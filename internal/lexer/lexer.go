@@ -53,6 +53,13 @@ func isLetter(b byte) bool {
 	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
+// isIdentStart reports whether b may begin an identifier. Unlike isLetter,
+// '_' is excluded: per the language reference, identifiers begin with a
+// letter — '_' is valid only as a continuation character.
+func isIdentStart(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 func isAlnum(b byte) bool { return isLetter(b) || isDigit(b) }
 
 func isHex(b byte) bool {
@@ -79,6 +86,9 @@ func (l *Lexer) Next() token.Token {
 		}
 
 		if l.off >= len(l.f.Content) {
+			if l.havePrev && l.prev != token.NEWLINE && l.prev != token.SEMI {
+				return l.emit(token.NEWLINE, source.Pos{Offset: l.off}, "\n")
+			}
 			return l.emit(token.EOF, source.Pos{Offset: l.off}, "")
 		}
 
@@ -97,7 +107,7 @@ func (l *Lexer) Next() token.Token {
 			return l.lexNumber(pos)
 		}
 
-		if isLetter(b) {
+		if isIdentStart(b) {
 			return l.lexIdent(pos)
 		}
 
@@ -134,6 +144,10 @@ func (l *Lexer) lexNumber(pos source.Pos) token.Token {
 		hexStart := l.off
 		for l.off < len(l.f.Content) && isHex(l.f.Content[l.off]) {
 			l.off++
+		}
+		if l.off == hexStart {
+			l.errorf(pos, "hex literal has no digits")
+			return l.emit(token.INT, pos, string(l.f.Content[start:l.off]))
 		}
 		text := string(l.f.Content[start:l.off])
 		var v int64

@@ -99,3 +99,107 @@ func TestKeywordVsIdent(t *testing.T) {
 		}
 	}
 }
+
+func diagsFor(src string) []source.Diag {
+	l := New(&source.File{Name: "t.cla", Content: []byte(src)})
+	for {
+		tk := l.Next()
+		if tk.Kind == token.EOF {
+			return l.Diags()
+		}
+	}
+}
+
+func TestHexLiteralNoDigits(t *testing.T) {
+	diags := diagsFor("x = 0x\n")
+	if len(diags) != 1 || diags[0].Msg != "hex literal has no digits" {
+		t.Fatalf("got diags %v, want one %q", diags, "hex literal has no digits")
+	}
+	if diags[0].Pos.Offset != 4 {
+		t.Errorf("pos: got %d want 4 (offset of '0')", diags[0].Pos.Offset)
+	}
+
+	if diags := diagsFor("x = 0x1F\n"); len(diags) != 0 {
+		t.Errorf("0x1F: got unexpected diags %v", diags)
+	}
+}
+
+func TestIdentifierMustNotStartWithUnderscore(t *testing.T) {
+	diags := diagsFor("_x = 1\n")
+	found := false
+	for _, d := range diags {
+		if d.Msg == `unexpected character '_'` {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("got diags %v, want one containing %q", diags, `unexpected character '_'`)
+	}
+
+	got := kinds("_x = 1\n")
+	want := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.NEWLINE, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("_x = 1: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("_x = 1: token %d got %v want %v", i, got[i], want[i])
+		}
+	}
+
+	// underscore is still valid as a continuation character
+	got2 := kinds("a_b\n")
+	want2 := []token.Kind{token.IDENT, token.NEWLINE, token.EOF}
+	if len(got2) != len(want2) {
+		t.Fatalf("a_b: got %v want %v", got2, want2)
+	}
+	l := New(&source.File{Name: "t.cla", Content: []byte("a_b\n")})
+	tok := l.Next()
+	if tok.Kind != token.IDENT || tok.Text != "a_b" {
+		t.Errorf("a_b: got %v %q, want IDENT %q", tok.Kind, tok.Text, "a_b")
+	}
+}
+
+func TestNewlineSynthesizedAtEOF(t *testing.T) {
+	got := kinds("x = 1")
+	want := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.NEWLINE, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("x = 1 (no trailing newline): got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("token %d got %v want %v", i, got[i], want[i])
+		}
+	}
+
+	// already ends in newline: no double NEWLINE
+	got2 := kinds("x = 1\n")
+	want2 := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.NEWLINE, token.EOF}
+	if len(got2) != len(want2) {
+		t.Fatalf("x = 1\\n: got %v want %v", got2, want2)
+	}
+	for i := range want2 {
+		if got2[i] != want2[i] {
+			t.Errorf("token %d got %v want %v", i, got2[i], want2[i])
+		}
+	}
+
+	// empty input: just EOF
+	got3 := kinds("")
+	want3 := []token.Kind{token.EOF}
+	if len(got3) != len(want3) || got3[0] != want3[0] {
+		t.Fatalf("empty: got %v want %v", got3, want3)
+	}
+
+	// comment at EOF with no trailing newline
+	got4 := kinds("x = 1 // c")
+	want4 := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.NEWLINE, token.EOF}
+	if len(got4) != len(want4) {
+		t.Fatalf("x = 1 // c: got %v want %v", got4, want4)
+	}
+	for i := range want4 {
+		if got4[i] != want4[i] {
+			t.Errorf("token %d got %v want %v", i, got4[i], want4[i])
+		}
+	}
+}
