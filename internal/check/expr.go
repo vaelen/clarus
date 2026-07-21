@@ -162,6 +162,10 @@ func (c *checker) checkIdent(e *ast.Ident, expected *types.Type) *types.Type {
 			c.errorf(e.P, "cannot use type %s as a value", e.Name)
 			return types.InvalidT
 		}
+		if sym.IsMenu {
+			c.errorf(e.P, "%s is a menu, not a value", e.Name)
+			return types.InvalidT
+		}
 		return sym.Type
 	}
 	if expected != nil && expected.Kind == types.Enum {

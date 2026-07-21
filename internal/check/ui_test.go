@@ -81,3 +81,11 @@ window W {
 `, "unknown property")
 	expectError(t, uiBase+"func f() {\n    edit Main, new Bookmark\n}\n", "not a form window")
 }
+
+func TestMenuNameNotAValue(t *testing.T) {
+	expectError(t, "menu File {\n    item Save \"Save\"\n}\nfunc f() {\n    close File\n}\n", "is a menu, not a value")
+}
+
+func TestWindowDuplicateNames(t *testing.T) {
+	expectError(t, "window W {\n    button B { caption: \"x\" }\n    var B: int\n}\n", "redeclaration of B")
+}

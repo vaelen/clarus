@@ -72,6 +72,9 @@ func (c *checker) checkWindowDecl(d *ast.WindowDecl) {
 		info.FormRecord = sym.Type.Record
 	}
 
+	// Track declared names to detect collisions: title (reserved), widget names, var names
+	declaredNames := map[string]bool{"title": true}
+
 	for _, item := range d.Items {
 		switch it := item.(type) {
 		case *ast.FormFor:
@@ -81,8 +84,18 @@ func (c *checker) checkWindowDecl(d *ast.WindowDecl) {
 				c.errorf(it.P, "unknown property %s for window", it.Name)
 			}
 		case *ast.VarDecl:
+			if declaredNames[it.Name] {
+				c.errorf(it.P, "redeclaration of %s", it.Name)
+			} else {
+				declaredNames[it.Name] = true
+			}
 			info.Vars = append(info.Vars, c.checkWindowVar(it))
 		case *ast.Widget:
+			if declaredNames[it.Name] {
+				c.errorf(it.P, "redeclaration of %s", it.Name)
+			} else {
+				declaredNames[it.Name] = true
+			}
 			info.Widgets = append(info.Widgets, c.checkWidget(it, info))
 		}
 	}
