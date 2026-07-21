@@ -349,7 +349,7 @@ datagrams. Both slot into the existing event model without new concepts.
 
 The 80% is documents plus one preferences file:
 
-- `file.readText(path)`, `file.writeText(path, t)`.
+- `file.readText(path, t)`, `file.writeText(path, t)`.
 - Record/list serialization: `file.save(path, bookmarks)` /
   `file.load(path, bookmarks)` — the binding metadata already knows field
   layouts.
