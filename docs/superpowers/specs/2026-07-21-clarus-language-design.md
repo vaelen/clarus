@@ -107,11 +107,18 @@ The runtime owns `WaitNextEvent`, update/activate handling, and dispatch.
 All user code is event handlers plus the plain functions they call:
 
 ```rust
-on Go.click { … }
+on Main.Go.click { … }
 on conn.received(data: text) { … }
 on File.Quit.select { quit }
 every 2 ticks { … }      // a tick = 1/60 s, the Mac's native clock
 ```
+
+Handler names are fully qualified: widget handlers carry their window's name
+(`on Window.Widget.event`), menu-item handlers their menu's name
+(`on Menu.Item.select`), and window-level and resource handlers use the
+window or resource name directly (`on EditForm.accepted`,
+`on conn.received`). Two windows may therefore each have an `Add` button
+without ambiguity, and handler lookup stays purely lexical.
 
 **Async model: everything is an event (no closures).** Async operations do
 not take callbacks; they post completion events caught by named handlers
@@ -209,7 +216,7 @@ table Marks {
     column "URL"  shows url      width fill
 }
 
-on Marks.doubleClick(i: int) {
+on Main.Marks.doubleClick(i: int) {
     edit EditForm, bookmarks[i]
 }
 ```
@@ -225,7 +232,7 @@ future sugar: they compile down to a generated bound form.
 
 `canvas` widget wrapping QuickDraw: `clear`, `line`, `rect`, `fillCircle`,
 text drawing, offscreen buffering for flicker-free animation. Click/key
-events deliver coordinates: `on Board.click(px: int, py: int)`.
+events deliver coordinates: `on Game.Board.click(px: int, py: int)`.
 
 `every N ticks { }` timers are first-class; games and network polling both
 need them. A `fixed` numeric type (Toolbox `FixMath`, 16.16 fixed-point)
@@ -360,11 +367,11 @@ window EditForm {
     button Cancel  { cancel }
 }
 
-on Add.click {
+on Main.Add.click {
     edit EditForm, new Bookmark
 }
 
-on Marks.doubleClick(i: int) {
+on Main.Marks.doubleClick(i: int) {
     edit EditForm, bookmarks[i]
 }
 
@@ -372,7 +379,7 @@ on EditForm.accepted(b: Bookmark) {
     if b.isNew { bookmarks.add(b) }
 }
 
-on Remove.click {
+on Main.Remove.click {
     bookmarks.remove(Marks.selected)
 }
 ```
