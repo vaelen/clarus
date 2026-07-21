@@ -49,22 +49,23 @@ There is no `main` function. Execution begins with the runtime, which fires `App
 Example program structure:
 
 ```rust
-record Person
-  name string
-  age int
+// A complete (tiny) Clarus program
 
-var globalCount int
+record Person {
+    name: string(63)
+    age:  int
+}
 
-func greet name string
-  var message string
-  message = "Hello, " + name
-  return message
+var visitors: list of Person
 
-window MainWindow
-  title "My App"
+func describe(p: Person): string {
+    return p.name + " is here"
+}
 
-on App.launch
-  // initialization
+on App.startEmpty {
+    // a real program would open a window here (Chapter 8)
+    quit
+}
 ```
 
 ## Chapter 2: Lexical Structure
