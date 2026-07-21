@@ -27,6 +27,9 @@ func (c *checker) checkExpr(e ast.Expr, expected *types.Type) *types.Type {
 	case *ast.NilLit:
 		return c.checkNil(e, expected)
 	case *ast.WindowSelf:
+		if c.curWindow != nil {
+			return &types.Type{Kind: types.WindowRef, Window: c.curWindow}
+		}
 		c.errorf(e.P, "window is only valid inside a window-scoped handler")
 		return types.InvalidT
 	case *ast.Ident:
@@ -363,10 +366,25 @@ func (c *checker) checkIndex(e *ast.Index) *types.Type {
 // checkSelect checks a bare `a.b` (field, or a no-argument property like
 // .length/.count) — method calls are handled in checkCall/checkMethodCall
 // since only a Call carries argument expressions.
+//
+// Two bases need special-casing before the generic checkExpr(e.X, nil)
+// below, because they aren't ordinary values: a window TYPE name used in
+// expression position (only `.front` is valid: `Doc.front`, Ch8) and a menu
+// name (only `.ItemName` is valid, en route to `.enabled`, Ch9).
 func (c *checker) checkSelect(e *ast.Select) *types.Type {
-	if id, ok := e.X.(*ast.Ident); ok && id.Name == "file" {
-		c.errorf(e.P, "file.%s must be called", e.Name)
-		return types.InvalidT
+	if id, ok := e.X.(*ast.Ident); ok {
+		if id.Name == "file" {
+			c.errorf(e.P, "file.%s must be called", e.Name)
+			return types.InvalidT
+		}
+		if sym, ok := c.scope.Lookup(id.Name); ok {
+			if sym.IsMenu {
+				return c.checkMenuItemName(e, sym)
+			}
+			if sym.IsType && sym.Type.Kind == types.WindowRef && e.Name == "front" {
+				return sym.Type
+			}
+		}
 	}
 	xt := c.checkExpr(e.X, nil)
 	if xt == types.InvalidT {
@@ -378,6 +396,15 @@ func (c *checker) checkSelect(e *ast.Select) *types.Type {
 			if f.Name == e.Name {
 				return f.Type
 			}
+		}
+		// ponytail: `isNew` is only meaningful on a record delivered by an
+		// `accepted` handler (Ch10) — tracking that provenance through every
+		// expression form a record value can flow through is more machinery
+		// than this task needs, so it's allowed as a bool pseudo-field on
+		// ANY record expression. Deliberately permissive; a later pass can
+		// narrow it if that ever matters.
+		if e.Name == "isNew" {
+			return types.BoolT
 		}
 	case types.ErrorType:
 		// Ch3: error is `{ code: int, message: string }`.
@@ -394,6 +421,14 @@ func (c *checker) checkSelect(e *ast.Select) *types.Type {
 	case types.List, types.Map:
 		if e.Name == "count" {
 			return types.IntT
+		}
+	case types.WindowRef:
+		return c.checkWindowRefSelect(e, xt)
+	case types.Widget:
+		return c.checkWidgetSelect(e, xt)
+	case types.MenuItem:
+		if e.Name == "enabled" {
+			return types.BoolT
 		}
 	}
 	c.errorf(e.P, "undefined: %s", e.Name)
@@ -681,6 +716,12 @@ func (c *checker) checkMethodCall(sel *ast.Select, args []ast.Expr) *types.Type 
 		return c.checkTableMethod(listenerMethods, sel, args)
 	case types.ServiceBrowser:
 		return c.checkTableMethod(serviceBrowserMethods, sel, args)
+	case types.Widget:
+		if xt.WidgetKind == "canvas" {
+			return c.checkTableMethod(canvasMethods, sel, args)
+		}
+		c.errorf(sel.P, "undefined: %s", sel.Name)
+		return types.InvalidT
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)
 		return types.InvalidT

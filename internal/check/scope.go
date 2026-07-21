@@ -13,13 +13,19 @@ type FuncSig struct {
 	Ret    *types.Type
 }
 
-// Symbol is a name bound in a Scope: a variable, function, or type name.
+// Symbol is a name bound in a Scope: a variable, function, type name, or menu
+// name. Menus are a fourth, narrower kind: unlike a window (a WindowRef
+// type), a menu is never a value — it only ever appears as the base of
+// `MenuName.ItemName` (Ch9's runtime `enabled` property), so it gets its own
+// flag and payload rather than a types.Type.
 type Symbol struct {
 	Name   string
 	Type   *types.Type
 	IsFunc bool
 	Func   *FuncSig
 	IsType bool
+	IsMenu bool
+	Menu   *MenuInfo
 }
 
 // Scope is a lexical block of declarations, chained to its enclosing scope.

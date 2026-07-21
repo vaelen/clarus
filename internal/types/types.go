@@ -26,6 +26,13 @@ const (
 	Address
 	ErrorType
 	Void
+
+	// Widget and MenuItem are checker-only pseudo-types: never a variable's
+	// declared type, only the transient result of a Select expression
+	// (Widget.property, MenuName.ItemName) on the way to a concrete type
+	// (Ch8 runtime properties, Ch9 `enabled`).
+	Widget
+	MenuItem
 )
 
 // Type is a Clarus type. Only the fields relevant to Kind are populated.
@@ -38,6 +45,8 @@ type Type struct {
 	Enum   *EnumInfo
 	Record *RecordInfo
 	Window *WindowInfo
+
+	WidgetKind string // Widget: which widget kind ("button", "field", "textview", "check", "popup", "table", "canvas", "label")
 }
 
 // EnumInfo is the named-type identity for an enum declaration.

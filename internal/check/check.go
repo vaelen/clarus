@@ -24,6 +24,16 @@ type checker struct {
 	// checking a procedure body (bare `return` only) or outside any
 	// function (top-level var initializers).
 	curFuncRet *types.Type
+
+	// curWindow is the WindowInfo of the enclosing window-scoped handler
+	// body (extend W { on ... }), or nil outside one. It resolves the
+	// `window` keyword (ast.WindowSelf) to that instance's WindowRef type.
+	curWindow *types.WindowInfo
+
+	// inCloseRequest is true while checking a closeRequest handler's body
+	// (a window's own, never a widget's or menu item's) — the only place
+	// `cancel` is valid (Ch5: Cancel).
+	inCloseRequest bool
 }
 
 // File type-checks tree and returns all diagnostics found. Declarations are
@@ -57,8 +67,16 @@ func (c *checker) checkDecl(d ast.Decl) {
 		c.checkVarDecl(d)
 	case *ast.FuncDecl:
 		c.checkFuncDecl(d)
-	case *ast.WindowDecl, *ast.MenuDecl, *ast.ExtendDecl, *ast.HandlerDecl, *ast.EveryDecl:
-		// Task 11.
+	case *ast.WindowDecl:
+		c.checkWindowDecl(d)
+	case *ast.MenuDecl:
+		c.checkMenuDecl(d)
+	case *ast.ExtendDecl:
+		c.checkExtendDecl(d)
+	case *ast.HandlerDecl:
+		c.checkTopHandlerDecl(d)
+	case *ast.EveryDecl:
+		c.checkEveryDecl(d)
 	}
 }
 
@@ -225,11 +243,9 @@ func (c *checker) checkBlock(b *ast.Block) {
 	c.scope = saved
 }
 
-// checkStmt checks one statement. Task 10 implements what the test file
-// exercises (var decls, assignment, expression statements, while/if
-// conditions, for loops, return); quit/cancel/open/close/edit are
-// statement forms this task doesn't reach and are silently skipped, like
-// window/menu/extend/handler declarations.
+// checkStmt checks one statement (var decls, assignment, expression
+// statements, while/if conditions, for loops, return, and — Task 11 —
+// quit/cancel/open/close/edit).
 func (c *checker) checkStmt(s ast.Stmt) {
 	switch s := s.(type) {
 	case *ast.AssignStmt:
@@ -244,6 +260,16 @@ func (c *checker) checkStmt(s ast.Stmt) {
 		c.checkForStmt(s)
 	case *ast.ReturnStmt:
 		c.checkReturnStmt(s)
+	case *ast.QuitStmt:
+		// Nothing to check: `quit` takes no arguments (Ch5: Quit).
+	case *ast.CancelStmt:
+		c.checkCancelStmt(s)
+	case *ast.OpenStmt:
+		c.checkOpenStmt(s)
+	case *ast.CloseStmt:
+		c.checkCloseStmt(s)
+	case *ast.EditStmt:
+		c.checkEditStmt(s)
 	}
 }
 
@@ -296,6 +322,9 @@ func (c *checker) checkForStmt(s *ast.ForStmt) {
 		}
 		if toT != types.InvalidT && toT.Kind != types.Int {
 			c.errorf(s.ToExpr.Pos(), "range bounds must be int")
+		}
+		if s.V2 != "" {
+			c.errorf(s.P, "range for takes one variable")
 		}
 		c.declareForVar(s.V1, types.IntT)
 		c.checkBlock(s.Body)
