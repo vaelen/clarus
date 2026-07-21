@@ -1126,3 +1126,40 @@ literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
 Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`.
+
+## Appendix B: Event Handler Quick Reference
+
+The following table is the complete per-resource inventory of every v1 event handler; Chapters 7–12 give full semantics.
+
+| Resource | Event | Handler signature |
+|---|---|---|
+| App | launch | `on App.launch { }` |
+| App | startEmpty | `on App.startEmpty { }` |
+| App | openDocument | `on App.openDocument(path: string) { }` |
+| window | opened | `on opened { }` (in `extend W`) |
+| window | closeRequest | `on closeRequest { }` — `cancel` allowed |
+| window | closed | `on closed { }` |
+| window | resized | `on resized { }` |
+| window | key | `on key(k: char) { }` |
+| form window | accepted | `on accepted(rec: T) { }` |
+| form window | cancelled | `on cancelled { }` |
+| button | click | `on Name.click { }` |
+| field | change | `on Name.change { }` |
+| field | enter | `on Name.enter { }` |
+| textview | change | `on Name.change { }` |
+| check | change | `on Name.change { }` |
+| popup | change | `on Name.change { }` |
+| table | select | `on Name.select(i: int) { }` |
+| table | doubleClick | `on Name.doubleClick(i: int) { }` |
+| canvas | click | `on Name.click(x: int, y: int) { }` |
+| canvas | drag | `on Name.drag(x: int, y: int) { }` |
+| menu item | select | `on Item.select { }` (in `extend Menu`) |
+| connection | opened | `on c.opened { }` |
+| connection | received | `on c.received(data: text) { }` |
+| connection | closed | `on c.closed { }` |
+| connection | failed | `on c.failed(err: error) { }` |
+| listener | accepted | `on l.accepted(c: connection) { }` |
+| listener | failed | `on l.failed(err: error) { }` |
+| serviceBrowser | found | `on b.found(name: string, addr: address) { }` |
+| serviceBrowser | failed | `on b.failed(err: error) { }` |
+| (timer) | — | `every N ticks { }` |
