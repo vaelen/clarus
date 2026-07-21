@@ -91,6 +91,13 @@ var (
 	VoidT    = &Type{Kind: Void}
 	AddressT = &Type{Kind: Address}
 	ErrT     = &Type{Kind: ErrorType}
+
+	// InvalidT is the checker's error-recovery sentinel: returned by
+	// checkExpr in place of a real type after a diagnostic has already been
+	// reported, so AssignableTo/Equal treat it as compatible with anything
+	// and a single mistake never cascades into unrelated follow-on errors.
+	// Distinct from ErrT, the language's own `error` record type.
+	InvalidT = &Type{Kind: Invalid}
 )
 
 // StringT returns a string(n) type.
@@ -122,6 +129,9 @@ func AssignableTo(src, dst *Type) bool {
 	if src == nil || dst == nil {
 		return false
 	}
+	if src.Kind == Invalid || dst.Kind == Invalid {
+		return true
+	}
 	if src.Kind != dst.Kind {
 		return false
 	}
@@ -149,7 +159,13 @@ func Equal(a, b *Type) bool {
 	if a == b {
 		return true
 	}
-	if a == nil || b == nil || a.Kind != b.Kind {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Kind == Invalid || b.Kind == Invalid {
+		return true
+	}
+	if a.Kind != b.Kind {
 		return false
 	}
 	switch a.Kind {

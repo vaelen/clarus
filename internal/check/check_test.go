@@ -66,6 +66,17 @@ func TestDeclareBeforeUse(t *testing.T) {
 	expectError(t, "var a: int = 1\nvar a: int = 2\n", "redeclaration")
 }
 
+func TestNoCascade(t *testing.T) {
+	if ds := diagsFor(t, "var a: int = b + 1\n"); len(ds) != 1 {
+		t.Fatalf("want exactly 1 diagnostic, got %v", ds)
+	}
+}
+
+func TestErrorType(t *testing.T) {
+	expectError(t, "var x: int = lastError\n", "cannot assign")
+	expectClean(t, "var m: string = lastError.message\n")
+}
+
 func TestCollections(t *testing.T) {
 	expectClean(t, `var l: list of int
 func f() {

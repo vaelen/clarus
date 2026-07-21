@@ -64,7 +64,7 @@ func (c *checker) checkDecl(d ast.Decl) {
 
 // resolveType maps a TypeExpr as written in source to a *types.Type,
 // reporting "undefined: X" for an unresolvable name and returning
-// types.ErrT — never re-diagnosed by a caller (see compatible()).
+// types.InvalidT — never re-diagnosed by a caller (see compatible()).
 func (c *checker) resolveType(te ast.TypeExpr) *types.Type {
 	switch t := te.(type) {
 	case *ast.NamedType:
@@ -83,7 +83,7 @@ func (c *checker) resolveType(te ast.TypeExpr) *types.Type {
 		sym, ok := c.scope.Lookup(t.Name)
 		if !ok || !sym.IsType {
 			c.errorf(t.P, "undefined: %s", t.Name)
-			return types.ErrT
+			return types.InvalidT
 		}
 		return sym.Type
 	case *ast.StringType:
@@ -95,7 +95,7 @@ func (c *checker) resolveType(te ast.TypeExpr) *types.Type {
 	case *ast.ArrayType:
 		return types.ArrayT(c.resolveType(t.Elem), t.N)
 	default:
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -115,7 +115,7 @@ func (c *checker) checkRecordDecl(d *ast.RecordDecl) {
 			continue
 		}
 		dt := c.checkExpr(f.Default, fields[i].Type)
-		if dt != types.ErrT && !compatible(dt, fields[i].Type) {
+		if dt != types.InvalidT && !compatible(dt, fields[i].Type) {
 			c.errorf(f.P, "cannot assign %s to field %s of type %s", typeName(dt), f.Name, typeName(fields[i].Type))
 		}
 	}
@@ -170,7 +170,7 @@ func (c *checker) checkVarDecl(d *ast.VarDecl) {
 	t := c.resolveType(d.Type)
 	if d.Init != nil {
 		it := c.checkExpr(d.Init, t)
-		if it != types.ErrT && !compatible(it, t) {
+		if it != types.InvalidT && !compatible(it, t) {
 			c.errorf(d.P, "cannot assign %s to %s", typeName(it), typeName(t))
 		}
 	}
@@ -250,7 +250,7 @@ func (c *checker) checkStmt(s ast.Stmt) {
 func (c *checker) checkAssignStmt(s *ast.AssignStmt) {
 	lt := c.checkExpr(s.LHS, nil)
 	rt := c.checkExpr(s.RHS, lt)
-	if lt == types.ErrT || rt == types.ErrT {
+	if lt == types.InvalidT || rt == types.InvalidT {
 		return
 	}
 	if !compatible(rt, lt) {
@@ -260,7 +260,7 @@ func (c *checker) checkAssignStmt(s *ast.AssignStmt) {
 
 func (c *checker) checkCond(cond ast.Expr) {
 	ct := c.checkExpr(cond, types.BoolT)
-	if ct != types.ErrT && ct.Kind != types.Bool {
+	if ct != types.InvalidT && ct.Kind != types.Bool {
 		c.errorf(cond.Pos(), "condition must be bool")
 	}
 }
@@ -291,10 +291,10 @@ func (c *checker) checkForStmt(s *ast.ForStmt) {
 
 	if s.ToExpr != nil {
 		toT := c.checkExpr(s.ToExpr, nil)
-		if seqT != types.ErrT && seqT.Kind != types.Int {
+		if seqT != types.InvalidT && seqT.Kind != types.Int {
 			c.errorf(s.Seq.Pos(), "range bounds must be int")
 		}
-		if toT != types.ErrT && toT.Kind != types.Int {
+		if toT != types.InvalidT && toT.Kind != types.Int {
 			c.errorf(s.ToExpr.Pos(), "range bounds must be int")
 		}
 		c.declareForVar(s.V1, types.IntT)
@@ -303,10 +303,10 @@ func (c *checker) checkForStmt(s *ast.ForStmt) {
 	}
 
 	switch {
-	case seqT == types.ErrT:
-		c.declareForVar(s.V1, types.ErrT)
+	case seqT == types.InvalidT:
+		c.declareForVar(s.V1, types.InvalidT)
 		if s.V2 != "" {
-			c.declareForVar(s.V2, types.ErrT)
+			c.declareForVar(s.V2, types.InvalidT)
 		}
 	case seqT.Kind == types.List:
 		if s.V2 != "" {
@@ -350,7 +350,7 @@ func (c *checker) checkReturnStmt(s *ast.ReturnStmt) {
 		c.errorf(s.P, "unexpected return value in a procedure")
 		return
 	}
-	if rt != types.ErrT && !compatible(rt, c.curFuncRet) {
+	if rt != types.InvalidT && !compatible(rt, c.curFuncRet) {
 		c.errorf(s.P, "cannot return %s as %s", typeName(rt), typeName(c.curFuncRet))
 	}
 }

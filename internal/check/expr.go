@@ -9,7 +9,7 @@ import (
 // checkExpr type-checks e and returns its type. expected resolves bare enum
 // members and `nil` (WindowRef/resource) — it is a hint, not an obligation;
 // concrete-typed expressions (literals, resolved idents) ignore it. On any
-// error, checkExpr reports exactly one diagnostic and returns types.ErrT,
+// error, checkExpr reports exactly one diagnostic and returns types.InvalidT,
 // which compatible() treats as compatible with everything so a single
 // mistake never cascades into unrelated follow-on errors.
 func (c *checker) checkExpr(e ast.Expr, expected *types.Type) *types.Type {
@@ -28,7 +28,7 @@ func (c *checker) checkExpr(e ast.Expr, expected *types.Type) *types.Type {
 		return c.checkNil(e, expected)
 	case *ast.WindowSelf:
 		c.errorf(e.P, "window is only valid inside a window-scoped handler")
-		return types.ErrT
+		return types.InvalidT
 	case *ast.Ident:
 		return c.checkIdent(e, expected)
 	case *ast.Unary:
@@ -47,18 +47,16 @@ func (c *checker) checkExpr(e ast.Expr, expected *types.Type) *types.Type {
 		return c.checkOpenExpr(e)
 	default:
 		c.errorf(e.Pos(), "internal: unhandled expression type")
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
-// compatible is the checker's own assignability wrapper: it treats
-// types.ErrT (on either side) as compatible with anything, so a diagnostic
-// already reported for one sub-expression never triggers a second,
-// misleading diagnostic downstream (the "no cascade" rule).
+// compatible is the checker's own assignability wrapper around
+// types.AssignableTo, which already treats types.InvalidT (on either side) as
+// compatible with anything, so a diagnostic already reported for one
+// sub-expression never triggers a second, misleading diagnostic downstream
+// (the "no cascade" rule).
 func compatible(src, dst *types.Type) bool {
-	if src == types.ErrT || dst == types.ErrT {
-		return true
-	}
 	return types.AssignableTo(src, dst)
 }
 
@@ -134,7 +132,7 @@ func (c *checker) checkNil(e *ast.NilLit, expected *types.Type) *types.Type {
 		return expected
 	}
 	c.errorf(e.P, "nil is only valid for window and resource references")
-	return types.ErrT
+	return types.InvalidT
 }
 
 // isBareIdentCandidate reports whether e is an Ident not resolvable in the
@@ -155,11 +153,11 @@ func (c *checker) checkIdent(e *ast.Ident, expected *types.Type) *types.Type {
 	if sym, ok := c.scope.Lookup(e.Name); ok {
 		if sym.IsFunc {
 			c.errorf(e.P, "cannot use function %s as a value", e.Name)
-			return types.ErrT
+			return types.InvalidT
 		}
 		if sym.IsType {
 			c.errorf(e.P, "cannot use type %s as a value", e.Name)
-			return types.ErrT
+			return types.InvalidT
 		}
 		return sym.Type
 	}
@@ -171,44 +169,44 @@ func (c *checker) checkIdent(e *ast.Ident, expected *types.Type) *types.Type {
 		}
 	}
 	c.errorf(e.P, "undefined: %s", e.Name)
-	return types.ErrT
+	return types.InvalidT
 }
 
 func (c *checker) checkUnary(e *ast.Unary) *types.Type {
 	switch e.Op {
 	case "-":
 		t := c.checkExpr(e.X, nil)
-		if t == types.ErrT {
-			return types.ErrT
+		if t == types.InvalidT {
+			return types.InvalidT
 		}
 		if t.Kind != types.Int && t.Kind != types.Fixed {
 			c.errorf(e.P, "cannot negate %s", typeName(t))
-			return types.ErrT
+			return types.InvalidT
 		}
 		return t
 	case "not":
 		t := c.checkExpr(e.X, types.BoolT)
-		if t == types.ErrT {
-			return types.ErrT
+		if t == types.InvalidT {
+			return types.InvalidT
 		}
 		if t.Kind != types.Bool {
 			c.errorf(e.P, "condition must be bool")
-			return types.ErrT
+			return types.InvalidT
 		}
 		return types.BoolT
 	case "~":
 		t := c.checkExpr(e.X, types.IntT)
-		if t == types.ErrT {
-			return types.ErrT
+		if t == types.InvalidT {
+			return types.InvalidT
 		}
 		if t.Kind != types.Int {
 			c.errorf(e.P, "bitwise operator requires int operands")
-			return types.ErrT
+			return types.InvalidT
 		}
 		return types.IntT
 	default:
 		c.errorf(e.P, "internal: unhandled unary operator %s", e.Op)
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -226,7 +224,7 @@ func (c *checker) checkBinary(e *ast.Binary) *types.Type {
 		return c.checkBoolOp(e)
 	default:
 		c.errorf(e.P, "internal: unhandled binary operator %s", e.Op)
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -235,8 +233,8 @@ func (c *checker) checkBinary(e *ast.Binary) *types.Type {
 func (c *checker) checkArith(e *ast.Binary) *types.Type {
 	lt := c.checkExpr(e.X, nil)
 	rt := c.checkExpr(e.Y, nil)
-	if lt == types.ErrT || rt == types.ErrT {
-		return types.ErrT
+	if lt == types.InvalidT || rt == types.InvalidT {
+		return types.InvalidT
 	}
 	if e.Op == "+" {
 		if lt.Kind == types.String && rt.Kind == types.String {
@@ -255,28 +253,28 @@ func (c *checker) checkArith(e *ast.Binary) *types.Type {
 	if lt.Kind == types.Fixed && rt.Kind == types.Fixed {
 		if e.Op == "mod" {
 			c.errorf(e.P, "operator mod requires int operands")
-			return types.ErrT
+			return types.InvalidT
 		}
 		return types.FixedT
 	}
 	if (lt.Kind == types.Int && rt.Kind == types.Fixed) || (lt.Kind == types.Fixed && rt.Kind == types.Int) {
 		c.errorf(e.P, "mixed int/fixed arithmetic; convert explicitly")
-		return types.ErrT
+		return types.InvalidT
 	}
 	c.errorf(e.P, "invalid operands to %s: %s and %s", e.Op, typeName(lt), typeName(rt))
-	return types.ErrT
+	return types.InvalidT
 }
 
 // checkBitwise checks `& | ^ << >>` — int only (Ch4: Bitwise Operators).
 func (c *checker) checkBitwise(e *ast.Binary) *types.Type {
 	lt := c.checkExpr(e.X, nil)
 	rt := c.checkExpr(e.Y, nil)
-	if lt == types.ErrT || rt == types.ErrT {
-		return types.ErrT
+	if lt == types.InvalidT || rt == types.InvalidT {
+		return types.InvalidT
 	}
 	if lt.Kind != types.Int || rt.Kind != types.Int {
 		c.errorf(e.P, "bitwise operator requires int operands")
-		return types.ErrT
+		return types.InvalidT
 	}
 	return types.IntT
 }
@@ -287,31 +285,31 @@ func (c *checker) checkComparison(e *ast.Binary, allowEnum bool) *types.Type {
 	var lt, rt *types.Type
 	if c.isBareIdentCandidate(e.X) {
 		rt = c.checkExpr(e.Y, nil)
-		if rt != types.ErrT && rt.Kind == types.Enum {
+		if rt != types.InvalidT && rt.Kind == types.Enum {
 			lt = c.checkExpr(e.X, rt)
 		} else {
 			lt = c.checkExpr(e.X, nil)
 		}
 	} else {
 		lt = c.checkExpr(e.X, nil)
-		if lt != types.ErrT && lt.Kind == types.Enum {
+		if lt != types.InvalidT && lt.Kind == types.Enum {
 			rt = c.checkExpr(e.Y, lt)
 		} else {
 			rt = c.checkExpr(e.Y, nil)
 		}
 	}
-	if lt == types.ErrT || rt == types.ErrT {
-		return types.ErrT
+	if lt == types.InvalidT || rt == types.InvalidT {
+		return types.InvalidT
 	}
 	if lt.Kind == types.Enum || rt.Kind == types.Enum {
 		if !allowEnum {
 			c.errorf(e.P, "enums are not ordered")
-			return types.ErrT
+			return types.InvalidT
 		}
 	}
 	if !compatible(lt, rt) && !compatible(rt, lt) {
 		c.errorf(e.P, "type mismatch: %s and %s", typeName(lt), typeName(rt))
-		return types.ErrT
+		return types.InvalidT
 	}
 	return types.BoolT
 }
@@ -320,12 +318,12 @@ func (c *checker) checkComparison(e *ast.Binary, allowEnum bool) *types.Type {
 func (c *checker) checkBoolOp(e *ast.Binary) *types.Type {
 	lt := c.checkExpr(e.X, types.BoolT)
 	rt := c.checkExpr(e.Y, types.BoolT)
-	if lt == types.ErrT || rt == types.ErrT {
-		return types.ErrT
+	if lt == types.InvalidT || rt == types.InvalidT {
+		return types.InvalidT
 	}
 	if lt.Kind != types.Bool || rt.Kind != types.Bool {
 		c.errorf(e.P, "condition must be bool")
-		return types.ErrT
+		return types.InvalidT
 	}
 	return types.BoolT
 }
@@ -334,31 +332,31 @@ func (c *checker) checkBoolOp(e *ast.Binary) *types.Type {
 // -> value (Ch3: Strings, Lists, Maps, Text; Ch4 precedence level 1).
 func (c *checker) checkIndex(e *ast.Index) *types.Type {
 	xt := c.checkExpr(e.X, nil)
-	if xt == types.ErrT {
-		return types.ErrT
+	if xt == types.InvalidT {
+		return types.InvalidT
 	}
 	switch xt.Kind {
 	case types.String, types.Text:
 		it := c.checkExpr(e.I, types.IntT)
-		if it != types.ErrT && it.Kind != types.Int {
+		if it != types.InvalidT && it.Kind != types.Int {
 			c.errorf(e.I.Pos(), "index must be int")
 		}
 		return types.CharT
 	case types.Array, types.List:
 		it := c.checkExpr(e.I, types.IntT)
-		if it != types.ErrT && it.Kind != types.Int {
+		if it != types.InvalidT && it.Kind != types.Int {
 			c.errorf(e.I.Pos(), "index must be int")
 		}
 		return xt.Elem
 	case types.Map:
 		it := c.checkExpr(e.I, types.StringT(255))
-		if it != types.ErrT && it.Kind != types.String {
+		if it != types.InvalidT && it.Kind != types.String {
 			c.errorf(e.I.Pos(), "map index must be string")
 		}
 		return xt.Elem
 	default:
 		c.errorf(e.P, "cannot index %s", typeName(xt))
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -368,11 +366,11 @@ func (c *checker) checkIndex(e *ast.Index) *types.Type {
 func (c *checker) checkSelect(e *ast.Select) *types.Type {
 	if id, ok := e.X.(*ast.Ident); ok && id.Name == "file" {
 		c.errorf(e.P, "file.%s must be called", e.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	xt := c.checkExpr(e.X, nil)
-	if xt == types.ErrT {
-		return types.ErrT
+	if xt == types.InvalidT {
+		return types.InvalidT
 	}
 	switch xt.Kind {
 	case types.Record:
@@ -380,6 +378,14 @@ func (c *checker) checkSelect(e *ast.Select) *types.Type {
 			if f.Name == e.Name {
 				return f.Type
 			}
+		}
+	case types.ErrorType:
+		// Ch3: error is `{ code: int, message: string }`.
+		switch e.Name {
+		case "code":
+			return types.IntT
+		case "message":
+			return types.StringT(255)
 		}
 	case types.String, types.Text:
 		if e.Name == "length" {
@@ -391,18 +397,18 @@ func (c *checker) checkSelect(e *ast.Select) *types.Type {
 		}
 	}
 	c.errorf(e.P, "undefined: %s", e.Name)
-	return types.ErrT
+	return types.InvalidT
 }
 
 func (c *checker) checkNewExpr(e *ast.NewExpr) *types.Type {
 	sym, ok := c.scope.Lookup(e.Type)
 	if !ok {
 		c.errorf(e.P, "undefined: %s", e.Type)
-		return types.ErrT
+		return types.InvalidT
 	}
 	if !sym.IsType || sym.Type.Kind != types.Record {
 		c.errorf(e.P, "cannot use new with non-record type %s", e.Type)
-		return types.ErrT
+		return types.InvalidT
 	}
 	return sym.Type
 }
@@ -415,11 +421,11 @@ func (c *checker) checkOpenExpr(e *ast.OpenExpr) *types.Type {
 	sym, ok := c.scope.Lookup(e.Window)
 	if !ok {
 		c.errorf(e.P, "undefined: %s", e.Window)
-		return types.ErrT
+		return types.InvalidT
 	}
 	if !sym.IsType || sym.Type.Kind != types.WindowRef {
 		c.errorf(e.P, "cannot open non-window type %s", e.Window)
-		return types.ErrT
+		return types.InvalidT
 	}
 	return sym.Type
 }
@@ -434,7 +440,7 @@ func (c *checker) checkCall(e *ast.Call, expected *types.Type) *types.Type {
 		return c.checkMethodCall(fn, e.Args)
 	default:
 		c.errorf(e.P, "cannot call this expression")
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -453,20 +459,20 @@ func (c *checker) checkIdentCall(e *ast.Call, fn *ast.Ident) *types.Type {
 	sym, ok := c.scope.Lookup(fn.Name)
 	if !ok {
 		c.errorf(e.P, "undefined: %s", fn.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	if sym.IsType {
 		if sym.Type.Kind == types.Enum {
 			return c.checkConversion(e, sym.Type, fn.Name)
 		}
 		c.errorf(e.P, "cannot convert to %s", fn.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	if sym.IsFunc {
 		return c.checkArgs(e.P, e.Args, sym.Func.Params, sym.Func.Ret)
 	}
 	c.errorf(e.P, "%s is not callable", fn.Name)
-	return types.ErrT
+	return types.InvalidT
 }
 
 // checkConversion checks a single-argument conversion call against target:
@@ -474,11 +480,11 @@ func (c *checker) checkIdentCall(e *ast.Call, fn *ast.Ident) *types.Type {
 func (c *checker) checkConversion(e *ast.Call, target *types.Type, name string) *types.Type {
 	if len(e.Args) != 1 {
 		c.errorf(e.P, "conversion %s takes exactly one argument", name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	at := c.checkExpr(e.Args[0], nil)
-	if at == types.ErrT {
-		return types.ErrT
+	if at == types.InvalidT {
+		return types.InvalidT
 	}
 	ok := false
 	switch {
@@ -493,7 +499,7 @@ func (c *checker) checkConversion(e *ast.Call, target *types.Type, name string) 
 	}
 	if !ok {
 		c.errorf(e.P, "cannot convert %s to %s", typeName(at), name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	return target
 }
@@ -507,7 +513,7 @@ func (c *checker) checkArgs(pos source.Pos, args []ast.Expr, params []*types.Typ
 	} else {
 		for i, pt := range params {
 			at := c.checkExpr(args[i], pt)
-			if at != types.ErrT && !compatible(at, pt) {
+			if at != types.InvalidT && !compatible(at, pt) {
 				c.errorf(args[i].Pos(), "cannot use %s where %s is expected", typeName(at), typeName(pt))
 			}
 		}
@@ -524,7 +530,7 @@ func (c *checker) checkParamArg(arg ast.Expr, p paramSpec) {
 	switch {
 	case p.AnyCharArray:
 		t := c.checkExpr(arg, nil)
-		if t == types.ErrT {
+		if t == types.InvalidT {
 			return
 		}
 		if !(t.Kind == types.Array && t.Elem != nil && t.Elem.Kind == types.Char) {
@@ -532,7 +538,7 @@ func (c *checker) checkParamArg(arg ast.Expr, p paramSpec) {
 		}
 	case p.AnyRecordish:
 		t := c.checkExpr(arg, nil)
-		if t == types.ErrT {
+		if t == types.InvalidT {
 			return
 		}
 		ok := t.Kind == types.Record || ((t.Kind == types.List || t.Kind == types.Map) && t.Elem != nil && t.Elem.Kind == types.Record)
@@ -541,7 +547,7 @@ func (c *checker) checkParamArg(arg ast.Expr, p paramSpec) {
 		}
 	case len(p.OneOfKinds) > 0:
 		t := c.checkExpr(arg, nil)
-		if t == types.ErrT {
+		if t == types.InvalidT {
 			return
 		}
 		for _, k := range p.OneOfKinds {
@@ -552,7 +558,7 @@ func (c *checker) checkParamArg(arg ast.Expr, p paramSpec) {
 		c.errorf(arg.Pos(), "cannot use %s here", typeName(t))
 	default:
 		t := c.checkExpr(arg, p.T)
-		if t != types.ErrT && !compatible(t, p.T) {
+		if t != types.InvalidT && !compatible(t, p.T) {
 			c.errorf(arg.Pos(), "cannot use %s where %s is expected", typeName(t), typeName(p.T))
 		}
 	}
@@ -564,7 +570,7 @@ func (c *checker) checkTableMethod(table map[string]methodSig, sel *ast.Select, 
 	sig, ok := table[sel.Name]
 	if !ok {
 		c.errorf(sel.P, "undefined: %s", sel.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 	if len(args) != len(sig.Params) {
 		c.errorf(sel.P, "wrong number of arguments to %s", sel.Name)
@@ -608,7 +614,7 @@ func (c *checker) checkListMethod(lt *types.Type, sel *ast.Select, args []ast.Ex
 		return types.IntT
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -642,7 +648,7 @@ func (c *checker) checkMapMethod(mt *types.Type, sel *ast.Select, args []ast.Exp
 		return types.IntT
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 }
 
@@ -659,8 +665,8 @@ func (c *checker) checkMethodCall(sel *ast.Select, args []ast.Expr) *types.Type 
 		return c.checkFileCall(sel, args)
 	}
 	xt := c.checkExpr(sel.X, nil)
-	if xt == types.ErrT {
-		return types.ErrT
+	if xt == types.InvalidT {
+		return types.InvalidT
 	}
 	switch xt.Kind {
 	case types.List:
@@ -677,6 +683,6 @@ func (c *checker) checkMethodCall(sel *ast.Select, args []ast.Expr) *types.Type 
 		return c.checkTableMethod(serviceBrowserMethods, sel, args)
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)
-		return types.ErrT
+		return types.InvalidT
 	}
 }

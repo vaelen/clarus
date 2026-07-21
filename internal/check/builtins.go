@@ -99,12 +99,6 @@ func registerBuiltins(u *Scope) {
 	declType("listener", listenerT)
 	declType("serviceBrowser", serviceBrowserT)
 	declType("address", types.AddressT)
-	// ponytail: `error` and the checker's own error-recovery sentinel are
-	// both types.ErrT (the brief mandates reusing it for recovery). That
-	// means a real type mismatch on a value legitimately typed `error`
-	// (e.g. lastError) won't be flagged, since compatible() treats ErrT as
-	// compatible with everything. Not exercised by any rule or test; split
-	// them into distinct types if that ever matters.
 	declType("error", types.ErrT)
 	declType("saveChoice", types.SaveChoice)
 
