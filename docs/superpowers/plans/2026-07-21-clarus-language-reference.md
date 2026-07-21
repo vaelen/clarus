@@ -96,6 +96,7 @@ caption label default ticks
 |---|---|---|
 | Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
 | Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type in v1) |
+| Character | `'A'`, `'\n'` | single Mac Roman character; same escapes as strings |
 | String | `"hello"` | escapes: `\"` `\\` `\n` `\t`; `\n` emits CR (13), the Mac newline |
 | Boolean | `true`, `false` | |
 | Nil | `nil` | window/resource references only |
@@ -135,6 +136,7 @@ Normative table:
 | `int` | 4 bytes | inline | 32-bit signed integer |
 | `bool` | 1 byte | inline | `true` / `false` |
 | `fixed` | 4 bytes | inline | 16.16 fixed-point (Toolbox `Fixed`) |
+| `char` | 1 byte | inline | unsigned 8-bit Mac Roman character; doubles as a byte (0–255) for binary data |
 | `string(n)` | n+1 bytes | inline | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)` |
 | enum `(A, B, C)` | 2 bytes | inline | named in a record field or type position |
 | `record` | sum of fields | inline | plain data aggregate; no methods |
@@ -153,7 +155,8 @@ Normative table:
 Also cover in prose:
 - Record declaration syntax with field defaults (`port: int = 80`).
 - Assignment of records/arrays copies by value. `text`, `list`, `map` variables copy the *reference* (same underlying handle).
-- No implicit numeric conversions. `fixed(i)` and `int(f)` convert explicitly (truncating toward zero).
+- No implicit numeric conversions. `fixed(i)`, `int(f)`, `int(c)`, and `char(i)` convert explicitly (numeric conversions truncate toward zero; `char(i)` takes the low byte).
+- String indexing: `s[i]` yields a `char`, 0-based like arrays (the length prefix is invisible); `s[i] = c` assigns in place; `s.length` is an `int`. `string + char` appends. `char` compares byte-wise with the usual operators.
 - Enum values: compared with `==`/`!=` only; converted with `int(e)`; not ordered.
 - `list of T` operations: `l.add(v)`, `l.remove(i)`, `l[i]`, `l.count`, `for x in l`.
 - `map of T` operations: `m[k] = v`, `m[k]` (runtime error if absent), `m.has(k)`, `m.remove(k)`, `m.count`, `for k, v in m`.
@@ -305,7 +308,7 @@ git commit -m "reference: application lifecycle"
 - bare-name resolution inside `extend Doc`: fields and widgets of the firing instance, then globals
 - `close ref`; `closeRequest` + `cancel`
 
-**Window events** (v1 complete): `opened`, `closeRequest`, `closed`, `resized`, `key(k: string(1))`.
+**Window events** (v1 complete): `opened`, `closeRequest`, `closed`, `resized`, `key(k: char)`.
 
 **Widget inventory** — for each: properties table + events table (v1 complete):
 
@@ -454,7 +457,7 @@ topDecl     = recordDecl | varDecl | funcDecl | windowDecl
 recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
 fieldDecl   = IDENT ":" type [ "=" literal ] ;
 
-type        = "int" | "bool" | "fixed" | "text"
+type        = "int" | "bool" | "fixed" | "char" | "text"
             | "string" [ "(" INT ")" ]
             | "list" "of" type
             | "map" "of" type
@@ -514,7 +517,7 @@ postfix     = primary { "." IDENT | "[" expr "]" | "(" [ args ] ")" } ;
 primary     = literal | IDENT | "window" | "nil"
             | "new" IDENT | "open" IDENT | "(" expr ")" ;
 args        = expr { "," expr } ;
-literal     = INT | HEXINT | FIXEDLIT | STRING | "true" | "false" ;
+literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
 Note under the grammar: newline sensitivity (statement termination, Chapter 2) is handled by the lexer, not shown in the EBNF; `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix.
@@ -554,7 +557,7 @@ One table, grouped by resource, every v1 event with full signature (this is the 
 | window | closeRequest | `on closeRequest { }` — `cancel` allowed |
 | window | closed | `on closed { }` |
 | window | resized | `on resized { }` |
-| window | key | `on key(k: string(1)) { }` |
+| window | key | `on key(k: char) { }` |
 | form window | accepted | `on accepted(rec: T) { }` |
 | form window | cancelled | `on cancelled { }` |
 | button | click | `on Name.click { }` |

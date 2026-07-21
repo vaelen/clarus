@@ -61,6 +61,10 @@ Pipeline: source → typed AST → small typed IR → printer.
 - Enums: `protocol: (Gopher, HTTP, Telnet)`.
 - Strings: `string(n)` is a fixed-size, length-prefixed Pascal string
   (n ≤ 255) — what the Toolbox eats natively. Bare `string` = `string(255)`.
+- `char`: an unsigned 8-bit Mac Roman character (`'A'`). Mac Roman is a
+  single-byte encoding, so `char` doubles as a byte (0–255) for binary
+  data; `int(c)` / `char(i)` convert explicitly. String indexing yields
+  `char`.
 - Fixed arrays: `var history: Bookmark[10]`.
 - Growable, handle-backed types: `text` (unbounded text), `list of T`,
   `map of T` (§4).
