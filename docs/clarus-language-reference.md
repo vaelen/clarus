@@ -1163,3 +1163,191 @@ The following table is the complete per-resource inventory of every v1 event han
 | serviceBrowser | found | `on b.found(name: string, addr: address) { }` |
 | serviceBrowser | failed | `on b.failed(err: error) { }` |
 | (timer) | — | `every N ticks { }` |
+
+## Appendix C: Worked Examples
+
+### Bookmark Manager
+
+A complete bookmark manager — data, live table, bound edit form:
+
+```rust
+record Bookmark {
+    name:     string(63)
+    url:      string(255)
+    port:     int = 80
+    protocol: (Gopher, HTTP, Telnet)
+    favorite: bool
+}
+
+var bookmarks: list of Bookmark
+
+window Main {
+    title: "Bookmarks"
+    size: 420, 300
+    resizable
+
+    table Marks {
+        rows: bookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 30
+    }
+    button Add    { at: 10, bottom;   caption: "Add…" }
+    button Remove { at: next, bottom; caption: "Remove" }
+}
+
+window EditForm {
+    title: "Edit Bookmark"
+    form of Bookmark
+
+    field Name     { binds: name;     label: "Name:" }
+    field Url      { binds: url;      label: "URL:" }
+    field Port     { binds: port;     label: "Port:";  width: 60 }
+    popup Protocol { binds: protocol; label: "Protocol:" }
+    check Fav      { binds: favorite; caption: "Favorite" }
+
+    button OK      { default }
+    button Cancel  { cancel }
+}
+
+on App.startEmpty {
+    open Main
+}
+
+extend Main {
+    on Add.click {
+        edit EditForm, new Bookmark
+    }
+
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+
+    on Remove.click {
+        bookmarks.remove(Marks.selected)
+    }
+}
+
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew { bookmarks.add(b) }
+    }
+}
+```
+
+### Text Editor
+
+A complete multi-document plain-text editor — menus, document launching, and unsaved-changes handling:
+
+```rust
+window Doc {
+    title: "Untitled"
+    size: 460, 320
+    resizable: min(200, 120)
+
+    textview Body { fill: both;  scrollbar: vertical }
+
+    var path: string(255)          // empty until first saved
+    var dirty: bool = false
+}
+
+menu File {
+    item New    "New"       key "N"
+    item Open   "Open…"     key "O"
+    item Save   "Save"      key "S"
+    item SaveAs "Save As…"
+    separator
+    item Quit   "Quit"      key "Q"
+}
+
+menu Edit { standard edit }        // Undo/Cut/Copy/Paste, pre-wired
+
+func openPath(p: string) {
+    var d: Doc
+
+    d = open Doc
+    if file.readText(p, d.Body.text) {
+        d.path = p
+        d.title = file.name(p)
+    } else {
+        alert("Couldn't open “" + file.name(p) + "”")
+        close d
+    }
+}
+
+func save(d: Doc): bool {
+    if d.path == "" {
+        if not askSave(d.path, "Untitled") { return false }   // fills d.path
+    }
+    if not file.writeText(d.path, d.Body.text) {
+        alert("Couldn't save: " + lastError.message)
+        return false
+    }
+    d.title = file.name(d.path)
+    d.dirty = false
+    return true
+}
+
+on App.startEmpty {                // bare launch: one empty document
+    open Doc
+}
+
+on App.openDocument(p: string) {   // double-clicked / dropped documents:
+    openPath(p)                    // fires per file; startEmpty does not
+}
+
+extend File {                      // app-level commands: always enabled
+    on New.select  { open Doc }
+
+    on Open.select {
+        var p: string(255)
+
+        if askOpen(p) { openPath(p) }
+    }
+
+    on Quit.select { quit }        // runtime sends closeRequest to every
+}                                  // open window; any cancel aborts quit
+
+extend Doc {
+    extend File {                  // document commands: the runtime dims
+        on Save.select {           // these items when no Doc is frontmost
+            save(window)
+        }
+
+        on SaveAs.select {
+            path = ""              // forget the path to force the dialog
+            save(window)
+        }
+    }
+
+    on Body.change {
+        dirty = true
+    }
+
+    on closeRequest {              // close box — and each window at quit
+        var c: saveChoice
+
+        if dirty {
+            c = askSaveChanges(title)
+            if c == Cancel { cancel }
+            if c == Save and not save(window) { cancel }
+        }
+    }
+}
+```
+
+Points of note:
+
+- Save and Save As live in an `extend File` scope nested inside
+  `extend Doc`, so they only ever run with a Doc frontmost — and the
+  runtime dims those menu items whenever that isn't true. Menu enabling
+  logic: zero lines.
+- The whole "quit with unsaved windows" story is the `closeRequest`
+  handler, written once.
+- Launching by double-clicking three files opens three windows and no
+  empty "Untitled" — `App.openDocument` replaces `App.startEmpty` on a
+  document launch (Chapter 7).
+- `save` is an ordinary function taking a `Doc` instance; handlers pass
+  `window`. No methods needed.
+- With a declared document file type for Finder integration (Chapter 11),
+  this is a complete, shippable System 6/7 application in under 100 lines.
