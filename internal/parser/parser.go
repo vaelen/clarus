@@ -94,9 +94,7 @@ func (p *parser) skipNewlines() {
 	}
 }
 
-// parseTopDecl parses one top-level declaration. var, func, record, and enum
-// are wired up here; the remaining top-level forms (window, menu, extend,
-// on, every) are wired in later tasks.
+// parseTopDecl parses one top-level declaration (Appendix A: topDecl).
 func (p *parser) parseTopDecl() ast.Decl {
 	switch p.tok.Kind {
 	case token.KwVar:
@@ -107,6 +105,16 @@ func (p *parser) parseTopDecl() ast.Decl {
 		return p.parseRecordDecl()
 	case token.KwEnum:
 		return p.parseEnumDecl()
+	case token.KwWindow:
+		return p.parseWindowDecl()
+	case token.KwMenu:
+		return p.parseMenuDecl()
+	case token.KwExtend:
+		return p.parseExtendDecl()
+	case token.KwOn:
+		return p.parseHandlerDecl()
+	case token.KwEvery:
+		return p.parseEveryDecl()
 	default:
 		p.errorf(p.tok.Pos, "expected declaration, found %s", p.tok.Kind)
 		panic(parseAbort{}) // unreachable: errorf already panics

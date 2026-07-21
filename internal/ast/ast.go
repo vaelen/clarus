@@ -290,6 +290,7 @@ func (w *Property) windowItemNode() {}
 func (w *Column) windowItemNode()   {}
 func (w *FormFor) windowItemNode()  {}
 func (w *Widget) windowItemNode()   {}
+func (d *VarDecl) windowItemNode()  {} // per-instance state declared in a window body
 
 // Expr markers with Pos()
 func (e *Ident) exprNode()       {}
