@@ -99,6 +99,8 @@ title size resizable min at fill scrollbar
 caption label default ticks
 ```
 
+This list is representative, not exhaustive: later chapters introduce further contextual words in property and value positions (`right`, `next`, `bottom`, `vertical`, `both`, `buffered`, `appletalk`, and others). Outside their positions, all contextual keywords are ordinary identifiers.
+
 ### Literals
 
 | Kind | Forms | Notes |
@@ -139,6 +141,8 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `saveChoice` | enum | inline | built-in: `Save`, `Discard`, `Cancel` |
 
 \* "inline" values past a size threshold are transparently promoted to handle-backed storage by the compiler (spec §6); semantics are identical.
+
+Resource variables (`connection`, `listener`, `serviceBrowser`) are fixed-size 4-byte references, like window references: assignable, storable in records and arrays (`connection[8]` is 8 references, 32 bytes), and `nil` until bound.
 
 ### Records and Defaults
 
@@ -184,8 +188,8 @@ Strings are length-prefixed Pascal strings, stored with a leading byte indicatin
 ```rust
 var s: string = "hello"
 var ch: char = s[1]          // 'e' (index 1)
-s[2] = 'x'                   // 'x' (in-place assignment)
 var len: int = s.length      // 5
+s[2] = 'x'                   // 'x' (in-place assignment)
 ```
 
 Out-of-range indexing raises a runtime error (see Chapter 12).
@@ -252,11 +256,9 @@ A `text` is an unbounded, resizable buffer of characters. Text operations are:
 
 ### Window References
 
-A window type (e.g., `Doc`) represents a reference to an open window instance. Window references are initially `nil` and are assigned only by the runtime or framework. Dereferencing a `nil` window reference raises a runtime error.
+A window type (e.g., `Doc`) represents a reference to an open window instance. Window references are initially `nil`; assigned from `open` expressions or from other references. Dereferencing a `nil` window reference raises a runtime error.
 
 ### Built-in Enum: `saveChoice`
-
-The `saveChoice` enum is pre-defined and used in save dialogs. Its members are:
 
 `saveChoice` is a built-in enum with members `Save`, `Discard`, and `Cancel`. It is not declared by user code; it is the return type of `askSaveChanges` (Chapter 12) and is used in comparisons: `if c == Cancel { cancel }`.
 
@@ -272,7 +274,7 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 
 ### Operator Precedence
 
-The following table is normative. Operators bind tighter the lower their level number; within a level, operators are left-associative.
+The following table is normative. Operators bind tighter the lower their level number; within a level, operators are left-associative. Comparison operators do not chain: `a < b < c` is a compile error.
 
 | Level | Operators | Notes |
 |---|---|---|
@@ -579,7 +581,7 @@ Functions may be declared at top level only. Window-scoped helper functions are 
 
 ### Application Entry Points
 
-A Clarus program responds to application-level events through top-level event handlers. These are the sole entry points to user code (aside from window, menu, and timer handlers, documented in later chapters).
+A Clarus program responds to application-level events through top-level event handlers. These are the sole entry points to user code (aside from the other handlers documented in Chapters 8–12).
 
 ### Event Inventory
 
@@ -602,8 +604,6 @@ App.launch
   ├─ App.openDocument (× N documents)
   └─ App.startEmpty (only if no documents)
 ```
-
-This is the sole entry point to user code. All other execution flows from window, menu, and timer handlers.
 
 ### Quit Semantics
 
@@ -637,6 +637,8 @@ A `window` block is a declaration, not code: it compiles to a real resource (WIN
 | `size` | `size: 400, 300` | content size in pixels |
 | `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + optional minimum |
 | `form of T` | `form of Bookmark` | marks a form window (Chapter 10) |
+
+One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
 
 ```rust
 window Doc {
@@ -672,7 +674,7 @@ window Doc {
 - `Doc.front` is the frontmost open instance of type `Doc`, or `nil` if none is open.
 - Inside a `Doc` handler, the keyword `window` names the firing instance — the one whose event is being handled — so it can be passed to functions that take a `Doc`.
 - Per-instance state (the `var`s declared in the window body) lives in a handle hung off the instance's `WindowRecord`; it is allocated when the instance opens and freed when it closes.
-- Bare names inside `extend Doc` resolve first against the firing instance's fields and widgets, then against globals — this is why two different window types may each declare an `Add` button without conflict.
+- Bare names inside `extend Doc` resolve first against the firing instance's properties, fields, and widgets, then against globals — this is why two different window types may each declare an `Add` button without conflict.
 - `close ref` closes an open instance, but only after its `closeRequest` handler runs. Inside a `closeRequest` handler, `cancel` aborts the pending close (or, during `quit`, aborts the whole quit) — see Chapter 5.
 
 ### Window Events
@@ -702,7 +704,7 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 | `canvas` | `at`, `fill`, `buffered` | `width`, `height` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
 | `label` | `text`, `at` | `text` | — |
 
-`binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively.
+`binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 
 ```rust
 window Doc {
@@ -820,7 +822,7 @@ A bound widget's behavior comes from the type of the field it binds to, with not
 1. `target`'s contents are copied into a working buffer, and the form's widgets are filled from that buffer.
 2. The form window is shown, movable modal by default.
 3. **Cancel** discards the buffer immediately — the original record, if any, is left untouched — and fires `cancelled`.
-4. **OK** validates every bound widget against its field's type. The first invalid widget beeps, selects itself, and the form stays open for correction. Once every widget validates, the buffer is written back to `target` (when `target` is an lvalue), and `accepted(rec: T)` fires with the clean, validated record — handlers only ever see data that has already passed validation.
+4. **OK** validates every bound widget against its field's type. The first invalid widget in declaration order beeps, selects itself, and the form stays open for correction. Once every widget validates, the buffer is written back to `target` (when `target` is an lvalue), and `accepted(rec: T)` fires with the clean, validated record — handlers only ever see data that has already passed validation.
 
 `target` is either an lvalue or `new T` (Chapter 5):
 
@@ -1127,7 +1129,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`.
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`.
 
 ## Appendix B: Event Handler Quick Reference
 
@@ -1353,3 +1355,20 @@ Points of note:
   `window`. No methods needed.
 - With a declared document file type for Finder integration (Chapter 12),
   this is a complete, shippable System 6/7 application in under 100 lines.
+
+## Not in v1
+
+The following are deliberately deferred beyond v1; they appear nowhere else in this reference except as explicit absences.
+
+- Objects and inheritance
+- Closures
+- Floating point (SANE)
+- An HTTP convenience layer
+- UDP and DDP datagrams
+- Auto-generated forms
+- Printing
+- Desk accessories
+- Color QuickDraw beyond basics
+- PowerPC
+- Case-insensitive maps
+- Handle-backed values inside maps
