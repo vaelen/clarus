@@ -624,3 +624,160 @@ every 60 ticks {
 ```
 
 The number is a tick count; each tick is 1/60 second. The block runs on the main event loop and is never re-entered while a previous run is still executing.
+
+## Chapter 8: Windows and Widgets
+
+### Window Declaration
+
+A `window` block is a declaration, not code: it compiles to a real resource (WIND, plus CNTL/DITL for its widgets), the way a `record` compiles to a layout. The following properties may appear at the top of a window's body (v1 complete):
+
+| Property | Form | Meaning |
+|---|---|---|
+| `title` | `title: "Untitled"` | initial title; assignable at runtime (`w.title = ...`) |
+| `size` | `size: 400, 300` | content size in pixels |
+| `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + optional minimum |
+| `form of T` | `form of Bookmark` | marks a form window (Chapter 10) |
+
+```rust
+window Doc {
+    title: "Untitled"
+    size: 400, 300
+    resizable: min(300, 200)
+}
+```
+
+### Window Body
+
+Besides the properties above, a window body may contain widget declarations, `var` declarations (per-instance state), and `form of` (Chapter 10):
+
+```rust
+window Doc {
+    title: "Untitled"
+    size: 400, 300
+    resizable: min(300, 200)
+
+    textview Body { fill: both; scrollbar: vertical }
+
+    var path: string(255)          // per-instance state
+    var dirty: bool = false
+}
+```
+
+### Window Instances
+
+`window Doc` is an instantiable template: each `open Doc` (Chapter 5) creates a distinct instance, with its own widgets and its own copy of the `var`s declared in the block.
+
+- `open Doc` used as a statement creates and opens an instance, discarding the reference; used as an expression (`d = open Doc`) it creates, opens, and returns the reference.
+- `var d: Doc` declares a nil window reference. Dereferencing a nil reference is a runtime error (Chapter 3).
+- `Doc.front` is the frontmost open instance of type `Doc`, or `nil` if none is open.
+- Inside a `Doc` handler, the keyword `window` names the firing instance — the one whose event is being handled — so it can be passed to functions that take a `Doc`.
+- Per-instance state (the `var`s declared in the window body) lives in a handle hung off the instance's `WindowRecord`; it is allocated when the instance opens and freed when it closes.
+- Bare names inside `extend Doc` resolve first against the firing instance's fields and widgets, then against globals — this is why two different window types may each declare an `Add` button without conflict.
+- `close ref` closes an open instance, but only after its `closeRequest` handler runs. Inside a `closeRequest` handler, `cancel` aborts the pending close (or, during `quit`, aborts the whole quit) — see Chapter 5.
+
+### Window Events
+
+| Event | Signature | When |
+|---|---|---|
+| `opened` | `on opened { }` | The instance has just been created and its window opened. |
+| `closeRequest` | `on closeRequest { }` | The close box was clicked, or the app is quitting; `cancel` aborts the close. |
+| `closed` | `on closed { }` | The window has finished closing; its per-instance state is about to be freed. |
+| `resized` | `on resized { }` | The user resized the window (resizable windows only). |
+| `key` | `on key(k: char) { }` | A key was typed while the window is frontmost and no widget consumed it. |
+
+A window's own events are handled with the bare event name inside its `extend` block, e.g. `extend Doc { on closeRequest { ... } }`; widget events use `on Widget.event { }` in the same block (Chapter 9 covers nesting menu handlers there too).
+
+### Widgets
+
+Widget declarations appear inside a `window` body. Each widget has declaration-time properties (set in the `window` block), runtime properties (readable and assignable as `Widget.property` from handlers), and events (handled as `on Widget.event { }` in the window's `extend` block). The widget set is complete for v1:
+
+| Widget | Properties | Runtime properties | Events |
+|---|---|---|---|
+| `button` | `caption`, `at`, `width`, `default`, `cancel` | `caption`, `enabled` | `click` |
+| `field` | `label`, `at`, `width`, `binds` | `text`, `enabled` | `change`, `enter` |
+| `textview` | `at`, `fill`, `scrollbar` (`vertical`\|`both`) | `text` | `change` |
+| `check` | `caption`, `at`, `binds` | `checked` | `change` |
+| `popup` | `label`, `at`, `binds` | `selected` (int index) | `change` |
+| `table` | `rows`, `column ...` (Chapter 10), `at`, `fill` | `selected` (int, −1 none) | `select(i: int)`, `doubleClick(i: int)` |
+| `canvas` | `at`, `fill`, `buffered` | — | `click(x: int, y: int)`, `drag(x: int, y: int)` |
+| `label` | `text`, `at` | `text` | — |
+
+`binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively.
+
+```rust
+window Doc {
+    title: "Untitled"
+    size: 300, 120
+
+    field Name { label: "Name:"; at: 10, 10; width: 200 }
+    button Go  { at: 10, 40; caption: "Go"; default }
+}
+
+extend Doc {
+    on Go.click {
+        Name.text = "clicked"
+    }
+}
+```
+
+### Layout
+
+`at: x, y` positions a widget's top-left corner; `at: right, y` and `at: next, bottom` position it relative to the previous widget's right or bottom edge. `width: fill` and `fill: both` stretch a widget to fill remaining width, or both dimensions, of the window. Resize re-layout is automatic: the runtime keeps edge-relative widgets pinned to the edges they were declared relative to; no resize handler is needed for ordinary layouts.
+
+## Chapter 9: Menus
+
+### Menu Declaration
+
+```rust
+menu File {
+    item New  "New"   key "N"
+    separator
+    item Quit "Quit"  key "Q"
+}
+```
+
+A `menu` block declares a menu — like `window`, it is a declaration compiled to a real resource (MENU), not code. `item Ident "Caption"` declares one item, named `Ident` for handlers and captioned `"Caption"` on screen; `key "K"` is the optional ⌘-equivalent. `separator` inserts a dividing line between items.
+
+### Standard Edit
+
+```rust
+menu Edit { standard edit }
+```
+
+`standard edit` supplies the Mac-standard Edit menu items (Undo/Cut/Copy/Paste) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`.
+
+### Item Events
+
+Each `item` fires `select` when chosen, handled in an `extend` block naming the menu:
+
+```rust
+extend File {
+    on Quit.select { quit }
+}
+```
+
+### Window-Scoped Commands
+
+A menu's `extend` block may be nested inside a window's `extend` block, scoping those commands to windows of that type:
+
+```rust
+extend Doc {
+    extend File {
+        on Save.select { save(window) }
+    }
+}
+```
+
+The nesting means "these commands apply when a Doc is frontmost." The runtime automatically enables such menu items only while a window of that type is frontmost, and dims them otherwise — menu enabling requires no user code — and a handler nested this way can never fire without a valid `window`. Scopes compose lexically: the inner `extend` resolves menu items, the outer resolves widgets and fields.
+
+### Runtime Menu-Item Property
+
+`enabled` is a runtime property on a menu item, addressed as `MenuName.ItemName.enabled`, for app-level items that need manual control rather than the automatic window-scoped dimming above:
+
+```rust
+File.Save.enabled = false
+```
+
+### The Apple Menu
+
+The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. In v1, the About item shows the application's name only — a richer About dialog is future work.
