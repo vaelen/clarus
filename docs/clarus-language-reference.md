@@ -591,7 +591,7 @@ A Clarus program responds to application-level events through top-level event ha
 
 ### Nothing Opens Implicitly
 
-A Clarus program does not automatically open any window. A program launched with no documents that provides no `App.startEmpty` handler shows only the menu bar. The programmer must explicitly open windows by calling `open WindowType` (Chapter 4) in an event handler.
+A Clarus program does not automatically open any window. A program launched with no documents that provides no `App.startEmpty` handler shows only the menu bar. The programmer must explicitly open windows by calling `open WindowType` (Chapter 5) in an event handler.
 
 ### Launch Order
 
@@ -618,9 +618,9 @@ These events correspond to the classic Macintosh OAPP and ODOC Apple events sent
 A top-level `every` block runs repeatedly at fixed intervals:
 
 ```rust
-every 60 {
-    // runs 60 times per second
+every 60 ticks {
+    // runs once per second
 }
 ```
 
-The number is a tick count; each tick is 1/60 second. The block runs on the main event loop and is never entered reentrantly. If a block's execution duration approaches or exceeds the tick interval, the next iteration is skipped rather than queued, preserving responsiveness.
+The number is a tick count; each tick is 1/60 second. The block runs on the main event loop and is never re-entered while a previous run is still executing.
