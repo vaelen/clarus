@@ -1,6 +1,6 @@
 # The Clarus Language Reference
 
-Version: v1 draft. Companion to the [design spec](superpowers/specs/2026-07-21-clarus-language-design.md), which is authoritative on rationale; this document is authoritative on surface details.
+Version: v1 draft. 
 
 Clarus is a small, compiled, event-driven language for building native
 System 6/7 applications on 68k Macintosh computers.
@@ -44,7 +44,7 @@ Within a function or event handler body, local variables are declared at the top
 
 There is no `main` function. Execution begins with the runtime, which fires `App.launch` (see Chapter 7).
 
-**Comments:** Comments begin with `//` and extend to the end of the line. There are no block comments in v1.
+**Comments:** Comments begin with `//` and extend to the end of the line. There are no block comments.
 
 Example program structure:
 
@@ -181,12 +181,12 @@ Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric trunca
 
 ### Strings
 
-Strings are length-prefixed Pascal strings, stored with a leading byte indicating length (0–255). The length prefix is transparent to user code.
+Strings are length-prefixed "Pascal" strings, stored with a leading byte indicating length (0–255). The length prefix is transparent to user code. Strings are defined with a maximum capacity which defaults to 255 if not provided.
 
 **Indexing:** A string index yields a single `char`, 0-based as with arrays:
 
 ```rust
-var s: string = "hello"
+var s: string = "hello"      // same as string(255)
 var ch: char = s[1]          // 'e' (index 1)
 var len: int = s.length      // 5
 s[2] = 'x'                   // 'x' (in-place assignment)
@@ -239,7 +239,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `m[k] = v` — set key `k` to value `v`
 - `m[k]` — retrieve value for key `k` (returns `T`); runtime error if absent
 - `m.has(k)` — test for key presence (returns `bool`)
-- `m.remove(k)` — remove the entry for key `k`
+- `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
@@ -315,7 +315,7 @@ var notAdult: bool = not isAdult
 
 ### Assignment Is a Statement
 
-`=` is a statement (see Chapter 5), not an expression. It cannot appear inside a larger expression, and there is no `+=`, `-=`, or `++`/`--` in v1 — write the full expression out:
+`=` is a statement (see Chapter 5), not an expression. It cannot appear inside a larger expression, and there is no `+=`, `-=`, or `++`/`--` :
 
 ```rust
 var count: int = 0
@@ -324,7 +324,7 @@ count = count + 1                // not count += 1
 
 ### No Bitwise Operators
 
-Clarus v1 has no bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`). Byte-level work on `char` values, where needed, goes through explicit arithmetic and the numeric conversions in Chapter 3.
+Clarus has no bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`). Byte-level work on `char` values, where needed, goes through explicit arithmetic and the numeric conversions in Chapter 3.
 
 ### Mixed Numeric Arithmetic
 
@@ -519,7 +519,7 @@ on closeRequest {
 
 ### No Break or Continue
 
-Clarus v1 has no `break` or `continue`. Restructure a loop that needs to exit early with a `while` loop and a `bool` flag, or extract the loop into a function and use `return`:
+Clarus has no `break` or `continue`. Restructure a loop that needs to exit early with a `while` loop and a `bool` flag, or extract the loop into a function and use `return`:
 
 ```rust
 var names: list of Person
@@ -575,7 +575,7 @@ There is no overloading, no default parameter values, and no varargs — every f
 
 ### Scope
 
-Functions may be declared at top level only. Window-scoped helper functions are a possible future `extend` addition, not part of v1.
+Functions may be declared at top level only. 
 
 ## Chapter 7: Application Lifecycle
 
@@ -629,7 +629,7 @@ The number is a tick count; each tick is 1/60 second. The block runs on the main
 
 ### Window Declaration
 
-A `window` block is a declaration, not code: it compiles to a real resource (WIND, plus CNTL/DITL for its widgets), the way a `record` compiles to a layout. The following properties may appear at the top of a window's body (v1 complete):
+A `window` block is a declaration, not code: it compiles to a real resource (WIND, plus CNTL/DITL for its widgets), the way a `record` compiles to a layout. The following properties may appear at the top of a window's body:
 
 | Property | Form | Meaning |
 |---|---|---|
@@ -691,7 +691,7 @@ A window's own events are handled with the bare event name inside its `extend` b
 
 ### Widgets
 
-Widget declarations appear inside a `window` body. Each widget has declaration-time properties (set in the `window` block), runtime properties (readable and assignable as `Widget.property` from handlers), and events (handled as `on Widget.event { }` in the window's `extend` block). The widget set is complete for v1:
+Widget declarations appear inside a `window` body. Each widget has declaration-time properties (set in the `window` block), runtime properties (readable and assignable as `Widget.property` from handlers), and events (handled as `on Widget.event { }` in the window's `extend` block). 
 
 | Widget | Properties | Runtime properties | Events |
 |---|---|---|---|
@@ -782,7 +782,7 @@ File.Save.enabled = false
 
 ### The Apple Menu
 
-The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. In v1, the About item shows the application's name only — a richer About dialog is future work.
+The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. In the current version, the About item shows the application's name only — a richer About dialog will come later on.
 
 ## Chapter 10: Forms and Tables
 
@@ -833,7 +833,7 @@ edit EditForm, new Bookmark     // new record: exists only in the form's buffer
 
 With `new T` there is no lvalue to write back to, so `accepted`'s `rec.isNew` is `true` for that call — the handler's cue to `add` the record rather than treat it as an update to something already stored.
 
-v1 requires a form window to be declared explicitly, as above; generating one automatically from `edit someRecord` alone is not yet supported.
+A form window must be declared explicitly, as above. Generating one automatically from `edit someRecord` alone is not yet supported.
 
 ### Form Events
 
@@ -873,7 +873,7 @@ The table stays live: `add`, `remove`, and writeback to an element of the bound 
 
 ### Table Selection
 
-Tables are single-select in v1. `selected` (Chapter 8) is a runtime `int` property: the index of the selected row, or `-1` if none is selected. `select(i: int)` fires when a row is clicked; `doubleClick(i: int)` fires on a double-click:
+Tables are single-select. `selected` (Chapter 8) is a runtime `int` property: the index of the selected row, or `-1` if none is selected. `select(i: int)` fires when a row is clicked; `doubleClick(i: int)` fires on a double-click:
 
 ```rust
 extend Main {
@@ -887,7 +887,7 @@ extend Main {
 
 ### Canvas Drawing Methods
 
-A `canvas` widget (Chapter 8) is drawn on from its own events and from `every` blocks — nowhere else, since no code runs outside a handler or timer (Chapter 7). The method set is complete for v1:
+A `canvas` widget (Chapter 8) is drawn on from its own events and from `every` blocks — nowhere else, since no code runs outside a handler or timer (Chapter 7). 
 
 ```
 c.clear()
@@ -939,7 +939,7 @@ every 1 ticks {
 
 ### Connections
 
-A `connection` (Chapter 3) is a single reliable byte-stream abstraction over both AppleTalk (ADSP) and TCP (MacTCP); the transport is chosen at `open` and invisible afterward. Its members are complete for v1:
+A `connection` (Chapter 3) is a single reliable byte-stream abstraction over both AppleTalk (ADSP) and TCP (MacTCP); the transport is chosen at `open` and invisible afterward. 
 
 | Member | Form |
 |---|---|
@@ -1020,7 +1020,7 @@ on browser.failed(err: error) { }
 
 ### Files
 
-The `file` namespace covers documents and preferences. Every function but `file.name` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. The set is complete for v1:
+The `file` namespace covers documents and preferences. Every function but `file.name` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. 
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -1133,7 +1133,7 @@ Newline sensitivity (statement termination, Chapter 2) is handled by the lexer a
 
 ## Appendix B: Event Handler Quick Reference
 
-The following table is the complete per-resource inventory of every v1 event handler; Chapters 7–12 give full semantics.
+The following table is the complete per-resource inventory of every event handler; Chapters 7–12 give full semantics.
 
 | Resource | Event | Handler signature |
 |---|---|---|
@@ -1355,20 +1355,3 @@ Points of note:
   `window`. No methods needed.
 - With a declared document file type for Finder integration (Chapter 12),
   this is a complete, shippable System 6/7 application in under 100 lines.
-
-## Not in v1
-
-The following are deliberately deferred beyond v1; they appear nowhere else in this reference except as explicit absences.
-
-- Objects and inheritance
-- Closures
-- Floating point (SANE)
-- An HTTP convenience layer
-- UDP and DDP datagrams
-- Auto-generated forms
-- Printing
-- Desk accessories
-- Color QuickDraw beyond basics
-- PowerPC
-- Case-insensitive maps
-- Handle-backed values inside maps
