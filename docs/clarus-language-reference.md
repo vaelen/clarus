@@ -699,7 +699,7 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 | `check` | `caption`, `at`, `binds` | `checked` | `change` |
 | `popup` | `label`, `at`, `binds` | `selected` (int index) | `change` |
 | `table` | `rows`, `column ...` (Chapter 10), `at`, `fill` | `selected` (int, −1 none) | `select(i: int)`, `doubleClick(i: int)` |
-| `canvas` | `at`, `fill`, `buffered` | — | `click(x: int, y: int)`, `drag(x: int, y: int)` |
+| `canvas` | `at`, `fill`, `buffered` | `width`, `height` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
 | `label` | `text`, `at` | `text` | — |
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively.
@@ -1043,7 +1043,7 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 
 An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent `false` return from a `file` function.
 
-Clarus reports failures in three ways, depending on where they occur:
+Clarus reports failures in four ways, depending on where they occur:
 
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
 - **Synchronous fallible operations** — the `file` functions — return `bool`; on `false`, inspect `lastError`. There are no exceptions and no unwinding machinery.
