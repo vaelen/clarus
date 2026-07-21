@@ -106,7 +106,7 @@ This list is representative, not exhaustive: later chapters introduce further co
 | Kind | Forms | Notes |
 |---|---|---|
 | Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
-| Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type in v1) |
+| Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type) |
 | Character | `'A'`, `'\n'` | single Mac Roman character; same escapes as strings |
 | String | `"hello"` | escapes: `\"` `\\` `\n` `\t`; `\n` emits CR (13), the Mac newline |
 | Boolean | `true`, `false` | |
