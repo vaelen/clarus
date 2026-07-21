@@ -42,13 +42,26 @@ type checker struct {
 // Window/menu/extend/handler/every declarations are skipped entirely —
 // Task 11 wires them up.
 func File(f *source.File, tree *ast.File) []source.Diag {
-	c := &checker{f: f}
+	return Files([]*source.File{f}, []*ast.File{tree})
+}
+
+// Files type-checks multiple files as a single program (the driver's
+// multi-file mode): top-level declarations from all trees are checked in a
+// single pass, in argument order, so declare-before-use holds across the
+// whole sequence exactly as it does for one file. Each diagnostic still
+// carries the source.File its declaration came from, since c.f is switched
+// to files[i] before that file's declarations are checked.
+func Files(files []*source.File, trees []*ast.File) []source.Diag {
+	c := &checker{}
 	universe := NewScope(nil)
 	registerBuiltins(universe)
 	c.scope = NewScope(universe)
 
-	for _, d := range tree.Decls {
-		c.checkDecl(d)
+	for i, tree := range trees {
+		c.f = files[i]
+		for _, d := range tree.Decls {
+			c.checkDecl(d)
+		}
 	}
 	return c.diags
 }

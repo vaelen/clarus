@@ -1,0 +1,8 @@
+record R {
+    name: string(63)
+}
+
+window W {
+    form for R
+    field F { binds: missing; label: "X:" }
+}

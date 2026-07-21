@@ -1,0 +1,64 @@
+enum Protocol { Gopher, HTTP, Telnet }
+
+record Bookmark {
+    name:     string(63)
+    url:      string(255)
+    port:     int = 80
+    protocol: Protocol
+    favorite: bool
+}
+
+var bookmarks: list of Bookmark
+
+window Main {
+    title: "Bookmarks"
+    size: 420, 300
+    resizable
+
+    table Marks {
+        rows: bookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 30
+    }
+    button Add    { at: 10, bottom;   caption: "Add…" }
+    button Remove { at: next, bottom; caption: "Remove" }
+}
+
+window EditForm {
+    title: "Edit Bookmark"
+    form for Bookmark
+
+    field Name     { binds: name;     label: "Name:" }
+    field Url      { binds: url;      label: "URL:" }
+    field Port     { binds: port;     label: "Port:";  width: 60 }
+    popup Proto    { binds: protocol; label: "Protocol:" }
+    check Fav      { binds: favorite; caption: "Favorite" }
+
+    button OK      { default }
+    button Cancel  { cancel }
+}
+
+on App.startEmpty {
+    open Main
+}
+
+extend Main {
+    on Add.click {
+        edit EditForm, new Bookmark
+    }
+
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+
+    on Remove.click {
+        bookmarks.remove(Marks.selected)
+    }
+}
+
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew { bookmarks.add(b) }
+    }
+}

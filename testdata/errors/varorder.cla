@@ -1,0 +1,5 @@
+func f() {
+    var x: int = 1
+    x = 2
+    var y: int = 3
+}
