@@ -1,6 +1,8 @@
 package check
 
 import (
+	"strings"
+
 	"clarus/internal/ast"
 	"clarus/internal/source"
 	"clarus/internal/types"
@@ -116,6 +118,23 @@ func typeName(t *types.Type) string {
 		return "map of " + typeName(t.Elem)
 	default:
 		return "?"
+	}
+}
+
+// kindsList renders a OneOfKinds paramSpec's allowed kinds for a diagnostic,
+// e.g. "string or address" / "a, b, or c".
+func kindsList(kinds []types.Kind) string {
+	names := make([]string, len(kinds))
+	for i, k := range kinds {
+		names[i] = typeName(&types.Type{Kind: k})
+	}
+	switch len(names) {
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " or " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
 	}
 }
 
@@ -286,18 +305,40 @@ func (c *checker) checkBitwise(e *ast.Binary) *types.Type {
 	return types.IntT
 }
 
+// isNilLit reports whether e is the literal `nil`.
+func isNilLit(e ast.Expr) bool {
+	_, ok := e.(*ast.NilLit)
+	return ok
+}
+
 // checkComparison checks `== != < <= > >=`. allowEnum is true for ==/!=;
-// enums support only those two (Ch3: Enums, Operations).
+// enums support only those two (Ch3: Enums, Operations), and so does nil
+// (Ch3: nil is only valid for window/resource references).
+//
+// nil is resolved the same way a bare enum member is: check the OTHER
+// operand first and feed its type back in as `expected` for the nil side,
+// so `w != nil` (any resource-typed operand) type-checks instead of
+// reporting nil's own "only valid for ..." error against a nil `expected`.
 func (c *checker) checkComparison(e *ast.Binary, allowEnum bool) *types.Type {
 	var lt, rt *types.Type
-	if c.isBareIdentCandidate(e.X) {
+	switch {
+	case isNilLit(e.X) && isNilLit(e.Y):
+		c.errorf(e.P, "nil is only valid for window and resource references")
+		return types.InvalidT
+	case isNilLit(e.X):
+		rt = c.checkExpr(e.Y, nil)
+		lt = c.checkExpr(e.X, rt)
+	case isNilLit(e.Y):
+		lt = c.checkExpr(e.X, nil)
+		rt = c.checkExpr(e.Y, lt)
+	case c.isBareIdentCandidate(e.X):
 		rt = c.checkExpr(e.Y, nil)
 		if rt != types.InvalidT && rt.Kind == types.Enum {
 			lt = c.checkExpr(e.X, rt)
 		} else {
 			lt = c.checkExpr(e.X, nil)
 		}
-	} else {
+	default:
 		lt = c.checkExpr(e.X, nil)
 		if lt != types.InvalidT && lt.Kind == types.Enum {
 			rt = c.checkExpr(e.Y, lt)
@@ -308,9 +349,36 @@ func (c *checker) checkComparison(e *ast.Binary, allowEnum bool) *types.Type {
 	if lt == types.InvalidT || rt == types.InvalidT {
 		return types.InvalidT
 	}
-	if lt.Kind == types.Enum || rt.Kind == types.Enum {
-		if !allowEnum {
+	if !allowEnum {
+		if lt.Kind == types.Enum || rt.Kind == types.Enum {
 			c.errorf(e.P, "enums are not ordered")
+			return types.InvalidT
+		}
+		if isNilLit(e.X) || isNilLit(e.Y) {
+			c.errorf(e.P, "nil is only valid with == or !=")
+			return types.InvalidT
+		}
+	}
+	// String and text compare byte-wise, in either direction, at every
+	// comparison operator (Ch3: Strings, Text; Ch4 level 5).
+	textish := func(t *types.Type) bool { return t.Kind == types.String || t.Kind == types.Text }
+	if textish(lt) && textish(rt) {
+		return types.BoolT
+	}
+	// Structural equality is undefined for aggregates (Ch3 defines
+	// comparison only for scalars/strings/text/chars/enums/refs); reject
+	// rather than silently compare by identity. A future release may define
+	// structural comparison for these.
+	if lt.Kind == rt.Kind {
+		switch lt.Kind {
+		case types.Record:
+			c.errorf(e.P, "records cannot be compared")
+			return types.InvalidT
+		case types.List:
+			c.errorf(e.P, "lists cannot be compared")
+			return types.InvalidT
+		case types.Map:
+			c.errorf(e.P, "maps cannot be compared")
 			return types.InvalidT
 		}
 	}
@@ -594,7 +662,7 @@ func (c *checker) checkParamArg(arg ast.Expr, p paramSpec) {
 				return
 			}
 		}
-		c.errorf(arg.Pos(), "cannot use %s here", typeName(t))
+		c.errorf(arg.Pos(), "cannot use %s here (expected %s)", typeName(t), kindsList(p.OneOfKinds))
 	default:
 		t := c.checkExpr(arg, p.T)
 		if t != types.InvalidT && !compatible(t, p.T) {
@@ -650,6 +718,9 @@ func (c *checker) checkListMethod(lt *types.Type, sel *ast.Select, args []ast.Ex
 		c.checkParamArg(args[0], paramSpec{T: types.IntT})
 		return types.VoidT
 	case "count":
+		if len(args) != 0 {
+			c.errorf(sel.P, "count takes no arguments")
+		}
 		return types.IntT
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)
@@ -684,6 +755,9 @@ func (c *checker) checkMapMethod(mt *types.Type, sel *ast.Select, args []ast.Exp
 		c.checkParamArg(args[0], paramSpec{T: types.StringT(255)})
 		return types.VoidT
 	case "count":
+		if len(args) != 0 {
+			c.errorf(sel.P, "count takes no arguments")
+		}
 		return types.IntT
 	default:
 		c.errorf(sel.P, "undefined: %s", sel.Name)

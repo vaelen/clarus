@@ -83,6 +83,8 @@ func (c *checker) checkWindowDecl(d *ast.WindowDecl) {
 			if !windowTopProps[it.Name] {
 				c.errorf(it.P, "unknown property %s for window", it.Name)
 			}
+		case *ast.Column:
+			c.errorf(it.P, "unknown property column for window")
 		case *ast.VarDecl:
 			if declaredNames[it.Name] {
 				c.errorf(it.P, "redeclaration of %s", it.Name)
@@ -143,6 +145,11 @@ func (c *checker) checkWidget(w *ast.Widget, info *types.WindowInfo) types.Widge
 				c.errorf(it.P, "unknown property %s for %s", it.Name, w.Kind)
 				continue
 			}
+			// ponytail: property VALUES (e.g. `fill: both`, `at: 10,
+			// bottom`) aren't resolved against a vocabulary here — only
+			// `binds` needs a value check to validate the form binding.
+			// Plan 4's resource emitter validates the rest against the real
+			// widget-property vocabulary.
 			if it.Name == "binds" {
 				binds = c.checkBindsProperty(it, w.Kind, info)
 			}

@@ -221,6 +221,30 @@ func TestEOFForever(t *testing.T) {
 	}
 }
 
+func TestOverLongCharLiteralOneDiagnosticNoStrayTokens(t *testing.T) {
+	diags := diagsFor("x = 'ab'\n")
+	if len(diags) != 1 || diags[0].Msg != "character literal must contain exactly one character" {
+		t.Fatalf("got diags %v, want exactly one %q", diags, "character literal must contain exactly one character")
+	}
+	got := kinds("x = 'ab'\n")
+	want := []token.Kind{token.IDENT, token.ASSIGN, token.CHARLIT, token.NEWLINE, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("'ab': got %v want %v (no stray IDENT)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("token %d got %v want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestInvalidEscapeSequence(t *testing.T) {
+	diags := diagsFor("x = '\\q'\n")
+	if len(diags) != 1 || diags[0].Msg != "invalid escape sequence" {
+		t.Fatalf("got diags %v, want exactly one %q", diags, "invalid escape sequence")
+	}
+}
+
 func TestSyntheticNewlineAfterDanglingOperator(t *testing.T) {
 	got := kinds("x = 1 +")
 	want := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.PLUS, token.NEWLINE, token.EOF}

@@ -67,6 +67,39 @@ func TestVarAfterStmtRejected(t *testing.T) {
 	}
 }
 
+func TestElseOnOwnLineRejected(t *testing.T) {
+	src := "func f() {\nif true {\n}\nelse {\n}\n}\n"
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 || !strings.Contains(diags[0].Msg, "expected expression, found 'else'") {
+		t.Fatalf("want else-on-own-line error, got %v", diags)
+	}
+}
+
+func TestFuncDeclForms(t *testing.T) {
+	src := "func add(a: int, b: int): int {\n    return a + b\n}\nfunc log(msg: string) {\n    quit\n}\n"
+	f, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diags[0])
+	}
+
+	fn := f.Decls[0].(*ast.FuncDecl)
+	if len(fn.Params) != 2 || fn.Params[0].Name != "a" || fn.Params[1].Name != "b" {
+		t.Fatalf("want 2 params a, b; got %+v", fn.Params)
+	}
+	nt, ok := fn.Ret.(*ast.NamedType)
+	if !ok || nt.Name != "int" {
+		t.Fatalf("want return type int, got %#v", fn.Ret)
+	}
+
+	proc := f.Decls[1].(*ast.FuncDecl)
+	if len(proc.Params) != 1 || proc.Params[0].Name != "msg" {
+		t.Fatalf("want 1 param msg; got %+v", proc.Params)
+	}
+	if proc.Ret != nil {
+		t.Fatalf("want no return type for a procedure, got %#v", proc.Ret)
+	}
+}
+
 func TestOpenCloseEdit(t *testing.T) {
 	b := parseFunc(t, "open Doc\nclose d\nedit EditForm, bookmarks[i]\nedit EditForm, new Bookmark")
 	if b.Stmts[0].(*ast.OpenStmt).Window != "Doc" {

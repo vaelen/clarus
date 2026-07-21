@@ -292,9 +292,61 @@ func (c *checker) checkAssignStmt(s *ast.AssignStmt) {
 	if lt == types.InvalidT || rt == types.InvalidT {
 		return
 	}
+	if sel, ok := s.LHS.(*ast.Select); ok {
+		if name, ok := c.readOnlyPropName(sel); ok {
+			c.errorf(s.P, "cannot assign to read-only property %s", name)
+			return
+		}
+	}
 	if !compatible(rt, lt) {
 		c.errorf(s.P, "cannot assign %s to %s", typeName(rt), typeName(lt))
 	}
+}
+
+// readOnlyPropName reports whether sel is one of the read-only
+// pseudo-properties (Ch3/Ch8: `front`, `count`, `length`, `isNew`, and the
+// error type's `code`/`message`) and, if so, its name for the diagnostic.
+// Widget runtime properties (text/caption/checked/selected/enabled/title)
+// aren't pseudo-properties — they're real per-instance state — so they fall
+// through unrecognized here and stay assignable.
+//
+// sel.X is re-checked to classify its kind; this is safe (no duplicate
+// diagnostics) because the caller only reaches here once s.LHS as a whole
+// has already checked clean, which requires sel.X to have checked clean too.
+func (c *checker) readOnlyPropName(sel *ast.Select) (string, bool) {
+	if sel.Name == "front" {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			if sym, ok := c.scope.Lookup(id.Name); ok && sym.IsType && sym.Type.Kind == types.WindowRef {
+				return "front", true
+			}
+		}
+	}
+	xt := c.checkExpr(sel.X, nil)
+	switch xt.Kind {
+	case types.List, types.Map:
+		if sel.Name == "count" {
+			return "count", true
+		}
+	case types.String, types.Text:
+		if sel.Name == "length" {
+			return "length", true
+		}
+	case types.Record:
+		if sel.Name != "isNew" {
+			return "", false
+		}
+		for _, f := range xt.Record.Fields {
+			if f.Name == "isNew" {
+				return "", false // a genuine field shadows the pseudo-field
+			}
+		}
+		return "isNew", true
+	case types.ErrorType:
+		if sel.Name == "code" || sel.Name == "message" {
+			return sel.Name, true
+		}
+	}
+	return "", false
 }
 
 func (c *checker) checkCond(cond ast.Expr) {

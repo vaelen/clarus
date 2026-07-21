@@ -268,7 +268,8 @@ func (l *Lexer) lexChar(pos source.Pos) token.Token {
 		l.off++
 		b, ok := l.decodeEscape('\'')
 		if !ok {
-			l.errorf(pos, "unterminated character literal")
+			l.errorf(pos, "invalid escape sequence")
+			l.resyncCharLit()
 			return l.emit(token.CHARLIT, pos, "")
 		}
 		v = b
@@ -277,8 +278,13 @@ func (l *Lexer) lexChar(pos source.Pos) token.Token {
 		l.off++
 	}
 
-	if l.off >= len(l.f.Content) || l.f.Content[l.off] != '\'' {
+	if l.off >= len(l.f.Content) || l.f.Content[l.off] == '\n' {
 		l.errorf(pos, "unterminated character literal")
+		return l.emit(token.CHARLIT, pos, "")
+	}
+	if l.f.Content[l.off] != '\'' {
+		l.errorf(pos, "character literal must contain exactly one character")
+		l.resyncCharLit()
 		return l.emit(token.CHARLIT, pos, "")
 	}
 	l.off++ // consume closing '
@@ -286,6 +292,19 @@ func (l *Lexer) lexChar(pos source.Pos) token.Token {
 	tok := l.emit(token.CHARLIT, pos, string(v))
 	tok.IntVal = int64(v)
 	return tok
+}
+
+// resyncCharLit advances past a malformed character literal's closing quote
+// on the current line — or to end of line if there is none — so a bad
+// literal ('ab', '\q) never leaves stray tokens for the parser to trip over.
+func (l *Lexer) resyncCharLit() {
+	for l.off < len(l.f.Content) && l.f.Content[l.off] != '\n' {
+		if l.f.Content[l.off] == '\'' {
+			l.off++
+			return
+		}
+		l.off++
+	}
 }
 
 func (l *Lexer) lexString(pos source.Pos) token.Token {

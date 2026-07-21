@@ -102,4 +102,53 @@ func crc(data: text): int {
     return c
 }
 `)
+	expectError(t, "var l: list of int\nfunc f() {\n    l.count(5)\n}\n", "count takes no arguments")
+}
+
+func TestNilComparison(t *testing.T) {
+	expectClean(t, `window W {
+    title: "T"
+}
+extend W {
+    on opened {
+        if window != nil {
+        }
+    }
+}
+`)
+	expectError(t, "var x: int = 3\nfunc f(): bool {\n    return x == nil\n}\n", "nil is only valid")
+}
+
+func TestTextStringComparison(t *testing.T) {
+	expectClean(t, "var t: text\nfunc f(): bool {\n    return t == \"hello\"\n}\n")
+	expectClean(t, "var t: text\nfunc f(): bool {\n    return \"a\" < t\n}\n")
+}
+
+func TestAggregateEqualityRejected(t *testing.T) {
+	expectError(t, "record R { x: int }\nvar a: R\nvar b: R\nfunc f(): bool {\n    return a == b\n}\n", "records cannot be compared")
+	expectError(t, "var a: list of int\nvar b: list of int\nfunc f(): bool {\n    return a == b\n}\n", "lists cannot be compared")
+}
+
+func TestReadOnlyProperties(t *testing.T) {
+	expectError(t, `window Doc {
+    title: "T"
+}
+func f() {
+    Doc.front = open Doc
+}
+`, "cannot assign to read-only property front")
+	expectError(t, "var l: list of int\nfunc f() {\n    l.count = 0\n}\n", "cannot assign to read-only property count")
+	expectClean(t, `window W {
+    field F { at: 10, 10; label: "L:" }
+}
+extend W {
+    on F.change {
+        F.text = "hi"
+    }
+}
+`)
+}
+
+func TestOneOfKindsMessageNamesExpectedKinds(t *testing.T) {
+	expectError(t, "var c: connection\nfunc f() {\n    c.open(true)\n}\n", "cannot use bool here (expected string or address)")
 }

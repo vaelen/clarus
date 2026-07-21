@@ -89,3 +89,7 @@ func TestMenuNameNotAValue(t *testing.T) {
 func TestWindowDuplicateNames(t *testing.T) {
 	expectError(t, "window W {\n    button B { caption: \"x\" }\n    var B: int\n}\n", "redeclaration of B")
 }
+
+func TestWindowLevelColumnRejected(t *testing.T) {
+	expectError(t, "window W {\n    column \"H\" shows x width 5\n}\n", "unknown property column for window")
+}
