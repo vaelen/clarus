@@ -267,3 +267,307 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 - Indexing a string, array, or list out of range
 - Accessing a map with a key that does not exist
 - Dereferencing a `nil` window reference
+
+## Chapter 4: Expressions and Operators
+
+### Operator Precedence
+
+The following table is normative. Operators bind tighter the lower their level number; within a level, operators are left-associative.
+
+| Level | Operators | Notes |
+|---|---|---|
+| 1 | `()` grouping, `f(args)` call, `a[i]` index, `a.b` field/property, `new T`, `open T` | postfix/primary |
+| 2 | unary `-`, `not` | |
+| 3 | `*` `/` `mod` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv` |
+| 4 | `+` `-` | `+` also concatenates strings and text |
+| 5 | `==` `!=` `<` `<=` `>` `>=` | strings compare byte-wise, case-sensitive |
+| 6 | `and` | short-circuit |
+| 7 | `or` | short-circuit |
+
+### Primary Expressions
+
+Level 1 covers grouping and the ways a value is produced or drilled into:
+
+- `(expr)` — grouping, overrides precedence
+- `f(args)` — function call
+- `a[i]` — string, array, list, or map indexing
+- `a.b` — field access on a record, or a property/method reference on a window, list, map, text, or connection
+- `new T` — constructs a value of record type `T` with every field at its declared default (or zero), per Chapter 3's record-construction rules
+- `open T` — opens a window of type `T` and yields its reference (statement form and full semantics in Chapter 8)
+
+```rust
+var p: Person = new Person       // name: "" (empty string), age: 0
+var isAdult: bool = p.age >= 18 and p.name != ""
+```
+
+### Unary Operators
+
+Unary `-` negates a numeric operand; `not` inverts a `bool`:
+
+```rust
+var p: Person = new Person
+var isAdult: bool = p.age >= 18
+var negAge: int = -p.age
+var notAdult: bool = not isAdult
+```
+
+### Assignment Is a Statement
+
+`=` is a statement (see Chapter 5), not an expression. It cannot appear inside a larger expression, and there is no `+=`, `-=`, or `++`/`--` in v1 — write the full expression out:
+
+```rust
+var count: int = 0
+count = count + 1                // not count += 1
+```
+
+### No Bitwise Operators
+
+Clarus v1 has no bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`). Byte-level work on `char` values, where needed, goes through explicit arithmetic and the numeric conversions in Chapter 3.
+
+### Mixed Numeric Arithmetic
+
+`int` and `fixed` do not mix in arithmetic; combining them is a compile error. Convert one side explicitly:
+
+```rust
+var i: int = 3
+var f: fixed = 1.5
+// var bad: fixed = i + f        // compile error: mixed int/fixed arithmetic
+var ok: fixed = fixed(i) + f     // 4.5
+```
+
+### String Concatenation and Truncation
+
+`+` concatenates `string` and `text` values (and appends a single `char` to a `string`, per Chapter 3). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the length is checked at the point of assignment. If it doesn't fit, that is a runtime error, not silent truncation:
+
+```rust
+var greeting: string(3) = "ab"
+// greeting = greeting + "cdef"  // runtime error: "abcdef" doesn't fit string(3)
+```
+
+## Chapter 5: Statements
+
+A statement ends at the newline that terminates it (Chapter 2). Each form below is shown as a short, self-contained example built from types already introduced (`Person` from Chapter 1, `connection` and `saveChoice` from Chapter 3).
+
+### Local Variable Declaration
+
+`var name: Type` and `var name: Type = expr` may appear only at the top of a function or handler body, before any other statement:
+
+```rust
+func summarize(p: Person): string {
+    var isAdult: bool = p.age >= 18
+    var note: string
+    return note
+}
+```
+
+### Assignment
+
+`lvalue = expr`. The left side must be an assignable location: a variable, a field, or an indexed element.
+
+```rust
+var count: int = 0
+count = count + 1
+```
+
+### Call Statement
+
+A function call, method-style call, or list/map operation may appear on its own as a statement; any return value is discarded.
+
+```rust
+// conn: connection declared elsewhere (Chapter 12)
+var p: Person = new Person
+var names: list of Person
+
+conn.open("mac.example.com:70")
+names.add(p)
+```
+
+### If / Else If / Else
+
+The condition must be a `bool` expression; no parentheses are required around it.
+
+```rust
+var p: Person = new Person
+var greeting: string
+
+if p.age >= 18 {
+    greeting = "Welcome"
+} else if p.age >= 13 {
+    greeting = "Hi there"
+} else {
+    greeting = "Hello, kid"
+}
+```
+
+### While
+
+```rust
+var names: list of Person
+var i: int = 0
+
+while i < names.count {
+    i = i + 1
+}
+```
+
+### For
+
+Three forms: iterate a `list of T`, iterate a `map of T` (key and value), or step an inclusive integer range.
+
+```rust
+var names: list of Person
+var total: int = 0
+
+for v in names {
+    total = total + v.age
+}
+```
+
+```rust
+var scores: map of int
+var total: int = 0
+for name, score in scores {
+    total = total + score
+}
+```
+
+```rust
+var sum: int = 0
+for i in 0 to 9 {
+    sum = sum + i          // i takes 0, 1, ..., 9 — the range is inclusive
+}
+```
+
+### Return
+
+`return` exits a procedure with no value; `return expr` exits a function with its result.
+
+```rust
+func isAdult(p: Person): bool {
+    if p.age >= 18 { return true }
+    return false
+}
+```
+
+```rust
+func maybeGreet(p: Person) {
+    var greeting: string
+
+    if p.name == "" { return }
+    greeting = "Hello, " + p.name
+}
+```
+
+### Open
+
+`open WindowType` used as a statement opens a window and discards the reference. Used as an expression (`w = open WindowType`), it yields the new window's reference; full window semantics are Chapter 8.
+
+```rust
+// window Doc declared in Chapter 8's style
+var d: Doc
+
+open Doc                         // statement form: opens, reference discarded
+d = open Doc                     // expression form: keeps the reference
+```
+
+### Close
+
+`close windowRef` closes an open window instance.
+
+```rust
+// window Doc declared in Chapter 8's style
+var d: Doc = open Doc
+close d
+```
+
+### Edit
+
+`edit FormWindow, recordLvalue` opens a form window bound to a record value; full form semantics are Chapter 10.
+
+```rust
+// form window EditPerson declared in Chapter 10's style
+var p: Person
+edit EditPerson, p
+```
+
+### Quit
+
+`quit` requests that the application quit. The runtime sends `closeRequest` to every open window first; any handler that runs `cancel` aborts the quit.
+
+```rust
+on App.startEmpty {
+    quit                          // requests app quit
+}
+```
+
+### Cancel
+
+`cancel` is valid only inside a `closeRequest` handler. It aborts the pending close (or, during quit, aborts the whole quit):
+
+```rust
+// closeRequest fires on close-box click and at quit (Chapter 8)
+on closeRequest {
+    var c: saveChoice = askSaveChanges("Untitled")
+    if c == Cancel { cancel }
+}
+```
+
+### No Break or Continue
+
+Clarus v1 has no `break` or `continue`. Restructure a loop that needs to exit early with a `while` loop and a `bool` flag, or extract the loop into a function and use `return`:
+
+```rust
+var names: list of Person
+var i: int = 0
+var found: bool = false
+
+while i < names.count and not found {
+    if names[i].name == "Ann" { found = true }
+    i = i + 1
+}
+```
+
+## Chapter 6: Functions
+
+### Declaration
+
+```rust
+func name(p: Type, q: Type): ReturnType {
+    // body
+}
+```
+
+The return type is optional; a function with no return type is a procedure and uses bare `return` (or falls off the end of its body) to finish.
+
+```rust
+func add(a: int, b: int): int {
+    return a + b
+}
+
+func logGreeting(p: Person) {
+    // procedure: no return type, nothing returned
+}
+```
+
+### Parameter Passing
+
+Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place; out-params of fixed-size types are not supported in v1 — return them instead.
+
+### Recursion
+
+Recursion is allowed:
+
+```rust
+func factorial(n: int): int {
+    if n <= 1 { return 1 }
+    return n * factorial(n - 1)
+}
+```
+
+### Restrictions
+
+There is no overloading, no default parameter values, and no varargs — every function has exactly one signature and every call site passes exactly its declared parameters.
+
+### Scope
+
+Functions may be declared at top level only. Window-scoped helper functions are a possible future `extend` addition, not part of v1.
