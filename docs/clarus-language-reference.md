@@ -173,7 +173,7 @@ var c: char = char(i)        // int to char (takes low byte, 0–255)
 var k: int = int(c)          // char to int
 ```
 
-Truncation in `int(f)` and `char(i)` is always toward zero.
+Numeric truncation in `int(f)` is toward zero. `char(i)` is not a numeric truncation: it keeps only the low byte of `i` — `char(-1)` yields 255.
 
 ### Strings
 
@@ -246,7 +246,7 @@ Keys are compared case-sensitively, byte-wise.
 A `text` is an unbounded, resizable buffer of characters. Text operations are:
 
 - Assignment: `t = "hello"`
-- Concatenation: `t = t + "world"` (or `t += "world"` if supported)
+- Concatenation: `t = t + "world"`
 - `t.length` — length of the buffer (returns `int`)
 - Comparison: `t == "hello"` (byte-wise)
 
@@ -258,9 +258,7 @@ A window type (e.g., `Doc`) represents a reference to an open window instance. W
 
 The `saveChoice` enum is pre-defined and used in save dialogs. Its members are:
 
-```rust
-saveChoice: (Save, Discard, Cancel)
-```
+`saveChoice` is a built-in enum with members `Save`, `Discard`, and `Cancel`. It is not declared by user code; it is the return type of `askSaveChanges` (Chapter 12) and is used in comparisons: `if c == Cancel { cancel }`.
 
 ### Runtime Errors
 
