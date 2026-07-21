@@ -58,7 +58,12 @@ Pipeline: source → typed AST → small typed IR → printer.
 - Declarations: `var x: int`, `var b: Bookmark`, colon type syntax.
 - Blocks with braces; statements newline-terminated; no semicolons.
 - `record` — plain data aggregate. No methods, no inheritance.
-- Enums: `protocol: (Gopher, HTTP, Telnet)`.
+- Enums are named types: `enum Protocol { Gopher, HTTP, Telnet }`, referenced
+  as `protocol: Protocol`. Members may carry display labels
+  (`HTTP "Web (HTTP)"`) used by bound popups and table columns; labels
+  compile to a STR# resource (ResEdit-localizable). Values are 16-bit
+  ordinals in declaration order; `int(e)` / `EnumType(i)` convert, the
+  latter range-checked.
 - Strings: `string(n)` is a fixed-size, length-prefixed Pascal string
   (n ≤ 255) — what the Toolbox eats natively. Bare `string` = `string(255)`.
 - `char`: an unsigned 8-bit Mac Roman character (`'A'`). Mac Roman is a
@@ -76,11 +81,13 @@ Pipeline: source → typed AST → small typed IR → printer.
 Example:
 
 ```rust
+enum Protocol { Gopher, HTTP, Telnet }
+
 record Bookmark {
     name:     string(63)
     url:      string(255)
     port:     int = 80
-    protocol: (Gopher, HTTP, Telnet)
+    protocol: Protocol
     favorite: bool
 }
 
@@ -263,7 +270,7 @@ Widget set (v1): `button`, `field`, `textview`, `check`, `popup`, `table`,
 
 ## 8. Forms and tables (data binding)
 
-**Forms.** A window may declare `form of RecordType`. Widgets bind to record
+**Forms.** A window may declare `form for RecordType`. Widgets bind to record
 fields by bare name (`binds: name` — inside a form block the record's fields
 are the innermost scope). Types drive widget behavior with nothing specified
 twice: enum → popup items, `bool` → checkbox, `int` → numeric validation,
@@ -405,11 +412,13 @@ case-insensitive maps, handle-backed values inside maps.
 A complete bookmark manager — data, live table, bound edit form:
 
 ```rust
+enum Protocol { Gopher, HTTP, Telnet }
+
 record Bookmark {
     name:     string(63)
     url:      string(255)
     port:     int = 80
-    protocol: (Gopher, HTTP, Telnet)
+    protocol: Protocol
     favorite: bool
 }
 
@@ -432,12 +441,12 @@ window Main {
 
 window EditForm {
     title: "Edit Bookmark"
-    form of Bookmark
+    form for Bookmark
 
     field Name     { binds: name;     label: "Name:" }
     field Url      { binds: url;      label: "URL:" }
     field Port     { binds: port;     label: "Port:";  width: 60 }
-    popup Protocol { binds: protocol; label: "Protocol:" }
+    popup Proto    { binds: protocol; label: "Protocol:" }
     check Fav      { binds: favorite; caption: "Favorite" }
 
     button OK      { default }

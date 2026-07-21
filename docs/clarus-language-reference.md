@@ -30,6 +30,7 @@ A Clarus program consists of one or more `.cla` source files. Compilation is sin
 The following declarations may appear at the top level, in any order, subject to declare-before-use:
 
 - `record` declarations
+- `enum` declarations
 - `var` declarations
 - `func` declarations
 - `window` declarations
@@ -81,7 +82,7 @@ Convention (not enforced): types, windows, menus, and widgets use CapitalCase; v
 **Hard keywords** (reserved everywhere):
 
 ```
-var func record window menu extend on every
+var func record enum window menu extend on every
 if else while for in to return
 and or not true false nil
 open close edit new quit cancel
@@ -128,7 +129,7 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `fixed` | 4 bytes | inline | 16.16 fixed-point (Toolbox `Fixed`) |
 | `char` | 1 byte | inline | unsigned 8-bit Mac Roman character; doubles as a byte (0–255) for binary data |
 | `string(n)` | n+1 bytes | inline | length-prefixed Pascal string, n ≤ 255; `string` alone = `string(255)` |
-| enum `(A, B, C)` | 2 bytes | inline | named in a record field or type position |
+| enum | 2 bytes | inline | named type declared with `enum Name { … }` (see Enums below) |
 | `record` | sum of fields | inline | plain data aggregate; no methods |
 | `T[n]` | n × size(T) | inline* | fixed array, 0-indexed |
 | `text` | 4-byte handle | heap | unbounded text buffer |
@@ -203,21 +204,58 @@ s = s + 'b'                  // "hib"
 
 **Comparison:** Strings and characters compare byte-wise with `==`, `!=`, and other relational operators.
 
-### Enums
+**Byte copies:** For assembling and parsing binary data (network protocols, file headers), a `string` doubles as a counted byte buffer, and two built-in methods copy between strings and `char` arrays. Both know the compile-time capacity of every operand and clamp every copy to it — a buffer overrun is impossible by construction. A clamped (truncated) copy sets `lastError` (Chapter 12) and execution continues:
 
-Enum types are declared in record field declarations or at the type level. Each enum member is an identifier known only within that enum:
+- `s.fromBytes(buf, count)` — copy the first `count` bytes of `char` array `buf` into `s`, setting `s`'s length; copies min(`count`, `buf`'s capacity, `s`'s capacity).
+- `s.toBytes(buf)` — copy `s`'s bytes into `char` array `buf`; returns (`int`) the number copied: min(`s.length`, `buf`'s capacity).
 
 ```rust
+var packet: char[16]
+var s: string(16)
+var n: int
+
+s.fromBytes(packet, 8)           // first 8 bytes of packet into s; s.length = 8
+n = s.toBytes(packet)            // s's bytes back into packet; n = 8
+```
+
+These are built-ins with the runtime calling convention of Chapter 6 — the arrays' capacities travel with the call, which is what makes the clamping intrinsic.
+
+### Enums
+
+An `enum` declaration creates a named type with a fixed set of members:
+
+```rust
+enum EventKind { Click, Drag, Release }
+
+var e: EventKind = Click
+
 record Event {
-    kind: (Click, Drag, Release)
+    kind: EventKind
 }
 ```
 
-Enum values are compared with `==` and `!=` only; `<`, `>`, and other comparisons are not defined. To convert an enum to an integer (for display or storage), use `int(e)`:
+Members are identifiers, separated by commas or newlines. Because the enum is a named type, any number of variables, fields, and parameters can share it. A member name is resolved against the enum type expected where it appears, so members of different enums may share names.
+
+**Labels.** Each member may carry a display label, used wherever the runtime shows the value to the user — popup items in bound forms and enum table columns (Chapter 10). A member without a label displays its own name:
 
 ```rust
-var e: (Click, Drag, Release) = Click
-var n: int = int(e)          // 0, 1, or 2 (order of declaration)
+enum Protocol {
+    Gopher "Gopher"
+    HTTP   "Web (HTTP)"
+    Telnet "Telnet"
+}
+```
+
+Labels are compiled into a string-list (STR#) resource, one per enum. They cost nothing in the value itself, and they can be edited — localized — with ResEdit without recompiling the program.
+
+**Representation.** An enum value is a 16-bit word holding the member's ordinal: 0 for the first declared member, 1 for the next, and so on. Two bytes rather than one keeps record fields aligned for the 68000, which cannot read a word from an odd address. A record field of enum type with no explicit default starts at the first member (ordinal 0).
+
+**Operations.** Enum values compare with `==` and `!=` only; ordering comparisons are not defined. `int(e)` yields the ordinal; `EventKind(i)` converts an integer back, raising a runtime error if `i` is outside `0` to (member count − 1) — the checked path for values read from files or the network:
+
+```rust
+var e: EventKind = Drag
+var n: int = int(e)               // 1
+var back: EventKind = EventKind(n)
 ```
 
 ### Lists
@@ -225,12 +263,17 @@ var n: int = int(e)          // 0, 1, or 2 (order of declaration)
 A `list of T` is a growable sequence. List operations are:
 
 - `l.add(v)` — append value `v` of type `T`
+- `l.push(v)` — synonym for `add`
+- `l.pop()` — remove and return the last element (returns `T`)
+- `l.shift()` — remove and return the first element (returns `T`)
+- `l.unshift(v)` — insert value `v` at the front
+- `l.first()` / `l.last()` — return the first / last element without removing it (returns `T`)
 - `l.remove(i)` — remove the element at index `i`
 - `l[i]` — access element at index `i` (returns `T`)
 - `l.count` — number of elements (returns `int`)
 - `for x in l { … }` — iterate (see Chapter 5)
 
-Out-of-range indexing raises a runtime error.
+Out-of-range indexing raises a runtime error, and so do `pop`, `shift`, `first`, and `last` on an empty list.
 
 ### Maps
 
@@ -238,6 +281,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 
 - `m[k] = v` — set key `k` to value `v`
 - `m[k]` — retrieve value for key `k` (returns `T`); runtime error if absent
+- `m.get(k, dv)` — retrieve the value for key `k`, or the default value `dv` (of type `T`) if the key is absent; never errors
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
@@ -260,14 +304,16 @@ A window type (e.g., `Doc`) represents a reference to an open window instance. W
 
 ### Built-in Enum: `saveChoice`
 
-`saveChoice` is a built-in enum with members `Save`, `Discard`, and `Cancel`. It is not declared by user code; it is the return type of `askSaveChanges` (Chapter 12) and is used in comparisons: `if c == Cancel { cancel }`.
+`saveChoice` is a built-in enum, as if declared `enum saveChoice { Save, Discard "Don't Save", Cancel }`. It is not declared by user code; it is the return type of `askSaveChanges` (Chapter 12) and is used in comparisons: `if c == Cancel { cancel }`.
 
 ### Runtime Errors
 
 The following operations may raise runtime errors (Chapter 12 specifies how errors are reported):
 
 - Indexing a string, array, or list out of range
-- Accessing a map with a key that does not exist
+- `pop`, `shift`, `first`, or `last` on an empty list
+- Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
+- A checked enum conversion (`EnumType(i)`) with an out-of-range ordinal
 - Dereferencing a `nil` window reference
 
 ## Chapter 4: Expressions and Operators
@@ -279,9 +325,9 @@ The following table is normative. Operators bind tighter the lower their level n
 | Level | Operators | Notes |
 |---|---|---|
 | 1 | `()` grouping, `f(args)` call, `a[i]` index, `a.b` field/property, `new T`, `open T` | postfix/primary |
-| 2 | unary `-`, `not` | |
-| 3 | `*` `/` `mod` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv` |
-| 4 | `+` `-` | `+` also concatenates strings and text |
+| 2 | unary `-`, `not`, `~` | `~` is bitwise NOT (int only) |
+| 3 | `*` `/` `mod` `<<` `>>` `&` | `/` on int truncates toward zero; `fixed` uses `FixMul`/`FixDiv`; shifts and `&` are int only |
+| 4 | `+` `-` `\|` `^` | `+` also concatenates strings and text; `\|` `^` are int only |
 | 5 | `==` `!=` `<` `<=` `>` `>=` | strings compare byte-wise, case-sensitive |
 | 6 | `and` | short-circuit |
 | 7 | `or` | short-circuit |
@@ -322,9 +368,17 @@ var count: int = 0
 count = count + 1                // not count += 1
 ```
 
-### No Bitwise Operators
+### Bitwise Operators
 
-Clarus has no bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`). Byte-level work on `char` values, where needed, goes through explicit arithmetic and the numeric conversions in Chapter 3.
+Bitwise operators work on `int` operands only (`char` values convert through `int(c)`, Chapter 3): `~` NOT, `&` AND, `|` OR, `^` XOR, `<<` shift left, `>>` shift right. `>>` is an arithmetic shift: it propagates the sign bit, matching `int`'s signedness. Shift counts must be 0–31; a count outside that range raises a runtime error.
+
+Precedence deliberately avoids C's pitfall: `&` binds at the multiplicative level and `|`/`^` at the additive level (the table above), so a masking test parses the way it reads:
+
+```rust
+var flags: int = 0x0C
+var masked: bool = flags & 0x08 != 0    // parses as (flags & 0x08) != 0
+var packed: int = 3 << 8 | 42           // parses as (3 << 8) | 42
+```
 
 ### Mixed Numeric Arithmetic
 
@@ -339,12 +393,14 @@ var ok: fixed = fixed(i) + f     // 4.5
 
 ### String Concatenation and Truncation
 
-`+` concatenates `string` and `text` values (and appends a single `char` to a `string`, per Chapter 3). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the length is checked at the point of assignment. If it doesn't fit, that is a runtime error, not silent truncation:
+`+` concatenates `string` and `text` values (and appends a single `char` to a `string`, per Chapter 3). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the store is clamped to the target's capacity. The copy never writes past the end — a buffer overrun is impossible by construction. If clamping dropped any bytes, the store sets `lastError` (Chapter 12) and execution continues:
 
 ```rust
 var greeting: string(3) = "ab"
-// greeting = greeting + "cdef"  // runtime error: "abcdef" doesn't fit string(3)
+greeting = greeting + "cdef"     // stores "abc", sets lastError; no runtime error
 ```
+
+The same rule governs every store into a `string(n)` — direct assignment as well as concatenation results. A program that cares checks `lastError` after the store; a program that doesn't gets a safely truncated value.
 
 ## Chapter 5: Statements
 
@@ -636,7 +692,7 @@ A `window` block is a declaration, not code: it compiles to a real resource (WIN
 | `title` | `title: "Untitled"` | initial title; assignable at runtime (`w.title = ...`) |
 | `size` | `size: 400, 300` | content size in pixels |
 | `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + optional minimum |
-| `form of T` | `form of Bookmark` | marks a form window (Chapter 10) |
+| `form for T` | `form for Bookmark` | marks a form window (Chapter 10) |
 
 One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
 
@@ -650,7 +706,7 @@ window Doc {
 
 ### Window Body
 
-Besides the properties above, a window body may contain widget declarations, `var` declarations (per-instance state), and `form of` (Chapter 10):
+Besides the properties above, a window body may contain widget declarations, `var` declarations (per-instance state), and `form for` (Chapter 10):
 
 ```rust
 window Doc {
@@ -788,15 +844,15 @@ The Apple menu and its About item are provided by the runtime automatically; no 
 
 ### Form Windows
 
-A window with `form of T` (Chapter 8) is a *form window*: its widgets bind to the fields of a value of type `T` rather than being addressed piecemeal by handler code. A `field`, `check`, or `popup` inside such a window declares `binds: name`, where `name` is resolved against `T`'s fields — inside a form window's widget declarations, the record's fields are the innermost scope, so a bare name is written, never a dotted path.
+A window with `form for T` (Chapter 8) is a *form window*: its widgets bind to the fields of a value of type `T` rather than being addressed piecemeal by handler code. A `field`, `check`, or `popup` inside such a window declares `binds: name`, where `name` is resolved against `T`'s fields — inside a form window's widget declarations, the record's fields are the innermost scope, so a bare name is written, never a dotted path.
 
 ```rust
 window EditForm {
-    form of Bookmark
+    form for Bookmark
 
     field Name     { binds: name;     label: "Name:" }
     check Fav      { binds: favorite; caption: "Favorite" }
-    popup Protocol { binds: protocol; label: "Protocol:" }
+    popup Proto    { binds: protocol; label: "Protocol:" }
 
     button OK      { default }
     button Cancel  { cancel }
@@ -813,11 +869,11 @@ A bound widget's behavior comes from the type of the field it binds to, with not
 | `int` | `field` | typing is restricted to numeric input; a non-numeric value fails OK validation |
 | `fixed` | `field` | numeric input, including a decimal point |
 | `bool` | `check` | checkbox; `checked` mirrors the field |
-| enum | `popup` | popup items are the enum's member names, in declaration order |
+| enum | `popup` | popup items are the enum's member labels (member name when unlabeled — Chapter 3), in declaration order |
 
 ### The Edit Statement
 
-`edit FormWindow, target` (Chapter 5) opens a form window bound to a value of its `form of T` type:
+`edit FormWindow, target` (Chapter 5) opens a form window bound to a value of its `form for T` type:
 
 1. `target`'s contents are copied into a working buffer, and the form's widgets are filled from that buffer.
 2. The form window is shown, movable modal by default.
@@ -869,7 +925,7 @@ The table stays live: `add`, `remove`, and writeback to an element of the bound 
 
 ### Table Columns
 
-`column "Header" shows fieldName width N` declares one column. `fieldName` is resolved against the row type `T` the same way `binds:` is resolved in a form — bare, never dotted. `width N` gives a fixed pixel width; `width fill` gives the column the window's remaining width. A column's rendering also follows its field's type: a `bool` field renders as a checkmark, and an enum field renders its member name.
+`column "Header" shows fieldName width N` declares one column. `fieldName` is resolved against the row type `T` the same way `binds:` is resolved in a form — bare, never dotted. `width N` gives a fixed pixel width; `width fill` gives the column the window's remaining width. A column's rendering also follows its field's type: a `bool` field renders as a checkmark, and an enum field renders its member label (member name when unlabeled — Chapter 3).
 
 ### Table Selection
 
@@ -1045,33 +1101,34 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 
 ### Errors
 
-An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent `false` return from a `file` function.
+An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent soft failure: a `false` return from a `file` function, or a clamped string store or byte copy (Chapters 3 and 4).
 
 Clarus reports failures in four ways, depending on where they occur:
 
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
-- **Synchronous fallible operations** — the `file` functions — return `bool`; on `false`, inspect `lastError`. There are no exceptions and no unwinding machinery.
+- **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue. There are no exceptions and no unwinding machinery.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
-- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, a string assignment that doesn't fit its target, or accessing a map with a key that doesn't exist (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion out of range, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
 
 ## Appendix A: Grammar (EBNF)
 
 ```ebnf
 program     = { topDecl } ;
-topDecl     = recordDecl | varDecl | funcDecl | windowDecl
+topDecl     = recordDecl | enumDecl | varDecl | funcDecl | windowDecl
             | menuDecl | extendDecl | handlerDecl | everyDecl ;
 
 recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
-fieldDecl   = IDENT ":" type [ "=" literal ] ;
+fieldDecl   = IDENT ":" type [ "=" ( literal | IDENT ) ] ;
+
+enumDecl    = "enum" IDENT "{" enumMember { [ "," ] enumMember } "}" ;
+enumMember  = IDENT [ STRING ] ;
 
 type        = "int" | "bool" | "fixed" | "char" | "text"
             | "string" [ "(" INT ")" ]
             | "list" "of" type
             | "map" "of" type
-            | enumType
             | IDENT
             | type "[" INT "]" ;
-enumType    = "(" IDENT { "," IDENT } ")" ;
 
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
@@ -1079,7 +1136,7 @@ params      = param { "," param } ;
 param       = IDENT ":" type ;
 
 windowDecl  = "window" IDENT "{" { windowItem } "}" ;
-windowItem  = property | widgetDecl | varDecl | "form" "of" IDENT ;
+windowItem  = property | widgetDecl | varDecl | "form" "for" IDENT ;
 widgetDecl  = widgetKind IDENT [ "{" propertyList "}" ] ;
 widgetKind  = "button" | "field" | "textview" | "check" | "popup"
             | "table" | "canvas" | "label" ;
@@ -1118,9 +1175,9 @@ expr        = andExpr { "or" andExpr } ;
 andExpr     = cmpExpr { "and" cmpExpr } ;
 cmpExpr     = addExpr [ cmpOp addExpr ] ;
 cmpOp       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
-addExpr     = mulExpr { ( "+" | "-" ) mulExpr } ;
-mulExpr     = unaryExpr { ( "*" | "/" | "mod" ) unaryExpr } ;
-unaryExpr   = [ "-" | "not" ] postfix ;
+addExpr     = mulExpr { ( "+" | "-" | "|" | "^" ) mulExpr } ;
+mulExpr     = unaryExpr { ( "*" | "/" | "mod" | "<<" | ">>" | "&" ) unaryExpr } ;
+unaryExpr   = [ "-" | "not" | "~" ] postfix ;
 postfix     = primary { "." memberName | "[" expr "]" | "(" [ args ] ")" } ;
 memberName  = IDENT | "open" | "close" ;
 primary     = literal | IDENT | "window" | "nil"
@@ -1175,11 +1232,13 @@ The following table is the complete per-resource inventory of every event handle
 A complete bookmark manager — data, live table, bound edit form:
 
 ```rust
+enum Protocol { Gopher, HTTP, Telnet }
+
 record Bookmark {
     name:     string(63)
     url:      string(255)
     port:     int = 80
-    protocol: (Gopher, HTTP, Telnet)
+    protocol: Protocol
     favorite: bool
 }
 
@@ -1202,12 +1261,12 @@ window Main {
 
 window EditForm {
     title: "Edit Bookmark"
-    form of Bookmark
+    form for Bookmark
 
     field Name     { binds: name;     label: "Name:" }
     field Url      { binds: url;      label: "URL:" }
     field Port     { binds: port;     label: "Port:";  width: 60 }
-    popup Protocol { binds: protocol; label: "Protocol:" }
+    popup Proto    { binds: protocol; label: "Protocol:" }
     check Fav      { binds: favorite; caption: "Favorite" }
 
     button OK      { default }
