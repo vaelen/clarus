@@ -107,18 +107,29 @@ The runtime owns `WaitNextEvent`, update/activate handling, and dispatch.
 All user code is event handlers plus the plain functions they call:
 
 ```rust
-on Main.Go.click { … }
-on conn.received(data: text) { … }
-on File.Quit.select { quit }
-every 2 ticks { … }      // a tick = 1/60 s, the Mac's native clock
+extend Main {
+    on Go.click { … }        // widget event
+    on close { … }           // the window's own events: bare event name
+}
+
+extend File {                // menus scope the same way
+    on Quit.select { quit }
+}
+
+on conn.received(data: text) { … }   // global resources: top-level handlers
+every 2 ticks { … }          // a tick = 1/60 s, the Mac's native clock
 ```
 
-Handler names are fully qualified: widget handlers carry their window's name
-(`on Window.Widget.event`), menu-item handlers their menu's name
-(`on Menu.Item.select`), and window-level and resource handlers use the
-window or resource name directly (`on EditForm.accepted`,
-`on conn.received`). Two windows may therefore each have an `Add` button
-without ambiguity, and handler lookup stays purely lexical.
+Widget and menu-item handlers live in an **`extend` block** naming their
+window or menu, which provides the scope: inside `extend Main`, bare names
+resolve against Main's widgets and fields, so two windows may each have an
+`Add` button without ambiguity and nothing is retyped per handler. A window
+may have any number of `extend` blocks (per feature, per file) — layout
+stays purely declarative in the `window` block. Handlers for global
+resources (`conn`, timers) are written at top level. `extend` is
+deliberately contents-neutral: instance-scoped helper functions may be
+allowed in it later, and the same construct could be folded inline into
+`window` blocks if co-location proves wanted.
 
 **Async model: everything is an event (no closures).** Async operations do
 not take callbacks; they post completion events caught by named handlers
@@ -216,8 +227,10 @@ table Marks {
     column "URL"  shows url      width fill
 }
 
-on Main.Marks.doubleClick(i: int) {
-    edit EditForm, bookmarks[i]
+extend Main {
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
 }
 ```
 
@@ -232,7 +245,8 @@ future sugar: they compile down to a generated bound form.
 
 `canvas` widget wrapping QuickDraw: `clear`, `line`, `rect`, `fillCircle`,
 text drawing, offscreen buffering for flicker-free animation. Click/key
-events deliver coordinates: `on Game.Board.click(px: int, py: int)`.
+events deliver coordinates: `on Board.click(px: int, py: int)` inside
+`extend Game`.
 
 `every N ticks { }` timers are first-class; games and network polling both
 need them. A `fixed` numeric type (Toolbox `FixMath`, 16.16 fixed-point)
@@ -367,19 +381,23 @@ window EditForm {
     button Cancel  { cancel }
 }
 
-on Main.Add.click {
-    edit EditForm, new Bookmark
+extend Main {
+    on Add.click {
+        edit EditForm, new Bookmark
+    }
+
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+
+    on Remove.click {
+        bookmarks.remove(Marks.selected)
+    }
 }
 
-on Main.Marks.doubleClick(i: int) {
-    edit EditForm, bookmarks[i]
-}
-
-on EditForm.accepted(b: Bookmark) {
-    if b.isNew { bookmarks.add(b) }
-}
-
-on Main.Remove.click {
-    bookmarks.remove(Marks.selected)
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew { bookmarks.add(b) }
+    }
 }
 ```
