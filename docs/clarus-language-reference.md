@@ -574,3 +574,53 @@ There is no overloading, no default parameter values, and no varargs — every f
 ### Scope
 
 Functions may be declared at top level only. Window-scoped helper functions are a possible future `extend` addition, not part of v1.
+
+## Chapter 7: Application Lifecycle
+
+### Application Entry Points
+
+A Clarus program responds to application-level events through top-level event handlers. These are the sole entry points to user code (aside from window, menu, and timer handlers, documented in later chapters).
+
+### Event Inventory
+
+| Event | Signature | When |
+|---|---|---|
+| `App.launch` | `on App.launch { }` | Always first, once, before any window exists. App-wide setup. |
+| `App.openDocument` | `on App.openDocument(path: string) { }` | Once per document the Finder launched the app with, or dropped on it while running. |
+| `App.startEmpty` | `on App.startEmpty { }` | After `launch`, only when the app was started with **no** documents. |
+
+### Nothing Opens Implicitly
+
+A Clarus program does not automatically open any window. A program launched with no documents that provides no `App.startEmpty` handler shows only the menu bar. The programmer must explicitly open windows by calling `open WindowType` (Chapter 4) in an event handler.
+
+### Launch Order
+
+The runtime fires application events in the following sequence:
+
+```
+App.launch
+  ├─ App.openDocument (× N documents)
+  └─ App.startEmpty (only if no documents)
+```
+
+This is the sole entry point to user code. All other execution flows from window, menu, and timer handlers.
+
+### Quit Semantics
+
+The `quit` statement (Chapter 5) requests that the application exit. The runtime does not exit immediately; instead, it sends a `closeRequest` event to every open window, starting with the front-most window and proceeding toward the back. If any window's `closeRequest` handler runs `cancel` (Chapter 5), the entire quit is aborted and the app remains open. If all windows close without cancellation, the app exits.
+
+### Mac Launch Events
+
+These events correspond to the classic Macintosh OAPP and ODOC Apple events sent by the Finder; design rationale appears in the language design spec.
+
+### Timers
+
+A top-level `every` block runs repeatedly at fixed intervals:
+
+```rust
+every 60 {
+    // runs 60 times per second
+}
+```
+
+The number is a tick count; each tick is 1/60 second. The block runs on the main event loop and is never entered reentrantly. If a block's execution duration approaches or exceeds the tick interval, the next iteration is skipped rather than queued, preserving responsiveness.
