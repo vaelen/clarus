@@ -1,0 +1,356 @@
+// Package check implements the Clarus type checker: declaration building
+// (Ch3-Ch4 authoritative on semantics) and expression/statement checking.
+package check
+
+import (
+	"fmt"
+
+	"clarus/internal/ast"
+	"clarus/internal/source"
+	"clarus/internal/types"
+)
+
+// checker holds the state of one File() call: the source file (for
+// diagnostics), the accumulated diagnostics, and the current scope, which
+// grows as top-level declarations are processed (declare-before-use) and is
+// swapped out (saved/restored) as function bodies and nested blocks are
+// entered.
+type checker struct {
+	f     *source.File
+	diags []source.Diag
+	scope *Scope
+
+	// curFuncRet is the enclosing function's return type, or nil when
+	// checking a procedure body (bare `return` only) or outside any
+	// function (top-level var initializers).
+	curFuncRet *types.Type
+}
+
+// File type-checks tree and returns all diagnostics found. Declarations are
+// processed in source order in a single pass: each is checked against
+// symbols declared so far, then declared itself (declare-before-use).
+// Window/menu/extend/handler/every declarations are skipped entirely —
+// Task 11 wires them up.
+func File(f *source.File, tree *ast.File) []source.Diag {
+	c := &checker{f: f}
+	universe := NewScope(nil)
+	registerBuiltins(universe)
+	c.scope = NewScope(universe)
+
+	for _, d := range tree.Decls {
+		c.checkDecl(d)
+	}
+	return c.diags
+}
+
+func (c *checker) errorf(pos source.Pos, format string, args ...interface{}) {
+	c.diags = append(c.diags, source.Diag{File: c.f, Pos: pos, Msg: fmt.Sprintf(format, args...)})
+}
+
+func (c *checker) checkDecl(d ast.Decl) {
+	switch d := d.(type) {
+	case *ast.RecordDecl:
+		c.checkRecordDecl(d)
+	case *ast.EnumDecl:
+		c.checkEnumDecl(d)
+	case *ast.VarDecl:
+		c.checkVarDecl(d)
+	case *ast.FuncDecl:
+		c.checkFuncDecl(d)
+	case *ast.WindowDecl, *ast.MenuDecl, *ast.ExtendDecl, *ast.HandlerDecl, *ast.EveryDecl:
+		// Task 11.
+	}
+}
+
+// resolveType maps a TypeExpr as written in source to a *types.Type,
+// reporting "undefined: X" for an unresolvable name and returning
+// types.ErrT — never re-diagnosed by a caller (see compatible()).
+func (c *checker) resolveType(te ast.TypeExpr) *types.Type {
+	switch t := te.(type) {
+	case *ast.NamedType:
+		switch t.Name {
+		case "int":
+			return types.IntT
+		case "bool":
+			return types.BoolT
+		case "fixed":
+			return types.FixedT
+		case "char":
+			return types.CharT
+		case "text":
+			return types.TextT
+		}
+		sym, ok := c.scope.Lookup(t.Name)
+		if !ok || !sym.IsType {
+			c.errorf(t.P, "undefined: %s", t.Name)
+			return types.ErrT
+		}
+		return sym.Type
+	case *ast.StringType:
+		return types.StringT(t.N)
+	case *ast.ListType:
+		return types.ListT(c.resolveType(t.Elem))
+	case *ast.MapType:
+		return types.MapT(c.resolveType(t.Val))
+	case *ast.ArrayType:
+		return types.ArrayT(c.resolveType(t.Elem), t.N)
+	default:
+		return types.ErrT
+	}
+}
+
+// checkRecordDecl builds a RecordInfo (Ch3: Records and Defaults): field
+// types are resolved first, then defaults are type-checked against them
+// (an enum-typed field's bare-identifier default resolves against that
+// field's own enum, via the expected-type parameter).
+func (c *checker) checkRecordDecl(d *ast.RecordDecl) {
+	info := &types.RecordInfo{Name: d.Name}
+	fields := make([]types.FieldInfo, len(d.Fields))
+	for i, f := range d.Fields {
+		fields[i] = types.FieldInfo{Name: f.Name, Type: c.resolveType(f.Type)}
+	}
+	info.Fields = fields
+	for i, f := range d.Fields {
+		if f.Default == nil {
+			continue
+		}
+		dt := c.checkExpr(f.Default, fields[i].Type)
+		if dt != types.ErrT && !compatible(dt, fields[i].Type) {
+			c.errorf(f.P, "cannot assign %s to field %s of type %s", typeName(dt), f.Name, typeName(fields[i].Type))
+		}
+	}
+	sym := Symbol{Name: d.Name, IsType: true, Type: &types.Type{Kind: types.Record, Record: info}}
+	if err := c.scope.Declare(sym); err != nil {
+		c.errorf(d.P, "%s", err.Error())
+	}
+}
+
+// checkEnumDecl builds an EnumInfo (Ch3: Enums): members auto-number from 0
+// or the previous value + 1; explicit values must fit 0-65535 and be unique
+// within the enum; member names must be unique (reuses Scope.Declare's
+// "redeclaration of X" via a throwaway scope, matching the language's own
+// redeclaration wording).
+func (c *checker) checkEnumDecl(d *ast.EnumDecl) {
+	info := &types.EnumInfo{Name: d.Name}
+	names := NewScope(nil)
+	seenValues := make(map[int]bool)
+	next := 0
+	for _, m := range d.Members {
+		val := next
+		if m.HasValue {
+			val = int(m.Value)
+			if val < 0 || val > 65535 {
+				c.errorf(m.P, "enum value out of range: %d", val)
+			}
+		}
+		if seenValues[val] {
+			c.errorf(m.P, "duplicate enum value %d", val)
+		}
+		seenValues[val] = true
+		if err := names.Declare(Symbol{Name: m.Name}); err != nil {
+			c.errorf(m.P, "%s", err.Error())
+		}
+		label := m.Label
+		if label == "" {
+			label = m.Name
+		}
+		info.Members = append(info.Members, types.EnumMemberInfo{Name: m.Name, Value: val, Label: label})
+		next = val + 1
+	}
+	sym := Symbol{Name: d.Name, IsType: true, Type: &types.Type{Kind: types.Enum, Enum: info}}
+	if err := c.scope.Declare(sym); err != nil {
+		c.errorf(d.P, "%s", err.Error())
+	}
+}
+
+// checkVarDecl checks a `var` declaration — global or local; both shapes
+// (top-level Decl, and a Block's Vars) are the same *ast.VarDecl node, and
+// both declare into whatever c.scope currently is.
+func (c *checker) checkVarDecl(d *ast.VarDecl) {
+	t := c.resolveType(d.Type)
+	if d.Init != nil {
+		it := c.checkExpr(d.Init, t)
+		if it != types.ErrT && !compatible(it, t) {
+			c.errorf(d.P, "cannot assign %s to %s", typeName(it), typeName(t))
+		}
+	}
+	if err := c.scope.Declare(Symbol{Name: d.Name, Type: t}); err != nil {
+		c.errorf(d.P, "%s", err.Error())
+	}
+}
+
+// checkFuncDecl declares the function's signature before checking its body,
+// so recursive calls resolve (Ch6: Recursion) — the one deliberate
+// exception to "checked then declared".
+func (c *checker) checkFuncDecl(d *ast.FuncDecl) {
+	params := make([]*types.Type, len(d.Params))
+	for i, p := range d.Params {
+		params[i] = c.resolveType(p.Type)
+	}
+	var ret *types.Type
+	if d.Ret != nil {
+		ret = c.resolveType(d.Ret)
+	}
+	sig := &FuncSig{Params: params, Ret: ret}
+	if err := c.scope.Declare(Symbol{Name: d.Name, IsFunc: true, Func: sig}); err != nil {
+		c.errorf(d.P, "%s", err.Error())
+	}
+
+	fnScope := NewScope(c.scope)
+	for i, p := range d.Params {
+		if err := fnScope.Declare(Symbol{Name: p.Name, Type: params[i]}); err != nil {
+			c.errorf(p.P, "%s", err.Error())
+		}
+	}
+
+	savedScope, savedRet := c.scope, c.curFuncRet
+	c.scope, c.curFuncRet = fnScope, ret
+	c.checkBlock(d.Body)
+	c.scope, c.curFuncRet = savedScope, savedRet
+}
+
+// checkBlock checks a block's local vars then its statements, in a scope
+// nested under whatever c.scope currently is (so the block's own locals
+// don't leak into the enclosing scope). Grown in Task 11 for UI/handler
+// statement contexts.
+func (c *checker) checkBlock(b *ast.Block) {
+	saved := c.scope
+	c.scope = NewScope(saved)
+	for _, v := range b.Vars {
+		c.checkVarDecl(v)
+	}
+	for _, s := range b.Stmts {
+		c.checkStmt(s)
+	}
+	c.scope = saved
+}
+
+// checkStmt checks one statement. Task 10 implements what the test file
+// exercises (var decls, assignment, expression statements, while/if
+// conditions, for loops, return); quit/cancel/open/close/edit are
+// statement forms this task doesn't reach and are silently skipped, like
+// window/menu/extend/handler declarations.
+func (c *checker) checkStmt(s ast.Stmt) {
+	switch s := s.(type) {
+	case *ast.AssignStmt:
+		c.checkAssignStmt(s)
+	case *ast.ExprStmt:
+		c.checkExpr(s.X, nil)
+	case *ast.IfStmt:
+		c.checkIfStmt(s)
+	case *ast.WhileStmt:
+		c.checkWhileStmt(s)
+	case *ast.ForStmt:
+		c.checkForStmt(s)
+	case *ast.ReturnStmt:
+		c.checkReturnStmt(s)
+	}
+}
+
+func (c *checker) checkAssignStmt(s *ast.AssignStmt) {
+	lt := c.checkExpr(s.LHS, nil)
+	rt := c.checkExpr(s.RHS, lt)
+	if lt == types.ErrT || rt == types.ErrT {
+		return
+	}
+	if !compatible(rt, lt) {
+		c.errorf(s.P, "cannot assign %s to %s", typeName(rt), typeName(lt))
+	}
+}
+
+func (c *checker) checkCond(cond ast.Expr) {
+	ct := c.checkExpr(cond, types.BoolT)
+	if ct != types.ErrT && ct.Kind != types.Bool {
+		c.errorf(cond.Pos(), "condition must be bool")
+	}
+}
+
+func (c *checker) checkIfStmt(s *ast.IfStmt) {
+	c.checkCond(s.Cond)
+	c.checkBlock(s.Then)
+	switch e := s.Else.(type) {
+	case *ast.Block:
+		c.checkBlock(e)
+	case *ast.IfStmt:
+		c.checkIfStmt(e)
+	}
+}
+
+func (c *checker) checkWhileStmt(s *ast.WhileStmt) {
+	c.checkCond(s.Cond)
+	c.checkBlock(s.Body)
+}
+
+// checkForStmt checks all three forms (Ch5: For): list iteration, map
+// iteration (key + value), and an inclusive integer range.
+func (c *checker) checkForStmt(s *ast.ForStmt) {
+	seqT := c.checkExpr(s.Seq, nil)
+	saved := c.scope
+	c.scope = NewScope(saved)
+	defer func() { c.scope = saved }()
+
+	if s.ToExpr != nil {
+		toT := c.checkExpr(s.ToExpr, nil)
+		if seqT != types.ErrT && seqT.Kind != types.Int {
+			c.errorf(s.Seq.Pos(), "range bounds must be int")
+		}
+		if toT != types.ErrT && toT.Kind != types.Int {
+			c.errorf(s.ToExpr.Pos(), "range bounds must be int")
+		}
+		c.declareForVar(s.V1, types.IntT)
+		c.checkBlock(s.Body)
+		return
+	}
+
+	switch {
+	case seqT == types.ErrT:
+		c.declareForVar(s.V1, types.ErrT)
+		if s.V2 != "" {
+			c.declareForVar(s.V2, types.ErrT)
+		}
+	case seqT.Kind == types.List:
+		if s.V2 != "" {
+			c.errorf(s.P, "list iteration takes one variable")
+		}
+		c.declareForVar(s.V1, seqT.Elem)
+	case seqT.Kind == types.Map:
+		if s.V2 == "" {
+			c.errorf(s.P, "map iteration requires key and value variables")
+		}
+		c.declareForVar(s.V1, types.StringT(255))
+		if s.V2 != "" {
+			c.declareForVar(s.V2, seqT.Elem)
+		}
+	default:
+		c.errorf(s.Seq.Pos(), "cannot iterate over %s", typeName(seqT))
+	}
+	c.checkBlock(s.Body)
+}
+
+func (c *checker) declareForVar(name string, t *types.Type) {
+	if name == "" {
+		return
+	}
+	_ = c.scope.Declare(Symbol{Name: name, Type: t})
+}
+
+// checkReturnStmt checks `return` / `return expr` (Ch5: Return). No
+// return-path flow analysis is performed here — a function falling off the
+// end without returning a value is a runtime concern in this design, not a
+// compile error.
+func (c *checker) checkReturnStmt(s *ast.ReturnStmt) {
+	if s.X == nil {
+		if c.curFuncRet != nil {
+			c.errorf(s.P, "missing return value")
+		}
+		return
+	}
+	rt := c.checkExpr(s.X, c.curFuncRet)
+	if c.curFuncRet == nil {
+		c.errorf(s.P, "unexpected return value in a procedure")
+		return
+	}
+	if rt != types.ErrT && !compatible(rt, c.curFuncRet) {
+		c.errorf(s.P, "cannot return %s as %s", typeName(rt), typeName(c.curFuncRet))
+	}
+}
