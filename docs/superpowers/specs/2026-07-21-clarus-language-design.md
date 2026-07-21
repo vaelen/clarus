@@ -124,13 +124,17 @@ on app.start {               // app lifecycle: nothing opens by itself
 }
 ```
 
-**App lifecycle.** No window is displayed implicitly; `on app.start` runs
-once after the runtime initializes and opens whatever the program wants —
-one fixed window, a fresh document, or nothing but a menu bar. Companion
-events: `on app.openDocument(path: string)` fires per document the Finder
-launched or dropped on the app (a multi-document app opens one instance per
-call and may never open an empty window at all), and `on app.quitRequested`
-runs before quitting (last chance to ask about unsaved changes).
+**App lifecycle.** No window is displayed implicitly. `on app.start` runs
+once after the runtime initializes **on a bare launch** and opens whatever
+the program wants — one fixed window, a fresh document, or nothing but a
+menu bar. When the app is launched by double-clicking documents (or has
+files dropped on it), `on app.openDocument(path: string)` fires once per
+file *instead of* `app.start` — mirroring the Mac's own OAPP/ODOC launch
+distinction, so a document launch never also opens an unwanted empty
+window. `quit` requests flow through the windows: the runtime sends
+`closeRequest` to every open window, and any handler that cancels aborts
+the quit — so unsaved-changes logic is written once, per window, not
+duplicated at quit time.
 
 Widget and menu-item handlers live in an **`extend` block** naming their
 window or menu, which provides the scope: inside `extend Main`, bare names
@@ -187,7 +191,10 @@ Rules:
   to that instance's fields and widgets. Single-window apps never notice the
   machinery.
 - Explicit references exist for crossing windows: `var w: Doc = open Doc`,
-  `Doc.front`.
+  `Doc.front`. Inside a window's handlers, `me` names the firing instance
+  (for passing it to functions). `close w` closes an instance after its
+  `closeRequest` runs; inside a request handler, the `cancel` statement
+  aborts the pending close (or quit).
 
 Layout: `at: x, y`, `width: fill`, `fill: both`, `at: right, 10`. The
 runtime handles resize re-layout, grow box, update regions, and scrollbars
@@ -207,9 +214,16 @@ window Doc {
 
 menu File {
     item New  "New"   key "N"
+    separator
     item Quit "Quit"  key "Q"
 }
+
+menu Edit { standard }     // Undo/Cut/Copy/Paste, pre-wired to text widgets
 ```
+
+`menu Edit { standard }` supplies the Mac-standard Edit menu with clipboard
+behavior already connected to `field`/`textview` widgets — required for a
+native feel (and for desk accessories) but pure boilerplate otherwise.
 
 Widget set (v1): `button`, `field`, `textview`, `check`, `popup`, `table`,
 `canvas`, static `label` text.
@@ -306,7 +320,11 @@ The 80% is documents plus one preferences file:
 - Record/list serialization: `file.save(path, bookmarks)` /
   `file.load(path, bookmarks)` — the binding metadata already knows field
   layouts.
-- `askOpen` / `askSave` wrap Standard File dialogs.
+- `askOpen(path)` / `askSave(path, suggestedName)` wrap Standard File
+  dialogs: they fill the passed string and return `false` on cancel.
+- `askSaveChanges(name)` shows the standard 3-way "Save changes to
+  “name”?" dialog, returning a built-in `saveChoice` enum:
+  `Save`, `Discard`, or `Cancel`.
 - Document windows can declare their file type for Finder integration
   (type/creator codes; double-click opens the app with the document).
 - No byte streams, no random access in v1.
@@ -349,7 +367,7 @@ Objects/inheritance, closures, HTTP layer, UDP/DDP, auto-generated forms,
 printing, desk accessories, color QuickDraw beyond basics, PowerPC,
 case-insensitive maps, handle-backed values inside maps.
 
-## 15. Worked example
+## 15. Worked example: bookmark manager
 
 A complete bookmark manager — data, live table, bound edit form:
 
@@ -417,3 +435,109 @@ extend EditForm {
     }
 }
 ```
+
+## 16. Worked example: text editor
+
+A complete multi-document plain-text editor — menus, document launching,
+and unsaved-changes handling:
+
+```rust
+window Doc {
+    title: "Untitled"
+    size: 460, 320
+    resizable: min(200, 120)
+
+    textview Body { fill: both;  scrollbar: vertical }
+
+    var path: string(255)          // empty until first saved
+    var dirty: bool = false
+}
+
+menu File {
+    item New    "New"       key "N"
+    item Open   "Open…"     key "O"
+    item Save   "Save"      key "S"
+    item SaveAs "Save As…"
+    separator
+    item Quit   "Quit"      key "Q"
+}
+
+menu Edit { standard }             // Undo/Cut/Copy/Paste, pre-wired
+
+func openPath(p: string) {
+    var d: Doc = open Doc
+    if file.readText(p, d.Body.text) {
+        d.path = p
+        d.title = file.name(p)
+    } else {
+        alert("Couldn't open “" + file.name(p) + "”")
+        close d
+    }
+}
+
+func save(d: Doc): bool {
+    if d.path == "" {
+        if not askSave(d.path, "Untitled") { return false }   // fills d.path
+    }
+    if not file.writeText(d.path, d.Body.text) {
+        alert("Couldn't save: " + lastError.message)
+        return false
+    }
+    d.title = file.name(d.path)
+    d.dirty = false
+    return true
+}
+
+on app.start {                     // bare launch: one empty document
+    open Doc
+}
+
+on app.openDocument(p: string) {   // double-clicked / dropped documents:
+    openPath(p)                    // fires per file; app.start does not
+}
+
+extend File {
+    on New.select  { open Doc }
+
+    on Open.select {
+        var p: string(255)
+        if askOpen(p) { openPath(p) }
+    }
+
+    on Save.select { save(Doc.front) }
+
+    on SaveAs.select {
+        Doc.front.path = ""        // forget the path to force the dialog
+        save(Doc.front)
+    }
+
+    on Quit.select { quit }        // runtime sends closeRequest to every
+}                                  // open window; any cancel aborts quit
+
+extend Doc {
+    on Body.change {
+        dirty = true
+    }
+
+    on closeRequest {              // close box — and each window at quit
+        if dirty {
+            var c: saveChoice = askSaveChanges(title)
+            if c == Cancel { cancel }
+            if c == Save and not save(me) { cancel }
+        }
+    }
+}
+```
+
+Points of note:
+
+- The whole "which document does this menu command apply to?" question is
+  `Doc.front`; the whole "quit with unsaved windows" story is the
+  `closeRequest` handler, written once.
+- Launching by double-clicking three files opens three windows and no
+  empty "Untitled" — `app.openDocument` replaces `app.start` on a
+  document launch (§5).
+- `save` is an ordinary function taking a `Doc` instance; handlers pass
+  `me` or `Doc.front`. No methods needed.
+- With a declared document file type for Finder integration (§11), this
+  is a complete, shippable System 6/7 application in under 100 lines.
