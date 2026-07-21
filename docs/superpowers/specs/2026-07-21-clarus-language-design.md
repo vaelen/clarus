@@ -65,6 +65,8 @@ Pipeline: source → typed AST → small typed IR → printer.
 - Growable, handle-backed types: `text` (unbounded text), `list of T`,
   `map of T` (§4).
 - Functions with typed parameters and return values. Declare-before-use.
+- Local variables are declared at the top of a function or handler body
+  (Wirthian; keeps stack-frame layout trivial for the single-pass compiler).
 - Single-pass compilable: no forward references, no whole-program inference.
 
 Example:
@@ -119,19 +121,25 @@ extend File {                // menus scope the same way
 on conn.received(data: text) { … }   // global resources: top-level handlers
 every 2 ticks { … }          // a tick = 1/60 s, the Mac's native clock
 
-on app.start {               // app lifecycle: nothing opens by itself
-    open Main
+on App.launch { … }          // always runs first, however we were started
+
+on App.startEmpty {          // bare launch, no documents: nothing opens
+    open Main                // by itself
 }
 ```
 
-**App lifecycle.** No window is displayed implicitly. `on app.start` runs
-once after the runtime initializes **on a bare launch** and opens whatever
-the program wants — one fixed window, a fresh document, or nothing but a
-menu bar. When the app is launched by double-clicking documents (or has
-files dropped on it), `on app.openDocument(path: string)` fires once per
-file *instead of* `app.start` — mirroring the Mac's own OAPP/ODOC launch
-distinction, so a document launch never also opens an unwanted empty
-window. `quit` requests flow through the windows: the runtime sends
+**App lifecycle.** No window is displayed implicitly, and the built-in
+`App` entity delivers startup in three events:
+
+1. `on App.launch` — always runs first, however the app was started:
+   app-wide setup (load preferences, register network services).
+2. Then either `on App.openDocument(path: string)`, once per document the
+   Finder launched or dropped on the app, **or** — if no documents were
+   passed — `on App.startEmpty`, whose name says exactly when it runs: a
+   bare launch. This mirrors the Mac's own OAPP/ODOC launch distinction,
+   so a document launch never also opens an unwanted empty window.
+
+`quit` requests flow through the windows: the runtime sends
 `closeRequest` to every open window, and any handler that cancels aborts
 the quit — so unsaved-changes logic is written once, per window, not
 duplicated at quit time.
@@ -190,11 +198,20 @@ Rules:
 - Inside a `Doc` handler the firing instance is implicit: bare names resolve
   to that instance's fields and widgets. Single-window apps never notice the
   machinery.
-- Explicit references exist for crossing windows: `var w: Doc = open Doc`,
-  `Doc.front`. Inside a window's handlers, `me` names the firing instance
-  (for passing it to functions). `close w` closes an instance after its
-  `closeRequest` runs; inside a request handler, the `cancel` statement
-  aborts the pending close (or quit).
+- Window variables are **references**: `var d: Doc` declares a nil
+  reference (4 bytes, nothing to clean up); `d = open Doc` is an
+  expression that creates the instance, opens its window, and returns the
+  reference. `Doc.front` is the frontmost window *of type Doc*, or nil.
+- Inside a window's handlers, the keyword `window` names the firing
+  instance (for passing it to functions). `close w` closes an instance
+  after its `closeRequest` runs; inside a request handler, the `cancel`
+  statement aborts the pending close (or quit).
+- **Menu handlers may live in a window's `extend` block** (qualified:
+  `on File.Save.select` inside `extend Doc`), meaning "this command
+  applies when a Doc is frontmost." The runtime auto-enables/disables such
+  menu items as windows of that type come and go from the front — menu
+  dimming, one of classic Mac's most tedious chores, requires no user
+  code, and a handler can never fire without a valid `window`.
 
 Layout: `at: x, y`, `width: fill`, `fill: both`, `at: right, 10`. The
 runtime handles resize re-layout, grow box, update regions, and scrollbars
@@ -218,12 +235,13 @@ menu File {
     item Quit "Quit"  key "Q"
 }
 
-menu Edit { standard }     // Undo/Cut/Copy/Paste, pre-wired to text widgets
+menu Edit { standard edit }   // Undo/Cut/Copy/Paste, pre-wired to text widgets
 ```
 
-`menu Edit { standard }` supplies the Mac-standard Edit menu with clipboard
+`standard edit` supplies the Mac-standard Edit menu items with clipboard
 behavior already connected to `field`/`textview` widgets — required for a
-native feel (and for desk accessories) but pure boilerplate otherwise.
+native feel (and for desk accessories) but pure boilerplate otherwise. The
+behavior is named by the keyword, not by the menu's name.
 
 Widget set (v1): `button`, `field`, `textview`, `check`, `popup`, `table`,
 `canvas`, static `label` text.
@@ -411,7 +429,7 @@ window EditForm {
     button Cancel  { cancel }
 }
 
-on app.start {
+on App.startEmpty {
     open Main
 }
 
@@ -462,10 +480,12 @@ menu File {
     item Quit   "Quit"      key "Q"
 }
 
-menu Edit { standard }             // Undo/Cut/Copy/Paste, pre-wired
+menu Edit { standard edit }        // Undo/Cut/Copy/Paste, pre-wired
 
 func openPath(p: string) {
-    var d: Doc = open Doc
+    var d: Doc
+
+    d = open Doc
     if file.readText(p, d.Body.text) {
         d.path = p
         d.title = file.name(p)
@@ -488,42 +508,46 @@ func save(d: Doc): bool {
     return true
 }
 
-on app.start {                     // bare launch: one empty document
+on App.startEmpty {                // bare launch: one empty document
     open Doc
 }
 
-on app.openDocument(p: string) {   // double-clicked / dropped documents:
-    openPath(p)                    // fires per file; app.start does not
+on App.openDocument(p: string) {   // double-clicked / dropped documents:
+    openPath(p)                    // fires per file; startEmpty does not
 }
 
-extend File {
+extend File {                      // app-level commands: always enabled
     on New.select  { open Doc }
 
     on Open.select {
         var p: string(255)
+
         if askOpen(p) { openPath(p) }
-    }
-
-    on Save.select { save(Doc.front) }
-
-    on SaveAs.select {
-        Doc.front.path = ""        // forget the path to force the dialog
-        save(Doc.front)
     }
 
     on Quit.select { quit }        // runtime sends closeRequest to every
 }                                  // open window; any cancel aborts quit
 
-extend Doc {
+extend Doc {                       // document commands: the runtime dims
+                                   // these items when no Doc is frontmost
+    on File.Save.select { save(window) }
+
+    on File.SaveAs.select {
+        path = ""                  // forget the path to force the dialog
+        save(window)
+    }
+
     on Body.change {
         dirty = true
     }
 
     on closeRequest {              // close box — and each window at quit
+        var c: saveChoice
+
         if dirty {
-            var c: saveChoice = askSaveChanges(title)
+            c = askSaveChanges(title)
             if c == Cancel { cancel }
-            if c == Save and not save(me) { cancel }
+            if c == Save and not save(window) { cancel }
         }
     }
 }
@@ -531,13 +555,15 @@ extend Doc {
 
 Points of note:
 
-- The whole "which document does this menu command apply to?" question is
-  `Doc.front`; the whole "quit with unsaved windows" story is the
-  `closeRequest` handler, written once.
+- Save and Save As live in `extend Doc`, so they only ever run with a Doc
+  frontmost — and the runtime dims those menu items whenever that isn't
+  true. Menu enabling logic: zero lines.
+- The whole "quit with unsaved windows" story is the `closeRequest`
+  handler, written once.
 - Launching by double-clicking three files opens three windows and no
-  empty "Untitled" — `app.openDocument` replaces `app.start` on a
+  empty "Untitled" — `App.openDocument` replaces `App.startEmpty` on a
   document launch (§5).
 - `save` is an ordinary function taking a `Doc` instance; handlers pass
-  `me` or `Doc.front`. No methods needed.
+  `window`. No methods needed.
 - With a declared document file type for Finder integration (§11), this
   is a complete, shippable System 6/7 application in under 100 lines.
