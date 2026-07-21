@@ -1030,6 +1030,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
+A document window may declare its document file type for Finder integration (Mac type and creator codes). Double-clicking such a document in the Finder launches the application and fires `App.openDocument` with the document's path (Chapter 7). The declaration syntax is part of the window declaration and is settled alongside the toolchain; the behavior is as described here.
+
 ### Dialogs
 
 Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 notes, these fill the string arguments passed to them using a runtime calling convention available only to built-ins, not to user-declared functions:
@@ -1349,5 +1351,5 @@ Points of note:
   document launch (Chapter 7).
 - `save` is an ordinary function taking a `Doc` instance; handlers pass
   `window`. No methods needed.
-- With a declared document file type for Finder integration (Chapter 11),
+- With a declared document file type for Finder integration (Chapter 12),
   this is a complete, shippable System 6/7 application in under 100 lines.
