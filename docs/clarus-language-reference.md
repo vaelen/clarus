@@ -218,7 +218,7 @@ s.fromBytes(packet, 8)           // first 8 bytes of packet into s; s.length = 8
 n = s.toBytes(packet)            // s's bytes back into packet; n = 8
 ```
 
-These are built-ins with the runtime calling convention of Chapter 6 — the arrays' capacities travel with the call, which is what makes the clamping intrinsic.
+These are built-ins with the runtime calling convention of Chapter 6 — the arrays' capacities travel with the call, which is what makes the clamping intrinsic. `text` supports the same two methods (see Text below).
 
 ### Enums
 
@@ -305,8 +305,12 @@ A `text` is an unbounded, resizable buffer of characters. Text operations are:
 
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
+- `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
 - `t.length` — length of the buffer (returns `int`)
 - Comparison: `t == "hello"` (byte-wise)
+- `t.fromBytes(buf, count)` / `t.toBytes(buf)` — byte copies to and from a `char` array, with the same clamping rules as their `string` counterparts (above). A `text` has no fixed capacity, so `fromBytes` resizes the text and never truncates; `toBytes` still clamps to the array's capacity and sets `lastError` if bytes were dropped.
+
+Out-of-range indexing raises a runtime error. Indexing and byte copies make `text` usable directly for binary protocol work — data arriving in `on conn.received(data: text)` (Chapter 12) can be scanned byte by byte without an intermediate copy.
 
 ### Window References
 
@@ -320,7 +324,7 @@ A window type (e.g., `Doc`) represents a reference to an open window instance. W
 
 The following operations may raise runtime errors (Chapter 12 specifies how errors are reported):
 
-- Indexing a string, array, or list out of range
+- Indexing a string, text, array, or list out of range
 - `pop`, `shift`, `first`, or `last` on an empty list
 - Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
 - A checked enum conversion (`EnumType(i)`) with a value that matches no member
@@ -1120,7 +1124,7 @@ Clarus reports failures in four ways, depending on where they occur:
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
 - **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue. There are no exceptions and no unwinding machinery.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
-- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
 
 ## Appendix A: Grammar (EBNF)
 
