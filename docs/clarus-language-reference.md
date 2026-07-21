@@ -781,3 +781,102 @@ File.Save.enabled = false
 ### The Apple Menu
 
 The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. In v1, the About item shows the application's name only — a richer About dialog is future work.
+
+## Chapter 10: Forms and Tables
+
+### Form Windows
+
+A window with `form of T` (Chapter 8) is a *form window*: its widgets bind to the fields of a value of type `T` rather than being addressed piecemeal by handler code. A `field`, `check`, or `popup` inside such a window declares `binds: name`, where `name` is resolved against `T`'s fields — inside a form window's widget declarations, the record's fields are the innermost scope, so a bare name is written, never a dotted path.
+
+```rust
+window EditForm {
+    form of Bookmark
+
+    field Name     { binds: name;     label: "Name:" }
+    check Fav      { binds: favorite; caption: "Favorite" }
+    popup Protocol { binds: protocol; label: "Protocol:" }
+
+    button OK      { default }
+    button Cancel  { cancel }
+}
+```
+
+### Type-Driven Widget Behavior
+
+A bound widget's behavior comes from the type of the field it binds to, with nothing specified twice:
+
+| Field type | Bound widget | Behavior |
+|---|---|---|
+| `string(n)` | `field` | typing is limited to n characters |
+| `int` | `field` | typing is restricted to numeric input; a non-numeric value fails OK validation |
+| `fixed` | `field` | numeric input, including a decimal point |
+| `bool` | `check` | checkbox; `checked` mirrors the field |
+| enum | `popup` | popup items are the enum's member names, in declaration order |
+
+### The Edit Statement
+
+`edit FormWindow, target` (Chapter 5) opens a form window bound to a value of its `form of T` type:
+
+1. `target`'s contents are copied into a working buffer, and the form's widgets are filled from that buffer.
+2. The form window is shown, movable modal by default.
+3. **Cancel** discards the buffer immediately — the original record, if any, is left untouched — and fires `cancelled`.
+4. **OK** validates every bound widget against its field's type. The first invalid widget beeps, selects itself, and the form stays open for correction. Once every widget validates, the buffer is written back to `target` (when `target` is an lvalue), and `accepted(rec: T)` fires with the clean, validated record — handlers only ever see data that has already passed validation.
+
+`target` is either an lvalue or `new T` (Chapter 5):
+
+```rust
+edit EditForm, bookmarks[i]     // lvalue: OK writes validated values back to it
+edit EditForm, new Bookmark     // new record: exists only in the form's buffer
+```
+
+With `new T` there is no lvalue to write back to, so `accepted`'s `rec.isNew` is `true` for that call — the handler's cue to `add` the record rather than treat it as an update to something already stored.
+
+v1 requires a form window to be declared explicitly, as above; generating one automatically from `edit someRecord` alone is not yet supported.
+
+### Form Events
+
+| Event | Signature | When |
+|---|---|---|
+| `accepted` | `on accepted(rec: T) { }` | OK was pressed and every bound widget validated; `rec` holds the clean, written-back data. |
+| `cancelled` | `on cancelled { }` | Cancel was pressed (or Escape, via a button's `cancel` property). Discarding the buffer is automatic; handling this event is optional. |
+
+```rust
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew { bookmarks.add(b) }
+    }
+}
+```
+
+`button OK { default }` and `button Cancel { cancel }` (Chapter 8) wire Return to OK and Escape to Cancel, so a form needs no other code to support keyboard confirm/dismiss.
+
+### Table Binding
+
+A `table` widget (Chapter 8) binds to a `list of T` with `rows: listExpr`:
+
+```rust
+table Marks {
+    rows: bookmarks
+    column "Name" shows name     width 140
+    column "URL"  shows url      width fill
+    column "Fav"  shows favorite width 30
+}
+```
+
+The table stays live: `add`, `remove`, and writeback to an element of the bound list (for instance, from an `edit` on that element) invalidate and redraw only the affected rows, with no handler code required.
+
+### Table Columns
+
+`column "Header" shows fieldName width N` declares one column. `fieldName` is resolved against the row type `T` the same way `binds:` is resolved in a form — bare, never dotted. `width N` gives a fixed pixel width; `width fill` gives the column the window's remaining width. A column's rendering also follows its field's type: a `bool` field renders as a checkmark, and an enum field renders its member name.
+
+### Table Selection
+
+Tables are single-select in v1. `selected` (Chapter 8) is a runtime `int` property: the index of the selected row, or `-1` if none is selected. `select(i: int)` fires when a row is clicked; `doubleClick(i: int)` fires on a double-click:
+
+```rust
+extend Main {
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+}
+```
