@@ -61,3 +61,23 @@ enum Protocol { Gopher, HTTP, Telnet }
 		t.Fatal("comma-separated enum")
 	}
 }
+
+func TestEmptyEnumRejected(t *testing.T) {
+	src := `enum E {}
+`
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic for empty enum")
+	}
+	if msg := diags[0].Msg; msg != "enum must have at least one member" {
+		t.Fatalf("wrong message: %q", msg)
+	}
+
+	// empty records are still legal
+	recSrc := `record R {}
+`
+	_, recDiags := Parse(&source.File{Name: "t.cla", Content: []byte(recSrc)})
+	if len(recDiags) > 0 {
+		t.Fatalf("empty record should be legal, got diags: %v", recDiags[0])
+	}
+}

@@ -96,6 +96,9 @@ func (p *parser) parseEnumDecl() *ast.EnumDecl {
 	p.expect(token.LBRACE)
 	e := &ast.EnumDecl{P: pos, Name: name.Text}
 	p.skipNewlines()
+	if p.tok.Kind == token.RBRACE {
+		p.errorf(p.tok.Pos, "enum must have at least one member")
+	}
 	for p.tok.Kind != token.RBRACE {
 		e.Members = append(e.Members, p.parseEnumMember())
 		if p.tok.Kind == token.COMMA {
