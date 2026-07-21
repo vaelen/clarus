@@ -86,7 +86,11 @@ func (l *Lexer) Next() token.Token {
 		}
 
 		if l.off >= len(l.f.Content) {
-			if l.havePrev && l.prev != token.NEWLINE && l.prev != token.SEMI {
+			// Emit synthetic NEWLINE at EOF to end incomplete statements (e.g., "x = 1 +"
+			// without trailing newline). The synthetic NEWLINE deliberately bypasses the
+			// operator-continuation suppression: at true EOF there is no next line, so files
+			// ending mid-expression get a NEWLINE and surface a parse error instead of silent truncation.
+			if l.havePrev && l.prev != token.NEWLINE && l.prev != token.SEMI && l.prev != token.EOF {
 				return l.emit(token.NEWLINE, source.Pos{Offset: l.off}, "\n")
 			}
 			return l.emit(token.EOF, source.Pos{Offset: l.off}, "")

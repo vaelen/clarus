@@ -203,3 +203,33 @@ func TestNewlineSynthesizedAtEOF(t *testing.T) {
 		}
 	}
 }
+
+func TestEOFForever(t *testing.T) {
+	l := New(&source.File{Name: "t.cla", Content: []byte("x = 1")})
+	var toks []token.Token
+	for i := 0; i < 7; i++ {
+		toks = append(toks, l.Next())
+	}
+	// After the first EOF (at index 4), all subsequent tokens must be EOF
+	if toks[4].Kind != token.EOF {
+		t.Fatalf("token 4: got %v, want EOF", toks[4].Kind)
+	}
+	for i := 5; i < len(toks); i++ {
+		if toks[i].Kind != token.EOF {
+			t.Errorf("token %d: got %v, want EOF (EOF must continue forever)", i, toks[i].Kind)
+		}
+	}
+}
+
+func TestSyntheticNewlineAfterDanglingOperator(t *testing.T) {
+	got := kinds("x = 1 +")
+	want := []token.Kind{token.IDENT, token.ASSIGN, token.INT, token.PLUS, token.NEWLINE, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("x = 1 +: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("token %d got %v want %v", i, got[i], want[i])
+		}
+	}
+}
