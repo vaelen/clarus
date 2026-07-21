@@ -1102,7 +1102,7 @@ stmt        = varDecl | assign | callStmt | ifStmt | whileStmt
             | "open" IDENT | "close" expr
             | "edit" IDENT "," ( lvalue | "new" IDENT ) ;
 assign      = lvalue "=" expr ;
-lvalue      = IDENT { "." IDENT | "[" expr "]" } ;
+lvalue      = IDENT { "." memberName | "[" expr "]" } ;
 callStmt    = lvalue "(" [ args ] ")" ;
 ifStmt      = "if" expr block [ "else" ( ifStmt | block ) ] ;
 whileStmt   = "while" expr block ;
@@ -1117,11 +1117,12 @@ cmpOp       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 addExpr     = mulExpr { ( "+" | "-" ) mulExpr } ;
 mulExpr     = unaryExpr { ( "*" | "/" | "mod" ) unaryExpr } ;
 unaryExpr   = [ "-" | "not" ] postfix ;
-postfix     = primary { "." IDENT | "[" expr "]" | "(" [ args ] ")" } ;
+postfix     = primary { "." memberName | "[" expr "]" | "(" [ args ] ")" } ;
+memberName  = IDENT | "open" | "close" ;
 primary     = literal | IDENT | "window" | "nil"
             | "new" IDENT | "open" IDENT | "(" expr ")" ;
 args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token.
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`.
