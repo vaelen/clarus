@@ -1049,3 +1049,79 @@ Clarus reports failures in four ways, depending on where they occur:
 - **Synchronous fallible operations** — the `file` functions — return `bool`; on `false`, inspect `lastError`. There are no exceptions and no unwinding machinery.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
 - **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, a string assignment that doesn't fit its target, or accessing a map with a key that doesn't exist (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+
+## Appendix A: Grammar (EBNF)
+
+```ebnf
+program     = { topDecl } ;
+topDecl     = recordDecl | varDecl | funcDecl | windowDecl
+            | menuDecl | extendDecl | handlerDecl | everyDecl ;
+
+recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
+fieldDecl   = IDENT ":" type [ "=" literal ] ;
+
+type        = "int" | "bool" | "fixed" | "char" | "text"
+            | "string" [ "(" INT ")" ]
+            | "list" "of" type
+            | "map" "of" type
+            | enumType
+            | IDENT
+            | type "[" INT "]" ;
+enumType    = "(" IDENT { "," IDENT } ")" ;
+
+varDecl     = "var" IDENT ":" type [ "=" expr ] ;
+funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
+params      = param { "," param } ;
+param       = IDENT ":" type ;
+
+windowDecl  = "window" IDENT "{" { windowItem } "}" ;
+windowItem  = property | widgetDecl | varDecl | "form" "of" IDENT ;
+widgetDecl  = widgetKind IDENT [ "{" propertyList "}" ] ;
+widgetKind  = "button" | "field" | "textview" | "check" | "popup"
+            | "table" | "canvas" | "label" ;
+propertyList= property { ";" property } ;
+property    = IDENT [ ":" propValue { "," propValue } ]
+            | "column" STRING "shows" IDENT "width" ( INT | "fill" )
+            | "cancel" ;
+propValue   = expr | IDENT "(" [ args ] ")" ;
+
+menuDecl    = "menu" IDENT "{" { menuEntry } "}" ;
+menuEntry   = "item" IDENT STRING [ "key" STRING ]
+            | "separator"
+            | "standard" "edit" ;
+
+extendDecl  = "extend" IDENT "{" { handlerDecl | extendDecl } "}" ;
+handlerDecl = "on" eventPath [ "(" params ")" ] block ;
+eventPath   = IDENT { "." IDENT } ;
+everyDecl   = "every" INT "ticks" block ;
+
+block       = "{" { stmt } "}" ;
+stmt        = varDecl | assign | callStmt | ifStmt | whileStmt
+            | forStmt | returnStmt
+            | "quit" | "cancel"
+            | "open" IDENT | "close" expr
+            | "edit" IDENT "," ( lvalue | "new" IDENT ) ;
+assign      = lvalue "=" expr ;
+lvalue      = IDENT { "." IDENT | "[" expr "]" } ;
+callStmt    = lvalue "(" [ args ] ")" ;
+ifStmt      = "if" expr block [ "else" ( ifStmt | block ) ] ;
+whileStmt   = "while" expr block ;
+forStmt     = "for" IDENT [ "," IDENT ] "in" forRange block ;
+forRange    = expr [ "to" expr ] ;
+returnStmt  = "return" [ expr ] ;
+
+expr        = andExpr { "or" andExpr } ;
+andExpr     = cmpExpr { "and" cmpExpr } ;
+cmpExpr     = addExpr [ cmpOp addExpr ] ;
+cmpOp       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+addExpr     = mulExpr { ( "+" | "-" ) mulExpr } ;
+mulExpr     = unaryExpr { ( "*" | "/" | "mod" ) unaryExpr } ;
+unaryExpr   = [ "-" | "not" ] postfix ;
+postfix     = primary { "." IDENT | "[" expr "]" | "(" [ args ] ")" } ;
+primary     = literal | IDENT | "window" | "nil"
+            | "new" IDENT | "open" IDENT | "(" expr ")" ;
+args        = expr { "," expr } ;
+literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
+```
+
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token.
