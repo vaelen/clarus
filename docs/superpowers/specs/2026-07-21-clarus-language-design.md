@@ -62,8 +62,10 @@ Pipeline: source → typed AST → small typed IR → printer.
   as `protocol: Protocol`. Members may carry display labels
   (`HTTP "Web (HTTP)"`) used by bound popups and table columns; labels
   compile to a STR# resource (ResEdit-localizable). Values are 16-bit
-  ordinals in declaration order; `int(e)` / `EnumType(i)` convert, the
-  latter range-checked.
+  words, numbered from 0 in declaration order unless a member declares an
+  explicit value (`Moof 0x10 "Dogcow"`; later members continue from it) —
+  for wire formats and Toolbox constants. `int(e)` / `EnumType(i)`
+  convert, the latter checked against membership.
 - Strings: `string(n)` is a fixed-size, length-prefixed Pascal string
   (n ≤ 255) — what the Toolbox eats natively. Bare `string` = `string(255)`.
 - `char`: an unsigned 8-bit Mac Roman character (`'A'`). Mac Roman is a

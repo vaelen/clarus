@@ -248,9 +248,19 @@ enum Protocol {
 
 Labels are compiled into a string-list (STR#) resource, one per enum. They cost nothing in the value itself, and they can be edited — localized — with ResEdit without recompiling the program.
 
-**Representation.** An enum value is a 16-bit word holding the member's ordinal: 0 for the first declared member, 1 for the next, and so on. Two bytes rather than one keeps record fields aligned for the 68000, which cannot read a word from an odd address. A record field of enum type with no explicit default starts at the first member (ordinal 0).
+**Values.** A member may declare its own value with an integer literal placed before its label. Members without one number from 0, or continue from the previous member's value + 1. Values must be unique within the enum (a duplicate is a compile error) and fit in 16 bits (0–65535). Explicit values let an enum line up with a wire format or a Toolbox constant instead of forcing translation code:
 
-**Operations.** Enum values compare with `==` and `!=` only; ordering comparisons are not defined. `int(e)` yields the ordinal; `EventKind(i)` converts an integer back, raising a runtime error if `i` is outside `0` to (member count − 1) — the checked path for values read from files or the network:
+```rust
+enum Foo {
+    Bar  "Bar"                 // value 0x00
+    Moof 0x10 "Dogcow"         // value 0x10
+    Next "The next thing"      // value 0x11
+}
+```
+
+**Representation.** An enum value is a 16-bit word holding the member's value (its default or declared number). Two bytes rather than one keeps record fields aligned for the 68000, which cannot read a word from an odd address. A record field of enum type with no explicit default starts at the first declared member.
+
+**Operations.** Enum values compare with `==` and `!=` only; ordering comparisons are not defined. `int(e)` yields the member's value; `EventKind(i)` converts an integer back to the member with that value, raising a runtime error if no member matches — the checked path for values read from files or the network:
 
 ```rust
 var e: EventKind = Drag
@@ -313,7 +323,7 @@ The following operations may raise runtime errors (Chapter 12 specifies how erro
 - Indexing a string, array, or list out of range
 - `pop`, `shift`, `first`, or `last` on an empty list
 - Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
-- A checked enum conversion (`EnumType(i)`) with an out-of-range ordinal
+- A checked enum conversion (`EnumType(i)`) with a value that matches no member
 - Dereferencing a `nil` window reference
 
 ## Chapter 4: Expressions and Operators
@@ -495,6 +505,8 @@ for i in 0 to 9 {
     sum = sum + i          // i takes 0, 1, ..., 9 — the range is inclusive
 }
 ```
+
+If the range's start exceeds its end (`for i in 0 to n - 1` with `n` = 0), the body runs zero times.
 
 ### Return
 
@@ -1108,7 +1120,7 @@ Clarus reports failures in four ways, depending on where they occur:
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
 - **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue. There are no exceptions and no unwinding machinery.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
-- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion out of range, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
 
 ## Appendix A: Grammar (EBNF)
 
@@ -1121,7 +1133,7 @@ recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
 fieldDecl   = IDENT ":" type [ "=" ( literal | IDENT ) ] ;
 
 enumDecl    = "enum" IDENT "{" enumMember { [ "," ] enumMember } "}" ;
-enumMember  = IDENT [ STRING ] ;
+enumMember  = IDENT [ INT | HEXINT ] [ STRING ] ;
 
 type        = "int" | "bool" | "fixed" | "char" | "text"
             | "string" [ "(" INT ")" ]
