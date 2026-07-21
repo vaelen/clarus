@@ -118,7 +118,19 @@ extend File {                // menus scope the same way
 
 on conn.received(data: text) { … }   // global resources: top-level handlers
 every 2 ticks { … }          // a tick = 1/60 s, the Mac's native clock
+
+on app.start {               // app lifecycle: nothing opens by itself
+    open Main
+}
 ```
+
+**App lifecycle.** No window is displayed implicitly; `on app.start` runs
+once after the runtime initializes and opens whatever the program wants —
+one fixed window, a fresh document, or nothing but a menu bar. Companion
+events: `on app.openDocument(path: string)` fires per document the Finder
+launched or dropped on the app (a multi-document app opens one instance per
+call and may never open an empty window at all), and `on app.quitRequested`
+runs before quitting (last chance to ask about unsaved changes).
 
 Widget and menu-item handlers live in an **`extend` block** naming their
 window or menu, which provides the scope: inside `extend Main`, bare names
@@ -379,6 +391,10 @@ window EditForm {
 
     button OK      { default }
     button Cancel  { cancel }
+}
+
+on app.start {
+    open Main
 }
 
 extend Main {
