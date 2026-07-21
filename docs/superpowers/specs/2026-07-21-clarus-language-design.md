@@ -206,12 +206,23 @@ Rules:
   instance (for passing it to functions). `close w` closes an instance
   after its `closeRequest` runs; inside a request handler, the `cancel`
   statement aborts the pending close (or quit).
-- **Menu handlers may live in a window's `extend` block** (qualified:
-  `on File.Save.select` inside `extend Doc`), meaning "this command
-  applies when a Doc is frontmost." The runtime auto-enables/disables such
-  menu items as windows of that type come and go from the front — menu
-  dimming, one of classic Mac's most tedious chores, requires no user
-  code, and a handler can never fire without a valid `window`.
+- **Menu handlers may live in a window's `extend` block**, by nesting the
+  menu's own `extend` scope inside the window's:
+
+  ```rust
+  extend Doc {
+      extend File {
+          on Save.select { save(window) }
+      }
+  }
+  ```
+
+  The nesting means "these commands apply when a Doc is frontmost." The
+  runtime auto-enables/disables such menu items as windows of that type
+  come and go from the front — menu dimming, one of classic Mac's most
+  tedious chores, requires no user code, and a handler can never fire
+  without a valid `window`. Scopes compose lexically: the inner `extend`
+  resolves menu items, the outer resolves widgets and fields.
 
 Layout: `at: x, y`, `width: fill`, `fill: both`, `at: right, 10`. The
 runtime handles resize re-layout, grow box, update regions, and scrollbars
@@ -528,13 +539,16 @@ extend File {                      // app-level commands: always enabled
     on Quit.select { quit }        // runtime sends closeRequest to every
 }                                  // open window; any cancel aborts quit
 
-extend Doc {                       // document commands: the runtime dims
-                                   // these items when no Doc is frontmost
-    on File.Save.select { save(window) }
+extend Doc {
+    extend File {                  // document commands: the runtime dims
+        on Save.select {           // these items when no Doc is frontmost
+            save(window)
+        }
 
-    on File.SaveAs.select {
-        path = ""                  // forget the path to force the dialog
-        save(window)
+        on SaveAs.select {
+            path = ""              // forget the path to force the dialog
+            save(window)
+        }
     }
 
     on Body.change {
@@ -555,9 +569,10 @@ extend Doc {                       // document commands: the runtime dims
 
 Points of note:
 
-- Save and Save As live in `extend Doc`, so they only ever run with a Doc
-  frontmost — and the runtime dims those menu items whenever that isn't
-  true. Menu enabling logic: zero lines.
+- Save and Save As live in an `extend File` scope nested inside
+  `extend Doc`, so they only ever run with a Doc frontmost — and the
+  runtime dims those menu items whenever that isn't true. Menu enabling
+  logic: zero lines.
 - The whole "quit with unsaved windows" story is the `closeRequest`
   handler, written once.
 - Launching by double-clicking three files opens three windows and no
