@@ -482,13 +482,16 @@ close d
 
 ### Edit
 
-`edit FormWindow, recordLvalue` opens a form window bound to a record value; full form semantics are Chapter 10.
+`edit FormWindow, record` opens a form window bound to a record value; full form semantics are Chapter 10.
 
 ```rust
 // form window EditPerson declared in Chapter 10's style
 var p: Person
-edit EditPerson, p
+edit EditPerson, p                  // lvalue: OK writes validated values back to it
+edit EditPerson, new Person         // new record: exists only in the form's buffer
 ```
+
+The second argument is the record to edit — either an lvalue or a fresh record. With an lvalue, pressing OK writes the validated values back to that location. With `new T`, the record is delivered to the form's `accepted` handler, where `rec.isNew` is true (Chapter 10).
 
 ### Quit
 
@@ -551,7 +554,7 @@ func logGreeting(p: Person) {
 
 ### Parameter Passing
 
-Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place; out-params of fixed-size types are not supported in v1 — return them instead.
+Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place. User-declared functions cannot fill fixed-size out-parameters — return values instead. Built-in runtime routines are not bound by this rule: dialogs such as `askOpen(p)` and `askSave(path, suggested)` fill the string you pass, using a runtime calling convention not available to user code (Chapter 12).
 
 ### Recursion
 
