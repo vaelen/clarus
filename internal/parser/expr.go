@@ -167,32 +167,46 @@ func (p *parser) parseMemberName() string {
 	}
 }
 
+// isPrimaryStart reports whether k can begin a primary expression
+// (Appendix A: literals, `window`, an identifier, `new`, or `open`). Two
+// primary-starts never appear back to back in valid expression syntax
+// otherwise, which is what makes the `appletalk` prefix unambiguous: see
+// parseArgs.
+func isPrimaryStart(k token.Kind) bool {
+	switch k {
+	case token.IDENT, token.INT, token.FIXEDLIT, token.CHARLIT, token.STRINGLIT,
+		token.KwTrue, token.KwFalse, token.KwNil, token.KwWindow, token.KwNew, token.KwOpen:
+		return true
+	default:
+		return false
+	}
+}
+
 // parseArgs parses `[args]` up to and including the closing `)` (the `(`
 // has already been consumed by the caller). It recognizes the contextual
 // `appletalk` prefix before a call's first argument, reporting whether it
 // was present.
+//
+// `appletalk` is the prefix only when the token that follows it can start a
+// primary expression — e.g. `appletalk "Mac:Srv"` or `appletalk name`.
+// Otherwise (`,` `)` an operator `(` `[` `.` etc.) it is an ordinary
+// identifier and is left for parseExpr to parse normally: `appletalk` alone,
+// `appletalk + 1`, and `appletalk(x)` (a call to a function named
+// appletalk) all fall in this branch.
 func (p *parser) parseArgs() ([]ast.Expr, bool) {
 	if p.tok.Kind == token.RPAREN {
 		p.next()
 		return nil, false
 	}
 
-	var args []ast.Expr
 	appleTalk := false
-	if p.tok.Kind == token.IDENT && p.tok.Text == "appletalk" {
-		atPos := p.tok.Pos
+	if p.tok.Kind == token.IDENT && p.tok.Text == "appletalk" && isPrimaryStart(p.peek().Kind) {
 		p.next()
-		if p.tok.Kind == token.COMMA || p.tok.Kind == token.RPAREN {
-			// "appletalk" was itself the (complete) first argument, not the prefix.
-			args = append(args, &ast.Ident{P: atPos, Name: "appletalk"})
-		} else {
-			appleTalk = true
-			args = append(args, p.parseExpr())
-		}
-	} else {
-		args = append(args, p.parseExpr())
+		appleTalk = true
 	}
 
+	var args []ast.Expr
+	args = append(args, p.parseExpr())
 	for p.tok.Kind == token.COMMA {
 		p.next()
 		args = append(args, p.parseExpr())

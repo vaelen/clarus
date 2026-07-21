@@ -1193,7 +1193,7 @@ cmpExpr     = addExpr [ cmpOp addExpr ] ;
 cmpOp       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 addExpr     = mulExpr { ( "+" | "-" | "|" | "^" ) mulExpr } ;
 mulExpr     = unaryExpr { ( "*" | "/" | "mod" | "<<" | ">>" | "&" ) unaryExpr } ;
-unaryExpr   = [ "-" | "not" | "~" ] postfix ;
+unaryExpr   = { "-" | "not" | "~" } postfix ;
 postfix     = primary { "." memberName | "[" expr "]" | "(" [ args ] ")" } ;
 memberName  = IDENT | "open" | "close" ;
 primary     = literal | IDENT | "window" | "nil"

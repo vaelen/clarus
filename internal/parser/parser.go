@@ -15,10 +15,12 @@ import (
 type parseAbort struct{}
 
 type parser struct {
-	f     *source.File
-	lex   *lexer.Lexer
-	tok   token.Token
-	diags []source.Diag
+	f       *source.File
+	lex     *lexer.Lexer
+	tok     token.Token
+	peekTok token.Token
+	hasPeek bool
+	diags   []source.Diag
 }
 
 // Parse lexes and parses f into an *ast.File. Any lexer diagnostics are
@@ -48,7 +50,22 @@ func Parse(f *source.File) (file *ast.File, diags []source.Diag) {
 
 // next advances p.tok to the next token from the lexer.
 func (p *parser) next() {
+	if p.hasPeek {
+		p.tok = p.peekTok
+		p.hasPeek = false
+		return
+	}
 	p.tok = p.lex.Next()
+}
+
+// peek returns the token following p.tok without consuming it, caching it
+// so the next call to next() returns it in turn.
+func (p *parser) peek() token.Token {
+	if !p.hasPeek {
+		p.peekTok = p.lex.Next()
+		p.hasPeek = true
+	}
+	return p.peekTok
 }
 
 // errorf records a single diagnostic at pos and aborts parsing via panic,
