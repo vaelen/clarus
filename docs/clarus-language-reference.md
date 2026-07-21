@@ -880,3 +880,172 @@ extend Main {
     }
 }
 ```
+
+## Chapter 11: Drawing and Timers
+
+### Canvas Drawing Methods
+
+A `canvas` widget (Chapter 8) is drawn on from its own events and from `every` blocks — nowhere else, since no code runs outside a handler or timer (Chapter 7). The method set is complete for v1:
+
+```
+c.clear()
+c.line(x1, y1, x2, y2: int)
+c.rect(x, y, w, h: int)        c.fillRect(x, y, w, h: int)
+c.circle(x, y, r: int)         c.fillCircle(x, y, r: int)
+c.drawText(x, y: int, s: string)
+c.width  c.height              // runtime properties, int
+```
+
+`clear` erases the canvas to white. `line` draws a line from `(x1, y1)` to `(x2, y2)`. `rect`/`fillRect` draw a rectangle outline or a filled rectangle at `(x, y)` with width `w` and height `h`. `circle`/`fillCircle` draw a circle outline or a filled circle centered at `(x, y)` with radius `r`. `drawText` draws `s` with its baseline at `(x, y)`. `width` and `height` are read-only runtime properties giving the canvas's current size in pixels.
+
+All coordinates are `int` pixels. The origin `(0, 0)` is the canvas's top-left corner; `x` increases rightward, `y` increases downward.
+
+### Buffered vs. Unbuffered
+
+A `canvas` declared with `buffered` (Chapter 8) draws to an offscreen bitmap; the accumulated drawing is blitted to the screen in a single copy when the current handler or timer returns control to the event loop, so a sequence of drawing calls never flickers. An unbuffered canvas draws directly to the screen as each method is called, visible immediately.
+
+### Drawing Only Happens in a Handler or Timer
+
+Clarus has no code that runs outside an event handler or an `every` block (Chapter 7) — there is no idle loop and no background thread. Drawing on a canvas is therefore always a response to some event: a click, a timer tick, or another widget's change. There is no way to draw from anywhere else.
+
+### Timers and Smooth Motion
+
+`every N ticks { }` (Chapter 7) is the mechanism for animation: it runs on the main event loop once every `N` ticks (each tick is 1/60 second) and is never re-entered while a previous run is still executing. Paired with `fixed` (Chapter 3) for sub-pixel position and velocity, it drives smooth motion, converting to `int` only at the point of drawing:
+
+```rust
+window Game {
+    title: "Bounce"
+    size: 200, 200
+    canvas Board { at: 0, 0; fill: both; buffered }
+
+    var x: fixed = 10.0
+    var dx: fixed = 2.0
+}
+
+every 1 ticks {
+    var g: Game = Game.front
+    if g != nil {
+        g.x = g.x + g.dx
+        if g.x > 190.0 or g.x < 0.0 { g.dx = -g.dx }
+        g.Board.clear()
+        g.Board.fillCircle(int(g.x), 100, 8)
+    }
+}
+```
+
+## Chapter 12: Networking, Files, and Errors
+
+### Connections
+
+A `connection` (Chapter 3) is a single reliable byte-stream abstraction over both AppleTalk (ADSP) and TCP (MacTCP); the transport is chosen at `open` and invisible afterward. Its members are complete for v1:
+
+| Member | Form |
+|---|---|
+| `open` | `c.open("host:port")` — MacTCP, DNS inside; `c.open(appletalk "Name:Type")` — ADSP, NBP inside; `c.open(addr)` — from a browser `address` |
+| `send` | `c.send(t: text)` (also accepts string) |
+| `close` | `c.close()` |
+| events | `opened`, `received(data: text)`, `closed`, `failed(err: error)` |
+
+Like other resources, a `connection`'s events are caught by top-level handlers, not callbacks:
+
+```rust
+var conn: connection
+
+on App.launch {
+    conn.open("mac.example.com:70")
+}
+
+on conn.opened {
+    conn.send("HELLO\n")
+}
+
+on conn.received(data: text) {
+    // process data
+}
+
+on conn.closed { }
+
+on conn.failed(err: error) {
+    alert(err.message)
+}
+```
+
+### Listeners
+
+A `listener` accepts incoming connections from clients. `l.listen(port: int)` opens a TCP listening socket; `l.register(name: string, type: string)` registers an ADSP server under an NBP name for clients to find. Its events are `accepted(c: connection)` and `failed(err: error)`.
+
+The `connection` delivered by `accepted` is bound to the parameter named in the handler — `c` below — a fresh reference the program must store somewhere to keep talking to that client. The usual pattern for a multi-client server is a fixed array of connections with a parallel `bool` array tracking which slots are in use:
+
+```rust
+var server: listener
+var clients: connection[8]
+var busy: bool[8]
+
+on App.launch {
+    server.listen(6502)
+}
+
+on server.accepted(c: connection) {
+    var i: int = 0
+    while i < 8 and busy[i] { i = i + 1 }
+    if i < 8 {
+        clients[i] = c
+        busy[i] = true
+    }
+}
+```
+
+`l.register(name, type)` is used the same way, in place of `l.listen(port)`, to run an ADSP server that's discoverable by name instead of a fixed TCP port.
+
+### Service Discovery
+
+A `serviceBrowser` finds other instances of a named service in the current AppleTalk zone. `b.find(type: string)` starts the search; its events are `found(name: string, addr: address)` and `failed(err: error)`. The `address` delivered by `found` can be passed straight to `connection.open`:
+
+```rust
+var browser: serviceBrowser
+var conn: connection
+
+on App.launch {
+    browser.find("ChatServer")
+}
+
+on browser.found(name: string, addr: address) {
+    conn.open(addr)
+}
+
+on browser.failed(err: error) { }
+```
+
+### Files
+
+The `file` namespace covers documents and preferences. Every function but `file.name` returns `bool`; `false` means inspect the global `lastError` (below) for what went wrong. The set is complete for v1:
+
+| Function | Signature | Notes |
+|---|---|---|
+| `readText` | `file.readText(path: string, t: text): bool` | fills `t` in place |
+| `writeText` | `file.writeText(path: string, t: text): bool` | writes `t`'s contents to `path` |
+| `save` | `file.save(path: string, data): bool` | `data`: any `record`, `list of` record, or `map of` record |
+| `load` | `file.load(path: string, data): bool` | fills `data` in place |
+| `name` | `file.name(path: string): string` | the file's display name; always succeeds |
+
+`save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
+
+### Dialogs
+
+Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 notes, these fill the string arguments passed to them using a runtime calling convention available only to built-ins, not to user-declared functions:
+
+- `alert(msg: string)` — shows `msg` in a standard alert with an OK button.
+- `askOpen(path: string): bool` — Standard File "Open" dialog; fills `path` and returns `true`, or returns `false` on Cancel.
+- `askSave(path: string, suggested: string): bool` — Standard File "Save" dialog, pre-filled with `suggested`; fills `path` and returns `true`, or returns `false` on Cancel.
+- `askSaveChanges(name: string): saveChoice` — the standard three-way "Save changes to “name”?" dialog; returns `Save`, `Discard`, or `Cancel` (Chapter 3).
+
+### Errors
+
+An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent `false` return from a `file` function.
+
+Clarus reports failures in three ways, depending on where they occur:
+
+- **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
+- **Synchronous fallible operations** — the `file` functions — return `bool`; on `false`, inspect `lastError`. There are no exceptions and no unwinding machinery.
+- **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, array, or list out of range, a string assignment that doesn't fit its target, or accessing a map with a key that doesn't exist (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
