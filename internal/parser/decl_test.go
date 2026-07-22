@@ -62,6 +62,31 @@ enum Protocol { Gopher, HTTP, Telnet }
 	}
 }
 
+func TestConstDecl(t *testing.T) {
+	src := `const maxTokens: int = 4096
+const startState: EventKind = Click
+`
+	f, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) > 0 {
+		t.Fatalf("diags: %v", diags[0])
+	}
+	lit := f.Decls[0].(*ast.ConstDecl)
+	if lit.Name != "maxTokens" {
+		t.Fatalf("name: %q", lit.Name)
+	}
+	if nt, ok := lit.Type.(*ast.NamedType); !ok || nt.Name != "int" {
+		t.Fatalf("type: %#v", lit.Type)
+	}
+	if v, ok := lit.Value.(*ast.IntLit); !ok || v.Val != 4096 {
+		t.Fatalf("literal value: %#v", lit.Value)
+	}
+
+	ident := f.Decls[1].(*ast.ConstDecl)
+	if v, ok := ident.Value.(*ast.Ident); !ok || v.Name != "Click" {
+		t.Fatalf("ident value: %#v", ident.Value)
+	}
+}
+
 func TestEmptyEnumRejected(t *testing.T) {
 	src := `enum E {}
 `

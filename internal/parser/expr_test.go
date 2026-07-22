@@ -4,6 +4,7 @@ package parser
 import (
 	"clarus/internal/ast"
 	"clarus/internal/source"
+	"strings"
 	"testing"
 )
 
@@ -167,6 +168,39 @@ func TestAppleTalkPrefix(t *testing.T) {
 	}
 	if id, ok := c.Args[0].(*ast.Ident); !ok || id.Name != "name" {
 		t.Fatalf("expected Ident name, got %#v", c.Args[0])
+	}
+}
+
+// TestSliceExpr covers the two-expression postfix `[` form (Appendix A):
+// `s[start, len]` is a SliceExpr, while the single-expression form `s[i]`
+// remains an Index.
+func TestSliceExpr(t *testing.T) {
+	e := parseInit(t, "s[1, 3]")
+	sl, ok := e.(*ast.SliceExpr)
+	if !ok {
+		t.Fatalf("want SliceExpr, got %#v", e)
+	}
+	if start, ok := sl.Start.(*ast.IntLit); !ok || start.Val != 1 {
+		t.Fatalf("start: %#v", sl.Start)
+	}
+	if length, ok := sl.Len.(*ast.IntLit); !ok || length.Val != 3 {
+		t.Fatalf("len: %#v", sl.Len)
+	}
+
+	e = parseInit(t, "s[1]")
+	if _, ok := e.(*ast.Index); !ok {
+		t.Fatalf("want Index, got %#v", e)
+	}
+}
+
+// TestSliceNotAssignable covers the brief's requirement that a slice
+// appearing as an assignment LHS is a parse error, not a silently-accepted
+// lvalue.
+func TestSliceNotAssignable(t *testing.T) {
+	src := "func f() {\ns[1, 2] = x\n}\n"
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 || !strings.Contains(diags[0].Msg, "slices are not assignable") {
+		t.Fatalf("want slices-are-not-assignable error, got %v", diags)
 	}
 }
 

@@ -136,6 +136,101 @@ func TestFuncDeclForms(t *testing.T) {
 	}
 }
 
+func TestQuitCode(t *testing.T) {
+	b := parseFunc(t, "quit 2")
+	q := b.Stmts[0].(*ast.QuitStmt)
+	lit, ok := q.Code.(*ast.IntLit)
+	if !ok || lit.Val != 2 {
+		t.Fatalf("quit 2: want IntLit(2), got %#v", q.Code)
+	}
+
+	b = parseFunc(t, "quit\nreturn")
+	bare := b.Stmts[0].(*ast.QuitStmt)
+	if bare.Code != nil {
+		t.Fatalf("bare quit: want nil Code, got %#v", bare.Code)
+	}
+
+	// quit as the last statement in a block: the closing '}' ends it, same
+	// as a NEWLINE would.
+	src := "func f() {\nif true {\n    quit\n}\n}\n"
+	f, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diags[0])
+	}
+	inner := f.Decls[0].(*ast.FuncDecl).Body.Stmts[0].(*ast.IfStmt).Then
+	end := inner.Stmts[0].(*ast.QuitStmt)
+	if end.Code != nil {
+		t.Fatalf("quit at end-of-block: want nil Code, got %#v", end.Code)
+	}
+}
+
+func TestBreakContinue(t *testing.T) {
+	b := parseFunc(t, `
+while true {
+    if x == 1 { break }
+    if x == 2 { continue }
+}`)
+	w := b.Stmts[0].(*ast.WhileStmt)
+	brk := w.Body.Stmts[0].(*ast.IfStmt).Then.Stmts[0]
+	if _, ok := brk.(*ast.BreakStmt); !ok {
+		t.Fatalf("want BreakStmt, got %#v", brk)
+	}
+	cont := w.Body.Stmts[1].(*ast.IfStmt).Then.Stmts[0]
+	if _, ok := cont.(*ast.ContinueStmt); !ok {
+		t.Fatalf("want ContinueStmt, got %#v", cont)
+	}
+}
+
+func TestSwitchStmt(t *testing.T) {
+	b := parseFunc(t, `
+switch tok {
+case KwIf {
+    parseIf()
+}
+case KwWhile, KwFor {
+    parseLoop()
+}
+else {
+    syntaxError()
+}
+}`)
+	sw := b.Stmts[0].(*ast.SwitchStmt)
+	if _, ok := sw.Subject.(*ast.Ident); !ok {
+		t.Fatalf("subject: %#v", sw.Subject)
+	}
+	if len(sw.Cases) != 2 {
+		t.Fatalf("want 2 cases, got %d", len(sw.Cases))
+	}
+	if len(sw.Cases[0].Labels) != 1 {
+		t.Fatalf("first case: want 1 label, got %d", len(sw.Cases[0].Labels))
+	}
+	if len(sw.Cases[1].Labels) != 2 {
+		t.Fatalf("second case: want 2 labels (multi-label), got %d", len(sw.Cases[1].Labels))
+	}
+	if len(sw.Cases[1].Body.Stmts) != 1 {
+		t.Fatalf("second case body: %d stmts", len(sw.Cases[1].Body.Stmts))
+	}
+	if sw.Else == nil || len(sw.Else.Stmts) != 1 {
+		t.Fatalf("else: %#v", sw.Else)
+	}
+}
+
+func TestSwitchCaseAfterElseRejected(t *testing.T) {
+	src := "func f() {\nswitch x {\nelse {\n}\ncase Y {\n}\n}\n}\n"
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 || !strings.Contains(diags[0].Msg, "expected '}'") {
+		t.Fatalf("want expected '}' error, got %v", diags)
+	}
+}
+
+func TestSwitchZeroCasesWithElse(t *testing.T) {
+	b := parseFunc(t, "switch x {\nelse {\n}\n}")
+	sw := b.Stmts[0].(*ast.SwitchStmt)
+	if len(sw.Cases) != 0 || sw.Else == nil {
+		t.Fatalf("want 0 cases with else, got %#v", sw)
+	}
+}
+
 func TestOpenCloseEdit(t *testing.T) {
 	b := parseFunc(t, "open Doc\nclose d\nedit EditForm, bookmarks[i]\nedit EditForm, new Bookmark")
 	if b.Stmts[0].(*ast.OpenStmt).Window != "Doc" {

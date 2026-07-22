@@ -65,6 +65,12 @@ type VarDecl struct {
 	Type TypeExpr
 	Init Expr
 } // also a Stmt
+type ConstDecl struct {
+	P     source.Pos
+	Name  string
+	Type  TypeExpr
+	Value Expr
+} // Value: literal or Ident (Decl)
 type Param struct {
 	P    source.Pos
 	Name string
@@ -171,8 +177,24 @@ type ReturnStmt struct {
 	P source.Pos
 	X Expr
 } // X may be nil
-type QuitStmt struct{ P source.Pos }
+type QuitStmt struct {
+	P    source.Pos
+	Code Expr
+} // Code nil for bare quit
 type CancelStmt struct{ P source.Pos }
+type BreakStmt struct{ P source.Pos }
+type ContinueStmt struct{ P source.Pos }
+type SwitchCase struct {
+	P      source.Pos
+	Labels []Expr
+	Body   *Block
+} // Labels: literal or Ident exprs
+type SwitchStmt struct {
+	P       source.Pos
+	Subject Expr
+	Cases   []SwitchCase
+	Else    *Block
+} // Else may be nil
 type OpenStmt struct {
 	P      source.Pos
 	Window string
@@ -236,6 +258,10 @@ type Index struct {
 	P    source.Pos
 	X, I Expr
 }
+type SliceExpr struct {
+	P             source.Pos
+	X, Start, Len Expr
+} // s[start, len]
 type Select struct {
 	P    source.Pos
 	X    Expr
@@ -256,6 +282,7 @@ type OpenExpr struct {
 func (d *RecordDecl) declNode()  {}
 func (d *EnumDecl) declNode()    {}
 func (d *VarDecl) declNode()     {}
+func (d *ConstDecl) declNode()   {}
 func (d *FuncDecl) declNode()    {}
 func (d *WindowDecl) declNode()  {}
 func (d *MenuDecl) declNode()    {}
@@ -264,19 +291,22 @@ func (d *HandlerDecl) declNode() {}
 func (d *EveryDecl) declNode()   {}
 
 // Stmt markers
-func (d *VarDecl) stmtNode()    {}
-func (s *Block) stmtNode()      {}
-func (s *AssignStmt) stmtNode() {}
-func (s *ExprStmt) stmtNode()   {}
-func (s *IfStmt) stmtNode()     {}
-func (s *WhileStmt) stmtNode()  {}
-func (s *ForStmt) stmtNode()    {}
-func (s *ReturnStmt) stmtNode() {}
-func (s *QuitStmt) stmtNode()   {}
-func (s *CancelStmt) stmtNode() {}
-func (s *OpenStmt) stmtNode()   {}
-func (s *CloseStmt) stmtNode()  {}
-func (s *EditStmt) stmtNode()   {}
+func (d *VarDecl) stmtNode()      {}
+func (s *Block) stmtNode()        {}
+func (s *AssignStmt) stmtNode()   {}
+func (s *ExprStmt) stmtNode()     {}
+func (s *IfStmt) stmtNode()       {}
+func (s *WhileStmt) stmtNode()    {}
+func (s *ForStmt) stmtNode()      {}
+func (s *ReturnStmt) stmtNode()   {}
+func (s *QuitStmt) stmtNode()     {}
+func (s *CancelStmt) stmtNode()   {}
+func (s *BreakStmt) stmtNode()    {}
+func (s *ContinueStmt) stmtNode() {}
+func (s *SwitchStmt) stmtNode()   {}
+func (s *OpenStmt) stmtNode()     {}
+func (s *CloseStmt) stmtNode()    {}
+func (s *EditStmt) stmtNode()     {}
 
 // TypeExpr markers
 func (t *NamedType) typeNode()  {}
@@ -328,6 +358,9 @@ func (e *Call) Pos() source.Pos { return e.P }
 
 func (e *Index) exprNode()       {}
 func (e *Index) Pos() source.Pos { return e.P }
+
+func (e *SliceExpr) exprNode()       {}
+func (e *SliceExpr) Pos() source.Pos { return e.P }
 
 func (e *Select) exprNode()       {}
 func (e *Select) Pos() source.Pos { return e.P }

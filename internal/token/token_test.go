@@ -4,10 +4,11 @@ package token
 import "testing"
 
 func TestKeywords(t *testing.T) {
-	hard := []string{"var", "func", "record", "enum", "window", "menu", "extend",
+	hard := []string{"var", "func", "record", "enum", "const", "window", "menu", "extend",
 		"on", "every", "if", "else", "while", "for", "in", "to", "return",
 		"and", "or", "not", "true", "false", "nil",
-		"open", "close", "edit", "new", "quit", "cancel"}
+		"open", "close", "edit", "new", "quit", "cancel",
+		"switch", "case", "break", "continue"}
 	if len(Keywords) != len(hard) {
 		t.Fatalf("Keywords has %d entries, want %d", len(Keywords), len(hard))
 	}
