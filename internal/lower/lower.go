@@ -39,6 +39,40 @@ type lowerer struct {
 	declTypes map[string]*types.Type
 
 	strIdx map[string]int // interning cache into prog.StrLits, by literal value
+
+	// localScopes is a stack of the current function/handler body's nested
+	// block scopes (pushed/popped in lockstep with checker.checkBlock),
+	// tracking which names are params/locals so lowerIdent (expr.go) can
+	// tell a local VarRef from a global one. Empty outside a function body.
+	localScopes []map[string]bool
+}
+
+// pushScope opens a new nested local-variable scope (mirrors
+// checker.checkBlock's scope nesting for shadowing).
+func (l *lowerer) pushScope() {
+	l.localScopes = append(l.localScopes, map[string]bool{})
+}
+
+// popScope closes the innermost local-variable scope.
+func (l *lowerer) popScope() {
+	l.localScopes = l.localScopes[:len(l.localScopes)-1]
+}
+
+// declareLocal registers name as a local in the innermost open scope.
+func (l *lowerer) declareLocal(name string) {
+	l.localScopes[len(l.localScopes)-1][name] = true
+}
+
+// isLocal reports whether name resolves to a param/local in the current
+// function body (searching from the innermost scope outward), as opposed to
+// a global.
+func (l *lowerer) isLocal(name string) bool {
+	for i := len(l.localScopes) - 1; i >= 0; i-- {
+		if l.localScopes[i][name] {
+			return true
+		}
+	}
+	return false
 }
 
 // Program lowers files/trees (already type-checked by check.Files, whose
@@ -188,7 +222,7 @@ func (l *lowerer) lowerDecl(d ast.Decl) {
 	case *ast.VarDecl:
 		l.lowerGlobalVarDecl(d)
 	case *ast.FuncDecl:
-		// Task 7 lowers function bodies into ir.Func; nothing to build here.
+		l.prog.Funcs = append(l.prog.Funcs, l.lowerFuncDecl(d))
 	case *ast.WindowDecl:
 		l.unsupported(d.P, "window")
 		// Registered so a later `var w: W` (also unsupported, via
@@ -199,10 +233,7 @@ func (l *lowerer) lowerDecl(d ast.Decl) {
 	case *ast.ExtendDecl:
 		l.unsupported(d.P, "extend")
 	case *ast.HandlerDecl:
-		// Top-level `on App.launch`/`on App.startEmpty` detection lands in
-		// Task 7 alongside the rest of handler-body lowering. Handlers on a
-		// resource variable need nothing here: the variable itself is
-		// already flagged host-unsupported at its own declaration.
+		l.lowerTopHandlerDecl(d)
 	case *ast.EveryDecl:
 		l.unsupported(d.P, "every")
 	}

@@ -20,6 +20,7 @@ int32_t rt_fix_div(int32_t a, int32_t b);                             /* (a<<16)
 
 void rt_panic(const char *msg);                                       /* "runtime error: MSG" to stderr, exit(3) */
 void rt_alert(const uint8_t *s);                                      /* stdout + \n; CR bytes rendered as LF */
+void rt_quit(void);                                                   /* `quit` statement: exit(0) */
 
 extern int32_t rt_lasterr_code;
 extern uint8_t rt_lasterr_msg[256];                                    /* a str255 */

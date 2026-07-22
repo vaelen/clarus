@@ -28,6 +28,10 @@ void rt_panic(const char *msg) {
     exit(3);
 }
 
+void rt_quit(void) {
+    exit(0);
+}
+
 void rt_alert(const uint8_t *s) {
     uint8_t len = s[0];
     for (uint8_t i = 0; i < len; i++) {

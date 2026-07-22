@@ -50,6 +50,7 @@ const (
 	IEnumFromInt = "enum_from_int" // (enum table, v) -> value or panic
 	IPanic       = "panic"         // (msg str-lit) -> never returns
 	IAlert       = "alert"         // (s) host: stdout
+	IQuit        = "quit"          // () host: exit(0); never returns
 	ILastErrCode = "lasterr_code"
 	ILastErrMsg  = "lasterr_msg"
 	// files (host: stdio)

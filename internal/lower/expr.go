@@ -97,15 +97,16 @@ func (l *lowerer) lowerArgs(args []ast.Expr) []ir.Expr {
 
 // lowerIdent lowers a resolved variable reference or a bare enum-member
 // constant (info.EnumConsts records which — checker.checkIdent populates it
-// only when the Ident didn't resolve in scope). Every Ident reachable here is
-// a global: Task 6 only lowers global initializers, and a bare enum member
-// isn't a variable at all.
+// only when the Ident didn't resolve in scope). Outside any function/handler
+// body (top-level var initializers) l.localScopes is empty, so isLocal is
+// always false and every Ident is a global, as before Task 7 introduced
+// locals.
 func (l *lowerer) lowerIdent(e *ast.Ident) ir.Expr {
 	ty := lowerType(l.mustType(e))
 	if v, ok := l.info.EnumConsts[e]; ok {
 		return &ir.IntConst{V: int64(v), Ty: ty}
 	}
-	return &ir.VarRef{Name: e.Name, Global: true, Ty: ty}
+	return &ir.VarRef{Name: e.Name, Global: !l.isLocal(e.Name), Ty: ty}
 }
 
 func (l *lowerer) bin(op string, ty ir.Type, x, y ast.Expr) ir.Expr {
