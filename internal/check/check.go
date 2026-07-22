@@ -35,6 +35,12 @@ type checker struct {
 	// `cancel` is valid (Ch5: Cancel).
 	inCloseRequest bool
 
+	// loopDepth counts enclosing while/for loop bodies (checkLoopBody
+	// increments/decrements it); it does NOT count switch case/else bodies,
+	// so break/continue inside a case body binds the enclosing LOOP, not the
+	// switch (Ch5: Break and Continue, Switch). Zero outside any loop.
+	loopDepth int
+
 	// info accumulates the type information the lowering pass consumes:
 	// every expression's checked type, resolved enum-member values, and
 	// top-level var declaration order. Always allocated (see Files) so
@@ -48,13 +54,30 @@ type checker struct {
 type Info struct {
 	Types       map[ast.Expr]*types.Type // type of every successfully checked expression
 	EnumConsts  map[ast.Expr]int         // resolved VALUE for bare enum-member Idents and enum-typed defaults
+	Consts      map[*ast.Ident]ConstVal  // resolved VALUE for every use of a `const`-declared name
 	GlobalOrder []string                 // declaration order of globals (init order for lowering)
+}
+
+// ConstVal is a `const` declaration's compile-time value (Ch3: Constants),
+// recorded per use-site in Info.Consts (mirroring the EnumConsts precedent:
+// EnumConsts already records a resolved value per bare-enum-member Ident
+// use, not per declaration; Consts does the same for const names, including
+// where a const's value flows into another const's initializer). Exactly one
+// of Int/Str holds the value, per IsStr — the same "one string field, one
+// int64 field, no interface{}" shape as an EnumMemberInfo.Value, since a
+// const's declared type is always int, fixed, char, bool, enum (all
+// int64-representable), or string.
+type ConstVal struct {
+	IsStr bool
+	Int   int64
+	Str   string
 }
 
 func newInfo() *Info {
 	return &Info{
 		Types:      make(map[ast.Expr]*types.Type),
 		EnumConsts: make(map[ast.Expr]int),
+		Consts:     make(map[*ast.Ident]ConstVal),
 	}
 }
 
@@ -104,6 +127,8 @@ func (c *checker) checkDecl(d ast.Decl) {
 	case *ast.VarDecl:
 		c.checkVarDecl(d)
 		c.info.GlobalOrder = append(c.info.GlobalOrder, d.Name)
+	case *ast.ConstDecl:
+		c.checkConstDecl(d)
 	case *ast.FuncDecl:
 		c.checkFuncDecl(d)
 	case *ast.WindowDecl:
@@ -236,6 +261,83 @@ func (c *checker) checkVarDecl(d *ast.VarDecl) {
 	}
 }
 
+// checkConstDecl checks a `const` declaration (Ch3: Constants): the
+// initializer must be a literal, an enum member, or a previously declared
+// constant — never an arbitrary expression (the parser only ever hands
+// ConstDecl.Value one of those shapes, via parseLiteralOrIdent) — and the
+// const is then usable, via its recorded ConstVal, anywhere its type's value
+// is: as a switch case label (checkCaseLabel) or inlined into another
+// expression at lowering time (Info.Consts, populated per use-site by
+// checkIdent).
+func (c *checker) checkConstDecl(d *ast.ConstDecl) {
+	t := c.resolveType(d.Type)
+	// Const types are restricted to those representable at compile time.
+	if t.Kind != types.Int && t.Kind != types.Fixed && t.Kind != types.Char && t.Kind != types.Bool && t.Kind != types.Enum && t.Kind != types.String {
+		c.errorf(d.P, "const type must be int, fixed, char, bool, enum, or string")
+		return
+	}
+	cv := c.constValue(d.Value, t)
+	if err := c.scope.Declare(Symbol{Name: d.Name, Type: t, IsConst: true, ConstVal: cv}); err != nil {
+		c.errorf(d.P, "%s", err.Error())
+	}
+}
+
+// constValue type-checks a const initializer against its declared type t and
+// returns its compile-time value. It defers to checkExpr/checkIdent for the
+// ordinary type-checking work (literal typing, enum-member fallback,
+// undefined-name/kind diagnostics), then adds the one rule generic
+// expression-checking doesn't know: an Ident initializer must name another
+// constant, not a plain variable.
+func (c *checker) constValue(val ast.Expr, t *types.Type) ConstVal {
+	id, isIdent := val.(*ast.Ident)
+	vt := c.checkExpr(val, t)
+	if vt == types.InvalidT {
+		return ConstVal{}
+	}
+	if isIdent {
+		if sym, found := c.scope.Lookup(id.Name); found {
+			if !sym.IsConst {
+				c.errorf(id.P, "constant initializer must be a literal, enum member, or constant")
+				return ConstVal{}
+			}
+			if !compatible(sym.Type, t) {
+				c.errorf(id.P, "cannot assign %s to %s", typeName(sym.Type), typeName(t))
+			}
+			return sym.ConstVal
+		}
+		// Not in scope: checkExpr succeeding means checkIdent resolved id as
+		// a bare enum member against t (the only other way it returns
+		// non-Invalid for an unresolved name), recording its value here.
+		return ConstVal{Int: int64(c.info.EnumConsts[id])}
+	}
+	if !compatible(vt, t) {
+		c.errorf(val.Pos(), "cannot assign %s to %s", typeName(vt), typeName(t))
+	}
+	return literalConstVal(val)
+}
+
+// literalConstVal extracts a ConstVal from one of the five literal AST
+// nodes parseLiteralOrIdent can produce (see constValue).
+func literalConstVal(e ast.Expr) ConstVal {
+	switch v := e.(type) {
+	case *ast.IntLit:
+		return ConstVal{Int: v.Val}
+	case *ast.FixedLit:
+		return ConstVal{Int: int64(v.Raw)}
+	case *ast.CharLit:
+		return ConstVal{Int: int64(v.Val)}
+	case *ast.StringLit:
+		return ConstVal{IsStr: true, Str: v.Val}
+	case *ast.BoolLit:
+		if v.Val {
+			return ConstVal{Int: 1}
+		}
+		return ConstVal{}
+	default:
+		return ConstVal{}
+	}
+}
+
 // checkFuncDecl declares the function's signature before checking its body,
 // so recursive calls resolve (Ch6: Recursion) — the one deliberate
 // exception to "checked then declared".
@@ -300,9 +402,15 @@ func (c *checker) checkStmt(s ast.Stmt) {
 	case *ast.ReturnStmt:
 		c.checkReturnStmt(s)
 	case *ast.QuitStmt:
-		// Nothing to check: `quit` takes no arguments (Ch5: Quit).
+		c.checkQuitStmt(s)
 	case *ast.CancelStmt:
 		c.checkCancelStmt(s)
+	case *ast.BreakStmt:
+		c.checkBreakStmt(s)
+	case *ast.ContinueStmt:
+		c.checkContinueStmt(s)
+	case *ast.SwitchStmt:
+		c.checkSwitchStmt(s)
 	case *ast.OpenStmt:
 		c.checkOpenStmt(s)
 	case *ast.CloseStmt:
@@ -315,6 +423,12 @@ func (c *checker) checkStmt(s ast.Stmt) {
 func (c *checker) checkAssignStmt(s *ast.AssignStmt) {
 	lt := c.checkExpr(s.LHS, nil)
 	rt := c.checkExpr(s.RHS, lt)
+	if id, ok := lvalueRootIdent(s.LHS); ok {
+		if sym, found := c.scope.Lookup(id.Name); found && sym.IsConst {
+			c.errorf(s.P, "cannot assign to constant %s", id.Name)
+			return
+		}
+	}
 	if lt == types.InvalidT || rt == types.InvalidT {
 		return
 	}
@@ -375,6 +489,24 @@ func (c *checker) readOnlyPropName(sel *ast.Select) (string, bool) {
 	return "", false
 }
 
+// lvalueRootIdent returns the Ident at the root of an lvalue chain — an
+// Ident under any run of Select/Index (mirrors the parser's own isLvalue) —
+// so checkAssignStmt can reject assigning through a const's field/index just
+// as readily as assigning to the const name directly (Ch3: Constants,
+// "Assigning to a constant is a compile error").
+func lvalueRootIdent(e ast.Expr) (*ast.Ident, bool) {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v, true
+	case *ast.Select:
+		return lvalueRootIdent(v.X)
+	case *ast.Index:
+		return lvalueRootIdent(v.X)
+	default:
+		return nil, false
+	}
+}
+
 func (c *checker) checkCond(cond ast.Expr) {
 	ct := c.checkExpr(cond, types.BoolT)
 	if ct != types.InvalidT && ct.Kind != types.Bool {
@@ -395,7 +527,17 @@ func (c *checker) checkIfStmt(s *ast.IfStmt) {
 
 func (c *checker) checkWhileStmt(s *ast.WhileStmt) {
 	c.checkCond(s.Cond)
-	c.checkBlock(s.Body)
+	c.checkLoopBody(s.Body)
+}
+
+// checkLoopBody checks a while/for loop's body with loopDepth incremented
+// (Ch5: Break and Continue) — the sole place loopDepth changes; switch case
+// bodies check with checkBlock directly, so a break inside one still binds
+// whatever loop, if any, encloses the switch.
+func (c *checker) checkLoopBody(b *ast.Block) {
+	c.loopDepth++
+	c.checkBlock(b)
+	c.loopDepth--
 }
 
 // checkForStmt checks all three forms (Ch5: For): list iteration, map
@@ -418,7 +560,7 @@ func (c *checker) checkForStmt(s *ast.ForStmt) {
 			c.errorf(s.P, "range for takes one variable")
 		}
 		c.declareForVar(s.V1, types.IntT)
-		c.checkBlock(s.Body)
+		c.checkLoopBody(s.Body)
 		return
 	}
 
@@ -444,7 +586,7 @@ func (c *checker) checkForStmt(s *ast.ForStmt) {
 	default:
 		c.errorf(s.Seq.Pos(), "cannot iterate over %s", typeName(seqT))
 	}
-	c.checkBlock(s.Body)
+	c.checkLoopBody(s.Body)
 }
 
 func (c *checker) declareForVar(name string, t *types.Type) {

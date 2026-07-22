@@ -1,0 +1,77 @@
+func show(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+on App.launch {
+    var s: string
+    var w: string
+    var t: text
+    var ts: string
+    var i: int
+    var start: int
+    var src: string
+    var tok: string
+
+    // string slice
+    s = "hello world"
+    w = s[6, 5]
+    alert(w)
+
+    // string indexOf: hit on a char, hit on a string, miss
+    show("string indexOf l = ", s.indexOf('l'))
+    show("string indexOf lo = ", s.indexOf("lo"))
+    if s.indexOf("xyz") == -1 {
+        alert("string indexOf miss ok")
+    } else {
+        alert("string indexOf miss WRONG")
+    }
+
+    // text slice
+    t = "the quick fox"
+    ts = t[4, 5]
+    alert(ts)
+
+    // text indexOf: hit, miss
+    show("text indexOf quick = ", t.indexOf("quick"))
+    if t.indexOf("zzz") == -1 {
+        alert("text indexOf miss ok")
+    } else {
+        alert("text indexOf miss WRONG")
+    }
+
+    // a parser-ish token scan: split on spaces via slicing + indexing
+    src = "abc de fgh"
+    start = 0
+    i = 0
+    while i <= src.length {
+        if i == src.length or src[i] == ' ' {
+            if i > start {
+                tok = src[start, i - start]
+                alert(tok)
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+}

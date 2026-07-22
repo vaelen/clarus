@@ -49,10 +49,10 @@ func lowerSrc(t *testing.T, src string) *ir.Program {
 	return p
 }
 
-// buildAndRun writes src's emitted C plus the host runtime to a temp dir,
-// compiles with -std=c99 -Wall -Werror, runs the result, and returns its
-// stdout.
-func buildAndRun(t *testing.T, src string) string {
+// buildExe lowers/emits src, compiles it plus the host runtime with
+// -std=c99 -Wall -Werror in a fresh temp dir, and returns the built
+// executable's path.
+func buildExe(t *testing.T, src string) string {
 	t.Helper()
 	p := lowerSrc(t, src)
 	c := Emit(p)
@@ -81,9 +81,39 @@ func buildAndRun(t *testing.T, src string) string {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted C ---\n%s", err, out, c)
 	}
+	return exe
+}
+
+// buildAndRun writes src's emitted C plus the host runtime to a temp dir,
+// compiles with -std=c99 -Wall -Werror, runs the result (expecting a clean
+// exit), and returns its stdout.
+func buildAndRun(t *testing.T, src string) string {
+	t.Helper()
+	exe := buildExe(t, src)
 	out, err := exec.Command(exe).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, out)
+	}
+	return string(out)
+}
+
+// buildAndRunExpectExit is buildAndRun's sibling for a program that `quit`s
+// with a non-zero code: it asserts the process exited with wantExit instead
+// of requiring success, and still returns stdout.
+func buildAndRunExpectExit(t *testing.T, src string, wantExit int) string {
+	t.Helper()
+	exe := buildExe(t, src)
+	out, err := exec.Command(exe).CombinedOutput()
+	got := 0
+	if err != nil {
+		ee, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("run: %v\n%s", err, out)
+		}
+		got = ee.ExitCode()
+	}
+	if got != wantExit {
+		t.Fatalf("exit code = %d, want %d\n%s", got, wantExit, out)
 	}
 	return string(out)
 }
@@ -102,7 +132,7 @@ on App.launch {
 }
 `)
 	c := string(Emit(p))
-	for _, want := range []string{"clar_init_globals", "int main(void)", "rt_alert", "clar_fn_addOne", "clar_fn_handler_App_launch"} {
+	for _, want := range []string{"clar_init_globals", "int main(int argc, char **argv)", "rt_args_init(argc, argv)", "rt_alert", "clar_fn_addOne", "clar_fn_handler_App_launch"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("emitted C missing %q:\n%s", want, c)
 		}
@@ -345,19 +375,357 @@ on App.launch {
     if f() == "x" or g() == "y" or h() == "z" {
         alert("matched")
     }
-    if fCount == 1 {
-        alert("f once")
-    }
-    if gCount == 0 {
-        alert("g never")
-    }
-    if hCount == 0 {
-        alert("h never")
-    }
+	if fCount == 1 {
+		alert("f once")
+	}
+	if gCount == 0 {
+		alert("g never")
+	}
+	if hCount == 0 {
+		alert("h never")
+	}
 }
 `)
 	want := "matched\nf once\ng never\nh never\n"
 	if out != want {
 		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// ---- break/continue, switch, const, quit code (CLI/self-hosting features plan) ----
+
+// TestSwitchDesugarStructural is the plan's structural proof that switch
+// desugars entirely to an if/else chain: the emitted C must contain no real
+// `switch (` construct at all, since a Break lowered from inside a case
+// relies on there being no switch for it to (wrongly) bind to instead of the
+// enclosing loop.
+func TestSwitchDesugarStructural(t *testing.T) {
+	p := lowerSrc(t, `func f(x: int) {
+    switch x {
+    case 1 {
+    }
+    case 2, 3 {
+    }
+    else {
+    }
+    }
+}
+`)
+	c := string(Emit(p))
+	if strings.Contains(c, "switch (") || strings.Contains(c, "switch(") {
+		t.Fatalf("switch desugar must never emit a real C switch:\n%s", c)
+	}
+	if !strings.Contains(c, "if (") {
+		t.Fatalf("want an if/else chain in the emitted C:\n%s", c)
+	}
+}
+
+// TestBreakContinueWhileRun is the While-shape proof (Ch5): `while (1) {
+// if (!(cond)) break; ...}` means a `continue` re-tests cond (jumps back to
+// the top of the body, where the condition check lives) and `break` exits
+// the loop — both exactly matching Clarus semantics.
+func TestBreakContinueWhileRun(t *testing.T) {
+	out := buildAndRun(t, `on App.launch {
+    var i: int = 0
+    var sum: int = 0
+    while i < 10 {
+        i = i + 1
+        if i == 8 {
+            break
+        }
+        if i mod 2 == 0 {
+            continue
+        }
+        sum = sum + i
+    }
+    if i == 8 {
+        alert("broke at 8")
+    }
+    if sum == 16 {
+        alert("sum ok")
+    }
+}
+`)
+	want := "broke at 8\nsum ok\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// TestBreakContinueForRangeRun is the ForRange-shape proof: a C `for`
+// header's increment always runs on `continue`, so odd values keep
+// accumulating past a skipped even value.
+func TestBreakContinueForRangeRun(t *testing.T) {
+	out := buildAndRun(t, `on App.launch {
+    var sum: int = 0
+    var last: int = 0
+    for i in 1 to 10 {
+        last = i
+        if i == 8 {
+            break
+        }
+        if i mod 2 == 0 {
+            continue
+        }
+        sum = sum + i
+    }
+    if last == 8 {
+        alert("broke at 8")
+    }
+    if sum == 16 {
+        alert("sum ok")
+    }
+}
+`)
+	want := "broke at 8\nsum ok\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// TestBreakContinueForListRun is the ForList-shape proof.
+func TestBreakContinueForListRun(t *testing.T) {
+	out := buildAndRun(t, `on App.launch {
+    var l: list of int
+    var i: int
+    var sum: int = 0
+    var last: int = 0
+    for i in 1 to 10 {
+        l.push(i)
+    }
+    for x in l {
+        last = x
+        if x == 8 {
+            break
+        }
+        if x mod 2 == 0 {
+            continue
+        }
+        sum = sum + x
+    }
+    if last == 8 {
+        alert("broke at 8")
+    }
+    if sum == 16 {
+        alert("sum ok")
+    }
+}
+`)
+	want := "broke at 8\nsum ok\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// TestBreakContinueForMapRun is the ForMap-shape proof. Keys are
+// zero-padded ("01".."10") so ascending byte-wise key order (rt_map's
+// documented iteration order) matches ascending value order.
+func TestBreakContinueForMapRun(t *testing.T) {
+	out := buildAndRun(t, `on App.launch {
+    var m: map of int
+    var sum: int = 0
+    var last: int = 0
+    m["01"] = 1
+    m["02"] = 2
+    m["03"] = 3
+    m["04"] = 4
+    m["05"] = 5
+    m["06"] = 6
+    m["07"] = 7
+    m["08"] = 8
+    m["09"] = 9
+    m["10"] = 10
+
+    for k, v in m {
+        last = v
+        if v == 8 {
+            break
+        }
+        if v mod 2 == 0 {
+            continue
+        }
+        sum = sum + v
+    }
+    if last == 8 {
+        alert("broke at 8")
+    }
+    if sum == 16 {
+        alert("sum ok")
+    }
+}
+`)
+	want := "broke at 8\nsum ok\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// TestEmitRunSwitchBreakConstQuit is the plan's Step 1 compile-and-run
+// check: int and string switch subjects (one comparing against a `const`
+// case label), a `break` escaping an infinite `while true` loop, and a
+// non-zero `quit` code, all in one program — asserting both stdout and the
+// process exit code.
+func TestEmitRunSwitchBreakConstQuit(t *testing.T) {
+	src := `const limit: int = 3
+
+func classify(x: int): string {
+    switch x {
+    case limit {
+        return "limit"
+    }
+    case 1, 2 {
+        return "small"
+    }
+    else {
+        return "other"
+    }
+    }
+}
+
+on App.launch {
+    var i: int = 0
+    var color: string = "red"
+    while true {
+        i = i + 1
+        if i > 5 {
+            break
+        }
+        alert(classify(i))
+    }
+
+    switch color {
+    case "red" {
+        alert("stop")
+    }
+    case "green" {
+        alert("go")
+    }
+    }
+
+    quit 4
+}
+`
+	want := "small\nsmall\nlimit\nother\nother\nstop\n"
+	out := buildAndRunExpectExit(t, src, 4)
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+// ---- structural coverage for the new intrinsics (slice/indexOf/append/log/
+// startCLI): the matching rt_* host functions land in Task 4, so these stay
+// emitted-C string checks rather than compile-and-run — see this task's
+// report for the exact list of rt_* symbols still unimplemented. ----
+
+func TestSliceIntrinsicsStructural(t *testing.T) {
+	p := lowerSrc(t, `var s: string = "hello world"
+var t: text
+func f() {
+    var a: string = s[0, 5]
+    var b: string = t[0, 5]
+}
+`)
+	c := string(Emit(p))
+	for _, want := range []string{"rt_str_slice((uint8_t*)&", "rt_text_slice((uint8_t*)&"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("emitted C missing %q:\n%s", want, c)
+		}
+	}
+}
+
+func TestIndexOfIntrinsicsStructural(t *testing.T) {
+	p := lowerSrc(t, `var s: string = "hi"
+var t: text
+func f() {
+    var a: int = s.indexOf('i')
+    var b: int = s.indexOf("hi")
+    var c: int = t.indexOf('i')
+    var d: int = t.indexOf("hi")
+}
+`)
+	c := string(Emit(p))
+	for _, want := range []string{"rt_str_index_of_char(", "rt_str_index_of_str(", "rt_text_index_of_char(", "rt_text_index_of_str("} {
+		if !strings.Contains(c, want) {
+			t.Errorf("emitted C missing %q:\n%s", want, c)
+		}
+	}
+}
+
+func TestAppendIntrinsicsStructural(t *testing.T) {
+	p := lowerSrc(t, `var t: text
+var s: string = "x"
+func f() {
+    t.append(s)
+    t.append('!')
+    t.append(t)
+}
+`)
+	c := string(Emit(p))
+	for _, want := range []string{"rt_text_append_str(", "rt_text_append_char(", "rt_text_append_text("} {
+		if !strings.Contains(c, want) {
+			t.Errorf("emitted C missing %q:\n%s", want, c)
+		}
+	}
+}
+
+func TestLogIntrinsicStructural(t *testing.T) {
+	p := lowerSrc(t, `on App.launch {
+    log("hi")
+}
+`)
+	c := string(Emit(p))
+	if !strings.Contains(c, "rt_log(") {
+		t.Errorf("emitted C missing rt_log(...):\n%s", c)
+	}
+}
+
+func TestQuitCodeStructural(t *testing.T) {
+	p := lowerSrc(t, `on App.launch {
+    quit 4
+}
+`)
+	c := string(Emit(p))
+	if !strings.Contains(c, "rt_quit((int32_t)(4));") {
+		t.Errorf("emitted C missing rt_quit((int32_t)(4)):\n%s", c)
+	}
+}
+
+// TestStartCLIMainSequence covers the App.startCLI main() sequence: argc/
+// argv plumbing always present, and handler_App_startCLI(rt_args_list())
+// called when the program declares one.
+func TestStartCLIMainSequence(t *testing.T) {
+	p := lowerSrc(t, `on App.startCLI(args: list of string) {
+    log("running")
+}
+`)
+	if !p.HasStartCLI {
+		t.Fatal("want HasStartCLI")
+	}
+	c := string(Emit(p))
+	for _, want := range []string{
+		"int main(int argc, char **argv) {",
+		"rt_args_init(argc, argv);",
+		"clar_fn_handler_App_startCLI(rt_args_list());",
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("emitted C missing %q:\n%s", want, c)
+		}
+	}
+}
+
+// TestStartEmptyFallbackWhenNoStartCLI covers the documented fallback: no
+// App.startCLI means main() calls App.startEmpty instead, never
+// rt_args_list().
+func TestStartEmptyFallbackWhenNoStartCLI(t *testing.T) {
+	p := lowerSrc(t, `on App.startEmpty {
+    log("empty")
+}
+`)
+	c := string(Emit(p))
+	if strings.Contains(c, "rt_args_list()") {
+		t.Errorf("no App.startCLI declared: main() must not call rt_args_list():\n%s", c)
+	}
+	if !strings.Contains(c, "clar_fn_handler_App_startEmpty();") {
+		t.Errorf("emitted C missing the startEmpty fallback call:\n%s", c)
 	}
 }

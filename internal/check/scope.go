@@ -26,6 +26,13 @@ type Symbol struct {
 	IsType bool
 	IsMenu bool
 	Menu   *MenuInfo
+
+	// IsConst marks a `const` declaration (Ch3: Constants): its value is
+	// fixed at compile time (ConstVal) and it can never appear as an
+	// assignment target (checkAssignStmt) or a non-constant switch case
+	// label (checkCaseLabel).
+	IsConst  bool
+	ConstVal ConstVal
 }
 
 // Scope is a lexical block of declarations, chained to its enclosing scope.

@@ -31,16 +31,31 @@ func (p *parser) parseFieldDecl() ast.Field {
 	f := ast.Field{P: pos, Name: name.Text, Type: typ}
 	if p.tok.Kind == token.ASSIGN {
 		p.next()
-		f.Default = p.parseFieldDefault()
+		f.Default = p.parseLiteralOrIdent()
 	}
 	return f
 }
 
-// parseFieldDefault parses a field default: a literal or a bare IDENT (an
-// enum member, resolved by the checker). The literal table (Ch3: Literals)
-// shows `-7` as an integer literal form; the lexer has no negative-literal
-// token, so a leading `-` is accepted here in front of an INT or FIXEDLIT.
-func (p *parser) parseFieldDefault() ast.Expr {
+// parseConstDecl parses `"const" IDENT ":" type "=" ( literal | IDENT )`
+// (Appendix A: constDecl; Ch3: Constants).
+func (p *parser) parseConstDecl() *ast.ConstDecl {
+	pos := p.tok.Pos
+	p.next() // 'const'
+	name := p.expect(token.IDENT)
+	p.expect(token.COLON)
+	typ := p.parseType()
+	p.expect(token.ASSIGN)
+	val := p.parseLiteralOrIdent()
+	return &ast.ConstDecl{P: pos, Name: name.Text, Type: typ, Value: val}
+}
+
+// parseLiteralOrIdent parses `literal | IDENT` (Appendix A): a field default,
+// a const declaration's value, or a switch case label (Ch3: Constants; Ch5:
+// Switch) — an IDENT here names an enum member or a previously declared
+// constant, resolved by the checker. The literal table (Ch3: Literals) shows
+// `-7` as an integer literal form; the lexer has no negative-literal token,
+// so a leading `-` is accepted here in front of an INT or FIXEDLIT.
+func (p *parser) parseLiteralOrIdent() ast.Expr {
 	if p.tok.Kind == token.MINUS {
 		pos := p.tok.Pos
 		p.next()

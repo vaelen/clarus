@@ -29,12 +29,22 @@ type methodSig struct {
 	Ret    *types.Type
 }
 
-// stringTextMethods: string and text share the same byte-copy methods
-// (Ch3: Strings, Text). `length` is a property, not a method, and is
+// stringTextMethods: string and text share the same byte-copy and search
+// methods (Ch3: Strings, Text). `length` is a property, not a method, and is
 // handled directly in checkSelect.
 var stringTextMethods = map[string]methodSig{
 	"fromBytes": {Params: []paramSpec{{AnyCharArray: true}, {T: types.IntT}}},
 	"toBytes":   {Params: []paramSpec{{AnyCharArray: true}}, Ret: types.IntT},
+	"indexOf":   {Params: []paramSpec{{OneOfKinds: []types.Kind{types.String, types.Char}}}, Ret: types.IntT},
+}
+
+// textOnlyMethods: methods valid on `text` but not `string` (Ch3: Text —
+// `append` grows the buffer in place, which a fixed-capacity string cannot
+// do). Checked first in checkMethodCall so a `text` receiver sees these
+// ahead of stringTextMethods; a `string` receiver never consults this table,
+// so `s.append(...)` reports "undefined" like any other unknown method.
+var textOnlyMethods = map[string]methodSig{
+	"append": {Params: []paramSpec{{OneOfKinds: []types.Kind{types.String, types.Char, types.Text}}}},
 }
 
 // connectionMethods (Ch12: Connections). `open` accepts a string
@@ -109,6 +119,7 @@ func registerBuiltins(u *Scope) {
 	declFunc("askOpen", []*types.Type{types.StringT(255)}, types.BoolT)
 	declFunc("askSave", []*types.Type{types.StringT(255), types.StringT(255)}, types.BoolT)
 	declFunc("askSaveChanges", []*types.Type{types.StringT(255)}, types.SaveChoice)
+	declFunc("log", []*types.Type{types.StringT(255)}, nil)
 
 	_ = u.Declare(Symbol{Name: "lastError", Type: types.ErrT})
 }

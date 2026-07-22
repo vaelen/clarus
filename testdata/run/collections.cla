@@ -54,9 +54,10 @@ on App.launch {
     }
 
     // map: set/get/get-with-default/has/remove/count
-    m["a"] = 1
-    m["b"] = 2
+    // inserted deliberately out of order: iteration must come back sorted
     m["c"] = 3
+    m["b"] = 2
+    m["a"] = 1
     show("map count = ", m.count)
     show("get a = ", m.get("a", 0))
     show("get missing dv = ", m.get("missing", 99))
@@ -74,7 +75,7 @@ on App.launch {
         alert("no b")
     }
 
-    // for over a map: insertion order (a, c — b was removed)
+    // for over a map: ascending key order (inserted c,b,a; b removed; sorted yields a,c)
     for k, v in m {
         alert(k)
         show("  value = ", v)

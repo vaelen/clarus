@@ -18,11 +18,12 @@ const (
 	CHARLIT
 	STRINGLIT
 
-	// Keywords (28 hard keywords)
+	// Keywords (33 hard keywords)
 	KwVar
 	KwFunc
 	KwRecord
 	KwEnum
+	KwConst
 	KwWindow
 	KwMenu
 	KwExtend
@@ -47,6 +48,10 @@ const (
 	KwNew
 	KwQuit
 	KwCancel
+	KwSwitch
+	KwCase
+	KwBreak
+	KwContinue
 
 	// Punctuation
 	LPAREN
@@ -90,34 +95,39 @@ type Token struct {
 
 // Keywords maps keyword text to their Kind.
 var Keywords = map[string]Kind{
-	"var":    KwVar,
-	"func":   KwFunc,
-	"record": KwRecord,
-	"enum":   KwEnum,
-	"window": KwWindow,
-	"menu":   KwMenu,
-	"extend": KwExtend,
-	"on":     KwOn,
-	"every":  KwEvery,
-	"if":     KwIf,
-	"else":   KwElse,
-	"while":  KwWhile,
-	"for":    KwFor,
-	"in":     KwIn,
-	"to":     KwTo,
-	"return": KwReturn,
-	"and":    KwAnd,
-	"or":     KwOr,
-	"not":    KwNot,
-	"true":   KwTrue,
-	"false":  KwFalse,
-	"nil":    KwNil,
-	"open":   KwOpen,
-	"close":  KwClose,
-	"edit":   KwEdit,
-	"new":    KwNew,
-	"quit":   KwQuit,
-	"cancel": KwCancel,
+	"var":      KwVar,
+	"func":     KwFunc,
+	"record":   KwRecord,
+	"enum":     KwEnum,
+	"const":    KwConst,
+	"window":   KwWindow,
+	"menu":     KwMenu,
+	"extend":   KwExtend,
+	"on":       KwOn,
+	"every":    KwEvery,
+	"if":       KwIf,
+	"else":     KwElse,
+	"while":    KwWhile,
+	"for":      KwFor,
+	"in":       KwIn,
+	"to":       KwTo,
+	"return":   KwReturn,
+	"and":      KwAnd,
+	"or":       KwOr,
+	"not":      KwNot,
+	"true":     KwTrue,
+	"false":    KwFalse,
+	"nil":      KwNil,
+	"open":     KwOpen,
+	"close":    KwClose,
+	"edit":     KwEdit,
+	"new":      KwNew,
+	"quit":     KwQuit,
+	"cancel":   KwCancel,
+	"switch":   KwSwitch,
+	"case":     KwCase,
+	"break":    KwBreak,
+	"continue": KwContinue,
 }
 
 // String returns the human-readable form of Kind for diagnostics.
@@ -137,34 +147,39 @@ var kindNames = [...]string{
 	STRINGLIT: "string literal",
 
 	// Keywords
-	KwVar:    "'var'",
-	KwFunc:   "'func'",
-	KwRecord: "'record'",
-	KwEnum:   "'enum'",
-	KwWindow: "'window'",
-	KwMenu:   "'menu'",
-	KwExtend: "'extend'",
-	KwOn:     "'on'",
-	KwEvery:  "'every'",
-	KwIf:     "'if'",
-	KwElse:   "'else'",
-	KwWhile:  "'while'",
-	KwFor:    "'for'",
-	KwIn:     "'in'",
-	KwTo:     "'to'",
-	KwReturn: "'return'",
-	KwAnd:    "'and'",
-	KwOr:     "'or'",
-	KwNot:    "'not'",
-	KwTrue:   "'true'",
-	KwFalse:  "'false'",
-	KwNil:    "'nil'",
-	KwOpen:   "'open'",
-	KwClose:  "'close'",
-	KwEdit:   "'edit'",
-	KwNew:    "'new'",
-	KwQuit:   "'quit'",
-	KwCancel: "'cancel'",
+	KwVar:      "'var'",
+	KwFunc:     "'func'",
+	KwRecord:   "'record'",
+	KwEnum:     "'enum'",
+	KwConst:    "'const'",
+	KwWindow:   "'window'",
+	KwMenu:     "'menu'",
+	KwExtend:   "'extend'",
+	KwOn:       "'on'",
+	KwEvery:    "'every'",
+	KwIf:       "'if'",
+	KwElse:     "'else'",
+	KwWhile:    "'while'",
+	KwFor:      "'for'",
+	KwIn:       "'in'",
+	KwTo:       "'to'",
+	KwReturn:   "'return'",
+	KwAnd:      "'and'",
+	KwOr:       "'or'",
+	KwNot:      "'not'",
+	KwTrue:     "'true'",
+	KwFalse:    "'false'",
+	KwNil:      "'nil'",
+	KwOpen:     "'open'",
+	KwClose:    "'close'",
+	KwEdit:     "'edit'",
+	KwNew:      "'new'",
+	KwQuit:     "'quit'",
+	KwCancel:   "'cancel'",
+	KwSwitch:   "'switch'",
+	KwCase:     "'case'",
+	KwBreak:    "'break'",
+	KwContinue: "'continue'",
 
 	// Punctuation
 	LPAREN:   "'('",

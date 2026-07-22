@@ -1,0 +1,10 @@
+world
+string indexOf l = 2
+string indexOf lo = 3
+string indexOf miss ok
+quick
+text indexOf quick = 4
+text indexOf miss ok
+abc
+de
+fgh

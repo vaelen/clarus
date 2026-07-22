@@ -105,6 +105,8 @@ func (p *parser) parseTopDecl() ast.Decl {
 		return p.parseRecordDecl()
 	case token.KwEnum:
 		return p.parseEnumDecl()
+	case token.KwConst:
+		return p.parseConstDecl()
 	case token.KwWindow:
 		return p.parseWindowDecl()
 	case token.KwMenu:

@@ -133,8 +133,15 @@ func (p *parser) parsePostfix() ast.Expr {
 			pos := p.tok.Pos
 			p.next()
 			idx := p.parseExpr()
-			p.expect(token.RBRACKET)
-			x = &ast.Index{P: pos, X: x, I: idx}
+			if p.tok.Kind == token.COMMA {
+				p.next()
+				length := p.parseExpr()
+				p.expect(token.RBRACKET)
+				x = &ast.SliceExpr{P: pos, X: x, Start: idx, Len: length}
+			} else {
+				p.expect(token.RBRACKET)
+				x = &ast.Index{P: pos, X: x, I: idx}
+			}
 		case token.LPAREN:
 			pos := p.tok.Pos
 			p.next()

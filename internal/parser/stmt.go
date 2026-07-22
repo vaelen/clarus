@@ -63,13 +63,21 @@ func (p *parser) parseStmt() ast.Stmt {
 	case token.KwReturn:
 		return p.parseReturnStmt()
 	case token.KwQuit:
-		pos := p.tok.Pos
-		p.next()
-		return &ast.QuitStmt{P: pos}
+		return p.parseQuitStmt()
 	case token.KwCancel:
 		pos := p.tok.Pos
 		p.next()
 		return &ast.CancelStmt{P: pos}
+	case token.KwBreak:
+		pos := p.tok.Pos
+		p.next()
+		return &ast.BreakStmt{P: pos}
+	case token.KwContinue:
+		pos := p.tok.Pos
+		p.next()
+		return &ast.ContinueStmt{P: pos}
+	case token.KwSwitch:
+		return p.parseSwitchStmt()
 	case token.KwOpen:
 		return p.parseOpenStmt()
 	case token.KwClose:
@@ -87,6 +95,9 @@ func (p *parser) parseSimpleStmt() ast.Stmt {
 	pos := p.tok.Pos
 	x := p.parseExpr()
 	if p.tok.Kind == token.ASSIGN {
+		if _, ok := x.(*ast.SliceExpr); ok {
+			p.errorf(pos, "slices are not assignable")
+		}
 		if !isLvalue(x) {
 			p.errorf(pos, "cannot assign to this expression")
 		}
@@ -176,6 +187,61 @@ func (p *parser) parseReturnStmt() *ast.ReturnStmt {
 		r.X = p.parseExpr()
 	}
 	return r
+}
+
+// parseQuitStmt parses `"quit" [ expr ]` (Appendix A; Ch5: Quit). The
+// expression is present only when it starts on the same line as `quit` — a
+// NEWLINE or the block's closing `}` ends the statement with no code, same
+// as parseReturnStmt.
+func (p *parser) parseQuitStmt() *ast.QuitStmt {
+	pos := p.tok.Pos
+	p.next() // 'quit'
+	q := &ast.QuitStmt{P: pos}
+	if p.tok.Kind != token.NEWLINE && p.tok.Kind != token.RBRACE {
+		q.Code = p.parseExpr()
+	}
+	return q
+}
+
+// parseSwitchStmt parses `"switch" expr "{" { caseClause } [ "else" block ] "}"`
+// (Appendix A; Ch5: Switch). Case bodies are nested blocks (parseBlock: no
+// top-of-body vars, since a case body is not a function or handler body). A
+// `case` clause after `else` is not a distinct diagnostic: `else` must be
+// last, so the trailing `p.expect(token.RBRACE)` reports "expected '}', found
+// 'case'" on its own.
+func (p *parser) parseSwitchStmt() *ast.SwitchStmt {
+	pos := p.tok.Pos
+	p.next() // 'switch'
+	subject := p.parseExpr()
+	p.expect(token.LBRACE)
+	s := &ast.SwitchStmt{P: pos, Subject: subject}
+	p.skipNewlines()
+	for p.tok.Kind == token.KwCase {
+		s.Cases = append(s.Cases, p.parseSwitchCase())
+		p.skipNewlines()
+	}
+	if p.tok.Kind == token.KwElse {
+		p.next()
+		s.Else = p.parseBlock()
+		p.skipNewlines()
+	}
+	p.expect(token.RBRACE)
+	return s
+}
+
+// parseSwitchCase parses `"case" caseLabel { "," caseLabel } block`, where
+// caseLabel = literal | IDENT (an enum member or declared constant).
+func (p *parser) parseSwitchCase() ast.SwitchCase {
+	pos := p.tok.Pos
+	p.next() // 'case'
+	c := ast.SwitchCase{P: pos}
+	c.Labels = append(c.Labels, p.parseLiteralOrIdent())
+	for p.tok.Kind == token.COMMA {
+		p.next()
+		c.Labels = append(c.Labels, p.parseLiteralOrIdent())
+	}
+	c.Body = p.parseBlock()
+	return c
 }
 
 // parseOpenStmt parses the statement form `"open" IDENT` (distinct from the

@@ -19,8 +19,11 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 	case ir.IAlert:
 		fp.emit("rt_alert(%s);", fp.strAddr(x.Args[0]))
 		return ""
+	case ir.ILog:
+		fp.emit("rt_log(%s);", fp.strAddr(x.Args[0]))
+		return ""
 	case ir.IQuit:
-		fp.emit("rt_quit();")
+		fp.emit("rt_quit((int32_t)(%s));", fp.expr(x.Args[0]))
 		return ""
 
 	// ---- strings ----
@@ -63,6 +66,15 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		t := fp.newTmp(fp.pr.cType(x.Ty))
 		fp.emit("rt_str_store((uint8_t*)&%s, %d, %s);", t, x.Ty.N, src)
 		return t
+	case ir.IStrSlice:
+		s, start, ln := fp.strAddr(x.Args[0]), fp.expr(x.Args[1]), fp.expr(x.Args[2])
+		t := fp.newTmp("clar_str_255")
+		fp.emit("rt_str_slice((uint8_t*)&%s, %s, (int32_t)(%s), (int32_t)(%s));", t, s, start, ln)
+		return t
+	case ir.IStrIndexOfStr:
+		return fmt.Sprintf("rt_str_index_of_str(%s, %s)", fp.strAddr(x.Args[0]), fp.strAddr(x.Args[1]))
+	case ir.IStrIndexOfChar:
+		return fmt.Sprintf("rt_str_index_of_char(%s, (uint8_t)(%s))", fp.strAddr(x.Args[0]), fp.expr(x.Args[1]))
 
 	// ---- text ----
 	case ir.ITextCmp:
@@ -91,6 +103,24 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		t := fp.expr(x.Args[0])
 		buf, bufcap := fp.addrable(x.Args[1]), x.Args[1].Type().N
 		return fmt.Sprintf("rt_text_to_bytes(%s, (uint8_t*)(%s).e, %d)", t, buf, bufcap)
+	case ir.ITextSlice:
+		t0, start, ln := fp.expr(x.Args[0]), fp.expr(x.Args[1]), fp.expr(x.Args[2])
+		t := fp.newTmp("clar_str_255")
+		fp.emit("rt_text_slice((uint8_t*)&%s, %s, (int32_t)(%s), (int32_t)(%s));", t, t0, start, ln)
+		return t
+	case ir.ITextIndexOfStr:
+		return fmt.Sprintf("rt_text_index_of_str(%s, %s)", fp.expr(x.Args[0]), fp.strAddr(x.Args[1]))
+	case ir.ITextIndexOfChar:
+		return fmt.Sprintf("rt_text_index_of_char(%s, (uint8_t)(%s))", fp.expr(x.Args[0]), fp.expr(x.Args[1]))
+	case ir.ITextAppendStr:
+		fp.emit("rt_text_append_str(%s, %s);", fp.expr(x.Args[0]), fp.strAddr(x.Args[1]))
+		return ""
+	case ir.ITextAppendChar:
+		fp.emit("rt_text_append_char(%s, (uint8_t)(%s));", fp.expr(x.Args[0]), fp.expr(x.Args[1]))
+		return ""
+	case ir.ITextAppendText:
+		fp.emit("rt_text_append_text(%s, %s);", fp.expr(x.Args[0]), fp.expr(x.Args[1]))
+		return ""
 
 	// ---- fixed ----
 	case ir.IFixMul:

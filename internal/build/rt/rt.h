@@ -14,13 +14,17 @@ uint8_t rt_str_index(const uint8_t *s, int32_t i);                    /* panics 
 void rt_str_set_index(uint8_t *s, int32_t i, uint8_t c);
 void rt_str_from_bytes(uint8_t *dst, int dstcap, const uint8_t *buf, int bufcap, int32_t count);
 int32_t rt_str_to_bytes(const uint8_t *src, uint8_t *buf, int bufcap);
+void rt_str_slice(uint8_t *out255, const uint8_t *src, int32_t start, int32_t len); /* strict bounds; panics "slice out of range" (len>255 or OOB) */
+int32_t rt_str_index_of_str(const uint8_t *s, const uint8_t *needle);  /* -1 if absent; empty needle -> 0 */
+int32_t rt_str_index_of_char(const uint8_t *s, uint8_t c);             /* -1 if absent */
 
 int32_t rt_fix_mul(int32_t a, int32_t b);                             /* (a*b)>>16 via int64 */
 int32_t rt_fix_div(int32_t a, int32_t b);                             /* (a<<16)/b via int64; b==0 panics "division by zero" */
 
 void rt_panic(const char *msg);                                       /* "runtime error: MSG" to stderr, exit(3) */
 void rt_alert(const uint8_t *s);                                      /* stdout + \n; CR bytes rendered as LF */
-void rt_quit(void);                                                   /* `quit` statement: exit(0) */
+void rt_log(const uint8_t *s);                                        /* stderr + \n; CR bytes rendered as LF (Ch12) */
+void rt_quit(int32_t code);                                           /* `quit [code]` statement: exit(code) */
 
 extern int32_t rt_lasterr_code;
 extern uint8_t rt_lasterr_msg[256];                                    /* a str255 */
@@ -37,6 +41,12 @@ uint8_t rt_text_index(const rt_text *t, int32_t i);
 void rt_text_set_index(rt_text *t, int32_t i, uint8_t c);
 void rt_text_from_bytes(rt_text *t, const uint8_t *buf, int bufcap, int32_t count);
 int32_t rt_text_to_bytes(const rt_text *t, uint8_t *buf, int bufcap);
+void rt_text_slice(uint8_t *out255, const rt_text *t, int32_t start, int32_t len); /* same strict bounds as rt_str_slice */
+int32_t rt_text_index_of_str(const rt_text *t, const uint8_t *needle); /* -1 if absent; empty needle -> 0 */
+int32_t rt_text_index_of_char(const rt_text *t, uint8_t c);            /* -1 if absent */
+void rt_text_append_str(rt_text *t, const uint8_t *s);    /* amortized growth */
+void rt_text_append_char(rt_text *t, uint8_t c);
+void rt_text_append_text(rt_text *t, const rt_text *src); /* src may alias t (self-append doubles) */
 
 typedef struct rt_list rt_list;   /* growable array of fixed-size elements */
 rt_list *rt_list_new(int32_t elemsize);
@@ -49,6 +59,14 @@ void rt_list_last(const rt_list *l, void *out);
 void rt_list_remove(rt_list *l, int32_t i);   /* panics OOB */
 void *rt_list_at(rt_list *l, int32_t i);      /* element pointer; panics OOB (used for l[i] read AND in-place write) */
 int32_t rt_list_count(const rt_list *l);
+
+/* ---- CLI args (main()'s argc/argv plumbing; the printer's Task-3 emitMain
+   always calls both, regardless of whether the program declares App.startCLI) ----
+   argv[1..argc-1] are stored as str255 values; rt_args_list() builds the
+   rt_list once, on first call, and returns that same list on every later
+   call. */
+void rt_args_init(int argc, char **argv);
+rt_list *rt_args_list(void);   /* list of str255 (256-byte elements: 1 len byte + 255 data bytes) */
 
 typedef struct rt_map rt_map;     /* string keys -> fixed-size values */
 rt_map *rt_map_new(int32_t valsize);

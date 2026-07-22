@@ -15,24 +15,33 @@ package ir
 
 const (
 	// strings (layout: [len byte][bytes...]; args pass ptr+cap as the printer arranges)
-	IStrConcat     = "str_concat"      // (a str, b str) -> str255 temp
-	IStrConcatChar = "str_concat_char" // (a str, c char) -> str255 temp
-	IStrCmp        = "str_cmp"         // (a, b) -> int (-1/0/1 bytewise)
-	IStrLen        = "str_len"         // (s) -> int
-	IStrIndex      = "str_index"       // (s, i) -> char  [panics OOB]
-	IStrSetIndex   = "str_set_index"   // (s, i, c)       [panics OOB]
-	IStrFromBytes  = "str_from_bytes"  // (dst str, buf char-arr ptr+cap, count) ; clamps, sets lastError
-	IStrToBytes    = "str_to_bytes"    // (src str, buf char-arr ptr+cap) -> int ; clamps, sets lastError
-	IStrCoerce     = "str_coerce"      // (src str) -> str temp at Ty's (different) capacity; clamps, sets lastError
+	IStrConcat      = "str_concat"        // (a str, b str) -> str255 temp
+	IStrConcatChar  = "str_concat_char"   // (a str, c char) -> str255 temp
+	IStrCmp         = "str_cmp"           // (a, b) -> int (-1/0/1 bytewise)
+	IStrLen         = "str_len"           // (s) -> int
+	IStrIndex       = "str_index"         // (s, i) -> char  [panics OOB]
+	IStrSetIndex    = "str_set_index"     // (s, i, c)       [panics OOB]
+	IStrFromBytes   = "str_from_bytes"    // (dst str, buf char-arr ptr+cap, count) ; clamps, sets lastError
+	IStrToBytes     = "str_to_bytes"      // (src str, buf char-arr ptr+cap) -> int ; clamps, sets lastError
+	IStrCoerce      = "str_coerce"        // (src str) -> str temp at Ty's (different) capacity; clamps, sets lastError
+	IStrSlice       = "str_slice"         // (src str, start int, len int) -> str255 temp; panics OOB (Ch3: Slicing)
+	IStrIndexOfStr  = "str_index_of_str"  // (s, needle str) -> int (-1 if absent; 0 if needle empty)
+	IStrIndexOfChar = "str_index_of_char" // (s, c char) -> int
 	// text (opaque handle on host: heap buffer)
-	ITextStore     = "text_store"
-	ITextConcat    = "text_concat"
-	ITextCmp       = "text_cmp"
-	ITextLen       = "text_len"
-	ITextIndex     = "text_index"
-	ITextSetIndex  = "text_set_index"
-	ITextFromBytes = "text_from_bytes"
-	ITextToBytes   = "text_to_bytes"
+	ITextStore       = "text_store"
+	ITextConcat      = "text_concat"
+	ITextCmp         = "text_cmp"
+	ITextLen         = "text_len"
+	ITextIndex       = "text_index"
+	ITextSetIndex    = "text_set_index"
+	ITextFromBytes   = "text_from_bytes"
+	ITextToBytes     = "text_to_bytes"
+	ITextSlice       = "text_slice"         // (t text, start int, len int) -> str255 temp; panics OOB
+	ITextIndexOfStr  = "text_index_of_str"  // (t text, needle str) -> int
+	ITextIndexOfChar = "text_index_of_char" // (t text, c char) -> int
+	ITextAppendStr   = "text_append_str"    // (t text, s str) grows t in place
+	ITextAppendChar  = "text_append_char"   // (t text, c char) grows t in place
+	ITextAppendText  = "text_append_text"   // (t text, src text) grows t in place; src may alias t
 	// list (element size known at creation)
 	IListPush    = "list_push"
 	IListPop     = "list_pop"
@@ -54,7 +63,8 @@ const (
 	IFixDiv = "fix_div"
 	// misc
 	IAlert       = "alert" // (s) host: stdout
-	IQuit        = "quit"  // () host: exit(0); never returns
+	IQuit        = "quit"  // (code int) host: exit(code); never returns
+	ILog         = "log"   // (s str) host: stderr + '\n'
 	ILastErrCode = "lasterr_code"
 	ILastErrMsg  = "lasterr_msg"
 	ILastErr     = "lasterr_value" // () -> Err temp {rt_lasterr_code, rt_lasterr_msg}

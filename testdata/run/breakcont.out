@@ -1,0 +1,11 @@
+while break sum = 10
+while break i = 5
+while continue sum = 9
+for range break total = 6
+for range continue total = 9
+for list break total = 30
+for list continue total = 80
+for map break total = 3
+ab
+for map continue total = 4
+ac

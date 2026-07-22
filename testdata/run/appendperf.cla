@@ -1,0 +1,49 @@
+func show(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+on App.launch {
+    var t: text
+    var n: int
+    var pass: bool
+
+    // append is the growth-amortized tool for building large output in a
+    // loop (Ch3: Text) -- 2000 five-byte appends, length verified.
+    for i in 1 to 2000 {
+        t.append("abcde")
+    }
+    n = t.length
+    show("length = ", n)
+
+    pass = true
+    if n != 10000 { pass = false }
+    if t[0] != 'a' { pass = false }
+    if t[5000] != 'a' { pass = false }
+    if t[9999] != 'e' { pass = false }
+    if pass {
+        alert("PASS")
+    } else {
+        alert("FAIL")
+    }
+}

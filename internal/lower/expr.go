@@ -49,6 +49,8 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Expr {
 		return l.lowerCall(e)
 	case *ast.Index:
 		return l.lowerIndex(e)
+	case *ast.SliceExpr:
+		return l.lowerSlice(e)
 	case *ast.Select:
 		return l.lowerSelect(e)
 	case *ast.NewExpr:
@@ -133,6 +135,16 @@ func (l *lowerer) lowerIdent(e *ast.Ident) ir.Expr {
 	ty := lowerType(l.mustType(e))
 	if v, ok := l.info.EnumConsts[e]; ok {
 		return &ir.IntConst{V: int64(v), Ty: ty}
+	}
+	if cv, ok := l.info.Consts[e]; ok {
+		// const uses have no IR decl — every use-site Ident inlines the
+		// checker-resolved value straight to a literal (mirroring the
+		// EnumConsts case just above), never a VarRef to some synthesized
+		// const global.
+		if cv.IsStr {
+			return &ir.StrConst{Idx: l.internStr(cv.Str), Ty: ir.Type{K: ir.Str, N: 255}}
+		}
+		return &ir.IntConst{V: cv.Int, Ty: ty}
 	}
 	if l.isUnshadowedLastError(e) {
 		return &ir.Intr{Name: ir.ILastErr, Ty: ty}
@@ -236,6 +248,8 @@ func (l *lowerer) lowerIdentCall(e *ast.Call, fn *ast.Ident) ir.Expr {
 		return &ir.Conv{Op: ir.IntToChar, X: l.lowerExpr(e.Args[0]), Ty: ty}
 	case "alert":
 		return &ir.Intr{Name: ir.IAlert, Args: l.lowerArgs(e.Args), Ty: ty}
+	case "log":
+		return &ir.Intr{Name: ir.ILog, Args: l.lowerArgs(e.Args), Ty: ty}
 	case "askOpen", "askSave", "askSaveChanges":
 		l.unsupported(e.P, fn.Name)
 		return l.placeholder(ty)
@@ -386,9 +400,57 @@ func (l *lowerer) lowerStringTextMethod(recv ir.Expr, isText bool, sel *ast.Sele
 			name = ir.ITextToBytes
 		}
 		return &ir.Intr{Name: name, Args: []ir.Expr{recv, l.lowerExpr(args[0])}, Ty: ty}
+	case "indexOf":
+		return l.lowerIndexOf(recv, isText, args[0], ty)
+	case "append":
+		// textOnlyMethods reaches here only for a text receiver (isText is
+		// always true) — see checker.textOnlyMethods's doc comment.
+		return l.lowerAppend(recv, args[0], ty)
 	default:
 		panic(fmt.Sprintf("lower: unknown string/text method %s at %v", sel.Name, sel.P))
 	}
+}
+
+// lowerIndexOf lowers `x.indexOf(arg)` (Ch3: string/text — indexOf), picking
+// the char vs. string needle intrinsic for whichever of string/text recv is.
+func (l *lowerer) lowerIndexOf(recv ir.Expr, isText bool, arg ast.Expr, ty ir.Type) ir.Expr {
+	isChar := l.mustType(arg).Kind == types.Char
+	name := ir.IStrIndexOfStr
+	switch {
+	case !isText && isChar:
+		name = ir.IStrIndexOfChar
+	case isText && isChar:
+		name = ir.ITextIndexOfChar
+	case isText:
+		name = ir.ITextIndexOfStr
+	}
+	return &ir.Intr{Name: name, Args: []ir.Expr{recv, l.lowerExpr(arg)}, Ty: ty}
+}
+
+// lowerAppend lowers `t.append(arg)` (Ch3: Text — append grows t in place).
+// arg is string, char, or text (textOnlyMethods' OneOfKinds); the checker
+// already validated it, so only the concrete kind decides which intrinsic.
+func (l *lowerer) lowerAppend(recv ir.Expr, arg ast.Expr, ty ir.Type) ir.Expr {
+	name := ir.ITextAppendStr
+	switch l.mustType(arg).Kind {
+	case types.Char:
+		name = ir.ITextAppendChar
+	case types.Text:
+		name = ir.ITextAppendText
+	}
+	return &ir.Intr{Name: name, Args: []ir.Expr{recv, l.lowerExpr(arg)}, Ty: ty}
+}
+
+// lowerSlice lowers `x[start, len]` (Ch3: Strings, Text — Slicing) to the
+// str/text slice intrinsic; the result always materializes into a str255
+// temp, like any other string-producing intrinsic (IStrConcat et al.).
+func (l *lowerer) lowerSlice(e *ast.SliceExpr) ir.Expr {
+	ty := lowerType(l.mustType(e))
+	name := ir.IStrSlice
+	if l.mustType(e.X).Kind == types.Text {
+		name = ir.ITextSlice
+	}
+	return &ir.Intr{Name: name, Args: []ir.Expr{l.lowerExpr(e.X), l.lowerExpr(e.Start), l.lowerExpr(e.Len)}, Ty: ty}
 }
 
 // lowerIndex lowers `a[i]`. Array and list share IndexRef — see the doc

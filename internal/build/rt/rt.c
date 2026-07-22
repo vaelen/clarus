@@ -28,8 +28,8 @@ void rt_panic(const char *msg) {
     exit(3);
 }
 
-void rt_quit(void) {
-    exit(0);
+void rt_quit(int32_t code) {
+    exit(code);
 }
 
 void rt_alert(const uint8_t *s) {
@@ -39,6 +39,17 @@ void rt_alert(const uint8_t *s) {
         putchar(c == '\r' ? '\n' : c); /* CR (Mac newline) renders as LF on the host */
     }
     putchar('\n');
+}
+
+/* Diagnostic stream (Ch12): same CR->LF rendering as rt_alert, but to
+   stderr rather than stdout. */
+void rt_log(const uint8_t *s) {
+    uint8_t len = s[0];
+    for (uint8_t i = 0; i < len; i++) {
+        uint8_t c = s[1 + i];
+        fputc(c == '\r' ? '\n' : c, stderr);
+    }
+    fputc('\n', stderr);
 }
 
 void rt_str_store(uint8_t *dst, int dstcap, const uint8_t *src) {
@@ -116,6 +127,35 @@ int32_t rt_str_to_bytes(const uint8_t *src, uint8_t *buf, int bufcap) {
     memmove(buf, src + 1, (size_t)n);
     if (n < srclen) rt_set_lasterr(1, "string truncated");
     return n;
+}
+
+/* Strict bounds (Ch3): start<0, len<0, len>255, or start+len>srclen all
+   panic "slice out of range" — there is no clamping here, unlike the
+   byte-copy family above. */
+void rt_str_slice(uint8_t *out255, const uint8_t *src, int32_t start, int32_t len) {
+    int32_t srclen = src[0];
+    if (len < 0 || len > 255) rt_panic("slice out of range");
+    if (start < 0 || start > srclen - len) rt_panic("slice out of range");
+    memmove(out255 + 1, src + 1 + start, (size_t)len);
+    out255[0] = (uint8_t)len;
+}
+
+int32_t rt_str_index_of_str(const uint8_t *s, const uint8_t *needle) {
+    int slen = s[0], nlen = needle[0];
+    if (nlen == 0) return 0; /* empty needle convention (Ch3) */
+    if (nlen > slen) return -1;
+    for (int i = 0; i <= slen - nlen; i++) {
+        if (memcmp(s + 1 + i, needle + 1, (size_t)nlen) == 0) return i;
+    }
+    return -1;
+}
+
+int32_t rt_str_index_of_char(const uint8_t *s, uint8_t c) {
+    int slen = s[0];
+    for (int i = 0; i < slen; i++) {
+        if (s[1 + i] == c) return i;
+    }
+    return -1;
 }
 
 int32_t rt_fix_mul(int32_t a, int32_t b) {
@@ -232,6 +272,62 @@ int32_t rt_text_to_bytes(const rt_text *t, uint8_t *buf, int bufcap) {
     return n;
 }
 
+/* Same strict-bounds rule as rt_str_slice, but against t->len rather than a
+   str255's own length — the len>255 leg is the one that actually bites
+   here, since text is unbounded and start+len can stay within it while
+   still being too long for the str255 the result must fit in. */
+void rt_text_slice(uint8_t *out255, const rt_text *t, int32_t start, int32_t len) {
+    int32_t tlen = t->len;
+    if (len < 0 || len > 255) rt_panic("slice out of range");
+    if (start < 0 || start > tlen - len) rt_panic("slice out of range");
+    memmove(out255 + 1, t->data + start, (size_t)len);
+    out255[0] = (uint8_t)len;
+}
+
+int32_t rt_text_index_of_str(const rt_text *t, const uint8_t *needle) {
+    int32_t tlen = t->len;
+    int nlen = needle[0];
+    if (nlen == 0) return 0; /* empty needle convention (Ch3) */
+    if (nlen > tlen) return -1;
+    for (int32_t i = 0; i <= tlen - nlen; i++) {
+        if (memcmp(t->data + i, needle + 1, (size_t)nlen) == 0) return i;
+    }
+    return -1;
+}
+
+int32_t rt_text_index_of_char(const rt_text *t, uint8_t c) {
+    for (int32_t i = 0; i < t->len; i++) {
+        if (t->data[i] == c) return i;
+    }
+    return -1;
+}
+
+/* Amortized growth: `grow` doubles capacity, so a loop of N appends costs
+   O(N) total, not O(N^2) — same helper the constructor/concat paths use. */
+void rt_text_append_str(rt_text *t, const uint8_t *s) {
+    int32_t n = s[0];
+    grow((void **)&t->data, &t->cap, t->len + n, 1);
+    memmove(t->data + t->len, s + 1, (size_t)n);
+    t->len += n;
+}
+
+void rt_text_append_char(rt_text *t, uint8_t c) {
+    grow((void **)&t->data, &t->cap, t->len + 1, 1);
+    t->data[t->len] = c;
+    t->len += 1;
+}
+
+/* src may alias t (self-append doubles): n is captured before grow() can
+   move t->data (which is src->data too, when src==t). For self-append, the
+   destination range (t->len, t->len+n) never overlaps the source (0, n)
+   because t->len == n when src==t — no separate self-append branch needed. */
+void rt_text_append_text(rt_text *t, const rt_text *src) {
+    int32_t n = src->len;
+    grow((void **)&t->data, &t->cap, t->len + n, 1);
+    memmove(t->data + t->len, src->data, (size_t)n);
+    t->len += n;
+}
+
 /* ==================== list ==================== */
 
 struct rt_list {
@@ -303,20 +399,54 @@ void *rt_list_at(rt_list *l, int32_t i) {
 
 int32_t rt_list_count(const rt_list *l) { return l->count; }
 
+/* ==================== CLI args ====================
+ * ponytail: this is already the full Task-4 implementation (there's nothing
+ * simpler to stub) — argv is just stashed, and rt_args_list() lazily builds
+ * a str255 rt_list from it once, the same construction rt_str_from_bytes
+ * would produce for each element.
+ */
+static int g_argc = 0;
+static char **g_argv = NULL;
+static rt_list *g_args_list = NULL;
+
+void rt_args_init(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+    g_args_list = NULL; /* rebuild lazily on next rt_args_list() call */
+}
+
+rt_list *rt_args_list(void) {
+    if (g_args_list == NULL) {
+        g_args_list = rt_list_new(256); /* str255 layout: 1 len byte + 255 data bytes */
+        for (int i = 1; i < g_argc; i++) {
+            uint8_t arg[256] = {0};
+            size_t n = strlen(g_argv[i]);
+            if (n > 255) n = 255;
+            memmove(arg + 1, g_argv[i], n);
+            arg[0] = (uint8_t)n;
+            rt_list_push(g_args_list, arg);
+        }
+    }
+    return g_args_list;
+}
+
 /* ==================== map ====================
- * ponytail: linear-scan map, fine for host tests
+ * Sorted parallel arrays: `keys` holds `count` str255 blocks (256 bytes
+ * each: one length byte + up to 255 data bytes, same layout rt_str_* uses)
+ * and `vals` holds `count` fixed-size values, index-aligned with `keys`.
+ * Entries are kept in ascending key order (rt_str_cmp, byte-wise): lookup
+ * is a binary search, insertion memmoves both arrays open at the sorted
+ * position, removal compacts.
  *
- * Parallel arrays: `keys` holds `count` str255 blocks (256 bytes each: one
- * length byte + up to 255 data bytes, same layout rt_str_* uses) and `vals`
- * holds `count` fixed-size values, index-aligned with `keys`. Lookup is a
- * linear scan via rt_str_cmp. Insertion appends; removal memmoves both
- * arrays to compact the gap.
+ * CONTRACT (language reference, Ch3 Maps): iteration visits entries in
+ * ascending byte-wise key order. `rt_map_key_at`/`rt_map_val_at` deliver
+ * that order directly because the arrays ARE the sort. Goldens depend on
+ * it, and the future Mac runtime must honor the same order (its planned
+ * layout is a key-sorted offset table over a packed arena — see the design
+ * spec §4).
  *
- * CONTRACT: entries are kept in insertion order. `rt_map_key_at`/
- * `rt_map_val_at` iterate in that order, and goldens depend on it — this is
- * a de-facto guarantee the host runtime makes (the language reference does
- * not promise an order); flagged to the controller so the reference can be
- * updated to state it explicitly.
+ * ponytail: 256-byte key slots waste space; fine for the host test double.
+ * The packed-arena layout is the Mac runtime's job.
  */
 
 #define MAP_KEYBLOCK 256
@@ -345,26 +475,47 @@ static uint8_t *map_val_slot(const rt_map *m, int32_t i) {
     return m->vals + (size_t)i * (size_t)m->valsize;
 }
 
-static int32_t map_find(const rt_map *m, const uint8_t *key) {
-    for (int32_t i = 0; i < m->count; i++) {
-        if (rt_str_cmp(map_key_slot(m, i), key) == 0) return i;
+/* Binary search for the smallest index whose key is >= `key` (lower bound).
+   Sets *found if the key at that index is an exact match. */
+static int32_t map_lower_bound(const rt_map *m, const uint8_t *key, int *found) {
+    int32_t lo = 0, hi = m->count;
+    while (lo < hi) {
+        int32_t mid = lo + (hi - lo) / 2;
+        if (rt_str_cmp(map_key_slot(m, mid), key) < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
     }
-    return -1;
+    *found = lo < m->count && rt_str_cmp(map_key_slot(m, lo), key) == 0;
+    return lo;
+}
+
+static int32_t map_find(const rt_map *m, const uint8_t *key) {
+    int found;
+    int32_t pos = map_lower_bound(m, key, &found);
+    return found ? pos : -1;
 }
 
 void rt_map_set(rt_map *m, const uint8_t *key, const void *val) {
-    int32_t idx = map_find(m, key);
-    if (idx >= 0) {
-        memmove(map_val_slot(m, idx), val, (size_t)m->valsize);
+    int found;
+    int32_t pos = map_lower_bound(m, key, &found);
+    if (found) {
+        memmove(map_val_slot(m, pos), val, (size_t)m->valsize);
         return;
     }
     grow((void **)&m->keys, &m->cap, m->count + 1, MAP_KEYBLOCK);
     grow((void **)&m->vals, &m->valcap, m->count + 1, (size_t)m->valsize);
+    int32_t tail = m->count - pos;
+    if (tail > 0) {
+        memmove(map_key_slot(m, pos + 1), map_key_slot(m, pos), (size_t)tail * MAP_KEYBLOCK);
+        memmove(map_val_slot(m, pos + 1), map_val_slot(m, pos), (size_t)tail * (size_t)m->valsize);
+    }
     int32_t klen = key[0];
-    uint8_t *kslot = map_key_slot(m, m->count);
+    uint8_t *kslot = map_key_slot(m, pos);
     kslot[0] = (uint8_t)klen;
     memmove(kslot + 1, key + 1, (size_t)klen);
-    memmove(map_val_slot(m, m->count), val, (size_t)m->valsize);
+    memmove(map_val_slot(m, pos), val, (size_t)m->valsize);
     m->count++;
 }
 

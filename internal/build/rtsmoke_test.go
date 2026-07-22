@@ -2,9 +2,11 @@
 package build
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,11 +57,12 @@ int main(void) {
     if (!rt_map_get_dv(m, (uint8_t*)&k1, &got) || got != 10) { printf("map getdv FAIL\n"); return 1; }
     int32_t missing = -1;
     if (rt_map_get_dv(m, (uint8_t*)"\x03""baz", &missing) || missing != -1) { printf("map getdv default FAIL\n"); return 1; }
+    /* iteration is ascending key order: "bar" < "foo" even though "foo" was inserted first */
     uint8_t key255[256];
     rt_map_key_at(m, 0, key255);
-    if (key255[0] != 3 || key255[1] != 'f') { printf("map key_at order FAIL\n"); return 1; }
+    if (key255[0] != 3 || key255[1] != 'b') { printf("map key_at sorted FAIL\n"); return 1; }
     rt_map_key_at(m, 1, key255);
-    if (key255[0] != 3 || key255[1] != 'b') { printf("map key_at order2 FAIL\n"); return 1; }
+    if (key255[0] != 3 || key255[1] != 'f') { printf("map key_at sorted2 FAIL\n"); return 1; }
 
     /* text */
     rt_text *t = rt_text_new();
@@ -113,6 +116,283 @@ func TestRuntimeSmokeCollections(t *testing.T) {
 }
 
 func cc() string { return CCPath() }
+
+const smokeSliceIndexAppendMain = `
+#include "rt.h"
+#include <stdio.h>
+#include <string.h>
+int main(void) {
+    struct { uint8_t len; uint8_t b[255]; } hello = {5, {'h','e','l','l','o'}};
+    struct { uint8_t len; uint8_t b[255]; } world11 = {11, {'h','e','l','l','o',' ','w','o','r','l','d'}};
+    struct { uint8_t len; uint8_t b[255]; } out = {0};
+    struct { uint8_t len; uint8_t b[255]; } needle_lo = {2, {'l','o'}};
+    struct { uint8_t len; uint8_t b[255]; } needle_xyz = {3, {'x','y','z'}};
+    struct { uint8_t len; uint8_t b[255]; } needle_empty = {0, {0}};
+
+    /* ---- string slice: happy, edge (start+len==length), zero-len ---- */
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&world11, 6, 5);
+    if (out.len != 5 || memcmp(out.b, "world", 5) != 0) { printf("str slice happy FAIL\n"); return 1; }
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&hello, 0, 5);
+    if (out.len != 5 || memcmp(out.b, "hello", 5) != 0) { printf("str slice edge FAIL\n"); return 1; }
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&hello, 2, 0);
+    if (out.len != 0) { printf("str slice zero FAIL\n"); return 1; }
+
+    /* ---- string indexOf: str hit/miss, empty needle, char hit/miss ---- */
+    if (rt_str_index_of_str((uint8_t*)&hello, (uint8_t*)&needle_lo) != 3) { printf("str idx str FAIL\n"); return 1; }
+    if (rt_str_index_of_str((uint8_t*)&hello, (uint8_t*)&needle_xyz) != -1) { printf("str idx miss FAIL\n"); return 1; }
+    if (rt_str_index_of_str((uint8_t*)&hello, (uint8_t*)&needle_empty) != 0) { printf("str idx empty FAIL\n"); return 1; }
+    if (rt_str_index_of_char((uint8_t*)&hello, 'l') != 2) { printf("str idx char FAIL\n"); return 1; }
+    if (rt_str_index_of_char((uint8_t*)&hello, 'z') != -1) { printf("str idx char miss FAIL\n"); return 1; }
+
+    /* ---- text slice / indexOf, mirroring string ---- */
+    rt_text *t = rt_text_new();
+    rt_text_store(t, (uint8_t*)&world11); /* "hello world" */
+    rt_text_slice((uint8_t*)&out, t, 6, 5);
+    if (out.len != 5 || memcmp(out.b, "world", 5) != 0) { printf("text slice happy FAIL\n"); return 1; }
+    rt_text_slice((uint8_t*)&out, t, 0, 11);
+    if (out.len != 11 || memcmp(out.b, "hello world", 11) != 0) { printf("text slice edge FAIL\n"); return 1; }
+    rt_text_slice((uint8_t*)&out, t, 3, 0);
+    if (out.len != 0) { printf("text slice zero FAIL\n"); return 1; }
+    if (rt_text_index_of_str(t, (uint8_t*)&needle_lo) != 3) { printf("text idx str FAIL\n"); return 1; }
+    if (rt_text_index_of_str(t, (uint8_t*)&needle_xyz) != -1) { printf("text idx miss FAIL\n"); return 1; }
+    if (rt_text_index_of_str(t, (uint8_t*)&needle_empty) != 0) { printf("text idx empty FAIL\n"); return 1; }
+    if (rt_text_index_of_char(t, 'w') != 6) { printf("text idx char FAIL\n"); return 1; }
+    if (rt_text_index_of_char(t, 'z') != -1) { printf("text idx char miss FAIL\n"); return 1; }
+
+    /* ---- append: 1000-iteration char loop (amortized growth; must finish instantly), then str/text append ---- */
+    rt_text *acc = rt_text_new();
+    for (int i = 0; i < 1000; i++) rt_text_append_char(acc, 'x');
+    if (rt_text_len(acc) != 1000) { printf("append char loop FAIL\n"); return 1; }
+    rt_text_append_str(acc, (uint8_t*)&hello);
+    if (rt_text_len(acc) != 1005) { printf("append str FAIL\n"); return 1; }
+    rt_text *more = rt_text_new();
+    rt_text_store(more, (uint8_t*)&hello);
+    rt_text_append_text(acc, more);
+    if (rt_text_len(acc) != 1010) { printf("append text FAIL\n"); return 1; }
+
+    /* ---- self-append (doubles; src may alias t) ---- */
+    rt_text *self = rt_text_new();
+    rt_text_store(self, (uint8_t*)&hello); /* "hello" */
+    rt_text_append_text(self, self);
+    if (rt_text_len(self) != 10) { printf("self append len FAIL\n"); return 1; }
+    uint8_t selfbuf[16] = {0};
+    rt_text_to_bytes(self, selfbuf, 16);
+    if (memcmp(selfbuf, "hellohello", 10) != 0) { printf("self append content FAIL\n"); return 1; }
+
+    printf("OK\n");
+    return 0;
+}
+`
+
+func TestRuntimeSmokeSliceIndexAppend(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(main, []byte(smokeSliceIndexAppendMain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	out, err := exec.Command(exe).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	if string(out) != "OK\n" {
+		t.Fatalf("output: %q", out)
+	}
+}
+
+// TestRuntimeSmokeSliceOutOfRange covers the strict-bounds panic for a
+// string slice whose start+len exceeds the source length (Ch3: "slice out
+// of range").
+func TestRuntimeSmokeSliceOutOfRange(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	src := `
+#include "rt.h"
+int main(void) {
+    struct { uint8_t len; uint8_t b[255]; } hello = {5, {'h','e','l','l','o'}};
+    struct { uint8_t len; uint8_t b[255]; } out = {0};
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&hello, 3, 5); /* start+len=8 > length 5 */
+    return 0;
+}
+`
+	if err := os.WriteFile(main, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	var stderr bytes.Buffer
+	run := exec.Command(exe)
+	run.Stderr = &stderr
+	err := run.Run()
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 3 {
+		t.Fatalf("want exit 3, got %v (stderr=%q)", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "slice out of range") {
+		t.Fatalf("stderr = %q, want it to mention slice out of range", stderr.String())
+	}
+}
+
+// TestRuntimeSmokeTextSliceLenTooLong covers the len>255 half of the
+// strict-bounds check, which only bites text (unbounded, so start+len can
+// stay within the source while len alone still exceeds what a str255 result
+// can hold).
+func TestRuntimeSmokeTextSliceLenTooLong(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	src := `
+#include "rt.h"
+int main(void) {
+    rt_text *t = rt_text_new();
+    for (int i = 0; i < 300; i++) rt_text_append_char(t, 'a');
+    struct { uint8_t len; uint8_t b[255]; } out = {0};
+    rt_text_slice((uint8_t*)&out, t, 0, 260); /* within t's length but len>255 */
+    return 0;
+}
+`
+	if err := os.WriteFile(main, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	var stderr bytes.Buffer
+	run := exec.Command(exe)
+	run.Stderr = &stderr
+	err := run.Run()
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 3 {
+		t.Fatalf("want exit 3, got %v (stderr=%q)", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "slice out of range") {
+		t.Fatalf("stderr = %q, want it to mention slice out of range", stderr.String())
+	}
+}
+
+const smokeLogMain = `
+#include "rt.h"
+int main(void) {
+    struct { uint8_t len; uint8_t b[255]; } msg = {6, {'h','i',13,'y','o','u'}}; /* embedded CR */
+    rt_log((uint8_t*)&msg);
+    return 0;
+}
+`
+
+// TestRuntimeSmokeLog captures stderr separately from stdout: rt_log writes
+// to stderr with a trailing newline, rendering embedded CR bytes as LF
+// (mirroring rt_alert's stdout behavior, per Ch12).
+func TestRuntimeSmokeLog(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(main, []byte(smokeLogMain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	var stdout, stderr bytes.Buffer
+	run := exec.Command(exe)
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+	if err := run.Run(); err != nil {
+		t.Fatalf("run: %v\nstderr=%s", err, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("unexpected stdout: %q", stdout.String())
+	}
+	if stderr.String() != "hi\nyou\n" {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), "hi\nyou\n")
+	}
+}
+
+const smokeArgsMain = `
+#include "rt.h"
+#include <stdio.h>
+#include <string.h>
+int main(void) {
+    char *fake_argv[] = {"prog", "alpha", "beta"};
+    rt_args_init(3, fake_argv);
+    rt_list *args = rt_args_list();
+    if (rt_list_count(args) != 2) { printf("args count FAIL\n"); return 1; }
+    uint8_t elem[256];
+    memmove(elem, rt_list_at(args, 0), 256);
+    if (elem[0] != 5 || memcmp(elem + 1, "alpha", 5) != 0) { printf("args[0] FAIL\n"); return 1; }
+    memmove(elem, rt_list_at(args, 1), 256);
+    if (elem[0] != 4 || memcmp(elem + 1, "beta", 4) != 0) { printf("args[1] FAIL\n"); return 1; }
+    if (rt_args_list() != args) { printf("args memo FAIL\n"); return 1; } /* built once */
+    printf("OK\n");
+    return 0;
+}
+`
+
+func TestRuntimeSmokeArgs(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(main, []byte(smokeArgsMain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	out, err := exec.Command(exe).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	if string(out) != "OK\n" {
+		t.Fatalf("output: %q", out)
+	}
+}
+
+// TestSliceOverflowPanics covers the int32 overflow vulnerability in slice
+// bounds checking: start=INT32_MAX, len=5 would cause start+len to wrap
+// negative in the old code, bypassing the bounds check. The reordered check
+// (start > srclen-len) avoids the addition entirely.
+func TestSliceOverflowPanics(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	src := `
+#include "rt.h"
+#include <stdint.h>
+int main(void) {
+    struct { uint8_t len; uint8_t b[255]; } s = {10, {'a','b','c','d','e','f','g','h','i','j'}};
+    struct { uint8_t len; uint8_t b[255]; } out = {0};
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&s, INT32_MAX, 5);
+    return 0;
+}
+`
+	if err := os.WriteFile(main, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	var stderr bytes.Buffer
+	run := exec.Command(exe)
+	run.Stderr = &stderr
+	err := run.Run()
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 3 {
+		t.Fatalf("want exit 3, got %v (stderr=%q)", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "slice out of range") {
+		t.Fatalf("stderr = %q, want it to mention slice out of range", stderr.String())
+	}
+}
 
 func TestRuntimeSmokeStrings(t *testing.T) {
 	dir := t.TempDir()

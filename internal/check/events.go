@@ -35,6 +35,7 @@ var events = map[string]map[string]eventSpec{
 		"launch":       {},
 		"startEmpty":   {},
 		"openDocument": {Params: []paramDesc{{"path", types.StringT(255)}}},
+		"startCLI":     {Params: []paramDesc{{"args", types.ListT(types.StringT(255))}}},
 	},
 	"window": {
 		"opened":       {},

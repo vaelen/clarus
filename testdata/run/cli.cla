@@ -1,0 +1,7 @@
+on App.startCLI(args: list of string) {
+    for a in args {
+        alert(a)
+    }
+    log("cli ran")
+    quit 4
+}
