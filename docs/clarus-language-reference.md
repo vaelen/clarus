@@ -31,6 +31,7 @@ The following declarations may appear at the top level, in any order, subject to
 
 - `record` declarations
 - `enum` declarations
+- `const` declarations
 - `var` declarations
 - `func` declarations
 - `window` declarations
@@ -82,10 +83,11 @@ Convention (not enforced): types, windows, menus, and widgets use CapitalCase; v
 **Hard keywords** (reserved everywhere):
 
 ```
-var func record enum window menu extend on every
+var func record enum const window menu extend on every
 if else while for in to return
 and or not true false nil
 open close edit new quit cancel
+switch case break continue
 ```
 
 Note: `window` is both the declaration keyword and, inside a window's handlers, the expression naming the firing instance (Chapter 8). The parser distinguishes by position.
@@ -204,6 +206,22 @@ s = s + 'b'                  // "hib"
 
 **Comparison:** Strings and characters compare byte-wise with `==`, `!=`, and other relational operators.
 
+**Slicing:** `s[start, len]` yields a new `string` holding `len` characters beginning at index `start` (the Pascal `Copy` parameter order). Bounds are strict: `start < 0`, `len < 0`, `start + len > s.length`, or `len > 255` raises a runtime error (`slice out of range`). A slice is an expression, never an assignment target:
+
+```rust
+var s: string = "hello world"
+var w: string = s[6, 5]          // "world"
+```
+
+**Searching:** `s.indexOf(needle)` returns the index of the first occurrence of `needle` (a `string` or a `char`), or `-1` if absent. Byte-wise, case-sensitive:
+
+```rust
+var s: string = "hello"
+var i: int = s.indexOf('l')      // 2
+var j: int = s.indexOf("lo")     // 3
+var k: int = s.indexOf("xyz")    // -1
+```
+
 **Byte copies:** For assembling and parsing binary data (network protocols, file headers), a `string` doubles as a counted byte buffer, and two built-in methods copy between strings and `char` arrays. Both know the compile-time capacity of every operand and clamp every copy to it — a buffer overrun is impossible by construction. A clamped (truncated) copy sets `lastError` (Chapter 12) and execution continues:
 
 - `s.fromBytes(buf, count)` — copy the first `count` bytes of `char` array `buf` into `s`, setting `s`'s length; copies min(`count`, `buf`'s capacity, `s`'s capacity).
@@ -305,7 +323,10 @@ A `text` is an unbounded, resizable buffer of characters. Text operations are:
 
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
+- `t.append(x)` — append `x` (a `string`, `char`, or `text`) in place. Unlike `t = t + x`, which rebuilds the buffer, `append` grows it amortized — the right tool for building large output in a loop.
 - `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
+- `t[start, len]` — slice, yielding a `string`; same strict-bounds rules as string slicing (above)
+- `t.indexOf(needle)` — first index of a `string` or `char`, or `-1` (as for strings)
 - `t.length` — length of the buffer (returns `int`)
 - Comparison: `t == "hello"` (byte-wise)
 - `t.fromBytes(buf, count)` / `t.toBytes(buf)` — byte copies to and from a `char` array, with the same clamping rules as their `string` counterparts (above). A `text` has no fixed capacity, so `fromBytes` resizes the text and never truncates; `toBytes` still clamps to the array's capacity and sets `lastError` if bytes were dropped.
@@ -320,11 +341,24 @@ A window type (e.g., `Doc`) represents a reference to an open window instance. W
 
 `saveChoice` is a built-in enum, as if declared `enum saveChoice { Save, Discard "Don't Save", Cancel }`. It is not declared by user code; it is the return type of `askSaveChanges` (Chapter 12) and is used in comparisons: `if c == Cancel { cancel }`.
 
+### Constants
+
+A `const` declaration names an immutable typed value at the top level:
+
+```rust
+const maxTokens: int = 4096
+const versionTag: string = "clarusc 0.1"
+const startState: EventKind = Click
+```
+
+The initializer must be a literal, an enum member, or a previously declared constant — no expressions. Assigning to a constant is a compile error. Constants follow declare-before-use like every other declaration, and they are valid as `switch` case labels (Chapter 5).
+
 ### Runtime Errors
 
 The following operations may raise runtime errors (Chapter 12 specifies how errors are reported):
 
 - Indexing a string, text, array, or list out of range
+- Slicing a string or text out of range, or with a length over 255
 - `pop`, `shift`, `first`, or `last` on an empty list
 - Accessing a map with the `[]` form using a key that does not exist (`get` never errors)
 - A checked enum conversion (`EnumType(i)`) with a value that matches no member
@@ -569,11 +603,20 @@ The second argument is the record to edit — either an lvalue or a fresh record
 
 ### Quit
 
-`quit` requests that the application quit. The runtime sends `closeRequest` to every open window first; any handler that runs `cancel` aborts the quit.
+`quit` requests that the application quit. The runtime sends `closeRequest` to every open window first; any handler that runs `cancel` aborts the quit. An optional `int` expression supplies the process exit code where the platform has one (command-line hosts); on the Macintosh the code is accepted and ignored. Bare `quit` exits 0.
 
 ```rust
 on App.startEmpty {
-    quit                          // requests app quit
+    quit                          // requests app quit (exit code 0)
+}
+```
+
+```rust
+on App.launch {
+    if App.args.count == 0 {
+        log("usage: clarusc file.cla...")
+        quit 2
+    }
 }
 ```
 
@@ -589,20 +632,40 @@ on closeRequest {
 }
 ```
 
-### No Break or Continue
+### Break and Continue
 
-Clarus has no `break` or `continue`. Restructure a loop that needs to exit early with a `while` loop and a `bool` flag, or extract the loop into a function and use `return`:
+`break` exits the innermost enclosing loop immediately; `continue` skips to the next iteration (in a `for` over a range, list, or map, it advances to the next element; in a `while`, it re-tests the condition). Both are unlabeled — they act only on the innermost loop — and both are valid only inside a loop body:
 
 ```rust
 var names: list of Person
 var i: int = 0
-var found: bool = false
 
-while i < names.count and not found {
-    if names[i].name == "Ann" { found = true }
+while i < names.count {
+    if names[i].name == "Ann" { break }
     i = i + 1
 }
+// i is the index of "Ann", or names.count if absent
 ```
+
+### Switch
+
+`switch` compares one value against constant case labels, running the first case that matches. There is **no fallthrough** — exactly one case (or `else`) runs. Case labels are literals, enum members, or declared constants (Chapter 3), comma-separated to match any of several values; the operand may be an `int`, `char`, enum, or `string`:
+
+```rust
+switch tok {
+case KwIf {
+    parseIf()
+}
+case KwWhile, KwFor {
+    parseLoop()
+}
+else {
+    syntaxError()
+}
+}
+```
+
+`else` is optional; with no match and no `else`, the statement does nothing. `break` is not used with `switch` (it has no fallthrough to break out of); a `break` inside a case body belongs to the enclosing loop, if any.
 
 ## Chapter 6: Functions
 
@@ -684,6 +747,18 @@ The `quit` statement (Chapter 5) requests that the application exit. The runtime
 ### Mac Launch Events
 
 These events correspond to the classic Macintosh OAPP and ODOC Apple events sent by the Finder; design rationale appears in the language design spec.
+
+### Command-Line Arguments
+
+`App.args` is a read-only `list of string` holding the program's command-line arguments (not including the program name), populated before `App.launch` fires. On a command-line host this is the argument vector; on the Macintosh it is always empty — documents opened from the Finder arrive through `App.openDocument`, never as arguments:
+
+```rust
+on App.launch {
+    for a in App.args {
+        compile(a)
+    }
+}
+```
 
 ### Timers
 
@@ -1104,6 +1179,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
+**Binary faithfulness:** `readText` and `writeText` transfer content verbatim, byte for byte — no newline translation, and every byte value 0–255 (including 0) round-trips unchanged. Since a `text` is a byte buffer (Chapter 3), these two functions are also the way to read and write binary data.
+
 A document window may declare its document file type for Finder integration (Mac type and creator codes). Double-clicking such a document in the Finder launches the application and fires `App.openDocument` with the document's path (Chapter 7). The declaration syntax is part of the window declaration and is settled alongside the toolchain; the behavior is as described here.
 
 ### Dialogs
@@ -1115,6 +1192,10 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 - `askSave(path: string, suggested: string): bool` — Standard File "Save" dialog, pre-filled with `suggested`; fills `path` and returns `true`, or returns `false` on Cancel.
 - `askSaveChanges(name: string): saveChoice` — the standard three-way "Save changes to “name”?" dialog; returns `Save`, `Discard`, or `Cancel` (Chapter 3).
 
+### Logging
+
+`log(msg: string)` writes a diagnostic line to the platform's diagnostic stream: on a command-line host, standard error; on the Macintosh, a destination reserved for a later release (a log file or debugging window) — programs use it identically either way. Diagnostics belong in `log`; user-facing output belongs in `alert` or files.
+
 ### Errors
 
 An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent soft failure: a `false` return from a `file` function, or a clamped string store or byte copy (Chapters 3 and 4).
@@ -1124,20 +1205,22 @@ Clarus reports failures in four ways, depending on where they occur:
 - **Async failures** — a `connection`, `listener`, or `serviceBrowser` operation that fails after it's already underway — are delivered as a `failed(err: error)` event on that resource (above).
 - **Synchronous fallible operations** — the `file` functions return `bool`; on `false`, inspect `lastError`. String stores and byte copies that must truncate (Chapters 3 and 4) clamp safely, set `lastError`, and continue. There are no exceptions and no unwinding machinery.
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
-- **Runtime errors** — dereferencing a `nil` window reference, indexing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
+- **Runtime errors** — dereferencing a `nil` window reference, indexing or slicing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
 
 ## Appendix A: Grammar (EBNF)
 
 ```ebnf
 program     = { topDecl } ;
-topDecl     = recordDecl | enumDecl | varDecl | funcDecl | windowDecl
-            | menuDecl | extendDecl | handlerDecl | everyDecl ;
+topDecl     = recordDecl | enumDecl | constDecl | varDecl | funcDecl
+            | windowDecl | menuDecl | extendDecl | handlerDecl | everyDecl ;
 
 recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
 fieldDecl   = IDENT ":" type [ "=" ( literal | IDENT ) ] ;
 
 enumDecl    = "enum" IDENT "{" enumMember { [ "," ] enumMember } "}" ;
 enumMember  = IDENT [ INT | HEXINT ] [ STRING ] ;
+
+constDecl   = "const" IDENT ":" type "=" ( literal | IDENT ) ;
 
 type        = "int" | "bool" | "fixed" | "char" | "text"
             | "string" [ "(" INT ")" ]
@@ -1174,8 +1257,8 @@ everyDecl   = "every" INT "ticks" block ;
 
 block       = "{" { stmt } "}" ;
 stmt        = varDecl | assign | callStmt | ifStmt | whileStmt
-            | forStmt | returnStmt
-            | "quit" | "cancel"
+            | forStmt | switchStmt | returnStmt
+            | "quit" [ expr ] | "cancel" | "break" | "continue"
             | "open" IDENT | "close" expr
             | "edit" IDENT "," ( lvalue | "new" IDENT ) ;
 assign      = lvalue "=" expr ;
@@ -1185,6 +1268,9 @@ ifStmt      = "if" expr block [ "else" ( ifStmt | block ) ] ;
 whileStmt   = "while" expr block ;
 forStmt     = "for" IDENT [ "," IDENT ] "in" forRange block ;
 forRange    = expr [ "to" expr ] ;
+switchStmt  = "switch" expr "{" { caseClause } [ "else" block ] "}" ;
+caseClause  = "case" caseLabel { "," caseLabel } block ;
+caseLabel   = literal | IDENT ;
 returnStmt  = "return" [ expr ] ;
 
 expr        = andExpr { "or" andExpr } ;
@@ -1194,7 +1280,7 @@ cmpOp       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 addExpr     = mulExpr { ( "+" | "-" | "|" | "^" ) mulExpr } ;
 mulExpr     = unaryExpr { ( "*" | "/" | "mod" | "<<" | ">>" | "&" ) unaryExpr } ;
 unaryExpr   = { "-" | "not" | "~" } postfix ;
-postfix     = primary { "." memberName | "[" expr "]" | "(" [ args ] ")" } ;
+postfix     = primary { "." memberName | "[" expr [ "," expr ] "]" | "(" [ args ] ")" } ;
 memberName  = IDENT | "open" | "close" ;
 primary     = literal | IDENT | "window" | "nil"
             | "new" IDENT | "open" IDENT | "(" expr ")" ;
@@ -1202,7 +1288,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`.
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement).
 
 ## Appendix B: Event Handler Quick Reference
 
