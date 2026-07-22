@@ -78,7 +78,13 @@ Pipeline: source → typed AST → small typed IR → printer.
 - Functions with typed parameters and return values. Declare-before-use.
 - Local variables are declared at the top of a function or handler body
   (Wirthian; keeps stack-frame layout trivial for the single-pass compiler).
-- Single-pass compilable: no forward references, no whole-program inference.
+- Single-pass compilable: no whole-program inference, no iterate-to-fixpoint.
+  The one forward reference allowed is function-to-function: the checker makes
+  a shallow pre-scan of top-level declarations to register function signatures
+  before checking any body ("1.5-pass" — bodies are still walked once; types
+  stay strictly declare-before-use). Added 2026-07-23 so the language can
+  express its own compiler (mutual recursion in recursive-descent parsing and
+  the checker). See the language reference, Ch1 declare-before-use.
 
 Example:
 

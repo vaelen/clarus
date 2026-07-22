@@ -40,7 +40,7 @@ The following declarations may appear at the top level, in any order, subject to
 - Top-level `on` handlers (App and global resources)
 - `every` blocks
 
-**Declare-before-use:** Every name must be declared textually before its first use. No forward references are permitted.
+**Declare-before-use:** Every name must be declared textually before its first use, with one exception: **functions are visible throughout the program regardless of definition order**, so a function may call another function declared later (and functions may be mutually recursive). A function's *signature* (its parameter and return types) may still only name types declared before it — the order-independence is between function bodies, not for the types they mention. Records, enums, constants, and variables remain strictly declare-before-use. No other forward references are permitted.
 
 Within a function or event handler body, local variables are declared at the top, before any statement.
 
@@ -710,7 +710,7 @@ There is no overloading, no default parameter values, and no varargs — every f
 
 ### Scope
 
-Functions may be declared at top level only. 
+Functions may be declared at top level only. They are visible to the whole program regardless of order, so any function or handler may call any function whether it appears earlier or later, and two functions may call each other (mutual recursion). This is the one relaxation of declare-before-use (Chapter 1); a function's parameter and return types must still be declared before the function.
 
 ## Chapter 7: Application Lifecycle
 
