@@ -1,0 +1,1628 @@
+// ast.cla: the AST as typed arenas -- a port of internal/ast/ast.go's node
+// shapes. Go's ast.go uses recursive struct/interface types (Expr, Stmt,
+// Decl, TypeExpr interfaces with pointer-typed fields); Clarus has no
+// recursive types, so every node kind here is instead a fixed-shape record
+// pushed onto one of four global arenas (exprs, stmts, decls, typeExprs),
+// referenced by its int index into that arena. A child "pointer" is just
+// the child's arena index; -1 means "no node" (absent optional child).
+// Variable-arity sequences (a Call's args, a Block's statements, a record's
+// fields, ...) are represented as intrusive singly-linked lists threaded
+// through each node's own `next` field: the sequence's head is an index
+// into the arena, and each node's `next` names the following node (-1 at
+// the end).
+//
+// parse.cla (Task 7) and check.cla (Task 9) build and walk these arenas
+// exclusively through the constructor (`newXxx`) and accessor functions
+// below -- never by touching `.a`/`.b`/`.c` directly. That discipline is
+// what makes the schema comment below a real contract: change a field's
+// meaning here and every caller changes with it, instead of silently
+// drifting out of sync with a comment nobody re-reads.
+//
+// ============================================================
+// SCHEMA: per-kind meaning of a / b / c / next / nameIdx / intVal
+// ============================================================
+//
+// Every arena record (ExprNode, StmtNode, DeclNode, TypeExpr) shares one
+// generic shape: kind + three child slots (a, b, c) + a sibling link
+// (next) + nameIdx (an interned string index -- its meaning varies by
+// kind, it is not always literally "the name") + intVal (a plain int,
+// meaning varies by kind) + line/col (source position, 1-based).
+//
+// `next` is used ONLY when a node sits inside some parent's variable-arity
+// sequence (e.g. one argument in a Call's argument list); a node that is
+// never part of such a sequence leaves `next` at -1. A child slot holding
+// "no node" is always -1 -- never 0, because 0 is a valid arena index (the
+// first node ever allocated in that arena).
+//
+// ---- ExprKind (exprs arena) ----
+//   ExIdent      nameIdx=name
+//   ExIntLit     intVal=value
+//   ExFixedLit   intVal=raw 16.16 value
+//   ExCharLit    intVal=byte value (0-255)
+//   ExStringLit  nameIdx=interned literal contents
+//   ExBoolLit    intVal=0 (false) or 1 (true)
+//   ExNilLit     (no fields used)
+//   ExWindowSelf (no fields used) -- the `window` keyword in expr position
+//   ExUnary      intVal=UnOp code (OpNeg/OpNot/OpBNot); a=operand expr
+//   ExBinary     intVal=BinOp code (OpAdd..OpOr); a=left expr; b=right expr
+//   ExCall       a=fn expr; b=args list head expr (-1 if none, each arg
+//                chained via its own .next); intVal=appletalk flag (0/1)
+//   ExIndex      a=base expr (X); b=index expr (I)
+//   ExSlice      a=base expr (X); b=start expr; c=len expr
+//   ExSelect     a=base expr (X); nameIdx=selected field/property name
+//   ExNew        nameIdx=record type name              -- `new T`
+//   ExOpen       nameIdx=window type name               -- `open T` (expr form)
+//
+// ---- StmtKind (stmts arena) ----
+//   StBlock      a=vars list head (decls arena, DkVar chain via
+//                DeclNode.next, -1 if none); b=stmts list head (stmts
+//                arena, chained via StmtNode.next, -1 if none)
+//   StAssign     a=lhs expr; b=rhs expr
+//   StExprStmt   a=expr (a call used as a statement)
+//   StIf         a=cond expr; b=then StBlock; c=else stmt (-1, a StBlock,
+//                or another StIf -- mirrors ast.go's Stmt-typed Else)
+//   StWhile      a=cond expr; b=body StBlock
+//   StFor        nameIdx=V1 (loop var name); intVal=V2 (map value var
+//                name, -1 unless the map form); a=Seq expr; b=ToExpr
+//                (-1 unless a range form); c=body StBlock
+//   StReturn     a=expr (-1 for bare `return`)
+//   StQuit       a=code expr (-1 for bare `quit`)
+//   StCancel     (no fields used)
+//   StBreak      (no fields used)
+//   StContinue   (no fields used)
+//   StSwitch     a=subject expr; b=cases list head (StCase chain via
+//                StmtNode.next, -1 if none -- grammar requires at least
+//                one, but the sentinel discipline stays uniform); c=else
+//                StBlock (-1 if no else)
+//   StCase       a=labels list head (exprs arena, chained via
+//                ExprNode.next); b=body StBlock; (.next chains to the
+//                next StCase in the enclosing StSwitch's case list) --
+//                not a real ast.go Stmt; represents SwitchCase
+//   StOpen       nameIdx=window type name                -- `open T` (stmt form)
+//   StClose      a=expr (window ref to close)
+//   StEdit       nameIdx=form window name; intVal=isNew flag (0/1);
+//                a=target expr (meaningful iff isNew==0); b=new-type name
+//                (meaningful iff isNew==1)
+//
+// ---- DeclKind (decls arena) ----
+// -- top-level declarations (a File's Decls, chained via DeclNode.next) --
+//   DkInclude    nameIdx=path string
+//   DkVar        nameIdx=name; a=type (typeExprs arena); b=init expr
+//                (-1 if none) -- also used for local vars (a StBlock's
+//                vars list) and window-body per-instance vars
+//   DkConst      nameIdx=name; a=type; b=value expr (literal or Ident)
+//   DkRecord     nameIdx=name; a=fields list head (DkField chain, -1 if
+//                empty)
+//   DkEnum       nameIdx=name; a=members list head (DkEnumMember chain)
+//   DkFunc       nameIdx=name; a=params list head (DkParam chain, -1 if
+//                none); b=return type (-1 if a procedure); c=body StBlock
+//   DkWindow     nameIdx=name; a=items list head (DkProperty/DkWidget/
+//                DkVar/DkFormFor chain, -1 if empty)
+//   DkMenu       nameIdx=name; a=entries list head (DkMenuEntry chain)
+//   DkExtend     nameIdx=target name; a=children list head (mixed
+//                DkHandler/DkExtend, chained via DeclNode.next in source
+//                order -- equivalent to ast.go's separate Handlers/Nested
+//                slices: a stable filter by kind over this one list
+//                reproduces each of them, in source order, exactly)
+//   DkHandler    nameIdx=dotted event path ("Go.click", "closeRequest",
+//                ... -- split with string ops at check time); a=params
+//                list head (DkParam chain, -1 if none); b=body StBlock
+//   DkEvery      intVal=ticks; a=body StBlock
+//
+// -- auxiliary structural nodes (helper structs in ast.go; live in the
+//    decls arena because they need the same kind+child-slot shape) --
+//   DkField      nameIdx=name; a=type; b=default expr (-1 if none)
+//   DkParam      nameIdx=name; a=type
+//   DkEnumMember nameIdx=name; intVal=value; b=hasValue flag (0/1);
+//                c=label (interned, -1 if unlabeled)
+//   DkProperty   nameIdx=property name; a=values list head (exprs arena,
+//                chained via ExprNode.next, -1 if none) -- a window/widget
+//                property, e.g. `title: "x"` or a bare `resizable`
+//   DkColumn     nameIdx=header (interned string content); a=shows name
+//                (interned); intVal=widthPx; b=widthFill flag (0/1)
+//   DkFormFor    nameIdx=record type name                -- `form for T`
+//   DkWidget     nameIdx=widget instance name; a=widget kind (interned,
+//                e.g. "button"); b=props list head (DkProperty/DkColumn
+//                chain, -1 if none)
+//   DkMenuEntry  nameIdx=item name (-1 if separator/standard-edit);
+//                a=caption (interned, -1 if none); b=key (interned, -1 if
+//                none); intVal=flags bitmask (bit0 IsItem, bit1
+//                IsSeparator, bit2 IsStandardEdit)
+//
+// ---- TypeExprKind (typeExprs arena) ----
+//   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
+//                record/enum/window name)
+//   TxString     intVal=capacity N (255 for bare `string`)
+//   TxList       a=element type (typeExprs arena)
+//   TxMap        a=value type (typeExprs arena)
+//   TxArray      a=element type; intVal=length N
+
+enum ExprKind {
+    ExIdent
+    ExIntLit
+    ExFixedLit
+    ExCharLit
+    ExStringLit
+    ExBoolLit
+    ExNilLit
+    ExWindowSelf
+    ExUnary
+    ExBinary
+    ExCall
+    ExIndex
+    ExSlice
+    ExSelect
+    ExNew
+    ExOpen
+}
+
+enum StmtKind {
+    StBlock
+    StAssign
+    StExprStmt
+    StIf
+    StWhile
+    StFor
+    StReturn
+    StQuit
+    StCancel
+    StBreak
+    StContinue
+    StSwitch
+    StCase
+    StOpen
+    StClose
+    StEdit
+}
+
+enum DeclKind {
+    DkInclude
+    DkVar
+    DkConst
+    DkRecord
+    DkEnum
+    DkFunc
+    DkWindow
+    DkMenu
+    DkExtend
+    DkHandler
+    DkEvery
+    DkField
+    DkParam
+    DkEnumMember
+    DkProperty
+    DkColumn
+    DkFormFor
+    DkWidget
+    DkMenuEntry
+}
+
+enum TypeExprKind {
+    TxNamed
+    TxString
+    TxList
+    TxMap
+    TxArray
+}
+
+record ExprNode {
+    kind: ExprKind
+    a: int
+    b: int
+    c: int
+    next: int
+    nameIdx: int
+    intVal: int
+    line: int
+    col: int
+}
+
+record StmtNode {
+    kind: StmtKind
+    a: int
+    b: int
+    c: int
+    next: int
+    nameIdx: int
+    intVal: int
+    line: int
+    col: int
+}
+
+record DeclNode {
+    kind: DeclKind
+    a: int
+    b: int
+    c: int
+    next: int
+    nameIdx: int
+    intVal: int
+    line: int
+    col: int
+}
+
+// TypeExpr shares the same generic shape as the other three node records
+// (uniform shape beats a bespoke smaller layout here -- one pattern to
+// remember, a few unused ints per node is irrelevant on a host machine),
+// though no TypeExprKind actually uses b, c, or next: a type expression is
+// always a single child of some other node (a field's type, a param's
+// type, ...), never itself a member of a linked list.
+record TypeExpr {
+    kind: TypeExprKind
+    a: int
+    b: int
+    c: int
+    next: int
+    nameIdx: int
+    intVal: int
+    line: int
+    col: int
+}
+
+var exprs: list of ExprNode
+var stmts: list of StmtNode
+var decls: list of DeclNode
+var typeExprs: list of TypeExpr
+
+// astReset empties all four arenas. Call between compiling independent
+// programs (mirrors lexAll's clear-on-entry / lib.cla's resetDiags -- Task
+// 5's established pattern for arenas that must not leak across programs in
+// the differential harness).
+func astReset() {
+    while exprs.count > 0 {
+        exprs.pop()
+    }
+    while stmts.count > 0 {
+        stmts.pop()
+    }
+    while decls.count > 0 {
+        decls.pop()
+    }
+    while typeExprs.count > 0 {
+        typeExprs.pop()
+    }
+}
+
+// boolToInt/intToBool convert between Clarus bool and the 0/1 ints stored
+// in intVal for kinds whose Go field is a bool (BoolLit.Val, Call.AppleTalk,
+// EnumMember.HasValue, Column.WidthFill, EditStmt.IsNew, MenuEntry's three
+// flags).
+func boolToInt(b: bool): int {
+    if b {
+        return 1
+    }
+    return 0
+}
+
+func intToBool(n: int): bool {
+    return n != 0
+}
+
+// ---- ExBinary / ExUnary operator codes ----
+// Op is a source string in ast.go ("+", "mod", "and", ...); the arena
+// stores it as a plain int code instead (matching the brief's `newBin(op:
+// int, ...)` signature) so building/reading a Binary/Unary node needs no
+// intern() round trip. binOpSymbol/unOpSymbol below map a code back to its
+// source spelling for renderers and diagnostics.
+const OpAdd: int = 0
+const OpSub: int = 1
+const OpMul: int = 2
+const OpDiv: int = 3
+const OpMod: int = 4
+const OpShl: int = 5
+const OpShr: int = 6
+const OpBAnd: int = 7
+const OpBOr: int = 8
+const OpBXor: int = 9
+const OpEq: int = 10
+const OpNe: int = 11
+const OpLt: int = 12
+const OpLe: int = 13
+const OpGt: int = 14
+const OpGe: int = 15
+const OpAnd: int = 16
+const OpOr: int = 17
+
+const OpNeg: int = 0
+const OpNot: int = 1
+const OpBNot: int = 2
+
+func binOpSymbol(op: int): string {
+    switch op {
+    case OpAdd { return "+" }
+    case OpSub { return "-" }
+    case OpMul { return "*" }
+    case OpDiv { return "/" }
+    case OpMod { return "mod" }
+    case OpShl { return "<<" }
+    case OpShr { return ">>" }
+    case OpBAnd { return "&" }
+    case OpBOr { return "|" }
+    case OpBXor { return "^" }
+    case OpEq { return "==" }
+    case OpNe { return "!=" }
+    case OpLt { return "<" }
+    case OpLe { return "<=" }
+    case OpGt { return ">" }
+    case OpGe { return ">=" }
+    case OpAnd { return "and" }
+    case OpOr { return "or" }
+    }
+    return "?"
+}
+
+func unOpSymbol(op: int): string {
+    switch op {
+    case OpNeg { return "-" }
+    case OpNot { return "not" }
+    case OpBNot { return "~" }
+    }
+    return "?"
+}
+
+// ================================================================
+// Expr constructors and accessors (exprs arena)
+// ================================================================
+
+func exprKind(i: int): ExprKind {
+    return exprs[i].kind
+}
+
+func exprLine(i: int): int {
+    return exprs[i].line
+}
+
+func exprCol(i: int): int {
+    return exprs[i].col
+}
+
+func exprNext(i: int): int {
+    return exprs[i].next
+}
+
+// exprListAppend links node idx as the successor of the node at tailIdx
+// (a no-op when tailIdx is -1, i.e. the list is still empty) and returns
+// idx so the caller can track it as the new tail. The caller separately
+// tracks the list's head (idx itself, the first time this is called).
+func exprListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        exprs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIdent(nameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExIdent
+    n.nameIdx = nameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func identName(i: int): int {
+    return exprs[i].nameIdx
+}
+
+func newIntLit(v: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExIntLit
+    n.intVal = v
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func intLitVal(i: int): int {
+    return exprs[i].intVal
+}
+
+func newFixedLit(raw: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExFixedLit
+    n.intVal = raw
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func fixedLitRaw(i: int): int {
+    return exprs[i].intVal
+}
+
+func newCharLit(v: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExCharLit
+    n.intVal = v
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func charLitVal(i: int): int {
+    return exprs[i].intVal
+}
+
+func newStringLit(nameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExStringLit
+    n.nameIdx = nameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func stringLitIdx(i: int): int {
+    return exprs[i].nameIdx
+}
+
+func newBoolLit(v: bool, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExBoolLit
+    n.intVal = boolToInt(v)
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func boolLitVal(i: int): bool {
+    return intToBool(exprs[i].intVal)
+}
+
+func newNilLit(line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExNilLit
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func newWindowSelf(line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExWindowSelf
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func newUnary(op: int, x: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExUnary
+    n.intVal = op
+    n.a = x
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func unaryOp(i: int): int {
+    return exprs[i].intVal
+}
+
+func unaryX(i: int): int {
+    return exprs[i].a
+}
+
+func newBin(op: int, left: int, right: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExBinary
+    n.intVal = op
+    n.a = left
+    n.b = right
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func binOp(i: int): int {
+    return exprs[i].intVal
+}
+
+func binLeft(i: int): int {
+    return exprs[i].a
+}
+
+func binRight(i: int): int {
+    return exprs[i].b
+}
+
+func newCall(fn: int, argsHead: int, appleTalk: bool, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExCall
+    n.a = fn
+    n.b = argsHead
+    n.intVal = boolToInt(appleTalk)
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func callFn(i: int): int {
+    return exprs[i].a
+}
+
+func callArgsHead(i: int): int {
+    return exprs[i].b
+}
+
+func callAppleTalk(i: int): bool {
+    return intToBool(exprs[i].intVal)
+}
+
+func newIndex(x: int, idx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExIndex
+    n.a = x
+    n.b = idx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func indexX(i: int): int {
+    return exprs[i].a
+}
+
+func indexI(i: int): int {
+    return exprs[i].b
+}
+
+func newSlice(x: int, start: int, sliceLen: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExSlice
+    n.a = x
+    n.b = start
+    n.c = sliceLen
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func sliceX(i: int): int {
+    return exprs[i].a
+}
+
+func sliceStart(i: int): int {
+    return exprs[i].b
+}
+
+func sliceLen(i: int): int {
+    return exprs[i].c
+}
+
+func newSelect(x: int, nameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExSelect
+    n.a = x
+    n.nameIdx = nameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func selectX(i: int): int {
+    return exprs[i].a
+}
+
+func selectName(i: int): int {
+    return exprs[i].nameIdx
+}
+
+func newNewExpr(typeNameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExNew
+    n.nameIdx = typeNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func newExprTypeName(i: int): int {
+    return exprs[i].nameIdx
+}
+
+func newOpenExpr(windowNameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExOpen
+    n.nameIdx = windowNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func openExprWindowName(i: int): int {
+    return exprs[i].nameIdx
+}
+
+// ================================================================
+// Stmt constructors and accessors (stmts arena)
+// ================================================================
+
+func stmtKind(i: int): StmtKind {
+    return stmts[i].kind
+}
+
+func stmtLine(i: int): int {
+    return stmts[i].line
+}
+
+func stmtCol(i: int): int {
+    return stmts[i].col
+}
+
+func stmtNext(i: int): int {
+    return stmts[i].next
+}
+
+func stmtListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        stmts[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newBlock(varsHead: int, stmtsHead: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StBlock
+    n.a = varsHead
+    n.b = stmtsHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func blockVarsHead(i: int): int {
+    return stmts[i].a
+}
+
+func blockStmtsHead(i: int): int {
+    return stmts[i].b
+}
+
+func newAssign(lhs: int, rhs: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StAssign
+    n.a = lhs
+    n.b = rhs
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func assignLHS(i: int): int {
+    return stmts[i].a
+}
+
+func assignRHS(i: int): int {
+    return stmts[i].b
+}
+
+func newExprStmt(x: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StExprStmt
+    n.a = x
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func exprStmtX(i: int): int {
+    return stmts[i].a
+}
+
+func newIf(cond: int, thenBlk: int, elseStmt: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StIf
+    n.a = cond
+    n.b = thenBlk
+    n.c = elseStmt
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func ifCond(i: int): int {
+    return stmts[i].a
+}
+
+func ifThen(i: int): int {
+    return stmts[i].b
+}
+
+func ifElse(i: int): int {
+    return stmts[i].c
+}
+
+func newWhile(cond: int, body: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StWhile
+    n.a = cond
+    n.b = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func whileCond(i: int): int {
+    return stmts[i].a
+}
+
+func whileBody(i: int): int {
+    return stmts[i].b
+}
+
+func newFor(v1NameIdx: int, v2NameIdx: int, seq: int, toExpr: int, body: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StFor
+    n.nameIdx = v1NameIdx
+    n.intVal = v2NameIdx
+    n.a = seq
+    n.b = toExpr
+    n.c = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func forV1(i: int): int {
+    return stmts[i].nameIdx
+}
+
+func forV2(i: int): int {
+    return stmts[i].intVal
+}
+
+func forSeq(i: int): int {
+    return stmts[i].a
+}
+
+func forTo(i: int): int {
+    return stmts[i].b
+}
+
+func forBody(i: int): int {
+    return stmts[i].c
+}
+
+func newReturn(x: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StReturn
+    n.a = x
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func returnX(i: int): int {
+    return stmts[i].a
+}
+
+func newQuit(code: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StQuit
+    n.a = code
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func quitCode(i: int): int {
+    return stmts[i].a
+}
+
+func newCancel(line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StCancel
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func newBreak(line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StBreak
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func newContinue(line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StContinue
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func newCase(labelsHead: int, body: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StCase
+    n.a = labelsHead
+    n.b = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func caseLabelsHead(i: int): int {
+    return stmts[i].a
+}
+
+func caseBody(i: int): int {
+    return stmts[i].b
+}
+
+func newSwitch(subject: int, casesHead: int, elseBlk: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StSwitch
+    n.a = subject
+    n.b = casesHead
+    n.c = elseBlk
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func switchSubject(i: int): int {
+    return stmts[i].a
+}
+
+func switchCasesHead(i: int): int {
+    return stmts[i].b
+}
+
+func switchElse(i: int): int {
+    return stmts[i].c
+}
+
+func newOpenStmt(windowNameIdx: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StOpen
+    n.nameIdx = windowNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func openStmtWindowName(i: int): int {
+    return stmts[i].nameIdx
+}
+
+func newClose(x: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StClose
+    n.a = x
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func closeX(i: int): int {
+    return stmts[i].a
+}
+
+func newEdit(formNameIdx: int, target: int, isNew: bool, newTypeIdx: int, line: int, col: int): int {
+    var n: StmtNode
+
+    n.kind = StEdit
+    n.nameIdx = formNameIdx
+    n.intVal = boolToInt(isNew)
+    n.a = target
+    n.b = newTypeIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    stmts.add(n)
+    return stmts.count - 1
+}
+
+func editForm(i: int): int {
+    return stmts[i].nameIdx
+}
+
+func editTarget(i: int): int {
+    return stmts[i].a
+}
+
+func editIsNew(i: int): bool {
+    return intToBool(stmts[i].intVal)
+}
+
+func editNewType(i: int): int {
+    return stmts[i].b
+}
+
+// ================================================================
+// Decl constructors and accessors (decls arena)
+// ================================================================
+
+func declKind(i: int): DeclKind {
+    return decls[i].kind
+}
+
+func declLine(i: int): int {
+    return decls[i].line
+}
+
+func declCol(i: int): int {
+    return decls[i].col
+}
+
+func declNext(i: int): int {
+    return decls[i].next
+}
+
+func declListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        decls[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newInclude(pathIdx: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkInclude
+    n.nameIdx = pathIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func includePath(i: int): int {
+    return decls[i].nameIdx
+}
+
+func newVarDecl(nameIdx: int, typeIdx: int, initExpr: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkVar
+    n.nameIdx = nameIdx
+    n.a = typeIdx
+    n.b = initExpr
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func varDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func varDeclType(i: int): int {
+    return decls[i].a
+}
+
+func varDeclInit(i: int): int {
+    return decls[i].b
+}
+
+func newConstDecl(nameIdx: int, typeIdx: int, valueExpr: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkConst
+    n.nameIdx = nameIdx
+    n.a = typeIdx
+    n.b = valueExpr
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func constDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func constDeclType(i: int): int {
+    return decls[i].a
+}
+
+func constDeclValue(i: int): int {
+    return decls[i].b
+}
+
+func newField(nameIdx: int, typeIdx: int, defaultExpr: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkField
+    n.nameIdx = nameIdx
+    n.a = typeIdx
+    n.b = defaultExpr
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func fieldName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func fieldType(i: int): int {
+    return decls[i].a
+}
+
+func fieldDefault(i: int): int {
+    return decls[i].b
+}
+
+func newRecordDecl(nameIdx: int, fieldsHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkRecord
+    n.nameIdx = nameIdx
+    n.a = fieldsHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func recordDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func recordDeclFieldsHead(i: int): int {
+    return decls[i].a
+}
+
+func newEnumMember(nameIdx: int, value: int, hasValue: bool, labelIdx: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkEnumMember
+    n.nameIdx = nameIdx
+    n.intVal = value
+    n.b = boolToInt(hasValue)
+    n.c = labelIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func enumMemberName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func enumMemberValue(i: int): int {
+    return decls[i].intVal
+}
+
+func enumMemberHasValue(i: int): bool {
+    return intToBool(decls[i].b)
+}
+
+func enumMemberLabel(i: int): int {
+    return decls[i].c
+}
+
+func newEnumDecl(nameIdx: int, membersHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkEnum
+    n.nameIdx = nameIdx
+    n.a = membersHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func enumDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func enumDeclMembersHead(i: int): int {
+    return decls[i].a
+}
+
+func newParam(nameIdx: int, typeIdx: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkParam
+    n.nameIdx = nameIdx
+    n.a = typeIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func paramName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func paramType(i: int): int {
+    return decls[i].a
+}
+
+func newFuncDecl(nameIdx: int, paramsHead: int, retType: int, body: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkFunc
+    n.nameIdx = nameIdx
+    n.a = paramsHead
+    n.b = retType
+    n.c = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func funcDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func funcDeclParamsHead(i: int): int {
+    return decls[i].a
+}
+
+func funcDeclRetType(i: int): int {
+    return decls[i].b
+}
+
+func funcDeclBody(i: int): int {
+    return decls[i].c
+}
+
+func newWindowDecl(nameIdx: int, itemsHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkWindow
+    n.nameIdx = nameIdx
+    n.a = itemsHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func windowDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func windowDeclItemsHead(i: int): int {
+    return decls[i].a
+}
+
+func newMenuDecl(nameIdx: int, entriesHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkMenu
+    n.nameIdx = nameIdx
+    n.a = entriesHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func menuDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func menuDeclEntriesHead(i: int): int {
+    return decls[i].a
+}
+
+func newExtendDecl(targetNameIdx: int, childrenHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkExtend
+    n.nameIdx = targetNameIdx
+    n.a = childrenHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func extendDeclTarget(i: int): int {
+    return decls[i].nameIdx
+}
+
+func extendDeclChildrenHead(i: int): int {
+    return decls[i].a
+}
+
+func newHandlerDecl(pathIdx: int, paramsHead: int, body: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkHandler
+    n.nameIdx = pathIdx
+    n.a = paramsHead
+    n.b = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func handlerDeclPath(i: int): int {
+    return decls[i].nameIdx
+}
+
+func handlerDeclParamsHead(i: int): int {
+    return decls[i].a
+}
+
+func handlerDeclBody(i: int): int {
+    return decls[i].b
+}
+
+func newEveryDecl(ticks: int, body: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkEvery
+    n.intVal = ticks
+    n.a = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func everyDeclTicks(i: int): int {
+    return decls[i].intVal
+}
+
+func everyDeclBody(i: int): int {
+    return decls[i].a
+}
+
+func newProperty(nameIdx: int, valuesHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkProperty
+    n.nameIdx = nameIdx
+    n.a = valuesHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func propertyName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func propertyValuesHead(i: int): int {
+    return decls[i].a
+}
+
+func newColumn(headerIdx: int, showsIdx: int, widthPx: int, widthFill: bool, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkColumn
+    n.nameIdx = headerIdx
+    n.a = showsIdx
+    n.intVal = widthPx
+    n.b = boolToInt(widthFill)
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func columnHeader(i: int): int {
+    return decls[i].nameIdx
+}
+
+func columnShows(i: int): int {
+    return decls[i].a
+}
+
+func columnWidthPx(i: int): int {
+    return decls[i].intVal
+}
+
+func columnWidthFill(i: int): bool {
+    return intToBool(decls[i].b)
+}
+
+func newFormFor(recordNameIdx: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkFormFor
+    n.nameIdx = recordNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func formForRecord(i: int): int {
+    return decls[i].nameIdx
+}
+
+func newWidget(nameIdx: int, kindIdx: int, propsHead: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkWidget
+    n.nameIdx = nameIdx
+    n.a = kindIdx
+    n.b = propsHead
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func widgetName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func widgetKindName(i: int): int {
+    return decls[i].a
+}
+
+func widgetPropsHead(i: int): int {
+    return decls[i].b
+}
+
+func newMenuEntry(nameIdx: int, captionIdx: int, keyIdx: int, isItem: bool, isSeparator: bool, isStandardEdit: bool, line: int, col: int): int {
+    var n: DeclNode
+    var flags: int
+
+    flags = 0
+    if isItem {
+        flags = flags + 1
+    }
+    if isSeparator {
+        flags = flags + 2
+    }
+    if isStandardEdit {
+        flags = flags + 4
+    }
+
+    n.kind = DkMenuEntry
+    n.nameIdx = nameIdx
+    n.a = captionIdx
+    n.b = keyIdx
+    n.intVal = flags
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func menuEntryName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func menuEntryCaption(i: int): int {
+    return decls[i].a
+}
+
+func menuEntryKey(i: int): int {
+    return decls[i].b
+}
+
+func menuEntryIsItem(i: int): bool {
+    return (decls[i].intVal & 1) != 0
+}
+
+func menuEntryIsSeparator(i: int): bool {
+    return (decls[i].intVal & 2) != 0
+}
+
+func menuEntryIsStandardEdit(i: int): bool {
+    return (decls[i].intVal & 4) != 0
+}
+
+// ================================================================
+// TypeExpr constructors and accessors (typeExprs arena)
+// ================================================================
+
+func typeExprKind(i: int): TypeExprKind {
+    return typeExprs[i].kind
+}
+
+func typeExprLine(i: int): int {
+    return typeExprs[i].line
+}
+
+func typeExprCol(i: int): int {
+    return typeExprs[i].col
+}
+
+func newNamedType(nameIdx: int, line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxNamed
+    n.nameIdx = nameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
+}
+
+func namedTypeName(i: int): int {
+    return typeExprs[i].nameIdx
+}
+
+func newStringType(n: int, line: int, col: int): int {
+    var te: TypeExpr
+
+    te.kind = TxString
+    te.intVal = n
+    te.next = -1
+    te.line = line
+    te.col = col
+    typeExprs.add(te)
+    return typeExprs.count - 1
+}
+
+func stringTypeN(i: int): int {
+    return typeExprs[i].intVal
+}
+
+func newListType(elem: int, line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxList
+    n.a = elem
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
+}
+
+func listTypeElem(i: int): int {
+    return typeExprs[i].a
+}
+
+func newMapType(val: int, line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxMap
+    n.a = val
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
+}
+
+func mapTypeVal(i: int): int {
+    return typeExprs[i].a
+}
+
+func newArrayType(elem: int, n: int, line: int, col: int): int {
+    var te: TypeExpr
+
+    te.kind = TxArray
+    te.a = elem
+    te.intVal = n
+    te.next = -1
+    te.line = line
+    te.col = col
+    typeExprs.add(te)
+    return typeExprs.count - 1
+}
+
+func arrayTypeElem(i: int): int {
+    return typeExprs[i].a
+}
+
+func arrayTypeN(i: int): int {
+    return typeExprs[i].intVal
+}

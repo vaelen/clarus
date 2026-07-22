@@ -1,0 +1,40 @@
+include "../lib.cla"
+include "../ast.cla"
+
+// renderExpr recursively renders expr i as a fully-parenthesized
+// expression string, e.g. `3 + 4 * 5` renders as "(3 + (4 * 5))". Covers
+// ExIntLit and ExBinary -- the only kinds this driver's hand-built tree
+// uses; Task 7's parser test reuses this function and extends its switch
+// with the remaining ExprKind cases as it starts rendering real parsed
+// trees.
+func renderExpr(i: int): string {
+    switch exprKind(i) {
+    case ExIntLit {
+        return numToStr(intLitVal(i))
+    }
+    case ExBinary {
+        return "(" + renderExpr(binLeft(i)) + " " + binOpSymbol(binOp(i)) + " " + renderExpr(binRight(i)) + ")"
+    }
+    }
+    return "?"
+}
+
+on App.startEmpty {
+    var three: int
+    var four: int
+    var five: int
+    var mul: int
+    var add: int
+
+    // Build `3 + 4 * 5` by hand via the constructors -- precedence is
+    // baked into the tree shape (the multiplication nested under the
+    // addition's right child) rather than parsed, since parsing is
+    // Task 7's job.
+    three = newIntLit(3, 1, 1)
+    four = newIntLit(4, 1, 5)
+    five = newIntLit(5, 1, 9)
+    mul = newBin(OpMul, four, five, 1, 7)
+    add = newBin(OpAdd, three, mul, 1, 3)
+
+    alert(renderExpr(add))
+}
