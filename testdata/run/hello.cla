@@ -1,0 +1,3 @@
+on App.launch {
+    alert("Hello from Clarus")
+}
