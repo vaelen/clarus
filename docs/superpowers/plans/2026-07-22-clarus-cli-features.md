@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the ten reference-approved features that make Clarus capable of hosting its own compiler: `break`/`continue`, `switch`, `const`, slices, `indexOf`, `text.append`, `App.args`, `log`, `quit` exit codes, and the binary-faithful file I/O guarantee — through the whole pipeline (lexer → parser → checker → lower → cprint → runtime) with goldens.
+**Goal:** Implement the ten reference-approved features that make Clarus capable of hosting its own compiler: `break`/`continue`, `switch`, `const`, slices, `indexOf`, `text.append`, `App.startCLI`, `log`, `quit` exit codes, and the binary-faithful file I/O guarantee — through the whole pipeline (lexer → parser → checker → lower → cprint → runtime) with goldens.
 
 **Architecture:** The reference (commit 1ec7504) is already updated and is the normative spec for every feature — implementers read it first. `switch` desugars in LOWERING to if/else chains (no new IR statement; C `break` therefore can never mis-bind to a switch, and string switches fall out of the existing `str_cmp` path). `break`/`continue` are two new IR statements mapping to C `break`/`continue` — correct against the existing loop-printing shapes (the `while(1){cond;…}` form makes `continue` re-evaluate the condition, which is exactly the spec'd semantics). Constants lower to inline literal values at use sites — no IR declaration form. Everything else is intrinsics + runtime.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Normative spec:** `docs/clarus-language-reference.md` at commit 1ec7504 (Ch2 keywords, Ch3 slices/indexOf/append/const, Ch5 break/continue/switch/quit, Ch7 App.args, Ch12 log/binary-faithfulness, Appendix A grammar). Where this plan and the reference disagree, the reference wins; flag conflicts.
+- **Normative spec:** `docs/clarus-language-reference.md` as amended on this branch (Ch2 keywords, Ch3 slices/indexOf/append/const, Ch5 break/continue/switch/quit, Ch7 App.startCLI event + launch-order fallback rules, Ch12 log/binary-faithfulness, Appendix A grammar, Appendix B startCLI row). Where this plan and the reference disagree, the reference wins; flag conflicts.
 - Hard keywords now number 33: the 28 existing plus `const`, `switch`, `case`, `break`, `continue`.
 - Diagnostic texts introduced here (exact): `break is only valid inside a loop`, `continue is only valid inside a loop`, `cannot assign to constant X`, `case label must be a constant`, `duplicate case label`, `switch operand must be int, char, enum, or string`, `slice out of range` (runtime), `slices are not assignable`.
 - All existing tests, goldens, and fixtures must stay green; `internal/reftest`'s manifest is REGENERATED in Task 6 (fence indices shifted; new fences must pass once features exist — this plan is not done while reftest is red).
@@ -53,7 +53,7 @@ Parsing rules (per Appendix A):
 ### Task 2: Checker for all new semantics
 
 **Files:**
-- Modify: `internal/check/check.go` (ConstDecl), `internal/check/stmt.go` (break/continue/switch/quit-code), `internal/check/expr.go` (SliceExpr, indexOf/append method entries, App.args), `internal/check/scope.go` (Symbol gains `IsConst bool; ConstVal int64; ConstStr string; ConstIsStr bool` — or a small ConstInfo struct), `internal/check/builtins.go` (`log(string)`)
+- Modify: `internal/check/check.go` (ConstDecl), `internal/check/stmt.go` (break/continue/switch/quit-code), `internal/check/expr.go` (SliceExpr, indexOf/append method entries), `internal/check/scope.go` (Symbol gains `IsConst bool; ConstVal int64; ConstStr string; ConstIsStr bool` — or a small ConstInfo struct), `internal/check/builtins.go` (`log(string)`)
 - Test: extend `internal/check/check_test.go` + `internal/check/ui_test.go` style negatives
 
 Rules (reference chapters govern; highlights):
@@ -64,7 +64,7 @@ Rules (reference chapters govern; highlights):
 - **slices:** X is string/text; Start/Len int; result `string(255)`; SliceExpr in lvalue position → `slices are not assignable` (if the parser didn't already reject).
 - **indexOf:** on string/text; one arg, string or char; returns int.
 - **append:** on text; one arg, string/char/text; void.
-- **App.args:** `App.args` Select yields `list of string(255)`; read-only (assignment → the existing read-only property diagnostic path).
+- **App.startCLI:** new events-table row: `(app, startCLI)` takes `(args: list of string)` — exactly one param of that type, validated like every other handler signature (`takes` diagnostics). There is NO App.args property; `App.args` anywhere is an `unknown event`/undefined-style error via the existing App-select path.
 - **log:** builtin `log(msg: string)`.
 
 - [ ] **Step 1: failing tests** covering every rule above, positive and negative (match the existing expectClean/expectError idiom; every exact diagnostic string from Global Constraints appears in at least one expectError).
@@ -85,7 +85,7 @@ Lowering rules:
 - **break/continue → ir.Break/ir.Continue**; printer emits `break;`/`continue;`. VERIFY against each loop shape: While (`while(1){cond-check…}` — continue re-tests condition ✓), ForRange/ForList/ForMap (C `for` — continue hits the increment ✓). Write one cprint test per loop shape asserting the emitted structure keeps this true.
 - **const:** no IR decl; uses lower to IntConst/StrConst via check.Info values.
 - **slices/indexOf/append:** method/expr → the new intrinsics (slice result materializes into a str255 temp like other string intrinsics).
-- **App.args:** `App.args.count` and `for a in App.args` are the required forms — lower `App.args` to a VarRef on a synthetic global `clar_args` (ir.Global with List-of-Str type, Init nil, populated by the runtime); simplest and reuses every existing list path. Document in ir.go that the printer/runtime own `clar_args` population.
+- **App.startCLI:** lowers to Func `handler_App_startCLI` with one List-of-Str param; Program gains `HasStartCLI bool`. main() sequence becomes: `clar_init_globals(); rt_args_init(argc, argv);` then `handler_App_launch` if present; then `handler_App_startCLI(rt_args_list())` if HasStartCLI, ELSE `handler_App_startEmpty` if present (the reference's fallback rule). `rt_args_list()` returns the runtime-built `rt_list` of str255 args.
 - **quit code:** `IQuit` with the int arg (default IntConst 0); host `rt_quit(int32_t)`.
 - **log:** `ILog` intrinsic.
 
@@ -113,7 +113,8 @@ void rt_text_append_char(rt_text *t, uint8_t c);
 void rt_text_append_text(rt_text *t, const rt_text *src); /* src may alias t (self-append doubles) */
 void rt_quit(int32_t code);                               /* replaces void version */
 void rt_log(const uint8_t *s);                            /* stderr + '\n'; CR rendered as LF */
-void rt_args_init(int argc, char **argv);                 /* builds the clar_args list (argv[1..], each clamped to str255) */
+void rt_args_init(int argc, char **argv);                 /* stores argv[1..] as str255 values */
+rt_list *rt_args_list(void);                              /* the stored args as a list (built once) */
 ```
 
 - [ ] **Step 1:** extend the smoke test C program: slice happy/edge (start+len == length), index_of hit/miss/char, append loop (1000 appends, assert length — the amortization proof is timing-free: it must complete instantly), self-append text, args_init from a fake argv. RED (missing symbols).
@@ -125,7 +126,8 @@ void rt_args_init(int argc, char **argv);                 /* builds the clar_arg
 ### Task 5: Goldens for every feature
 
 **Files:**
-- Create: `testdata/run/switch.cla`+`.out` (int, enum, string subjects; multi-label; else; no-match-no-else; break-inside-case-binds-loop proof), `testdata/run/breakcont.cla`+`.out` (break and continue in while + all three for forms), `testdata/run/constants.cla`+`.out` (const usage incl. as case label and in expressions), `testdata/run/slices.cla`+`.out` (string+text slices, indexOf hit/miss, building a parser-ish token scan), `testdata/run/appendperf.cla`+`.out` (append loop building a large text, length verified), `testdata/run/cli.cla`+`.out`+`.args`+`.log`+`.exit` (echoes App.args via alert, logs a line, quits with code 4), `testdata/run/binroundtrip.cla`+`.out` (writes a text containing bytes 0, 13, 255 via writeText, reads back, verifies byte-for-byte via indexing — pins the binary-faithfulness guarantee)
+- Create: `testdata/run/switch.cla`+`.out` (int, enum, string subjects; multi-label; else; no-match-no-else; break-inside-case-binds-loop proof), `testdata/run/breakcont.cla`+`.out` (break and continue in while + all three for forms), `testdata/run/constants.cla`+`.out` (const usage incl. as case label and in expressions), `testdata/run/slices.cla`+`.out` (string+text slices, indexOf hit/miss, building a parser-ish token scan), `testdata/run/appendperf.cla`+`.out` (append loop building a large text, length verified), `testdata/run/cli.cla`+`.out`+`.args`+`.log`+`.exit` (declares startCLI(args); echoes each arg via alert, logs a line, quits with code 4), `testdata/run/binroundtrip.cla`+`.out` (writes a text containing bytes 0, 13, 255 via writeText, reads back, verifies byte-for-byte via indexing — pins the binary-faithfulness guarantee)
+- Create: `testdata/run/clifallback.cla`+`.out` (declares launch + startEmpty but NOT startCLI; run with `.args` present — proves the startEmpty fallback fires and args are ignored)
 - Create: `testdata/runerr/slicerange.cla`+`.err` (`slice out of range`)
 - Modify: `internal/build/golden_test.go` — harness extensions: optional `NAME.args` (whitespace-split argv), optional `NAME.log` (exact stderr), optional `NAME.exit` (expected exit code, default 0; a nonzero expected code means the harness accepts that code instead of requiring success)
 
@@ -139,12 +141,12 @@ void rt_args_init(int argc, char **argv);                 /* builds the clar_arg
 - Modify: `internal/reftest/manifest.go` (regenerate per the Task-1-of-backend-plan procedure: dump all fences, run driver.Check on each, rebuild CheckClean + exclusion comments)
 - Modify: anything the gate surfaces.
 
-- [ ] **Step 1:** regenerate the manifest (61 fences now). Every NEW fence from the feature sections (slices, indexOf, const, break, switch, quit-code, App.args examples) must be evaluated: complete programs go IN CheckClean; fragments get reason comments. The four pinned programs must still pass (`TestRequiredProgramsInManifest` guards them).
+- [ ] **Step 1:** regenerate the manifest (61 fences now). Every NEW fence from the feature sections (slices, indexOf, const, break, switch, quit-code, startCLI examples) must be evaluated: complete programs go IN CheckClean; fragments get reason comments. The four pinned programs must still pass (`TestRequiredProgramsInManifest` guards them).
 - [ ] **Step 2:** full gate: `go test -count=1 ./...`, `go vet ./...`, `gofmt -l .` empty; run goldens twice (determinism); `clarus check` on testdata/valid/*.cla.
 - [ ] **Step 3: Commit** — `test: regenerate reference-fence manifest for feature sections`
 
 ## Self-review notes
 
 - `switch` on `text` subjects: the reference lists int/char/enum/**string** — a `text` subject is NOT in the list; the checker must reject it (the diagnostic already names the four). If an implementer finds the reference ambiguous here, flag it rather than widening.
-- The Ch5 quit-code example uses `App.args.count` and `log(...)` — that fence becomes a CheckClean candidate in Task 6 and is the natural cross-feature smoke.
+- The Ch5 quit-code example uses `App.startCLI(args)` and `log(...)` — that fence becomes a CheckClean candidate in Task 6 and is the natural cross-feature smoke.
 - `IQuit`'s signature change (void → int arg) touches the Task-7-era lowering of bare `quit` — bare quit lowers with IntConst 0; grep for existing IQuit uses.

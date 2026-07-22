@@ -612,8 +612,8 @@ on App.startEmpty {
 ```
 
 ```rust
-on App.launch {
-    if App.args.count == 0 {
+on App.startCLI(args: list of string) {
+    if args.count == 0 {
         log("usage: clarusc file.cla...")
         quit 2
     }
@@ -725,6 +725,7 @@ A Clarus program responds to application-level events through top-level event ha
 | `App.launch` | `on App.launch { }` | Always first, once, before any window exists. App-wide setup. |
 | `App.openDocument` | `on App.openDocument(path: string) { }` | Once per document the Finder launched the app with, or dropped on it while running. |
 | `App.startEmpty` | `on App.startEmpty { }` | After `launch`, only when the app was started with **no** documents. |
+| `App.startCLI` | `on App.startCLI(args: list of string) { }` | After `launch`, only on a command-line host, carrying the argument list. Never fires on the Macintosh. |
 
 ### Nothing Opens Implicitly
 
@@ -736,9 +737,12 @@ The runtime fires application events in the following sequence:
 
 ```
 App.launch
-  ├─ App.openDocument (× N documents)
-  └─ App.startEmpty (only if no documents)
+  ├─ App.openDocument (× N documents)     [Macintosh, launched with documents]
+  ├─ App.startEmpty (no documents)        [Macintosh bare launch]
+  └─ App.startCLI(args)                   [command-line host]
 ```
+
+On a command-line host, `App.startCLI` fires after `launch` with the argument list (excluding the program name; possibly empty). A program that declares no `startCLI` handler falls back to `App.startEmpty` — a GUI-style program run from the command line behaves as a bare launch. On the Macintosh, `startCLI` never fires.
 
 ### Quit Semantics
 
@@ -748,13 +752,13 @@ The `quit` statement (Chapter 5) requests that the application exit. The runtime
 
 These events correspond to the classic Macintosh OAPP and ODOC Apple events sent by the Finder; design rationale appears in the language design spec.
 
-### Command-Line Arguments
+### Command-Line Programs
 
-`App.args` is a read-only `list of string` holding the program's command-line arguments (not including the program name), populated before `App.launch` fires. On a command-line host this is the argument vector; on the Macintosh it is always empty — documents opened from the Finder arrive through `App.openDocument`, never as arguments:
+A tool built for a command-line host does its work in `App.startCLI`, which delivers the arguments the way `openDocument` delivers a path — documents opened from the Finder never arrive as arguments:
 
 ```rust
-on App.launch {
-    for a in App.args {
+on App.startCLI(args: list of string) {
+    for a in args {
         compile(a)
     }
 }
@@ -1298,6 +1302,7 @@ The following table is the complete per-resource inventory of every event handle
 |---|---|---|
 | App | launch | `on App.launch { }` |
 | App | startEmpty | `on App.startEmpty { }` |
+| App | startCLI | `on App.startCLI(args: list of string) { }` — command-line hosts only |
 | App | openDocument | `on App.openDocument(path: string) { }` |
 | window | opened | `on opened { }` (in `extend W`) |
 | window | closeRequest | `on closeRequest { }` — `cancel` allowed |
