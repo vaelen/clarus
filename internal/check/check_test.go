@@ -217,3 +217,43 @@ func TestForwardTypeInSignatureStillErrors(t *testing.T) {
 		t.Fatalf("forward type in signature must still error, got: %v", diags)
 	}
 }
+
+// Two-tier declare-before-use tests (Ch1 blessed behavior):
+// - Bodies see all top-level declarations regardless of order
+// - Type-layout positions require declare-before-use
+
+func TestBodySeesLaterGlobal(t *testing.T) {
+	// Handler body can read a global var declared after it
+	expectClean(t, "on App.launch { count = 5 }\nvar count: int\n")
+}
+
+func TestExtendBodySeesLaterWindow(t *testing.T) {
+	// Extend block body can reference a window declared after it
+	expectClean(t, "extend Doc { on closeRequest { } }\nwindow Doc { title: \"x\" }\n")
+}
+
+func TestBodyVarTypeResolvedInPhase2(t *testing.T) {
+	// Local var type is resolved in phase 2 against full scope,
+	// so body can use a record type declared after the function
+	expectClean(t, "func uses(): int { var w: Widget = new Widget\nreturn w.x }\nrecord Widget { x: int }\n")
+}
+
+func TestEveryBodySeesLaterFunc(t *testing.T) {
+	// Timer body can call a function declared after it
+	expectClean(t, "every 60 ticks { tick() }\nfunc tick() { }\n")
+}
+
+func TestSignatureTypeForwardRefStillErrors(t *testing.T) {
+	// Function signature cannot name a record declared later
+	expectError(t, "func make(): Widget { return new Widget }\nrecord Widget { x: int }\n", "undefined: Widget")
+}
+
+func TestTopLevelVarTypeForwardRefStillErrors(t *testing.T) {
+	// Top-level var type cannot name a record declared later
+	expectError(t, "var x: Widget\nrecord Widget { x: int }\n", "undefined: Widget")
+}
+
+func TestRecordFieldTypeForwardRefStillErrors(t *testing.T) {
+	// Record field type cannot name a record declared later
+	expectError(t, "record A { b: B }\nrecord B { x: int }\n", "undefined: B")
+}
