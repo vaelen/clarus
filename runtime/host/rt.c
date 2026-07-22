@@ -407,3 +407,29 @@ void rt_map_val_at(const rt_map *m, int32_t i, void *out) {
     if (i < 0 || i >= m->count) rt_panic("map key not found");
     memmove(out, map_val_slot(m, i), (size_t)m->valsize);
 }
+
+/* ==================== added by the C printer (Task 8) ==================== */
+
+int32_t rt_arr_check(int32_t i, int32_t n) {
+    if (i < 0 || i >= n) rt_panic("array index out of range");
+    return i;
+}
+
+int32_t rt_enum_from_int(const int32_t *vals, int n, int32_t v) {
+    for (int i = 0; i < n; i++) {
+        if (vals[i] == v) return v;
+    }
+    rt_panic("no enum member with value");
+    return v; /* unreached; rt_panic never returns, but silences -Wreturn-type-style analyzers */
+}
+
+int rt_text_cmp(const rt_text *a, const rt_text *b) {
+    int32_t alen = a->len, blen = b->len;
+    int32_t n = alen < blen ? alen : blen;
+    int c = n > 0 ? memcmp(a->data, b->data, (size_t)n) : 0;
+    if (c < 0) return -1;
+    if (c > 0) return 1;
+    if (alen < blen) return -1;
+    if (alen > blen) return 1;
+    return 0;
+}

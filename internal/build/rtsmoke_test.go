@@ -112,12 +112,7 @@ func TestRuntimeSmokeCollections(t *testing.T) {
 	}
 }
 
-func cc() string {
-	if c := os.Getenv("CC"); c != "" {
-		return c
-	}
-	return "cc"
-}
+func cc() string { return CCPath() }
 
 func TestRuntimeSmokeStrings(t *testing.T) {
 	dir := t.TempDir()

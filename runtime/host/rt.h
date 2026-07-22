@@ -61,4 +61,20 @@ int32_t rt_map_count(const rt_map *m);
 /* iteration for `for k, v in m`: stable snapshot by index */
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255);
 void rt_map_val_at(const rt_map *m, int32_t i, void *out);
+
+/* ---- added by the C printer (Task 8) ---- */
+
+/* Fixed-array bounds check for `a[i]`: panics "array index out of range" if
+   i is out of [0,n); otherwise returns i, so the printer can embed the call
+   directly as the array subscript: a.e[rt_arr_check(i, N)]. */
+int32_t rt_arr_check(int32_t i, int32_t n);
+
+/* Checked int->enum conversion (`EnumType(i)`): returns v if it appears in
+   vals[0..n), else panics "no enum member with value N". */
+int32_t rt_enum_from_int(const int32_t *vals, int n, int32_t v);
+
+/* text-vs-text byte-wise comparison (rt_text_cmp_str only compares a text
+   against a fixed string; this is the text/text sibling the printer needs
+   for `t1 == t2`). */
+int rt_text_cmp(const rt_text *a, const rt_text *b);
 #endif
