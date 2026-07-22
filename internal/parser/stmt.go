@@ -1,0 +1,194 @@
+package parser
+
+import (
+	"clarus/internal/ast"
+	"clarus/internal/token"
+)
+
+// parseBlock parses `"{" { stmt } "}"` (Appendix A), where stmt also
+// includes varDecl. All var declarations must appear before any other
+// statement; a var seen afterward is a diagnostic, not a silent reorder.
+func (p *parser) parseBlock() *ast.Block {
+	lb := p.expect(token.LBRACE)
+	b := &ast.Block{P: lb.Pos}
+	p.skipNewlines()
+	seenStmt := false
+	for p.tok.Kind != token.RBRACE {
+		if p.tok.Kind == token.KwVar {
+			if seenStmt {
+				p.errorf(p.tok.Pos, "variable declarations must appear at the top of the body")
+			}
+			b.Vars = append(b.Vars, p.parseVarDecl())
+		} else {
+			b.Stmts = append(b.Stmts, p.parseStmt())
+			seenStmt = true
+		}
+		p.skipNewlines()
+	}
+	p.next() // consume '}'
+	return b
+}
+
+// parseStmt parses one statement (Appendix A: stmt), dispatching on the
+// leading token. Expression-leading statements (assignment and call) fall
+// through to parseSimpleStmt.
+func (p *parser) parseStmt() ast.Stmt {
+	switch p.tok.Kind {
+	case token.KwIf:
+		return p.parseIfStmt()
+	case token.KwWhile:
+		return p.parseWhileStmt()
+	case token.KwFor:
+		return p.parseForStmt()
+	case token.KwReturn:
+		return p.parseReturnStmt()
+	case token.KwQuit:
+		pos := p.tok.Pos
+		p.next()
+		return &ast.QuitStmt{P: pos}
+	case token.KwCancel:
+		pos := p.tok.Pos
+		p.next()
+		return &ast.CancelStmt{P: pos}
+	case token.KwOpen:
+		return p.parseOpenStmt()
+	case token.KwClose:
+		return p.parseCloseStmt()
+	case token.KwEdit:
+		return p.parseEditStmt()
+	default:
+		return p.parseSimpleStmt()
+	}
+}
+
+// parseSimpleStmt parses an expression-leading statement: `lvalue = expr`
+// (assignment) or a bare call. Anything else is neither, and is rejected.
+func (p *parser) parseSimpleStmt() ast.Stmt {
+	pos := p.tok.Pos
+	x := p.parseExpr()
+	if p.tok.Kind == token.ASSIGN {
+		if !isLvalue(x) {
+			p.errorf(pos, "cannot assign to this expression")
+		}
+		p.next()
+		rhs := p.parseExpr()
+		return &ast.AssignStmt{P: pos, LHS: x, RHS: rhs}
+	}
+	if call, ok := x.(*ast.Call); ok {
+		return &ast.ExprStmt{P: pos, X: call}
+	}
+	p.errorf(pos, "expression is not a statement")
+	panic(parseAbort{}) // unreachable: errorf already panics
+}
+
+// isLvalue reports whether e has the shape `IDENT { "." memberName | "[" expr "]" }`
+// (Appendix A: lvalue) — an Ident base with any chain of Select/Index on top.
+func isLvalue(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.Select:
+		return isLvalue(v.X)
+	case *ast.Index:
+		return isLvalue(v.X)
+	default:
+		return false
+	}
+}
+
+// parseIfStmt parses `"if" expr block [ "else" ( ifStmt | block ) ]`.
+func (p *parser) parseIfStmt() *ast.IfStmt {
+	pos := p.tok.Pos
+	p.next() // 'if'
+	cond := p.parseExpr()
+	then := p.parseBlock()
+	s := &ast.IfStmt{P: pos, Cond: cond, Then: then}
+	if p.tok.Kind == token.KwElse {
+		p.next()
+		if p.tok.Kind == token.KwIf {
+			s.Else = p.parseIfStmt()
+		} else {
+			s.Else = p.parseBlock()
+		}
+	}
+	return s
+}
+
+// parseWhileStmt parses `"while" expr block`.
+func (p *parser) parseWhileStmt() *ast.WhileStmt {
+	pos := p.tok.Pos
+	p.next() // 'while'
+	cond := p.parseExpr()
+	body := p.parseBlock()
+	return &ast.WhileStmt{P: pos, Cond: cond, Body: body}
+}
+
+// parseForStmt parses `"for" IDENT [ "," IDENT ] "in" forRange block`, where
+// forRange = expr [ "to" expr ]. All three forms (list, map, range) share
+// this one grammar; which is valid is a checker concern, not the parser's.
+func (p *parser) parseForStmt() *ast.ForStmt {
+	pos := p.tok.Pos
+	p.next() // 'for'
+	v1 := p.expect(token.IDENT)
+	f := &ast.ForStmt{P: pos, V1: v1.Text}
+	if p.tok.Kind == token.COMMA {
+		p.next()
+		v2 := p.expect(token.IDENT)
+		f.V2 = v2.Text
+	}
+	p.expect(token.KwIn)
+	f.Seq = p.parseExpr()
+	if p.tok.Kind == token.KwTo {
+		p.next()
+		f.ToExpr = p.parseExpr()
+	}
+	f.Body = p.parseBlock()
+	return f
+}
+
+// parseReturnStmt parses `"return" [ expr ]`. A return with no value is
+// followed directly by the statement-ending NEWLINE or the block's `}`.
+func (p *parser) parseReturnStmt() *ast.ReturnStmt {
+	pos := p.tok.Pos
+	p.next() // 'return'
+	r := &ast.ReturnStmt{P: pos}
+	if p.tok.Kind != token.NEWLINE && p.tok.Kind != token.RBRACE {
+		r.X = p.parseExpr()
+	}
+	return r
+}
+
+// parseOpenStmt parses the statement form `"open" IDENT` (distinct from the
+// `open IDENT` primary expression, which keeps the opened window's reference).
+func (p *parser) parseOpenStmt() *ast.OpenStmt {
+	pos := p.tok.Pos
+	p.next() // 'open'
+	name := p.expect(token.IDENT)
+	return &ast.OpenStmt{P: pos, Window: name.Text}
+}
+
+// parseCloseStmt parses `"close" expr`.
+func (p *parser) parseCloseStmt() *ast.CloseStmt {
+	pos := p.tok.Pos
+	p.next() // 'close'
+	x := p.parseExpr()
+	return &ast.CloseStmt{P: pos, X: x}
+}
+
+// parseEditStmt parses `"edit" IDENT "," ( lvalue | "new" IDENT )`.
+func (p *parser) parseEditStmt() *ast.EditStmt {
+	pos := p.tok.Pos
+	p.next() // 'edit'
+	form := p.expect(token.IDENT)
+	p.expect(token.COMMA)
+	e := &ast.EditStmt{P: pos, Form: form.Text}
+	if p.tok.Kind == token.KwNew {
+		p.next()
+		typ := p.expect(token.IDENT)
+		e.IsNew = true
+		e.NewType = typ.Text
+	} else {
+		e.Target = p.parseExpr()
+	}
+	return e
+}
