@@ -41,6 +41,17 @@ void rt_alert(const uint8_t *s) {
     putchar('\n');
 }
 
+/* Diagnostic stream (Ch12): same CR->LF rendering as rt_alert, but to
+   stderr rather than stdout. */
+void rt_log(const uint8_t *s) {
+    uint8_t len = s[0];
+    for (uint8_t i = 0; i < len; i++) {
+        uint8_t c = s[1 + i];
+        fputc(c == '\r' ? '\n' : c, stderr);
+    }
+    fputc('\n', stderr);
+}
+
 void rt_str_store(uint8_t *dst, int dstcap, const uint8_t *src) {
     uint8_t srclen = src[0];
     int n = srclen < dstcap ? srclen : dstcap;
@@ -116,6 +127,34 @@ int32_t rt_str_to_bytes(const uint8_t *src, uint8_t *buf, int bufcap) {
     memmove(buf, src + 1, (size_t)n);
     if (n < srclen) rt_set_lasterr(1, "string truncated");
     return n;
+}
+
+/* Strict bounds (Ch3): start<0, len<0, len>255, or start+len>srclen all
+   panic "slice out of range" — there is no clamping here, unlike the
+   byte-copy family above. */
+void rt_str_slice(uint8_t *out255, const uint8_t *src, int32_t start, int32_t len) {
+    int32_t srclen = src[0];
+    if (start < 0 || len < 0 || len > 255 || start + len > srclen) rt_panic("slice out of range");
+    memmove(out255 + 1, src + 1 + start, (size_t)len);
+    out255[0] = (uint8_t)len;
+}
+
+int32_t rt_str_index_of_str(const uint8_t *s, const uint8_t *needle) {
+    int slen = s[0], nlen = needle[0];
+    if (nlen == 0) return 0; /* empty needle convention (Ch3) */
+    if (nlen > slen) return -1;
+    for (int i = 0; i <= slen - nlen; i++) {
+        if (memcmp(s + 1 + i, needle + 1, (size_t)nlen) == 0) return i;
+    }
+    return -1;
+}
+
+int32_t rt_str_index_of_char(const uint8_t *s, uint8_t c) {
+    int slen = s[0];
+    for (int i = 0; i < slen; i++) {
+        if (s[1 + i] == c) return i;
+    }
+    return -1;
 }
 
 int32_t rt_fix_mul(int32_t a, int32_t b) {
@@ -230,6 +269,61 @@ int32_t rt_text_to_bytes(const rt_text *t, uint8_t *buf, int bufcap) {
     memmove(buf, t->data, (size_t)n);
     if (n < t->len) rt_set_lasterr(1, "string truncated");
     return n;
+}
+
+/* Same strict-bounds rule as rt_str_slice, but against t->len rather than a
+   str255's own length — the len>255 leg is the one that actually bites
+   here, since text is unbounded and start+len can stay within it while
+   still being too long for the str255 the result must fit in. */
+void rt_text_slice(uint8_t *out255, const rt_text *t, int32_t start, int32_t len) {
+    int32_t tlen = t->len;
+    if (start < 0 || len < 0 || len > 255 || start + len > tlen) rt_panic("slice out of range");
+    memmove(out255 + 1, t->data + start, (size_t)len);
+    out255[0] = (uint8_t)len;
+}
+
+int32_t rt_text_index_of_str(const rt_text *t, const uint8_t *needle) {
+    int32_t tlen = t->len;
+    int nlen = needle[0];
+    if (nlen == 0) return 0; /* empty needle convention (Ch3) */
+    if (nlen > tlen) return -1;
+    for (int32_t i = 0; i <= tlen - nlen; i++) {
+        if (memcmp(t->data + i, needle + 1, (size_t)nlen) == 0) return i;
+    }
+    return -1;
+}
+
+int32_t rt_text_index_of_char(const rt_text *t, uint8_t c) {
+    for (int32_t i = 0; i < t->len; i++) {
+        if (t->data[i] == c) return i;
+    }
+    return -1;
+}
+
+/* Amortized growth: `grow` doubles capacity, so a loop of N appends costs
+   O(N) total, not O(N^2) — same helper the constructor/concat paths use. */
+void rt_text_append_str(rt_text *t, const uint8_t *s) {
+    int32_t n = s[0];
+    grow((void **)&t->data, &t->cap, t->len + n, 1);
+    memmove(t->data + t->len, s + 1, (size_t)n);
+    t->len += n;
+}
+
+void rt_text_append_char(rt_text *t, uint8_t c) {
+    grow((void **)&t->data, &t->cap, t->len + 1, 1);
+    t->data[t->len] = c;
+    t->len += 1;
+}
+
+/* src may alias t (self-append doubles): n is captured before grow() can
+   move t->data (which is src->data too, when src==t), and memmove tolerates
+   the source/dest ranges overlapping — no separate self-append branch
+   needed. */
+void rt_text_append_text(rt_text *t, const rt_text *src) {
+    int32_t n = src->len;
+    grow((void **)&t->data, &t->cap, t->len + n, 1);
+    memmove(t->data + t->len, src->data, (size_t)n);
+    t->len += n;
 }
 
 /* ==================== list ==================== */
