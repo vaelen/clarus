@@ -304,19 +304,22 @@ void *rt_list_at(rt_list *l, int32_t i) {
 int32_t rt_list_count(const rt_list *l) { return l->count; }
 
 /* ==================== map ====================
- * ponytail: linear-scan map, fine for host tests
+ * Sorted parallel arrays: `keys` holds `count` str255 blocks (256 bytes
+ * each: one length byte + up to 255 data bytes, same layout rt_str_* uses)
+ * and `vals` holds `count` fixed-size values, index-aligned with `keys`.
+ * Entries are kept in ascending key order (rt_str_cmp, byte-wise): lookup
+ * is a binary search, insertion memmoves both arrays open at the sorted
+ * position, removal compacts.
  *
- * Parallel arrays: `keys` holds `count` str255 blocks (256 bytes each: one
- * length byte + up to 255 data bytes, same layout rt_str_* uses) and `vals`
- * holds `count` fixed-size values, index-aligned with `keys`. Lookup is a
- * linear scan via rt_str_cmp. Insertion appends; removal memmoves both
- * arrays to compact the gap.
+ * CONTRACT (language reference, Ch3 Maps): iteration visits entries in
+ * ascending byte-wise key order. `rt_map_key_at`/`rt_map_val_at` deliver
+ * that order directly because the arrays ARE the sort. Goldens depend on
+ * it, and the future Mac runtime must honor the same order (its planned
+ * layout is a key-sorted offset table over a packed arena — see the design
+ * spec §4).
  *
- * CONTRACT: entries are kept in insertion order. `rt_map_key_at`/
- * `rt_map_val_at` iterate in that order, and goldens depend on it — this is
- * a de-facto guarantee the host runtime makes (the language reference does
- * not promise an order); flagged to the controller so the reference can be
- * updated to state it explicitly.
+ * ponytail: 256-byte key slots waste space; fine for the host test double.
+ * The packed-arena layout is the Mac runtime's job.
  */
 
 #define MAP_KEYBLOCK 256
@@ -345,26 +348,47 @@ static uint8_t *map_val_slot(const rt_map *m, int32_t i) {
     return m->vals + (size_t)i * (size_t)m->valsize;
 }
 
-static int32_t map_find(const rt_map *m, const uint8_t *key) {
-    for (int32_t i = 0; i < m->count; i++) {
-        if (rt_str_cmp(map_key_slot(m, i), key) == 0) return i;
+/* Binary search for the smallest index whose key is >= `key` (lower bound).
+   Sets *found if the key at that index is an exact match. */
+static int32_t map_lower_bound(const rt_map *m, const uint8_t *key, int *found) {
+    int32_t lo = 0, hi = m->count;
+    while (lo < hi) {
+        int32_t mid = lo + (hi - lo) / 2;
+        if (rt_str_cmp(map_key_slot(m, mid), key) < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
     }
-    return -1;
+    *found = lo < m->count && rt_str_cmp(map_key_slot(m, lo), key) == 0;
+    return lo;
+}
+
+static int32_t map_find(const rt_map *m, const uint8_t *key) {
+    int found;
+    int32_t pos = map_lower_bound(m, key, &found);
+    return found ? pos : -1;
 }
 
 void rt_map_set(rt_map *m, const uint8_t *key, const void *val) {
-    int32_t idx = map_find(m, key);
-    if (idx >= 0) {
-        memmove(map_val_slot(m, idx), val, (size_t)m->valsize);
+    int found;
+    int32_t pos = map_lower_bound(m, key, &found);
+    if (found) {
+        memmove(map_val_slot(m, pos), val, (size_t)m->valsize);
         return;
     }
     grow((void **)&m->keys, &m->cap, m->count + 1, MAP_KEYBLOCK);
     grow((void **)&m->vals, &m->valcap, m->count + 1, (size_t)m->valsize);
+    int32_t tail = m->count - pos;
+    if (tail > 0) {
+        memmove(map_key_slot(m, pos + 1), map_key_slot(m, pos), (size_t)tail * MAP_KEYBLOCK);
+        memmove(map_val_slot(m, pos + 1), map_val_slot(m, pos), (size_t)tail * (size_t)m->valsize);
+    }
     int32_t klen = key[0];
-    uint8_t *kslot = map_key_slot(m, m->count);
+    uint8_t *kslot = map_key_slot(m, pos);
     kslot[0] = (uint8_t)klen;
     memmove(kslot + 1, key + 1, (size_t)klen);
-    memmove(map_val_slot(m, m->count), val, (size_t)m->valsize);
+    memmove(map_val_slot(m, pos), val, (size_t)m->valsize);
     m->count++;
 }
 

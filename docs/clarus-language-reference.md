@@ -315,7 +315,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `m.count` — number of entries (returns `int`)
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
-Keys are compared case-sensitively, byte-wise. Iteration order is insertion order; removing a key preserves the order of the remaining entries.
+Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in ascending key order (byte-wise) — deterministic regardless of insertion or removal history.
 
 ### Text
 

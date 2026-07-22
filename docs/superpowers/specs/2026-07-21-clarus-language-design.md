@@ -109,10 +109,12 @@ indexing, `for x in list`.
 - Values are any fixed-size type, records included. Handle-backed values
   (`text`, `list of T`) as map values are deferred — nesting handle-backed
   types inside handle-backed types complicates transparent locking.
-- Storage: one relocatable handle containing a slot table (hash, 2-byte key
-  offset, value) plus a packed key arena of length-prefixed strings — keys
-  cost what they are, not 256 bytes per slot. Deleted keys leave arena holes
-  until the next growth rehash compacts them.
+- Storage: one relocatable handle containing a key-sorted entry table
+  (2-byte key offset, value) plus a packed key arena of length-prefixed
+  strings — keys cost what they are, not 256 bytes per slot. Lookup is a
+  binary search (O(log n) byte-wise compares); iteration is ascending key
+  order, which is the documented contract. No hashing. Deleted keys leave
+  arena holes until a growth pass compacts them.
 - Operations: `m["k"] = v`, `m["k"]`, `m.has("k")`, `m.remove("k")`,
   `for key, v in m`.
 

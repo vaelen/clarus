@@ -54,9 +54,10 @@ on App.launch {
     }
 
     // map: set/get/get-with-default/has/remove/count
-    m["a"] = 1
-    m["b"] = 2
+    // inserted deliberately out of order: iteration must come back sorted
     m["c"] = 3
+    m["b"] = 2
+    m["a"] = 1
     show("map count = ", m.count)
     show("get a = ", m.get("a", 0))
     show("get missing dv = ", m.get("missing", 99))
