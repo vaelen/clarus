@@ -28,8 +28,15 @@ development is fully host-testable and will surface language defects that
 should be fixed before the Mac runtime freezes contracts. The older plans'
 "Roadmap context" sections predate this reorder — this file wins.
 
-**Next fork (user decision pending):** Plan 4a (Mac target) vs clarusc.
-The CLI features are done, so clarusc is now writable.
+**Decided 2026-07-23: clarusc is next.** The order is:
+
+1. **clarusc** — the compiler written in Clarus, developed host-side against
+   the Go compiler with differential testing, through the three-stage
+   bootstrap and the committed C snapshot (strategy below).
+2. **Mac target** (4a "hello, Macintosh", then 4b windows/menus/events).
+3. Memory + forms runtime, then networking.
+4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
+   target exists.
 
 ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
 
