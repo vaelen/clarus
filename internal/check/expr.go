@@ -8,13 +8,25 @@ import (
 	"clarus/internal/types"
 )
 
-// checkExpr type-checks e and returns its type. expected resolves bare enum
-// members and `nil` (WindowRef/resource) — it is a hint, not an obligation;
-// concrete-typed expressions (literals, resolved idents) ignore it. On any
-// error, checkExpr reports exactly one diagnostic and returns types.InvalidT,
-// which compatible() treats as compatible with everything so a single
-// mistake never cascades into unrelated follow-on errors.
+// checkExpr type-checks e and returns its type, recording the result in
+// c.info.Types — the single point every expression's final type passes
+// through, since checkExprInner's many internal call sites all recurse back
+// through this wrapper rather than calling checkExprInner directly.
 func (c *checker) checkExpr(e ast.Expr, expected *types.Type) *types.Type {
+	t := c.checkExprInner(e, expected)
+	c.info.Types[e] = t
+	return t
+}
+
+// checkExprInner does the actual type-checking dispatch; see checkExpr for
+// the recording wrapper every caller should use instead. expected resolves
+// bare enum members and `nil` (WindowRef/resource) — it is a hint, not an
+// obligation; concrete-typed expressions (literals, resolved idents) ignore
+// it. On any error, checkExprInner reports exactly one diagnostic and
+// returns types.InvalidT, which compatible() treats as compatible with
+// everything so a single mistake never cascades into unrelated follow-on
+// errors.
+func (c *checker) checkExprInner(e ast.Expr, expected *types.Type) *types.Type {
 	switch e := e.(type) {
 	case *ast.IntLit:
 		return types.IntT
@@ -190,6 +202,7 @@ func (c *checker) checkIdent(e *ast.Ident, expected *types.Type) *types.Type {
 	if expected != nil && expected.Kind == types.Enum {
 		for _, m := range expected.Enum.Members {
 			if m.Name == e.Name {
+				c.info.EnumConsts[e] = m.Value
 				return expected
 			}
 		}
