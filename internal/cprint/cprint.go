@@ -1,6 +1,6 @@
 // Package cprint walks a lowered *ir.Program (internal/ir) into one
 // self-contained C99 translation unit that #includes "rt.h" and links
-// against runtime/host/rt.c (Task 4/5's host runtime).
+// against internal/build/rt/rt.c (Task 4/5's host runtime).
 //
 // # Name mangling
 //

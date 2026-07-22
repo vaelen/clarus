@@ -10,13 +10,23 @@ import (
 	"testing"
 
 	"clarus/internal/ast"
-	"clarus/internal/build"
 	"clarus/internal/check"
 	"clarus/internal/ir"
 	"clarus/internal/lower"
 	"clarus/internal/parser"
 	"clarus/internal/source"
 )
+
+// ccPath returns the C compiler to invoke, mirroring build.CCPath — this
+// package can't import internal/build for it since build now imports
+// cprint (Task 9 wires Build to Emit), which would be an import cycle in
+// this test.
+func ccPath() string {
+	if c := os.Getenv("CC"); c != "" {
+		return c
+	}
+	return "cc"
+}
 
 // lowerSrc parses, checks, and lowers src, failing the test on any error —
 // the same pipeline internal/lower's own tests use, reimplemented here
@@ -52,11 +62,11 @@ func buildAndRun(t *testing.T, src string) string {
 	if err := os.WriteFile(main, c, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rtH, err := os.ReadFile("../../runtime/host/rt.h")
+	rtH, err := os.ReadFile("../build/rt/rt.h")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rtC, err := os.ReadFile("../../runtime/host/rt.c")
+	rtC, err := os.ReadFile("../build/rt/rt.c")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +77,7 @@ func buildAndRun(t *testing.T, src string) string {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "prog")
-	cmd := exec.Command(build.CCPath(), "-std=c99", "-Wall", "-Werror", main, filepath.Join(dir, "rt.c"), "-o", exe)
+	cmd := exec.Command(ccPath(), "-std=c99", "-Wall", "-Werror", main, filepath.Join(dir, "rt.c"), "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s\n--- emitted C ---\n%s", err, out, c)
 	}

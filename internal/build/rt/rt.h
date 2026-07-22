@@ -1,4 +1,4 @@
-/* runtime/host/rt.h — host stand-in for the future Toolbox runtime. May use libc. */
+/* internal/build/rt/rt.h — host stand-in for the future Toolbox runtime. May use libc. */
 #ifndef CLARUS_RT_H
 #define CLARUS_RT_H
 #include <stdint.h>
