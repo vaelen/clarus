@@ -35,6 +35,35 @@ func poolGet(i: int): string {
     return strPool[i]
 }
 
+// Diag is a compiler diagnostic: a position plus an interned message. Shared
+// by every clarusc phase (lexer, parser, checker) so they all accumulate
+// into one list and format identically (Task 5's retrofit onto lib.cla; see
+// docs/superpowers/plans/2026-07-23-clarusc-v1.md Task 5).
+record Diag {
+    line: int
+    col: int
+    msgIdx: int
+}
+
+var diags: list of Diag
+
+// emitDiag appends a diagnostic at line:col with message msg to the shared
+// diags list.
+func emitDiag(line: int, col: int, msg: string) {
+    var d: Diag
+
+    d.line = line
+    d.col = col
+    d.msgIdx = intern(msg)
+    diags.add(d)
+}
+
+// formatDiag renders d as "path:line:col: message", matching
+// internal/source.Diag.String().
+func formatDiag(path: string, d: Diag): string {
+    return path + ":" + numToStr(d.line) + ":" + numToStr(d.col) + ": " + poolGet(d.msgIdx)
+}
+
 // digitsOf renders the decimal digits of n (which may be negative or zero)
 // most-significant-first, with no sign. Peeling digits off the original
 // (possibly negative) n via mod/div avoids ever negating n directly, so

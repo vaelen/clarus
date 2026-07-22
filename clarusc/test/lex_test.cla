@@ -1,0 +1,56 @@
+include "../lex.cla"
+
+// describeTok renders one token as "KINDNAME line:col [text]" for the
+// golden below -- not part of clarusc proper, just this test's display.
+func describeTok(t: Token): string {
+    var s: string
+
+    s = tokKindName(t.kind) + " " + numToStr(t.line) + ":" + numToStr(t.col)
+    if t.kind == TkIdent or t.kind == TkStringLit {
+        s = s + " " + poolGet(t.nameIdx)
+    }
+    if t.kind == TkInt or t.kind == TkCharLit {
+        s = s + " " + numToStr(t.intVal)
+    }
+    if t.kind == TkFixedLit {
+        s = s + " " + numToStr(t.fixVal)
+    }
+    return s
+}
+
+on App.startEmpty {
+    var src: text
+    var i: int
+    var n: int
+
+    // Line 1: `var x: int = 0x1F + "hi"` -- keyword, ident, punctuation,
+    // hex INT, operator, STRINGLIT: one clean line covering most kinds.
+    // Line 2: `y = 0x` -- hex literal with no digits, the diagnostic case
+    // (matches Go's TestHexLiteralNoDigits).
+    //
+    // Built with text.append rather than a Clarus string escape for the
+    // newlines: Clarus's own `\n` escape decodes to CR (13), not the LF
+    // (10) byte this lexer treats as ending a line (see lex.cla's header
+    // comment) -- char(10) is the actual newline byte the lexer scans for.
+    src.append("var x: int = 0x1F + ")
+    src.append('"')
+    src.append("hi")
+    src.append('"')
+    src.append(char(10))
+    src.append("y = 0x")
+    src.append(char(10))
+
+    n = lexAll(src)
+
+    i = 0
+    while i < toks.count {
+        alert(describeTok(toks[i]))
+        i = i + 1
+    }
+
+    i = 0
+    while i < diags.count {
+        alert(formatDiag("lex_test.cla", diags[i]))
+        i = i + 1
+    }
+}

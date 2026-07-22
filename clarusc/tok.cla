@@ -1,0 +1,214 @@
+include "lib.cla"
+
+// tok.cla: token kinds and the Token record — a port of
+// internal/token/token.go. Enum member order matches token.go's Kind
+// constants exactly: the operator members (TkAssign..TkTilde) MUST stay
+// contiguous and last, because lex.cla's isOperatorKind relies on a single
+// int(k) range test over that span (mirroring token.go's
+// `k >= token.ASSIGN && k <= token.TILDE`) — Clarus enums only support ==/!=
+// directly, so the range test goes through int(k).
+enum TokKind {
+    TkEOF
+    TkNewline
+    TkSemi
+    TkIdent
+    TkInt
+    TkFixedLit
+    TkCharLit
+    TkStringLit
+
+    TkVar
+    TkFunc
+    TkRecord
+    TkEnum
+    TkConst
+    TkWindow
+    TkMenu
+    TkExtend
+    TkOn
+    TkEvery
+    TkIf
+    TkElse
+    TkWhile
+    TkFor
+    TkIn
+    TkTo
+    TkReturn
+    TkAnd
+    TkOr
+    TkNot
+    TkTrue
+    TkFalse
+    TkNil
+    TkOpen
+    TkClose
+    TkEdit
+    TkNew
+    TkQuit
+    TkCancel
+    TkSwitch
+    TkCase
+    TkBreak
+    TkContinue
+
+    TkLParen
+    TkRParen
+    TkLBrace
+    TkRBrace
+    TkLBracket
+    TkRBracket
+    TkComma
+    TkColon
+    TkDot
+
+    TkAssign
+    TkEq
+    TkNe
+    TkLt
+    TkLe
+    TkGt
+    TkGe
+    TkPlus
+    TkMinus
+    TkStar
+    TkSlash
+    TkShl
+    TkShr
+    TkAmp
+    TkPipe
+    TkCaret
+    TkTilde
+}
+
+// Token mirrors token.Token, minus its Text/Pos fields: nameIdx holds the
+// interned identifier/string/char text (IDENT, STRINGLIT, CHARLIT); intVal
+// holds INT's and CHARLIT's numeric value; fixVal holds FIXEDLIT's raw
+// 16.16 value; line/col replace Go's lazily-computed source.Pos (the
+// Clarus lexer tracks line/col incrementally as it scans — see lex.cla).
+// Fields unused by a given kind are left at zero.
+record Token {
+    kind: TokKind
+    nameIdx: int
+    intVal: int
+    fixVal: int
+    line: int
+    col: int
+}
+
+// keywordKind maps nameIdx (the interned index of an identifier's text) to
+// its keyword TokKind, or TkIdent — the sentinel meaning "not a keyword,
+// this is an ordinary identifier". Mirrors token.Keywords.
+func keywordKind(nameIdx: int): TokKind {
+    if nameIdx == intern("var") { return TkVar }
+    if nameIdx == intern("func") { return TkFunc }
+    if nameIdx == intern("record") { return TkRecord }
+    if nameIdx == intern("enum") { return TkEnum }
+    if nameIdx == intern("const") { return TkConst }
+    if nameIdx == intern("window") { return TkWindow }
+    if nameIdx == intern("menu") { return TkMenu }
+    if nameIdx == intern("extend") { return TkExtend }
+    if nameIdx == intern("on") { return TkOn }
+    if nameIdx == intern("every") { return TkEvery }
+    if nameIdx == intern("if") { return TkIf }
+    if nameIdx == intern("else") { return TkElse }
+    if nameIdx == intern("while") { return TkWhile }
+    if nameIdx == intern("for") { return TkFor }
+    if nameIdx == intern("in") { return TkIn }
+    if nameIdx == intern("to") { return TkTo }
+    if nameIdx == intern("return") { return TkReturn }
+    if nameIdx == intern("and") { return TkAnd }
+    if nameIdx == intern("or") { return TkOr }
+    if nameIdx == intern("not") { return TkNot }
+    if nameIdx == intern("true") { return TkTrue }
+    if nameIdx == intern("false") { return TkFalse }
+    if nameIdx == intern("nil") { return TkNil }
+    if nameIdx == intern("open") { return TkOpen }
+    if nameIdx == intern("close") { return TkClose }
+    if nameIdx == intern("edit") { return TkEdit }
+    if nameIdx == intern("new") { return TkNew }
+    if nameIdx == intern("quit") { return TkQuit }
+    if nameIdx == intern("cancel") { return TkCancel }
+    if nameIdx == intern("switch") { return TkSwitch }
+    if nameIdx == intern("case") { return TkCase }
+    if nameIdx == intern("break") { return TkBreak }
+    if nameIdx == intern("continue") { return TkContinue }
+    return TkIdent
+}
+
+// tokKindName renders a short debug name for k, e.g. for lex_test.cla's
+// golden output. This is a display helper for clarusc's own tests, NOT a
+// port of Go's Kind.String() — that table's quoted diagnostic forms
+// ("'if'", "identifier", "';'", ...) belong to the parser's error messages
+// (Task 7) and are deferred to that task.
+func tokKindName(k: TokKind): string {
+    switch k {
+    case TkEOF { return "EOF" }
+    case TkNewline { return "NEWLINE" }
+    case TkSemi { return "SEMI" }
+    case TkIdent { return "IDENT" }
+    case TkInt { return "INT" }
+    case TkFixedLit { return "FIXEDLIT" }
+    case TkCharLit { return "CHARLIT" }
+    case TkStringLit { return "STRINGLIT" }
+    case TkVar { return "KwVar" }
+    case TkFunc { return "KwFunc" }
+    case TkRecord { return "KwRecord" }
+    case TkEnum { return "KwEnum" }
+    case TkConst { return "KwConst" }
+    case TkWindow { return "KwWindow" }
+    case TkMenu { return "KwMenu" }
+    case TkExtend { return "KwExtend" }
+    case TkOn { return "KwOn" }
+    case TkEvery { return "KwEvery" }
+    case TkIf { return "KwIf" }
+    case TkElse { return "KwElse" }
+    case TkWhile { return "KwWhile" }
+    case TkFor { return "KwFor" }
+    case TkIn { return "KwIn" }
+    case TkTo { return "KwTo" }
+    case TkReturn { return "KwReturn" }
+    case TkAnd { return "KwAnd" }
+    case TkOr { return "KwOr" }
+    case TkNot { return "KwNot" }
+    case TkTrue { return "KwTrue" }
+    case TkFalse { return "KwFalse" }
+    case TkNil { return "KwNil" }
+    case TkOpen { return "KwOpen" }
+    case TkClose { return "KwClose" }
+    case TkEdit { return "KwEdit" }
+    case TkNew { return "KwNew" }
+    case TkQuit { return "KwQuit" }
+    case TkCancel { return "KwCancel" }
+    case TkSwitch { return "KwSwitch" }
+    case TkCase { return "KwCase" }
+    case TkBreak { return "KwBreak" }
+    case TkContinue { return "KwContinue" }
+    case TkLParen { return "LPAREN" }
+    case TkRParen { return "RPAREN" }
+    case TkLBrace { return "LBRACE" }
+    case TkRBrace { return "RBRACE" }
+    case TkLBracket { return "LBRACKET" }
+    case TkRBracket { return "RBRACKET" }
+    case TkComma { return "COMMA" }
+    case TkColon { return "COLON" }
+    case TkDot { return "DOT" }
+    case TkAssign { return "ASSIGN" }
+    case TkEq { return "EQ" }
+    case TkNe { return "NE" }
+    case TkLt { return "LT" }
+    case TkLe { return "LE" }
+    case TkGt { return "GT" }
+    case TkGe { return "GE" }
+    case TkPlus { return "PLUS" }
+    case TkMinus { return "MINUS" }
+    case TkStar { return "STAR" }
+    case TkSlash { return "SLASH" }
+    case TkShl { return "SHL" }
+    case TkShr { return "SHR" }
+    case TkAmp { return "AMP" }
+    case TkPipe { return "PIPE" }
+    case TkCaret { return "CARET" }
+    case TkTilde { return "TILDE" }
+    }
+    return "?"
+}

@@ -1,0 +1,619 @@
+include "tok.cla"
+
+// lex.cla: the lexer — a port of internal/lexer/lexer.go. Global state
+// stands in for Go's *Lexer receiver (this task's driver only ever lexes
+// one file at a time, per the brief's "single global lexer" option).
+//
+// Byte-vs-escape gotcha this port has to route around: Clarus's own char
+// escape `\n` decodes to CR (13, "the Mac newline" — Chapter 2), NOT to the
+// LF (10) byte that actually ends a line in a .cla file's raw bytes. Every
+// place below that means "the raw newline byte in the source being lexed"
+// therefore spells it char(10), never '\n' — using '\n' there would silently
+// compare against 13 instead of 10. Where Go's decodeEscape produces the
+// *value* 13 for its own 'n' escape case, '\n' is correct (both this host
+// compiler and the ported one agree CR = 13), and is used as such.
+var lexSrc: text
+var lexOff: int
+var lexLine: int
+var lexCol: int
+var lexPrev: TokKind
+var lexHavePrev: bool
+
+// lexOpKind and lexEscByte are out-parameters: Clarus functions return a
+// single value and take no out-params, so lexTryOperator/lexDecodeEscape
+// (which port Go's multi-return lexOperator/decodeEscape) stash their extra
+// result here before returning the bool "did it match" flag.
+var lexOpKind: TokKind
+var lexEscByte: char
+
+// toks is the arena lexAll fills; the test driver (and, later, the parser)
+// walks it directly.
+var toks: list of Token
+
+func isSpace(c: char): bool {
+    return c == ' ' or c == '\t' or c == char(13)
+}
+
+func isHex(c: char): bool {
+    return isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F')
+}
+
+func digitVal(c: char): int {
+    return int(c) - int('0')
+}
+
+func hexDigitVal(c: char): int {
+    if c >= '0' and c <= '9' {
+        return int(c) - int('0')
+    }
+    if c >= 'a' and c <= 'f' {
+        return int(c) - int('a') + 10
+    }
+    return int(c) - int('A') + 10
+}
+
+// operatorRangeLo/Hi hold TkAssign/TkTilde in an enum-typed var: a bare enum
+// member only resolves where the compiler can infer "expected type TokKind"
+// (an assignment target, a comparison against a same-typed value, a switch
+// on that type, ...) -- passing TkAssign directly to int(...) has no such
+// context and fails as "undefined" (int's parameter is int, not TokKind).
+// Routing through a var declared `: TokKind` gives the literal that context.
+var operatorRangeLo: TokKind = TkAssign
+var operatorRangeHi: TokKind = TkTilde
+
+// isOperatorKind reports whether k is one of the tokens after which a
+// trailing newline is a continuation rather than a statement end.
+func isOperatorKind(k: TokKind): bool {
+    if int(k) >= int(operatorRangeLo) and int(k) <= int(operatorRangeHi) {
+        return true
+    }
+    switch k {
+    case TkComma { return true }
+    case TkLParen { return true }
+    case TkLBracket { return true }
+    case TkLBrace { return true }
+    case TkColon { return true }
+    }
+    return false
+}
+
+func lexInit(src: text) {
+    lexSrc = src
+    lexOff = 0
+    lexLine = 1
+    lexCol = 1
+    lexHavePrev = false
+}
+
+// lexAdvance consumes the byte at lexOff (the caller must ensure
+// lexOff < lexSrc.length) and updates lexLine/lexCol to describe the new
+// current offset, exactly matching source.File.LineCol's counting (a
+// newline byte ends the current line; anything else advances the column).
+func lexAdvance() {
+    var c: char
+
+    c = lexSrc[lexOff]
+    lexOff = lexOff + 1
+    if c == char(10) {
+        lexLine = lexLine + 1
+        lexCol = 1
+    } else {
+        lexCol = lexCol + 1
+    }
+}
+
+func lexEmit(kind: TokKind, line: int, col: int, nameIdx: int, intVal: int, fixVal: int): Token {
+    var t: Token
+
+    lexPrev = kind
+    lexHavePrev = true
+    t.kind = kind
+    t.nameIdx = nameIdx
+    t.intVal = intVal
+    t.fixVal = fixVal
+    t.line = line
+    t.col = col
+    return t
+}
+
+// lexTryOperator attempts to match an operator/punctuation token at lexOff
+// (longest match first: two-byte operators before single-byte ones),
+// advancing lexOff past it and setting lexOpKind on success. A bare '!'
+// (there is no '!' operator; "not" is the negation) and any other
+// unrecognized byte leave lexOff untouched and return false, for the
+// caller's unknown-byte diagnostic.
+func lexTryOperator(): bool {
+    var two: string
+    var b: char
+
+    if lexOff + 1 < lexSrc.length {
+        two = lexSrc[lexOff, 2]
+        switch two {
+        case "<<" {
+            lexOpKind = TkShl
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        case ">>" {
+            lexOpKind = TkShr
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        case "<=" {
+            lexOpKind = TkLe
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        case ">=" {
+            lexOpKind = TkGe
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        case "==" {
+            lexOpKind = TkEq
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        case "!=" {
+            lexOpKind = TkNe
+            lexAdvance()
+            lexAdvance()
+            return true
+        }
+        }
+    }
+
+    b = lexSrc[lexOff]
+    switch b {
+    case '(' {
+        lexOpKind = TkLParen
+        lexAdvance()
+        return true
+    }
+    case ')' {
+        lexOpKind = TkRParen
+        lexAdvance()
+        return true
+    }
+    case '{' {
+        lexOpKind = TkLBrace
+        lexAdvance()
+        return true
+    }
+    case '}' {
+        lexOpKind = TkRBrace
+        lexAdvance()
+        return true
+    }
+    case '[' {
+        lexOpKind = TkLBracket
+        lexAdvance()
+        return true
+    }
+    case ']' {
+        lexOpKind = TkRBracket
+        lexAdvance()
+        return true
+    }
+    case ',' {
+        lexOpKind = TkComma
+        lexAdvance()
+        return true
+    }
+    case ':' {
+        lexOpKind = TkColon
+        lexAdvance()
+        return true
+    }
+    case '.' {
+        lexOpKind = TkDot
+        lexAdvance()
+        return true
+    }
+    case '=' {
+        lexOpKind = TkAssign
+        lexAdvance()
+        return true
+    }
+    case '<' {
+        lexOpKind = TkLt
+        lexAdvance()
+        return true
+    }
+    case '>' {
+        lexOpKind = TkGt
+        lexAdvance()
+        return true
+    }
+    case '+' {
+        lexOpKind = TkPlus
+        lexAdvance()
+        return true
+    }
+    case '-' {
+        lexOpKind = TkMinus
+        lexAdvance()
+        return true
+    }
+    case '*' {
+        lexOpKind = TkStar
+        lexAdvance()
+        return true
+    }
+    case '/' {
+        lexOpKind = TkSlash
+        lexAdvance()
+        return true
+    }
+    case '&' {
+        lexOpKind = TkAmp
+        lexAdvance()
+        return true
+    }
+    case '|' {
+        lexOpKind = TkPipe
+        lexAdvance()
+        return true
+    }
+    case '^' {
+        lexOpKind = TkCaret
+        lexAdvance()
+        return true
+    }
+    case '~' {
+        lexOpKind = TkTilde
+        lexAdvance()
+        return true
+    }
+    case ';' {
+        lexOpKind = TkSemi
+        lexAdvance()
+        return true
+    }
+    }
+    return false
+}
+
+// lexNumber lexes an INT (decimal or 0x hex) or FIXEDLIT starting at the
+// digit lexOff currently points to; line/col is that digit's position.
+func lexNumber(line: int, col: int): Token {
+    var start: int
+    var hexStart: int
+    var v: int
+    var i: int
+    var whole: int
+    var fracStart: int
+    var fracNum: int
+    var fracDen: int
+    var fracScaled: int
+    var fixVal: int
+
+    start = lexOff
+
+    if lexSrc[lexOff] == '0' and lexOff + 1 < lexSrc.length and (lexSrc[lexOff + 1] == 'x' or lexSrc[lexOff + 1] == 'X') {
+        lexAdvance()
+        lexAdvance()
+        hexStart = lexOff
+        while lexOff < lexSrc.length and isHex(lexSrc[lexOff]) {
+            lexAdvance()
+        }
+        if lexOff == hexStart {
+            emitDiag(line, col, "hex literal has no digits")
+            return lexEmit(TkInt, line, col, 0, 0, 0)
+        }
+        v = 0
+        i = hexStart
+        while i < lexOff {
+            v = v * 16 + hexDigitVal(lexSrc[i])
+            i = i + 1
+        }
+        return lexEmit(TkInt, line, col, 0, v, 0)
+    }
+
+    while lexOff < lexSrc.length and isDigit(lexSrc[lexOff]) {
+        lexAdvance()
+    }
+
+    if lexOff + 1 < lexSrc.length and lexSrc[lexOff] == '.' and isDigit(lexSrc[lexOff + 1]) {
+        whole = 0
+        i = start
+        while i < lexOff {
+            whole = whole * 10 + digitVal(lexSrc[i])
+            i = i + 1
+        }
+        lexAdvance() // consume '.'
+        fracStart = lexOff
+        while lexOff < lexSrc.length and isDigit(lexSrc[lexOff]) {
+            lexAdvance()
+        }
+        fracNum = 0
+        fracDen = 1
+        i = fracStart
+        while i < lexOff {
+            fracNum = fracNum * 10 + digitVal(lexSrc[i])
+            fracDen = fracDen * 10
+            i = i + 1
+        }
+        // Scale the fractional digits to 16.16 fixed point without a float
+        // type: frac/10^n * 65536, rounded to nearest.
+        fracScaled = (fracNum * 65536 * 2 + fracDen) / (fracDen * 2)
+        fixVal = whole * 65536 + fracScaled
+        return lexEmit(TkFixedLit, line, col, 0, 0, fixVal)
+    }
+
+    v = 0
+    i = start
+    while i < lexOff {
+        v = v * 10 + digitVal(lexSrc[i])
+        i = i + 1
+    }
+    return lexEmit(TkInt, line, col, 0, v, 0)
+}
+
+// lexIdent lexes an identifier or keyword starting at lexOff (already known
+// to be isIdentStart); line/col is its first character's position.
+func lexIdent(line: int, col: int): Token {
+    var start: int
+    var rawLen: int
+    var sliceLen: int
+    var name: string
+    var nameIdx: int
+    var kind: TokKind
+
+    start = lexOff
+    while lexOff < lexSrc.length and isAlnum(lexSrc[lexOff]) {
+        lexAdvance()
+    }
+    rawLen = lexOff - start
+    sliceLen = rawLen
+    if sliceLen > 255 {
+        // Clarus string/text slicing errors at runtime past 255 (Ch3), so
+        // the slice itself must be clamped; no keyword is anywhere near
+        // this long, so clamping can't hide a keyword match.
+        sliceLen = 255
+    }
+    name = lexSrc[start, sliceLen]
+
+    nameIdx = intern(name)
+    kind = keywordKind(nameIdx)
+    if kind != TkIdent {
+        return lexEmit(kind, line, col, 0, 0, 0)
+    }
+
+    if rawLen > 255 {
+        emitDiag(line, col, "identifier too long (max 255 bytes)")
+    }
+    return lexEmit(TkIdent, line, col, nameIdx, 0, 0)
+}
+
+// lexDecodeEscape decodes the escape sequence starting at lexOff (just past
+// the backslash), advancing past it. On success it stores the decoded byte
+// in lexEscByte and returns true.
+func lexDecodeEscape(quote: char): bool {
+    var c: char
+
+    if lexOff >= lexSrc.length {
+        return false
+    }
+    c = lexSrc[lexOff]
+    lexAdvance()
+    switch c {
+    case '"' {
+        lexEscByte = '"'
+        return true
+    }
+    case '\\' {
+        lexEscByte = '\\'
+        return true
+    }
+    case 'n' {
+        lexEscByte = '\n'
+        return true
+    } // CR, the Mac newline
+    case 't' {
+        lexEscByte = '\t'
+        return true
+    }
+    case '\'' {
+        if quote == '\'' {
+            lexEscByte = '\''
+            return true
+        }
+    }
+    }
+    return false
+}
+
+// lexResyncCharLit advances past a malformed character literal's closing
+// quote on the current line — or to end of line if there is none — so a bad
+// literal ('ab', '\q) never leaves stray tokens for the caller to trip over.
+func lexResyncCharLit() {
+    while lexOff < lexSrc.length and lexSrc[lexOff] != char(10) {
+        if lexSrc[lexOff] == '\'' {
+            lexAdvance()
+            return
+        }
+        lexAdvance()
+    }
+}
+
+func lexChar(line: int, col: int): Token {
+    var v: char
+    var ok: bool
+
+    lexAdvance() // consume opening '
+
+    if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+        emitDiag(line, col, "unterminated character literal")
+        return lexEmit(TkCharLit, line, col, 0, 0, 0)
+    }
+
+    if lexSrc[lexOff] == '\\' {
+        lexAdvance()
+        ok = lexDecodeEscape('\'')
+        if not ok {
+            emitDiag(line, col, "invalid escape sequence")
+            lexResyncCharLit()
+            return lexEmit(TkCharLit, line, col, 0, 0, 0)
+        }
+        v = lexEscByte
+    } else {
+        v = lexSrc[lexOff]
+        lexAdvance()
+    }
+
+    if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+        emitDiag(line, col, "unterminated character literal")
+        return lexEmit(TkCharLit, line, col, 0, 0, 0)
+    }
+    if lexSrc[lexOff] != '\'' {
+        emitDiag(line, col, "character literal must contain exactly one character")
+        lexResyncCharLit()
+        return lexEmit(TkCharLit, line, col, 0, 0, 0)
+    }
+    lexAdvance() // consume closing '
+
+    return lexEmit(TkCharLit, line, col, 0, int(v), 0)
+}
+
+func lexString(line: int, col: int): Token {
+    var out: text
+    var c: char
+    var ok: bool
+    var sliceLen: int
+    var content: string
+
+    lexAdvance() // consume opening "
+
+    while true {
+        if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+            emitDiag(line, col, "unterminated string literal")
+            break
+        }
+        c = lexSrc[lexOff]
+        if c == '"' {
+            lexAdvance()
+            break
+        }
+        if c == '\\' {
+            lexAdvance()
+            ok = lexDecodeEscape('"')
+            if not ok {
+                emitDiag(line, col, "unterminated string literal")
+                break
+            }
+            out.append(lexEscByte)
+            continue
+        }
+        out.append(c)
+        lexAdvance()
+    }
+
+    sliceLen = out.length
+    if sliceLen > 255 {
+        // As in lexIdent: clamp before slicing so the slice itself can't
+        // runtime-error; a program triggering this diagnostic is rejected
+        // regardless of the interned text's exact tail.
+        emitDiag(line, col, "string literal too long (max 255 bytes)")
+        sliceLen = 255
+    }
+    content = out[0, sliceLen]
+
+    return lexEmit(TkStringLit, line, col, intern(content), 0, 0)
+}
+
+// lexNext returns the next token. At end of input it returns TkEOF forever.
+func lexNext(): Token {
+    var b: char
+    var startLine: int
+    var startCol: int
+
+    while true {
+        // Skip whitespace (not newline) and comments.
+        while lexOff < lexSrc.length {
+            b = lexSrc[lexOff]
+            if isSpace(b) {
+                lexAdvance()
+                continue
+            }
+            if b == '/' and lexOff + 1 < lexSrc.length and lexSrc[lexOff + 1] == '/' {
+                while lexOff < lexSrc.length and lexSrc[lexOff] != char(10) {
+                    lexAdvance()
+                }
+                continue
+            }
+            break
+        }
+
+        if lexOff >= lexSrc.length {
+            // Emit a synthetic NEWLINE at EOF to end incomplete statements
+            // (e.g. "x = 1 +" with no trailing newline). This deliberately
+            // bypasses the operator-continuation suppression below: at true
+            // EOF there is no next line, so a file ending mid-expression
+            // gets a NEWLINE and surfaces a parse error instead of silent
+            // truncation.
+            if lexHavePrev and lexPrev != TkNewline and lexPrev != TkSemi and lexPrev != TkEOF {
+                return lexEmit(TkNewline, lexLine, lexCol, 0, 0, 0)
+            }
+            return lexEmit(TkEOF, lexLine, lexCol, 0, 0, 0)
+        }
+
+        startLine = lexLine
+        startCol = lexCol
+        b = lexSrc[lexOff]
+
+        if b == char(10) {
+            lexAdvance()
+            if not lexHavePrev or isOperatorKind(lexPrev) or lexPrev == TkNewline or lexPrev == TkSemi {
+                continue
+            }
+            return lexEmit(TkNewline, startLine, startCol, 0, 0, 0)
+        }
+
+        if isDigit(b) {
+            return lexNumber(startLine, startCol)
+        }
+
+        if isIdentStart(b) {
+            return lexIdent(startLine, startCol)
+        }
+
+        if b == '\'' {
+            return lexChar(startLine, startCol)
+        }
+        if b == '"' {
+            return lexString(startLine, startCol)
+        }
+
+        if lexTryOperator() {
+            return lexEmit(lexOpKind, startLine, startCol, 0, 0, 0)
+        }
+
+        // Unknown byte.
+        lexAdvance()
+        emitDiag(startLine, startCol, "unexpected character '" + b + "'")
+        continue
+    }
+}
+
+// lexAll lexes src fully into the toks arena (including the trailing EOF)
+// and returns the number of tokens produced. Diagnostics land in lib.cla's
+// shared diags list via emitDiag.
+func lexAll(src: text): int {
+    var t: Token
+
+    lexInit(src)
+    while true {
+        t = lexNext()
+        toks.add(t)
+        if t.kind == TkEOF {
+            break
+        }
+    }
+    return toks.count
+}
