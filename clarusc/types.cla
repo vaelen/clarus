@@ -389,6 +389,34 @@ record FuncSig {
 
 var funcSigs: list of FuncSig
 
+// newFuncSig builds a FuncSig from params (a list of type-arena indices,
+// in declaration order -- the caller's own fresh local list, since list of
+// T is a handle: aliasing it into two FuncSigs would be a checker bug, not
+// something this layer guards against) and ret (a type-arena index, or -1
+// for a procedure), and returns its funcSigs index. Task 9's job: called
+// once per declared function/procedure signature, and once per built-in
+// (alert, askOpen, ...) registered into the universe scope.
+func newFuncSig(params: list of int, ret: int): int {
+    var s: FuncSig
+
+    s.params = params
+    s.ret = ret
+    funcSigs.add(s)
+    return funcSigs.count - 1
+}
+
+func funcSigParamCount(i: int): int {
+    return funcSigs[i].params.count
+}
+
+func funcSigParam(i: int, idx: int): int {
+    return funcSigs[i].params[idx]
+}
+
+func funcSigRet(i: int): int {
+    return funcSigs[i].ret
+}
+
 // Symbol is a name bound in a Scope: a variable, function, type name, or
 // (IsMenu) menu name. IsFunc/IsType/IsConst/IsMenu are mutually exclusive
 // tags mirroring scope.go's Symbol; a plain variable has all four false.

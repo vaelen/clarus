@@ -1,0 +1,294 @@
+include "../lib.cla"
+include "../tok.cla"
+include "../lex.cla"
+include "../ast.cla"
+include "../parse.cla"
+include "../types.cla"
+include "../check.cla"
+
+// runCase lexes, parses, and (if the parse was clean) type-checks src,
+// then alerts either "clean" or every diagnostic -- one line per
+// diagnostic family, cross-checked against `clarus check` on the
+// identical snippet (see task-9-report.md).
+func runCase(label: string, src: text) {
+    var head: int
+    var d: int
+
+    resetDiags()
+    lexAll(src)
+    head = parseFile()
+    if diags.count == 0 {
+        checkProgram(head)
+    }
+    alert("=== " + label + " ===")
+    if diags.count == 0 {
+        alert("clean")
+    } else {
+        d = 0
+        while d < diags.count {
+            alert(formatDiag("check_test.cla", diags[d]))
+            d = d + 1
+        }
+    }
+}
+
+on App.startEmpty {
+    var src: text
+
+    // Case 1: a clean program exercising the whole 9a decl+expr surface --
+    // record (with a defaulted field), enum, two consts, two globals (one
+    // enum-defaulted via a bare member), mutual recursion between two
+    // funcs (forward call resolves via the two-phase walk), and a third
+    // func exercising list/map/string/record locals and a record field
+    // assignment.
+    src = ""
+    src.append("record Point {")
+    src.append(char(10))
+    src.append("    x: int")
+    src.append(char(10))
+    src.append("    y: int = 1")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("enum Color {")
+    src.append(char(10))
+    src.append("    Red")
+    src.append(char(10))
+    src.append("    Green")
+    src.append(char(10))
+    src.append("    Blue")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("const Pi: int = 3")
+    src.append(char(10))
+    src.append("const Greeting: string = \"hi\"")
+    src.append(char(10))
+    src.append("var origin: Point")
+    src.append(char(10))
+    src.append("var favorite: Color = Blue")
+    src.append(char(10))
+    src.append("func isEven(n: int): bool {")
+    src.append(char(10))
+    src.append("    isOdd(n - 1)")
+    src.append(char(10))
+    src.append("    return true")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("func isOdd(n: int): bool {")
+    src.append(char(10))
+    src.append("    isEven(n - 1)")
+    src.append(char(10))
+    src.append("    return true")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("func useStuff() {")
+    src.append(char(10))
+    src.append("    var names: list of string")
+    src.append(char(10))
+    src.append("    var scores: map of int")
+    src.append(char(10))
+    src.append("    var s: string")
+    src.append(char(10))
+    src.append("    var p: Point")
+    src.append(char(10))
+    src.append("    var cnt: int")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    names.add(\"a\")")
+    src.append(char(10))
+    src.append("    scores[\"a\"] = 1")
+    src.append(char(10))
+    src.append("    s = \"hi\" + \"there\"")
+    src.append(char(10))
+    src.append("    p = origin")
+    src.append(char(10))
+    src.append("    p.x = 5")
+    src.append(char(10))
+    src.append("    cnt = names.count")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("clean", src)
+
+    // Case 2: mixed int/fixed arithmetic.
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var a: int")
+    src.append(char(10))
+    src.append("    var b: fixed")
+    src.append(char(10))
+    src.append("    var c: fixed")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    a = 1")
+    src.append(char(10))
+    src.append("    b = 2.0")
+    src.append(char(10))
+    src.append("    c = a + b")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("mixed-int-fixed", src)
+
+    // Case 3: bitwise operator on a fixed operand.
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var a: fixed")
+    src.append(char(10))
+    src.append("    var b: int")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    a = 1.0")
+    src.append(char(10))
+    src.append("    b = a & 1")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("bitwise-requires-int", src)
+
+    // Case 4: undefined name (an assignment's RHS, not a `return` --
+    // Task 9b, not 9a, checks return statements; see task-9-report.md).
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var a: int")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    a = missingName")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("undefined", src)
+
+    // Case 5: redeclaration in the same scope.
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var a: int")
+    src.append(char(10))
+    src.append("    var a: int")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("redeclaration", src)
+
+    // Case 6: cannot-convert (bool has no conversion to char).
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var b: bool")
+    src.append(char(10))
+    src.append("    var c: char")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    b = true")
+    src.append(char(10))
+    src.append("    c = char(b)")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("cannot-convert", src)
+
+    // Case 7: enums are not ordered (`<` on enum values, via an
+    // assignment so 9a's checker -- which doesn't check `return` yet --
+    // actually visits the comparison).
+    src = ""
+    src.append("enum Color {")
+    src.append(char(10))
+    src.append("    Red")
+    src.append(char(10))
+    src.append("    Green")
+    src.append(char(10))
+    src.append("    Blue")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var a: Color")
+    src.append(char(10))
+    src.append("    var b: Color")
+    src.append(char(10))
+    src.append("    var r: bool")
+    src.append(char(10))
+    src.append("")
+    src.append(char(10))
+    src.append("    a = Red")
+    src.append(char(10))
+    src.append("    b = Blue")
+    src.append(char(10))
+    src.append("    r = a < b")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("enums-not-ordered", src)
+
+    // Case 8: duplicate enum value (explicit 0 collides with Red's
+    // implicit 0).
+    src = ""
+    src.append("enum Color {")
+    src.append(char(10))
+    src.append("    Red")
+    src.append(char(10))
+    src.append("    Green 0")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("duplicate-enum-value", src)
+
+    // Case 9: const type must be int/fixed/char/bool/enum/string.
+    src = ""
+    src.append("const Names: list of string = 3")
+    src.append(char(10))
+    runCase("const-type-must-be", src)
+
+    // Case 10: a function signature naming a record declared later still
+    // errors -- phase 1 resolves signatures against the scope built SO
+    // FAR, not the complete program (Task 0's forward-type carve-out).
+    src = ""
+    src.append("func make(): Widget {")
+    src.append(char(10))
+    src.append("    return new Widget")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("record Widget {")
+    src.append(char(10))
+    src.append("    x: int")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("forward-type-in-signature-still-errors", src)
+
+    // Case 11: mutual recursion checks clean -- phase 2 sees the complete
+    // top-level scope, so isEven calling isOdd (declared AFTER it) and
+    // vice versa both resolve.
+    src = ""
+    src.append("func isEven(n: int): bool {")
+    src.append(char(10))
+    src.append("    isOdd(n - 1)")
+    src.append(char(10))
+    src.append("    return true")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("func isOdd(n: int): bool {")
+    src.append(char(10))
+    src.append("    isEven(n - 1)")
+    src.append(char(10))
+    src.append("    return true")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("mutual-recursion-clean", src)
+}

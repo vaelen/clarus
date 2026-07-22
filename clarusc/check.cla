@@ -1,0 +1,2328 @@
+// check.cla: the type checker -- Task 9a's port of internal/check/check.go
+// (the two-phase top-level walk, record/enum layout building) and
+// internal/check/expr.go (checkExpr's full rule set) and
+// internal/check/builtins.go (the universe scope + string/text/list/map/
+// connection/listener/serviceBrowser/file/canvas method tables).
+//
+// DEFERRED TO TASK 9b (see task-9-report.md): stmt.go's control-flow
+// family (if/while/for/switch/break/continue/return/quit/cancel/open/
+// close/edit) -- checkStmt below only dispatches StAssign/StExprStmt, the
+// two statement kinds this task's diagnostic list (condition-must-be-bool
+// via `not`/`and`/`or`, cannot-assign-to-constant, cannot-assign-*) needs.
+// Also deferred whole: ui.go (window/widget property and bind checking,
+// canvas widget-instance dispatch) and events.go (the handler-path/events
+// table, menu-item resolution). Window/menu DECLARATIONS are registered
+// as symbols in phase 1 below (so declare-before-use and "undefined: X"
+// work across functions/windows/menus), but their BODIES are not walked.
+//
+// ============================================================
+// InvalidT no-cascade discipline (see types.cla's header comment)
+// ============================================================
+// Every check* function below returns InvalidT after reporting exactly one
+// diagnostic, and treats an InvalidT operand as "already reported, don't
+// pile on" -- never re-diagnosing an expression whose sub-expression was
+// already InvalidT. -1 is this module's "no expected type" sentinel
+// (mirrors Go's untyped `nil` for the `expected *types.Type` parameter);
+// it is never a valid type-arena index.
+
+include "lib.cla"
+include "ast.cla"
+include "types.cla"
+
+// ================================================================
+// Global checker state
+// ================================================================
+
+// connectionT/listenerT/serviceBrowserT are the resource kinds' singleton
+// type indices. types.cla's typesInit seeds Invalid/Int/Bool/Fixed/Char/
+// Text/Void/Address/ErrorType/saveChoice only -- these three are check.cla's
+// own (builtins.go has no *types.Type package var for them either; see
+// builtins.go's own comment). Rebuilt by checkReset every program, since
+// typesReset empties typeArena and a stale index here would silently
+// alias whatever the NEXT program allocates at that slot.
+var connectionT: int
+var listenerT: int
+var serviceBrowserT: int
+
+// universeScope holds the built-in type/function names; topScope is the
+// user program's global scope, chained under it (mirrors Go's
+// `universe := NewScope(nil); registerBuiltins(universe); c.scope :=
+// NewScope(universe)` -- rebuilt fresh every checkProgram call, exactly as
+// Files() does). curScope is whichever scope is currently active while
+// walking a decl/block; curFuncRet is the enclosing function's return type
+// (-1 for a procedure or outside any function -- Task 9b's checkReturnStmt
+// will need to further distinguish these if it ever matters); curWindow is
+// always -1 in 9a (no window-scoped handler body is ever checked yet, so
+// the `window` keyword always reports "only valid inside a window-scoped
+// handler" -- correct current behavior, not a stub bug).
+var universeScope: int
+var topScope: int
+var curScope: int
+var curFuncRet: int
+var curWindow: int
+
+// ---- record field layout ----
+// types.cla's TyRec carries only nameIdx (the named-type identity); the
+// field list itself is this module's own side table, keyed by that name --
+// exactly Go's types.Type.Record *RecordInfo side pointer, restated as an
+// arena + a name-keyed map instead of a Go pointer.
+record FieldInfo {
+    nameIdx: int
+    typeIdx: int
+    next: int
+}
+
+var fieldInfos: list of FieldInfo
+var recFieldsHeadByName: map of int
+
+func fieldInfoAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        fieldInfos[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newFieldInfo(nameIdx: int, typeIdx: int): int {
+    var fi: FieldInfo
+
+    fi.nameIdx = nameIdx
+    fi.typeIdx = typeIdx
+    fi.next = -1
+    fieldInfos.add(fi)
+    return fieldInfos.count - 1
+}
+
+// recordFieldsHead returns the head index (into fieldInfos) of the field
+// list for the record named by nameIdx, or -1 if none is registered.
+func recordFieldsHead(nameIdx: int): int {
+    return recFieldsHeadByName.get(poolGet(nameIdx), -1)
+}
+
+func setRecordFields(nameIdx: int, head: int) {
+    recFieldsHeadByName[poolGet(nameIdx)] = head
+}
+
+// ---- built-in method/function parameter specs (builtins.go's paramSpec) ----
+// Exactly one match mode applies per ParamSpec: a plain expected type (t,
+// the zero mode), AnyCharArray, AnyRecordish, or a fixed small OneOfKinds
+// set (kindCount 2 or 3 -- every current builtin table needs at most 3).
+record ParamSpec {
+    t: int
+    anyCharArray: bool
+    anyRecordish: bool
+    kindCount: int
+    kind1: TypeKind
+    kind2: TypeKind
+    kind3: TypeKind
+    next: int
+}
+
+var paramSpecs: list of ParamSpec
+var sigHead: int
+var sigTail: int
+var sigCount: int
+
+func paramSpecAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        paramSpecs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func psPlain(t: int): int {
+    var p: ParamSpec
+
+    p.t = t
+    p.anyCharArray = false
+    p.anyRecordish = false
+    p.kindCount = 0
+    p.kind1 = TyInvalid
+    p.kind2 = TyInvalid
+    p.kind3 = TyInvalid
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+func psAnyCharArray(): int {
+    var p: ParamSpec
+
+    p.t = -1
+    p.anyCharArray = true
+    p.anyRecordish = false
+    p.kindCount = 0
+    p.kind1 = TyInvalid
+    p.kind2 = TyInvalid
+    p.kind3 = TyInvalid
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+func psAnyRecordish(): int {
+    var p: ParamSpec
+
+    p.t = -1
+    p.anyCharArray = false
+    p.anyRecordish = true
+    p.kindCount = 0
+    p.kind1 = TyInvalid
+    p.kind2 = TyInvalid
+    p.kind3 = TyInvalid
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+func psOneOf2(k1: TypeKind, k2: TypeKind): int {
+    var p: ParamSpec
+
+    p.t = -1
+    p.anyCharArray = false
+    p.anyRecordish = false
+    p.kindCount = 2
+    p.kind1 = k1
+    p.kind2 = k2
+    p.kind3 = TyInvalid
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+func psOneOf3(k1: TypeKind, k2: TypeKind, k3: TypeKind): int {
+    var p: ParamSpec
+
+    p.t = -1
+    p.anyCharArray = false
+    p.anyRecordish = false
+    p.kindCount = 3
+    p.kind1 = k1
+    p.kind2 = k2
+    p.kind3 = k3
+    p.next = -1
+    paramSpecs.add(p)
+    return paramSpecs.count - 1
+}
+
+// ---- built-in method signatures (builtins.go's methodSig) ----
+record MethodSig {
+    paramsHead: int
+    paramCount: int
+    ret: int
+}
+
+var methodSigs: list of MethodSig
+
+func newMethodSig(paramsHead: int, paramCount: int, ret: int): int {
+    var s: MethodSig
+
+    s.paramsHead = paramsHead
+    s.paramCount = paramCount
+    s.ret = ret
+    methodSigs.add(s)
+    return methodSigs.count - 1
+}
+
+// sigStart/sigAdd/sigEnd build one MethodSig's param chain: sigStart
+// resets the scratch builder, sigAdd appends one ParamSpec (by its
+// paramSpecs index), sigEnd allocates the MethodSig and returns its index.
+// Used only by buildMethodTables, sequentially, never nested.
+func sigStart() {
+    sigHead = -1
+    sigTail = -1
+    sigCount = 0
+}
+
+func sigAdd(specIdx: int) {
+    if sigHead == -1 {
+        sigHead = specIdx
+    }
+    sigTail = paramSpecAppend(sigTail, specIdx)
+    sigCount = sigCount + 1
+}
+
+func sigEnd(ret: int): int {
+    return newMethodSig(sigHead, sigCount, ret)
+}
+
+// ---- built-in method tables (name -> methodSigs index) ----
+var stringTextMethods: map of int
+var textOnlyMethods: map of int
+var connectionMethods: map of int
+var listenerMethods: map of int
+var serviceBrowserMethods: map of int
+var fileFuncs: map of int
+var canvasMethods: map of int
+var canvasProperties: map of int
+
+// ---- const values (Ch3: Constants) ----
+// CVal mirrors check.go's ConstVal: exactly one of intVal/strIdx holds the
+// value, per isStr -- the same flattened shape types.cla's Symbol already
+// uses for a *declared* const's own payload (constIsStr/constInt/
+// constStrIdx); CVal is this module's return-value vehicle for computing
+// one (Clarus functions return a single value, so a 3-field record stands
+// in for Go's multi-field ConstVal struct return).
+record CVal {
+    isStr: bool
+    intVal: int
+    strIdx: int
+}
+
+func cvInt(n: int): CVal {
+    var cv: CVal
+
+    cv.isStr = false
+    cv.intVal = n
+    cv.strIdx = -1
+    return cv
+}
+
+func cvStr(s: string): CVal {
+    var cv: CVal
+
+    cv.isStr = true
+    cv.intVal = 0
+    cv.strIdx = intern(s)
+    return cv
+}
+
+func cvZero(): CVal {
+    return cvInt(0)
+}
+
+// ---- per-decl / per-expr side tables ----
+// funcScopeByDecl/funcRetByDecl: keyed by a DkFunc decl's own arena index
+// (as a string), recording checkFuncSig's fnScope/ret for checkFuncBody to
+// consume in phase 2 WITHOUT re-resolving the signature (re-resolving
+// against the wider phase-2 scope would both re-declare the function,
+// tripping a false "redeclaration of X", and could wrongly resolve a
+// forward-declared signature type that phase 1 correctly rejected).
+//
+// enumConstOf/constUseIsStr/constUseInt/constUseStr: keyed by an Ident
+// expr's own arena index, mirroring Info.EnumConsts/Info.Consts -- the
+// resolved value of a bare enum-member Ident, or of an Ident naming a
+// `const`. Needed by Task 9b's switch-case-label checking and by any
+// later lowering pass, not by any diagnostic this task's driver checks.
+//
+// None of these six maps is ever bulk-cleared between programs (map has
+// no bulk-clear primitive): every key used within a checkProgram call is
+// always freshly written in THAT SAME call before anything in that call
+// reads it (a func's decl index is registered in phase 1 before phase 2
+// reads it; an Ident's resolved value is read back only by the very same
+// Ident occurrence that wrote it), so a stale entry surviving from a
+// previous program, under a decl/expr index a later program happens to
+// reuse, is never consulted before being overwritten. checkReset relies
+// on this and does not attempt to clear them.
+var funcScopeByDecl: map of int
+var funcRetByDecl: map of int
+var enumConstOf: map of int
+var constUseIsStr: map of int
+var constUseInt: map of int
+var constUseStr: map of string
+
+func enumConstGet(e: int): int {
+    return enumConstOf.get(numToStr(e), 0)
+}
+
+// ================================================================
+// Diagnostic-rendering helpers (expr.go's typeName/kindsList/isResourceKind)
+// ================================================================
+
+// typeName renders t for diagnostics -- a byte-exact port of expr.go's
+// typeName. Every call site passes a concrete (non-InvalidT) type, exactly
+// as in Go (typeName is only ever called after an InvalidT guard).
+func typeName(t: int): string {
+    switch typeKind(t) {
+    case TyInt {
+        return "int"
+    }
+    case TyBool {
+        return "bool"
+    }
+    case TyFixed {
+        return "fixed"
+    }
+    case TyChar {
+        return "char"
+    }
+    case TyStr {
+        return "string"
+    }
+    case TyText {
+        return "text"
+    }
+    case TyVoid {
+        return "void"
+    }
+    case TyAddress {
+        return "address"
+    }
+    case TyErrorType {
+        return "error"
+    }
+    case TyConnection {
+        return "connection"
+    }
+    case TyListener {
+        return "listener"
+    }
+    case TyServiceBrowser {
+        return "serviceBrowser"
+    }
+    case TyEnum {
+        return poolGet(typeNameIdx(t))
+    }
+    case TyRec {
+        return poolGet(typeNameIdx(t))
+    }
+    case TyWindowRef {
+        return poolGet(typeNameIdx(t))
+    }
+    case TyArr {
+        return typeName(typeElem(t)) + "[]"
+    }
+    case TyList {
+        return "list of " + typeName(typeElem(t))
+    }
+    case TyMap {
+        return "map of " + typeName(typeElem(t))
+    }
+    }
+    return "?"
+}
+
+// kindName renders a bare TypeKind (no arena entry) for a OneOfKinds
+// diagnostic -- every kind ever used in a OneOfKinds set (String, Char,
+// Address, Text) needs no capacity/elem/name to render, so this mirrors
+// typeName's scalar cases without needing a throwaway typeArena entry.
+func kindName(k: TypeKind): string {
+    switch k {
+    case TyInt {
+        return "int"
+    }
+    case TyBool {
+        return "bool"
+    }
+    case TyFixed {
+        return "fixed"
+    }
+    case TyChar {
+        return "char"
+    }
+    case TyStr {
+        return "string"
+    }
+    case TyText {
+        return "text"
+    }
+    case TyVoid {
+        return "void"
+    }
+    case TyAddress {
+        return "address"
+    }
+    case TyErrorType {
+        return "error"
+    }
+    case TyConnection {
+        return "connection"
+    }
+    case TyListener {
+        return "listener"
+    }
+    case TyServiceBrowser {
+        return "serviceBrowser"
+    }
+    case TyEnum {
+        return "enum"
+    }
+    case TyRec {
+        return "record"
+    }
+    case TyWindowRef {
+        return "window"
+    }
+    case TyArr {
+        return "array"
+    }
+    case TyList {
+        return "list"
+    }
+    case TyMap {
+        return "map"
+    }
+    }
+    return "?"
+}
+
+// kindsList renders a OneOfKinds paramSpec's allowed kinds for a
+// diagnostic, e.g. "string or address" / "a, b, or c" -- a byte-exact port
+// of expr.go's kindsList, specialized to the kind1/kind2/kind3/count shape
+// ParamSpec uses instead of a slice.
+func kindsList(k1: TypeKind, k2: TypeKind, k3: TypeKind, count: int): string {
+    if count == 1 {
+        return kindName(k1)
+    }
+    if count == 2 {
+        return kindName(k1) + " or " + kindName(k2)
+    }
+    return kindName(k1) + ", " + kindName(k2) + ", or " + kindName(k3)
+}
+
+// isResourceKind reports whether k is a window ref or one of the network
+// resource kinds -- the only kinds `nil` is valid for.
+func isResourceKind(k: TypeKind): bool {
+    return k == TyWindowRef or k == TyConnection or k == TyListener or k == TyServiceBrowser
+}
+
+func isTextish(t: int): bool {
+    return typeKind(t) == TyStr or typeKind(t) == TyText
+}
+
+// compatible is the checker's own assignability wrapper (expr.go's
+// compatible), kept as a distinct name for parity with the Go source even
+// though it is presently a bare alias for assignable.
+func compatible(src: int, dst: int): bool {
+    return assignable(src, dst)
+}
+
+func exprListCount(head: int): int {
+    var n: int
+    var a: int
+
+    n = 0
+    a = head
+    while a != -1 {
+        n = n + 1
+        a = exprNext(a)
+    }
+    return n
+}
+
+// ================================================================
+// Built-in universe (builtins.go)
+// ================================================================
+
+func declBuiltinType(scope: int, name: string, t: int) {
+    var sym: Symbol
+
+    sym.nameIdx = intern(name)
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = true
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
+func declBuiltinVar(scope: int, name: string, t: int) {
+    var sym: Symbol
+
+    sym.nameIdx = intern(name)
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
+func declBuiltinFunc1(scope: int, name: string, p1: int, ret: int) {
+    var params: list of int
+    var sigIdx: int
+    var sym: Symbol
+
+    params.add(p1)
+    sigIdx = newFuncSig(params, ret)
+    sym.nameIdx = intern(name)
+    sym.typeIdx = -1
+    sym.isFunc = true
+    sym.sigIdx = sigIdx
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
+func declBuiltinFunc2(scope: int, name: string, p1: int, p2: int, ret: int) {
+    var params: list of int
+    var sigIdx: int
+    var sym: Symbol
+
+    params.add(p1)
+    params.add(p2)
+    sigIdx = newFuncSig(params, ret)
+    sym.nameIdx = intern(name)
+    sym.typeIdx = -1
+    sym.isFunc = true
+    sym.sigIdx = sigIdx
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
+// registerUniverse populates scope with the built-in dialogs, resource/
+// error/saveChoice type names, and lastError -- a byte-exact port of
+// builtins.go's registerBuiltins.
+func registerUniverse(scope: int) {
+    declBuiltinType(scope, "connection", connectionT)
+    declBuiltinType(scope, "listener", listenerT)
+    declBuiltinType(scope, "serviceBrowser", serviceBrowserT)
+    declBuiltinType(scope, "address", AddressT)
+    declBuiltinType(scope, "error", ErrTIndex)
+    declBuiltinType(scope, "saveChoice", SaveChoiceT)
+
+    declBuiltinFunc1(scope, "alert", strT(255), -1)
+    declBuiltinFunc1(scope, "askOpen", strT(255), BoolT)
+    declBuiltinFunc2(scope, "askSave", strT(255), strT(255), BoolT)
+    declBuiltinFunc1(scope, "askSaveChanges", strT(255), SaveChoiceT)
+    declBuiltinFunc1(scope, "log", strT(255), -1)
+
+    declBuiltinVar(scope, "lastError", ErrTIndex)
+}
+
+// buildMethodTables populates the string/text/list-adjacent/connection/
+// listener/serviceBrowser/file/canvas method-signature tables -- a
+// byte-exact port of builtins.go's stringTextMethods/textOnlyMethods/
+// connectionMethods/listenerMethods/serviceBrowserMethods/fileFuncs/
+// canvasMethods/canvasProperties. (`list of T`/`map of T` operations are
+// NOT table-driven -- their element type is per-declaration, see
+// checkListMethod/checkMapMethod below, matching Go's own comment.)
+func buildMethodTables() {
+    sigStart()
+    sigAdd(psAnyCharArray())
+    sigAdd(psPlain(IntT))
+    stringTextMethods["fromBytes"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psAnyCharArray())
+    stringTextMethods["toBytes"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psOneOf2(TyStr, TyChar))
+    stringTextMethods["indexOf"] = sigEnd(IntT)
+
+    sigStart()
+    sigAdd(psOneOf3(TyStr, TyChar, TyText))
+    textOnlyMethods["append"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psOneOf2(TyStr, TyAddress))
+    connectionMethods["open"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psOneOf2(TyText, TyStr))
+    connectionMethods["send"] = sigEnd(-1)
+
+    sigStart()
+    connectionMethods["close"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    listenerMethods["listen"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    listenerMethods["register"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    serviceBrowserMethods["find"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(TextT))
+    fileFuncs["readText"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(TextT))
+    fileFuncs["writeText"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psAnyRecordish())
+    fileFuncs["save"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psAnyRecordish())
+    fileFuncs["load"] = sigEnd(BoolT)
+
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["name"] = sigEnd(strT(255))
+
+    // canvas (Ch11: Drawing) -- data only; unreachable in 9a/9b's expr
+    // checking until a later task adds widget symbols (checkMethodCall's
+    // TyWidget case below has nothing that ever types as TyWidget yet).
+    sigStart()
+    canvasMethods["clear"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    canvasMethods["line"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    canvasMethods["rect"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    canvasMethods["fillRect"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    canvasMethods["circle"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    canvasMethods["fillCircle"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(IntT))
+    sigAdd(psPlain(strT(255)))
+    canvasMethods["drawText"] = sigEnd(-1)
+
+    canvasProperties["width"] = IntT
+    canvasProperties["height"] = IntT
+}
+
+// ================================================================
+// checkParamArg (expr.go)
+// ================================================================
+
+func checkParamArg(arg: int, specIdx: int) {
+    var t: int
+
+    if paramSpecs[specIdx].anyCharArray {
+        t = checkExpr(arg, -1)
+        if t == InvalidT {
+            return
+        }
+        if not (typeKind(t) == TyArr and typeKind(typeElem(t)) == TyChar) {
+            emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " where a char array is expected")
+        }
+        return
+    }
+    if paramSpecs[specIdx].anyRecordish {
+        t = checkExpr(arg, -1)
+        if t == InvalidT {
+            return
+        }
+        if typeKind(t) == TyRec or ((typeKind(t) == TyList or typeKind(t) == TyMap) and typeKind(typeElem(t)) == TyRec) {
+            return
+        }
+        emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " where a record is expected")
+        return
+    }
+    if paramSpecs[specIdx].kindCount > 0 {
+        t = checkExpr(arg, -1)
+        if t == InvalidT {
+            return
+        }
+        if typeKind(t) == paramSpecs[specIdx].kind1 {
+            return
+        }
+        if paramSpecs[specIdx].kindCount >= 2 and typeKind(t) == paramSpecs[specIdx].kind2 {
+            return
+        }
+        if paramSpecs[specIdx].kindCount >= 3 and typeKind(t) == paramSpecs[specIdx].kind3 {
+            return
+        }
+        emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " here (expected " + kindsList(paramSpecs[specIdx].kind1, paramSpecs[specIdx].kind2, paramSpecs[specIdx].kind3, paramSpecs[specIdx].kindCount) + ")")
+        return
+    }
+    t = checkExpr(arg, paramSpecs[specIdx].t)
+    if t != InvalidT and not compatible(t, paramSpecs[specIdx].t) {
+        emitDiag(exprLine(arg), exprCol(arg), "cannot use " + typeName(t) + " where " + typeName(paramSpecs[specIdx].t) + " is expected")
+    }
+}
+
+// checkTableMethod checks a call against a fixed methodSig table (string,
+// text, connection, listener, serviceBrowser, and the `file` namespace).
+func checkTableMethod(table: map of int, sel: int, argsHead: int): int {
+    var name: string
+    var sigIdx: int
+    var wantCount: int
+    var haveCount: int
+    var a: int
+    var p: int
+
+    name = poolGet(selectName(sel))
+    if not table.has(name) {
+        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+        return InvalidT
+    }
+    sigIdx = table.get(name, -1)
+    wantCount = methodSigs[sigIdx].paramCount
+    haveCount = exprListCount(argsHead)
+    if haveCount != wantCount {
+        emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+    } else {
+        a = argsHead
+        p = methodSigs[sigIdx].paramsHead
+        while a != -1 {
+            checkParamArg(a, p)
+            a = exprNext(a)
+            p = paramSpecs[p].next
+        }
+    }
+    if methodSigs[sigIdx].ret == -1 {
+        return VoidT
+    }
+    return methodSigs[sigIdx].ret
+}
+
+// checkListMethod checks `list of T` operations (Ch3: Lists).
+func checkListMethod(lt: int, sel: int, argsHead: int): int {
+    var elem: int
+    var name: string
+    var argCount: int
+
+    elem = typeElem(lt)
+    name = poolGet(selectName(sel))
+    argCount = exprListCount(argsHead)
+
+    if name == "add" or name == "push" or name == "unshift" {
+        if argCount != 1 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+            return VoidT
+        }
+        checkParamArg(argsHead, psPlain(elem))
+        return VoidT
+    }
+    if name == "pop" or name == "shift" or name == "first" or name == "last" {
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+        }
+        return elem
+    }
+    if name == "remove" {
+        if argCount != 1 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+            return VoidT
+        }
+        checkParamArg(argsHead, psPlain(IntT))
+        return VoidT
+    }
+    if name == "count" {
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "count takes no arguments")
+        }
+        return IntT
+    }
+    emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+    return InvalidT
+}
+
+// checkMapMethod checks `map of T` operations (Ch3: Maps).
+func checkMapMethod(mt: int, sel: int, argsHead: int): int {
+    var elem: int
+    var name: string
+    var argCount: int
+    var a1: int
+    var a2: int
+
+    elem = typeElem(mt)
+    name = poolGet(selectName(sel))
+    argCount = exprListCount(argsHead)
+
+    if name == "get" {
+        if argCount != 2 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+            return elem
+        }
+        a1 = argsHead
+        a2 = exprNext(a1)
+        checkParamArg(a1, psPlain(strT(255)))
+        checkParamArg(a2, psPlain(elem))
+        return elem
+    }
+    if name == "has" {
+        if argCount != 1 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+            return BoolT
+        }
+        checkParamArg(argsHead, psPlain(strT(255)))
+        return BoolT
+    }
+    if name == "remove" {
+        if argCount != 1 {
+            emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
+            return VoidT
+        }
+        checkParamArg(argsHead, psPlain(strT(255)))
+        return VoidT
+    }
+    if name == "count" {
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "count takes no arguments")
+        }
+        return IntT
+    }
+    emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+    return InvalidT
+}
+
+// checkMethodCall dispatches `x.name(args)` by the receiver's kind.
+func checkMethodCall(sel: int, argsHead: int): int {
+    var x: int
+    var xt: int
+    var name: string
+
+    x = selectX(sel)
+    if exprKind(x) == ExIdent and poolGet(identName(x)) == "file" {
+        return checkTableMethod(fileFuncs, sel, argsHead)
+    }
+    xt = checkExpr(x, -1)
+    if xt == InvalidT {
+        return InvalidT
+    }
+    name = poolGet(selectName(sel))
+    switch typeKind(xt) {
+    case TyList {
+        return checkListMethod(xt, sel, argsHead)
+    }
+    case TyMap {
+        return checkMapMethod(xt, sel, argsHead)
+    }
+    case TyText {
+        if textOnlyMethods.has(name) {
+            return checkTableMethod(textOnlyMethods, sel, argsHead)
+        }
+        return checkTableMethod(stringTextMethods, sel, argsHead)
+    }
+    case TyStr {
+        return checkTableMethod(stringTextMethods, sel, argsHead)
+    }
+    case TyConnection {
+        return checkTableMethod(connectionMethods, sel, argsHead)
+    }
+    case TyListener {
+        return checkTableMethod(listenerMethods, sel, argsHead)
+    }
+    case TyServiceBrowser {
+        return checkTableMethod(serviceBrowserMethods, sel, argsHead)
+    }
+    case TyWidget {
+        // canvas widget-instance dispatch is ui.go's job (Task 9b) -- no
+        // expression can type as TyWidget until window bodies are
+        // checked, so this case is unreachable in 9a/9b's own driver but
+        // kept for structural parity with expr.go's checkMethodCall.
+        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+        return InvalidT
+    }
+    }
+    emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+    return InvalidT
+}
+
+// checkFileCall dispatches `file.fn(args)` -- the `file` namespace has no
+// value or type of its own (Ch12: Files); recognized syntactically by
+// name, like the `window` keyword.
+func checkFileCall(sel: int, argsHead: int): int {
+    return checkTableMethod(fileFuncs, sel, argsHead)
+}
+
+// ================================================================
+// resolveType (check.go)
+// ================================================================
+
+// resolveType maps a TypeExpr as written in source to a type-arena index,
+// reporting "undefined: X" for an unresolvable name and returning
+// InvalidT -- never re-diagnosed by a caller.
+func resolveType(te: int): int {
+    var nameIdx: int
+    var name: string
+    var symIdx: int
+
+    switch typeExprKind(te) {
+    case TxNamed {
+        nameIdx = namedTypeName(te)
+        name = poolGet(nameIdx)
+        if name == "int" {
+            return IntT
+        }
+        if name == "bool" {
+            return BoolT
+        }
+        if name == "fixed" {
+            return FixedT
+        }
+        if name == "char" {
+            return CharT
+        }
+        if name == "text" {
+            return TextT
+        }
+        symIdx = scopeLookup(curScope, nameIdx)
+        if symIdx == -1 or not symbols[symIdx].isType {
+            emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + name)
+            return InvalidT
+        }
+        return symbols[symIdx].typeIdx
+    }
+    case TxString {
+        return strT(stringTypeN(te))
+    }
+    case TxList {
+        return listT(resolveType(listTypeElem(te)))
+    }
+    case TxMap {
+        return mapT(resolveType(mapTypeVal(te)))
+    }
+    case TxArray {
+        return arrT(resolveType(arrayTypeElem(te)), arrayTypeN(te))
+    }
+    }
+    return InvalidT
+}
+
+// ================================================================
+// Top-level declaration checking (check.go)
+// ================================================================
+
+// checkRecordDecl builds a record's field layout (Ch3: Records and
+// Defaults): field types are resolved first, then defaults are
+// type-checked against them (an enum-typed field's bare-identifier
+// default resolves against that field's own enum, via the expected-type
+// parameter).
+func checkRecordDecl(d: int) {
+    var nameIdx: int
+    var f: int
+    var ft: int
+    var fiHead: int
+    var fiTail: int
+    var fi: int
+    var dt: int
+    var t: int
+    var sym: Symbol
+
+    nameIdx = recordDeclName(d)
+    fiHead = -1
+    fiTail = -1
+    f = recordDeclFieldsHead(d)
+    while f != -1 {
+        ft = resolveType(fieldType(f))
+        fi = newFieldInfo(fieldName(f), ft)
+        if fiHead == -1 {
+            fiHead = fi
+        }
+        fiTail = fieldInfoAppend(fiTail, fi)
+        f = declNext(f)
+    }
+    setRecordFields(nameIdx, fiHead)
+
+    f = recordDeclFieldsHead(d)
+    fi = fiHead
+    while f != -1 {
+        if fieldDefault(f) != -1 {
+            dt = checkExpr(fieldDefault(f), fieldInfos[fi].typeIdx)
+            if dt != InvalidT and not compatible(dt, fieldInfos[fi].typeIdx) {
+                emitDiag(declLine(f), declCol(f), "cannot assign " + typeName(dt) + " to field " + poolGet(fieldName(f)) + " of type " + typeName(fieldInfos[fi].typeIdx))
+            }
+        }
+        f = declNext(f)
+        fi = fieldInfos[fi].next
+    }
+
+    t = recT(nameIdx)
+    sym.nameIdx = nameIdx
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = true
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
+    }
+}
+
+// checkEnumDecl builds an enum's member layout (Ch3: Enums): members
+// auto-number from 0 or the previous value + 1; explicit values must fit
+// 0-65535 and be unique within the enum; member names must be unique
+// (checked via a throwaway scope, reusing scopeDeclare's own
+// "redeclaration of X" wording).
+func checkEnumDecl(d: int) {
+    var nameIdx: int
+    var namesScope: int
+    var m: int
+    var val: int
+    var next: int
+    var head: int
+    var count: int
+    var label: int
+    var t: int
+    var sym: Symbol
+    var msym: Symbol
+    var seen: map of int
+
+    nameIdx = enumDeclName(d)
+    namesScope = scopeNew(-1)
+    head = enumMembers.count
+    next = 0
+    count = 0
+    m = enumDeclMembersHead(d)
+    while m != -1 {
+        if enumMemberHasValue(m) {
+            val = enumMemberValue(m)
+            if val < 0 or val > 65535 {
+                emitDiag(declLine(m), declCol(m), "enum value out of range: " + numToStr(val))
+            }
+        } else {
+            val = next
+        }
+        if seen.has(numToStr(val)) {
+            emitDiag(declLine(m), declCol(m), "duplicate enum value " + numToStr(val))
+        }
+        seen[numToStr(val)] = 1
+
+        msym.nameIdx = enumMemberName(m)
+        msym.typeIdx = -1
+        msym.isFunc = false
+        msym.sigIdx = -1
+        msym.isType = false
+        msym.isConst = false
+        msym.constIsStr = false
+        msym.constInt = 0
+        msym.constStrIdx = -1
+        msym.isMenu = false
+        if not scopeDeclare(namesScope, msym) {
+            emitDiag(declLine(m), declCol(m), "redeclaration of " + poolGet(enumMemberName(m)))
+        }
+
+        label = enumMemberLabel(m)
+        if label == -1 {
+            label = enumMemberName(m)
+        }
+        addEnumMember(poolGet(enumMemberName(m)), val, poolGet(label))
+        count = count + 1
+        next = val + 1
+        m = declNext(m)
+    }
+
+    t = enumT(nameIdx, head, count)
+    sym.nameIdx = nameIdx
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = true
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
+    }
+}
+
+// checkVarDecl checks a `var` declaration -- global or local; both shapes
+// (a top-level decl, and a Block's own vars) are the same DkVar node, and
+// both declare into whatever curScope currently is.
+func checkVarDecl(d: int) {
+    var t: int
+    var it: int
+    var sym: Symbol
+
+    t = resolveType(varDeclType(d))
+    if varDeclInit(d) != -1 {
+        it = checkExpr(varDeclInit(d), t)
+        if it != InvalidT and not compatible(it, t) {
+            emitDiag(declLine(d), declCol(d), "cannot assign " + typeName(it) + " to " + typeName(t))
+        }
+    }
+    sym.nameIdx = varDeclName(d)
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+    }
+}
+
+// literalConstVal extracts a CVal from one of the five literal ExprKinds a
+// ConstDecl's value can be (the parser only ever hands it a literal or an
+// Ident -- see constValue).
+func literalConstVal(e: int): CVal {
+    switch exprKind(e) {
+    case ExIntLit {
+        return cvInt(intLitVal(e))
+    }
+    case ExFixedLit {
+        return cvInt(fixedLitRaw(e))
+    }
+    case ExCharLit {
+        return cvInt(charLitVal(e))
+    }
+    case ExStringLit {
+        return cvStr(poolGet(stringLitIdx(e)))
+    }
+    case ExBoolLit {
+        if boolLitVal(e) {
+            return cvInt(1)
+        }
+        return cvZero()
+    }
+    }
+    return cvZero()
+}
+
+// constValue type-checks a const initializer against its declared type t
+// and returns its compile-time value -- a byte-exact port of check.go's
+// constValue.
+func constValue(val: int, t: int): CVal {
+    var vt: int
+    var symIdx: int
+    var cv: CVal
+
+    vt = checkExpr(val, t)
+    if vt == InvalidT {
+        return cvZero()
+    }
+    if exprKind(val) == ExIdent {
+        symIdx = scopeLookup(curScope, identName(val))
+        if symIdx != -1 {
+            if not symbols[symIdx].isConst {
+                emitDiag(exprLine(val), exprCol(val), "constant initializer must be a literal, enum member, or constant")
+                return cvZero()
+            }
+            if not compatible(symbols[symIdx].typeIdx, t) {
+                emitDiag(exprLine(val), exprCol(val), "cannot assign " + typeName(symbols[symIdx].typeIdx) + " to " + typeName(t))
+            }
+            cv.isStr = symbols[symIdx].constIsStr
+            cv.intVal = symbols[symIdx].constInt
+            cv.strIdx = symbols[symIdx].constStrIdx
+            return cv
+        }
+        return cvInt(enumConstGet(val))
+    }
+    if not compatible(vt, t) {
+        emitDiag(exprLine(val), exprCol(val), "cannot assign " + typeName(vt) + " to " + typeName(t))
+    }
+    return literalConstVal(val)
+}
+
+// checkConstDecl checks a `const` declaration (Ch3: Constants): the type
+// is restricted to those representable at compile time, and the
+// initializer must be a literal, an enum member, or a previously declared
+// constant.
+func checkConstDecl(d: int) {
+    var t: int
+    var k: TypeKind
+    var cv: CVal
+    var sym: Symbol
+
+    t = resolveType(constDeclType(d))
+    k = typeKind(t)
+    if k != TyInt and k != TyFixed and k != TyChar and k != TyBool and k != TyEnum and k != TyStr {
+        emitDiag(declLine(d), declCol(d), "const type must be int, fixed, char, bool, enum, or string")
+        return
+    }
+    cv = constValue(constDeclValue(d), t)
+    sym.nameIdx = constDeclName(d)
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = true
+    sym.constIsStr = cv.isStr
+    sym.constInt = cv.intVal
+    sym.constStrIdx = cv.strIdx
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+    }
+}
+
+// checkFuncSig resolves and declares a function's signature (name +
+// param/return types, against the scope built so far -- a signature
+// naming a type declared later still errors, since only function BODIES
+// get forward visibility, not signatures) and stashes its param scope
+// (chained under curScope) and resolved return type into
+// funcScopeByDecl/funcRetByDecl, keyed by d's own decl index, for
+// checkFuncBody to consume in phase 2.
+func checkFuncSig(d: int) {
+    var params: list of int
+    var p: int
+    var pt: int
+    var ret: int
+    var sigIdx: int
+    var sym: Symbol
+    var fnScope: int
+    var psym: Symbol
+    var key: string
+    var i: int
+
+    p = funcDeclParamsHead(d)
+    while p != -1 {
+        pt = resolveType(paramType(p))
+        params.add(pt)
+        p = declNext(p)
+    }
+    if funcDeclRetType(d) != -1 {
+        ret = resolveType(funcDeclRetType(d))
+    } else {
+        ret = -1
+    }
+    sigIdx = newFuncSig(params, ret)
+    sym.nameIdx = funcDeclName(d)
+    sym.typeIdx = -1
+    sym.isFunc = true
+    sym.sigIdx = sigIdx
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+    }
+
+    fnScope = scopeNew(curScope)
+    p = funcDeclParamsHead(d)
+    i = 0
+    while p != -1 {
+        psym.nameIdx = paramName(p)
+        psym.typeIdx = params[i]
+        psym.isFunc = false
+        psym.sigIdx = -1
+        psym.isType = false
+        psym.isConst = false
+        psym.constIsStr = false
+        psym.constInt = 0
+        psym.constStrIdx = -1
+        psym.isMenu = false
+        if not scopeDeclare(fnScope, psym) {
+            emitDiag(declLine(p), declCol(p), "redeclaration of " + poolGet(psym.nameIdx))
+        }
+        p = declNext(p)
+        i = i + 1
+    }
+
+    key = numToStr(d)
+    funcScopeByDecl[key] = fnScope
+    funcRetByDecl[key] = ret
+}
+
+// checkFuncBody checks a function's body against the fnScope/ret
+// checkFuncSig stashed for it -- split from checkFuncSig so checkProgram
+// can resolve every top-level signature (phase 1) before checking any
+// body (phase 2), making forward/mutual calls resolve (Ch6: Recursion).
+func checkFuncBody(d: int) {
+    var savedScope: int
+    var savedRet: int
+    var key: string
+
+    key = numToStr(d)
+    savedScope = curScope
+    savedRet = curFuncRet
+    curScope = funcScopeByDecl.get(key, -1)
+    curFuncRet = funcRetByDecl.get(key, -1)
+    checkBlock(funcDeclBody(d))
+    curScope = savedScope
+    curFuncRet = savedRet
+}
+
+// registerWindowDecl registers a window's own name as a WindowRef-typed
+// symbol -- phase 1's job, so forward references from functions/other
+// windows/menus resolve. The window's BODY (props, binds, widgets,
+// columns, rows, form for) is ui.go's job, deferred whole to Task 9b;
+// windowDeclItemsHead(d) is never walked here.
+func registerWindowDecl(d: int) {
+    var nameIdx: int
+    var sym: Symbol
+
+    nameIdx = windowDeclName(d)
+    sym.nameIdx = nameIdx
+    sym.typeIdx = windowRefT(nameIdx)
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = true
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
+    }
+}
+
+// registerMenuDecl registers a menu's own name as a menu symbol -- phase
+// 1's job. Menu-item resolution (MenuInfo, item names/captions/keys, the
+// `.enabled` MenuItem select) is events.go/ui.go's job, deferred whole to
+// Task 9b; menuDeclEntriesHead(d) is never walked here.
+func registerMenuDecl(d: int) {
+    var nameIdx: int
+    var sym: Symbol
+
+    nameIdx = menuDeclName(d)
+    sym.nameIdx = nameIdx
+    sym.typeIdx = -1
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = true
+    if not scopeDeclare(curScope, sym) {
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
+    }
+}
+
+// ================================================================
+// Statement checking (check.go) -- 9a's expr-adjacent subset only
+// ================================================================
+
+// lvalueRootIdent returns the Ident expr index at the root of an lvalue
+// chain (an Ident under any run of Select/Index), or -1 if e isn't rooted
+// in one -- so checkAssignStmt can reject assigning through a const's
+// field/index just as readily as assigning to the const name directly.
+func lvalueRootIdent(e: int): int {
+    if exprKind(e) == ExIdent {
+        return e
+    }
+    if exprKind(e) == ExSelect {
+        return lvalueRootIdent(selectX(e))
+    }
+    if exprKind(e) == ExIndex {
+        return lvalueRootIdent(indexX(e))
+    }
+    return -1
+}
+
+// readOnlyPropName reports the read-only pseudo-property sel names
+// (`front`, `count`, `length`, `isNew`, the error type's `code`/`message`),
+// or "" if sel isn't one. Widget runtime properties (text/caption/
+// checked/selected/enabled/title) aren't pseudo-properties -- they're
+// real per-instance state -- so they fall through unrecognized here and
+// stay assignable, matching expr.go's own comment; no ui.go dependency.
+func readOnlyPropName(sel: int): string {
+    var name: string
+    var x: int
+    var symIdx: int
+    var xt: int
+    var fh: int
+
+    name = poolGet(selectName(sel))
+    if name == "front" {
+        x = selectX(sel)
+        if exprKind(x) == ExIdent {
+            symIdx = scopeLookup(curScope, identName(x))
+            if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef {
+                return "front"
+            }
+        }
+    }
+    xt = checkExpr(selectX(sel), -1)
+    switch typeKind(xt) {
+    case TyList, TyMap {
+        if name == "count" {
+            return "count"
+        }
+    }
+    case TyStr, TyText {
+        if name == "length" {
+            return "length"
+        }
+    }
+    case TyRec {
+        if name != "isNew" {
+            return ""
+        }
+        fh = recordFieldsHead(typeNameIdx(xt))
+        while fh != -1 {
+            if poolGet(fieldInfos[fh].nameIdx) == "isNew" {
+                return ""
+            }
+            fh = fieldInfos[fh].next
+        }
+        return "isNew"
+    }
+    case TyErrorType {
+        if name == "code" or name == "message" {
+            return name
+        }
+    }
+    }
+    return ""
+}
+
+func checkAssignStmt(s: int) {
+    var lhs: int
+    var rhs: int
+    var lt: int
+    var rt: int
+    var rootIdent: int
+    var symIdx: int
+    var propName: string
+
+    lhs = assignLHS(s)
+    rhs = assignRHS(s)
+    lt = checkExpr(lhs, -1)
+    rt = checkExpr(rhs, lt)
+
+    rootIdent = lvalueRootIdent(lhs)
+    if rootIdent != -1 {
+        symIdx = scopeLookup(curScope, identName(rootIdent))
+        if symIdx != -1 and symbols[symIdx].isConst {
+            emitDiag(stmtLine(s), stmtCol(s), "cannot assign to constant " + poolGet(identName(rootIdent)))
+            return
+        }
+    }
+    if lt == InvalidT or rt == InvalidT {
+        return
+    }
+    if exprKind(lhs) == ExSelect {
+        propName = readOnlyPropName(lhs)
+        if propName != "" {
+            emitDiag(stmtLine(s), stmtCol(s), "cannot assign to read-only property " + propName)
+            return
+        }
+    }
+    if not compatible(rt, lt) {
+        emitDiag(stmtLine(s), stmtCol(s), "cannot assign " + typeName(rt) + " to " + typeName(lt))
+    }
+}
+
+// checkBlock checks a block's local vars then its statements, in a scope
+// nested under whatever curScope currently is.
+func checkBlock(b: int) {
+    var saved: int
+    var v: int
+    var s: int
+
+    saved = curScope
+    curScope = scopeNew(saved)
+    v = blockVarsHead(b)
+    while v != -1 {
+        checkVarDecl(v)
+        v = declNext(v)
+    }
+    s = blockStmtsHead(b)
+    while s != -1 {
+        checkStmt(s)
+        s = stmtNext(s)
+    }
+    curScope = saved
+}
+
+// checkStmt dispatches one statement. Only StAssign and StExprStmt are
+// checked here -- the expr-adjacent surface this task's diagnostic list
+// covers (cannot-assign-*, cannot-assign-to-constant, cannot-assign-to-
+// read-only-property). The control-flow family -- StIf/StWhile/StFor/
+// StSwitch/StBreak/StContinue/StReturn/StQuit/StCancel/StOpen/StClose/
+// StEdit -- is stmt.go's job, deferred whole to Task 9b (see
+// task-9-report.md); left unhandled here (a no-op, matching Clarus
+// switch's own "no match, no else -> does nothing" rule) rather than
+// silently half-checked.
+func checkStmt(s: int) {
+    switch stmtKind(s) {
+    case StAssign {
+        checkAssignStmt(s)
+    }
+    case StExprStmt {
+        checkExpr(exprStmtX(s), -1)
+    }
+    }
+}
+
+// ================================================================
+// Expression checking (expr.go)
+// ================================================================
+
+func checkNil(e: int, expected: int): int {
+    if expected != -1 and isResourceKind(typeKind(expected)) {
+        return expected
+    }
+    emitDiag(exprLine(e), exprCol(e), "nil is only valid for window and resource references")
+    return InvalidT
+}
+
+func checkIdent(e: int, expected: int): int {
+    var nameIdx: int
+    var name: string
+    var symIdx: int
+    var i: int
+    var mi: int
+    var key: string
+
+    nameIdx = identName(e)
+    name = poolGet(nameIdx)
+    symIdx = scopeLookup(curScope, nameIdx)
+    if symIdx != -1 {
+        if symbols[symIdx].isFunc {
+            emitDiag(exprLine(e), exprCol(e), "cannot use function " + name + " as a value")
+            return InvalidT
+        }
+        if symbols[symIdx].isType {
+            emitDiag(exprLine(e), exprCol(e), "cannot use type " + name + " as a value")
+            return InvalidT
+        }
+        if symbols[symIdx].isMenu {
+            emitDiag(exprLine(e), exprCol(e), name + " is a menu, not a value")
+            return InvalidT
+        }
+        if symbols[symIdx].isConst {
+            key = numToStr(e)
+            constUseIsStr[key] = boolToInt(symbols[symIdx].constIsStr)
+            constUseInt[key] = symbols[symIdx].constInt
+            if symbols[symIdx].constStrIdx != -1 {
+                constUseStr[key] = poolGet(symbols[symIdx].constStrIdx)
+            }
+        }
+        return symbols[symIdx].typeIdx
+    }
+    if expected != -1 and typeKind(expected) == TyEnum {
+        mi = typeElem(expected)
+        i = 0
+        while i < typeN(expected) {
+            if poolGet(enumMembers[mi + i].nameIdx) == name {
+                enumConstOf[numToStr(e)] = enumMembers[mi + i].value
+                return expected
+            }
+            i = i + 1
+        }
+    }
+    emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
+    return InvalidT
+}
+
+func checkUnary(e: int): int {
+    var op: int
+    var t: int
+
+    op = unaryOp(e)
+    if op == OpNeg {
+        t = checkExpr(unaryX(e), -1)
+        if t == InvalidT {
+            return InvalidT
+        }
+        if typeKind(t) != TyInt and typeKind(t) != TyFixed {
+            emitDiag(exprLine(e), exprCol(e), "cannot negate " + typeName(t))
+            return InvalidT
+        }
+        return t
+    }
+    if op == OpNot {
+        t = checkExpr(unaryX(e), BoolT)
+        if t == InvalidT {
+            return InvalidT
+        }
+        if typeKind(t) != TyBool {
+            emitDiag(exprLine(e), exprCol(e), "condition must be bool")
+            return InvalidT
+        }
+        return BoolT
+    }
+    if op == OpBNot {
+        t = checkExpr(unaryX(e), IntT)
+        if t == InvalidT {
+            return InvalidT
+        }
+        if typeKind(t) != TyInt {
+            emitDiag(exprLine(e), exprCol(e), "bitwise operator requires int operands")
+            return InvalidT
+        }
+        return IntT
+    }
+    emitDiag(exprLine(e), exprCol(e), "internal: unhandled unary operator " + unOpSymbol(op))
+    return InvalidT
+}
+
+// checkArith checks `+ - * / mod` (Ch4: Mixed Numeric Arithmetic, String
+// Concatenation and Truncation).
+func checkArith(e: int): int {
+    var lt: int
+    var rt: int
+    var op: int
+
+    lt = checkExpr(binLeft(e), -1)
+    rt = checkExpr(binRight(e), -1)
+    if lt == InvalidT or rt == InvalidT {
+        return InvalidT
+    }
+    op = binOp(e)
+    if op == OpAdd {
+        if typeKind(lt) == TyStr and typeKind(rt) == TyStr {
+            return strT(255)
+        }
+        if typeKind(lt) == TyStr and typeKind(rt) == TyChar {
+            return strT(255)
+        }
+        if typeKind(lt) == TyText and (typeKind(rt) == TyText or typeKind(rt) == TyStr) {
+            return TextT
+        }
+    }
+    if typeKind(lt) == TyInt and typeKind(rt) == TyInt {
+        return IntT
+    }
+    if typeKind(lt) == TyFixed and typeKind(rt) == TyFixed {
+        if op == OpMod {
+            emitDiag(exprLine(e), exprCol(e), "operator mod requires int operands")
+            return InvalidT
+        }
+        return FixedT
+    }
+    if (typeKind(lt) == TyInt and typeKind(rt) == TyFixed) or (typeKind(lt) == TyFixed and typeKind(rt) == TyInt) {
+        emitDiag(exprLine(e), exprCol(e), "mixed int/fixed arithmetic; convert explicitly")
+        return InvalidT
+    }
+    emitDiag(exprLine(e), exprCol(e), "invalid operands to " + binOpSymbol(op) + ": " + typeName(lt) + " and " + typeName(rt))
+    return InvalidT
+}
+
+// checkBitwise checks `& | ^ << >>` -- int only (Ch4: Bitwise Operators).
+func checkBitwise(e: int): int {
+    var lt: int
+    var rt: int
+
+    lt = checkExpr(binLeft(e), -1)
+    rt = checkExpr(binRight(e), -1)
+    if lt == InvalidT or rt == InvalidT {
+        return InvalidT
+    }
+    if typeKind(lt) != TyInt or typeKind(rt) != TyInt {
+        emitDiag(exprLine(e), exprCol(e), "bitwise operator requires int operands")
+        return InvalidT
+    }
+    return IntT
+}
+
+func isNilLit(e: int): bool {
+    return exprKind(e) == ExNilLit
+}
+
+// isBareIdentCandidate reports whether e is an Ident not resolvable in the
+// current scope -- a candidate for enum-member resolution via the other
+// operand's type (see checkComparison).
+func isBareIdentCandidate(e: int): bool {
+    if exprKind(e) != ExIdent {
+        return false
+    }
+    return scopeLookup(curScope, identName(e)) == -1
+}
+
+// checkComparison checks `== != < <= > >=`. allowEnum is true for ==/!=;
+// enums support only those two, and so does nil.
+func checkComparison(e: int, allowEnum: bool): int {
+    var lt: int
+    var rt: int
+    var x: int
+    var y: int
+
+    x = binLeft(e)
+    y = binRight(e)
+
+    if isNilLit(x) and isNilLit(y) {
+        emitDiag(exprLine(e), exprCol(e), "nil is only valid for window and resource references")
+        return InvalidT
+    }
+    if isNilLit(x) {
+        rt = checkExpr(y, -1)
+        lt = checkExpr(x, rt)
+    } else if isNilLit(y) {
+        lt = checkExpr(x, -1)
+        rt = checkExpr(y, lt)
+    } else if isBareIdentCandidate(x) {
+        rt = checkExpr(y, -1)
+        if rt != InvalidT and typeKind(rt) == TyEnum {
+            lt = checkExpr(x, rt)
+        } else {
+            lt = checkExpr(x, -1)
+        }
+    } else {
+        lt = checkExpr(x, -1)
+        if lt != InvalidT and typeKind(lt) == TyEnum {
+            rt = checkExpr(y, lt)
+        } else {
+            rt = checkExpr(y, -1)
+        }
+    }
+    if lt == InvalidT or rt == InvalidT {
+        return InvalidT
+    }
+    if not allowEnum {
+        if typeKind(lt) == TyEnum or typeKind(rt) == TyEnum {
+            emitDiag(exprLine(e), exprCol(e), "enums are not ordered")
+            return InvalidT
+        }
+        if isNilLit(x) or isNilLit(y) {
+            emitDiag(exprLine(e), exprCol(e), "nil is only valid with == or !=")
+            return InvalidT
+        }
+    }
+    if isTextish(lt) and isTextish(rt) {
+        return BoolT
+    }
+    if typeKind(lt) == typeKind(rt) {
+        if typeKind(lt) == TyRec {
+            emitDiag(exprLine(e), exprCol(e), "records cannot be compared")
+            return InvalidT
+        }
+        if typeKind(lt) == TyList {
+            emitDiag(exprLine(e), exprCol(e), "lists cannot be compared")
+            return InvalidT
+        }
+        if typeKind(lt) == TyMap {
+            emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
+            return InvalidT
+        }
+    }
+    if not compatible(lt, rt) and not compatible(rt, lt) {
+        emitDiag(exprLine(e), exprCol(e), "type mismatch: " + typeName(lt) + " and " + typeName(rt))
+        return InvalidT
+    }
+    return BoolT
+}
+
+// checkBoolOp checks `and`/`or` -- bool operands only.
+func checkBoolOp(e: int): int {
+    var lt: int
+    var rt: int
+
+    lt = checkExpr(binLeft(e), BoolT)
+    rt = checkExpr(binRight(e), BoolT)
+    if lt == InvalidT or rt == InvalidT {
+        return InvalidT
+    }
+    if typeKind(lt) != TyBool or typeKind(rt) != TyBool {
+        emitDiag(exprLine(e), exprCol(e), "condition must be bool")
+        return InvalidT
+    }
+    return BoolT
+}
+
+func checkBinary(e: int): int {
+    var op: int
+
+    op = binOp(e)
+    if op == OpAdd or op == OpSub or op == OpMul or op == OpDiv or op == OpMod {
+        return checkArith(e)
+    }
+    if op == OpBAnd or op == OpBOr or op == OpBXor or op == OpShl or op == OpShr {
+        return checkBitwise(e)
+    }
+    if op == OpEq or op == OpNe {
+        return checkComparison(e, true)
+    }
+    if op == OpLt or op == OpLe or op == OpGt or op == OpGe {
+        return checkComparison(e, false)
+    }
+    if op == OpAnd or op == OpOr {
+        return checkBoolOp(e)
+    }
+    emitDiag(exprLine(e), exprCol(e), "internal: unhandled binary operator " + binOpSymbol(op))
+    return InvalidT
+}
+
+// checkIndex checks `a[i]` -- string/text -> char, array/list -> elem, map
+// -> value.
+func checkIndex(e: int): int {
+    var xt: int
+    var it: int
+    var idx: int
+
+    xt = checkExpr(indexX(e), -1)
+    if xt == InvalidT {
+        return InvalidT
+    }
+    idx = indexI(e)
+    if typeKind(xt) == TyStr or typeKind(xt) == TyText {
+        it = checkExpr(idx, IntT)
+        if it != InvalidT and typeKind(it) != TyInt {
+            emitDiag(exprLine(idx), exprCol(idx), "index must be int")
+        }
+        return CharT
+    }
+    if typeKind(xt) == TyArr or typeKind(xt) == TyList {
+        it = checkExpr(idx, IntT)
+        if it != InvalidT and typeKind(it) != TyInt {
+            emitDiag(exprLine(idx), exprCol(idx), "index must be int")
+        }
+        return typeElem(xt)
+    }
+    if typeKind(xt) == TyMap {
+        it = checkExpr(idx, strT(255))
+        if it != InvalidT and typeKind(it) != TyStr {
+            emitDiag(exprLine(idx), exprCol(idx), "map index must be string")
+        }
+        return typeElem(xt)
+    }
+    emitDiag(exprLine(e), exprCol(e), "cannot index " + typeName(xt))
+    return InvalidT
+}
+
+// checkSliceExpr checks `x[start, len]`: x must be string or text,
+// start/len must be int, and the result is always a string(255) regardless
+// of x's own capacity.
+func checkSliceExpr(e: int): int {
+    var xt: int
+    var st: int
+    var lt: int
+    var xx: int
+    var sx: int
+    var lx: int
+
+    xx = sliceX(e)
+    sx = sliceStart(e)
+    lx = sliceLen(e)
+    xt = checkExpr(xx, -1)
+    st = checkExpr(sx, IntT)
+    lt = checkExpr(lx, IntT)
+    if xt != InvalidT and typeKind(xt) != TyStr and typeKind(xt) != TyText {
+        emitDiag(exprLine(xx), exprCol(xx), "cannot slice " + typeName(xt))
+        xt = InvalidT
+    }
+    if st != InvalidT and typeKind(st) != TyInt {
+        emitDiag(exprLine(sx), exprCol(sx), "slice start must be int")
+    }
+    if lt != InvalidT and typeKind(lt) != TyInt {
+        emitDiag(exprLine(lx), exprCol(lx), "slice length must be int")
+    }
+    if xt == InvalidT {
+        return InvalidT
+    }
+    return strT(255)
+}
+
+// checkSelect checks a bare `a.b` (field, or a no-argument property like
+// .length/.count) -- method calls go through checkMethodCall since only a
+// Call carries argument expressions.
+func checkSelect(e: int): int {
+    var x: int
+    var name: string
+    var symIdx: int
+    var xt: int
+    var fh: int
+
+    x = selectX(e)
+    name = poolGet(selectName(e))
+    if exprKind(x) == ExIdent {
+        if poolGet(identName(x)) == "file" {
+            emitDiag(exprLine(e), exprCol(e), "file." + name + " must be called")
+            return InvalidT
+        }
+        symIdx = scopeLookup(curScope, identName(x))
+        if symIdx != -1 {
+            // sym.IsMenu -> a MenuItem select (`MenuName.ItemName`) is
+            // events.go/ui.go's job (Task 9b): not special-cased here, so
+            // it falls through to the generic checkExpr(x) below, which
+            // reports "%s is a menu, not a value" via checkIdent -- a
+            // valid, if less specific, diagnostic until 9b adds the real
+            // MenuItem resolution.
+            if symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef and name == "front" {
+                return symbols[symIdx].typeIdx
+            }
+        }
+    }
+    xt = checkExpr(x, -1)
+    if xt == InvalidT {
+        return InvalidT
+    }
+    switch typeKind(xt) {
+    case TyRec {
+        fh = recordFieldsHead(typeNameIdx(xt))
+        while fh != -1 {
+            if poolGet(fieldInfos[fh].nameIdx) == name {
+                return fieldInfos[fh].typeIdx
+            }
+            fh = fieldInfos[fh].next
+        }
+        if name == "isNew" {
+            return BoolT
+        }
+    }
+    case TyErrorType {
+        if name == "code" {
+            return IntT
+        }
+        if name == "message" {
+            return strT(255)
+        }
+    }
+    case TyStr, TyText {
+        if name == "length" {
+            return IntT
+        }
+    }
+    case TyList, TyMap {
+        if name == "count" {
+            return IntT
+        }
+    }
+    }
+    // TyWindowRef / TyWidget / TyMenuItem selects (window .front chaining
+    // past the type name, widget runtime properties, menu-item .enabled)
+    // are ui.go's job -- Task 9b; they fall through to the same
+    // "undefined: NAME" a truly-unknown selector gets below.
+    emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
+    return InvalidT
+}
+
+func checkNewExpr(e: int): int {
+    var nameIdx: int
+    var symIdx: int
+
+    nameIdx = newExprTypeName(e)
+    symIdx = scopeLookup(curScope, nameIdx)
+    if symIdx == -1 {
+        emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(nameIdx))
+        return InvalidT
+    }
+    if not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyRec {
+        emitDiag(exprLine(e), exprCol(e), "cannot use new with non-record type " + poolGet(nameIdx))
+        return InvalidT
+    }
+    return symbols[symIdx].typeIdx
+}
+
+// checkOpenExpr checks `open W` (an expression form: keeps the reference).
+func checkOpenExpr(e: int): int {
+    var nameIdx: int
+    var symIdx: int
+
+    nameIdx = openExprWindowName(e)
+    symIdx = scopeLookup(curScope, nameIdx)
+    if symIdx == -1 {
+        emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(nameIdx))
+        return InvalidT
+    }
+    if not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyWindowRef {
+        emitDiag(exprLine(e), exprCol(e), "cannot open non-window type " + poolGet(nameIdx))
+        return InvalidT
+    }
+    return symbols[symIdx].typeIdx
+}
+
+// checkConversion checks a single-argument conversion call against target:
+// int(fixed|char|enum), fixed(int), char(int), EnumName(int).
+func checkConversion(e: int, target: int, name: string): int {
+    var argsHead: int
+    var at: int
+    var ok: bool
+
+    argsHead = callArgsHead(e)
+    if exprListCount(argsHead) != 1 {
+        emitDiag(exprLine(e), exprCol(e), "conversion " + name + " takes exactly one argument")
+        return InvalidT
+    }
+    at = checkExpr(argsHead, -1)
+    if at == InvalidT {
+        return InvalidT
+    }
+    ok = false
+    if target == IntT {
+        ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum
+    } else if target == FixedT {
+        ok = typeKind(at) == TyInt
+    } else if target == CharT {
+        ok = typeKind(at) == TyInt
+    } else if typeKind(target) == TyEnum {
+        ok = typeKind(at) == TyInt
+    }
+    if not ok {
+        emitDiag(exprLine(e), exprCol(e), "cannot convert " + typeName(at) + " to " + name)
+        return InvalidT
+    }
+    return target
+}
+
+// checkArgsCall type-checks a fixed-arity call's arguments against a
+// FuncSig (bidirectionally, so bare enum members and nil resolve) and
+// returns its return type, or VoidT for a procedure.
+func checkArgsCall(e: int, argsHead: int, sigIdx: int): int {
+    var wantCount: int
+    var haveCount: int
+    var a: int
+    var i: int
+    var pt: int
+    var at: int
+    var ret: int
+
+    wantCount = funcSigParamCount(sigIdx)
+    haveCount = exprListCount(argsHead)
+    if haveCount != wantCount {
+        emitDiag(exprLine(e), exprCol(e), "wrong number of arguments")
+    } else {
+        a = argsHead
+        i = 0
+        while a != -1 {
+            pt = funcSigParam(sigIdx, i)
+            at = checkExpr(a, pt)
+            if at != InvalidT and not compatible(at, pt) {
+                emitDiag(exprLine(a), exprCol(a), "cannot use " + typeName(at) + " where " + typeName(pt) + " is expected")
+            }
+            a = exprNext(a)
+            i = i + 1
+        }
+    }
+    ret = funcSigRet(sigIdx)
+    if ret == -1 {
+        return VoidT
+    }
+    return ret
+}
+
+// checkIdentCall handles `name(args)` where name is a bare identifier:
+// either a numeric/enum conversion or a call to a user-declared function.
+func checkIdentCall(e: int, fn: int): int {
+    var name: string
+    var symIdx: int
+
+    name = poolGet(identName(fn))
+    if name == "int" {
+        return checkConversion(e, IntT, "int")
+    }
+    if name == "fixed" {
+        return checkConversion(e, FixedT, "fixed")
+    }
+    if name == "char" {
+        return checkConversion(e, CharT, "char")
+    }
+
+    symIdx = scopeLookup(curScope, identName(fn))
+    if symIdx == -1 {
+        emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
+        return InvalidT
+    }
+    if symbols[symIdx].isType {
+        if typeKind(symbols[symIdx].typeIdx) == TyEnum {
+            return checkConversion(e, symbols[symIdx].typeIdx, name)
+        }
+        emitDiag(exprLine(e), exprCol(e), "cannot convert to " + name)
+        return InvalidT
+    }
+    if symbols[symIdx].isFunc {
+        return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx)
+    }
+    emitDiag(exprLine(e), exprCol(e), name + " is not callable")
+    return InvalidT
+}
+
+func checkCall(e: int, expected: int): int {
+    var fn: int
+
+    fn = callFn(e)
+    if exprKind(fn) == ExIdent {
+        return checkIdentCall(e, fn)
+    }
+    if exprKind(fn) == ExSelect {
+        return checkMethodCall(fn, callArgsHead(e))
+    }
+    emitDiag(exprLine(e), exprCol(e), "cannot call this expression")
+    return InvalidT
+}
+
+// checkExpr type-checks e and returns its type-arena index (or InvalidT).
+// expected resolves bare enum members and `nil` (a type-arena index, or -1
+// for "no hint"); it is a hint, not an obligation -- concrete-typed
+// expressions (literals, resolved idents) ignore it. On any error,
+// checkExpr reports exactly one diagnostic and returns InvalidT.
+func checkExpr(e: int, expected: int): int {
+    switch exprKind(e) {
+    case ExIntLit {
+        return IntT
+    }
+    case ExFixedLit {
+        return FixedT
+    }
+    case ExCharLit {
+        return CharT
+    }
+    case ExStringLit {
+        return strT(255)
+    }
+    case ExBoolLit {
+        return BoolT
+    }
+    case ExNilLit {
+        return checkNil(e, expected)
+    }
+    case ExWindowSelf {
+        if curWindow != -1 {
+            return curWindow
+        }
+        emitDiag(exprLine(e), exprCol(e), "window is only valid inside a window-scoped handler")
+        return InvalidT
+    }
+    case ExIdent {
+        return checkIdent(e, expected)
+    }
+    case ExUnary {
+        return checkUnary(e)
+    }
+    case ExBinary {
+        return checkBinary(e)
+    }
+    case ExCall {
+        return checkCall(e, expected)
+    }
+    case ExIndex {
+        return checkIndex(e)
+    }
+    case ExSlice {
+        return checkSliceExpr(e)
+    }
+    case ExSelect {
+        return checkSelect(e)
+    }
+    case ExNew {
+        return checkNewExpr(e)
+    }
+    case ExOpen {
+        return checkOpenExpr(e)
+    }
+    }
+    emitDiag(exprLine(e), exprCol(e), "internal: unhandled expression type")
+    return InvalidT
+}
+
+// ================================================================
+// checkReset / checkProgram (check.go)
+// ================================================================
+
+// checkReset clears all check-global state and rebuilds the universe
+// scope + built-in method tables from scratch -- called by checkProgram
+// itself (callers never need to remember it), mirroring parseFile's own
+// parseReset-on-entry convention. Every non-fixed typeArena index (a
+// strT(255) result, say) that any of this state might have cached is
+// invalidated the instant typesReset runs, so EVERYTHING derived from the
+// type system is rebuilt here every single call -- exactly as Go's Files()
+// rebuilds a fresh universe scope on every call, no caching. This mirrors
+// Go's own behavior, not an inefficiency unique to this port; paramSpecs/
+// methodSigs are explicitly emptied first so they don't grow across
+// repeated resets in a long-running process.
+func checkReset() {
+    typesReset()
+    scopesReset()
+
+    connectionT = pushSimple(TyConnection)
+    listenerT = pushSimple(TyListener)
+    serviceBrowserT = pushSimple(TyServiceBrowser)
+
+    universeScope = scopeNew(-1)
+    topScope = scopeNew(universeScope)
+    curScope = topScope
+    curFuncRet = -1
+    curWindow = -1
+
+    while paramSpecs.count > 0 {
+        paramSpecs.pop()
+    }
+    while methodSigs.count > 0 {
+        methodSigs.pop()
+    }
+    while fieldInfos.count > 0 {
+        fieldInfos.pop()
+    }
+
+    registerUniverse(universeScope)
+    buildMethodTables()
+}
+
+// checkTopDeclPhase1 registers one top-level declaration into curScope
+// (records/enums/consts/vars fully checked; function signatures resolved
+// and declared, body deferred; window/menu names registered, bodies
+// deferred). DkExtend/DkHandler/DkEvery declarations attach behavior to an
+// existing name rather than declaring one -- ui.go/events.go's job,
+// deferred whole to Task 9b, so phase 1 does nothing for them (and phase 2
+// below never visits them either, only DkFunc).
+func checkTopDeclPhase1(d: int) {
+    switch declKind(d) {
+    case DkRecord {
+        checkRecordDecl(d)
+    }
+    case DkEnum {
+        checkEnumDecl(d)
+    }
+    case DkVar {
+        checkVarDecl(d)
+    }
+    case DkConst {
+        checkConstDecl(d)
+    }
+    case DkFunc {
+        checkFuncSig(d)
+    }
+    case DkWindow {
+        registerWindowDecl(d)
+    }
+    case DkMenu {
+        registerMenuDecl(d)
+    }
+    }
+}
+
+// checkProgram type-checks a whole program (parseFile's returned
+// declHead) in two phases -- check.go's Files, restated for a single
+// already-assembled decl list rather than a []*ast.File slice (include
+// expansion, if any, has already flattened everything into one list by
+// the time this is called): phase 1 walks every top-level decl in order,
+// declaring each into curScope; phase 2 then checks every DkFunc's body,
+// against the now-COMPLETE top-level scope, so a body may call any
+// function regardless of declaration order (Ch6: Recursion, Scope).
+func checkProgram(declHead: int) {
+    var d: int
+
+    checkReset()
+
+    d = declHead
+    while d != -1 {
+        checkTopDeclPhase1(d)
+        d = declNext(d)
+    }
+
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkFunc {
+            checkFuncBody(d)
+        }
+        d = declNext(d)
+    }
+}

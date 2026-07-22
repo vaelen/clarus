@@ -1,0 +1,22 @@
+=== clean ===
+clean
+=== mixed-int-fixed ===
+check_test.cla:8:11: mixed int/fixed arithmetic; convert explicitly
+=== bitwise-requires-int ===
+check_test.cla:6:11: bitwise operator requires int operands
+=== undefined ===
+check_test.cla:4:9: undefined: missingName
+=== redeclaration ===
+check_test.cla:3:5: redeclaration of a
+=== cannot-convert ===
+check_test.cla:6:13: cannot convert bool to char
+=== enums-not-ordered ===
+check_test.cla:13:11: enums are not ordered
+=== duplicate-enum-value ===
+check_test.cla:3:5: duplicate enum value 0
+=== const-type-must-be ===
+check_test.cla:1:1: const type must be int, fixed, char, bool, enum, or string
+=== forward-type-in-signature-still-errors ===
+check_test.cla:1:14: undefined: Widget
+=== mutual-recursion-clean ===
+clean
