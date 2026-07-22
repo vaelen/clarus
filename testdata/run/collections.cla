@@ -65,6 +65,7 @@ on App.launch {
     } else {
         alert("no a")
     }
+    show("m[a] = ", m["a"])
     m.remove("b")
     show("map count after remove = ", m.count)
     if m.has("b") {

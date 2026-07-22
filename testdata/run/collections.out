@@ -13,6 +13,7 @@ map count = 3
 get a = 1
 get missing dv = 99
 has a
+m[a] = 1
 map count after remove = 2
 no b
 a
