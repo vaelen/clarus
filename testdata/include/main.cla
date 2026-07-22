@@ -1,0 +1,12 @@
+include "lib.cla"
+
+var lastSquare: int
+
+func rememberSquare(x: int) {
+    lastSquare = square(x)
+}
+
+on App.startEmpty {
+    rememberSquare(6)
+    quit
+}

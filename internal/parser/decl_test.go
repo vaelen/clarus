@@ -106,3 +106,33 @@ func TestEmptyEnumRejected(t *testing.T) {
 		t.Fatalf("empty record should be legal, got diags: %v", recDiags[0])
 	}
 }
+
+func TestIncludeDecl(t *testing.T) {
+	src := `include "lib.cla"
+record R {}
+`
+	f, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) > 0 {
+		t.Fatalf("diags: %v", diags[0])
+	}
+	inc, ok := f.Decls[0].(*ast.Include)
+	if !ok {
+		t.Fatalf("Decls[0]: %#v", f.Decls[0])
+	}
+	if inc.Path != "lib.cla" {
+		t.Fatalf("Path: %q", inc.Path)
+	}
+}
+
+func TestIncludeMustBeLeading(t *testing.T) {
+	src := `var x: int = 1
+include "lib.cla"
+`
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic for non-leading include")
+	}
+	if msg := diags[0].Msg; msg != "include must precede other declarations" {
+		t.Fatalf("wrong message: %q", msg)
+	}
+}

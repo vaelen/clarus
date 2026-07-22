@@ -1,0 +1,9 @@
+include "cycle_b.cla"
+
+func fromCycleA(): int {
+    return 1
+}
+
+on App.startEmpty {
+    quit
+}

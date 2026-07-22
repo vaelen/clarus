@@ -1,0 +1,5 @@
+include "nope.cla"
+
+on App.startEmpty {
+    quit
+}

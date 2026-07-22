@@ -1,0 +1,5 @@
+include "c.cla"
+
+func fromA(): int {
+    return Base + 1
+}

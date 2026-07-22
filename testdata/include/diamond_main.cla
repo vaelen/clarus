@@ -1,0 +1,13 @@
+include "a.cla"
+include "b.cla"
+
+var diamondTotal: int
+
+func useDiamond() {
+    diamondTotal = fromA() + fromB()
+}
+
+on App.startEmpty {
+    useDiamond()
+    quit
+}

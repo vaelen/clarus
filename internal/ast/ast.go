@@ -110,6 +110,10 @@ type EveryDecl struct {
 	Ticks int64
 	Body  *Block
 }
+type Include struct {
+	P    source.Pos
+	Path string
+} // "include" STRING; must precede all other topDecls (enforced by parser)
 
 // ---- window body items ----
 type WindowItem interface{ windowItemNode() }
@@ -289,6 +293,7 @@ func (d *MenuDecl) declNode()    {}
 func (d *ExtendDecl) declNode()  {}
 func (d *HandlerDecl) declNode() {}
 func (d *EveryDecl) declNode()   {}
+func (d *Include) declNode()     {}
 
 // Stmt markers
 func (d *VarDecl) stmtNode()      {}

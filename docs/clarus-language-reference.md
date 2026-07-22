@@ -73,6 +73,20 @@ on App.startEmpty {
 }
 ```
 
+### Multi-File Programs: `include`
+
+A file may pull in another file's declarations with an `include` declaration naming a path in quotes:
+
+```rust
+include "geometry.cla"
+```
+
+`include` is contextual, not a reserved word — it is only recognized as an include when it starts a top-level declaration and is followed by a string. An `include` must be one of the leading declarations in its file: it may only be preceded by other `include`s, and once any other top-level declaration has appeared, a later `include` is an error.
+
+The path is resolved relative to the directory of the file containing the `include` (not the current working directory, and not relative to the program's entry file). There are no search paths and no conditional includes — a path names exactly one file, unconditionally.
+
+Includes are expanded depth-first: each included file's own leading includes are resolved first, so a file's declarations always enter the program after everything it depends on. A file is included at most once no matter how many other files include it (identity is the file's path, so two different files that both include a third common file each see its declarations exactly once, not duplicated) — this also means include cycles (A includes B includes A) are harmless rather than an error: a file already in progress is simply not visited again. Beyond that ordering, declare-before-use across an expanded program works exactly as described above for a single file.
+
 ## Chapter 2: Lexical Structure
 
 ### Identifiers
@@ -1218,8 +1232,11 @@ Clarus reports failures in four ways, depending on where they occur:
 
 ```ebnf
 program     = { topDecl } ;
-topDecl     = recordDecl | enumDecl | constDecl | varDecl | funcDecl
-            | windowDecl | menuDecl | extendDecl | handlerDecl | everyDecl ;
+topDecl     = includeDecl | recordDecl | enumDecl | constDecl | varDecl
+            | funcDecl | windowDecl | menuDecl | extendDecl | handlerDecl
+            | everyDecl ;
+
+includeDecl = "include" STRING ;
 
 recordDecl  = "record" IDENT "{" { fieldDecl } "}" ;
 fieldDecl   = IDENT ":" type [ "=" ( literal | IDENT ) ] ;
@@ -1295,7 +1312,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement).
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above.
 
 ## Appendix B: Event Handler Quick Reference
 

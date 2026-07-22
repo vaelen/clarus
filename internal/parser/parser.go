@@ -15,12 +15,13 @@ import (
 type parseAbort struct{}
 
 type parser struct {
-	f       *source.File
-	lex     *lexer.Lexer
-	tok     token.Token
-	peekTok token.Token
-	hasPeek bool
-	diags   []source.Diag
+	f             *source.File
+	lex           *lexer.Lexer
+	tok           token.Token
+	peekTok       token.Token
+	hasPeek       bool
+	diags         []source.Diag
+	sawNonInclude bool // set once a non-include top decl has been parsed
 }
 
 // Parse lexes and parses f into an *ast.File. Any lexer diagnostics are
@@ -96,6 +97,13 @@ func (p *parser) skipNewlines() {
 
 // parseTopDecl parses one top-level declaration (Appendix A: topDecl).
 func (p *parser) parseTopDecl() ast.Decl {
+	if p.tok.Kind == token.IDENT && p.tok.Text == "include" && p.peek().Kind == token.STRINGLIT {
+		if p.sawNonInclude {
+			p.errorf(p.tok.Pos, "include must precede other declarations")
+		}
+		return p.parseIncludeDecl()
+	}
+	p.sawNonInclude = true
 	switch p.tok.Kind {
 	case token.KwVar:
 		return p.parseVarDecl()
@@ -121,6 +129,17 @@ func (p *parser) parseTopDecl() ast.Decl {
 		p.errorf(p.tok.Pos, "expected declaration, found %s", p.tok.Kind)
 		panic(parseAbort{}) // unreachable: errorf already panics
 	}
+}
+
+// parseIncludeDecl parses `"include" STRING` (contextual: "include" is an
+// IDENT recognized by text at top-level statement start, mirroring "mod"/
+// "of"/"ticks"). Must be the leading top-level declaration in the file;
+// parseTopDecl enforces that before calling this.
+func (p *parser) parseIncludeDecl() *ast.Include {
+	pos := p.tok.Pos
+	p.next() // 'include'
+	path := p.expect(token.STRINGLIT)
+	return &ast.Include{P: pos, Path: path.Text}
 }
 
 // parseFuncDecl parses `"func" IDENT "(" [ params ] ")" [ ":" type ] block`.
