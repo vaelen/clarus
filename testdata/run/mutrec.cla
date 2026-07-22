@@ -1,0 +1,20 @@
+func isEven(n: int): bool {
+    if n == 0 { return true }
+    return isOdd(n - 1)
+}
+func isOdd(n: int): bool {
+    if n == 0 { return false }
+    return isEven(n - 1)
+}
+
+func boolStr(b: bool): string {
+    if b { return "true" }
+    return "false"
+}
+
+on App.launch {
+    alert(boolStr(isEven(10)))
+    alert(boolStr(isOdd(10)))
+    alert(boolStr(isEven(7)))
+    alert(boolStr(isOdd(7)))
+}

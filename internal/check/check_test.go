@@ -1,6 +1,7 @@
 package check
 
 import (
+	"clarus/internal/ast"
 	"clarus/internal/parser"
 	"clarus/internal/source"
 	"strings"
@@ -162,4 +163,57 @@ extend W {
 
 func TestOneOfKindsMessageNamesExpectedKinds(t *testing.T) {
 	expectError(t, "var c: connection\nfunc f() {\n    c.open(true)\n}\n", "cannot use bool here (expected string or address)")
+}
+
+// TestMutualRecursion, TestForwardCallClean, and TestForwardTypeInSignatureStillErrors
+// pin Task 0 (order-independent top-level functions, Ch6: Scope): a function
+// body may call any function regardless of declaration order, but a
+// signature may still only name types declared textually before it.
+func TestMutualRecursion(t *testing.T) {
+	src := `func isEven(n: int): bool {
+    if n == 0 { return true }
+    return isOdd(n - 1)
+}
+func isOdd(n: int): bool {
+    if n == 0 { return false }
+    return isEven(n - 1)
+}
+`
+	f := &source.File{Name: "t.cla", Content: []byte(src)}
+	tree, pd := parser.Parse(f)
+	if len(pd) > 0 {
+		t.Fatal(pd[0])
+	}
+	diags, _ := Files([]*source.File{f}, []*ast.File{tree})
+	if len(diags) != 0 {
+		t.Fatalf("mutual recursion must check clean, got: %v", diags[0])
+	}
+}
+
+func TestForwardCallClean(t *testing.T) {
+	// a handler calling a function defined after it
+	src := "on App.startEmpty { helper() }\nfunc helper() { }\n"
+	f := &source.File{Name: "t.cla", Content: []byte(src)}
+	tree, _ := parser.Parse(f)
+	diags, _ := Files([]*source.File{f}, []*ast.File{tree})
+	if len(diags) != 0 {
+		t.Fatalf("forward call must check clean, got: %v", diags[0])
+	}
+}
+
+func TestForwardTypeInSignatureStillErrors(t *testing.T) {
+	// a function signature naming a record declared later still errors
+	src := "func make(): Widget { return new Widget }\nrecord Widget { x: int }\n"
+	f := &source.File{Name: "t.cla", Content: []byte(src)}
+	tree, _ := parser.Parse(f)
+	diags, _ := Files([]*source.File{f}, []*ast.File{tree})
+	found := false
+	for _, d := range diags {
+		if strings.Contains(d.Msg, "undefined: Widget") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("forward type in signature must still error, got: %v", diags)
+	}
 }

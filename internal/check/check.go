@@ -91,24 +91,71 @@ func File(f *source.File, tree *ast.File) []source.Diag {
 	return diags
 }
 
+// deferredDecl is a top-level decl whose body-checking is deferred to
+// Files' second pass (see below): a func (with its signature already
+// resolved in pass 1, so pass 2 need not — and must not — re-resolve it
+// against a wider scope), or an extend/handler/every block (whose bodies may
+// likewise call any function).
+type deferredDecl struct {
+	f       *source.File
+	d       ast.Decl
+	fnScope *Scope      // *ast.FuncDecl only: its param scope, chained under the global scope
+	ret     *types.Type // *ast.FuncDecl only: its resolved return type
+}
+
 // Files type-checks multiple files as a single program (the driver's
-// multi-file mode): top-level declarations from all trees are checked in a
-// single pass, in argument order, so declare-before-use holds across the
-// whole sequence exactly as it does for one file. Each diagnostic still
-// carries the source.File its declaration came from, since c.f is switched
-// to files[i] before that file's declarations are checked. The returned
-// *Info is the type information the lowering pass consumes; it's still
-// populated (though possibly incomplete) even when diagnostics are reported.
+// multi-file mode): top-level declarations from all trees are checked in two
+// passes, in argument order, so declare-before-use holds across the whole
+// sequence exactly as it does for one file.
+//
+// Pass 1 walks every top-level decl in order, declaring each into the global
+// scope: records/enums/consts/vars/windows/menus exactly as before (fully
+// checked, including their own initializers/bodies), and function signatures
+// (name + resolved param/return types, checked against the scope built so
+// far — so a signature naming a type declared later still errors, same as
+// today). Extend/handler/every decls and function bodies are not checked
+// yet; they're collected into deferred.
+//
+// Pass 2 checks those deferred bodies, in original source order. Because
+// pass 1 has by then declared every top-level name, a body may call any
+// function (earlier or later) or target any window/menu (Ch6: Scope) — the
+// one relaxation this makes over the old single-pass walk. A function's
+// fnScope was built in pass 1 chained under the (still-mutable) global
+// scope, so it sees every function pass 1 went on to add after it.
+//
+// Each diagnostic still carries the source.File its declaration came from,
+// since c.f is switched to files[i] (pass 1) or the deferred item's file
+// (pass 2) before it's checked. The returned *Info is the type information
+// the lowering pass consumes; it's still populated (though possibly
+// incomplete) even when diagnostics are reported.
 func Files(files []*source.File, trees []*ast.File) ([]source.Diag, *Info) {
 	c := &checker{info: newInfo()}
 	universe := NewScope(nil)
 	registerBuiltins(universe)
 	c.scope = NewScope(universe)
 
+	var deferred []deferredDecl
 	for i, tree := range trees {
 		c.f = files[i]
 		for _, d := range tree.Decls {
-			c.checkDecl(d)
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				fnScope, ret := c.checkFuncSig(d)
+				deferred = append(deferred, deferredDecl{f: c.f, d: d, fnScope: fnScope, ret: ret})
+			case *ast.ExtendDecl, *ast.HandlerDecl, *ast.EveryDecl:
+				deferred = append(deferred, deferredDecl{f: c.f, d: d})
+			default:
+				c.checkDecl(d)
+			}
+		}
+	}
+
+	for _, dd := range deferred {
+		c.f = dd.f
+		if fd, ok := dd.d.(*ast.FuncDecl); ok {
+			c.checkFuncBody(fd, dd.fnScope, dd.ret)
+		} else {
+			c.checkDecl(dd.d)
 		}
 	}
 	return c.diags, c.info
@@ -129,8 +176,6 @@ func (c *checker) checkDecl(d ast.Decl) {
 		c.info.GlobalOrder = append(c.info.GlobalOrder, d.Name)
 	case *ast.ConstDecl:
 		c.checkConstDecl(d)
-	case *ast.FuncDecl:
-		c.checkFuncDecl(d)
 	case *ast.WindowDecl:
 		c.checkWindowDecl(d)
 	case *ast.MenuDecl:
@@ -338,10 +383,14 @@ func literalConstVal(e ast.Expr) ConstVal {
 	}
 }
 
-// checkFuncDecl declares the function's signature before checking its body,
-// so recursive calls resolve (Ch6: Recursion) — the one deliberate
-// exception to "checked then declared".
-func (c *checker) checkFuncDecl(d *ast.FuncDecl) {
+// checkFuncSig resolves and declares a function's signature (name +
+// param/return types, against the scope built so far — Task 0: a signature
+// naming a type declared later still errors, since only function bodies get
+// forward visibility, not signatures) and returns its param scope (chained
+// under the current, still-mutable global scope) and resolved return type,
+// for checkFuncBody to check the body against later, once every top-level
+// name is declared (Ch6: Recursion, Scope).
+func (c *checker) checkFuncSig(d *ast.FuncDecl) (*Scope, *types.Type) {
 	params := make([]*types.Type, len(d.Params))
 	for i, p := range d.Params {
 		params[i] = c.resolveType(p.Type)
@@ -361,7 +410,14 @@ func (c *checker) checkFuncDecl(d *ast.FuncDecl) {
 			c.errorf(p.P, "%s", err.Error())
 		}
 	}
+	return fnScope, ret
+}
 
+// checkFuncBody checks a function's body in fnScope (built by checkFuncSig)
+// with ret as the enclosing return type — split from checkFuncSig so Files
+// can resolve every top-level signature (pass 1) before checking any body
+// (pass 2), making forward/mutual calls resolve (Ch6: Recursion).
+func (c *checker) checkFuncBody(d *ast.FuncDecl, fnScope *Scope, ret *types.Type) {
 	savedScope, savedRet := c.scope, c.curFuncRet
 	c.scope, c.curFuncRet = fnScope, ret
 	c.checkBlock(d.Body)
