@@ -1,0 +1,7 @@
+on App.launch {
+    alert("launch")
+}
+
+on App.startEmpty {
+    alert("startEmpty")
+}

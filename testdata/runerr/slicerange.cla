@@ -1,0 +1,7 @@
+on App.launch {
+    var s: string = "hello"
+    var w: string
+
+    w = s[2, 10]
+    alert("unreachable")
+}
