@@ -1,0 +1,27 @@
+=== expr ===
+func f() { return (1 + (2 * 3)) }
+=== while ===
+func countUp(n) { var i i = 0 while (i < n) { i = (i + 1) } return i }
+=== record ===
+record Point { x=0 y=0 }
+=== switch ===
+func classify(n) { switch n { case 0 { return 0 } case 1 2 { return 1 } else { return 2 } } }
+=== ui ===
+window Main
+menu FileMenu
+extend Main
+every 10
+=== error ===
+parse_test.cla:3:1: expected expression, found '}'
+=== chain ===
+parse_test.cla:3:15: comparisons do not chain
+=== slice-assign ===
+parse_test.cla:3:5: slices are not assignable
+=== bad-assign ===
+parse_test.cla:2:5: cannot assign to this expression
+=== var-not-top ===
+parse_test.cla:3:9: variable declarations are only allowed at the top of a function or handler body
+=== include-order ===
+parse_test.cla:3:1: include must precede other declarations
+=== member-name ===
+parse_test.cla:2:14: expected member name, found newline

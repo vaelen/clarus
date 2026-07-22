@@ -1,0 +1,1728 @@
+include "lib.cla"
+include "tok.cla"
+include "lex.cla"
+include "ast.cla"
+
+// parse.cla: the parser -- a port of internal/parser/*.go (parser.go,
+// expr.go, stmt.go, decl.go, ui.go). Recursive descent over the `toks`
+// arena lex.cla already filled; builds the AST via ast.cla's constructors.
+//
+// ---- Fail-fast without panic/recover ----
+// Go's parser records one diagnostic via errorf and panics a sentinel
+// (parseAbort{}), recovered at the top of Parse -- the first syntax error
+// unwinds every nested call straight back to the entry point, no cascading
+// diagnostics. Clarus has no panic/recover, so this port uses a global
+// `parseAborted` flag instead:
+//   - parseErrorf(line, col, msg) is a no-op if parseAborted is already
+//     true; otherwise it records the diagnostic and sets the flag. This
+//     alone guarantees at most one parse diagnostic ever gets emitted,
+//     matching Go's exactly-one-panic behavior regardless of how much
+//     "wasted work" happens afterward.
+//   - Every bounded parse loop (`while <token condition> { ... }` in the
+//     Go source) is translated as `while <token condition> and not
+//     parseAborted { ... }`. This is what actually prevents an infinite
+//     loop: a syntax error that doesn't itself consume a token (e.g. an
+//     unexpected token at statement start) would otherwise spin forever,
+//     since Go's version never returns to re-check the loop condition at
+//     all (the panic exits it). Adding `and not parseAborted` reproduces
+//     that immediate exit.
+//   - The one place the parser inspects an already-parsed node's kind
+//     (parseSimpleStmt's assign/call dispatch, and isLvalue) guards with
+//     an explicit `if parseAborted { return -1 }` right after the
+//     sub-parse, before touching exprKind/selectX/indexX -- otherwise a
+//     pathological input (parsePrimary failing without consuming a token,
+//     e.g. a bare `.foo`) could hand back the sentinel index -1 to an
+//     arena accessor and crash. Every other function only ever threads a
+//     possibly-sentinel child index into a constructor (which just stores
+//     it, never dereferences it), so no other guard is needed: constructor
+//     calls are safe with a -1 child, and nothing renders the tree unless
+//     parseFile returns with parseAborted still false.
+// Bottom line: once aborted, downstream calls may still run (mostly
+// harmlessly consuming a few more tokens or building garbage nodes that
+// are never rendered), but no second diagnostic is ever recorded, no loop
+// spins forever, and no accessor call ever dereferences a sentinel index.
+
+var parseIdx: int
+var parseAborted: bool
+var parseSawNonInclude: bool
+
+// parseArgsAppleTalk is parseArgs's out-parameter (mirrors lex.cla's
+// lexOpKind convention): Clarus functions return one value, so the second
+// piece of parseArgs's result (whether the contextual `appletalk` prefix
+// was present) is stashed here immediately before return, and read by the
+// caller immediately after -- safe even under recursion (nested calls),
+// since each call overwrites and is read back before any other call runs.
+var parseArgsAppleTalk: bool
+
+// ================================================================
+// Cursor helpers (parser.go's tok/peek/next)
+// ================================================================
+
+func curTok(): Token {
+    return toks[parseIdx]
+}
+
+func curKind(): TokKind {
+    return toks[parseIdx].kind
+}
+
+func curLine(): int {
+    return toks[parseIdx].line
+}
+
+func curCol(): int {
+    return toks[parseIdx].col
+}
+
+// advance moves the cursor to the next token, clamping at the last token
+// in the arena (always a trailing EOF from lexAll) -- mirrors Go's lexer
+// returning EOF forever once input is exhausted.
+func advance() {
+    if parseIdx < toks.count - 1 {
+        parseIdx = parseIdx + 1
+    }
+}
+
+// peekKind reports the kind of the token after the current one, without
+// consuming anything (parser.go's peek(), specialized to just the kind --
+// the only thing either lookahead site needs).
+func peekKind(): TokKind {
+    if parseIdx + 1 < toks.count {
+        return toks[parseIdx + 1].kind
+    }
+    return toks[toks.count - 1].kind
+}
+
+// curIsIdentText reports whether the current token is an IDENT whose text
+// equals s (the pattern behind every contextual keyword: mod, of, form,
+// shows, width, fill, ticks, appletalk, column, key, item, separator,
+// standard, include).
+func curIsIdentText(s: string): bool {
+    return curKind() == TkIdent and poolGet(curTok().nameIdx) == s
+}
+
+func parseErrorf(line: int, col: int, msg: string) {
+    if parseAborted {
+        return
+    }
+    emitDiag(line, col, msg)
+    parseAborted = true
+}
+
+// tokKindQuoted renders k exactly as Go's token.Kind.String() does --
+// the quoted forms diagnostics are built from ("'if'", "identifier",
+// "';'", ...). This is the parity table the brief calls out: every
+// "expected X, found Y" message must match Go's wording byte-for-byte.
+func tokKindQuoted(k: TokKind): string {
+    switch k {
+    case TkEOF { return "EOF" }
+    case TkNewline { return "newline" }
+    case TkSemi { return "';'" }
+    case TkIdent { return "identifier" }
+    case TkInt { return "integer" }
+    case TkFixedLit { return "fixed-point literal" }
+    case TkCharLit { return "character literal" }
+    case TkStringLit { return "string literal" }
+    case TkVar { return "'var'" }
+    case TkFunc { return "'func'" }
+    case TkRecord { return "'record'" }
+    case TkEnum { return "'enum'" }
+    case TkConst { return "'const'" }
+    case TkWindow { return "'window'" }
+    case TkMenu { return "'menu'" }
+    case TkExtend { return "'extend'" }
+    case TkOn { return "'on'" }
+    case TkEvery { return "'every'" }
+    case TkIf { return "'if'" }
+    case TkElse { return "'else'" }
+    case TkWhile { return "'while'" }
+    case TkFor { return "'for'" }
+    case TkIn { return "'in'" }
+    case TkTo { return "'to'" }
+    case TkReturn { return "'return'" }
+    case TkAnd { return "'and'" }
+    case TkOr { return "'or'" }
+    case TkNot { return "'not'" }
+    case TkTrue { return "'true'" }
+    case TkFalse { return "'false'" }
+    case TkNil { return "'nil'" }
+    case TkOpen { return "'open'" }
+    case TkClose { return "'close'" }
+    case TkEdit { return "'edit'" }
+    case TkNew { return "'new'" }
+    case TkQuit { return "'quit'" }
+    case TkCancel { return "'cancel'" }
+    case TkSwitch { return "'switch'" }
+    case TkCase { return "'case'" }
+    case TkBreak { return "'break'" }
+    case TkContinue { return "'continue'" }
+    case TkLParen { return "'('" }
+    case TkRParen { return "')'" }
+    case TkLBrace { return "'{'" }
+    case TkRBrace { return "'}'" }
+    case TkLBracket { return "'['" }
+    case TkRBracket { return "']'" }
+    case TkComma { return "','" }
+    case TkColon { return "':'" }
+    case TkDot { return "'.'" }
+    case TkAssign { return "'='" }
+    case TkEq { return "'=='" }
+    case TkNe { return "'!='" }
+    case TkLt { return "'<'" }
+    case TkLe { return "'<='" }
+    case TkGt { return "'>'" }
+    case TkGe { return "'>='" }
+    case TkPlus { return "'+'" }
+    case TkMinus { return "'-'" }
+    case TkStar { return "'*'" }
+    case TkSlash { return "'/'" }
+    case TkShl { return "'<<'" }
+    case TkShr { return "'>>'" }
+    case TkAmp { return "'&'" }
+    case TkPipe { return "'|'" }
+    case TkCaret { return "'^'" }
+    case TkTilde { return "'~'" }
+    }
+    return "?"
+}
+
+// expect consumes the current token if it has kind k, else records a
+// syntax error (aborting) and returns the current token unconsumed.
+func expect(k: TokKind): Token {
+    var t: Token
+
+    if curKind() != k {
+        parseErrorf(curLine(), curCol(), "expected " + tokKindQuoted(k) + ", found " + tokKindQuoted(curKind()))
+        return curTok()
+    }
+    t = curTok()
+    advance()
+    return t
+}
+
+// expectIdentText consumes the current token if it is an IDENT with the
+// given text (the contextual keyword `of` in `list of`/`map of`, etc.),
+// else records a syntax error.
+func expectIdentText(s: string) {
+    if not curIsIdentText(s) {
+        parseErrorf(curLine(), curCol(), "expected \"" + s + "\", found " + tokKindQuoted(curKind()))
+        return
+    }
+    advance()
+}
+
+func skipNewlines() {
+    while curKind() == TkNewline {
+        advance()
+    }
+}
+
+func skipItemSeps() {
+    while curKind() == TkNewline or curKind() == TkSemi {
+        advance()
+    }
+}
+
+// ================================================================
+// Expression parsing (expr.go): precedence-climbing chain
+// parseExpr(or) -> parseAnd(and) -> parseCmp(non-chaining cmpOp) ->
+// parseAdd(+ - | ^) -> parseMul(* / mod << >> &) -> parseUnary(- not ~) ->
+// parsePostfix(. [ (]) -> parsePrimary.
+// ================================================================
+
+func isCmpKind(k: TokKind): bool {
+    return k == TkEq or k == TkNe or k == TkLt or k == TkLe or k == TkGt or k == TkGe
+}
+
+func cmpOpCode(k: TokKind): int {
+    if k == TkEq { return OpEq }
+    if k == TkNe { return OpNe }
+    if k == TkLt { return OpLt }
+    if k == TkLe { return OpLe }
+    if k == TkGt { return OpGt }
+    return OpGe
+}
+
+func isAddKind(k: TokKind): bool {
+    return k == TkPlus or k == TkMinus or k == TkPipe or k == TkCaret
+}
+
+func addOpCode(k: TokKind): int {
+    if k == TkPlus { return OpAdd }
+    if k == TkMinus { return OpSub }
+    if k == TkPipe { return OpBOr }
+    return OpBXor
+}
+
+func isMulKind(k: TokKind): bool {
+    return k == TkStar or k == TkSlash or k == TkShl or k == TkShr or k == TkAmp
+}
+
+func mulOpCode(k: TokKind): int {
+    if k == TkStar { return OpMul }
+    if k == TkSlash { return OpDiv }
+    if k == TkShl { return OpShl }
+    if k == TkShr { return OpShr }
+    return OpBAnd
+}
+
+func parseExpr(): int {
+    var x: int
+    var y: int
+    var line: int
+    var col: int
+
+    x = parseAnd()
+    while curKind() == TkOr and not parseAborted {
+        line = curLine()
+        col = curCol()
+        advance()
+        y = parseAnd()
+        x = newBin(OpOr, x, y, line, col)
+    }
+    return x
+}
+
+func parseAnd(): int {
+    var x: int
+    var y: int
+    var line: int
+    var col: int
+
+    x = parseCmp()
+    while curKind() == TkAnd and not parseAborted {
+        line = curLine()
+        col = curCol()
+        advance()
+        y = parseCmp()
+        x = newBin(OpAnd, x, y, line, col)
+    }
+    return x
+}
+
+// parseCmp parses at most one comparison -- comparisons do not chain.
+func parseCmp(): int {
+    var x: int
+    var y: int
+    var opCode: int
+    var line: int
+    var col: int
+
+    x = parseAdd()
+    if not isCmpKind(curKind()) {
+        return x
+    }
+    opCode = cmpOpCode(curKind())
+    line = curLine()
+    col = curCol()
+    advance()
+    y = parseAdd()
+    x = newBin(opCode, x, y, line, col)
+    if isCmpKind(curKind()) {
+        parseErrorf(curLine(), curCol(), "comparisons do not chain")
+    }
+    return x
+}
+
+func parseAdd(): int {
+    var x: int
+    var y: int
+    var opCode: int
+    var line: int
+    var col: int
+
+    x = parseMul()
+    while isAddKind(curKind()) and not parseAborted {
+        opCode = addOpCode(curKind())
+        line = curLine()
+        col = curCol()
+        advance()
+        y = parseMul()
+        x = newBin(opCode, x, y, line, col)
+    }
+    return x
+}
+
+// parseMul handles the contextual `mod` operator (an IDENT recognized by
+// text in infix position) alongside the real multiplicative-level tokens.
+func parseMul(): int {
+    var x: int
+    var y: int
+    var opCode: int
+    var line: int
+    var col: int
+
+    x = parseUnary()
+    while not parseAborted {
+        line = curLine()
+        col = curCol()
+        if curIsIdentText("mod") {
+            advance()
+            y = parseUnary()
+            x = newBin(OpMod, x, y, line, col)
+        } else if isMulKind(curKind()) {
+            opCode = mulOpCode(curKind())
+            advance()
+            y = parseUnary()
+            x = newBin(opCode, x, y, line, col)
+        } else {
+            return x
+        }
+    }
+    return x
+}
+
+func parseUnary(): int {
+    var opCode: int
+    var line: int
+    var col: int
+    var x: int
+
+    if curKind() == TkMinus or curKind() == TkNot or curKind() == TkTilde {
+        line = curLine()
+        col = curCol()
+        if curKind() == TkMinus {
+            opCode = OpNeg
+        } else if curKind() == TkNot {
+            opCode = OpNot
+        } else {
+            opCode = OpBNot
+        }
+        advance()
+        x = parseUnary()
+        return newUnary(opCode, x, line, col)
+    }
+    return parsePostfix()
+}
+
+// parsePostfix parses a primary followed by any run of `.memberName`,
+// `[expr]`/`[expr, expr]`, or `(args)` postfix operators.
+func parsePostfix(): int {
+    var x: int
+    var line: int
+    var col: int
+    var name: int
+    var idx: int
+    var lenExpr: int
+    var argsHead: int
+
+    x = parsePrimary()
+    while not parseAborted {
+        if curKind() == TkDot {
+            line = curLine()
+            col = curCol()
+            advance()
+            name = parseMemberName()
+            x = newSelect(x, name, line, col)
+        } else if curKind() == TkLBracket {
+            line = curLine()
+            col = curCol()
+            advance()
+            idx = parseExpr()
+            if curKind() == TkComma {
+                advance()
+                lenExpr = parseExpr()
+                expect(TkRBracket)
+                x = newSlice(x, idx, lenExpr, line, col)
+            } else {
+                expect(TkRBracket)
+                x = newIndex(x, idx, line, col)
+            }
+        } else if curKind() == TkLParen {
+            line = curLine()
+            col = curCol()
+            advance()
+            argsHead = parseArgs()
+            x = newCall(x, argsHead, parseArgsAppleTalk, line, col)
+        } else {
+            return x
+        }
+    }
+    return x
+}
+
+// parseMemberName parses the identifier after `.`: an IDENT, or one of the
+// hard keywords `open`/`close`, which are permitted as member names.
+func parseMemberName(): int {
+    var t: Token
+
+    if curKind() == TkIdent {
+        t = curTok()
+        advance()
+        return t.nameIdx
+    }
+    if curKind() == TkOpen {
+        advance()
+        return intern("open")
+    }
+    if curKind() == TkClose {
+        advance()
+        return intern("close")
+    }
+    parseErrorf(curLine(), curCol(), "expected member name, found " + tokKindQuoted(curKind()))
+    return -1
+}
+
+// isPrimaryStart reports whether k can begin a primary expression. Two
+// primary-starts never appear back to back in valid expression syntax
+// otherwise, which is what makes the `appletalk` prefix unambiguous.
+func isPrimaryStart(k: TokKind): bool {
+    if k == TkIdent { return true }
+    if k == TkInt { return true }
+    if k == TkFixedLit { return true }
+    if k == TkCharLit { return true }
+    if k == TkStringLit { return true }
+    if k == TkTrue { return true }
+    if k == TkFalse { return true }
+    if k == TkNil { return true }
+    if k == TkWindow { return true }
+    if k == TkNew { return true }
+    if k == TkOpen { return true }
+    return false
+}
+
+// parseArgs parses `[args]` up to and including the closing `)` (the `(`
+// already consumed by the caller), recognizing the contextual `appletalk`
+// prefix (only when what follows it can start a primary expression --
+// otherwise it's an ordinary identifier, left for parseExpr). Stashes
+// whether it matched in parseArgsAppleTalk (see that var's doc comment).
+func parseArgs(): int {
+    var head: int
+    var tail: int
+    var appleTalk: bool
+    var argIdx: int
+
+    if curKind() == TkRParen {
+        advance()
+        parseArgsAppleTalk = false
+        return -1
+    }
+
+    appleTalk = false
+    if curIsIdentText("appletalk") and isPrimaryStart(peekKind()) {
+        advance()
+        appleTalk = true
+    }
+
+    head = -1
+    tail = -1
+    argIdx = parseExpr()
+    head = argIdx
+    tail = exprListAppend(tail, argIdx)
+    while curKind() == TkComma and not parseAborted {
+        advance()
+        argIdx = parseExpr()
+        tail = exprListAppend(tail, argIdx)
+    }
+    expect(TkRParen)
+    parseArgsAppleTalk = appleTalk
+    return head
+}
+
+// parsePrimary parses a primary expression: literals, `window`, an
+// identifier, `new IDENT`, `open IDENT`, or a parenthesized expression.
+func parsePrimary(): int {
+    var t: Token
+    var line: int
+    var col: int
+    var nameTok: Token
+    var idx: int
+
+    t = curTok()
+    line = t.line
+    col = t.col
+
+    if t.kind == TkInt {
+        advance()
+        return newIntLit(t.intVal, line, col)
+    }
+    if t.kind == TkFixedLit {
+        advance()
+        return newFixedLit(t.fixVal, line, col)
+    }
+    if t.kind == TkCharLit {
+        advance()
+        return newCharLit(t.intVal, line, col)
+    }
+    if t.kind == TkStringLit {
+        advance()
+        return newStringLit(t.nameIdx, line, col)
+    }
+    if t.kind == TkTrue {
+        advance()
+        return newBoolLit(true, line, col)
+    }
+    if t.kind == TkFalse {
+        advance()
+        return newBoolLit(false, line, col)
+    }
+    if t.kind == TkNil {
+        advance()
+        return newNilLit(line, col)
+    }
+    if t.kind == TkWindow {
+        advance()
+        return newWindowSelf(line, col)
+    }
+    if t.kind == TkIdent {
+        advance()
+        return newIdent(t.nameIdx, line, col)
+    }
+    if t.kind == TkNew {
+        advance()
+        nameTok = expect(TkIdent)
+        return newNewExpr(nameTok.nameIdx, line, col)
+    }
+    if t.kind == TkOpen {
+        advance()
+        nameTok = expect(TkIdent)
+        return newOpenExpr(nameTok.nameIdx, line, col)
+    }
+    if t.kind == TkLParen {
+        advance()
+        idx = parseExpr()
+        expect(TkRParen)
+        return idx
+    }
+    parseErrorf(line, col, "expected expression, found " + tokKindQuoted(t.kind))
+    return -1
+}
+
+// ================================================================
+// Type parsing (parser.go's parseType)
+// ================================================================
+
+// parseType parses a type as written in source. Built-in names
+// (int/bool/fixed/char/text) and any user record/enum/window name all lex
+// as a plain IDENT and become a NamedType; `string`, `list of`, `map of`
+// are contextual on that IDENT's text. Any type may be followed by one or
+// more `[N]` suffixes, each wrapping the type built so far in an ArrayType.
+func parseType(): int {
+    var nameTok: Token
+    var line: int
+    var col: int
+    var t: int
+    var nStr: string
+    var capTok: Token
+    var elemT: int
+    var bline: int
+    var bcol: int
+    var nTok: Token
+
+    nameTok = expect(TkIdent)
+    line = nameTok.line
+    col = nameTok.col
+    nStr = poolGet(nameTok.nameIdx)
+
+    if nStr == "string" and curKind() == TkLParen {
+        advance()
+        capTok = expect(TkInt)
+        expect(TkRParen)
+        t = newStringType(capTok.intVal, line, col)
+    } else if nStr == "string" {
+        t = newStringType(255, line, col)
+    } else if nStr == "list" {
+        expectIdentText("of")
+        elemT = parseType()
+        t = newListType(elemT, line, col)
+    } else if nStr == "map" {
+        expectIdentText("of")
+        elemT = parseType()
+        t = newMapType(elemT, line, col)
+    } else {
+        t = newNamedType(nameTok.nameIdx, line, col)
+    }
+
+    while curKind() == TkLBracket and not parseAborted {
+        bline = curLine()
+        bcol = curCol()
+        advance()
+        nTok = expect(TkInt)
+        expect(TkRBracket)
+        t = newArrayType(t, nTok.intVal, bline, bcol)
+    }
+    return t
+}
+
+// ================================================================
+// Statement parsing (stmt.go)
+// ================================================================
+
+// parseBlock parses a nested block (if/else/while/for/case body), where
+// var declarations are not permitted.
+func parseBlock(): int {
+    return parseBlockVars(false)
+}
+
+// parseBodyBlock parses the outermost body of a func, handler, or `every`
+// declaration, where var declarations are allowed at the top.
+func parseBodyBlock(): int {
+    return parseBlockVars(true)
+}
+
+// parseBlockVars parses `"{" { stmt } "}"`, where stmt also includes
+// varDecl when allowVars is true. All var declarations must appear before
+// any other statement; a var seen afterward is a diagnostic, not a silent
+// reorder. When allowVars is false, any var declaration is a diagnostic
+// regardless of position.
+func parseBlockVars(allowVars: bool): int {
+    var lb: Token
+    var varsHead: int
+    var varsTail: int
+    var stmtsHead: int
+    var stmtsTail: int
+    var seenStmt: bool
+    var vIdx: int
+    var sIdx: int
+
+    lb = expect(TkLBrace)
+    varsHead = -1
+    varsTail = -1
+    stmtsHead = -1
+    stmtsTail = -1
+    seenStmt = false
+
+    skipNewlines()
+    while curKind() != TkRBrace and not parseAborted {
+        if curKind() == TkVar {
+            if not allowVars {
+                parseErrorf(curLine(), curCol(), "variable declarations are only allowed at the top of a function or handler body")
+            } else if seenStmt {
+                parseErrorf(curLine(), curCol(), "variable declarations must appear at the top of the body")
+            }
+            vIdx = parseVarDecl()
+            if varsHead == -1 { varsHead = vIdx }
+            varsTail = declListAppend(varsTail, vIdx)
+        } else {
+            sIdx = parseStmt()
+            if stmtsHead == -1 { stmtsHead = sIdx }
+            stmtsTail = stmtListAppend(stmtsTail, sIdx)
+            seenStmt = true
+        }
+        skipNewlines()
+    }
+    advance() // consume '}'
+    return newBlock(varsHead, stmtsHead, lb.line, lb.col)
+}
+
+// parseStmt parses one statement, dispatching on the leading token.
+// Expression-leading statements (assignment and call) fall through to
+// parseSimpleStmt.
+func parseStmt(): int {
+    var line: int
+    var col: int
+
+    if curKind() == TkIf { return parseIfStmt() }
+    if curKind() == TkWhile { return parseWhileStmt() }
+    if curKind() == TkFor { return parseForStmt() }
+    if curKind() == TkReturn { return parseReturnStmt() }
+    if curKind() == TkQuit { return parseQuitStmt() }
+    if curKind() == TkCancel {
+        line = curLine()
+        col = curCol()
+        advance()
+        return newCancel(line, col)
+    }
+    if curKind() == TkBreak {
+        line = curLine()
+        col = curCol()
+        advance()
+        return newBreak(line, col)
+    }
+    if curKind() == TkContinue {
+        line = curLine()
+        col = curCol()
+        advance()
+        return newContinue(line, col)
+    }
+    if curKind() == TkSwitch { return parseSwitchStmt() }
+    if curKind() == TkOpen { return parseOpenStmt() }
+    if curKind() == TkClose { return parseCloseStmt() }
+    if curKind() == TkEdit { return parseEditStmt() }
+    return parseSimpleStmt()
+}
+
+// isLvalue reports whether e has the shape `IDENT { "." memberName | "["
+// expr "]" }` -- an Ident base with any chain of Select/Index on top. Only
+// ever called with x guaranteed non-sentinel (see parseSimpleStmt).
+func isLvalue(x: int): bool {
+    if exprKind(x) == ExIdent { return true }
+    if exprKind(x) == ExSelect { return isLvalue(selectX(x)) }
+    if exprKind(x) == ExIndex { return isLvalue(indexX(x)) }
+    return false
+}
+
+// parseSimpleStmt parses an expression-leading statement: `lvalue = expr`
+// (assignment) or a bare call. Anything else is neither, and is rejected.
+//
+// The `if parseAborted { return -1 }` right after parseExpr is not just
+// the usual fail-fast hygiene: it is load-bearing here, because this is
+// the one place the parser inspects an already-parsed expression's kind
+// (exprKind(x), isLvalue) rather than dispatching on the current token. A
+// pathological input can make parsePrimary fail without consuming a
+// token (e.g. a bare `.foo`), in which case x comes back as the sentinel
+// -1; without this guard, exprKind(-1) below would be an out-of-bounds
+// arena access.
+func parseSimpleStmt(): int {
+    var line: int
+    var col: int
+    var x: int
+    var rhs: int
+
+    line = curLine()
+    col = curCol()
+    x = parseExpr()
+    if parseAborted {
+        return -1
+    }
+
+    if curKind() == TkAssign {
+        if exprKind(x) == ExSlice {
+            parseErrorf(line, col, "slices are not assignable")
+        }
+        if not isLvalue(x) {
+            parseErrorf(line, col, "cannot assign to this expression")
+        }
+        advance()
+        rhs = parseExpr()
+        return newAssign(x, rhs, line, col)
+    }
+    if exprKind(x) == ExCall {
+        return newExprStmt(x, line, col)
+    }
+    parseErrorf(line, col, "expression is not a statement")
+    return -1
+}
+
+// parseIfStmt parses `"if" expr block [ "else" ( ifStmt | block ) ]`.
+func parseIfStmt(): int {
+    var line: int
+    var col: int
+    var cond: int
+    var thenBlk: int
+    var elseIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'if'
+    cond = parseExpr()
+    thenBlk = parseBlock()
+    elseIdx = -1
+    if curKind() == TkElse {
+        advance()
+        if curKind() == TkIf {
+            elseIdx = parseIfStmt()
+        } else {
+            elseIdx = parseBlock()
+        }
+    }
+    return newIf(cond, thenBlk, elseIdx, line, col)
+}
+
+func parseWhileStmt(): int {
+    var line: int
+    var col: int
+    var cond: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'while'
+    cond = parseExpr()
+    body = parseBlock()
+    return newWhile(cond, body, line, col)
+}
+
+// parseForStmt parses `"for" IDENT [ "," IDENT ] "in" forRange block`,
+// where forRange = expr [ "to" expr ]. All three forms (list, map, range)
+// share this one grammar; which is valid is a checker concern.
+func parseForStmt(): int {
+    var line: int
+    var col: int
+    var v1: Token
+    var v2Tok: Token
+    var v2NameIdx: int
+    var seq: int
+    var toExpr: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'for'
+    v1 = expect(TkIdent)
+    v2NameIdx = -1
+    if curKind() == TkComma {
+        advance()
+        v2Tok = expect(TkIdent)
+        v2NameIdx = v2Tok.nameIdx
+    }
+    expect(TkIn)
+    seq = parseExpr()
+    toExpr = -1
+    if curKind() == TkTo {
+        advance()
+        toExpr = parseExpr()
+    }
+    body = parseBlock()
+    return newFor(v1.nameIdx, v2NameIdx, seq, toExpr, body, line, col)
+}
+
+// parseReturnStmt parses `"return" [ expr ]`. A return with no value is
+// followed directly by the statement-ending NEWLINE or the block's `}`.
+func parseReturnStmt(): int {
+    var line: int
+    var col: int
+    var x: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'return'
+    x = -1
+    if curKind() != TkNewline and curKind() != TkRBrace {
+        x = parseExpr()
+    }
+    return newReturn(x, line, col)
+}
+
+// parseQuitStmt parses `"quit" [ expr ]`. The expression is present only
+// when it starts on the same line as `quit`.
+func parseQuitStmt(): int {
+    var line: int
+    var col: int
+    var x: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'quit'
+    x = -1
+    if curKind() != TkNewline and curKind() != TkRBrace {
+        x = parseExpr()
+    }
+    return newQuit(x, line, col)
+}
+
+// parseSwitchStmt parses `"switch" expr "{" { caseClause } [ "else" block
+// ] "}"`. Case bodies are nested blocks (no top-of-body vars).
+func parseSwitchStmt(): int {
+    var line: int
+    var col: int
+    var subject: int
+    var casesHead: int
+    var casesTail: int
+    var elseBlk: int
+    var cIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'switch'
+    subject = parseExpr()
+    expect(TkLBrace)
+    casesHead = -1
+    casesTail = -1
+    elseBlk = -1
+    skipNewlines()
+    while curKind() == TkCase and not parseAborted {
+        cIdx = parseSwitchCase()
+        if casesHead == -1 { casesHead = cIdx }
+        casesTail = stmtListAppend(casesTail, cIdx)
+        skipNewlines()
+    }
+    if curKind() == TkElse {
+        advance()
+        elseBlk = parseBlock()
+        skipNewlines()
+    }
+    expect(TkRBrace)
+    return newSwitch(subject, casesHead, elseBlk, line, col)
+}
+
+// parseSwitchCase parses `"case" caseLabel { "," caseLabel } block`.
+func parseSwitchCase(): int {
+    var line: int
+    var col: int
+    var labelsHead: int
+    var labelsTail: int
+    var lIdx: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'case'
+    labelsHead = -1
+    labelsTail = -1
+    lIdx = parseLiteralOrIdent()
+    labelsHead = lIdx
+    labelsTail = exprListAppend(labelsTail, lIdx)
+    while curKind() == TkComma and not parseAborted {
+        advance()
+        lIdx = parseLiteralOrIdent()
+        labelsTail = exprListAppend(labelsTail, lIdx)
+    }
+    body = parseBlock()
+    return newCase(labelsHead, body, line, col)
+}
+
+// parseOpenStmt parses the statement form `"open" IDENT` (distinct from
+// the `open IDENT` primary expression, which keeps the opened window's
+// reference).
+func parseOpenStmt(): int {
+    var line: int
+    var col: int
+    var name: Token
+
+    line = curLine()
+    col = curCol()
+    advance() // 'open'
+    name = expect(TkIdent)
+    return newOpenStmt(name.nameIdx, line, col)
+}
+
+func parseCloseStmt(): int {
+    var line: int
+    var col: int
+    var x: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'close'
+    x = parseExpr()
+    return newClose(x, line, col)
+}
+
+// parseEditStmt parses `"edit" IDENT "," ( lvalue | "new" IDENT )`.
+func parseEditStmt(): int {
+    var line: int
+    var col: int
+    var form: Token
+    var isNewFlag: bool
+    var newType: int
+    var target: int
+    var typTok: Token
+
+    line = curLine()
+    col = curCol()
+    advance() // 'edit'
+    form = expect(TkIdent)
+    expect(TkComma)
+    isNewFlag = false
+    newType = -1
+    target = -1
+    if curKind() == TkNew {
+        advance()
+        typTok = expect(TkIdent)
+        isNewFlag = true
+        newType = typTok.nameIdx
+    } else {
+        target = parseExpr()
+    }
+    return newEdit(form.nameIdx, target, isNewFlag, newType, line, col)
+}
+
+// ================================================================
+// Declaration parsing (decl.go, plus parser.go's var/func/param/include)
+// ================================================================
+
+// parseRecordDecl parses `"record" IDENT "{" { fieldDecl } "}"`, where
+// fields are newline-separated.
+func parseRecordDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var fieldsHead: int
+    var fieldsTail: int
+    var fIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'record'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    fieldsHead = -1
+    fieldsTail = -1
+    skipNewlines()
+    while curKind() != TkRBrace and not parseAborted {
+        fIdx = parseFieldDecl()
+        if fieldsHead == -1 { fieldsHead = fIdx }
+        fieldsTail = declListAppend(fieldsTail, fIdx)
+        skipNewlines()
+    }
+    advance() // consume '}'
+    return newRecordDecl(name.nameIdx, fieldsHead, line, col)
+}
+
+// parseFieldDecl parses `IDENT ":" type [ "=" ( literal | IDENT ) ]`.
+func parseFieldDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+    var defaultExpr: int
+
+    line = curLine()
+    col = curCol()
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseType()
+    defaultExpr = -1
+    if curKind() == TkAssign {
+        advance()
+        defaultExpr = parseLiteralOrIdent()
+    }
+    return newField(name.nameIdx, typ, defaultExpr, line, col)
+}
+
+// parseConstDecl parses `"const" IDENT ":" type "=" ( literal | IDENT )`.
+func parseConstDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+    var val: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'const'
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseType()
+    expect(TkAssign)
+    val = parseLiteralOrIdent()
+    return newConstDecl(name.nameIdx, typ, val, line, col)
+}
+
+// parseLiteralOrIdent parses `literal | IDENT`: a field default, a const
+// declaration's value, or a switch case label -- an IDENT here names an
+// enum member or a previously declared constant, resolved by the checker.
+// The lexer has no negative-literal token, so a leading `-` is accepted
+// here in front of an INT or FIXEDLIT.
+func parseLiteralOrIdent(): int {
+    var line: int
+    var col: int
+    var t: Token
+    var negTok: Token
+
+    if curKind() == TkMinus {
+        line = curLine()
+        col = curCol()
+        advance()
+        if curKind() == TkInt {
+            negTok = curTok()
+            advance()
+            return newIntLit(0 - negTok.intVal, line, col)
+        }
+        if curKind() == TkFixedLit {
+            negTok = curTok()
+            advance()
+            return newFixedLit(0 - negTok.fixVal, line, col)
+        }
+        parseErrorf(line, col, "expected integer or fixed literal after '-', found " + tokKindQuoted(curKind()))
+        return -1
+    }
+
+    t = curTok()
+    line = t.line
+    col = t.col
+    if t.kind == TkInt {
+        advance()
+        return newIntLit(t.intVal, line, col)
+    }
+    if t.kind == TkFixedLit {
+        advance()
+        return newFixedLit(t.fixVal, line, col)
+    }
+    if t.kind == TkCharLit {
+        advance()
+        return newCharLit(t.intVal, line, col)
+    }
+    if t.kind == TkStringLit {
+        advance()
+        return newStringLit(t.nameIdx, line, col)
+    }
+    if t.kind == TkTrue {
+        advance()
+        return newBoolLit(true, line, col)
+    }
+    if t.kind == TkFalse {
+        advance()
+        return newBoolLit(false, line, col)
+    }
+    if t.kind == TkIdent {
+        advance()
+        return newIdent(t.nameIdx, line, col)
+    }
+    parseErrorf(line, col, "expected default value, found " + tokKindQuoted(t.kind))
+    return -1
+}
+
+// parseEnumDecl parses `"enum" IDENT "{" enumMember { [ "," ] enumMember }
+// "}"`. Members may be separated by commas, newlines, or both mixed.
+func parseEnumDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var membersHead: int
+    var membersTail: int
+    var mIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'enum'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    membersHead = -1
+    membersTail = -1
+    skipNewlines()
+    if curKind() == TkRBrace {
+        parseErrorf(curLine(), curCol(), "enum must have at least one member")
+    }
+    while curKind() != TkRBrace and not parseAborted {
+        mIdx = parseEnumMember()
+        if membersHead == -1 { membersHead = mIdx }
+        membersTail = declListAppend(membersTail, mIdx)
+        if curKind() == TkComma {
+            advance()
+        }
+        skipNewlines()
+    }
+    advance() // consume '}'
+    return newEnumDecl(name.nameIdx, membersHead, line, col)
+}
+
+// parseEnumMember parses `IDENT [ INT | HEXINT ] [ STRING ]`. Hex and
+// decimal integers both lex as an INT token; the parser does not check
+// the value range or reject duplicates -- that's the checker's job.
+func parseEnumMember(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var hasValue: bool
+    var value: int
+    var label: int
+
+    line = curLine()
+    col = curCol()
+    name = expect(TkIdent)
+    hasValue = false
+    value = 0
+    label = -1
+    if curKind() == TkInt {
+        hasValue = true
+        value = curTok().intVal
+        advance()
+    }
+    if curKind() == TkStringLit {
+        label = curTok().nameIdx
+        advance()
+    }
+    return newEnumMember(name.nameIdx, value, hasValue, label, line, col)
+}
+
+// parseVarDecl parses `"var" IDENT ":" type [ "=" expr ]`.
+func parseVarDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+    var initExpr: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'var'
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseType()
+    initExpr = -1
+    if curKind() == TkAssign {
+        advance()
+        initExpr = parseExpr()
+    }
+    return newVarDecl(name.nameIdx, typ, initExpr, line, col)
+}
+
+// parseParam parses `IDENT ":" type`.
+func parseParam(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+
+    line = curLine()
+    col = curCol()
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseType()
+    return newParam(name.nameIdx, typ, line, col)
+}
+
+// parseFuncDecl parses `"func" IDENT "(" [ params ] ")" [ ":" type ] block`.
+func parseFuncDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var paramsHead: int
+    var paramsTail: int
+    var pIdx: int
+    var retType: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'func'
+    name = expect(TkIdent)
+    expect(TkLParen)
+    paramsHead = -1
+    paramsTail = -1
+    if curKind() != TkRParen {
+        pIdx = parseParam()
+        paramsHead = pIdx
+        paramsTail = declListAppend(paramsTail, pIdx)
+        while curKind() == TkComma and not parseAborted {
+            advance()
+            pIdx = parseParam()
+            paramsTail = declListAppend(paramsTail, pIdx)
+        }
+    }
+    expect(TkRParen)
+    retType = -1
+    if curKind() == TkColon {
+        advance()
+        retType = parseType()
+    }
+    body = parseBodyBlock()
+    return newFuncDecl(name.nameIdx, paramsHead, retType, body, line, col)
+}
+
+// parseIncludeDecl parses `"include" STRING` (contextual: "include" is an
+// IDENT recognized by text at top-level statement start). Must be the
+// leading top-level declaration in the file; parseTopDecl enforces that.
+func parseIncludeDecl(): int {
+    var line: int
+    var col: int
+    var path: Token
+
+    line = curLine()
+    col = curCol()
+    advance() // 'include'
+    path = expect(TkStringLit)
+    return newInclude(path.nameIdx, line, col)
+}
+
+// parseTopDecl parses one top-level declaration.
+func parseTopDecl(): int {
+    if curKind() == TkIdent and poolGet(curTok().nameIdx) == "include" and peekKind() == TkStringLit {
+        if parseSawNonInclude {
+            parseErrorf(curLine(), curCol(), "include must precede other declarations")
+        }
+        return parseIncludeDecl()
+    }
+    parseSawNonInclude = true
+    if curKind() == TkVar { return parseVarDecl() }
+    if curKind() == TkFunc { return parseFuncDecl() }
+    if curKind() == TkRecord { return parseRecordDecl() }
+    if curKind() == TkEnum { return parseEnumDecl() }
+    if curKind() == TkConst { return parseConstDecl() }
+    if curKind() == TkWindow { return parseWindowDecl() }
+    if curKind() == TkMenu { return parseMenuDecl() }
+    if curKind() == TkExtend { return parseExtendDecl() }
+    if curKind() == TkOn { return parseHandlerDecl() }
+    if curKind() == TkEvery { return parseEveryDecl() }
+    parseErrorf(curLine(), curCol(), "expected declaration, found " + tokKindQuoted(curKind()))
+    return -1
+}
+
+// ================================================================
+// UI declaration parsing (ui.go): window/widget/menu/extend/handler/every
+// ================================================================
+
+// isWidgetKind reports whether s is one of the contextual IDENT words
+// that begin a widgetDecl inside a window body. Unlike `var`/`form`,
+// these are plain identifiers, not keywords -- dispatched purely by text.
+func isWidgetKind(s: string): bool {
+    if s == "button" { return true }
+    if s == "field" { return true }
+    if s == "textview" { return true }
+    if s == "check" { return true }
+    if s == "popup" { return true }
+    if s == "table" { return true }
+    if s == "canvas" { return true }
+    if s == "label" { return true }
+    return false
+}
+
+// parseWindowDecl parses `"window" IDENT "{" { windowItem } "}"`.
+func parseWindowDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var itemsHead: int
+    var itemsTail: int
+    var iIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'window'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    itemsHead = -1
+    itemsTail = -1
+    skipItemSeps()
+    while curKind() != TkRBrace and not parseAborted {
+        iIdx = parseWindowItem()
+        if itemsHead == -1 { itemsHead = iIdx }
+        itemsTail = declListAppend(itemsTail, iIdx)
+        skipItemSeps()
+    }
+    advance() // consume '}'
+    return newWindowDecl(name.nameIdx, itemsHead, line, col)
+}
+
+// parseWindowItem parses one windowItem: a `var` declaration, `form for
+// IDENT`, a widget declaration (dispatched by isWidgetKind), or a generic
+// property.
+func parseWindowItem(): int {
+    if curKind() == TkVar {
+        return parseVarDecl()
+    }
+    if curIsIdentText("form") {
+        return parseFormFor()
+    }
+    if curKind() == TkIdent and isWidgetKind(poolGet(curTok().nameIdx)) {
+        return parseWidgetDecl()
+    }
+    return parseProperty()
+}
+
+// parseFormFor parses `"form" "for" IDENT` (the leading `form` IDENT has
+// not yet been consumed; `for` is the hard keyword here, not contextual).
+func parseFormFor(): int {
+    var line: int
+    var col: int
+    var rec: Token
+
+    line = curLine()
+    col = curCol()
+    advance() // 'form'
+    expect(TkFor)
+    rec = expect(TkIdent)
+    return newFormFor(rec.nameIdx, line, col)
+}
+
+// parseWidgetDecl parses `widgetKind IDENT [ "{" propertyList "}" ]`. The
+// leading widgetKind word has been recognized by parseWindowItem but not
+// yet consumed.
+func parseWidgetDecl(): int {
+    var line: int
+    var col: int
+    var kindIdx: int
+    var name: Token
+    var propsHead: int
+    var propsTail: int
+    var pIdx: int
+
+    line = curLine()
+    col = curCol()
+    kindIdx = curTok().nameIdx
+    advance() // widget kind
+    name = expect(TkIdent)
+    propsHead = -1
+    propsTail = -1
+    if curKind() == TkLBrace {
+        advance()
+        skipItemSeps()
+        while curKind() != TkRBrace and not parseAborted {
+            pIdx = parseProperty()
+            if propsHead == -1 { propsHead = pIdx }
+            propsTail = declListAppend(propsTail, pIdx)
+            skipItemSeps()
+        }
+        advance() // consume '}'
+    }
+    return newWidget(name.nameIdx, kindIdx, propsHead, line, col)
+}
+
+// parseProperty parses one property: bare `cancel` (a hard keyword,
+// hence its own alternative), a `column` clause (contextual IDENT text,
+// valid anywhere in a widget body though only meaningful inside `table`),
+// or a generic `IDENT [ ":" value { "," value } ]` where each value is a
+// full expr -- so `min(300, 200)` arrives as a Call and `fill`/`both`/
+// `bottom` arrive as Ident.
+func parseProperty(): int {
+    var line: int
+    var col: int
+    var nameIdx: int
+    var valuesHead: int
+    var valuesTail: int
+    var vIdx: int
+
+    line = curLine()
+    col = curCol()
+
+    if curKind() == TkCancel {
+        advance()
+        return newProperty(intern("cancel"), -1, line, col)
+    }
+    if curIsIdentText("column") {
+        return parseColumn()
+    }
+    if curKind() == TkIdent {
+        nameIdx = curTok().nameIdx
+        advance()
+        valuesHead = -1
+        valuesTail = -1
+        if curKind() == TkColon {
+            advance()
+            vIdx = parseExpr()
+            valuesHead = vIdx
+            valuesTail = exprListAppend(valuesTail, vIdx)
+            while curKind() == TkComma and not parseAborted {
+                advance()
+                vIdx = parseExpr()
+                valuesTail = exprListAppend(valuesTail, vIdx)
+            }
+        }
+        return newProperty(nameIdx, valuesHead, line, col)
+    }
+    parseErrorf(line, col, "expected property, found " + tokKindQuoted(curKind()))
+    return -1
+}
+
+// parseColumn parses `"column" STRING "shows" IDENT "width" ( INT |
+// "fill" )`. The leading `column` IDENT has not yet been consumed.
+func parseColumn(): int {
+    var line: int
+    var col: int
+    var header: Token
+    var shows: Token
+    var widthPx: int
+    var widthFill: bool
+
+    line = curLine()
+    col = curCol()
+    advance() // 'column'
+    header = expect(TkStringLit)
+    expectIdentText("shows")
+    shows = expect(TkIdent)
+    expectIdentText("width")
+    widthPx = 0
+    widthFill = false
+    if curKind() == TkInt {
+        widthPx = curTok().intVal
+        advance()
+    } else if curIsIdentText("fill") {
+        widthFill = true
+        advance()
+    } else {
+        parseErrorf(curLine(), curCol(), "expected column width (INT or 'fill'), found " + tokKindQuoted(curKind()))
+    }
+    return newColumn(header.nameIdx, shows.nameIdx, widthPx, widthFill, line, col)
+}
+
+// parseMenuDecl parses `"menu" IDENT "{" { menuEntry } "}"`.
+func parseMenuDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var entriesHead: int
+    var entriesTail: int
+    var eIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'menu'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    entriesHead = -1
+    entriesTail = -1
+    skipItemSeps()
+    while curKind() != TkRBrace and not parseAborted {
+        eIdx = parseMenuEntry()
+        if entriesHead == -1 { entriesHead = eIdx }
+        entriesTail = declListAppend(entriesTail, eIdx)
+        skipItemSeps()
+    }
+    advance() // consume '}'
+    return newMenuDecl(name.nameIdx, entriesHead, line, col)
+}
+
+// parseMenuEntry parses one menuEntry: `item IDENT STRING [ "key" STRING
+// ]`, bare `separator`, or `standard "edit"` -- `edit` here is the hard
+// keyword, not a contextual word.
+func parseMenuEntry(): int {
+    var line: int
+    var col: int
+    var word: string
+    var name: Token
+    var caption: Token
+    var key: Token
+    var keyIdx: int
+
+    line = curLine()
+    col = curCol()
+    if curKind() != TkIdent {
+        parseErrorf(line, col, "expected menu entry, found " + tokKindQuoted(curKind()))
+        return -1
+    }
+    word = poolGet(curTok().nameIdx)
+    if word == "item" {
+        advance()
+        name = expect(TkIdent)
+        caption = expect(TkStringLit)
+        keyIdx = -1
+        if curIsIdentText("key") {
+            advance()
+            key = expect(TkStringLit)
+            keyIdx = key.nameIdx
+        }
+        return newMenuEntry(name.nameIdx, caption.nameIdx, keyIdx, true, false, false, line, col)
+    }
+    if word == "separator" {
+        advance()
+        return newMenuEntry(-1, -1, -1, false, true, false, line, col)
+    }
+    if word == "standard" {
+        advance()
+        expect(TkEdit)
+        return newMenuEntry(-1, -1, -1, false, false, true, line, col)
+    }
+    parseErrorf(line, col, "expected 'item', 'separator', or 'standard', found " + tokKindQuoted(curKind()))
+    return -1
+}
+
+// parseExtendDecl parses `"extend" IDENT "{" { handlerDecl | extendDecl }
+// "}"`.
+func parseExtendDecl(): int {
+    var line: int
+    var col: int
+    var target: Token
+    var childrenHead: int
+    var childrenTail: int
+    var cIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'extend'
+    target = expect(TkIdent)
+    expect(TkLBrace)
+    childrenHead = -1
+    childrenTail = -1
+    skipItemSeps()
+    while curKind() != TkRBrace and not parseAborted {
+        if curKind() == TkOn {
+            cIdx = parseHandlerDecl()
+        } else if curKind() == TkExtend {
+            cIdx = parseExtendDecl()
+        } else {
+            parseErrorf(curLine(), curCol(), "expected 'on' or 'extend', found " + tokKindQuoted(curKind()))
+            cIdx = -1
+        }
+        if childrenHead == -1 { childrenHead = cIdx }
+        childrenTail = declListAppend(childrenTail, cIdx)
+        skipItemSeps()
+    }
+    advance() // consume '}'
+    return newExtendDecl(target.nameIdx, childrenHead, line, col)
+}
+
+// parseHandlerDecl parses `"on" eventPath [ "(" params ")" ] block`,
+// where eventPath = IDENT { "." IDENT }, joined into one dotted interned
+// string (ast.cla's DkHandler schema: nameIdx is the whole path, e.g.
+// "Go.click"). Used both at the top level and nested inside extendDecl.
+func parseHandlerDecl(): int {
+    var line: int
+    var col: int
+    var first: Token
+    var pathStr: string
+    var seg: Token
+    var pathIdx: int
+    var paramsHead: int
+    var paramsTail: int
+    var pIdx: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'on'
+    first = expect(TkIdent)
+    pathStr = poolGet(first.nameIdx)
+    while curKind() == TkDot and not parseAborted {
+        advance()
+        seg = expect(TkIdent)
+        pathStr = pathStr + "." + poolGet(seg.nameIdx)
+    }
+    pathIdx = intern(pathStr)
+
+    paramsHead = -1
+    paramsTail = -1
+    if curKind() == TkLParen {
+        advance()
+        if curKind() != TkRParen {
+            pIdx = parseParam()
+            paramsHead = pIdx
+            paramsTail = declListAppend(paramsTail, pIdx)
+            while curKind() == TkComma and not parseAborted {
+                advance()
+                pIdx = parseParam()
+                paramsTail = declListAppend(paramsTail, pIdx)
+            }
+        }
+        expect(TkRParen)
+    }
+    body = parseBodyBlock()
+    return newHandlerDecl(pathIdx, paramsHead, body, line, col)
+}
+
+// parseEveryDecl parses `"every" INT "ticks" block`.
+func parseEveryDecl(): int {
+    var line: int
+    var col: int
+    var n: Token
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'every'
+    n = expect(TkInt)
+    expectIdentText("ticks")
+    body = parseBodyBlock()
+    return newEveryDecl(n.intVal, body, line, col)
+}
+
+// ================================================================
+// Entry point
+// ================================================================
+
+// parseFile reads the already-lexed global `toks` arena and parses a
+// full program, returning the top-level decl list's head index (File =
+// Decls head), or an index that must not be trusted if any diagnostic
+// was recorded (check diags.count, or parseAborted, before rendering).
+// Resets the parser's own cursor/abort state itself, so callers don't
+// need to remember to call parseReset before each program -- but it's
+// provided too (see below) for symmetry with lexAll/astReset.
+func parseFile(): int {
+    var declsHead: int
+    var declsTail: int
+    var dIdx: int
+
+    parseReset()
+
+    declsHead = -1
+    declsTail = -1
+    skipNewlines()
+    while curKind() != TkEOF and not parseAborted {
+        dIdx = parseTopDecl()
+        if declsHead == -1 { declsHead = dIdx }
+        declsTail = declListAppend(declsTail, dIdx)
+        skipNewlines()
+    }
+    return declsHead
+}
+
+// parseReset clears the parser's own global state (cursor position, the
+// abort flag, the include-ordering tracker) between compiling independent
+// programs -- the differential harness reuses the process across many
+// programs, exactly like lexAll's clear-on-entry and astReset.
+func parseReset() {
+    parseIdx = 0
+    parseAborted = false
+    parseSawNonInclude = false
+}

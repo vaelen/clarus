@@ -1,0 +1,397 @@
+include "../lib.cla"
+include "../tok.cla"
+include "../lex.cla"
+include "../ast.cla"
+include "../parse.cla"
+
+// renderExpr recursively renders expr i as a fully-parenthesized
+// expression string -- extends ast_test.cla's version (Task 6) with the
+// ExprKinds this driver's real parsed programs actually produce.
+func renderExpr(i: int): string {
+    switch exprKind(i) {
+    case ExIntLit {
+        return numToStr(intLitVal(i))
+    }
+    case ExIdent {
+        return poolGet(identName(i))
+    }
+    case ExBoolLit {
+        if boolLitVal(i) {
+            return "true"
+        }
+        return "false"
+    }
+    case ExBinary {
+        return "(" + renderExpr(binLeft(i)) + " " + binOpSymbol(binOp(i)) + " " + renderExpr(binRight(i)) + ")"
+    }
+    case ExUnary {
+        return "(" + unOpSymbol(unaryOp(i)) + renderExpr(unaryX(i)) + ")"
+    }
+    case ExCall {
+        return "call(" + renderExpr(callFn(i)) + ")"
+    }
+    }
+    return "?expr"
+}
+
+// renderStmt renders one statement as a single line (nested blocks
+// render inline via renderBlock).
+func renderStmt(i: int): string {
+    switch stmtKind(i) {
+    case StReturn {
+        if returnX(i) == -1 {
+            return "return"
+        }
+        return "return " + renderExpr(returnX(i))
+    }
+    case StAssign {
+        return renderExpr(assignLHS(i)) + " = " + renderExpr(assignRHS(i))
+    }
+    case StWhile {
+        return "while " + renderExpr(whileCond(i)) + " " + renderBlock(whileBody(i))
+    }
+    case StSwitch {
+        return "switch " + renderExpr(switchSubject(i)) + " " + renderSwitchCases(switchCasesHead(i)) + renderSwitchElse(switchElse(i))
+    }
+    case StClose {
+        return "close " + renderExpr(closeX(i))
+    }
+    case StQuit {
+        if quitCode(i) == -1 {
+            return "quit"
+        }
+        return "quit " + renderExpr(quitCode(i))
+    }
+    }
+    return "?stmt"
+}
+
+func renderSwitchCases(i: int): string {
+    var out: string
+    var c: int
+    var l: int
+
+    out = "{"
+    c = i
+    while c != -1 {
+        out = out + " case"
+        l = caseLabelsHead(c)
+        while l != -1 {
+            out = out + " " + renderExpr(l)
+            l = exprNext(l)
+        }
+        out = out + " " + renderBlock(caseBody(c))
+        c = stmtNext(c)
+    }
+    return out
+}
+
+func renderSwitchElse(i: int): string {
+    if i == -1 {
+        return " }"
+    }
+    return " else " + renderBlock(i) + " }"
+}
+
+// renderBlock renders a block's own vars then its statements, in order,
+// space-separated inside braces (a block's vars and stmts are two
+// separate linked lists per ast.cla's schema).
+func renderBlock(i: int): string {
+    var out: string
+    var v: int
+    var s: int
+
+    out = "{"
+    v = blockVarsHead(i)
+    while v != -1 {
+        out = out + " var " + poolGet(varDeclName(v))
+        v = declNext(v)
+    }
+    s = blockStmtsHead(i)
+    while s != -1 {
+        out = out + " " + renderStmt(s)
+        s = stmtNext(s)
+    }
+    out = out + " }"
+    return out
+}
+
+// renderTopDecl renders one top-level declaration as a single summary
+// line -- enough to confirm shape (name, params/fields, body) without
+// reproducing full source syntax.
+func renderTopDecl(i: int): string {
+    var out: string
+    var f: int
+    var p: int
+
+    switch declKind(i) {
+    case DkFunc {
+        out = "func " + poolGet(funcDeclName(i)) + "("
+        p = funcDeclParamsHead(i)
+        while p != -1 {
+            out = out + poolGet(paramName(p))
+            p = declNext(p)
+            if p != -1 {
+                out = out + ", "
+            }
+        }
+        out = out + ") " + renderBlock(funcDeclBody(i))
+        return out
+    }
+    case DkRecord {
+        out = "record " + poolGet(recordDeclName(i)) + " {"
+        f = recordDeclFieldsHead(i)
+        while f != -1 {
+            out = out + " " + poolGet(fieldName(f))
+            if fieldDefault(f) != -1 {
+                out = out + "=" + renderExpr(fieldDefault(f))
+            }
+            f = declNext(f)
+        }
+        out = out + " }"
+        return out
+    }
+    case DkWindow {
+        out = "window " + poolGet(windowDeclName(i))
+        return out
+    }
+    case DkMenu {
+        out = "menu " + poolGet(menuDeclName(i))
+        return out
+    }
+    case DkExtend {
+        out = "extend " + poolGet(extendDeclTarget(i))
+        return out
+    }
+    case DkEvery {
+        out = "every " + numToStr(everyDeclTicks(i))
+        return out
+    }
+    }
+    return "?decl"
+}
+
+// runCase lexes and parses src, then alerts either every top-level
+// decl's rendering (clean parse) or every diagnostic (parse error) --
+// the two outcomes the brief asks this driver to cover.
+func runCase(label: string, src: text) {
+    var head: int
+    var d: int
+    var decl: int
+
+    resetDiags()
+    lexAll(src)
+    head = parseFile()
+    alert("=== " + label + " ===")
+    if diags.count > 0 {
+        d = 0
+        while d < diags.count {
+            alert(formatDiag("parse_test.cla", diags[d]))
+            d = d + 1
+        }
+    } else {
+        decl = head
+        while decl != -1 {
+            alert(renderTopDecl(decl))
+            decl = declNext(decl)
+        }
+    }
+}
+
+on App.startEmpty {
+    var src: text
+
+    // Case 1: an expression (precedence, inside a return).
+    src.append("func f(): int {")
+    src.append(char(10))
+    src.append("    return 1 + 2 * 3")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("expr", src)
+
+    // Case 2: a func with a while loop.
+    src = ""
+    src.append("func countUp(n: int): int {")
+    src.append(char(10))
+    src.append("    var i: int")
+    src.append(char(10))
+    src.append("    i = 0")
+    src.append(char(10))
+    src.append("    while i < n {")
+    src.append(char(10))
+    src.append("        i = i + 1")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("    return i")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("while", src)
+
+    // Case 3: a record with defaulted fields.
+    src = ""
+    src.append("record Point {")
+    src.append(char(10))
+    src.append("    x: int = 0")
+    src.append(char(10))
+    src.append("    y: int = 0")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("record", src)
+
+    // Case 4: a switch with a multi-label case and an else.
+    src = ""
+    src.append("func classify(n: int): int {")
+    src.append(char(10))
+    src.append("    switch n {")
+    src.append(char(10))
+    src.append("    case 0 {")
+    src.append(char(10))
+    src.append("        return 0")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("    case 1, 2 {")
+    src.append(char(10))
+    src.append("        return 1")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("    else {")
+    src.append(char(10))
+    src.append("        return 2")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("switch", src)
+
+    // Case 5: window/menu/extend/handler/every -- ui.go coverage.
+    src = ""
+    src.append("window Main {")
+    src.append(char(10))
+    src.append("    title: \"Hi\"")
+    src.append(char(10))
+    src.append("    button go {")
+    src.append(char(10))
+    src.append("        caption: \"Go\"")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("menu FileMenu {")
+    src.append(char(10))
+    src.append("    item openItem \"Open\" key \"O\"")
+    src.append(char(10))
+    src.append("    separator")
+    src.append(char(10))
+    src.append("    standard edit")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("extend Main {")
+    src.append(char(10))
+    src.append("    on go.click {")
+    src.append(char(10))
+    src.append("        close window")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("every 10 ticks {")
+    src.append(char(10))
+    src.append("    quit")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("ui", src)
+
+    // Case 6: a program with a syntax error (quit-same-line-style
+    // operator continuation swallows the newline after `+`, so the
+    // next real token is the block's closing `}`).
+    src = ""
+    src.append("func bad(): int {")
+    src.append(char(10))
+    src.append("    return 1 +")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("error", src)
+
+    // Cases 7-12: one diagnostic-family spot-check each, cross-checked
+    // against `clarus check` on the identical snippet (see
+    // task-7-report.md).
+    src = ""
+    src.append("func f(): bool {")
+    src.append(char(10))
+    src.append("    var x: bool")
+    src.append(char(10))
+    src.append("    x = 1 < 2 < 3")
+    src.append(char(10))
+    src.append("    return x")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("chain", src)
+
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    var s: string")
+    src.append(char(10))
+    src.append("    s[0,2] = \"hi\"")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("slice-assign", src)
+
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    1 + 2 = 3")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("bad-assign", src)
+
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("    if true {")
+    src.append(char(10))
+    src.append("        var x: int")
+    src.append(char(10))
+    src.append("        x = 1")
+    src.append(char(10))
+    src.append("    }")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("var-not-top", src)
+
+    src = ""
+    src.append("func f() {")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    src.append("include \"x.cla\"")
+    src.append(char(10))
+    runCase("include-order", src)
+
+    src = ""
+    src.append("func f(): int {")
+    src.append(char(10))
+    src.append("    return x.")
+    src.append(char(10))
+    src.append("}")
+    src.append(char(10))
+    runCase("member-name", src)
+}
