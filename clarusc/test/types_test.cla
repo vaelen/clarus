@@ -1,0 +1,125 @@
+include "../lib.cla"
+include "../types.cla"
+
+func boolStr(b: bool): string {
+    if b {
+        return "true"
+    }
+    return "false"
+}
+
+// check alerts one "label: got vs want" style PASS/FAIL line -- the
+// golden captures both the case name and the result, so a wrong answer is
+// unambiguous rather than a bare "false" with no context.
+func check(label: string, got: bool, want: bool) {
+    if got == want {
+        alert("PASS " + label)
+    } else {
+        alert("FAIL " + label + " got=" + boolStr(got) + " want=" + boolStr(want))
+    }
+}
+
+on App.startEmpty {
+    var str63: int
+    var str255: int
+    var enumA1: int
+    var enumA2: int
+    var enumB: int
+    var listInt: int
+    var listInt2: int
+    var listBool: int
+    var root: int
+    var child: int
+    var symX: Symbol
+    var symY: Symbol
+    var symXShadow: Symbol
+
+    typesInit()
+
+    // -- assignability rules (internal/types/types.go) --
+
+    str63 = strT(63)
+    str255 = strT(255)
+    check("string any-capacity: str(63) -> str(255)", assignable(str63, str255), true)
+    check("string any-capacity: str(255) -> str(63)", assignable(str255, str63), true)
+
+    check("int -/-> fixed", assignable(IntT, FixedT), false)
+    check("fixed -/-> int", assignable(FixedT, IntT), false)
+
+    check("string -> text", assignable(str255, TextT), true)
+    check("text -/-> string", assignable(TextT, str255), false)
+
+    enumA1 = enumT(intern("Alpha"), -1, 0)
+    enumA2 = enumT(intern("Alpha"), -1, 0)
+    enumB = enumT(intern("Beta"), -1, 0)
+    check("same-named enum (distinct arena entries) assignable", assignable(enumA1, enumA2), true)
+    check("distinct-named enums -/-> each other", assignable(enumA1, enumB), false)
+    check("distinct-named enums -/-> each other (reverse)", assignable(enumB, enumA1), false)
+
+    listInt = listT(IntT)
+    listInt2 = listT(IntT)
+    listBool = listT(BoolT)
+    check("list of int -> list of int", assignable(listInt, listInt2), true)
+    check("list of int -/-> list of bool", assignable(listInt, listBool), false)
+
+    check("Invalid src compatible with anything", assignable(InvalidT, IntT), true)
+    check("Invalid dst compatible with anything", assignable(IntT, InvalidT), true)
+    check("Invalid <-> Invalid", assignable(InvalidT, InvalidT), true)
+
+    // ErrType is NOT given InvalidT's free pass: strictly kind-checked.
+    check("error -> error", assignable(ErrTIndex, ErrTIndex), true)
+    check("error -/-> int", assignable(ErrTIndex, IntT), false)
+
+    // saveChoice seeded with 3 members, Discard labeled "Don't Save".
+    check("saveChoice has 3 members", typeN(SaveChoiceT) == 3, true)
+    check("saveChoice member 1 label is Don't Save", poolGet(enumMembers[typeElem(SaveChoiceT) + 1].labelIdx) == "Don't Save", true)
+
+    // -- typesEqual (structural except named types) --
+    check("typesEqual same string capacity", typesEqual(strT(63), strT(63)), true)
+    check("typesEqual different string capacity", typesEqual(strT(63), strT(255)), false)
+    check("typesEqual same-named enums", typesEqual(enumA1, enumA2), true)
+    check("typesEqual distinct-named enums", typesEqual(enumA1, enumB), false)
+
+    // -- scope: declare/lookup/shadow/duplicate-error (internal/check/scope.go) --
+
+    root = scopeNew(-1)
+    symX.nameIdx = intern("x")
+    symX.typeIdx = IntT
+    symX.sigIdx = -1
+    symX.constStrIdx = -1
+    check("declare x in root", scopeDeclare(root, symX), true)
+    check("lookup x from root finds it", scopeLookup(root, intern("x")) != -1, true)
+
+    child = scopeNew(root)
+    symY.nameIdx = intern("y")
+    symY.typeIdx = BoolT
+    symY.sigIdx = -1
+    symY.constStrIdx = -1
+    check("declare y in child", scopeDeclare(child, symY), true)
+    check("lookup y from child finds it", scopeLookup(child, intern("y")) != -1, true)
+    check("lookup y from root does not find it (inner scope invisible outward)", scopeLookup(root, intern("y")) == -1, true)
+    check("lookup x from child walks out to root", scopeLookup(child, intern("x")) != -1, true)
+    check("lookup undeclared name from child", scopeLookup(child, intern("nope")) == -1, true)
+
+    // Shadowing: re-declaring "x" in the child scope is legal (a distinct
+    // scope), and afterward child's lookup of "x" resolves to its OWN
+    // symbol, not root's.
+    symXShadow.nameIdx = intern("x")
+    symXShadow.typeIdx = FixedT
+    symXShadow.sigIdx = -1
+    symXShadow.constStrIdx = -1
+    check("shadow x in child (legal)", scopeDeclare(child, symXShadow), true)
+    check("child's x now resolves to the shadow, not root's", symbols[scopeLookup(child, intern("x"))].typeIdx == FixedT, true)
+    check("root's x is unaffected by the shadow", symbols[scopeLookup(root, intern("x"))].typeIdx == IntT, true)
+
+    // Duplicate-in-same-scope: declaring "x" again in child (already
+    // shadowed there) must fail.
+    check("duplicate declare of x in child fails", scopeDeclare(child, symXShadow), false)
+    // Root is likewise still protected against a same-scope duplicate.
+    check("duplicate declare of x in root fails", scopeDeclare(root, symX), false)
+
+    typesReset()
+    scopesReset()
+    check("typesReset re-seeds IntT usably", assignable(IntT, IntT), true)
+    check("scopesReset empties scopes (new scope is index 0)", scopeNew(-1) == 0, true)
+}

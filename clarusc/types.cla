@@ -1,0 +1,482 @@
+// types.cla: the checked-type system -- a port of internal/types/types.go
+// (Type/Kind, the singleton scalar types, StringT/ListT/MapT/ArrayT,
+// AssignableTo/Equal, the built-in saveChoice enum) plus
+// internal/check/scope.go (Scope/Symbol, Declare/Lookup). Types are values
+// in a `list of TypeInfo` arena (typeArena), referenced by int index --
+// exactly the arena-of-fixed-shape-records discipline ast.cla established
+// for AST nodes (Task 6). Only the constructors/accessors below may touch
+// a TypeInfo's fields directly.
+//
+// ============================================================
+// The InvalidT / ErrType distinction (read this before touching assignable)
+// ============================================================
+//
+// InvalidT (TyInvalid) is the checker's error-recovery sentinel: once a
+// diagnostic has already been reported for some expression, checkExpr
+// (Task 9) returns InvalidT in its place so that a single mistake never
+// cascades into unrelated follow-on errors -- assignable/typesEqual treat
+// TyInvalid as compatible with EVERY other type, in both directions.
+//
+// ErrTIndex (TyErrorType) is the language's own `error` record type (Ch3:
+// Errors -- `{ code: int, message: string }`). It is a perfectly ordinary
+// type: assignable/typesEqual check it exactly like any other scalar kind
+// (equal kind required, nothing more -- there is only ever one `error`
+// type, so kind-equality already implies identity). It is NEVER given
+// InvalidT's "compatible with anything" pass. Confusing these two was a
+// hard-won bug fix in the Go checker; do not special-case TyErrorType
+// anywhere near the TyInvalid checks below.
+
+include "lib.cla"
+
+enum TypeKind {
+    TyInvalid
+    TyInt
+    TyBool
+    TyFixed
+    TyChar
+    TyStr
+    TyText
+    TyEnum
+    TyRec
+    TyArr
+    TyList
+    TyMap
+    TyWindowRef
+    TyConnection
+    TyListener
+    TyServiceBrowser
+    TyAddress
+    TyErrorType
+    TyVoid
+
+    // TyWidget/TyMenuItem are checker-only pseudo-types (Task 9): never a
+    // variable's declared type, only the transient result of a Select
+    // expression (Widget.property, MenuName.ItemName) on the way to a
+    // concrete type. Carried here only for parity with types.go's Kind;
+    // Task 8 seeds and tests neither.
+    TyWidget
+    TyMenuItem
+}
+
+// TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
+// are meaningful, matching types.go's Type struct:
+//   TyStr              n=capacity
+//   TyArr               n=length; elem=element type index
+//   TyList, TyMap        elem=element/value type index
+//   TyEnum, TyRec, TyWindowRef
+//                       nameIdx=interned declared name -- the type's
+//                       NAMED-TYPE IDENTITY. Two TypeInfo entries of the
+//                       same kind with the same nameIdx are the SAME
+//                       declared type (Go compares Enum/Record/Window
+//                       struct pointers; here that pointer is stood in for
+//                       by the nameIdx, since a name is declared at most
+//                       once -- see the language reference's
+//                       declare-before-use section). Additionally for
+//                       TyEnum: n=member count, elem=index of this enum's
+//                       first member in the enumMembers arena (its members
+//                       occupy enumMembers[elem .. elem+n-1]).
+//   everything else     no other field is meaningful (n=0, elem=-1,
+//                       nameIdx=-1 by convention, though nothing reads them)
+record TypeInfo {
+    kind: TypeKind
+    n: int
+    elem: int
+    nameIdx: int
+}
+
+var typeArena: list of TypeInfo
+
+// EnumMemberInfo is one member of a TyEnum type (types.go's EnumMemberInfo).
+record EnumMemberInfo {
+    nameIdx: int
+    value: int
+    labelIdx: int
+}
+
+var enumMembers: list of EnumMemberInfo
+
+// Singletons for kinds with no other state -- set by typesInit(), matching
+// types.go's IntT/BoolT/.../InvalidT package vars. ErrTIndex is named
+// distinctly from the bare `ErrT` types.go uses to keep the InvalidT/
+// ErrType distinction visually unmistakable at every call site here.
+var InvalidT: int
+var IntT: int
+var BoolT: int
+var FixedT: int
+var CharT: int
+var TextT: int
+var VoidT: int
+var AddressT: int
+var ErrTIndex: int
+var SaveChoiceT: int
+
+func typeKind(i: int): TypeKind {
+    return typeArena[i].kind
+}
+
+func typeN(i: int): int {
+    return typeArena[i].n
+}
+
+func typeElem(i: int): int {
+    return typeArena[i].elem
+}
+
+func typeNameIdx(i: int): int {
+    return typeArena[i].nameIdx
+}
+
+// pushSimple appends a kind-only TypeInfo (no capacity/elem/name) and
+// returns its arena index. Used for the singleton scalar/resource kinds.
+func pushSimple(k: TypeKind): int {
+    var t: TypeInfo
+
+    t.kind = k
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+// strT returns a string(n) type. Every call allocates a fresh arena entry
+// (matching types.go's StringT: no caching), so two calls with equal n are
+// Equal but not index-identical -- exactly the case typesEqual's
+// structural (not pointer) comparison exists to handle.
+func strT(n: int): int {
+    var t: TypeInfo
+
+    t.kind = TyStr
+    t.n = n
+    t.elem = -1
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func listT(elem: int): int {
+    var t: TypeInfo
+
+    t.kind = TyList
+    t.n = 0
+    t.elem = elem
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func mapT(val: int): int {
+    var t: TypeInfo
+
+    t.kind = TyMap
+    t.n = 0
+    t.elem = val
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func arrT(elem: int, n: int): int {
+    var t: TypeInfo
+
+    t.kind = TyArr
+    t.n = n
+    t.elem = elem
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+// enumT/recT/windowRefT construct a fresh named type -- one call per
+// declared enum/record/window (Task 9's job at decl-check time). Each call
+// allocates a new arena entry; nameIdx alone carries the named-type
+// identity two such entries are compared by (see TypeInfo's schema
+// comment above), so re-declaring under the same nameIdx would be a
+// checker bug, not something this layer needs to guard against.
+func enumT(nameIdx: int, membersHead: int, memberCount: int): int {
+    var t: TypeInfo
+
+    t.kind = TyEnum
+    t.n = memberCount
+    t.elem = membersHead
+    t.nameIdx = nameIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func recT(nameIdx: int): int {
+    var t: TypeInfo
+
+    t.kind = TyRec
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = nameIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func windowRefT(nameIdx: int): int {
+    var t: TypeInfo
+
+    t.kind = TyWindowRef
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = nameIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+// addEnumMember appends one member and returns its enumMembers index.
+func addEnumMember(name: string, value: int, label: string): int {
+    var m: EnumMemberInfo
+
+    m.nameIdx = intern(name)
+    m.value = value
+    m.labelIdx = intern(label)
+    enumMembers.add(m)
+    return enumMembers.count - 1
+}
+
+// seedSaveChoice builds the built-in three-way save/discard/cancel enum,
+// as if declared `enum saveChoice { Save, Discard "Don't Save", Cancel }`
+// (types.go's SaveChoice var), and returns its type index.
+func seedSaveChoice(): int {
+    var head: int
+
+    head = enumMembers.count
+    addEnumMember("Save", 0, "Save")
+    addEnumMember("Discard", 1, "Don't Save")
+    addEnumMember("Cancel", 2, "Cancel")
+    return enumT(intern("saveChoice"), head, 3)
+}
+
+// typesInit seeds typeArena with the singleton scalar/resource types and
+// the built-in saveChoice enum, in a fixed order, and points the global
+// index vars at them. Called once at program start and again by
+// typesReset (Task 5/6's differential-harness discipline: arenas must not
+// leak state across independently-compiled programs).
+func typesInit() {
+    InvalidT = pushSimple(TyInvalid)
+    IntT = pushSimple(TyInt)
+    BoolT = pushSimple(TyBool)
+    FixedT = pushSimple(TyFixed)
+    CharT = pushSimple(TyChar)
+    TextT = pushSimple(TyText)
+    VoidT = pushSimple(TyVoid)
+    AddressT = pushSimple(TyAddress)
+    ErrTIndex = pushSimple(TyErrorType)
+    SaveChoiceT = seedSaveChoice()
+}
+
+// typesReset empties typeArena and enumMembers, then re-seeds the
+// singletons via typesInit -- call between compiling independent programs.
+func typesReset() {
+    while typeArena.count > 0 {
+        typeArena.pop()
+    }
+    while enumMembers.count > 0 {
+        enumMembers.pop()
+    }
+    typesInit()
+}
+
+// assignable reports whether a value of type src may be assigned to a
+// location of type dst -- a byte-exact port of types.go's AssignableTo.
+// Deliberately has NO src==dst fast path (types.go's AssignableTo doesn't
+// either, unlike Equal): every case falls through the same kind-by-kind
+// rules whether or not the two indices happen to coincide.
+func assignable(src: int, dst: int): bool {
+    var sk: TypeKind
+    var dk: TypeKind
+
+    sk = typeKind(src)
+    dk = typeKind(dst)
+    if sk == TyInvalid or dk == TyInvalid {
+        return true
+    }
+    // String -> Text is documented and one-way; Text -> String is not (see
+    // the language reference's Text operations and Strings chapters).
+    if sk == TyStr and dk == TyText {
+        return true
+    }
+    if sk != dk {
+        return false
+    }
+    switch sk {
+    case TyStr {
+        return true // any capacity assigns to any other; runtime clamps
+    }
+    case TyEnum {
+        return typeNameIdx(src) == typeNameIdx(dst)
+    }
+    case TyRec {
+        return typeNameIdx(src) == typeNameIdx(dst)
+    }
+    case TyWindowRef {
+        return typeNameIdx(src) == typeNameIdx(dst)
+    }
+    case TyArr {
+        return typeN(src) == typeN(dst) and assignable(typeElem(src), typeElem(dst))
+    }
+    case TyList {
+        return typesEqual(typeElem(src), typeElem(dst))
+    }
+    case TyMap {
+        return typesEqual(typeElem(src), typeElem(dst))
+    }
+    }
+    return true // same-kind scalars/resources/void need no further check
+}
+
+// typesEqual reports whether a and b are the same type -- a byte-exact
+// port of types.go's Equal. Structural except for named types
+// (enum/record/window), which compare by nameIdx identity.
+func typesEqual(a: int, b: int): bool {
+    var ak: TypeKind
+    var bk: TypeKind
+
+    if a == b {
+        return true
+    }
+    ak = typeKind(a)
+    bk = typeKind(b)
+    if ak == TyInvalid or bk == TyInvalid {
+        return true
+    }
+    if ak != bk {
+        return false
+    }
+    switch ak {
+    case TyStr {
+        return typeN(a) == typeN(b)
+    }
+    case TyEnum {
+        return typeNameIdx(a) == typeNameIdx(b)
+    }
+    case TyRec {
+        return typeNameIdx(a) == typeNameIdx(b)
+    }
+    case TyWindowRef {
+        return typeNameIdx(a) == typeNameIdx(b)
+    }
+    case TyArr {
+        return typeN(a) == typeN(b) and typesEqual(typeElem(a), typeElem(b))
+    }
+    case TyList {
+        return typesEqual(typeElem(a), typeElem(b))
+    }
+    case TyMap {
+        return typesEqual(typeElem(a), typeElem(b))
+    }
+    }
+    return true
+}
+
+// ================================================================
+// Scope: a port of internal/check/scope.go
+// ================================================================
+
+// FuncSig is the signature of a declared function or procedure: params in
+// declaration order (each a type-arena index) plus a return type index, or
+// -1 for a procedure (types.go has no Void-shaped sentinel of its own;
+// scope.go's FuncSig.Ret is a nil *types.Type for a procedure, mirrored
+// here as -1 rather than VoidT so a procedure and a `func f(): void` --
+// were that ever legal syntax -- stay distinguishable).
+record FuncSig {
+    params: list of int
+    ret: int
+}
+
+var funcSigs: list of FuncSig
+
+// Symbol is a name bound in a Scope: a variable, function, type name, or
+// (IsMenu) menu name. IsFunc/IsType/IsConst/IsMenu are mutually exclusive
+// tags mirroring scope.go's Symbol; a plain variable has all four false.
+// The const payload is flattened (constIsStr/constInt/constStrIdx) rather
+// than nested, matching types.cla's own "one flat record per arena slot"
+// discipline -- Task 9 owns actually populating IsConst/IsType/IsMenu.
+record Symbol {
+    nameIdx: int
+    typeIdx: int
+    isFunc: bool
+    sigIdx: int
+    isType: bool
+    isConst: bool
+    constIsStr: bool
+    constInt: int
+    constStrIdx: int
+    isMenu: bool
+}
+
+var symbols: list of Symbol
+
+// Scope is a lexical block of declarations, chained to its enclosing scope
+// (parent == -1 for the top level). names maps a symbol's name (the plain
+// string, not its interned index -- map keys are strings; see lib.cla's
+// own strIndex for the same shape) to that symbol's index in `symbols`.
+record Scope {
+    parent: int
+    names: map of int
+}
+
+var scopes: list of Scope
+
+// scopeNew creates a scope nested inside parent (-1 for the top level) and
+// returns its index.
+func scopeNew(parent: int): int {
+    var s: Scope
+
+    s.parent = parent
+    scopes.add(s)
+    return scopes.count - 1
+}
+
+// scopeDeclare binds sym in scope. Returns false if the name is already
+// declared in this SAME scope (shadowing an outer scope is allowed and
+// returns true) -- the caller (Task 9's checker) is responsible for
+// turning a false return into a "redeclaration of X" diagnostic at the
+// declaration's own line:col, mirroring scope.go's Declare error.
+func scopeDeclare(scope: int, sym: Symbol): bool {
+    var key: string
+    var idx: int
+
+    key = poolGet(sym.nameIdx)
+    if scopes[scope].names.has(key) {
+        return false
+    }
+    symbols.add(sym)
+    idx = symbols.count - 1
+    scopes[scope].names[key] = idx
+    return true
+}
+
+// scopeLookup finds nameIdx in scope or any enclosing scope, returning its
+// index in `symbols`, or -1 if undeclared anywhere in the chain.
+func scopeLookup(scope: int, nameIdx: int): int {
+    var cur: int
+    var key: string
+
+    key = poolGet(nameIdx)
+    cur = scope
+    while cur != -1 {
+        if scopes[cur].names.has(key) {
+            return scopes[cur].names.get(key, -1)
+        }
+        cur = scopes[cur].parent
+    }
+    return -1
+}
+
+// scopesReset empties scopes/symbols/funcSigs -- call between compiling
+// independent programs, alongside typesReset.
+func scopesReset() {
+    while scopes.count > 0 {
+        scopes.pop()
+    }
+    while symbols.count > 0 {
+        symbols.pop()
+    }
+    while funcSigs.count > 0 {
+        funcSigs.pop()
+    }
+}

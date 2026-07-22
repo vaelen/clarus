@@ -1,0 +1,36 @@
+PASS string any-capacity: str(63) -> str(255)
+PASS string any-capacity: str(255) -> str(63)
+PASS int -/-> fixed
+PASS fixed -/-> int
+PASS string -> text
+PASS text -/-> string
+PASS same-named enum (distinct arena entries) assignable
+PASS distinct-named enums -/-> each other
+PASS distinct-named enums -/-> each other (reverse)
+PASS list of int -> list of int
+PASS list of int -/-> list of bool
+PASS Invalid src compatible with anything
+PASS Invalid dst compatible with anything
+PASS Invalid <-> Invalid
+PASS error -> error
+PASS error -/-> int
+PASS saveChoice has 3 members
+PASS saveChoice member 1 label is Don't Save
+PASS typesEqual same string capacity
+PASS typesEqual different string capacity
+PASS typesEqual same-named enums
+PASS typesEqual distinct-named enums
+PASS declare x in root
+PASS lookup x from root finds it
+PASS declare y in child
+PASS lookup y from child finds it
+PASS lookup y from root does not find it (inner scope invisible outward)
+PASS lookup x from child walks out to root
+PASS lookup undeclared name from child
+PASS shadow x in child (legal)
+PASS child's x now resolves to the shadow, not root's
+PASS root's x is unaffected by the shadow
+PASS duplicate declare of x in child fails
+PASS duplicate declare of x in root fails
+PASS typesReset re-seeds IntT usably
+PASS scopesReset empties scopes (new scope is index 0)
