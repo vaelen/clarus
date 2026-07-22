@@ -45,9 +45,7 @@ The following declarations may appear at the top level, in any order, subject to
 - **Type-layout positions are strictly ordered.** A record field's type, an enum, a function's parameter and return types, and a top-level variable's declared type may only name types declared textually before them. This keeps the compiler single-pass over type layout (a record cannot forward-reference a record, so recursive record types do not arise).
 - **Function and handler bodies see the whole program.** Inside any `func`, `on`-handler, or `every` body, a name resolves against every top-level declaration — function, variable, record, enum, or constant — regardless of whether it appears earlier or later in the source. Functions may therefore call one another freely and be mutually recursive, and a body may read a global declared further down.
 
-Local variables inside a body remain declare-before-use (top of body, before any statement). One initialization-order caution follows from the second tier: top-level variable initializers run in declaration order, so a global initializer that calls a function reading a *later* global sees that global still at its zero value.
-
-Within a function or event handler body, local variables are declared at the top, before any statement.
+Local variables inside a body remain declare-before-use, and are declared at the top of the body before any statement. One initialization-order caution follows from the second tier: top-level variable initializers run in declaration order, so a global initializer that calls a function reading a *later* global sees that global still at its zero value.
 
 There is no `main` function. Execution begins with the runtime, which fires `App.launch` (see Chapter 7).
 
