@@ -45,6 +45,7 @@ void rt_str_store(uint8_t *dst, int dstcap, const uint8_t *src) {
     if (n < srclen) rt_set_lasterr(1, "string truncated");
 }
 
+/* out255 must not alias b (a-aliasing is safe); the printer always passes a fresh temp as out. */
 void rt_str_concat(uint8_t *out255, const uint8_t *a, const uint8_t *b) {
     int la = a[0], lb = b[0];
     int total = la + lb;
@@ -61,6 +62,7 @@ void rt_str_concat(uint8_t *out255, const uint8_t *a, const uint8_t *b) {
     if (n < total) rt_set_lasterr(1, "string truncated");
 }
 
+/* out255 must not alias b (a-aliasing is safe); the printer always passes a fresh temp as out. */
 void rt_str_concat_char(uint8_t *out255, const uint8_t *a, uint8_t c) {
     int la = a[0];
     int total = la + 1;
@@ -119,6 +121,6 @@ int32_t rt_fix_mul(int32_t a, int32_t b) {
 
 int32_t rt_fix_div(int32_t a, int32_t b) {
     if (b == 0) rt_panic("division by zero");
-    int64_t n = (int64_t)a << 16;
+    int64_t n = (int64_t)a * 65536; /* not <<16: left shift of negative is UB (C99 6.5.7p4) */
     return (int32_t)(n / b);
 }
