@@ -134,7 +134,8 @@ int32_t rt_str_to_bytes(const uint8_t *src, uint8_t *buf, int bufcap) {
    byte-copy family above. */
 void rt_str_slice(uint8_t *out255, const uint8_t *src, int32_t start, int32_t len) {
     int32_t srclen = src[0];
-    if (start < 0 || len < 0 || len > 255 || start + len > srclen) rt_panic("slice out of range");
+    if (len < 0 || len > 255) rt_panic("slice out of range");
+    if (start < 0 || start > srclen - len) rt_panic("slice out of range");
     memmove(out255 + 1, src + 1 + start, (size_t)len);
     out255[0] = (uint8_t)len;
 }
@@ -277,7 +278,8 @@ int32_t rt_text_to_bytes(const rt_text *t, uint8_t *buf, int bufcap) {
    still being too long for the str255 the result must fit in. */
 void rt_text_slice(uint8_t *out255, const rt_text *t, int32_t start, int32_t len) {
     int32_t tlen = t->len;
-    if (start < 0 || len < 0 || len > 255 || start + len > tlen) rt_panic("slice out of range");
+    if (len < 0 || len > 255) rt_panic("slice out of range");
+    if (start < 0 || start > tlen - len) rt_panic("slice out of range");
     memmove(out255 + 1, t->data + start, (size_t)len);
     out255[0] = (uint8_t)len;
 }
@@ -316,9 +318,9 @@ void rt_text_append_char(rt_text *t, uint8_t c) {
 }
 
 /* src may alias t (self-append doubles): n is captured before grow() can
-   move t->data (which is src->data too, when src==t), and memmove tolerates
-   the source/dest ranges overlapping — no separate self-append branch
-   needed. */
+   move t->data (which is src->data too, when src==t). For self-append, the
+   destination range (t->len, t->len+n) never overlaps the source (0, n)
+   because t->len == n when src==t — no separate self-append branch needed. */
 void rt_text_append_text(rt_text *t, const rt_text *src) {
     int32_t n = src->len;
     grow((void **)&t->data, &t->cap, t->len + n, 1);

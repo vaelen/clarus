@@ -356,6 +356,44 @@ func TestRuntimeSmokeArgs(t *testing.T) {
 	}
 }
 
+// TestSliceOverflowPanics covers the int32 overflow vulnerability in slice
+// bounds checking: start=INT32_MAX, len=5 would cause start+len to wrap
+// negative in the old code, bypassing the bounds check. The reordered check
+// (start > srclen-len) avoids the addition entirely.
+func TestSliceOverflowPanics(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "main.c")
+	src := `
+#include "rt.h"
+#include <stdint.h>
+int main(void) {
+    struct { uint8_t len; uint8_t b[255]; } s = {10, {'a','b','c','d','e','f','g','h','i','j'}};
+    struct { uint8_t len; uint8_t b[255]; } out = {0};
+    rt_str_slice((uint8_t*)&out, (uint8_t*)&s, INT32_MAX, 5);
+    return 0;
+}
+`
+	if err := os.WriteFile(main, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "smoke")
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc: %v\n%s", err, out)
+	}
+	var stderr bytes.Buffer
+	run := exec.Command(exe)
+	run.Stderr = &stderr
+	err := run.Run()
+	ee, ok := err.(*exec.ExitError)
+	if !ok || ee.ExitCode() != 3 {
+		t.Fatalf("want exit 3, got %v (stderr=%q)", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "slice out of range") {
+		t.Fatalf("stderr = %q, want it to mention slice out of range", stderr.String())
+	}
+}
+
 func TestRuntimeSmokeStrings(t *testing.T) {
 	dir := t.TempDir()
 	main := filepath.Join(dir, "main.c")
