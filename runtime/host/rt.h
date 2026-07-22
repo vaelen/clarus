@@ -24,4 +24,40 @@ void rt_alert(const uint8_t *s);                                      /* stdout 
 extern int32_t rt_lasterr_code;
 extern uint8_t rt_lasterr_msg[256];                                    /* a str255 */
 void rt_set_lasterr(int32_t code, const char *msg);
+
+typedef struct rt_text rt_text;   /* opaque; growable byte buffer */
+rt_text *rt_text_new(void);
+void rt_text_store(rt_text *t, const uint8_t *s);            /* from string */
+void rt_text_store_text(rt_text *t, const rt_text *src);
+void rt_text_concat(rt_text *t, const rt_text *a, const uint8_t *bstr, const rt_text *btext); /* one of bstr/btext non-NULL */
+int  rt_text_cmp_str(const rt_text *t, const uint8_t *s);
+int32_t rt_text_len(const rt_text *t);
+uint8_t rt_text_index(const rt_text *t, int32_t i);
+void rt_text_set_index(rt_text *t, int32_t i, uint8_t c);
+void rt_text_from_bytes(rt_text *t, const uint8_t *buf, int bufcap, int32_t count);
+int32_t rt_text_to_bytes(const rt_text *t, uint8_t *buf, int bufcap);
+
+typedef struct rt_list rt_list;   /* growable array of fixed-size elements */
+rt_list *rt_list_new(int32_t elemsize);
+void rt_list_push(rt_list *l, const void *elem);
+void rt_list_pop(rt_list *l, void *out);      /* panics empty: "pop on empty list" etc. */
+void rt_list_shift(rt_list *l, void *out);
+void rt_list_unshift(rt_list *l, const void *elem);
+void rt_list_first(const rt_list *l, void *out);
+void rt_list_last(const rt_list *l, void *out);
+void rt_list_remove(rt_list *l, int32_t i);   /* panics OOB */
+void *rt_list_at(rt_list *l, int32_t i);      /* element pointer; panics OOB (used for l[i] read AND in-place write) */
+int32_t rt_list_count(const rt_list *l);
+
+typedef struct rt_map rt_map;     /* string keys -> fixed-size values */
+rt_map *rt_map_new(int32_t valsize);
+void rt_map_set(rt_map *m, const uint8_t *key, const void *val);
+void rt_map_get(rt_map *m, const uint8_t *key, void *out);        /* panics absent: "map key not found" */
+int  rt_map_get_dv(rt_map *m, const uint8_t *key, void *out);     /* returns 0 and leaves out untouched if absent */
+int  rt_map_has(rt_map *m, const uint8_t *key);
+void rt_map_remove(rt_map *m, const uint8_t *key);
+int32_t rt_map_count(const rt_map *m);
+/* iteration for `for k, v in m`: stable snapshot by index */
+void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255);
+void rt_map_val_at(const rt_map *m, int32_t i, void *out);
 #endif
