@@ -49,6 +49,12 @@ func TestBuildUnsupportedConstructs(t *testing.T) {
 				"on App.launch {\n    var p: string\n    var r: R\n    file.save(p, r)\n}\n",
 			want: "file.save",
 		},
+		{
+			name: "isNew",
+			src: "record Person {\n    age: int\n}\n" +
+				"on App.launch {\n    var p: Person = new Person\n    if p.isNew {\n    }\n}\n",
+			want: "isNew",
+		},
 	}
 
 	for _, tc := range cases {

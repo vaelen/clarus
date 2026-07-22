@@ -15,12 +15,10 @@ import (
 // initialization (scalarDefault 0, strDefault -1: no override, use the
 // type's own zero/empty/fresh-handle value) go through — a nil-Init Rec
 // value gets the SAME per-field defaults as clar_new_NAME because this
-// function's own ir.Rec case just calls clar_new_NAME too.
-//
-// Heap-handle types (text/list/map) get a fresh empty handle rather than a
-// null pointer: Ch3's `var visitors: list of Person` is immediately usable
-// (push, count, ...) with no explicit initializer, so the printer must
-// supply the handle nil-Init leaves implicit.
+// function's own ir.Rec case just calls clar_new_NAME too. See the
+// fresh-handle-on-default contract note in internal/ir's package doc
+// (intrinsics.go) for why text/list/map default to a fresh handle here
+// rather than a null pointer.
 func (pr *printer) defaultInit(dst string, t ir.Type, scalarDefault int64, strDefault int, indent int) string {
 	ind := strings.Repeat("    ", indent)
 	switch t.K {
@@ -32,7 +30,10 @@ func (pr *printer) defaultInit(dst string, t ir.Type, scalarDefault int64, strDe
 		}
 		return fmt.Sprintf("%srt_str_store((uint8_t*)&(%s), %d, (const uint8_t*)&clar_lit_%d);\n", ind, dst, t.N, strDefault)
 	case ir.Text:
-		return fmt.Sprintf("%s%s = rt_text_new();\n", ind, dst)
+		if strDefault < 0 {
+			return fmt.Sprintf("%s%s = rt_text_new();\n", ind, dst)
+		}
+		return fmt.Sprintf("%s%s = rt_text_new();\n%srt_text_store(%s, (const uint8_t*)&clar_lit_%d);\n", ind, dst, ind, dst, strDefault)
 	case ir.List:
 		return fmt.Sprintf("%s%s = rt_list_new(sizeof(%s));\n", ind, dst, cTypeName(*t.Elem))
 	case ir.Map:

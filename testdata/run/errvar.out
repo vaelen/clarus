@@ -1,0 +1,5 @@
+e.code before = 0
+lastError.code before = 0
+e.code after truncation = 0
+lastError.code after truncation = 1
+string truncated

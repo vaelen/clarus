@@ -265,6 +265,13 @@ func (fp *funcPrinter) expr(e ir.Expr) string {
 	case *ir.VarRef:
 		return "cv_" + e.Name
 	case *ir.FieldRef:
+		if e.X.Type().K == ir.Err {
+			// clar_rec_Err's fields are named "code"/"message" directly, no
+			// cv_ prefix (see Emit's clar_rec_Err typedef in cprint.go) —
+			// unlike a user record's clar_rec_NAME fields, which always
+			// carry the cv_ prefix every OTHER FieldRef here relies on.
+			return fmt.Sprintf("(%s).%s", fp.expr(e.X), e.Name)
+		}
 		return fmt.Sprintf("(%s).cv_%s", fp.expr(e.X), e.Name)
 	case *ir.IndexRef:
 		return fp.indexRef(e)

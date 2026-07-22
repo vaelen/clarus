@@ -297,7 +297,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `m.count` — number of entries (returns `int`)
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
-Keys are compared case-sensitively, byte-wise.
+Keys are compared case-sensitively, byte-wise. Iteration order is insertion order; removing a key preserves the order of the remaining entries.
 
 ### Text
 
@@ -414,7 +414,7 @@ var greeting: string(3) = "ab"
 greeting = greeting + "cdef"     // stores "abc", sets lastError; no runtime error
 ```
 
-The same rule governs every store into a `string(n)` — direct assignment as well as concatenation results. A program that cares checks `lastError` after the store; a program that doesn't gets a safely truncated value.
+The same rule governs every store into a `string(n)` — direct assignment as well as concatenation results. A program that cares checks `lastError` after the store; a program that doesn't gets a safely truncated value. A `string + string` result exceeding 255 bytes is itself clamped, at the `string(255)` temporary the concatenation builds before that final store, and sets `lastError` the same way.
 
 ## Chapter 5: Statements
 

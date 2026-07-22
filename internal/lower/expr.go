@@ -87,6 +87,25 @@ func (l *lowerer) placeholder(ty ir.Type) ir.Expr {
 	return &ir.IntConst{Ty: ty}
 }
 
+// coerceStr wraps x in a capacity-clamping temp when x is a Str value whose
+// capacity differs from target's. CallFn args, Return, and list/map element
+// writes/reads all bind a value into a slot of another, independently
+// declared Str capacity WITHOUT going through storeStmt's StoreStr (that
+// path is reserved for plain lvalue assignment) — printed as a raw value,
+// clar_str_M and clar_str_N are distinct C struct types, so a capacity
+// mismatch there is either uncompilable C (a function call/return) or a
+// same-size-only struct copy that silently reads/writes the wrong bytes (a
+// list push, since rt_list_push's memmove size comes from the LIST's
+// declared element size, not the source value's). x is returned unchanged
+// when no coercion is needed (identical capacity, or not a Str at all) — the
+// common case, so callers pay nothing extra.
+func (l *lowerer) coerceStr(target ir.Type, x ir.Expr) ir.Expr {
+	if target.K != ir.Str || x.Type().K != ir.Str || x.Type().N == target.N {
+		return x
+	}
+	return &ir.Intr{Name: ir.IStrCoerce, Args: []ir.Expr{x}, Ty: target}
+}
+
 func (l *lowerer) lowerArgs(args []ast.Expr) []ir.Expr {
 	out := make([]ir.Expr, len(args))
 	for i, a := range args {
@@ -101,12 +120,34 @@ func (l *lowerer) lowerArgs(args []ast.Expr) []ir.Expr {
 // body (top-level var initializers) l.localScopes is empty, so isLocal is
 // always false and every Ident is a global, as before Task 7 introduced
 // locals.
+//
+// A bare, unshadowed `lastError` (e.g. the rvalue in `e = lastError`) is a
+// special case: there is no `cv_lastError` global to reference (its
+// code/message live in the runtime's rt_lasterr_code/rt_lasterr_msg
+// globals, not a Clarus-declared variable — see lowerSelect's ErrorType
+// case for the matching .code/.message read path), so it materializes an
+// Err-record value from them via the ILastErr intrinsic instead of a
+// VarRef. isUnshadowedLastError (below) decides "unshadowed" identically
+// here and in lowerSelect: a local var named lastError shadows the global.
 func (l *lowerer) lowerIdent(e *ast.Ident) ir.Expr {
 	ty := lowerType(l.mustType(e))
 	if v, ok := l.info.EnumConsts[e]; ok {
 		return &ir.IntConst{V: int64(v), Ty: ty}
 	}
+	if l.isUnshadowedLastError(e) {
+		return &ir.Intr{Name: ir.ILastErr, Ty: ty}
+	}
 	return &ir.VarRef{Name: e.Name, Global: !l.isLocal(e.Name), Ty: ty}
+}
+
+// isUnshadowedLastError reports whether id is the built-in global `lastError`
+// — as opposed to a local variable that happens to shadow that name — the
+// distinction lowerIdent and lowerSelect both need to route a `lastError`/
+// `lastError.code`/`lastError.message` reference to the runtime's
+// rt_lasterr_* globals instead of treating it as an ordinary error-typed
+// variable.
+func (l *lowerer) isUnshadowedLastError(id *ast.Ident) bool {
+	return id.Name == "lastError" && !l.isLocal("lastError")
 }
 
 func (l *lowerer) bin(op string, ty ir.Type, x, y ast.Expr) ir.Expr {
@@ -202,7 +243,14 @@ func (l *lowerer) lowerIdentCall(e *ast.Call, fn *ast.Ident) ir.Expr {
 	if et, ok := l.declTypes[fn.Name]; ok && et.Kind == types.Enum {
 		return &ir.Conv{Op: ir.IntToEnum, X: l.lowerExpr(e.Args[0]), EnumName: fn.Name, Ty: ty}
 	}
-	return &ir.CallFn{Name: fn.Name, Args: l.lowerArgs(e.Args), Ty: ty}
+	args := l.lowerArgs(e.Args)
+	params := l.funcParams[fn.Name]
+	for i := range args {
+		if i < len(params) {
+			args[i] = l.coerceStr(params[i], args[i])
+		}
+	}
+	return &ir.CallFn{Name: fn.Name, Args: args, Ty: ty}
 }
 
 // lowerIntConv lowers `int(x)`, whose ConvOp depends on x's source kind
@@ -271,11 +319,22 @@ func (l *lowerer) lowerListMethod(recv ir.Expr, sel *ast.Select, args []ast.Expr
 	zero := func(name string) ir.Expr {
 		return &ir.Intr{Name: name, Args: []ir.Expr{recv}, Ty: ty}
 	}
+	// push/unshift's value arg goes through coerceStr against the list's
+	// OWN element capacity (recv's elem type, not `ty` — push/unshift both
+	// return void): the checker's compatible() accepts any Str capacity
+	// against elem (Ch3's "any capacity assigns to any other"), but
+	// intrCall's IListPush/IListUnshift copy the value's OWN struct type,
+	// sized to fit the list's declared element size — a mismatch there is
+	// the same class of bug as CallFn args (see coerceStr's doc comment).
+	pushArg := func(name string) ir.Expr {
+		v := l.coerceStr(*recv.Type().Elem, l.lowerExpr(args[0]))
+		return &ir.Intr{Name: name, Args: []ir.Expr{recv, v}, Ty: ty}
+	}
 	switch sel.Name {
 	case "add", "push":
-		return one(ir.IListPush)
+		return pushArg(ir.IListPush)
 	case "unshift":
-		return one(ir.IListUnshift)
+		return pushArg(ir.IListUnshift)
 	case "pop":
 		return zero(ir.IListPop)
 	case "shift":
@@ -296,7 +355,12 @@ func (l *lowerer) lowerListMethod(recv ir.Expr, sel *ast.Select, args []ast.Expr
 func (l *lowerer) lowerMapMethod(recv ir.Expr, sel *ast.Select, args []ast.Expr, ty ir.Type) ir.Expr {
 	switch sel.Name {
 	case "get":
-		return &ir.Intr{Name: ir.IMapGetDv, Args: []ir.Expr{recv, l.lowerExpr(args[0]), l.lowerExpr(args[1])}, Ty: ty}
+		// args[1] (the default value) goes through coerceStr against the
+		// map's elem type for the same reason list push's value arg does —
+		// intrCall's IMapGetDv pre-fills its result temp with a plain `=`
+		// from dv, which requires dv's own C struct type to already match.
+		dv := l.coerceStr(*recv.Type().Elem, l.lowerExpr(args[1]))
+		return &ir.Intr{Name: ir.IMapGetDv, Args: []ir.Expr{recv, l.lowerExpr(args[0]), dv}, Ty: ty}
 	case "has":
 		return &ir.Intr{Name: ir.IMapHas, Args: []ir.Expr{recv, l.lowerExpr(args[0])}, Ty: ty}
 	case "remove":
@@ -350,6 +414,19 @@ func (l *lowerer) lowerIndex(e *ast.Index) ir.Expr {
 	}
 }
 
+// hasField reports whether rt (a Record-kind *types.Type) genuinely declares
+// a field named name — used to tell a real `isNew` field (which shadows the
+// Ch10 pseudo-field, per checker.checkSelect's readOnlyPropName) from the
+// pseudo-field itself.
+func hasField(rt *types.Type, name string) bool {
+	for _, f := range rt.Record.Fields {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // lowerSelect lowers a bare `a.b` — a record field, or a no-argument
 // property (.length/.count, lastError's .code/.message). Method calls go
 // through lowerMethodCall instead, since only a Call carries argument
@@ -359,14 +436,35 @@ func (l *lowerer) lowerSelect(e *ast.Select) ir.Expr {
 	xt := l.mustType(e.X)
 	switch xt.Kind {
 	case types.Record:
+		if e.Name == "isNew" && !hasField(xt, "isNew") {
+			// Ch10's isNew pseudo-field needs provenance (was this record
+			// delivered by an `accepted` handler?) that lowering doesn't
+			// track through arbitrary record-valued expressions — the
+			// checker allows it permissively (see checker's checkSelect
+			// comment) on any record, but the host build has nothing to
+			// print for it, so it's diagnosed here rather than reaching
+			// cprint as a FieldRef to a field that doesn't exist.
+			l.unsupported(e.P, "isNew")
+			return l.placeholder(ty)
+		}
 		return &ir.FieldRef{X: l.lowerExpr(e.X), Name: e.Name, Ty: ty}
 	case types.ErrorType:
-		switch e.Name {
-		case "code":
-			return &ir.Intr{Name: ir.ILastErrCode, Ty: ty}
-		case "message":
-			return &ir.Intr{Name: ir.ILastErrMsg, Ty: ty}
+		// `lastError.code`/`.message` read the runtime's rt_lasterr_*
+		// globals directly (see lowerIdent's doc comment). Every OTHER
+		// error-typed receiver (a `var e: error`, a `failed(err: error)`
+		// param, ...) is an ordinary Err-record value instead — its .code/
+		// .message are a plain FieldRef into that record (cprint's FieldRef
+		// case special-cases ir.Err's field names to match, since clar_rec_Err
+		// has no cv_ prefix on its fields).
+		if id, ok := e.X.(*ast.Ident); ok && l.isUnshadowedLastError(id) {
+			switch e.Name {
+			case "code":
+				return &ir.Intr{Name: ir.ILastErrCode, Ty: ty}
+			case "message":
+				return &ir.Intr{Name: ir.ILastErrMsg, Ty: ty}
+			}
 		}
+		return &ir.FieldRef{X: l.lowerExpr(e.X), Name: e.Name, Ty: ty}
 	case types.String, types.Text:
 		if e.Name == "length" {
 			name := ir.IStrLen

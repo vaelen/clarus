@@ -93,6 +93,57 @@ func TestLowerRecordEnumFieldDefault(t *testing.T) {
 	}
 }
 
+// TestLowerIsNewGenuineFieldShadowsPseudo confirms a record that genuinely
+// declares a field named isNew lowers as a normal FieldRef (no unsupported
+// diagnostic) — only the Ch10 pseudo-field (no such declared field) is
+// host-unsupported.
+func TestLowerIsNewGenuineFieldShadowsPseudo(t *testing.T) {
+	p := lowerSrc(t, "record R {\n    isNew: bool\n}\nvar b: bool = new R.isNew\n")
+	fr, ok := p.Globals[0].Init.(*ir.FieldRef)
+	if !ok || fr.Name != "isNew" {
+		t.Fatalf("want FieldRef isNew, got %+v", p.Globals[0].Init)
+	}
+}
+
+func TestLowerErrVarFieldRefNotLastErrIntrinsic(t *testing.T) {
+	p := lowerSrc(t, "func f(): int {\n    var e: error\n    return e.code\n}\n")
+	ret := p.Funcs[0].Body[0].(*ir.Return)
+	fr, ok := ret.X.(*ir.FieldRef)
+	if !ok || fr.Name != "code" {
+		t.Fatalf("want FieldRef code (routed to e, not the global), got %+v", ret.X)
+	}
+}
+
+func TestLowerLastErrorSelectIsIntrinsic(t *testing.T) {
+	p := lowerSrc(t, "func f(): int {\n    return lastError.code\n}\n")
+	ret := p.Funcs[0].Body[0].(*ir.Return)
+	in, ok := ret.X.(*ir.Intr)
+	if !ok || in.Name != ir.ILastErrCode {
+		t.Fatalf("want lasterr_code intrinsic, got %+v", ret.X)
+	}
+}
+
+func TestLowerBareLastErrorIsIntrinsic(t *testing.T) {
+	p := lowerSrc(t, "func f() {\n    var e: error\n    e = lastError\n}\n")
+	asn := p.Funcs[0].Body[0].(*ir.Assign)
+	in, ok := asn.Src.(*ir.Intr)
+	if !ok || in.Name != ir.ILastErr {
+		t.Fatalf("want lasterr_value intrinsic, got %+v", asn.Src)
+	}
+}
+
+func TestLowerCallArgStrCapacityCoerced(t *testing.T) {
+	p := lowerSrc(t, "func f(s: string): string {\n    return s\n}\nvar y: string = f(\"hi\")\n")
+	// The string literal "hi" is already string(255) (StringLit's lowered
+	// Ty), same as f's declared param capacity, so no coercion is expected
+	// here — this pins the no-op case; TestRunGoldens/strcap.cla is the
+	// end-to-end proof for an actual capacity mismatch.
+	call := p.Globals[0].Init.(*ir.CallFn)
+	if _, ok := call.Args[0].(*ir.StrConst); !ok {
+		t.Fatalf("want uncoerced StrConst arg (same capacity), got %+v", call.Args[0])
+	}
+}
+
 func TestUnsupportedWindow(t *testing.T) {
 	f := &source.File{Name: "t.cla", Content: []byte("window W {\n    title: \"x\"\n}\n")}
 	tree, _ := parser.Parse(f)

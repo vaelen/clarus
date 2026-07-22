@@ -260,9 +260,18 @@ func (pr *printer) emitGlobalsAndInit() {
 		if g.Init != nil {
 			fp := newFuncPrinter(pr, 1)
 			dst := &ir.VarRef{Name: g.Name, Global: true, Ty: g.T}
-			if g.T.K == ir.Str {
+			switch {
+			case g.T.K == ir.Str:
 				fp.storeStr(dst, g.Init)
-			} else {
+			case g.T.K == ir.Text && g.Init.Type().K == ir.Str:
+				// String -> Text is documented assignability (Ch3); a Text
+				// handle and a Str value have no common C representation to
+				// plain-assign between, so this goes through rt_text_store
+				// like storeStmt's matching ExprStmt/ITextStore case for a
+				// local var does (internal/lower/stmt.go) — globals just
+				// never routed through that helper.
+				fp.emit("rt_text_store(%s, %s);", fp.expr(dst), fp.strAddr(g.Init))
+			default:
 				d := fp.expr(dst)
 				v := fp.expr(g.Init)
 				fp.emit("%s = %s;", d, v)

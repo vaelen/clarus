@@ -45,6 +45,18 @@ type lowerer struct {
 	// tracking which names are params/locals so lowerIdent (expr.go) can
 	// tell a local VarRef from a global one. Empty outside a function body.
 	localScopes []map[string]bool
+
+	// funcParams/funcRet resolve a user function's declared (lowered) param
+	// and return types by name — check.Info doesn't export the checker's own
+	// FuncSig table, so lowerFuncBody rebuilds just enough of it, registering
+	// each function's signature before lowering its own body (mirroring
+	// checker.checkFuncDecl's declare-before-check-body, which is what makes
+	// a self-recursive call resolve). Consulted by lowerIdentCall's CallFn
+	// case (expr.go) to clamp a string(M) argument into a string(N) param
+	// slot, and by curFuncRet for the matching Return-statement clamp.
+	funcParams map[string][]ir.Type
+	funcRet    map[string]ir.Type
+	curFuncRet ir.Type // the enclosing function's declared return type, for Return coercion (stmt.go)
 }
 
 // pushScope opens a new nested local-variable scope (mirrors
@@ -81,10 +93,12 @@ func (l *lowerer) isLocal(name string) bool {
 // already owns.
 func Program(files []*source.File, trees []*ast.File, info *check.Info) (*ir.Program, []source.Diag) {
 	l := &lowerer{
-		info:      info,
-		prog:      &ir.Program{},
-		strIdx:    make(map[string]int),
-		declTypes: builtinDeclTypes(),
+		info:       info,
+		prog:       &ir.Program{Enums: []*ir.EnumLayout{builtinSaveChoiceLayout}},
+		strIdx:     make(map[string]int),
+		declTypes:  builtinDeclTypes(),
+		funcParams: make(map[string][]ir.Type),
+		funcRet:    make(map[string]ir.Type),
 	}
 	for i, tree := range trees {
 		l.f = files[i]
@@ -107,6 +121,19 @@ func builtinDeclTypes() map[string]*types.Type {
 		"error":          types.ErrT,
 		"saveChoice":     types.SaveChoice,
 	}
+}
+
+// builtinSaveChoiceLayout is saveChoice's ir.EnumLayout — the checked
+// EnumType(i) conversion (ir.IntToEnum, cprint's enumCount) needs a
+// Program.Enums entry for every enum a program can convert INTO, but
+// saveChoice (types.SaveChoice) is a checker-side builtin with no matching
+// *ast.EnumDecl for lowerEnumDecl to have ever registered — Program seeds
+// this by hand so `saveChoice(i)` (Ch3: Numeric Conversions) doesn't panic.
+var builtinSaveChoiceLayout = &ir.EnumLayout{
+	Name:    "saveChoice",
+	Members: []string{"Save", "Discard", "Cancel"},
+	Values:  []int{0, 1, 2},
+	Labels:  []string{"Save", "Don't Save", "Cancel"},
 }
 
 // unsupported records a "host build does not support X yet" diagnostic.
@@ -267,7 +294,13 @@ func (l *lowerer) lowerRecordDecl(d *ast.RecordDecl) {
 		switch {
 		case f.Default != nil:
 			dv := l.lowerExpr(f.Default)
-			if ft.Kind == types.String {
+			if ft.Kind == types.String || ft.Kind == types.Text {
+				// A text field's default is a string literal (Ch3's
+				// String->Text assignability), so it's a *ir.StrConst just
+				// like a string field's — the printer's ir.Text case (see
+				// cprint/defaults.go) turns DefaultStr into rt_text_new +
+				// rt_text_store instead of the string case's plain
+				// rt_str_store.
 				slot.DefaultStr = dv.(*ir.StrConst).Idx
 			} else {
 				slot.Default = dv.(*ir.IntConst).V

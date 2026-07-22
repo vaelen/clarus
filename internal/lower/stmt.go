@@ -52,21 +52,35 @@ func (l *lowerer) lowerTopHandlerDecl(d *ast.HandlerDecl) {
 }
 
 // lowerFuncBody lowers params and a body into a *ir.Func, opening the
-// function-level local scope that lowerIdent (expr.go) consults.
+// function-level local scope that lowerIdent (expr.go) consults. The
+// signature is registered into l.funcParams/l.funcRet (and l.curFuncRet is
+// set) BEFORE the body is lowered — mirroring checker.checkFuncDecl's own
+// declare-signature-before-check-body order — so a self-recursive call or a
+// `return` inside this very body already sees it, for lowerIdentCall's and
+// the Return case's string-capacity coercion (expr.go, this file).
 func (l *lowerer) lowerFuncBody(name string, params []ast.Param, ret ir.Type, body *ast.Block) *ir.Func {
 	f := &ir.Func{Name: name, Ret: ret}
 	l.pushScope()
 	defer l.popScope()
+	var paramTypes []ir.Type
 	for _, p := range params {
 		t := l.resolveType(p.Type)
 		if what, bad := unsupportedKind(t.Kind); bad {
 			l.unsupported(p.P, what)
 			continue
 		}
-		f.Params = append(f.Params, ir.Local{Name: p.Name, T: lowerType(t)})
+		pt := lowerType(t)
+		f.Params = append(f.Params, ir.Local{Name: p.Name, T: pt})
+		paramTypes = append(paramTypes, pt)
 		l.declareLocal(p.Name)
 	}
+	l.funcParams[name] = paramTypes
+	l.funcRet[name] = ret
+
+	savedRet := l.curFuncRet
+	l.curFuncRet = ret
 	f.Body = l.lowerBlock(body, f)
+	l.curFuncRet = savedRet
 	return f
 }
 
@@ -137,7 +151,7 @@ func (l *lowerer) lowerStmt(s ast.Stmt, f *ir.Func) []ir.Stmt {
 	case *ast.ReturnStmt:
 		var x ir.Expr
 		if s.X != nil {
-			x = l.lowerExpr(s.X)
+			x = l.coerceStr(l.curFuncRet, l.lowerExpr(s.X))
 		}
 		return []ir.Stmt{&ir.Return{X: x}}
 	case *ast.QuitStmt:
@@ -187,6 +201,13 @@ func (l *lowerer) lowerIndexAssign(lhs *ast.Index, rhsExpr ast.Expr) ir.Stmt {
 	case types.Text:
 		return &ir.ExprStmt{X: &ir.Intr{Name: ir.ITextSetIndex, Args: []ir.Expr{x, i, rhs}, Ty: ir.Type{K: ir.Void}}}
 	case types.Map:
+		// rhs goes through coerceStr, not raw: intrCall's IMapSet copies rhs
+		// into a temp of rhs's OWN type before taking its address (see
+		// copyToTemp's doc comment on why it can't just addrable the value
+		// argument here) — a rhs Str capacity that differs from the map's
+		// declared value type would otherwise mismatch the struct size
+		// rt_map_set's memmove actually moves (Critical 2's class of bug).
+		rhs = l.coerceStr(*x.Type().Elem, rhs)
 		return &ir.ExprStmt{X: &ir.Intr{Name: ir.IMapSet, Args: []ir.Expr{x, i, rhs}, Ty: ir.Type{K: ir.Void}}}
 	default:
 		panic(fmt.Sprintf("lower: cannot assign into index of %v at %v", xt.Kind, lhs.P))

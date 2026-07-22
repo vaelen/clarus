@@ -54,6 +54,15 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		src := fp.strAddr(x.Args[0])
 		buf, bufcap := fp.addrable(x.Args[1]), x.Args[1].Type().N
 		return fmt.Sprintf("rt_str_to_bytes(%s, (uint8_t*)(%s).e, %d)", src, buf, bufcap)
+	case ir.IStrCoerce:
+		// Materializes x.Args[0] (any Str capacity) into a fresh temp at
+		// x.Ty's (different) capacity via the same clamped rt_str_store
+		// storeStr uses for a plain lvalue — see coerceStr's doc comment
+		// (internal/lower/expr.go) for why this can't just be a plain `=`.
+		src := fp.strAddr(x.Args[0])
+		t := fp.newTmp(fp.pr.cType(x.Ty))
+		fp.emit("rt_str_store((uint8_t*)&%s, %d, %s);", t, x.Ty.N, src)
+		return t
 
 	// ---- text ----
 	case ir.ITextCmp:
@@ -154,6 +163,15 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		// exposing the type mismatch to callers.
 		t := fp.newTmp("clar_str_255")
 		fp.emit("rt_str_store((uint8_t*)&%s, 255, rt_lasterr_msg);", t)
+		return t
+	case ir.ILastErr:
+		// Materializes a whole Err-record value {code, message} from the
+		// runtime's rt_lasterr_* globals — the printer contract lowerIdent
+		// (internal/lower/expr.go) relies on for a bare `lastError` rvalue,
+		// since there is no cv_lastError global to reference directly.
+		t := fp.newTmp("clar_rec_Err")
+		fp.emit("%s.code = rt_lasterr_code;", t)
+		fp.emit("rt_str_store((uint8_t*)&%s.message, 255, rt_lasterr_msg);", t)
 		return t
 
 	// ---- files (Task 13 implements the matching rt_file_* runtime; the

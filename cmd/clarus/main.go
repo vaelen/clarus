@@ -64,7 +64,11 @@ func runCheck(args []string) {
 
 func runBuild(args []string) {
 	out := ""
-	if len(args) >= 2 && args[0] == "-o" {
+	if len(args) >= 1 && args[0] == "-o" {
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, usage)
+			os.Exit(2)
+		}
 		out = args[1]
 		args = args[2:]
 	}
@@ -100,11 +104,16 @@ func runRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(workdir)
+	// No `defer os.RemoveAll(workdir)` here: every exit below is an
+	// os.Exit, which skips deferred calls entirely — the workdir must be
+	// removed explicitly on every path out of this function, including the
+	// child's own nonzero exit code (previously leaked one throwaway temp
+	// dir per failing `clarus run`).
 	exe := filepath.Join(workdir, "prog")
 
 	diags, err := build.Build(args, exe)
 	if err != nil {
+		os.RemoveAll(workdir)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -112,6 +121,7 @@ func runRun(args []string) {
 		fmt.Println(d.String())
 	}
 	if len(diags) > 0 {
+		os.RemoveAll(workdir)
 		os.Exit(1)
 	}
 
@@ -120,6 +130,7 @@ func runRun(args []string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
+	os.RemoveAll(workdir)
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		os.Exit(exitErr.ExitCode())
 	}
