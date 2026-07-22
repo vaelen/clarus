@@ -77,4 +77,12 @@ int32_t rt_enum_from_int(const int32_t *vals, int n, int32_t v);
    against a fixed string; this is the text/text sibling the printer needs
    for `t1 == t2`). */
 int rt_text_cmp(const rt_text *a, const rt_text *b);
+
+/* ---- files (Task 13) ----
+   path is a str255 (len-prefixed, as elsewhere in this header). Clarus's
+   `\n` is CR (Chapter 3) — these copy file contents verbatim, byte for
+   byte, with no newline translation; only rt_alert translates CR to LF. */
+int rt_file_read_text(const uint8_t *path, rt_text *t);        /* whole-file read into t; false + lastError on open/read failure */
+int rt_file_write_text(const uint8_t *path, const rt_text *t); /* create/truncate write of t's contents; false + lastError on failure */
+void rt_file_name(uint8_t *dst255, const uint8_t *path);       /* basename of path; always succeeds */
 #endif

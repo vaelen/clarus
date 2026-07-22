@@ -24,7 +24,14 @@ func TestRunGoldens(t *testing.T) {
 			if diags, err := Build([]string{f}, exe); err != nil || len(diags) > 0 {
 				t.Fatalf("build: %v %v", err, diags)
 			}
-			out, err := exec.Command(exe).Output()
+			// cwd = a fresh per-test temp dir, distinct from exe's own
+			// TempDir above: run goldens that touch files (files.cla) use
+			// relative paths, and must not litter the source tree or race
+			// each other. Fixtures that don't touch the filesystem are
+			// unaffected by cwd.
+			cmd := exec.Command(exe)
+			cmd.Dir = t.TempDir()
+			out, err := cmd.Output()
 			if err != nil {
 				t.Fatalf("run: %v", err)
 			}

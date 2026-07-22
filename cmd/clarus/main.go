@@ -1,6 +1,19 @@
-// Command clarus is the Clarus front-end CLI: `clarus check FILE...`
-// type-checks one or more source files as a single program; `clarus build
-// [-o OUT] FILE...` compiles them to a native host executable.
+// Command clarus is the Clarus front-end CLI, targeting the portable host
+// backend (a native executable built from generated C99 plus the runtime in
+// internal/build/rt — no Mac emulator involved; that target lands in a
+// later plan). FILE... arguments are concatenated in order and checked as a
+// single program, same as multiple files in one package.
+//
+//	clarus check FILE...          type-check only; prints diagnostics, exit 1 on any
+//	clarus build [-o OUT] FILE... compile to a native executable (default OUT: first FILE's
+//	                               basename, extension stripped, in the current directory)
+//	clarus run FILE...             build to a throwaway temp dir and execute it immediately,
+//	                               forwarding stdin/stdout/stderr and the child's exit code
+//
+// A program using a construct the host backend doesn't yet support (windows,
+// menus, timers, network/file-dialog resources — see the language reference,
+// Chapter 12 and the UI chapters) fails with a "host build does not support
+// X yet" diagnostic instead of an executable.
 package main
 
 import (

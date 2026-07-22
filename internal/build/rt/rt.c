@@ -433,3 +433,71 @@ int rt_text_cmp(const rt_text *a, const rt_text *b) {
     if (alen > blen) return 1;
     return 0;
 }
+
+/* ==================== files (Task 13) ==================== */
+
+/* path255 is at most 255 bytes; buf holds it plus a NUL terminator for the
+ * libc file calls. */
+static void path_to_cstr(char *buf, const uint8_t *path255) {
+    uint8_t n = path255[0];
+    memmove(buf, path255 + 1, (size_t)n);
+    buf[n] = '\0';
+}
+
+int rt_file_read_text(const uint8_t *path, rt_text *t) {
+    char cpath[256];
+    path_to_cstr(cpath, path);
+    FILE *f = fopen(cpath, "rb");
+    if (!f) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    long sz = ftell(f);
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    grow((void **)&t->data, &t->cap, (int32_t)sz, 1);
+    size_t got = sz > 0 ? fread(t->data, 1, (size_t)sz, f) : 0;
+    fclose(f);
+    if ((long)got != sz) {
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    t->len = (int32_t)sz;
+    return 1;
+}
+
+int rt_file_write_text(const uint8_t *path, const rt_text *t) {
+    char cpath[256];
+    path_to_cstr(cpath, path);
+    FILE *f = fopen(cpath, "wb");
+    if (!f) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    size_t wrote = t->len > 0 ? fwrite(t->data, 1, (size_t)t->len, f) : 0;
+    int closeErr = fclose(f);
+    if ((int32_t)wrote != t->len || closeErr != 0) {
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    return 1;
+}
+
+void rt_file_name(uint8_t *dst255, const uint8_t *path) {
+    uint8_t n = path[0];
+    int start = 0;
+    for (int i = 0; i < n; i++) {
+        if (path[1 + i] == '/') start = i + 1;
+    }
+    uint8_t len = n - (uint8_t)start;
+    memmove(dst255 + 1, path + 1 + start, (size_t)len);
+    dst255[0] = len;
+}
