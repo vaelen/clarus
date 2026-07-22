@@ -51,7 +51,7 @@ package reftest
 // 42 (line 837): undefined: Doc (window extend block, window declared elsewhere)
 // 44 (line 865): form for names an undefined record: Bookmark
 // 46 (line 917): undefined: EditForm (window extend block)
-// 47 (line 931): table fragment references undeclared var bookmarks, not inside a window
+// 47 (line 931): bare table fragment — parse error: expected declaration, found identifier
 // 48 (line 950): undefined: Main (window extend block)
 var CheckClean = []int{
 	0, 1, 2, 6, 7, 8, 13, 14, 29, 34, 35, 36, 37, 38, 39, 40,
