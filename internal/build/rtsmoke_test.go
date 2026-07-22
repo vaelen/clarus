@@ -71,6 +71,22 @@ int main(void) {
     if (rt_text_index(t, 3) != 'b') { printf("text index FAIL\n"); return 1; }
     if (rt_text_cmp_str(t, (uint8_t*)"\x06""foobar") != 0) { printf("text cmp FAIL\n"); return 1; }
 
+    /* list and map of 16-byte struct */
+    typedef struct { int64_t a; int64_t b; } pair16;
+    rt_list *pl = rt_list_new(sizeof(pair16));
+    pair16 p1 = {111, 222}, p2 = {333, 444}, po;
+    rt_list_push(pl, &p1);
+    rt_list_push(pl, &p2);
+    rt_list_remove(pl, 0);
+    rt_list_first(pl, &po);
+    if (po.a != 333 || po.b != 444) { printf("pair16 list FAIL\n"); return 1; }
+    rt_map *pm = rt_map_new(sizeof(pair16));
+    rt_map_set(pm, (const uint8_t*)"\001k", &p1);
+    rt_map_set(pm, (const uint8_t*)"\001k", &p2);   /* overwrite */
+    if (rt_map_count(pm) != 1) { printf("pair16 map count FAIL\n"); return 1; }
+    rt_map_get(pm, (const uint8_t*)"\001k", &po);
+    if (po.a != 333) { printf("pair16 map FAIL\n"); return 1; }
+
     printf("OK\n");
     return 0;
 }

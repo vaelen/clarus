@@ -291,6 +291,7 @@ void rt_list_remove(rt_list *l, int32_t i) {
     l->count--;
 }
 
+/* CONTRACT: the returned pointer is invalidated by any subsequent mutation (push/unshift/remove) of the same list. The C printer must never hold it across an intervening mutation. */
 void *rt_list_at(rt_list *l, int32_t i) {
     if (i < 0 || i >= l->count) rt_panic("list index out of range");
     return list_slot(l, i);
