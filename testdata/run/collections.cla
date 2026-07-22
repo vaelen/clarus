@@ -75,7 +75,7 @@ on App.launch {
         alert("no b")
     }
 
-    // for over a map: insertion order (a, c — b was removed)
+    // for over a map: ascending key order (inserted c,b,a; b removed; sorted yields a,c)
     for k, v in m {
         alert(k)
         show("  value = ", v)

@@ -213,7 +213,7 @@ var s: string = "hello world"
 var w: string = s[6, 5]          // "world"
 ```
 
-**Searching:** `s.indexOf(needle)` returns the index of the first occurrence of `needle` (a `string` or a `char`), or `-1` if absent. Byte-wise, case-sensitive:
+**Searching:** `s.indexOf(needle)` returns the index of the first occurrence of `needle` (a `string` or a `char`), or `-1` if absent. Byte-wise, case-sensitive; an empty `string` needle matches at index 0:
 
 ```rust
 var s: string = "hello"
@@ -323,7 +323,7 @@ A `text` is an unbounded, resizable buffer of characters. Text operations are:
 
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
-- `t.append(x)` — append `x` (a `string`, `char`, or `text`) in place. Unlike `t = t + x`, which rebuilds the buffer, `append` grows it amortized — the right tool for building large output in a loop.
+- `t.append(x)` — append `x` (a `string`, `char`, or `text`) in place. Unlike concatenation with `+`, which rebuilds the buffer, `append` grows it amortized (and accepts a `char` directly, which `+` does not) — the right tool for building large output in a loop.
 - `t[i]` — the character at index `i` (returns `char`), 0-based; `t[i] = c` assigns in place
 - `t[start, len]` — slice, yielding a `string`; same strict-bounds rules as string slicing (above)
 - `t.indexOf(needle)` — first index of a `string` or `char`, or `-1` (as for strings)

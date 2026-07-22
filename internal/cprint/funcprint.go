@@ -179,7 +179,7 @@ func (fp *funcPrinter) forListStmt(s *ir.ForList) {
 }
 
 // forMapStmt lowers `for k, v in m { ... }` to an index loop over
-// rt_map_count/rt_map_key_at/rt_map_val_at — insertion order, per rt.c's
+// rt_map_count/rt_map_key_at/rt_map_val_at — ascending key order, per rt.c's
 // CONTRACT comment on rt_map.
 func (fp *funcPrinter) forMapStmt(s *ir.ForMap) {
 	mv := fp.expr(s.MapV)

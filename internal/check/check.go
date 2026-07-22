@@ -271,6 +271,11 @@ func (c *checker) checkVarDecl(d *ast.VarDecl) {
 // checkIdent).
 func (c *checker) checkConstDecl(d *ast.ConstDecl) {
 	t := c.resolveType(d.Type)
+	// Const types are restricted to those representable at compile time.
+	if t.Kind != types.Int && t.Kind != types.Fixed && t.Kind != types.Char && t.Kind != types.Bool && t.Kind != types.Enum && t.Kind != types.String {
+		c.errorf(d.P, "const type must be int, fixed, char, bool, enum, or string")
+		return
+	}
 	cv := c.constValue(d.Value, t)
 	if err := c.scope.Declare(Symbol{Name: d.Name, Type: t, IsConst: true, ConstVal: cv}); err != nil {
 		c.errorf(d.P, "%s", err.Error())

@@ -27,6 +27,7 @@ func f() {
     a = 2
 }
 `, "cannot assign to constant a")
+	expectError(t, "const t: text = \"hi\"\n", "const type must be int, fixed, char, bool, enum, or string")
 }
 
 func TestBreakContinue(t *testing.T) {
