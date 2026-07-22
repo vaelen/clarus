@@ -144,7 +144,11 @@ type IndexRef struct {
 	X  Expr
 	I  Expr
 	Ty Type
-} // array element (lvalue/rvalue); list/map/string/text indexing lowers to intrinsics, NOT IndexRef
+} // array element (lvalue/rvalue). Also reused, deliberately, for list
+// indexing `l[i]` (both reads and writes): the printer recognizes a
+// List-typed X and emits *(T*)rt_list_at(l, i) instead of a real array
+// access — keeps the IR small rather than adding a dedicated node. Map,
+// string, and text indexing are NOT IndexRef; they lower to intrinsics.
 
 type Bin struct {
 	Op   string
