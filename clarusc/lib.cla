@@ -45,10 +45,14 @@ record Diag {
     msgIdx: int
 }
 
+// diags accumulates compiler diagnostics across lex/parse/check within one
+// file's compilation BY DESIGN. Between independent programs or files, callers
+// must call resetDiags() to start fresh (Task 10's per-program loop owns this).
 var diags: list of Diag
 
 // emitDiag appends a diagnostic at line:col with message msg to the shared
-// diags list.
+// diags list. Diagnostics accumulate across lex/parse/check within one
+// compilation; call resetDiags() between independent programs.
 func emitDiag(line: int, col: int, msg: string) {
     var d: Diag
 
@@ -56,6 +60,14 @@ func emitDiag(line: int, col: int, msg: string) {
     d.col = col
     d.msgIdx = intern(msg)
     diags.add(d)
+}
+
+// resetDiags empties the global diags list. Call this between compiling
+// independent programs or files to avoid cross-program diagnostic leakage.
+func resetDiags() {
+    while diags.count > 0 {
+        diags.pop()
+    }
 }
 
 // formatDiag renders d as "path:line:col: message", matching

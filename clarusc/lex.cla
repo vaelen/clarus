@@ -596,17 +596,24 @@ func lexNext(): Token {
 
         // Unknown byte.
         lexAdvance()
+        // ponytail: use plain quote + byte, not Go's %q (escapes non-printable/non-ASCII).
+        // Only diverges for control bytes or non-ASCII input; fine for normal .cla source.
         emitDiag(startLine, startCol, "unexpected character '" + b + "'")
         continue
     }
 }
 
 // lexAll lexes src fully into the toks arena (including the trailing EOF)
-// and returns the number of tokens produced. Diagnostics land in lib.cla's
+// and returns the number of tokens produced. The arena is cleared on entry,
+// so lexAll produces exactly its own tokens; the returned count is never
+// cumulative across multiple calls. Diagnostics land in lib.cla's
 // shared diags list via emitDiag.
 func lexAll(src: text): int {
     var t: Token
 
+    while toks.count > 0 {
+        toks.pop()
+    }
     lexInit(src)
     while true {
         t = lexNext()
