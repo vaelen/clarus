@@ -77,3 +77,34 @@ func TestRunCleansTempDirOnNonzeroExit(t *testing.T) {
 		t.Fatalf("workdir leaked: %v", leftover)
 	}
 }
+
+func TestSplitRunArgs(t *testing.T) {
+	cases := []struct {
+		in        []string
+		wantFiles []string
+		wantArgs  []string
+	}{
+		{[]string{"a.cla"}, []string{"a.cla"}, nil},
+		{[]string{"a.cla", "--", "x", "y"}, []string{"a.cla"}, []string{"x", "y"}},
+		{[]string{"a.cla", "b.cla", "--"}, []string{"a.cla", "b.cla"}, []string{}},
+		{[]string{"--", "x"}, []string{}, []string{"x"}},
+	}
+	for _, c := range cases {
+		files, args := splitRunArgs(c.in)
+		if !eqSlice(files, c.wantFiles) || !eqSlice(args, c.wantArgs) {
+			t.Errorf("%v: got files=%v args=%v", c.in, files, args)
+		}
+	}
+}
+
+func eqSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

@@ -93,11 +93,24 @@ func runBuild(args []string) {
 	}
 }
 
+func splitRunArgs(args []string) (files, childArgs []string) {
+	for i, arg := range args {
+		if arg == "--" {
+			files = args[:i]
+			childArgs = args[i+1:]
+			return
+		}
+	}
+	return args, nil
+}
+
 func runRun(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+
+	files, childArgs := splitRunArgs(args)
 
 	workdir, err := os.MkdirTemp("", "clarus-run-*")
 	if err != nil {
@@ -111,7 +124,7 @@ func runRun(args []string) {
 	// dir per failing `clarus run`).
 	exe := filepath.Join(workdir, "prog")
 
-	diags, err := build.Build(args, exe)
+	diags, err := build.Build(files, exe)
 	if err != nil {
 		os.RemoveAll(workdir)
 		fmt.Fprintln(os.Stderr, err)
@@ -125,7 +138,7 @@ func runRun(args []string) {
 		os.Exit(1)
 	}
 
-	cmd := exec.Command(exe)
+	cmd := exec.Command(exe, childArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
