@@ -935,12 +935,12 @@ func checkMethodCall(sel: int, argsHead: int): int {
     case TyServiceBrowser {
         return checkTableMethod(serviceBrowserMethods, sel, argsHead)
     }
-    case TyWidget {
-        // canvas widget-instance dispatch is ui.go's job (Task 9b) -- no
-        // expression can type as TyWidget until window bodies are
-        // checked, so this case is unreachable in 9a/9b's own driver but
-        // kept for structural parity with expr.go's checkMethodCall.
-        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
+    case TyWindowRef, TyWidget, TyMenuItem {
+        // Method calls on a window-ref/widget/menu-item VALUE (e.g. a
+        // window-ref function parameter) are ui.go's job -- Task 9b.
+        // Silently defer rather than misdiagnosing "undefined: NAME",
+        // matching checkSelect's handling of the same receiver kinds
+        // just below.
         return InvalidT
     }
     }
@@ -1999,8 +1999,12 @@ func checkSelect(e: int): int {
     }
     // TyWindowRef / TyWidget / TyMenuItem selects (window .front chaining
     // past the type name, widget runtime properties, menu-item .enabled)
-    // are ui.go's job -- Task 9b; they fall through to the same
-    // "undefined: NAME" a truly-unknown selector gets below.
+    // are ui.go's job -- Task 9b. Silently defer rather than
+    // misdiagnosing "undefined: NAME" -- e.g. `d.title` where `d` is a
+    // window-ref function parameter must not false-positive here.
+    if typeKind(xt) == TyWindowRef or typeKind(xt) == TyWidget or typeKind(xt) == TyMenuItem {
+        return InvalidT
+    }
     emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
     return InvalidT
 }
