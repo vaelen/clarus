@@ -1,0 +1,12 @@
+enum Protocol {
+    Gopher 0x01 "Gopher"
+    HTTP   0x50 "Web (HTTP)"
+    Telnet 0x17 "Telnet"
+}
+
+on App.launch {
+    var bad: Protocol
+
+    bad = Protocol(0x99)
+    alert("unreachable")
+}

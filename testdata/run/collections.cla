@@ -1,0 +1,86 @@
+func show(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+on App.launch {
+    var l: list of int
+    var m: map of int
+    var popped: int
+    var shifted: int
+
+    // list: push/pop/shift/unshift/first/last/count
+    l.push(10)
+    l.push(20)
+    l.push(30)
+    show("count after 3 pushes = ", l.count)
+    show("first = ", l.first())
+    show("last = ", l.last())
+
+    l.unshift(5)
+    show("count after unshift = ", l.count)
+    show("first after unshift = ", l.first())
+
+    popped = l.pop()
+    show("popped = ", popped)
+    show("count after pop = ", l.count)
+
+    shifted = l.shift()
+    show("shifted = ", shifted)
+    show("count after shift = ", l.count)
+
+    for x in l {
+        show("list item = ", x)
+    }
+
+    // map: set/get/get-with-default/has/remove/count
+    m["a"] = 1
+    m["b"] = 2
+    m["c"] = 3
+    show("map count = ", m.count)
+    show("get a = ", m.get("a", 0))
+    show("get missing dv = ", m.get("missing", 99))
+    if m.has("a") {
+        alert("has a")
+    } else {
+        alert("no a")
+    }
+    m.remove("b")
+    show("map count after remove = ", m.count)
+    if m.has("b") {
+        alert("has b")
+    } else {
+        alert("no b")
+    }
+
+    // for over a map: insertion order (a, c — b was removed)
+    for k, v in m {
+        alert(k)
+        show("  value = ", v)
+    }
+
+    // for over an inclusive range
+    for i in 1 to 3 {
+        show("range i = ", i)
+    }
+}

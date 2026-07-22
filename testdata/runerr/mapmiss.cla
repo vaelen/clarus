@@ -1,0 +1,8 @@
+on App.launch {
+    var m: map of int
+    var v: int
+
+    m["a"] = 1
+    v = m["missing"]
+    alert("unreachable")
+}

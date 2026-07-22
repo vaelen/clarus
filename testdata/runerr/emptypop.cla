@@ -1,0 +1,7 @@
+on App.launch {
+    var l: list of int
+    var v: int
+
+    v = l.pop()
+    alert("unreachable")
+}
