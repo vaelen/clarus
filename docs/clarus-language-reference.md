@@ -40,7 +40,12 @@ The following declarations may appear at the top level, in any order, subject to
 - Top-level `on` handlers (App and global resources)
 - `every` blocks
 
-**Declare-before-use:** Every name must be declared textually before its first use, with one exception: **functions are visible throughout the program regardless of definition order**, so a function may call another function declared later (and functions may be mutually recursive). A function's *signature* (its parameter and return types) may still only name types declared before it — the order-independence is between function bodies, not for the types they mention. Records, enums, constants, and variables remain strictly declare-before-use. No other forward references are permitted.
+**Declare-before-use** governs where a name may be referenced, and it applies in two tiers:
+
+- **Type-layout positions are strictly ordered.** A record field's type, an enum, a function's parameter and return types, and a top-level variable's declared type may only name types declared textually before them. This keeps the compiler single-pass over type layout (a record cannot forward-reference a record, so recursive record types do not arise).
+- **Function and handler bodies see the whole program.** Inside any `func`, `on`-handler, or `every` body, a name resolves against every top-level declaration — function, variable, record, enum, or constant — regardless of whether it appears earlier or later in the source. Functions may therefore call one another freely and be mutually recursive, and a body may read a global declared further down.
+
+Local variables inside a body remain declare-before-use (top of body, before any statement). One initialization-order caution follows from the second tier: top-level variable initializers run in declaration order, so a global initializer that calls a function reading a *later* global sees that global still at its zero value.
 
 Within a function or event handler body, local variables are declared at the top, before any statement.
 
@@ -710,7 +715,7 @@ There is no overloading, no default parameter values, and no varargs — every f
 
 ### Scope
 
-Functions may be declared at top level only. They are visible to the whole program regardless of order, so any function or handler may call any function whether it appears earlier or later, and two functions may call each other (mutual recursion). This is the one relaxation of declare-before-use (Chapter 1); a function's parameter and return types must still be declared before the function.
+Functions may be declared at top level only. They are visible to the whole program regardless of order: any function or handler body may call any function whether it appears earlier or later, and two functions may call each other (mutual recursion). This follows from the body-scope tier of declare-before-use (Chapter 1) — a function's parameter and return types, being type-layout positions, must still be declared before the function.
 
 ## Chapter 7: Application Lifecycle
 
