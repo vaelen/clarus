@@ -56,6 +56,8 @@ func (c *checker) checkExprInner(e ast.Expr, expected *types.Type) *types.Type {
 		return c.checkCall(e, expected)
 	case *ast.Index:
 		return c.checkIndex(e)
+	case *ast.SliceExpr:
+		return c.checkSliceExpr(e)
 	case *ast.Select:
 		return c.checkSelect(e)
 	case *ast.NewExpr:
@@ -196,6 +198,9 @@ func (c *checker) checkIdent(e *ast.Ident, expected *types.Type) *types.Type {
 		if sym.IsMenu {
 			c.errorf(e.P, "%s is a menu, not a value", e.Name)
 			return types.InvalidT
+		}
+		if sym.IsConst {
+			c.info.Consts[e] = sym.ConstVal
 		}
 		return sym.Type
 	}
@@ -446,6 +451,36 @@ func (c *checker) checkIndex(e *ast.Index) *types.Type {
 		c.errorf(e.P, "cannot index %s", typeName(xt))
 		return types.InvalidT
 	}
+}
+
+// checkSliceExpr checks `x[start, len]` (Ch3: Strings, Text — Slicing): x
+// must be string or text, start/len must be int, and the result is always a
+// string(255), regardless of x's own capacity (a fresh copy, per the
+// reference's `Copy`-parameter-order example). The parser already rejects a
+// SliceExpr as an assignment target (Appendix A's lvalue grammar excludes
+// it; parser/stmt.go's parseSimpleStmt reports "slices are not assignable"),
+// including through parens (parsePrimary's `(` case is transparent — it
+// returns the inner expression unwrapped, so `(s[1,2]) = x` still hands
+// parseSimpleStmt a bare *ast.SliceExpr) — no reachable path needs a second,
+// checker-level guard.
+func (c *checker) checkSliceExpr(e *ast.SliceExpr) *types.Type {
+	xt := c.checkExpr(e.X, nil)
+	st := c.checkExpr(e.Start, types.IntT)
+	lt := c.checkExpr(e.Len, types.IntT)
+	if xt != types.InvalidT && xt.Kind != types.String && xt.Kind != types.Text {
+		c.errorf(e.X.Pos(), "cannot slice %s", typeName(xt))
+		xt = types.InvalidT
+	}
+	if st != types.InvalidT && st.Kind != types.Int {
+		c.errorf(e.Start.Pos(), "slice start must be int")
+	}
+	if lt != types.InvalidT && lt.Kind != types.Int {
+		c.errorf(e.Len.Pos(), "slice length must be int")
+	}
+	if xt == types.InvalidT {
+		return types.InvalidT
+	}
+	return types.StringT(255)
 }
 
 // checkSelect checks a bare `a.b` (field, or a no-argument property like
@@ -799,7 +834,12 @@ func (c *checker) checkMethodCall(sel *ast.Select, args []ast.Expr) *types.Type 
 		return c.checkListMethod(xt, sel, args)
 	case types.Map:
 		return c.checkMapMethod(xt, sel, args)
-	case types.String, types.Text:
+	case types.Text:
+		if _, ok := textOnlyMethods[sel.Name]; ok {
+			return c.checkTableMethod(textOnlyMethods, sel, args)
+		}
+		return c.checkTableMethod(stringTextMethods, sel, args)
+	case types.String:
 		return c.checkTableMethod(stringTextMethods, sel, args)
 	case types.Connection:
 		return c.checkTableMethod(connectionMethods, sel, args)
