@@ -1,0 +1,30 @@
+include "../lib.cla"
+
+on App.startEmpty {
+    var a: int
+    var b: int
+    var c: int
+    var identStart: bool
+    var seven: bool
+
+    a = intern("foo")
+    b = intern("bar")
+    c = intern("foo")
+    alert(numToStr(a))
+    alert(numToStr(b))
+    alert(numToStr(c))
+    alert(numToStr(-42))
+
+    identStart = isIdentStart('_')
+    seven = isDigit('7')
+    if identStart {
+        alert("true")
+    } else {
+        alert("false")
+    }
+    if seven {
+        alert("true")
+    } else {
+        alert("false")
+    }
+}

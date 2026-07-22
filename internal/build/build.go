@@ -11,35 +11,25 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"clarus/internal/ast"
 	"clarus/internal/check"
 	"clarus/internal/cprint"
+	"clarus/internal/driver"
 	"clarus/internal/lower"
-	"clarus/internal/parser"
 	"clarus/internal/source"
 )
 
 // Build compiles the Clarus program made up of paths (concatenated in
-// argument order, as driver.Check does) into the native executable out. It
-// returns non-empty diags on any parse, check, or host-build-support error
-// — in that case out is not written. A non-nil err means the pipeline
-// itself failed (an unreadable source file, or cc rejecting checker-clean
-// emitted C, which is a compiler bug and reported as
-// "internal error: emitted C failed to compile").
+// argument order and with leading `include`s expanded, as driver.Check
+// does — see driver.Expand) into the native executable out. It returns
+// non-empty diags on any parse, check, or host-build-support error — in
+// that case out is not written. A non-nil err means the pipeline itself
+// failed (an unreadable source file, or cc rejecting checker-clean emitted
+// C, which is a compiler bug and reported as "internal error: emitted C
+// failed to compile").
 func Build(paths []string, out string) ([]source.Diag, error) {
-	var diags []source.Diag
-	files := make([]*source.File, 0, len(paths))
-	trees := make([]*ast.File, 0, len(paths))
-
-	for _, path := range paths {
-		f, err := source.Load(path)
-		if err != nil {
-			return nil, err
-		}
-		tree, pdiags := parser.Parse(f)
-		diags = append(diags, pdiags...)
-		files = append(files, f)
-		trees = append(trees, tree)
+	files, trees, diags, err := driver.Expand(paths)
+	if err != nil {
+		return nil, err
 	}
 
 	cdiags, info := check.Files(files, trees)

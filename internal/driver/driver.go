@@ -13,24 +13,27 @@ import (
 	"path/filepath"
 )
 
-// Check loads and type-checks the files at paths as a single program.
-// Each file may lead with `include "other.cla"` declarations (Chapter 1);
-// includes are expanded depth-first, relative to the including file's
-// directory, before that file's own declarations are emitted — so a
-// dependency's declarations always precede the declarations of the file
-// that included it. A file is expanded only once no matter how many times
-// it's reached (identity by cleaned absolute path), which also makes
-// include cycles harmless rather than infinite. Include nodes themselves
-// are stripped before the trees reach the checker. Declare-before-use then
-// holds across the whole expanded sequence exactly as it does for one file.
+// Expand loads and parses the files at paths as a single program, expanding
+// each file's leading `include "other.cla"` declarations (Chapter 1) depth
+// first, relative to the including file's directory, before that file's own
+// declarations are emitted — so a dependency's declarations always precede
+// the declarations of the file that included it. A file is expanded only
+// once no matter how many times it's reached (identity by cleaned absolute
+// path), which also makes include cycles harmless rather than infinite.
+// Include nodes themselves are stripped before the trees are returned.
+// Declare-before-use then holds across the whole expanded sequence exactly
+// as it does for one file.
 //
 // A parse error in one file stops parsing of that file only — its
 // diagnostics are still reported, and the rest of the program is still
-// expanded and checked. A missing included file produces a "cannot open
-// included file" diagnostic at the include's position and is otherwise
-// skipped; a missing entry path (one of paths itself) is a hard error, as
-// before.
-func Check(paths []string) ([]source.Diag, error) {
+// expanded. A missing included file produces a "cannot open included file"
+// diagnostic at the include's position and is otherwise skipped; a missing
+// entry path (one of paths itself) is a hard error, returned as err.
+//
+// Both Check (type-checking only) and build.Build (the full compile
+// pipeline) call Expand so the two entry points can never disagree about
+// what "the program" is.
+func Expand(paths []string) ([]*source.File, []*ast.File, []source.Diag, error) {
 	var diags []source.Diag
 	var files []*source.File
 	var trees []*ast.File
@@ -89,10 +92,20 @@ func Check(paths []string) ([]source.Diag, error) {
 
 	for _, path := range paths {
 		if _, err := expand(path, true); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 	}
 
+	return files, trees, diags, nil
+}
+
+// Check loads and type-checks the files at paths as a single program (see
+// Expand for the include-expansion semantics).
+func Check(paths []string) ([]source.Diag, error) {
+	files, trees, diags, err := Expand(paths)
+	if err != nil {
+		return nil, err
+	}
 	cdiags, _ := check.Files(files, trees)
 	diags = append(diags, cdiags...)
 	return diags, nil

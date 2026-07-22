@@ -1,0 +1,90 @@
+// lib.cla: intern pool and numeric/character helpers shared by clarusc's
+// self-hosted modules (Tasks 5-9).
+
+var strPool: list of string
+var strIndex: map of int
+
+// intern returns s's index in the pool, adding it if not already present.
+func intern(s: string): int {
+    var idx: int
+
+    if strIndex.has(s) {
+        return strIndex.get(s, -1)
+    }
+    idx = strPool.count
+    strPool.add(s)
+    strIndex[s] = idx
+    return idx
+}
+
+// internText interns the contents of a text buffer (the lexer builds token
+// text as text, not string). text has no direct "+ string" conversion, so
+// route it through the same byte-copy pattern used elsewhere for text ->
+// string (Chapter 3: Byte copies).
+func internText(t: text): int {
+    var buf: char[255]
+    var n: int
+    var s: string
+
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    return intern(s)
+}
+
+func poolGet(i: int): string {
+    return strPool[i]
+}
+
+// digitsOf renders the decimal digits of n (which may be negative or zero)
+// most-significant-first, with no sign. Peeling digits off the original
+// (possibly negative) n via mod/div avoids ever negating n directly, so
+// int.min (whose negation overflows a 32-bit int) is handled safely.
+func digitsOf(n: int): string {
+    var d: int
+    var rest: string
+
+    if n == 0 {
+        return ""
+    }
+    d = n mod 10
+    if d < 0 {
+        d = 0 - d
+    }
+    rest = digitsOf(n / 10)
+    return rest + char(48 + d)
+}
+
+// numToStr renders n as signed decimal, matching Go's %d.
+func numToStr(n: int): string {
+    var s: string
+
+    if n == 0 {
+        return "0"
+    }
+    if n < 0 {
+        s = "-"
+    } else {
+        s = ""
+    }
+    return s + digitsOf(n)
+}
+
+// isLetter, isDigit, isAlnum, and isIdentStart mirror
+// internal/lexer/lexer.go's byte predicates exactly (isIdentStart excludes
+// '_' — it's valid only as an identifier continuation character, not a
+// start).
+func isDigit(c: char): bool {
+    return c >= '0' and c <= '9'
+}
+
+func isLetter(c: char): bool {
+    return c == '_' or c >= 'a' and c <= 'z' or c >= 'A' and c <= 'Z'
+}
+
+func isIdentStart(c: char): bool {
+    return c >= 'a' and c <= 'z' or c >= 'A' and c <= 'Z'
+}
+
+func isAlnum(c: char): bool {
+    return isLetter(c) or isDigit(c)
+}
