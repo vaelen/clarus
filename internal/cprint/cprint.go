@@ -64,11 +64,61 @@
 //
 // # Operators
 //
-// `and`/`or` print as `&&`/`||` (short-circuiting preserved); `not` as `!`;
-// `~` as `~`; every other Bin op string (+, -, *, /, mod, &, |, ^, <<, >>,
-// ==, !=, <, <=, >, >=) maps directly to the same C operator (mod -> %).
-// Fixed +/- are plain int32 adds/subs (fixed is a raw scaled int32); fixed
-// *,/ always arrive as ir.Intr(IFixMul/IFixDiv), never ir.Bin.
+// `and`/`or` short-circuit, per the language spec — see "and/or:
+// conditional RHS expansion" below for how that's actually achieved; `not`
+// prints as `!`; `~` as `~`; every other Bin op string (+, -, *, /, mod, &,
+// |, ^, <<, >>, ==, !=, <, <=, >, >=) maps directly to the same C operator
+// (mod -> %). Fixed +/- are plain int32 adds/subs (fixed is a raw scaled
+// int32); fixed *,/ always arrive as ir.Intr(IFixMul/IFixDiv), never ir.Bin.
+//
+// # and/or: conditional RHS expansion
+//
+// A plain `X && Y` / `X || Y` is only correct C when neither operand's
+// *printing* has side effects — but printing an operand can itself emit
+// statements (a temp declaration + assignment) ahead of the expression, per
+// the "statement-level temporaries" section above. If those emits happened
+// unconditionally for the RHS, short-circuiting would be a lie: the RHS's
+// side effects (e.g. a function call materialized so its address can be
+// taken) would run even when the LHS already decided the outcome (Critical
+// review finding: `left() == "aa" or right() == "bb"` was calling right()
+// even when left() alone made the `or` true).
+//
+// funcPrinter.andOr fixes this by speculatively printing the RHS into an
+// isolated buffer first (captureExpr) to see whether it needed any
+// statements. If not, the plain form is still used — no churn for the
+// common case (e.g. two bool locals: `cv_a && cv_b`). If it did, the RHS's
+// statements move inside an `if`, guarded by the already-evaluated
+// (unconditional — the LHS always evaluates) LHS:
+//
+//	int32_t tN;
+//	tN = <lhs>;
+//	if (!tN) {              // "or"; "if (tN)" for "and"
+//	    <rhs's statement-level temps>
+//	    tN = <rhs>;
+//	}
+//
+// with tN as the expression's value. Nested and/or chains compose for
+// free: each side prints through the normal expr() dispatch, so a Y that is
+// itself an and/or recurses through andOr again, each level guarded by its
+// own if.
+//
+// # List/map-mutating intrinsics: never alias the container's own storage
+//
+// rt_list_push/unshift and rt_map_set can realloc their target's backing
+// store mid-call (rt.c's `grow`). addrable's normal "already an lvalue,
+// print as-is" shortcut for a List-kind IndexRef (`l[i]`, which dereferences
+// rt_list_at — see rt_list_at's CONTRACT comment in rt.c) is therefore
+// unsafe as the *value* argument to one of these calls: `l.push(l[0])`
+// naively prints as `rt_list_push(l, &(*(T*)rt_list_at(l, 0)))`, and push's
+// own realloc can free that pointer's block before push's memmove reads it
+// (Critical review finding, ASan-confirmed heap-use-after-free). Every
+// list/map-growing intrinsic's value argument therefore goes through
+// copyToTemp instead of addrable: it always materializes into a fresh,
+// stable local first, regardless of whether the source expression happened
+// to be addressable in place. (map subscript, `m[k]`, isn't an IndexRef at
+// all — it lowers to the map_get intrinsic, which already always
+// materializes into its own temp — so this same hazard doesn't reach
+// map_set's value argument via that path either way.)
 package cprint
 
 import (

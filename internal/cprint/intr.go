@@ -87,7 +87,11 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 
 	// ---- list ----
 	case ir.IListPush, ir.IListUnshift:
-		l, v := fp.expr(x.Args[0]), fp.addrable(x.Args[1])
+		// v goes through copyToTemp, not addrable: push/unshift can realloc
+		// l's backing store, and if v were instead a raw rt_list_at pointer
+		// (addrable's IndexRef shortcut, e.g. `l.push(l[0])`), that realloc
+		// could free it before this call's own memmove reads it.
+		l, v := fp.expr(x.Args[0]), fp.copyToTemp(x.Args[1])
 		fn := "rt_list_push"
 		if x.Name == ir.IListUnshift {
 			fn = "rt_list_unshift"
@@ -107,7 +111,15 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 
 	// ---- map ----
 	case ir.IMapSet:
-		m, k, v := fp.expr(x.Args[0]), fp.strAddr(x.Args[1]), fp.addrable(x.Args[2])
+		// v goes through copyToTemp, not addrable, for the same reason as
+		// list_push/unshift above: map_set grows m's key/value arrays on a
+		// new key, so a raw rt_list_at-derived pointer passed as v (e.g.
+		// `m.set(k, l[0])`) must be copied out before the call, not handed
+		// in live. (m's own values never alias this way: map subscript
+		// lowers to the map_get intrinsic, which always materializes into
+		// its own temp before it can be used as another call's argument —
+		// see intrCall's IMapGet case.)
+		m, k, v := fp.expr(x.Args[0]), fp.strAddr(x.Args[1]), fp.copyToTemp(x.Args[2])
 		fp.emit("rt_map_set(%s, %s, &(%s));", m, k, v)
 		return ""
 	case ir.IMapGet:

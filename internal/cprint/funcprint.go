@@ -215,6 +215,14 @@ func (fp *funcPrinter) strAddr(e ir.Expr) string {
 // already covered by the VarRef-shaped case since a temp is just a plain
 // declared local, but a CallFn/NewRec/Bin/... result is not addressable in
 // C) is first copied into a fresh temp of its own type.
+//
+// "Safe to take the address of" here means safe as a write destination or
+// as a value read once, immediately, in place. It does NOT mean safe to
+// hand to a call that may itself relocate the storage the address points
+// into (rt_list_push/unshift, rt_map_set: see rt_list_at's CONTRACT comment
+// in rt.c) — that hazard is narrower than addrable's job and is handled
+// separately by copyToTemp, which every list/map-growing intrinsic's value
+// argument goes through instead of addrable.
 func (fp *funcPrinter) addrable(e ir.Expr) string {
 	switch e.(type) {
 	// VarRef/FieldRef/IndexRef print to real C lvalues; StrConst to a named
@@ -223,11 +231,27 @@ func (fp *funcPrinter) addrable(e ir.Expr) string {
 	case *ir.VarRef, *ir.FieldRef, *ir.IndexRef, *ir.StrConst, *ir.Intr:
 		return fp.expr(e)
 	default:
-		v := fp.expr(e)
-		t := fp.newTmp(fp.pr.cType(e.Type()))
-		fp.emit("%s = %s;", t, v)
-		return t
+		return fp.copyToTemp(e)
 	}
+}
+
+// copyToTemp unconditionally materializes e's value into a fresh
+// statement-level temp and returns the temp's name — never the "already an
+// lvalue, print as-is" shortcut addrable takes for a VarRef/FieldRef/
+// IndexRef/StrConst/Intr. Used for the *value* argument of every
+// list/map-growing intrinsic (list_push, list_unshift, map_set): those can
+// realloc their target's backing store mid-call (rt.c's `grow`), so if the
+// value argument were instead a raw rt_list_at/rt_map-derived pointer
+// (e.g. `l.push(l[0])`, addrable's normal IndexRef shortcut), the realloc
+// could free that pointer's block before the call's own memmove reads it —
+// an ASan-confirmed use-after-free. Copying into a temp first means the
+// address handed to the call is always a stable local, never a pointer
+// into a container the same call might move.
+func (fp *funcPrinter) copyToTemp(e ir.Expr) string {
+	v := fp.expr(e)
+	t := fp.newTmp(fp.pr.cType(e.Type()))
+	fp.emit("%s = %s;", t, v)
+	return t
 }
 
 // expr prints e as a single C expression, materializing any needed
@@ -245,6 +269,9 @@ func (fp *funcPrinter) expr(e ir.Expr) string {
 	case *ir.IndexRef:
 		return fp.indexRef(e)
 	case *ir.Bin:
+		if e.Op == "and" || e.Op == "or" {
+			return fp.andOr(e)
+		}
 		return fmt.Sprintf("(%s %s %s)", fp.expr(e.X), cOp(e.Op), fp.expr(e.Y))
 	case *ir.Un:
 		return fp.un(e)
@@ -275,6 +302,70 @@ func cOp(op string) string {
 	default:
 		return op
 	}
+}
+
+// andOr prints `and`/`or`, preserving short-circuit evaluation even when
+// the right operand needs statement-level temps of its own (e.g. it
+// contains a call, or a string compare whose operand needs materializing —
+// see addrable). The left operand always evaluates, so its temps stay
+// unconditional, printed in place exactly like any other expression. The
+// right operand's temps must NOT run when short-circuiting would skip it,
+// so this speculatively prints the right operand into an isolated buffer
+// (captureExpr) first: if that produced no statements, the simple case
+// (both sides pure) stays a plain C &&/|| — no churn. If it did produce
+// statements, they're moved inside an `if`, guarded by the already-
+// evaluated left operand:
+//
+//	int32_t tN;
+//	tN = <lhs>;
+//	if (!tN) {              // "or"; "if (tN)" for "and"
+//	    <rhs temp statements>
+//	    tN = <rhs>;
+//	}
+//
+// and tN (not wrapped in parens — it's already a single token) becomes the
+// expression's value. Nested and/or chains compose for free: e.X/e.Y are
+// printed through fp.expr, so a Y that is itself an and/or recurses through
+// this same method, each level guarded by its own if.
+func (fp *funcPrinter) andOr(e *ir.Bin) string {
+	x := fp.expr(e.X) // LHS: always evaluates, unconditional, like every other operand.
+
+	stmts, y := fp.captureExpr(e.Y)
+	if stmts == "" {
+		return fmt.Sprintf("(%s %s %s)", x, cOp(e.Op), y)
+	}
+
+	t := fp.newTmp(fp.pr.cType(e.Ty))
+	fp.emit("%s = %s;", t, x)
+	cond := t
+	if e.Op == "or" {
+		cond = "!" + t
+	}
+	fp.emit("if (%s) {", cond)
+	fp.indent++
+	fp.body.WriteString(stmts)
+	fp.emit("%s = %s;", t, y)
+	fp.indent--
+	fp.emit("}")
+	return t
+}
+
+// captureExpr prints e one indent level deeper than fp's current level
+// (matching where it would land if andOr decides to nest it inside a new
+// `if`), returning any statements it emitted separately from its value
+// expression. Statements land in the returned string, not fp.body, so the
+// caller can inspect whether any were needed at all before committing to
+// either splice them into a guarded `if` or discard them in favor of a
+// plain, unconditional re-use of the (side-effect-free) value string.
+func (fp *funcPrinter) captureExpr(e ir.Expr) (stmts, value string) {
+	saved := fp.body
+	fp.body = strings.Builder{}
+	fp.indent++
+	value = fp.expr(e)
+	fp.indent--
+	stmts = fp.body.String()
+	fp.body = saved
+	return stmts, value
 }
 
 func (fp *funcPrinter) un(e *ir.Un) string {
