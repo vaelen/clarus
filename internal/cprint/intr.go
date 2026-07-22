@@ -60,6 +60,10 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		return fp.textCmp(x.Args[0], x.Args[1])
 	case ir.ITextConcat:
 		return fp.textConcat(x.Args[0], x.Args[1])
+	case ir.ITextStore:
+		t, s := fp.expr(x.Args[0]), fp.strAddr(x.Args[1])
+		fp.emit("rt_text_store(%s, %s);", t, s)
+		return ""
 	case ir.ITextLen:
 		return fmt.Sprintf("rt_text_len(%s)", fp.expr(x.Args[0]))
 	case ir.ITextIndex:

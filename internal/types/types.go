@@ -141,6 +141,13 @@ func AssignableTo(src, dst *Type) bool {
 	if src.Kind == Invalid || dst.Kind == Invalid {
 		return true
 	}
+	// String -> Text is documented (Ch3, Text operations: `t = "hello"` and
+	// `var t: text = "hello"`). The reverse isn't documented, and an
+	// implicit Text -> String would silently clamp to the string's
+	// capacity, which would surprise; so only this direction is open.
+	if src.Kind == String && dst.Kind == Text {
+		return true
+	}
 	if src.Kind != dst.Kind {
 		return false
 	}

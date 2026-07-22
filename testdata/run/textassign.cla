@@ -1,0 +1,25 @@
+on App.launch {
+    var t: text = "hello"
+    var t2: text = "x" + "y"
+    var buf: char[64]
+    var n: int
+    var s: string
+
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+
+    t = t + " world"
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+
+    n = t2.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+
+    t = "goodbye"
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+}

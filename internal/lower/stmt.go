@@ -102,13 +102,21 @@ func (l *lowerer) lowerBlock(b *ast.Block, f *ir.Func) []ir.Stmt {
 }
 
 // storeStmt builds the store form the task brief's Assign rule requires: a
-// Str-typed destination clamps through StoreStr, everything else is a plain
-// Assign (records/arrays copy by value).
+// Str-typed destination clamps through StoreStr; a Text destination fed by a
+// Str source (the checker's String -> Text assignability, Ch3) goes through
+// the text_store intrinsic since a Text handle and a Str value have no
+// common C representation to plain-assign between; everything else
+// (Text=Text reference copy, records/arrays copy by value) is a plain
+// Assign.
 func (l *lowerer) storeStmt(dst, src ir.Expr, ty ir.Type) ir.Stmt {
-	if ty.K == ir.Str {
+	switch {
+	case ty.K == ir.Str:
 		return &ir.StoreStr{Dst: dst, Src: src}
+	case ty.K == ir.Text && src.Type().K == ir.Str:
+		return &ir.ExprStmt{X: &ir.Intr{Name: ir.ITextStore, Args: []ir.Expr{dst, src}, Ty: ir.Type{K: ir.Void}}}
+	default:
+		return &ir.Assign{Dst: dst, Src: src}
 	}
-	return &ir.Assign{Dst: dst, Src: src}
 }
 
 // lowerStmt lowers one statement. It returns a slice (rather than a single
