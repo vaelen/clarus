@@ -238,7 +238,7 @@ func (p *parser) parseHandlerDecl() *ast.HandlerDecl {
 		}
 		p.expect(token.RPAREN)
 	}
-	h.Body = p.parseBlock()
+	h.Body = p.parseBodyBlock()
 	return h
 }
 
@@ -248,6 +248,6 @@ func (p *parser) parseEveryDecl() *ast.EveryDecl {
 	p.next() // 'every'
 	n := p.expect(token.INT)
 	p.expectIdentText("ticks")
-	body := p.parseBlock()
+	body := p.parseBodyBlock()
 	return &ast.EveryDecl{P: pos, Ticks: n.IntVal, Body: body}
 }
