@@ -28,8 +28,8 @@ void rt_panic(const char *msg) {
     exit(3);
 }
 
-void rt_quit(void) {
-    exit(0);
+void rt_quit(int32_t code) {
+    exit(code);
 }
 
 void rt_alert(const uint8_t *s) {
@@ -302,6 +302,37 @@ void *rt_list_at(rt_list *l, int32_t i) {
 }
 
 int32_t rt_list_count(const rt_list *l) { return l->count; }
+
+/* ==================== CLI args ====================
+ * ponytail: this is already the full Task-4 implementation (there's nothing
+ * simpler to stub) — argv is just stashed, and rt_args_list() lazily builds
+ * a str255 rt_list from it once, the same construction rt_str_from_bytes
+ * would produce for each element.
+ */
+static int g_argc = 0;
+static char **g_argv = NULL;
+static rt_list *g_args_list = NULL;
+
+void rt_args_init(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+    g_args_list = NULL; /* rebuild lazily on next rt_args_list() call */
+}
+
+rt_list *rt_args_list(void) {
+    if (g_args_list == NULL) {
+        g_args_list = rt_list_new(256); /* str255 layout: 1 len byte + 255 data bytes */
+        for (int i = 1; i < g_argc; i++) {
+            uint8_t arg[256] = {0};
+            size_t n = strlen(g_argv[i]);
+            if (n > 255) n = 255;
+            memmove(arg + 1, g_argv[i], n);
+            arg[0] = (uint8_t)n;
+            rt_list_push(g_args_list, arg);
+        }
+    }
+    return g_args_list;
+}
 
 /* ==================== map ====================
  * Sorted parallel arrays: `keys` holds `count` str255 blocks (256 bytes

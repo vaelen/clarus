@@ -57,6 +57,11 @@ type lowerer struct {
 	funcParams map[string][]ir.Type
 	funcRet    map[string]ir.Type
 	curFuncRet ir.Type // the enclosing function's declared return type, for Return coercion (stmt.go)
+
+	// switchN counts synthesized switch-subject temps (stmt.go's
+	// lowerSwitch/newSwitchTemp) — program-wide, so distinct switches never
+	// collide on the same "__switchN" local name even within one function.
+	switchN int
 }
 
 // pushScope opens a new nested local-variable scope (mirrors
@@ -263,6 +268,9 @@ func (l *lowerer) lowerDecl(d ast.Decl) {
 		l.lowerTopHandlerDecl(d)
 	case *ast.EveryDecl:
 		l.unsupported(d.P, "every")
+	case *ast.ConstDecl:
+		// no IR decl (Ch3: Constants) — every use of the const name already
+		// inlines to a literal via check.Info.Consts (lowerIdent, expr.go).
 	}
 }
 

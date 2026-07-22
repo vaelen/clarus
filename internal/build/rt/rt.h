@@ -20,7 +20,7 @@ int32_t rt_fix_div(int32_t a, int32_t b);                             /* (a<<16)
 
 void rt_panic(const char *msg);                                       /* "runtime error: MSG" to stderr, exit(3) */
 void rt_alert(const uint8_t *s);                                      /* stdout + \n; CR bytes rendered as LF */
-void rt_quit(void);                                                   /* `quit` statement: exit(0) */
+void rt_quit(int32_t code);                                           /* `quit [code]` statement: exit(code) */
 
 extern int32_t rt_lasterr_code;
 extern uint8_t rt_lasterr_msg[256];                                    /* a str255 */
@@ -49,6 +49,14 @@ void rt_list_last(const rt_list *l, void *out);
 void rt_list_remove(rt_list *l, int32_t i);   /* panics OOB */
 void *rt_list_at(rt_list *l, int32_t i);      /* element pointer; panics OOB (used for l[i] read AND in-place write) */
 int32_t rt_list_count(const rt_list *l);
+
+/* ---- CLI args (main()'s argc/argv plumbing; the printer's Task-3 emitMain
+   always calls both, regardless of whether the program declares App.startCLI) ----
+   argv[1..argc-1] are stored as str255 values; rt_args_list() builds the
+   rt_list once, on first call, and returns that same list on every later
+   call. */
+void rt_args_init(int argc, char **argv);
+rt_list *rt_args_list(void);   /* list of str255 (256-byte elements: 1 len byte + 255 data bytes) */
 
 typedef struct rt_map rt_map;     /* string keys -> fixed-size values */
 rt_map *rt_map_new(int32_t valsize);

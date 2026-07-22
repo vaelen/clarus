@@ -27,14 +27,18 @@ func (l *lowerer) lowerFuncDecl(d *ast.FuncDecl) *ir.Func {
 	return l.lowerFuncBody(d.Name, d.Params, ret, d.Body)
 }
 
-// lowerTopHandlerDecl lowers a top-level `on App.launch`/`on App.startEmpty`
-// handler into an ir.Func named "handler_App_launch"/"handler_App_startEmpty"
-// plus the matching Program flag (Ch7: Application Entry Points). Any other
-// `on App.*` event (openDocument) is host-unsupported. A handler on a
-// resource variable (`on someConn.opened`) needs nothing here: check.Files
-// already required the variable to exist, and its declaration already
-// flagged the resource type itself host-unsupported (unsupportedKind in
-// lower.go) — the handler body was never going to be reachable code.
+// lowerTopHandlerDecl lowers a top-level `on App.launch`/`on App.startEmpty`/
+// `on App.startCLI` handler into an ir.Func named
+// "handler_App_launch"/"handler_App_startEmpty"/"handler_App_startCLI" plus
+// the matching Program flag (Ch7: Application Entry Points; the CLI/
+// self-hosting features plan adds startCLI, whose single `args: list of
+// string` param lowers through the ordinary lowerFuncBody param path —
+// nothing startCLI-specific needed there). Any other `on App.*` event
+// (openDocument) is host-unsupported. A handler on a resource variable (`on
+// someConn.opened`) needs nothing here: check.Files already required the
+// variable to exist, and its declaration already flagged the resource type
+// itself host-unsupported (unsupportedKind in lower.go) — the handler body
+// was never going to be reachable code.
 func (l *lowerer) lowerTopHandlerDecl(d *ast.HandlerDecl) {
 	if len(d.Path) != 2 || d.Path[0] != "App" {
 		return
@@ -46,6 +50,9 @@ func (l *lowerer) lowerTopHandlerDecl(d *ast.HandlerDecl) {
 	case "startEmpty":
 		l.prog.Funcs = append(l.prog.Funcs, l.lowerFuncBody("handler_App_startEmpty", nil, ir.Type{K: ir.Void}, d.Body))
 		l.prog.HasStartEmpty = true
+	case "startCLI":
+		l.prog.Funcs = append(l.prog.Funcs, l.lowerFuncBody("handler_App_startCLI", d.Params, ir.Type{K: ir.Void}, d.Body))
+		l.prog.HasStartCLI = true
 	default: // openDocument
 		l.unsupported(d.P, "on App."+d.Path[1])
 	}
@@ -155,7 +162,13 @@ func (l *lowerer) lowerStmt(s ast.Stmt, f *ir.Func) []ir.Stmt {
 		}
 		return []ir.Stmt{&ir.Return{X: x}}
 	case *ast.QuitStmt:
-		return []ir.Stmt{&ir.ExprStmt{X: &ir.Intr{Name: ir.IQuit, Ty: ir.Type{K: ir.Void}}}}
+		return []ir.Stmt{l.lowerQuit(s)}
+	case *ast.BreakStmt:
+		return []ir.Stmt{&ir.Break{}}
+	case *ast.ContinueStmt:
+		return []ir.Stmt{&ir.Continue{}}
+	case *ast.SwitchStmt:
+		return l.lowerSwitch(s, f)
 	case *ast.CancelStmt:
 		l.unsupported(s.P, "cancel")
 		return nil
@@ -266,4 +279,92 @@ func (l *lowerer) lowerFor(s *ast.ForStmt, f *ir.Func) ir.Stmt {
 	default:
 		panic(fmt.Sprintf("lower: cannot iterate %v at %v", seqT.Kind, s.P))
 	}
+}
+
+// lowerQuit lowers `quit [code]` (Ch5: Quit) to the IQuit intrinsic, which
+// always carries exactly one int argument on the IR side — bare `quit`
+// supplies the default IntConst 0 itself, matching rt_quit(int32_t code)'s
+// single required argument (host runtime, Task 4).
+func (l *lowerer) lowerQuit(s *ast.QuitStmt) ir.Stmt {
+	code := ir.Expr(&ir.IntConst{Ty: ir.Type{K: ir.Int}}) // V defaults to 0
+	if s.Code != nil {
+		code = l.lowerExpr(s.Code)
+	}
+	return &ir.ExprStmt{X: &ir.Intr{Name: ir.IQuit, Args: []ir.Expr{code}, Ty: ir.Type{K: ir.Void}}}
+}
+
+// lowerSwitch desugars `switch subject { case labels {body} ... [else
+// {body}] }` (Ch5: Switch) into: the subject expression evaluated exactly
+// ONCE into a synthesized function-local temp (so a subject with side
+// effects, e.g. a function call, never re-runs per case), followed by an
+// if/else-if/.../else chain comparing that temp against each case's
+// label(s) — multi-label cases OR their comparisons together. int/char/enum
+// subjects compare with a plain `==`; string subjects go through IStrCmp==0
+// (text subjects are rejected by the checker — Ch3 lists only string among
+// the text-like types switch accepts).
+//
+// The desugared chain is pure ir.If — no C loop or switch construct is ever
+// emitted for it (see ir.Break/Continue's doc comment) — so a `break`
+// lowered from inside a case body automatically binds whatever LOOP
+// lexically encloses the switch, never the switch itself, exactly matching
+// Ch5's rule with no special-casing required here.
+func (l *lowerer) lowerSwitch(s *ast.SwitchStmt, f *ir.Func) []ir.Stmt {
+	subjT := l.mustType(s.Subject)
+	ty := lowerType(subjT)
+	tmp := l.newSwitchTemp()
+	f.Locals = append(f.Locals, ir.Local{Name: tmp, T: ty})
+	store := l.storeStmt(&ir.VarRef{Name: tmp, Ty: ty}, l.lowerExpr(s.Subject), ty)
+
+	var tail []ir.Stmt
+	if s.Else != nil {
+		tail = l.lowerBlock(s.Else, f)
+	}
+	for i := len(s.Cases) - 1; i >= 0; i-- {
+		cs := s.Cases[i]
+		cond := l.caseCond(subjT, ty, tmp, cs.Labels)
+		body := l.lowerBlock(cs.Body, f)
+		tail = []ir.Stmt{&ir.If{Cond: cond, Then: body, Else: tail}}
+	}
+	return append([]ir.Stmt{store}, tail...)
+}
+
+// newSwitchTemp names one switch desugar's subject temp. The "__switch"
+// prefix keeps it out of the way of any user-declared local — Clarus source
+// identifiers are never expected to start with a double underscore — and the
+// counter is program-wide (never reset per function) so nested/sibling
+// switches never collide even when several land in the same function body.
+func (l *lowerer) newSwitchTemp() string {
+	l.switchN++
+	return fmt.Sprintf("__switch%d", l.switchN)
+}
+
+// caseCond builds one case's condition: its label(s), OR'd together when
+// there's more than one (`case 2, 3`).
+func (l *lowerer) caseCond(subjT *types.Type, ty ir.Type, tmp string, labels []ast.Expr) ir.Expr {
+	var cond ir.Expr
+	for _, lbl := range labels {
+		eq := l.labelEq(subjT, ty, tmp, lbl)
+		if cond == nil {
+			cond = eq
+			continue
+		}
+		cond = &ir.Bin{Op: "or", X: cond, Y: eq, Ty: ir.Type{K: ir.Bool}}
+	}
+	return cond
+}
+
+// labelEq builds `tmp == label`: a plain int/char/enum comparison, or
+// `str_cmp(tmp, label) == 0` for a string subject (label is a literal,
+// bare enum member, or const Ident — lowerExpr/lowerIdent already resolve
+// all three to a plain constant, per checkCaseLabel's "must be a constant"
+// rule).
+func (l *lowerer) labelEq(subjT *types.Type, ty ir.Type, tmp string, lbl ast.Expr) ir.Expr {
+	ref := &ir.VarRef{Name: tmp, Ty: ty}
+	lblExpr := l.lowerExpr(lbl)
+	if subjT.Kind == types.String {
+		cmp := &ir.Intr{Name: ir.IStrCmp, Args: []ir.Expr{ref, lblExpr}, Ty: ir.Type{K: ir.Int}}
+		zero := &ir.IntConst{Ty: ir.Type{K: ir.Int}}
+		return &ir.Bin{Op: "==", X: cmp, Y: zero, Ty: ir.Type{K: ir.Bool}}
+	}
+	return &ir.Bin{Op: "==", X: ref, Y: lblExpr, Ty: ir.Type{K: ir.Bool}}
 }

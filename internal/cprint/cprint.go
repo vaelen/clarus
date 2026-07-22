@@ -355,15 +355,26 @@ func (pr *printer) emitFunc(f *ir.Func) {
 	pr.restBuf.WriteString("}\n\n")
 }
 
-// emitMain prints the fixed entry point: init globals, then App.launch (if
-// declared), then App.startEmpty (if declared), then exit 0.
+// emitMain prints the fixed entry point (Ch7: Application Entry Points; the
+// CLI/self-hosting features plan adds the argc/argv plumbing and the
+// startCLI step): init globals, stash argv (rt_args_init — Task 4 fills in
+// the runtime side, but every build already needs the extern declared and
+// called since HasStartCLI or not, main()'s own shape doesn't change), then
+// App.launch (if declared), then App.startCLI(rt_args_list()) if declared,
+// ELSE App.startEmpty (if declared) — the reference's documented fallback:
+// a program with no startCLI handler ignores argv entirely, same as before
+// this plan existed.
 func (pr *printer) emitMain() {
-	pr.restBuf.WriteString("int main(void) {\n")
+	pr.restBuf.WriteString("int main(int argc, char **argv) {\n")
 	pr.restBuf.WriteString("    clar_init_globals();\n")
+	pr.restBuf.WriteString("    rt_args_init(argc, argv);\n")
 	if pr.prog.HasLaunch {
 		pr.restBuf.WriteString("    clar_fn_handler_App_launch();\n")
 	}
-	if pr.prog.HasStartEmpty {
+	switch {
+	case pr.prog.HasStartCLI:
+		pr.restBuf.WriteString("    clar_fn_handler_App_startCLI(rt_args_list());\n")
+	case pr.prog.HasStartEmpty:
 		pr.restBuf.WriteString("    clar_fn_handler_App_startEmpty();\n")
 	}
 	pr.restBuf.WriteString("    return 0;\n}\n")

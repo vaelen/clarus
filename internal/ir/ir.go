@@ -1,12 +1,12 @@
 package ir
 
 type Program struct {
-	Globals                  []*Global
-	Funcs                    []*Func
-	StrLits                  []string        // literal pool; StrConst.Idx indexes this
-	Records                  []*RecordLayout // declaration order
-	Enums                    []*EnumLayout
-	HasLaunch, HasStartEmpty bool // which App handlers exist
+	Globals                               []*Global
+	Funcs                                 []*Func
+	StrLits                               []string        // literal pool; StrConst.Idx indexes this
+	Records                               []*RecordLayout // declaration order
+	Enums                                 []*EnumLayout
+	HasLaunch, HasStartEmpty, HasStartCLI bool // which App handlers exist
 }
 
 type RecordLayout struct {
@@ -109,6 +109,16 @@ type ForMap struct {
 }
 type Return struct{ X Expr } // nil for bare return
 
+// Break and Continue print as plain C `break;`/`continue;`. switch desugars
+// entirely into an if/else chain (see lower.lowerSwitch) that emits no C
+// loop or switch construct of its own, so a Break/Continue lowered from a
+// break/continue inside a switch case body automatically binds the
+// enclosing C loop, exactly matching Ch5's "a break inside a case body
+// belongs to the enclosing loop, if any" rule — no special-casing needed
+// here or in the printer.
+type Break struct{}
+type Continue struct{}
+
 // stmt() marker methods
 func (s *Assign) stmt()   {}
 func (s *StoreStr) stmt() {}
@@ -119,6 +129,8 @@ func (s *ForRange) stmt() {}
 func (s *ForList) stmt()  {}
 func (s *ForMap) stmt()   {}
 func (s *Return) stmt()   {}
+func (s *Break) stmt()    {}
+func (s *Continue) stmt() {}
 
 // ---- expressions (every node carries its Type) ----
 type Expr interface{ Type() Type }

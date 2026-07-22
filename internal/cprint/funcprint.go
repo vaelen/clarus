@@ -76,6 +76,10 @@ func (fp *funcPrinter) stmt(s ir.Stmt) {
 		} else {
 			fp.emit("return %s;", fp.expr(s.X))
 		}
+	case *ir.Break:
+		fp.emit("break;")
+	case *ir.Continue:
+		fp.emit("continue;")
 	default:
 		panic(fmt.Sprintf("cprint: unhandled statement %T", s))
 	}
