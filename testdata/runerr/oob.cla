@@ -1,0 +1,12 @@
+on App.launch {
+    var a: int[3]
+    var i: int
+    var v: int
+
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    i = 5
+    v = a[i]
+    alert("unreachable")
+}

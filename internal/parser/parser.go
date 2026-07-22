@@ -141,7 +141,7 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 		p.next()
 		ret = p.parseType()
 	}
-	body := p.parseBlock()
+	body := p.parseBodyBlock()
 	return &ast.FuncDecl{P: pos, Name: name.Text, Params: params, Ret: ret, Body: body}
 }
 

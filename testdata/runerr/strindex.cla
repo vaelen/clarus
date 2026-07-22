@@ -1,0 +1,9 @@
+on App.launch {
+    var s: string = "hi"
+    var i: int
+    var c: char
+
+    i = 5
+    c = s[i]
+    alert("unreachable")
+}

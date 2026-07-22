@@ -1,0 +1,75 @@
+func show(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+on App.launch {
+    var a: string = "hello"
+    var b: string = " world"
+    var c: string
+    var d: string
+    var buf: char[8]
+    var packed: string(8)
+    var restored: string(8)
+    var n: int
+
+    // concat
+    c = a + b
+    alert(c)
+
+    // s[i] write, then read via comparison
+    c[0] = 'H'
+    if c[0] == 'H' {
+        alert("first char is H")
+    } else {
+        alert("first char is wrong")
+    }
+
+    // .length
+    show("length = ", c.length)
+
+    // comparison branches
+    if c == "Hello world" {
+        alert("matches")
+    } else {
+        alert("no match")
+    }
+    if a < b {
+        alert("a < b")
+    } else {
+        alert("a >= b")
+    }
+
+    // string + char
+    d = "hi"
+    d = d + '!'
+    alert(d)
+
+    // fromBytes/toBytes round trip through a char[8] buffer
+    packed = "ABCDEFGH"
+    n = packed.toBytes(buf)
+    show("copied = ", n)
+    buf[3] = 'z'
+    restored.fromBytes(buf, 8)
+    alert(restored)
+}

@@ -1,0 +1,41 @@
+func show(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+on App.launch {
+    var e: error
+    var g: string(3)
+
+    show("e.code before = ", e.code)
+    show("lastError.code before = ", lastError.code)
+
+    // overflow g's capacity: sets the GLOBAL lastError, must not touch e
+    g = "ab" + "cdef"
+
+    show("e.code after truncation = ", e.code)
+    show("lastError.code after truncation = ", lastError.code)
+
+    e = lastError
+    alert(e.message)
+}

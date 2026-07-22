@@ -1,0 +1,9 @@
+on App.launch {
+    var c: saveChoice = saveChoice(1)
+
+    if int(c) == 1 {
+        alert("ok")
+    } else {
+        alert("bad")
+    }
+}

@@ -124,6 +124,17 @@ func TestTextStringComparison(t *testing.T) {
 	expectClean(t, "var t: text\nfunc f(): bool {\n    return \"a\" < t\n}\n")
 }
 
+// TestStringToTextAssignment covers Ch3's documented `t = "hello"` /
+// `var t: text = "hello"` (String -> Text assignability is one-way: the
+// reverse, Text -> String, stays an error since it's undocumented and would
+// silently clamp).
+func TestStringToTextAssignment(t *testing.T) {
+	expectClean(t, "var t: text\nfunc f() {\n    t = \"hello\"\n}\n")
+	expectClean(t, "var t: text = \"hello\"\n")
+	expectClean(t, "var t: text = \"x\" + \"y\"\n")
+	expectError(t, "var t: text\nvar s: string\nfunc f() {\n    s = t\n}\n", "cannot assign")
+}
+
 func TestAggregateEqualityRejected(t *testing.T) {
 	expectError(t, "record R { x: int }\nvar a: R\nvar b: R\nfunc f(): bool {\n    return a == b\n}\n", "records cannot be compared")
 	expectError(t, "var a: list of int\nvar b: list of int\nfunc f(): bool {\n    return a == b\n}\n", "lists cannot be compared")

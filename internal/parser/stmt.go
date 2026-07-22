@@ -5,17 +5,37 @@ import (
 	"clarus/internal/token"
 )
 
-// parseBlock parses `"{" { stmt } "}"` (Appendix A), where stmt also
-// includes varDecl. All var declarations must appear before any other
-// statement; a var seen afterward is a diagnostic, not a silent reorder.
+// parseBlock parses `"{" { stmt } "}"` (Appendix A) for a nested block
+// (if/else/while/for body), where var declarations are not permitted: the
+// reference restricts `var` to the top of a function or handler body, not
+// every block. See parseBodyBlock for that outermost form.
 func (p *parser) parseBlock() *ast.Block {
+	return p.parseBlockVars(false)
+}
+
+// parseBodyBlock parses the outermost body of a func, handler (`on`), or
+// `every` declaration, where var declarations are allowed at the top
+// (Ch5 of the reference; an `every` block is a handler body, so its vars
+// are legitimate too — Ch7).
+func (p *parser) parseBodyBlock() *ast.Block {
+	return p.parseBlockVars(true)
+}
+
+// parseBlockVars parses `"{" { stmt } "}"`, where stmt also includes
+// varDecl when allowVars is true. All var declarations must appear before
+// any other statement; a var seen afterward is a diagnostic, not a silent
+// reorder. When allowVars is false, any var declaration is a diagnostic
+// regardless of position.
+func (p *parser) parseBlockVars(allowVars bool) *ast.Block {
 	lb := p.expect(token.LBRACE)
 	b := &ast.Block{P: lb.Pos}
 	p.skipNewlines()
 	seenStmt := false
 	for p.tok.Kind != token.RBRACE {
 		if p.tok.Kind == token.KwVar {
-			if seenStmt {
+			if !allowVars {
+				p.errorf(p.tok.Pos, "variable declarations are only allowed at the top of a function or handler body")
+			} else if seenStmt {
 				p.errorf(p.tok.Pos, "variable declarations must appear at the top of the body")
 			}
 			b.Vars = append(b.Vars, p.parseVarDecl())

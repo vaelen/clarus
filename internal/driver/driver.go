@@ -32,6 +32,7 @@ func Check(paths []string) ([]source.Diag, error) {
 		trees = append(trees, tree)
 	}
 
-	diags = append(diags, check.Files(files, trees)...)
+	cdiags, _ := check.Files(files, trees)
+	diags = append(diags, cdiags...)
 	return diags, nil
 }

@@ -67,6 +67,42 @@ func TestVarAfterStmtRejected(t *testing.T) {
 	}
 }
 
+func TestVarInNestedBlockRejected(t *testing.T) {
+	src := "func demo(): int {\n" +
+		"    if true { var x: int = 1\n" +
+		"        return x }\n" +
+		"    return 0\n" +
+		"}\n"
+	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) == 0 || !strings.Contains(diags[0].Msg, "only allowed at the top of a function or handler body") {
+		t.Fatalf("want nested-var error, got %v", diags)
+	}
+}
+
+func TestVarsAtTopWithNestedIfNoVars(t *testing.T) {
+	b := parseFunc(t, `
+var x: int = 1
+if x > 0 {
+    x = x + 1
+}
+return x`)
+	if len(b.Vars) != 1 {
+		t.Fatalf("want 1 var, got %d", len(b.Vars))
+	}
+}
+
+func TestEveryBlockAllowsTopVars(t *testing.T) {
+	src := "func f() {\n}\nevery 1 ticks {\n    var t: int = 0\n    t = t + 1\n}\n"
+	f, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diags[0])
+	}
+	ev := f.Decls[1].(*ast.EveryDecl)
+	if len(ev.Body.Vars) != 1 {
+		t.Fatalf("want 1 var in every block, got %d", len(ev.Body.Vars))
+	}
+}
+
 func TestElseOnOwnLineRejected(t *testing.T) {
 	src := "func f() {\nif true {\n}\nelse {\n}\n}\n"
 	_, diags := Parse(&source.File{Name: "t.cla", Content: []byte(src)})

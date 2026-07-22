@@ -34,6 +34,28 @@ type checker struct {
 	// (a window's own, never a widget's or menu item's) — the only place
 	// `cancel` is valid (Ch5: Cancel).
 	inCloseRequest bool
+
+	// info accumulates the type information the lowering pass consumes:
+	// every expression's checked type, resolved enum-member values, and
+	// top-level var declaration order. Always allocated (see Files) so
+	// checkExpr and checkIdent can record into it unconditionally.
+	info *Info
+}
+
+// Info is the type information the checker exports for the lowering pass:
+// every checked expression's type, resolved values for bare enum-member
+// Idents (including field defaults), and top-level var declaration order.
+type Info struct {
+	Types       map[ast.Expr]*types.Type // type of every successfully checked expression
+	EnumConsts  map[ast.Expr]int         // resolved VALUE for bare enum-member Idents and enum-typed defaults
+	GlobalOrder []string                 // declaration order of globals (init order for lowering)
+}
+
+func newInfo() *Info {
+	return &Info{
+		Types:      make(map[ast.Expr]*types.Type),
+		EnumConsts: make(map[ast.Expr]int),
+	}
 }
 
 // File type-checks tree and returns all diagnostics found. Declarations are
@@ -42,7 +64,8 @@ type checker struct {
 // Window/menu/extend/handler/every declarations are skipped entirely —
 // Task 11 wires them up.
 func File(f *source.File, tree *ast.File) []source.Diag {
-	return Files([]*source.File{f}, []*ast.File{tree})
+	diags, _ := Files([]*source.File{f}, []*ast.File{tree})
+	return diags
 }
 
 // Files type-checks multiple files as a single program (the driver's
@@ -50,9 +73,11 @@ func File(f *source.File, tree *ast.File) []source.Diag {
 // single pass, in argument order, so declare-before-use holds across the
 // whole sequence exactly as it does for one file. Each diagnostic still
 // carries the source.File its declaration came from, since c.f is switched
-// to files[i] before that file's declarations are checked.
-func Files(files []*source.File, trees []*ast.File) []source.Diag {
-	c := &checker{}
+// to files[i] before that file's declarations are checked. The returned
+// *Info is the type information the lowering pass consumes; it's still
+// populated (though possibly incomplete) even when diagnostics are reported.
+func Files(files []*source.File, trees []*ast.File) ([]source.Diag, *Info) {
+	c := &checker{info: newInfo()}
 	universe := NewScope(nil)
 	registerBuiltins(universe)
 	c.scope = NewScope(universe)
@@ -63,7 +88,7 @@ func Files(files []*source.File, trees []*ast.File) []source.Diag {
 			c.checkDecl(d)
 		}
 	}
-	return c.diags
+	return c.diags, c.info
 }
 
 func (c *checker) errorf(pos source.Pos, format string, args ...interface{}) {
@@ -78,6 +103,7 @@ func (c *checker) checkDecl(d ast.Decl) {
 		c.checkEnumDecl(d)
 	case *ast.VarDecl:
 		c.checkVarDecl(d)
+		c.info.GlobalOrder = append(c.info.GlobalOrder, d.Name)
 	case *ast.FuncDecl:
 		c.checkFuncDecl(d)
 	case *ast.WindowDecl:
