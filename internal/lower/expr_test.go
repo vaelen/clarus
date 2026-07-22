@@ -65,6 +65,34 @@ func TestLowerEnumConst(t *testing.T) {
 	}
 }
 
+func TestLowerNewNested(t *testing.T) {
+	p := lowerSrc(t, "record Person {\n    age: int\n}\nvar ok: bool = new Person.age > 0\n")
+	b := p.Globals[0].Init.(*ir.Bin)
+	fr := b.X.(*ir.FieldRef)
+	if fr.Name != "age" {
+		t.Fatalf("field: %+v", fr)
+	}
+	nr := fr.X.(*ir.NewRec)
+	if nr.RecName != "Person" {
+		t.Fatalf("newrec: %+v", nr)
+	}
+}
+
+func TestLowerNewWhole(t *testing.T) {
+	p := lowerSrc(t, "record Person {\n    age: int\n}\nvar b: Person = new Person\n")
+	nr := p.Globals[0].Init.(*ir.NewRec)
+	if nr.RecName != "Person" || nr.Ty.K != ir.Rec || nr.Ty.Name != "Person" {
+		t.Fatalf("%+v", nr)
+	}
+}
+
+func TestLowerRecordEnumFieldDefault(t *testing.T) {
+	p := lowerSrc(t, "enum Status { Active 5, Done 6 }\nrecord Job {\n    status: Status\n}\n")
+	if p.Records[0].Fields[0].Default != 5 {
+		t.Fatalf("want first-member default 5, got %+v", p.Records[0].Fields[0])
+	}
+}
+
 func TestUnsupportedWindow(t *testing.T) {
 	f := &source.File{Name: "t.cla", Content: []byte("window W {\n    title: \"x\"\n}\n")}
 	tree, _ := parser.Parse(f)

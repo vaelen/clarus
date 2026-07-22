@@ -18,10 +18,11 @@ import (
 // inside a window-scoped handler body, and `open W` only type-checks against
 // a declared window type — all three require a construct lowerDecl already
 // flagged host-unsupported before lowerExpr could ever be reached on them.
-// NewExpr's one supported use (a global's `= new T` initializer) is handled
-// directly by lowerGlobalVarDecl, never through lowerExpr. All four fall to
-// the panicking default case; Task 7 revisits this seam if statement bodies
-// ever need `new` in a non-initializer position.
+// These three fall to the panicking default case.
+//
+// *ast.NewExpr lowers to ir.NewRec below wherever it appears — as a whole
+// global initializer or nested inside a larger expression (FieldRef/args
+// compose over it naturally, since NewRec is just another ir.Expr).
 func (l *lowerer) lowerExpr(e ast.Expr) ir.Expr {
 	switch e := e.(type) {
 	case *ast.IntLit:
@@ -50,6 +51,8 @@ func (l *lowerer) lowerExpr(e ast.Expr) ir.Expr {
 		return l.lowerIndex(e)
 	case *ast.Select:
 		return l.lowerSelect(e)
+	case *ast.NewExpr:
+		return &ir.NewRec{RecName: e.Type, Ty: lowerType(l.mustType(e))}
 	default:
 		panic(fmt.Sprintf("lower: unhandled expression %T at %v", e, e.Pos()))
 	}

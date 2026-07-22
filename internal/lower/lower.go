@@ -233,13 +233,18 @@ func (l *lowerer) lowerRecordDecl(d *ast.RecordDecl) {
 			continue
 		}
 		slot.T = lowerType(ft)
-		if f.Default != nil {
+		switch {
+		case f.Default != nil:
 			dv := l.lowerExpr(f.Default)
 			if ft.Kind == types.String {
 				slot.DefaultStr = dv.(*ir.StrConst).Idx
 			} else {
 				slot.Default = dv.(*ir.IntConst).V
 			}
+		case ft.Kind == types.Enum:
+			// Ch3: an enum-typed field with no explicit default starts at
+			// the first declared member, whose value may be non-zero.
+			slot.Default = int64(ft.Enum.Members[0].Value)
 		}
 		layout.Fields = append(layout.Fields, slot)
 	}
@@ -285,18 +290,8 @@ func (l *lowerer) lowerGlobalVarDecl(d *ast.VarDecl) {
 		return
 	}
 	g := &ir.Global{Name: d.Name, T: lowerType(t)}
-	switch init := d.Init.(type) {
-	case nil:
-		// zero value
-	case *ast.NewExpr:
-		// `new T` constructs every field at its declared default (reference
-		// Ch3: Records and Defaults) — precisely ir.Global's own "Init ==
-		// nil -> zero value" contract, since RecordLayout already carries
-		// those same defaults. No IR expression is needed at all; see
-		// lowerExpr's default case for the (currently unreachable, Task
-		// 6-scope) non-global-initializer use of `new`.
-	default:
-		g.Init = l.lowerExpr(init)
+	if d.Init != nil {
+		g.Init = l.lowerExpr(d.Init)
 	}
 	l.prog.Globals = append(l.prog.Globals, g)
 }

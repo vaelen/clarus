@@ -31,7 +31,12 @@ type EnumLayout struct {
 type Global struct {
 	Name string
 	T    Type
-	Init Expr // nil → zero value
+	Init Expr // Init nil → zero value. For Rec-typed globals, "zero value" means
+	// the record's declared defaults per RecordLayout.Fields (Default/
+	// DefaultStr), NOT memset-zero — the printer must apply them. A
+	// whole-initializer `new T` lowers to a NewRec Init (not nil); nil Init
+	// on a Rec-typed global only arises from an uninitialized declaration
+	// (`var b: Bookmark`), which this same defaults-application applies to.
 }
 
 type Func struct {
@@ -192,6 +197,15 @@ type Intr struct {
 	Ty   Type
 } // runtime intrinsic (intrinsics.go names)
 
+// NewRec constructs a record value of the named record type with every
+// field at its declared default (per RecordLayout.Fields). The C printer
+// emits a call to the per-record constructor clar_new_NAME(), which
+// returns the struct by value.
+type NewRec struct {
+	RecName string
+	Ty      Type
+}
+
 // Type() marker methods
 func (e *IntConst) Type() Type { return e.Ty }
 func (e *StrConst) Type() Type { return e.Ty }
@@ -203,3 +217,4 @@ func (e *Un) Type() Type       { return e.Ty }
 func (e *Conv) Type() Type     { return e.Ty }
 func (e *CallFn) Type() Type   { return e.Ty }
 func (e *Intr) Type() Type     { return e.Ty }
+func (e *NewRec) Type() Type   { return e.Ty }
