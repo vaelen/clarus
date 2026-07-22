@@ -79,7 +79,7 @@ on App.startEmpty {
 
 ### Identifiers
 
-Identifiers begin with a letter and continue with letters, digits, or underscores. Identifiers are case-sensitive.
+Identifiers begin with a letter and continue with letters, digits, or underscores. Identifiers are case-sensitive. An identifier may be at most 255 bytes; longer is a compile error.
 
 Convention (not enforced): types, windows, menus, and widgets use CapitalCase; variables and functions use lowerCamelCase.
 
@@ -116,7 +116,7 @@ This list is representative, not exhaustive: later chapters introduce further co
 | Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
 | Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type) |
 | Character | `'A'`, `'\n'` | single Mac Roman character; same escapes as strings |
-| String | `"hello"` | escapes: `\"` `\\` `\n` `\t`; `\n` emits CR (13), the Mac newline |
+| String | `"hello"` | escapes: `\"` `\\` `\n` `\t`; `\n` emits CR (13), the Mac newline. A string literal may be at most 255 bytes. |
 | Boolean | `true`, `false` | |
 | Nil | `nil` | window/resource references only |
 | Enum member | bare identifier | resolved against the expected enum type |

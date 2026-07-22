@@ -227,6 +227,9 @@ func (l *Lexer) lexIdent(pos source.Pos) token.Token {
 	if kind, ok := token.Keywords[text]; ok {
 		return l.emit(kind, pos, text)
 	}
+	if len(text) > 255 {
+		l.errorf(pos, "identifier too long (max 255 bytes)")
+	}
 	return l.emit(token.IDENT, pos, text)
 }
 
@@ -332,6 +335,9 @@ func (l *Lexer) lexString(pos source.Pos) token.Token {
 		}
 		out = append(out, c)
 		l.off++
+	}
+	if len(out) > 255 {
+		l.errorf(pos, "string literal too long (max 255 bytes)")
 	}
 	tok := l.emit(token.STRINGLIT, pos, string(out))
 	return tok

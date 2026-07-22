@@ -4,6 +4,7 @@ package lexer
 import (
 	"clarus/internal/source"
 	"clarus/internal/token"
+	"strings"
 	"testing"
 )
 
@@ -255,5 +256,43 @@ func TestSyntheticNewlineAfterDanglingOperator(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("token %d got %v want %v", i, got[i], want[i])
 		}
+	}
+}
+
+func TestIdentifierLengthCap(t *testing.T) {
+	long := strings.Repeat("a", 256)
+	l := New(&source.File{Name: "t.cla", Content: []byte("var " + long + ": int\n")})
+	for {
+		if l.Next().Kind == token.EOF {
+			break
+		}
+	}
+	ds := l.Diags()
+	if len(ds) == 0 || !strings.Contains(ds[0].Msg, "identifier too long") {
+		t.Fatalf("want identifier-too-long, got %v", ds)
+	}
+	// 255 is fine
+	l2 := New(&source.File{Name: "t.cla", Content: []byte("var " + strings.Repeat("a", 255) + ": int\n")})
+	for {
+		if l2.Next().Kind == token.EOF {
+			break
+		}
+	}
+	if len(l2.Diags()) != 0 {
+		t.Fatalf("255 must be legal, got %v", l2.Diags())
+	}
+}
+
+func TestStringLiteralLengthCap(t *testing.T) {
+	long := strings.Repeat("x", 256)
+	l := New(&source.File{Name: "t.cla", Content: []byte(`var s: string = "` + long + `"` + "\n")})
+	for {
+		if l.Next().Kind == token.EOF {
+			break
+		}
+	}
+	ds := l.Diags()
+	if len(ds) == 0 || !strings.Contains(ds[0].Msg, "string literal too long") {
+		t.Fatalf("want string-literal-too-long, got %v", ds)
 	}
 }
