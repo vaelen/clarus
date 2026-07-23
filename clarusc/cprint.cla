@@ -1325,14 +1325,19 @@ func cpEmitRecords() {
 func cpEmitEnums() {
     var i: int
     var m: int
-    var vals: string
+    // vals is `text`, not `string`: a `string` is a fixed 255-byte buffer,
+    // and the comma-joined ordinal list can run past that for an enum with
+    // enough members (clarusc's own TokKind has 67) -- it would silently
+    // truncate rather than error, emitting invalid C. Self-emission is what
+    // exposed this: no testdata corpus enum is large enough to hit it.
+    var vals: text
     var first: bool
     var count: int
     var name: string
 
     i = 0
     while i < irEnums.count {
-        vals = ""
+        vals = toText("")
         first = true
         count = 0
         m = irEnumLayoutMembersHead(i)
@@ -1346,7 +1351,7 @@ func cpEmitEnums() {
             m = irEnumMemberNext(m)
         }
         name = poolGet(irEnumLayoutName(i))
-        cpRestBuf.add(toText("static const int32_t clar_enum_" + name + "[] __attribute__((unused)) = {" + vals + "};"))
+        cpRestBuf.add(toText("static const int32_t clar_enum_" + name + "[] __attribute__((unused)) = {") + vals + toText("};"))
         cpRestBuf.add(toText("static const int clar_enum_" + name + "_count __attribute__((unused)) = " + numToStr(count) + ";"))
         i = i + 1
     }

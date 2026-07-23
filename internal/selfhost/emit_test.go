@@ -2,15 +2,56 @@ package selfhost
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"clarus/internal/build"
 )
+
+// emitBuildDir is the dir-taking core of emitBuild: it runs
+// `clarusc emit -o <dir>/main.c claPath`, writes the embedded host runtime
+// (rt.h/rt.c) alongside it, and compiles with the same toolchain and flags
+// internal/build uses. It returns the built binary's path, or an error
+// (never t.Fatalf) so callers that need to memoize a build across multiple
+// top-level tests -- where a per-test t.TempDir() would be cleaned up as
+// soon as the first such test finishes -- can use a longer-lived directory.
+func emitBuildDir(exe, claPath, dir string) (string, error) {
+	mainC := filepath.Join(dir, "main.c")
+
+	cmd := exec.Command(exe, "emit", "-o", mainC, claPath)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("clarusc emit -o %s %s: %v\nstderr: %s", mainC, claPath, err, errb.String())
+	}
+
+	emitted, err := os.ReadFile(mainC)
+	if err != nil {
+		return "", fmt.Errorf("read emitted C at %s: %w", mainC, err)
+	}
+
+	rtC := filepath.Join(dir, "rt.c")
+	if err := os.WriteFile(filepath.Join(dir, "rt.h"), build.RuntimeH(), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(rtC, build.RuntimeC(), 0o644); err != nil {
+		return "", err
+	}
+
+	bin := filepath.Join(dir, "prog")
+	cc := exec.Command(build.CCPath(), "-std=c99", "-O1", mainC, rtC, "-o", bin)
+	if ccOut, err := cc.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, string(emitted))
+	}
+	return bin, nil
+}
 
 // emitBuild runs `clarusc emit -o <dir>/main.c claPath`, reads the written
 // main.c as the emitted C translation unit, writes it alongside the embedded
@@ -19,35 +60,9 @@ import (
 // built binary's path.
 func emitBuild(t *testing.T, exe, claPath string) string {
 	t.Helper()
-
-	dir := t.TempDir()
-	mainC := filepath.Join(dir, "main.c")
-
-	cmd := exec.Command(exe, "emit", "-o", mainC, claPath)
-	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("clarusc emit -o %s %s: %v\nstderr: %s", mainC, claPath, err, errb.String())
-	}
-
-	emitted, err := os.ReadFile(mainC)
+	bin, err := emitBuildDir(exe, claPath, t.TempDir())
 	if err != nil {
-		t.Fatalf("read emitted C at %s: %v", mainC, err)
-	}
-
-	rtC := filepath.Join(dir, "rt.c")
-	if err := os.WriteFile(filepath.Join(dir, "rt.h"), build.RuntimeH(), 0o644); err != nil {
 		t.Fatal(err)
-	}
-	if err := os.WriteFile(rtC, build.RuntimeC(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	bin := filepath.Join(dir, "prog")
-	cc := exec.Command(build.CCPath(), "-std=c99", "-O1", mainC, rtC, "-o", bin)
-	if ccOut, err := cc.CombinedOutput(); err != nil {
-		t.Fatalf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, string(emitted))
 	}
 	return bin
 }
@@ -118,6 +133,115 @@ func TestEmitDifferential(t *testing.T) {
 				t.Errorf("stderr:\n got: %q\nwant: %q", stderr.String(), string(b))
 			}
 		})
+	}
+}
+
+// selfBuiltClarusc memoizes emitBuild(mainClaruscExe, "../../clarusc/main.cla")
+// -- i.e. it self-emits clarusc's own ~10-file source through clarusc-emit,
+// compiles the result with cc + rt.c, and returns the resulting binary's
+// path. This is the "stage1 emits stage2" step: proof that the emit path
+// covers everything clarusc's own source uses. Memoized because self-emit +
+// cc takes real time and every subtest below wants the same binary.
+var (
+	selfExeOnce sync.Once
+	selfExe     string
+	selfExeErr  error
+)
+
+func selfBuiltClarusc(t *testing.T) string {
+	t.Helper()
+	selfExeOnce.Do(func() {
+		exe, err := buildClarusc()
+		if err != nil {
+			selfExeErr = fmt.Errorf("build clarusc (Go): %w", err)
+			return
+		}
+		// A plain os.MkdirTemp, not t.TempDir(): this build is memoized
+		// across multiple top-level tests, and t.TempDir()'s cleanup fires
+		// as soon as the first such test completes -- which would delete
+		// the binary out from under the others.
+		dir, err := os.MkdirTemp("", "clarusc-self-*")
+		if err != nil {
+			selfExeErr = err
+			return
+		}
+		selfExe, selfExeErr = emitBuildDir(exe, "../../clarusc/main.cla", dir)
+	})
+	if selfExeErr != nil {
+		t.Fatal(selfExeErr)
+	}
+	return selfExe
+}
+
+// TestEmitSelfCompiles proves self-emission: clarusc emits C for its OWN
+// source (the include graph rooted at clarusc/main.cla pulls in every
+// clarusc module), that C compiles clean against the host runtime, and the
+// resulting binary is a correct clarusc -- both as a checker (front end
+// parity against the v1 Go oracle) and as an emitter (it can itself run
+// `emit` and produce a working program).
+func TestEmitSelfCompiles(t *testing.T) {
+	bin := selfBuiltClarusc(t)
+	info, err := os.Stat(bin)
+	if err != nil || info.Size() == 0 {
+		t.Fatalf("self-built clarusc binary missing or empty: %v", err)
+	}
+	t.Logf("self-built clarusc binary: %s (%d bytes)", bin, info.Size())
+}
+
+// TestEmitSelfChecks runs the self-built clarusc (stage1-emitted, cc-compiled)
+// as a checker over a handful of testdata/diag/*.cla files with known
+// diagnostics, plus one clean valid file, and asserts its stdout + exit code
+// match the v1 Go oracle (goCheck) exactly -- the same comparison diffOne
+// does, but against the self-built binary instead of the Go-built one. This
+// proves the emitted compiler's front end behaves identically, not merely
+// that it compiles.
+func TestEmitSelfChecks(t *testing.T) {
+	bin := selfBuiltClarusc(t)
+
+	files := []string{
+		"../../testdata/diag/chk_undefined.cla",
+		"../../testdata/diag/chk_typemismatch.cla",
+		"../../testdata/diag/chk_wrongargs.cla",
+		"../../testdata/diag/lex_unexpected.cla",
+		"../../testdata/diag/chk_missingret.cla",
+		"../../testdata/valid/bookmarks.cla",
+	}
+	for _, f := range files {
+		f := f
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			wantOut, wantCode := goCheck(f)
+			gotOut, gotCode := runClarusc(t, bin, f)
+			if gotOut != wantOut || gotCode != wantCode {
+				t.Errorf("divergence on %s\n  go        (exit %d): %q\n  self-built(exit %d): %q",
+					f, wantCode, wantOut, gotCode, gotOut)
+			}
+		})
+	}
+}
+
+// TestEmitSelfEmits is the mini pre-flight for Task 11's bootstrap: the
+// self-built clarusc must itself be able to run `emit`, not just `check`.
+// It emits testdata/run/emit_hello.cla, that C compiles + links against the
+// host runtime, and running it reproduces the golden .out exactly.
+func TestEmitSelfEmits(t *testing.T) {
+	bin := selfBuiltClarusc(t)
+
+	prog := emitBuild(t, bin, "../../testdata/run/emit_hello.cla")
+	want, err := os.ReadFile("../../testdata/run/emit_hello.out")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(prog)
+	cmd.Dir = t.TempDir()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run self-built-clarusc-emitted binary: %v (stderr: %s)", err, stderr.String())
+	}
+	if stdout.String() != string(want) {
+		t.Errorf("stdout: got %q want %q", stdout.String(), string(want))
 	}
 }
 
