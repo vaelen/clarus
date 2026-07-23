@@ -16854,12 +16854,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                         return clar_fn_toText(clar_lit_3);
                                                                                                                                     } else {
                                                                                                                                         if (cv_nm == clar_fn_ITextOfStr()) {
-                                                                                                                                            cv_s0 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                                             cv_t = clar_fn_fpNewTmp(clar_lit_587);
                                                                                                                                             rt_text * t158;
                                                                                                                                             t158 = rt_text_new();
                                                                                                                                             rt_text_concat(t158, cv_t, (const uint8_t*)&(clar_lit_642), NULL);
                                                                                                                                             clar_fn_fpEmit(t158);
+                                                                                                                                            cv_s0 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                                             rt_text * t159;
                                                                                                                                             t159 = rt_text_new();
                                                                                                                                             rt_text_concat_sl(t159, (const uint8_t*)&(clar_lit_674), cv_t);

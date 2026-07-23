@@ -771,9 +771,9 @@ func fpIntrCall(x: int): text {
         // contract: mutating the received text (e.g. .append) never affects
         // the original string, since rt_text_store copies the string's
         // bytes into the new handle's own buffer.
-        s0 = fpStrAddr(a0)
         t = fpNewTmp("rt_text *")
         fpEmit(t + " = rt_text_new();")
+        s0 = fpStrAddr(a0)
         fpEmit("rt_text_store(" + t + ", " + s0 + ");")
         return t
 

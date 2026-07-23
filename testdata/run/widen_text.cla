@@ -13,6 +13,10 @@ func makeText(s: string): text {
     return s
 }
 
+func getStr(): string {
+    return "delta"
+}
+
 on App.launch {
     var pass: bool
     var s: string
@@ -46,6 +50,12 @@ on App.launch {
     // map.get default: a string as the default-value argument
     dv = m.get("missing", "gamma")
     if dv != "gamma" { pass = false }
+
+    // call argument, non-addressable string source: a function-call result
+    // (routes through strAddr -> addrable -> copyToTemp, emitting its own
+    // temp+statement) widened to a text param.
+    t1 = acceptText(getStr())
+    if t1 != "delta!" { pass = false }
 
     if pass {
         alert("ok")
