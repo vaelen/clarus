@@ -1,0 +1,4 @@
+record R { x: int }
+func f() { var r: R
+    var b: bool
+    b = r == r }

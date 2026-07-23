@@ -1,0 +1,3 @@
+window W { title: "t" }
+func f() { var w: W
+    if w < nil { } }

@@ -1,0 +1,3 @@
+enum E { A }
+func f() { var v: E
+    v = new E }

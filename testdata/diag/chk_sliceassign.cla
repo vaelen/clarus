@@ -1,0 +1,2 @@
+func f() { var a: list of int
+    a[0,1] = a }

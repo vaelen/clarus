@@ -1,0 +1,2 @@
+func f() { var y: int
+    switch 1 { case y { } } }

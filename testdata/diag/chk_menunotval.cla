@@ -1,0 +1,2 @@
+menu FileM { item Save "Save" }
+func f() { close FileM }

@@ -1,0 +1,1 @@
+func bad(): int { return true }

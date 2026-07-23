@@ -1,0 +1,2 @@
+func f() { var s: string
+    s = "a" - "b" }

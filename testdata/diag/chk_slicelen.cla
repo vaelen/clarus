@@ -1,0 +1,3 @@
+func f() { var s: string
+    var w: string
+    w = s[0, true] }

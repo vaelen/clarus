@@ -1,0 +1,2 @@
+func g(a: int) { }
+func f() { g(true) }

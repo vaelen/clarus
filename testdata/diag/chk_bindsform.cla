@@ -1,0 +1,2 @@
+record R { x: int }
+window W { field F { binds: x } }

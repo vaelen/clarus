@@ -1,0 +1,3 @@
+var bs: list of int
+window W { table T { rows: bs, bs
+        column "H" shows x width 5 } }

@@ -1,0 +1,1 @@
+window W { button B { bogus: 5 } title: "t" }

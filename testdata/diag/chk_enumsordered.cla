@@ -1,0 +1,5 @@
+enum E { A, B }
+func f() { var x: E = A
+    var y: E = B
+    var b: bool
+    b = x < y }

@@ -12,6 +12,7 @@ import (
 
 	"clarus/internal/build"
 	"clarus/internal/driver"
+	"clarus/internal/reftest"
 )
 
 // clarusc is built once per `go test` invocation and reused across every
@@ -87,8 +88,23 @@ func runClarusc(t *testing.T, exe, path string) (string, int) {
 	return out.String(), 0
 }
 
-// TestDifferential is the parity gate: for every file in the subset corpus,
-// clarusc's stdout and exit code must match the Go front end's byte-for-byte.
+// diffOne runs both front ends on path and fails if stdout or exit code differ.
+func diffOne(t *testing.T, exe, path string) {
+	t.Helper()
+	wantOut, wantCode := goCheck(path)
+	gotOut, gotCode := runClarusc(t, exe, path)
+	if gotOut != wantOut || gotCode != wantCode {
+		t.Errorf("divergence on %s\n  go     (exit %d): %q\n  clarusc(exit %d): %q",
+			path, wantCode, wantOut, gotCode, gotOut)
+	}
+}
+
+// TestDifferential is the parity gate over the whole file corpus: for every
+// file in testdata/{valid,errors,run,runerr,include} AND clarusc's own
+// main.cla (clarusc checks itself), clarusc's stdout and exit code must match
+// the Go front end's byte-for-byte. Include entry files exercise multi-file
+// expansion (parse-phase per-file attribution, check-phase per-decl
+// attribution) on both sides.
 func TestDifferential(t *testing.T) {
 	exe, err := buildClarusc()
 	if err != nil {
@@ -99,24 +115,70 @@ func TestDifferential(t *testing.T) {
 	for _, g := range []string{
 		"../../testdata/valid/*.cla",
 		"../../testdata/errors/*.cla",
+		"../../testdata/run/*.cla",
 		"../../testdata/runerr/*.cla",
+		"../../testdata/include/*.cla",
+		"../../testdata/diag/*.cla",
 	} {
 		m, _ := filepath.Glob(g)
 		files = append(files, m...)
 	}
+	files = append(files, "../../clarusc/main.cla")
 	if len(files) == 0 {
 		t.Fatal("no corpus files matched")
 	}
 
 	for _, f := range files {
 		f := f
-		t.Run(filepath.Base(f), func(t *testing.T) {
-			wantOut, wantCode := goCheck(f)
-			gotOut, gotCode := runClarusc(t, exe, f)
-			if gotOut != wantOut || gotCode != wantCode {
-				t.Errorf("divergence on %s\n  go     (exit %d): %q\n  clarusc(exit %d): %q",
-					f, wantCode, wantOut, gotCode, gotOut)
+		t.Run(filepath.Base(f), func(t *testing.T) { diffOne(t, exe, f) })
+	}
+}
+
+// TestDifferentialFences extends parity to EVERY ```rust fence in the language
+// reference (not just the manifest-clean subset): each fence is written to a
+// temp file and both front ends must produce identical diagnostics, whether
+// the fence is a clean program, an intentional-error snippet, or a fragment
+// that fails to parse/resolve the same way on both sides.
+func TestDifferentialFences(t *testing.T) {
+	exe, err := buildClarusc()
+	if err != nil {
+		t.Fatalf("build clarusc: %v", err)
+	}
+	fences, err := reftest.ExtractFences("../../docs/clarus-language-reference.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fences) == 0 {
+		t.Fatal("no reference fences extracted")
+	}
+	dir := t.TempDir()
+	for _, fe := range fences {
+		fe := fe
+		t.Run(fmt.Sprintf("fence%03d_line%d", fe.Index, fe.Line), func(t *testing.T) {
+			p := filepath.Join(dir, fmt.Sprintf("fence%03d.cla", fe.Index))
+			if err := os.WriteFile(p, []byte(fe.Code), 0o644); err != nil {
+				t.Fatal(err)
 			}
+			diffOne(t, exe, p)
 		})
+	}
+}
+
+// TestClaruscChecksItself pins the self-host property explicitly: clarusc's own
+// source (main.cla plus its includes) must check CLEAN (empty stdout, exit 0)
+// under both the Go front end and clarusc itself.
+func TestClaruscChecksItself(t *testing.T) {
+	exe, err := buildClarusc()
+	if err != nil {
+		t.Fatalf("build clarusc: %v", err)
+	}
+	const self = "../../clarusc/main.cla"
+	goOut, goCode := goCheck(self)
+	if goOut != "" || goCode != 0 {
+		t.Fatalf("go check %s not clean: exit %d, out %q", self, goCode, goOut)
+	}
+	ccOut, ccCode := runClarusc(t, exe, self)
+	if ccOut != "" || ccCode != 0 {
+		t.Fatalf("clarusc check %s not clean: exit %d, out %q", self, ccCode, ccOut)
 	}
 }

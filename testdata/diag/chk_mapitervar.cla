@@ -1,0 +1,2 @@
+func f() { var m: map of int
+    for k in m { } }

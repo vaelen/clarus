@@ -1,0 +1,4 @@
+window W { title: "t"
+    table T { rows: bs
+        column "H" shows x width bad } }
+var bs: list of int

@@ -1,0 +1,2 @@
+menu M2 { item Save "a"
+    item Save "b" }

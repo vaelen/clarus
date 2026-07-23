@@ -1,0 +1,2 @@
+func f() { var x: int
+    x = window }

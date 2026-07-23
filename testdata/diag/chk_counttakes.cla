@@ -1,0 +1,2 @@
+var l: list of int
+func f() { l.count(5) }

@@ -1,0 +1,3 @@
+record R { x: int }
+window W { form for R
+    field F { binds: x, x } }

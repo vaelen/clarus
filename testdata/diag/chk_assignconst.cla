@@ -1,0 +1,2 @@
+const C: int = 5
+func f() { C = 6 }

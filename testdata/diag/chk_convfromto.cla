@@ -1,0 +1,2 @@
+func f() { var n: int
+    n = int("x") }

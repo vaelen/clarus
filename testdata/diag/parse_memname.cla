@@ -1,0 +1,3 @@
+func f() { var r: int
+    var y: int
+    y = r.5 }

@@ -1,0 +1,2 @@
+window W { title: "t" }
+extend W { foo }

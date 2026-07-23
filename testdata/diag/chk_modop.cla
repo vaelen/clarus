@@ -1,0 +1,2 @@
+func f() { var x: fixed
+    x = 1.0 mod 2.0 }

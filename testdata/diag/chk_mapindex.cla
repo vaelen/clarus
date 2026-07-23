@@ -1,0 +1,3 @@
+func f() { var m: map of int
+    var y: int
+    y = m[1] }

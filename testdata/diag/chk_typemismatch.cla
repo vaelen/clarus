@@ -1,0 +1,1 @@
+func f() { var b: bool = 1 == true }

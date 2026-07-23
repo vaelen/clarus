@@ -1,0 +1,4 @@
+func f() { var s: string
+    var x: int
+    var n: int
+    n = s.toBytes(x) }

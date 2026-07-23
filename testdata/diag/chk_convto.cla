@@ -1,0 +1,3 @@
+record R { x: int }
+func f() { var r: R
+    r = R(5) }

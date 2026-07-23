@@ -1,0 +1,3 @@
+window W { form for Bookmark2
+    field F { binds: name.foo } }
+record Bookmark2 { name: int }

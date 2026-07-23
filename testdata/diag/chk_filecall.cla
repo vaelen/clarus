@@ -1,0 +1,2 @@
+func f() { var b: bool
+    b = file.exists }

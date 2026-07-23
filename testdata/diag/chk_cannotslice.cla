@@ -1,0 +1,3 @@
+func f() { var n: int
+    var y: list of int
+    y = n[0,1] }

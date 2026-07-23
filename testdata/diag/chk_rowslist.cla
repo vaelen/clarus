@@ -1,0 +1,2 @@
+window W { table T { rows: 3
+        column "H" shows x width 5 } }

@@ -1,0 +1,14 @@
+enum Protocol { Gopher, HTTP, Telnet }
+record Bookmark { name: string(63)
+    protocol: Protocol
+    favorite: bool }
+var bookmarks: list of Bookmark
+window EditForm { title: "Edit"
+    form for Bookmark
+    field Name { binds: name; label: "Name:" }
+    button OK { default } }
+window Main { title: "Marks"
+    table Marks { rows: bookmarks
+        column "Name" shows name width 140 }
+    button Add { caption: "Add" } }
+extend Main { on Add.frobnicate { } }

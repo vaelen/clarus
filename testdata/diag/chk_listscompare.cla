@@ -1,0 +1,3 @@
+func f() { var a: list of int
+    var b: bool
+    b = a == a }

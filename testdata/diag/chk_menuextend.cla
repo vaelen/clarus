@@ -1,0 +1,2 @@
+menu M { item S "s" }
+extend M { extend M { } }

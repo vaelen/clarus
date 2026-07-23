@@ -1,0 +1,6 @@
+var nums: list of int
+window W { title: "t"
+    table T { rows: bs
+        column "H" shows nope width 5 } }
+var bs: list of Bookmark2
+record Bookmark2 { name: int }

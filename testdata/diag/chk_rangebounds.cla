@@ -1,0 +1,1 @@
+func f() { for x in 0 to "z" { } }

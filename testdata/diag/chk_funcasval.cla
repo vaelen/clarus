@@ -1,0 +1,3 @@
+func g() { }
+func f() { var x: int
+    x = g }

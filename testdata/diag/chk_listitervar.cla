@@ -1,0 +1,2 @@
+func f() { var l: list of int
+    for a, b in l { } }
