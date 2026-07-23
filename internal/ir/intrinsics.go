@@ -44,6 +44,7 @@ const (
 	ITextAppendStr   = "text_append_str"    // (t text, s str) grows t in place
 	ITextAppendChar  = "text_append_char"   // (t text, c char) grows t in place
 	ITextAppendText  = "text_append_text"   // (t text, src text) grows t in place; src may alias t
+	ITextOfStr       = "text_of_str"        // (s str) -> text fresh handle
 	// list (element size known at creation)
 	IListPush    = "list_push"
 	IListPop     = "list_pop"

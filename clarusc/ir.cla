@@ -1179,6 +1179,10 @@ func ITextAppendText(): int {
     return intern("text_append_text")
 }
 
+func ITextOfStr(): int {
+    return intern("text_of_str")
+}
+
 // -- list (element size known at creation) --
 func IListPush(): int {
     return intern("list_push")

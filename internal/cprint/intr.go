@@ -91,6 +91,17 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		fp.emit("%s = rt_text_new();", t)
 		fp.emit("rt_text_concat_sl(%s, %s, %s);", t, fp.strAddr(x.Args[0]), fp.expr(x.Args[1]))
 		return t
+	case ir.ITextOfStr:
+		// Materializes x.Args[0] (a Str value) into a fresh rt_text handle —
+		// coerceStr's Text-target/Str-source case (internal/lower/expr.go).
+		// The fresh handle satisfies the language reference's "always a
+		// fresh copy" contract: mutating the received text (e.g. .append)
+		// never affects the original string, since rt_text_store copies the
+		// string's bytes into the new handle's own buffer.
+		t := fp.newTmp("rt_text *")
+		fp.emit("%s = rt_text_new();", t)
+		fp.emit("rt_text_store(%s, %s);", t, fp.strAddr(x.Args[0]))
+		return t
 	case ir.ITextStore:
 		t, s := fp.expr(x.Args[0]), fp.strAddr(x.Args[1])
 		fp.emit("rt_text_store(%s, %s);", t, s)

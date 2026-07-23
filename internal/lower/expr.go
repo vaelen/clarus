@@ -90,18 +90,27 @@ func (l *lowerer) placeholder(ty ir.Type) ir.Expr {
 }
 
 // coerceStr wraps x in a capacity-clamping temp when x is a Str value whose
-// capacity differs from target's. CallFn args, Return, and list/map element
-// writes/reads all bind a value into a slot of another, independently
-// declared Str capacity WITHOUT going through storeStmt's StoreStr (that
-// path is reserved for plain lvalue assignment) — printed as a raw value,
-// clar_str_M and clar_str_N are distinct C struct types, so a capacity
-// mismatch there is either uncompilable C (a function call/return) or a
+// capacity differs from target's, or materializes a fresh Text handle when x
+// is a Str value binding into a Text-typed slot (the checker's
+// String -> Text assignability, Ch3 — see docs/clarus-language-reference.md's
+// Text section: a string may be used wherever a text is expected, and the
+// conversion always creates a FRESH text copy). CallFn args, Return, and
+// list/map element writes/reads all bind a value into a slot of another,
+// independently declared type WITHOUT going through storeStmt (that path is
+// reserved for plain lvalue assignment) — printed as a raw value, a Str
+// capacity mismatch is either uncompilable C (a function call/return) or a
 // same-size-only struct copy that silently reads/writes the wrong bytes (a
 // list push, since rt_list_push's memmove size comes from the LIST's
-// declared element size, not the source value's). x is returned unchanged
-// when no coercion is needed (identical capacity, or not a Str at all) — the
-// common case, so callers pay nothing extra.
+// declared element size, not the source value's); a Str value bound into a
+// Text slot the same way would copy the Str struct's raw bytes as if they
+// were an rt_text* handle — garbage pointer, memory corruption, no
+// diagnostic. x is returned unchanged when no coercion is needed (identical
+// Str capacity, or not a Str at all) — the common case, so callers pay
+// nothing extra.
 func (l *lowerer) coerceStr(target ir.Type, x ir.Expr) ir.Expr {
+	if target.K == ir.Text && x.Type().K == ir.Str {
+		return &ir.Intr{Name: ir.ITextOfStr, Args: []ir.Expr{x}, Ty: target}
+	}
 	if target.K != ir.Str || x.Type().K != ir.Str || x.Type().N == target.N {
 		return x
 	}

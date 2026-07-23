@@ -764,6 +764,18 @@ func fpIntrCall(x: int): text {
     } else if nm == ITextAppendText() {
         fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
+    } else if nm == ITextOfStr() {
+        // Materializes a0 (a Str value) into a fresh rt_text handle --
+        // lowCoerceStr's Text-target/Str-source case (lower.cla). The fresh
+        // handle satisfies the language reference's "always a fresh copy"
+        // contract: mutating the received text (e.g. .append) never affects
+        // the original string, since rt_text_store copies the string's
+        // bytes into the new handle's own buffer.
+        s0 = fpStrAddr(a0)
+        t = fpNewTmp("rt_text *")
+        fpEmit(t + " = rt_text_new();")
+        fpEmit("rt_text_store(" + t + ", " + s0 + ");")
+        return t
 
     // ---- list ----
     } else if nm == IListPush() or nm == IListUnshift() {

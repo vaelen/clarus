@@ -811,11 +811,18 @@ func lowSelect(e: int): int {
 }
 
 // coerceStr wraps x in a capacity-clamping temp when x is a Str value whose
-// capacity differs from target's -- a port of expr.go's coerceStr. No call
-// site in this task's conservative subset reaches a mismatched-capacity
-// Str binding yet (no user functions/lists/maps are wired); ported now so
-// Task 6+'s call/list/map slices can call it directly.
+// capacity differs from target's, or materializes a fresh Text handle when
+// x is a Str value binding into a Text-typed slot (the checker's
+// String -> Text assignability, Ch3 -- the conversion always creates a
+// FRESH text copy, per docs/clarus-language-reference.md's Text section) --
+// a port of expr.go's coerceStr. No call site in this task's conservative
+// subset reaches a mismatched-capacity Str binding yet (no user functions/
+// lists/maps are wired); ported now so Task 6+'s call/list/map slices can
+// call it directly.
 func lowCoerceStr(target: int, x: int): int {
+    if irtKind(target) == KText and irtKind(irExprType(x)) == KStr {
+        return newIRIntr(ITextOfStr(), x, target)
+    }
     if irtKind(target) != KStr or irtKind(irExprType(x)) != KStr or irtN(irExprType(x)) == irtN(target) {
         return x
     }
