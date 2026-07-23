@@ -1,0 +1,222 @@
+// main.cla: the clarusc CLI driver -- the check-only compiler front end that
+// ties lex.cla + parse.cla + check.cla together and prints diagnostics
+// byte-identically to `clarus check`.
+//
+// Pipeline, in the Go compiler's TWO-PHASE order (internal/driver/driver.go
+// + internal/check/check.go), which is load-bearing for multi-file parity:
+//   Phase A -- include-expand every entry file, lexing+parsing each in
+//     DFS/expansion order and collecting all parse-phase diagnostics as it
+//     goes (pre-order per driver.go: a file's own parse diags precede its
+//     includes'; the assembled decl lists are post-order so a dependency's
+//     declarations precede the includer's).
+//   Phase B -- run checkProgram ONCE over the whole assembled decl list,
+//     collecting check-phase diagnostics.
+// All parse diagnostics therefore print before all check diagnostics, exactly
+// as the Go compiler orders them. Diagnostics are printed via alert as
+// "path:line:col: message" (source.Diag.String()); quit 1 if any, else 0.
+
+include "lib.cla"
+include "tok.cla"
+include "lex.cla"
+include "ast.cla"
+include "parse.cla"
+include "types.cla"
+include "check.cla"
+
+// seenPaths keys the include-once set (driver.go's `seen`). Go keys by
+// cleaned absolute path so the same file reached two ways dedups; this port
+// keys by the resolved path string.
+// ponytail: string-keyed, not Abs+Clean-keyed -- exact for the flat testdata
+// layouts; upgrade to a real abs/clean if a corpus reaches one file via two
+// distinct relative spellings (Task 11 territory).
+var seenPaths: map of int
+
+// asmHeads holds each expanded file's decl-list head in POST-ORDER
+// (dependencies before includers), matching driver.go's files/trees order.
+var asmHeads: list of int
+
+// diagPaths runs parallel to lib.cla's global `diags`: diagPaths[i] is the
+// interned path string diags[i] belongs to. Parse diagnostics are stamped
+// with their file as each file is parsed; check diagnostics are stamped with
+// the entry path (exact for a single-file program -- the whole Task 10
+// subset; multi-file check-diag attribution is Task 11).
+var diagPaths: list of int
+
+// entryFailed records that an entry path itself could not be read -- Go's
+// Expand returns this as a hard error (clarus check: stderr + exit 1).
+var entryFailed: bool
+
+// stampNewDiags assigns pathIdx to every diagnostic added since the last
+// stamp, keeping diagPaths aligned with diags in emission order.
+func stampNewDiags(pathIdx: int) {
+    while diagPaths.count < diags.count {
+        diagPaths.add(pathIdx)
+    }
+}
+
+// dirOf returns path's directory including the trailing '/', or "" if path
+// has no slash (mirrors filepath.Dir + a following Join for our purposes).
+func dirOf(path: string): string {
+    var i: int
+    var last: int
+
+    last = -1
+    i = 0
+    while i < path.length {
+        if path[i] == '/' {
+            last = i
+        }
+        i = i + 1
+    }
+    if last == -1 {
+        return ""
+    }
+    return path[0, last + 1]
+}
+
+// joinPath resolves an include's path relative to dir (filepath.Join): an
+// absolute name (leading '/') wins outright, otherwise it hangs off dir.
+func joinPath(dir: string, name: string): string {
+    if name.length > 0 and name[0] == '/' {
+        return name
+    }
+    return dir + name
+}
+
+// lastDecl returns the last node in head's `next` chain (head must be a real
+// index, not -1) -- used to splice one file's decl list onto the running
+// combined list.
+func lastDecl(head: int): int {
+    var d: int
+
+    d = head
+    while declNext(d) != -1 {
+        d = declNext(d)
+    }
+    return d
+}
+
+// expand loads, lexes, and parses path, recursing into its leading includes
+// first (post-order decl assembly into asmHeads, pre-order parse
+// diagnostics) -- a port of driver.go's inner `expand`. Returns whether path
+// itself could not be read (the caller turns a missing non-entry file into a
+// "cannot open included file" diagnostic at the include's position).
+func expand(path: string, entry: bool): bool {
+    var src: text
+    var ok: bool
+    var head: int
+    var dir: string
+    var d: int
+    var pathIdx: int
+    var incName: string
+    var incResolved: string
+    var missing: bool
+
+    if seenPaths.has(path) {
+        return false
+    }
+    seenPaths[path] = 1
+
+    src = ""
+    ok = file.readText(path, src)
+    if not ok {
+        if entry {
+            entryFailed = true
+        }
+        return true
+    }
+
+    lexAll(src)
+    head = parseFile()
+    pathIdx = intern(path)
+    stampNewDiags(pathIdx)
+
+    dir = dirOf(path)
+    d = head
+    while d != -1 {
+        if declKind(d) == DkInclude {
+            incName = poolGet(includePath(d))
+            incResolved = joinPath(dir, incName)
+            missing = expand(incResolved, false)
+            if missing {
+                emitDiag(declLine(d), declCol(d), "cannot open included file \"" + incName + "\"")
+                stampNewDiags(pathIdx)
+            }
+        }
+        d = declNext(d)
+    }
+
+    asmHeads.add(head)
+    return false
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+    var combined: int
+    var tail: int
+    var h: int
+    var entryPathIdx: int
+
+    // Reset-at-start (belt-and-suspenders): the process is reused across many
+    // programs by the differential harness, so clear every arena/global even
+    // though one invocation checks one program. lexAll/parseFile/checkProgram
+    // each also reset their own state on entry.
+    resetDiags()
+    astReset()
+
+    if args.count == 0 {
+        log("usage: clarusc FILE...")
+        quit 2
+    }
+
+    // Phase A: include-expand + lex + parse every entry file, collecting all
+    // parse-phase diagnostics.
+    i = 0
+    while i < args.count {
+        expand(args[i], true)
+        i = i + 1
+    }
+    if entryFailed {
+        log("cannot open entry file")
+        quit 1
+    }
+
+    // Assemble the post-order decl lists into one chain for the single
+    // checker pass.
+    combined = -1
+    tail = -1
+    i = 0
+    while i < asmHeads.count {
+        h = asmHeads[i]
+        if h != -1 {
+            if combined == -1 {
+                combined = h
+            } else {
+                tail = declListAppend(tail, h)
+            }
+            tail = lastDecl(h)
+        }
+        i = i + 1
+    }
+
+    // Phase B: one checker pass over the whole program, collecting all
+    // check-phase diagnostics (they follow every parse diagnostic).
+    entryPathIdx = intern(args[0])
+    if combined != -1 {
+        checkProgram(combined)
+    }
+    stampNewDiags(entryPathIdx)
+
+    // Print every diagnostic as "path:line:col: message", parse phase before
+    // check phase, matching clarus check's stdout exactly.
+    i = 0
+    while i < diags.count {
+        alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
+        i = i + 1
+    }
+
+    if diags.count > 0 {
+        quit 1
+    }
+    quit 0
+}
