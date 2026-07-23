@@ -337,7 +337,7 @@ Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visit
 
 ### Text
 
-A `text` is an unbounded, resizable buffer of characters. Text operations are:
+A `text` is an unbounded, resizable buffer of characters. A `string` value may be used wherever a `text` is expected — assignment, a call argument, a return value, or a `list`/`map` element — and the conversion always creates a **fresh** `text` holding a copy of the string's bytes: because strings are values, mutating the resulting `text` never affects the original `string`. Text operations are:
 
 - Assignment: `t = "hello"`
 - Concatenation: `t = t + "world"`
