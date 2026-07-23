@@ -1710,6 +1710,14 @@ func parseFile(): int {
     skipNewlines()
     while curKind() != TkEOF and not parseAborted {
         dIdx = parseTopDecl()
+        // Match the Go parser's panic/recover fail-fast: a syntax error
+        // unwinds the whole call stack, so the decl being parsed when the
+        // abort fired is never appended (nor is any later one). Without
+        // this guard clarusc would check a half-built decl and emit
+        // cascade diagnostics the Go checker never sees. See parseErrorf.
+        if parseAborted {
+            return declsHead
+        }
         if declsHead == -1 { declsHead = dIdx }
         declsTail = declListAppend(declsTail, dIdx)
         skipNewlines()
