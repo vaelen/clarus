@@ -325,6 +325,10 @@ var enumConstOf: map of int
 var constUseIsStr: map of int
 var constUseInt: map of int
 var constUseStr: map of string
+// exprTypeOf is keyed by expr arena index; lower.cla/cprint.cla (the emit
+// path) read it via exprTypeGet AFTER checkProgram, in the SAME process, with
+// no astReset in between -- `clarusc emit` runs one program per process, so
+// those indices still name the AST that produced these entries.
 var exprTypeOf: map of int
 
 func enumConstGet(e: int): int {

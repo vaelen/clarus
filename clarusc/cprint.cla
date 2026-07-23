@@ -1,0 +1,420 @@
+// cprint.cla: arena IR (ir.cla) -> one self-contained C99 translation unit
+// that #includes "rt.h". A port of the walking-skeleton subset of
+// internal/cprint (cprint.go / funcprint.go / intr.go / types.go).
+//
+// Output channel: the translation unit is printed to STDOUT, one C source
+// line per `alert` call (alert appends '\n' -- see rt.h). Clarus has no
+// primitive to write a whole multi-line `text` to stdout without per-chunk
+// newlines, and `string` results are capped at 255 bytes, so emission is
+// line-oriented: each section accumulates its lines into a `list of string`
+// buffer, and emitProgram replays the four buffers in Emit's fixed assembly
+// order. cType may append a clar_str_N typedef to cpTypeBuf at any point
+// during body printing (the first time an unseen capacity appears), so the
+// buffers are assembled fully before any is printed.
+// ponytail: one emitted C source line must stay under 255 bytes (a `string`
+// capacity); true for the skeleton. Task 4+ that emits a longer single line
+// (a big literal, a wide proto) switches that buffer to `text`.
+//
+// This is the Task 3 skeleton: it emits ONLY what the seed program needs
+// (clar_str_255, the string-literal pool, the clar_rec_Err typedef, an empty
+// clar_init_globals, one void handler Func with an ExprStmt body, and main).
+// Every branch a later task fills in is marked "Task 4+".
+
+include "lib.cla"
+include "ir.cla"
+
+// ================================================================
+// Whole-program buffers (cprint.go's printer struct), assembled in a fixed
+// final order. One emitProgram call per process, so these start empty.
+// ================================================================
+
+var cpTypeBuf: list of string   // string-capacity (+ array-wrapper, Task 4+) typedefs
+var cpLitBuf: list of string    // string-literal pool
+var cpRecBuf: list of string    // record structs (seeded with clar_rec_Err)
+var cpRestBuf: list of string   // globals init, funcs, main
+
+// cpStrCapsEmitted keys the string capacities already emitted into cpTypeBuf
+// (keyed by numToStr(n)); each clar_str_N typedef is emitted once.
+var cpStrCapsEmitted: map of int
+
+// ================================================================
+// funcPrinter (funcprint.go): one function body's lines, temp counter, and
+// indent. Modeled as module state -- one function is printed at a time and
+// printing is not reentrant in the skeleton.
+// ================================================================
+
+var fpBody: list of string
+var fpTmpN: int
+var fpIndent: int
+
+func fpReset(indent: int) {
+    while fpBody.count > 0 {
+        fpBody.pop()
+    }
+    fpTmpN = 0
+    fpIndent = indent
+}
+
+// fpEmit appends one indented body line (4 spaces per indent level).
+func fpEmit(line: string) {
+    var pad: string
+    var i: int
+
+    pad = ""
+    i = 0
+    while i < fpIndent {
+        pad = pad + "    "
+        i = i + 1
+    }
+    fpBody.add(pad + line)
+}
+
+// fpNewTmp declares a fresh `ctype tN;` at the current position and returns
+// its name (funcprint.go's newTmp). The counter is monotonic within a
+// function and never reset mid-function -- load-bearing for later bootstrap
+// determinism.
+func fpNewTmp(ctype: string): string {
+    var name: string
+
+    fpTmpN = fpTmpN + 1
+    name = "t" + numToStr(fpTmpN)
+    fpEmit(ctype + " " + name + ";")
+    return name
+}
+
+// ================================================================
+// Type printing (types.go subset)
+// ================================================================
+
+// cpCTypeName is the pure C type name for an IR type index (no side effects).
+func cpCTypeName(t: int): string {
+    switch irtKind(t) {
+    case KVoid { return "void" }
+    case KInt { return "int32_t" }
+    case KBool { return "int32_t" }
+    case KFixed { return "int32_t" }
+    case KEnum { return "int32_t" }
+    case KChar { return "uint8_t" }
+    case KStr { return "clar_str_" + numToStr(irtN(t)) }
+    case KText { return "rt_text *" }
+    case KList { return "rt_list *" }
+    case KMap { return "rt_map *" }
+    case KRec { return "clar_rec_" + poolGet(irtName(t)) }
+    case KErr { return "clar_rec_Err" }
+    }
+    // KArr: Task 4+ (fixed-array wrapper typedefs).
+    return "void"
+}
+
+// cpEnsureStr emits the clar_str_N capacity typedef into cpTypeBuf once.
+func cpEnsureStr(n: int) {
+    var key: string
+
+    key = numToStr(n)
+    if cpStrCapsEmitted.has(key) {
+        return
+    }
+    cpStrCapsEmitted[key] = 1
+    cpTypeBuf.add("typedef struct { uint8_t len; uint8_t b[" + key + "]; } clar_str_" + key + ";")
+}
+
+// cpEnsureType lazily emits whatever typedef(s) t depends on (types.go's
+// ensureType). Rec/Enum are emitted in declaration order elsewhere (Task 4+).
+func cpEnsureType(t: int) {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KStr {
+        cpEnsureStr(irtN(t))
+    } else if k == KList {
+        cpEnsureType(irtElem(t))
+    } else if k == KMap {
+        cpEnsureType(irtElem(t))
+    }
+    // KArr: Task 4+.
+}
+
+// cpCType returns t's C type name, first emitting any typedef it depends on.
+func cpCType(t: int): string {
+    cpEnsureType(t)
+    return cpCTypeName(t)
+}
+
+// ================================================================
+// Expression + statement printing (funcprint.go / intr.go subset)
+// ================================================================
+
+func fpExpr(e: int): string {
+    switch irExprKind(e) {
+    case EIntConst {
+        return numToStr(irIntConstV(e))
+    }
+    case EStrConst {
+        return "clar_lit_" + numToStr(irStrConstIdx(e))
+    }
+    case EVarRef {
+        return "cv_" + poolGet(irVarRefName(e))
+    }
+    case EIntr {
+        return fpIntrCall(e)
+    }
+    }
+    // Task 4+: EFieldRef/EIndexRef/EBin/EUn/EConv/ECallFn/ENewRec.
+    return ""
+}
+
+// fpAddrable returns a C expression for e that is safe to take the address of
+// (funcprint.go's addrable). VarRef/FieldRef/IndexRef print to C lvalues,
+// StrConst to a named static, Intr to its already-materialized temp -- none
+// needs a copy. Task 4+ adds copyToTemp for non-lvalue results.
+func fpAddrable(e: int): string {
+    var k: IRExprKind
+
+    k = irExprKind(e)
+    if k == EVarRef or k == EFieldRef or k == EIndexRef or k == EStrConst or k == EIntr {
+        return fpExpr(e)
+    }
+    return fpExpr(e)
+}
+
+// fpStrAddr renders `(const uint8_t*)&(<addrable e>)` (funcprint.go's strAddr).
+func fpStrAddr(e: int): string {
+    return "(const uint8_t*)&(" + fpAddrable(e) + ")"
+}
+
+// fpIntrCall prints one Intr call (intr.go). Void operations emit their call
+// as a statement and return "" (the only context they appear in is an
+// ExprStmt). Skeleton: alert/log/quit.
+func fpIntrCall(x: int): string {
+    var nm: int
+
+    nm = irIntrName(x)
+    if nm == IAlert() {
+        fpEmit("rt_alert(" + fpStrAddr(irIntrArgsHead(x)) + ");")
+        return ""
+    } else if nm == ILog() {
+        fpEmit("rt_log(" + fpStrAddr(irIntrArgsHead(x)) + ");")
+        return ""
+    } else if nm == IQuit() {
+        fpEmit("rt_quit((int32_t)(" + fpExpr(irIntrArgsHead(x)) + "));")
+        return ""
+    }
+    // Task 4+: the remaining 50 intrinsics (str/text/list/map/fixed/file).
+    return ""
+}
+
+func fpStmt(s: int) {
+    var e: string
+
+    if irStmtKind(s) == SExprStmt {
+        e = fpExpr(irExprStmtX(s))
+        if e != "" {
+            fpEmit(e + ";")
+        }
+    }
+    // Task 4+: SAssign/SStoreStr/SIf/SWhile/SForRange/SForList/SForMap/
+    // SReturn/SBreak/SContinue.
+}
+
+func fpStmts(head: int) {
+    var s: int
+
+    s = head
+    while s != -1 {
+        fpStmt(s)
+        s = irStmtNext(s)
+    }
+}
+
+// ================================================================
+// Function + main printing (cprint.go subset)
+// ================================================================
+
+// cpFuncProto renders a function/handler's C prototype (cprint.go's
+// funcProto), without the trailing ";" or " {".
+func cpFuncProto(f: int): string {
+    var params: string
+    var p: int
+    var first: bool
+
+    params = ""
+    first = true
+    p = irFuncParamsHead(f)
+    while p != -1 {
+        if not first {
+            params = params + ", "
+        }
+        first = false
+        params = params + cpCType(irLocalType(p)) + " cv_" + poolGet(irLocalName(p))
+        p = irLocalNext(p)
+    }
+    if first {
+        params = "void"
+    }
+    return "static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(" + params + ")"
+}
+
+// cpEmitFunc appends one function's full definition to cpRestBuf
+// (cprint.go's emitFunc). Skeleton: no locals default-init, no trailing
+// return (handlers are void).
+func cpEmitFunc(f: int) {
+    var loc: int
+    var i: int
+
+    cpEnsureType(irFuncRet(f))
+    fpReset(1)
+
+    loc = irFuncLocalsHead(f)
+    while loc != -1 {
+        fpEmit(cpCType(irLocalType(loc)) + " cv_" + poolGet(irLocalName(loc)) + ";")
+        // Task 4+: defaultInit per local.
+        loc = irLocalNext(loc)
+    }
+    fpStmts(irFuncBodyHead(f))
+    // Task 4+: `return <zeroLiteral>;` for a non-void return type.
+
+    cpRestBuf.add(cpFuncProto(f) + " {")
+    i = 0
+    while i < fpBody.count {
+        cpRestBuf.add(fpBody[i])
+        i = i + 1
+    }
+    cpRestBuf.add("}")
+    cpRestBuf.add("")
+}
+
+// cpEmitFuncs prints every prototype up front, then every definition
+// (cprint.go's emitFuncs).
+func cpEmitFuncs() {
+    var i: int
+
+    i = 0
+    while i < irFuncs.count {
+        cpRestBuf.add(cpFuncProto(i) + ";")
+        i = i + 1
+    }
+    cpRestBuf.add("")
+    i = 0
+    while i < irFuncs.count {
+        cpEmitFunc(i)
+        i = i + 1
+    }
+}
+
+// cpEmitGlobalsInit declares every global then defines clar_init_globals
+// (cprint.go's emitGlobalsAndInit). Skeleton: no globals -> just the empty
+// init function (main always calls it).
+func cpEmitGlobalsInit() {
+    var i: int
+
+    i = 0
+    while i < irGlobals.count {
+        cpRestBuf.add("static " + cpCType(irGlobalType(i)) + " cv_" + poolGet(irGlobalName(i)) + ";")
+        i = i + 1
+    }
+    cpRestBuf.add("static void clar_init_globals(void) {")
+    // Task 4+: per-global default-init + Init expression.
+    cpRestBuf.add("}")
+    cpRestBuf.add("")
+}
+
+// cpEmitStrLits prints the interned string-literal pool as clar_str_255
+// constants (cprint.go's emitStrLits). StrConst.Idx indexes this pool.
+func cpEmitStrLits() {
+    var i: int
+    var s: string
+    var bytesStr: string
+    var j: int
+
+    i = 0
+    while i < irStrLits.count {
+        s = poolGet(irStrLitPoolIdx(i))
+        bytesStr = ""
+        j = 0
+        while j < s.length {
+            if j > 0 {
+                bytesStr = bytesStr + ", "
+            }
+            bytesStr = bytesStr + numToStr(int(s[j]))
+            j = j + 1
+        }
+        cpLitBuf.add("static const clar_str_255 clar_lit_" + numToStr(i) + " = {" + numToStr(s.length) + ", {" + bytesStr + "}};")
+        i = i + 1
+    }
+}
+
+// cpEmitMain prints the fixed entry point (cprint.go's emitMain): init
+// globals, stash argv, then launch, then startCLI (else startEmpty).
+func cpEmitMain() {
+    cpRestBuf.add("int main(int argc, char **argv) {")
+    cpRestBuf.add("    clar_init_globals();")
+    cpRestBuf.add("    rt_args_init(argc, argv);")
+    if irHasLaunch {
+        cpRestBuf.add("    clar_fn_handler_App_launch();")
+    }
+    if irHasStartCLI {
+        cpRestBuf.add("    clar_fn_handler_App_startCLI(rt_args_list());")
+    } else if irHasStartEmpty {
+        cpRestBuf.add("    clar_fn_handler_App_startEmpty();")
+    }
+    cpRestBuf.add("    return 0;")
+    cpRestBuf.add("}")
+}
+
+// ================================================================
+// Assembly + output
+// ================================================================
+
+func cpResetBuffers() {
+    while cpTypeBuf.count > 0 {
+        cpTypeBuf.pop()
+    }
+    while cpLitBuf.count > 0 {
+        cpLitBuf.pop()
+    }
+    while cpRecBuf.count > 0 {
+        cpRecBuf.pop()
+    }
+    while cpRestBuf.count > 0 {
+        cpRestBuf.pop()
+    }
+}
+
+// cpPrintList writes every line of buf to stdout (one alert per line).
+func cpPrintList(buf: list of string) {
+    var i: int
+
+    i = 0
+    while i < buf.count {
+        alert(buf[i])
+        i = i + 1
+    }
+}
+
+// emitProgram renders the whole IR (ir.cla arenas) and prints it to stdout in
+// Emit's fixed assembly order (cprint.go's Emit).
+func emitProgram() {
+    cpResetBuffers()
+
+    cpEnsureStr(255)   // literal pool + every intrinsic string temp use this
+    cpRecBuf.add("typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;")
+    cpRecBuf.add("")
+
+    cpEmitStrLits()
+    // Task 4+: cpEmitRecords / cpEmitEnums.
+    cpEmitGlobalsInit()
+    cpEmitFuncs()
+    cpEmitMain()
+
+    alert("/* Generated by clarus (internal/cprint). Do not edit. */")
+    alert("#include \"rt.h\"")
+    alert("#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
+    alert("")
+    cpPrintList(cpTypeBuf)
+    alert("")
+    cpPrintList(cpLitBuf)
+    alert("")
+    cpPrintList(cpRecBuf)
+    alert("")
+    cpPrintList(cpRestBuf)
+}

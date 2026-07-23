@@ -1,0 +1,437 @@
+// lower.cla: AST + checker-type-info -> arena IR (ir.cla). A port of the
+// walking-skeleton subset of internal/lower (lower.go / stmt.go / expr.go).
+//
+// This is Task 3's walking skeleton: it lowers ONLY what the seed program
+//   on App.startCLI(args: list of string) { alert("...") quit 0 }
+// needs -- Program flags + one handler Func, ExprStmt, Intr(IAlert/ILog),
+// Intr(IQuit), StrConst and IntConst -- plus the structural scaffolding
+// (scope stack, curFuncRet, per-function locals chain, full lowType/
+// lowResolveType) that Tasks 4-9 extend without reshaping. Every branch a
+// later task fills in is marked "Task 4+".
+//
+// One program is lowered per process (a fresh `clarusc emit FILE` exec per
+// program): the checker's exprTypeOf and the AST arenas are never cleared
+// between check and lower, so exprTypeGet(e) resolves against the very AST
+// this pass walks. irReset() (ir.cla) must run once before lowerProgram to
+// seed the singleton IR scalar types (irIntT, irVoidT, ...).
+
+include "lib.cla"
+include "ast.cla"
+include "types.cla"
+include "check.cla"
+include "ir.cla"
+
+// ================================================================
+// Lowerer state (lower.go's `lowerer` struct, reduced to the skeleton).
+// ================================================================
+
+// LowScope is one nested local-variable scope: names present as locals in
+// this scope (value 1). Mirrors lower.go's localScopes entries -- consulted
+// by lowIsLocal so lowIdent can tell a local VarRef from a global one.
+record LowScope {
+    names: map of int
+}
+
+var lowScopes: list of LowScope
+
+// lowStrIdx dedups string literals into the irStrLits pool by literal value
+// (lower.go's strIdx): identical literals share one clar_lit_K slot.
+var lowStrIdx: map of int
+
+// lowCurFuncRet is the enclosing function's declared return IR type index,
+// for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
+var lowCurFuncRet: int
+
+// lowLocalsHead/lowLocalsTail thread the current function's flat locals
+// chain (lower.go's f.Locals): every nested block's `var` flattens into it,
+// which is what cprint declares at C function scope.
+var lowLocalsHead: int
+var lowLocalsTail: int
+
+func lowPushScope() {
+    var s: LowScope
+
+    lowScopes.add(s)
+}
+
+func lowPopScope() {
+    lowScopes.pop()
+}
+
+func lowDeclareLocal(nameIdx: int) {
+    var top: int
+
+    top = lowScopes.count - 1
+    lowScopes[top].names[poolGet(nameIdx)] = 1
+}
+
+func lowIsLocal(nameIdx: int): bool {
+    var i: int
+    var key: string
+
+    key = poolGet(nameIdx)
+    i = lowScopes.count - 1
+    while i >= 0 {
+        if lowScopes[i].names.has(key) {
+            return true
+        }
+        i = i - 1
+    }
+    return false
+}
+
+// lowAddLocal appends one local (name + IR type) to the current function's
+// flat locals chain and returns its irLocals index.
+func lowAddLocal(nameIdx: int, t: int): int {
+    var loc: int
+
+    loc = newIRLocal(nameIdx, t)
+    if lowLocalsHead == -1 {
+        lowLocalsHead = loc
+    }
+    lowLocalsTail = irLocalListAppend(lowLocalsTail, loc)
+    return loc
+}
+
+// ================================================================
+// Type lowering
+// ================================================================
+
+// lowType maps a checked type-arena index (types.cla) to its IR type index
+// (ir.cla) -- a port of lower.go's lowerType.
+func lowType(t: int): int {
+    switch typeKind(t) {
+    case TyInt { return irIntT }
+    case TyBool { return irBoolT }
+    case TyFixed { return irFixedT }
+    case TyChar { return irCharT }
+    case TyText { return irTextT }
+    case TyVoid { return irVoidT }
+    case TyErrorType { return irErrT }
+    case TyStr { return irStrType(typeN(t)) }
+    case TyEnum { return irEnumType(typeNameIdx(t)) }
+    case TyRec { return irRecType(typeNameIdx(t)) }
+    case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
+    case TyList { return irListType(lowType(typeElem(t))) }
+    case TyMap { return irMapType(lowType(typeElem(t))) }
+    }
+    // TyInvalid and the checker-only pseudo-kinds never reach a
+    // checker-clean lowering (lower.go's lowerType panics here).
+    return irVoidT
+}
+
+// lowResolveType maps an AST TypeExpr (ast.cla) directly to an IR type index
+// -- a fused port of lower.go's resolveType + lowerType, used for the type
+// annotations (params, `var`, fields) that never went through checkExpr and
+// so have no exprTypeOf entry.
+func lowResolveType(tx: int): int {
+    var nm: string
+
+    switch typeExprKind(tx) {
+    case TxNamed {
+        nm = poolGet(namedTypeName(tx))
+        if nm == "int" {
+            return irIntT
+        } else if nm == "bool" {
+            return irBoolT
+        } else if nm == "fixed" {
+            return irFixedT
+        } else if nm == "char" {
+            return irCharT
+        } else if nm == "text" {
+            return irTextT
+        }
+        // Task 4+: user record/enum names via a declTypes registry.
+        return irIntT
+    }
+    case TxString {
+        return irStrType(stringTypeN(tx))
+    }
+    case TxList {
+        return irListType(lowResolveType(listTypeElem(tx)))
+    }
+    case TxMap {
+        return irMapType(lowResolveType(mapTypeVal(tx)))
+    }
+    case TxArray {
+        return irArrType(lowResolveType(arrayTypeElem(tx)), arrayTypeN(tx))
+    }
+    }
+    return irIntT
+}
+
+// lowMustType returns e's IR type from the checker's recorded type
+// (exprTypeGet, Task 1) -- lower.go's mustType.
+func lowMustType(e: int): int {
+    return lowType(exprTypeGet(e))
+}
+
+// lowInternStr interns a string literal into the irStrLits pool, deduping by
+// value, and returns its pool index (a StrConst's Idx) -- lower.go's
+// internStr.
+func lowInternStr(s: string): int {
+    var idx: int
+
+    if lowStrIdx.has(s) {
+        return lowStrIdx.get(s, -1)
+    }
+    idx = irAddStrLit(intern(s))
+    lowStrIdx[s] = idx
+    return idx
+}
+
+// ================================================================
+// Expression lowering (expr.go subset)
+// ================================================================
+
+func lowExpr(e: int): int {
+    switch exprKind(e) {
+    case ExIntLit {
+        return newIRIntConst(intLitVal(e), irIntT)
+    }
+    case ExStringLit {
+        return newIRStrConst(lowInternStr(poolGet(stringLitIdx(e))), irStrType(255))
+    }
+    case ExCall {
+        return lowCall(e)
+    }
+    case ExIdent {
+        return lowIdent(e)
+    }
+    }
+    // Task 4+: ExBoolLit/ExCharLit/ExFixedLit/ExUnary/ExBinary/ExIndex/
+    // ExSlice/ExSelect/ExNew.
+    return -1
+}
+
+// lowIdent lowers a bare variable reference (expr.go's lowerIdent, reduced).
+// Task 4+ adds enum-member constants, const inlining, and lastError.
+func lowIdent(e: int): int {
+    var nm: int
+    var global: bool
+
+    nm = identName(e)
+    global = not lowIsLocal(nm)
+    return newIRVarRef(nm, global, lowMustType(e))
+}
+
+// lowArgs lowers an AST argument chain (each linked via exprNext) into an IR
+// expr chain (linked via irExprListAppend), returning the chain head (-1 if
+// none).
+func lowArgs(argsHead: int): int {
+    var head: int
+    var tail: int
+    var a: int
+    var le: int
+
+    head = -1
+    tail = -1
+    a = argsHead
+    while a != -1 {
+        le = lowExpr(a)
+        if head == -1 {
+            head = le
+        }
+        tail = irExprListAppend(tail, le)
+        a = exprNext(a)
+    }
+    return head
+}
+
+// lowCall lowers a bare-name call. Skeleton: alert/log intrinsics only.
+func lowCall(e: int): int {
+    var fn: int
+    var name: string
+    var ty: int
+
+    fn = callFn(e)
+    if exprKind(fn) == ExIdent {
+        name = poolGet(identName(fn))
+        ty = lowMustType(e)
+        if name == "alert" {
+            return newIRIntr(IAlert(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "log" {
+            return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
+        }
+        // Task 4+: int/fixed/char/enum conversions, user functions.
+    }
+    // Task 4+: method calls (ExSelect receiver).
+    return -1
+}
+
+// ================================================================
+// Statement lowering (stmt.go subset)
+// ================================================================
+
+// lowStoreStmt builds the store form for `dst = src` at IR type t: a Str
+// destination clamps through StoreStr, everything else is a plain Assign
+// (stmt.go's storeStmt; Task 4 adds the Text<-Str text_store case).
+func lowStoreStmt(dst: int, src: int, t: int): int {
+    if irtKind(t) == KStr {
+        return newIRStoreStr(dst, src)
+    }
+    return newIRAssign(dst, src)
+}
+
+// lowStmt lowers one statement, returning its irStmts index, or -1 for a
+// statement that contributes no IR node. Skeleton: ExprStmt + Quit.
+func lowStmt(s: int): int {
+    switch stmtKind(s) {
+    case StExprStmt {
+        return newIRExprStmt(lowExpr(exprStmtX(s)))
+    }
+    case StQuit {
+        return lowQuit(s)
+    }
+    }
+    // Task 4+: StAssign/StIf/StWhile/StFor/StReturn/StSwitch/StBreak/
+    // StContinue.
+    return -1
+}
+
+// lowQuit lowers `quit [code]` to Intr(IQuit) with exactly one int argument
+// (bare `quit` supplies IntConst 0) -- stmt.go's lowerQuit.
+func lowQuit(s: int): int {
+    var code: int
+
+    if quitCode(s) == -1 {
+        code = newIRIntConst(0, irIntT)
+    } else {
+        code = lowExpr(quitCode(s))
+    }
+    return newIRExprStmt(newIRIntr(IQuit(), code, irVoidT))
+}
+
+// lowBlock lowers one StBlock's local `var`s (flattened into the current
+// function's locals chain) then its statements, in a fresh nested scope, and
+// returns the statement-chain head (-1 if empty) -- stmt.go's lowerBlock.
+func lowBlock(blk: int): int {
+    var head: int
+    var tail: int
+    var v: int
+    var t: int
+    var dst: int
+    var s: int
+    var st: int
+
+    lowPushScope()
+    head = -1
+    tail = -1
+
+    v = blockVarsHead(blk)
+    while v != -1 {
+        t = lowResolveType(varDeclType(v))
+        lowAddLocal(varDeclName(v), t)
+        lowDeclareLocal(varDeclName(v))
+        if varDeclInit(v) != -1 {
+            dst = newIRVarRef(varDeclName(v), false, t)
+            st = lowStoreStmt(dst, lowExpr(varDeclInit(v)), t)
+            if head == -1 {
+                head = st
+            }
+            tail = irStmtListAppend(tail, st)
+        }
+        v = declNext(v)
+    }
+
+    s = blockStmtsHead(blk)
+    while s != -1 {
+        st = lowStmt(s)
+        if st != -1 {
+            if head == -1 {
+                head = st
+            }
+            tail = irStmtListAppend(tail, st)
+        }
+        s = stmtNext(s)
+    }
+
+    lowPopScope()
+    return head
+}
+
+// ================================================================
+// Declaration + top-level lowering (lower.go / stmt.go subset)
+// ================================================================
+
+// lowFuncBody lowers params + a body block into an ir.Func, registering the
+// signature scope and returning its irFuncs index (stmt.go's lowerFuncBody).
+func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int {
+    var paramsHead: int
+    var paramsTail: int
+    var p: int
+    var loc: int
+    var savedRet: int
+    var bodyHead: int
+    var fn: int
+
+    lowPushScope()
+
+    paramsHead = -1
+    paramsTail = -1
+    p = astParamsHead
+    while p != -1 {
+        loc = newIRLocal(paramName(p), lowResolveType(paramType(p)))
+        if paramsHead == -1 {
+            paramsHead = loc
+        }
+        paramsTail = irLocalListAppend(paramsTail, loc)
+        lowDeclareLocal(paramName(p))
+        p = declNext(p)
+    }
+
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+    savedRet = lowCurFuncRet
+    lowCurFuncRet = ret
+    bodyHead = lowBlock(bodyBlk)
+    lowCurFuncRet = savedRet
+
+    fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
+    lowPopScope()
+    return fn
+}
+
+// lowTopHandler lowers a top-level `on App.launch`/`startEmpty`/`startCLI`
+// handler into an ir.Func plus the matching Program flag (stmt.go's
+// lowerTopHandlerDecl). Any other handler event is host-unsupported (Task 4+).
+func lowTopHandler(d: int) {
+    var path: string
+
+    path = poolGet(handlerDeclPath(d))
+    if path == "App.launch" {
+        lowFuncBody(intern("handler_App_launch"), -1, irVoidT, handlerDeclBody(d))
+        irHasLaunch = true
+    } else if path == "App.startEmpty" {
+        lowFuncBody(intern("handler_App_startEmpty"), -1, irVoidT, handlerDeclBody(d))
+        irHasStartEmpty = true
+    } else if path == "App.startCLI" {
+        lowFuncBody(intern("handler_App_startCLI"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
+        irHasStartCLI = true
+    }
+    // Task 4+: `on App.openDocument` and resource handlers are unsupported.
+}
+
+// lowDecl dispatches one top-level declaration (lower.go's lowerDecl subset).
+func lowDecl(d: int) {
+    if declKind(d) == DkHandler {
+        lowTopHandler(d)
+    }
+    // Task 4+: DkRecord/DkEnum/DkVar(global)/DkFunc; DkInclude/DkConst emit
+    // no IR.
+}
+
+// lowerProgram walks the assembled top-level decl chain (declHead, linked via
+// declNext), populating the ir.cla arenas + Program flags. Returns 0 (ir.cla
+// has no wrapping Program value: the arenas ARE the program). irReset() must
+// have run first.
+func lowerProgram(declHead: int): int {
+    var d: int
+
+    d = declHead
+    while d != -1 {
+        lowDecl(d)
+        d = declNext(d)
+    }
+    return 0
+}
