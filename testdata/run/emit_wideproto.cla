@@ -1,0 +1,20 @@
+// emit_wideproto.cla: pins the cpFuncProto fix (clarusc/cprint.cla) -- a
+// function's C prototype must not truncate. cpFuncProto used to accumulate
+// its comma-joined param list (and the whole prototype) in a 255-byte-capped
+// `string`; sumBoxMetrics's 18 descriptively-named int params produce a
+// prototype well past 255 bytes (~565), which a `string` would silently cut
+// mid-token, emitting invalid C. Fixed by making the accumulator/return
+// `text`, same fix class as cpEmitEnums (see that function's comment).
+// Self-verifying: sums all 18 args and checks the total.
+
+func sumBoxMetrics(widthInPixels: int, heightInPixels: int, marginTopValue: int, marginBottomValue: int, marginLeftValue: int, marginRightValue: int, paddingTopValue: int, paddingBottomValue: int, paddingLeftValue: int, paddingRightValue: int, borderWidthValue: int, cornerRadiusValue: int, shadowOffsetXValue: int, shadowOffsetYValue: int, shadowBlurRadiusValue: int, opacityPercentValue: int, rotationDegreeValue: int, scaleFactorValue: int): int {
+    return widthInPixels + heightInPixels + marginTopValue + marginBottomValue + marginLeftValue + marginRightValue + paddingTopValue + paddingBottomValue + paddingLeftValue + paddingRightValue + borderWidthValue + cornerRadiusValue + shadowOffsetXValue + shadowOffsetYValue + shadowBlurRadiusValue + opacityPercentValue + rotationDegreeValue + scaleFactorValue
+}
+
+on App.launch {
+    if sumBoxMetrics(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18) == 171 {
+        alert("ok")
+    } else {
+        alert("FAIL")
+    }
+}

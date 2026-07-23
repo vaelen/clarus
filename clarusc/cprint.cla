@@ -1092,13 +1092,17 @@ func fpStmts(head: int) {
 // ================================================================
 
 // cpFuncProto renders a function/handler's C prototype (cprint.go's
-// funcProto), without the trailing ";" or " {".
-func cpFuncProto(f: int): string {
-    var params: string
+// funcProto), without the trailing ";" or " {". params/the return value are
+// `text`, not `string`: a `string` is a fixed 255-byte buffer, and a
+// function with enough params (or record-typed/long-named ones) produces a
+// comma-joined param list that can run past that -- the same class of bug
+// cpEmitEnums had (fixed above) for an enum's ordinal list.
+func cpFuncProto(f: int): text {
+    var params: text
     var p: int
     var first: bool
 
-    params = ""
+    params = toText("")
     first = true
     p = irFuncParamsHead(f)
     while p != -1 {
@@ -1110,9 +1114,9 @@ func cpFuncProto(f: int): string {
         p = irLocalNext(p)
     }
     if first {
-        params = "void"
+        params = toText("void")
     }
-    return "static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(" + params + ")"
+    return toText("static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(") + params + toText(")")
 }
 
 // cpDefaultInit emits the default-value statement(s) for dst at type t, via
@@ -1233,7 +1237,7 @@ func cpEmitFunc(f: int) {
         fpEmit(toText("return " + cpZeroLiteral(irFuncRet(f)) + ";"))
     }
 
-    cpRestBuf.add(toText(cpFuncProto(f) + " {"))
+    cpRestBuf.add(cpFuncProto(f) + " {")
     i = 0
     while i < fpBody.count {
         cpRestBuf.add(fpBody[i])
@@ -1250,7 +1254,7 @@ func cpEmitFuncs() {
 
     i = 0
     while i < irFuncs.count {
-        cpRestBuf.add(toText(cpFuncProto(i) + ";"))
+        cpRestBuf.add(cpFuncProto(i) + ";")
         i = i + 1
     }
     cpRestBuf.add(toText(""))
