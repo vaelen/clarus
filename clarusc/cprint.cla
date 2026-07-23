@@ -70,6 +70,10 @@ var cpStrCapsEmitted: map of int
 // distinct array shape is emitted once.
 var cpArrEmitted: map of int
 
+// cpLoopN counts default-init loop variable names (cpDefaultInit's Arr
+// case) -- cprint.go's printer.loopN.
+var cpLoopN: int
+
 // ================================================================
 // funcPrinter (funcprint.go): one function body's lines, temp counter, and
 // indent. Modeled as module state -- one function is printed at a time and
@@ -147,9 +151,7 @@ func cpArrKey(t: int): string {
 }
 
 // cpElemKey renders t as an identifier fragment, for composing cpArrKey --
-// types.go's elemKey, reduced to the element kinds an Arr can hold in this
-// task's subset (int/bool/fixed/char/str/text/nested-arr); Rec/Enum/List/
-// Map/Err elements are Task 6+.
+// a full port of types.go's elemKey.
 func cpElemKey(t: int): string {
     switch irtKind(t) {
     case KInt { return "int" }
@@ -158,6 +160,11 @@ func cpElemKey(t: int): string {
     case KChar { return "char" }
     case KStr { return "str" + numToStr(irtN(t)) }
     case KText { return "text" }
+    case KList { return "list" }
+    case KMap { return "map" }
+    case KRec { return "rec_" + poolGet(irtName(t)) }
+    case KEnum { return "enum_" + poolGet(irtName(t)) }
+    case KErr { return "err" }
     case KArr { return "arr_" + cpArrKey(t) }
     }
     return "unsupported"
@@ -266,9 +273,26 @@ func fpExpr(e: int): string {
     case EIndexRef {
         return fpIndexRef(e)
     }
+    case EFieldRef {
+        return fpFieldRef(e)
     }
-    // Task 6+: EFieldRef/ECallFn/ENewRec.
+    case ENewRec {
+        return "clar_new_" + poolGet(irNewRecName(e)) + "()"
+    }
+    }
+    // Task 9: ECallFn.
     return ""
+}
+
+// fpFieldRef prints an EFieldRef node (funcprint.go's expr's *ir.FieldRef
+// case). An Err-typed receiver's fields are named "code"/"message" directly,
+// no cv_ prefix (see emitProgram's clar_rec_Err typedef) -- unlike a user
+// record's clar_rec_NAME fields, which always carry the cv_ prefix.
+func fpFieldRef(e: int): string {
+    if irtKind(irExprType(irFieldRefX(e))) == KErr {
+        return "(" + fpExpr(irFieldRefX(e)) + ")." + poolGet(irFieldRefName(e))
+    }
+    return "(" + fpExpr(irFieldRefX(e)) + ").cv_" + poolGet(irFieldRefName(e))
 }
 
 // fpIndexRef implements the ir.IndexRef printer contract for Arr (a
@@ -414,6 +438,7 @@ func fpUn(e: int): string {
 func fpConv(e: int): string {
     var x: string
     var op: IRConvOp
+    var n: int
 
     x = fpExpr(irConvX(e))
     op = irConvOp(e)
@@ -425,9 +450,36 @@ func fpConv(e: int): string {
         return "((uint8_t)(" + x + "))"
     } else if op == CvCharToInt or op == CvEnumToInt {
         return "((int32_t)(" + x + "))"
+    } else if op == CvIntToEnum {
+        n = cpEnumCount(irConvEnumName(e))
+        return "rt_enum_from_int(clar_enum_" + poolGet(irConvEnumName(e)) + ", " + numToStr(n) + ", (" + x + "))"
     }
-    // CvIntToEnum: Task 8.
     return ""
+}
+
+// cpEnumCount returns the member count of the enum named nameIdx (an
+// interned pool index), by walking irEnums -- funcprint.go's enumCount.
+func cpEnumCount(nameIdx: int): int {
+    var i: int
+    var m: int
+    var count: int
+
+    i = 0
+    while i < irEnums.count {
+        if irEnumLayoutName(i) == nameIdx {
+            count = 0
+            m = irEnumLayoutMembersHead(i)
+            while m != -1 {
+                count = count + 1
+                m = irEnumMemberNext(m)
+            }
+            return count
+        }
+        i = i + 1
+    }
+    log("cprint: unknown enum " + poolGet(nameIdx))
+    quit 1
+    return 0
 }
 
 // fpAddrable returns a C expression for e that is safe to take the address
@@ -743,8 +795,28 @@ func fpIntrCall(x: int): string {
         return ""
     } else if nm == IMapCount() {
         return "rt_map_count(" + fpExpr(a0) + ")"
+
+    // ---- lastError ----
+    } else if nm == ILastErrCode() {
+        return "rt_lasterr_code"
+    } else if nm == ILastErrMsg() {
+        // rt_lasterr_msg is a raw uint8_t[256] (rt.h), not a clar_str_255
+        // struct -- copy it into a proper temp via rt_str_store rather than
+        // exposing the type mismatch to callers.
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_store((uint8_t*)&" + t + ", 255, rt_lasterr_msg);")
+        return t
+    } else if nm == ILastErr() {
+        // Materializes a whole Err-record value {code, message} from the
+        // runtime's rt_lasterr_* globals -- the printer contract lowIdent
+        // relies on for a bare `lastError` rvalue, since there is no
+        // cv_lastError global to reference directly.
+        t = fpNewTmp("clar_rec_Err")
+        fpEmit(t + ".code = rt_lasterr_code;")
+        fpEmit("rt_str_store((uint8_t*)&" + t + ".message, 255, rt_lasterr_msg);")
+        return t
     }
-    // Later tasks: lasterr/file intrinsics.
+    // Task 9: file intrinsics.
     return ""
 }
 
@@ -981,29 +1053,57 @@ func cpFuncProto(f: int): string {
     return "static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(" + params + ")"
 }
 
-// cpDefaultInit emits the default-value statement(s) for a nil-Init local:
-// `dst = 0;` for a scalar (Int/Bool/Fixed/Char/Enum), `dst = (clar_str_N)
-// {0};` for a Str (empty string, no field-default override exists yet --
-// Task 6+'s record fields add that), and `dst = rt_text_new();` for a Text
-// -- the fresh-handle contract every Text local needs before any append/
-// store/index touches it, since there is no null "no text yet" state. A
-// port of defaults.go's defaultInit, reduced to the scalarDefault==0/
-// strDefault==-1 (no override) cases; List/Map/Rec/Err/Arr defaults are
-// Task 6+.
-func cpDefaultInit(dst: string, t: int) {
+// cpDefaultInit emits the default-value statement(s) for dst at type t, via
+// fpEmit (so it lands wherever the caller's fpBody/fpIndent currently point
+// -- a record's clar_new_NAME ctor, clar_init_globals, or a function's local
+// declarations all reuse this same one code path, exactly like Go's
+// defaultInit being one function called from emitRecords/emitGlobalsAndInit/
+// emitFunc alike): `dst = 0;` for a scalar, a clamped rt_str_store for a Str
+// default (or `dst = (clar_str_N){0};` with no override), `dst =
+// rt_text_new();` (+ a store, if a string default) for Text, a fresh
+// list/map handle, `dst = clar_new_NAME();` for a Rec (which itself applies
+// that record's OWN per-field defaults -- a nil-Init Rec value gets exactly
+// the same defaults as clar_new_NAME because this is that same function),
+// `{0, ""}`-equivalent field-by-field zeroing for Err, and an unrolled
+// bounds-checked `for` loop recursing into the element type for Arr -- a
+// port of defaults.go's defaultInit. scalarDefault/strDefault are 0/-1 (no
+// override) for every nil-Init global/local; a record field's OWN default
+// (IRFieldSlot.default/defaultStr) is passed through by cpEmitRecords.
+func cpDefaultInit(dst: string, t: int, scalarDefault: int, strDefault: int) {
     var k: IRKind
+    var ix: string
 
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
-        fpEmit(dst + " = 0;")
+        fpEmit(dst + " = " + numToStr(scalarDefault) + ";")
     } else if k == KStr {
-        fpEmit(dst + " = (" + cpCType(t) + "){0};")
+        if strDefault < 0 {
+            fpEmit(dst + " = (" + cpCType(t) + "){0};")
+        } else {
+            fpEmit("rt_str_store((uint8_t*)&(" + dst + "), " + numToStr(irtN(t)) + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
+        }
     } else if k == KText {
         fpEmit(dst + " = rt_text_new();")
+        if strDefault >= 0 {
+            fpEmit("rt_text_store(" + dst + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
+        }
     } else if k == KList {
         fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
     } else if k == KMap {
         fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
+    } else if k == KRec {
+        fpEmit(dst + " = clar_new_" + poolGet(irtName(t)) + "();")
+    } else if k == KErr {
+        fpEmit(dst + ".code = 0;")
+        fpEmit(dst + ".message = (clar_str_255){0};")
+    } else if k == KArr {
+        cpLoopN = cpLoopN + 1
+        ix = "ix" + numToStr(cpLoopN)
+        fpEmit("for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
+        fpIndent = fpIndent + 1
+        cpDefaultInit(dst + ".e[" + ix + "]", irtElem(t), 0, -1)
+        fpIndent = fpIndent - 1
+        fpEmit("}")
     }
 }
 
@@ -1041,7 +1141,7 @@ func cpEmitFunc(f: int) {
         } else {
             declared[nm] = irLocalType(loc)
             fpEmit(cpCType(irLocalType(loc)) + " cv_" + nm + ";")
-            cpDefaultInit("cv_" + nm, irLocalType(loc))
+            cpDefaultInit("cv_" + nm, irLocalType(loc), 0, -1)
         }
         loc = irLocalNext(loc)
     }
@@ -1076,19 +1176,150 @@ func cpEmitFuncs() {
     }
 }
 
-// cpEmitGlobalsInit declares every global then defines clar_init_globals
-// (cprint.go's emitGlobalsAndInit). Skeleton: no globals -> just the empty
-// init function (main always calls it).
+// cpEmitRecords prints every record struct (and its clar_new_NAME
+// constructor) in declaration order, into cpRecBuf -- cprint.go's
+// emitRecords. Clarus requires declare-before-use for record-typed fields,
+// so any nested record a field refers to was already fully emitted by an
+// earlier iteration of this same loop -- cpEnsureType's lazy array-wrapper
+// emission (for Arr-typed fields) can safely assume that. clar_new_NAME's
+// body is built via the same fpReset/fpEmit/fpBody machinery cpEmitFunc uses
+// for a real function body (indent level 1), then harvested into cpRecBuf,
+// since cpDefaultInit only knows how to append to "whatever fpBody
+// currently is".
+func cpEmitRecords() {
+    var i: int
+    var f: int
+    var name: string
+    var ctype: string
+    var j: int
+
+    i = 0
+    while i < irRecords.count {
+        f = irRecordLayoutFieldsHead(i)
+        while f != -1 {
+            cpEnsureType(irFieldSlotType(f))
+            f = irFieldSlotNext(f)
+        }
+        name = poolGet(irRecordLayoutName(i))
+        ctype = "clar_rec_" + name
+
+        cpRecBuf.add("typedef struct {")
+        f = irRecordLayoutFieldsHead(i)
+        while f != -1 {
+            cpRecBuf.add("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";")
+            f = irFieldSlotNext(f)
+        }
+        cpRecBuf.add("} " + ctype + ";")
+
+        fpReset(1)
+        f = irRecordLayoutFieldsHead(i)
+        while f != -1 {
+            cpDefaultInit("r.cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
+            f = irFieldSlotNext(f)
+        }
+        cpRecBuf.add("static " + ctype + " clar_new_" + name + "(void) {")
+        cpRecBuf.add("    " + ctype + " r;")
+        j = 0
+        while j < fpBody.count {
+            cpRecBuf.add(fpBody[j])
+            j = j + 1
+        }
+        cpRecBuf.add("    return r;")
+        cpRecBuf.add("}")
+        cpRecBuf.add("")
+        i = i + 1
+    }
+}
+
+// cpEmitEnums prints each enum's value table (for the checked int->enum
+// conversion, rt_enum_from_int) plus a matching _count constant, into
+// cpRestBuf -- cprint.go's emitEnums. Marked __attribute__((unused)): a
+// program that declares an enum but never runs a checked EnumType(i)
+// conversion on it would otherwise fail -Wunused-const-variable under
+// -Werror.
+func cpEmitEnums() {
+    var i: int
+    var m: int
+    var vals: string
+    var first: bool
+    var count: int
+    var name: string
+
+    i = 0
+    while i < irEnums.count {
+        vals = ""
+        first = true
+        count = 0
+        m = irEnumLayoutMembersHead(i)
+        while m != -1 {
+            if not first {
+                vals = vals + ", "
+            }
+            first = false
+            vals = vals + numToStr(irEnumMemberValue(m))
+            count = count + 1
+            m = irEnumMemberNext(m)
+        }
+        name = poolGet(irEnumLayoutName(i))
+        cpRestBuf.add("static const int32_t clar_enum_" + name + "[] __attribute__((unused)) = {" + vals + "};")
+        cpRestBuf.add("static const int clar_enum_" + name + "_count __attribute__((unused)) = " + numToStr(count) + ";")
+        i = i + 1
+    }
+    cpRestBuf.add("")
+}
+
+// cpEmitGlobalsInit declares every global as a bare (uninitialized-in-C)
+// file-scope variable, then defines clar_init_globals, which applies each
+// one's default (RecordLayout defaults for a nil-Init Rec; the type's zero/
+// empty/fresh-handle value for anything else nil-Init) followed by its
+// explicit Init expression, if any, in declaration order -- cprint.go's
+// emitGlobalsAndInit. Globals can't be given real C initializers at file
+// scope: several of their defaults (clar_new_NAME, rt_list_new, ...) are
+// function calls, and C requires file-scope initializers to be constant
+// expressions.
 func cpEmitGlobalsInit() {
     var i: int
+    var gt: int
+    var initE: int
+    var nm: string
+    var j: int
 
     i = 0
     while i < irGlobals.count {
         cpRestBuf.add("static " + cpCType(irGlobalType(i)) + " cv_" + poolGet(irGlobalName(i)) + ";")
         i = i + 1
     }
+
+    fpReset(1)
+    i = 0
+    while i < irGlobals.count {
+        gt = irGlobalType(i)
+        nm = poolGet(irGlobalName(i))
+        cpDefaultInit("cv_" + nm, gt, 0, -1)
+        initE = irGlobalInit(i)
+        if initE != -1 {
+            if irtKind(gt) == KStr {
+                fpStoreStr(newIRVarRef(irGlobalName(i), true, gt), initE)
+            } else if irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr {
+                // String -> Text is documented assignability (Ch3); a Text
+                // handle and a Str value have no common C representation to
+                // plain-assign between, so this goes through rt_text_store
+                // like a local var's matching ExprStmt/ITextStore case does
+                // (lower.cla's lowStoreStmt) -- globals just never route
+                // through that helper.
+                fpEmit("rt_text_store(cv_" + nm + ", " + fpStrAddr(initE) + ");")
+            } else {
+                fpEmit("cv_" + nm + " = " + fpExpr(initE) + ";")
+            }
+        }
+        i = i + 1
+    }
     cpRestBuf.add("static void clar_init_globals(void) {")
-    // Task 4+: per-global default-init + Init expression.
+    j = 0
+    while j < fpBody.count {
+        cpRestBuf.add(fpBody[j])
+        j = j + 1
+    }
     cpRestBuf.add("}")
     cpRestBuf.add("")
 }
@@ -1213,7 +1444,8 @@ func emitProgram(): text {
     cpRecBuf.add("")
 
     cpEmitStrLits()
-    // Task 4+: cpEmitRecords / cpEmitEnums.
+    cpEmitRecords()
+    cpEmitEnums()
     cpEmitGlobalsInit()
     cpEmitFuncs()
     cpEmitMain()

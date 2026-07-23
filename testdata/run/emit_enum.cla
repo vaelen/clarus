@@ -1,0 +1,86 @@
+// emit_enum.cla: Task 8 coverage slice for clarusc emit -- enum layout
+// emission (clar_enum_NAME value table + _count), auto-numbering (member's
+// own value, or previous+1), enum<->int conversion (EnumToInt/IntToEnum),
+// and the CHECKED int->enum conversion panicking on a value no member
+// declares. Self-verifying via `if cond { alert("... ok") } else {
+// alert("... FAIL") }`, same convention as emit_arith.cla. Bare enum-member
+// identifiers (Red, Clubs, ...) only resolve where the checker threads an
+// expected enum type through (a typed var's assignment RHS, a comparison
+// against an already-typed value) -- never as a call argument with no
+// expected type of its own (`int(Red)` would be "undefined: Red"), so every
+// check below first assigns the bare member into a declared var of that
+// enum type. No user funcs (Task 9) -- just the handler-body subset this
+// task supports.
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+// Explicit values plus auto-continuation: Hearts has no explicit value, so
+// it continues from Diamonds(5) + 1 = 6, exactly like checkEnumDecl/
+// lowEnumDecl's auto-numbering rule.
+enum Suit {
+    Clubs 1
+    Diamonds 5
+    Hearts
+    Spades 20
+}
+
+on App.startCLI(args: list of string) {
+    var r: Color
+    var g: Color
+    var b: Color
+    var clubs: Suit
+    var diamonds: Suit
+    var hearts: Suit
+    var spades: Suit
+    var s: Suit
+    var back: Suit
+
+    // ---- auto-numbered enum (0, 1, 2, ...) ----
+    r = Red
+    g = Green
+    b = Blue
+    if int(r) == 0 and int(g) == 1 and int(b) == 2 {
+        alert("auto-numbered enum ok")
+    } else {
+        alert("auto-numbered enum FAIL")
+    }
+
+    // ---- explicit values + auto-continuation ----
+    clubs = Clubs
+    diamonds = Diamonds
+    hearts = Hearts
+    spades = Spades
+    if int(clubs) == 1 and int(diamonds) == 5 and int(hearts) == 6 and int(spades) == 20 {
+        alert("explicit-value + auto-continuation enum ok")
+    } else {
+        alert("explicit-value + auto-continuation enum FAIL")
+    }
+
+    // ---- enum -> int (EnumToInt) ----
+    s = Hearts
+    if int(s) == 6 {
+        alert("enum to int ok")
+    } else {
+        alert("enum to int FAIL")
+    }
+
+    // ---- checked int -> enum (IntToEnum): a value a member actually
+    // declares round-trips cleanly ----
+    back = Suit(5)
+    if back == Diamonds {
+        alert("checked int-to-enum valid ok")
+    } else {
+        alert("checked int-to-enum valid FAIL")
+    }
+
+    // ---- checked int -> enum: a value NO member declares panics
+    // (rt_enum_from_int -> rt_panic, exit 3) rather than producing a
+    // silently-bogus enum value -- verified via .exit, not stdout, since
+    // the process aborts before the next alert runs. ----
+    alert("before invalid conversion")
+    back = Suit(99)
+    alert("after invalid conversion (should not print)")
+}

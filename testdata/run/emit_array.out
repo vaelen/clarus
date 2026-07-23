@@ -1,0 +1,7 @@
+int array zero-init ok
+char array zero-init ok
+int array write/read ok
+char array write/read ok
+array of records default ok
+array of records write ok
+before out of bounds

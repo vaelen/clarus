@@ -85,6 +85,9 @@ var emitSeeds = []string{
 	"../../testdata/run/emit_switch.cla",
 	"../../testdata/run/emit_list.cla",
 	"../../testdata/run/emit_map.cla",
+	"../../testdata/run/emit_record.cla",
+	"../../testdata/run/emit_enum.cla",
+	"../../testdata/run/emit_array.cla",
 }
 
 // TestEmitDifferential is the walking-skeleton gate: for every seed in

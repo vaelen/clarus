@@ -131,12 +131,24 @@ func lowType(t: int): int {
 // -- a fused port of lower.go's resolveType + lowerType, used for the type
 // annotations (params, `var`, fields) that never went through checkExpr and
 // so have no exprTypeOf entry.
+//
+// A named type that isn't one of the five hardcoded scalars (record/enum/
+// error/saveChoice, plus the host-unsupported resource types) resolves via
+// curScope, exactly like check.cla's own resolveType -- unlike lower.go,
+// which rebuilds an independent declTypes registry (check.Info doesn't
+// export the Go checker's symbol table), this single-process self-hosted
+// compiler never tears down curScope between checkProgram and lowerProgram
+// (see main.cla), so the SAME topScope checkRecordDecl/checkEnumDecl/
+// registerUniverse already populated is still there to read back.
 func lowResolveType(tx: int): int {
     var nm: string
+    var nameIdx: int
+    var symIdx: int
 
     switch typeExprKind(tx) {
     case TxNamed {
-        nm = poolGet(namedTypeName(tx))
+        nameIdx = namedTypeName(tx)
+        nm = poolGet(nameIdx)
         if nm == "int" {
             return irIntT
         } else if nm == "bool" {
@@ -148,7 +160,12 @@ func lowResolveType(tx: int): int {
         } else if nm == "text" {
             return irTextT
         }
-        // Task 4+: user record/enum names via a declTypes registry.
+        symIdx = scopeLookup(curScope, nameIdx)
+        if symIdx != -1 and symbols[symIdx].isType {
+            return lowType(symbols[symIdx].typeIdx)
+        }
+        // check.Files already rejected an undefined type name; reaching
+        // here on a checker-clean program would be a lowerer bug.
         return irIntT
     }
     case TxString {
@@ -247,8 +264,10 @@ func lowExpr(e: int): int {
     case ExSelect {
         return lowSelect(e)
     }
+    case ExNew {
+        return newIRNewRec(newExprTypeName(e), lowMustType(e))
     }
-    // Task 6+: ExNew.
+    }
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
 }
@@ -352,15 +371,46 @@ func lowComparison(e: int): int {
     return lowBin(binOpSymbol(binOp(e)), irBoolT, binLeft(e), binRight(e))
 }
 
-// lowIdent lowers a bare variable reference (expr.go's lowerIdent, reduced).
-// Task 4+ adds enum-member constants, const inlining, and lastError.
+// lowIsUnshadowedLastError reports whether nameIdx is the built-in global
+// `lastError` -- as opposed to a local variable that happens to shadow that
+// name -- the distinction lowIdent and lowSelect both need to route a
+// `lastError`/`lastError.code`/`lastError.message` reference to the
+// runtime's rt_lasterr_* globals instead of treating it as an ordinary
+// error-typed variable (expr.go's isUnshadowedLastError).
+func lowIsUnshadowedLastError(nameIdx: int): bool {
+    return poolGet(nameIdx) == "lastError" and not lowIsLocal(nameIdx)
+}
+
+// lowIdent lowers a resolved variable reference or a bare enum-member/const
+// constant (check.cla's enumConstOf/constUseIsStr, keyed by e's own arena
+// index, mirror Go's Info.EnumConsts/Info.Consts) -- a port of expr.go's
+// lowerIdent. A bare, unshadowed `lastError` materializes an Err-record
+// value via the ILastErr intrinsic instead of a VarRef, since there is no
+// cv_lastError global to reference (see lowSelect's ErrorType case for the
+// matching .code/.message read path).
 func lowIdent(e: int): int {
     var nm: int
     var global: bool
+    var ty: int
+    var key: string
 
     nm = identName(e)
+    ty = lowMustType(e)
+    key = numToStr(e)
+    if enumConstOf.has(key) {
+        return newIRIntConst(enumConstOf.get(key, 0), ty)
+    }
+    if constUseIsStr.has(key) {
+        if intToBool(constUseIsStr.get(key, 0)) {
+            return newIRStrConst(lowInternStr(constUseStr.get(key, "")), irStrType(255))
+        }
+        return newIRIntConst(constUseInt.get(key, 0), ty)
+    }
+    if lowIsUnshadowedLastError(nm) {
+        return newIRIntr(ILastErr(), -1, ty)
+    }
     global = not lowIsLocal(nm)
-    return newIRVarRef(nm, global, lowMustType(e))
+    return newIRVarRef(nm, global, ty)
 }
 
 // lowArgs lowers an AST argument chain (each linked via exprNext) into an IR
@@ -386,11 +436,16 @@ func lowArgs(argsHead: int): int {
     return head
 }
 
-// lowCall lowers a bare-name call. Skeleton: alert/log intrinsics only.
+// lowCall lowers a bare-name call: a scalar conversion, alert/log, an
+// enum's checked int->enum conversion (EnumName(i) -- resolved the same way
+// lowResolveType resolves a named type, via curScope), or a method call.
+// User function CALLS (and standalone top-level `func` DECLARATIONS, which
+// this package doesn't lower at all yet) remain Task 9.
 func lowCall(e: int): int {
     var fn: int
     var name: string
     var ty: int
+    var symIdx: int
 
     fn = callFn(e)
     if exprKind(fn) == ExIdent {
@@ -407,7 +462,11 @@ func lowCall(e: int): int {
         } else if name == "char" {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
         }
-        // Task 6+: enum conversions, user functions.
+        symIdx = scopeLookup(curScope, identName(fn))
+        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
+            return newIRConv(CvIntToEnum, lowExpr(callArgsHead(e)), identName(fn), ty)
+        }
+        // Task 9: user function calls.
         lowUnsupported("call to " + name)
         return -1
     } else if exprKind(fn) == ExSelect {
@@ -649,28 +708,48 @@ func lowIndex(e: int): int {
     return -1
 }
 
-// lowSelect lowers a bare `a.b` -- reduced to the String/Text `.length`
-// property and the List/Map `.count` property (Task 6+ adds record fields)
-// -- a port of expr.go's lowerSelect.
+// lowSelect lowers a bare `a.b` -- a record field, or a no-argument
+// property (.length/.count, lastError's .code/.message) -- a port of
+// expr.go's lowerSelect. Method calls go through lowMethodCall instead,
+// since only a Call carries argument expressions.
 func lowSelect(e: int): int {
     var ty: int
     var xk: TypeKind
     var propName: string
     var name: int
+    var xExpr: int
 
     ty = lowMustType(e)
-    xk = typeKind(exprTypeGet(selectX(e)))
+    xExpr = selectX(e)
+    xk = typeKind(exprTypeGet(xExpr))
     propName = poolGet(selectName(e))
-    if (xk == TyStr or xk == TyText) and propName == "length" {
+    if xk == TyRec {
+        return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
+    } else if xk == TyErrorType {
+        // `lastError.code`/`.message` read the runtime's rt_lasterr_*
+        // globals directly (see lowIdent's doc comment). Every OTHER
+        // error-typed receiver (a `var e: error`, ...) is an ordinary
+        // Err-record value instead -- its .code/.message are a plain
+        // FieldRef into that record (cprint's FieldRef case special-cases
+        // ir.Err's field names, since clar_rec_Err has no cv_ prefix).
+        if exprKind(xExpr) == ExIdent and lowIsUnshadowedLastError(identName(xExpr)) {
+            if propName == "code" {
+                return newIRIntr(ILastErrCode(), -1, ty)
+            } else if propName == "message" {
+                return newIRIntr(ILastErrMsg(), -1, ty)
+            }
+        }
+        return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
+    } else if (xk == TyStr or xk == TyText) and propName == "length" {
         name = IStrLen()
         if xk == TyText {
             name = ITextLen()
         }
-        return newIRIntr(name, lowExpr(selectX(e)), ty)
+        return newIRIntr(name, lowExpr(xExpr), ty)
     } else if xk == TyList and propName == "count" {
-        return newIRIntr(IListCount(), lowExpr(selectX(e)), ty)
+        return newIRIntr(IListCount(), lowExpr(xExpr), ty)
     } else if xk == TyMap and propName == "count" {
-        return newIRIntr(IMapCount(), lowExpr(selectX(e)), ty)
+        return newIRIntr(IMapCount(), lowExpr(xExpr), ty)
     }
     lowUnsupported("select ." + propName)
     return -1
@@ -689,8 +768,7 @@ func lowCoerceStr(target: int, x: int): int {
 }
 
 // lowIntConv lowers `int(x)`, whose ConvOp depends on x's source kind (Ch3:
-// Numeric Conversions, Enums) -- a port of expr.go's lowerIntConv, minus the
-// Enum source (Task 8).
+// Numeric Conversions, Enums) -- a port of expr.go's lowerIntConv.
 func lowIntConv(e: int, ty: int): int {
     var argT: int
     var argK: TypeKind
@@ -701,9 +779,11 @@ func lowIntConv(e: int, ty: int): int {
         return newIRConv(CvFixedToInt, lowExpr(callArgsHead(e)), -1, ty)
     } else if argK == TyChar {
         return newIRConv(CvCharToInt, lowExpr(callArgsHead(e)), -1, ty)
+    } else if argK == TyEnum {
+        return newIRConv(CvEnumToInt, lowExpr(callArgsHead(e)), -1, ty)
     }
-    // TyEnum: Task 8. Anything else is a checker bug (int() from an
-    // unsupported source kind should never pass checkCall).
+    // Anything else is a checker bug (int() from an unsupported source
+    // kind should never pass checkCall).
     lowUnsupported("int(...) from unsupported source kind")
     return -1
 }
@@ -1166,6 +1246,126 @@ func lowTopHandler(d: int) {
     }
 }
 
+// lowRecordDecl builds the record's IRRecordLayout (field slots with their
+// lowered type and constant default) -- a port of lower.go's
+// lowerRecordDecl. Field TYPES are read back from check.cla's own
+// recordFieldsHead/fieldInfos side table (checkRecordDecl already resolved
+// them, walking the exact same AST field chain in the exact same order) --
+// simpler than lower.go's independent re-resolution, and correct for the
+// same reason lowResolveType's named-type case is: curScope/fieldInfos are
+// still the very tables checkProgram built, untouched since.
+func lowRecordDecl(d: int) {
+    var f: int
+    var fi: int
+    var fieldsHead: int
+    var fieldsTail: int
+    var ft: int
+    var dv: int
+    var defaultVal: int
+    var defaultStr: int
+    var slot: int
+
+    fieldsHead = -1
+    fieldsTail = -1
+    f = recordDeclFieldsHead(d)
+    fi = recordFieldsHead(recordDeclName(d))
+    while f != -1 {
+        ft = fieldInfos[fi].typeIdx
+        defaultVal = 0
+        defaultStr = -1
+        if fieldDefault(f) != -1 {
+            dv = lowExpr(fieldDefault(f))
+            if typeKind(ft) == TyStr or typeKind(ft) == TyText {
+                defaultStr = irStrConstIdx(dv)
+            } else {
+                defaultVal = irIntConstV(dv)
+            }
+        } else if typeKind(ft) == TyEnum {
+            // Ch3: an enum-typed field with no explicit default starts at
+            // the first declared member, whose value may be non-zero.
+            defaultVal = enumMembers[typeElem(ft)].value
+        }
+        slot = newIRFieldSlot(fieldName(f), lowType(ft), defaultVal, defaultStr)
+        if fieldsHead == -1 {
+            fieldsHead = slot
+        }
+        fieldsTail = irFieldSlotListAppend(fieldsTail, slot)
+        f = declNext(f)
+        fi = fieldInfos[fi].next
+    }
+    newIRRecordLayout(recordDeclName(d), fieldsHead)
+}
+
+// lowEnumDecl builds the enum's IREnumLayout, replicating checkEnumDecl's
+// auto-numbering (member's own value, or previous+1) and label default
+// (member's own label, or its name) -- a port of lower.go's lowerEnumDecl.
+func lowEnumDecl(d: int) {
+    var m: int
+    var head: int
+    var tail: int
+    var val: int
+    var next: int
+    var label: int
+    var mem: int
+
+    head = -1
+    tail = -1
+    next = 0
+    m = enumDeclMembersHead(d)
+    while m != -1 {
+        if enumMemberHasValue(m) {
+            val = enumMemberValue(m)
+        } else {
+            val = next
+        }
+        label = enumMemberLabel(m)
+        if label == -1 {
+            label = enumMemberName(m)
+        }
+        mem = newIREnumMember(enumMemberName(m), val, label)
+        if head == -1 {
+            head = mem
+        }
+        tail = irEnumMemberListAppend(tail, mem)
+        next = val + 1
+        m = declNext(m)
+    }
+    newIREnumLayout(enumDeclName(d), head)
+}
+
+// lowGlobalVarDecl lowers one top-level `var` into an ir.Global -- a port of
+// lower.go's lowerGlobalVarDecl. Globals are appended in the same
+// source-order traversal lowerProgram itself uses, so Program.Globals order
+// matches declaration order.
+func lowGlobalVarDecl(d: int) {
+    var t: int
+    var init: int
+
+    t = lowResolveType(varDeclType(d))
+    init = -1
+    if varDeclInit(d) != -1 {
+        init = lowExpr(varDeclInit(d))
+    }
+    newIRGlobal(varDeclName(d), t, init)
+}
+
+// lowBuiltinSaveChoiceLayout seeds irEnums with saveChoice's IREnumLayout
+// (as if declared `enum saveChoice { Save, Discard "Don't Save", Cancel }`)
+// -- a port of lower.go's builtinSaveChoiceLayout. The checked EnumType(i)
+// conversion (ir.IntToEnum, cprint's enumCount) needs an irEnums entry for
+// every enum a program can convert INTO, but saveChoice is a checker-side
+// builtin (types.cla's seedSaveChoice) with no matching *ast.EnumDecl for
+// lowEnumDecl to have ever registered.
+func lowBuiltinSaveChoiceLayout() {
+    var head: int
+    var tail: int
+
+    head = newIREnumMember(intern("Save"), 0, intern("Save"))
+    tail = irEnumMemberListAppend(head, newIREnumMember(intern("Discard"), 1, intern("Don't Save")))
+    tail = irEnumMemberListAppend(tail, newIREnumMember(intern("Cancel"), 2, intern("Cancel")))
+    newIREnumLayout(intern("saveChoice"), head)
+}
+
 // lowDecl dispatches one top-level declaration (lower.go's lowerDecl subset).
 func lowDecl(d: int) {
     var k: DeclKind
@@ -1175,10 +1375,16 @@ func lowDecl(d: int) {
         lowTopHandler(d)
     } else if k == DkInclude or k == DkConst {
         // DkInclude/DkConst intentionally emit no IR (includes are already
-        // expanded; consts inline at use, Task 4+) -- not a stub.
+        // expanded; consts inline at use) -- not a stub.
+    } else if k == DkRecord {
+        lowRecordDecl(d)
+    } else if k == DkEnum {
+        lowEnumDecl(d)
+    } else if k == DkVar {
+        lowGlobalVarDecl(d)
     } else {
-        // Task 4+: DkRecord/DkEnum/DkVar(global)/DkFunc, and any other
-        // top-level decl kind, are unsupported until their task lands.
+        // Task 9+: DkFunc, windows, menus, and any other top-level decl
+        // kind not yet ported.
         lowUnsupported("declaration kind " + numToStr(int(k)))
     }
 }
@@ -1191,6 +1397,7 @@ func lowerProgram(declHead: int): int {
     var d: int
 
     lowSwitchN = 0
+    lowBuiltinSaveChoiceLayout()
     d = declHead
     while d != -1 {
         lowDecl(d)
