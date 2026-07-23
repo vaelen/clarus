@@ -155,10 +155,10 @@ on App.startCLI(args: list of string) {
     var tail: int
     var h: int
 
-    // Reset-at-start (belt-and-suspenders): the process is reused across many
-    // programs by the differential harness, so clear every arena/global even
-    // though one invocation checks one program. lexAll/parseFile/checkProgram
-    // each also reset their own state on entry.
+    // Reset-at-start: one clarusc invocation checks one program (each
+    // differential-harness case is a fresh exec). These resets clear the
+    // module-level state the pipeline reuses, so a program is checked from a
+    // clean slate regardless of how the process was entered.
     resetDiags()
     astReset()
 

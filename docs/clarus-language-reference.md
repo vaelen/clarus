@@ -25,7 +25,7 @@ Appendix C. Worked Examples
 
 ## Chapter 1: Program Structure
 
-A Clarus program consists of one or more `.cla` source files. Compilation is single-pass over the concatenation of files in a declared file order (build details are out of scope for this reference).
+A Clarus program consists of one or more `.cla` source files, compiled as one program over the concatenation of files in a declared file order (build details are out of scope for this reference). Checking is single-pass over type layout — see declare-before-use below for the precise ordering rules — with function bodies visible to one another regardless of order.
 
 The following declarations may appear at the top level, in any order, subject to declare-before-use:
 
@@ -458,7 +458,7 @@ var ok: fixed = fixed(i) + f     // 4.5
 
 ### String Concatenation and Truncation
 
-`+` concatenates `string` and `text` values (and appends a single `char` to a `string`, per Chapter 3). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the store is clamped to the target's capacity. The copy never writes past the end — a buffer overrun is impossible by construction. If clamping dropped any bytes, the store sets `lastError` (Chapter 12) and execution continues:
+`+` concatenates two `string`s, two `text`s, a `text` on the left with a `string` on the right, and appends a single `char` to a `string` (per Chapter 3). The combinations are directional: `string + text` and `char + string` are not defined (use `text + string`, or `text.append` to prepend/append a `char`). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the store is clamped to the target's capacity. The copy never writes past the end — a buffer overrun is impossible by construction. If clamping dropped any bytes, the store sets `lastError` (Chapter 12) and execution continues:
 
 ```rust
 var greeting: string(3) = "ab"

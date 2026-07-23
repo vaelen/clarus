@@ -159,3 +159,20 @@ Internal (should never fire on valid input; still transcribed for completeness):
 - `internal: unhandled binary operator %s`
 - `internal: unhandled unary operator %s`
 - `internal: unhandled expression type`
+
+## Known parity divergences (documented, corpus-untriggered)
+
+These are places where clarusc's diagnostics can differ from `clarus check`;
+no corpus or reference-fence file triggers them, so the differential stays
+green. Fixing either is architectural and belongs to a future task that also
+adds the triggering fixture.
+
+- **`unexpected character %q` quoting.** clarusc prints the raw byte where the
+  Go lexer applies `%q`-style escaping for non-printable/non-ASCII bytes.
+  Differs only for control/high bytes in source.
+- **Bad escape in a double-quoted string** (e.g. `"a\qb"`). clarusc's `lexAll`
+  eagerly lexes to EOF, so after the escape error the orphaned closing quote
+  starts a bogus second string and clarusc emits an extra
+  `unterminated string literal` that Go never produces (Go's lazy lexer stops
+  being pulled once the parser fail-fast aborts). The covered case `'\q'`
+  (char literal) agrees on both sides.
