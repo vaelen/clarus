@@ -271,16 +271,18 @@ func fpExpr(e: int): string {
     return ""
 }
 
-// fpIndexRef implements the ir.IndexRef printer contract, reduced to Arr
-// (Task 6+ adds List, sharing this same node -- see ir.IndexRef's doc
-// comment in ir.go): a bounds-checked plain C array access -- a port of
-// funcprint.go's indexRef.
+// fpIndexRef implements the ir.IndexRef printer contract for Arr (a
+// bounds-checked plain C array access) and List (a bounds-checked
+// rt_list_at call, sharing this same node -- see ir.IndexRef's doc comment
+// in ir.go) -- a port of funcprint.go's indexRef.
 func fpIndexRef(e: int): string {
     var xt: int
 
     xt = irExprType(irIndexRefX(e))
     if irtKind(xt) == KArr {
         return "(" + fpExpr(irIndexRefX(e)) + ").e[rt_arr_check((int32_t)(" + fpExpr(irIndexRefI(e)) + "), " + numToStr(irtN(xt)) + ")]"
+    } else if irtKind(xt) == KList {
+        return "(*(" + cpCType(irExprType(e)) + "*)rt_list_at(" + fpExpr(irIndexRefX(e)) + ", (int32_t)(" + fpExpr(irIndexRefI(e)) + ")))"
     }
     return ""
 }
@@ -524,6 +526,12 @@ func fpIntrCall(x: int): string {
     var s1: string
     var cap0: int
     var cap1: int
+    var l: string
+    var v: string
+    var fn: string
+    var m: string
+    var k: string
+    var dv: string
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -664,8 +672,79 @@ func fpIntrCall(x: int): string {
     } else if nm == ITextAppendText() {
         fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return ""
+
+    // ---- list ----
+    } else if nm == IListPush() or nm == IListUnshift() {
+        // v goes through fpCopyToTemp, not fpAddrable: push/unshift can
+        // realloc a0's backing store, and if v were instead a raw
+        // rt_list_at pointer (fpAddrable's IndexRef shortcut, e.g.
+        // `l.push(l[0])`), that realloc could free it before this call's
+        // own memmove reads it.
+        l = fpExpr(a0)
+        v = fpCopyToTemp(a1)
+        fn = "rt_list_push"
+        if nm == IListUnshift() {
+            fn = "rt_list_unshift"
+        }
+        fpEmit(fn + "(" + l + ", &(" + v + "));")
+        return ""
+    } else if nm == IListPop() or nm == IListShift() or nm == IListFirst() or nm == IListLast() {
+        l = fpExpr(a0)
+        t = fpNewTmp(cpCType(irExprType(x)))
+        fn = "rt_list_pop"
+        if nm == IListShift() {
+            fn = "rt_list_shift"
+        } else if nm == IListFirst() {
+            fn = "rt_list_first"
+        } else if nm == IListLast() {
+            fn = "rt_list_last"
+        }
+        fpEmit(fn + "(" + l + ", &" + t + ");")
+        return t
+    } else if nm == IListRemove() {
+        fpEmit("rt_list_remove(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
+        return ""
+    } else if nm == IListCount() {
+        return "rt_list_count(" + fpExpr(a0) + ")"
+
+    // ---- map ----
+    } else if nm == IMapSet() {
+        // v goes through fpCopyToTemp, not fpAddrable, for the same reason
+        // as list_push/unshift above: map_set grows m's key/value arrays on
+        // a new key, so a raw rt_list_at-derived pointer passed as v (e.g.
+        // `m.set(k, l[0])`) must be copied out before the call, not handed
+        // in live. (m's own values never alias this way: map subscript
+        // lowers to the map_get intrinsic, which always materializes into
+        // its own temp before it can be used as another call's argument --
+        // see IMapGet below.)
+        m = fpExpr(a0)
+        k = fpStrAddr(a1)
+        v = fpCopyToTemp(a2)
+        fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
+        return ""
+    } else if nm == IMapGet() {
+        m = fpExpr(a0)
+        k = fpStrAddr(a1)
+        t = fpNewTmp(cpCType(irExprType(x)))
+        fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+        return t
+    } else if nm == IMapGetDv() {
+        m = fpExpr(a0)
+        k = fpStrAddr(a1)
+        dv = fpExpr(a2)
+        t = fpNewTmp(cpCType(irExprType(x)))
+        fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
+        fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+        return t
+    } else if nm == IMapHas() {
+        return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
+    } else if nm == IMapRemove() {
+        fpEmit("rt_map_remove(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        return ""
+    } else if nm == IMapCount() {
+        return "rt_map_count(" + fpExpr(a0) + ")"
     }
-    // Task 6+: list/map/lasterr/file intrinsics.
+    // Later tasks: lasterr/file intrinsics.
     return ""
 }
 
@@ -703,12 +782,75 @@ func fpStmt(s: int) {
         } else {
             fpEmit("return " + fpExpr(irReturnX(s)) + ";")
         }
+    } else if irStmtKind(s) == SForList {
+        fpForListStmt(s)
+    } else if irStmtKind(s) == SForMap {
+        fpForMapStmt(s)
     } else if irStmtKind(s) == SBreak {
         fpEmit("break;")
     } else if irStmtKind(s) == SContinue {
         fpEmit("continue;")
     }
-    // Task 7+: SForList/SForMap.
+}
+
+// fpForListStmt lowers `for x in l { ... }` to an index loop over a count
+// snapshotted once at loop entry (Ch5 doesn't promise behavior for a list
+// mutated mid-iteration; a fixed count is the simplest defensible choice)
+// -- a port of funcprint.go's forListStmt.
+func fpForListStmt(s: int) {
+    var lv: string
+    var lt: string
+    var cnt: string
+    var ix: string
+    var elemC: string
+    var vName: string
+
+    lv = fpExpr(irForListListV(s))
+    lt = fpNewTmp("rt_list *")
+    fpEmit(lt + " = " + lv + ";")
+    cnt = fpNewTmp("int32_t")
+    fpEmit(cnt + " = rt_list_count(" + lt + ");")
+    ix = fpNewTmp("int32_t")
+    elemC = cpCType(irtElem(irExprType(irForListListV(s))))
+    vName = poolGet(irForListV(s))
+    fpEmit("for (" + ix + " = 0; " + ix + " < " + cnt + "; " + ix + "++) {")
+    fpIndent = fpIndent + 1
+    fpEmit("cv_" + vName + " = *(" + elemC + "*)rt_list_at(" + lt + ", " + ix + ");")
+    fpStmts(irForListBody(s))
+    fpIndent = fpIndent - 1
+    fpEmit("}")
+}
+
+// fpForMapStmt lowers `for k, v in m { ... }` to an index loop over
+// rt_map_count/rt_map_key_at/rt_map_val_at -- ascending key order, per
+// rt.c's CONTRACT comment on rt_map -- a port of funcprint.go's
+// forMapStmt. The value fetch only emits when the loop declared a V:
+// irForMapV(s) is -1 (parseForStmt's own "no second IDENT" signal,
+// threaded straight through lowFor) when the loop wrote `for k in m`
+// without a value variable.
+func fpForMapStmt(s: int) {
+    var mv: string
+    var mt: string
+    var cnt: string
+    var ix: string
+    var vNameIdx: int
+
+    mv = fpExpr(irForMapMapV(s))
+    mt = fpNewTmp("rt_map *")
+    fpEmit(mt + " = " + mv + ";")
+    cnt = fpNewTmp("int32_t")
+    fpEmit(cnt + " = rt_map_count(" + mt + ");")
+    ix = fpNewTmp("int32_t")
+    fpEmit("for (" + ix + " = 0; " + ix + " < " + cnt + "; " + ix + "++) {")
+    fpIndent = fpIndent + 1
+    fpEmit("rt_map_key_at(" + mt + ", " + ix + ", (uint8_t*)&cv_" + poolGet(irForMapK(s)) + ");")
+    vNameIdx = irForMapV(s)
+    if vNameIdx != -1 {
+        fpEmit("rt_map_val_at(" + mt + ", " + ix + ", &cv_" + poolGet(vNameIdx) + ");")
+    }
+    fpStmts(irForMapBody(s))
+    fpIndent = fpIndent - 1
+    fpEmit("}")
 }
 
 // fpWhileStmt prints `while (1) { <cond's temps, re-run every iteration>;
@@ -858,6 +1000,10 @@ func cpDefaultInit(dst: string, t: int) {
         fpEmit(dst + " = (" + cpCType(t) + "){0};")
     } else if k == KText {
         fpEmit(dst + " = rt_text_new();")
+    } else if k == KList {
+        fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
+    } else if k == KMap {
+        fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
     }
 }
 

@@ -418,7 +418,7 @@ func lowCall(e: int): int {
 }
 
 // lowMethodCall dispatches `x.name(args)` by the receiver's kind (expr.go's
-// lowerMethodCall, reduced to the String/Text receiver -- list/map/file
+// lowerMethodCall, reduced to the String/Text/List/Map receivers -- file
 // receivers are Task 6+).
 func lowMethodCall(e: int, fn: int): int {
     var ty: int
@@ -430,8 +430,83 @@ func lowMethodCall(e: int, fn: int): int {
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
         return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
+    } else if xk == TyList {
+        return lowListMethod(recv, fn, callArgsHead(e), ty)
+    } else if xk == TyMap {
+        return lowMapMethod(recv, fn, callArgsHead(e), ty)
     }
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowListMethod lowers `l.name(args)` for a List receiver (expr.go's
+// lowerListMethod): add/push/unshift route the value through lowCoerceStr
+// against the list's OWN element type (recv's elem, not `ty` -- push/
+// unshift both return void) before chaining it onto recv, since the
+// checker's compatible() accepts any Str capacity against elem but
+// IListPush/IListUnshift's C printer copies the value's OWN struct type,
+// sized to fit the list's declared element size.
+func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
+    var nm: string
+    var elemT: int
+    var v: int
+
+    nm = poolGet(selectName(sel))
+    if nm == "add" or nm == "push" {
+        elemT = irtElem(irExprType(recv))
+        v = lowCoerceStr(elemT, lowExpr(argsHead))
+        irExprListAppend(recv, v)
+        return newIRIntr(IListPush(), recv, ty)
+    } else if nm == "unshift" {
+        elemT = irtElem(irExprType(recv))
+        v = lowCoerceStr(elemT, lowExpr(argsHead))
+        irExprListAppend(recv, v)
+        return newIRIntr(IListUnshift(), recv, ty)
+    } else if nm == "pop" {
+        return newIRIntr(IListPop(), recv, ty)
+    } else if nm == "shift" {
+        return newIRIntr(IListShift(), recv, ty)
+    } else if nm == "first" {
+        return newIRIntr(IListFirst(), recv, ty)
+    } else if nm == "last" {
+        return newIRIntr(IListLast(), recv, ty)
+    } else if nm == "remove" {
+        return newIRIntr(IListRemove(), lowMethodArgs2(recv, argsHead), ty)
+    } else if nm == "count" {
+        return newIRIntr(IListCount(), recv, ty)
+    }
+    lowUnsupported("list method " + nm)
+    return -1
+}
+
+// lowMapMethod lowers `m.name(args)` for a Map receiver (expr.go's
+// lowerMapMethod): get's default-value argument goes through lowCoerceStr
+// against the map's elem type for the same reason list push's value arg
+// does -- IMapGetDv's C printer pre-fills its result temp with a plain `=`
+// from the default, which requires the default's own C struct type to
+// already match.
+func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int): int {
+    var nm: string
+    var key: int
+    var dv: int
+    var elemT: int
+
+    nm = poolGet(selectName(sel))
+    if nm == "get" {
+        elemT = irtElem(irExprType(recv))
+        key = lowExpr(argsHead)
+        dv = lowCoerceStr(elemT, lowExpr(exprNext(argsHead)))
+        irExprListAppend(recv, key)
+        irExprListAppend(key, dv)
+        return newIRIntr(IMapGetDv(), recv, ty)
+    } else if nm == "has" {
+        return newIRIntr(IMapHas(), lowMethodArgs2(recv, argsHead), ty)
+    } else if nm == "remove" {
+        return newIRIntr(IMapRemove(), lowMethodArgs2(recv, argsHead), ty)
+    } else if nm == "count" {
+        return newIRIntr(IMapCount(), recv, ty)
+    }
+    lowUnsupported("map method " + nm)
     return -1
 }
 
@@ -551,29 +626,32 @@ func lowSlice(e: int): int {
     return newIRIntr(name, x, ty)
 }
 
-// lowIndex lowers `a[i]`. Array indexing lowers to IndexRef (Task 6+ adds
-// List); string/text index to their read intrinsic -- a port of expr.go's
-// lowerIndex, minus the List/Map receivers.
+// lowIndex lowers `a[i]`. Array and List indexing share IndexRef (see
+// ir.IndexRef's doc comment for the printer contract this relies on for
+// List -- funcprint.go's indexRef, Task 7 branch); string/text/map index to
+// their read intrinsic -- a port of expr.go's lowerIndex.
 func lowIndex(e: int): int {
     var ty: int
     var xk: TypeKind
 
     ty = lowMustType(e)
     xk = typeKind(exprTypeGet(indexX(e)))
-    if xk == TyArr {
+    if xk == TyArr or xk == TyList {
         return newIRIndexRef(lowExpr(indexX(e)), lowExpr(indexI(e)), ty)
     } else if xk == TyStr {
         return newIRIntr(IStrIndex(), lowBin2Args(indexX(e), indexI(e)), ty)
     } else if xk == TyText {
         return newIRIntr(ITextIndex(), lowBin2Args(indexX(e), indexI(e)), ty)
+    } else if xk == TyMap {
+        return newIRIntr(IMapGet(), lowBin2Args(indexX(e), indexI(e)), ty)
     }
     lowUnsupported("index of unsupported kind " + numToStr(int(xk)))
     return -1
 }
 
 // lowSelect lowers a bare `a.b` -- reduced to the String/Text `.length`
-// property (Task 6+ adds record fields and list/map `.count`) -- a port of
-// expr.go's lowerSelect.
+// property and the List/Map `.count` property (Task 6+ adds record fields)
+// -- a port of expr.go's lowerSelect.
 func lowSelect(e: int): int {
     var ty: int
     var xk: TypeKind
@@ -589,6 +667,10 @@ func lowSelect(e: int): int {
             name = ITextLen()
         }
         return newIRIntr(name, lowExpr(selectX(e)), ty)
+    } else if xk == TyList and propName == "count" {
+        return newIRIntr(IListCount(), lowExpr(selectX(e)), ty)
+    } else if xk == TyMap and propName == "count" {
+        return newIRIntr(IMapCount(), lowExpr(selectX(e)), ty)
     }
     lowUnsupported("select ." + propName)
     return -1
@@ -696,16 +778,18 @@ func lowWhile(s: int): int {
     return newIRWhile(cond, body)
 }
 
-// lowFor lowers the inclusive int-range `for` form only (Ch5: For) --
-// stmt.go's lowerFor, RANGE case. From/To are lowered in the ENCLOSING
-// scope (mirroring checkForStmt's own scope nesting), THEN V is declared as
-// an Int local in a fresh scope wrapping the body. The list/map `for` forms
-// (ForList/ForMap) are Task 7 -- left loud via lowUnsupported.
+// lowFor lowers all three `for` forms (Ch5: For) that the checker
+// validates: an inclusive int range (ToExpr set), list iteration (one
+// element var), and map iteration (key + optional value var) -- a port of
+// stmt.go's lowerFor. Seq/ToExpr are lowered in the ENCLOSING scope
+// (mirroring checkForStmt's own scope nesting), THEN the loop variable(s)
+// are declared in a fresh scope wrapping the body.
 func lowFor(s: int): int {
     var seq: int
     var toExpr: int
     var body: int
     var n: int
+    var seqT: int
 
     seq = lowExpr(forSeq(s))
     if forTo(s) != -1 {
@@ -718,8 +802,30 @@ func lowFor(s: int): int {
         lowPopScope()
         return n
     }
-    // Task 7: for-over-list / for-over-map.
-    lowUnsupported("for-list/for-map (not yet implemented)")
+
+    seqT = exprTypeGet(forSeq(s))
+    if typeKind(seqT) == TyList {
+        lowPushScope()
+        lowAddLocal(forV1(s), lowType(typeElem(seqT)))
+        lowDeclareLocal(forV1(s))
+        body = lowBlock(forBody(s))
+        n = newIRForList(forV1(s), seq, body)
+        lowPopScope()
+        return n
+    } else if typeKind(seqT) == TyMap {
+        lowPushScope()
+        lowAddLocal(forV1(s), irStrType(255))
+        lowDeclareLocal(forV1(s))
+        if forV2(s) != -1 {
+            lowAddLocal(forV2(s), lowType(typeElem(seqT)))
+            lowDeclareLocal(forV2(s))
+        }
+        body = lowBlock(forBody(s))
+        n = newIRForMap(forV1(s), forV2(s), seq, body)
+        lowPopScope()
+        return n
+    }
+    lowUnsupported("cannot iterate for-loop sequence kind " + numToStr(int(typeKind(seqT))))
     return -1
 }
 
@@ -752,11 +858,14 @@ func lowAssign(s: int): int {
     return lowStoreStmt(lowExpr(lhs), lowExpr(assignRHS(s)), ty)
 }
 
-// lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign, minus the
-// Map case -- Task 6+): an array element write reuses IndexRef as an lvalue
-// through lowStoreStmt (same printer contract as a read); string/text
-// writes have no lvalue form and lower to their set-index intrinsic as an
-// ExprStmt instead.
+// lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign): an
+// array/list element write reuses IndexRef as an lvalue through
+// lowStoreStmt (same printer contract as a read); string/text writes have
+// no lvalue form and lower to their set-index intrinsic as an ExprStmt
+// instead; a map write's rhs goes through lowCoerceStr against the map's
+// OWN elem type -- IMapSet's C printer copies rhs's OWN struct type into a
+// temp before taking its address (same class of bug lowListMethod's
+// push/unshift value guards against).
 func lowIndexAssign(lhs: int, rhsAst: int): int {
     var xk: TypeKind
     var x: int
@@ -768,7 +877,7 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
     x = lowExpr(indexX(lhs))
     i = lowExpr(indexI(lhs))
     rhs = lowExpr(rhsAst)
-    if xk == TyArr {
+    if xk == TyArr or xk == TyList {
         elemTy = lowMustType(lhs)
         return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
     } else if xk == TyStr {
@@ -779,6 +888,12 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         irExprListAppend(x, i)
         irExprListAppend(i, rhs)
         return newIRExprStmt(newIRIntr(ITextSetIndex(), x, irVoidT))
+    } else if xk == TyMap {
+        elemTy = irtElem(irExprType(x))
+        rhs = lowCoerceStr(elemTy, rhs)
+        irExprListAppend(x, i)
+        irExprListAppend(i, rhs)
+        return newIRExprStmt(newIRIntr(IMapSet(), x, irVoidT))
     }
     lowUnsupported("index-assign of unsupported kind " + numToStr(int(xk)))
     return -1

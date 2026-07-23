@@ -1,0 +1,96 @@
+// emit_list.cla: Task 7 coverage slice for clarusc emit -- list intrinsics
+// (push/pop/shift/unshift/first/last/remove/count), for-list iteration,
+// IndexRef read AND write, and a `list of string(N)` push from a
+// differently-sized string to exercise coerceStr (IStrCoerce) together with
+// the copyToTemp aliasing guard on the value argument. Self-verifying via
+// `if cond { alert("... ok") } else { alert("... FAIL") }`, same convention
+// as emit_arith.cla/emit_control.cla. No user funcs (Task 9) -- just the
+// handler-body subset clarusc's self-hosted lower.cla/cprint.cla support at
+// this task.
+on App.startCLI(args: list of string) {
+    var l: list of int
+    var popped: int
+    var shifted: int
+    var sum: int
+    var sl: list of string(8)
+
+    // ---- push + count + first/last ----
+    l.push(10)
+    l.push(20)
+    l.push(30)
+    if l.count == 3 and l.first() == 10 and l.last() == 30 {
+        alert("push/count/first/last ok")
+    } else {
+        alert("push/count/first/last FAIL")
+    }
+
+    // ---- unshift ----
+    l.unshift(5)
+    if l.count == 4 and l.first() == 5 {
+        alert("unshift ok")
+    } else {
+        alert("unshift FAIL")
+    }
+
+    // ---- pop ----
+    popped = l.pop()
+    if popped == 30 and l.count == 3 {
+        alert("pop ok")
+    } else {
+        alert("pop FAIL")
+    }
+
+    // ---- shift ----
+    shifted = l.shift()
+    if shifted == 5 and l.count == 2 {
+        alert("shift ok")
+    } else {
+        alert("shift FAIL")
+    }
+
+    // ---- IndexRef read (l is now [10, 20]) ----
+    if l[0] == 10 and l[1] == 20 {
+        alert("index read ok")
+    } else {
+        alert("index read FAIL")
+    }
+
+    // ---- IndexRef write ----
+    l[0] = 100
+    if l[0] == 100 {
+        alert("index write ok")
+    } else {
+        alert("index write FAIL")
+    }
+
+    // ---- remove (l is now [100, 20]; push 200, 300 -> [100, 20, 200, 300]) ----
+    l.push(200)
+    l.push(300)
+    l.remove(1)
+    if l.count == 3 and l[0] == 100 and l[1] == 200 and l[2] == 300 {
+        alert("remove ok")
+    } else {
+        alert("remove FAIL")
+    }
+
+    // ---- for-list ----
+    sum = 0
+    for x in l {
+        sum = sum + x
+    }
+    if sum == 600 {
+        alert("for-list ok")
+    } else {
+        alert("for-list FAIL")
+    }
+
+    // ---- list of string(8): push a string(255) literal wider than the
+    // list's own element capacity -- forces coerceStr (IStrCoerce) to
+    // clamp it down before copyToTemp materializes the pushed value ----
+    sl.push("this is over eight bytes")
+    if sl.first() == "this is " and sl.count == 1 {
+        alert("list string coerce ok")
+    } else {
+        alert("list string coerce FAIL")
+    }
+}

@@ -1,0 +1,79 @@
+// emit_map.cla: Task 7 coverage slice for clarusc emit -- map intrinsics
+// (set/get/get-default/has/remove/count), for-map iteration in sorted key
+// order, and a `map of string(N)` set with a differently-sized string to
+// exercise coerceStr (IStrCoerce) together with the copyToTemp aliasing
+// guard on the value argument (IMapSet). Self-verifying via `if cond {
+// alert("... ok") } else { alert("... FAIL") }`, same convention as
+// emit_list.cla. No user funcs (Task 9) -- just the handler-body subset
+// clarusc's self-hosted lower.cla/cprint.cla support at this task.
+on App.startCLI(args: list of string) {
+    var m: map of int
+    var got: int
+    var sum: int
+    var sm: map of string(8)
+    var mv: string(8)
+
+    // ---- set (IMapSet via index-assign) + count ----
+    // inserted deliberately out of order: iteration must come back sorted
+    m["c"] = 3
+    m["b"] = 2
+    m["a"] = 1
+    if m.count == 3 {
+        alert("set+count ok")
+    } else {
+        alert("set+count FAIL")
+    }
+
+    // ---- get (index read + .get) ----
+    if m["a"] == 1 and m.get("a", 0) == 1 {
+        alert("get ok")
+    } else {
+        alert("get FAIL")
+    }
+
+    // ---- get-default (missing key) ----
+    got = m.get("missing", 99)
+    if got == 99 {
+        alert("get-default ok")
+    } else {
+        alert("get-default FAIL")
+    }
+
+    // ---- has ----
+    if m.has("a") and (not m.has("z")) {
+        alert("has ok")
+    } else {
+        alert("has FAIL")
+    }
+
+    // ---- remove ----
+    m.remove("b")
+    if m.count == 2 and (not m.has("b")) {
+        alert("remove ok")
+    } else {
+        alert("remove FAIL")
+    }
+
+    // ---- for-map: sorted key order (a, c remain after removing b) ----
+    sum = 0
+    for k, v in m {
+        alert(k)
+        sum = sum + v
+    }
+    if sum == 4 {
+        alert("for-map ok")
+    } else {
+        alert("for-map FAIL")
+    }
+
+    // ---- map of string(8): set a string(255) literal wider than the
+    // map's own element capacity -- forces coerceStr (IStrCoerce) to
+    // clamp it down before copyToTemp materializes the set value ----
+    sm["k"] = "this is over eight bytes"
+    mv = sm.get("k", "")
+    if mv == "this is " and sm.count == 1 {
+        alert("map string coerce ok")
+    } else {
+        alert("map string coerce FAIL")
+    }
+}
