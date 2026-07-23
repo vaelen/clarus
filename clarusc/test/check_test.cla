@@ -41,6 +41,8 @@ func ln(src: text, s: string) {
 
 on App.startEmpty {
     var src: text
+    var body: int
+    var s: int
 
     // Case 1: a clean program exercising the whole 9a decl+expr surface --
     // record (with a defaulted field), enum, two consts, two globals (one
@@ -466,4 +468,39 @@ on App.startEmpty {
     ln(src, "    }")
     ln(src, "}")
     runCase("window-menu-extend-clean", src)
+
+    // Case 27: exprTypeOf pins the checker's resolved type for a known
+    // expression's own arena index -- "a + b" (the RHS of c's assignment,
+    // the third statement in f's body) -- so lower.cla's mustType can
+    // later read it back via exprTypeGet. Reached by walking the parsed
+    // AST directly (not via runCase, which only alerts diagnostics),
+    // mirroring parse_test.cla's AST-walking convention.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var a: int")
+    ln(src, "    var b: int")
+    ln(src, "    var c: int")
+    ln(src, "")
+    ln(src, "    a = 1")
+    ln(src, "    b = 2")
+    ln(src, "    c = a + b")
+    ln(src, "}")
+    resetDiags()
+    lexAll(src)
+    body = parseFile()
+    checkProgram(body)
+    alert("=== exprtype-pin ===")
+    if diags.count != 0 {
+        alert("unexpected diagnostics")
+    } else {
+        body = funcDeclBody(body)
+        s = blockStmtsHead(body)
+        s = stmtNext(s)
+        s = stmtNext(s)
+        if exprTypeGet(assignRHS(s)) == IntT {
+            alert("a + b : int")
+        } else {
+            alert("wrong type recorded")
+        }
+    }
 }

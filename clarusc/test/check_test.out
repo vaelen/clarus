@@ -51,3 +51,5 @@ check_test.cla:5:5: handler T.select takes (i: int)
 check_test.cla:1:1: tick count must be at least 1
 === window-menu-extend-clean ===
 clean
+=== exprtype-pin ===
+a + b : int

@@ -304,24 +304,35 @@ func cvZero(): CVal {
 // `const`. Needed by Task 9b's switch-case-label checking and by any
 // later lowering pass, not by any diagnostic this task's driver checks.
 //
-// None of these six maps is ever bulk-cleared between programs (map has
+// exprTypeOf: keyed by an expr's own arena index, recording checkExpr's
+// resolved TypeInfo index for that expr (mirrors Go's Info.Types). Needed
+// by the later lowering pass, not by any diagnostic this task's driver
+// checks.
+//
+// None of these seven maps is ever bulk-cleared between programs (map has
 // no bulk-clear primitive): every key used within a checkProgram call is
 // always freshly written in THAT SAME call before anything in that call
 // reads it (a func's decl index is registered in phase 1 before phase 2
 // reads it; an Ident's resolved value is read back only by the very same
-// Ident occurrence that wrote it), so a stale entry surviving from a
-// previous program, under a decl/expr index a later program happens to
-// reuse, is never consulted before being overwritten. checkReset relies
-// on this and does not attempt to clear them.
+// Ident occurrence that wrote it; an expr's type is read back only by
+// code that runs after that same expr was checked), so a stale entry
+// surviving from a previous program, under a decl/expr index a later
+// program happens to reuse, is never consulted before being overwritten.
+// checkReset relies on this and does not attempt to clear them.
 var funcScopeByDecl: map of int
 var funcRetByDecl: map of int
 var enumConstOf: map of int
 var constUseIsStr: map of int
 var constUseInt: map of int
 var constUseStr: map of string
+var exprTypeOf: map of int
 
 func enumConstGet(e: int): int {
     return enumConstOf.get(numToStr(e), 0)
+}
+
+func exprTypeGet(e: int): int {
+    return exprTypeOf.get(numToStr(e), InvalidT)
 }
 
 // ================================================================
@@ -3559,7 +3570,22 @@ func checkCall(e: int, expected: int): int {
 // for "no hint"); it is a hint, not an obligation -- concrete-typed
 // expressions (literals, resolved idents) ignore it. On any error,
 // checkExpr reports exactly one diagnostic and returns InvalidT.
+//
+// checkExpr is a single-tail wrapper around checkExprInner (below, which
+// has the real per-ExprKind logic and its many return sites): it records
+// the resolved type in exprTypeOf, keyed by numToStr(e) same as
+// enumConstOf, so a later lowering pass can read it back via
+// exprTypeGet -- mirroring Go's Info.Types -- before returning it.
 func checkExpr(e: int, expected: int): int {
+    var t: int
+    t = checkExprInner(e, expected)
+    exprTypeOf[numToStr(e)] = t
+    return t
+}
+
+// checkExprInner holds checkExpr's actual per-ExprKind checking logic;
+// see checkExpr above for why it is split out this way.
+func checkExprInner(e: int, expected: int): int {
     switch exprKind(e) {
     case ExIntLit {
         return IntT
