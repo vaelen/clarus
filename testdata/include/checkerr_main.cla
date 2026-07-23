@@ -1,0 +1,6 @@
+include "checkerr_lib.cla"
+
+on App.startEmpty {
+    useLib()
+    quit
+}

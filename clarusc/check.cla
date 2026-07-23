@@ -3711,6 +3711,20 @@ func checkTopDeclPhase1(d: int) {
 // declaring each into curScope; phase 2 then checks every DkFunc's body,
 // against the now-COMPLETE top-level scope, so a body may call any
 // function regardless of declaration order (Ch6: Recursion, Scope).
+// setCheckPath switches curPathIdx to the file the top-level decl d was parsed
+// from, so every diagnostic emitted while checking it (and its nested body) is
+// attributed to that file -- the Go checker's `c.f = files[i]` / `c.f = dd.f`.
+// A -1 (unrecorded, e.g. a single-file program checked without expansion)
+// leaves curPathIdx unchanged.
+func setCheckPath(d: int) {
+    var p: int
+
+    p = getDeclFile(d)
+    if p != -1 {
+        curPathIdx = p
+    }
+}
+
 func checkProgram(declHead: int) {
     var d: int
 
@@ -3718,12 +3732,14 @@ func checkProgram(declHead: int) {
 
     d = declHead
     while d != -1 {
+        setCheckPath(d)
         checkTopDeclPhase1(d)
         d = declNext(d)
     }
 
     d = declHead
     while d != -1 {
+        setCheckPath(d)
         if declKind(d) == DkFunc {
             checkFuncBody(d)
         } else if declKind(d) == DkExtend {

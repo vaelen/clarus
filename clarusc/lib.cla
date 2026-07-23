@@ -50,9 +50,20 @@ record Diag {
 // must call resetDiags() to start fresh (Task 10's per-program loop owns this).
 var diags: list of Diag
 
+// diagPaths runs parallel to diags: diagPaths[i] is the interned path string
+// diags[i] belongs to. It is filled automatically by emitDiag from curPathIdx
+// -- the Clarus analogue of the Go checker's `c.f`, which every diagnostic is
+// stamped with (internal/check/check.go errorf). The driver sets curPathIdx to
+// the file currently being lexed/parsed (per file) and, in the check phase, to
+// each top-level decl's owning file, so a check error in an INCLUDED file is
+// attributed to that file, not the entry path.
+var diagPaths: list of int
+var curPathIdx: int
+
 // emitDiag appends a diagnostic at line:col with message msg to the shared
-// diags list. Diagnostics accumulate across lex/parse/check within one
-// compilation; call resetDiags() between independent programs.
+// diags list, stamping it with curPathIdx (the current file). Diagnostics
+// accumulate across lex/parse/check within one compilation; call resetDiags()
+// between independent programs.
 func emitDiag(line: int, col: int, msg: string) {
     var d: Diag
 
@@ -60,14 +71,44 @@ func emitDiag(line: int, col: int, msg: string) {
     d.col = col
     d.msgIdx = intern(msg)
     diags.add(d)
+    diagPaths.add(curPathIdx)
 }
 
-// resetDiags empties the global diags list. Call this between compiling
-// independent programs or files to avoid cross-program diagnostic leakage.
+// resetDiags empties the global diags list (and its parallel path stamps).
+// Call this between compiling independent programs or files to avoid
+// cross-program diagnostic leakage.
 func resetDiags() {
     while diags.count > 0 {
         diags.pop()
     }
+    while diagPaths.count > 0 {
+        diagPaths.pop()
+    }
+    while declFileTab.count > 0 {
+        declFileTab.pop()
+    }
+    curPathIdx = 0
+}
+
+// declFileTab maps a decl arena index to the interned path of the file that
+// decl was parsed from -- the per-decl file identity the Go checker carries on
+// each deferredDecl (check.go). setDeclFile records it during include
+// expansion; getDeclFile is read in the check phase to switch curPathIdx per
+// top-level decl. -1 means "not recorded" (fall back to the current path).
+var declFileTab: list of int
+
+func setDeclFile(d: int, pathIdx: int) {
+    while declFileTab.count <= d {
+        declFileTab.add(-1)
+    }
+    declFileTab[d] = pathIdx
+}
+
+func getDeclFile(d: int): int {
+    if d < 0 or d >= declFileTab.count {
+        return -1
+    }
+    return declFileTab[d]
 }
 
 // formatDiag renders d as "path:line:col: message", matching
