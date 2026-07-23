@@ -65,6 +65,11 @@ var cpRestBuf: list of string   // globals init, funcs, main
 // (keyed by numToStr(n)); each clar_str_N typedef is emitted once.
 var cpStrCapsEmitted: map of int
 
+// cpArrEmitted keys the clar_arr_<elem>_<N> wrapper typedefs already
+// emitted into cpRecBuf (keyed by the wrapper's own type name), so each
+// distinct array shape is emitted once.
+var cpArrEmitted: map of int
+
 // ================================================================
 // funcPrinter (funcprint.go): one function body's lines, temp counter, and
 // indent. Modeled as module state -- one function is printed at a time and
@@ -129,9 +134,33 @@ func cpCTypeName(t: int): string {
     case KMap { return "rt_map *" }
     case KRec { return "clar_rec_" + poolGet(irtName(t)) }
     case KErr { return "clar_rec_Err" }
+    case KArr { return "clar_arr_" + cpArrKey(t) }
     }
-    // KArr: Task 4+ (fixed-array wrapper typedefs).
     return "void"
+}
+
+// cpArrKey names one Arr type's wrapper typedef, distinct per (element
+// shape, length) pair -- a pure function of t, no side effects (types.go's
+// arrKey).
+func cpArrKey(t: int): string {
+    return cpElemKey(irtElem(t)) + "_" + numToStr(irtN(t))
+}
+
+// cpElemKey renders t as an identifier fragment, for composing cpArrKey --
+// types.go's elemKey, reduced to the element kinds an Arr can hold in this
+// task's subset (int/bool/fixed/char/str/text/nested-arr); Rec/Enum/List/
+// Map/Err elements are Task 6+.
+func cpElemKey(t: int): string {
+    switch irtKind(t) {
+    case KInt { return "int" }
+    case KBool { return "bool" }
+    case KFixed { return "fixed" }
+    case KChar { return "char" }
+    case KStr { return "str" + numToStr(irtN(t)) }
+    case KText { return "text" }
+    case KArr { return "arr_" + cpArrKey(t) }
+    }
+    return "unsupported"
 }
 
 // cpEnsureStr emits the clar_str_N capacity typedef into cpTypeBuf once.
@@ -158,8 +187,28 @@ func cpEnsureType(t: int) {
         cpEnsureType(irtElem(t))
     } else if k == KMap {
         cpEnsureType(irtElem(t))
+    } else if k == KArr {
+        cpEnsureArr(t)
     }
-    // KArr: Task 4+.
+}
+
+// cpEnsureArr lazily emits t's clar_arr_<elem>_<N> wrapper typedef, first
+// ensuring its element type's own typedef (if any) -- types.go's ensureArr.
+// Written into cpRecBuf (like Go's recBuf): an array of records (Task 6+)
+// needs that record's struct already defined, which only exists in
+// cpRecBuf; a scalar/Str element has no such requirement but cpRecBuf works
+// fine for it too.
+func cpEnsureArr(t: int): string {
+    var name: string
+
+    name = cpCTypeName(t)
+    if cpArrEmitted.has(name) {
+        return name
+    }
+    cpArrEmitted[name] = 1
+    cpEnsureType(irtElem(t))
+    cpRecBuf.add("typedef struct { " + cpCTypeName(irtElem(t)) + " e[" + numToStr(irtN(t)) + "]; } " + name + ";")
+    return name
 }
 
 // cpCType returns t's C type name, first emitting any typedef it depends on.
@@ -195,8 +244,25 @@ func fpExpr(e: int): string {
     case EIntr {
         return fpIntrCall(e)
     }
+    case EIndexRef {
+        return fpIndexRef(e)
     }
-    // Task 5+: EFieldRef/EIndexRef/ECallFn/ENewRec.
+    }
+    // Task 6+: EFieldRef/ECallFn/ENewRec.
+    return ""
+}
+
+// fpIndexRef implements the ir.IndexRef printer contract, reduced to Arr
+// (Task 6+ adds List, sharing this same node -- see ir.IndexRef's doc
+// comment in ir.go): a bounds-checked plain C array access -- a port of
+// funcprint.go's indexRef.
+func fpIndexRef(e: int): string {
+    var xt: int
+
+    xt = irExprType(irIndexRefX(e))
+    if irtKind(xt) == KArr {
+        return "(" + fpExpr(irIndexRefX(e)) + ").e[rt_arr_check((int32_t)(" + fpExpr(irIndexRefI(e)) + "), " + numToStr(irtN(xt)) + ")]"
+    }
     return ""
 }
 
@@ -343,10 +409,12 @@ func fpConv(e: int): string {
     return ""
 }
 
-// fpAddrable returns a C expression for e that is safe to take the address of
-// (funcprint.go's addrable). VarRef/FieldRef/IndexRef print to C lvalues,
-// StrConst to a named static, Intr to its already-materialized temp -- none
-// needs a copy. Task 4+ adds copyToTemp for non-lvalue results.
+// fpAddrable returns a C expression for e that is safe to take the address
+// of (funcprint.go's addrable). VarRef/FieldRef/IndexRef print to C
+// lvalues, StrConst to a named static, Intr's value-producing cases already
+// materialize into a named temp -- none of these need a further copy;
+// anything else (a Bin/Un/Conv/CallFn/NewRec result) is first copied into a
+// fresh temp of its own type via fpCopyToTemp.
 func fpAddrable(e: int): string {
     var k: IRExprKind
 
@@ -354,7 +422,26 @@ func fpAddrable(e: int): string {
     if k == EVarRef or k == EFieldRef or k == EIndexRef or k == EStrConst or k == EIntr {
         return fpExpr(e)
     }
-    return fpExpr(e)
+    return fpCopyToTemp(e)
+}
+
+// fpCopyToTemp unconditionally materializes e's value into a fresh
+// statement-level temp and returns the temp's name -- never the "already an
+// lvalue, print as-is" shortcut fpAddrable takes for a VarRef/FieldRef/
+// IndexRef/StrConst/Intr. Used for the *value* argument of every
+// list/map-growing intrinsic (Task 6+'s list_push, list_unshift, map_set):
+// those can realloc their target's backing store mid-call, so if the value
+// argument were instead a raw rt_list_at/rt_map-derived pointer, the
+// realloc could free that pointer's block before the call's own memmove
+// reads it -- an ASan-confirmed use-after-free (funcprint.go's copyToTemp).
+func fpCopyToTemp(e: int): string {
+    var v: string
+    var t: string
+
+    v = fpExpr(e)
+    t = fpNewTmp(cpCType(irExprType(e)))
+    fpEmit(t + " = " + v + ";")
+    return t
 }
 
 // fpStrAddr renders `(const uint8_t*)&(<addrable e>)` (funcprint.go's strAddr).
@@ -362,38 +449,217 @@ func fpStrAddr(e: int): string {
     return "(const uint8_t*)&(" + fpAddrable(e) + ")"
 }
 
-// fpIntrCall prints one Intr call (intr.go). Void operations emit their call
-// as a statement and return "" (the only context they appear in is an
-// ExprStmt). Skeleton: alert/log/quit.
+// fpTextCmp handles text/text, text/string, and string/text comparisons
+// (intr.go's textCmp). rt_text_cmp_str only knows (text, string); a string
+// on the left needs the call flipped and its sign negated to preserve
+// `a < b` orientation.
+func fpTextCmp(a: int, b: int): string {
+    var atk: IRKind
+    var btk: IRKind
+
+    atk = irtKind(irExprType(a))
+    btk = irtKind(irExprType(b))
+    if atk == KText and btk == KText {
+        return "rt_text_cmp(" + fpExpr(a) + ", " + fpExpr(b) + ")"
+    } else if atk == KText and btk == KStr {
+        return "rt_text_cmp_str(" + fpExpr(a) + ", " + fpStrAddr(b) + ")"
+    }
+    // atk == KStr and btk == KText: lowComparison only ever calls ITextCmp
+    // when at least one side is Text, so this is the only remaining combo.
+    return "(-rt_text_cmp_str(" + fpExpr(b) + ", " + fpStrAddr(a) + "))"
+}
+
+// fpTextConcat allocates a fresh rt_text handle for the `text + (text|
+// string)` result (text has reference semantics, but `+` always produces a
+// new value), then concatenates a and b into it (intr.go's textConcat).
+func fpTextConcat(a: int, b: int): string {
+    var ae: string
+    var t: string
+
+    ae = fpExpr(a)
+    t = fpNewTmp("rt_text *")
+    fpEmit(t + " = rt_text_new();")
+    if irtKind(irExprType(b)) == KStr {
+        fpEmit("rt_text_concat(" + t + ", " + ae + ", " + fpStrAddr(b) + ", NULL);")
+    } else {
+        fpEmit("rt_text_concat(" + t + ", " + ae + ", NULL, " + fpExpr(b) + ");")
+    }
+    return t
+}
+
+// fpIntrCall prints one Intr call (intr.go). Every rt_* function whose
+// result comes back through an out-parameter (concat, text concat, ...) is
+// materialized into a fresh statement-level temp here and its name
+// returned; pure value-returning rt_* calls (len, cmp, index_of, ...) are
+// embedded directly with no temp, since C already lets them nest safely.
+// Void operations (alert, quit, set_index, append, ...) emit their call as
+// a statement and return "" -- see fpStmt's SExprStmt case, the only
+// context they appear in.
 func fpIntrCall(x: int): string {
     var nm: int
     var a0: int
     var a1: int
+    var a2: int
+    var t: string
+    var s0: string
+    var s1: string
+    var cap0: int
+    var cap1: int
 
     nm = irIntrName(x)
+    a0 = irIntrArgsHead(x)
+    if a0 != -1 {
+        a1 = irExprNext(a0)
+    }
+    if a1 != -1 {
+        a2 = irExprNext(a1)
+    }
+
     if nm == IAlert() {
-        fpEmit("rt_alert(" + fpStrAddr(irIntrArgsHead(x)) + ");")
+        fpEmit("rt_alert(" + fpStrAddr(a0) + ");")
         return ""
     } else if nm == ILog() {
-        fpEmit("rt_log(" + fpStrAddr(irIntrArgsHead(x)) + ");")
+        fpEmit("rt_log(" + fpStrAddr(a0) + ");")
         return ""
     } else if nm == IQuit() {
-        fpEmit("rt_quit((int32_t)(" + fpExpr(irIntrArgsHead(x)) + "));")
+        fpEmit("rt_quit((int32_t)(" + fpExpr(a0) + "));")
         return ""
-    } else if nm == IFixMul() or nm == IFixDiv() {
-        a0 = irIntrArgsHead(x)
-        a1 = irExprNext(a0)
-        if nm == IFixMul() {
-            return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
-        }
+    } else if nm == IFixMul() {
+        return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == IFixDiv() {
         return "rt_fix_div((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+
+    // ---- strings ----
+    } else if nm == IStrConcat() {
+        s0 = fpStrAddr(a0)
+        s1 = fpStrAddr(a1)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_concat((uint8_t*)&" + t + ", " + s0 + ", " + s1 + ");")
+        return t
+    } else if nm == IStrConcatChar() {
+        s0 = fpStrAddr(a0)
+        s1 = fpExpr(a1)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_concat_char((uint8_t*)&" + t + ", " + s0 + ", (uint8_t)(" + s1 + "));")
+        return t
+    } else if nm == IStrPrependChar() {
+        s0 = fpExpr(a0)
+        s1 = fpStrAddr(a1)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_prepend_char((uint8_t*)&" + t + ", (uint8_t)(" + s0 + "), " + s1 + ");")
+        return t
+    } else if nm == IStrCmp() {
+        return "rt_str_cmp(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+    } else if nm == IStrLen() {
+        return "rt_str_len(" + fpStrAddr(a0) + ")"
+    } else if nm == IStrIndex() {
+        return "rt_str_index(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == IStrSetIndex() {
+        s0 = fpAddrable(a0)
+        s1 = fpExpr(a1)
+        fpEmit("rt_str_set_index((uint8_t*)&(" + s0 + "), (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        return ""
+    } else if nm == IStrFromBytes() {
+        s0 = fpAddrable(a0)
+        cap0 = irtN(irExprType(a0))
+        s1 = fpAddrable(a1)
+        cap1 = irtN(irExprType(a1))
+        fpEmit("rt_str_from_bytes((uint8_t*)&(" + s0 + "), " + numToStr(cap0) + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        return ""
+    } else if nm == IStrToBytes() {
+        s0 = fpStrAddr(a0)
+        s1 = fpAddrable(a1)
+        cap1 = irtN(irExprType(a1))
+        return "rt_str_to_bytes(" + s0 + ", (uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ")"
+    } else if nm == IStrCoerce() {
+        // Materializes a0 (any Str capacity) into a fresh temp at x.Ty's
+        // (different) capacity via the same clamped rt_str_store fpStoreStr
+        // uses for a plain lvalue -- see lowCoerceStr's doc comment
+        // (lower.cla) for why this can't just be a plain `=`.
+        s0 = fpStrAddr(a0)
+        t = fpNewTmp(cpCType(irExprType(x)))
+        fpEmit("rt_str_store((uint8_t*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
+        return t
+    } else if nm == IStrSlice() {
+        s0 = fpStrAddr(a0)
+        s1 = fpExpr(a1)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        return t
+    } else if nm == IStrIndexOfStr() {
+        return "rt_str_index_of_str(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+    } else if nm == IStrIndexOfChar() {
+        return "rt_str_index_of_char(" + fpStrAddr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
+
+    // ---- text ----
+    } else if nm == ITextCmp() {
+        return fpTextCmp(a0, a1)
+    } else if nm == ITextConcat() {
+        return fpTextConcat(a0, a1)
+    } else if nm == ITextConcatSL() {
+        s0 = fpStrAddr(a0)
+        s1 = fpExpr(a1)
+        t = fpNewTmp("rt_text *")
+        fpEmit(t + " = rt_text_new();")
+        fpEmit("rt_text_concat_sl(" + t + ", " + s0 + ", " + s1 + ");")
+        return t
+    } else if nm == ITextStore() {
+        fpEmit("rt_text_store(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        return ""
+    } else if nm == ITextLen() {
+        return "rt_text_len(" + fpExpr(a0) + ")"
+    } else if nm == ITextIndex() {
+        return "rt_text_index(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextSetIndex() {
+        s0 = fpExpr(a0)
+        s1 = fpExpr(a1)
+        fpEmit("rt_text_set_index(" + s0 + ", (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        return ""
+    } else if nm == ITextFromBytes() {
+        s0 = fpExpr(a0)
+        s1 = fpAddrable(a1)
+        cap1 = irtN(irExprType(a1))
+        fpEmit("rt_text_from_bytes(" + s0 + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        return ""
+    } else if nm == ITextToBytes() {
+        s0 = fpExpr(a0)
+        s1 = fpAddrable(a1)
+        cap1 = irtN(irExprType(a1))
+        return "rt_text_to_bytes(" + s0 + ", (uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ")"
+    } else if nm == ITextSlice() {
+        s0 = fpExpr(a0)
+        s1 = fpExpr(a1)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_text_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        return t
+    } else if nm == ITextIndexOfStr() {
+        return "rt_text_index_of_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
+    } else if nm == ITextIndexOfChar() {
+        return "rt_text_index_of_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
+    } else if nm == ITextAppendStr() {
+        fpEmit("rt_text_append_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        return ""
+    } else if nm == ITextAppendChar() {
+        fpEmit("rt_text_append_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "));")
+        return ""
+    } else if nm == ITextAppendText() {
+        fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return ""
     }
-    // Task 5+: the remaining 48 intrinsics (str/text/list/map/file).
+    // Task 6+: list/map/lasterr/file intrinsics.
     return ""
+}
+
+// fpStoreStr prints a clamped string store: `rt_str_store(&dst, CAP, &src);`
+// -- funcprint.go's storeStr.
+func fpStoreStr(dst: int, src: int) {
+    fpEmit("rt_str_store((uint8_t*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
 }
 
 func fpStmt(s: int) {
     var e: string
+    var d: string
+    var v: string
 
     if irStmtKind(s) == SExprStmt {
         e = fpExpr(irExprStmtX(s))
@@ -402,9 +668,14 @@ func fpStmt(s: int) {
         }
     } else if irStmtKind(s) == SIf {
         fpIfStmt(s)
+    } else if irStmtKind(s) == SAssign {
+        d = fpExpr(irAssignDst(s))
+        v = fpExpr(irAssignSrc(s))
+        fpEmit(d + " = " + v + ";")
+    } else if irStmtKind(s) == SStoreStr {
+        fpStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
     }
-    // Task 5+: SAssign/SStoreStr/SWhile/SForRange/SForList/SForMap/
-    // SReturn/SBreak/SContinue.
+    // Task 6+: SWhile/SForRange/SForList/SForMap/SReturn/SBreak/SContinue.
 }
 
 // fpStripOuterParens removes one matching outer parenthesis pair from s, if
@@ -492,18 +763,25 @@ func cpFuncProto(f: int): string {
     return "static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(" + params + ")"
 }
 
-// cpDefaultInitScalar emits `dst = 0;` for a scalar-kind local (Int/Bool/
-// Fixed/Char/Enum) -- a Task-4-scoped port of defaults.go's defaultInit
-// covering only the scalar cases (defaults.go:22-31's `dst =
-// scalarDefault;` arm; scalarDefault is always 0 for a nil-Init local, per
-// cprint.go's emitFunc call site). Str/Text/List/Map/Rec/Err/Arr defaults
-// are Task 5+.
-func cpDefaultInitScalar(dst: string, t: int) {
+// cpDefaultInit emits the default-value statement(s) for a nil-Init local:
+// `dst = 0;` for a scalar (Int/Bool/Fixed/Char/Enum), `dst = (clar_str_N)
+// {0};` for a Str (empty string, no field-default override exists yet --
+// Task 6+'s record fields add that), and `dst = rt_text_new();` for a Text
+// -- the fresh-handle contract every Text local needs before any append/
+// store/index touches it, since there is no null "no text yet" state. A
+// port of defaults.go's defaultInit, reduced to the scalarDefault==0/
+// strDefault==-1 (no override) cases; List/Map/Rec/Err/Arr defaults are
+// Task 6+.
+func cpDefaultInit(dst: string, t: int) {
     var k: IRKind
 
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
         fpEmit(dst + " = 0;")
+    } else if k == KStr {
+        fpEmit(dst + " = (" + cpCType(t) + "){0};")
+    } else if k == KText {
+        fpEmit(dst + " = rt_text_new();")
     }
 }
 
@@ -520,7 +798,7 @@ func cpEmitFunc(f: int) {
     loc = irFuncLocalsHead(f)
     while loc != -1 {
         fpEmit(cpCType(irLocalType(loc)) + " cv_" + poolGet(irLocalName(loc)) + ";")
-        cpDefaultInitScalar("cv_" + poolGet(irLocalName(loc)), irLocalType(loc))
+        cpDefaultInit("cv_" + poolGet(irLocalName(loc)), irLocalType(loc))
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))

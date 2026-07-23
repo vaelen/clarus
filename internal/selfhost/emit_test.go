@@ -67,9 +67,20 @@ func emitBuild(t *testing.T, exe, claPath string) string {
 // Task 5+. emit_arith.cla is written from scratch against the exact
 // current subset (handler body, `if`/`else`, `alert`, `quit`, and
 // expression-only Bin/Un/Conv coverage) instead.
+//
+// Task 5 (strings/char/text): likewise, none of the OTHER existing
+// string/text run goldens (strings.cla, strcap.cla, textassign.cla,
+// concat_order.cla) qualify -- all rely on a user-defined `func` and/or
+// `while` to render/accumulate their result, still unsupported before
+// Task 6+. emit_strings.cla/emit_text.cla are written from scratch against
+// the exact current subset (StAssign, string/text/char `+`, comparisons,
+// slicing, indexing/set-indexing, fromBytes/toBytes/indexOf/append, and a
+// fixed-size char[] array for the byte-buffer methods) instead.
 var emitSeeds = []string{
 	"../../testdata/run/emit_hello.cla",
 	"../../testdata/run/emit_arith.cla",
+	"../../testdata/run/emit_strings.cla",
+	"../../testdata/run/emit_text.cla",
 }
 
 // TestEmitDifferential is the walking-skeleton gate: for every seed in

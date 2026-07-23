@@ -231,8 +231,17 @@ func lowExpr(e: int): int {
     case ExIdent {
         return lowIdent(e)
     }
+    case ExIndex {
+        return lowIndex(e)
     }
-    // Task 5+: ExIndex/ExSlice/ExSelect/ExNew.
+    case ExSlice {
+        return lowSlice(e)
+    }
+    case ExSelect {
+        return lowSelect(e)
+    }
+    }
+    // Task 6+: ExNew.
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
 }
@@ -259,11 +268,11 @@ func lowBin2Args(xAst: int, yAst: int): int {
     return x
 }
 
-// lowBinary dispatches `+` (int/fixed stay Bin; string/text/char concat is
-// Task 5), `*`/`/` (fixed routes to IFixMul/IFixDiv; int stays Bin),
-// comparisons, and everything else (`-`, mod, bitwise, and/or), which all
-// stay Bin -- a port of expr.go's lowerBinary (everything except the
-// string/text `+` cases, which stay Task 5).
+// lowBinary dispatches `+` (int/fixed stay Bin; string/text/char concat
+// routes to the matching concat/prepend intrinsic by operand-kind combo),
+// `*`/`/` (fixed routes to IFixMul/IFixDiv; int stays Bin), comparisons, and
+// everything else (`-`, mod, bitwise, and/or), which all stay Bin -- a port
+// of expr.go's lowerBinary.
 func lowBinary(e: int): int {
     var op: int
     var ty: int
@@ -277,9 +286,20 @@ func lowBinary(e: int): int {
     if op == OpAdd {
         ltk = typeKind(exprTypeGet(binLeft(e)))
         rtk = typeKind(exprTypeGet(binRight(e)))
-        if ltk == TyStr or ltk == TyText or ltk == TyChar or rtk == TyStr or rtk == TyText or rtk == TyChar {
-            // String/text/char `+` combos (concat/prepend) -- Task 5.
-            lowUnsupported("string/text/char + operand")
+        if ltk == TyStr and rtk == TyStr {
+            return newIRIntr(IStrConcat(), lowBin2Args(binLeft(e), binRight(e)), ty)
+        } else if ltk == TyStr and rtk == TyChar {
+            return newIRIntr(IStrConcatChar(), lowBin2Args(binLeft(e), binRight(e)), ty)
+        } else if ltk == TyText and (rtk == TyText or rtk == TyStr) {
+            return newIRIntr(ITextConcat(), lowBin2Args(binLeft(e), binRight(e)), ty)
+        } else if ltk == TyChar and rtk == TyStr {
+            return newIRIntr(IStrPrependChar(), lowBin2Args(binLeft(e), binRight(e)), ty)
+        } else if ltk == TyStr and rtk == TyText {
+            return newIRIntr(ITextConcatSL(), lowBin2Args(binLeft(e), binRight(e)), ty)
+        } else if ltk == TyStr or ltk == TyText or ltk == TyChar or rtk == TyStr or rtk == TyText or rtk == TyChar {
+            // Every other string/text/char `+` combo is rejected by the
+            // checker before lowering ever sees it.
+            lowUnsupported("string/text/char + operand combo")
             return -1
         }
         return lowBin(binOpSymbol(op), ty, binLeft(e), binRight(e))
@@ -299,18 +319,28 @@ func lowBinary(e: int): int {
     return lowBin(binOpSymbol(op), ty, binLeft(e), binRight(e))
 }
 
-// lowComparison lowers `== != < <= > >=` for non-textish operands (expr.go's
-// lowerComparison, minus the String/Text byte-wise-cmp path, which is
-// Task 5).
+// lowComparison lowers `== != < <= > >=`: a String/Text operand (either
+// side) compares via the byte-wise cmp intrinsics wrapped as `<op> 0` (Text
+// wins over String when mixed, since IStrCmp only knows fixed-capacity
+// strings); everything else (int/fixed/char/bool/enum) stays a plain Bin
+// comparison -- a port of expr.go's lowerComparison.
 func lowComparison(e: int): int {
     var ltk: TypeKind
     var rtk: TypeKind
+    var name: int
+    var cmp: int
+    var zero: int
 
     ltk = typeKind(exprTypeGet(binLeft(e)))
     rtk = typeKind(exprTypeGet(binRight(e)))
     if ltk == TyStr or ltk == TyText or rtk == TyStr or rtk == TyText {
-        lowUnsupported("textish comparison")
-        return -1
+        name = IStrCmp()
+        if ltk == TyText or rtk == TyText {
+            name = ITextCmp()
+        }
+        cmp = newIRIntr(name, lowBin2Args(binLeft(e), binRight(e)), irIntT)
+        zero = newIRIntConst(0, irIntT)
+        return newIRBin(intern(binOpSymbol(binOp(e))), cmp, zero, irBoolT)
     }
     return lowBin(binOpSymbol(binOp(e)), irBoolT, binLeft(e), binRight(e))
 }
@@ -370,13 +400,203 @@ func lowCall(e: int): int {
         } else if name == "char" {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
         }
-        // Task 5+: enum conversions, user functions.
+        // Task 6+: enum conversions, user functions.
         lowUnsupported("call to " + name)
         return -1
+    } else if exprKind(fn) == ExSelect {
+        return lowMethodCall(e, fn)
     }
-    // Task 5+: method calls (ExSelect receiver).
-    lowUnsupported("method call")
+    lowUnsupported("call target")
     return -1
+}
+
+// lowMethodCall dispatches `x.name(args)` by the receiver's kind (expr.go's
+// lowerMethodCall, reduced to the String/Text receiver -- list/map/file
+// receivers are Task 6+).
+func lowMethodCall(e: int, fn: int): int {
+    var ty: int
+    var xk: TypeKind
+    var recv: int
+
+    ty = lowMustType(e)
+    xk = typeKind(exprTypeGet(selectX(fn)))
+    recv = lowExpr(selectX(fn))
+    if xk == TyStr or xk == TyText {
+        return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
+    }
+    lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowMethodArgs2 chains an already-lowered receiver IR expr with one
+// freshly-lowered AST argument, returning the chain head (recvIR) -- the
+// mixed-source counterpart to lowBin2Args/lowArgs, needed because a method
+// call's receiver is lowered once up front (lowMethodCall) while its
+// arguments are still raw AST nodes.
+func lowMethodArgs2(recvIR: int, a0Ast: int): int {
+    var a: int
+
+    a = lowExpr(a0Ast)
+    irExprListAppend(recvIR, a)
+    return recvIR
+}
+
+// lowMethodArgs3 is lowMethodArgs2 for a 2-argument method call (fromBytes).
+func lowMethodArgs3(recvIR: int, a0Ast: int, a1Ast: int): int {
+    var a: int
+    var b: int
+
+    a = lowExpr(a0Ast)
+    b = lowExpr(a1Ast)
+    irExprListAppend(recvIR, a)
+    irExprListAppend(a, b)
+    return recvIR
+}
+
+// lowStringTextMethod lowers `.fromBytes`/`.toBytes`/`.indexOf`/`.append` on
+// a String or Text receiver (expr.go's lowerStringTextMethod).
+func lowStringTextMethod(recv: int, isText: bool, sel: int, argsHead: int, ty: int): int {
+    var nm: string
+    var name: int
+    var arg0: int
+    var arg1: int
+
+    nm = poolGet(selectName(sel))
+    arg0 = argsHead
+    if nm == "fromBytes" {
+        arg1 = exprNext(arg0)
+        name = IStrFromBytes()
+        if isText {
+            name = ITextFromBytes()
+        }
+        return newIRIntr(name, lowMethodArgs3(recv, arg0, arg1), ty)
+    } else if nm == "toBytes" {
+        name = IStrToBytes()
+        if isText {
+            name = ITextToBytes()
+        }
+        return newIRIntr(name, lowMethodArgs2(recv, arg0), ty)
+    } else if nm == "indexOf" {
+        return lowIndexOf(recv, isText, arg0, ty)
+    } else if nm == "append" {
+        // textOnlyMethods (check.cla) only reaches here for a text
+        // receiver -- isText is always true.
+        return lowAppend(recv, arg0, ty)
+    }
+    lowUnsupported("string/text method " + nm)
+    return -1
+}
+
+// lowIndexOf lowers `x.indexOf(arg)` (Ch3: string/text -- indexOf), picking
+// the char vs. string needle intrinsic for whichever of string/text recv is
+// -- a port of expr.go's lowerIndexOf.
+func lowIndexOf(recv: int, isText: bool, argAst: int, ty: int): int {
+    var isChar: bool
+    var name: int
+
+    isChar = typeKind(exprTypeGet(argAst)) == TyChar
+    name = IStrIndexOfStr()
+    if (not isText) and isChar {
+        name = IStrIndexOfChar()
+    } else if isText and isChar {
+        name = ITextIndexOfChar()
+    } else if isText {
+        name = ITextIndexOfStr()
+    }
+    return newIRIntr(name, lowMethodArgs2(recv, argAst), ty)
+}
+
+// lowAppend lowers `t.append(arg)` (Ch3: Text -- append grows t in place);
+// arg is string, char, or text -- a port of expr.go's lowerAppend.
+func lowAppend(recv: int, argAst: int, ty: int): int {
+    var name: int
+    var argk: TypeKind
+
+    argk = typeKind(exprTypeGet(argAst))
+    name = ITextAppendStr()
+    if argk == TyChar {
+        name = ITextAppendChar()
+    } else if argk == TyText {
+        name = ITextAppendText()
+    }
+    return newIRIntr(name, lowMethodArgs2(recv, argAst), ty)
+}
+
+// lowSlice lowers `x[start, len]` (Ch3: Strings, Text -- Slicing) to the
+// str/text slice intrinsic -- a port of expr.go's lowerSlice.
+func lowSlice(e: int): int {
+    var ty: int
+    var name: int
+    var x: int
+    var start: int
+    var ln: int
+
+    ty = lowMustType(e)
+    name = IStrSlice()
+    if typeKind(exprTypeGet(sliceX(e))) == TyText {
+        name = ITextSlice()
+    }
+    x = lowExpr(sliceX(e))
+    start = lowExpr(sliceStart(e))
+    ln = lowExpr(sliceLen(e))
+    irExprListAppend(x, start)
+    irExprListAppend(start, ln)
+    return newIRIntr(name, x, ty)
+}
+
+// lowIndex lowers `a[i]`. Array indexing lowers to IndexRef (Task 6+ adds
+// List); string/text index to their read intrinsic -- a port of expr.go's
+// lowerIndex, minus the List/Map receivers.
+func lowIndex(e: int): int {
+    var ty: int
+    var xk: TypeKind
+
+    ty = lowMustType(e)
+    xk = typeKind(exprTypeGet(indexX(e)))
+    if xk == TyArr {
+        return newIRIndexRef(lowExpr(indexX(e)), lowExpr(indexI(e)), ty)
+    } else if xk == TyStr {
+        return newIRIntr(IStrIndex(), lowBin2Args(indexX(e), indexI(e)), ty)
+    } else if xk == TyText {
+        return newIRIntr(ITextIndex(), lowBin2Args(indexX(e), indexI(e)), ty)
+    }
+    lowUnsupported("index of unsupported kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowSelect lowers a bare `a.b` -- reduced to the String/Text `.length`
+// property (Task 6+ adds record fields and list/map `.count`) -- a port of
+// expr.go's lowerSelect.
+func lowSelect(e: int): int {
+    var ty: int
+    var xk: TypeKind
+    var propName: string
+    var name: int
+
+    ty = lowMustType(e)
+    xk = typeKind(exprTypeGet(selectX(e)))
+    propName = poolGet(selectName(e))
+    if (xk == TyStr or xk == TyText) and propName == "length" {
+        name = IStrLen()
+        if xk == TyText {
+            name = ITextLen()
+        }
+        return newIRIntr(name, lowExpr(selectX(e)), ty)
+    }
+    lowUnsupported("select ." + propName)
+    return -1
+}
+
+// coerceStr wraps x in a capacity-clamping temp when x is a Str value whose
+// capacity differs from target's -- a port of expr.go's coerceStr. No call
+// site in this task's conservative subset reaches a mismatched-capacity
+// Str binding yet (no user functions/lists/maps are wired); ported now so
+// Task 6+'s call/list/map slices can call it directly.
+func lowCoerceStr(target: int, x: int): int {
+    if irtKind(target) != KStr or irtKind(irExprType(x)) != KStr or irtN(irExprType(x)) == irtN(target) {
+        return x
+    }
+    return newIRIntr(IStrCoerce(), x, target)
 }
 
 // lowIntConv lowers `int(x)`, whose ConvOp depends on x's source kind (Ch3:
@@ -404,17 +624,24 @@ func lowIntConv(e: int, ty: int): int {
 // ================================================================
 
 // lowStoreStmt builds the store form for `dst = src` at IR type t: a Str
-// destination clamps through StoreStr, everything else is a plain Assign
-// (stmt.go's storeStmt; Task 4 adds the Text<-Str text_store case).
+// destination clamps through StoreStr; a Text destination fed by a Str
+// source (the checker's String -> Text assignability) goes through the
+// text_store intrinsic, since a Text handle and a Str value have no common
+// C representation to plain-assign between; everything else (Text=Text
+// reference copy, records/arrays copy by value) is a plain Assign --
+// stmt.go's storeStmt.
 func lowStoreStmt(dst: int, src: int, t: int): int {
     if irtKind(t) == KStr {
         return newIRStoreStr(dst, src)
+    } else if irtKind(t) == KText and irtKind(irExprType(src)) == KStr {
+        irExprListAppend(dst, src)
+        return newIRExprStmt(newIRIntr(ITextStore(), dst, irVoidT))
     }
     return newIRAssign(dst, src)
 }
 
 // lowStmt lowers one statement, returning its irStmts index, or -1 for a
-// statement that contributes no IR node. Skeleton: ExprStmt + Quit.
+// statement that contributes no IR node.
 func lowStmt(s: int): int {
     switch stmtKind(s) {
     case StExprStmt {
@@ -426,9 +653,59 @@ func lowStmt(s: int): int {
     case StQuit {
         return lowQuit(s)
     }
+    case StAssign {
+        return lowAssign(s)
     }
-    // Task 5+: StAssign/StWhile/StFor/StReturn/StSwitch/StBreak/StContinue.
+    }
+    // Task 6+: StWhile/StFor/StReturn/StSwitch/StBreak/StContinue.
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
+    return -1
+}
+
+// lowAssign lowers `lvalue = expr` (stmt.go's lowerAssign): `l[i] = v`
+// routes through lowIndexAssign; everything else (a plain variable) is a
+// normal store through lowStoreStmt.
+func lowAssign(s: int): int {
+    var lhs: int
+    var ty: int
+
+    lhs = assignLHS(s)
+    if exprKind(lhs) == ExIndex {
+        return lowIndexAssign(lhs, assignRHS(s))
+    }
+    ty = lowMustType(lhs)
+    return lowStoreStmt(lowExpr(lhs), lowExpr(assignRHS(s)), ty)
+}
+
+// lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign, minus the
+// Map case -- Task 6+): an array element write reuses IndexRef as an lvalue
+// through lowStoreStmt (same printer contract as a read); string/text
+// writes have no lvalue form and lower to their set-index intrinsic as an
+// ExprStmt instead.
+func lowIndexAssign(lhs: int, rhsAst: int): int {
+    var xk: TypeKind
+    var x: int
+    var i: int
+    var rhs: int
+    var elemTy: int
+
+    xk = typeKind(exprTypeGet(indexX(lhs)))
+    x = lowExpr(indexX(lhs))
+    i = lowExpr(indexI(lhs))
+    rhs = lowExpr(rhsAst)
+    if xk == TyArr {
+        elemTy = lowMustType(lhs)
+        return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
+    } else if xk == TyStr {
+        irExprListAppend(x, i)
+        irExprListAppend(i, rhs)
+        return newIRExprStmt(newIRIntr(IStrSetIndex(), x, irVoidT))
+    } else if xk == TyText {
+        irExprListAppend(x, i)
+        irExprListAppend(i, rhs)
+        return newIRExprStmt(newIRIntr(ITextSetIndex(), x, irVoidT))
+    }
+    lowUnsupported("index-assign of unsupported kind " + numToStr(int(xk)))
     return -1
 }
 

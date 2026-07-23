@@ -1,0 +1,11 @@
+str concat ok
+str+char ok
+char+str prepend ok
+str+text ok
+slice ok
+indexof str ok
+indexof char ok
+index read/set ok
+capacity coerce ok
+or intrinsic-rhs ok
+and intrinsic-rhs ok

@@ -1,0 +1,111 @@
+// emit_strings.cla: Task 5 coverage slice for clarusc emit -- the `+`
+// concat family (str+str, str+char, char+str prepend, str+text->text),
+// string slicing, indexOf (string and char needle), index read + set-index,
+// capacity coercion via a differently-sized string(n) store, and one
+// and/or check whose RHS is itself a string-intrinsic comparison (to
+// exercise fpAndOr/fpCaptureExpr's statement-materializing path). Every
+// check is a bare `if cond { alert("... ok") } else { alert("... FAIL") }`,
+// matching emit_arith.cla's self-verifying style. Deliberately restricted
+// to constructs clarusc's self-hosted lower.cla/cprint.cla support at this
+// task (no user funcs, no while/for, no list/map): see the task brief's
+// WATCH note on why no string is ever handed across a function-call
+// boundary here.
+on App.startCLI(args: list of string) {
+    var a: string = "hello"
+    var b: string = " world"
+    var c: string
+    var d: string
+    var t: text = "!"
+    var t2: text
+    var n: int
+    var w: string
+    var short: string(4)
+    var wide: string = "hello world"
+
+    // ---- concat: str + str ----
+    c = a + b
+    if c == "hello world" {
+        alert("str concat ok")
+    } else {
+        alert("str concat FAIL")
+    }
+
+    // ---- concat: str + char ----
+    d = "hi"
+    d = d + '!'
+    if d == "hi!" {
+        alert("str+char ok")
+    } else {
+        alert("str+char FAIL")
+    }
+
+    // ---- concat: char + str (prepend) ----
+    d = '<' + d
+    if d == "<hi!" {
+        alert("char+str prepend ok")
+    } else {
+        alert("char+str prepend FAIL")
+    }
+
+    // ---- concat: str + text -> text ----
+    t2 = a + t
+    if t2 == "hello!" {
+        alert("str+text ok")
+    } else {
+        alert("str+text FAIL")
+    }
+
+    // ---- slice ----
+    w = c[6, 5]
+    if w == "world" {
+        alert("slice ok")
+    } else {
+        alert("slice FAIL")
+    }
+
+    // ---- indexOf: string needle ----
+    n = c.indexOf("wor")
+    if n == 6 {
+        alert("indexof str ok")
+    } else {
+        alert("indexof str FAIL")
+    }
+
+    // ---- indexOf: char needle ----
+    n = c.indexOf('w')
+    if n == 6 {
+        alert("indexof char ok")
+    } else {
+        alert("indexof char FAIL")
+    }
+
+    // ---- index read + set-index ----
+    c[0] = 'H'
+    if c[0] == 'H' {
+        alert("index read/set ok")
+    } else {
+        alert("index read/set FAIL")
+    }
+
+    // ---- capacity coercion via a differently-sized string(n) store ----
+    short = wide
+    if short == "hell" {
+        alert("capacity coerce ok")
+    } else {
+        alert("capacity coerce FAIL")
+    }
+
+    // ---- and/or with a string-intrinsic RHS (fpAndOr/fpCaptureExpr) ----
+    if short == "no match" or (short + "o!") == "hello!" {
+        alert("or intrinsic-rhs ok")
+    } else {
+        alert("or intrinsic-rhs FAIL")
+    }
+    if short == "hell" and (short + "o!") == "hello!" {
+        alert("and intrinsic-rhs ok")
+    } else {
+        alert("and intrinsic-rhs FAIL")
+    }
+
+    quit 0
+}
