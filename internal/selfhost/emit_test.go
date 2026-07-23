@@ -14,14 +14,13 @@ import (
 	"clarus/internal/build"
 )
 
-// emitBuildDir is the dir-taking core of emitBuild: it runs
-// `clarusc emit -o <dir>/main.c claPath`, writes the embedded host runtime
-// (rt.h/rt.c) alongside it, and compiles with the same toolchain and flags
-// internal/build uses. It returns the built binary's path, or an error
-// (never t.Fatalf) so callers that need to memoize a build across multiple
-// top-level tests -- where a per-test t.TempDir() would be cleaned up as
-// soon as the first such test finishes -- can use a longer-lived directory.
-func emitBuildDir(exe, claPath, dir string) (string, error) {
+// emitCDir is the dir-taking core of emitC: it runs
+// `clarusc emit -o <dir>/main.c claPath` and returns the emitted C bytes, or
+// an error (never t.Fatalf) so callers that need to memoize a build across
+// multiple top-level tests -- where a per-test t.TempDir() would be cleaned
+// up as soon as the first such test finishes -- can use a longer-lived
+// directory.
+func emitCDir(exe, claPath, dir string) ([]byte, error) {
 	mainC := filepath.Join(dir, "main.c")
 
 	cmd := exec.Command(exe, "emit", "-o", mainC, claPath)
@@ -29,14 +28,36 @@ func emitBuildDir(exe, claPath, dir string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("clarusc emit -o %s %s: %v\nstderr: %s", mainC, claPath, err, errb.String())
+		return nil, fmt.Errorf("clarusc emit -o %s %s: %v\nstderr: %s", mainC, claPath, err, errb.String())
 	}
 
 	emitted, err := os.ReadFile(mainC)
 	if err != nil {
-		return "", fmt.Errorf("read emitted C at %s: %w", mainC, err)
+		return nil, fmt.Errorf("read emitted C at %s: %w", mainC, err)
 	}
+	return emitted, nil
+}
 
+// emitC runs `clarusc emit` for claPath and returns the emitted C bytes.
+func emitC(t *testing.T, exe, claPath string) []byte {
+	t.Helper()
+	c, err := emitCDir(exe, claPath, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// compileCDir is the dir-taking core of compileC: it writes cBytes plus the
+// embedded host runtime (rt.h/rt.c) into dir and compiles them with the same
+// toolchain and flags internal/build uses. It returns the built binary's
+// path, or an error (never t.Fatalf) -- same memoization rationale as
+// emitCDir.
+func compileCDir(cBytes []byte, dir string) (string, error) {
+	mainC := filepath.Join(dir, "main.c")
+	if err := os.WriteFile(mainC, cBytes, 0o644); err != nil {
+		return "", err
+	}
 	rtC := filepath.Join(dir, "rt.c")
 	if err := os.WriteFile(filepath.Join(dir, "rt.h"), build.RuntimeH(), 0o644); err != nil {
 		return "", err
@@ -48,9 +69,32 @@ func emitBuildDir(exe, claPath, dir string) (string, error) {
 	bin := filepath.Join(dir, "prog")
 	cc := exec.Command(build.CCPath(), "-std=c99", "-O1", mainC, rtC, "-o", bin)
 	if ccOut, err := cc.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, string(emitted))
+		return "", fmt.Errorf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, string(cBytes))
 	}
 	return bin, nil
+}
+
+// compileC writes cBytes alongside the embedded host runtime into a temp dir
+// and compiles them, returning the built binary's path.
+func compileC(t *testing.T, cBytes []byte) string {
+	t.Helper()
+	bin, err := compileCDir(cBytes, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// emitBuildDir composes emitCDir + compileCDir in a single directory: it
+// runs `clarusc emit -o <dir>/main.c claPath`, then compiles that alongside
+// the embedded host runtime. See emitCDir for the memoization rationale for
+// taking dir instead of using t.TempDir() internally.
+func emitBuildDir(exe, claPath, dir string) (string, error) {
+	c, err := emitCDir(exe, claPath, dir)
+	if err != nil {
+		return "", err
+	}
+	return compileCDir(c, dir)
 }
 
 // emitBuild runs `clarusc emit -o <dir>/main.c claPath`, reads the written
@@ -142,13 +186,28 @@ func TestEmitDifferential(t *testing.T) {
 // path. This is the "stage1 emits stage2" step: proof that the emit path
 // covers everything clarusc's own source uses. Memoized because self-emit +
 // cc takes real time and every subtest below wants the same binary.
+//
+// selfC is the emitted C itself (Task 11 calls this "c2": stage1's emission
+// of clarusc's own source). It's retained alongside the binary so
+// TestBootstrapFixedPoint can diff it against stage2's own emission (c3)
+// without re-running the stage1 emit.
 var (
 	selfExeOnce sync.Once
+	selfC       []byte
 	selfExe     string
 	selfExeErr  error
 )
 
 func selfBuiltClarusc(t *testing.T) string {
+	t.Helper()
+	selfBuiltClaruscC(t)
+	return selfExe
+}
+
+// selfBuiltClaruscC returns c2 -- the C that stage1 (the Go-built clarusc)
+// emits for clarusc's own source -- triggering the same memoized build
+// selfBuiltClarusc uses.
+func selfBuiltClaruscC(t *testing.T) []byte {
 	t.Helper()
 	selfExeOnce.Do(func() {
 		exe, err := buildClarusc()
@@ -165,12 +224,16 @@ func selfBuiltClarusc(t *testing.T) string {
 			selfExeErr = err
 			return
 		}
-		selfExe, selfExeErr = emitBuildDir(exe, "../../clarusc/main.cla", dir)
+		selfC, selfExeErr = emitCDir(exe, "../../clarusc/main.cla", dir)
+		if selfExeErr != nil {
+			return
+		}
+		selfExe, selfExeErr = compileCDir(selfC, dir)
 	})
 	if selfExeErr != nil {
 		t.Fatal(selfExeErr)
 	}
-	return selfExe
+	return selfC
 }
 
 // TestEmitSelfCompiles proves self-emission: clarusc emits C for its OWN

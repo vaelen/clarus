@@ -99,18 +99,12 @@ func diffOne(t *testing.T, exe, path string) {
 	}
 }
 
-// TestDifferential is the parity gate over the whole file corpus: for every
-// file in testdata/{valid,errors,run,runerr,include} AND clarusc's own
-// main.cla (clarusc checks itself), clarusc's stdout and exit code must match
-// the Go front end's byte-for-byte. Include entry files exercise multi-file
-// expansion (parse-phase per-file attribution, check-phase per-decl
-// attribution) on both sides.
-func TestDifferential(t *testing.T) {
-	exe, err := buildClarusc()
-	if err != nil {
-		t.Fatalf("build clarusc: %v", err)
-	}
-
+// corpusFiles globs the whole differential corpus: testdata/{valid,errors,
+// run,runerr,include,diag} plus clarusc's own main.cla (clarusc checks
+// itself). Shared by TestDifferential and TestSelfBuiltDifferential so both
+// walk exactly the same file list.
+func corpusFiles(t *testing.T) []string {
+	t.Helper()
 	var files []string
 	for _, g := range []string{
 		"../../testdata/valid/*.cla",
@@ -127,8 +121,22 @@ func TestDifferential(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no corpus files matched")
 	}
+	return files
+}
 
-	for _, f := range files {
+// TestDifferential is the parity gate over the whole file corpus: for every
+// file in testdata/{valid,errors,run,runerr,include} AND clarusc's own
+// main.cla (clarusc checks itself), clarusc's stdout and exit code must match
+// the Go front end's byte-for-byte. Include entry files exercise multi-file
+// expansion (parse-phase per-file attribution, check-phase per-decl
+// attribution) on both sides.
+func TestDifferential(t *testing.T) {
+	exe, err := buildClarusc()
+	if err != nil {
+		t.Fatalf("build clarusc: %v", err)
+	}
+
+	for _, f := range corpusFiles(t) {
 		f := f
 		t.Run(filepath.Base(f), func(t *testing.T) { diffOne(t, exe, f) })
 	}
