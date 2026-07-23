@@ -12,27 +12,31 @@ import (
 	"clarus/internal/build"
 )
 
-// emitBuild runs `clarusc emit claPath`, captures its stdout as one C
-// translation unit, writes it alongside the embedded host runtime (rt.h/rt.c
-// from internal/build) into a temp dir, and compiles them with the same
-// toolchain and flags internal/build uses. It returns the built binary's path.
+// emitBuild runs `clarusc emit -o <dir>/main.c claPath`, reads the written
+// main.c as the emitted C translation unit, writes it alongside the embedded
+// host runtime (rt.h/rt.c from internal/build) into a temp dir, and compiles
+// them with the same toolchain and flags internal/build uses. It returns the
+// built binary's path.
 func emitBuild(t *testing.T, exe, claPath string) string {
 	t.Helper()
 
-	cmd := exec.Command(exe, "emit", claPath)
+	dir := t.TempDir()
+	mainC := filepath.Join(dir, "main.c")
+
+	cmd := exec.Command(exe, "emit", "-o", mainC, claPath)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("clarusc emit %s: %v\nstderr: %s", claPath, err, errb.String())
+		t.Fatalf("clarusc emit -o %s %s: %v\nstderr: %s", mainC, claPath, err, errb.String())
 	}
 
-	dir := t.TempDir()
-	mainC := filepath.Join(dir, "main.c")
-	rtC := filepath.Join(dir, "rt.c")
-	if err := os.WriteFile(mainC, out.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
+	emitted, err := os.ReadFile(mainC)
+	if err != nil {
+		t.Fatalf("read emitted C at %s: %v", mainC, err)
 	}
+
+	rtC := filepath.Join(dir, "rt.c")
 	if err := os.WriteFile(filepath.Join(dir, "rt.h"), build.RuntimeH(), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +47,7 @@ func emitBuild(t *testing.T, exe, claPath string) string {
 	bin := filepath.Join(dir, "prog")
 	cc := exec.Command(build.CCPath(), "-std=c99", "-O1", mainC, rtC, "-o", bin)
 	if ccOut, err := cc.CombinedOutput(); err != nil {
-		t.Fatalf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, out.String())
+		t.Fatalf("cc rejected clarusc-emitted C: %v\n%s\n--- emitted C ---\n%s", err, ccOut, string(emitted))
 	}
 	return bin
 }

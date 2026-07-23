@@ -159,6 +159,11 @@ on App.startCLI(args: list of string) {
     var h: int
     var emitMode: bool
     var startArg: int
+    var outPath: string
+    var haveOutPath: bool
+    var fileArgs: list of string
+    var cSrc: text
+    var wrote: bool
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -168,14 +173,16 @@ on App.startCLI(args: list of string) {
     astReset()
 
     if args.count == 0 {
-        log("usage: clarusc [emit] FILE...")
+        log("usage: clarusc [emit -o OUT.c] FILE...")
         quit 2
     }
 
-    // Subcommand: `clarusc emit FILE...` runs the same pipeline as the default
-    // check, then -- only if there are zero diagnostics -- lowers to IR and
-    // prints the C translation unit to stdout. The default (no `emit`) checks
-    // and prints diagnostics exactly as before.
+    // Subcommand: `clarusc emit -o OUT.c FILE...` runs the same pipeline as
+    // the default check, then -- only if there are zero diagnostics -- lowers
+    // to IR, builds the C translation unit, and writes it to OUT.c via
+    // file.writeText (byte-faithful, no per-line length cap -- unlike stdout
+    // via alert, which is capped at a string's 255 bytes per line). The
+    // default (no `emit`) checks and prints diagnostics exactly as before.
     emitMode = false
     startArg = 0
     if args[0] == "emit" {
@@ -183,15 +190,43 @@ on App.startCLI(args: list of string) {
         startArg = 1
     }
     if startArg >= args.count {
-        log("usage: clarusc [emit] FILE...")
+        log("usage: clarusc [emit -o OUT.c] FILE...")
+        quit 2
+    }
+
+    // Collect input files, diverting emit's "-o PATH" (which may appear
+    // before or after the input files) out of the file list.
+    outPath = ""
+    haveOutPath = false
+    i = startArg
+    while i < args.count {
+        if emitMode and args[i] == "-o" {
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit -o OUT.c FILE...")
+                quit 2
+            }
+            outPath = args[i]
+            haveOutPath = true
+        } else {
+            fileArgs.add(args[i])
+        }
+        i = i + 1
+    }
+    if emitMode and not haveOutPath {
+        log("usage: clarusc emit -o OUT.c FILE...")
+        quit 2
+    }
+    if fileArgs.count == 0 {
+        log("usage: clarusc [emit -o OUT.c] FILE...")
         quit 2
     }
 
     // Phase A: include-expand + lex + parse every entry file, collecting all
     // parse-phase diagnostics.
-    i = startArg
-    while i < args.count {
-        expand(args[i], true)
+    i = 0
+    while i < fileArgs.count {
+        expand(fileArgs[i], true)
         i = i + 1
     }
     if entryFailed {
@@ -240,13 +275,19 @@ on App.startCLI(args: list of string) {
         quit 1
     }
 
-    // Emit path: lower the checked-clean program to IR and print its C. One
-    // program per process, so no astReset happens between check and lower --
+    // Emit path: lower the checked-clean program to IR, build its C into one
+    // text buffer, and write that buffer to -o's path. One program per
+    // process, so no astReset happens between check and lower --
     // exprTypeGet (check.cla) resolves against the very AST lowerProgram walks.
     if emitMode {
         irReset()
         lowerProgram(combined)
-        emitProgram()
+        cSrc = emitProgram()
+        wrote = file.writeText(outPath, cSrc)
+        if not wrote {
+            log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
+            quit 1
+        }
     }
     quit 0
 }

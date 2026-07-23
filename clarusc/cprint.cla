@@ -2,18 +2,46 @@
 // that #includes "rt.h". A port of the walking-skeleton subset of
 // internal/cprint (cprint.go / funcprint.go / intr.go / types.go).
 //
-// Output channel: the translation unit is printed to STDOUT, one C source
-// line per `alert` call (alert appends '\n' -- see rt.h). Clarus has no
-// primitive to write a whole multi-line `text` to stdout without per-chunk
-// newlines, and `string` results are capped at 255 bytes, so emission is
-// line-oriented: each section accumulates its lines into a `list of string`
-// buffer, and emitProgram replays the four buffers in Emit's fixed assembly
-// order. cType may append a clar_str_N typedef to cpTypeBuf at any point
-// during body printing (the first time an unseen capacity appears), so the
-// buffers are assembled fully before any is printed.
-// ponytail: one emitted C source line must stay under 255 bytes (a `string`
-// capacity); true for the skeleton. Task 4+ that emits a longer single line
-// (a big literal, a wide proto) switches that buffer to `text`.
+// Output channel: emitProgram returns the whole translation unit as one
+// `text` buffer (mirrors the Go internal/cprint.Emit, which returns the unit
+// as bytes) -- the caller (main.cla) writes it via file.writeText, which is
+// byte-faithful and uncapped. Each section still accumulates its lines into a
+// buffer as before (cType may append a clar_str_N typedef to cpTypeBuf at any
+// point during body printing, the first time an unseen capacity appears, so
+// the buffers are assembled fully before any line is appended to the output);
+// emitProgram then appends every buffer's lines, each followed by a single LF
+// (char(10)), into the returned text in Emit's fixed assembly order.
+//
+// cpLitBuf is `list of text`, not `list of string`, unlike the other three
+// buffers: its one producer, cpEmitStrLits, builds each line as `... + {" +
+// bytesStr + "}};"` where bytesStr is itself a `text` accumulator (the
+// literal's byte list, which can run well past 255 bytes for a >60-byte
+// source string) -- a `string`, capped at 255, would silently clamp that
+// line before it ever reached the output stage. Once bytesStr is `text`,
+// the `+` chain that embeds it is *already* `text`-typed by the checker
+// (Ch3: `string + text` -> `text`), so cpLitBuf must hold `text` values to
+// receive it without a truncating re-clamp.
+//
+// The other three buffers (cpTypeBuf, cpRecBuf, cpRestBuf) stay `list of
+// string`: every line they hold today is fixed, short boilerplate (a
+// typedef, an init function, main) built from pure `string` concatenation
+// with no `text` operand anywhere in the expression. That matters beyond
+// style: passing a plain `string` value where a `text` is expected only
+// type-checks (Ch3's documented `string` -> `text` widen) at a plain
+// assignment (`t = s`) -- a user function call's argument, a `list of
+// text`'s pushed element, and a function's `return` value are separate
+// lowering paths that do not yet implement that widen (each binds the value
+// into a `text`-shaped C slot without going through the assignment machinery
+// that performs the conversion), so a `string` value handed to any of those
+// three either fails to compile (a call argument, where the mismatch is a
+// visible C type error) or is silently miscopied (a list push, which goes
+// through a `void*`-typed runtime call the C compiler can't check). Widening
+// cpTypeBuf/cpRecBuf/cpRestBuf to `list of text` wholesale would put every
+// one of their many pure-`string` `.add(...)` calls on the second, silent
+// path. Keeping them `string` (their real content never needs more) and
+// widening only cpLitBuf -- whose one line is already `text`-typed by
+// construction, never by an implicit call/push/return conversion -- fixes
+// the reported bug without relying on an unimplemented conversion.
 //
 // This is the Task 3 skeleton: it emits ONLY what the seed program needs
 // (clar_str_255, the string-literal pool, the clar_rec_Err typedef, an empty
@@ -29,7 +57,7 @@ include "ir.cla"
 // ================================================================
 
 var cpTypeBuf: list of string   // string-capacity (+ array-wrapper, Task 4+) typedefs
-var cpLitBuf: list of string    // string-literal pool
+var cpLitBuf: list of text      // string-literal pool -- `text`, not `string`: see below
 var cpRecBuf: list of string    // record structs (seeded with clar_rec_Err)
 var cpRestBuf: list of string   // globals init, funcs, main
 
@@ -323,7 +351,7 @@ func cpEmitGlobalsInit() {
 func cpEmitStrLits() {
     var i: int
     var s: string
-    var bytesStr: string
+    var bytesStr: text
     var j: int
 
     i = 0
@@ -380,20 +408,57 @@ func cpResetBuffers() {
     }
 }
 
-// cpPrintList writes every line of buf to stdout (one alert per line).
-func cpPrintList(buf: list of string) {
+// cpAppendLine appends a `string`-sourced line to out, followed by a single
+// LF (byte 10, via char(10) -- never CR/13, and never alert's own newline
+// handling). append takes a char directly, unlike `+` concatenation.
+func cpAppendLine(out: text, line: string) {
+    out.append(line)
+    out.append(char(10))
+}
+
+// cpAppendTextLine is cpAppendLine for a `text`-sourced line -- one that may
+// exceed a `string`'s 255-byte capacity (cpLitBuf's lines). A separate
+// function, not an overload: a `text` argument bound to a `string` parameter
+// (or vice versa) is either a type error or a lowering gap (see the header
+// comment), so each buffer's lines must reach `out.append` through the
+// function whose parameter already matches their real type.
+func cpAppendTextLine(out: text, line: text) {
+    out.append(line)
+    out.append(char(10))
+}
+
+// cpAppendList appends every line of a `list of string` buffer to out
+// (cpAppendLine per line, in order) -- the text-buffer replacement for the
+// old per-line alert output.
+func cpAppendList(out: text, buf: list of string) {
     var i: int
 
     i = 0
     while i < buf.count {
-        alert(buf[i])
+        cpAppendLine(out, buf[i])
         i = i + 1
     }
 }
 
-// emitProgram renders the whole IR (ir.cla arenas) and prints it to stdout in
-// Emit's fixed assembly order (cprint.go's Emit).
-func emitProgram() {
+// cpAppendTextList is cpAppendList for cpLitBuf (`list of text`).
+func cpAppendTextList(out: text, buf: list of text) {
+    var i: int
+
+    i = 0
+    while i < buf.count {
+        cpAppendTextLine(out, buf[i])
+        i = i + 1
+    }
+}
+
+// emitProgram renders the whole IR (ir.cla arenas) into one `text` buffer, in
+// Emit's fixed assembly order (cprint.go's Emit), and returns it. Same input
+// always assembles the same buffers in the same order, so the returned bytes
+// are deterministic.
+func emitProgram(): text {
+    var out: text
+
+    out = ""
     cpResetBuffers()
 
     cpEnsureStr(255)   // literal pool + every intrinsic string temp use this
@@ -406,15 +471,17 @@ func emitProgram() {
     cpEmitFuncs()
     cpEmitMain()
 
-    alert("/* Generated by clarus (internal/cprint). Do not edit. */")
-    alert("#include \"rt.h\"")
-    alert("#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
-    alert("")
-    cpPrintList(cpTypeBuf)
-    alert("")
-    cpPrintList(cpLitBuf)
-    alert("")
-    cpPrintList(cpRecBuf)
-    alert("")
-    cpPrintList(cpRestBuf)
+    cpAppendLine(out, "/* Generated by clarus (internal/cprint). Do not edit. */")
+    cpAppendLine(out, "#include \"rt.h\"")
+    cpAppendLine(out, "#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
+    cpAppendLine(out, "")
+    cpAppendList(out, cpTypeBuf)
+    cpAppendLine(out, "")
+    cpAppendTextList(out, cpLitBuf)
+    cpAppendLine(out, "")
+    cpAppendList(out, cpRecBuf)
+    cpAppendLine(out, "")
+    cpAppendList(out, cpRestBuf)
+
+    return out
 }
