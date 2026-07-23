@@ -1,0 +1,32 @@
+int add/mul ok
+int sub ok
+int mod ok
+int and ok
+int or ok
+int xor ok
+int shl ok
+int shr ok
+int neg ok
+int bnot ok
+lt true ok
+lt false ok
+le ok
+gt ok
+ge ok
+eq ok
+ne ok
+not ok
+and shortcircuit ok
+or shortcircuit ok
+and eval ok
+or eval ok
+fixed mul ok
+fixed div ok
+fixed sub ok
+int to fixed ok
+fixed to int (add) ok
+fixed to int trunc ok
+fixed to int trunc neg ok
+char to int ok
+int to char ok
+int to char low byte ok

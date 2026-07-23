@@ -52,56 +52,81 @@ func emitBuild(t *testing.T, exe, claPath string) string {
 	return bin
 }
 
-// TestEmitDifferential is the walking-skeleton gate: clarusc emits C for a
-// seed golden, that C compiles and links against the host runtime, and the
-// resulting binary's stdout + exit code match the golden's .out/.exit (with
-// .args/.exit handled exactly as internal/build's run goldens).
+// emitSeeds lists every testdata/run/*.cla golden clarusc's self-hosted
+// emit path (lower.cla/cprint.cla) can currently handle end to end. Each
+// entry gets its own subtest via TestEmitDifferential. Only seeds inside
+// the emit path's current conservative feature subset belong here — see
+// each task's brief for what that subset covers; a seed exercising an
+// unimplemented construct fails loudly (lowUnsupported aborts clarusc
+// emit), not silently.
+//
+// Task 4 (arithmetic/comparisons/conversions): none of the OTHER existing
+// run goldens that touch arithmetic (arith.cla, fixedmath.cla) qualify yet
+// -- both rely on a user-defined `func` and `while`/array indexing to
+// render their result as text, none of which the emit path supports before
+// Task 5+. emit_arith.cla is written from scratch against the exact
+// current subset (handler body, `if`/`else`, `alert`, `quit`, and
+// expression-only Bin/Un/Conv coverage) instead.
+var emitSeeds = []string{
+	"../../testdata/run/emit_hello.cla",
+	"../../testdata/run/emit_arith.cla",
+}
+
+// TestEmitDifferential is the walking-skeleton gate: for every seed in
+// emitSeeds, clarusc emits C, that C compiles and links against the host
+// runtime, and the resulting binary's stdout + exit code match the
+// golden's .out/.exit (with .args/.exit handled exactly as internal/
+// build's run goldens).
 func TestEmitDifferential(t *testing.T) {
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
 	}
 
-	const seed = "../../testdata/run/emit_hello.cla"
-	base := strings.TrimSuffix(seed, ".cla")
-	want, err := os.ReadFile(base + ".out")
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, seed := range emitSeeds {
+		seed := seed
+		t.Run(filepath.Base(seed), func(t *testing.T) {
+			base := strings.TrimSuffix(seed, ".cla")
+			want, err := os.ReadFile(base + ".out")
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	bin := emitBuild(t, exe, seed)
+			bin := emitBuild(t, exe, seed)
 
-	var argv []string
-	if b, err := os.ReadFile(base + ".args"); err == nil {
-		argv = strings.Fields(string(b))
-	}
-	wantExit := 0
-	if b, err := os.ReadFile(base + ".exit"); err == nil {
-		wantExit, err = strconv.Atoi(strings.TrimSpace(string(b)))
-		if err != nil {
-			t.Fatalf("bad .exit: %v", err)
-		}
-	}
+			var argv []string
+			if b, err := os.ReadFile(base + ".args"); err == nil {
+				argv = strings.Fields(string(b))
+			}
+			wantExit := 0
+			if b, err := os.ReadFile(base + ".exit"); err == nil {
+				wantExit, err = strconv.Atoi(strings.TrimSpace(string(b)))
+				if err != nil {
+					t.Fatalf("bad .exit: %v", err)
+				}
+			}
 
-	cmd := exec.Command(bin, argv...)
-	cmd.Dir = t.TempDir()
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
+			cmd := exec.Command(bin, argv...)
+			cmd.Dir = t.TempDir()
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			runErr := cmd.Run()
 
-	gotExit := 0
-	if runErr != nil {
-		ee, ok := runErr.(*exec.ExitError)
-		if !ok {
-			t.Fatalf("run emitted binary: %v", runErr)
-		}
-		gotExit = ee.ExitCode()
-	}
-	if gotExit != wantExit {
-		t.Fatalf("exit code: got %d want %d (stderr: %s)", gotExit, wantExit, stderr.String())
-	}
-	if stdout.String() != string(want) {
-		t.Errorf("stdout:\n got: %q\nwant: %q", stdout.String(), string(want))
+			gotExit := 0
+			if runErr != nil {
+				ee, ok := runErr.(*exec.ExitError)
+				if !ok {
+					t.Fatalf("run emitted binary: %v", runErr)
+				}
+				gotExit = ee.ExitCode()
+			}
+			if gotExit != wantExit {
+				t.Fatalf("exit code: got %d want %d (stderr: %s)", gotExit, wantExit, stderr.String())
+			}
+			if stdout.String() != string(want) {
+				t.Errorf("stdout:\n got: %q\nwant: %q", stdout.String(), string(want))
+			}
+		})
 	}
 }

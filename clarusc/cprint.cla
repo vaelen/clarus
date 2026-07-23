@@ -183,11 +183,163 @@ func fpExpr(e: int): string {
     case EVarRef {
         return "cv_" + poolGet(irVarRefName(e))
     }
+    case EBin {
+        return fpBin(e)
+    }
+    case EUn {
+        return fpUn(e)
+    }
+    case EConv {
+        return fpConv(e)
+    }
     case EIntr {
         return fpIntrCall(e)
     }
     }
-    // Task 4+: EFieldRef/EIndexRef/EBin/EUn/EConv/ECallFn/ENewRec.
+    // Task 5+: EFieldRef/EIndexRef/ECallFn/ENewRec.
+    return ""
+}
+
+// cOp maps a Bin/Un op string to its C spelling (funcprint.go's cOp):
+// and/or short-circuit as &&/||, mod as %, everything else (+ - * / & | ^
+// << >> == != < <= > >=) passes straight through.
+func cOp(op: string): string {
+    if op == "and" {
+        return "&&"
+    } else if op == "or" {
+        return "||"
+    } else if op == "mod" {
+        return "%"
+    }
+    return op
+}
+
+// fpBin prints an EBin node: and/or route to fpAndOr (short-circuit); every
+// other operator (arithmetic, bitwise, comparison) prints as a plain
+// `(x op y)` via cOp -- funcprint.go's expr's *ir.Bin case.
+func fpBin(e: int): string {
+    var op: string
+
+    op = poolGet(irBinOp(e))
+    if op == "and" or op == "or" {
+        return fpAndOr(e)
+    }
+    return "(" + fpExpr(irBinX(e)) + " " + cOp(op) + " " + fpExpr(irBinY(e)) + ")"
+}
+
+// FpCapture is fpCaptureExpr's return value: the statements it would have
+// emitted (joined in order, each already indented one level deeper -- the
+// level fpAndOr's guarded `if` body will land at) and e's own value
+// expression -- funcprint.go's captureExpr returns (stmts, value string);
+// Clarus has no tuple return, so this record serves the same purpose.
+record FpCapture {
+    stmts: list of string
+    value: string
+}
+
+// fpCaptureExpr prints e one indent level deeper than fp's current level
+// (matching where it would land if fpAndOr decides to nest it inside a new
+// `if`), returning any statements it emitted separately from its value
+// expression -- a port of funcprint.go's captureExpr. fpBody is swapped out
+// for a fresh (empty) list for the duration of the call so e's statements
+// land in the returned capture, not the caller's in-progress body; `list of
+// T`'s reference semantics (Ch3: Value and Reference Semantics) make this a
+// cheap pointer swap, not a copy.
+func fpCaptureExpr(e: int): FpCapture {
+    var saved: list of string
+    var fresh: list of string
+    var cap: FpCapture
+
+    saved = fpBody
+    fpBody = fresh
+    fpIndent = fpIndent + 1
+    cap.value = fpExpr(e)
+    fpIndent = fpIndent - 1
+    cap.stmts = fpBody
+    fpBody = saved
+    return cap
+}
+
+// fpAndOr prints `and`/`or`, preserving short-circuit evaluation even when
+// the right operand needs statement-level temps of its own -- a port of
+// funcprint.go's andOr. The left operand always evaluates, printed in place
+// like any other operand; the right operand is speculatively captured first
+// (fpCaptureExpr): if it produced no statements, the simple case (both
+// sides pure) stays a plain C &&/|| -- no churn. If it did produce
+// statements, they're moved inside an `if`, guarded by the already-
+// evaluated left operand, so they run only when short-circuiting wouldn't
+// skip them.
+func fpAndOr(e: int): string {
+    var x: string
+    var op: string
+    var cap: FpCapture
+    var t: string
+    var cond: string
+    var i: int
+
+    x = fpExpr(irBinX(e))
+    op = poolGet(irBinOp(e))
+    cap = fpCaptureExpr(irBinY(e))
+    if cap.stmts.count == 0 {
+        return "(" + x + " " + cOp(op) + " " + cap.value + ")"
+    }
+
+    t = fpNewTmp(cpCType(irExprType(e)))
+    fpEmit(t + " = " + x + ";")
+    cond = t
+    if op == "or" {
+        cond = "!" + t
+    }
+    fpEmit("if (" + cond + ") {")
+    fpIndent = fpIndent + 1
+    i = 0
+    while i < cap.stmts.count {
+        fpBody.add(cap.stmts[i])
+        i = i + 1
+    }
+    fpEmit(t + " = " + cap.value + ";")
+    fpIndent = fpIndent - 1
+    fpEmit("}")
+    return t
+}
+
+// fpUn prints an EUn node (funcprint.go's un).
+func fpUn(e: int): string {
+    var x: string
+    var op: string
+
+    x = fpExpr(irUnX(e))
+    op = poolGet(irUnOp(e))
+    if op == "-" {
+        return "(-(" + x + "))"
+    } else if op == "not" {
+        return "(!(" + x + "))"
+    } else if op == "~" {
+        return "(~(" + x + "))"
+    }
+    return ""
+}
+
+// fpConv prints an EConv node (funcprint.go's conv). IntToFixed/FixedToInt
+// avoid a raw `<<`/plain arithmetic-shift on a possibly-negative value by
+// multiplying/dividing by 65536 instead; C99 integer division truncates
+// toward zero, exactly Ch3's "int(f) ... truncates toward zero".
+func fpConv(e: int): string {
+    var x: string
+    var op: IRConvOp
+
+    x = fpExpr(irConvX(e))
+    op = irConvOp(e)
+    if op == CvIntToFixed {
+        return "((int32_t)((int64_t)(" + x + ") * 65536))"
+    } else if op == CvFixedToInt {
+        return "((int32_t)((" + x + ") / 65536))"
+    } else if op == CvIntToChar {
+        return "((uint8_t)(" + x + "))"
+    } else if op == CvCharToInt or op == CvEnumToInt {
+        return "((int32_t)(" + x + "))"
+    }
+    // CvIntToEnum: Task 8.
     return ""
 }
 
@@ -215,6 +367,8 @@ func fpStrAddr(e: int): string {
 // ExprStmt). Skeleton: alert/log/quit.
 func fpIntrCall(x: int): string {
     var nm: int
+    var a0: int
+    var a1: int
 
     nm = irIntrName(x)
     if nm == IAlert() {
@@ -226,8 +380,15 @@ func fpIntrCall(x: int): string {
     } else if nm == IQuit() {
         fpEmit("rt_quit((int32_t)(" + fpExpr(irIntrArgsHead(x)) + "));")
         return ""
+    } else if nm == IFixMul() or nm == IFixDiv() {
+        a0 = irIntrArgsHead(x)
+        a1 = irExprNext(a0)
+        if nm == IFixMul() {
+            return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+        }
+        return "rt_fix_div((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
     }
-    // Task 4+: the remaining 50 intrinsics (str/text/list/map/fixed/file).
+    // Task 5+: the remaining 48 intrinsics (str/text/list/map/file).
     return ""
 }
 
@@ -239,9 +400,58 @@ func fpStmt(s: int) {
         if e != "" {
             fpEmit(e + ";")
         }
+    } else if irStmtKind(s) == SIf {
+        fpIfStmt(s)
     }
-    // Task 4+: SAssign/SStoreStr/SIf/SWhile/SForRange/SForList/SForMap/
+    // Task 5+: SAssign/SStoreStr/SWhile/SForRange/SForList/SForMap/
     // SReturn/SBreak/SContinue.
+}
+
+// fpStripOuterParens removes one matching outer parenthesis pair from s, if
+// present -- a port of funcprint.go's stripOuterParens. fpExpr always wraps
+// a Bin/Un result in its own parens (needed when nested inside another
+// expression); printed directly as an `if (...)` condition, a top-level
+// comparison would come out double-parenthesized (`if ((a == b))`). Used
+// only where the condition becomes the entire, sole content of a C
+// `if (...)`.
+func fpStripOuterParens(s: string): string {
+    var depth: int
+    var i: int
+    var c: char
+
+    if s.length < 2 or s[0] != '(' or s[s.length - 1] != ')' {
+        return s
+    }
+    depth = 0
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c == '(' {
+            depth = depth + 1
+        } else if c == ')' {
+            depth = depth - 1
+            if depth == 0 and i != s.length - 1 {
+                return s
+            }
+        }
+        i = i + 1
+    }
+    return s[1, s.length - 2]
+}
+
+// fpIfStmt prints an SIf node (funcprint.go's ifStmt).
+func fpIfStmt(s: int) {
+    fpEmit("if (" + fpStripOuterParens(fpExpr(irIfCond(s))) + ") {")
+    fpIndent = fpIndent + 1
+    fpStmts(irIfThen(s))
+    fpIndent = fpIndent - 1
+    if irIfElse(s) != -1 {
+        fpEmit("} else {")
+        fpIndent = fpIndent + 1
+        fpStmts(irIfElse(s))
+        fpIndent = fpIndent - 1
+    }
+    fpEmit("}")
 }
 
 func fpStmts(head: int) {
@@ -282,9 +492,24 @@ func cpFuncProto(f: int): string {
     return "static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(" + params + ")"
 }
 
+// cpDefaultInitScalar emits `dst = 0;` for a scalar-kind local (Int/Bool/
+// Fixed/Char/Enum) -- a Task-4-scoped port of defaults.go's defaultInit
+// covering only the scalar cases (defaults.go:22-31's `dst =
+// scalarDefault;` arm; scalarDefault is always 0 for a nil-Init local, per
+// cprint.go's emitFunc call site). Str/Text/List/Map/Rec/Err/Arr defaults
+// are Task 5+.
+func cpDefaultInitScalar(dst: string, t: int) {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
+        fpEmit(dst + " = 0;")
+    }
+}
+
 // cpEmitFunc appends one function's full definition to cpRestBuf
-// (cprint.go's emitFunc). Skeleton: no locals default-init, no trailing
-// return (handlers are void).
+// (cprint.go's emitFunc). Skeleton: scalar-only locals default-init, no
+// trailing return (handlers are void).
 func cpEmitFunc(f: int) {
     var loc: int
     var i: int
@@ -295,7 +520,7 @@ func cpEmitFunc(f: int) {
     loc = irFuncLocalsHead(f)
     while loc != -1 {
         fpEmit(cpCType(irLocalType(loc)) + " cv_" + poolGet(irLocalName(loc)) + ";")
-        // Task 4+: defaultInit per local.
+        cpDefaultInitScalar("cv_" + poolGet(irLocalName(loc)), irLocalType(loc))
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))

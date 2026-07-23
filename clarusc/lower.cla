@@ -197,12 +197,33 @@ func lowUnsupported(what: string) {
 // ================================================================
 
 func lowExpr(e: int): int {
+    var v: int
+
     switch exprKind(e) {
     case ExIntLit {
         return newIRIntConst(intLitVal(e), irIntT)
     }
+    case ExBoolLit {
+        v = 0
+        if boolLitVal(e) {
+            v = 1
+        }
+        return newIRIntConst(v, irBoolT)
+    }
+    case ExCharLit {
+        return newIRIntConst(charLitVal(e), irCharT)
+    }
+    case ExFixedLit {
+        return newIRIntConst(fixedLitRaw(e), irFixedT)
+    }
     case ExStringLit {
         return newIRStrConst(lowInternStr(poolGet(stringLitIdx(e))), irStrType(255))
+    }
+    case ExUnary {
+        return newIRUn(intern(unOpSymbol(unaryOp(e))), lowExpr(unaryX(e)), lowMustType(e))
+    }
+    case ExBinary {
+        return lowBinary(e)
     }
     case ExCall {
         return lowCall(e)
@@ -211,10 +232,87 @@ func lowExpr(e: int): int {
         return lowIdent(e)
     }
     }
-    // Task 4+: ExBoolLit/ExCharLit/ExFixedLit/ExUnary/ExBinary/ExIndex/
-    // ExSlice/ExSelect/ExNew.
+    // Task 5+: ExIndex/ExSlice/ExSelect/ExNew.
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
+}
+
+// lowBin builds a plain IR Bin node (lower.go's l.bin): op is interned here
+// so every call site hands it a bare source spelling from binOpSymbol/
+// unOpSymbol, matching ir.cla's "Bin.Op/Un.Op are interned strPool strings"
+// contract.
+func lowBin(opSym: string, ty: int, xAst: int, yAst: int): int {
+    return newIRBin(intern(opSym), lowExpr(xAst), lowExpr(yAst), ty)
+}
+
+// lowBin2Args lowers two AST expressions into a 2-element IR expr chain
+// (lower.go's l.lowArgs applied to a 2-element Go slice) -- used for
+// IFixMul/IFixDiv's Args, since a Binary node's X/Y are plain fields, not an
+// AST arg-chain lowArgs can walk directly.
+func lowBin2Args(xAst: int, yAst: int): int {
+    var x: int
+    var y: int
+
+    x = lowExpr(xAst)
+    y = lowExpr(yAst)
+    irExprListAppend(x, y)
+    return x
+}
+
+// lowBinary dispatches `+` (int/fixed stay Bin; string/text/char concat is
+// Task 5), `*`/`/` (fixed routes to IFixMul/IFixDiv; int stays Bin),
+// comparisons, and everything else (`-`, mod, bitwise, and/or), which all
+// stay Bin -- a port of expr.go's lowerBinary (everything except the
+// string/text `+` cases, which stay Task 5).
+func lowBinary(e: int): int {
+    var op: int
+    var ty: int
+    var ltk: TypeKind
+    var rtk: TypeKind
+    var name: int
+
+    op = binOp(e)
+    ty = lowMustType(e)
+
+    if op == OpAdd {
+        ltk = typeKind(exprTypeGet(binLeft(e)))
+        rtk = typeKind(exprTypeGet(binRight(e)))
+        if ltk == TyStr or ltk == TyText or ltk == TyChar or rtk == TyStr or rtk == TyText or rtk == TyChar {
+            // String/text/char `+` combos (concat/prepend) -- Task 5.
+            lowUnsupported("string/text/char + operand")
+            return -1
+        }
+        return lowBin(binOpSymbol(op), ty, binLeft(e), binRight(e))
+    } else if op == OpMul or op == OpDiv {
+        if typeKind(exprTypeGet(binLeft(e))) == TyFixed {
+            name = IFixMul()
+            if op == OpDiv {
+                name = IFixDiv()
+            }
+            return newIRIntr(name, lowBin2Args(binLeft(e), binRight(e)), ty)
+        }
+        return lowBin(binOpSymbol(op), ty, binLeft(e), binRight(e))
+    } else if op == OpEq or op == OpNe or op == OpLt or op == OpLe or op == OpGt or op == OpGe {
+        return lowComparison(e)
+    }
+    // "-", mod, &, |, ^, <<, >>, and, or.
+    return lowBin(binOpSymbol(op), ty, binLeft(e), binRight(e))
+}
+
+// lowComparison lowers `== != < <= > >=` for non-textish operands (expr.go's
+// lowerComparison, minus the String/Text byte-wise-cmp path, which is
+// Task 5).
+func lowComparison(e: int): int {
+    var ltk: TypeKind
+    var rtk: TypeKind
+
+    ltk = typeKind(exprTypeGet(binLeft(e)))
+    rtk = typeKind(exprTypeGet(binRight(e)))
+    if ltk == TyStr or ltk == TyText or rtk == TyStr or rtk == TyText {
+        lowUnsupported("textish comparison")
+        return -1
+    }
+    return lowBin(binOpSymbol(binOp(e)), irBoolT, binLeft(e), binRight(e))
 }
 
 // lowIdent lowers a bare variable reference (expr.go's lowerIdent, reduced).
@@ -265,13 +363,39 @@ func lowCall(e: int): int {
             return newIRIntr(IAlert(), lowArgs(callArgsHead(e)), ty)
         } else if name == "log" {
             return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "int" {
+            return lowIntConv(e, ty)
+        } else if name == "fixed" {
+            return newIRConv(CvIntToFixed, lowExpr(callArgsHead(e)), -1, ty)
+        } else if name == "char" {
+            return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
         }
-        // Task 4+: int/fixed/char/enum conversions, user functions.
+        // Task 5+: enum conversions, user functions.
         lowUnsupported("call to " + name)
         return -1
     }
-    // Task 4+: method calls (ExSelect receiver).
+    // Task 5+: method calls (ExSelect receiver).
     lowUnsupported("method call")
+    return -1
+}
+
+// lowIntConv lowers `int(x)`, whose ConvOp depends on x's source kind (Ch3:
+// Numeric Conversions, Enums) -- a port of expr.go's lowerIntConv, minus the
+// Enum source (Task 8).
+func lowIntConv(e: int, ty: int): int {
+    var argT: int
+    var argK: TypeKind
+
+    argT = exprTypeGet(callArgsHead(e))
+    argK = typeKind(argT)
+    if argK == TyFixed {
+        return newIRConv(CvFixedToInt, lowExpr(callArgsHead(e)), -1, ty)
+    } else if argK == TyChar {
+        return newIRConv(CvCharToInt, lowExpr(callArgsHead(e)), -1, ty)
+    }
+    // TyEnum: Task 8. Anything else is a checker bug (int() from an
+    // unsupported source kind should never pass checkCall).
+    lowUnsupported("int(...) from unsupported source kind")
     return -1
 }
 
@@ -296,14 +420,41 @@ func lowStmt(s: int): int {
     case StExprStmt {
         return newIRExprStmt(lowExpr(exprStmtX(s)))
     }
+    case StIf {
+        return lowIf(s)
+    }
     case StQuit {
         return lowQuit(s)
     }
     }
-    // Task 4+: StAssign/StIf/StWhile/StFor/StReturn/StSwitch/StBreak/
-    // StContinue.
+    // Task 5+: StAssign/StWhile/StFor/StReturn/StSwitch/StBreak/StContinue.
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
+}
+
+// lowIf lowers `if cond { ... } [else { ... } | else if ...]` -- a port of
+// stmt.go's lowerIf. Else is -1 (no else), a StBlock, or another StIf
+// (an else-if chain), mirroring ast.go's Stmt-typed Else.
+func lowIf(s: int): int {
+    var cond: int
+    var thenHead: int
+    var elseNode: int
+    var elseHead: int
+
+    cond = lowExpr(ifCond(s))
+    thenHead = lowBlock(ifThen(s))
+    elseHead = -1
+    elseNode = ifElse(s)
+    if elseNode != -1 {
+        if stmtKind(elseNode) == StBlock {
+            elseHead = lowBlock(elseNode)
+        } else if stmtKind(elseNode) == StIf {
+            elseHead = lowIf(elseNode)
+        } else {
+            lowUnsupported("if-else shape")
+        }
+    }
+    return newIRIf(cond, thenHead, elseHead)
 }
 
 // lowQuit lowers `quit [code]` to Intr(IQuit) with exactly one int argument

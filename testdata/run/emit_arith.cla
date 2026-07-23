@@ -1,0 +1,192 @@
+// emit_arith.cla: Task 4 coverage slice for clarusc emit -- int/bool/fixed/
+// char arithmetic, all six comparison operators, and/or short-circuit, and
+// int()/fixed()/char() conversions. Deliberately restricted to constructs
+// clarusc's self-hosted lower.cla/cprint.cla support at this task (no
+// vars-with-initializer, no user funcs, no while/for): every check is a
+// bare `if cond { alert("... ok") } else { alert("... FAIL") }`, since `if`
+// is the only way a bool-typed expression's value becomes observable in
+// Clarus (no int(bool) conversion exists -- Ch3's Numeric Conversions).
+//
+// The and/or short-circuit checks put a fixed division by zero (a checked
+// runtime panic, rt_fix_div -- unlike raw int division, which traps or not
+// depending on the CPU) on the branch that must NOT be evaluated: if
+// short-circuit is broken, the whole program aborts (exit 3) before ever
+// reaching either alert, rather than printing the wrong branch.
+on App.startCLI(args: list of string) {
+    var unusedInt: int
+    var unusedBool: bool
+    var unusedFixed: fixed
+    var unusedChar: char
+
+    // ---- int arithmetic ----
+    if 3 + 4 * 5 == 23 {
+        alert("int add/mul ok")
+    } else {
+        alert("int add/mul FAIL")
+    }
+    if 23 - 8 == 15 {
+        alert("int sub ok")
+    } else {
+        alert("int sub FAIL")
+    }
+    if 17 mod 5 == 2 {
+        alert("int mod ok")
+    } else {
+        alert("int mod FAIL")
+    }
+    if (0xFF & 0x0F) == 15 {
+        alert("int and ok")
+    } else {
+        alert("int and FAIL")
+    }
+    if (0x0F | 0xF0) == 255 {
+        alert("int or ok")
+    } else {
+        alert("int or FAIL")
+    }
+    if (5 ^ 3) == 6 {
+        alert("int xor ok")
+    } else {
+        alert("int xor FAIL")
+    }
+    if (1 << 10) == 1024 {
+        alert("int shl ok")
+    } else {
+        alert("int shl FAIL")
+    }
+    if (1024 >> 3) == 128 {
+        alert("int shr ok")
+    } else {
+        alert("int shr FAIL")
+    }
+    if -5 + 10 == 5 {
+        alert("int neg ok")
+    } else {
+        alert("int neg FAIL")
+    }
+    if ~0 == -1 {
+        alert("int bnot ok")
+    } else {
+        alert("int bnot FAIL")
+    }
+
+    // ---- comparisons ----
+    if 3 < 5 {
+        alert("lt true ok")
+    } else {
+        alert("lt true FAIL")
+    }
+    if 5 < 3 {
+        alert("lt false FAIL")
+    } else {
+        alert("lt false ok")
+    }
+    if 5 <= 5 {
+        alert("le ok")
+    } else {
+        alert("le FAIL")
+    }
+    if 5 > 3 {
+        alert("gt ok")
+    } else {
+        alert("gt FAIL")
+    }
+    if 5 >= 5 {
+        alert("ge ok")
+    } else {
+        alert("ge FAIL")
+    }
+    if 5 == 5 {
+        alert("eq ok")
+    } else {
+        alert("eq FAIL")
+    }
+    if 5 != 6 {
+        alert("ne ok")
+    } else {
+        alert("ne FAIL")
+    }
+    if not (5 == 6) {
+        alert("not ok")
+    } else {
+        alert("not FAIL")
+    }
+
+    // ---- and/or short-circuit (RHS panics if ever evaluated) ----
+    if false and (1.0 / 0.0 == 0.0) {
+        alert("and shortcircuit FAIL")
+    } else {
+        alert("and shortcircuit ok")
+    }
+    if true or (1.0 / 0.0 == 0.0) {
+        alert("or shortcircuit ok")
+    } else {
+        alert("or shortcircuit FAIL")
+    }
+    if true and false {
+        alert("and eval FAIL")
+    } else {
+        alert("and eval ok")
+    }
+    if false or true {
+        alert("or eval ok")
+    } else {
+        alert("or eval FAIL")
+    }
+
+    // ---- fixed arithmetic (IFixMul/IFixDiv) ----
+    if int(1.5 * 2.0) == 3 {
+        alert("fixed mul ok")
+    } else {
+        alert("fixed mul FAIL")
+    }
+    if int(9.0 / 2.0) == 4 {
+        alert("fixed div ok")
+    } else {
+        alert("fixed div FAIL")
+    }
+    if int(1.0 - 0.5) == 0 {
+        alert("fixed sub ok")
+    } else {
+        alert("fixed sub FAIL")
+    }
+
+    // ---- numeric conversions ----
+    if fixed(3) == 3.0 {
+        alert("int to fixed ok")
+    } else {
+        alert("int to fixed FAIL")
+    }
+    if int(fixed(3) + 0.25) == 3 {
+        alert("fixed to int (add) ok")
+    } else {
+        alert("fixed to int (add) FAIL")
+    }
+    if int(3.9) == 3 {
+        alert("fixed to int trunc ok")
+    } else {
+        alert("fixed to int trunc FAIL")
+    }
+    if int(-3.9) == -3 {
+        alert("fixed to int trunc neg ok")
+    } else {
+        alert("fixed to int trunc neg FAIL")
+    }
+    if int('A') == 65 {
+        alert("char to int ok")
+    } else {
+        alert("char to int FAIL")
+    }
+    if char(66) == 'B' {
+        alert("int to char ok")
+    } else {
+        alert("int to char FAIL")
+    }
+    if int(char(-1)) == 255 {
+        alert("int to char low byte ok")
+    } else {
+        alert("int to char low byte FAIL")
+    }
+
+    quit 0
+}
