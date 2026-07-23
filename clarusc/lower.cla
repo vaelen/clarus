@@ -180,6 +180,18 @@ func lowInternStr(s: string): int {
     return idx
 }
 
+// lowUnsupported reports that `lower` hit an AST construct Task 4+ hasn't
+// implemented yet, and aborts -- so an unimplemented construct fails loudly
+// (a clear message, non-zero exit) instead of either silently dropping the
+// node (a stray -1 return that a caller ignores) or crashing later with an
+// opaque arena-index error (a stray -1 dereferenced as an index). `lower`
+// has no diagnostic-accumulation path of its own, so this reuses the same
+// log+quit machinery main.cla's own error paths use.
+func lowUnsupported(what: string) {
+    log("clarusc emit: unsupported construct: " + what + " (not yet implemented)")
+    quit 1
+}
+
 // ================================================================
 // Expression lowering (expr.go subset)
 // ================================================================
@@ -201,6 +213,7 @@ func lowExpr(e: int): int {
     }
     // Task 4+: ExBoolLit/ExCharLit/ExFixedLit/ExUnary/ExBinary/ExIndex/
     // ExSlice/ExSelect/ExNew.
+    lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
 }
 
@@ -254,8 +267,11 @@ func lowCall(e: int): int {
             return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
         }
         // Task 4+: int/fixed/char/enum conversions, user functions.
+        lowUnsupported("call to " + name)
+        return -1
     }
     // Task 4+: method calls (ExSelect receiver).
+    lowUnsupported("method call")
     return -1
 }
 
@@ -286,6 +302,7 @@ func lowStmt(s: int): int {
     }
     // Task 4+: StAssign/StIf/StWhile/StFor/StReturn/StSwitch/StBreak/
     // StContinue.
+    lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
 }
 
@@ -408,17 +425,28 @@ func lowTopHandler(d: int) {
     } else if path == "App.startCLI" {
         lowFuncBody(intern("handler_App_startCLI"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
         irHasStartCLI = true
+    } else {
+        // Task 4+: `on App.openDocument` and resource handlers are
+        // unsupported.
+        lowUnsupported("handler " + path)
     }
-    // Task 4+: `on App.openDocument` and resource handlers are unsupported.
 }
 
 // lowDecl dispatches one top-level declaration (lower.go's lowerDecl subset).
 func lowDecl(d: int) {
-    if declKind(d) == DkHandler {
+    var k: DeclKind
+
+    k = declKind(d)
+    if k == DkHandler {
         lowTopHandler(d)
+    } else if k == DkInclude or k == DkConst {
+        // DkInclude/DkConst intentionally emit no IR (includes are already
+        // expanded; consts inline at use, Task 4+) -- not a stub.
+    } else {
+        // Task 4+: DkRecord/DkEnum/DkVar(global)/DkFunc, and any other
+        // top-level decl kind, are unsupported until their task lands.
+        lowUnsupported("declaration kind " + numToStr(int(k)))
     }
-    // Task 4+: DkRecord/DkEnum/DkVar(global)/DkFunc; DkInclude/DkConst emit
-    // no IR.
 }
 
 // lowerProgram walks the assembled top-level decl chain (declHead, linked via
