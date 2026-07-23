@@ -3081,6 +3081,12 @@ func checkArith(e: int): int {
         if typeKind(lt) == TyText and (typeKind(rt) == TyText or typeKind(rt) == TyStr) {
             return TextT
         }
+        if typeKind(lt) == TyChar and typeKind(rt) == TyStr {
+            return strT(255)
+        }
+        if typeKind(lt) == TyStr and typeKind(rt) == TyText {
+            return TextT
+        }
     }
     if typeKind(lt) == TyInt and typeKind(rt) == TyInt {
         return IntT

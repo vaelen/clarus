@@ -117,38 +117,33 @@ func formatDiag(path: string, d: Diag): string {
     return path + ":" + numToStr(d.line) + ":" + numToStr(d.col) + ": " + poolGet(d.msgIdx)
 }
 
-// digitsOf renders the decimal digits of n (which may be negative or zero)
-// most-significant-first, with no sign. Peeling digits off the original
+// numToStr renders n in base 10. Building the digits by PREPENDING each
+// one (char + string) lets this be a flat loop instead of the recursive
+// append helper the language once required. Working from the low digit of a
 // (possibly negative) n via mod/div avoids ever negating n directly, so
 // int.min (whose negation overflows a 32-bit int) is handled safely.
-func digitsOf(n: int): string {
-    var d: int
-    var rest: string
-
-    if n == 0 {
-        return ""
-    }
-    d = n mod 10
-    if d < 0 {
-        d = 0 - d
-    }
-    rest = digitsOf(n / 10)
-    return rest + char(48 + d)
-}
-
-// numToStr renders n as signed decimal, matching Go's %d.
 func numToStr(n: int): string {
     var s: string
+    var d: int
+    var neg: bool
 
     if n == 0 {
         return "0"
     }
-    if n < 0 {
-        s = "-"
-    } else {
-        s = ""
+    neg = n < 0
+    s = ""
+    while n != 0 {
+        d = n mod 10
+        if d < 0 {
+            d = 0 - d
+        }
+        s = char(48 + d) + s
+        n = n / 10
     }
-    return s + digitsOf(n)
+    if neg {
+        s = "-" + s
+    }
+    return s
 }
 
 // isLetter, isDigit, isAlnum, and isIdentStart mirror

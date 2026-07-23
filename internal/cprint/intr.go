@@ -37,6 +37,11 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		t := fp.newTmp("clar_str_255")
 		fp.emit("rt_str_concat_char((uint8_t*)&%s, %s, (uint8_t)(%s));", t, a, c)
 		return t
+	case ir.IStrPrependChar:
+		c, a := fp.expr(x.Args[0]), fp.strAddr(x.Args[1])
+		t := fp.newTmp("clar_str_255")
+		fp.emit("rt_str_prepend_char((uint8_t*)&%s, (uint8_t)(%s), %s);", t, c, a)
+		return t
 	case ir.IStrCmp:
 		return fmt.Sprintf("rt_str_cmp(%s, %s)", fp.strAddr(x.Args[0]), fp.strAddr(x.Args[1]))
 	case ir.IStrLen:
@@ -81,6 +86,11 @@ func (fp *funcPrinter) intrCall(x *ir.Intr) string {
 		return fp.textCmp(x.Args[0], x.Args[1])
 	case ir.ITextConcat:
 		return fp.textConcat(x.Args[0], x.Args[1])
+	case ir.ITextConcatSL:
+		t := fp.newTmp("rt_text *")
+		fp.emit("%s = rt_text_new();", t)
+		fp.emit("rt_text_concat_sl(%s, %s, %s);", t, fp.strAddr(x.Args[0]), fp.expr(x.Args[1]))
+		return t
 	case ir.ITextStore:
 		t, s := fp.expr(x.Args[0]), fp.strAddr(x.Args[1])
 		fp.emit("rt_text_store(%s, %s);", t, s)

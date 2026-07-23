@@ -17,6 +17,7 @@ const (
 	// strings (layout: [len byte][bytes...]; args pass ptr+cap as the printer arranges)
 	IStrConcat      = "str_concat"        // (a str, b str) -> str255 temp
 	IStrConcatChar  = "str_concat_char"   // (a str, c char) -> str255 temp
+	IStrPrependChar = "str_prepend_char"  // (c char, a str) -> str255 temp
 	IStrCmp         = "str_cmp"           // (a, b) -> int (-1/0/1 bytewise)
 	IStrLen         = "str_len"           // (s) -> int
 	IStrIndex       = "str_index"         // (s, i) -> char  [panics OOB]
@@ -30,6 +31,7 @@ const (
 	// text (opaque handle on host: heap buffer)
 	ITextStore       = "text_store"
 	ITextConcat      = "text_concat"
+	ITextConcatSL    = "text_concat_sl" // (s str, b text) -> text (string on left)
 	ITextCmp         = "text_cmp"
 	ITextLen         = "text_len"
 	ITextIndex       = "text_index"

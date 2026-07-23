@@ -88,6 +88,17 @@ void rt_str_concat_char(uint8_t *out255, const uint8_t *a, uint8_t c) {
     if (n < total) rt_set_lasterr(1, "string truncated");
 }
 
+/* out255 must not alias a; the printer always passes a fresh temp as out. */
+void rt_str_prepend_char(uint8_t *out255, uint8_t c, const uint8_t *a) {
+    int la = a[0];
+    int total = la + 1;
+    int n = total > 255 ? 255 : total;
+    out255[1] = c;                              /* n >= 1, so the char always fits */
+    memmove(out255 + 2, a + 1, (size_t)(n - 1));
+    out255[0] = (uint8_t)n;
+    if (n < total) rt_set_lasterr(1, "string truncated");
+}
+
 int rt_str_cmp(const uint8_t *a, const uint8_t *b) {
     int la = a[0], lb = b[0];
     int n = la < lb ? la : lb;
@@ -224,6 +235,23 @@ void rt_text_concat(rt_text *t, const rt_text *a, const uint8_t *bstr, const rt_
     } else {
         memmove(scratch + alen, btext->data, (size_t)blen);
     }
+    grow((void **)&t->data, &t->cap, total, 1);
+    memmove(t->data, scratch, (size_t)total);
+    t->len = total;
+    free(scratch);
+}
+
+/* string on the left, text on the right; mirrors rt_text_concat's
+ * scratch-then-copy approach (t may alias btext), no truncation — text is
+ * unbounded. */
+void rt_text_concat_sl(rt_text *t, const uint8_t *sstr, const rt_text *btext) {
+    int slen = sstr[0];
+    int32_t blen = btext->len;
+    int32_t total = slen + blen;
+    uint8_t *scratch = malloc((size_t)(total > 0 ? total : 1));
+    if (!scratch) rt_panic("out of memory");
+    memmove(scratch, sstr + 1, (size_t)slen);
+    memmove(scratch + slen, btext->data, (size_t)blen);
     grow((void **)&t->data, &t->cap, total, 1);
     memmove(t->data, scratch, (size_t)total);
     t->len = total;

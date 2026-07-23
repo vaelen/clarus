@@ -186,6 +186,10 @@ func (l *lowerer) lowerBinary(e *ast.Binary) ir.Expr {
 			return l.intr(ir.IStrConcatChar, ty, e.X, e.Y)
 		case lt.Kind == types.Text && (rt.Kind == types.Text || rt.Kind == types.String):
 			return l.intr(ir.ITextConcat, ty, e.X, e.Y)
+		case lt.Kind == types.Char && rt.Kind == types.String:
+			return l.intr(ir.IStrPrependChar, ty, e.X, e.Y)
+		case lt.Kind == types.String && rt.Kind == types.Text:
+			return l.intr(ir.ITextConcatSL, ty, e.X, e.Y)
 		default:
 			return l.bin(e.Op, ty, e.X, e.Y)
 		}

@@ -8,6 +8,7 @@
 void rt_str_store(uint8_t *dst, int dstcap, const uint8_t *src);      /* clamped; sets lastError on truncation */
 void rt_str_concat(uint8_t *out255, const uint8_t *a, const uint8_t *b); /* out is a str255 temp */
 void rt_str_concat_char(uint8_t *out255, const uint8_t *a, uint8_t c);
+void rt_str_prepend_char(uint8_t *out255, uint8_t c, const uint8_t *a); /* out is a str255 temp */
 int  rt_str_cmp(const uint8_t *a, const uint8_t *b);                  /* bytewise -1/0/1 */
 int  rt_str_len(const uint8_t *s);
 uint8_t rt_str_index(const uint8_t *s, int32_t i);                    /* panics OOB */
@@ -35,6 +36,7 @@ rt_text *rt_text_new(void);
 void rt_text_store(rt_text *t, const uint8_t *s);            /* from string */
 void rt_text_store_text(rt_text *t, const rt_text *src);
 void rt_text_concat(rt_text *t, const rt_text *a, const uint8_t *bstr, const rt_text *btext); /* one of bstr/btext non-NULL */
+void rt_text_concat_sl(rt_text *t, const uint8_t *sstr, const rt_text *btext); /* string on the left */
 int  rt_text_cmp_str(const rt_text *t, const uint8_t *s);
 int32_t rt_text_len(const rt_text *t);
 uint8_t rt_text_index(const rt_text *t, int32_t i);

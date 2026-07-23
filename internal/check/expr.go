@@ -290,6 +290,12 @@ func (c *checker) checkArith(e *ast.Binary) *types.Type {
 		if lt.Kind == types.Text && (rt.Kind == types.Text || rt.Kind == types.String) {
 			return types.TextT
 		}
+		if lt.Kind == types.Char && rt.Kind == types.String {
+			return types.StringT(255)
+		}
+		if lt.Kind == types.String && rt.Kind == types.Text {
+			return types.TextT
+		}
 	}
 	if lt.Kind == types.Int && rt.Kind == types.Int {
 		return types.IntT
