@@ -88,6 +88,11 @@ var emitSeeds = []string{
 	"../../testdata/run/emit_record.cla",
 	"../../testdata/run/emit_enum.cla",
 	"../../testdata/run/emit_array.cla",
+	// emit_longline exercises the uncapped C output: its emitted C contains a
+	// single line AND a single expression each >300 bytes (a 40-term `and`
+	// chain and a 60-term `+` sum), which the old `string`-typed (255-cap)
+	// line buffers / expression fragments would have truncated mid-token.
+	"../../testdata/run/emit_longline.cla",
 }
 
 // TestEmitDifferential is the walking-skeleton gate: for every seed in

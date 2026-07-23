@@ -12,36 +12,34 @@
 // emitProgram then appends every buffer's lines, each followed by a single LF
 // (char(10)), into the returned text in Emit's fixed assembly order.
 //
-// cpLitBuf is `list of text`, not `list of string`, unlike the other three
-// buffers: its one producer, cpEmitStrLits, builds each line as `... + {" +
-// bytesStr + "}};"` where bytesStr is itself a `text` accumulator (the
-// literal's byte list, which can run well past 255 bytes for a >60-byte
-// source string) -- a `string`, capped at 255, would silently clamp that
-// line before it ever reached the output stage. Once bytesStr is `text`,
-// the `+` chain that embeds it is *already* `text`-typed by the checker
-// (Ch3: `string + text` -> `text`), so cpLitBuf must hold `text` values to
-// receive it without a truncating re-clamp.
+// ALL C-code text in this file is `text`, not `string`: a `string` is capped
+// at 255 bytes, and a single emitted C line (a long `and` chain, a deeply
+// nested field/index expression, a big arithmetic expression, or a
+// string-literal pool line) can run well past that. A `string` would silently
+// clamp such a line mid-token before it ever reached the output stage. So the
+// four line buffers below are `list of text`, and every C-fragment-producing
+// expression helper (fpExpr and friends) returns `text`.
 //
-// The other three buffers (cpTypeBuf, cpRecBuf, cpRestBuf) stay `list of
-// string`: every line they hold today is fixed, short boilerplate (a
-// typedef, an init function, main) built from pure `string` concatenation
-// with no `text` operand anywhere in the expression. That matters beyond
-// style: passing a plain `string` value where a `text` is expected only
-// type-checks (Ch3's documented `string` -> `text` widen) at a plain
-// assignment (`t = s`) -- a user function call's argument, a `list of
-// text`'s pushed element, and a function's `return` value are separate
-// lowering paths that do not yet implement that widen (each binds the value
-// into a `text`-shaped C slot without going through the assignment machinery
-// that performs the conversion), so a `string` value handed to any of those
-// three either fails to compile (a call argument, where the mismatch is a
-// visible C type error) or is silently miscopied (a list push, which goes
-// through a `void*`-typed runtime call the C compiler can't check). Widening
-// cpTypeBuf/cpRecBuf/cpRestBuf to `list of text` wholesale would put every
-// one of their many pure-`string` `.add(...)` calls on the second, silent
-// path. Keeping them `string` (their real content never needs more) and
-// widening only cpLitBuf -- whose one line is already `text`-typed by
-// construction, never by an implicit call/push/return conversion -- fixes
-// the reported bug without relying on an unimplemented conversion.
+// Bridging `string` -> `text` at the leaves: the Go compiler that builds this
+// file implements the Ch3 `string` -> `text` widen only at a plain assignment
+// (`t = s`) -- a user function call's argument, a function's `return` value,
+// and a `list of text`'s pushed element are separate lowering paths that do
+// NOT implement it. A `string` handed to a call argument or a `return` fails
+// to compile (a visible C type error); a `string` pushed into a `list of
+// text` is silently miscopied (a `void*` runtime call the C compiler can't
+// check). So wherever a bare `string` (a literal like `"("`, an interned
+// `poolGet` name, a `numToStr`/type-name result) must become or join a `text`
+// value at one of those boundaries, we bridge explicitly: either a `+` with a
+// `text` operand (which yields `text` by the checker's `string + text` rule),
+// or the `toText` helper below for a standalone `string`. Fragment values
+// flow through `text` end to end, so most concatenations are already `text`;
+// toText is needed only for a pure-`string` line/return with no `text`
+// operand anywhere in it.
+//
+// This is a representation change only: toText copies the same bytes, so every
+// emitted-C byte is identical to the old `string`-typed path for any program
+// whose lines fit in 255 bytes (all existing goldens). The gain is that lines
+// which DON'T fit no longer truncate.
 //
 // This is the Task 3 skeleton: it emits ONLY what the seed program needs
 // (clar_str_255, the string-literal pool, the clar_rec_Err typedef, an empty
@@ -56,10 +54,22 @@ include "ir.cla"
 // final order. One emitProgram call per process, so these start empty.
 // ================================================================
 
-var cpTypeBuf: list of string   // string-capacity (+ array-wrapper, Task 4+) typedefs
-var cpLitBuf: list of text      // string-literal pool -- `text`, not `string`: see below
-var cpRecBuf: list of string    // record structs (seeded with clar_rec_Err)
-var cpRestBuf: list of string   // globals init, funcs, main
+var cpTypeBuf: list of text   // string-capacity (+ array-wrapper, Task 4+) typedefs
+var cpLitBuf: list of text    // string-literal pool
+var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err)
+var cpRestBuf: list of text   // globals init, funcs, main
+
+// toText copies a `string` into a fresh `text` value. Used to bridge a bare
+// `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
+// across a call-argument / return / list-push boundary, where the Go compiler
+// building this file does NOT widen `string` -> `text` on its own (see the
+// header comment). `var t: text = ""` is the supported Text-from-Str init;
+// `t.append(s)` is rt_text_append_str.
+func toText(s: string): text {
+    var t: text = ""
+    t.append(s)
+    return t
+}
 
 // cpStrCapsEmitted keys the string capacities already emitted into cpTypeBuf
 // (keyed by numToStr(n)); each clar_str_N typedef is emitted once.
@@ -80,7 +90,7 @@ var cpLoopN: int
 // printing is not reentrant in the skeleton.
 // ================================================================
 
-var fpBody: list of string
+var fpBody: list of text
 var fpTmpN: int
 var fpIndent: int
 
@@ -92,9 +102,14 @@ func fpReset(indent: int) {
     fpIndent = indent
 }
 
-// fpEmit appends one indented body line (4 spaces per indent level).
-func fpEmit(line: string) {
-    var pad: string
+// fpEmit appends one indented body line (4 spaces per indent level). `line`
+// is `text`: an emitted C line can exceed a `string`'s 255-byte cap. `pad`
+// is `text` too, so `pad + line` is `text` and lands in fpBody (list of
+// text) without a truncating re-clamp. Callers with a pure-`string` line
+// (no `text` operand) bridge it via toText -- else the `string` -> `text`
+// call-argument mismatch fails to compile (a deliberate loud guard).
+func fpEmit(line: text) {
+    var pad: text
     var i: int
 
     pad = ""
@@ -110,8 +125,8 @@ func fpEmit(line: string) {
 // its name (funcprint.go's newTmp). The counter is monotonic within a
 // function and never reset mid-function -- load-bearing for later bootstrap
 // determinism.
-func fpNewTmp(ctype: string): string {
-    var name: string
+func fpNewTmp(ctype: string): text {
+    var name: text
 
     fpTmpN = fpTmpN + 1
     name = "t" + numToStr(fpTmpN)
@@ -179,7 +194,7 @@ func cpEnsureStr(n: int) {
         return
     }
     cpStrCapsEmitted[key] = 1
-    cpTypeBuf.add("typedef struct { uint8_t len; uint8_t b[" + key + "]; } clar_str_" + key + ";")
+    cpTypeBuf.add(toText("typedef struct { uint8_t len; uint8_t b[" + key + "]; } clar_str_" + key + ";"))
 }
 
 // cpEnsureType lazily emits whatever typedef(s) t depends on (types.go's
@@ -214,7 +229,7 @@ func cpEnsureArr(t: int): string {
     }
     cpArrEmitted[name] = 1
     cpEnsureType(irtElem(t))
-    cpRecBuf.add("typedef struct { " + cpCTypeName(irtElem(t)) + " e[" + numToStr(irtN(t)) + "]; } " + name + ";")
+    cpRecBuf.add(toText("typedef struct { " + cpCTypeName(irtElem(t)) + " e[" + numToStr(irtN(t)) + "]; } " + name + ";"))
     return name
 }
 
@@ -247,16 +262,16 @@ func cpTypeEqual(a: int, b: int): bool {
 // Expression + statement printing (funcprint.go / intr.go subset)
 // ================================================================
 
-func fpExpr(e: int): string {
+func fpExpr(e: int): text {
     switch irExprKind(e) {
     case EIntConst {
-        return numToStr(irIntConstV(e))
+        return toText(numToStr(irIntConstV(e)))
     }
     case EStrConst {
-        return "clar_lit_" + numToStr(irStrConstIdx(e))
+        return toText("clar_lit_" + numToStr(irStrConstIdx(e)))
     }
     case EVarRef {
-        return "cv_" + poolGet(irVarRefName(e))
+        return toText("cv_" + poolGet(irVarRefName(e)))
     }
     case EBin {
         return fpBin(e)
@@ -277,18 +292,18 @@ func fpExpr(e: int): string {
         return fpFieldRef(e)
     }
     case ENewRec {
-        return "clar_new_" + poolGet(irNewRecName(e)) + "()"
+        return toText("clar_new_" + poolGet(irNewRecName(e)) + "()")
     }
     }
     // Task 9: ECallFn.
-    return ""
+    return toText("")
 }
 
 // fpFieldRef prints an EFieldRef node (funcprint.go's expr's *ir.FieldRef
 // case). An Err-typed receiver's fields are named "code"/"message" directly,
 // no cv_ prefix (see emitProgram's clar_rec_Err typedef) -- unlike a user
 // record's clar_rec_NAME fields, which always carry the cv_ prefix.
-func fpFieldRef(e: int): string {
+func fpFieldRef(e: int): text {
     if irtKind(irExprType(irFieldRefX(e))) == KErr {
         return "(" + fpExpr(irFieldRefX(e)) + ")." + poolGet(irFieldRefName(e))
     }
@@ -299,7 +314,7 @@ func fpFieldRef(e: int): string {
 // bounds-checked plain C array access) and List (a bounds-checked
 // rt_list_at call, sharing this same node -- see ir.IndexRef's doc comment
 // in ir.go) -- a port of funcprint.go's indexRef.
-func fpIndexRef(e: int): string {
+func fpIndexRef(e: int): text {
     var xt: int
 
     xt = irExprType(irIndexRefX(e))
@@ -308,7 +323,7 @@ func fpIndexRef(e: int): string {
     } else if irtKind(xt) == KList {
         return "(*(" + cpCType(irExprType(e)) + "*)rt_list_at(" + fpExpr(irIndexRefX(e)) + ", (int32_t)(" + fpExpr(irIndexRefI(e)) + ")))"
     }
-    return ""
+    return toText("")
 }
 
 // cOp maps a Bin/Un op string to its C spelling (funcprint.go's cOp):
@@ -328,7 +343,7 @@ func cOp(op: string): string {
 // fpBin prints an EBin node: and/or route to fpAndOr (short-circuit); every
 // other operator (arithmetic, bitwise, comparison) prints as a plain
 // `(x op y)` via cOp -- funcprint.go's expr's *ir.Bin case.
-func fpBin(e: int): string {
+func fpBin(e: int): text {
     var op: string
 
     op = poolGet(irBinOp(e))
@@ -344,8 +359,8 @@ func fpBin(e: int): string {
 // expression -- funcprint.go's captureExpr returns (stmts, value string);
 // Clarus has no tuple return, so this record serves the same purpose.
 record FpCapture {
-    stmts: list of string
-    value: string
+    stmts: list of text
+    value: text
 }
 
 // fpCaptureExpr prints e one indent level deeper than fp's current level
@@ -357,8 +372,8 @@ record FpCapture {
 // T`'s reference semantics (Ch3: Value and Reference Semantics) make this a
 // cheap pointer swap, not a copy.
 func fpCaptureExpr(e: int): FpCapture {
-    var saved: list of string
-    var fresh: list of string
+    var saved: list of text
+    var fresh: list of text
     var cap: FpCapture
 
     saved = fpBody
@@ -380,12 +395,12 @@ func fpCaptureExpr(e: int): FpCapture {
 // statements, they're moved inside an `if`, guarded by the already-
 // evaluated left operand, so they run only when short-circuiting wouldn't
 // skip them.
-func fpAndOr(e: int): string {
-    var x: string
+func fpAndOr(e: int): text {
+    var x: text
     var op: string
     var cap: FpCapture
-    var t: string
-    var cond: string
+    var t: text
+    var cond: text
     var i: int
 
     x = fpExpr(irBinX(e))
@@ -410,13 +425,13 @@ func fpAndOr(e: int): string {
     }
     fpEmit(t + " = " + cap.value + ";")
     fpIndent = fpIndent - 1
-    fpEmit("}")
+    fpEmit(toText("}"))
     return t
 }
 
 // fpUn prints an EUn node (funcprint.go's un).
-func fpUn(e: int): string {
-    var x: string
+func fpUn(e: int): text {
+    var x: text
     var op: string
 
     x = fpExpr(irUnX(e))
@@ -428,15 +443,15 @@ func fpUn(e: int): string {
     } else if op == "~" {
         return "(~(" + x + "))"
     }
-    return ""
+    return toText("")
 }
 
 // fpConv prints an EConv node (funcprint.go's conv). IntToFixed/FixedToInt
 // avoid a raw `<<`/plain arithmetic-shift on a possibly-negative value by
 // multiplying/dividing by 65536 instead; C99 integer division truncates
 // toward zero, exactly Ch3's "int(f) ... truncates toward zero".
-func fpConv(e: int): string {
-    var x: string
+func fpConv(e: int): text {
+    var x: text
     var op: IRConvOp
     var n: int
 
@@ -454,7 +469,7 @@ func fpConv(e: int): string {
         n = cpEnumCount(irConvEnumName(e))
         return "rt_enum_from_int(clar_enum_" + poolGet(irConvEnumName(e)) + ", " + numToStr(n) + ", (" + x + "))"
     }
-    return ""
+    return toText("")
 }
 
 // cpEnumCount returns the member count of the enum named nameIdx (an
@@ -488,7 +503,7 @@ func cpEnumCount(nameIdx: int): int {
 // materialize into a named temp -- none of these need a further copy;
 // anything else (a Bin/Un/Conv/CallFn/NewRec result) is first copied into a
 // fresh temp of its own type via fpCopyToTemp.
-func fpAddrable(e: int): string {
+func fpAddrable(e: int): text {
     var k: IRExprKind
 
     k = irExprKind(e)
@@ -507,9 +522,9 @@ func fpAddrable(e: int): string {
 // argument were instead a raw rt_list_at/rt_map-derived pointer, the
 // realloc could free that pointer's block before the call's own memmove
 // reads it -- an ASan-confirmed use-after-free (funcprint.go's copyToTemp).
-func fpCopyToTemp(e: int): string {
-    var v: string
-    var t: string
+func fpCopyToTemp(e: int): text {
+    var v: text
+    var t: text
 
     v = fpExpr(e)
     t = fpNewTmp(cpCType(irExprType(e)))
@@ -518,7 +533,7 @@ func fpCopyToTemp(e: int): string {
 }
 
 // fpStrAddr renders `(const uint8_t*)&(<addrable e>)` (funcprint.go's strAddr).
-func fpStrAddr(e: int): string {
+func fpStrAddr(e: int): text {
     return "(const uint8_t*)&(" + fpAddrable(e) + ")"
 }
 
@@ -526,7 +541,7 @@ func fpStrAddr(e: int): string {
 // (intr.go's textCmp). rt_text_cmp_str only knows (text, string); a string
 // on the left needs the call flipped and its sign negated to preserve
 // `a < b` orientation.
-func fpTextCmp(a: int, b: int): string {
+func fpTextCmp(a: int, b: int): text {
     var atk: IRKind
     var btk: IRKind
 
@@ -545,9 +560,9 @@ func fpTextCmp(a: int, b: int): string {
 // fpTextConcat allocates a fresh rt_text handle for the `text + (text|
 // string)` result (text has reference semantics, but `+` always produces a
 // new value), then concatenates a and b into it (intr.go's textConcat).
-func fpTextConcat(a: int, b: int): string {
-    var ae: string
-    var t: string
+func fpTextConcat(a: int, b: int): text {
+    var ae: text
+    var t: text
 
     ae = fpExpr(a)
     t = fpNewTmp("rt_text *")
@@ -568,22 +583,22 @@ func fpTextConcat(a: int, b: int): string {
 // Void operations (alert, quit, set_index, append, ...) emit their call as
 // a statement and return "" -- see fpStmt's SExprStmt case, the only
 // context they appear in.
-func fpIntrCall(x: int): string {
+func fpIntrCall(x: int): text {
     var nm: int
     var a0: int
     var a1: int
     var a2: int
-    var t: string
-    var s0: string
-    var s1: string
+    var t: text
+    var s0: text
+    var s1: text
     var cap0: int
     var cap1: int
-    var l: string
-    var v: string
+    var l: text
+    var v: text
     var fn: string
-    var m: string
-    var k: string
-    var dv: string
+    var m: text
+    var k: text
+    var dv: text
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -596,13 +611,13 @@ func fpIntrCall(x: int): string {
 
     if nm == IAlert() {
         fpEmit("rt_alert(" + fpStrAddr(a0) + ");")
-        return ""
+        return toText("")
     } else if nm == ILog() {
         fpEmit("rt_log(" + fpStrAddr(a0) + ");")
-        return ""
+        return toText("")
     } else if nm == IQuit() {
         fpEmit("rt_quit((int32_t)(" + fpExpr(a0) + "));")
-        return ""
+        return toText("")
     } else if nm == IFixMul() {
         return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == IFixDiv() {
@@ -637,14 +652,14 @@ func fpIntrCall(x: int): string {
         s0 = fpAddrable(a0)
         s1 = fpExpr(a1)
         fpEmit("rt_str_set_index((uint8_t*)&(" + s0 + "), (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
-        return ""
+        return toText("")
     } else if nm == IStrFromBytes() {
         s0 = fpAddrable(a0)
         cap0 = irtN(irExprType(a0))
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
         fpEmit("rt_str_from_bytes((uint8_t*)&(" + s0 + "), " + numToStr(cap0) + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
-        return ""
+        return toText("")
     } else if nm == IStrToBytes() {
         s0 = fpStrAddr(a0)
         s1 = fpAddrable(a1)
@@ -684,7 +699,7 @@ func fpIntrCall(x: int): string {
         return t
     } else if nm == ITextStore() {
         fpEmit("rt_text_store(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
-        return ""
+        return toText("")
     } else if nm == ITextLen() {
         return "rt_text_len(" + fpExpr(a0) + ")"
     } else if nm == ITextIndex() {
@@ -693,13 +708,13 @@ func fpIntrCall(x: int): string {
         s0 = fpExpr(a0)
         s1 = fpExpr(a1)
         fpEmit("rt_text_set_index(" + s0 + ", (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
-        return ""
+        return toText("")
     } else if nm == ITextFromBytes() {
         s0 = fpExpr(a0)
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
         fpEmit("rt_text_from_bytes(" + s0 + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
-        return ""
+        return toText("")
     } else if nm == ITextToBytes() {
         s0 = fpExpr(a0)
         s1 = fpAddrable(a1)
@@ -717,13 +732,13 @@ func fpIntrCall(x: int): string {
         return "rt_text_index_of_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextAppendStr() {
         fpEmit("rt_text_append_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
-        return ""
+        return toText("")
     } else if nm == ITextAppendChar() {
         fpEmit("rt_text_append_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "));")
-        return ""
+        return toText("")
     } else if nm == ITextAppendText() {
         fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
-        return ""
+        return toText("")
 
     // ---- list ----
     } else if nm == IListPush() or nm == IListUnshift() {
@@ -739,7 +754,7 @@ func fpIntrCall(x: int): string {
             fn = "rt_list_unshift"
         }
         fpEmit(fn + "(" + l + ", &(" + v + "));")
-        return ""
+        return toText("")
     } else if nm == IListPop() or nm == IListShift() or nm == IListFirst() or nm == IListLast() {
         l = fpExpr(a0)
         t = fpNewTmp(cpCType(irExprType(x)))
@@ -755,7 +770,7 @@ func fpIntrCall(x: int): string {
         return t
     } else if nm == IListRemove() {
         fpEmit("rt_list_remove(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
-        return ""
+        return toText("")
     } else if nm == IListCount() {
         return "rt_list_count(" + fpExpr(a0) + ")"
 
@@ -773,7 +788,7 @@ func fpIntrCall(x: int): string {
         k = fpStrAddr(a1)
         v = fpCopyToTemp(a2)
         fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
-        return ""
+        return toText("")
     } else if nm == IMapGet() {
         m = fpExpr(a0)
         k = fpStrAddr(a1)
@@ -792,13 +807,13 @@ func fpIntrCall(x: int): string {
         return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IMapRemove() {
         fpEmit("rt_map_remove(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
-        return ""
+        return toText("")
     } else if nm == IMapCount() {
         return "rt_map_count(" + fpExpr(a0) + ")"
 
     // ---- lastError ----
     } else if nm == ILastErrCode() {
-        return "rt_lasterr_code"
+        return toText("rt_lasterr_code")
     } else if nm == ILastErrMsg() {
         // rt_lasterr_msg is a raw uint8_t[256] (rt.h), not a clar_str_255
         // struct -- copy it into a proper temp via rt_str_store rather than
@@ -817,7 +832,7 @@ func fpIntrCall(x: int): string {
         return t
     }
     // Task 9: file intrinsics.
-    return ""
+    return toText("")
 }
 
 // fpStoreStr prints a clamped string store: `rt_str_store(&dst, CAP, &src);`
@@ -827,9 +842,9 @@ func fpStoreStr(dst: int, src: int) {
 }
 
 func fpStmt(s: int) {
-    var e: string
-    var d: string
-    var v: string
+    var e: text
+    var d: text
+    var v: text
 
     if irStmtKind(s) == SExprStmt {
         e = fpExpr(irExprStmtX(s))
@@ -850,7 +865,7 @@ func fpStmt(s: int) {
         fpForRangeStmt(s)
     } else if irStmtKind(s) == SReturn {
         if irReturnX(s) == -1 {
-            fpEmit("return;")
+            fpEmit(toText("return;"))
         } else {
             fpEmit("return " + fpExpr(irReturnX(s)) + ";")
         }
@@ -859,9 +874,9 @@ func fpStmt(s: int) {
     } else if irStmtKind(s) == SForMap {
         fpForMapStmt(s)
     } else if irStmtKind(s) == SBreak {
-        fpEmit("break;")
+        fpEmit(toText("break;"))
     } else if irStmtKind(s) == SContinue {
-        fpEmit("continue;")
+        fpEmit(toText("continue;"))
     }
 }
 
@@ -870,10 +885,10 @@ func fpStmt(s: int) {
 // mutated mid-iteration; a fixed count is the simplest defensible choice)
 // -- a port of funcprint.go's forListStmt.
 func fpForListStmt(s: int) {
-    var lv: string
-    var lt: string
-    var cnt: string
-    var ix: string
+    var lv: text
+    var lt: text
+    var cnt: text
+    var ix: text
     var elemC: string
     var vName: string
 
@@ -890,7 +905,7 @@ func fpForListStmt(s: int) {
     fpEmit("cv_" + vName + " = *(" + elemC + "*)rt_list_at(" + lt + ", " + ix + ");")
     fpStmts(irForListBody(s))
     fpIndent = fpIndent - 1
-    fpEmit("}")
+    fpEmit(toText("}"))
 }
 
 // fpForMapStmt lowers `for k, v in m { ... }` to an index loop over
@@ -901,10 +916,10 @@ func fpForListStmt(s: int) {
 // threaded straight through lowFor) when the loop wrote `for k in m`
 // without a value variable.
 func fpForMapStmt(s: int) {
-    var mv: string
-    var mt: string
-    var cnt: string
-    var ix: string
+    var mv: text
+    var mt: text
+    var cnt: text
+    var ix: text
     var vNameIdx: int
 
     mv = fpExpr(irForMapMapV(s))
@@ -922,7 +937,7 @@ func fpForMapStmt(s: int) {
     }
     fpStmts(irForMapBody(s))
     fpIndent = fpIndent - 1
-    fpEmit("}")
+    fpEmit(toText("}"))
 }
 
 // fpWhileStmt prints `while (1) { <cond's temps, re-run every iteration>;
@@ -931,15 +946,15 @@ func fpForMapStmt(s: int) {
 // must be recomputed every iteration, not hoisted out and reused stale --
 // funcprint.go's whileStmt.
 func fpWhileStmt(s: int) {
-    var cond: string
+    var cond: text
 
-    fpEmit("while (1) {")
+    fpEmit(toText("while (1) {"))
     fpIndent = fpIndent + 1
     cond = fpExpr(irWhileCond(s))
     fpEmit("if (!(" + cond + ")) break;")
     fpStmts(irWhileBody(s))
     fpIndent = fpIndent - 1
-    fpEmit("}")
+    fpEmit(toText("}"))
 }
 
 // fpForRangeStmt evaluates From/To once into temps (never re-embeds their
@@ -948,10 +963,10 @@ func fpWhileStmt(s: int) {
 // loops the bound variable, already declared at function top, over
 // [from, to] inclusive -- funcprint.go's forRangeStmt.
 func fpForRangeStmt(s: int) {
-    var from: string
-    var ft: string
-    var toVal: string
-    var tt: string
+    var from: text
+    var ft: text
+    var toVal: text
+    var tt: text
     var vName: string
 
     from = fpExpr(irForRangeFrom(s))
@@ -965,7 +980,7 @@ func fpForRangeStmt(s: int) {
     fpIndent = fpIndent + 1
     fpStmts(irForRangeBody(s))
     fpIndent = fpIndent - 1
-    fpEmit("}")
+    fpEmit(toText("}"))
 }
 
 // fpStripOuterParens removes one matching outer parenthesis pair from s, if
@@ -975,10 +990,11 @@ func fpForRangeStmt(s: int) {
 // comparison would come out double-parenthesized (`if ((a == b))`). Used
 // only where the condition becomes the entire, sole content of a C
 // `if (...)`.
-func fpStripOuterParens(s: string): string {
+func fpStripOuterParens(s: text): text {
     var depth: int
     var i: int
     var c: char
+    var r: text
 
     if s.length < 2 or s[0] != '(' or s[s.length - 1] != ')' {
         return s
@@ -997,7 +1013,18 @@ func fpStripOuterParens(s: string): string {
         }
         i = i + 1
     }
-    return s[1, s.length - 2]
+    // Build the inner run s[1 .. length-2] by appending each char: a text
+    // slice (s[1, length-2]) would route through rt_text_slice into a
+    // clar_str_255, re-imposing the 255-byte cap this whole change removes
+    // (and overflowing outright on a long condition). Char-append is
+    // uncapped and byte-identical.
+    r = ""
+    i = 1
+    while i < s.length - 1 {
+        r.append(s[i])
+        i = i + 1
+    }
+    return r
 }
 
 // fpIfStmt prints an SIf node (funcprint.go's ifStmt).
@@ -1007,12 +1034,12 @@ func fpIfStmt(s: int) {
     fpStmts(irIfThen(s))
     fpIndent = fpIndent - 1
     if irIfElse(s) != -1 {
-        fpEmit("} else {")
+        fpEmit(toText("} else {"))
         fpIndent = fpIndent + 1
         fpStmts(irIfElse(s))
         fpIndent = fpIndent - 1
     }
-    fpEmit("}")
+    fpEmit(toText("}"))
 }
 
 func fpStmts(head: int) {
@@ -1069,9 +1096,9 @@ func cpFuncProto(f: int): string {
 // port of defaults.go's defaultInit. scalarDefault/strDefault are 0/-1 (no
 // override) for every nil-Init global/local; a record field's OWN default
 // (IRFieldSlot.default/defaultStr) is passed through by cpEmitRecords.
-func cpDefaultInit(dst: string, t: int, scalarDefault: int, strDefault: int) {
+func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     var k: IRKind
-    var ix: string
+    var ix: text
 
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
@@ -1103,7 +1130,7 @@ func cpDefaultInit(dst: string, t: int, scalarDefault: int, strDefault: int) {
         fpIndent = fpIndent + 1
         cpDefaultInit(dst + ".e[" + ix + "]", irtElem(t), 0, -1)
         fpIndent = fpIndent - 1
-        fpEmit("}")
+        fpEmit(toText("}"))
     }
 }
 
@@ -1140,22 +1167,22 @@ func cpEmitFunc(f: int) {
             }
         } else {
             declared[nm] = irLocalType(loc)
-            fpEmit(cpCType(irLocalType(loc)) + " cv_" + nm + ";")
-            cpDefaultInit("cv_" + nm, irLocalType(loc), 0, -1)
+            fpEmit(toText(cpCType(irLocalType(loc)) + " cv_" + nm + ";"))
+            cpDefaultInit(toText("cv_" + nm), irLocalType(loc), 0, -1)
         }
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))
     // Task 4+: `return <zeroLiteral>;` for a non-void return type.
 
-    cpRestBuf.add(cpFuncProto(f) + " {")
+    cpRestBuf.add(toText(cpFuncProto(f) + " {"))
     i = 0
     while i < fpBody.count {
         cpRestBuf.add(fpBody[i])
         i = i + 1
     }
-    cpRestBuf.add("}")
-    cpRestBuf.add("")
+    cpRestBuf.add(toText("}"))
+    cpRestBuf.add(toText(""))
 }
 
 // cpEmitFuncs prints every prototype up front, then every definition
@@ -1165,10 +1192,10 @@ func cpEmitFuncs() {
 
     i = 0
     while i < irFuncs.count {
-        cpRestBuf.add(cpFuncProto(i) + ";")
+        cpRestBuf.add(toText(cpFuncProto(i) + ";"))
         i = i + 1
     }
-    cpRestBuf.add("")
+    cpRestBuf.add(toText(""))
     i = 0
     while i < irFuncs.count {
         cpEmitFunc(i)
@@ -1203,30 +1230,30 @@ func cpEmitRecords() {
         name = poolGet(irRecordLayoutName(i))
         ctype = "clar_rec_" + name
 
-        cpRecBuf.add("typedef struct {")
+        cpRecBuf.add(toText("typedef struct {"))
         f = irRecordLayoutFieldsHead(i)
         while f != -1 {
-            cpRecBuf.add("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";")
+            cpRecBuf.add(toText("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
             f = irFieldSlotNext(f)
         }
-        cpRecBuf.add("} " + ctype + ";")
+        cpRecBuf.add(toText("} " + ctype + ";"))
 
         fpReset(1)
         f = irRecordLayoutFieldsHead(i)
         while f != -1 {
-            cpDefaultInit("r.cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
+            cpDefaultInit(toText("r.cv_" + poolGet(irFieldSlotName(f))), irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
             f = irFieldSlotNext(f)
         }
-        cpRecBuf.add("static " + ctype + " clar_new_" + name + "(void) {")
-        cpRecBuf.add("    " + ctype + " r;")
+        cpRecBuf.add(toText("static " + ctype + " clar_new_" + name + "(void) {"))
+        cpRecBuf.add(toText("    " + ctype + " r;"))
         j = 0
         while j < fpBody.count {
             cpRecBuf.add(fpBody[j])
             j = j + 1
         }
-        cpRecBuf.add("    return r;")
-        cpRecBuf.add("}")
-        cpRecBuf.add("")
+        cpRecBuf.add(toText("    return r;"))
+        cpRecBuf.add(toText("}"))
+        cpRecBuf.add(toText(""))
         i = i + 1
     }
 }
@@ -1261,11 +1288,11 @@ func cpEmitEnums() {
             m = irEnumMemberNext(m)
         }
         name = poolGet(irEnumLayoutName(i))
-        cpRestBuf.add("static const int32_t clar_enum_" + name + "[] __attribute__((unused)) = {" + vals + "};")
-        cpRestBuf.add("static const int clar_enum_" + name + "_count __attribute__((unused)) = " + numToStr(count) + ";")
+        cpRestBuf.add(toText("static const int32_t clar_enum_" + name + "[] __attribute__((unused)) = {" + vals + "};"))
+        cpRestBuf.add(toText("static const int clar_enum_" + name + "_count __attribute__((unused)) = " + numToStr(count) + ";"))
         i = i + 1
     }
-    cpRestBuf.add("")
+    cpRestBuf.add(toText(""))
 }
 
 // cpEmitGlobalsInit declares every global as a bare (uninitialized-in-C)
@@ -1286,7 +1313,7 @@ func cpEmitGlobalsInit() {
 
     i = 0
     while i < irGlobals.count {
-        cpRestBuf.add("static " + cpCType(irGlobalType(i)) + " cv_" + poolGet(irGlobalName(i)) + ";")
+        cpRestBuf.add(toText("static " + cpCType(irGlobalType(i)) + " cv_" + poolGet(irGlobalName(i)) + ";"))
         i = i + 1
     }
 
@@ -1295,7 +1322,7 @@ func cpEmitGlobalsInit() {
     while i < irGlobals.count {
         gt = irGlobalType(i)
         nm = poolGet(irGlobalName(i))
-        cpDefaultInit("cv_" + nm, gt, 0, -1)
+        cpDefaultInit(toText("cv_" + nm), gt, 0, -1)
         initE = irGlobalInit(i)
         if initE != -1 {
             if irtKind(gt) == KStr {
@@ -1314,14 +1341,14 @@ func cpEmitGlobalsInit() {
         }
         i = i + 1
     }
-    cpRestBuf.add("static void clar_init_globals(void) {")
+    cpRestBuf.add(toText("static void clar_init_globals(void) {"))
     j = 0
     while j < fpBody.count {
         cpRestBuf.add(fpBody[j])
         j = j + 1
     }
-    cpRestBuf.add("}")
-    cpRestBuf.add("")
+    cpRestBuf.add(toText("}"))
+    cpRestBuf.add(toText(""))
 }
 
 // cpEmitStrLits prints the interned string-literal pool as clar_str_255
@@ -1352,19 +1379,19 @@ func cpEmitStrLits() {
 // cpEmitMain prints the fixed entry point (cprint.go's emitMain): init
 // globals, stash argv, then launch, then startCLI (else startEmpty).
 func cpEmitMain() {
-    cpRestBuf.add("int main(int argc, char **argv) {")
-    cpRestBuf.add("    clar_init_globals();")
-    cpRestBuf.add("    rt_args_init(argc, argv);")
+    cpRestBuf.add(toText("int main(int argc, char **argv) {"))
+    cpRestBuf.add(toText("    clar_init_globals();"))
+    cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
     if irHasLaunch {
-        cpRestBuf.add("    clar_fn_handler_App_launch();")
+        cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
     }
     if irHasStartCLI {
-        cpRestBuf.add("    clar_fn_handler_App_startCLI(rt_args_list());")
+        cpRestBuf.add(toText("    clar_fn_handler_App_startCLI(rt_args_list());"))
     } else if irHasStartEmpty {
-        cpRestBuf.add("    clar_fn_handler_App_startEmpty();")
+        cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
     }
-    cpRestBuf.add("    return 0;")
-    cpRestBuf.add("}")
+    cpRestBuf.add(toText("    return 0;"))
+    cpRestBuf.add(toText("}"))
 }
 
 // ================================================================
@@ -1405,20 +1432,9 @@ func cpAppendTextLine(out: text, line: text) {
     out.append(char(10))
 }
 
-// cpAppendList appends every line of a `list of string` buffer to out
-// (cpAppendLine per line, in order) -- the text-buffer replacement for the
-// old per-line alert output.
-func cpAppendList(out: text, buf: list of string) {
-    var i: int
-
-    i = 0
-    while i < buf.count {
-        cpAppendLine(out, buf[i])
-        i = i + 1
-    }
-}
-
-// cpAppendTextList is cpAppendList for cpLitBuf (`list of text`).
+// cpAppendTextList appends every line of a `list of text` buffer to out
+// (cpAppendTextLine per line, in order). Every C-code buffer is `list of
+// text` now (see the header comment), so this is the only list appender.
 func cpAppendTextList(out: text, buf: list of text) {
     var i: int
 
@@ -1440,8 +1456,8 @@ func emitProgram(): text {
     cpResetBuffers()
 
     cpEnsureStr(255)   // literal pool + every intrinsic string temp use this
-    cpRecBuf.add("typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;")
-    cpRecBuf.add("")
+    cpRecBuf.add(toText("typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;"))
+    cpRecBuf.add(toText(""))
 
     cpEmitStrLits()
     cpEmitRecords()
@@ -1454,13 +1470,13 @@ func emitProgram(): text {
     cpAppendLine(out, "#include \"rt.h\"")
     cpAppendLine(out, "#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
     cpAppendLine(out, "")
-    cpAppendList(out, cpTypeBuf)
+    cpAppendTextList(out, cpTypeBuf)
     cpAppendLine(out, "")
     cpAppendTextList(out, cpLitBuf)
     cpAppendLine(out, "")
-    cpAppendList(out, cpRecBuf)
+    cpAppendTextList(out, cpRecBuf)
     cpAppendLine(out, "")
-    cpAppendList(out, cpRestBuf)
+    cpAppendTextList(out, cpRestBuf)
 
     return out
 }
