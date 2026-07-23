@@ -20,3 +20,34 @@ check_test.cla:1:1: const type must be int, fixed, char, bool, enum, or string
 check_test.cla:1:14: undefined: Widget
 === mutual-recursion-clean ===
 clean
+=== break-outside-loop ===
+check_test.cla:2:5: break is only valid inside a loop
+=== cancel-outside-closeRequest ===
+check_test.cla:2:5: cancel is only valid inside a closeRequest handler
+=== duplicate-case-label ===
+check_test.cla:6:10: duplicate case label
+=== switch-operand ===
+check_test.cla:4:12: switch operand must be int, char, enum, or string
+=== return-mismatch ===
+check_test.cla:2:5: cannot return bool as int
+=== quit-code-int ===
+check_test.cla:2:10: quit code must be int
+=== unknown-property ===
+check_test.cla:2:5: unknown property bogus for window
+check_test.cla:3:16: unknown property frobnicate for button
+=== bind-no-field ===
+check_test.cla:6:15: no field missing on R
+=== bind-incompatible ===
+check_test.cla:6:15: field flag (bool) is not compatible with field
+=== edit-not-form-window ===
+check_test.cla:7:5: W is not a form window
+=== duplicate-menu-item ===
+check_test.cla:3:5: duplicate menu item A
+=== unknown-event ===
+check_test.cla:5:5: unknown event
+=== handler-takes ===
+check_test.cla:5:5: handler T.select takes (i: int)
+=== every-tick-min ===
+check_test.cla:1:1: tick count must be at least 1
+=== window-menu-extend-clean ===
+clean

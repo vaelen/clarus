@@ -226,6 +226,27 @@ func windowRefT(nameIdx: int): int {
     return typeArena.count - 1
 }
 
+// widgetT builds a TyWidget pseudo-type (Task 9's checker-only Select
+// result -- Widget.property), carrying the widget's kind ("button",
+// "canvas", ...) interned into nameIdx (Go's Type.WidgetKind). Never a
+// declared variable type.
+func widgetT(kindIdx: int): int {
+    var t: TypeInfo
+
+    t.kind = TyWidget
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = kindIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+// menuItemT builds a TyMenuItem pseudo-type -- the transient result of
+// `MenuName.ItemName`, en route to its `.enabled` bool property (Ch9).
+func menuItemT(): int {
+    return pushSimple(TyMenuItem)
+}
+
 // addEnumMember appends one member and returns its enumMembers index.
 func addEnumMember(name: string, value: int, label: string): int {
     var m: EnumMemberInfo

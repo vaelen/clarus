@@ -325,6 +325,295 @@ func enumConstGet(e: int): int {
 }
 
 // ================================================================
+// Statement / handler checking state (stmt.go, events.go)
+// ================================================================
+
+// loopDepth counts enclosing while/for loop bodies (checkLoopBody
+// increments/decrements it); switch case/else bodies do NOT increment it,
+// so break/continue inside a case body binds the enclosing LOOP. Zero
+// outside any loop. inCloseRequest is true only while checking a window's
+// own closeRequest handler body -- the sole place `cancel` is valid.
+var loopDepth: int
+var inCloseRequest: bool
+
+// progGen is bumped by every checkReset so the per-program menuItems set
+// (below) can namespace its keys and never consult a stale entry from a
+// previous program compiled in the same process (maps have no bulk-clear
+// primitive, and menu-item lookup reads presence, so overwrite-on-redeclare
+// -- the discipline the other side tables rely on -- is not enough here).
+var progGen: int
+
+// ================================================================
+// Window/menu declaration side tables (ui.go's WindowInfo/MenuInfo)
+// ================================================================
+// types.cla's TyWindowRef carries only its name; the per-window layout
+// (form-ness, form record, per-instance vars, widgets) is this module's own
+// set of name-keyed side tables -- exactly Go's types.Type.Window
+// *WindowInfo side pointer, restated as maps + arenas. Each is OVERWRITTEN
+// per window in checkWindowDecl (phase 1, source order), and only ever read
+// for a window that resolves in the current program's (reset) scope, so a
+// stale entry for a window absent from the current program is never
+// consulted -- the same argument recFieldsHeadByName relies on.
+
+// per-instance vars reuse the FieldInfo arena (name+type+next); widgets get
+// their own WidgetInfo arena.
+record WidgetInfo {
+    nameIdx: int
+    kindIdx: int
+    bindsIdx: int
+    next: int
+}
+
+var widgetInfos: list of WidgetInfo
+
+func newWidgetInfo(nameIdx: int, kindIdx: int, bindsIdx: int): int {
+    var w: WidgetInfo
+
+    w.nameIdx = nameIdx
+    w.kindIdx = kindIdx
+    w.bindsIdx = bindsIdx
+    w.next = -1
+    widgetInfos.add(w)
+    return widgetInfos.count - 1
+}
+
+func widgetInfoAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        widgetInfos[tailIdx].next = idx
+    }
+    return idx
+}
+
+var windowIsForm: map of int
+var windowFormRecType: map of int
+var windowVarsHead: map of int
+var windowWidgetsHead: map of int
+
+// menuItems is the flattened set of every declared menu's item names, keyed
+// (progGen | menuName | itemName) so it needs no reset. checkMenuDecl
+// populates it; checkMenuItemName / checkMenuExtend read it.
+var menuItems: map of int
+
+func menuKey(menuName: string, itemName: string): string {
+    return numToStr(progGen) + "|" + menuName + "|" + itemName
+}
+
+// ---- Ch8 widget/window property tables (ui.go) ----
+// windowTopProps: allowed window-body property names. widgetDeclProps:
+// allowed declaration-time properties, keyed "kind.prop". widgetRuntimeProps:
+// a Widget.property Select's result type, keyed "kind.prop" (canvas's
+// width/height folded in here rather than a nested map). Rebuilt every
+// checkReset since widgetRuntimeProps values are type-arena indices.
+var windowTopProps: map of int
+var widgetDeclProps: map of int
+var widgetRuntimeProps: map of int
+
+func buildUiTables() {
+    windowTopProps["title"] = 1
+    windowTopProps["size"] = 1
+    windowTopProps["resizable"] = 1
+
+    widgetDeclProps["button.caption"] = 1
+    widgetDeclProps["button.at"] = 1
+    widgetDeclProps["button.width"] = 1
+    widgetDeclProps["button.default"] = 1
+    widgetDeclProps["button.cancel"] = 1
+
+    widgetDeclProps["field.label"] = 1
+    widgetDeclProps["field.at"] = 1
+    widgetDeclProps["field.width"] = 1
+    widgetDeclProps["field.binds"] = 1
+
+    widgetDeclProps["textview.at"] = 1
+    widgetDeclProps["textview.fill"] = 1
+    widgetDeclProps["textview.scrollbar"] = 1
+
+    widgetDeclProps["check.caption"] = 1
+    widgetDeclProps["check.at"] = 1
+    widgetDeclProps["check.binds"] = 1
+
+    widgetDeclProps["popup.label"] = 1
+    widgetDeclProps["popup.at"] = 1
+    widgetDeclProps["popup.binds"] = 1
+
+    widgetDeclProps["table.rows"] = 1
+    widgetDeclProps["table.at"] = 1
+    widgetDeclProps["table.fill"] = 1
+
+    widgetDeclProps["canvas.at"] = 1
+    widgetDeclProps["canvas.fill"] = 1
+    widgetDeclProps["canvas.buffered"] = 1
+
+    widgetDeclProps["label.text"] = 1
+    widgetDeclProps["label.at"] = 1
+
+    widgetRuntimeProps["button.caption"] = strT(255)
+    widgetRuntimeProps["button.enabled"] = BoolT
+    widgetRuntimeProps["field.text"] = strT(255)
+    widgetRuntimeProps["field.enabled"] = BoolT
+    widgetRuntimeProps["textview.text"] = TextT
+    widgetRuntimeProps["check.checked"] = BoolT
+    widgetRuntimeProps["popup.selected"] = IntT
+    widgetRuntimeProps["table.selected"] = IntT
+    widgetRuntimeProps["canvas.width"] = IntT
+    widgetRuntimeProps["canvas.height"] = IntT
+    widgetRuntimeProps["label.text"] = strT(255)
+}
+
+// ================================================================
+// The Appendix B events table (events.go)
+// ================================================================
+// An event's fixed handler signature: a param chain (name + required type)
+// plus its count. Keyed in eventTable by "context.event".
+record EventParam {
+    nameIdx: int
+    typeIdx: int
+    next: int
+}
+
+var eventParams: list of EventParam
+
+record EventSpec {
+    paramsHead: int
+    paramCount: int
+}
+
+var eventSpecs: list of EventSpec
+
+var eventTable: map of int
+
+func newEventParam(nameIdx: int, typeIdx: int, next: int): int {
+    var p: EventParam
+
+    p.nameIdx = nameIdx
+    p.typeIdx = typeIdx
+    p.next = next
+    eventParams.add(p)
+    return eventParams.count - 1
+}
+
+func newEventSpec(paramsHead: int, count: int): int {
+    var s: EventSpec
+
+    s.paramsHead = paramsHead
+    s.paramCount = count
+    eventSpecs.add(s)
+    return eventSpecs.count - 1
+}
+
+func addEvent(key: string, paramsHead: int, count: int) {
+    eventTable[key] = newEventSpec(paramsHead, count)
+}
+
+// makeSpec1 builds a one-param spec on the fly -- for `on accepted(rec)`,
+// whose param type is the form window's own record (resolved per window,
+// so it isn't a fixed row of the table).
+func makeSpec1(nameIdx: int, typeIdx: int): int {
+    return newEventSpec(newEventParam(nameIdx, typeIdx, -1), 1)
+}
+
+// buildEventsTable transcribes Appendix B whole. Rebuilt every checkReset
+// since every param type (and connectionT/AddressT/...) is a type-arena
+// index invalidated by typesReset.
+func buildEventsTable() {
+    var p1: int
+    var p2: int
+
+    addEvent("app.launch", -1, 0)
+    addEvent("app.startEmpty", -1, 0)
+    addEvent("app.openDocument", newEventParam(intern("path"), strT(255), -1), 1)
+    addEvent("app.startCLI", newEventParam(intern("args"), listT(strT(255)), -1), 1)
+
+    addEvent("window.opened", -1, 0)
+    addEvent("window.closeRequest", -1, 0)
+    addEvent("window.closed", -1, 0)
+    addEvent("window.resized", -1, 0)
+    addEvent("window.key", newEventParam(intern("k"), CharT, -1), 1)
+
+    addEvent("formWindow.cancelled", -1, 0)
+
+    addEvent("button.click", -1, 0)
+    addEvent("field.change", -1, 0)
+    addEvent("field.enter", -1, 0)
+    addEvent("textview.change", -1, 0)
+    addEvent("check.change", -1, 0)
+    addEvent("popup.change", -1, 0)
+
+    addEvent("table.select", newEventParam(intern("i"), IntT, -1), 1)
+    addEvent("table.doubleClick", newEventParam(intern("i"), IntT, -1), 1)
+
+    p2 = newEventParam(intern("y"), IntT, -1)
+    p1 = newEventParam(intern("x"), IntT, p2)
+    addEvent("canvas.click", p1, 2)
+    p2 = newEventParam(intern("y"), IntT, -1)
+    p1 = newEventParam(intern("x"), IntT, p2)
+    addEvent("canvas.drag", p1, 2)
+
+    addEvent("menuItem.select", -1, 0)
+
+    addEvent("connection.opened", -1, 0)
+    addEvent("connection.received", newEventParam(intern("data"), TextT, -1), 1)
+    addEvent("connection.closed", -1, 0)
+    addEvent("connection.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+
+    addEvent("listener.accepted", newEventParam(intern("c"), connectionT, -1), 1)
+    addEvent("listener.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+
+    p2 = newEventParam(intern("addr"), AddressT, -1)
+    p1 = newEventParam(intern("name"), strT(255), p2)
+    addEvent("serviceBrowser.found", p1, 2)
+    addEvent("serviceBrowser.failed", newEventParam(intern("err"), ErrTIndex, -1), 1)
+}
+
+// formatEventParams renders an event spec's params for a "takes (...)"
+// diagnostic (events.go's formatParams) -- "name: type, ..." or "" for a
+// no-param event.
+func formatEventParams(specIdx: int): string {
+    var s: string
+    var ep: int
+    var first: bool
+
+    s = ""
+    first = true
+    ep = eventSpecs[specIdx].paramsHead
+    while ep != -1 {
+        if not first {
+            s = s + ", "
+        }
+        s = s + poolGet(eventParams[ep].nameIdx) + ": " + typeName(eventParams[ep].typeIdx)
+        first = false
+        ep = eventParams[ep].next
+    }
+    return s
+}
+
+// splitDots splits a dotted handler path ("Go.click", "closeRequest") into
+// its segments -- events.go relies on Go's []string Path; the parser joined
+// it into one interned string (ast.cla's DkHandler schema), so it's re-split
+// here.
+func splitDots(s: string): list of string {
+    var parts: list of string
+    var cur: string
+    var i: int
+    var c: char
+
+    cur = ""
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c == '.' {
+            parts.add(cur)
+            cur = ""
+        } else {
+            cur = cur + c
+        }
+        i = i + 1
+    }
+    parts.add(cur)
+    return parts
+}
+
+// ================================================================
 // Diagnostic-rendering helpers (expr.go's typeName/kindsList/isResourceKind)
 // ================================================================
 
@@ -935,12 +1224,15 @@ func checkMethodCall(sel: int, argsHead: int): int {
     case TyServiceBrowser {
         return checkTableMethod(serviceBrowserMethods, sel, argsHead)
     }
-    case TyWindowRef, TyWidget, TyMenuItem {
-        // Method calls on a window-ref/widget/menu-item VALUE (e.g. a
-        // window-ref function parameter) are ui.go's job -- Task 9b.
-        // Silently defer rather than misdiagnosing "undefined: NAME",
-        // matching checkSelect's handling of the same receiver kinds
-        // just below.
+    case TyWidget {
+        // Only a canvas widget has methods (Ch11: Drawing); every other
+        // widget kind -- and window-ref/menu-item values -- has none, so it
+        // falls through to the "undefined" default below, matching
+        // expr.go's checkMethodCall switch exactly.
+        if poolGet(typeNameIdx(xt)) == "canvas" {
+            return checkTableMethod(canvasMethods, sel, argsHead)
+        }
+        emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
         return InvalidT
     }
     }
@@ -1366,18 +1658,106 @@ func checkFuncBody(d: int) {
     curFuncRet = savedRet
 }
 
-// registerWindowDecl registers a window's own name as a WindowRef-typed
-// symbol -- phase 1's job, so forward references from functions/other
-// windows/menus resolve. The window's BODY (props, binds, widgets,
-// columns, rows, form for) is ui.go's job, deferred whole to Task 9b;
-// windowDeclItemsHead(d) is never walked here.
-func registerWindowDecl(d: int) {
-    var nameIdx: int
+// ================================================================
+// Window/widget/menu declaration checking (ui.go)
+// ================================================================
+
+// checkWindowDecl builds a window's side-table layout (form-ness, form
+// record, per-instance vars, widgets -- Ch8/Ch10) and declares the window's
+// name as a WindowRef-typed symbol. Runs in phase 1 (source order), so
+// forward references from later decls resolve, exactly as Go's single-pass
+// checkDecl does for a window.
+func checkWindowDecl(d: int) {
+    var winNameIdx: int
+    var winName: string
+    var isForm: bool
+    var formRecType: int
+    var item: int
+    var recNameIdx: int
+    var symIdx: int
+    var declared: map of int
+    var k: DeclKind
+    var vname: string
+    var wname: string
+    var fi: int
+    var varsHead: int
+    var varsTail: int
+    var wi: int
+    var widgetsHead: int
+    var widgetsTail: int
     var sym: Symbol
 
-    nameIdx = windowDeclName(d)
-    sym.nameIdx = nameIdx
-    sym.typeIdx = windowRefT(nameIdx)
+    winNameIdx = windowDeclName(d)
+    winName = poolGet(winNameIdx)
+    isForm = false
+    formRecType = -1
+
+    // First pass: resolve `form for` before widgets, since binds validation
+    // needs the form record regardless of where in the body it appears.
+    item = windowDeclItemsHead(d)
+    while item != -1 {
+        if declKind(item) == DkFormFor {
+            recNameIdx = formForRecord(item)
+            symIdx = scopeLookup(curScope, recNameIdx)
+            if symIdx == -1 or not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyRec {
+                emitDiag(declLine(item), declCol(item), "form for names an undefined record: " + poolGet(recNameIdx))
+            } else {
+                isForm = true
+                formRecType = symbols[symIdx].typeIdx
+            }
+        }
+        item = declNext(item)
+    }
+    windowIsForm[winName] = boolToInt(isForm)
+    windowFormRecType[winName] = formRecType
+
+    declared["title"] = 1
+    varsHead = -1
+    varsTail = -1
+    widgetsHead = -1
+    widgetsTail = -1
+
+    item = windowDeclItemsHead(d)
+    while item != -1 {
+        k = declKind(item)
+        if k == DkProperty {
+            if not windowTopProps.has(poolGet(propertyName(item))) {
+                emitDiag(declLine(item), declCol(item), "unknown property " + poolGet(propertyName(item)) + " for window")
+            }
+        } else if k == DkColumn {
+            emitDiag(declLine(item), declCol(item), "unknown property column for window")
+        } else if k == DkVar {
+            vname = poolGet(varDeclName(item))
+            if declared.has(vname) {
+                emitDiag(declLine(item), declCol(item), "redeclaration of " + vname)
+            } else {
+                declared[vname] = 1
+            }
+            fi = checkWindowVar(item)
+            if varsHead == -1 {
+                varsHead = fi
+            }
+            varsTail = fieldInfoAppend(varsTail, fi)
+        } else if k == DkWidget {
+            wname = poolGet(widgetName(item))
+            if declared.has(wname) {
+                emitDiag(declLine(item), declCol(item), "redeclaration of " + wname)
+            } else {
+                declared[wname] = 1
+            }
+            wi = checkWidget(item, formRecType)
+            if widgetsHead == -1 {
+                widgetsHead = wi
+            }
+            widgetsTail = widgetInfoAppend(widgetsTail, wi)
+        }
+        item = declNext(item)
+    }
+    windowVarsHead[winName] = varsHead
+    windowWidgetsHead[winName] = widgetsHead
+
+    sym.nameIdx = winNameIdx
+    sym.typeIdx = windowRefT(winNameIdx)
     sym.isFunc = false
     sym.sigIdx = -1
     sym.isType = true
@@ -1387,19 +1767,202 @@ func registerWindowDecl(d: int) {
     sym.constStrIdx = -1
     sym.isMenu = false
     if not scopeDeclare(curScope, sym) {
-        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
+        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(winNameIdx))
     }
 }
 
-// registerMenuDecl registers a menu's own name as a menu symbol -- phase
-// 1's job. Menu-item resolution (MenuInfo, item names/captions/keys, the
-// `.enabled` MenuItem select) is events.go/ui.go's job, deferred whole to
-// Task 9b; menuDeclEntriesHead(d) is never walked here.
-func registerMenuDecl(d: int) {
+// checkWindowVar checks one per-instance `var` in a window body -- same
+// shape as a top-level var, but recorded into the window's FieldInfo chain
+// rather than the global scope. Returns its fieldInfos index.
+func checkWindowVar(v: int): int {
+    var t: int
+    var it: int
+
+    t = resolveType(varDeclType(v))
+    if varDeclInit(v) != -1 {
+        it = checkExpr(varDeclInit(v), t)
+        if it != InvalidT and not compatible(it, t) {
+            emitDiag(declLine(v), declCol(v), "cannot assign " + typeName(it) + " to " + typeName(t))
+        }
+    }
+    return newFieldInfo(varDeclName(v), t)
+}
+
+// checkWidget validates one widget's properties against Ch8's per-kind
+// property table and, for a table, its columns against Ch10's rules. Returns
+// its widgetInfos index.
+func checkWidget(w: int, formRecType: int): int {
+    var kind: string
+    var rowRecType: int
+    var p: int
+    var pname: string
+    var binds: int
+
+    kind = poolGet(widgetKindName(w))
+    rowRecType = -1
+    if kind == "table" {
+        p = widgetPropsHead(w)
+        while p != -1 {
+            if declKind(p) == DkProperty and poolGet(propertyName(p)) == "rows" {
+                rowRecType = checkRowsProperty(p)
+            }
+            p = declNext(p)
+        }
+    }
+
+    binds = -1
+    p = widgetPropsHead(w)
+    while p != -1 {
+        if declKind(p) == DkProperty {
+            pname = poolGet(propertyName(p))
+            if not widgetDeclProps.has(kind + "." + pname) {
+                emitDiag(declLine(p), declCol(p), "unknown property " + pname + " for " + kind)
+            } else if pname == "binds" {
+                binds = checkBindsProperty(p, kind, formRecType)
+            }
+        } else if declKind(p) == DkColumn {
+            if kind != "table" {
+                emitDiag(declLine(p), declCol(p), "unknown property column for " + kind)
+            } else {
+                checkColumn(p, rowRecType)
+            }
+        }
+        p = declNext(p)
+    }
+    return newWidgetInfo(widgetName(w), widgetKindName(w), binds)
+}
+
+// checkRowsProperty checks a table's `rows: expr` (Ch10) -- expr must be a
+// `list of` record, whose record becomes the row type for `column ... shows`.
+// Returns that record's type index, or -1.
+func checkRowsProperty(p: int): int {
+    var vh: int
+    var t: int
+
+    vh = propertyValuesHead(p)
+    if exprListCount(vh) != 1 {
+        emitDiag(declLine(p), declCol(p), "rows: takes one list expression")
+        return -1
+    }
+    t = checkExpr(vh, -1)
+    if t == InvalidT {
+        return -1
+    }
+    if typeKind(t) != TyList or typeKind(typeElem(t)) != TyRec {
+        emitDiag(declLine(p), declCol(p), "rows: must be a list of record")
+        return -1
+    }
+    return typeElem(t)
+}
+
+// checkColumn checks `column "Header" shows field` (Ch10) -- field must be a
+// field of the row record. rowRecType is -1 when `rows:` was missing or
+// misdiagnosed; skip silently to avoid a cascading second error.
+func checkColumn(col: int, rowRecType: int) {
+    var shows: string
+    var fh: int
+
+    if rowRecType == -1 {
+        return
+    }
+    shows = poolGet(columnShows(col))
+    fh = recordFieldsHead(typeNameIdx(rowRecType))
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == shows {
+            return
+        }
+        fh = fieldInfos[fh].next
+    }
+    emitDiag(declLine(col), declCol(col), "no field " + shows + " on " + poolGet(typeNameIdx(rowRecType)))
+}
+
+// checkBindsProperty checks `binds: name` on a field/check/popup widget
+// (Ch10) -- the value is a bare Ident naming a field of the window's form
+// record, and that field's type must be widget-compatible. Returns the
+// interned bound field name, or -1.
+func checkBindsProperty(p: int, kind: string, formRecType: int): int {
+    var vh: int
+    var idName: string
+    var recName: string
+    var fieldType: int
+    var found: bool
+    var fh: int
+    var fk: TypeKind
+    var compat: bool
+
+    vh = propertyValuesHead(p)
+    if exprListCount(vh) != 1 {
+        emitDiag(declLine(p), declCol(p), "binds: takes one field name")
+        return -1
+    }
+    if exprKind(vh) != ExIdent {
+        emitDiag(declLine(p), declCol(p), "binds: expects a bare field name")
+        return -1
+    }
+    idName = poolGet(identName(vh))
+    if formRecType == -1 {
+        emitDiag(declLine(p), declCol(p), "binds: requires the window to declare form for")
+        return -1
+    }
+    recName = poolGet(typeNameIdx(formRecType))
+    fieldType = -1
+    found = false
+    fh = recordFieldsHead(typeNameIdx(formRecType))
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == idName {
+            fieldType = fieldInfos[fh].typeIdx
+            found = true
+            fh = -1
+        } else {
+            fh = fieldInfos[fh].next
+        }
+    }
+    if not found {
+        emitDiag(declLine(p), declCol(p), "no field " + idName + " on " + recName)
+        return -1
+    }
+    fk = typeKind(fieldType)
+    compat = false
+    if kind == "field" {
+        compat = fk == TyStr or fk == TyInt or fk == TyFixed
+    } else if kind == "check" {
+        compat = fk == TyBool
+    } else if kind == "popup" {
+        compat = fk == TyEnum
+    }
+    if not compat {
+        emitDiag(declLine(p), declCol(p), "field " + idName + " (" + typeName(fieldType) + ") is not compatible with " + kind)
+    }
+    return identName(vh)
+}
+
+// checkMenuDecl builds a menu's item set (Ch9) and declares its name as a
+// menu symbol -- entry shape is already validated by the parser; only
+// duplicate item names are a checker concern.
+func checkMenuDecl(d: int) {
     var nameIdx: int
+    var menuName: string
+    var e: int
+    var iname: string
+    var seen: map of int
     var sym: Symbol
 
     nameIdx = menuDeclName(d)
+    menuName = poolGet(nameIdx)
+    e = menuDeclEntriesHead(d)
+    while e != -1 {
+        if menuEntryIsItem(e) {
+            iname = poolGet(menuEntryName(e))
+            if seen.has(iname) {
+                emitDiag(declLine(e), declCol(e), "duplicate menu item " + iname)
+            } else {
+                seen[iname] = 1
+            }
+            menuItems[menuKey(menuName, iname)] = 1
+        }
+        e = declNext(e)
+    }
+
     sym.nameIdx = nameIdx
     sym.typeIdx = -1
     sym.isFunc = false
@@ -1413,6 +1976,417 @@ func registerMenuDecl(d: int) {
     if not scopeDeclare(curScope, sym) {
         emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(nameIdx))
     }
+}
+
+// checkMenuItemName checks `MenuName.ItemName` -- the base of the
+// `MenuName.ItemName.enabled` runtime property (Ch9). Returns a MenuItem
+// pseudo-type.
+func checkMenuItemName(e: int, menuName: string): int {
+    var itemName: string
+
+    itemName = poolGet(selectName(e))
+    if not menuItems.has(menuKey(menuName, itemName)) {
+        emitDiag(exprLine(e), exprCol(e), "undefined: " + itemName)
+        return InvalidT
+    }
+    return menuItemT()
+}
+
+// checkWindowRefSelect checks a WindowRef VALUE's Select (Ch8: Window
+// Instances): its `title`, per-instance vars, and widgets (yielding a widget
+// pseudo-type).
+func checkWindowRefSelect(e: int, xt: int): int {
+    var winName: string
+    var name: string
+    var fh: int
+    var wi: int
+
+    winName = poolGet(typeNameIdx(xt))
+    name = poolGet(selectName(e))
+    if name == "title" {
+        return strT(255)
+    }
+    fh = windowVarsHead.get(winName, -1)
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == name {
+            return fieldInfos[fh].typeIdx
+        }
+        fh = fieldInfos[fh].next
+    }
+    wi = windowWidgetsHead.get(winName, -1)
+    while wi != -1 {
+        if poolGet(widgetInfos[wi].nameIdx) == name {
+            return widgetT(widgetInfos[wi].kindIdx)
+        }
+        wi = widgetInfos[wi].next
+    }
+    emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
+    return InvalidT
+}
+
+// checkWidgetSelect checks a widget pseudo-value's Select -- Ch8's runtime
+// properties column, keyed by widget kind (widgetRuntimeProps).
+func checkWidgetSelect(e: int, xt: int): int {
+    var key: string
+
+    key = poolGet(typeNameIdx(xt)) + "." + poolGet(selectName(e))
+    if widgetRuntimeProps.has(key) {
+        return widgetRuntimeProps.get(key, InvalidT)
+    }
+    emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(selectName(e)))
+    return InvalidT
+}
+
+// findWidgetKind returns the kind ("button"/"canvas"/...) of the widget
+// named widgetName in window winName, or "" if there's no such widget.
+func findWidgetKind(winName: string, wgName: string): string {
+    var wi: int
+
+    wi = windowWidgetsHead.get(winName, -1)
+    while wi != -1 {
+        if poolGet(widgetInfos[wi].nameIdx) == wgName {
+            return poolGet(widgetInfos[wi].kindIdx)
+        }
+        wi = widgetInfos[wi].next
+    }
+    return ""
+}
+
+// ================================================================
+// Handlers, extend blocks, and timers (events.go)
+// ================================================================
+
+// windowScope builds the scope a window-scoped handler body sees beneath its
+// own params: the instance's `title`, its per-instance vars, and its widgets
+// (as widget pseudo-values) -- Ch8: bare names resolve first against the
+// firing instance's properties, fields, and widgets.
+func windowScope(parent: int, winType: int): int {
+    var s: int
+    var winName: string
+    var fh: int
+    var wi: int
+
+    s = scopeNew(parent)
+    winName = poolGet(typeNameIdx(winType))
+    declScopeVar(s, intern("title"), strT(255))
+    fh = windowVarsHead.get(winName, -1)
+    while fh != -1 {
+        declScopeVar(s, fieldInfos[fh].nameIdx, fieldInfos[fh].typeIdx)
+        fh = fieldInfos[fh].next
+    }
+    wi = windowWidgetsHead.get(winName, -1)
+    while wi != -1 {
+        declScopeVar(s, widgetInfos[wi].nameIdx, widgetT(widgetInfos[wi].kindIdx))
+        wi = widgetInfos[wi].next
+    }
+    return s
+}
+
+func declScopeVar(scope: int, nameIdx: int, t: int) {
+    var sym: Symbol
+
+    sym.nameIdx = nameIdx
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
+// checkHandlerBody checks one handler's declared params against spec
+// (reporting a "handler NAME takes (...)" mismatch), then checks its body in
+// a scope holding those params and, for a window-scoped handler (winType !=
+// -1), the instance's widgets/vars/title beneath them. isCloseRequest gates
+// `cancel`.
+func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: int, winType: int, isCloseRequest: bool, line: int, col: int) {
+    var paramTypes: list of int
+    var pcount: int
+    var wantCount: int
+    var mismatch: bool
+    var p: int
+    var i: int
+    var ep: int
+    var base: int
+    var fnScope: int
+    var psym: Symbol
+    var savedScope: int
+    var savedRet: int
+    var savedWin: int
+    var savedCR: bool
+
+    p = paramsHead
+    while p != -1 {
+        paramTypes.add(resolveType(paramType(p)))
+        p = declNext(p)
+    }
+    pcount = paramTypes.count
+    wantCount = eventSpecs[specIdx].paramCount
+
+    mismatch = pcount != wantCount
+    if not mismatch {
+        i = 0
+        ep = eventSpecs[specIdx].paramsHead
+        while i < pcount {
+            if paramTypes[i] != InvalidT and not typesEqual(paramTypes[i], eventParams[ep].typeIdx) {
+                mismatch = true
+            }
+            ep = eventParams[ep].next
+            i = i + 1
+        }
+    }
+    if mismatch {
+        emitDiag(line, col, "handler " + displayName + " takes (" + formatEventParams(specIdx) + ")")
+    }
+
+    base = curScope
+    if winType != -1 {
+        base = windowScope(base, winType)
+    }
+    fnScope = scopeNew(base)
+    p = paramsHead
+    i = 0
+    while p != -1 {
+        psym.nameIdx = paramName(p)
+        psym.typeIdx = paramTypes[i]
+        psym.isFunc = false
+        psym.sigIdx = -1
+        psym.isType = false
+        psym.isConst = false
+        psym.constIsStr = false
+        psym.constInt = 0
+        psym.constStrIdx = -1
+        psym.isMenu = false
+        if not scopeDeclare(fnScope, psym) {
+            emitDiag(declLine(p), declCol(p), "redeclaration of " + poolGet(paramName(p)))
+        }
+        p = declNext(p)
+        i = i + 1
+    }
+
+    savedScope = curScope
+    savedRet = curFuncRet
+    savedWin = curWindow
+    savedCR = inCloseRequest
+    curScope = fnScope
+    curFuncRet = -1
+    curWindow = winType
+    inCloseRequest = isCloseRequest
+    checkBlock(body)
+    curScope = savedScope
+    curFuncRet = savedRet
+    curWindow = savedWin
+    inCloseRequest = savedCR
+}
+
+// checkTopHandlerDecl checks a top-level `on App.event` or `on
+// resourceVar.event` handler (Ch7, Ch12) -- the two shapes the grammar's
+// top-level handler means, since only App and resource variables fire events
+// outside a window/menu `extend`.
+func checkTopHandlerDecl(d: int) {
+    var path: string
+    var parts: list of string
+    var root: string
+    var event: string
+    var ctx: string
+    var symIdx: int
+    var k: TypeKind
+    var specIdx: int
+
+    path = poolGet(handlerDeclPath(d))
+    parts = splitDots(path)
+    if parts.count != 2 {
+        emitDiag(declLine(d), declCol(d), "unknown event")
+        return
+    }
+    root = parts[0]
+    event = parts[1]
+
+    ctx = ""
+    if root == "App" {
+        ctx = "app"
+    } else {
+        symIdx = scopeLookup(curScope, intern(root))
+        if symIdx == -1 or symbols[symIdx].typeIdx == -1 {
+            emitDiag(declLine(d), declCol(d), "undefined: " + root)
+            return
+        }
+        k = typeKind(symbols[symIdx].typeIdx)
+        if k == TyConnection {
+            ctx = "connection"
+        } else if k == TyListener {
+            ctx = "listener"
+        } else if k == TyServiceBrowser {
+            ctx = "serviceBrowser"
+        } else {
+            emitDiag(declLine(d), declCol(d), "undefined: " + root)
+            return
+        }
+    }
+
+    if not eventTable.has(ctx + "." + event) {
+        emitDiag(declLine(d), declCol(d), "unknown event")
+        return
+    }
+    specIdx = eventTable.get(ctx + "." + event, -1)
+    checkHandlerBody(path, handlerDeclParamsHead(d), specIdx, handlerDeclBody(d), -1, false, declLine(d), declCol(d))
+}
+
+// checkExtendDecl checks a top-level `extend` block (Ch8, Ch9) -- Target
+// names either a window type or a menu.
+func checkExtendDecl(d: int) {
+    var tgtNameIdx: int
+    var symIdx: int
+
+    tgtNameIdx = extendDeclTarget(d)
+    symIdx = scopeLookup(curScope, tgtNameIdx)
+    if symIdx == -1 {
+        emitDiag(declLine(d), declCol(d), "undefined: " + poolGet(tgtNameIdx))
+        return
+    }
+    if symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef {
+        checkWindowExtend(symbols[symIdx].typeIdx, d)
+    } else if symbols[symIdx].isMenu {
+        checkMenuExtend(poolGet(tgtNameIdx), d, -1)
+    } else {
+        emitDiag(declLine(d), declCol(d), "cannot extend " + poolGet(tgtNameIdx))
+    }
+}
+
+// checkWindowExtend checks `extend W { ... }`'s handlers (bare window events,
+// or Widget.event) and nested `extend Menu { ... }` blocks scoped to W
+// (Ch9: Window-Scoped Commands).
+func checkWindowExtend(winType: int, d: int) {
+    var c: int
+    var tgtNameIdx: int
+    var symIdx: int
+
+    c = extendDeclChildrenHead(d)
+    while c != -1 {
+        if declKind(c) == DkHandler {
+            checkWindowHandler(winType, c)
+        } else if declKind(c) == DkExtend {
+            tgtNameIdx = extendDeclTarget(c)
+            symIdx = scopeLookup(curScope, tgtNameIdx)
+            if symIdx == -1 or not symbols[symIdx].isMenu {
+                emitDiag(declLine(c), declCol(c), "undefined: " + poolGet(tgtNameIdx))
+            } else {
+                checkMenuExtend(poolGet(tgtNameIdx), c, winType)
+            }
+        }
+        c = declNext(c)
+    }
+}
+
+// checkWindowHandler checks one handler inside `extend W`: a bare window
+// event (Ch8), a bare form event when W is a form window (Ch10 --
+// `accepted`'s param is W's own record), or `Widget.event` dispatched by
+// that widget's kind.
+func checkWindowHandler(winType: int, h: int) {
+    var winName: string
+    var displayName: string
+    var parts: list of string
+    var event: string
+    var wgName: string
+    var widgetKind: string
+    var formRecType: int
+    var specIdx: int
+    var line: int
+    var col: int
+
+    winName = poolGet(typeNameIdx(winType))
+    displayName = poolGet(handlerDeclPath(h))
+    parts = splitDots(displayName)
+    line = declLine(h)
+    col = declCol(h)
+
+    if parts.count == 1 {
+        event = parts[0]
+        if eventTable.has("window." + event) {
+            specIdx = eventTable.get("window." + event, -1)
+            checkHandlerBody(displayName, handlerDeclParamsHead(h), specIdx, handlerDeclBody(h), winType, event == "closeRequest", line, col)
+            return
+        }
+        if windowIsForm.get(winName, 0) == 1 {
+            if event == "accepted" {
+                formRecType = windowFormRecType.get(winName, -1)
+                specIdx = makeSpec1(intern("rec"), formRecType)
+                checkHandlerBody(displayName, handlerDeclParamsHead(h), specIdx, handlerDeclBody(h), winType, false, line, col)
+                return
+            }
+            if eventTable.has("formWindow." + event) {
+                specIdx = eventTable.get("formWindow." + event, -1)
+                checkHandlerBody(displayName, handlerDeclParamsHead(h), specIdx, handlerDeclBody(h), winType, false, line, col)
+                return
+            }
+        }
+        emitDiag(line, col, "unknown event")
+    } else if parts.count == 2 {
+        wgName = parts[0]
+        event = parts[1]
+        widgetKind = findWidgetKind(winName, wgName)
+        if widgetKind == "" {
+            emitDiag(line, col, "undefined: " + wgName)
+            return
+        }
+        if not eventTable.has(widgetKind + "." + event) {
+            emitDiag(line, col, "unknown event")
+            return
+        }
+        specIdx = eventTable.get(widgetKind + "." + event, -1)
+        checkHandlerBody(displayName, handlerDeclParamsHead(h), specIdx, handlerDeclBody(h), winType, false, line, col)
+    } else {
+        emitDiag(line, col, "unknown event")
+    }
+}
+
+// checkMenuExtend checks `extend MenuName { on Item.select { } }` (Ch9),
+// either at the top level (winType == -1: app-level commands) or nested
+// inside `extend W` (winType != -1: window-scoped commands, auto-dimmed).
+func checkMenuExtend(menuName: string, d: int, winType: int) {
+    var c: int
+    var path: string
+    var parts: list of string
+    var item: string
+    var event: string
+    var specIdx: int
+
+    c = extendDeclChildrenHead(d)
+    while c != -1 {
+        if declKind(c) == DkHandler {
+            path = poolGet(handlerDeclPath(c))
+            parts = splitDots(path)
+            if parts.count != 2 {
+                emitDiag(declLine(c), declCol(c), "unknown event")
+            } else {
+                item = parts[0]
+                event = parts[1]
+                if not menuItems.has(menuKey(menuName, item)) {
+                    emitDiag(declLine(c), declCol(c), "undefined: " + item)
+                } else if not eventTable.has("menuItem." + event) {
+                    emitDiag(declLine(c), declCol(c), "unknown event")
+                } else {
+                    specIdx = eventTable.get("menuItem." + event, -1)
+                    checkHandlerBody(path, handlerDeclParamsHead(c), specIdx, handlerDeclBody(c), winType, false, declLine(c), declCol(c))
+                }
+            }
+        } else if declKind(c) == DkExtend {
+            emitDiag(declLine(c), declCol(c), "cannot extend inside a menu extend")
+        }
+        c = declNext(c)
+    }
+}
+
+// checkEveryDecl checks a top-level `every N ticks { }` timer block (Ch7).
+func checkEveryDecl(d: int) {
+    if everyDeclTicks(d) < 1 {
+        emitDiag(declLine(d), declCol(d), "tick count must be at least 1")
+    }
+    checkBlock(everyDeclBody(d))
 }
 
 // ================================================================
@@ -1569,6 +2543,415 @@ func checkStmt(s: int) {
     case StExprStmt {
         checkExpr(exprStmtX(s), -1)
     }
+    case StIf {
+        checkIfStmt(s)
+    }
+    case StWhile {
+        checkWhileStmt(s)
+    }
+    case StFor {
+        checkForStmt(s)
+    }
+    case StReturn {
+        checkReturnStmt(s)
+    }
+    case StQuit {
+        checkQuitStmt(s)
+    }
+    case StCancel {
+        checkCancelStmt(s)
+    }
+    case StBreak {
+        checkBreakStmt(s)
+    }
+    case StContinue {
+        checkContinueStmt(s)
+    }
+    case StSwitch {
+        checkSwitchStmt(s)
+    }
+    case StOpen {
+        checkOpenStmt(s)
+    }
+    case StClose {
+        checkCloseStmt(s)
+    }
+    case StEdit {
+        checkEditStmt(s)
+    }
+    }
+}
+
+// ================================================================
+// Control-flow statement checking (check.go stmt half + stmt.go)
+// ================================================================
+
+func checkCond(cond: int) {
+    var ct: int
+
+    ct = checkExpr(cond, BoolT)
+    if ct != InvalidT and typeKind(ct) != TyBool {
+        emitDiag(exprLine(cond), exprCol(cond), "condition must be bool")
+    }
+}
+
+func checkIfStmt(s: int) {
+    var els: int
+
+    checkCond(ifCond(s))
+    checkBlock(ifThen(s))
+    els = ifElse(s)
+    if els != -1 {
+        if stmtKind(els) == StBlock {
+            checkBlock(els)
+        } else if stmtKind(els) == StIf {
+            checkIfStmt(els)
+        }
+    }
+}
+
+// checkLoopBody checks a while/for loop's body with loopDepth incremented --
+// the sole place loopDepth changes; switch case bodies use checkBlock
+// directly, so a break inside one still binds the enclosing loop, if any.
+func checkLoopBody(b: int) {
+    loopDepth = loopDepth + 1
+    checkBlock(b)
+    loopDepth = loopDepth - 1
+}
+
+func checkWhileStmt(s: int) {
+    checkCond(whileCond(s))
+    checkLoopBody(whileBody(s))
+}
+
+func declareForVar(nameIdx: int, t: int) {
+    var sym: Symbol
+
+    if nameIdx == -1 {
+        return
+    }
+    sym.nameIdx = nameIdx
+    sym.typeIdx = t
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(curScope, sym)
+}
+
+// checkForStmt checks all three forms (Ch5: For): list iteration, map
+// iteration (key + value), and an inclusive integer range.
+func checkForStmt(s: int) {
+    var seq: int
+    var toX: int
+    var v1: int
+    var v2: int
+    var body: int
+    var seqT: int
+    var toT: int
+    var saved: int
+
+    seq = forSeq(s)
+    toX = forTo(s)
+    v1 = forV1(s)
+    v2 = forV2(s)
+    body = forBody(s)
+
+    seqT = checkExpr(seq, -1)
+    saved = curScope
+    curScope = scopeNew(saved)
+
+    if toX != -1 {
+        toT = checkExpr(toX, -1)
+        if seqT != InvalidT and typeKind(seqT) != TyInt {
+            emitDiag(exprLine(seq), exprCol(seq), "range bounds must be int")
+        }
+        if toT != InvalidT and typeKind(toT) != TyInt {
+            emitDiag(exprLine(toX), exprCol(toX), "range bounds must be int")
+        }
+        if v2 != -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "range for takes one variable")
+        }
+        declareForVar(v1, IntT)
+        checkLoopBody(body)
+        curScope = saved
+        return
+    }
+
+    if seqT == InvalidT {
+        declareForVar(v1, InvalidT)
+        if v2 != -1 {
+            declareForVar(v2, InvalidT)
+        }
+    } else if typeKind(seqT) == TyList {
+        if v2 != -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "list iteration takes one variable")
+        }
+        declareForVar(v1, typeElem(seqT))
+    } else if typeKind(seqT) == TyMap {
+        if v2 == -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "map iteration requires key and value variables")
+        }
+        declareForVar(v1, strT(255))
+        if v2 != -1 {
+            declareForVar(v2, typeElem(seqT))
+        }
+    } else {
+        emitDiag(exprLine(seq), exprCol(seq), "cannot iterate over " + typeName(seqT))
+    }
+    checkLoopBody(body)
+    curScope = saved
+}
+
+// checkReturnStmt checks `return` / `return expr` (Ch5: Return). No
+// return-path flow analysis -- falling off the end is a runtime concern.
+func checkReturnStmt(s: int) {
+    var x: int
+    var rt: int
+
+    x = returnX(s)
+    if x == -1 {
+        if curFuncRet != -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "missing return value")
+        }
+        return
+    }
+    rt = checkExpr(x, curFuncRet)
+    if curFuncRet == -1 {
+        emitDiag(stmtLine(s), stmtCol(s), "unexpected return value in a procedure")
+        return
+    }
+    if rt != InvalidT and not compatible(rt, curFuncRet) {
+        emitDiag(stmtLine(s), stmtCol(s), "cannot return " + typeName(rt) + " as " + typeName(curFuncRet))
+    }
+}
+
+// checkQuitStmt checks `quit [code]` -- the optional exit code must be int.
+func checkQuitStmt(s: int) {
+    var code: int
+    var t: int
+
+    code = quitCode(s)
+    if code == -1 {
+        return
+    }
+    t = checkExpr(code, IntT)
+    if t != InvalidT and typeKind(t) != TyInt {
+        emitDiag(exprLine(code), exprCol(code), "quit code must be int")
+    }
+}
+
+func checkBreakStmt(s: int) {
+    if loopDepth == 0 {
+        emitDiag(stmtLine(s), stmtCol(s), "break is only valid inside a loop")
+    }
+}
+
+func checkContinueStmt(s: int) {
+    if loopDepth == 0 {
+        emitDiag(stmtLine(s), stmtCol(s), "continue is only valid inside a loop")
+    }
+}
+
+func checkCancelStmt(s: int) {
+    if not inCloseRequest {
+        emitDiag(stmtLine(s), stmtCol(s), "cancel is only valid inside a closeRequest handler")
+    }
+}
+
+// checkCaseLabel checks one switch case label against the subject's type (or
+// -1 when the subject itself already errored): checkExpr handles literal
+// typing and the bare-enum-member fallback, so the only rule left is that an
+// Ident resolving to a plain (non-const) symbol is not a constant.
+func checkCaseLabel(lbl: int, expected: int): int {
+    var lt: int
+    var symIdx: int
+
+    lt = checkExpr(lbl, expected)
+    if lt == InvalidT {
+        return InvalidT
+    }
+    if exprKind(lbl) == ExIdent {
+        symIdx = scopeLookup(curScope, identName(lbl))
+        if symIdx != -1 and not symbols[symIdx].isConst {
+            emitDiag(exprLine(lbl), exprCol(lbl), "case label must be a constant")
+            return InvalidT
+        }
+    }
+    return lt
+}
+
+// caseLabelKey renders a checked case label's resolved value as a
+// duplicate-detection key -- "" for anything with no compile-time value
+// (already diagnosed, so unreachable for a clean program). Literals read
+// straight off the AST; a bare enum member or const Ident reads the resolved
+// value checkExpr/checkIdent recorded per expr index.
+func caseLabelKey(lbl: int): string {
+    var key: string
+
+    switch exprKind(lbl) {
+    case ExIntLit {
+        return "i" + numToStr(intLitVal(lbl))
+    }
+    case ExCharLit {
+        return "i" + numToStr(charLitVal(lbl))
+    }
+    case ExStringLit {
+        return "s" + poolGet(stringLitIdx(lbl))
+    }
+    case ExIdent {
+        key = numToStr(lbl)
+        if constUseIsStr.has(key) {
+            if constUseIsStr.get(key, 0) == 1 {
+                return "s" + constUseStr.get(key, "")
+            }
+            return "i" + numToStr(constUseInt.get(key, 0))
+        }
+        if enumConstOf.has(key) {
+            return "i" + numToStr(enumConstGet(lbl))
+        }
+    }
+    }
+    return ""
+}
+
+// checkSwitchStmt checks `switch subject { case ... } [else]` (Ch5: Switch).
+// The subject must be int/char/enum/string (text excluded); each label is
+// checked against it, must be a constant value, and duplicates are rejected.
+func checkSwitchStmt(s: int) {
+    var subj: int
+    var subjT: int
+    var validSubject: bool
+    var k: TypeKind
+    var cs: int
+    var lbl: int
+    var expected: int
+    var lt: int
+    var key: string
+    var seen: map of int
+
+    subj = switchSubject(s)
+    subjT = checkExpr(subj, -1)
+    validSubject = subjT != InvalidT
+    if validSubject {
+        k = typeKind(subjT)
+        if k != TyInt and k != TyChar and k != TyEnum and k != TyStr {
+            emitDiag(exprLine(subj), exprCol(subj), "switch operand must be int, char, enum, or string")
+            validSubject = false
+        }
+    }
+
+    cs = switchCasesHead(s)
+    while cs != -1 {
+        lbl = caseLabelsHead(cs)
+        while lbl != -1 {
+            expected = -1
+            if validSubject {
+                expected = subjT
+            }
+            lt = checkCaseLabel(lbl, expected)
+            if lt != InvalidT {
+                if validSubject and not compatible(lt, subjT) {
+                    emitDiag(exprLine(lbl), exprCol(lbl), "cannot use " + typeName(lt) + " where " + typeName(subjT) + " is expected")
+                } else {
+                    key = caseLabelKey(lbl)
+                    if key != "" {
+                        if seen.has(key) {
+                            emitDiag(exprLine(lbl), exprCol(lbl), "duplicate case label")
+                        }
+                        seen[key] = 1
+                    }
+                }
+            }
+            lbl = exprNext(lbl)
+        }
+        checkBlock(caseBody(cs))
+        cs = stmtNext(cs)
+    }
+    if switchElse(s) != -1 {
+        checkBlock(switchElse(s))
+    }
+}
+
+// checkOpenStmt checks `open WindowType` -- WindowType must name a window.
+func checkOpenStmt(s: int) {
+    var nameIdx: int
+    var symIdx: int
+
+    nameIdx = openStmtWindowName(s)
+    symIdx = scopeLookup(curScope, nameIdx)
+    if symIdx == -1 {
+        emitDiag(stmtLine(s), stmtCol(s), "undefined: " + poolGet(nameIdx))
+        return
+    }
+    if not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyWindowRef {
+        emitDiag(stmtLine(s), stmtCol(s), "cannot open non-window type " + poolGet(nameIdx))
+    }
+}
+
+// checkCloseStmt checks `close windowRef` -- the operand must be a window ref.
+func checkCloseStmt(s: int) {
+    var t: int
+
+    t = checkExpr(closeX(s), -1)
+    if t != InvalidT and typeKind(t) != TyWindowRef {
+        emitDiag(stmtLine(s), stmtCol(s), "cannot close " + typeName(t))
+    }
+}
+
+// checkEditStmt checks `edit FormWindow, target` (Ch10: The Edit Statement) --
+// FormWindow must be a form window, and target (an lvalue, or `new T`) must
+// agree with its `form for` record type.
+func checkEditStmt(s: int) {
+    var formNameIdx: int
+    var symIdx: int
+    var winName: string
+    var formRecType: int
+    var recName: string
+    var newTypeName: int
+    var tsymIdx: int
+    var target: int
+    var tt: int
+
+    formNameIdx = editForm(s)
+    symIdx = scopeLookup(curScope, formNameIdx)
+    if symIdx == -1 {
+        emitDiag(stmtLine(s), stmtCol(s), "undefined: " + poolGet(formNameIdx))
+        return
+    }
+    if not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyWindowRef {
+        emitDiag(stmtLine(s), stmtCol(s), poolGet(formNameIdx) + " is not a window")
+        return
+    }
+    winName = poolGet(formNameIdx)
+    if windowIsForm.get(winName, 0) != 1 {
+        emitDiag(stmtLine(s), stmtCol(s), poolGet(formNameIdx) + " is not a form window")
+        return
+    }
+    formRecType = windowFormRecType.get(winName, -1)
+    recName = poolGet(typeNameIdx(formRecType))
+
+    if editIsNew(s) {
+        newTypeName = editNewType(s)
+        tsymIdx = scopeLookup(curScope, newTypeName)
+        if tsymIdx == -1 or not symbols[tsymIdx].isType or typeKind(symbols[tsymIdx].typeIdx) != TyRec {
+            emitDiag(stmtLine(s), stmtCol(s), "undefined: " + poolGet(newTypeName))
+            return
+        }
+        if typeNameIdx(symbols[tsymIdx].typeIdx) != typeNameIdx(formRecType) {
+            emitDiag(stmtLine(s), stmtCol(s), "cannot use " + poolGet(newTypeName) + " where " + recName + " is expected")
+        }
+        return
+    }
+
+    target = editTarget(s)
+    tt = checkExpr(target, formRecType)
+    if tt != InvalidT and not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
+        emitDiag(exprLine(target), exprCol(target), "cannot use " + typeName(tt) + " where " + recName + " is expected")
     }
 }
 
@@ -1950,12 +3333,11 @@ func checkSelect(e: int): int {
         }
         symIdx = scopeLookup(curScope, identName(x))
         if symIdx != -1 {
-            // sym.IsMenu -> a MenuItem select (`MenuName.ItemName`) is
-            // events.go/ui.go's job (Task 9b): not special-cased here, so
-            // it falls through to the generic checkExpr(x) below, which
-            // reports "%s is a menu, not a value" via checkIdent -- a
-            // valid, if less specific, diagnostic until 9b adds the real
-            // MenuItem resolution.
+            // A menu name's only valid select is `.ItemName` (Ch9), en route
+            // to `.enabled` -- resolved against the menu's item set.
+            if symbols[symIdx].isMenu {
+                return checkMenuItemName(e, poolGet(symbols[symIdx].nameIdx))
+            }
             if symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef and name == "front" {
                 return symbols[symIdx].typeIdx
             }
@@ -1996,14 +3378,17 @@ func checkSelect(e: int): int {
             return IntT
         }
     }
+    case TyWindowRef {
+        return checkWindowRefSelect(e, xt)
     }
-    // TyWindowRef / TyWidget / TyMenuItem selects (window .front chaining
-    // past the type name, widget runtime properties, menu-item .enabled)
-    // are ui.go's job -- Task 9b. Silently defer rather than
-    // misdiagnosing "undefined: NAME" -- e.g. `d.title` where `d` is a
-    // window-ref function parameter must not false-positive here.
-    if typeKind(xt) == TyWindowRef or typeKind(xt) == TyWidget or typeKind(xt) == TyMenuItem {
-        return InvalidT
+    case TyWidget {
+        return checkWidgetSelect(e, xt)
+    }
+    case TyMenuItem {
+        if name == "enabled" {
+            return BoolT
+        }
+    }
     }
     emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
     return InvalidT
@@ -2256,6 +3641,10 @@ func checkReset() {
     curFuncRet = -1
     curWindow = -1
 
+    loopDepth = 0
+    inCloseRequest = false
+    progGen = progGen + 1
+
     while paramSpecs.count > 0 {
         paramSpecs.pop()
     }
@@ -2265,18 +3654,29 @@ func checkReset() {
     while fieldInfos.count > 0 {
         fieldInfos.pop()
     }
+    while widgetInfos.count > 0 {
+        widgetInfos.pop()
+    }
+    while eventParams.count > 0 {
+        eventParams.pop()
+    }
+    while eventSpecs.count > 0 {
+        eventSpecs.pop()
+    }
 
     registerUniverse(universeScope)
     buildMethodTables()
+    buildUiTables()
+    buildEventsTable()
 }
 
-// checkTopDeclPhase1 registers one top-level declaration into curScope
-// (records/enums/consts/vars fully checked; function signatures resolved
-// and declared, body deferred; window/menu names registered, bodies
-// deferred). DkExtend/DkHandler/DkEvery declarations attach behavior to an
-// existing name rather than declaring one -- ui.go/events.go's job,
-// deferred whole to Task 9b, so phase 1 does nothing for them (and phase 2
-// below never visits them either, only DkFunc).
+// checkTopDeclPhase1 checks/declares one top-level declaration into curScope
+// (records/enums/consts/vars fully checked; function signatures resolved and
+// declared with body deferred; windows/menus fully built and declared).
+// DkExtend/DkHandler/DkEvery attach behavior to an existing name rather than
+// declaring one -- their bodies (like function bodies) are deferred to
+// phase 2, so they can target any window/menu/function regardless of source
+// order (Ch6: Scope).
 func checkTopDeclPhase1(d: int) {
     switch declKind(d) {
     case DkRecord {
@@ -2295,10 +3695,10 @@ func checkTopDeclPhase1(d: int) {
         checkFuncSig(d)
     }
     case DkWindow {
-        registerWindowDecl(d)
+        checkWindowDecl(d)
     }
     case DkMenu {
-        registerMenuDecl(d)
+        checkMenuDecl(d)
     }
     }
 }
@@ -2326,6 +3726,12 @@ func checkProgram(declHead: int) {
     while d != -1 {
         if declKind(d) == DkFunc {
             checkFuncBody(d)
+        } else if declKind(d) == DkExtend {
+            checkExtendDecl(d)
+        } else if declKind(d) == DkHandler {
+            checkTopHandlerDecl(d)
+        } else if declKind(d) == DkEvery {
+            checkEveryDecl(d)
         }
         d = declNext(d)
     }

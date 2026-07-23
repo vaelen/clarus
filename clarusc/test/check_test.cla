@@ -32,6 +32,13 @@ func runCase(label: string, src: text) {
     }
 }
 
+// ln appends one source line plus a newline to the buffer (text is a
+// mutable handle, so the caller's buffer is grown in place).
+func ln(src: text, s: string) {
+    src.append(s)
+    src.append(char(10))
+}
+
 on App.startEmpty {
     var src: text
 
@@ -291,4 +298,172 @@ on App.startEmpty {
     src.append("}")
     src.append(char(10))
     runCase("mutual-recursion-clean", src)
+
+    // ---- Task 9b: statements ----
+
+    // Case 12: break outside any loop (loop-depth counter).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    break")
+    ln(src, "}")
+    runCase("break-outside-loop", src)
+
+    // Case 13: cancel outside a closeRequest handler.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    cancel")
+    ln(src, "}")
+    runCase("cancel-outside-closeRequest", src)
+
+    // Case 14: duplicate switch case label (after const/enum resolution).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var x: int")
+    ln(src, "    x = 1")
+    ln(src, "    switch x {")
+    ln(src, "    case 1 { x = 2 }")
+    ln(src, "    case 1 { x = 3 }")
+    ln(src, "    }")
+    ln(src, "}")
+    runCase("duplicate-case-label", src)
+
+    // Case 15: switch operand must be int/char/enum/string (fixed rejected).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var x: fixed")
+    ln(src, "    x = 1.0")
+    ln(src, "    switch x {")
+    ln(src, "    case 1 { }")
+    ln(src, "    }")
+    ln(src, "}")
+    runCase("switch-operand", src)
+
+    // Case 16: return type mismatch.
+    src = ""
+    ln(src, "func f(): int {")
+    ln(src, "    return true")
+    ln(src, "}")
+    runCase("return-mismatch", src)
+
+    // Case 17: quit code must be int.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    quit \"no\"")
+    ln(src, "}")
+    runCase("quit-code-int", src)
+
+    // ---- Task 9b: UI ----
+
+    // Case 18: unknown window property, and unknown widget property.
+    src = ""
+    ln(src, "window W {")
+    ln(src, "    bogus: \"x\"")
+    ln(src, "    button B { frobnicate: 1 }")
+    ln(src, "}")
+    runCase("unknown-property", src)
+
+    // Case 19: binds a field that doesn't exist on the form record.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    name: string(63)")
+    ln(src, "}")
+    ln(src, "window W {")
+    ln(src, "    form for R")
+    ln(src, "    field F { binds: missing; label: \"X:\" }")
+    ln(src, "}")
+    runCase("bind-no-field", src)
+
+    // Case 20: binds a field of a type incompatible with the widget.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    flag: bool")
+    ln(src, "}")
+    ln(src, "window W {")
+    ln(src, "    form for R")
+    ln(src, "    field F { binds: flag }")
+    ln(src, "}")
+    runCase("bind-incompatible", src)
+
+    // Case 21: edit into a non-form window.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "window W {")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    edit W, new R")
+    ln(src, "}")
+    runCase("edit-not-form-window", src)
+
+    // Case 22: duplicate menu item.
+    src = ""
+    ln(src, "menu M {")
+    ln(src, "    item A \"A\"")
+    ln(src, "    item A \"B\"")
+    ln(src, "}")
+    runCase("duplicate-menu-item", src)
+
+    // ---- Task 9b: events ----
+
+    // Case 23: unknown widget event in an extend block.
+    src = ""
+    ln(src, "window W {")
+    ln(src, "    button B { }")
+    ln(src, "}")
+    ln(src, "extend W {")
+    ln(src, "    on B.frob { }")
+    ln(src, "}")
+    runCase("unknown-event", src)
+
+    // Case 24: handler param signature mismatch (table.select takes i: int).
+    src = ""
+    ln(src, "window W {")
+    ln(src, "    table T { }")
+    ln(src, "}")
+    ln(src, "extend W {")
+    ln(src, "    on T.select(x: string) { }")
+    ln(src, "}")
+    runCase("handler-takes", src)
+
+    // Case 25: `every N ticks` needs N >= 1.
+    src = ""
+    ln(src, "every 0 ticks {")
+    ln(src, "}")
+    runCase("every-tick-min", src)
+
+    // Case 26: a clean window + form + menu + extend program (window-ref
+    // value selects, instance-var scope, form-record `accepted` param, the
+    // `window` keyword, widget events, and nested window-scoped menu
+    // commands all resolve).
+    src = ""
+    ln(src, "record Doc {")
+    ln(src, "    name: string(63)")
+    ln(src, "}")
+    ln(src, "window Main {")
+    ln(src, "    title: \"Main\"")
+    ln(src, "    form for Doc")
+    ln(src, "    field Name { binds: name }")
+    ln(src, "    button Go { caption: \"Go\" }")
+    ln(src, "    var count: int = 0")
+    ln(src, "}")
+    ln(src, "menu File {")
+    ln(src, "    item Save \"Save\"")
+    ln(src, "}")
+    ln(src, "on App.startEmpty {")
+    ln(src, "    open Main")
+    ln(src, "}")
+    ln(src, "extend Main {")
+    ln(src, "    on Go.click {")
+    ln(src, "        count = count + 1")
+    ln(src, "        Name.enabled = false")
+    ln(src, "    }")
+    ln(src, "    on accepted(d: Doc) {")
+    ln(src, "        count = count + 1")
+    ln(src, "    }")
+    ln(src, "    extend File {")
+    ln(src, "        on Save.select { close window }")
+    ln(src, "    }")
+    ln(src, "}")
+    runCase("window-menu-extend-clean", src)
 }
