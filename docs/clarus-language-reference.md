@@ -214,11 +214,12 @@ s[2] = 'x'                   // 'x' (in-place assignment)
 
 Out-of-range indexing raises a runtime error (see Chapter 12).
 
-**Concatenation:** `string + char` appends the character to the string:
+**Concatenation:** `string + char` appends the character to the string, and `char + string` prepends it:
 
 ```rust
 var s: string = "hi"
-s = s + 'b'                  // "hib"
+s = s + 'b'                  // "hib" (append)
+s = 'a' + s                  // "ahib" (prepend)
 ```
 
 **Comparison:** Strings and characters compare byte-wise with `==`, `!=`, and other relational operators.
@@ -458,7 +459,7 @@ var ok: fixed = fixed(i) + f     // 4.5
 
 ### String Concatenation and Truncation
 
-`+` concatenates two `string`s, two `text`s, a `text` on the left with a `string` on the right, and appends a single `char` to a `string` (per Chapter 3). The combinations are directional: `string + text` and `char + string` are not defined (use `text + string`, or `text.append` to prepend/append a `char`). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the store is clamped to the target's capacity. The copy never writes past the end — a buffer overrun is impossible by construction. If clamping dropped any bytes, the store sets `lastError` (Chapter 12) and execution continues:
+`+` concatenates two `string`s, two `text`s, a `string` with a `text` in either order (the result is always `text`), and a `char` with a `string` in either order (append or prepend; the result is `string`, per Chapter 3). A `string + string` result is a temporary of the combined length; when that temporary is stored into a fixed-capacity `string(n)` target, the store is clamped to the target's capacity. The copy never writes past the end — a buffer overrun is impossible by construction. If clamping dropped any bytes, the store sets `lastError` (Chapter 12) and execution continues:
 
 ```rust
 var greeting: string(3) = "ab"

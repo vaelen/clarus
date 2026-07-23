@@ -78,11 +78,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 
 ## Small open items (not yet scheduled)
 
-- `clarus run prog.cla -- args…` pass-through: `run` currently treats extra
-  argv as more source files; programs needing startCLI args must be built
-  then executed directly. Few-line fix; fold into the next plan.
+- `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
+- **Lexer diagnostic quality (FOLLOW-UP, deferred — decided 2026-07-23):** a
+  bad escape inside a double-quoted string (e.g. `"a\qb"`) should report
+  `invalid escape sequence`, NOT `unterminated string literal` — the literal
+  is well-formed, only the escape is wrong. AND it should not cascade a second
+  spurious `unterminated string literal` from the eager `lexAll` scanning past
+  the error to EOF (Go's lazy lexer stops once the parser fail-fast aborts;
+  clarusc's eager lexer does not). Fixing the message is small; fixing the
+  cascade is architectural (lazy/on-demand lexing, or truncate lexer diags
+  after the first at an offset). Land BOTH together with a triggering fixture,
+  since adding the fixture before the fix turns the differential red. Both
+  compilers currently agree via `'\q'` (char literal); the double-quoted-string
+  shape is corpus-untriggered. See internal/selfhost/inventory.md.
 - `text + char` concatenation does not exist (append accepts char; `+` does
-  not). Deliberate for now; revisit if it keeps surprising.
+  not). Deliberate for now; revisit if it keeps surprising. (`char + string`
+  and `string + text` WERE added 2026-07-23 — see the reference Ch4.)
 - Parking lot (deferred features, from the design spec §14 + later
   decisions): HTTP layer, UDP/DDP, auto-generated forms, float/SANE,
   case-insensitive maps, handle-backed map values, printing, color QuickDraw,
