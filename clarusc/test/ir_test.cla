@@ -1,0 +1,97 @@
+include "../lib.cla"
+include "../ir.cla"
+
+// kindName/stmtKindName/exprKindName render the IR's enum kinds as
+// strings for a deterministic golden -- test-only helpers (mirrors
+// ast_test.cla's renderExpr living in the driver, not the module under
+// test).
+func kindName(k: IRKind): string {
+    switch k {
+    case KVoid { return "KVoid" }
+    case KInt { return "KInt" }
+    case KBool { return "KBool" }
+    case KFixed { return "KFixed" }
+    case KChar { return "KChar" }
+    case KStr { return "KStr" }
+    case KText { return "KText" }
+    case KList { return "KList" }
+    case KMap { return "KMap" }
+    case KRec { return "KRec" }
+    case KEnum { return "KEnum" }
+    case KArr { return "KArr" }
+    case KErr { return "KErr" }
+    }
+    return "?"
+}
+
+func stmtKindName(k: IRStmtKind): string {
+    switch k {
+    case SAssign { return "SAssign" }
+    case SStoreStr { return "SStoreStr" }
+    case SExprStmt { return "SExprStmt" }
+    case SIf { return "SIf" }
+    case SWhile { return "SWhile" }
+    case SForRange { return "SForRange" }
+    case SForList { return "SForList" }
+    case SForMap { return "SForMap" }
+    case SReturn { return "SReturn" }
+    case SBreak { return "SBreak" }
+    case SContinue { return "SContinue" }
+    }
+    return "?"
+}
+
+func exprKindName(k: IRExprKind): string {
+    switch k {
+    case EIntConst { return "EIntConst" }
+    case EStrConst { return "EStrConst" }
+    case EVarRef { return "EVarRef" }
+    case EFieldRef { return "EFieldRef" }
+    case EIndexRef { return "EIndexRef" }
+    case EBin { return "EBin" }
+    case EUn { return "EUn" }
+    case EConv { return "EConv" }
+    case ECallFn { return "ECallFn" }
+    case EIntr { return "EIntr" }
+    case ENewRec { return "ENewRec" }
+    }
+    return "?"
+}
+
+on App.startEmpty {
+    var zeroExpr: int
+    var intrExpr: int
+    var quitStmt: int
+    var fn: int
+
+    irReset()
+
+    // Build, by hand, a Program with one Func whose Body is
+    // ExprStmt(Intr(IQuit, [IntConst 0])).
+    zeroExpr = newIRIntConst(0, irIntT)
+    intrExpr = newIRIntr(IQuit(), zeroExpr, irVoidT)
+    quitStmt = newIRExprStmt(intrExpr)
+    fn = newIRFunc(intern("main"), -1, irVoidT, -1, quitStmt)
+
+    // -- read the whole shape back through accessors only --
+    alert("func.name=" + poolGet(irFuncName(fn)))
+    alert("func.params=" + numToStr(irFuncParamsHead(fn)))
+    alert("func.ret=" + kindName(irtKind(irFuncRet(fn))))
+    alert("func.locals=" + numToStr(irFuncLocalsHead(fn)))
+
+    alert("body.kind=" + stmtKindName(irStmtKind(irFuncBodyHead(fn))))
+    alert("body.next=" + numToStr(irStmtNext(irFuncBodyHead(fn))))
+
+    intrExpr = irExprStmtX(irFuncBodyHead(fn))
+    alert("stmt.x.kind=" + exprKindName(irExprKind(intrExpr)))
+    alert("stmt.x.name=" + poolGet(irIntrName(intrExpr)))
+    alert("stmt.x.ty=" + kindName(irtKind(irExprType(intrExpr))))
+
+    zeroExpr = irIntrArgsHead(intrExpr)
+    alert("arg0.kind=" + exprKindName(irExprKind(zeroExpr)))
+    alert("arg0.val=" + numToStr(irIntConstV(zeroExpr)))
+    alert("arg0.ty=" + kindName(irtKind(irExprType(zeroExpr))))
+    alert("arg0.next=" + numToStr(irExprNext(zeroExpr)))
+
+    alert("arenas=" + numToStr(irFuncs.count) + "," + numToStr(irStmts.count) + "," + numToStr(irExprs.count))
+}

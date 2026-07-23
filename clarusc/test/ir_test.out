@@ -1,0 +1,14 @@
+func.name=main
+func.params=-1
+func.ret=KVoid
+func.locals=-1
+body.kind=SExprStmt
+body.next=-1
+stmt.x.kind=EIntr
+stmt.x.name=quit
+stmt.x.ty=KVoid
+arg0.kind=EIntConst
+arg0.val=0
+arg0.ty=KInt
+arg0.next=-1
+arenas=1,1,2

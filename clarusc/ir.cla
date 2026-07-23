@@ -1,0 +1,1285 @@
+// ir.cla: the arena IR -- a port of internal/ir/ir.go (node shapes) and
+// internal/ir/intrinsics.go (the 53 intrinsic-name constants). Follows
+// ast.cla's arena idiom exactly: every node kind lives in a `list of X`
+// arena, referenced by `int` index (`-1` is nil); variable-arity sequences
+// (arg lists, stmt-list bodies, param/local lists, field/member lists) are
+// intrusive singly-linked lists threaded through each node's own `next`
+// field, with the sequence's head stored in whatever node/record owns it.
+// Every name and every string literal is interned into the shared
+// strPool/intern (lib.cla) -- ir.go's Type.Name and every *.Name string
+// field become a strPool index here.
+//
+// This module holds no logic beyond constructors/accessors: lower.cla
+// (Task 6+) is the only writer, cprint.cla (Task 9+) is the only reader.
+// Every symbol here is prefixed `ir`/`IR` (functions lowercase, types
+// uppercase) so it can never collide with ast.cla/check.cla/types.cla's
+// identically-shaped-but-differently-named AST symbols when all modules
+// are `include`d together.
+//
+// Go's ir.go carries no source-position fields on any IR node (lowering
+// has already consumed positions into diagnostics), so unlike ast.cla's
+// node records, none of the records below have line/col fields.
+//
+// One Program is in flight at a time (one `clarusc emit` invocation lowers
+// one program from a clean slate), so -- exactly as ast.cla's four arenas
+// stand in for "the AST" without a wrapping Program-of-arenas type --
+// ir.go's Program.{Globals,Funcs,StrLits,Records,Enums} are simply the
+// irGlobals/irFuncs/irStrLits/irRecords/irEnums arenas below, populated in
+// declaration order, plus three flag vars for HasLaunch/HasStartEmpty/
+// HasStartCLI. irReset clears every arena and re-seeds the singleton
+// scalar IRTypes, mirroring astReset/typesReset's role in the differential
+// harness: arenas must not leak across independently-compiled programs.
+//
+// ============================================================
+// SCHEMA: per-kind meaning of fields
+// ============================================================
+//
+// ---- IRKind (irTypes arena entries) ----
+//   KVoid/KInt/KBool/KFixed/KChar/KText/KErr  no other field meaningful
+//   KStr   n=capacity
+//   KList  elem=element IRType index
+//   KMap   elem=value IRType index
+//   KRec   name=record name (interned)
+//   KEnum  name=enum name (interned)
+//   KArr   n=length, elem=element IRType index
+//
+// ---- IRStmtKind (irStmts arena) ----
+//   SAssign    a=Dst expr; b=Src expr
+//   SStoreStr  a=Dst expr; b=Src expr
+//   SExprStmt  a=X expr
+//   SIf        a=Cond expr; b=Then-body stmt-list head; c=Else-body
+//              stmt-list head (-1 if no else)
+//   SWhile     a=Cond expr; b=Body stmt-list head
+//   SForRange  nameIdx=V (loop int local, interned); a=From expr; b=To
+//              expr; c=Body stmt-list head
+//   SForList   nameIdx=V (element local, interned); a=ListV expr; b=Body
+//              stmt-list head
+//   SForMap    nameIdx=K (interned); intVal=V (interned); a=MapV expr;
+//              b=Body stmt-list head
+//   SReturn    a=X expr (-1 for bare `return`)
+//   SBreak     no fields used
+//   SContinue  no fields used
+//
+// ---- IRExprKind (irExprs arena; every kind also carries ty=IRType index) ----
+//   EIntConst  intVal=V (int/bool(0|1)/char/enum-value/fixed-raw constant)
+//   EStrConst  intVal=Idx (irStrLits index -- the literal pool)
+//   EVarRef    name=Name (interned); global=Global
+//   EFieldRef  a=X expr; name=Name (interned)
+//   EIndexRef  a=X expr; b=I expr
+//   EBin       name=Op (interned operator spelling, e.g. "+"); a=X expr;
+//              b=Y expr
+//   EUn        name=Op (interned operator spelling); a=X expr
+//   EConv      convOp=Op (IRConvOp); a=X expr; name=EnumName (interned,
+//              -1 unless Op is CvIntToEnum/CvEnumToInt)
+//   ECallFn    name=Name (interned); b=Args list head (each arg an IRExpr
+//              chained via its own .next, -1 if none)
+//   EIntr      name=Name (interned intrinsic name); b=Args list head (as
+//              ECallFn)
+//   ENewRec    name=RecName (interned)
+//
+// `next` on an IRExpr is used ONLY when that node is one argument in some
+// ECallFn/EIntr's argument list; otherwise -1 (mirrors ast.cla's ExprNode
+// .next discipline exactly).
+
+include "lib.cla"
+
+enum IRKind {
+    KVoid
+    KInt
+    KBool
+    KFixed
+    KChar
+    KStr
+    KText
+    KList
+    KMap
+    KRec
+    KEnum
+    KArr
+    KErr
+}
+
+enum IRStmtKind {
+    SAssign
+    SStoreStr
+    SExprStmt
+    SIf
+    SWhile
+    SForRange
+    SForList
+    SForMap
+    SReturn
+    SBreak
+    SContinue
+}
+
+enum IRExprKind {
+    EIntConst
+    EStrConst
+    EVarRef
+    EFieldRef
+    EIndexRef
+    EBin
+    EUn
+    EConv
+    ECallFn
+    EIntr
+    ENewRec
+}
+
+// IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191).
+// CvIntToEnum is CHECKED (panics on no member).
+enum IRConvOp {
+    CvIntToFixed
+    CvFixedToInt
+    CvIntToChar
+    CvCharToInt
+    CvEnumToInt
+    CvIntToEnum
+}
+
+record IRType {
+    k: IRKind
+    n: int
+    elem: int
+    name: int
+}
+
+record IRStmt {
+    kind: IRStmtKind
+    a: int
+    b: int
+    c: int
+    next: int
+    nameIdx: int
+    intVal: int
+}
+
+record IRExpr {
+    kind: IRExprKind
+    a: int
+    b: int
+    name: int
+    intVal: int
+    global: bool
+    convOp: IRConvOp
+    ty: int
+    next: int
+}
+
+// IRLocal covers both ir.go's Func.Params and Func.Locals -- identical
+// shape (Name, T) in Go, so one record/arena serves both; a Func stores a
+// separate paramsHead/localsHead chain into this same arena.
+record IRLocal {
+    name: int
+    t: int
+    next: int
+}
+
+record IRFunc {
+    name: int
+    paramsHead: int
+    ret: int
+    localsHead: int
+    bodyHead: int
+}
+
+record IRGlobal {
+    name: int
+    t: int
+    init: int
+}
+
+// IRFieldSlot ports ir.go's FieldSlot: default is the scalar/enum/char/
+// bool/fixed-raw default; defaultStr is -1, or an irStrLits index for a
+// string default.
+record IRFieldSlot {
+    name: int
+    t: int
+    default: int
+    defaultStr: int
+    next: int
+}
+
+record IRRecordLayout {
+    name: int
+    fieldsHead: int
+}
+
+// IREnumMember mirrors ir.go's EnumLayout's parallel Members/Values/Labels
+// slices as one chained record per member.
+record IREnumMember {
+    name: int
+    value: int
+    label: int
+    next: int
+}
+
+record IREnumLayout {
+    name: int
+    membersHead: int
+}
+
+var irTypes: list of IRType
+var irStmts: list of IRStmt
+var irExprs: list of IRExpr
+var irLocals: list of IRLocal
+var irFuncs: list of IRFunc
+var irGlobals: list of IRGlobal
+var irFieldSlots: list of IRFieldSlot
+var irRecords: list of IRRecordLayout
+var irEnumMembers: list of IREnumMember
+var irEnums: list of IREnumLayout
+
+// irStrLits is the literal pool (ir.go's Program.StrLits): each entry is a
+// strPool index, in the order literals are added; a StrConst's Idx field
+// indexes THIS list, not strPool directly, matching the brief's contract.
+var irStrLits: list of int
+
+// Program-level flags (ir.go's Program.HasLaunch/HasStartEmpty/HasStartCLI).
+var irHasLaunch: bool
+var irHasStartEmpty: bool
+var irHasStartCLI: bool
+
+// Singletons for the kind-only IRTypes -- set by irReset(), matching
+// types.cla's IntT/BoolT/... pattern. KStr/KList/KMap/KRec/KEnum/KArr are
+// parametrized (capacity/elem/name) and so are never singletons.
+var irVoidT: int
+var irIntT: int
+var irBoolT: int
+var irFixedT: int
+var irCharT: int
+var irTextT: int
+var irErrT: int
+
+// irReset empties every IR arena and re-seeds the singleton scalar
+// IRTypes. Call between lowering independent programs (mirrors astReset/
+// typesReset).
+func irReset() {
+    while irTypes.count > 0 {
+        irTypes.pop()
+    }
+    while irStmts.count > 0 {
+        irStmts.pop()
+    }
+    while irExprs.count > 0 {
+        irExprs.pop()
+    }
+    while irLocals.count > 0 {
+        irLocals.pop()
+    }
+    while irFuncs.count > 0 {
+        irFuncs.pop()
+    }
+    while irGlobals.count > 0 {
+        irGlobals.pop()
+    }
+    while irFieldSlots.count > 0 {
+        irFieldSlots.pop()
+    }
+    while irRecords.count > 0 {
+        irRecords.pop()
+    }
+    while irEnumMembers.count > 0 {
+        irEnumMembers.pop()
+    }
+    while irEnums.count > 0 {
+        irEnums.pop()
+    }
+    while irStrLits.count > 0 {
+        irStrLits.pop()
+    }
+
+    irHasLaunch = false
+    irHasStartEmpty = false
+    irHasStartCLI = false
+
+    irVoidT = irSimpleType(KVoid)
+    irIntT = irSimpleType(KInt)
+    irBoolT = irSimpleType(KBool)
+    irFixedT = irSimpleType(KFixed)
+    irCharT = irSimpleType(KChar)
+    irTextT = irSimpleType(KText)
+    irErrT = irSimpleType(KErr)
+}
+
+// ================================================================
+// IRType constructors and accessors (irTypes arena)
+// ================================================================
+
+func newIRType(k: IRKind, n: int, elem: int, name: int): int {
+    var t: IRType
+
+    t.k = k
+    t.n = n
+    t.elem = elem
+    t.name = name
+    irTypes.add(t)
+    return irTypes.count - 1
+}
+
+func irtKind(i: int): IRKind {
+    return irTypes[i].k
+}
+
+func irtN(i: int): int {
+    return irTypes[i].n
+}
+
+func irtElem(i: int): int {
+    return irTypes[i].elem
+}
+
+func irtName(i: int): int {
+    return irTypes[i].name
+}
+
+// irSimpleType builds a kind-only IRType (no capacity/elem/name) -- used
+// for the singleton scalar kinds.
+func irSimpleType(k: IRKind): int {
+    return newIRType(k, 0, -1, -1)
+}
+
+func irStrType(n: int): int {
+    return newIRType(KStr, n, -1, -1)
+}
+
+func irListType(elem: int): int {
+    return newIRType(KList, 0, elem, -1)
+}
+
+func irMapType(elem: int): int {
+    return newIRType(KMap, 0, elem, -1)
+}
+
+func irArrType(elem: int, n: int): int {
+    return newIRType(KArr, n, elem, -1)
+}
+
+func irRecType(name: int): int {
+    return newIRType(KRec, 0, -1, name)
+}
+
+func irEnumType(name: int): int {
+    return newIRType(KEnum, 0, -1, name)
+}
+
+// ================================================================
+// IRStmt constructors and accessors (irStmts arena)
+// ================================================================
+
+func irStmtKind(i: int): IRStmtKind {
+    return irStmts[i].kind
+}
+
+func irStmtNext(i: int): int {
+    return irStmts[i].next
+}
+
+func irStmtListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irStmts[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRAssign(dst: int, src: int): int {
+    var n: IRStmt
+
+    n.kind = SAssign
+    n.a = dst
+    n.b = src
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irAssignDst(i: int): int {
+    return irStmts[i].a
+}
+
+func irAssignSrc(i: int): int {
+    return irStmts[i].b
+}
+
+func newIRStoreStr(dst: int, src: int): int {
+    var n: IRStmt
+
+    n.kind = SStoreStr
+    n.a = dst
+    n.b = src
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irStoreStrDst(i: int): int {
+    return irStmts[i].a
+}
+
+func irStoreStrSrc(i: int): int {
+    return irStmts[i].b
+}
+
+func newIRExprStmt(x: int): int {
+    var n: IRStmt
+
+    n.kind = SExprStmt
+    n.a = x
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irExprStmtX(i: int): int {
+    return irStmts[i].a
+}
+
+func newIRIf(cond: int, thenHead: int, elseHead: int): int {
+    var n: IRStmt
+
+    n.kind = SIf
+    n.a = cond
+    n.b = thenHead
+    n.c = elseHead
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irIfCond(i: int): int {
+    return irStmts[i].a
+}
+
+func irIfThen(i: int): int {
+    return irStmts[i].b
+}
+
+func irIfElse(i: int): int {
+    return irStmts[i].c
+}
+
+func newIRWhile(cond: int, bodyHead: int): int {
+    var n: IRStmt
+
+    n.kind = SWhile
+    n.a = cond
+    n.b = bodyHead
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irWhileCond(i: int): int {
+    return irStmts[i].a
+}
+
+func irWhileBody(i: int): int {
+    return irStmts[i].b
+}
+
+func newIRForRange(vName: int, fromExpr: int, toExpr: int, bodyHead: int): int {
+    var n: IRStmt
+
+    n.kind = SForRange
+    n.nameIdx = vName
+    n.a = fromExpr
+    n.b = toExpr
+    n.c = bodyHead
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irForRangeV(i: int): int {
+    return irStmts[i].nameIdx
+}
+
+func irForRangeFrom(i: int): int {
+    return irStmts[i].a
+}
+
+func irForRangeTo(i: int): int {
+    return irStmts[i].b
+}
+
+func irForRangeBody(i: int): int {
+    return irStmts[i].c
+}
+
+func newIRForList(vName: int, listV: int, bodyHead: int): int {
+    var n: IRStmt
+
+    n.kind = SForList
+    n.nameIdx = vName
+    n.a = listV
+    n.b = bodyHead
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irForListV(i: int): int {
+    return irStmts[i].nameIdx
+}
+
+func irForListListV(i: int): int {
+    return irStmts[i].a
+}
+
+func irForListBody(i: int): int {
+    return irStmts[i].b
+}
+
+func newIRForMap(kName: int, vName: int, mapV: int, bodyHead: int): int {
+    var n: IRStmt
+
+    n.kind = SForMap
+    n.nameIdx = kName
+    n.intVal = vName
+    n.a = mapV
+    n.b = bodyHead
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irForMapK(i: int): int {
+    return irStmts[i].nameIdx
+}
+
+func irForMapV(i: int): int {
+    return irStmts[i].intVal
+}
+
+func irForMapMapV(i: int): int {
+    return irStmts[i].a
+}
+
+func irForMapBody(i: int): int {
+    return irStmts[i].b
+}
+
+func newIRReturn(x: int): int {
+    var n: IRStmt
+
+    n.kind = SReturn
+    n.a = x
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func irReturnX(i: int): int {
+    return irStmts[i].a
+}
+
+func newIRBreak(): int {
+    var n: IRStmt
+
+    n.kind = SBreak
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+func newIRContinue(): int {
+    var n: IRStmt
+
+    n.kind = SContinue
+    n.next = -1
+    irStmts.add(n)
+    return irStmts.count - 1
+}
+
+// ================================================================
+// IRExpr constructors and accessors (irExprs arena)
+// ================================================================
+
+func irExprKind(i: int): IRExprKind {
+    return irExprs[i].kind
+}
+
+func irExprNext(i: int): int {
+    return irExprs[i].next
+}
+
+func irExprType(i: int): int {
+    return irExprs[i].ty
+}
+
+func irExprListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irExprs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRIntConst(v: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EIntConst
+    n.intVal = v
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irIntConstV(i: int): int {
+    return irExprs[i].intVal
+}
+
+func newIRStrConst(idx: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EStrConst
+    n.intVal = idx
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irStrConstIdx(i: int): int {
+    return irExprs[i].intVal
+}
+
+func newIRVarRef(name: int, isGlobal: bool, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EVarRef
+    n.name = name
+    n.global = isGlobal
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irVarRefName(i: int): int {
+    return irExprs[i].name
+}
+
+func irVarRefGlobal(i: int): bool {
+    return irExprs[i].global
+}
+
+func newIRFieldRef(x: int, name: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EFieldRef
+    n.a = x
+    n.name = name
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irFieldRefX(i: int): int {
+    return irExprs[i].a
+}
+
+func irFieldRefName(i: int): int {
+    return irExprs[i].name
+}
+
+func newIRIndexRef(x: int, idx: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EIndexRef
+    n.a = x
+    n.b = idx
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irIndexRefX(i: int): int {
+    return irExprs[i].a
+}
+
+func irIndexRefI(i: int): int {
+    return irExprs[i].b
+}
+
+func newIRBin(op: int, x: int, y: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EBin
+    n.name = op
+    n.a = x
+    n.b = y
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irBinOp(i: int): int {
+    return irExprs[i].name
+}
+
+func irBinX(i: int): int {
+    return irExprs[i].a
+}
+
+func irBinY(i: int): int {
+    return irExprs[i].b
+}
+
+func newIRUn(op: int, x: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EUn
+    n.name = op
+    n.a = x
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irUnOp(i: int): int {
+    return irExprs[i].name
+}
+
+func irUnX(i: int): int {
+    return irExprs[i].a
+}
+
+func newIRConv(op: IRConvOp, x: int, enumName: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EConv
+    n.convOp = op
+    n.a = x
+    n.name = enumName
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irConvOp(i: int): IRConvOp {
+    return irExprs[i].convOp
+}
+
+func irConvX(i: int): int {
+    return irExprs[i].a
+}
+
+func irConvEnumName(i: int): int {
+    return irExprs[i].name
+}
+
+func newIRCallFn(name: int, argsHead: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = ECallFn
+    n.name = name
+    n.b = argsHead
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irCallFnName(i: int): int {
+    return irExprs[i].name
+}
+
+func irCallFnArgsHead(i: int): int {
+    return irExprs[i].b
+}
+
+func newIRIntr(name: int, argsHead: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EIntr
+    n.name = name
+    n.b = argsHead
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irIntrName(i: int): int {
+    return irExprs[i].name
+}
+
+func irIntrArgsHead(i: int): int {
+    return irExprs[i].b
+}
+
+func newIRNewRec(recName: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = ENewRec
+    n.name = recName
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irNewRecName(i: int): int {
+    return irExprs[i].name
+}
+
+// ================================================================
+// IRLocal constructors and accessors (irLocals arena; serves both a
+// Func's Params and its Locals -- see the record comment above)
+// ================================================================
+
+func irLocalListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irLocals[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRLocal(name: int, t: int): int {
+    var n: IRLocal
+
+    n.name = name
+    n.t = t
+    n.next = -1
+    irLocals.add(n)
+    return irLocals.count - 1
+}
+
+func irLocalName(i: int): int {
+    return irLocals[i].name
+}
+
+func irLocalType(i: int): int {
+    return irLocals[i].t
+}
+
+func irLocalNext(i: int): int {
+    return irLocals[i].next
+}
+
+// ================================================================
+// IRFunc constructors and accessors (irFuncs arena -- Program.Funcs)
+// ================================================================
+
+func newIRFunc(name: int, paramsHead: int, ret: int, localsHead: int, bodyHead: int): int {
+    var n: IRFunc
+
+    n.name = name
+    n.paramsHead = paramsHead
+    n.ret = ret
+    n.localsHead = localsHead
+    n.bodyHead = bodyHead
+    irFuncs.add(n)
+    return irFuncs.count - 1
+}
+
+func irFuncName(i: int): int {
+    return irFuncs[i].name
+}
+
+func irFuncParamsHead(i: int): int {
+    return irFuncs[i].paramsHead
+}
+
+func irFuncRet(i: int): int {
+    return irFuncs[i].ret
+}
+
+func irFuncLocalsHead(i: int): int {
+    return irFuncs[i].localsHead
+}
+
+func irFuncBodyHead(i: int): int {
+    return irFuncs[i].bodyHead
+}
+
+// ================================================================
+// IRGlobal constructors and accessors (irGlobals arena -- Program.Globals)
+// ================================================================
+
+func newIRGlobal(name: int, t: int, init: int): int {
+    var n: IRGlobal
+
+    n.name = name
+    n.t = t
+    n.init = init
+    irGlobals.add(n)
+    return irGlobals.count - 1
+}
+
+func irGlobalName(i: int): int {
+    return irGlobals[i].name
+}
+
+func irGlobalType(i: int): int {
+    return irGlobals[i].t
+}
+
+func irGlobalInit(i: int): int {
+    return irGlobals[i].init
+}
+
+// ================================================================
+// IRFieldSlot / IRRecordLayout constructors and accessors
+// (irFieldSlots / irRecords arenas -- Program.Records)
+// ================================================================
+
+func irFieldSlotListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irFieldSlots[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRFieldSlot(name: int, t: int, defaultVal: int, defaultStr: int): int {
+    var n: IRFieldSlot
+
+    n.name = name
+    n.t = t
+    n.default = defaultVal
+    n.defaultStr = defaultStr
+    n.next = -1
+    irFieldSlots.add(n)
+    return irFieldSlots.count - 1
+}
+
+func irFieldSlotName(i: int): int {
+    return irFieldSlots[i].name
+}
+
+func irFieldSlotType(i: int): int {
+    return irFieldSlots[i].t
+}
+
+func irFieldSlotDefault(i: int): int {
+    return irFieldSlots[i].default
+}
+
+func irFieldSlotDefaultStr(i: int): int {
+    return irFieldSlots[i].defaultStr
+}
+
+func irFieldSlotNext(i: int): int {
+    return irFieldSlots[i].next
+}
+
+func newIRRecordLayout(name: int, fieldsHead: int): int {
+    var n: IRRecordLayout
+
+    n.name = name
+    n.fieldsHead = fieldsHead
+    irRecords.add(n)
+    return irRecords.count - 1
+}
+
+func irRecordLayoutName(i: int): int {
+    return irRecords[i].name
+}
+
+func irRecordLayoutFieldsHead(i: int): int {
+    return irRecords[i].fieldsHead
+}
+
+// ================================================================
+// IREnumMember / IREnumLayout constructors and accessors
+// (irEnumMembers / irEnums arenas -- Program.Enums)
+// ================================================================
+
+func irEnumMemberListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irEnumMembers[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIREnumMember(name: int, value: int, label: int): int {
+    var n: IREnumMember
+
+    n.name = name
+    n.value = value
+    n.label = label
+    n.next = -1
+    irEnumMembers.add(n)
+    return irEnumMembers.count - 1
+}
+
+func irEnumMemberName(i: int): int {
+    return irEnumMembers[i].name
+}
+
+func irEnumMemberValue(i: int): int {
+    return irEnumMembers[i].value
+}
+
+func irEnumMemberLabel(i: int): int {
+    return irEnumMembers[i].label
+}
+
+func irEnumMemberNext(i: int): int {
+    return irEnumMembers[i].next
+}
+
+func newIREnumLayout(name: int, membersHead: int): int {
+    var n: IREnumLayout
+
+    n.name = name
+    n.membersHead = membersHead
+    irEnums.add(n)
+    return irEnums.count - 1
+}
+
+func irEnumLayoutName(i: int): int {
+    return irEnums[i].name
+}
+
+func irEnumLayoutMembersHead(i: int): int {
+    return irEnums[i].membersHead
+}
+
+// ================================================================
+// irStrLits (literal pool) constructors and accessors
+// ================================================================
+
+// irAddStrLit appends strPoolIdx (an already-interned strPool index) to
+// the literal pool and returns its irStrLits index -- the value a
+// StrConst's Idx field stores.
+func irAddStrLit(strPoolIdx: int): int {
+    irStrLits.add(strPoolIdx)
+    return irStrLits.count - 1
+}
+
+func irStrLitPoolIdx(i: int): int {
+    return irStrLits[i]
+}
+
+// ================================================================
+// Intrinsic-name constants (internal/ir/intrinsics.go:18-76, verbatim).
+// Each returns its name interned into strPool -- the exact value lower.cla
+// writes into an Intr node's Name field and cprint.cla switches on.
+// ================================================================
+
+// -- strings --
+func IStrConcat(): int {
+    return intern("str_concat")
+}
+
+func IStrConcatChar(): int {
+    return intern("str_concat_char")
+}
+
+func IStrPrependChar(): int {
+    return intern("str_prepend_char")
+}
+
+func IStrCmp(): int {
+    return intern("str_cmp")
+}
+
+func IStrLen(): int {
+    return intern("str_len")
+}
+
+func IStrIndex(): int {
+    return intern("str_index")
+}
+
+func IStrSetIndex(): int {
+    return intern("str_set_index")
+}
+
+func IStrFromBytes(): int {
+    return intern("str_from_bytes")
+}
+
+func IStrToBytes(): int {
+    return intern("str_to_bytes")
+}
+
+func IStrCoerce(): int {
+    return intern("str_coerce")
+}
+
+func IStrSlice(): int {
+    return intern("str_slice")
+}
+
+func IStrIndexOfStr(): int {
+    return intern("str_index_of_str")
+}
+
+func IStrIndexOfChar(): int {
+    return intern("str_index_of_char")
+}
+
+// -- text (opaque handle on host: heap buffer) --
+func ITextStore(): int {
+    return intern("text_store")
+}
+
+func ITextConcat(): int {
+    return intern("text_concat")
+}
+
+func ITextConcatSL(): int {
+    return intern("text_concat_sl")
+}
+
+func ITextCmp(): int {
+    return intern("text_cmp")
+}
+
+func ITextLen(): int {
+    return intern("text_len")
+}
+
+func ITextIndex(): int {
+    return intern("text_index")
+}
+
+func ITextSetIndex(): int {
+    return intern("text_set_index")
+}
+
+func ITextFromBytes(): int {
+    return intern("text_from_bytes")
+}
+
+func ITextToBytes(): int {
+    return intern("text_to_bytes")
+}
+
+func ITextSlice(): int {
+    return intern("text_slice")
+}
+
+func ITextIndexOfStr(): int {
+    return intern("text_index_of_str")
+}
+
+func ITextIndexOfChar(): int {
+    return intern("text_index_of_char")
+}
+
+func ITextAppendStr(): int {
+    return intern("text_append_str")
+}
+
+func ITextAppendChar(): int {
+    return intern("text_append_char")
+}
+
+func ITextAppendText(): int {
+    return intern("text_append_text")
+}
+
+// -- list (element size known at creation) --
+func IListPush(): int {
+    return intern("list_push")
+}
+
+func IListPop(): int {
+    return intern("list_pop")
+}
+
+func IListShift(): int {
+    return intern("list_shift")
+}
+
+func IListUnshift(): int {
+    return intern("list_unshift")
+}
+
+func IListFirst(): int {
+    return intern("list_first")
+}
+
+func IListLast(): int {
+    return intern("list_last")
+}
+
+func IListRemove(): int {
+    return intern("list_remove")
+}
+
+func IListCount(): int {
+    return intern("list_count")
+}
+
+// -- map (string keys; value size known at creation) --
+func IMapSet(): int {
+    return intern("map_set")
+}
+
+func IMapGet(): int {
+    return intern("map_get")
+}
+
+func IMapGetDv(): int {
+    return intern("map_get_dv")
+}
+
+func IMapHas(): int {
+    return intern("map_has")
+}
+
+func IMapRemove(): int {
+    return intern("map_remove")
+}
+
+func IMapCount(): int {
+    return intern("map_count")
+}
+
+// -- fixed 16.16 --
+func IFixMul(): int {
+    return intern("fix_mul")
+}
+
+func IFixDiv(): int {
+    return intern("fix_div")
+}
+
+// -- misc --
+func IAlert(): int {
+    return intern("alert")
+}
+
+func IQuit(): int {
+    return intern("quit")
+}
+
+func ILog(): int {
+    return intern("log")
+}
+
+func ILastErrCode(): int {
+    return intern("lasterr_code")
+}
+
+func ILastErrMsg(): int {
+    return intern("lasterr_msg")
+}
+
+func ILastErr(): int {
+    return intern("lasterr_value")
+}
+
+// -- files (host: stdio) --
+func IFileReadText(): int {
+    return intern("file_read_text")
+}
+
+func IFileWriteText(): int {
+    return intern("file_write_text")
+}
+
+func IFileName(): int {
+    return intern("file_name")
+}
