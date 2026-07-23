@@ -1,0 +1,143 @@
+// emit_switch.cla: Task 6 coverage slice for clarusc emit -- the switch
+// desugar (lowSwitch/labelEq/caseCond in lower.cla; no new cprint code,
+// since switch lowers entirely to If/Assign): int, char, and string
+// subjects, multi-label cases, an else, a no-match/no-else fallthrough, and
+// a break/continue inside a case body proving they bind the ENCLOSING loop,
+// never the switch itself (Ch5: switch has no C-level loop/switch construct
+// for break/continue to bind to). Self-verifying via `if cond { alert("...
+// ok") } else { alert("... FAIL") }`. No user funcs (Task 9), no enums
+// (Task 8) -- just the handler-body subset this task supports.
+on App.startCLI(args: list of string) {
+    var n: int
+    var c: char
+    var s: string
+    var loopI: int
+    var hits: int
+
+    // ---- int subject: multi-label case matches ----
+    n = 1
+    switch n {
+    case 0, 1 {
+        alert("int multi-label ok")
+    }
+    case 2 {
+        alert("int multi-label FAIL")
+    }
+    else {
+        alert("int multi-label FAIL")
+    }
+    }
+
+    // ---- int subject: single-label case matches ----
+    n = 2
+    switch n {
+    case 0, 1 {
+        alert("int single-label FAIL")
+    }
+    case 2 {
+        alert("int single-label ok")
+    }
+    else {
+        alert("int single-label FAIL")
+    }
+    }
+
+    // ---- int subject: else matches ----
+    n = 9
+    switch n {
+    case 0, 1 {
+        alert("int else FAIL")
+    }
+    case 2 {
+        alert("int else FAIL")
+    }
+    else {
+        alert("int else ok")
+    }
+    }
+
+    // ---- char subject: multi-label case matches ----
+    c = 'b'
+    switch c {
+    case 'a' {
+        alert("char multi-label FAIL")
+    }
+    case 'b', 'c' {
+        alert("char multi-label ok")
+    }
+    else {
+        alert("char multi-label FAIL")
+    }
+    }
+
+    // ---- string subject: multi-label case matches ----
+    s = "zz"
+    switch s {
+    case "a" {
+        alert("string multi-label FAIL")
+    }
+    case "zz", "yy" {
+        alert("string multi-label ok")
+    }
+    else {
+        alert("string multi-label FAIL")
+    }
+    }
+
+    // ---- string subject: no match, no else -> statement does nothing ----
+    s = "nomatch"
+    switch s {
+    case "a" {
+        alert("string no-match FAIL")
+    }
+    case "b" {
+        alert("string no-match FAIL")
+    }
+    }
+    alert("string no-match ok")
+
+    // ---- break inside a case body binds the enclosing loop, not the
+    // switch: if it were swallowed instead, this loop would run all 5
+    // iterations (hits = 4, loopI = 5) instead of stopping at loopI = 2. ----
+    loopI = 0
+    hits = 0
+    while loopI < 5 {
+        switch loopI {
+        case 2 {
+            break
+        }
+        else {
+            hits = hits + 1
+        }
+        }
+        loopI = loopI + 1
+    }
+    if hits == 2 and loopI == 2 {
+        alert("break binds loop ok")
+    } else {
+        alert("break binds loop FAIL")
+    }
+
+    // ---- continue inside a case body binds the enclosing loop, not the
+    // switch: matching cases advance loopI themselves and continue, so the
+    // trailing hits++/loopI++ below only runs on a non-matching iteration. ----
+    loopI = 0
+    hits = 0
+    while loopI < 6 {
+        switch loopI {
+        case 2, 3 {
+            loopI = loopI + 1
+            continue
+        }
+        }
+        hits = hits + 1
+        loopI = loopI + 1
+    }
+    if hits == 4 and loopI == 6 {
+        alert("continue binds loop ok")
+    } else {
+        alert("continue binds loop FAIL")
+    }
+
+    quit 0
+}

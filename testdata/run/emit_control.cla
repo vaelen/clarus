@@ -1,0 +1,128 @@
+// emit_control.cla: Task 6 coverage slice for clarusc emit -- if/else-if
+// chaining (closing the golden gap Task 4 left: fpIfStmt/fpStripOuterParens
+// already handle a single if/else, but else-if RECURSIVE chaining had no
+// golden), while with break and continue, for-range accumulation, and a
+// bare `return` early-exit. Self-verifying via `if cond { alert("... ok") }
+// else { alert("... FAIL") }`, same convention as emit_arith.cla. No user
+// funcs (Task 9), no lists/maps (Task 7) -- just the handler-body subset
+// clarusc's self-hosted lower.cla/cprint.cla support at this task.
+on App.startCLI(args: list of string) {
+    var i: int
+    var sum: int
+    var n: int
+
+    // ---- nested if + else-if chain ----
+    n = 2
+    if n == 1 {
+        alert("else-if chain FAIL")
+    } else if n == 2 {
+        if true {
+            alert("nested if inside else-if ok")
+        } else {
+            alert("nested if inside else-if FAIL")
+        }
+    } else if n == 3 {
+        alert("else-if chain FAIL")
+    } else {
+        alert("else-if chain FAIL")
+    }
+
+    n = 3
+    if n == 1 {
+        alert("else-if chain 2 FAIL")
+    } else if n == 2 {
+        alert("else-if chain 2 FAIL")
+    } else if n == 3 {
+        alert("else-if chain 2 ok")
+    } else {
+        alert("else-if chain 2 FAIL")
+    }
+
+    n = 9
+    if n == 1 {
+        alert("else-if chain 3 FAIL")
+    } else if n == 2 {
+        alert("else-if chain 3 FAIL")
+    } else if n == 3 {
+        alert("else-if chain 3 FAIL")
+    } else {
+        alert("else-if chain 3 ok")
+    }
+
+    // ---- while: break ----
+    i = 0
+    sum = 0
+    while i < 10 {
+        if i == 5 {
+            break
+        }
+        sum = sum + i
+        i = i + 1
+    }
+    if sum == 10 and i == 5 {
+        alert("while break ok")
+    } else {
+        alert("while break FAIL")
+    }
+
+    // ---- while: continue ----
+    i = 0
+    sum = 0
+    while i < 5 {
+        i = i + 1
+        if i mod 2 == 0 {
+            continue
+        }
+        sum = sum + i
+    }
+    if sum == 9 {
+        alert("while continue ok")
+    } else {
+        alert("while continue FAIL")
+    }
+
+    // ---- for-range accumulation ----
+    sum = 0
+    for x in 0 to 4 {
+        sum = sum + x
+    }
+    if sum == 10 {
+        alert("for range accumulate ok")
+    } else {
+        alert("for range accumulate FAIL")
+    }
+
+    // ---- for-range: break/continue bind the for loop itself ----
+    sum = 0
+    for x in 0 to 9 {
+        if x == 4 {
+            break
+        }
+        sum = sum + x
+    }
+    if sum == 6 {
+        alert("for range break ok")
+    } else {
+        alert("for range break FAIL")
+    }
+
+    sum = 0
+    for x in 0 to 5 {
+        if x mod 2 == 0 {
+            continue
+        }
+        sum = sum + x
+    }
+    if sum == 9 {
+        alert("for range continue ok")
+    } else {
+        alert("for range continue FAIL")
+    }
+
+    // ---- bare return early-exit ----
+    alert("before return ok")
+    if true {
+        return
+    }
+    alert("after return FAIL")
+}

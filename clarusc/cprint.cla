@@ -217,6 +217,25 @@ func cpCType(t: int): string {
     return cpCTypeName(t)
 }
 
+// cpTypeEqual is a pure structural comparison of two IR types (kind,
+// capacity/length, record/enum name, and -- recursively -- element type),
+// with no side effects -- types.go's typeEqual. Needed because ir.cla's
+// arena interns every IRType afresh (two structurally-identical types built
+// at different call sites get different indices), unlike Go's ir.Type,
+// which is a plain comparable-by-field struct.
+func cpTypeEqual(a: int, b: int): bool {
+    if irtKind(a) != irtKind(b) or irtN(a) != irtN(b) or irtName(a) != irtName(b) {
+        return false
+    }
+    if (irtElem(a) == -1) != (irtElem(b) == -1) {
+        return false
+    }
+    if irtElem(a) != -1 {
+        return cpTypeEqual(irtElem(a), irtElem(b))
+    }
+    return true
+}
+
 // ================================================================
 // Expression + statement printing (funcprint.go / intr.go subset)
 // ================================================================
@@ -674,8 +693,65 @@ func fpStmt(s: int) {
         fpEmit(d + " = " + v + ";")
     } else if irStmtKind(s) == SStoreStr {
         fpStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
+    } else if irStmtKind(s) == SWhile {
+        fpWhileStmt(s)
+    } else if irStmtKind(s) == SForRange {
+        fpForRangeStmt(s)
+    } else if irStmtKind(s) == SReturn {
+        if irReturnX(s) == -1 {
+            fpEmit("return;")
+        } else {
+            fpEmit("return " + fpExpr(irReturnX(s)) + ";")
+        }
+    } else if irStmtKind(s) == SBreak {
+        fpEmit("break;")
+    } else if irStmtKind(s) == SContinue {
+        fpEmit("continue;")
     }
-    // Task 6+: SWhile/SForRange/SForList/SForMap/SReturn/SBreak/SContinue.
+    // Task 7+: SForList/SForMap.
+}
+
+// fpWhileStmt prints `while (1) { <cond's temps, re-run every iteration>;
+// if (!(cond)) break; <body> }` rather than a plain C `while (cond)`: cond
+// may itself need statement-level temporaries (e.g. a string concat), which
+// must be recomputed every iteration, not hoisted out and reused stale --
+// funcprint.go's whileStmt.
+func fpWhileStmt(s: int) {
+    var cond: string
+
+    fpEmit("while (1) {")
+    fpIndent = fpIndent + 1
+    cond = fpExpr(irWhileCond(s))
+    fpEmit("if (!(" + cond + ")) break;")
+    fpStmts(irWhileBody(s))
+    fpIndent = fpIndent - 1
+    fpEmit("}")
+}
+
+// fpForRangeStmt evaluates From/To once into temps (never re-embeds their
+// expression text into the loop header, which would re-evaluate -- and for
+// a From/To that's a function call, re-run -- them every iteration) and
+// loops the bound variable, already declared at function top, over
+// [from, to] inclusive -- funcprint.go's forRangeStmt.
+func fpForRangeStmt(s: int) {
+    var from: string
+    var ft: string
+    var toVal: string
+    var tt: string
+    var vName: string
+
+    from = fpExpr(irForRangeFrom(s))
+    ft = fpNewTmp("int32_t")
+    fpEmit(ft + " = " + from + ";")
+    toVal = fpExpr(irForRangeTo(s))
+    tt = fpNewTmp("int32_t")
+    fpEmit(tt + " = " + toVal + ";")
+    vName = poolGet(irForRangeV(s))
+    fpEmit("for (cv_" + vName + " = " + ft + "; cv_" + vName + " <= " + tt + "; cv_" + vName + "++) {")
+    fpIndent = fpIndent + 1
+    fpStmts(irForRangeBody(s))
+    fpIndent = fpIndent - 1
+    fpEmit("}")
 }
 
 // fpStripOuterParens removes one matching outer parenthesis pair from s, if
@@ -791,14 +867,36 @@ func cpDefaultInit(dst: string, t: int) {
 func cpEmitFunc(f: int) {
     var loc: int
     var i: int
+    var declared: map of int
+    var nm: string
 
     cpEnsureType(irFuncRet(f))
     fpReset(1)
 
+    // Every local (var-declared, or a for-range loop's bound variable) is
+    // hoisted to the top of the C function (Ch5: "var only at the top of a
+    // function/handler body"). Two sibling (non-nested, non-overlapping)
+    // for-range loops reusing the same bound-variable name is legal Clarus
+    // and common style (lowFor appends a fresh IRLocal per loop, same name,
+    // same Int type every time): declaring the shared C variable once and
+    // reusing it across both loops is semantically identical to two
+    // independent loops in C, so a duplicate (name, same-type) entry just
+    // skips re-declaration -- cprint.go's emitFunc. A genuine same-name/
+    // different-type collision is a real ambiguity in a flat-by-name IR and
+    // is reported loudly rather than silently miscompiled.
     loc = irFuncLocalsHead(f)
     while loc != -1 {
-        fpEmit(cpCType(irLocalType(loc)) + " cv_" + poolGet(irLocalName(loc)) + ";")
-        cpDefaultInit("cv_" + poolGet(irLocalName(loc)), irLocalType(loc))
+        nm = poolGet(irLocalName(loc))
+        if declared.has(nm) {
+            if not cpTypeEqual(declared.get(nm, -1), irLocalType(loc)) {
+                log("cprint: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
+                quit 1
+            }
+        } else {
+            declared[nm] = irLocalType(loc)
+            fpEmit(cpCType(irLocalType(loc)) + " cv_" + nm + ";")
+            cpDefaultInit("cv_" + nm, irLocalType(loc))
+        }
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))

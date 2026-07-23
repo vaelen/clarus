@@ -48,6 +48,13 @@ var lowCurFuncRet: int
 var lowLocalsHead: int
 var lowLocalsTail: int
 
+// lowSwitchN counts synthesized switch-subject temps (lowNewSwitchTemp,
+// below) program-wide, NEVER per-function or per-scope -- so two switches
+// landing in the same function (or in sibling functions) never collide on
+// the same "__switchN" local name (lower.go's lowerer.switchN). Reset once
+// per program in lowerProgram, alongside irReset().
+var lowSwitchN: int
+
 func lowPushScope() {
     var s: LowScope
 
@@ -656,10 +663,78 @@ func lowStmt(s: int): int {
     case StAssign {
         return lowAssign(s)
     }
+    case StWhile {
+        return lowWhile(s)
     }
-    // Task 6+: StWhile/StFor/StReturn/StSwitch/StBreak/StContinue.
+    case StFor {
+        return lowFor(s)
+    }
+    case StReturn {
+        return lowReturn(s)
+    }
+    case StBreak {
+        return newIRBreak()
+    }
+    case StContinue {
+        return newIRContinue()
+    }
+    case StSwitch {
+        return lowSwitch(s)
+    }
+    }
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
+}
+
+// lowWhile lowers `while cond { ... }` -- stmt.go's While case.
+func lowWhile(s: int): int {
+    var cond: int
+    var body: int
+
+    cond = lowExpr(whileCond(s))
+    body = lowBlock(whileBody(s))
+    return newIRWhile(cond, body)
+}
+
+// lowFor lowers the inclusive int-range `for` form only (Ch5: For) --
+// stmt.go's lowerFor, RANGE case. From/To are lowered in the ENCLOSING
+// scope (mirroring checkForStmt's own scope nesting), THEN V is declared as
+// an Int local in a fresh scope wrapping the body. The list/map `for` forms
+// (ForList/ForMap) are Task 7 -- left loud via lowUnsupported.
+func lowFor(s: int): int {
+    var seq: int
+    var toExpr: int
+    var body: int
+    var n: int
+
+    seq = lowExpr(forSeq(s))
+    if forTo(s) != -1 {
+        toExpr = lowExpr(forTo(s))
+        lowPushScope()
+        lowAddLocal(forV1(s), irIntT)
+        lowDeclareLocal(forV1(s))
+        body = lowBlock(forBody(s))
+        n = newIRForRange(forV1(s), seq, toExpr, body)
+        lowPopScope()
+        return n
+    }
+    // Task 7: for-over-list / for-over-map.
+    lowUnsupported("for-list/for-map (not yet implemented)")
+    return -1
+}
+
+// lowReturn lowers `return` / `return expr` -- stmt.go's Return case. A
+// value clamps through lowCoerceStr against the enclosing function's
+// declared return type (lowCurFuncRet), exactly like a plain `var`
+// initializer's store.
+func lowReturn(s: int): int {
+    var x: int
+
+    x = -1
+    if returnX(s) != -1 {
+        x = lowCoerceStr(lowCurFuncRet, lowExpr(returnX(s)))
+    }
+    return newIRReturn(x)
 }
 
 // lowAssign lowers `lvalue = expr` (stmt.go's lowerAssign): `l[i] = v`
@@ -747,6 +822,114 @@ func lowQuit(s: int): int {
     return newIRExprStmt(newIRIntr(IQuit(), code, irVoidT))
 }
 
+// lowNewSwitchTemp names one switch desugar's subject temp. The "__switch"
+// prefix keeps it out of the way of any user-declared local -- Clarus
+// source identifiers are never expected to start with a double underscore
+// -- and lowSwitchN is program-wide (never reset per function) so nested/
+// sibling switches never collide even when several land in the same
+// function body -- stmt.go's newSwitchTemp.
+func lowNewSwitchTemp(): int {
+    lowSwitchN = lowSwitchN + 1
+    return intern("__switch" + numToStr(lowSwitchN))
+}
+
+// lowLabelEq builds `tmp == label`: a plain int/char/enum comparison, or
+// `str_cmp(tmp, label) == 0` for a string subject (a case label is always a
+// literal, bare enum member, or const Ident -- checkCaseLabel's "must be a
+// constant" rule) -- stmt.go's labelEq.
+func lowLabelEq(subjT: int, ty: int, tmpNameIdx: int, lbl: int): int {
+    var ref: int
+    var lblExpr: int
+    var cmp: int
+    var zero: int
+
+    ref = newIRVarRef(tmpNameIdx, false, ty)
+    lblExpr = lowExpr(lbl)
+    if typeKind(subjT) == TyStr {
+        irExprListAppend(ref, lblExpr)
+        cmp = newIRIntr(IStrCmp(), ref, irIntT)
+        zero = newIRIntConst(0, irIntT)
+        return newIRBin(intern("=="), cmp, zero, irBoolT)
+    }
+    return newIRBin(intern("=="), ref, lblExpr, irBoolT)
+}
+
+// lowCaseCond builds one case's condition: its label(s), OR'd together when
+// there's more than one (`case 2, 3`) -- stmt.go's caseCond.
+func lowCaseCond(subjT: int, ty: int, tmpNameIdx: int, labelsHead: int): int {
+    var cond: int
+    var eq: int
+    var lbl: int
+
+    cond = -1
+    lbl = labelsHead
+    while lbl != -1 {
+        eq = lowLabelEq(subjT, ty, tmpNameIdx, lbl)
+        if cond == -1 {
+            cond = eq
+        } else {
+            cond = newIRBin(intern("or"), cond, eq, irBoolT)
+        }
+        lbl = exprNext(lbl)
+    }
+    return cond
+}
+
+// lowSwitch desugars `switch subject { case labels {body} ... [else
+// {body}] }` into: the subject expression evaluated exactly ONCE into a
+// synthesized function-local temp (so a subject with side effects, e.g. a
+// function call, never re-runs per case), followed by an
+// if/else-if/.../else chain comparing that temp against each case's
+// label(s) -- cases are iterated in REVERSE, each wrapping the
+// previously-built chain as its Else, so the final result is exactly TWO
+// chained statements: the subject store, then one nested If -- stmt.go's
+// lowerSwitch.
+//
+// The desugared chain is pure IR If/Assign -- no C loop or switch construct
+// is ever emitted for it -- so a `break`/`continue` lowered from inside a
+// case body automatically binds whatever LOOP lexically encloses the
+// switch, never the switch itself, with no special-casing required here.
+func lowSwitch(s: int): int {
+    var subjT: int
+    var ty: int
+    var tmpNameIdx: int
+    var storeIdx: int
+    var tailHead: int
+    var caseIdxs: list of int
+    var cs: int
+    var i: int
+    var cond: int
+    var body: int
+
+    subjT = exprTypeGet(switchSubject(s))
+    ty = lowType(subjT)
+    tmpNameIdx = lowNewSwitchTemp()
+    lowAddLocal(tmpNameIdx, ty)
+    storeIdx = lowStoreStmt(newIRVarRef(tmpNameIdx, false, ty), lowExpr(switchSubject(s)), ty)
+
+    tailHead = -1
+    if switchElse(s) != -1 {
+        tailHead = lowBlock(switchElse(s))
+    }
+
+    cs = switchCasesHead(s)
+    while cs != -1 {
+        caseIdxs.add(cs)
+        cs = stmtNext(cs)
+    }
+
+    i = caseIdxs.count - 1
+    while i >= 0 {
+        cond = lowCaseCond(subjT, ty, tmpNameIdx, caseLabelsHead(caseIdxs[i]))
+        body = lowBlock(caseBody(caseIdxs[i]))
+        tailHead = newIRIf(cond, body, tailHead)
+        i = i - 1
+    }
+
+    irStmtListAppend(storeIdx, tailHead)
+    return storeIdx
+}
+
 // lowBlock lowers one StBlock's local `var`s (flattened into the current
 // function's locals chain) then its statements, in a fresh nested scope, and
 // returns the statement-chain head (-1 if empty) -- stmt.go's lowerBlock.
@@ -786,7 +969,15 @@ func lowBlock(blk: int): int {
             if head == -1 {
                 head = st
             }
+            // lowStmt normally returns one node (its own .next left at -1
+            // by every newIRXxx constructor), but lowSwitch returns a
+            // 2-node chain (the subject store, already linked to its
+            // if-chain via .next) -- walk to the chain's TRUE end so the
+            // next statement appends after it, not in the middle.
             tail = irStmtListAppend(tail, st)
+            while irStmtNext(tail) != -1 {
+                tail = irStmtNext(tail)
+            }
         }
         s = stmtNext(s)
     }
@@ -884,6 +1075,7 @@ func lowDecl(d: int) {
 func lowerProgram(declHead: int): int {
     var d: int
 
+    lowSwitchN = 0
     d = declHead
     while d != -1 {
         lowDecl(d)

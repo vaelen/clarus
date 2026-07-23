@@ -81,6 +81,8 @@ var emitSeeds = []string{
 	"../../testdata/run/emit_arith.cla",
 	"../../testdata/run/emit_strings.cla",
 	"../../testdata/run/emit_text.cla",
+	"../../testdata/run/emit_control.cla",
+	"../../testdata/run/emit_switch.cla",
 }
 
 // TestEmitDifferential is the walking-skeleton gate: for every seed in
