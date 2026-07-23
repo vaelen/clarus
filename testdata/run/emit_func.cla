@@ -1,0 +1,71 @@
+// emit_func.cla: Task 9 coverage slice for clarusc emit -- user functions.
+// Exercises: params + a local var (addLabel), simple recursion (fact),
+// mutual recursion (isEven/isOdd, whose forward reference proves signatures
+// are registered before bodies are lowered), a `string(n)`-returning func
+// whose `return` clamps a WIDER source through coerceStr (clamp3), and a
+// `string(n)` PARAMETER called with a differently-sized arg so coerceStr
+// fires at the call-argument boundary (firstOf). Self-verifying via
+// `if cond { alert("... ok") } else { alert("... FAIL") }`, same convention
+// as emit_arith.cla; the two clamp cases alert the resulting string directly.
+
+func fact(n: int): int {
+    if n <= 1 { return 1 }
+    return n * fact(n - 1)
+}
+
+func isEven(n: int): bool {
+    if n == 0 { return true }
+    return isOdd(n - 1)
+}
+
+func isOdd(n: int): bool {
+    if n == 0 { return false }
+    return isEven(n - 1)
+}
+
+func addLabel(label: string, a: int, b: int): int {
+    var sum: int
+    sum = a + b
+    return sum
+}
+
+// Return type is narrower than the source: `return s` clamps string(255) ->
+// string(3) through coerceStr (IStrCoerce).
+func clamp3(s: string): string(3) {
+    return s
+}
+
+// Parameter is string(3): a wider arg clamps to string(3) at the call site.
+func firstOf(s: string(3)): string(3) {
+    return s
+}
+
+on App.launch {
+    var big: string(10)
+
+    if fact(5) == 120 {
+        alert("recursion ok")
+    } else {
+        alert("recursion FAIL")
+    }
+
+    if isEven(10) and isOdd(7) and not isEven(7) {
+        alert("mutual recursion ok")
+    } else {
+        alert("mutual recursion FAIL")
+    }
+
+    if addLabel("x", 3, 4) == 7 {
+        alert("params ok")
+    } else {
+        alert("params FAIL")
+    }
+
+    // return-value string(n) capacity clamp: "abcdef" -> "abc"
+    alert(clamp3("abcdef"))
+
+    // call-arg coerceStr: big is string(10); the param is string(3), so the
+    // argument clamps to "hel" at the boundary
+    big = "hello"
+    alert(firstOf(big))
+}

@@ -436,6 +436,38 @@ func lowArgs(argsHead: int): int {
     return head
 }
 
+// lowCallArgs lowers a user function call's argument chain, coercing each arg
+// through lowCoerceStr against the callee's DECLARED param IR type (read back
+// from the checker's already-resolved FuncSig, whose signatures phase 1
+// registered before any body -- so forward/mutual/self calls all resolve) so a
+// `string(n)` param called with a wider-string arg clamps at the boundary --
+// expr.go's lowerIdentCall user path.
+func lowCallArgs(argsHead: int, sig: int): int {
+    var head: int
+    var tail: int
+    var a: int
+    var i: int
+    var le: int
+
+    head = -1
+    tail = -1
+    a = argsHead
+    i = 0
+    while a != -1 {
+        le = lowExpr(a)
+        if i < funcSigParamCount(sig) {
+            le = lowCoerceStr(lowType(funcSigParam(sig, i)), le)
+        }
+        if head == -1 {
+            head = le
+        }
+        tail = irExprListAppend(tail, le)
+        a = exprNext(a)
+        i = i + 1
+    }
+    return head
+}
+
 // lowCall lowers a bare-name call: a scalar conversion, alert/log, an
 // enum's checked int->enum conversion (EnumName(i) -- resolved the same way
 // lowResolveType resolves a named type, via curScope), or a method call.
@@ -466,7 +498,9 @@ func lowCall(e: int): int {
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
             return newIRConv(CvIntToEnum, lowExpr(callArgsHead(e)), identName(fn), ty)
         }
-        // Task 9: user function calls.
+        if symIdx != -1 and symbols[symIdx].isFunc {
+            return newIRCallFn(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+        }
         lowUnsupported("call to " + name)
         return -1
     } else if exprKind(fn) == ExSelect {
@@ -485,6 +519,9 @@ func lowMethodCall(e: int, fn: int): int {
     var recv: int
 
     ty = lowMustType(e)
+    if exprKind(selectX(fn)) == ExIdent and poolGet(identName(selectX(fn))) == "file" {
+        return lowFileCall(e, fn, ty)
+    }
     xk = typeKind(exprTypeGet(selectX(fn)))
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
@@ -495,6 +532,24 @@ func lowMethodCall(e: int, fn: int): int {
         return lowMapMethod(recv, fn, callArgsHead(e), ty)
     }
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
+    return -1
+}
+
+// lowFileCall lowers `file.fn(args)` (expr.go's lowerFileCall): readText/
+// writeText/name are host-supported and map to the matching file intrinsics;
+// save/load are not host-supported.
+func lowFileCall(e: int, fn: int, ty: int): int {
+    var nm: string
+
+    nm = poolGet(selectName(fn))
+    if nm == "readText" {
+        return newIRIntr(IFileReadText(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "writeText" {
+        return newIRIntr(IFileWriteText(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "name" {
+        return newIRIntr(IFileName(), lowArgs(callArgsHead(e)), ty)
+    }
+    lowUnsupported("file." + nm)
     return -1
 }
 
@@ -1223,6 +1278,20 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     return fn
 }
 
+// lowFuncDecl lowers a user `func` declaration into an ir.Func (stmt.go's
+// lowerFuncDecl): resolve the declared return type (void if none), then
+// lowFuncBody registers the signature scope and lowers the body.
+func lowFuncDecl(d: int) {
+    var ret: int
+
+    if funcDeclRetType(d) != -1 {
+        ret = lowResolveType(funcDeclRetType(d))
+    } else {
+        ret = irVoidT
+    }
+    lowFuncBody(funcDeclName(d), funcDeclParamsHead(d), ret, funcDeclBody(d))
+}
+
 // lowTopHandler lowers a top-level `on App.launch`/`startEmpty`/`startCLI`
 // handler into an ir.Func plus the matching Program flag (stmt.go's
 // lowerTopHandlerDecl). Any other handler event is host-unsupported (Task 4+).
@@ -1382,9 +1451,11 @@ func lowDecl(d: int) {
         lowEnumDecl(d)
     } else if k == DkVar {
         lowGlobalVarDecl(d)
+    } else if k == DkFunc {
+        lowFuncDecl(d)
     } else {
-        // Task 9+: DkFunc, windows, menus, and any other top-level decl
-        // kind not yet ported.
+        // Windows, menus, and any other top-level decl kind not ported for
+        // the host build.
         lowUnsupported("declaration kind " + numToStr(int(k)))
     }
 }

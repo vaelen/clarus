@@ -294,9 +294,34 @@ func fpExpr(e: int): text {
     case ENewRec {
         return toText("clar_new_" + poolGet(irNewRecName(e)) + "()")
     }
+    case ECallFn {
+        return fpCallFn(e)
     }
-    // Task 9: ECallFn.
+    }
     return toText("")
+}
+
+// fpCallFn renders a user function call `clar_fn_NAME(args...)` (funcprint.go's
+// callFn). Args were already coerced against the callee's param types at lower
+// time (lowCallArgs); each is printed left-to-right so any temp an arg needs
+// lands in evaluation order.
+func fpCallFn(e: int): text {
+    var args: text
+    var a: int
+    var first: bool
+
+    args = ""
+    first = true
+    a = irCallFnArgsHead(e)
+    while a != -1 {
+        if not first {
+            args = args + ", "
+        }
+        first = false
+        args = args + fpExpr(a)
+        a = irExprNext(a)
+    }
+    return "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
 }
 
 // fpFieldRef prints an EFieldRef node (funcprint.go's expr's *ir.FieldRef
@@ -830,8 +855,18 @@ func fpIntrCall(x: int): text {
         fpEmit(t + ".code = rt_lasterr_code;")
         fpEmit("rt_str_store((uint8_t*)&" + t + ".message, 255, rt_lasterr_msg);")
         return t
+
+    // ---- files ----
+    } else if nm == IFileReadText() {
+        return "rt_file_read_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
+    } else if nm == IFileWriteText() {
+        return "rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
+    } else if nm == IFileName() {
+        s0 = fpStrAddr(a0)
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_file_name((uint8_t*)&" + t + ", " + s0 + ");")
+        return t
     }
-    // Task 9: file intrinsics.
     return toText("")
 }
 
@@ -1134,6 +1169,23 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     }
 }
 
+// cpZeroLiteral renders a type-correct placeholder value for t, for the
+// unreachable trailing return cpEmitFunc appends after a non-void body
+// (types.go's zeroLiteral).
+func cpZeroLiteral(t: int): string {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KText or k == KList or k == KMap {
+        return "NULL"
+    } else if k == KRec {
+        return "clar_new_" + poolGet(irtName(t)) + "()"
+    } else if k == KStr or k == KArr or k == KErr {
+        return "(" + cpCType(t) + "){0}"
+    }
+    return "0"
+}
+
 // cpEmitFunc appends one function's full definition to cpRestBuf
 // (cprint.go's emitFunc). Skeleton: scalar-only locals default-init, no
 // trailing return (handlers are void).
@@ -1173,7 +1225,13 @@ func cpEmitFunc(f: int) {
         loc = irLocalNext(loc)
     }
     fpStmts(irFuncBodyHead(f))
-    // Task 4+: `return <zeroLiteral>;` for a non-void return type.
+    // Every path through a well-formed Clarus function already returns (or is
+    // void), but proving that from C is harder than the checker's own
+    // analysis -- an unconditional trailing return sidesteps -Wreturn-type.
+    // Dead code when the real body returns on every path (cprint.go's emitFunc).
+    if irtKind(irFuncRet(f)) != KVoid {
+        fpEmit(toText("return " + cpZeroLiteral(irFuncRet(f)) + ";"))
+    }
 
     cpRestBuf.add(toText(cpFuncProto(f) + " {"))
     i = 0

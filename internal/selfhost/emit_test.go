@@ -52,61 +52,25 @@ func emitBuild(t *testing.T, exe, claPath string) string {
 	return bin
 }
 
-// emitSeeds lists every testdata/run/*.cla golden clarusc's self-hosted
-// emit path (lower.cla/cprint.cla) can currently handle end to end. Each
-// entry gets its own subtest via TestEmitDifferential. Only seeds inside
-// the emit path's current conservative feature subset belong here — see
-// each task's brief for what that subset covers; a seed exercising an
-// unimplemented construct fails loudly (lowUnsupported aborts clarusc
-// emit), not silently.
-//
-// Task 4 (arithmetic/comparisons/conversions): none of the OTHER existing
-// run goldens that touch arithmetic (arith.cla, fixedmath.cla) qualify yet
-// -- both rely on a user-defined `func` and `while`/array indexing to
-// render their result as text, none of which the emit path supports before
-// Task 5+. emit_arith.cla is written from scratch against the exact
-// current subset (handler body, `if`/`else`, `alert`, `quit`, and
-// expression-only Bin/Un/Conv coverage) instead.
-//
-// Task 5 (strings/char/text): likewise, none of the OTHER existing
-// string/text run goldens (strings.cla, strcap.cla, textassign.cla,
-// concat_order.cla) qualify -- all rely on a user-defined `func` and/or
-// `while` to render/accumulate their result, still unsupported before
-// Task 6+. emit_strings.cla/emit_text.cla are written from scratch against
-// the exact current subset (StAssign, string/text/char `+`, comparisons,
-// slicing, indexing/set-indexing, fromBytes/toBytes/indexOf/append, and a
-// fixed-size char[] array for the byte-buffer methods) instead.
-var emitSeeds = []string{
-	"../../testdata/run/emit_hello.cla",
-	"../../testdata/run/emit_arith.cla",
-	"../../testdata/run/emit_strings.cla",
-	"../../testdata/run/emit_text.cla",
-	"../../testdata/run/emit_control.cla",
-	"../../testdata/run/emit_switch.cla",
-	"../../testdata/run/emit_list.cla",
-	"../../testdata/run/emit_map.cla",
-	"../../testdata/run/emit_record.cla",
-	"../../testdata/run/emit_enum.cla",
-	"../../testdata/run/emit_array.cla",
-	// emit_longline exercises the uncapped C output: its emitted C contains a
-	// single line AND a single expression each >300 bytes (a 40-term `and`
-	// chain and a 60-term `+` sum), which the old `string`-typed (255-cap)
-	// line buffers / expression fragments would have truncated mid-token.
-	"../../testdata/run/emit_longline.cla",
-}
-
-// TestEmitDifferential is the walking-skeleton gate: for every seed in
-// emitSeeds, clarusc emits C, that C compiles and links against the host
-// runtime, and the resulting binary's stdout + exit code match the
-// golden's .out/.exit (with .args/.exit handled exactly as internal/
-// build's run goldens).
+// TestEmitDifferential is the whole-corpus parity gate: for EVERY
+// testdata/run/*.cla golden, clarusc emits C, that C compiles and links
+// against the host runtime, and the resulting binary's stdout + exit code
+// match the SAME .out/.args/.exit/.log oracle internal/build's run goldens
+// match (golden_test.go's TestRunGoldens). A golden exercising a construct
+// the emit path can't yet handle fails loudly (lowUnsupported aborts clarusc
+// emit), never silently — so this glob is the enforcement that the emit path
+// now covers the full host-subset corpus.
 func TestEmitDifferential(t *testing.T) {
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
 	}
 
-	for _, seed := range emitSeeds {
+	files, _ := filepath.Glob("../../testdata/run/*.cla")
+	if len(files) == 0 {
+		t.Fatal("no run goldens")
+	}
+	for _, seed := range files {
 		seed := seed
 		t.Run(filepath.Base(seed), func(t *testing.T) {
 			base := strings.TrimSuffix(seed, ".cla")
@@ -149,6 +113,49 @@ func TestEmitDifferential(t *testing.T) {
 			}
 			if stdout.String() != string(want) {
 				t.Errorf("stdout:\n got: %q\nwant: %q", stdout.String(), string(want))
+			}
+			if b, err := os.ReadFile(base + ".log"); err == nil && stderr.String() != string(b) {
+				t.Errorf("stderr:\n got: %q\nwant: %q", stderr.String(), string(b))
+			}
+		})
+	}
+}
+
+// TestEmitRunErr is the runtime-error half of the whole-corpus gate: every
+// testdata/runerr/*.cla golden, emitted through clarusc and run, must abort
+// with exit 3 and a stderr containing the golden's .err substring — the same
+// oracle golden_test.go's TestRunErrGoldens holds the Go build to.
+func TestEmitRunErr(t *testing.T) {
+	exe, err := buildClarusc()
+	if err != nil {
+		t.Fatalf("build clarusc: %v", err)
+	}
+
+	files, _ := filepath.Glob("../../testdata/runerr/*.cla")
+	if len(files) == 0 {
+		t.Fatal("no runerr goldens")
+	}
+	for _, seed := range files {
+		seed := seed
+		t.Run(filepath.Base(seed), func(t *testing.T) {
+			want, err := os.ReadFile(strings.TrimSuffix(seed, ".cla") + ".err")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			bin := emitBuild(t, exe, seed)
+			cmd := exec.Command(bin)
+			cmd.Dir = t.TempDir()
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			runErr := cmd.Run()
+
+			ee, ok := runErr.(*exec.ExitError)
+			if !ok || ee.ExitCode() != 3 {
+				t.Fatalf("want exit 3, got %v (stderr: %s)", runErr, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), strings.TrimSpace(string(want))) {
+				t.Errorf("stderr %q missing %q", stderr.String(), want)
 			}
 		})
 	}
