@@ -37,6 +37,17 @@ func RunSuiteHost(t *testing.T, exe string) string {
 	return string(out)
 }
 
+// suiteExcluded names lib files that test_suite.cla deliberately omits:
+// each one's entry func aborts the process by design (rt_panic, exit 3),
+// which is incompatible with the shared-process monolithic suite. They
+// are not dropped from coverage -- they run as standalone apps under the
+// Mac harness (mac_test.go, plan Task 11), checked against their existing
+// pre-abort stdout/panic-message/exit-code goldens individually.
+var suiteExcluded = map[string]bool{
+	"emit_array": true,
+	"emit_enum":  true,
+}
+
 func TestSuiteRunsAllTests(t *testing.T) {
 	out := RunSuiteHost(t, BuildSuiteHost(t))
 	names, _ := filepath.Glob("../../testdata/run/lib/*.cla")
@@ -44,7 +55,11 @@ func TestSuiteRunsAllTests(t *testing.T) {
 		t.Fatal("no lib corpus")
 	}
 	for _, n := range names {
-		delim := "=== " + strings.TrimSuffix(filepath.Base(n), ".cla") + " ==="
+		name := strings.TrimSuffix(filepath.Base(n), ".cla")
+		if suiteExcluded[name] {
+			continue
+		}
+		delim := "=== " + name + " ==="
 		if !strings.Contains(out, delim) {
 			t.Errorf("suite output missing %q", delim)
 		}

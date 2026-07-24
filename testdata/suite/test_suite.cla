@@ -19,21 +19,27 @@
 // This program's stdout, run on the host toolchain, is the byte-exact
 // expectation for the Mac run (see internal/mactest).
 //
-// emit_array and emit_enum are documented exceptions: each one's final
-// section deliberately triggers a runtime panic (rt_arr_check /
-// rt_enum_from_int -> rt_panic, exit 3) to prove out-of-range array access
-// and an invalid checked int->enum conversion abort the process instead of
-// producing a bogus value (see each file's own comment, its
-// testdata/run/<name>.{out,exit} golden, and -- for the array case -- the
-// equivalent standalone crash test testdata/runerr/oob.cla). Calling
-// either entry func to completion here would terminate this whole suite
-// process before "=== suite done ===" -- incompatible with a single
-// monolithic run covering all 41 lib files, and not a contract violation
-// to work around by editing the lib file. So both files are included
-// (their declarations are harmless) and their delimiters are still
-// alerted for coverage bookkeeping, but their entry funcs are deliberately
-// NOT called; the crash behavior each exists to prove is already exercised
-// independently by the goldens named above.
+// emit_array and emit_enum are excluded entirely, not just uncalled: each
+// one's final section deliberately triggers a runtime panic (rt_arr_check
+// / rt_enum_from_int -> rt_panic, exit 3) to prove out-of-range array
+// access and an invalid checked int->enum conversion abort the process
+// instead of producing a bogus value. Calling either entry func to
+// completion here would terminate this whole suite process before "===
+// suite done ===" -- incompatible with a single monolithic run covering
+// the rest of the 41 lib files, and not a contract violation to work
+// around by editing the lib file. A delimiter with no entry-func call
+// would read as fake coverage, so both the `include` and the delimiter
+// alert are dropped for these two names, not just the call.
+//
+// These abort-by-design tests (emit_array, emit_enum, and all of
+// testdata/runerr/) are NOT dropped from coverage -- they run as
+// STANDALONE apps under the Mac harness (internal/mactest, plan Task 11),
+// which builds and runs each one on its own and checks its pre-abort
+// stdout, panic message, and exit code against its existing goldens
+// (testdata/run/<name>.{out,exit} for emit_array/emit_enum;
+// testdata/runerr/<name>.err for the runerr set). internal/mactest's
+// suite_host_test.go tracks the exclusion explicitly (suiteExcluded) so a
+// future lib file silently dropped from this suite still fails that test.
 
 include "../run/lib/appendperf.cla"
 include "../run/lib/arith.cla"
@@ -46,9 +52,7 @@ include "../run/lib/concat_order.cla"
 include "../run/lib/constants.cla"
 include "../run/lib/crc8.cla"
 include "../run/lib/emit_arith.cla"
-include "../run/lib/emit_array.cla"
 include "../run/lib/emit_control.cla"
-include "../run/lib/emit_enum.cla"
 include "../run/lib/emit_file.cla"
 include "../run/lib/emit_func.cla"
 include "../run/lib/emit_hello.cla"
@@ -106,12 +110,8 @@ on App.launch {
     runCrc8()
     alert("=== emit_arith ===")
     runEmitArith(cliArgs)
-    alert("=== emit_array ===")
-    // runEmitArray(cliArgs) deliberately NOT called -- see file header.
     alert("=== emit_control ===")
     runEmitControl(cliArgs)
-    alert("=== emit_enum ===")
-    // runEmitEnum(cliArgs) deliberately NOT called -- see file header.
     alert("=== emit_file ===")
     runEmitFile()
     alert("=== emit_func ===")
