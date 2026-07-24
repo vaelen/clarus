@@ -11,8 +11,8 @@
    BlockMoveData(src, dst, count)); memcmp/strlen stay as they are pure
    comparisons/measurement, not copies.
 
-   text/list/map/file are temporary stubs here (Tasks 9-10 replace them
-   with Handle-backed implementations); every symbol in rt.h is defined. */
+   text/list/map are Handle-backed (Task 9); file is File Manager-backed
+   (Task 10); every symbol in rt.h is defined. */
 #include "rt.h"
 #include <Dialogs.h>
 #include <Files.h>
@@ -23,6 +23,10 @@
 #include <Menus.h>
 #include <TextEdit.h>
 #include <string.h>
+#ifdef RT_MAC_TEST
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 static int rt_mac_inited = 0;
 
@@ -66,6 +70,141 @@ void rt_panic(const char *msg)
     ParamText(p, "\p", "\p", "\p");
     StopAlert(128, NULL);
     ExitToShell();
+}
+#else
+/* ==================== RT_MAC_TEST: single-file capture build (Task 10) ====
+ *
+ * LaunchAPPL only ever echoes back a file literally named `out` on the
+ * boot volume once the emulated app quits (see
+ * internal/mactest/probe/FINDINGS.md) -- there is no second output
+ * channel -- so every stream this build produces multiplexes into that
+ * one file:
+ *
+ *   - rt_alert appends its bytes live: CR->LF (Mac newline rendered as
+ *     the host's LF) plus a trailing LF, byte-identical to host
+ *     rt_alert's stdout stream (internal/build/rt/rt.c).
+ *   - rt_log instead buffers (same CR->LF + trailing LF, matching host
+ *     rt_log's stderr stream) into an in-memory rt_text; it is NOT
+ *     written to `out` during the run.
+ *   - At exit -- normal main return, rt_quit, or rt_panic -- an atexit
+ *     handler appends the trailer
+ *         ##CLARUS-EXIT## <decimal code>\n##CLARUS-LOG##\n
+ *     followed by the buffered log bytes, then FSCloses + FlushVols and
+ *     calls ExitToShell(). The handler is registered once, the first
+ *     time any of alert/log/quit/panic touches the capture file
+ *     (rt_test_open, guarded by its own static so repeat calls are a
+ *     no-op), and rt_test_done guards the trailer itself against being
+ *     written twice.
+ */
+
+static short    rt_test_ref = -1;   /* refnum for `out`, cached across calls */
+static rt_text *rt_test_log = NULL; /* buffered rt_log bytes; flushed at exit */
+static int32_t  rt_test_code = 0;   /* pending exit code; 0 = normal main return */
+static int      rt_test_done = 0;   /* guard: write the exit trailer only once */
+
+static void rt_test_atexit(void);
+static void rt_test_flush_log(void); /* defined after struct rt_text (below) is visible */
+
+/* Opens (creating if needed) `out` on the default volume and registers
+   the exit-trailer handler, once. Safe to call from every capture entry
+   point (rt_alert/rt_log/rt_quit/rt_panic) -- idempotent after the first
+   call, so whichever of those four the program hits first is the one
+   that wires up the atexit handler. */
+static void rt_test_open(void)
+{
+    static int tried = 0;
+    if (tried) return;
+    tried = 1;
+    /* dupFNErr if LaunchAPPL pre-created `out` (it does); ignored either
+       way -- FSOpen just below is the real success/failure gate. */
+    Create((const unsigned char *)"\pout", 0, 'MPS ', 'TEXT');
+    if (FSOpen((const unsigned char *)"\pout", 0, &rt_test_ref) != noErr) {
+        rt_test_ref = -1;
+        return;
+    }
+    SetEOF(rt_test_ref, 0);
+    atexit(rt_test_atexit);
+}
+
+/* Appends raw bytes at the current file mark (always EOF: nothing here
+   ever seeks) and flushes, so output written before a crash/hang stays
+   visible on disk. */
+static void rt_test_write(const uint8_t *buf, long n)
+{
+    long count;
+    rt_test_open();
+    if (rt_test_ref < 0 || n <= 0) return;
+    count = n;
+    FSWrite(rt_test_ref, &count, buf);
+    FlushVol(NULL, 0);
+}
+
+/* CR->LF plus a trailing LF -- the same rendering host rt_alert/rt_log
+   apply before their own trailing newline (rt.c). dst must hold >=256
+   bytes; returns the number of bytes written to dst. */
+static uint8_t rt_test_crlf(uint8_t *dst, const uint8_t *s)
+{
+    uint8_t len, i, n;
+    len = s[0];
+    n = 0;
+    for (i = 0; i < len; i++) dst[n++] = (s[1 + i] == '\r') ? '\n' : s[1 + i];
+    dst[n++] = '\n';
+    return n;
+}
+
+void rt_alert(const uint8_t *s)
+{
+    uint8_t buf[256];
+    rt_test_write(buf, (long)rt_test_crlf(buf, s));
+}
+
+void rt_log(const uint8_t *s)
+{
+    uint8_t buf[256], n, i;
+    rt_test_open();
+    if (!rt_test_log) rt_test_log = rt_text_new();
+    n = rt_test_crlf(buf, s);
+    for (i = 0; i < n; i++) rt_text_append_char(rt_test_log, buf[i]);
+}
+
+static void rt_test_atexit(void)
+{
+    static const char pre[] = "##CLARUS-EXIT## ";
+    static const char mid[] = "\n##CLARUS-LOG##\n";
+    char num[16];
+    int nlen;
+
+    if (rt_test_done) return;
+    rt_test_done = 1;
+    rt_test_write((const uint8_t *)pre, (long)(sizeof(pre) - 1));
+    nlen = sprintf(num, "%ld", (long)rt_test_code);
+    rt_test_write((const uint8_t *)num, (long)nlen);
+    rt_test_write((const uint8_t *)mid, (long)(sizeof(mid) - 1));
+    rt_test_flush_log();
+    if (rt_test_ref >= 0) {
+        FSClose(rt_test_ref);
+        FlushVol(NULL, 0);
+    }
+    ExitToShell();
+}
+
+void rt_quit(int32_t code)
+{
+    rt_test_open();
+    rt_test_code = code;
+    exit((int)code);
+}
+
+void rt_panic(const char *msg)
+{
+    const char *pre = "runtime error: ";
+    rt_test_open();
+    if (!rt_test_log) rt_test_log = rt_text_new();
+    while (*pre) rt_text_append_char(rt_test_log, (uint8_t)*pre++);
+    while (*msg) rt_text_append_char(rt_test_log, (uint8_t)*msg++);
+    rt_text_append_char(rt_test_log, '\n');
+    rt_test_code = 3;
+    exit(3);
 }
 #endif
 
@@ -544,6 +683,17 @@ int rt_text_cmp(const rt_text *a, const rt_text *b)
     return 0;
 }
 
+#ifdef RT_MAC_TEST
+/* Writes the buffered rt_log bytes (rt_test_log, a plain rt_text) to the
+   capture file in one shot. Defined here rather than up in the RT_MAC_TEST
+   block above because struct rt_text isn't visible until this point in
+   the file; rt_test_atexit calls it through the forward declaration. */
+static void rt_test_flush_log(void)
+{
+    if (rt_test_log) rt_test_write((const uint8_t *)*rt_test_log->h, (long)rt_test_log->len);
+}
+#endif
+
 /* ==================== list ==================== */
 
 struct rt_list {
@@ -778,8 +928,88 @@ void rt_map_val_at(const rt_map *m, int32_t i, void *out)
     BlockMoveData(map_val_slot(m, i), out, (Size)m->valsize);
 }
 
-/* ==================== files (stub -- Task 13) ==================== */
+/* ==================== files ====================
+ * File Manager port of internal/build/rt/rt.c's files (Task 13): same
+ * lastError codes/messages on failure, same rt_file_name basename
+ * semantics (byte scan for '/', identical to the host -- this is a pure
+ * string algorithm, not an OS path convention, so it is ported as-is
+ * rather than adapted to Mac's ':' separator). Paths are str255 values
+ * taken as-is on the default volume (vRefNum 0): no cstr conversion, no
+ * ':'-splitting -- ConstStr255Param has the same [len][bytes] layout a
+ * strN value already has. Created files get type 'TEXT', creator 'MPS ',
+ * the same File Manager pattern the probe (internal/mactest/probe/probe.c)
+ * proved: Create/FSOpen/SetEOF/FSWrite/FSClose/FlushVol to write; GetEOF
+ * + FSRead to read. */
 
-int rt_file_read_text(const uint8_t *path, rt_text *t) { rt_panic("not yet implemented on mac"); return 0; }
-int rt_file_write_text(const uint8_t *path, const rt_text *t) { rt_panic("not yet implemented on mac"); return 0; }
-void rt_file_name(uint8_t *dst255, const uint8_t *path) { rt_panic("not yet implemented on mac"); }
+int rt_file_read_text(const uint8_t *path, rt_text *t)
+{
+    short ref;
+    long eof, got;
+
+    if (FSOpen(path, 0, &ref) != noErr) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    if (GetEOF(ref, &eof) != noErr) {
+        FSClose(ref);
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    rt_text_grow(t, (int32_t)eof);
+    got = eof;
+    if (eof > 0 && FSRead(ref, &got, *t->h) != noErr) {
+        FSClose(ref);
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    FSClose(ref);
+    if (got != eof) {
+        rt_set_lasterr(2, "could not read file");
+        return 0;
+    }
+    t->len = (int32_t)eof;
+    return 1;
+}
+
+int rt_file_write_text(const uint8_t *path, const rt_text *t)
+{
+    short ref;
+    long count;
+
+    /* dupFNErr if the file already exists; ignored either way -- FSOpen
+       just below is the real success/failure gate (matches the host's
+       fopen(path, "wb"), which also just opens-or-truncates). */
+    Create(path, 0, 'MPS ', 'TEXT');
+    if (FSOpen(path, 0, &ref) != noErr) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    SetEOF(ref, 0);
+    count = t->len;
+    if (t->len > 0 && FSWrite(ref, &count, *t->h) != noErr) {
+        FSClose(ref);
+        FlushVol(NULL, 0);
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    FSClose(ref);
+    FlushVol(NULL, 0);
+    if (count != t->len) {
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    return 1;
+}
+
+void rt_file_name(uint8_t *dst255, const uint8_t *path)
+{
+    uint8_t n, start, i, len;
+    n = path[0];
+    start = 0;
+    for (i = 0; i < n; i++) {
+        if (path[1 + i] == '/') start = (uint8_t)(i + 1);
+    }
+    len = (uint8_t)(n - start);
+    BlockMoveData(path + 1 + start, dst255 + 1, (Size)len);
+    dst255[0] = len;
+}
