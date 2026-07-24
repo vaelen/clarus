@@ -1,0 +1,42 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func runBinroundtrip() {
+    var t: text
+    var t2: text
+    var ok: bool
+    var pass: bool
+
+    // build a text containing the control byte 0, the CR byte 13, and the
+    // high byte 255 -- pins binary faithfulness through writeText/readText
+    // (Ch12). A raw byte 0/255 would print oddly via alert, so verification
+    // below is by indexed comparison, not by printing the bytes themselves.
+    t.append('A')
+    t.append(char(0))
+    t.append(char(13))
+    t.append(char(255))
+    t.append('B')
+
+    ok = file.writeText("bin.dat", t)
+    if not ok {
+        alert("write failed")
+    }
+
+    ok = file.readText("bin.dat", t2)
+    if not ok {
+        alert("read failed")
+    } else {
+        pass = true
+        if t2.length != 5 { pass = false }
+        if t2[0] != 'A' { pass = false }
+        if t2[1] != char(0) { pass = false }
+        if t2[2] != char(13) { pass = false }
+        if t2[3] != char(255) { pass = false }
+        if t2[4] != 'B' { pass = false }
+        if pass {
+            alert("PASS")
+        } else {
+            alert("FAIL")
+        }
+    }
+}

@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func runConcatOrder() {
+    var s: string = "bc"
+    var t: text = ""
+    var buf: char[64]
+    var out: string
+    var n: int
+
+    // char + string -> string(255), prepend
+    s = 'a' + s
+    alert(s)
+
+    // string + text -> text
+    t = "x" + t
+    t.append("yz")
+    n = t.toBytes(buf)
+    out.fromBytes(buf, n)
+    alert(out)
+}

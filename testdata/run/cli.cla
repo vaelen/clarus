@@ -1,10 +1,9 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+include "lib/cli.cla"
+
 on App.startCLI(args: list of string) {
-    for a in args {
-        alert(a)
-    }
-    log("cli ran")
+    runCli(args)
     quit 4
 }

@@ -1,10 +1,12 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+include "lib/clifallback.cla"
+
 on App.launch {
-    alert("launch")
+    runClifallbackLaunch()
 }
 
 on App.startEmpty {
-    alert("startEmpty")
+    runClifallbackStartEmpty()
 }
