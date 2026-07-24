@@ -41,6 +41,7 @@ EXTRA_SRC=""
 if [ -n "$EVENTS" ]; then
     {
         echo 'const char rt_ui_test_script[] ='
+        echo '""' # seed so an empty FILE still yields valid C (`= ;` is a syntax error)
         while IFS= read -r line || [ -n "$line" ]; do
             esc="${line//\\/\\\\}"
             esc="${esc//\"/\\\"}"
