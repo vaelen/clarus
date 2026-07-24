@@ -1277,14 +1277,18 @@ static void rt_ui_script_tick(long n)
     rt_ui_flush_all_buffered(); /* same "returns control to the event loop" point real rt_ui_run uses, Ch11 */
 }
 
-/* `snap NAME`: hex-dumps RTUI_SNAP_BYTES bytes starting at
-   qd.screenBits.baseAddr between the pinned sentinels, uppercase, 128 hex
-   chars (64 source bytes) per line -- RTUI_SNAP_BYTES is an exact multiple
-   of 64, so every line is a full line, no partial-line case to handle.
-   rowBytes is asserted (not just assumed) to be 64, since the whole
-   64-bytes-per-hex-line convention depends on it. */
-#define RTUI_SNAP_BYTES 10944L
-
+/* `snap NAME`: hex-dumps the FULL screen -- rows * rowBytes bytes starting
+   at qd.screenBits.baseAddr -- between the pinned sentinels, uppercase,
+   128 hex chars (64 source bytes) per line. rowBytes is asserted (not
+   just assumed) to be 64, both because the 64-bytes-per-hex-line
+   convention depends on it AND because it's what makes rows*rowBytes an
+   exact multiple of 64 (342*64 = 21,888 bytes for the pinned 512x342 1-bit
+   screen), so every line is a full line -- no partial-line case to
+   handle. Computed, not hardcoded: self-documents that 21,888 comes from
+   the screen's own dimensions rather than being a magic number the
+   contract just happens to pin (see docs/superpowers/plans/
+   2026-07-24-mac-target-4b.md and the design doc's own correction of an
+   earlier 10,944 miscalculation). */
 static void rt_ui_hex_line(char *out, const unsigned char *src)
 {
     static const char hexd[16] = "0123456789ABCDEF";
@@ -1299,15 +1303,17 @@ static void rt_ui_hex_line(char *out, const unsigned char *src)
 static void rt_ui_test_snap(const char *name)
 {
     unsigned char *base;
-    long off;
+    long off, total, rows;
     char hdr[280];
     char line[130];
 
     if (qd.screenBits.rowBytes != 64) rt_panic("snap: screenBits.rowBytes is not 64");
+    rows = (long)qd.screenBits.bounds.bottom - (long)qd.screenBits.bounds.top;
+    total = rows * (long)qd.screenBits.rowBytes;
     sprintf(hdr, "##CLARUS-SNAP## %s", name);
     rt_test_emit(hdr);
     base = (unsigned char *)qd.screenBits.baseAddr;
-    for (off = 0; off < RTUI_SNAP_BYTES; off += 64) {
+    for (off = 0; off < total; off += 64) {
         rt_ui_hex_line(line, base + off);
         rt_test_emit(line);
     }

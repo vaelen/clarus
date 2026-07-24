@@ -53,7 +53,7 @@ In the test build, virtual time replaces TickCount for `every` scheduling; the i
 **Snap encoding** in the capture stream:
 ```
 ##CLARUS-SNAP## NAME
-<hex of 10,944 screen bytes (512x342 1-bit), uppercase, 128 hex chars per line>
+<hex of 21,888 screen bytes (512x342 1-bit), uppercase, 128 hex chars per line>
 ##CLARUS-SNAP-END##
 ```
 Harness decodes to `testdata/uisnaps/<scenario>.<NAME>.pbm` (P4 header `P4\n512 342\n` + raw bytes). `CLARUS_MAC_BLESS=1` rewrites goldens instead of comparing.
@@ -157,9 +157,9 @@ scripts/build-mac.sh                 gains --events FILE (generates events.c)
 **Files:** Modify `runtime/mac/rt_ui.c` (+minor rt_ui.h), `scripts/build-mac.sh`, `internal/mactest/uiprobe/` (add `events.c` sample), Create nothing else.
 
 - [ ] Trace: every contract-listed action emits its exact line to the 4a capture stream (reuse rt_mac.c's rt_test_emit path via a shared internal hook; normal build compiles it all out).
-- [ ] Scripted events: `extern const char rt_ui_test_script[];` (weak default empty in rt_ui.c). In RT_MAC_TEST when non-empty, rt_ui_run's WaitNextEvent is replaced by a script reader producing synthetic EventRecords/actions per the contract grammar — injection ONLY at that point; `tick N` advances virtual time driving the every-table (TickCount unused in test builds); `snap NAME` dumps the screen bits hex-encoded per the contract (screenBits.baseAddr, 10,944 bytes — hide the cursor in test builds at startup); `menu M I` routes through the same dispatch as MenuSelect's result; script end or `quit` → quit cascade.
+- [ ] Scripted events: `extern const char rt_ui_test_script[];` (weak default empty in rt_ui.c). In RT_MAC_TEST when non-empty, rt_ui_run's WaitNextEvent is replaced by a script reader producing synthetic EventRecords/actions per the contract grammar — injection ONLY at that point; `tick N` advances virtual time driving the every-table (TickCount unused in test builds); `snap NAME` dumps the screen bits hex-encoded per the contract (screenBits.baseAddr, 21,888 bytes — hide the cursor in test builds at startup); `menu M I` routes through the same dispatch as MenuSelect's result; script end or `quit` → quit cascade.
 - [ ] build-mac.sh: add `--events FILE` — generates `<out>/events.c` defining rt_ui_test_script from FILE's contents (C-escaped), adds it to the cmake app sources.
-- [ ] Gates: compile both modes; build probe with a sample script (click button, tick 120, snap S1, quit) via `--test --events`; run via LaunchAPPL; verify captured stdout contains expected `T FIRE Probe.Go.click`-style lines in order, a well-formed snap block (10,944 bytes of hex → decode with `xxd -r -p | wc -c` = 10944), and the 4a exit trailer with code 0. Non-scripted --test probe still runs with real input. `go test ./...` green.
+- [ ] Gates: compile both modes; build probe with a sample script (click button, tick 120, snap S1, quit) via `--test --events`; run via LaunchAPPL; verify captured stdout contains expected `T FIRE Probe.Go.click`-style lines in order, a well-formed snap block (21,888 bytes of hex → decode with `xxd -r -p | wc -c` = 21888), and the 4a exit trailer with code 0. Non-scripted --test probe still runs with real input. `go test ./...` green.
 - [ ] Commit `runtime/mac: UI trace, scripted event injection, framebuffer snaps; build-mac --events`.
 
 ### Task 4: clarusc lowering I — descriptors + UI expression/statement lowering

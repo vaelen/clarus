@@ -122,7 +122,7 @@ diffed with 4a's capture discipline.
   scripted ticks, never TickCount, making runs deterministic),
   `snap NAME`, `quit`. Script exhaustion implies `quit`.
 - **Framebuffer goldens:** `snap NAME` captures the 1-bit 512×342 screen
-  (10,944 bytes) via CopyBits, hex-encoded into the capture stream
+  (21,888 bytes) via CopyBits, hex-encoded into the capture stream
   between `##CLARUS-SNAP## NAME` / `##CLARUS-SNAP-END##` sentinels. The
   harness decodes and byte-compares against `testdata/uisnaps/NAME.pbm`
   (stored as PBM so snapshots are viewable). `--bless` regenerates.
