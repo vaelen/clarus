@@ -141,10 +141,13 @@ static void rt_test_write(const uint8_t *buf, long n)
 
 /* CR->LF plus a trailing LF -- the same rendering host rt_alert/rt_log
    apply before their own trailing newline (rt.c). dst must hold >=256
-   bytes; returns the number of bytes written to dst. */
-static uint8_t rt_test_crlf(uint8_t *dst, const uint8_t *s)
+   bytes; returns the number of bytes written to dst (up to 256, for a
+   255-byte str255 plus the trailing LF -- an int, NOT a uint8_t: 256
+   wraps a uint8_t counter to 0, silently dropping the whole record). */
+static int rt_test_crlf(uint8_t *dst, const uint8_t *s)
 {
-    uint8_t len, i, n;
+    uint8_t len, i;
+    int n;
     len = s[0];
     n = 0;
     for (i = 0; i < len; i++) dst[n++] = (s[1 + i] == '\r') ? '\n' : s[1 + i];
@@ -160,7 +163,8 @@ void rt_alert(const uint8_t *s)
 
 void rt_log(const uint8_t *s)
 {
-    uint8_t buf[256], n, i;
+    uint8_t buf[256];
+    int n, i;
     rt_test_open();
     if (!rt_test_log) rt_test_log = rt_text_new();
     n = rt_test_crlf(buf, s);
@@ -197,8 +201,19 @@ void rt_quit(int32_t code)
 
 void rt_panic(const char *msg)
 {
+    static int reentered = 0; /* guards against rt_panic calling back into
+        itself -- e.g. rt_text_new/rt_text_append_char below panicking
+        "out of memory" while building the very log record this call is
+        trying to write */
     const char *pre = "runtime error: ";
     rt_test_open();
+    if (reentered) {
+        static const char fallback[] = "runtime error: out of memory\n";
+        rt_test_write((const uint8_t *)fallback, (long)(sizeof(fallback) - 1));
+        rt_test_code = 3;
+        exit(3);
+    }
+    reentered = 1;
     if (!rt_test_log) rt_test_log = rt_text_new();
     while (*pre) rt_text_append_char(rt_test_log, (uint8_t)*pre++);
     while (*msg) rt_text_append_char(rt_test_log, (uint8_t)*msg++);
@@ -208,7 +223,19 @@ void rt_panic(const char *msg)
 }
 #endif
 
-void rt_args_init(int argc, char **argv) { (void)argc; (void)argv; }
+/* emitted main() always calls this first (cprint.go's emitMain), before
+   anything else -- in RT_MAC_TEST this is what guarantees the exit
+   trailer gets registered even for a program that never calls
+   alert/log/quit/panic, not just whichever of those four happens to run
+   first. */
+void rt_args_init(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+#ifdef RT_MAC_TEST
+    rt_test_open();
+#endif
+}
 
 rt_list *rt_args_list(void)
 {
