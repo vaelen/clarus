@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # build-mac.sh NAME file.cla... [--test]
 # Emits C via the snapshot-built clarusc and builds a classic Mac APPL
 # via Retro68. Output: build-mac/NAME/NAME.{bin,APPL,dsk}
@@ -6,9 +6,9 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NAME="$1"; shift
 TESTDEF=""
-FILES=""
+FILES=()
 for a in "$@"; do
-    if [ "$a" = "--test" ]; then TESTDEF="-DRT_MAC_TEST=1"; else FILES="$FILES $a"; fi
+    if [ "$a" = "--test" ]; then TESTDEF="-DRT_MAC_TEST=1"; else FILES+=("$a"); fi
 done
 
 mkdir -p "$ROOT/build-mac"
@@ -21,7 +21,7 @@ fi
 # 2. emit
 OUT="$ROOT/build-mac/$NAME"
 mkdir -p "$OUT"
-"$CLARUSC" emit -o "$OUT/$NAME.c" $FILES
+"$CLARUSC" emit -o "$OUT/$NAME.c" "${FILES[@]}"
 # 3. Retro68 build
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
