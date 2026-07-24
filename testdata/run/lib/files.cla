@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func runFiles() {
+    var t: text
+    var t2: text
+    var buf: char[64]
+    var n: int
+    var s: string
+    var ok: bool
+
+    s = "line one\nline two"
+    n = s.toBytes(buf)
+    t.fromBytes(buf, n)
+    ok = file.writeText("doc.txt", t)
+    if not ok {
+        alert("write failed")
+    }
+
+    ok = file.readText("doc.txt", t2)
+    if not ok {
+        alert("read failed")
+    } else {
+        n = t2.toBytes(buf)
+        s.fromBytes(buf, n)
+        alert(s)
+    }
+
+    alert(file.name("some/path/doc.txt"))
+}

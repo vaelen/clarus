@@ -1,39 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-func show(label: string, n: int) {
-    var digits: char[12]
-    var count: int = 0
-    var v: int = n
-    var s: string
-    var i: int
-
-    while v > 0 {
-        digits[count] = char(v mod 10 + int('0'))
-        v = v / 10
-        count = count + 1
-    }
-    if count == 0 {
-        digits[0] = '0'
-        count = 1
-    }
-    s = label
-    i = count - 1
-    while i >= 0 {
-        s = s + digits[i]
-        i = i - 1
-    }
-    alert(s)
-}
+include "lib/fixedmath.cla"
 
 on App.launch {
-    var a: fixed = 1.5
-    var b: fixed = 2.0
-    var c: fixed = a * b
-    var d: fixed = 9.0 / 2.0
-    var e: fixed = fixed(3) + 0.25
-
-    show("1.5 * 2.0 = ", int(c))
-    show("9.0 / 2.0 = ", int(d))
-    show("fixed(3) + 0.25 = ", int(e))
+    runFixedmath()
 }

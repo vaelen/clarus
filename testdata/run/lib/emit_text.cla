@@ -1,0 +1,110 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// emit_text.cla: Task 5 coverage slice for clarusc emit -- text.append
+// (string/char/text variants), a fromBytes/toBytes round trip in both
+// directions (text.toBytes -> string.fromBytes, and string.toBytes ->
+// text.fromBytes) through char[] buffers, text comparison (text/text,
+// text/string, string/text), text indexing (read + set-index), `.length`,
+// and text slicing. Every check is a bare `if cond { alert("... ok") }
+// else { alert("... FAIL") }`, matching emit_arith.cla's self-verifying
+// style. Deliberately restricted to constructs clarusc's self-hosted
+// lower.cla/cprint.cla support at this task (no user funcs, no while/for,
+// no list/map).
+func runEmitText(args: list of string) {
+    var t: text = "hello"
+    var t2: text = " world"
+    var t3: text
+    var buf: char[16]
+    var n: int
+    var s: string
+    var s2: string = "ABCDEFGH"
+    var buf2: char[16]
+    var n2: int
+    var t4: text
+    var w: string
+
+    // ---- append: string ----
+    t.append(" world")
+    if t == "hello world" {
+        alert("append str ok")
+    } else {
+        alert("append str FAIL")
+    }
+
+    // ---- append: char ----
+    t.append('!')
+    if t == "hello world!" {
+        alert("append char ok")
+    } else {
+        alert("append char FAIL")
+    }
+
+    // ---- append: text ----
+    t3 = "??"
+    t.append(t3)
+    if t == "hello world!??" {
+        alert("append text ok")
+    } else {
+        alert("append text FAIL")
+    }
+
+    // ---- toBytes (text) -> fromBytes (string) round trip ----
+    n = t2.toBytes(buf)
+    s.fromBytes(buf, n)
+    if s == " world" {
+        alert("text.toBytes/string.fromBytes ok")
+    } else {
+        alert("text.toBytes/string.fromBytes FAIL")
+    }
+
+    // ---- toBytes (string) -> fromBytes (text) round trip ----
+    n2 = s2.toBytes(buf2)
+    t4.fromBytes(buf2, n2)
+    if t4 == "ABCDEFGH" {
+        alert("string.toBytes/text.fromBytes ok")
+    } else {
+        alert("string.toBytes/text.fromBytes FAIL")
+    }
+
+    // ---- compare: text == text ----
+    if t2 == " world" and " world" == t2 {
+        alert("text/str cmp ok")
+    } else {
+        alert("text/str cmp FAIL")
+    }
+    t3 = " world"
+    if t2 == t3 {
+        alert("text/text cmp ok")
+    } else {
+        alert("text/text cmp FAIL")
+    }
+
+    // ---- index read + set-index ----
+    if t2[1] == 'w' {
+        alert("text index read ok")
+    } else {
+        alert("text index read FAIL")
+    }
+    t2[1] = 'W'
+    if t2[1] == 'W' {
+        alert("text set-index ok")
+    } else {
+        alert("text set-index FAIL")
+    }
+
+    // ---- .length ----
+    if t2.length == 6 {
+        alert("text length ok")
+    } else {
+        alert("text length FAIL")
+    }
+
+    // ---- slice ----
+    w = t[0, 5]
+    if w == "hello" {
+        alert("text slice ok")
+    } else {
+        alert("text slice FAIL")
+    }
+}
