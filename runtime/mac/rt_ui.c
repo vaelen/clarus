@@ -12,11 +12,44 @@
 
    Scope (Task 1 of docs/superpowers/plans/2026-07-24-mac-target-4b.md):
    windows, widgets (button/check/label), the Ch8 layout engine, and the
-   real-input WaitNextEvent loop. Menus, canvas drawing, and `every` timers
-   are declared here per the frozen rt_ui.h contract but only stubbed
-   (harmless no-ops) -- Task 2 gives them bodies. RT_MAC_TEST scripted
-   events/trace/snaps are Task 3; nothing in this file branches on
-   RT_MAC_TEST, so it compiles identically in both modes. */
+   real-input WaitNextEvent loop.
+
+   Task 2 (this revision) adds menus (Ch9), canvas (Ch11), and `every`
+   timers:
+     - Menus are built once at startup (NewMenu/AppendMenu/InsertMenu/
+       DrawMenuBar); MenuSelect (mouseDown in the menu bar) and MenuKey
+       (cmdKey keyDown) both funnel into one dispatch routine keyed off the
+       native (menuID, item) pair. App-scope handlers (scope==NULL) always
+       fire; window-scoped handlers fire with the type's front instance and
+       are auto-dimmed via native (Dis|En)ableItem whenever the frontmost
+       window of that type changes (open/close/click-to-front) -- the
+       `T DIM` trace line itself is Task 3, but the dimming BEHAVIOR (the
+       item actually becomes unselectable) is real now. The Apple menu and
+       About item (Ch9) are intentionally NOT built here: nothing in this
+       plan's ABI or Task 2's probe exercises them, and Ch9 itself says a
+       richer About dialog is future work -- ponytail: add when something
+       actually needs it.
+     - Canvas is a widget kind with no Control Manager backing (like
+       label). When RTUI_BUFFERED, each instance owns an offscreen 1-bit
+       GrafPort+BitMap (the pre-Color-QuickDraw "OffscreenBitmap" recipe --
+       this codebase is already strictly B&W, see the 512x342 1-bit snap
+       format pinned by the plan, so there's no reason to pull in Color
+       QuickDraw/GWorld for this); drawing ops target the offscreen port,
+       and the accumulated drawing is blitted to the screen via CopyBits
+       once per rt_ui_run iteration (the point where "the current handler
+       or timer returns control to the event loop", Ch11) rather than
+       after each op, so a sequence of draws never flickers. Unbuffered
+       canvas ops draw straight into the window's own port, offset into
+       the widget's rect, visible immediately (Ch11). Click/drag hit
+       testing is layered onto the existing FindControl-miss path with
+       widget-local coordinates.
+     - `every` blocks are scheduled on TickCount deltas, pumped once per
+       rt_ui_run iteration; when any exist, WaitNextEvent's sleep argument
+       drops to 1 tick so timers fire close to on schedule (unchanged at
+       30 ticks when there are none, preserving Task 1's polling cadence).
+
+   RT_MAC_TEST scripted events/trace/snaps are Task 3; nothing in this file
+   branches on RT_MAC_TEST, so it compiles identically in both modes. */
 #include "rt_ui.h"
 #include "rt.h"
 #include <Quickdraw.h>
@@ -28,6 +61,7 @@
 #include <Events.h>
 #include <Memory.h>
 #include <ToolUtils.h>
+#include <Menus.h>
 
 /* rt_mac.c's eager Toolbox init, exposed non-static for exactly this call
    (see runtime/mac/rt_mac.c). */
@@ -47,8 +81,23 @@ extern void rt_mac_init_toolbox(void);
 #define RTUI_BUTTON_H  20
 #define RTUI_CHECK_H   16
 #define RTUI_LABEL_H   16
+#define RTUI_CANVAS_H 100  /* natural height when not `fill: both` -- Ch8/11 pin no default; picked to be a usable default canvas size */
+
+/* Native menu IDs: 1 is conventionally the Apple menu (not built here, see
+   the file header comment), so declared menus start at 2, one ID per
+   `menus[]` array index in order. */
+#define RTUI_MENU_ID_BASE 2
 
 /* ==================== per-instance state ==================== */
+
+/* One offscreen 1-bit GrafPort+BitMap per buffered canvas widget. `port`
+   doubles as the "is this canvas buffered and allocated" flag: NULL for
+   every non-canvas widget and for unbuffered canvases. Allocated with
+   NewPtrClear (not Handle-locked like the rest of rt_ui_winst) because
+   OpenPort/SetPortBits/PortSize want a real, permanently-fixed GrafPort
+   record to install as the current port -- same "never relocates" property
+   a locked Handle gives, just via the more direct API these calls expect. */
+typedef struct { GrafPtr port; BitMap bits; Ptr pixels; } rt_ui_canvas_buf;
 
 typedef struct rt_ui_winst {
     Handle selfH;                    /* this struct's own locked box */
@@ -58,6 +107,7 @@ typedef struct rt_ui_winst {
     Handle ctrlsH; ControlHandle *ctrls;  /* nWidgets entries; NULL for non-Control kinds */
     Handle rectsH; Rect *rects;           /* nWidgets entries, window-local coords */
     Handle labelsH; unsigned char (*labels)[256]; /* nWidgets entries; only LABEL kinds used */
+    Handle canvasH; rt_ui_canvas_buf *canvases;   /* nWidgets entries; only buffered CANVAS kinds used */
 } rt_ui_winst;
 
 /* Allocates a Handle that never moves (NewHandleClear + HLock, held locked
@@ -103,7 +153,8 @@ static short rt_ui_kind_height(short kind)
     case RTUI_BUTTON: return RTUI_BUTTON_H;
     case RTUI_CHECK:  return RTUI_CHECK_H;
     case RTUI_LABEL:  return RTUI_LABEL_H;
-    default:          return RTUI_CHECK_H; /* RTUI_CANVAS: Task 2 picks its own height via fill */
+    case RTUI_CANVAS: return RTUI_CANVAS_H;
+    default:          return RTUI_CHECK_H;
     }
 }
 
@@ -220,6 +271,198 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
     }
 }
 
+/* ==================== canvas offscreen buffers (Ch11 buffered) ====================
+ * Classic pre-Color-QuickDraw offscreen bitmap recipe: a real GrafPort
+ * record (OpenPort'd so it's fully initialized) whose portBits is pointed
+ * at a manually allocated 1-bit-per-pixel buffer, sized and cleared to
+ * white. Every drawing op targets this port directly; the screen only
+ * sees it via the CopyBits in rt_ui_flush_all_buffered. */
+static void rt_ui_canvas_dispose(rt_ui_canvas_buf *cb)
+{
+    if (!cb->port) return;
+    DisposePtr((Ptr)cb->port);
+    DisposePtr(cb->pixels);
+    cb->port = NULL;
+    cb->pixels = NULL;
+}
+
+static void rt_ui_canvas_make(rt_ui_canvas_buf *cb, short w, short h)
+{
+    long rowBytes;
+    Rect r;
+
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    cb->port = (GrafPtr)NewPtrClear(sizeof(GrafPort));
+    if (!cb->port) rt_panic("out of memory");
+    rowBytes = (((long)w + 15) / 16) * 2; /* word-aligned rowBytes, classic QD convention */
+    cb->pixels = NewPtrClear(rowBytes * (long)h);
+    if (!cb->pixels) rt_panic("out of memory");
+    OpenPort(cb->port); /* also SetPort(cb->port): SetPortBits/PortSize/SetOrigin below act on it */
+    SetRect(&r, 0, 0, w, h);
+    cb->bits.baseAddr = cb->pixels;
+    cb->bits.rowBytes = (short)rowBytes;
+    cb->bits.bounds = r;
+    SetPortBits(&cb->bits);
+    PortSize(w, h);
+    SetOrigin(0, 0);
+}
+
+/* (Re)allocates the offscreen buffer for every buffered canvas widget at
+   its CURRENT laid-out size -- called once at open, and again after any
+   resize's re-layout, since a `fill: both` canvas's size tracks the
+   window. Old content does not survive a resize (a fresh, cleared buffer
+   is made); Ch11 promises no more than that. */
+static void rt_ui_canvas_realloc_all(rt_ui_winst *inst)
+{
+    short i;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        const rt_ui_widget_desc *wd = &inst->desc->widgets[i];
+        if (wd->kind != RTUI_CANVAS || !(wd->flags & RTUI_BUFFERED)) continue;
+        rt_ui_canvas_dispose(&inst->canvases[i]);
+        rt_ui_canvas_make(&inst->canvases[i],
+                           (short)(inst->rects[i].right - inst->rects[i].left),
+                           (short)(inst->rects[i].bottom - inst->rects[i].top));
+    }
+}
+
+/* Blits every buffered canvas's offscreen content to its window, once per
+   rt_ui_run iteration (see the file header comment) -- this IS the "single
+   copy when the current handler or timer returns to the event loop" Ch11
+   describes, and it also covers redrawing a buffered canvas after an
+   updateEvt (the offscreen bits persist; nothing needs to re-draw them). */
+static void rt_ui_flush_buffered_canvases(rt_ui_winst *inst)
+{
+    short i;
+    if (!inst) return;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        rt_ui_canvas_buf *cb = &inst->canvases[i];
+        if (!cb->port) continue;
+        SetPort(inst->wp);
+        CopyBits(&cb->bits, &((GrafPtr)inst->wp)->portBits, &cb->bits.bounds, &inst->rects[i], srcCopy, NULL);
+    }
+}
+
+static void rt_ui_flush_all_buffered(void)
+{
+    WindowPeek w;
+    for (w = (WindowPeek)FrontWindow(); w != NULL; w = w->nextWindow) {
+        if (w->windowKind == RTUI_WINDOW_KIND)
+            rt_ui_flush_buffered_canvases((rt_ui_winst *)GetWRefCon((WindowPtr)w));
+    }
+}
+
+/* ==================== menus (Ch9) ====================
+ * Built once at startup from the descriptor tables and never rebuilt.
+ * Native menu IDs are RTUI_MENU_ID_BASE + array index, so mapping a
+ * MenuSelect/MenuKey result back to a `menus[]`/`items[]` pair is pure
+ * arithmetic; `rt_ui_menu_handler.menuIndex/itemIndex` (both 0-based, same
+ * convention as widgetIndex and the every-block trace index) are looked up
+ * against that pair directly -- the name fields in rt_ui_menu_handler are
+ * for trace output (Task 3), not needed for dispatch. The Apple menu is
+ * deliberately not built (see the file header comment). */
+
+static MenuHandle *gMenuHandles = NULL;  /* gNMenus entries */
+static short gNMenus = 0;
+static const rt_ui_menu_handler *gMenuHandlerTable = NULL;
+static short gNMenuHandlers = 0;
+
+static void rt_ui_build_menus(const rt_ui_menu_desc **menus, short nMenus)
+{
+    short i, j;
+
+    gNMenus = nMenus;
+    gMenuHandles = nMenus > 0 ? (MenuHandle *)NewPtrClear((Size)nMenus * sizeof(MenuHandle)) : NULL;
+    for (i = 0; i < nMenus; i++) {
+        const rt_ui_menu_desc *md;
+        MenuHandle mh;
+
+        md = menus[i];
+        mh = NewMenu((short)(RTUI_MENU_ID_BASE + i), md->title);
+        for (j = 0; j < md->nItems; j++) {
+            const rt_ui_item_desc *it = &md->items[j];
+            if (it->separator) {
+                AppendMenu(mh, (const unsigned char *)"\p-");
+                continue;
+            }
+            /* AppendMenu's `/K` metacharacter wires the cmd-key
+               equivalent straight from the item text (no separate
+               SetItemCmd call needed). Not escaped against a caption that
+               itself contains '/', '!', '<', or '(': none of this task's
+               captions do, and the reference doesn't ask for that
+               generality yet. */
+            {
+                unsigned char buf[258]; /* 255-byte Str255 + "/K" + count byte */
+                unsigned char n;
+                rt_ui_pstrcpy(buf, it->label);
+                n = buf[0];
+                if (it->key) {
+                    buf[1 + n] = '/';
+                    buf[2 + n] = it->key;
+                    buf[0] = (unsigned char)(n + 2);
+                }
+                AppendMenu(mh, buf);
+            }
+        }
+        InsertMenu(mh, 0);
+        gMenuHandles[i] = mh;
+    }
+    DrawMenuBar();
+}
+
+void rt_ui_menu_enable(short menuIdx, short itemIdx, int on)
+{
+    MenuHandle mh;
+
+    if (!gMenuHandles || menuIdx < 0 || menuIdx >= gNMenus) return;
+    mh = gMenuHandles[menuIdx];
+    if (!mh) return;
+    if (on) EnableItem(mh, (short)(itemIdx + 1));
+    else DisableItem(mh, (short)(itemIdx + 1));
+}
+
+/* Recomputes native enable state for every window-scoped menu handler,
+   keyed off whether its scope type currently has a front instance
+   (rt_ui_front, unchanged from Task 1) -- call after anything that can
+   change which window is frontmost: open, close, click-to-front. App-scope
+   handlers (scope == NULL) are untouched: they stay enabled unless the
+   program calls rt_ui_menu_enable itself. */
+static void rt_ui_menu_recompute_dim(void)
+{
+    short k;
+    for (k = 0; k < gNMenuHandlers; k++) {
+        const rt_ui_menu_handler *h = &gMenuHandlerTable[k];
+        if (!h->scope) continue;
+        rt_ui_menu_enable(h->menuIndex, h->itemIndex, rt_ui_front(h->scope) != NULL);
+    }
+}
+
+/* Shared by MenuSelect (mouseDown in the menu bar) and MenuKey (cmdKey
+   keyDown) -- both return the same packed (menuID, item) long. */
+static void rt_ui_menu_dispatch(long result)
+{
+    short menuID, itemNum, menuIdx, itemIdx, k;
+
+    menuID = HiWord(result);
+    itemNum = LoWord(result);
+    HiliteMenu(0);
+    if (menuID == 0) return;
+    menuIdx = (short)(menuID - RTUI_MENU_ID_BASE);
+    itemIdx = (short)(itemNum - 1);
+    for (k = 0; k < gNMenuHandlers; k++) {
+        const rt_ui_menu_handler *h = &gMenuHandlerTable[k];
+        void *front;
+        if (h->menuIndex != menuIdx || h->itemIndex != itemIdx) continue;
+        if (h->scope) {
+            front = rt_ui_front(h->scope);
+            if (!front) continue; /* dimmed; the Menu Manager already blocks this selection natively -- defensive no-op */
+        } else {
+            front = NULL;
+        }
+        if (h->fire) h->fire(front);
+    }
+}
+
 /* ==================== widget click/change dispatch ====================
  * Shared by real mouse clicks (after TrackControl confirms the release
  * landed back inside the control) and by the Return/Escape default/cancel
@@ -231,6 +474,7 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
     const rt_ui_widget_desc *wd;
     ControlHandle ctrl;
 
+    SetPort(inst->wp); /* Return/Escape-key dispatch reaches here without having set a port first (unlike the content-click caller) */
     wd = &inst->desc->widgets[wIdx];
     ctrl = inst->ctrls[wIdx];
     switch (wd->kind) {
@@ -284,6 +528,7 @@ static void rt_ui_handle_update(WindowPtr wp)
                 rt_ui_draw_default_outline(&inst->rects[i]);
             }
         }
+        rt_ui_flush_buffered_canvases(inst); /* re-blit persisted offscreen content; unbuffered has none to restore (Ch11) */
     }
     EndUpdate(wp);
 }
@@ -327,6 +572,7 @@ static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
     newH = HiWord(newSize);
     SizeWindow(wp, newW, newH, (Boolean)1);
     rt_ui_layout(inst);
+    rt_ui_canvas_realloc_all(inst); /* buffered canvas sizes may have tracked the resize (fill: both) */
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_RESIZED, 0, 0);
 }
@@ -337,6 +583,52 @@ static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
    port) before either call -- easy to miss since FindWindow, TrackGoAway,
    DragWindow, and GrowWindow all take the SAME EventRecord field
    unconverted (they operate on window furniture in global screen space). */
+/* Canvas widgets have no Control Manager backing (like label), so a click
+   that FindControl doesn't claim is checked against canvas widget rects
+   next -- coordinates delivered to the handler are widget-local (Ch8:
+   canvas's `click`/`drag` events carry (x, y) relative to the canvas's own
+   origin), matching RTUI_WEV_DRAG's header comment. */
+static int rt_ui_canvas_hit(rt_ui_winst *inst, Point local, short *outIdx)
+{
+    short i;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        if (inst->desc->widgets[i].kind == RTUI_CANVAS && PtInRect(local, &inst->rects[i])) {
+            *outIdx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void rt_ui_fire_canvas_xy(rt_ui_winst *inst, short wIdx, short event, Point local)
+{
+    const Rect *r;
+    r = &inst->rects[wIdx];
+    if (inst->desc->handlers && inst->desc->handlers->widget)
+        inst->desc->handlers->widget(inst, wIdx, event, (long)(local.h - r->left), (long)(local.v - r->top));
+}
+
+static void rt_ui_handle_canvas_click(WindowPtr wp, rt_ui_winst *inst, short wIdx, Point where)
+{
+    Point last;
+
+    rt_ui_fire_canvas_xy(inst, wIdx, RTUI_WEV_CLICK, where);
+    last = where;
+    while (StillDown()) {
+        Point cur;
+        /* GetMouse reports in the CURRENT port's local coords -- the click
+           handler just fired may have left a canvas's offscreen port
+           current (drawing calls SetPort it), so re-assert the window's
+           own port before every read. */
+        SetPort(wp);
+        GetMouse(&cur);
+        if (cur.h != last.h || cur.v != last.v) {
+            rt_ui_fire_canvas_xy(inst, wIdx, RTUI_WEV_DRAG, cur);
+            last = cur;
+        }
+    }
+}
+
 static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point where)
 {
     ControlHandle ctrl;
@@ -351,6 +643,12 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
         wIdx = (short)(*ctrl)->contrlRfCon;
         trackPart = TrackControl(ctrl, where, NULL);
         if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
+        return;
+    }
+    {
+        short cIdx;
+        if (rt_ui_canvas_hit(inst, where, &cIdx))
+            rt_ui_handle_canvas_click(wp, inst, cIdx, where);
     }
 }
 
@@ -372,7 +670,8 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
         Rect dragBounds;
         dragBounds = qd.screenBits.bounds;
         InsetRect(&dragBounds, 4, 4);
-        DragWindow(wp, ev->where, &dragBounds);
+        DragWindow(wp, ev->where, &dragBounds); /* also brings wp to front if it wasn't -- click-to-front */
+        rt_ui_menu_recompute_dim();
         break;
     }
     case inGrow:
@@ -382,13 +681,17 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
     case inContent:
         if (wp != FrontWindow()) {
             SelectWindow(wp);
+            rt_ui_menu_recompute_dim(); /* click-to-front changed frontmost */
             break;
         }
         inst = rt_ui_winst_of(wp);
         if (inst) rt_ui_handle_content_click(wp, inst, ev->where);
         break;
+    case inMenuBar:
+        rt_ui_menu_dispatch(MenuSelect(ev->where));
+        break;
     default:
-        break; /* inDesk, inMenuBar, inSysWindow: no menus yet (Task 2) */
+        break; /* inDesk, inSysWindow: nothing to do */
     }
 }
 
@@ -414,11 +717,14 @@ static void rt_ui_handle_key(const EventRecord *ev)
     unsigned char ch;
     short wIdx;
 
-    if (ev->modifiers & cmdKey) return; /* menu key equivalents: Task 2 */
+    ch = (unsigned char)(ev->message & charCodeMask);
+    if (ev->modifiers & cmdKey) {
+        rt_ui_menu_dispatch(MenuKey(ch));
+        return;
+    }
     wp = FrontWindow();
     inst = rt_ui_winst_of(wp);
     if (!inst) return;
-    ch = (unsigned char)(ev->message & charCodeMask);
     if ((ch == 13 || ch == 3) && rt_ui_find_flagged(inst, RTUI_DEFAULT, &wIdx)) {
         rt_ui_fire_widget(inst, wIdx);
         return;
@@ -433,25 +739,64 @@ static void rt_ui_handle_key(const EventRecord *ev)
 
 /* ==================== public API ==================== */
 
+/* every-table: scheduled on TickCount deltas, pumped once per rt_ui_run
+   iteration (see file header comment). gEveryDue holds, per entry, the
+   next absolute TickCount at which it's due; on firing it's rescheduled
+   from `now` (not accumulated from the missed deadline) so a stall (e.g. a
+   long TrackControl drag) doesn't make a timer burst-fire to catch up --
+   Ch11 only promises "never re-entered while a previous run is still
+   executing", not catch-up semantics, and drift-over-burst is the less
+   surprising choice for animation. */
+static const rt_ui_every_desc *gEveryTable = NULL;
+static short gNEvery = 0;
+static unsigned long *gEveryDue = NULL;
+
+static void rt_ui_build_every(const rt_ui_every_desc *ev, short nEv)
+{
+    unsigned long now;
+    short i;
+
+    gEveryTable = ev;
+    gNEvery = nEv;
+    gEveryDue = nEv > 0 ? (unsigned long *)NewPtrClear((Size)nEv * sizeof(unsigned long)) : NULL;
+    now = TickCount();
+    for (i = 0; i < nEv; i++) gEveryDue[i] = now + (unsigned long)ev[i].ticks;
+}
+
+static void rt_ui_every_pump(void)
+{
+    unsigned long now;
+    short i;
+
+    if (!gEveryTable) return;
+    now = TickCount();
+    for (i = 0; i < gNEvery; i++) {
+        if ((long)(now - gEveryDue[i]) < 0) continue; /* not due yet */
+        gEveryDue[i] = now + (unsigned long)gEveryTable[i].ticks;
+        if (gEveryTable[i].fire) gEveryTable[i].fire();
+    }
+}
+
 void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
                     const rt_ui_menu_desc **menus, short nMenus,
                     const rt_ui_menu_handler *mh, short nMh,
                     const rt_ui_every_desc *ev, short nEv)
 {
-    /* Menus/timers: Task 2 builds NewMenu/InsertMenu/DrawMenuBar and the
-       every-table from these; T1 has neither, so they're accepted and
-       ignored (the frozen ABI still requires startup to take them). */
-    (void)wins; (void)nWins; (void)menus; (void)nMenus;
-    (void)mh; (void)nMh; (void)ev; (void)nEv;
+    (void)wins; (void)nWins;
     rt_mac_init_toolbox(); /* eager: subsumes rt_mac.c's own lazy init */
     FlushEvents(everyEvent, 0);
+    rt_ui_build_menus(menus, nMenus);
+    gMenuHandlerTable = mh;
+    gNMenuHandlers = nMh;
+    rt_ui_menu_recompute_dim(); /* no windows open yet: all window-scoped items start dimmed */
+    rt_ui_build_every(ev, nEv);
 }
 
 void rt_ui_run(void)
 {
     EventRecord ev;
     for (;;) {
-        WaitNextEvent(everyEvent, &ev, 30, NULL);
+        WaitNextEvent(everyEvent, &ev, (short)(gNEvery > 0 ? 1 : 30), NULL);
         switch (ev.what) {
         case mouseDown:
             rt_ui_handle_mouse_down(&ev);
@@ -469,6 +814,8 @@ void rt_ui_run(void)
         default:
             break;
         }
+        rt_ui_every_pump();
+        rt_ui_flush_all_buffered(); /* "returns control to the event loop" point, Ch11 */
     }
 }
 
@@ -491,6 +838,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->ctrls = (ControlHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(ControlHandle), &inst->ctrlsH);
     inst->rects = (Rect *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(Rect), &inst->rectsH);
     inst->labels = (unsigned char (*)[256])rt_ui_alloc_locked((Size)d->nWidgets * 256, &inst->labelsH);
+    inst->canvases = (rt_ui_canvas_buf *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(rt_ui_canvas_buf), &inst->canvasH);
 
     screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
     left = (short)((screenW - d->w) / 2);
@@ -507,9 +855,11 @@ void *rt_ui_open(const rt_ui_window_desc *d)
 
     rt_ui_make_widgets(inst);
     rt_ui_layout(inst);
+    rt_ui_canvas_realloc_all(inst);
 
     ShowWindow(inst->wp);
     SelectWindow(inst->wp);
+    rt_ui_menu_recompute_dim(); /* frontmost changed: this instance is now front */
 
     if (d->handlers && d->handlers->winEvent)
         d->handlers->winEvent(inst, RTUI_EV_OPENED, 0, 0);
@@ -534,13 +884,19 @@ void rt_ui_close(void *instV)
        bookkeeping Handles (which still hold valid data at this point) are
        freed only after the handler returns. */
     DisposeWindow(inst->wp);
+    rt_ui_menu_recompute_dim(); /* frontmost changed: this instance is gone */
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSED, 0, 0);
 
+    {
+        short i;
+        for (i = 0; i < inst->desc->nWidgets; i++) rt_ui_canvas_dispose(&inst->canvases[i]);
+    }
     if (inst->stateH) DisposeHandle(inst->stateH);
     DisposeHandle(inst->ctrlsH);
     DisposeHandle(inst->rectsH);
     DisposeHandle(inst->labelsH);
+    DisposeHandle(inst->canvasH);
     DisposeHandle(inst->selfH);
 }
 
@@ -576,6 +932,12 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
     const rt_ui_widget_desc *wd;
 
     inst = (rt_ui_winst *)instV;
+    /* InvalRect/SetControlTitle work in the CURRENT port's terms -- fine
+       when called from widget-click dispatch (already SetPort'd to this
+       window), NOT fine from a menu handler or every-block, which can run
+       with any port current (a canvas op, another window, ...). Set it
+       explicitly rather than trusting the caller's ambient state. */
+    SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
     if (wd->kind == RTUI_LABEL && prop == RTUI_PROP_TEXT) {
         rt_ui_pstrcpy(inst->labels[wIdx], s);
@@ -591,6 +953,7 @@ void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
     const rt_ui_widget_desc *wd;
 
     inst = (rt_ui_winst *)instV;
+    SetPort(inst->wp); /* same reasoning as rt_ui_widget_set_str -- see its comment */
     wd = &inst->desc->widgets[wIdx];
     if (wd->kind == RTUI_CHECK && prop == RTUI_PROP_CHECKED && inst->ctrls[wIdx]) {
         SetControlValue(inst->ctrls[wIdx], (short)(v ? 1 : 0));
@@ -624,29 +987,102 @@ short rt_ui_widget_get_int(void *instV, short wIdx, short prop)
     return (short)(inst->rects[wIdx].right - inst->rects[wIdx].left); /* default: width */
 }
 
-/* ==================== Task 2 stubs: menus, canvas ==================== */
+/* ==================== canvas drawing ops (Ch11) ====================
+ * Every op targets a canvas's offscreen port (buffered) or the window's
+ * own port at an offset (unbuffered), per rt_ui_canvas_begin, in
+ * widget-local coordinates either way (Ch11: "the origin (0,0) is the
+ * canvas's top-left corner"). Buffered ops are NOT blitted to the screen
+ * here -- rt_ui_flush_all_buffered (called once per rt_ui_run iteration)
+ * does that, which is what gives buffered drawing its flicker-free,
+ * one-copy-per-handler behavior (Ch11's "Buffered vs. Unbuffered"). */
+typedef struct { GrafPtr port; short dx, dy; } rt_ui_canvas_target;
 
-void rt_ui_menu_enable(short menuIdx, short itemIdx, int on)
+static rt_ui_canvas_target rt_ui_canvas_begin(rt_ui_winst *inst, short wIdx)
 {
-    (void)menuIdx; (void)itemIdx; (void)on; /* no menus are built yet (Task 2) */
+    rt_ui_canvas_target t;
+    rt_ui_canvas_buf *cb;
+
+    cb = &inst->canvases[wIdx];
+    if (cb->port) {
+        t.port = cb->port;
+        t.dx = 0;
+        t.dy = 0;
+    } else {
+        t.port = inst->wp;
+        t.dx = inst->rects[wIdx].left;
+        t.dy = inst->rects[wIdx].top;
+    }
+    SetPort(t.port);
+    return t;
 }
 
-void rt_ui_canvas_clear(void *inst, short wIdx)
+void rt_ui_canvas_clear(void *instV, short wIdx)
 {
-    (void)inst; (void)wIdx;
+    rt_ui_winst *inst;
+    Rect r;
+
+    inst = (rt_ui_winst *)instV;
+    rt_ui_canvas_begin(inst, wIdx);
+    if (inst->canvases[wIdx].port) r = inst->canvases[wIdx].bits.bounds;
+    else r = inst->rects[wIdx];
+    EraseRect(&r);
 }
 
-void rt_ui_canvas_fill_circle(void *inst, short wIdx, short x, short y, short r)
+void rt_ui_canvas_line(void *instV, short wIdx, short x0, short y0, short x1, short y1)
 {
-    (void)inst; (void)wIdx; (void)x; (void)y; (void)r;
+    rt_ui_winst *inst;
+    rt_ui_canvas_target t;
+
+    inst = (rt_ui_winst *)instV;
+    t = rt_ui_canvas_begin(inst, wIdx);
+    MoveTo((short)(x0 + t.dx), (short)(y0 + t.dy));
+    LineTo((short)(x1 + t.dx), (short)(y1 + t.dy));
 }
 
-void rt_ui_canvas_line(void *inst, short wIdx, short x0, short y0, short x1, short y1)
+void rt_ui_canvas_rect(void *instV, short wIdx, short x, short y, short w, short h, int fill)
 {
-    (void)inst; (void)wIdx; (void)x0; (void)y0; (void)x1; (void)y1;
+    rt_ui_winst *inst;
+    rt_ui_canvas_target t;
+    Rect r;
+
+    inst = (rt_ui_winst *)instV;
+    t = rt_ui_canvas_begin(inst, wIdx);
+    SetRect(&r, (short)(x + t.dx), (short)(y + t.dy), (short)(x + t.dx + w), (short)(y + t.dy + h));
+    if (fill) PaintRect(&r);
+    else FrameRect(&r);
 }
 
-void rt_ui_canvas_rect(void *inst, short wIdx, short x, short y, short w, short h, int fill)
+void rt_ui_canvas_fill_circle(void *instV, short wIdx, short x, short y, short r)
 {
-    (void)inst; (void)wIdx; (void)x; (void)y; (void)w; (void)h; (void)fill;
+    rt_ui_winst *inst;
+    rt_ui_canvas_target t;
+    Rect box;
+
+    inst = (rt_ui_winst *)instV;
+    t = rt_ui_canvas_begin(inst, wIdx);
+    SetRect(&box, (short)(x + t.dx - r), (short)(y + t.dy - r), (short)(x + t.dx + r), (short)(y + t.dy + r));
+    PaintOval(&box);
+}
+
+void rt_ui_canvas_circle(void *instV, short wIdx, short x, short y, short r)
+{
+    rt_ui_winst *inst;
+    rt_ui_canvas_target t;
+    Rect box;
+
+    inst = (rt_ui_winst *)instV;
+    t = rt_ui_canvas_begin(inst, wIdx);
+    SetRect(&box, (short)(x + t.dx - r), (short)(y + t.dy - r), (short)(x + t.dx + r), (short)(y + t.dy + r));
+    FrameOval(&box);
+}
+
+void rt_ui_canvas_draw_text(void *instV, short wIdx, short x, short y, const unsigned char *s)
+{
+    rt_ui_winst *inst;
+    rt_ui_canvas_target t;
+
+    inst = (rt_ui_winst *)instV;
+    t = rt_ui_canvas_begin(inst, wIdx);
+    MoveTo((short)(x + t.dx), (short)(y + t.dy));
+    DrawString(s);
 }

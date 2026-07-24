@@ -1,25 +1,25 @@
 /* probe_ui.c -- hand-authored rt_ui descriptor app proving runtime/mac/
-   rt_ui.c end to end: one window type ("Probe", resizable) with a default
-   button, a checkbox, and a label, laid out with all three Ch8 `at` kinds
-   (button at an explicit x,y; the checkbox at the button's right edge;
-   the label below the checkbox, filling the remaining width). This is the
-   "living example of descriptor authorship" Task 4's emitter must later
-   reproduce -- every table below is exactly the shape clarusc will emit
-   from a `window Probe { ... }` declaration.
+   rt_ui.c end to end. Task 1 proved windows/widgets/layout/events with one
+   window type ("Probe": default button, checkbox, label). Task 2 adds:
 
-   Interaction proven:
-     - clicking Go toggles On (rt_ui_widget_get/set_bool) and rewrites the
-       Status label (rt_ui_widget_set_str) with the check state plus a
-       click counter kept in the window's own per-instance state
-       (rt_ui_state), proving stateSize/rt_ui_state end to end too.
-     - typing a key sets the window title to that character
-       (rt_ui_set_title), proving the `key` window event.
-     - the close box's closeRequest handler allows the close (no cancel);
-       once the window has actually finished closing, `closed` calls
-       rt_quit(0) so the whole run ends cleanly (no menu yet -- Task 2 --
-       so this is the probe's own way to terminate for verification). */
+     - a "Probe" menu (app-scope "Toggle" item that flips Probe.front's
+       check the same way the Go button does; a "Scoped" item nested under
+       Probe's own scope, only enabled while a Probe window is frontmost;
+       a "Quit" item -- now that menus exist, closing a window no longer
+       ends the run by itself, see probe_win_event's RTUI_EV_CLOSED case).
+     - a second window type, "Bounce": a single buffered canvas animated by
+       a top-level every-block (a bouncing filled square), which doubles
+       as the "prove dimming" window -- it is a DIFFERENT type from Probe,
+       so closing Probe while Bounce stays open must leave the Scoped item
+       disabled (rt_ui_front(&kProbeWindow) is nil either way).
+
+   Both windows are opened at startup so the animation is visible
+   immediately and the dimming proof only requires closing Probe's own
+   close box. */
 #include "rt_ui.h"
 #include "rt.h"
+
+/* ==================== Probe window (Task 1, extended) ==================== */
 
 enum { W_GO = 0, W_ON = 1, W_STATUS = 2 };
 
@@ -54,21 +54,27 @@ static void build_status(unsigned char *out, int checked, int clicks)
     out[0] = (unsigned char)(out[0] + num[0]);
 }
 
+/* Shared by the Go button's click handler and the Probe menu's app-scope
+   "Toggle" item -- both are "flip the check, bump the counter, rewrite the
+   label", the same action from two different entry points. */
+static void probe_do_toggle(void *inst)
+{
+    ProbeState *st;
+    unsigned char status[16];
+    int checked;
+
+    checked = rt_ui_widget_get_bool(inst, W_ON, RTUI_PROP_CHECKED);
+    rt_ui_widget_set_bool(inst, W_ON, RTUI_PROP_CHECKED, !checked);
+    st = (ProbeState *)rt_ui_state(inst);
+    st->clicks++;
+    build_status(status, !checked, st->clicks);
+    rt_ui_widget_set_str(inst, W_STATUS, RTUI_PROP_TEXT, status);
+}
+
 static void probe_widget_event(void *inst, short widgetIndex, short event, long a, long b)
 {
     (void)a; (void)b;
-    if (widgetIndex == W_GO && event == RTUI_WEV_CLICK) {
-        ProbeState *st;
-        unsigned char status[16];
-        int checked;
-
-        checked = rt_ui_widget_get_bool(inst, W_ON, RTUI_PROP_CHECKED);
-        rt_ui_widget_set_bool(inst, W_ON, RTUI_PROP_CHECKED, !checked);
-        st = (ProbeState *)rt_ui_state(inst);
-        st->clicks++;
-        build_status(status, !checked, st->clicks);
-        rt_ui_widget_set_str(inst, W_STATUS, RTUI_PROP_TEXT, status);
-    }
+    if (widgetIndex == W_GO && event == RTUI_WEV_CLICK) probe_do_toggle(inst);
 }
 
 static void probe_win_event(void *inst, short event, long a, long b)
@@ -82,11 +88,9 @@ static void probe_win_event(void *inst, short event, long a, long b)
         rt_ui_set_title(inst, title);
         break;
     }
-    case RTUI_EV_CLOSED:
-        rt_quit(0);
-        break;
     default:
-        break; /* opened, closeRequest (no cancel), resized: nothing to do */
+        break; /* opened, closeRequest (no cancel), closed, resized: nothing
+                   to do -- Quit (the menu item, Task 2) ends the run now */
     }
 }
 
@@ -115,14 +119,126 @@ static const rt_ui_window_desc kProbeWindow = {
     &kProbeHandlers
 };
 
-static const rt_ui_window_desc *kWindows[] = { &kProbeWindow };
+/* ==================== Bounce window (Task 2: canvas + every) ==================== */
+
+enum { B_BOARD = 0 };
+
+typedef struct { short x, dx; } BounceState;
+
+static void bounce_win_event(void *inst, short event, long a, long b)
+{
+    (void)a; (void)b;
+    if (event == RTUI_EV_OPENED) {
+        BounceState *st;
+        st = (BounceState *)rt_ui_state(inst);
+        st->x = 10;
+        st->dx = 3;
+    }
+}
+
+static const rt_ui_widget_desc kBounceWidgets[] = {
+    { RTUI_CANVAS, "Board", (const unsigned char *)0,
+      RTUI_AT_XY, 0, 0, RTUI_FILL, RTUI_FILL_BOTH, RTUI_BUFFERED }
+};
+
+static const rt_ui_handlers kBounceHandlers = { bounce_win_event, 0 };
+
+static const rt_ui_window_desc kBounceWindow = {
+    "Bounce", (const unsigned char *)"\pBounce",
+    160, 160, 0, 0, 0,
+    1, kBounceWidgets,
+    (short)sizeof(BounceState),
+    &kBounceHandlers
+};
+
+#define BOUNCE_SQUARE 20
+
+/* Top-level every-block (Ch11/Ch7): looks up the front Bounce instance
+   itself (mirrors the reference's `Game.front` pattern) since
+   rt_ui_every_desc's `fire` takes no instance argument -- an every-block
+   is not tied to any one window type. */
+static void bounce_tick(void)
+{
+    void *g;
+    BounceState *st;
+    short cw;
+
+    g = rt_ui_front(&kBounceWindow);
+    if (!g) return;
+    st = (BounceState *)rt_ui_state(g);
+    cw = rt_ui_widget_get_int(g, B_BOARD, RTUI_PROP_WIDTH);
+    st->x = (short)(st->x + st->dx);
+    if (st->x < 0) {
+        st->x = 0;
+        st->dx = (short)-st->dx;
+    } else if (st->x + BOUNCE_SQUARE > cw) {
+        st->x = (short)(cw - BOUNCE_SQUARE);
+        st->dx = (short)-st->dx;
+    }
+    rt_ui_canvas_clear(g, B_BOARD);
+    rt_ui_canvas_rect(g, B_BOARD, st->x, 60, BOUNCE_SQUARE, BOUNCE_SQUARE, 1);
+}
+
+static const rt_ui_every_desc kEvery[] = {
+    { bounce_tick, 4 } /* 60/4 = 15 ticks/sec: clearly visible motion within a 1s window */
+};
+
+/* ==================== Probe menu (Task 2) ====================
+ * "Toggle" is app-scope: always enabled, and it finds Probe.front itself.
+ * "Scoped" is window-scoped to kProbeWindow: the runtime only enables it
+ * while a Probe window is frontmost, and always calls it with that
+ * instance directly. "Quit" is app-scope and ends the run -- see the file
+ * header comment for why a menu Quit replaces Task 1's close-to-quit. */
+
+static void probe_menu_toggle(void *frontInstOrNull)
+{
+    void *p;
+    (void)frontInstOrNull; /* app-scope: always nil: this handler finds its own target */
+    p = rt_ui_front(&kProbeWindow);
+    if (p) probe_do_toggle(p);
+}
+
+static void probe_menu_scoped(void *frontInst)
+{
+    /* frontInst is guaranteed a live Probe instance: the runtime only
+       calls a window-scoped handler while its scope is frontmost. */
+    rt_ui_set_title(frontInst, (const unsigned char *)"\pScoped");
+}
+
+static void probe_menu_quit(void *frontInstOrNull)
+{
+    (void)frontInstOrNull;
+    rt_quit(0);
+}
+
+static const rt_ui_item_desc kProbeMenuItems[] = {
+    { "Toggle", (const unsigned char *)"\pToggle Check", 'T', 0 },
+    { "Scoped", (const unsigned char *)"\pScoped Action", 'S', 0 },
+    { "sep1",   (const unsigned char *)0,                 0,   1 },
+    { "Quit",   (const unsigned char *)"\pQuit",           'Q', 0 }
+};
+
+static const rt_ui_menu_desc kProbeMenu = {
+    "Probe", (const unsigned char *)"\pProbe", 4, kProbeMenuItems
+};
+
+static const rt_ui_menu_handler kProbeMenuHandlers[] = {
+    { probe_menu_toggle, "Probe", "Toggle", 0, 0, 0 },
+    { probe_menu_scoped, "Probe", "Scoped", 0, 1, &kProbeWindow },
+    { probe_menu_quit,   "Probe", "Quit",   0, 3, 0 }
+};
+
+/* ==================== wiring ==================== */
+
+static const rt_ui_window_desc *kWindows[] = { &kProbeWindow, &kBounceWindow };
+static const rt_ui_menu_desc *kMenus[] = { &kProbeMenu };
 
 int main(void)
 {
     rt_args_init(0, (char **)0);
-    rt_ui_startup(kWindows, 1, (const rt_ui_menu_desc **)0, 0,
-                  (const rt_ui_menu_handler *)0, 0, (const rt_ui_every_desc *)0, 0);
+    rt_ui_startup(kWindows, 2, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
     rt_ui_open(&kProbeWindow);
+    rt_ui_open(&kBounceWindow);
     rt_ui_run();
     return 0;
 }

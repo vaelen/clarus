@@ -6,9 +6,12 @@
    clarusc's emitted C (Tasks 4-5) -- do not rename or reorder fields
    without updating the plan.
 
-   Menus (Chapter 9), canvas (Chapter 11 subset), and timers (`every`) are
-   declared here in full per the contract; rt_ui.c gives them working
-   bodies except where explicitly a Task 2 stub (see rt_ui.c's comments). */
+   Menus (Chapter 9), canvas (Chapter 11), and timers (`every`) are declared
+   here and given working bodies in rt_ui.c as of Task 2. The canvas op list
+   below was amended against Ch11 during Task 2 (see the comment just above
+   the canvas prototypes) -- `rt_ui_canvas_circle` and
+   `rt_ui_canvas_draw_text` are additions beyond this plan's original ABI
+   sketch, per the plan's own "the reference wins" rule. */
 #ifndef CLARUS_RT_UI_H
 #define CLARUS_RT_UI_H
 
@@ -119,10 +122,23 @@ void  rt_ui_widget_set_bool(void *inst, short wIdx, short prop, int v);
 int   rt_ui_widget_get_bool(void *inst, short wIdx, short prop);
 short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width/height */
 void  rt_ui_menu_enable(short menuIdx, short itemIdx, int on);
-/* canvas ops (Ch11 subset used by bounce + demos) */
+/* canvas ops (Ch11 subset used by bounce + demos).
+ *
+ * ABI ADJUSTMENT (Task 2, per the plan's "reference wins" rule): Ch11 lists
+ * SEVEN canvas methods -- clear, line, rect, fillRect, circle, fillCircle,
+ * drawText -- not the four in this plan's header sketch. `rect` already
+ * covers rect/fillRect with its `fill` flag (a legitimate collapse: both
+ * Clarus method names lower to one runtime call with fill=0/1), but the
+ * sketch had no plain (outline) `circle` at all and no `drawText` -- both
+ * genuinely missing ops, not just differently shaped ones. Added below,
+ * mirroring rt_ui_canvas_fill_circle's own shape rather than bolting a
+ * fill flag onto it, since the reference spells `circle`/`fillCircle` as
+ * two distinct method names, not one parameterized by a flag. */
 void  rt_ui_canvas_clear(void *inst, short wIdx);
 void  rt_ui_canvas_fill_circle(void *inst, short wIdx, short x, short y, short r);
+void  rt_ui_canvas_circle(void *inst, short wIdx, short x, short y, short r);      /* Ch11 outline circle -- added, Task 2 */
 void  rt_ui_canvas_line(void *inst, short wIdx, short x0, short y0, short x1, short y1);
 void  rt_ui_canvas_rect(void *inst, short wIdx, short x, short y, short w, short h, int fill);
+void  rt_ui_canvas_draw_text(void *inst, short wIdx, short x, short y, const unsigned char *s); /* Ch11 drawText -- added, Task 2; s is Str255-compatible like other rt_ui string params */
 
 #endif /* CLARUS_RT_UI_H */
