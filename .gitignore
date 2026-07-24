@@ -1,3 +1,5 @@
 /Retro68
 /toolchain
 /macplus
+/build-mac/
+internal/mactest/probe/build/
