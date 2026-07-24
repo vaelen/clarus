@@ -1,0 +1,16 @@
+T OPEN Main 1
+T FRONT Main 1
+T FIRE Ops.Toggle.select
+T SET Main.On.checked 1
+T SET Main.Status.text Toggled
+T FIRE Ops.NewAux.select
+T OPEN Aux 1
+T DIM Ops.Scoped 1
+T FRONT Aux 1
+T FIRE Ops.Scoped.select
+T FIRE Aux.closeRequest
+T CLOSE Aux 1
+T DIM Ops.Scoped 0
+T FRONT Main 1
+T FIRE Aux.closed
+T FIRE Ops.Quit.select

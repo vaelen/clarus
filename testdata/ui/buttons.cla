@@ -1,0 +1,43 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// buttons.cla: gated UI scenario (Task 6, mac-target-4b) -- one window
+// (button/check/label), no menus, no canvas. Exercises the widget-click and
+// window-`key` dispatch paths and the goAway close-box path end to end on
+// real m68k hardware (Mini vMac), scripted by buttons.events:
+//
+//   click 156 74   -- lands inside the Go button's rect (window opens
+//                     centered at global (106,44) for its 300x160 size;
+//                     Go is at local (20,20)-(100,40))
+//   key x          -- frontmost window's `key` handler
+//   resize 340 180 -- Panel is resizable (min 220x120)
+//   close          -- goAway click on the frontmost (only) window
+//
+// Expected buttons.trace: T OPEN/T FRONT on open, T FIRE Panel.Go.click plus
+// the two T SET lines its handler causes (On.checked, Status.text), T FIRE
+// Panel.key, T FIRE Panel.resized, then the close cascade (T FIRE
+// Panel.closeRequest, T CLOSE Panel 1, T FIRE Panel.closed). No snaps.
+
+window Panel {
+    title: "Panel"
+    size: 300, 160
+    resizable: min(220, 120)
+
+    button Go    { at: 20, 20; caption: "Go"; width: 80 }
+    check On     { at: right, 22; caption: "On" }
+    label Status { at: next, bottom; text: "Off" }
+}
+
+on App.launch {
+    open Panel
+}
+
+extend Panel {
+    on Go.click {
+        On.checked = true
+        Status.text = "Clicked"
+    }
+    on key(k: char) {
+        title = "Typed"
+    }
+}

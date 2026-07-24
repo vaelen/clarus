@@ -1,0 +1,10 @@
+T OPEN Panel 1
+T FRONT Panel 1
+T FIRE Panel.Go.click
+T SET Panel.On.checked 1
+T SET Panel.Status.text Clicked
+T FIRE Panel.key
+T FIRE Panel.resized
+T FIRE Panel.closeRequest
+T CLOSE Panel 1
+T FIRE Panel.closed

@@ -1,0 +1,60 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// canvas.cla: gated UI scenario (Task 6, mac-target-4b) -- one window with
+// a buffered canvas animated by a top-level `every` block: a 20x20 filled
+// square that slides rightward across the canvas and bounces off either
+// edge. Anim opens at 160x160; `fill: both` sizes the canvas to the
+// content area minus the layout gap (152x152 -- see rt_ui.c's
+// rt_ui_layout).
+//
+// canvas.events fires the every-block 3 times (tick 4 x3; every 4 ticks)
+// before snapping S1 (square at x=10+3*3=19), then 5 more times before
+// snapping S2 (x=19+3*5=34) -- S1 and S2 must byte-differ because the
+// square has visibly moved 15px right between them. Expected snap content:
+// S1 shows the window chrome (titlebar "Anim", content frame) with a small
+// filled square near the canvas's left edge (~x=19,y=60); S2 shows the
+// same chrome with the square further right (~x=34,y=60), everything else
+// (menu bar, window frame) identical between the two.
+//
+// A tick's every-pump fires each due entry AT MOST once per `tick N`
+// script line (see rt_ui.c's rt_ui_script_tick/rt_ui_script_every_pump),
+// regardless of how large N is, so this script uses several small `tick 4`
+// lines rather than one big one to get multiple firings.
+
+window Anim {
+    title: "Anim"
+    size: 160, 160
+
+    canvas Board { at: 0, 0; fill: both; buffered }
+
+    var x: int
+    var dx: int
+}
+
+on App.launch {
+    open Anim
+}
+
+extend Anim {
+    on opened {
+        x = 10
+        dx = 3
+    }
+}
+
+every 4 ticks {
+    var g: Anim = Anim.front
+    if g != nil {
+        g.x = g.x + g.dx
+        if g.x < 0 {
+            g.x = 0
+            g.dx = -g.dx
+        } else if g.x + 20 > g.Board.width {
+            g.x = g.Board.width - 20
+            g.dx = -g.dx
+        }
+        g.Board.clear()
+        g.Board.fillRect(g.x, 60, 20, 20)
+    }
+}

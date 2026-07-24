@@ -112,6 +112,24 @@ extern void rt_quit(int32_t code);
 #define RTUI_LABEL_H   16
 #define RTUI_CANVAS_H 100  /* natural height when not `fill: both` -- Ch8/11 pin no default; picked to be a usable default canvas size */
 
+/* Natural WIDTHS, same free-to-pick status as the heights above, added by
+   Task 6 (mac-target-4b) once a real compiled program exposed the gap:
+   Ch8's own widget property table gives `check` and `label` NO `width`
+   property at all (only `button` and `field` have one), and `canvas` has
+   none either (only `fill`) -- so any check/label/unfilled-canvas widget a
+   .cla program declares lowers with a literal width of 0 (clarusc's
+   default when no `width:` property exists to read -- see
+   clarusc/lower.cla's lowWidgetDesc), and used to render as a genuinely
+   zero-pixel-wide (invisible) control. Applied in rt_ui_layout below only
+   when the declared width is that literal-zero "unset" case (an explicit
+   `width: 0` is not a sentence anyone would write, and is indistinguishable
+   from "omitted" at this layer either way) -- `width: fill` (RTUI_FILL,
+   button/field only) and `fill: both` both still take priority, unchanged. */
+#define RTUI_BUTTON_W  80
+#define RTUI_CHECK_W   90
+#define RTUI_LABEL_W  150
+#define RTUI_CANVAS_W 200
+
 /* Native menu IDs: 1 is conventionally the Apple menu (not built here, see
    the file header comment), so declared menus start at 2, one ID per
    `menus[]` array index in order. */
@@ -337,6 +355,20 @@ static short rt_ui_kind_height(short kind)
     }
 }
 
+/* Natural-width fallback for a widget declared with no `width:` (or, for
+   check/label/canvas, one that has no such property to give at all) -- see
+   the RTUI_*_W constants' own comment just above. */
+static short rt_ui_kind_width(short kind)
+{
+    switch (kind) {
+    case RTUI_BUTTON: return RTUI_BUTTON_W;
+    case RTUI_CHECK:  return RTUI_CHECK_W;
+    case RTUI_LABEL:  return RTUI_LABEL_W;
+    case RTUI_CANVAS: return RTUI_CANVAS_W;
+    default:          return RTUI_CHECK_W;
+    }
+}
+
 /* portRect helpers: a WindowPtr is a GrafPtr, and window content-local
    coordinates always start at (0,0) in classic Mac OS, so the port's own
    rect IS the content size -- this also means it reflects post-resize
@@ -388,7 +420,27 @@ static void rt_ui_layout(rt_ui_winst *inst)
            `at: 10, bottom` is at-xy with an explicit x) -- resolve it here,
            once, rather than only inside the RTUI_AT_NEXT case. */
         y = (wd->y == RTUI_BOTTOM) ? (short)(prevBottom + RTUI_GAP) : wd->y;
-        w = (wd->width == RTUI_FILL) ? (short)(contentW - x - RTUI_GAP) : wd->width;
+        /* BUG FIX (Task 6, mac-target-4b): Ch8 says `fill: both` "stretch[es]
+           a widget to fill remaining width, or both dimensions" -- i.e.
+           fill:both implies width:fill too, not just a height override. A
+           widget declared with `fill: both` alone (no separate `width:
+           fill`) -- which is how every .cla source in this codebase spells
+           it (see testdata/emitui/win_basic.cla's Board, every.cla's Board)
+           -- lowers to a literal width of 0 (clarusc's default when no
+           `width:` property is given), so without this fix the layout would
+           size such a canvas to zero pixels wide. Fixed at the single place
+           that computes layout for both hand-written (uiprobe, which
+           happens to spell width explicitly as RTUI_FILL alongside
+           RTUI_FILL_BOTH) and emitted descriptors, rather than duplicating
+           the "fill:both implies width:fill" rule in clarusc's lowering
+           too. */
+        if (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH) {
+            w = (short)(contentW - x - RTUI_GAP);
+        } else if (wd->width == 0) {
+            w = rt_ui_kind_width(wd->kind); /* no `width:` given (or none exists for this kind) -- see RTUI_*_W's comment */
+        } else {
+            w = wd->width;
+        }
         if (w < 0) w = 0;
         if (wd->fill == RTUI_FILL_BOTH) {
             h = (short)(contentH - y - RTUI_GAP);

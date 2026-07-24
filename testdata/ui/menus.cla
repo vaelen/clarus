@@ -1,0 +1,83 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// menus.cla: gated UI scenario (Task 6, mac-target-4b) -- two window types
+// (Main, Aux) and one menu (Ops) exercising an app-scope item (Toggle,
+// finds Main.front itself), a window-scoped item (Scoped, nested under
+// `extend Aux`, enabled only while an Aux window is frontmost -- proves the
+// automatic dimming transitions), and an app-scope item that opens the
+// second window type (NewAux) and one that quits.
+//
+// The event grammar has no `open`/`cmd-key` primitives (docs/superpowers/
+// plans/2026-07-24-mac-target-4b.md's pinned grammar is click/drag/key/
+// menu/close/resize/tick/snap/quit), so this scenario opens Aux via a menu
+// item instead of a script verb, and selects every item -- including the
+// key-equivalent-bearing ones -- via `menu M I` rather than a Cmd-key press
+// (there is no way to inject a modifier key in this grammar; noted in the
+// task report, not a gap in this fixture). Position 1 in the bar is always
+// the Apple menu, so Ops is position 2 (only declared menu); its items in
+// declaration order are 1=NewAux, 2=Toggle, 3=Scoped, 4=separator,
+// 5=Quit (separators consume a native item slot too).
+//
+// menus.events:
+//   menu 2 2   -- Toggle (app-scope): Main is the only window open, so it
+//                 checks Main's box and rewrites its label
+//   menu 2 1   -- NewAux (app-scope): opens Aux -> T DIM Ops.Scoped 1
+//                 (Aux is now frontmost, so the Scoped item undims)
+//   menu 2 3   -- Scoped (window-scoped to Aux, now enabled): retitles Aux
+//   close      -- goAway on Aux (frontmost) -> T DIM Ops.Scoped 0 (Aux is
+//                 gone) and T FRONT Main 1 (Main becomes frontmost again)
+//   menu 2 5   -- Quit (app-scope): ends the run
+//
+// No snaps -- this scenario is entirely about trace order.
+
+window Main {
+    title: "Main"
+    size: 260, 140
+
+    check On     { at: 20, 20; caption: "On" }
+    label Status { at: next, bottom; text: "Off" }
+}
+
+window Aux {
+    title: "Aux"
+    size: 200, 100
+
+    label Note { at: 20, 20; text: "Aux Window" }
+}
+
+menu Ops {
+    item NewAux "New Aux" key "N"
+    item Toggle "Toggle"  key "T"
+    item Scoped "Scoped"  key "S"
+    separator
+    item Quit   "Quit"    key "Q"
+}
+
+on App.launch {
+    open Main
+}
+
+extend Ops {
+    on NewAux.select {
+        open Aux
+    }
+    on Toggle.select {
+        var m: Main = Main.front
+        if m != nil {
+            m.On.checked = true
+            m.Status.text = "Toggled"
+        }
+    }
+    on Quit.select {
+        quit
+    }
+}
+
+extend Aux {
+    extend Ops {
+        on Scoped.select {
+            title = "Scoped!"
+        }
+    }
+}

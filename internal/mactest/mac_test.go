@@ -33,17 +33,15 @@ func repoRoot(t *testing.T) string {
 	return filepath.Join(wd, "..", "..")
 }
 
-// BuildMac invokes scripts/build-mac.sh and returns the built .bin's
-// absolute path. claFiles are resolved relative to the current package
-// directory, same convention as BuildSuiteHost/RunSuiteHost.
-func BuildMac(t *testing.T, name string, test bool, claFiles ...string) string {
+// runBuildMac invokes scripts/build-mac.sh NAME ARGS... and returns the
+// built .bin's absolute path. Shared by BuildMac (4a) and ui_test.go's
+// events-driven builds (Task 6) -- both just assemble a different ARGS list
+// for the same script and the same "did it produce a .bin" check.
+func runBuildMac(t *testing.T, name string, args ...string) string {
 	t.Helper()
 	root := repoRoot(t)
-	args := append([]string{name}, claFiles...)
-	if test {
-		args = append(args, "--test")
-	}
-	cmd := exec.Command(filepath.Join(root, "scripts", "build-mac.sh"), args...)
+	cmdArgs := append([]string{name}, args...)
+	cmd := exec.Command(filepath.Join(root, "scripts", "build-mac.sh"), cmdArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -55,6 +53,18 @@ func BuildMac(t *testing.T, name string, test bool, claFiles ...string) string {
 		t.Fatalf("expected built binary: %v (build-mac.sh output: %s)", err, stdout.String())
 	}
 	return bin
+}
+
+// BuildMac invokes scripts/build-mac.sh and returns the built .bin's
+// absolute path. claFiles are resolved relative to the current package
+// directory, same convention as BuildSuiteHost/RunSuiteHost.
+func BuildMac(t *testing.T, name string, test bool, claFiles ...string) string {
+	t.Helper()
+	args := append([]string{}, claFiles...)
+	if test {
+		args = append(args, "--test")
+	}
+	return runBuildMac(t, name, args...)
 }
 
 const exitMarker = "##CLARUS-EXIT## "

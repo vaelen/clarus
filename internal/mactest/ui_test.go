@@ -1,0 +1,180 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+package mactest
+
+import (
+	"bytes"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// blessUI reports whether CLARUS_MAC_BLESS=1 is set: golden files are
+// (re)written instead of compared. Independent of CLARUS_MAC_TESTS
+// (requireMac still gates whether this runs at all).
+func blessUI() bool {
+	return os.Getenv("CLARUS_MAC_BLESS") != ""
+}
+
+// uiSnap is one decoded ##CLARUS-SNAP##...##CLARUS-SNAP-END## block from
+// the capture stream (docs/superpowers/plans/2026-07-24-mac-target-4b.md's
+// pinned snap encoding).
+type uiSnap struct {
+	name  string
+	bytes []byte // raw framebuffer bytes, always 21,888 for the pinned 512x342 1-bit screen
+}
+
+// parseUIOutput splits RunMac's `out` stream (already stripped of the 4a
+// exit trailer and log by parseCapture) into the RT_MAC_TEST trace lines
+// (every "T ..." line, in order) and any snap blocks, per the plan's
+// contract: both are interleaved into the same stream, in the order the
+// runtime emitted them (rt_ui.c's rt_test_emit is the single hook for all
+// of it -- see that file's header comment).
+func parseUIOutput(t *testing.T, out string) (trace string, snaps []uiSnap) {
+	t.Helper()
+	lines := strings.Split(out, "\n")
+	var traceLines []string
+	i := 0
+	for i < len(lines) {
+		line := lines[i]
+		switch {
+		case strings.HasPrefix(line, "T "):
+			traceLines = append(traceLines, line)
+			i++
+		case strings.HasPrefix(line, "##CLARUS-SNAP## "):
+			name := strings.TrimPrefix(line, "##CLARUS-SNAP## ")
+			i++
+			var hexBuf strings.Builder
+			for i < len(lines) && lines[i] != "##CLARUS-SNAP-END##" {
+				hexBuf.WriteString(lines[i])
+				i++
+			}
+			if i >= len(lines) {
+				t.Fatalf("unterminated snap block %q in capture", name)
+			}
+			i++ // skip the END marker
+			raw, err := hex.DecodeString(hexBuf.String())
+			if err != nil {
+				t.Fatalf("snap %q: malformed hex: %v", name, err)
+			}
+			snaps = append(snaps, uiSnap{name: name, bytes: raw})
+		case line == "":
+			i++
+		default:
+			t.Fatalf("unexpected capture line outside trace/snap: %q", line)
+		}
+	}
+	trace = strings.Join(traceLines, "\n")
+	if trace != "" {
+		trace += "\n"
+	}
+	return trace, snaps
+}
+
+// pbmBytes wraps a snap's raw 21,888 bytes in the pinned P4 (raw PBM)
+// header: "P4\n512 342\n" + the bytes as-is (1 bit per pixel, MSB first,
+// same bit order the Mac's own screenBits already uses).
+func pbmBytes(raw []byte) []byte {
+	return append([]byte("P4\n512 342\n"), raw...)
+}
+
+// runUIScenario builds testdata/ui/<scenario>.cla with its .events script
+// (scripts/build-mac.sh --test --events), runs it via the 4a LaunchAPPL
+// plumbing, and checks the trace against testdata/ui/<scenario>.trace and
+// every snap against testdata/uisnaps/<scenario>.<name>.pbm -- byte-exact,
+// unless CLARUS_MAC_BLESS=1, in which case both are (re)written instead
+// (snap size and exit code are still asserted even while blessing).
+func runUIScenario(t *testing.T, scenario string, wantExit int) []uiSnap {
+	t.Helper()
+	requireMac(t)
+	root := repoRoot(t)
+	claRel := filepath.Join("..", "..", "testdata", "ui", scenario+".cla")
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
+	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
+
+	bin := runBuildMac(t, name, claRel, "--test", "--events", eventsRel)
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	trace, snaps := parseUIOutput(t, out)
+
+	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")
+	if blessUI() {
+		if err := os.WriteFile(traceGolden, []byte(trace), 0o644); err != nil {
+			t.Fatalf("writing trace golden: %v", err)
+		}
+	} else {
+		want, err := os.ReadFile(traceGolden)
+		if err != nil {
+			t.Fatalf("reading trace golden %s: %v", traceGolden, err)
+		}
+		if trace != string(want) {
+			t.Fatalf("%s: trace mismatch:%s", scenario, firstDiff(string(want), trace))
+		}
+	}
+
+	for _, s := range snaps {
+		if len(s.bytes) != 21888 {
+			t.Fatalf("%s: snap %q decoded to %d bytes, want 21888", scenario, s.name, len(s.bytes))
+		}
+		pbmPath := filepath.Join(root, "testdata", "uisnaps", scenario+"."+s.name+".pbm")
+		pbm := pbmBytes(s.bytes)
+		if blessUI() {
+			if err := os.WriteFile(pbmPath, pbm, 0o644); err != nil {
+				t.Fatalf("writing snap golden %s: %v", pbmPath, err)
+			}
+			continue
+		}
+		want, err := os.ReadFile(pbmPath)
+		if err != nil {
+			t.Fatalf("reading snap golden %s: %v", pbmPath, err)
+		}
+		if !bytes.Equal(pbm, want) {
+			t.Fatalf("%s: snap %q mismatch against %s (byte-exact PBM compare failed)", scenario, s.name, pbmPath)
+		}
+	}
+
+	if exitCode != wantExit {
+		t.Errorf("%s: exit code: got %d, want %d", scenario, exitCode, wantExit)
+	}
+	return snaps
+}
+
+// TestButtonsUIScenario: window with button/check/label, no menus, no
+// canvas -- click/key/resize/close-box dispatch, no snaps.
+func TestButtonsUIScenario(t *testing.T) {
+	runUIScenario(t, "buttons", 0)
+}
+
+// TestMenusUIScenario: two window types, app-scope + window-scoped menu
+// items, dimming transitions on open/close of the scoped window.
+func TestMenusUIScenario(t *testing.T) {
+	runUIScenario(t, "menus", 0)
+}
+
+// TestCanvasUIScenario: buffered canvas animated by an every-block; two
+// snaps (S1, S2) taken after different amounts of virtual-tick animation
+// must differ (the moving square's position proves it) -- checked here
+// directly, in addition to each snap's own byte-exact PBM golden compare,
+// so a golden pair blessed identical by accident (e.g. no actual motion)
+// fails loudly rather than silently passing forever after.
+func TestCanvasUIScenario(t *testing.T) {
+	snaps := runUIScenario(t, "canvas", 0)
+	var s1, s2 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil {
+		t.Fatalf("canvas: expected snaps S1 and S2, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("canvas: snap S1 == S2 -- animation did not move the square between snaps")
+	}
+}
