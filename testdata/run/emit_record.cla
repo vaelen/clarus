@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_record.cla: Task 8 coverage slice for clarusc emit -- record layout
 // emission (clar_rec_NAME struct + clar_new_NAME ctor), NewRec, FieldRef
 // read/write (including a nested record), copy-by-value semantics, a

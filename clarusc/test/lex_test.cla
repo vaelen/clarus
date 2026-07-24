@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 include "../lex.cla"
 
 // describeTok renders one token as "KINDNAME line:col [text]" for the

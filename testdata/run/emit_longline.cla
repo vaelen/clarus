@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_longline.cla: proves clarusc's C emitter no longer caps emitted C at a
 // `string`'s 255 bytes. Two constructs each render to a SINGLE C line AND a
 // SINGLE C expression well past 300 bytes -- before the text-typed line

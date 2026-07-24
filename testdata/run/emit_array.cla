@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_array.cla: Task 8 coverage slice for clarusc emit -- fixed-array
 // read/write (IndexRef's Arr path, funcprint.go's `X.e[rt_arr_check(i, N)]`
 // contract), a read-before-write array local to prove zero-init for BOTH a

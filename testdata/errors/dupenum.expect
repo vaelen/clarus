@@ -1,1 +1,1 @@
-../../testdata/errors/dupenum.cla:1:15: duplicate enum value 0
+../../testdata/errors/dupenum.cla:4:15: duplicate enum value 0

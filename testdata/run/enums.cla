@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 enum Protocol {
     Gopher 0x01 "Gopher"
     HTTP   0x50 "Web (HTTP)"

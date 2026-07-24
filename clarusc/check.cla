@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // check.cla: the type checker -- Task 9a's port of internal/check/check.go
 // (the two-phase top-level walk, record/enum layout building) and
 // internal/check/expr.go (checkExpr's full rule set) and

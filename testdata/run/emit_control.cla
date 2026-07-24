@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_control.cla: Task 6 coverage slice for clarusc emit -- if/else-if
 // chaining (closing the golden gap Task 4 left: fpIfStmt/fpStripOuterParens
 // already handle a single if/else, but else-if RECURSIVE chaining had no

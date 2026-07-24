@@ -1,1 +1,1 @@
-../../testdata/errors/varorder.cla:4:5: variable declarations must appear at the top of the body
+../../testdata/errors/varorder.cla:7:5: variable declarations must appear at the top of the body

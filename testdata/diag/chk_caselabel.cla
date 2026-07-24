@@ -1,2 +1,5 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 func f() { var y: int
     switch 1 { case y { } } }

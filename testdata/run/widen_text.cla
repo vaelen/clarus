@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // Exercises string -> text widening at every assignability position (Ch3:
 // Text -- "a string may be used wherever a text is expected"): a call
 // argument, a return value, a list element (push), a map element

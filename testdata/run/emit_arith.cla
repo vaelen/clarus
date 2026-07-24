@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_arith.cla: Task 4 coverage slice for clarusc emit -- int/bool/fixed/
 // char arithmetic, all six comparison operators, and/or short-circuit, and
 // int()/fixed()/char() conversions. Deliberately restricted to constructs

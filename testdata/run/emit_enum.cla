@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_enum.cla: Task 8 coverage slice for clarusc emit -- enum layout
 // emission (clar_enum_NAME value table + _count), auto-numbering (member's
 // own value, or previous+1), enum<->int conversion (EnumToInt/IntToEnum),

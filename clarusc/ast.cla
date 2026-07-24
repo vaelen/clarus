@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // ast.cla: the AST as typed arenas -- a port of internal/ast/ast.go's node
 // shapes. Go's ast.go uses recursive struct/interface types (Expr, Stmt,
 // Decl, TypeExpr interfaces with pointer-typed fields); Clarus has no

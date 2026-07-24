@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // ir.cla: the arena IR -- a port of internal/ir/ir.go (node shapes) and
 // internal/ir/intrinsics.go (the 53 intrinsic-name constants). Follows
 // ast.cla's arena idiom exactly: every node kind lives in a `list of X`

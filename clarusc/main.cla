@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // main.cla: the clarusc CLI driver -- the check-only compiler front end that
 // ties lex.cla + parse.cla + check.cla together and prints diagnostics
 // byte-identically to `clarus check`.

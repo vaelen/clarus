@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_strings.cla: Task 5 coverage slice for clarusc emit -- the `+`
 // concat family (str+str, str+char, char+str prepend, str+text->text),
 // string slicing, indexOf (string and char needle), index read + set-index,

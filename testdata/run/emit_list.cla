@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_list.cla: Task 7 coverage slice for clarusc emit -- list intrinsics
 // (push/pop/shift/unshift/first/last/remove/count), for-list iteration,
 // IndexRef read AND write, and a `list of string(N)` push from a

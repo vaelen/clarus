@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 func isEven(n: int): bool {
     if n == 0 { return true }
     return isOdd(n - 1)

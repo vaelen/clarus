@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 func show(label: string, n: int) {
     var digits: char[12]
     var count: int = 0

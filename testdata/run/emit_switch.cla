@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_switch.cla: Task 6 coverage slice for clarusc emit -- the switch
 // desugar (lowSwitch/labelEq/caseCond in lower.cla; no new cprint code,
 // since switch lowers entirely to If/Assign): int, char, and string

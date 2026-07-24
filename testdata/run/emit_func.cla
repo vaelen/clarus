@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_func.cla: Task 9 coverage slice for clarusc emit -- user functions.
 // Exercises: params + a local var (addLabel), simple recursion (fact),
 // mutual recursion (isEven/isOdd, whose forward reference proves signatures

@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_wideproto.cla: pins the cpFuncProto fix (clarusc/cprint.cla) -- a
 // function's C prototype must not truncate. cpFuncProto used to accumulate
 // its comma-joined param list (and the whole prototype) in a 255-byte-capped

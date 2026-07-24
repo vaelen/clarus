@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // types.cla: the checked-type system -- a port of internal/types/types.go
 // (Type/Kind, the singleton scalar types, StringT/ListT/MapT/ArrayT,
 // AssignableTo/Equal, the built-in saveChoice enum) plus

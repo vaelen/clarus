@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // emit_map.cla: Task 7 coverage slice for clarusc emit -- map intrinsics
 // (set/get/get-default/has/remove/count), for-map iteration in sorted key
 // order, and a `map of string(N)` set with a differently-sized string to

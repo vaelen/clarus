@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // lower.cla: AST + checker-type-info -> arena IR (ir.cla). A port of the
 // walking-skeleton subset of internal/lower (lower.go / stmt.go / expr.go).
 //

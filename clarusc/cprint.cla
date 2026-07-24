@@ -1,3 +1,6 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
 // cprint.cla: arena IR (ir.cla) -> one self-contained C99 translation unit
 // that #includes "rt.h". A port of the walking-skeleton subset of
 // internal/cprint (cprint.go / funcprint.go / intr.go / types.go).
