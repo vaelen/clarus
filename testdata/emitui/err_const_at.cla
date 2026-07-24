@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// err_const_at.cla: emitui error fixture -- a named int constant in a
+// window property's geometry position (`at:`). checkWidget validates only
+// the PROPERTY NAME, not this value's shape (parseProperty always parses a
+// full expression), so this is legal syntax the checker accepts but
+// lowering cannot handle yet -- clarusc emit must fail loudly (lower.cla's
+// lowRequireIntLit), not silently misread GoX's value. No .c.golden: this
+// fixture never successfully emits.
+
+const GoX: int = 20
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    button Go { at: GoX, 20; caption: "Go" }
+}

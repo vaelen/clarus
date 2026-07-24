@@ -61,15 +61,18 @@ var lowSwitchN: int
 // uiMenuCount/uiMenuIdx/uiMenuItemIdx (Task 4) are lowMenuDecl's own
 // declaration-order registries, existing solely so `Menu.Item.enabled = b`
 // (lowMenuEnableAssign) can resolve rt_ui_menu_enable's two indices:
-// uiMenuIdx maps a menu name to its 1-based declaration-order position
-// (rt_ui_menu_enable's menuIdx contract -- "the Nth DECLARED menu");
+// uiMenuIdx maps a menu name to its 0-based declaration-order position
+// (rt_ui_menu_enable's menuIdx parameter is 0-based -- see rt_ui.c's
+// gMenuHandles/gNMenus bounds check; the 1-based "Nth declared menu" phrasing
+// belongs only to the RT_MAC_TEST event script's `menu M I` bar position, a
+// different, human-facing index space, not this C parameter);
 // uiMenuItemIdx maps (menu, item) to that item's 0-based position in its
 // OWN menu's declared entry list, separators included (matching
 // rt_ui_item_desc[]'s array order -- see probe_ui.c's kProbeMenuHandlers).
 // Both are progGen-prefixed exactly like check.cla's own menuItems/menuKey,
 // for the same reason (a differential harness may lower more than one
 // program per process; uiMenuCount is reset to 0 in lowerProgram, alongside
-// lowSwitchN, so a second program's menus renumber from 1 again). Relies on
+// lowSwitchN, so a second program's menus renumber from 0 again). Relies on
 // every menu being declared before any code that references it, which is
 // the only order Clarus source ever writes it in (see the language
 // reference's own examples) -- lowerProgram's single top-to-bottom pass
@@ -1286,7 +1289,7 @@ func isMenuItemEnabledSelect(e: int): bool {
 }
 
 // lowMenuEnableAssign lowers `MenuName.ItemName.enabled = b` to
-// rt_ui_menu_enable(menuIdx, itemIdx, b) -- menuIdx is the 1-based
+// rt_ui_menu_enable(menuIdx, itemIdx, b) -- menuIdx is the 0-based
 // declaration-order index (uiMenuIdx, populated by lowMenuDecl) and itemIdx
 // is the item's 0-based position in its menu's declared entry list
 // (uiMenuItemIdx), matching rt_ui_menu_enable's contract (see rt_ui.c's
@@ -1825,19 +1828,28 @@ func lowBuiltinSaveChoiceLayout() {
     newIREnumLayout(intern("saveChoice"), head)
 }
 
+// lowRequireIntLit reads a window/widget property value that must be a
+// compile-time pixel/tick count (Ch8's `at`/`size`/`width`/`resizable`
+// values) -- checkWidget/checkWindowDecl validate property NAMES but not
+// these values' SHAPE (parseProperty always parses a full expression, so a
+// named int constant is legal grammar there too), so a non-literal reaching
+// here is a checker-clean program lowering genuinely cannot handle yet, not
+// a lowerer bug -- reported and aborted the same way lowUnsupported is,
+// rather than silently reading a wrong/garbage value.
+func lowRequireIntLit(e: int): int {
+    if exprKind(e) != ExIntLit {
+        log("clarusc emit: window property requires an integer literal")
+        quit 1
+    }
+    return intLitVal(e)
+}
+
 // lowWidgetDesc builds one widget's IRWidgetDesc from its DkWidget AST node
 // (w) -- Ch8: Widgets/Layout. Walks the exact same DkProperty chain
 // checkWidget already validated; this task's four widget kinds (button/
 // check/canvas/label) are rt_ui's whole widget surface (field/textview/
 // popup/table have no rt_ui support at all yet -- host-unsupported here,
 // same as every other not-yet-ported construct in this file).
-//
-// ponytail: `at`/`size`/`width` values are read via intLitVal, which
-// assumes a literal int (true of every example in the language reference
-// and both of this task's fixtures); a named int constant in one of these
-// positions -- legal per the grammar, since parseProperty always parses a
-// full expression -- would read a wrong/garbage value instead of failing
-// loudly. Upgrade to constant-folding here if a fixture ever needs it.
 func lowWidgetDesc(w: int): int {
     var kind: string
     var p: int
@@ -1890,14 +1902,14 @@ func lowWidgetDesc(w: int): int {
                     x = 0
                 } else {
                     atKind = 0
-                    x = intLitVal(vh)
+                    x = lowRequireIntLit(vh)
                 }
                 if exprKind(v1) == ExIdent and poolGet(identName(v1)) == "bottom" {
                     yIsBottom = true
                     y = 0
                 } else {
                     yIsBottom = false
-                    y = intLitVal(v1)
+                    y = lowRequireIntLit(v1)
                 }
             } else if pname == "width" {
                 if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "fill" {
@@ -1905,7 +1917,7 @@ func lowWidgetDesc(w: int): int {
                     width = 0
                 } else {
                     widthIsFill = false
-                    width = intLitVal(vh)
+                    width = lowRequireIntLit(vh)
                 }
             } else if pname == "fill" {
                 fillBoth = poolGet(identName(vh)) == "both"
@@ -1969,13 +1981,13 @@ func lowWindowDecl(d: int) {
             if pname == "title" {
                 titleIdx = stringLitIdx(vh)
             } else if pname == "size" {
-                w = intLitVal(vh)
-                h = intLitVal(exprNext(vh))
+                w = lowRequireIntLit(vh)
+                h = lowRequireIntLit(exprNext(vh))
             } else if pname == "resizable" {
                 resizable = true
                 if vh != -1 {
-                    minW = intLitVal(callArgsHead(vh))
-                    minH = intLitVal(exprNext(callArgsHead(vh)))
+                    minW = lowRequireIntLit(callArgsHead(vh))
+                    minH = lowRequireIntLit(exprNext(callArgsHead(vh)))
                 }
             }
         } else if declKind(item) == DkVar {
@@ -2020,8 +2032,11 @@ func lowMenuDecl(d: int) {
 
     nameIdx = menuDeclName(d)
     menuName = poolGet(nameIdx)
-    uiMenuCount = uiMenuCount + 1
+    // Capture BEFORE incrementing: rt_ui_menu_enable's menuIdx is 0-based
+    // (rt_ui.c's gMenuHandles/gNMenus bounds check), so the first declared
+    // menu is index 0, not 1.
     uiMenuIdx[numToStr(progGen) + "|" + menuName] = uiMenuCount
+    uiMenuCount = uiMenuCount + 1
 
     itemsHead = -1
     itemsTail = -1

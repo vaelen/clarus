@@ -104,12 +104,21 @@ func TestEmitUiGoldens(t *testing.T) {
 	exe := buildClarusc(t)
 	gcc := m68kGCC(t)
 
-	fixtures, err := filepath.Glob(filepath.Join(root, "testdata", "emitui", "*.cla"))
+	allFixtures, err := filepath.Glob(filepath.Join(root, "testdata", "emitui", "*.cla"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Only fixtures with a committed .c.golden run this loop -- an error
+	// fixture (e.g. err_const_at.cla) has none by design (see
+	// TestEmitUiErrConstAt) and never successfully emits.
+	var fixtures []string
+	for _, f := range allFixtures {
+		if _, err := os.Stat(strings.TrimSuffix(f, ".cla") + ".c.golden"); err == nil {
+			fixtures = append(fixtures, f)
+		}
+	}
 	if len(fixtures) == 0 {
-		t.Fatal("no testdata/emitui/*.cla fixtures found")
+		t.Fatal("no testdata/emitui/*.cla fixtures with a .c.golden found")
 	}
 
 	for _, fixture := range fixtures {
@@ -153,5 +162,28 @@ func TestEmitUiGoldens(t *testing.T) {
 				t.Fatalf("m68k-apple-macos-gcc -c %s: %v\n%s", golden, err, ccOut.String())
 			}
 		})
+	}
+}
+
+// TestEmitUiErrConstAt asserts that a window property whose geometry value
+// is a named int constant rather than a literal (legal syntax -- checkWidget
+// validates only the property NAME, not this value's shape) fails clarusc
+// emit loudly (lower.cla's lowRequireIntLit) instead of silently reading a
+// wrong value: nonzero exit, and the diagnostic on stderr.
+func TestEmitUiErrConstAt(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildClarusc(t)
+	fixture := filepath.Join(root, "testdata", "emitui", "err_const_at.cla")
+
+	cmd := exec.Command(exe, "emit", "-o", filepath.Join(t.TempDir(), "out.c"), fixture)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("clarusc emit %s: want nonzero exit, got success (stderr: %s)", fixture, stderr.String())
+	}
+	const want = "window property requires an integer literal"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr %q missing %q", stderr.String(), want)
 	}
 }
