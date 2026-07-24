@@ -97,10 +97,25 @@ func RunMac(t *testing.T, bin string, timeout time.Duration) (out, log string, e
 	defer cancel()
 	cmd := exec.CommandContext(ctx, launchappl, "-e", "minivmac", bin)
 	cmd.Dir = t.TempDir() // LaunchAPPL makes its temp dir in cwd
+	// LaunchAPPL launches Mini vMac via `open -nWa`, which detaches into its
+	// own process outside LaunchAPPL's process group -- a context kill only
+	// terminates LaunchAPPL, not the detached emulator, which can keep our
+	// stdout/stderr pipes open and hang Wait() forever. WaitDelay bounds
+	// that: once ctx expires, Wait() kills the remaining I/O goroutines
+	// after this grace period instead of blocking on them indefinitely.
+	cmd.WaitDelay = 10 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		// Best-effort: the emulator itself survives a context kill (see
+		// above), so sweep it up explicitly rather than leave an orphaned
+		// minivmac process running.
+		exec.Command("pkill", "-f", "minivmac.app").Run()
+		t.Fatalf("LaunchAPPL %s timed out after %s (emulator killed): %v\nstderr: %s\nstdout: %s", bin, timeout, err, stderr.String(), stdout.String())
+	}
+	if err != nil {
 		t.Fatalf("LaunchAPPL %s failed: %v\nstderr: %s\nstdout: %s", bin, err, stderr.String(), stdout.String())
 	}
 	return parseCapture(t, stdout.Bytes())
