@@ -1,0 +1,33 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func strcapF(s: string): string {
+    return s
+}
+
+func strcapH(): string(8) {
+    var big: string = "truncateme"
+    return big
+}
+
+func runStrcap() {
+    var x: string(8) = "hi"
+    var y: string = strcapF(x)
+    var z: string(8)
+    var lst: list of string(8)
+    var m: map of string(8)
+    var mv: string(8)
+
+    alert(y)
+
+    z = strcapH()
+    alert(z)
+    alert(lastError.message)
+
+    lst.push("this is over eight bytes")
+    alert(lst.first())
+    alert(lastError.message)
+
+    mv = m.get("missing", y)
+    alert(mv)
+}

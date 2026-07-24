@@ -1,12 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-on App.launch {
-    var c: saveChoice = saveChoice(1)
+include "lib/savechoice.cla"
 
-    if int(c) == 1 {
-        alert("ok")
-    } else {
-        alert("bad")
-    }
+on App.launch {
+    runSavechoice()
 }

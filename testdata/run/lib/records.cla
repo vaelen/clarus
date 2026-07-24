@@ -1,0 +1,76 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+enum recordsStatus {
+    Active 5 "Active"
+    Done   6 "Done"
+}
+
+record recordsAddress {
+    city: string(31)
+    zip:  int
+}
+
+record recordsPerson {
+    name:   string(31)
+    age:    int = 18
+    status: recordsStatus
+    home:   recordsAddress
+}
+
+func recordsShow(label: string, n: int) {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var s: string
+    var i: int
+
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    s = label
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    alert(s)
+}
+
+func runRecords() {
+    var p: recordsPerson = new recordsPerson
+    var q: recordsPerson
+
+    // defaults: age from its own default, status from Status's first
+    // member (Active = 5, a NON-zero explicit value — pins a bug where the
+    // default path assumed member 0 always means value 0), home.zip from
+    // the nested record's own zero default.
+    recordsShow("default age = ", p.age)
+    recordsShow("default status = ", int(p.status))
+    recordsShow("default home.zip = ", p.home.zip)
+
+    p.name = "Original"
+    p.home.city = "Springfield"
+    p.home.zip = 90210
+
+    // copy-by-value: q gets an independent snapshot of p, including the
+    // nested record; mutating q must not touch p.
+    q = p
+    q.age = 99
+    q.home.zip = 11111
+    q.name = "Copy"
+
+    alert(p.name)
+    recordsShow("p.age = ", p.age)
+    recordsShow("p.home.zip = ", p.home.zip)
+
+    alert(q.name)
+    recordsShow("q.age = ", q.age)
+    recordsShow("q.home.zip = ", q.home.zip)
+}

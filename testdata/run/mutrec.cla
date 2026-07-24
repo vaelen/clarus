@@ -1,23 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-func isEven(n: int): bool {
-    if n == 0 { return true }
-    return isOdd(n - 1)
-}
-func isOdd(n: int): bool {
-    if n == 0 { return false }
-    return isEven(n - 1)
-}
-
-func boolStr(b: bool): string {
-    if b { return "true" }
-    return "false"
-}
+include "lib/mutrec.cla"
 
 on App.launch {
-    alert(boolStr(isEven(10)))
-    alert(boolStr(isOdd(10)))
-    alert(boolStr(isEven(7)))
-    alert(boolStr(isOdd(7)))
+    runMutrec()
 }

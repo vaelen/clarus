@@ -1,14 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+include "lib/truncate.cla"
+
 on App.launch {
-    var g: string(3)
-
-    g = "ab" + "cdef"
-    alert(g)
-    alert(lastError.message)
-
-    // a fitting store must not touch lastError (Ch4/Ch12: only failures set it)
-    g = "z"
-    alert(lastError.message)
+    runTruncate()
 }

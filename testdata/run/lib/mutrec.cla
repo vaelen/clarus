@@ -1,0 +1,23 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+func mutrecIsEven(n: int): bool {
+    if n == 0 { return true }
+    return mutrecIsOdd(n - 1)
+}
+func mutrecIsOdd(n: int): bool {
+    if n == 0 { return false }
+    return mutrecIsEven(n - 1)
+}
+
+func mutrecBoolStr(b: bool): string {
+    if b { return "true" }
+    return "false"
+}
+
+func runMutrec() {
+    alert(mutrecBoolStr(mutrecIsEven(10)))
+    alert(mutrecBoolStr(mutrecIsOdd(10)))
+    alert(mutrecBoolStr(mutrecIsEven(7)))
+    alert(mutrecBoolStr(mutrecIsOdd(7)))
+}

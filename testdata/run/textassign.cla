@@ -1,59 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-var gt: text = "global"
-
-record Note {
-    body: text = "hi"
-}
+include "lib/textassign.cla"
 
 on App.launch {
-    var t: text = "hello"
-    var t2: text = "x" + "y"
-    var buf: char[64]
-    var n: int
-    var s: string
-    var note: Note
-
-    n = gt.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    n = note.body.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    n = t.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    t = t + " world"
-    n = t.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    n = t2.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    t = "goodbye"
-    n = t.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    t[0] = 'G'
-    n = t.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
-
-    if "Goodbya" < t {
-        alert("str-lt-text")
-    } else {
-        alert("str-ge-text")
-    }
-    if t < "Goodbya" {
-        alert("text-lt-str")
-    } else {
-        alert("text-ge-str")
-    }
+    runTextassign()
 }

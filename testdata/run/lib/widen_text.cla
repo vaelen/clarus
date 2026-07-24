@@ -1,0 +1,68 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Exercises string -> text widening at every assignability position (Ch3:
+// Text -- "a string may be used wherever a text is expected"): a call
+// argument, a return value, a list element (push), a map element
+// (index-assign), and a map.get default -- plus the fresh-copy guarantee
+// (mutating the resulting text never affects the original string).
+
+func widenTextAcceptText(t: text): text {
+    t.append("!")
+    return t
+}
+
+func widenTextMakeText(s: string): text {
+    return s
+}
+
+func widenTextGetStr(): string {
+    return "delta"
+}
+
+func runWidenText() {
+    var pass: bool
+    var s: string
+    var t1: text
+    var t2: text
+    var lst: list of text
+    var m: map of text
+    var dv: text
+
+    pass = true
+
+    // call argument: a string arg to a text param, plus the fresh-copy
+    // guarantee -- appending to the received text must not affect s.
+    s = "hello"
+    t1 = widenTextAcceptText(s)
+    if s != "hello" { pass = false }
+    if t1 != "hello!" { pass = false }
+
+    // return value: a string returned from a text-returning function
+    t2 = widenTextMakeText("world")
+    if t2 != "world" { pass = false }
+
+    // list element: a string pushed to a `list of text`
+    lst.add("alpha")
+    if lst[0] != "alpha" { pass = false }
+
+    // map element: a string set into a `map of text` via index-assign
+    m["k"] = "beta"
+    if m["k"] != "beta" { pass = false }
+
+    // map.get default: a string as the default-value argument
+    dv = m.get("missing", "gamma")
+    if dv != "gamma" { pass = false }
+
+    // call argument, non-addressable string source: a function-call result
+    // (routes through strAddr -> addrable -> copyToTemp, emitting its own
+    // temp+statement) widened to a text param.
+    t1 = widenTextAcceptText(widenTextGetStr())
+    if t1 != "delta!" { pass = false }
+
+    if pass {
+        alert("ok")
+    } else {
+        alert("FAIL")
+    }
+}
