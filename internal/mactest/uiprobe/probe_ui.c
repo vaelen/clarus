@@ -96,15 +96,21 @@ static const rt_ui_widget_desc kProbeWidgets[] = {
     { RTUI_CHECK, "On", (const unsigned char *)"\pOn",
       RTUI_AT_RIGHT, 0, 22, 60, RTUI_FILL_NONE, 0 },
     { RTUI_LABEL, "Status", (const unsigned char *)"\pOff 0",
-      RTUI_AT_NEXT, 0, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 }
+      RTUI_AT_NEXT, 0, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 },
+    /* Exercises `at: 10, bottom` (RTUI_AT_XY with an explicit x AND the
+       RTUI_BOTTOM y-sentinel) -- distinct from Status's RTUI_AT_NEXT case
+       above, which resolves RTUI_BOTTOM too but takes its x from the
+       previous widget instead of stating one. */
+    { RTUI_LABEL, "Note", (const unsigned char *)"\pBelow Status",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 }
 };
 
 static const rt_ui_handlers kProbeHandlers = { probe_win_event, probe_widget_event };
 
 static const rt_ui_window_desc kProbeWindow = {
     "Probe", (const unsigned char *)"\pProbe",
-    300, 140, 1, 220, 100,
-    3, kProbeWidgets,
+    300, 170, 1, 220, 130,
+    4, kProbeWidgets,
     (short)sizeof(ProbeState),
     &kProbeHandlers
 };

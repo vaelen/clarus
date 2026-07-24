@@ -144,18 +144,20 @@ static void rt_ui_layout(rt_ui_winst *inst)
         switch (wd->atKind) {
         case RTUI_AT_RIGHT:
             x = prevRight + RTUI_GAP;
-            y = wd->y;
             break;
         case RTUI_AT_NEXT:
             x = prevLeft;
-            y = (wd->y == RTUI_BOTTOM) ? (short)(prevBottom + RTUI_GAP) : wd->y;
             break;
         case RTUI_AT_XY:
         default:
             x = wd->x;
-            y = wd->y;
             break;
         }
+        /* RTUI_BOTTOM is a valid y sentinel regardless of atKind (Ch8's
+           "bottom" keyword is a propValue in its own right, e.g.
+           `at: 10, bottom` is at-xy with an explicit x) -- resolve it here,
+           once, rather than only inside the RTUI_AT_NEXT case. */
+        y = (wd->y == RTUI_BOTTOM) ? (short)(prevBottom + RTUI_GAP) : wd->y;
         w = (wd->width == RTUI_FILL) ? (short)(contentW - x - RTUI_GAP) : wd->width;
         if (w < 0) w = 0;
         if (wd->fill == RTUI_FILL_BOTH) {

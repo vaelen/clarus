@@ -47,7 +47,7 @@
 
 /* rt_ui_handlers.winEvent `event` values (Ch8 Window Events) */
 #define RTUI_EV_OPENED       0
-#define RTUI_EV_CLOSEREQUEST 1  /* a = (long)&int cancelFlag; handler sets *cancelFlag=1 to cancel */
+#define RTUI_EV_CLOSEREQUEST 1  /* a = (long)&long cancelFlag; handler sets *cancelFlag=1 to cancel */
 #define RTUI_EV_CLOSED       2
 #define RTUI_EV_RESIZED      3
 #define RTUI_EV_KEY          4  /* a = the typed char */
