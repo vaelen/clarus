@@ -66,10 +66,35 @@
 #include <Dialogs.h>   /* NoteAlert, for the About item (Ch9) */
 #include <Devices.h>   /* OpenDeskAcc, for the Apple menu's desk-accessory list */
 #include <LowMem.h>    /* LMGetCurApName -- the running app's name, for About (Ch9) */
+#ifdef RT_MAC_TEST
+#include <stdio.h>     /* sprintf/sscanf -- trace-line formatting and script-line parsing (Task 3) */
+#include <string.h>    /* strcmp -- script verb dispatch (Task 3) */
+#include <stdlib.h>    /* atoi -- script argument parsing (Task 3) */
+#endif
 
 /* rt_mac.c's eager Toolbox init, exposed non-static for exactly this call
    (see runtime/mac/rt_mac.c). */
 extern void rt_mac_init_toolbox(void);
+
+#ifdef RT_MAC_TEST
+/* rt_mac.c's shared capture-stream hook (Task 3): every trace line and
+   framebuffer snap chunk below goes through this single entry point, so
+   they interleave into the SAME `out` capture file as alert/log output and
+   the 4a exit trailer -- there is no second output channel on the Mac
+   side (see rt_mac.c's own header comment). */
+extern void rt_test_emit(const char *line);
+
+/* rt_ui_run's real WaitNextEvent loop wires `quit` (the menu item, the
+   close-to-quit path, etc.) through rt_quit (internal/build/rt/rt.h) --
+   the plain process-exit primitive every non-UI `quit` statement already
+   compiles to. The scripted `quit` command and script exhaustion (Task 3)
+   go through the exact same function: rt_ui.c has no richer "quit cascade"
+   of its own yet (that is future clarusc-lowering work, per the design
+   doc's aspirational note -- out of this task's scope), so "same path as
+   the quit statement" means literally this call, not a hand-rolled
+   window-closing loop. */
+extern void rt_quit(int32_t code);
+#endif
 
 /* Marks our own windows in WindowPeek->windowKind so rt_ui_front/
    rt_ui_winst_of never mistake some other window (a DA, an alert dialog)
@@ -112,6 +137,9 @@ typedef struct rt_ui_winst {
     Handle rectsH; Rect *rects;           /* nWidgets entries, window-local coords */
     Handle labelsH; unsigned char (*labels)[256]; /* nWidgets entries; only LABEL kinds used */
     Handle canvasH; rt_ui_canvas_buf *canvases;   /* nWidgets entries; only buffered CANVAS kinds used */
+#ifdef RT_MAC_TEST
+    short traceId;                    /* 1-based per-type instance counter for T OPEN/CLOSE/FRONT (Task 3) */
+#endif
 } rt_ui_winst;
 
 /* Allocates a Handle that never moves (NewHandleClear + HLock, held locked
@@ -128,6 +156,153 @@ static void *rt_ui_alloc_locked(Size sz, Handle *outH)
     *outH = h;
     return *h;
 }
+
+#ifdef RT_MAC_TEST
+/* ==================== RT_MAC_TEST trace lines (Task 3) ====================
+ * One line per contract-listed action (docs/superpowers/plans/
+ * 2026-07-24-mac-target-4b.md, "Contracts pinned by this plan"), appended
+ * to the 4a capture stream via rt_test_emit (rt_mac.c) -- golden-file
+ * vocabulary, byte-exact, do not reword without updating the plan and
+ * every scenario `.trace` golden that depends on it (Task 6). Every
+ * helper here is called from exactly the runtime action it names; none of
+ * this compiles into a normal build (the whole block, and every call site
+ * below guarded the same way, is `#ifdef RT_MAC_TEST`). */
+
+static void rt_ui_trace_id(const char *verb, const char *name, short id)
+{
+    char buf[300];
+    sprintf(buf, "T %s %s %d", verb, name, (int)id);
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_fire1(const char *name, const char *event)
+{
+    char buf[300];
+    sprintf(buf, "T FIRE %s.%s", name, event);
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_fire2(const char *name, const char *wname, const char *event)
+{
+    char buf[300];
+    sprintf(buf, "T FIRE %s.%s.%s", name, wname, event);
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_menu_select(const char *menu, const char *item)
+{
+    char buf[300];
+    sprintf(buf, "T FIRE %s.%s.select", menu, item);
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_every(short n)
+{
+    char buf[64];
+    sprintf(buf, "T FIRE every.%d", (int)n);
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_dim(const char *menu, const char *item, int on)
+{
+    char buf[300];
+    sprintf(buf, "T DIM %s.%s %d", menu, item, on ? 1 : 0);
+    rt_test_emit(buf);
+}
+
+/* Runtime-property names exactly as Ch8's widget table spells them
+   (`caption`/`text`/`enabled`/`checked`/`selected`/`width`/`height`) --
+   the SET trace line names the property the way `.cla` source names it,
+   not the RTUI_PROP_* C constant. */
+static const char *rt_ui_prop_name(short prop)
+{
+    switch (prop) {
+    case RTUI_PROP_CAPTION:  return "caption";
+    case RTUI_PROP_TEXT:     return "text";
+    case RTUI_PROP_ENABLED:  return "enabled";
+    case RTUI_PROP_CHECKED:  return "checked";
+    case RTUI_PROP_SELECTED: return "selected";
+    case RTUI_PROP_WIDTH:    return "width";
+    case RTUI_PROP_HEIGHT:   return "height";
+    default:                 return "?";
+    }
+}
+
+/* `T SET <WinType>.<Widget>.<prop> <value>` -- value is the Pascal-string
+   bytes as-is for a string write (widget captions/labels/text in this
+   codebase are plain ASCII, no embedded NUL/newline to worry about). */
+static void rt_ui_trace_set_str(const char *name, const char *wname, short prop, const unsigned char *s)
+{
+    char buf[512];
+    int n, i, len;
+    n = sprintf(buf, "T SET %s.%s.%s ", name, wname, rt_ui_prop_name(prop));
+    len = s ? s[0] : 0;
+    for (i = 0; i < len && n < (int)sizeof(buf) - 1; i++) buf[n++] = (char)s[1 + i];
+    buf[n] = '\0';
+    rt_test_emit(buf);
+}
+
+static void rt_ui_trace_set_bool(const char *name, const char *wname, short prop, int v)
+{
+    char buf[300];
+    sprintf(buf, "T SET %s.%s.%s %d", name, wname, rt_ui_prop_name(prop), v ? 1 : 0);
+    rt_test_emit(buf);
+}
+
+/* Per-WinType 1-based instance counter for T OPEN/CLOSE/FRONT ids (Task 3).
+   Sized off rt_ui_startup's own `wins` array -- linear scan is plenty for
+   the handful of window types any real program declares. */
+static const rt_ui_window_desc **gTraceWinTypes = NULL;
+static short *gTraceWinCounts = NULL;
+static short gTraceNWinTypes = 0;
+
+static short rt_ui_trace_next_id(const rt_ui_window_desc *d)
+{
+    short i;
+    for (i = 0; i < gTraceNWinTypes; i++) {
+        if (gTraceWinTypes[i] == d) {
+            gTraceWinCounts[i]++;
+            return gTraceWinCounts[i];
+        }
+    }
+    return 0; /* defensive: a window type rt_ui_startup was never told about */
+}
+
+/* T FRONT: fires only when the frontmost-of-ours WINDOW actually changes,
+   at the 4 real call sites where it can (open, close, click-to-front,
+   drag-to-front) -- see rt_ui_after_front_change below, which wraps every
+   such call site's existing rt_ui_menu_recompute_dim() call. */
+static rt_ui_winst *gTraceLastFront = NULL;
+
+static void rt_ui_trace_front_check(void)
+{
+    WindowPeek w;
+    rt_ui_winst *cur;
+
+    w = (WindowPeek)FrontWindow();
+    cur = (w && w->windowKind == RTUI_WINDOW_KIND) ? (rt_ui_winst *)GetWRefCon((WindowPtr)w) : NULL;
+    if (cur == gTraceLastFront) return;
+    gTraceLastFront = cur;
+    if (cur) rt_ui_trace_id("FRONT", cur->desc->name, cur->traceId);
+}
+
+/* T DIM: only the AUTOMATIC window-scoped dimming recompute is traced (per
+   the contract: "dimming recompute changed an item") -- a program calling
+   rt_ui_menu_enable directly (`MenuName.Item.enabled = b`, Ch9) has no
+   trace line of its own in the pinned vocabulary. gDimPrev holds the last
+   COMPUTED state per scoped handler entry (gMenuHandlerTable index,
+   allocated to gNMenuHandlers in rt_ui_startup); gDimFirst suppresses the
+   very first computation (rt_ui_startup's own initial call, before any
+   window has opened) so the trace stream doesn't open with a burst of
+   "just discovered nothing is open yet" lines that no script action
+   caused. */
+static char *gDimPrev = NULL;
+static int gDimFirst = 1;
+
+/* Set for the duration of rt_ui_run_scripted (see below): governs the one
+   sanctioned real/scripted divergence in rt_ui_handle_content_click. */
+static int gUiScripted = 0;
+#endif /* RT_MAC_TEST */
 
 static int rt_ui_is_ours(WindowPtr wp)
 {
@@ -469,9 +644,31 @@ static void rt_ui_menu_recompute_dim(void)
     short k;
     for (k = 0; k < gNMenuHandlers; k++) {
         const rt_ui_menu_handler *h = &gMenuHandlerTable[k];
+        int on;
         if (!h->scope) continue;
-        rt_ui_menu_enable(h->menuIndex, h->itemIndex, rt_ui_front(h->scope) != NULL);
+        on = rt_ui_front(h->scope) != NULL;
+        rt_ui_menu_enable(h->menuIndex, h->itemIndex, on);
+#ifdef RT_MAC_TEST
+        if (!gDimFirst && gDimPrev && gDimPrev[k] != (char)on) rt_ui_trace_dim(h->menu, h->item, on);
+        if (gDimPrev) gDimPrev[k] = (char)on;
+#endif
     }
+#ifdef RT_MAC_TEST
+    gDimFirst = 0;
+#endif
+}
+
+/* Wraps rt_ui_menu_recompute_dim at every call site where frontmost CAN
+   change (open, close, click-to-front, drag-to-front) with the T FRONT
+   trace check (Task 3) -- rt_ui_startup's own initial call (before any
+   window exists) is left as a bare rt_ui_menu_recompute_dim() call, not
+   this wrapper, since there is no frontmost change to report yet. */
+static void rt_ui_after_front_change(void)
+{
+    rt_ui_menu_recompute_dim();
+#ifdef RT_MAC_TEST
+    rt_ui_trace_front_check();
+#endif
 }
 
 /* Shared by MenuSelect (mouseDown in the menu bar) and MenuKey (cmdKey
@@ -500,6 +697,9 @@ static void rt_ui_menu_dispatch(long result)
         } else {
             front = NULL;
         }
+#ifdef RT_MAC_TEST
+        rt_ui_trace_menu_select(h->menu, h->item);
+#endif
         if (h->fire) h->fire(front);
     }
 }
@@ -528,11 +728,17 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
         short newVal;
         newVal = (short)(GetControlValue(ctrl) ? 0 : 1);
         SetControlValue(ctrl, newVal);
+#ifdef RT_MAC_TEST
+        rt_ui_trace_fire2(inst->desc->name, wd->name, "change");
+#endif
         if (inst->desc->handlers && inst->desc->handlers->widget)
             inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_CHANGE, (long)newVal, 0);
         break;
     }
     case RTUI_BUTTON:
+#ifdef RT_MAC_TEST
+        rt_ui_trace_fire2(inst->desc->name, wd->name, "click");
+#endif
         if (inst->desc->handlers && inst->desc->handlers->widget)
             inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_CLICK, 0, 0);
         break;
@@ -602,11 +808,28 @@ static void rt_ui_handle_activate(WindowPtr wp, int activating)
 
 /* ==================== mouse ==================== */
 
+/* Shared by real GrowWindow tracking below and the scripted `resize W H`
+   command (Task 3, rt_ui_script_resize): everything AFTER "we now know the
+   new size" -- resizing the WindowRecord itself, re-laying-out widgets,
+   reallocating buffered-canvas offscreen buffers, and firing the
+   `resized` handler -- is identical whether that size came from a real
+   interactive GrowWindow drag or a script line. */
+static void rt_ui_apply_resize(WindowPtr wp, rt_ui_winst *inst, short newW, short newH)
+{
+    SizeWindow(wp, newW, newH, (Boolean)1);
+    rt_ui_layout(inst);
+    rt_ui_canvas_realloc_all(inst); /* buffered canvas sizes may have tracked the resize (fill: both) */
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "resized");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->winEvent)
+        inst->desc->handlers->winEvent(inst, RTUI_EV_RESIZED, 0, 0);
+}
+
 static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
 {
     Rect limits;
     long newSize;
-    short newW, newH;
 
     if (!inst->desc->resizable) return;
     SetRect(&limits,
@@ -615,13 +838,7 @@ static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
             32767, 32767);
     newSize = GrowWindow(wp, where, &limits);
     if (newSize == 0) return;
-    newW = LoWord(newSize);
-    newH = HiWord(newSize);
-    SizeWindow(wp, newW, newH, (Boolean)1);
-    rt_ui_layout(inst);
-    rt_ui_canvas_realloc_all(inst); /* buffered canvas sizes may have tracked the resize (fill: both) */
-    if (inst->desc->handlers && inst->desc->handlers->winEvent)
-        inst->desc->handlers->winEvent(inst, RTUI_EV_RESIZED, 0, 0);
+    rt_ui_apply_resize(wp, inst, LoWord(newSize), HiWord(newSize));
 }
 
 /* `where` arrives as ev->where, which EventRecord always carries in GLOBAL
@@ -651,6 +868,9 @@ static void rt_ui_fire_canvas_xy(rt_ui_winst *inst, short wIdx, short event, Poi
 {
     const Rect *r;
     r = &inst->rects[wIdx];
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire2(inst->desc->name, inst->desc->widgets[wIdx].name, event == RTUI_WEV_CLICK ? "click" : "drag");
+#endif
     if (inst->desc->handlers && inst->desc->handlers->widget)
         inst->desc->handlers->widget(inst, wIdx, event, (long)(local.h - r->left), (long)(local.v - r->top));
 }
@@ -685,11 +905,28 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
     GlobalToLocal(&where);
     cpart = FindControl(where, wp, &ctrl);
     if (cpart != 0 && ctrl != NULL) {
-        short trackPart;
         short wIdx;
         wIdx = (short)(*ctrl)->contrlRfCon;
-        trackPart = TrackControl(ctrl, where, NULL);
-        if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
+#ifdef RT_MAC_TEST
+        /* The ONE sanctioned real/scripted divergence (Task 3, see the
+           plan's self-review notes): TrackControl's modal tracking loop
+           blocks waiting for a REAL mouse-up, which a scripted `click`
+           command never produces (there is no live mouse in RT_MAC_TEST
+           scripted mode -- gUiScripted is set only for the duration of
+           rt_ui_run_scripted). A synthetic click that FindControl
+           resolves to one of our own controls is dispatched directly --
+           exactly as if TrackControl had returned "released inside the
+           control" -- instead of calling TrackControl at all. Traced
+           identically to a real click either way: rt_ui_fire_widget is
+           the one shared "this widget just activated" entry point real
+           clicks and Return/Escape-key wiring already used before this
+           task; nothing downstream can tell the difference. */
+        if (gUiScripted) { rt_ui_fire_widget(inst, wIdx); return; }
+#endif
+        {
+            short trackPart = TrackControl(ctrl, where, NULL);
+            if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
+        }
         return;
     }
     {
@@ -718,7 +955,7 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
         dragBounds = qd.screenBits.bounds;
         InsetRect(&dragBounds, 4, 4);
         DragWindow(wp, ev->where, &dragBounds); /* also brings wp to front if it wasn't -- click-to-front */
-        rt_ui_menu_recompute_dim();
+        rt_ui_after_front_change();
         break;
     }
     case inGrow:
@@ -728,7 +965,7 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
     case inContent:
         if (wp != FrontWindow()) {
             SelectWindow(wp);
-            rt_ui_menu_recompute_dim(); /* click-to-front changed frontmost */
+            rt_ui_after_front_change(); /* click-to-front changed frontmost */
             break;
         }
         inst = rt_ui_winst_of(wp);
@@ -780,6 +1017,9 @@ static void rt_ui_handle_key(const EventRecord *ev)
         rt_ui_fire_widget(inst, wIdx);
         return;
     }
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "key");
+#endif
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_KEY, (long)ch, 0);
 }
@@ -806,7 +1046,21 @@ static void rt_ui_build_every(const rt_ui_every_desc *ev, short nEv)
     gEveryTable = ev;
     gNEvery = nEv;
     gEveryDue = nEv > 0 ? (unsigned long *)NewPtrClear((Size)nEv * sizeof(unsigned long)) : NULL;
+#ifdef RT_MAC_TEST
+    /* Scripted mode's virtual tick counter (gVirtualTicks, below) always
+       starts at 0 -- if the "due" baseline here came from the REAL
+       TickCount() instead (as the non-scripted branch below still needs),
+       every-block firing would depend on how many real ticks the Toolbox
+       boot sequence happened to burn before main() reached rt_ui_startup,
+       exactly the non-determinism the contract rules out ("TickCount is
+       not consulted... making runs deterministic"). Checking
+       rt_ui_test_script here (rather than referencing gVirtualTicks
+       directly, which is not yet declared at this point in the file) is
+       equivalent: gVirtualTicks is always still 0 when rt_ui_startup runs. */
+    now = (rt_ui_test_script[0] != '\0') ? 0UL : TickCount();
+#else
     now = TickCount();
+#endif
     for (i = 0; i < nEv; i++) gEveryDue[i] = now + (unsigned long)ev[i].ticks;
 }
 
@@ -820,6 +1074,9 @@ static void rt_ui_every_pump(void)
     for (i = 0; i < gNEvery; i++) {
         if ((long)(now - gEveryDue[i]) < 0) continue; /* not due yet */
         gEveryDue[i] = now + (unsigned long)gEveryTable[i].ticks;
+#ifdef RT_MAC_TEST
+        rt_ui_trace_every(i);
+#endif
         if (gEveryTable[i].fire) gEveryTable[i].fire();
     }
 }
@@ -836,13 +1093,297 @@ void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
     rt_ui_build_menus(menus, nMenus);
     gMenuHandlerTable = mh;
     gNMenuHandlers = nMh;
+#ifdef RT_MAC_TEST
+    gTraceWinTypes = wins;
+    gTraceNWinTypes = nWins;
+    gTraceWinCounts = nWins > 0 ? (short *)NewPtrClear((Size)nWins * sizeof(short)) : NULL;
+    gDimPrev = nMh > 0 ? (char *)NewPtrClear((Size)nMh) : NULL;
+    gDimFirst = 1;
+#endif
     rt_ui_menu_recompute_dim(); /* no windows open yet: all window-scoped items start dimmed */
     rt_ui_build_every(ev, nEv);
 }
 
+#ifdef RT_MAC_TEST
+/* ==================== RT_MAC_TEST scripted events (Task 3) ====================
+ * `rt_ui_test_script` (weak, empty by default -- see rt_ui.h) is consumed
+ * here INSTEAD of WaitNextEvent when non-empty, per the plan's pinned
+ * grammar. The injection point is exactly this: rt_ui_run's single
+ * WaitNextEvent call site is replaced wholesale by rt_ui_run_scripted
+ * below; every downstream dispatch function (rt_ui_handle_mouse_down,
+ * rt_ui_handle_key, rt_ui_menu_dispatch, rt_ui_fire_widget,
+ * rt_ui_fire_canvas_xy, ...) is the SAME code real input already used --
+ * the only sanctioned exception is the TrackControl bypass documented at
+ * its one call site in rt_ui_handle_content_click. */
+
+__attribute__((weak)) const char rt_ui_test_script[] = "";
+
+static const char *gScriptCursor = NULL;
+static unsigned long gVirtualTicks = 0; /* replaces TickCount() for `every` scheduling in scripted mode */
+
+/* Reads one non-blank line (verb + args, NUL-terminated, trailing '\n'
+   stripped) from rt_ui_test_script into buf. Returns 0 at end of script
+   (script exhaustion), which the caller treats as `quit`. Lines longer
+   than bufsz-1 are truncated -- generated/hand-written scripts are always
+   short lines, so this is a defensive bound, not a real limit. */
+static int rt_ui_script_next_line(char *buf, int bufsz)
+{
+    int n;
+    if (!gScriptCursor) gScriptCursor = rt_ui_test_script;
+    for (;;) {
+        if (*gScriptCursor == '\0') return 0;
+        n = 0;
+        while (*gScriptCursor && *gScriptCursor != '\n') {
+            if (n < bufsz - 1) buf[n++] = *gScriptCursor;
+            gScriptCursor++;
+        }
+        if (*gScriptCursor == '\n') gScriptCursor++;
+        buf[n] = '\0';
+        if (n > 0) return 1; /* blank line: keep reading */
+    }
+}
+
+/* Drains queued update/activate events (never mouseDown/keyDown -- nothing
+   generates those without a real WaitNextEvent call in scripted mode) so
+   InvalRect'd content (e.g. a label rewritten by rt_ui_widget_set_str)
+   actually reaches the screen bits before the next script action or a
+   `snap`, matching what a real WaitNextEvent-driven loop would have
+   processed between one action and the next by now. Bounded: these are
+   software-queued Toolbox events, not blocking waits on real input. */
+static void rt_ui_pump_passive(void)
+{
+    EventRecord ev;
+    while (GetNextEvent(updateMask | activMask, &ev)) {
+        if (ev.what == updateEvt) rt_ui_handle_update((WindowPtr)ev.message);
+        else if (ev.what == activateEvt) rt_ui_handle_activate((WindowPtr)ev.message, (ev.modifiers & activeFlag) != 0);
+    }
+}
+
+/* `click X Y` (GLOBAL coords): synthesizes a mouseDown EventRecord and
+   feeds it through the EXACT SAME rt_ui_handle_mouse_down real clicks use
+   -- goAway/drag/grow/menu-bar/content all resolve identically; the one
+   divergence (button clicks skip TrackControl's modal loop) is documented
+   at its call site in rt_ui_handle_content_click. */
+static void rt_ui_script_click(short x, short y)
+{
+    EventRecord ev;
+    ev.what = mouseDown;
+    ev.where.h = x;
+    ev.where.v = y;
+    ev.modifiers = 0;
+    rt_ui_handle_mouse_down(&ev);
+}
+
+/* `drag X Y` (GLOBAL coords): "mouse-moved-while-down" has no Toolbox
+   event type of its own -- real canvas dragging is polled with StillDown()
+   inside rt_ui_handle_canvas_click's own loop, which scripted mode cannot
+   drive (there is no continuously-held real mouse button). A script drag
+   is therefore its own discrete action: resolve (X,Y) via FindWindow
+   exactly like a content click would, and if it lands inside a canvas
+   widget's rect on the frontmost window, fire RTUI_WEV_DRAG directly --
+   same widget-local coordinate conversion and same rt_ui_fire_canvas_xy
+   entry point real dragging uses, just without TrackControl/StillDown's
+   real-mouse machinery in between. A point that misses (no window, wrong
+   window, not over a canvas) is a silent no-op, same as a real drag that
+   wanders off every hit-testable widget. */
+static void rt_ui_script_drag(short x, short y)
+{
+    WindowPtr wp;
+    Point where, local;
+    short part, cIdx;
+    rt_ui_winst *inst;
+
+    where.h = x;
+    where.v = y;
+    part = FindWindow(where, &wp);
+    if (part != inContent || wp != FrontWindow()) return;
+    inst = rt_ui_winst_of(wp);
+    if (!inst) return;
+    SetPort(wp);
+    local = where;
+    GlobalToLocal(&local);
+    if (rt_ui_canvas_hit(inst, local, &cIdx)) rt_ui_fire_canvas_xy(inst, cIdx, RTUI_WEV_DRAG, local);
+}
+
+/* `key C`: synthesizes a keyDown EventRecord for the exact same
+   rt_ui_handle_key real typing uses (menu-key equivalents, Return/Escape
+   default/cancel wiring, and the frontmost window's `key` handler all
+   resolve identically). */
+static void rt_ui_script_key(unsigned char ch)
+{
+    EventRecord ev;
+    ev.what = keyDown;
+    ev.message = ch;
+    ev.modifiers = 0;
+    rt_ui_handle_key(&ev);
+}
+
+/* `close`: "goAway click on frontmost" -- a real goAway click needs
+   TrackGoAway to confirm the mouse-up landed back in the box (impossible
+   to simulate meaningfully without a real mouse); a script `close` means
+   "the close box was clicked and released", so it goes directly to
+   rt_ui_close, exactly what a successful TrackGoAway leads to in
+   rt_ui_handle_mouse_down's inGoAway case. */
+static void rt_ui_script_close(void)
+{
+    WindowPtr wp;
+    rt_ui_winst *inst;
+
+    wp = FrontWindow();
+    if (!wp) return;
+    inst = rt_ui_winst_of(wp);
+    if (inst) rt_ui_close(inst);
+}
+
+/* `resize W H`: real resizing is interactive (GrowWindow blocks on a real
+   mouse drag); a script gives the new size directly, so it skips straight
+   to rt_ui_apply_resize -- the same post-GrowWindow logic (layout, canvas
+   realloc, `resized` trace + handler) rt_ui_handle_grow already factors
+   out for exactly this reuse. */
+static void rt_ui_script_resize(short w, short h)
+{
+    WindowPtr wp;
+    rt_ui_winst *inst;
+
+    wp = FrontWindow();
+    if (!wp) return;
+    inst = rt_ui_winst_of(wp);
+    if (inst && inst->desc->resizable) rt_ui_apply_resize(wp, inst, w, h);
+}
+
+/* `tick N`: advances the VIRTUAL tick counter (TickCount is never
+   consulted in scripted mode) and pumps the every-table off of it, once --
+   same "reschedule from now, no burst catch-up" policy rt_ui_every_pump
+   already uses for real timers (see its comment), just against
+   gVirtualTicks instead of TickCount(). A separate function from
+   rt_ui_every_pump (rather than a shared one parameterized on "now") keeps
+   real-build `every` scheduling untouched by anything scripted-mode adds. */
+static void rt_ui_script_every_pump(void)
+{
+    short i;
+    if (!gEveryTable) return;
+    for (i = 0; i < gNEvery; i++) {
+        if ((long)(gVirtualTicks - gEveryDue[i]) < 0) continue; /* not due yet */
+        gEveryDue[i] = gVirtualTicks + (unsigned long)gEveryTable[i].ticks;
+        rt_ui_trace_every(i);
+        if (gEveryTable[i].fire) gEveryTable[i].fire();
+    }
+}
+
+static void rt_ui_script_tick(long n)
+{
+    gVirtualTicks += (unsigned long)n;
+    rt_ui_script_every_pump();
+    rt_ui_flush_all_buffered(); /* same "returns control to the event loop" point real rt_ui_run uses, Ch11 */
+}
+
+/* `snap NAME`: hex-dumps RTUI_SNAP_BYTES bytes starting at
+   qd.screenBits.baseAddr between the pinned sentinels, uppercase, 128 hex
+   chars (64 source bytes) per line -- RTUI_SNAP_BYTES is an exact multiple
+   of 64, so every line is a full line, no partial-line case to handle.
+   rowBytes is asserted (not just assumed) to be 64, since the whole
+   64-bytes-per-hex-line convention depends on it. */
+#define RTUI_SNAP_BYTES 10944L
+
+static void rt_ui_hex_line(char *out, const unsigned char *src)
+{
+    static const char hexd[16] = "0123456789ABCDEF";
+    int i;
+    for (i = 0; i < 64; i++) {
+        out[i * 2] = hexd[(src[i] >> 4) & 0xF];
+        out[i * 2 + 1] = hexd[src[i] & 0xF];
+    }
+    out[128] = '\0';
+}
+
+static void rt_ui_test_snap(const char *name)
+{
+    unsigned char *base;
+    long off;
+    char hdr[280];
+    char line[130];
+
+    if (qd.screenBits.rowBytes != 64) rt_panic("snap: screenBits.rowBytes is not 64");
+    sprintf(hdr, "##CLARUS-SNAP## %s", name);
+    rt_test_emit(hdr);
+    base = (unsigned char *)qd.screenBits.baseAddr;
+    for (off = 0; off < RTUI_SNAP_BYTES; off += 64) {
+        rt_ui_hex_line(line, base + off);
+        rt_test_emit(line);
+    }
+    rt_test_emit("##CLARUS-SNAP-END##");
+}
+
+/* Menu bar position -> native (menuID, itemNum), for `menu M I` (Task 3):
+   M is the 1-based BAR position, where position 1 is ALWAYS the Apple
+   menu (native ID RTUI_APPLE_MENU_ID == 1) and positions 2..N+1 are the N
+   declared menus in declaration order (native IDs RTUI_MENU_ID_BASE(2)..
+   RTUI_MENU_ID_BASE+N-1). Both are built with InsertMenu(mh, 0)
+   (append-to-list == rightward-in-bar) in that exact order at startup
+   (rt_ui_build_apple_menu then rt_ui_build_menus), so bar position and
+   native menu ID are numerically IDENTICAL -- `menu M I` needs no
+   position-to-ID translation at all: passing M as the native menuID and I
+   as the native 1-based itemNum reproduces exactly what MenuSelect would
+   have returned for a real click on that (position, item). So `menu 2 1`
+   is the FIRST declared menu's FIRST item (position 1 is Apple). Task 6's
+   goldens pin this numbering -- do not change RTUI_MENU_ID_BASE or the
+   Apple-menu-first insertion order in rt_ui_startup without updating this
+   comment and the two call sites above (rt_ui_build_apple_menu /
+   rt_ui_build_menus) that make it true. */
+static void rt_ui_script_menu(short m, short i)
+{
+    rt_ui_menu_dispatch(((long)m << 16) | (unsigned short)i);
+}
+
+static void rt_ui_run_scripted(void)
+{
+    char line[256];
+    char verb[32];
+    char arg1[64], arg2[64];
+
+    gUiScripted = 1;
+    HideCursor(); /* determinism for `snap` -- scripted-mode startup only, per the contract */
+    for (;;) {
+        int nf;
+        if (!rt_ui_script_next_line(line, sizeof(line))) { rt_quit(0); return; }
+        arg1[0] = '\0';
+        arg2[0] = '\0';
+        nf = sscanf(line, "%31s %63s %63s", verb, arg1, arg2);
+        if (nf < 1) continue;
+        if (strcmp(verb, "click") == 0) {
+            rt_ui_script_click((short)atoi(arg1), (short)atoi(arg2));
+        } else if (strcmp(verb, "drag") == 0) {
+            rt_ui_script_drag((short)atoi(arg1), (short)atoi(arg2));
+        } else if (strcmp(verb, "key") == 0) {
+            rt_ui_script_key((unsigned char)arg1[0]);
+        } else if (strcmp(verb, "menu") == 0) {
+            rt_ui_script_menu((short)atoi(arg1), (short)atoi(arg2));
+        } else if (strcmp(verb, "close") == 0) {
+            rt_ui_script_close();
+        } else if (strcmp(verb, "resize") == 0) {
+            rt_ui_script_resize((short)atoi(arg1), (short)atoi(arg2));
+        } else if (strcmp(verb, "tick") == 0) {
+            rt_ui_script_tick((long)atoi(arg1));
+        } else if (strcmp(verb, "snap") == 0) {
+            rt_ui_test_snap(arg1);
+        } else if (strcmp(verb, "quit") == 0) {
+            rt_quit(0);
+            return;
+        }
+        rt_ui_pump_passive();
+    }
+}
+#endif /* RT_MAC_TEST */
+
 void rt_ui_run(void)
 {
     EventRecord ev;
+#ifdef RT_MAC_TEST
+    if (rt_ui_test_script[0] != '\0') {
+        rt_ui_run_scripted();
+        return; /* unreachable in practice: rt_ui_run_scripted only returns via rt_quit, which does not */
+    }
+#endif
     for (;;) {
         WaitNextEvent(everyEvent, &ev, (short)(gNEvery > 0 ? 1 : 30), NULL);
         switch (ev.what) {
@@ -907,8 +1448,15 @@ void *rt_ui_open(const rt_ui_window_desc *d)
 
     ShowWindow(inst->wp);
     SelectWindow(inst->wp);
-    rt_ui_menu_recompute_dim(); /* frontmost changed: this instance is now front */
+#ifdef RT_MAC_TEST
+    inst->traceId = rt_ui_trace_next_id(d);
+    rt_ui_trace_id("OPEN", d->name, inst->traceId);
+#endif
+    rt_ui_after_front_change(); /* frontmost changed: this instance is now front */
 
+    /* `opened` is not in the T FIRE event vocabulary (only closeRequest/
+       closed/resized/key are) -- T OPEN above already covers "a window was
+       opened", so no trace line accompanies this handler call. */
     if (d->handlers && d->handlers->winEvent)
         d->handlers->winEvent(inst, RTUI_EV_OPENED, 0, 0);
 
@@ -922,6 +1470,9 @@ void rt_ui_close(void *instV)
 
     inst = (rt_ui_winst *)instV;
     cancelFlag = 0;
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "closeRequest");
+#endif
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSEREQUEST, (long)&cancelFlag, 0);
     if (cancelFlag) return;
@@ -932,7 +1483,13 @@ void rt_ui_close(void *instV)
        bookkeeping Handles (which still hold valid data at this point) are
        freed only after the handler returns. */
     DisposeWindow(inst->wp);
-    rt_ui_menu_recompute_dim(); /* frontmost changed: this instance is gone */
+#ifdef RT_MAC_TEST
+    rt_ui_trace_id("CLOSE", inst->desc->name, inst->traceId);
+#endif
+    rt_ui_after_front_change(); /* frontmost changed: this instance is gone */
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "closed");
+#endif
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSED, 0, 0);
 
@@ -991,6 +1548,9 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
     GetPort(&savedPort);
     SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
+#ifdef RT_MAC_TEST
+    rt_ui_trace_set_str(inst->desc->name, wd->name, prop, s);
+#endif
     if (wd->kind == RTUI_LABEL && prop == RTUI_PROP_TEXT) {
         rt_ui_pstrcpy(inst->labels[wIdx], s);
         InvalRect(&inst->rects[wIdx]);
@@ -1010,6 +1570,9 @@ void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
     GetPort(&savedPort); /* same reasoning as rt_ui_widget_set_str -- see its comment */
     SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
+#ifdef RT_MAC_TEST
+    rt_ui_trace_set_bool(inst->desc->name, wd->name, prop, v);
+#endif
     if (wd->kind == RTUI_CHECK && prop == RTUI_PROP_CHECKED && inst->ctrls[wIdx]) {
         SetControlValue(inst->ctrls[wIdx], (short)(v ? 1 : 0));
     } else if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_ENABLED && inst->ctrls[wIdx]) {

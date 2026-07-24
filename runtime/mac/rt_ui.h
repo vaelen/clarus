@@ -155,4 +155,20 @@ void  rt_ui_canvas_line(void *inst, short wIdx, short x0, short y0, short x1, sh
 void  rt_ui_canvas_rect(void *inst, short wIdx, short x, short y, short w, short h, int fill);
 void  rt_ui_canvas_draw_text(void *inst, short wIdx, short x, short y, const unsigned char *s); /* Ch11 drawText -- added, Task 2; s is Str255-compatible like other rt_ui string params */
 
+/* ==================== RT_MAC_TEST scripted events (Task 3) ====================
+ * Compiled-in event script consumed by rt_ui_run's scripted-input path
+ * (rt_ui.c) INSTEAD of WaitNextEvent, per the plan's pinned grammar
+ * (click/drag/key/menu/close/resize/tick/snap/quit). Defined weak and
+ * empty in rt_ui.c -- an empty script means "no scripted input; run the
+ * normal WaitNextEvent loop with real input" -- so a generated events.c
+ * (scripts/build-mac.sh's `--events FILE`, or the committed sample at
+ * internal/mactest/uiprobe/events.c) need only provide ONE strong,
+ * non-empty definition of this exact symbol to override it at link time;
+ * declared here so that generated code has an authoritative signature to
+ * match without including rt_ui.c or guessing the type. RT_MAC_TEST only:
+ * normal (non-test) builds never reference this symbol at all. */
+#ifdef RT_MAC_TEST
+extern const char rt_ui_test_script[];
+#endif
+
 #endif /* CLARUS_RT_UI_H */

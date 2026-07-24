@@ -146,6 +146,26 @@ static void rt_test_write(const uint8_t *buf, long n)
     FlushVol(NULL, 0);
 }
 
+/* Exposed for runtime/mac/rt_ui.c (Task 3, mac-target-4b): the shared hook
+   every UI trace line and framebuffer snap chunk goes through, so they
+   interleave into the SAME `out` capture stream as alert/log output ahead
+   of the 4a exit trailer, byte-identically to how rt_alert already does it.
+   `line` is a plain NUL-terminated C string (NOT a Str255 -- window/widget/
+   menu names in rt_ui.h's descriptors are already plain `const char *`,
+   so there is no Pascal-string count byte to strip here); a trailing '\n'
+   is appended, matching the LF-terminated trace-line contract. Declared
+   `extern` directly in rt_ui.c (same convention as rt_mac_init_toolbox
+   just below) rather than added to the frozen internal/build/rt/rt.h. */
+void rt_test_emit(const char *line)
+{
+    char buf[512];
+    int n;
+    n = 0;
+    while (line[n] != '\0' && n < (int)sizeof(buf) - 1) { buf[n] = line[n]; n++; }
+    buf[n++] = '\n';
+    rt_test_write((const uint8_t *)buf, (long)n);
+}
+
 /* CR->LF plus a trailing LF -- the same rendering host rt_alert/rt_log
    apply before their own trailing newline (rt.c). dst must hold >=256
    bytes; returns the number of bytes written to dst (up to 256, for a
