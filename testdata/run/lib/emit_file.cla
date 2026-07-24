@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// emit_file.cla: Task 9 coverage slice for clarusc emit -- file intrinsics.
+// A file.writeText/readText round-trip through a relative path (the test
+// harness runs each binary in a fresh temp cwd, so "doc.txt" never litters
+// the tree) plus file.name path-basename extraction. Self-verifying.
+func runEmitFile() {
+    var t: text
+    var t2: text
+    var buf: char[64]
+    var n: int
+    var s: string
+    var ok: bool
+
+    s = "line one\nline two"
+    n = s.toBytes(buf)
+    t.fromBytes(buf, n)
+
+    ok = file.writeText("doc.txt", t)
+    if ok {
+        alert("write ok")
+    } else {
+        alert("write FAIL")
+    }
+
+    ok = file.readText("doc.txt", t2)
+    if ok {
+        n = t2.toBytes(buf)
+        s.fromBytes(buf, n)
+        if s == "line one\nline two" {
+            alert("round-trip ok")
+        } else {
+            alert("round-trip FAIL")
+        }
+    } else {
+        alert("read FAIL")
+    }
+
+    if file.name("some/path/doc.txt") == "doc.txt" {
+        alert("file.name ok")
+    } else {
+        alert("file.name FAIL")
+    }
+}

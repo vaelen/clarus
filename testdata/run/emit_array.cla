@@ -1,86 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// emit_array.cla: Task 8 coverage slice for clarusc emit -- fixed-array
-// read/write (IndexRef's Arr path, funcprint.go's `X.e[rt_arr_check(i, N)]`
-// contract), a read-before-write array local to prove zero-init for BOTH a
-// scalar element type (int) and a char element type (cpDefaultInit's Arr
-// case, added this task -- a read-before-write char[] local previously had
-// no default-init at all), an array of records (cpEnsureArr's element-type
-// ordering: the record struct must already exist before the array wrapper
-// typedef references it), and bounds-checked out-of-range access aborting
-// the program (rt_arr_check -> rt_panic, exit 3) instead of reading/writing
-// out of bounds. Self-verifying via `if cond { alert("... ok") } else {
-// alert("... FAIL") }`, same convention as emit_arith.cla. No user funcs
-// (Task 9) -- just the handler-body subset this task supports.
-record Cell {
-    v: int = 7
-}
+include "lib/emit_array.cla"
 
 on App.startCLI(args: list of string) {
-    var arr: int[5]
-    var chars: char[4]
-    var cells: Cell[3]
-    var i: int
-    var sum: int
-
-    // ---- read-before-write zero-init: int array ----
-    if arr[0] == 0 and arr[4] == 0 {
-        alert("int array zero-init ok")
-    } else {
-        alert("int array zero-init FAIL")
-    }
-
-    // ---- read-before-write zero-init: char array (cpDefaultInit's new Arr
-    // case -- a char[] element loop, not a scalar `= 0`) ----
-    if int(chars[0]) == 0 and int(chars[3]) == 0 {
-        alert("char array zero-init ok")
-    } else {
-        alert("char array zero-init FAIL")
-    }
-
-    // ---- write/read: int array ----
-    i = 0
-    while i < 5 {
-        arr[i] = i * 10
-        i = i + 1
-    }
-    sum = arr[0] + arr[1] + arr[2] + arr[3] + arr[4]
-    if sum == 100 {
-        alert("int array write/read ok")
-    } else {
-        alert("int array write/read FAIL")
-    }
-
-    // ---- write/read: char array ----
-    chars[0] = 'h'
-    chars[1] = 'i'
-    if chars[0] == 'h' and chars[1] == 'i' {
-        alert("char array write/read ok")
-    } else {
-        alert("char array write/read FAIL")
-    }
-
-    // ---- array of records: default-init applies each element's OWN
-    // record defaults (clar_new_Cell()), and FieldRef composes with
-    // IndexRef for both read and write ----
-    if cells[0].v == 7 and cells[2].v == 7 {
-        alert("array of records default ok")
-    } else {
-        alert("array of records default FAIL")
-    }
-    cells[1].v = 42
-    if cells[1].v == 42 and cells[0].v == 7 {
-        alert("array of records write ok")
-    } else {
-        alert("array of records write FAIL")
-    }
-
-    // ---- bounds behavior: an out-of-range index aborts the program
-    // (rt_arr_check -> rt_panic, exit 3) rather than reading/writing out of
-    // bounds -- verified via .exit, not stdout, since the process aborts
-    // before the next alert runs. ----
-    alert("before out of bounds")
-    arr[10] = 1
-    alert("after out of bounds (should not print)")
+    runEmitArray(args)
 }

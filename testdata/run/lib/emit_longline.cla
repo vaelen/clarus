@@ -1,0 +1,27 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// emit_longline.cla: proves clarusc's C emitter no longer caps emitted C at a
+// `string`'s 255 bytes. Two constructs each render to a SINGLE C line AND a
+// SINGLE C expression well past 300 bytes -- before the text-typed line
+// buffers / expression fragments, either would have truncated mid-token and
+// produced broken (or silently wrong) C.
+//
+//  1. A 40-term `and` chain of all-true comparisons: fpAndOr inlines the whole
+//     chain into one nested `(... && ...)` C expression on one `if (...)` line.
+//  2. A 60-term `+` sum: fpBin inlines it into one nested `(((1 + 1) + 1)...)`
+//     C expression on one line.
+//
+// Self-verifying: each `if` alerts "ok" only when the (long) condition holds.
+func runEmitLongline(args: list of string) {
+    if 1 < 2 and 2 < 3 and 3 < 4 and 4 < 5 and 5 < 6 and 6 < 7 and 7 < 8 and 8 < 9 and 9 < 10 and 10 < 11 and 11 < 12 and 12 < 13 and 13 < 14 and 14 < 15 and 15 < 16 and 16 < 17 and 17 < 18 and 18 < 19 and 19 < 20 and 20 < 21 and 21 < 22 and 22 < 23 and 23 < 24 and 24 < 25 and 25 < 26 and 26 < 27 and 27 < 28 and 28 < 29 and 29 < 30 and 30 < 31 and 31 < 32 and 32 < 33 and 33 < 34 and 34 < 35 and 35 < 36 and 36 < 37 and 37 < 38 and 38 < 39 and 39 < 40 and 40 < 41 {
+        alert("longcond ok")
+    } else {
+        alert("longcond FAIL")
+    }
+    if (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) == 60 {
+        alert("longarith ok")
+    } else {
+        alert("longarith FAIL")
+    }
+}
