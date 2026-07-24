@@ -5,6 +5,17 @@ Read `docs/ROADMAP.md` first — it is the authoritative record of sequencing
 and strategy. `docs/clarus-language-reference.md` is the normative language
 spec; where any other doc disagrees, the reference wins.
 
+## Working conventions
+
+- Design-first: brainstorm → spec → plan → implement (specs in
+  `docs/superpowers/specs/`, plans in `docs/superpowers/plans/`).
+- Implementation is ALWAYS subagent-driven (superpowers:subagent-driven-development)
+  using cheaper models (`model: sonnet` for implementation and review tasks;
+  `haiku` for mechanical batch edits). The top-level (Fable) session designs,
+  dispatches, reviews, and integrates — it does not write implementation code
+  itself. Final whole-branch review may use the most capable model.
+- Feature branch per plan; main stays green; merge only on request.
+
 ## Build and test
 
 ```sh
@@ -27,6 +38,13 @@ go test ./...                     # full suite, incl. bootstrap + snapshot tests
 - `toolchain/` → built cross-toolchain (`toolchain/bin`: gcc, Rez, LaunchAPPL,
   hfsutils h* tools). Prebuilt samples: `../Retro68-build/build-target/Samples/`.
 - `macplus/` → Mini vMac emulator (`MacPlus.app`) + `vMac.ROM`.
+
+To build a Mac app from C: `CMakeLists.txt` with `add_application(Name src.c)`, then
+
+```sh
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=$REPO/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+make -C build    # produces Name.bin (for LaunchAPPL), Name.APPL, Name.dsk
+```
 
 ## Running Mac apps in the emulator
 
