@@ -43,6 +43,13 @@ static void rt_mac_toolbox_init(void)
     rt_mac_inited = 1;
 }
 
+/* Non-static wrapper so runtime/mac/rt_ui.c (Task 1, mac-target-4b) can
+   force eager Toolbox init from rt_ui_startup, reusing this exact routine
+   instead of duplicating InitGraf/InitFonts/... -- idempotent same as the
+   static version above (rt_mac_inited guards both). No other rt_mac.c
+   behavior changes. */
+void rt_mac_init_toolbox(void) { rt_mac_toolbox_init(); }
+
 #ifndef RT_MAC_TEST
 void rt_alert(const uint8_t *s)
 {
