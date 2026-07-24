@@ -107,6 +107,20 @@ typedef struct { void (*fire)(void *frontInstOrNull); const char *menu, *item;
 
 /* ==================== runtime API (called by emitted code / probe) ==================== */
 
+/* PORT DISCIPLINE RULE: every rt_ui entry point below that touches
+ * QuickDraw/Control Manager state (the widget/canvas setters and getters
+ * that draw or invalidate) self-asserts the correct GrafPort with
+ * GetPort/SetPort and restores the CALLER's port before returning. Nothing
+ * here may assume "the current port is already correct" on entry, and
+ * nothing here may leave the port changed on exit -- a widget click
+ * happens to already have the right port set by the time it dispatches,
+ * but a menu handler or an `every` block can run with any port current
+ * (mid-canvas-draw, a different window, ...), and Task 3's scripted
+ * dispatch and Tasks 4-5's emitted call sites get no other guarantee than
+ * this one. This is not ambient behavior to preserve by convention -- it
+ * is an explicit contract every future rt_ui.c entry point in this
+ * category must keep.
+ */
 void  rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
                     const rt_ui_menu_desc **menus, short nMenus,
                     const rt_ui_menu_handler *mh, short nMh,

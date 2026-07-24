@@ -145,7 +145,7 @@ static const rt_ui_handlers kBounceHandlers = { bounce_win_event, 0 };
 
 static const rt_ui_window_desc kBounceWindow = {
     "Bounce", (const unsigned char *)"\pBounce",
-    160, 160, 0, 0, 0,
+    160, 160, 1, 120, 120, /* resizable: exercises buffered-canvas offscreen-buffer reallocation on grow (rt_ui_canvas_realloc_all) */
     1, kBounceWidgets,
     (short)sizeof(BounceState),
     &kBounceHandlers

@@ -24,11 +24,12 @@
        are auto-dimmed via native (Dis|En)ableItem whenever the frontmost
        window of that type changes (open/close/click-to-front) -- the
        `T DIM` trace line itself is Task 3, but the dimming BEHAVIOR (the
-       item actually becomes unselectable) is real now. The Apple menu and
-       About item (Ch9) are intentionally NOT built here: nothing in this
-       plan's ABI or Task 2's probe exercises them, and Ch9 itself says a
-       richer About dialog is future work -- ponytail: add when something
-       actually needs it.
+       item actually becomes unselectable) is real now. The Apple menu
+       (Ch9: "provided by the runtime automatically; no declaration is
+       needed") is built here too: an About item that shows the
+       application's name only (Ch9 pins exactly that much, nothing
+       richer), a separator, then the standard System 6 desk-accessory
+       list via AppendResMenu('DRVR')/OpenDeskAcc.
      - Canvas is a widget kind with no Control Manager backing (like
        label). When RTUI_BUFFERED, each instance owns an offscreen 1-bit
        GrafPort+BitMap (the pre-Color-QuickDraw "OffscreenBitmap" recipe --
@@ -62,6 +63,9 @@
 #include <Memory.h>
 #include <ToolUtils.h>
 #include <Menus.h>
+#include <Dialogs.h>   /* NoteAlert, for the About item (Ch9) */
+#include <Devices.h>   /* OpenDeskAcc, for the Apple menu's desk-accessory list */
+#include <LowMem.h>    /* LMGetCurApName -- the running app's name, for About (Ch9) */
 
 /* rt_mac.c's eager Toolbox init, exposed non-static for exactly this call
    (see runtime/mac/rt_mac.c). */
@@ -280,6 +284,7 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
 static void rt_ui_canvas_dispose(rt_ui_canvas_buf *cb)
 {
     if (!cb->port) return;
+    ClosePort(cb->port); /* releases the port's own visRgn/clipRgn Handles before the port record itself is freed */
     DisposePtr((Ptr)cb->port);
     DisposePtr(cb->pixels);
     cb->port = NULL;
@@ -359,13 +364,45 @@ static void rt_ui_flush_all_buffered(void)
  * arithmetic; `rt_ui_menu_handler.menuIndex/itemIndex` (both 0-based, same
  * convention as widgetIndex and the every-block trace index) are looked up
  * against that pair directly -- the name fields in rt_ui_menu_handler are
- * for trace output (Task 3), not needed for dispatch. The Apple menu is
- * deliberately not built (see the file header comment). */
+ * for trace output (Task 3), not needed for dispatch. RTUI_MENU_ID_BASE
+ * leaves ID 1 free for the Apple menu, built separately below (it has no
+ * descriptor and no app-authored handler, so it isn't part of this table). */
 
 static MenuHandle *gMenuHandles = NULL;  /* gNMenus entries */
 static short gNMenus = 0;
 static const rt_ui_menu_handler *gMenuHandlerTable = NULL;
 static short gNMenuHandlers = 0;
+static MenuHandle gAppleMenu = NULL;
+
+#define RTUI_APPLE_MENU_ID 1
+
+/* Ch9: "The Apple menu and its About item are provided by the runtime
+   automatically; no declaration is needed." Standard System 6 shape: an
+   About item (Ch9 pins its content to "the application's name only" --
+   shown via the same ALRT 128 / DITL "^0" resource rt_mac.c's own
+   rt_alert uses, substituting the app's name instead of an error message),
+   a separator, then the desk-accessory list. Inserted before the declared
+   menus so it lands leftmost in the bar. */
+static void rt_ui_build_apple_menu(void)
+{
+    gAppleMenu = NewMenu(RTUI_APPLE_MENU_ID, (const unsigned char *)"\p\024");
+    AppendMenu(gAppleMenu, (const unsigned char *)"\pAbout This Application;-");
+    AppendResMenu(gAppleMenu, 'DRVR');
+    InsertMenu(gAppleMenu, 0);
+}
+
+static void rt_ui_apple_select(short itemNum)
+{
+    if (itemNum == 1) {
+        ParamText(LMGetCurApName(), (const unsigned char *)"\p",
+                  (const unsigned char *)"\p", (const unsigned char *)"\p");
+        NoteAlert(128, NULL);
+    } else {
+        Str255 name;
+        GetMenuItemText(gAppleMenu, itemNum, name);
+        OpenDeskAcc(name); /* item 2 is the separator; the Menu Manager never returns it as a selection */
+    }
+}
 
 static void rt_ui_build_menus(const rt_ui_menu_desc **menus, short nMenus)
 {
@@ -447,6 +484,10 @@ static void rt_ui_menu_dispatch(long result)
     itemNum = LoWord(result);
     HiliteMenu(0);
     if (menuID == 0) return;
+    if (menuID == RTUI_APPLE_MENU_ID) {
+        rt_ui_apple_select(itemNum);
+        return;
+    }
     menuIdx = (short)(menuID - RTUI_MENU_ID_BASE);
     itemIdx = (short)(itemNum - 1);
     for (k = 0; k < gNMenuHandlers; k++) {
@@ -473,8 +514,13 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
 {
     const rt_ui_widget_desc *wd;
     ControlHandle ctrl;
+    GrafPtr savedPort;
 
-    SetPort(inst->wp); /* Return/Escape-key dispatch reaches here without having set a port first (unlike the content-click caller) */
+    /* Self-asserts and restores its own port (see the rt_ui.h header
+       comment on this rule) -- Return/Escape-key dispatch reaches here
+       without the caller having set a port first, unlike content-click. */
+    GetPort(&savedPort);
+    SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
     ctrl = inst->ctrls[wIdx];
     switch (wd->kind) {
@@ -493,6 +539,7 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
     default:
         break;
     }
+    SetPort(savedPort);
 }
 
 /* ==================== update / activate ==================== */
@@ -785,6 +832,7 @@ void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
     (void)wins; (void)nWins;
     rt_mac_init_toolbox(); /* eager: subsumes rt_mac.c's own lazy init */
     FlushEvents(everyEvent, 0);
+    rt_ui_build_apple_menu(); /* inserted first so it lands leftmost in the bar */
     rt_ui_build_menus(menus, nMenus);
     gMenuHandlerTable = mh;
     gNMenuHandlers = nMh;
@@ -930,13 +978,17 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
 {
     rt_ui_winst *inst;
     const rt_ui_widget_desc *wd;
+    GrafPtr savedPort;
 
     inst = (rt_ui_winst *)instV;
     /* InvalRect/SetControlTitle work in the CURRENT port's terms -- fine
        when called from widget-click dispatch (already SetPort'd to this
        window), NOT fine from a menu handler or every-block, which can run
-       with any port current (a canvas op, another window, ...). Set it
-       explicitly rather than trusting the caller's ambient state. */
+       with any port current (a canvas op, another window, ...). Self-
+       assert and restore rather than trusting the caller's ambient state
+       (the rt_ui.h header comment codifies this as a rule every
+       Toolbox-touching entry point follows). */
+    GetPort(&savedPort);
     SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
     if (wd->kind == RTUI_LABEL && prop == RTUI_PROP_TEXT) {
@@ -945,21 +997,25 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
     } else if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_CAPTION && inst->ctrls[wIdx]) {
         SetControlTitle(inst->ctrls[wIdx], s);
     }
+    SetPort(savedPort);
 }
 
 void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
 {
     rt_ui_winst *inst;
     const rt_ui_widget_desc *wd;
+    GrafPtr savedPort;
 
     inst = (rt_ui_winst *)instV;
-    SetPort(inst->wp); /* same reasoning as rt_ui_widget_set_str -- see its comment */
+    GetPort(&savedPort); /* same reasoning as rt_ui_widget_set_str -- see its comment */
+    SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
     if (wd->kind == RTUI_CHECK && prop == RTUI_PROP_CHECKED && inst->ctrls[wIdx]) {
         SetControlValue(inst->ctrls[wIdx], (short)(v ? 1 : 0));
     } else if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_ENABLED && inst->ctrls[wIdx]) {
         HiliteControl(inst->ctrls[wIdx], (short)(v ? 0 : 255));
     }
+    SetPort(savedPort);
 }
 
 int rt_ui_widget_get_bool(void *instV, short wIdx, short prop)
@@ -995,8 +1051,11 @@ short rt_ui_widget_get_int(void *instV, short wIdx, short prop)
  * here -- rt_ui_flush_all_buffered (called once per rt_ui_run iteration)
  * does that, which is what gives buffered drawing its flicker-free,
  * one-copy-per-handler behavior (Ch11's "Buffered vs. Unbuffered"). */
-typedef struct { GrafPtr port; short dx, dy; } rt_ui_canvas_target;
+typedef struct { GrafPtr port; short dx, dy; GrafPtr savedPort; } rt_ui_canvas_target;
 
+/* Self-asserts and restores its own port, like every other Toolbox-touching
+   rt_ui entry point (rt_ui.h header rule) -- paired with rt_ui_canvas_end,
+   which every op below calls before returning. */
 static rt_ui_canvas_target rt_ui_canvas_begin(rt_ui_winst *inst, short wIdx)
 {
     rt_ui_canvas_target t;
@@ -1012,20 +1071,28 @@ static rt_ui_canvas_target rt_ui_canvas_begin(rt_ui_winst *inst, short wIdx)
         t.dx = inst->rects[wIdx].left;
         t.dy = inst->rects[wIdx].top;
     }
+    GetPort(&t.savedPort);
     SetPort(t.port);
     return t;
+}
+
+static void rt_ui_canvas_end(rt_ui_canvas_target t)
+{
+    SetPort(t.savedPort);
 }
 
 void rt_ui_canvas_clear(void *instV, short wIdx)
 {
     rt_ui_winst *inst;
+    rt_ui_canvas_target t;
     Rect r;
 
     inst = (rt_ui_winst *)instV;
-    rt_ui_canvas_begin(inst, wIdx);
+    t = rt_ui_canvas_begin(inst, wIdx);
     if (inst->canvases[wIdx].port) r = inst->canvases[wIdx].bits.bounds;
     else r = inst->rects[wIdx];
     EraseRect(&r);
+    rt_ui_canvas_end(t);
 }
 
 void rt_ui_canvas_line(void *instV, short wIdx, short x0, short y0, short x1, short y1)
@@ -1037,6 +1104,7 @@ void rt_ui_canvas_line(void *instV, short wIdx, short x0, short y0, short x1, sh
     t = rt_ui_canvas_begin(inst, wIdx);
     MoveTo((short)(x0 + t.dx), (short)(y0 + t.dy));
     LineTo((short)(x1 + t.dx), (short)(y1 + t.dy));
+    rt_ui_canvas_end(t);
 }
 
 void rt_ui_canvas_rect(void *instV, short wIdx, short x, short y, short w, short h, int fill)
@@ -1050,6 +1118,7 @@ void rt_ui_canvas_rect(void *instV, short wIdx, short x, short y, short w, short
     SetRect(&r, (short)(x + t.dx), (short)(y + t.dy), (short)(x + t.dx + w), (short)(y + t.dy + h));
     if (fill) PaintRect(&r);
     else FrameRect(&r);
+    rt_ui_canvas_end(t);
 }
 
 void rt_ui_canvas_fill_circle(void *instV, short wIdx, short x, short y, short r)
@@ -1062,6 +1131,7 @@ void rt_ui_canvas_fill_circle(void *instV, short wIdx, short x, short y, short r
     t = rt_ui_canvas_begin(inst, wIdx);
     SetRect(&box, (short)(x + t.dx - r), (short)(y + t.dy - r), (short)(x + t.dx + r), (short)(y + t.dy + r));
     PaintOval(&box);
+    rt_ui_canvas_end(t);
 }
 
 void rt_ui_canvas_circle(void *instV, short wIdx, short x, short y, short r)
@@ -1074,6 +1144,7 @@ void rt_ui_canvas_circle(void *instV, short wIdx, short x, short y, short r)
     t = rt_ui_canvas_begin(inst, wIdx);
     SetRect(&box, (short)(x + t.dx - r), (short)(y + t.dy - r), (short)(x + t.dx + r), (short)(y + t.dy + r));
     FrameOval(&box);
+    rt_ui_canvas_end(t);
 }
 
 void rt_ui_canvas_draw_text(void *instV, short wIdx, short x, short y, const unsigned char *s)
@@ -1085,4 +1156,5 @@ void rt_ui_canvas_draw_text(void *instV, short wIdx, short x, short y, const uns
     t = rt_ui_canvas_begin(inst, wIdx);
     MoveTo((short)(x + t.dx), (short)(y + t.dy));
     DrawString(s);
+    rt_ui_canvas_end(t);
 }
