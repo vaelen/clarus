@@ -52,11 +52,19 @@ if [ -n "$EVENTS" ]; then
     EXTRA_SRC="$OUT/events.c"
 fi
 # 3. Retro68 build
+#
+# rt_ui.c is always added to the sources (Task 5, mac-target-4b), even for a
+# UI-free program: the simplest correct approach over conditionally
+# detecting UI declarations in the generated C, at the cost of a UI-free
+# .bin linking a few dead rt_ui_* functions it never calls -- acceptable per
+# the plan's own note. -I.../runtime/mac is needed unconditionally too, both
+# for rt_ui.c's own #include "rt_ui.h" and for a UI program's generated
+# $NAME.c, which includes the same header when it declares any window/menu.
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
 project($NAME C)
-add_definitions(-I$ROOT/internal/build/rt $TESTDEF)
-add_application($NAME $NAME.c $ROOT/runtime/mac/rt_mac.c $ROOT/runtime/mac/alert.r $EXTRA_SRC)
+add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF)
+add_application($NAME $NAME.c $ROOT/runtime/mac/rt_mac.c $ROOT/runtime/mac/rt_ui.c $ROOT/runtime/mac/alert.r $EXTRA_SRC)
 EOF
 cmake -S "$OUT" -B "$OUT/build" \
     -DCMAKE_TOOLCHAIN_FILE="$ROOT/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake" \

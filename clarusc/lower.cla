@@ -81,6 +81,29 @@ var uiMenuCount: int
 var uiMenuIdx: map of int
 var uiMenuItemIdx: map of int
 
+// lowCurWinType (Task 5) is the checked-type-arena index of the window type
+// whose `extend` body (or window-scoped menu `extend`) is CURRENTLY being
+// lowered by lowHandlerFunc, or -1 outside any such body (every-block,
+// app-scope menu handler, or simply "not lowering a handler body at all").
+// Mirrors check.cla's curWindow exactly, but as lower.cla's own variable --
+// checkProgram already ran to completion before lowerProgram starts (see
+// lowResolveType's header comment on curScope/symbols being read-only
+// leftovers from checking), so check.cla's curWindow itself is always back
+// at -1 by the time any lowering runs and cannot be reused here. Consulted
+// by lowIdent (a bare per-instance-var/`title` reference), lowWidgetRecv (a
+// bare widget receiver), and ExWindowSelf's lowExpr case (the `window`
+// keyword) to resolve against the handler's own hidden instance value
+// (lowWinInstRef) instead of a local/global (Ch8: "bare names resolve first
+// against the firing instance's properties, fields, and widgets").
+var lowCurWinType: int
+
+// uiWinHandlersIdx (Task 5) maps a window type name to its irWinHandlers
+// arena index, lazily created on that window's FIRST registered handler
+// (lowGetOrCreateWinHandlers) -- a window with no `extend` block at all
+// never gets an entry, matching cpFindWinHandlers' "-1 means no extend
+// block" contract. progGen-prefixed like uiMenuIdx, for the same reason.
+var uiWinHandlersIdx: map of int
+
 func lowPushScope() {
     var s: LowScope
 
@@ -307,6 +330,13 @@ func lowExpr(e: int): int {
         // statement is StOpen (lowStmt), not this case.
         return newIRIntr(IUiOpen(), -1, irWinRefType(openExprWindowName(e)))
     }
+    case ExWindowSelf {
+        // The `window` keyword (Ch8: "the keyword window names the firing
+        // instance") -- valid only inside a window-scoped handler body
+        // (checkExprInner's ExWindowSelf case already rejects it elsewhere,
+        // so lowCurWinType is always set here for a checker-clean program).
+        return lowWinInstRef()
+    }
     }
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
@@ -411,6 +441,17 @@ func lowComparison(e: int): int {
     return lowBin(binOpSymbol(binOp(e)), irBoolT, binLeft(e), binRight(e))
 }
 
+// lowWinInstRef builds a fresh IR reference to the CURRENTLY-lowered
+// handler's hidden instance parameter (lowHandlerFunc always names it
+// "window", Ch8's own keyword for exactly this value -- see that function's
+// header comment) -- a new node every call, never a cached one, since an
+// IRExpr's `next` slot can only ever link it into ONE argument chain (a
+// shared node reused at two call sites would corrupt whichever chain lost
+// the race). Only valid while lowCurWinType != -1.
+func lowWinInstRef(): int {
+    return newIRVarRef(intern("window"), false, irWinRefType(typeNameIdx(lowCurWinType)))
+}
+
 // lowIsUnshadowedLastError reports whether nameIdx is the built-in global
 // `lastError` -- as opposed to a local variable that happens to shadow that
 // name -- the distinction lowIdent and lowSelect both need to route a
@@ -421,18 +462,53 @@ func lowIsUnshadowedLastError(nameIdx: int): bool {
     return poolGet(nameIdx) == "lastError" and not lowIsLocal(nameIdx)
 }
 
+// lowBareWindowMemberRef resolves nm as a bare per-instance-var reference of
+// the currently-lowered window-scoped handler (lowCurWinType), returning its
+// lowered FieldRef, or -1 if nm doesn't name one (Ch8: "bare names resolve
+// first against the firing instance's properties, fields"). Reads
+// check.cla's own windowVarsHead/fieldInfos side table directly -- the SAME
+// table lowWindowInstSelect already walks for the explicit `w.name` form; a
+// bare `title` reference matches no fieldInfos entry (it's a synthetic
+// windowScope symbol, not a real per-instance var) and so is deliberately
+// NOT resolved by this function -- lowIdent's caller handles bare `title`
+// as its own explicit unsupported-read case, matching lowWindowInstSelect's
+// existing "title read is unsupported" behavior for the explicit form.
+func lowBareWindowMemberRef(nm: int, ty: int): int {
+    var winName: string
+    var fh: int
+    var stateExpr: int
+
+    winName = poolGet(typeNameIdx(lowCurWinType))
+    fh = windowVarsHead.get(winName, -1)
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == poolGet(nm) {
+            stateExpr = newIRIntr(IUiState(), lowWinInstRef(), irUiStateType(typeNameIdx(lowCurWinType)))
+            return newIRFieldRef(stateExpr, nm, ty)
+        }
+        fh = fieldInfos[fh].next
+    }
+    return -1
+}
+
 // lowIdent lowers a resolved variable reference or a bare enum-member/const
 // constant (check.cla's enumConstOf/constUseIsStr, keyed by e's own arena
 // index, mirror Go's Info.EnumConsts/Info.Consts) -- a port of expr.go's
 // lowerIdent. A bare, unshadowed `lastError` materializes an Err-record
 // value via the ILastErr intrinsic instead of a VarRef, since there is no
 // cv_lastError global to reference (see lowSelect's ErrorType case for the
-// matching .code/.message read path).
+// matching .code/.message read path). Task 5 adds: inside a window-scoped
+// handler body, a bare per-instance-var name (lowBareWindowMemberRef) or the
+// bare `title` (unsupported here, matching the explicit form's read gap --
+// rt_ui.h has no getter) resolve against the firing instance BEFORE the
+// local/global fallback, mirroring windowScope's own scope-nesting order
+// (Ch8: "bare names resolve first against the firing instance's properties,
+// fields, and widgets, then against globals").
 func lowIdent(e: int): int {
     var nm: int
     var global: bool
     var ty: int
     var key: string
+    var winRef: int
 
     nm = identName(e)
     ty = lowMustType(e)
@@ -448,6 +524,16 @@ func lowIdent(e: int): int {
     }
     if lowIsUnshadowedLastError(nm) {
         return newIRIntr(ILastErr(), -1, ty)
+    }
+    if (not lowIsLocal(nm)) and lowCurWinType != -1 {
+        winRef = lowBareWindowMemberRef(nm, ty)
+        if winRef != -1 {
+            return winRef
+        }
+        if poolGet(nm) == "title" {
+            lowUnsupported("read of title")
+            return -1
+        }
     }
     global = not lowIsLocal(nm)
     return newIRVarRef(nm, global, ty)
@@ -582,6 +668,43 @@ func lowMethodCall(e: int, fn: int): int {
     return -1
 }
 
+// LowWidgetRecv carries the resolved (instance IR value, window TYPE name,
+// widget name) triple for a widget-typed receiver expression -- lowCanvasMethod/
+// lowWidgetPropGet/lowWidgetSetAssign, wired against lowWidgetRecv below.
+record LowWidgetRecv {
+    instIR: int
+    winName: string
+    wgName: string
+}
+
+// lowWidgetRecv resolves a widget-typed receiver expression (typeKind ==
+// TyWidget), which is either the explicit `w.Widget` shape (ExSelect; w's
+// own type names the window -- Task 4's original, only-supported form) or,
+// inside a window-scoped handler body, the bare `Widget` shape windowScope
+// resolves directly (Ch8: "bare names resolve first against the firing
+// instance's ... widgets"): an ExIdent with no explicit instance
+// sub-expression to peel at all, since IT IS the widget-select in the
+// caller's eyes (recvAst IS what Task 4's callers named `wgSel`/`instAst`'s
+// combined shape) -- the implicit instance is the handler's own hidden
+// `window` value (lowWinInstRef) instead. Every one of Task 4's three
+// widget-receiver call sites (lowCanvasMethod, lowWidgetPropGet,
+// lowWidgetSetAssign) peeled this exact shape inline; Task 5 centralizes it
+// here since all three need the identical bare-vs-explicit branch.
+func lowWidgetRecv(recvAst: int): LowWidgetRecv {
+    var r: LowWidgetRecv
+
+    if exprKind(recvAst) == ExSelect {
+        r.instIR = lowExpr(selectX(recvAst))
+        r.winName = poolGet(typeNameIdx(exprTypeGet(selectX(recvAst))))
+        r.wgName = poolGet(selectName(recvAst))
+    } else {
+        r.instIR = lowWinInstRef()
+        r.winName = poolGet(typeNameIdx(lowCurWinType))
+        r.wgName = poolGet(identName(recvAst))
+    }
+    return r
+}
+
 // lowCanvasMethod lowers `w.Board.name(args)` (Ch11: Drawing) -- fn is the
 // method select (`w.Board.name`); selectX(fn) (`w.Board`) is the
 // widget-select, peeled directly for the instance + widget index exactly
@@ -592,9 +715,7 @@ func lowMethodCall(e: int, fn: int): int {
 // Clarus-level argument.
 func lowCanvasMethod(e: int, fn: int, ty: int): int {
     var wgSel: int
-    var instAst: int
-    var wgName: string
-    var winName: string
+    var recv: LowWidgetRecv
     var widgetIdx: int
     var head: int
     var tail: int
@@ -604,10 +725,8 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
     var fillLit: int
 
     wgSel = selectX(fn)
-    instAst = selectX(wgSel)
-    wgName = poolGet(selectName(wgSel))
-    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
-    widgetIdx = uiWidgetIndex(winName, wgName)
+    recv = lowWidgetRecv(wgSel)
+    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
 
     nm = poolGet(selectName(fn))
     intrName = -1
@@ -633,7 +752,7 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
         return -1
     }
 
-    head = lowExpr(instAst)
+    head = recv.instIR
     tail = irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
     a = callArgsHead(e)
     while a != -1 {
@@ -1005,20 +1124,16 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
 // rt_ui_widget_get_str, so a caption/text/label READ is unsupported here
 // (only ever a write, via lowWidgetSetAssign).
 func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
-    var instAst: int
-    var wgName: string
-    var winName: string
+    var recv: LowWidgetRecv
     var widgetKind: string
     var propName: string
     var widgetIdx: int
     var head: int
     var intrName: int
 
-    instAst = selectX(wgSel)
-    wgName = poolGet(selectName(wgSel))
-    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
-    widgetKind = findWidgetKind(winName, wgName)
-    widgetIdx = uiWidgetIndex(winName, wgName)
+    recv = lowWidgetRecv(wgSel)
+    widgetKind = findWidgetKind(recv.winName, recv.wgName)
+    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
     propName = poolGet(selectName(e))
 
     intrName = -1
@@ -1036,7 +1151,7 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         return -1
     }
 
-    head = lowExpr(instAst)
+    head = recv.instIR
     irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
     return newIRIntr(intrName, head, ty)
 }
@@ -1148,6 +1263,11 @@ func lowStmt(s: int): int {
         // must know which descriptor to reference).
         return newIRExprStmt(newIRIntr(IUiClose(), lowExpr(closeX(s)), irVoidT))
     }
+    case StCancel {
+        // `cancel` (Ch5/Ch8) -- see IUiCancel's doc comment (ir.cla) for the
+        // scratch-pointer convention it writes through.
+        return newIRExprStmt(newIRIntr(IUiCancel(), -1, irVoidT))
+    }
     }
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
@@ -1245,6 +1365,25 @@ func isWindowTitleSelect(e: int): bool {
     return typeKind(exprTypeGet(selectX(e))) == TyWindowRef
 }
 
+// isBareWindowTitleIdent reports whether e is a BARE `title` reference
+// inside a window-scoped handler body (Task 5) -- windowScope declares
+// "title" as its own scope symbol (check.cla's windowScope), so the bare
+// form is a plain ExIdent, never an ExSelect like isWindowTitleSelect's
+// explicit `w.title` shape; not a local var (which would shadow it, per
+// windowScope's own scope nesting -- see lowIdent's matching guard).
+func isBareWindowTitleIdent(e: int): bool {
+    if exprKind(e) != ExIdent {
+        return false
+    }
+    if lowCurWinType == -1 {
+        return false
+    }
+    if lowIsLocal(identName(e)) {
+        return false
+    }
+    return poolGet(identName(e)) == "title"
+}
+
 // isWidgetPropSelect reports whether e is `w.Widget.prop` -- e's own base
 // (`w.Widget`) checks as the TyWidget pseudo-type (Ch8: Widgets' runtime
 // properties).
@@ -1323,9 +1462,7 @@ func lowMenuEnableAssign(lhs: int, rhsAst: int): int {
 // not a widget one.
 func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
     var wgSel: int
-    var instAst: int
-    var wgName: string
-    var winName: string
+    var recv: LowWidgetRecv
     var widgetKind: string
     var propName: string
     var widgetIdx: int
@@ -1334,11 +1471,9 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
     var intrName: int
 
     wgSel = selectX(lhs)
-    instAst = selectX(wgSel)
-    wgName = poolGet(selectName(wgSel))
-    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
-    widgetKind = findWidgetKind(winName, wgName)
-    widgetIdx = uiWidgetIndex(winName, wgName)
+    recv = lowWidgetRecv(wgSel)
+    widgetKind = findWidgetKind(recv.winName, recv.wgName)
+    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
     propName = poolGet(selectName(lhs))
 
     intrName = -1
@@ -1356,7 +1491,7 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
         return -1
     }
 
-    head = lowExpr(instAst)
+    head = recv.instIR
     tail = irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
     tail = irExprListAppend(tail, lowExpr(rhsAst))
     return newIRExprStmt(newIRIntr(intrName, head, irVoidT))
@@ -1376,6 +1511,11 @@ func lowAssign(s: int): int {
     }
     if isWindowTitleSelect(lhs) {
         head = lowExpr(selectX(lhs))
+        irExprListAppend(head, lowExpr(assignRHS(s)))
+        return newIRExprStmt(newIRIntr(IUiSetTitle(), head, irVoidT))
+    }
+    if isBareWindowTitleIdent(lhs) {
+        head = lowWinInstRef()
         irExprListAppend(head, lowExpr(assignRHS(s)))
         return newIRExprStmt(newIRIntr(IUiSetTitle(), head, irVoidT))
     }
@@ -2062,6 +2202,292 @@ func lowMenuDecl(d: int) {
     newIRMenuDesc(nameIdx, nameIdx, itemsHead)
 }
 
+// ================================================================
+// `extend`/`every` lowering (Task 5): handlers, dispatch, timers
+// ================================================================
+
+// lowGetOrCreateWinHandlers returns winName's irWinHandlers arena index,
+// creating it on first use -- a window with no `extend` block at all never
+// gets an entry (cprint.cla's cpFindWinHandlers reads absence as "handlers
+// field prints 0", exactly Task 4's placeholder). progGen-prefixed like
+// uiMenuIdx, for the same reason (see that var's own doc comment).
+func lowGetOrCreateWinHandlers(winName: string): int {
+    var key: string
+    var idx: int
+
+    key = numToStr(progGen) + "|" + winName
+    if uiWinHandlersIdx.has(key) {
+        return uiWinHandlersIdx.get(key, -1)
+    }
+    idx = newIRWinHandlers(intern(winName))
+    uiWinHandlersIdx[key] = idx
+    return idx
+}
+
+// lowFindWidgetHandlerEntry returns widgetIndex's IRWidgetHandlerEntry
+// within window handlers `whIdx`, creating one on first use -- a linear
+// scan, since a window's own widget count is always small and this only
+// ever runs once per registered handler at lowering time.
+func lowFindWidgetHandlerEntry(whIdx: int, widgetIndex: int): int {
+    var w: int
+
+    w = irWinHandlersWidgetHead(whIdx)
+    while w != -1 {
+        if irWidgetHandlerEntryWidgetIndex(w) == widgetIndex {
+            return w
+        }
+        w = irWidgetHandlerEntryNext(w)
+    }
+    return irWinHandlersAppendWidgetEntry(whIdx, widgetIndex)
+}
+
+// lowHandlerFunc lowers one handler body (window event, widget event,
+// window-scoped or app-scope menu item, or an `every` block) into a fresh
+// top-level IR Func, added to irFuncs exactly like a user `func` or a
+// top-level `on App.*` handler -- cpEmitFuncs's existing prototype+
+// definition pass prints it with NO special-casing at all.
+//
+//   cName          the C function's own name (interned here); every caller
+//                  picks one built from Clarus identifiers that can't
+//                  collide (window/widget/menu/scope names are already
+//                  distinct within one program).
+//   winType        sets lowCurWinType for the body (bare-name/`window`
+//                  resolution, see that var's own doc comment) -- -1 for an
+//                  every-block or an app-scope menu handler, neither of
+//                  which the checker ever lets reference `window` or a bare
+//                  instance member.
+//   instParamName  -1: no leading C parameter at all (an every-block's
+//                  `fire` is `void (*)(void)`); otherwise the interned name
+//                  of the hidden first parameter -- intern("window") for a
+//                  window/widget/window-scoped-menu handler (bound as the
+//                  firing instance, Ch8's own keyword for exactly this
+//                  value); any OTHER name for an app-scope menu handler,
+//                  whose `fire` function pointer type still needs exactly
+//                  one `void *` parameter it never uses (rt_ui_menu_handler
+//                  ABI).
+//   astParamsHead  the user-declared param list (key's `k`, canvas
+//                  click/drag's x/y; -1 for every other event, which the
+//                  checker guarantees are param-count 0), appended AFTER
+//                  the hidden instance parameter -- the exact same
+//                  paramName/paramType/declNext walk lowFuncBody uses.
+//
+// Returns cName's own interned pool index (NOT the irFuncs arena index --
+// every caller only ever needs the printable name, to build cprint's
+// hand-generated dispatcher/table text; the func is already fully
+// registered as a side effect of this call).
+func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHead: int, body: int): int {
+    var nameIdx: int
+    var paramsHead: int
+    var paramsTail: int
+    var instLoc: int
+    var p: int
+    var loc: int
+    var savedWinType: int
+    var savedRet: int
+    var bodyHead: int
+
+    nameIdx = intern(cName)
+    lowPushScope()
+    paramsHead = -1
+    paramsTail = -1
+    savedWinType = lowCurWinType
+    lowCurWinType = winType
+
+    if instParamName != -1 {
+        if winType != -1 {
+            instLoc = newIRLocal(instParamName, irWinRefType(typeNameIdx(winType)))
+        } else {
+            // App-scope menu handler: a dummy KWinRef param purely for its
+            // "void *" C spelling (cpCTypeName ignores KWinRef's name field
+            // entirely) -- never read, since lowCurWinType stays -1 and the
+            // checker never lets an app-scope body reference `window` or a
+            // bare instance member.
+            instLoc = newIRLocal(instParamName, irWinRefType(instParamName))
+        }
+        paramsHead = instLoc
+        paramsTail = instLoc
+        lowDeclareLocal(instParamName)
+    }
+    p = astParamsHead
+    while p != -1 {
+        loc = newIRLocal(paramName(p), lowResolveType(paramType(p)))
+        if paramsHead == -1 {
+            paramsHead = loc
+        }
+        paramsTail = irLocalListAppend(paramsTail, loc)
+        lowDeclareLocal(paramName(p))
+        p = declNext(p)
+    }
+
+    lowLocalsHead = -1
+    lowLocalsTail = -1
+    savedRet = lowCurFuncRet
+    lowCurFuncRet = irVoidT
+    bodyHead = lowBlock(body)
+    lowCurFuncRet = savedRet
+
+    lowCurWinType = savedWinType
+    lowPopScope()
+    newIRFunc(nameIdx, paramsHead, irVoidT, lowLocalsHead, bodyHead)
+    return nameIdx
+}
+
+// lowWindowHandlerEntry lowers one DkHandler child of `extend Win { ... }`
+// -- a bare window event (Ch8) or `Widget.event` -- into its own IRFunc,
+// wired into win's IRWinHandlers entry.
+func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
+    var displayName: string
+    var parts: list of string
+    var event: string
+    var cName: string
+
+    displayName = poolGet(handlerDeclPath(h))
+    parts = splitDots(displayName)
+    if parts.count == 1 {
+        event = parts[0]
+        cName = "ui_" + winName + "_" + event
+        if event == "opened" {
+            irWinHandlersSetOpenedFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else if event == "closeRequest" {
+            irWinHandlersSetCloseRequestFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else if event == "closed" {
+            irWinHandlersSetClosedFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else if event == "resized" {
+            irWinHandlersSetResizedFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else if event == "key" {
+            irWinHandlersSetKeyFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else {
+            // Form-window events (Ch10: `accepted`/`cancelled`) are
+            // host-unsupported here, like Task 4's own `form for` gap.
+            lowUnsupported("window event " + event)
+        }
+    } else {
+        lowWidgetHandlerEvent(winType, winName, whIdx, parts[0], parts[1], h)
+    }
+}
+
+// lowWidgetHandlerEvent lowers `on Widget.event { }` inside `extend Win`
+// (Ch8: button.click, check.change, canvas.click/drag).
+func lowWidgetHandlerEvent(winType: int, winName: string, whIdx: int, wgName: string, event: string, h: int) {
+    var widgetIdx: int
+    var entryIdx: int
+    var fnName: int
+    var cName: string
+
+    widgetIdx = uiWidgetIndex(winName, wgName)
+    entryIdx = lowFindWidgetHandlerEntry(whIdx, widgetIdx)
+    cName = "ui_" + winName + "_" + wgName + "_" + event
+    fnName = lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h))
+    if event == "click" {
+        irWidgetHandlerEntrySetClickFn(entryIdx, fnName)
+    } else if event == "change" {
+        irWidgetHandlerEntrySetChangeFn(entryIdx, fnName)
+    } else if event == "drag" {
+        irWidgetHandlerEntrySetDragFn(entryIdx, fnName)
+    } else {
+        lowUnsupported("widget event " + event)
+    }
+}
+
+// lowWindowExtend lowers `extend Win { ... }` (Ch8/Ch9): bare window/widget
+// handlers directly (lowWindowHandlerEntry); a nested `extend Menu { ... }`
+// (window-scoped menu commands) via lowMenuExtend.
+func lowWindowExtend(winType: int, d: int) {
+    var winName: string
+    var whIdx: int
+    var c: int
+
+    winName = poolGet(typeNameIdx(winType))
+    whIdx = lowGetOrCreateWinHandlers(winName)
+    c = extendDeclChildrenHead(d)
+    while c != -1 {
+        if declKind(c) == DkHandler {
+            lowWindowHandlerEntry(winType, winName, whIdx, c)
+        } else if declKind(c) == DkExtend {
+            lowMenuExtend(extendDeclTarget(c), c, winType)
+        }
+        c = declNext(c)
+    }
+}
+
+// lowMenuExtend lowers `extend MenuName { on Item.select { } }` (Ch9),
+// either at the top level (winType == -1: app-scope commands) or nested
+// inside `extend Win` (winType != -1: window-scoped, auto-dimmed by the
+// runtime while a window of that type is frontmost).
+func lowMenuExtend(menuNameIdx: int, d: int, winType: int) {
+    var menuName: string
+    var menuIdx: int
+    var scopeName: int
+    var c: int
+    var path: string
+    var parts: list of string
+    var itemName: string
+    var itemIdx: int
+    var instParam: int
+    var cName: string
+    var fnName: int
+
+    menuName = poolGet(menuNameIdx)
+    menuIdx = uiMenuIdx.get(numToStr(progGen) + "|" + menuName, -1)
+    scopeName = -1
+    if winType != -1 {
+        scopeName = typeNameIdx(winType)
+    }
+    c = extendDeclChildrenHead(d)
+    while c != -1 {
+        if declKind(c) == DkHandler {
+            path = poolGet(handlerDeclPath(c))
+            parts = splitDots(path)
+            itemName = parts[0]
+            itemIdx = uiMenuItemIdx.get(menuKey(menuName, itemName), -1)
+            instParam = intern("menuArg")
+            cName = "ui_menuh_" + menuName + "_" + itemName + "_app"
+            if winType != -1 {
+                instParam = intern("window")
+                cName = "ui_menuh_" + menuName + "_" + itemName + "_" + poolGet(typeNameIdx(winType))
+            }
+            fnName = lowHandlerFunc(cName, winType, instParam, handlerDeclParamsHead(c), handlerDeclBody(c))
+            newIRMenuHandlerEntry(menuNameIdx, intern(itemName), menuIdx, itemIdx, fnName, scopeName)
+        }
+        // No nested extend inside a menu extend (checker already rejects
+        // it, checkMenuExtend's own DkExtend branch).
+        c = declNext(c)
+    }
+}
+
+// lowEveryDecl lowers a top-level `every N ticks { }` block (Ch7/Ch11) into
+// its own IRFunc (winType/instParamName both -1: an every-block is never
+// window-scoped -- Ch7/Ch11's own examples always reach a window through an
+// explicit `.front` local, never a bare/implicit `window` reference) plus
+// an IREveryEntry recording its tick count, in declaration order (the SAME
+// order the ledger's `T FIRE every.<n>` trace index and rt_ui_every_desc[]'s
+// array position both use).
+func lowEveryDecl(d: int) {
+    var fnName: int
+
+    fnName = lowHandlerFunc("ui_every_" + numToStr(irEveryCount), -1, -1, -1, everyDeclBody(d))
+    newIREveryEntry(fnName, everyDeclTicks(d))
+}
+
+// lowExtendDecl dispatches a top-level `extend` block (Ch8/Ch9) -- mirrors
+// checkExtendDecl's own dispatch exactly, reusing curScope/symbols (still
+// populated from checking -- see lowResolveType's header comment on why
+// that's safe).
+func lowExtendDecl(d: int) {
+    var tgtNameIdx: int
+    var symIdx: int
+
+    tgtNameIdx = extendDeclTarget(d)
+    symIdx = scopeLookup(curScope, tgtNameIdx)
+    if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef {
+        lowWindowExtend(symbols[symIdx].typeIdx, d)
+    } else if symIdx != -1 and symbols[symIdx].isMenu {
+        lowMenuExtend(tgtNameIdx, d, -1)
+    } else {
+        lowUnsupported("extend target")
+    }
+}
+
 // lowDecl dispatches one top-level declaration (lower.go's lowerDecl subset).
 func lowDecl(d: int) {
     var k: DeclKind
@@ -2084,8 +2510,11 @@ func lowDecl(d: int) {
         lowWindowDecl(d)
     } else if k == DkMenu {
         lowMenuDecl(d)
+    } else if k == DkExtend {
+        lowExtendDecl(d)
+    } else if k == DkEvery {
+        lowEveryDecl(d)
     } else {
-        // `extend`/`every` (handler bodies, timers): Task 5.
         lowUnsupported("declaration kind " + numToStr(int(k)))
     }
 }
@@ -2099,6 +2528,7 @@ func lowerProgram(declHead: int): int {
 
     lowSwitchN = 0
     uiMenuCount = 0
+    lowCurWinType = -1
     lowBuiltinSaveChoiceLayout()
     d = declHead
     while d != -1 {

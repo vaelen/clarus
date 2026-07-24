@@ -1,16 +1,20 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Package emitui holds the ungated lowering-goldens gate for Task 4 of the
-// 2026-07-24 mac-target-4b plan: clarusc's window/menu descriptor + UI
-// intrinsic lowering. For each testdata/emitui/<fixture>.cla, it builds
+// Package emitui holds the ungated lowering-goldens gate for Tasks 4-5 of
+// the 2026-07-24 mac-target-4b plan: clarusc's window/menu descriptor + UI
+// intrinsic lowering (Task 4), then `extend`/`every` handler/dispatch
+// lowering (Task 5). For each testdata/emitui/<fixture>.cla, it builds
 // clarusc via the Go compiler (same pattern as internal/selfhost's
 // buildClarusc/emitCDir: build.Build on clarusc/main.cla, then run that
 // exe's own `emit` subcommand -- clarusc is never built from its own
 // snapshot here), compares the emitted C to a committed <fixture>.c.golden
 // byte-for-byte, then compile-checks the GOLDEN against rt_ui.h with the
-// m68k toolchain (compile only, no link -- handler tables are all-NULL
-// until Task 5, so there is nothing to link against yet).
+// m68k toolchain (compile only, no link -- this package verifies LOWERING,
+// fixture by fixture; the full compile-AND-LINK gate is a real program,
+// testdata/valid/bounce.cla, built end to end via scripts/build-mac.sh,
+// which every emitui fixture's handler/dispatch C shape is hand-verified
+// against).
 package emitui
 
 import (
@@ -149,9 +153,15 @@ func TestEmitUiGoldens(t *testing.T) {
 			// Compile-check the GOLDEN (the committed contract), not the
 			// freshly emitted bytes -- so a mismatch above is reported as a
 			// golden-mismatch failure, and this step still exercises the
-			// pinned contract even if emission has drifted.
+			// pinned contract even if emission has drifted. `-x c` is
+			// REQUIRED: gcc picks a source language purely from the file
+			// extension, ".c.golden" isn't in its table, and -- without -x --
+			// it silently treats the file as an unrecognized/link-only input,
+			// warns, and exits 0 with NO object emitted at all (found
+			// verifying this exact check while adding Task 5's fixtures: the
+			// step had never actually compiled anything since Task 4).
 			obj := filepath.Join(t.TempDir(), "out.o")
-			ccCmd := exec.Command(gcc, "-c",
+			ccCmd := exec.Command(gcc, "-x", "c", "-c",
 				"-I"+filepath.Join(root, "internal", "build", "rt"),
 				"-I"+filepath.Join(root, "runtime", "mac"),
 				golden, "-o", obj)
@@ -160,6 +170,9 @@ func TestEmitUiGoldens(t *testing.T) {
 			ccCmd.Stderr = &ccOut
 			if err := ccCmd.Run(); err != nil {
 				t.Fatalf("m68k-apple-macos-gcc -c %s: %v\n%s", golden, err, ccOut.String())
+			}
+			if fi, statErr := os.Stat(obj); statErr != nil || fi.Size() == 0 {
+				t.Fatalf("m68k-apple-macos-gcc -c %s: no object file produced (stat: %v)\n%s", golden, statErr, ccOut.String())
 			}
 		})
 	}

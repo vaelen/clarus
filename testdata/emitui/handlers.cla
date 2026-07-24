@@ -1,0 +1,77 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// handlers.cla: emitui golden fixture -- `extend` bodies (Task 5): window
+// events (opened, closeRequest with a cancel path, key), widget events
+// (button click, check change, canvas click/drag), a window-scoped menu
+// handler (Ch9: Window-Scoped Commands), and an app-scope menu handler that
+// quits. Exercises bare per-instance-var/widget/`title` resolution (Ch8:
+// "bare names resolve first against the firing instance's properties,
+// fields, and widgets") -- win_basic.cla already covers the explicit
+// `w.name` form; `on key` additionally exercises the `window` keyword
+// itself (Ch8) as an explicit per-instance-var READ (`window.clicks`) --
+// there is no `window.name = ...` assignment form: the parser's isLvalue
+// only accepts Ident/Select/Index roots, and `window` is its own distinct
+// expression kind (ExWindowSelf), so only the bare (implicit) name is ever
+// an assignable per-instance-var target.
+
+window Widgets {
+    title: "Widgets"
+    size: 300, 220
+
+    button Go    { at: 20, 20; caption: "Go" }
+    check On     { at: right, 20; caption: "On" }
+    label Status { at: next, bottom; text: "Ready" }
+    canvas Board { at: next, bottom; fill: both; buffered }
+
+    var clicks: int
+}
+
+menu File {
+    item Save "Save" key "S"
+    item Quit "Quit" key "Q"
+}
+
+on App.launch {
+    open Widgets
+}
+
+extend Widgets {
+    on opened {
+        clicks = 0
+    }
+    on closeRequest {
+        if clicks > 100 {
+            cancel
+        }
+    }
+    on key(k: char) {
+        title = "typed"
+        clicks = window.clicks + 1
+    }
+    on Go.click {
+        clicks = clicks + 1
+        Status.text = "clicked"
+    }
+    on On.change {
+        Board.clear()
+    }
+    on Board.click(x: int, y: int) {
+        Board.fillCircle(x, y, 5)
+    }
+    on Board.drag(x: int, y: int) {
+        Board.line(x, y, x, y)
+    }
+
+    extend File {
+        on Save.select {
+            title = "saved"
+        }
+    }
+}
+
+extend File {
+    on Quit.select {
+        quit
+    }
+}

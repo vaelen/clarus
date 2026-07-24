@@ -321,6 +321,80 @@ record IRMenuDesc {
     itemsHead: int
 }
 
+// ---- UI handler/dispatch IR (Task 5) ----
+// `extend`/`every` bodies -> rt_ui_handlers dispatch + rt_ui_menu_handler/
+// rt_ui_every_desc tables. Each handler BODY itself is an ordinary IRFunc
+// (lower.cla's lowHandlerFunc; ADDED TO irFuncs exactly like a top-level
+// `func`/`on App.*` handler, so cpEmitFuncs's existing prototype+definition
+// pass prints it with no changes) -- only the SMALL amount of glue a
+// checker-validated `extend`/`every` needed beyond "a function body" lives
+// here: which C function (by interned name) answers which event, so
+// cprint.cla's hand-generated dispatcher switches (there is no Clarus
+// source shape for "a dispatch table": clarusc invents this glue itself,
+// per the same lower-extracts/cprint-spells division the descriptor tables
+// already use) can call the right one. A field holds -1 when that event has
+// no registered handler.
+
+// IRWinHandlers: one window TYPE's whole `extend` block content -- the five
+// bare window events (Ch8) plus the widget-event table below. winTypeNameIdx
+// is the window's own name (for cprint's clar_ui_winevent_/widget_ C names);
+// looked up by cprint.cla scanning this arena for a name match (see
+// cpFindWinHandlers) rather than back-referenced from IRWindowDesc, since a
+// window's IRWindowDesc is built (lowWindowDecl) BEFORE its `extend` block
+// (a separate top-level decl) is ever seen, and nothing else needs the
+// reverse link.
+record IRWinHandlers {
+    winTypeNameIdx: int
+    openedFn: int
+    closeRequestFn: int
+    closedFn: int
+    resizedFn: int
+    keyFn: int
+    widgetHead: int   // -1; chains IRWidgetHandlerEntry
+    widgetTail: int   // -1; append cursor (see lower.cla's lowGetOrCreateWidgetHandlerEntry)
+}
+
+// IRWidgetHandlerEntry: one widget's registered events within its window's
+// IRWinHandlers -- clickFn covers BOTH `button.click` and `canvas.click`
+// (rt_ui.h's RTUI_WEV_CLICK is one event value shared by both widget kinds;
+// cprint.cla picks the right call shape -- 0 args vs. (x, y) from a/b -- by
+// the widget's OWN kind, already available via IRWidgetDesc), changeFn is
+// `check.change`, dragFn is `canvas.drag`.
+record IRWidgetHandlerEntry {
+    widgetIndex: int
+    clickFn: int
+    changeFn: int
+    dragFn: int
+    next: int
+}
+
+// IRMenuHandlerEntry: one `on Item.select` handler -- app-scope
+// (scopeWinTypeNameIdx == -1) or window-scoped (nested inside `extend Win`,
+// per Ch9's Window-Scoped Commands). menuIdx/itemIdx are the SAME 0-based
+// indices lower.cla's uiMenuIdx/uiMenuItemIdx already compute for
+// `Menu.Item.enabled = b` (lowMenuEnableAssign) -- one registry, two
+// readers. menuNameIdx/itemNameIdx are carried only for cprint's raw C
+// string literals in the rt_ui_menu_handler struct (trace/debugging field,
+// mirroring probe_ui.c's kProbeMenuHandlers).
+record IRMenuHandlerEntry {
+    menuNameIdx: int
+    itemNameIdx: int
+    menuIdx: int
+    itemIdx: int
+    funcNameIdx: int
+    scopeWinTypeNameIdx: int
+    next: int
+}
+
+// IREveryEntry: one top-level `every N ticks { }` block (Ch7/Ch11), in
+// declaration order (the SAME order the ledger's `T FIRE every.<n>` trace
+// index and rt_ui_every_desc[]'s array position both use).
+record IREveryEntry {
+    funcNameIdx: int
+    ticks: int
+    next: int
+}
+
 var irTypes: list of IRType
 var irStmts: list of IRStmt
 var irExprs: list of IRExpr
@@ -335,6 +409,20 @@ var irWidgetDescs: list of IRWidgetDesc
 var irWindowDescs: list of IRWindowDesc
 var irMenuItemDescs: list of IRMenuItemDesc
 var irMenuDescs: list of IRMenuDesc
+var irWinHandlers: list of IRWinHandlers
+var irWidgetHandlerEntries: list of IRWidgetHandlerEntry
+var irMenuHandlerEntries: list of IRMenuHandlerEntry
+var irEveryEntries: list of IREveryEntry
+
+// irMenuHandlersHead/Tail/Count and irEveryHead/Tail/Count thread the
+// program-wide chains (declaration order) -- lower.cla's lowMenuExtend/
+// lowEveryDecl append-only, cprint.cla walks them read-only.
+var irMenuHandlersHead: int
+var irMenuHandlersTail: int
+var irMenuHandlerCount: int
+var irEveryHead: int
+var irEveryTail: int
+var irEveryCount: int
 
 // irStrLits is the literal pool (ir.go's Program.StrLits): each entry is a
 // strPool index, in the order literals are added; a StrConst's Idx field
@@ -403,6 +491,18 @@ func irReset() {
     while irMenuDescs.count > 0 {
         irMenuDescs.pop()
     }
+    while irWinHandlers.count > 0 {
+        irWinHandlers.pop()
+    }
+    while irWidgetHandlerEntries.count > 0 {
+        irWidgetHandlerEntries.pop()
+    }
+    while irMenuHandlerEntries.count > 0 {
+        irMenuHandlerEntries.pop()
+    }
+    while irEveryEntries.count > 0 {
+        irEveryEntries.pop()
+    }
     while irStrLits.count > 0 {
         irStrLits.pop()
     }
@@ -410,6 +510,12 @@ func irReset() {
     irHasLaunch = false
     irHasStartEmpty = false
     irHasStartCLI = false
+    irMenuHandlersHead = -1
+    irMenuHandlersTail = -1
+    irMenuHandlerCount = 0
+    irEveryHead = -1
+    irEveryTail = -1
+    irEveryCount = 0
 
     irVoidT = irSimpleType(KVoid)
     irIntT = irSimpleType(KInt)
@@ -1376,6 +1482,216 @@ func irMenuDescItemsHead(i: int): int {
 }
 
 // ================================================================
+// UI handler/dispatch constructors and accessors (Task 5)
+// (irWinHandlers / irWidgetHandlerEntries / irMenuHandlerEntries /
+// irEveryEntries arenas)
+// ================================================================
+
+func newIRWinHandlers(winTypeNameIdx: int): int {
+    var n: IRWinHandlers
+
+    n.winTypeNameIdx = winTypeNameIdx
+    n.openedFn = -1
+    n.closeRequestFn = -1
+    n.closedFn = -1
+    n.resizedFn = -1
+    n.keyFn = -1
+    n.widgetHead = -1
+    n.widgetTail = -1
+    irWinHandlers.add(n)
+    return irWinHandlers.count - 1
+}
+
+func irWinHandlersName(i: int): int {
+    return irWinHandlers[i].winTypeNameIdx
+}
+
+func irWinHandlersOpenedFn(i: int): int {
+    return irWinHandlers[i].openedFn
+}
+
+func irWinHandlersSetOpenedFn(i: int, fn: int) {
+    irWinHandlers[i].openedFn = fn
+}
+
+func irWinHandlersCloseRequestFn(i: int): int {
+    return irWinHandlers[i].closeRequestFn
+}
+
+func irWinHandlersSetCloseRequestFn(i: int, fn: int) {
+    irWinHandlers[i].closeRequestFn = fn
+}
+
+func irWinHandlersClosedFn(i: int): int {
+    return irWinHandlers[i].closedFn
+}
+
+func irWinHandlersSetClosedFn(i: int, fn: int) {
+    irWinHandlers[i].closedFn = fn
+}
+
+func irWinHandlersResizedFn(i: int): int {
+    return irWinHandlers[i].resizedFn
+}
+
+func irWinHandlersSetResizedFn(i: int, fn: int) {
+    irWinHandlers[i].resizedFn = fn
+}
+
+func irWinHandlersKeyFn(i: int): int {
+    return irWinHandlers[i].keyFn
+}
+
+func irWinHandlersSetKeyFn(i: int, fn: int) {
+    irWinHandlers[i].keyFn = fn
+}
+
+func irWinHandlersWidgetHead(i: int): int {
+    return irWinHandlers[i].widgetHead
+}
+
+// irWinHandlersAppendWidgetEntry appends a fresh IRWidgetHandlerEntry to
+// window handlers `i`'s widget chain (widgetTail bookkeeping is internal to
+// this arena -- callers never see it) and returns the new entry's index.
+func irWinHandlersAppendWidgetEntry(i: int, widgetIndex: int): int {
+    var n: IRWidgetHandlerEntry
+    var idx: int
+
+    n.widgetIndex = widgetIndex
+    n.clickFn = -1
+    n.changeFn = -1
+    n.dragFn = -1
+    n.next = -1
+    irWidgetHandlerEntries.add(n)
+    idx = irWidgetHandlerEntries.count - 1
+    if irWinHandlers[i].widgetHead == -1 {
+        irWinHandlers[i].widgetHead = idx
+    } else {
+        irWidgetHandlerEntries[irWinHandlers[i].widgetTail].next = idx
+    }
+    irWinHandlers[i].widgetTail = idx
+    return idx
+}
+
+func irWidgetHandlerEntryWidgetIndex(i: int): int {
+    return irWidgetHandlerEntries[i].widgetIndex
+}
+
+func irWidgetHandlerEntryClickFn(i: int): int {
+    return irWidgetHandlerEntries[i].clickFn
+}
+
+func irWidgetHandlerEntrySetClickFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].clickFn = fn
+}
+
+func irWidgetHandlerEntryChangeFn(i: int): int {
+    return irWidgetHandlerEntries[i].changeFn
+}
+
+func irWidgetHandlerEntrySetChangeFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].changeFn = fn
+}
+
+func irWidgetHandlerEntryDragFn(i: int): int {
+    return irWidgetHandlerEntries[i].dragFn
+}
+
+func irWidgetHandlerEntrySetDragFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].dragFn = fn
+}
+
+func irWidgetHandlerEntryNext(i: int): int {
+    return irWidgetHandlerEntries[i].next
+}
+
+// newIRMenuHandlerEntry appends to the program-wide irMenuHandlersHead/Tail
+// chain (declaration order) and returns the new entry's index.
+func newIRMenuHandlerEntry(menuNameIdx: int, itemNameIdx: int, menuIdx: int, itemIdx: int, funcNameIdx: int, scopeWinTypeNameIdx: int): int {
+    var n: IRMenuHandlerEntry
+    var idx: int
+
+    n.menuNameIdx = menuNameIdx
+    n.itemNameIdx = itemNameIdx
+    n.menuIdx = menuIdx
+    n.itemIdx = itemIdx
+    n.funcNameIdx = funcNameIdx
+    n.scopeWinTypeNameIdx = scopeWinTypeNameIdx
+    n.next = -1
+    irMenuHandlerEntries.add(n)
+    idx = irMenuHandlerEntries.count - 1
+    if irMenuHandlersHead == -1 {
+        irMenuHandlersHead = idx
+    } else {
+        irMenuHandlerEntries[irMenuHandlersTail].next = idx
+    }
+    irMenuHandlersTail = idx
+    irMenuHandlerCount = irMenuHandlerCount + 1
+    return idx
+}
+
+func irMenuHandlerEntryMenuName(i: int): int {
+    return irMenuHandlerEntries[i].menuNameIdx
+}
+
+func irMenuHandlerEntryItemName(i: int): int {
+    return irMenuHandlerEntries[i].itemNameIdx
+}
+
+func irMenuHandlerEntryMenuIdx(i: int): int {
+    return irMenuHandlerEntries[i].menuIdx
+}
+
+func irMenuHandlerEntryItemIdx(i: int): int {
+    return irMenuHandlerEntries[i].itemIdx
+}
+
+func irMenuHandlerEntryFuncName(i: int): int {
+    return irMenuHandlerEntries[i].funcNameIdx
+}
+
+func irMenuHandlerEntryScopeWinType(i: int): int {
+    return irMenuHandlerEntries[i].scopeWinTypeNameIdx
+}
+
+func irMenuHandlerEntryNext(i: int): int {
+    return irMenuHandlerEntries[i].next
+}
+
+// newIREveryEntry appends to the program-wide irEveryHead/Tail chain
+// (declaration order) and returns the new entry's index.
+func newIREveryEntry(funcNameIdx: int, ticks: int): int {
+    var n: IREveryEntry
+    var idx: int
+
+    n.funcNameIdx = funcNameIdx
+    n.ticks = ticks
+    n.next = -1
+    irEveryEntries.add(n)
+    idx = irEveryEntries.count - 1
+    if irEveryHead == -1 {
+        irEveryHead = idx
+    } else {
+        irEveryEntries[irEveryTail].next = idx
+    }
+    irEveryTail = idx
+    irEveryCount = irEveryCount + 1
+    return idx
+}
+
+func irEveryEntryFuncName(i: int): int {
+    return irEveryEntries[i].funcNameIdx
+}
+
+func irEveryEntryTicks(i: int): int {
+    return irEveryEntries[i].ticks
+}
+
+func irEveryEntryNext(i: int): int {
+    return irEveryEntries[i].next
+}
+
+// ================================================================
 // irStrLits (literal pool) constructors and accessors
 // ================================================================
 
@@ -1680,6 +1996,20 @@ func IUiGetHeight(): int {
 
 func IUiMenuEnable(): int {
     return intern("ui_menu_enable")
+}
+
+// IUiCancel (Task 5) is the `cancel` statement (Ch5/Ch8) -- valid only
+// inside a closeRequest handler (checkCancelStmt already enforces this), so
+// its body always runs inside a function the winEvent dispatcher's
+// RTUI_EV_CLOSEREQUEST case calls with `clar_ui_cur_cancel` already pointed
+// at the runtime's cancelFlag (the dispatcher sets it from `a` -- the
+// ledger's `a = (long)&long cancelFlag` convention -- immediately before
+// calling in; see cprint.cla's cpEmitOneWinEventDispatcher). No args: it
+// writes through that one program-wide scratch pointer, never a
+// per-handler parameter (closeRequest's own event spec always has 0
+// declared Clarus params, so there is no AST-visible slot for one anyway).
+func IUiCancel(): int {
+    return intern("ui_cancel")
 }
 
 func IUiCanvasClear(): int {

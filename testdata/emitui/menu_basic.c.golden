@@ -43,9 +43,16 @@ static void clar_fn_handler_App_launch(void) {
     rt_ui_menu_enable(1, 0, (int32_t)(1));
 }
 
+static const rt_ui_menu_desc *clar_ui_menus[] = {
+    &clar_ui_menu_File,
+    &clar_ui_menu_Edit,
+};
+
 int main(int argc, char **argv) {
     clar_init_globals();
     rt_args_init(argc, argv);
+    rt_ui_startup(0, 0, clar_ui_menus, 2, 0, 0, 0, 0);
     clar_fn_handler_App_launch();
+    rt_ui_run();
     return 0;
 }

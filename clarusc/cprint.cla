@@ -945,6 +945,12 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiMenuEnable() {
         fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
+    } else if nm == IUiCancel() {
+        // `cancel` (Ch5/Ch8) -- writes through the dispatcher-owned scratch
+        // pointer (see ir.cla's IUiCancel doc comment and
+        // cpEmitOneWinEventDispatcher's RTUI_EV_CLOSEREQUEST case).
+        fpEmit("*clar_ui_cur_cancel = 1;")
+        return toText("")
     } else if nm == IUiCanvasClear() {
         fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
@@ -1473,9 +1479,11 @@ func cpEmitEnums() {
 // file's existing cv_/clar_fn_/clar_rec_/clar_str_/clar_lit_/clar_enum_/
 // clar_new_ conventions -- never bare, so a generated name can never
 // collide with a user identifier (those are always cv_/clar_fn_-prefixed
-// too). Handler-table fields (rt_ui_window_desc.handlers) print as a bare
-// `0` -- Task 5 fills them in; NULL still compiles and links against
-// rt_ui.h's `const rt_ui_handlers *` field type.
+// too). Handler-table fields (rt_ui_window_desc.handlers) print a bare `0`
+// for a window with no `extend` block at all (NULL still compiles and
+// links against rt_ui.h's `const rt_ui_handlers *` field type); Task 5 wires
+// a real `&clar_ui_handlers_NAME` for every window that registers at least
+// one handler -- see cpEmitWinHandlersFwd/cpEmitUiDispatchers below.
 // ================================================================
 
 func cpBoolLit(b: bool): string {
@@ -1662,6 +1670,101 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
     return name
 }
 
+// cpFindWinHandlers returns winName's irWinHandlers arena index, or -1 if
+// the window has no `extend` block at all (lower.cla's lowGetOrCreateWinHandlers
+// only ever creates an entry on a window's FIRST registered handler) -- a
+// linear scan over irWinHandlers, cheap given a program's handful of window
+// types.
+func cpFindWinHandlers(winName: string): int {
+    var i: int
+
+    i = 0
+    while i < irWinHandlers.count {
+        if poolGet(irWinHandlersName(i)) == winName {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cpWidgetKindForIndex returns the widget kind word ("button"/"check"/
+// "canvas"/"label") at position widgetIndex in window winName's declared
+// widget list -- cpEmitOneWidgetDispatcher needs this to pick each widget's
+// calling convention (0 args for button click/check change vs. (x, y) from
+// a/b for canvas click/drag).
+func cpWidgetKindForIndex(winName: string, widgetIndex: int): string {
+    var i: int
+    var w: int
+    var n: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        if poolGet(irWindowDescName(i)) == winName {
+            w = irWindowDescWidgetsHead(i)
+            n = 0
+            while w != -1 {
+                if n == widgetIndex {
+                    return poolGet(irWidgetDescKind(w))
+                }
+                n = n + 1
+                w = irWidgetDescNext(w)
+            }
+        }
+        i = i + 1
+    }
+    return "" // unreachable for a checker-clean program
+}
+
+// cpWinHandlersHasWinEvent/HasWidget report whether window handlers `whIdx`
+// registered at least one bare window event / widget event -- used both to
+// decide whether to forward-declare+wire that half of the rt_ui_handlers
+// struct (cpEmitWinHandlersFwd) and whether to define its dispatcher body
+// at all (cpEmitUiDispatchers).
+func cpWinHandlersHasWinEvent(whIdx: int): bool {
+    return irWinHandlersOpenedFn(whIdx) != -1 or irWinHandlersCloseRequestFn(whIdx) != -1 or irWinHandlersClosedFn(whIdx) != -1 or irWinHandlersResizedFn(whIdx) != -1 or irWinHandlersKeyFn(whIdx) != -1
+}
+
+func cpWinHandlersHasWidget(whIdx: int): bool {
+    return irWinHandlersWidgetHead(whIdx) != -1
+}
+
+// cpEmitWinHandlersFwd prints (into cpUiBuf, BEFORE any clar_fn_ handler-body
+// prototype exists anywhere in the emitted file -- cpEmitFuncs's own
+// "prototypes up front" pass hasn't run yet at this point in emitProgram's
+// assembly order) the forward declarations for window `winName`'s dispatcher
+// functions (whichever of winEvent/widget actually have >=1 registered
+// handler -- matching probe_ui.c's own "0 for the unused half" convention,
+// e.g. kBounceHandlers = { bounce_win_event, 0 }) plus the rt_ui_handlers
+// struct wiring them together. The dispatcher bodies themselves are defined
+// later (cpEmitUiDispatchers, called AFTER cpEmitFuncs -- see that
+// function's header comment for why the split is necessary). Returns the
+// handlers struct's own C name (for the window desc to reference), or "0"
+// if winName has no `extend` block at all.
+func cpEmitWinHandlersFwd(winName: string): string {
+    var whIdx: int
+    var winFn: string
+    var widgetFn: string
+
+    whIdx = cpFindWinHandlers(winName)
+    if whIdx == -1 {
+        return "0"
+    }
+    winFn = "0"
+    if cpWinHandlersHasWinEvent(whIdx) {
+        winFn = "clar_ui_winevent_" + winName
+        cpUiBuf.add(toText("static void " + winFn + "(void *inst, short event, long a, long b);"))
+    }
+    widgetFn = "0"
+    if cpWinHandlersHasWidget(whIdx) {
+        widgetFn = "clar_ui_widget_" + winName
+        cpUiBuf.add(toText("static void " + widgetFn + "(void *inst, short widgetIndex, short event, long a, long b);"))
+    }
+    cpUiBuf.add(toText("static const rt_ui_handlers clar_ui_handlers_" + winName + " = { " + winFn + ", " + widgetFn + " };"))
+    cpUiBuf.add(toText(""))
+    return "clar_ui_handlers_" + winName
+}
+
 // cpEmitWindowDescs prints every window TYPE's widget array + state struct +
 // rt_ui_window_desc, in declaration order, into cpUiBuf/cpRecBuf.
 func cpEmitWindowDescs() {
@@ -1670,6 +1773,7 @@ func cpEmitWindowDescs() {
     var widgetsArrName: string
     var nWidgets: int
     var w: int
+    var handlersName: string
 
     i = 0
     while i < irWindowDescs.count {
@@ -1695,12 +1799,17 @@ func cpEmitWindowDescs() {
             cpRecBuf.add(toText(""))
         }
 
+        handlersName = cpEmitWinHandlersFwd(name)
+        if handlersName != "0" {
+            handlersName = "&" + handlersName
+        }
+
         cpUiBuf.add(toText("static const rt_ui_window_desc clar_ui_window_" + name + " = {"))
         cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irWindowDescTitle(i)) + ","))
         cpUiBuf.add(toText("    " + numToStr(irWindowDescW(i)) + ", " + numToStr(irWindowDescH(i)) + ", " + cpBoolLit(irWindowDescResizable(i)) + ", " + numToStr(irWindowDescMinW(i)) + ", " + numToStr(irWindowDescMinH(i)) + ","))
         cpUiBuf.add(toText("    " + numToStr(nWidgets) + ", " + widgetsArrName + ","))
         cpUiBuf.add(toText("    (short)sizeof(clar_uistate_" + name + "),"))
-        cpUiBuf.add(toText("    0")) // handlers: Task 5
+        cpUiBuf.add(toText("    " + handlersName))
         cpUiBuf.add(toText("};"))
         cpUiBuf.add(toText(""))
         i = i + 1
@@ -1760,6 +1869,208 @@ func cpEmitMenuDescs() {
 func cpEmitUiDescs() {
     cpEmitWindowDescs()
     cpEmitMenuDescs()
+    if irAnyCloseRequestHandler() {
+        // Into cpUiBuf, NOT cpEmitUiWiring's cpRestBuf section: a
+        // closeRequest handler's own BODY (an ordinary IRFunc, printed by
+        // cpEmitFuncs) references this global directly (the lowered
+        // `cancel` statement), and cpEmitFuncs's output lands in cpRestBuf
+        // strictly AFTER cpUiBuf in the final file -- declaring it any
+        // later would be a forward reference the C compiler rejects.
+        cpUiBuf.add(toText("static long *clar_ui_cur_cancel;"))
+        cpUiBuf.add(toText(""))
+    }
+}
+
+// irIsUiProgram reports whether this program declares any window, menu, or
+// `every` block -- gates every UI-only emission (the #include "rt_ui.h"
+// line, cpUiBuf's own blank-line separator, and Task 5's main()/dispatcher
+// wiring below), so a UI-free program's output stays byte-for-byte
+// unchanged (the differential suite enforces this).
+func irIsUiProgram(): bool {
+    return irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0
+}
+
+// irAnyCloseRequestHandler reports whether ANY window type registered a
+// closeRequest handler -- gates the `clar_ui_cur_cancel` scratch global
+// (cpEmitUiWiring): declaring it unconditionally for every UI program would
+// be a static file-scope variable no code ever references on a program with
+// no closeRequest handler at all, which -Wall's -Wunused-variable flags (a
+// NEW warning the gate forbids).
+func irAnyCloseRequestHandler(): bool {
+    var i: int
+
+    i = 0
+    while i < irWinHandlers.count {
+        if irWinHandlersCloseRequestFn(i) != -1 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// cpEmitOneWinEventDispatcher defines (into cpRestBuf) window `winName`'s
+// winEvent dispatcher body -- cpEmitWinHandlersFwd already forward-declared
+// its prototype into cpUiBuf; this runs AFTER cpEmitFuncs (see
+// cpEmitUiWiring) so every clar_fn_ handler-body name it calls is already
+// declared. The RTUI_EV_CLOSEREQUEST case sets clar_ui_cur_cancel from `a`
+// BEFORE calling in (the ledger's `a = (long)&long cancelFlag` convention);
+// RTUI_EV_KEY casts `a` to the handler's own declared `char` param.
+func cpEmitOneWinEventDispatcher(winName: string, whIdx: int) {
+    if not cpWinHandlersHasWinEvent(whIdx) {
+        return
+    }
+    cpRestBuf.add(toText("static void clar_ui_winevent_" + winName + "(void *inst, short event, long a, long b) {"))
+    cpRestBuf.add(toText("    switch (event) {"))
+    if irWinHandlersOpenedFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_OPENED: clar_fn_" + poolGet(irWinHandlersOpenedFn(whIdx)) + "(inst); break;"))
+    }
+    if irWinHandlersCloseRequestFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_CLOSEREQUEST: clar_ui_cur_cancel = (long *)a; clar_fn_" + poolGet(irWinHandlersCloseRequestFn(whIdx)) + "(inst); break;"))
+    }
+    if irWinHandlersClosedFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_CLOSED: clar_fn_" + poolGet(irWinHandlersClosedFn(whIdx)) + "(inst); break;"))
+    }
+    if irWinHandlersResizedFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_RESIZED: clar_fn_" + poolGet(irWinHandlersResizedFn(whIdx)) + "(inst); break;"))
+    }
+    if irWinHandlersKeyFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_KEY: clar_fn_" + poolGet(irWinHandlersKeyFn(whIdx)) + "(inst, (char)a); break;"))
+    }
+    cpRestBuf.add(toText("    default: break;"))
+    cpRestBuf.add(toText("    }"))
+    cpRestBuf.add(toText("}"))
+    cpRestBuf.add(toText(""))
+}
+
+// cpEmitOneWidgetDispatcher defines (into cpRestBuf) window `winName`'s
+// widget dispatcher body -- switches on widgetIndex, then on event; each
+// widget's calling convention (0 args for button click / check change vs.
+// (x, y) cast from a/b for canvas click/drag) is picked by that widget's OWN
+// kind (cpWidgetKindForIndex), since RTUI_WEV_CLICK is shared by both
+// button.click and canvas.click.
+func cpEmitOneWidgetDispatcher(winName: string, whIdx: int) {
+    var wEntry: int
+    var kind: string
+    var idx: int
+
+    if not cpWinHandlersHasWidget(whIdx) {
+        return
+    }
+    cpRestBuf.add(toText("static void clar_ui_widget_" + winName + "(void *inst, short widgetIndex, short event, long a, long b) {"))
+    cpRestBuf.add(toText("    switch (widgetIndex) {"))
+    wEntry = irWinHandlersWidgetHead(whIdx)
+    while wEntry != -1 {
+        idx = irWidgetHandlerEntryWidgetIndex(wEntry)
+        kind = cpWidgetKindForIndex(winName, idx)
+        cpRestBuf.add(toText("    case " + numToStr(idx) + ":"))
+        if kind == "canvas" {
+            if irWidgetHandlerEntryClickFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_CLICK) clar_fn_" + poolGet(irWidgetHandlerEntryClickFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
+            }
+            if irWidgetHandlerEntryDragFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_DRAG) clar_fn_" + poolGet(irWidgetHandlerEntryDragFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
+            }
+        } else {
+            // button (click only) / check (change only): both are
+            // zero-param Clarus handlers (Ch8's event table).
+            if irWidgetHandlerEntryClickFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_CLICK) clar_fn_" + poolGet(irWidgetHandlerEntryClickFn(wEntry)) + "(inst);"))
+            }
+            if irWidgetHandlerEntryChangeFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_CHANGE) clar_fn_" + poolGet(irWidgetHandlerEntryChangeFn(wEntry)) + "(inst);"))
+            }
+        }
+        cpRestBuf.add(toText("        break;"))
+        wEntry = irWidgetHandlerEntryNext(wEntry)
+    }
+    cpRestBuf.add(toText("    default: break;"))
+    cpRestBuf.add(toText("    }"))
+    cpRestBuf.add(toText("}"))
+    cpRestBuf.add(toText(""))
+}
+
+// cpEmitUiDispatchers defines every window type's forward-declared
+// dispatcher bodies, in declaration order.
+func cpEmitUiDispatchers() {
+    var i: int
+    var name: string
+    var whIdx: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        name = poolGet(irWindowDescName(i))
+        whIdx = cpFindWinHandlers(name)
+        if whIdx != -1 {
+            cpEmitOneWinEventDispatcher(name, whIdx)
+            cpEmitOneWidgetDispatcher(name, whIdx)
+        }
+        i = i + 1
+    }
+}
+
+// cpEmitMenuHandlerArray prints the rt_ui_menu_handler[] table (Ch9), in
+// declaration order -- referencing clar_fn_ fire functions (already
+// declared by cpEmitFuncs, called before this) and window-desc pointers
+// (already fully defined earlier in cpUiBuf; a forward-direction reference
+// is always fine in C).
+func cpEmitMenuHandlerArray() {
+    var e: int
+    var scopeStr: string
+
+    if irMenuHandlersHead == -1 {
+        return
+    }
+    cpRestBuf.add(toText("static const rt_ui_menu_handler clar_ui_menu_handlers[] = {"))
+    e = irMenuHandlersHead
+    while e != -1 {
+        scopeStr = "0"
+        if irMenuHandlerEntryScopeWinType(e) != -1 {
+            scopeStr = "&clar_ui_window_" + poolGet(irMenuHandlerEntryScopeWinType(e))
+        }
+        cpRestBuf.add(toText("    { clar_fn_" + poolGet(irMenuHandlerEntryFuncName(e)) + ", \"" +
+            cpEscapeCStr(poolGet(irMenuHandlerEntryMenuName(e))) + "\", \"" +
+            cpEscapeCStr(poolGet(irMenuHandlerEntryItemName(e))) + "\", " +
+            numToStr(irMenuHandlerEntryMenuIdx(e)) + ", " + numToStr(irMenuHandlerEntryItemIdx(e)) + ", " + scopeStr + " },"))
+        e = irMenuHandlerEntryNext(e)
+    }
+    cpRestBuf.add(toText("};"))
+    cpRestBuf.add(toText(""))
+}
+
+// cpEmitEveryArray prints the rt_ui_every_desc[] table (Ch7/Ch11), in
+// declaration order (the SAME order the `T FIRE every.<n>` trace index
+// uses).
+func cpEmitEveryArray() {
+    var e: int
+
+    if irEveryHead == -1 {
+        return
+    }
+    cpRestBuf.add(toText("static const rt_ui_every_desc clar_ui_every[] = {"))
+    e = irEveryHead
+    while e != -1 {
+        cpRestBuf.add(toText("    { clar_fn_" + poolGet(irEveryEntryFuncName(e)) + ", " + numToStr(irEveryEntryTicks(e)) + " },"))
+        e = irEveryEntryNext(e)
+    }
+    cpRestBuf.add(toText("};"))
+    cpRestBuf.add(toText(""))
+}
+
+// cpEmitUiWiring emits (into cpRestBuf, called AFTER cpEmitFuncs so every
+// clar_fn_ name it references is already declared -- see
+// cpEmitOneWinEventDispatcher's header comment): the dispatcher
+// definitions, the menu-handler array, and the every array (the
+// `clar_ui_cur_cancel` scratch global itself is declared earlier, by
+// cpEmitUiDescs -- see that function's header comment for why). A no-op for
+// a UI-free program.
+func cpEmitUiWiring() {
+    if not irIsUiProgram() {
+        return
+    }
+    cpEmitUiDispatchers()
+    cpEmitMenuHandlerArray()
+    cpEmitEveryArray()
 }
 
 // cpEmitGlobalsInit declares every global as a bare (uninitialized-in-C)
@@ -1843,9 +2154,94 @@ func cpEmitStrLits() {
     }
 }
 
+// cpEmitUiMain prints main() for a program declaring any window/menu/every
+// (Task 5): rt_args_init/clar_init_globals (same relative order as the
+// non-UI path below -- nothing depends on the other), the window-desc and
+// menu-desc pointer arrays rt_ui_startup wants, rt_ui_startup itself,
+// launch/startEmpty (Ch7: startCLI never fires on the Macintosh, so a UI
+// program's own `on App.startCLI` handler, if any, is simply never called
+// here -- dead per the reference, not a lowering gap), then rt_ui_run
+// (returns on quit).
+func cpEmitUiMain() {
+    var i: int
+    var winsExpr: string
+    var winsCount: string
+    var menusExpr: string
+    var menusCount: string
+    var mhExpr: string
+    var mhCount: string
+    var evExpr: string
+    var evCount: string
+
+    winsExpr = "0"
+    winsCount = "0"
+    if irWindowDescs.count > 0 {
+        cpRestBuf.add(toText("static const rt_ui_window_desc *clar_ui_windows[] = {"))
+        i = 0
+        while i < irWindowDescs.count {
+            cpRestBuf.add(toText("    &clar_ui_window_" + poolGet(irWindowDescName(i)) + ","))
+            i = i + 1
+        }
+        cpRestBuf.add(toText("};"))
+        cpRestBuf.add(toText(""))
+        winsExpr = "clar_ui_windows"
+        winsCount = numToStr(irWindowDescs.count)
+    }
+
+    menusExpr = "0"
+    menusCount = "0"
+    if irMenuDescs.count > 0 {
+        cpRestBuf.add(toText("static const rt_ui_menu_desc *clar_ui_menus[] = {"))
+        i = 0
+        while i < irMenuDescs.count {
+            cpRestBuf.add(toText("    &clar_ui_menu_" + poolGet(irMenuDescName(i)) + ","))
+            i = i + 1
+        }
+        cpRestBuf.add(toText("};"))
+        cpRestBuf.add(toText(""))
+        menusExpr = "clar_ui_menus"
+        menusCount = numToStr(irMenuDescs.count)
+    }
+
+    mhExpr = "0"
+    mhCount = "0"
+    if irMenuHandlersHead != -1 {
+        mhExpr = "clar_ui_menu_handlers"
+        mhCount = numToStr(irMenuHandlerCount)
+    }
+
+    evExpr = "0"
+    evCount = "0"
+    if irEveryHead != -1 {
+        evExpr = "clar_ui_every"
+        evCount = numToStr(irEveryCount)
+    }
+
+    cpRestBuf.add(toText("int main(int argc, char **argv) {"))
+    cpRestBuf.add(toText("    clar_init_globals();"))
+    cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
+    cpRestBuf.add(toText("    rt_ui_startup(" + winsExpr + ", " + winsCount + ", " + menusExpr + ", " + menusCount + ", " + mhExpr + ", " + mhCount + ", " + evExpr + ", " + evCount + ");"))
+    if irHasLaunch {
+        cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
+    }
+    if irHasStartEmpty {
+        cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
+    }
+    cpRestBuf.add(toText("    rt_ui_run();"))
+    cpRestBuf.add(toText("    return 0;"))
+    cpRestBuf.add(toText("}"))
+}
+
 // cpEmitMain prints the fixed entry point (cprint.go's emitMain): init
-// globals, stash argv, then launch, then startCLI (else startEmpty).
+// globals, stash argv, then launch, then startCLI (else startEmpty) -- for
+// a UI program (Task 5), cpEmitUiMain takes over instead, so a UI-free
+// program's output stays byte-for-byte unchanged (the differential suite
+// enforces this).
 func cpEmitMain() {
+    if irIsUiProgram() {
+        cpEmitUiMain()
+        return
+    }
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
@@ -1935,14 +2331,18 @@ func emitProgram(): text {
     cpEmitUiDescs()
     cpEmitGlobalsInit()
     cpEmitFuncs()
+    cpEmitUiWiring()
     cpEmitMain()
 
     cpAppendLine(out, "/* Generated by clarus (internal/cprint). Do not edit. */")
     cpAppendLine(out, "#include \"rt.h\"")
-    if irWindowDescs.count > 0 or irMenuDescs.count > 0 {
-        // Only when the program actually declares a window/menu -- a
+    if irIsUiProgram() {
+        // Only when the program actually declares a window/menu/every -- a
         // UI-free program's emitted C must stay byte-identical to before
-        // this task (the differential suite enforces it).
+        // this task (the differential suite enforces it). An every-only
+        // program (no window/menu at all) still needs rt_ui.h: its main()
+        // calls rt_ui_startup/rt_ui_run (Task 5) same as any other UI
+        // program.
         cpAppendLine(out, "#include \"rt_ui.h\"")
     }
     cpAppendLine(out, "#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
@@ -1953,7 +2353,7 @@ func emitProgram(): text {
     cpAppendLine(out, "")
     cpAppendTextList(out, cpRecBuf)
     cpAppendLine(out, "")
-    if irWindowDescs.count > 0 or irMenuDescs.count > 0 {
+    if irIsUiProgram() {
         // Gated exactly like the #include above: a UI-free program's cpUiBuf
         // is always empty, and emitting an unconditional extra blank line
         // here would perturb byte-identical UI-free output.
