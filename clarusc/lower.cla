@@ -58,6 +58,26 @@ var lowLocalsTail: int
 // per program in lowerProgram, alongside irReset().
 var lowSwitchN: int
 
+// uiMenuCount/uiMenuIdx/uiMenuItemIdx (Task 4) are lowMenuDecl's own
+// declaration-order registries, existing solely so `Menu.Item.enabled = b`
+// (lowMenuEnableAssign) can resolve rt_ui_menu_enable's two indices:
+// uiMenuIdx maps a menu name to its 1-based declaration-order position
+// (rt_ui_menu_enable's menuIdx contract -- "the Nth DECLARED menu");
+// uiMenuItemIdx maps (menu, item) to that item's 0-based position in its
+// OWN menu's declared entry list, separators included (matching
+// rt_ui_item_desc[]'s array order -- see probe_ui.c's kProbeMenuHandlers).
+// Both are progGen-prefixed exactly like check.cla's own menuItems/menuKey,
+// for the same reason (a differential harness may lower more than one
+// program per process; uiMenuCount is reset to 0 in lowerProgram, alongside
+// lowSwitchN, so a second program's menus renumber from 1 again). Relies on
+// every menu being declared before any code that references it, which is
+// the only order Clarus source ever writes it in (see the language
+// reference's own examples) -- lowerProgram's single top-to-bottom pass
+// over declHead never revisits an earlier decl to re-register it.
+var uiMenuCount: int
+var uiMenuIdx: map of int
+var uiMenuItemIdx: map of int
+
 func lowPushScope() {
     var s: LowScope
 
@@ -124,6 +144,7 @@ func lowType(t: int): int {
     case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
     case TyList { return irListType(lowType(typeElem(t))) }
     case TyMap { return irMapType(lowType(typeElem(t))) }
+    case TyWindowRef { return irWinRefType(typeNameIdx(t)) }
     }
     // TyInvalid and the checker-only pseudo-kinds never reach a
     // checker-clean lowering (lower.go's lowerType panics here).
@@ -269,6 +290,19 @@ func lowExpr(e: int): int {
     }
     case ExNew {
         return newIRNewRec(newExprTypeName(e), lowMustType(e))
+    }
+    case ExNilLit {
+        // `nil`'s checked type is always the OTHER side's window/resource
+        // type (checkNil/checkComparison -- see check.cla), so lowMustType
+        // already resolves to the right KWinRef; a bare void* NULL always
+        // prints as plain `0` in C regardless of which window type it's
+        // compared against.
+        return newIRIntConst(0, lowMustType(e))
+    }
+    case ExOpen {
+        // `open W` used as an expression (Ch5: Open) -- `open W` as a bare
+        // statement is StOpen (lowStmt), not this case.
+        return newIRIntr(IUiOpen(), -1, irWinRefType(openExprWindowName(e)))
     }
     }
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
@@ -526,6 +560,13 @@ func lowMethodCall(e: int, fn: int): int {
         return lowFileCall(e, fn, ty)
     }
     xk = typeKind(exprTypeGet(selectX(fn)))
+    if xk == TyWidget {
+        // Canvas drawing (Ch11): selectX(fn) is itself a widget-select
+        // (`w.Board`), never lowered as a standalone value -- lowCanvasMethod
+        // peels both levels itself, same as lowWidgetPropGet does for a
+        // property read, so recv is never computed generically here.
+        return lowCanvasMethod(e, fn, ty)
+    }
     recv = lowExpr(selectX(fn))
     if xk == TyStr or xk == TyText {
         return lowStringTextMethod(recv, xk == TyText, fn, callArgsHead(e), ty)
@@ -536,6 +577,70 @@ func lowMethodCall(e: int, fn: int): int {
     }
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
     return -1
+}
+
+// lowCanvasMethod lowers `w.Board.name(args)` (Ch11: Drawing) -- fn is the
+// method select (`w.Board.name`); selectX(fn) (`w.Board`) is the
+// widget-select, peeled directly for the instance + widget index exactly
+// like lowWidgetPropGet's TyWidget case. `rect`/`fillRect` are Clarus's two
+// distinct method names for rt_ui_canvas_rect's single runtime function
+// (see rt_ui.h's own comment on this collapse) -- the trailing fill literal
+// (0/1) is picked here by WHICH method was called, never exposed as a
+// Clarus-level argument.
+func lowCanvasMethod(e: int, fn: int, ty: int): int {
+    var wgSel: int
+    var instAst: int
+    var wgName: string
+    var winName: string
+    var widgetIdx: int
+    var head: int
+    var tail: int
+    var nm: string
+    var intrName: int
+    var a: int
+    var fillLit: int
+
+    wgSel = selectX(fn)
+    instAst = selectX(wgSel)
+    wgName = poolGet(selectName(wgSel))
+    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
+    widgetIdx = uiWidgetIndex(winName, wgName)
+
+    nm = poolGet(selectName(fn))
+    intrName = -1
+    fillLit = -1
+    if nm == "clear" {
+        intrName = IUiCanvasClear()
+    } else if nm == "line" {
+        intrName = IUiCanvasLine()
+    } else if nm == "rect" {
+        intrName = IUiCanvasRect()
+        fillLit = 0
+    } else if nm == "fillRect" {
+        intrName = IUiCanvasRect()
+        fillLit = 1
+    } else if nm == "circle" {
+        intrName = IUiCanvasCircle()
+    } else if nm == "fillCircle" {
+        intrName = IUiCanvasFillCircle()
+    } else if nm == "drawText" {
+        intrName = IUiCanvasDrawText()
+    } else {
+        lowUnsupported("canvas method " + nm)
+        return -1
+    }
+
+    head = lowExpr(instAst)
+    tail = irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
+    a = callArgsHead(e)
+    while a != -1 {
+        tail = irExprListAppend(tail, lowExpr(a))
+        a = exprNext(a)
+    }
+    if fillLit != -1 {
+        tail = irExprListAppend(tail, newIRIntConst(fillLit, irBoolT))
+    }
+    return newIRIntr(intrName, head, ty)
 }
 
 // lowFileCall lowers `file.fn(args)` (expr.go's lowerFileCall): readText/
@@ -776,12 +881,35 @@ func lowSelect(e: int): int {
     var propName: string
     var name: int
     var xExpr: int
+    var symIdx: int
 
     ty = lowMustType(e)
     xExpr = selectX(e)
-    xk = typeKind(exprTypeGet(xExpr))
     propName = poolGet(selectName(e))
-    if xk == TyRec {
+
+    // `WindowType.front` (Ch8: Window Instances) -- xExpr names a window
+    // TYPE, never an ordinary checked expression (checkSelect's own
+    // early-return path for this exact shape; exprTypeGet(xExpr) is unset
+    // here, so xk below must not be computed from it for this case). An
+    // instance's OWN `.front`-named var/widget, if any, is a different,
+    // ordinary shape (an ExIdent variable, not a type name) and falls
+    // through to the generic TyWindowRef dispatch below untouched.
+    if exprKind(xExpr) == ExIdent and propName == "front" {
+        symIdx = scopeLookup(curScope, identName(xExpr))
+        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyWindowRef {
+            return newIRIntr(IUiFront(), -1, irWinRefType(symbols[symIdx].nameIdx))
+        }
+    }
+
+    xk = typeKind(exprTypeGet(xExpr))
+    if xk == TyWidget {
+        // The OUTER select of a `w.Widget.prop` chain: xExpr (`w.Widget`)
+        // is itself never lowered as a standalone value -- lowWidgetPropGet
+        // peels both levels itself (Ch8: Widgets' runtime-property column).
+        return lowWidgetPropGet(e, xExpr, ty)
+    } else if xk == TyWindowRef {
+        return lowWindowInstSelect(e, xExpr, propName, ty)
+    } else if xk == TyRec {
         return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
     } else if xk == TyErrorType {
         // `lastError.code`/`.message` read the runtime's rt_lasterr_*
@@ -811,6 +939,103 @@ func lowSelect(e: int): int {
     }
     lowUnsupported("select ." + propName)
     return -1
+}
+
+// uiWidgetIndex returns wgName's 0-based position in window winName's
+// declared widget list -- reads check.cla's own windowWidgetsHead/
+// widgetInfos side tables directly (both modules share one process, one
+// scope/type arena, per lowResolveType's header comment), so this is the
+// SAME order cprint.cla's rt_ui_widget_desc[] array walk uses (lower.cla's
+// lowWindowDecl), and thus the SAME index rt_ui's runtime expects.
+func uiWidgetIndex(winName: string, wgName: string): int {
+    var wi: int
+    var idx: int
+
+    wi = windowWidgetsHead.get(winName, -1)
+    idx = 0
+    while wi != -1 {
+        if poolGet(widgetInfos[wi].nameIdx) == wgName {
+            return idx
+        }
+        wi = widgetInfos[wi].next
+        idx = idx + 1
+    }
+    return -1 // unreachable in a checker-clean program
+}
+
+// lowWindowInstSelect lowers `w.name` where w is a window-instance VALUE
+// (xk == TyWindowRef): either a per-instance `var` (Ch8) -- read through
+// the rt_ui_state() cast (IUiState + an ordinary FieldRef, so the same
+// FieldRef printer that already knows how to render "(X).cv_name" does all
+// the work; see IRKind's KUiState doc comment in ir.cla) -- or `.title`,
+// which rt_ui.h has no getter for yet (rt_ui_set_title is write-only) and
+// so is unsupported as a read here (lowAssign intercepts the WRITE form
+// directly, before ever calling this). A widget-select (`w.Widget`) is
+// never reached here as a value in its own right -- the OUTER property
+// select peels both levels itself (lowWidgetPropGet).
+func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
+    var winNameIdx: int
+    var winName: string
+    var fh: int
+    var stateExpr: int
+
+    winNameIdx = typeNameIdx(exprTypeGet(xExpr))
+    winName = poolGet(winNameIdx)
+    fh = windowVarsHead.get(winName, -1)
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == propName {
+            stateExpr = newIRIntr(IUiState(), lowExpr(xExpr), irUiStateType(winNameIdx))
+            return newIRFieldRef(stateExpr, intern(propName), ty)
+        }
+        fh = fieldInfos[fh].next
+    }
+    lowUnsupported("select ." + propName)
+    return -1
+}
+
+// lowWidgetPropGet lowers `w.Widget.prop` (Ch8: Widgets' runtime-property
+// column) -- e is the OUTER select (the `.prop` one); wgSel is `w.Widget`,
+// itself never lowered as a standalone value (see lowSelect's TyWidget
+// case). Covers exactly the get half of rt_ui.h's ABI as built: bool props
+// via rt_ui_widget_get_bool (check/button `enabled`), int props via
+// rt_ui_widget_get_int (canvas `width`/`height`) -- there is no
+// rt_ui_widget_get_str, so a caption/text/label READ is unsupported here
+// (only ever a write, via lowWidgetSetAssign).
+func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
+    var instAst: int
+    var wgName: string
+    var winName: string
+    var widgetKind: string
+    var propName: string
+    var widgetIdx: int
+    var head: int
+    var intrName: int
+
+    instAst = selectX(wgSel)
+    wgName = poolGet(selectName(wgSel))
+    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
+    widgetKind = findWidgetKind(winName, wgName)
+    widgetIdx = uiWidgetIndex(winName, wgName)
+    propName = poolGet(selectName(e))
+
+    intrName = -1
+    if widgetKind == "check" and propName == "checked" {
+        intrName = IUiGetChecked()
+    } else if (widgetKind == "button" or widgetKind == "field") and propName == "enabled" {
+        intrName = IUiGetEnabled()
+    } else if widgetKind == "canvas" and propName == "width" {
+        intrName = IUiGetWidth()
+    } else if widgetKind == "canvas" and propName == "height" {
+        intrName = IUiGetHeight()
+    }
+    if intrName == -1 {
+        lowUnsupported("read of " + widgetKind + "." + propName)
+        return -1
+    }
+
+    head = lowExpr(instAst)
+    irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
+    return newIRIntr(intrName, head, ty)
 }
 
 // coerceStr wraps x in a capacity-clamping temp when x is a Str value whose
@@ -908,6 +1133,18 @@ func lowStmt(s: int): int {
     case StSwitch {
         return lowSwitch(s)
     }
+    case StOpen {
+        // `open W` as a bare statement (Ch5: Open) -- the reference is
+        // created and discarded; ExOpen (lowExpr) is the assigned/returned
+        // form (`w = open W`).
+        return newIRExprStmt(newIRIntr(IUiOpen(), -1, irWinRefType(openStmtWindowName(s))))
+    }
+    case StClose {
+        // `close w` (Ch5: Close) -- rt_ui_close takes just the instance
+        // pointer; no window-type name is needed (unlike open/front, which
+        // must know which descriptor to reference).
+        return newIRExprStmt(newIRIntr(IUiClose(), lowExpr(closeX(s)), irVoidT))
+    }
     }
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
     return -1
@@ -991,13 +1228,156 @@ func lowReturn(s: int): int {
 // lowAssign lowers `lvalue = expr` (stmt.go's lowerAssign): `l[i] = v`
 // routes through lowIndexAssign; everything else (a plain variable) is a
 // normal store through lowStoreStmt.
+// isWindowTitleSelect reports whether e is `w.title` where w is a window
+// INSTANCE value (Ch8: title is "assignable at runtime"; rt_ui_set_title is
+// write-only, so this shape is only ever handled as an assignment LHS --
+// there is no matching read path in lowWindowInstSelect).
+func isWindowTitleSelect(e: int): bool {
+    if exprKind(e) != ExSelect {
+        return false
+    }
+    if poolGet(selectName(e)) != "title" {
+        return false
+    }
+    return typeKind(exprTypeGet(selectX(e))) == TyWindowRef
+}
+
+// isWidgetPropSelect reports whether e is `w.Widget.prop` -- e's own base
+// (`w.Widget`) checks as the TyWidget pseudo-type (Ch8: Widgets' runtime
+// properties).
+func isWidgetPropSelect(e: int): bool {
+    if exprKind(e) != ExSelect {
+        return false
+    }
+    return typeKind(exprTypeGet(selectX(e))) == TyWidget
+}
+
+// isMenuNameIdent reports whether e is a bare Ident naming a declared menu
+// (check.cla's Symbol.isMenu) -- mirrors checkSelect's own menu-name guard.
+func isMenuNameIdent(e: int): bool {
+    var symIdx: int
+
+    if exprKind(e) != ExIdent {
+        return false
+    }
+    symIdx = scopeLookup(curScope, identName(e))
+    return symIdx != -1 and symbols[symIdx].isMenu
+}
+
+// isMenuItemEnabledSelect reports whether e is `MenuName.ItemName.enabled`
+// (Ch9: Runtime Menu-Item Property) -- the only per-spec menu-item op, and
+// rt_ui.h has no getter for it (rt_ui_menu_enable is write-only), so this
+// shape is only ever handled as an assignment LHS; lowSelect has no
+// TyMenuItem case at all (see its own header note).
+func isMenuItemEnabledSelect(e: int): bool {
+    var inner: int
+
+    if exprKind(e) != ExSelect {
+        return false
+    }
+    if poolGet(selectName(e)) != "enabled" {
+        return false
+    }
+    inner = selectX(e)
+    if exprKind(inner) != ExSelect {
+        return false
+    }
+    return isMenuNameIdent(selectX(inner))
+}
+
+// lowMenuEnableAssign lowers `MenuName.ItemName.enabled = b` to
+// rt_ui_menu_enable(menuIdx, itemIdx, b) -- menuIdx is the 1-based
+// declaration-order index (uiMenuIdx, populated by lowMenuDecl) and itemIdx
+// is the item's 0-based position in its menu's declared entry list
+// (uiMenuItemIdx), matching rt_ui_menu_enable's contract (see rt_ui.c's
+// usage and probe_ui.c's kProbeMenuHandlers).
+func lowMenuEnableAssign(lhs: int, rhsAst: int): int {
+    var inner: int
+    var menuName: string
+    var itemName: string
+    var menuIdx: int
+    var itemIdx: int
+    var head: int
+    var tail: int
+
+    inner = selectX(lhs)
+    menuName = poolGet(identName(selectX(inner)))
+    itemName = poolGet(selectName(inner))
+    menuIdx = uiMenuIdx.get(numToStr(progGen) + "|" + menuName, -1)
+    itemIdx = uiMenuItemIdx.get(menuKey(menuName, itemName), -1)
+
+    head = newIRIntConst(menuIdx, irIntT)
+    tail = irExprListAppend(head, newIRIntConst(itemIdx, irIntT))
+    tail = irExprListAppend(tail, lowExpr(rhsAst))
+    return newIRExprStmt(newIRIntr(IUiMenuEnable(), head, irVoidT))
+}
+
+// lowWidgetSetAssign lowers `w.Widget.prop = rhs` (Ch8: Widgets' runtime
+// properties, write half) -- covers exactly rt_ui.h's ABI as built: caption
+// (button)/text (label) via rt_ui_widget_set_str, checked (check)/enabled
+// (button) via rt_ui_widget_set_bool. `title` is handled separately
+// (isWindowTitleSelect, above it in lowAssign) since it's a window property,
+// not a widget one.
+func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
+    var wgSel: int
+    var instAst: int
+    var wgName: string
+    var winName: string
+    var widgetKind: string
+    var propName: string
+    var widgetIdx: int
+    var head: int
+    var tail: int
+    var intrName: int
+
+    wgSel = selectX(lhs)
+    instAst = selectX(wgSel)
+    wgName = poolGet(selectName(wgSel))
+    winName = poolGet(typeNameIdx(exprTypeGet(instAst)))
+    widgetKind = findWidgetKind(winName, wgName)
+    widgetIdx = uiWidgetIndex(winName, wgName)
+    propName = poolGet(selectName(lhs))
+
+    intrName = -1
+    if widgetKind == "button" and propName == "caption" {
+        intrName = IUiSetCaption()
+    } else if widgetKind == "label" and propName == "text" {
+        intrName = IUiSetText()
+    } else if widgetKind == "check" and propName == "checked" {
+        intrName = IUiSetChecked()
+    } else if (widgetKind == "button" or widgetKind == "field") and propName == "enabled" {
+        intrName = IUiSetEnabled()
+    }
+    if intrName == -1 {
+        lowUnsupported("set of " + widgetKind + "." + propName)
+        return -1
+    }
+
+    head = lowExpr(instAst)
+    tail = irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
+    tail = irExprListAppend(tail, lowExpr(rhsAst))
+    return newIRExprStmt(newIRIntr(intrName, head, irVoidT))
+}
+
 func lowAssign(s: int): int {
     var lhs: int
     var ty: int
+    var head: int
 
     lhs = assignLHS(s)
     if exprKind(lhs) == ExIndex {
         return lowIndexAssign(lhs, assignRHS(s))
+    }
+    if isMenuItemEnabledSelect(lhs) {
+        return lowMenuEnableAssign(lhs, assignRHS(s))
+    }
+    if isWindowTitleSelect(lhs) {
+        head = lowExpr(selectX(lhs))
+        irExprListAppend(head, lowExpr(assignRHS(s)))
+        return newIRExprStmt(newIRIntr(IUiSetTitle(), head, irVoidT))
+    }
+    if isWidgetPropSelect(lhs) {
+        return lowWidgetSetAssign(lhs, assignRHS(s))
     }
     ty = lowMustType(lhs)
     return lowStoreStmt(lowExpr(lhs), lowExpr(assignRHS(s)), ty)
@@ -1445,6 +1825,228 @@ func lowBuiltinSaveChoiceLayout() {
     newIREnumLayout(intern("saveChoice"), head)
 }
 
+// lowWidgetDesc builds one widget's IRWidgetDesc from its DkWidget AST node
+// (w) -- Ch8: Widgets/Layout. Walks the exact same DkProperty chain
+// checkWidget already validated; this task's four widget kinds (button/
+// check/canvas/label) are rt_ui's whole widget surface (field/textview/
+// popup/table have no rt_ui support at all yet -- host-unsupported here,
+// same as every other not-yet-ported construct in this file).
+//
+// ponytail: `at`/`size`/`width` values are read via intLitVal, which
+// assumes a literal int (true of every example in the language reference
+// and both of this task's fixtures); a named int constant in one of these
+// positions -- legal per the grammar, since parseProperty always parses a
+// full expression -- would read a wrong/garbage value instead of failing
+// loudly. Upgrade to constant-folding here if a fixture ever needs it.
+func lowWidgetDesc(w: int): int {
+    var kind: string
+    var p: int
+    var pname: string
+    var vh: int
+    var v1: int
+    var atKind: int
+    var x: int
+    var yIsBottom: bool
+    var y: int
+    var widthIsFill: bool
+    var width: int
+    var fillBoth: bool
+    var isDefault: bool
+    var isCancel: bool
+    var isBuffered: bool
+    var captionIdx: int
+
+    kind = poolGet(widgetKindName(w))
+    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" {
+        lowUnsupported("widget kind " + kind)
+    }
+
+    atKind = 0
+    x = 0
+    yIsBottom = false
+    y = 0
+    widthIsFill = false
+    width = 0
+    fillBoth = false
+    isDefault = false
+    isCancel = false
+    isBuffered = false
+    captionIdx = -1
+
+    p = widgetPropsHead(w)
+    while p != -1 {
+        if declKind(p) == DkProperty {
+            pname = poolGet(propertyName(p))
+            vh = propertyValuesHead(p)
+            if pname == "caption" or pname == "text" or pname == "label" {
+                captionIdx = stringLitIdx(vh)
+            } else if pname == "at" {
+                v1 = exprNext(vh)
+                if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "next" {
+                    atKind = 1
+                    x = 0
+                } else if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "right" {
+                    atKind = 2
+                    x = 0
+                } else {
+                    atKind = 0
+                    x = intLitVal(vh)
+                }
+                if exprKind(v1) == ExIdent and poolGet(identName(v1)) == "bottom" {
+                    yIsBottom = true
+                    y = 0
+                } else {
+                    yIsBottom = false
+                    y = intLitVal(v1)
+                }
+            } else if pname == "width" {
+                if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "fill" {
+                    widthIsFill = true
+                    width = 0
+                } else {
+                    widthIsFill = false
+                    width = intLitVal(vh)
+                }
+            } else if pname == "fill" {
+                fillBoth = poolGet(identName(vh)) == "both"
+            } else if pname == "default" {
+                isDefault = true
+            } else if pname == "cancel" {
+                isCancel = true
+            } else if pname == "buffered" {
+                isBuffered = true
+            }
+        }
+        p = declNext(p)
+    }
+    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered)
+}
+
+// lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
+// window-body properties (title/size/resizable), each widget (lowWidgetDesc,
+// in declaration order -- the SAME order uiWidgetIndex and rt_ui's widget
+// indices rely on), and each per-instance `var` (an IRFieldSlot, reusing
+// the record-layout arena -- see IRWindowDesc's doc comment in ir.cla). Per-
+// var INIT expressions are not lowered here: a UI state block is allocated
+// and zeroed by the runtime, and applying a `var x: int = N` default is
+// wiring the (Task 5) `opened` handler owns, not this task. `form for` is
+// Ch10 (out of scope; host-unsupported here).
+func lowWindowDecl(d: int) {
+    var winNameIdx: int
+    var item: int
+    var titleIdx: int
+    var w: int
+    var h: int
+    var resizable: bool
+    var minW: int
+    var minH: int
+    var widgetsHead: int
+    var widgetsTail: int
+    var stateHead: int
+    var stateTail: int
+    var vh: int
+    var pname: string
+    var wd: int
+    var fslot: int
+
+    winNameIdx = windowDeclName(d)
+    titleIdx = -1
+    w = 0
+    h = 0
+    resizable = false
+    minW = 0
+    minH = 0
+    widgetsHead = -1
+    widgetsTail = -1
+    stateHead = -1
+    stateTail = -1
+
+    item = windowDeclItemsHead(d)
+    while item != -1 {
+        if declKind(item) == DkProperty {
+            pname = poolGet(propertyName(item))
+            vh = propertyValuesHead(item)
+            if pname == "title" {
+                titleIdx = stringLitIdx(vh)
+            } else if pname == "size" {
+                w = intLitVal(vh)
+                h = intLitVal(exprNext(vh))
+            } else if pname == "resizable" {
+                resizable = true
+                if vh != -1 {
+                    minW = intLitVal(callArgsHead(vh))
+                    minH = intLitVal(exprNext(callArgsHead(vh)))
+                }
+            }
+        } else if declKind(item) == DkVar {
+            fslot = newIRFieldSlot(varDeclName(item), lowResolveType(varDeclType(item)), 0, -1)
+            if stateHead == -1 {
+                stateHead = fslot
+            }
+            stateTail = irFieldSlotListAppend(stateTail, fslot)
+        } else if declKind(item) == DkWidget {
+            wd = lowWidgetDesc(item)
+            if widgetsHead == -1 {
+                widgetsHead = wd
+            }
+            widgetsTail = irWidgetDescListAppend(widgetsTail, wd)
+        } else if declKind(item) == DkFormFor {
+            lowUnsupported("form for")
+        }
+        item = declNext(item)
+    }
+    if resizable and minW == 0 and minH == 0 {
+        // No explicit `min(...)` -- default to the window's own opening
+        // size (never shrinks below what it opened at), a sane choice
+        // absent from the language reference's own bare-`resizable` example.
+        minW = w
+        minH = h
+    }
+    newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead)
+}
+
+// lowMenuDecl lowers `menu M { ... }` (Ch9) into an IRMenuDesc, and records
+// M's declaration-order menuIdx plus each item's 0-based position (separators
+// included) into uiMenuIdx/uiMenuItemIdx for lowMenuEnableAssign to read back
+// later in this same pass (see those vars' own doc comment).
+func lowMenuDecl(d: int) {
+    var nameIdx: int
+    var menuName: string
+    var e: int
+    var itemsHead: int
+    var itemsTail: int
+    var idx: int
+    var it: int
+
+    nameIdx = menuDeclName(d)
+    menuName = poolGet(nameIdx)
+    uiMenuCount = uiMenuCount + 1
+    uiMenuIdx[numToStr(progGen) + "|" + menuName] = uiMenuCount
+
+    itemsHead = -1
+    itemsTail = -1
+    idx = 0
+    e = menuDeclEntriesHead(d)
+    while e != -1 {
+        if menuEntryIsStandardEdit(e) {
+            lowUnsupported("standard edit")
+        }
+        if menuEntryIsItem(e) {
+            uiMenuItemIdx[menuKey(menuName, poolGet(menuEntryName(e)))] = idx
+            it = newIRMenuItemDesc(menuEntryName(e), menuEntryCaption(e), menuEntryKey(e), false)
+        } else {
+            it = newIRMenuItemDesc(-1, -1, -1, true)
+        }
+        if itemsHead == -1 {
+            itemsHead = it
+        }
+        itemsTail = irMenuItemDescListAppend(itemsTail, it)
+        idx = idx + 1
+        e = declNext(e)
+    }
+    newIRMenuDesc(nameIdx, nameIdx, itemsHead)
+}
+
 // lowDecl dispatches one top-level declaration (lower.go's lowerDecl subset).
 func lowDecl(d: int) {
     var k: DeclKind
@@ -1463,9 +2065,12 @@ func lowDecl(d: int) {
         lowGlobalVarDecl(d)
     } else if k == DkFunc {
         lowFuncDecl(d)
+    } else if k == DkWindow {
+        lowWindowDecl(d)
+    } else if k == DkMenu {
+        lowMenuDecl(d)
     } else {
-        // Windows, menus, and any other top-level decl kind not ported for
-        // the host build.
+        // `extend`/`every` (handler bodies, timers): Task 5.
         lowUnsupported("declaration kind " + numToStr(int(k)))
     }
 }
@@ -1478,6 +2083,7 @@ func lowerProgram(declHead: int): int {
     var d: int
 
     lowSwitchN = 0
+    uiMenuCount = 0
     lowBuiltinSaveChoiceLayout()
     d = declHead
     while d != -1 {

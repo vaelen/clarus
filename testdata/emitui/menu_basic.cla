@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// menu_basic.cla: emitui golden fixture -- two menus, exercising items,
+// key equivalents, and a separator, plus a runtime `enabled` assignment
+// from the launch handler (Ch9: Runtime Menu-Item Property). No `extend`
+// handler blocks appear here (Task 5's job); the enable assignment is
+// exercised directly from App.launch instead, which is already lowered.
+
+menu File {
+    item New  "New"  key "N"
+    item Open "Open" key "O"
+    separator
+    item Quit "Quit" key "Q"
+}
+
+menu Edit {
+    item Copy  "Copy"  key "C"
+    item Paste "Paste" key "V"
+}
+
+on App.launch {
+    File.Quit.enabled = false
+    Edit.Copy.enabled = true
+}

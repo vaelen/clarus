@@ -59,7 +59,8 @@ include "ir.cla"
 
 var cpTypeBuf: list of text   // string-capacity (+ array-wrapper, Task 4+) typedefs
 var cpLitBuf: list of text    // string-literal pool
-var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err)
+var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err) + UI state structs
+var cpUiBuf: list of text     // rt_ui_widget_desc/window_desc/item_desc/menu_desc tables (Task 4)
 var cpRestBuf: list of text   // globals init, funcs, main
 
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
@@ -157,6 +158,7 @@ func cpCTypeName(t: int): string {
     case KRec { return "clar_rec_" + poolGet(irtName(t)) }
     case KErr { return "clar_rec_Err" }
     case KArr { return "clar_arr_" + cpArrKey(t) }
+    case KWinRef { return "void *" }
     }
     return "void"
 }
@@ -603,6 +605,25 @@ func fpTextConcat(a: int, b: int): text {
     return t
 }
 
+// fpArgAt walks n steps down an Intr's argument chain from head (via
+// irExprNext) and returns the expr index found there -- for the UI canvas
+// intrinsics below, whose fixed positional argument count (inst, widget
+// index, then each Ch11 method's own 2-4 geometry args, an optional trailing
+// fill flag) runs past the a0/a1/a2 prelude every other fpIntrCall case gets
+// by default.
+func fpArgAt(head: int, n: int): int {
+    var cur: int
+    var i: int
+
+    cur = head
+    i = 0
+    while i < n {
+        cur = irExprNext(cur)
+        i = i + 1
+    }
+    return cur
+}
+
 // fpIntrCall prints one Intr call (intr.go). Every rt_* function whose
 // result comes back through an out-parameter (concat, text concat, ...) is
 // materialized into a fresh statement-level temp here and its name
@@ -881,6 +902,67 @@ func fpIntrCall(x: int): text {
         t = fpNewTmp("clar_str_255")
         fpEmit("rt_file_name((uint8_t*)&" + t + ", " + s0 + ");")
         return t
+
+    // ---- UI (Task 4: Ch7-11 -> runtime/mac/rt_ui.h) ----
+    } else if nm == IUiOpen() {
+        // `open W` -- x's own ty (set at lowering time) is the KWinRef type
+        // carrying W's name; see ir.cla's KWinRef doc comment.
+        return "rt_ui_open(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
+    } else if nm == IUiFront() {
+        return "rt_ui_front(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
+    } else if nm == IUiClose() {
+        fpEmit("rt_ui_close(" + fpExpr(a0) + ");")
+        return toText("")
+    } else if nm == IUiState() {
+        // Casts rt_ui_state's void* to the firing window's state struct and
+        // dereferences it inline, so the ENCLOSING FieldRef's ordinary
+        // "(X).cv_name" printer (fpFieldRef) needs no special case at all --
+        // see ir.cla's KUiState doc comment.
+        return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)rt_ui_state(" + fpExpr(a0) + "))"
+    } else if nm == IUiSetTitle() {
+        fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        return toText("")
+    } else if nm == IUiSetCaption() {
+        fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
+        return toText("")
+    } else if nm == IUiSetText() {
+        fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
+        return toText("")
+    } else if nm == IUiGetChecked() {
+        return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
+    } else if nm == IUiSetChecked() {
+        fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == IUiGetEnabled() {
+        return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
+    } else if nm == IUiSetEnabled() {
+        fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == IUiGetWidth() {
+        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
+    } else if nm == IUiGetHeight() {
+        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
+    } else if nm == IUiMenuEnable() {
+        fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
+    } else if nm == IUiCanvasClear() {
+        fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IUiCanvasLine() {
+        fpEmit("rt_ui_canvas_line(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
+        return toText("")
+    } else if nm == IUiCanvasRect() {
+        fpEmit("rt_ui_canvas_rect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
+        return toText("")
+    } else if nm == IUiCanvasCircle() {
+        fpEmit("rt_ui_canvas_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        return toText("")
+    } else if nm == IUiCanvasFillCircle() {
+        fpEmit("rt_ui_canvas_fill_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        return toText("")
+    } else if nm == IUiCanvasDrawText() {
+        fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
+        return toText("")
     }
     return toText("")
 }
@@ -1157,6 +1239,11 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
         fpEmit(dst + " = " + numToStr(scalarDefault) + ";")
+    } else if k == KWinRef {
+        // `var w: SomeWindow` declares a nil window reference (Ch8) -- a
+        // plain NULL `void *`, same spelling nil itself lowers to (lower.cla's
+        // ExNilLit case).
+        fpEmit(dst + " = 0;")
     } else if k == KStr {
         if strDefault < 0 {
             fpEmit(dst + " = (" + cpCType(t) + "){0};")
@@ -1377,6 +1464,304 @@ func cpEmitEnums() {
     cpRestBuf.add(toText(""))
 }
 
+// ================================================================
+// UI descriptor printing (Task 4): irWindowDescs/irMenuDescs (ir.cla) ->
+// static const rt_ui_widget_desc[]/rt_ui_window_desc/rt_ui_item_desc[]/
+// rt_ui_menu_desc tables, matching the shape internal/mactest/uiprobe/
+// probe_ui.c hand-authors (rt_ui.h's own living example). Every C
+// identifier this section mints uses the "clar_ui_" prefix, alongside this
+// file's existing cv_/clar_fn_/clar_rec_/clar_str_/clar_lit_/clar_enum_/
+// clar_new_ conventions -- never bare, so a generated name can never
+// collide with a user identifier (those are always cv_/clar_fn_-prefixed
+// too). Handler-table fields (rt_ui_window_desc.handlers) print as a bare
+// `0` -- Task 5 fills them in; NULL still compiles and links against
+// rt_ui.h's `const rt_ui_handlers *` field type.
+// ================================================================
+
+func cpBoolLit(b: bool): string {
+    if b {
+        return "1"
+    }
+    return "0"
+}
+
+// cpEscapeCStr escapes s for embedding inside a C double-quoted string
+// literal (backslash and doublequote only -- every caption/title/label this
+// task's fixtures or the language reference's own examples use is plain
+// ASCII text with neither).
+func cpEscapeCStr(s: string): string {
+    var out: string
+    var i: int
+    var c: char
+
+    out = ""
+    i = 0
+    while i < s.length {
+        c = s[i]
+        if c == '"' {
+            out = out + "\\\""
+        } else if c == '\\' {
+            out = out + "\\\\"
+        } else {
+            out = out + c
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// cpUiCaptionOrNull renders a widget/menu-item caption slot: idx == -1 (no
+// caption -- e.g. a canvas widget, or a separator) prints a bare `0`
+// (matching probe_ui.c's own NULL-caption widgets/separators exactly);
+// otherwise a Retro68 "\pFoo"-escaped Str255 literal cast to `const
+// unsigned char *`, the same spelling probe_ui.c hand-authors throughout.
+func cpUiCaptionOrNull(idx: int): string {
+    if idx == -1 {
+        return "0"
+    }
+    return "(const unsigned char *)\"\\p" + cpEscapeCStr(poolGet(idx)) + "\""
+}
+
+// cpUiTitleStr renders a window/menu title slot: unlike a widget caption, a
+// title is never semantically absent (NewWindow/NewMenu both want a real,
+// possibly-empty Str255, not NULL), so idx == -1 (no `title:` property
+// given) prints an empty Pascal string rather than 0.
+func cpUiTitleStr(idx: int): string {
+    if idx == -1 {
+        return "(const unsigned char *)\"\\p\""
+    }
+    return "(const unsigned char *)\"\\p" + cpEscapeCStr(poolGet(idx)) + "\""
+}
+
+// cpMenuKeyChar renders a menu item's key-equivalent slot (`unsigned char
+// key`): 0 if the item declared no `key "K"`, else a C char literal.
+func cpMenuKeyChar(keyIdx: int): string {
+    var s: string
+
+    if keyIdx == -1 {
+        return "0"
+    }
+    s = poolGet(keyIdx)
+    if s.length == 0 {
+        return "0"
+    }
+    return "'" + s + "'"
+}
+
+func cpWidgetKindMacro(kindIdx: int): string {
+    var kind: string
+
+    kind = poolGet(kindIdx)
+    if kind == "button" {
+        return "RTUI_BUTTON"
+    }
+    if kind == "check" {
+        return "RTUI_CHECK"
+    }
+    if kind == "canvas" {
+        return "RTUI_CANVAS"
+    }
+    return "RTUI_LABEL" // lower.cla's lowWidgetDesc rejects every other kind
+}
+
+func cpAtKindMacro(k: int): string {
+    if k == 1 {
+        return "RTUI_AT_NEXT"
+    }
+    if k == 2 {
+        return "RTUI_AT_RIGHT"
+    }
+    return "RTUI_AT_XY"
+}
+
+func cpFillMacro(fillBoth: bool): string {
+    if fillBoth {
+        return "RTUI_FILL_BOTH"
+    }
+    return "RTUI_FILL_NONE"
+}
+
+func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool): string {
+    var s: string
+
+    s = ""
+    if isDefault {
+        s = "RTUI_DEFAULT"
+    }
+    if isCancel {
+        if s == "" {
+            s = "RTUI_CANCEL"
+        } else {
+            s = s + " | RTUI_CANCEL"
+        }
+    }
+    if isBuffered {
+        if s == "" {
+            s = "RTUI_BUFFERED"
+        } else {
+            s = s + " | RTUI_BUFFERED"
+        }
+    }
+    if s == "" {
+        return "0"
+    }
+    return s
+}
+
+// cpEmitUiStateStruct prints one window's per-instance-var state struct
+// (clar_uistate_NAME) into cpRecBuf -- a plain typedef, deliberately NOT
+// routed through cpEmitRecords: a UI state block is allocated and zeroed by
+// rt_ui itself (rt_ui_state's Handle), never via a clar_new_NAME
+// constructor, so there is no per-field default-init body to emit here.
+func cpEmitUiStateStruct(name: string, fieldsHead: int) {
+    var f: int
+
+    cpRecBuf.add(toText("typedef struct {"))
+    f = fieldsHead
+    while f != -1 {
+        cpEnsureType(irFieldSlotType(f))
+        cpRecBuf.add(toText("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
+        f = irFieldSlotNext(f)
+    }
+    cpRecBuf.add(toText("} clar_uistate_" + name + ";"))
+    cpRecBuf.add(toText(""))
+}
+
+// cpEmitWidgetDescArray prints one window's rt_ui_widget_desc[] array (Ch8)
+// into cpUiBuf, in the SAME order lower.cla's lowWindowDecl chained them --
+// the order uiWidgetIndex (lower.cla) and this array's own positions agree
+// on. Returns the array's own C name, for the window desc below to
+// reference.
+func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
+    var name: string
+    var w: int
+    var yStr: string
+    var widthStr: string
+
+    name = "clar_ui_widgets_" + winName
+    cpUiBuf.add(toText("static const rt_ui_widget_desc " + name + "[] = {"))
+    w = headIdx
+    while w != -1 {
+        yStr = "RTUI_BOTTOM"
+        if not irWidgetDescYIsBottom(w) {
+            yStr = numToStr(irWidgetDescY(w))
+        }
+        widthStr = "RTUI_FILL"
+        if not irWidgetDescWidthIsFill(w) {
+            widthStr = numToStr(irWidgetDescWidth(w))
+        }
+        cpUiBuf.add(toText("    { " + cpWidgetKindMacro(irWidgetDescKind(w)) + ", \"" + poolGet(irWidgetDescName(w)) + "\", " +
+            cpUiCaptionOrNull(irWidgetDescCaption(w)) + ", " +
+            cpAtKindMacro(irWidgetDescAtKind(w)) + ", " + numToStr(irWidgetDescX(w)) + ", " + yStr + ", " + widthStr + ", " +
+            cpFillMacro(irWidgetDescFillBoth(w)) + ", " +
+            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w)) + " },"))
+        w = irWidgetDescNext(w)
+    }
+    cpUiBuf.add(toText("};"))
+    cpUiBuf.add(toText(""))
+    return name
+}
+
+// cpEmitWindowDescs prints every window TYPE's widget array + state struct +
+// rt_ui_window_desc, in declaration order, into cpUiBuf/cpRecBuf.
+func cpEmitWindowDescs() {
+    var i: int
+    var name: string
+    var widgetsArrName: string
+    var nWidgets: int
+    var w: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        name = poolGet(irWindowDescName(i))
+
+        widgetsArrName = "0"
+        nWidgets = 0
+        w = irWindowDescWidgetsHead(i)
+        if w != -1 {
+            widgetsArrName = cpEmitWidgetDescArray(name, w)
+            while w != -1 {
+                nWidgets = nWidgets + 1
+                w = irWidgetDescNext(w)
+            }
+        }
+
+        if irWindowDescStateFieldsHead(i) != -1 {
+            cpEmitUiStateStruct(name, irWindowDescStateFieldsHead(i))
+        } else {
+            // No per-instance vars: a zero-size struct isn't portable C, so
+            // a one-byte placeholder stands in -- nothing ever reads it.
+            cpRecBuf.add(toText("typedef struct { char clar_ui_unused; } clar_uistate_" + name + ";"))
+            cpRecBuf.add(toText(""))
+        }
+
+        cpUiBuf.add(toText("static const rt_ui_window_desc clar_ui_window_" + name + " = {"))
+        cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irWindowDescTitle(i)) + ","))
+        cpUiBuf.add(toText("    " + numToStr(irWindowDescW(i)) + ", " + numToStr(irWindowDescH(i)) + ", " + cpBoolLit(irWindowDescResizable(i)) + ", " + numToStr(irWindowDescMinW(i)) + ", " + numToStr(irWindowDescMinH(i)) + ","))
+        cpUiBuf.add(toText("    " + numToStr(nWidgets) + ", " + widgetsArrName + ","))
+        cpUiBuf.add(toText("    (short)sizeof(clar_uistate_" + name + "),"))
+        cpUiBuf.add(toText("    0")) // handlers: Task 5
+        cpUiBuf.add(toText("};"))
+        cpUiBuf.add(toText(""))
+        i = i + 1
+    }
+}
+
+// cpEmitMenuItemsArray prints one menu's rt_ui_item_desc[] array (Ch9) into
+// cpUiBuf, in declaration order (separators occupy a real slot, matching
+// lower.cla's uiMenuItemIdx numbering exactly).
+func cpEmitMenuItemsArray(menuName: string, headIdx: int): string {
+    var name: string
+    var it: int
+
+    name = "clar_ui_items_" + menuName
+    cpUiBuf.add(toText("static const rt_ui_item_desc " + name + "[] = {"))
+    it = headIdx
+    while it != -1 {
+        if irMenuItemDescIsSeparator(it) {
+            cpUiBuf.add(toText("    { 0, 0, 0, 1 },"))
+        } else {
+            cpUiBuf.add(toText("    { \"" + poolGet(irMenuItemDescName(it)) + "\", " + cpUiCaptionOrNull(irMenuItemDescCaption(it)) + ", " + cpMenuKeyChar(irMenuItemDescKey(it)) + ", 0 },"))
+        }
+        it = irMenuItemDescNext(it)
+    }
+    cpUiBuf.add(toText("};"))
+    cpUiBuf.add(toText(""))
+    return name
+}
+
+// cpEmitMenuDescs prints every menu's items array + rt_ui_menu_desc, in
+// declaration order, into cpUiBuf.
+func cpEmitMenuDescs() {
+    var i: int
+    var name: string
+    var itemsName: string
+    var nItems: int
+    var it: int
+
+    i = 0
+    while i < irMenuDescs.count {
+        name = poolGet(irMenuDescName(i))
+        itemsName = cpEmitMenuItemsArray(name, irMenuDescItemsHead(i))
+        nItems = 0
+        it = irMenuDescItemsHead(i)
+        while it != -1 {
+            nItems = nItems + 1
+            it = irMenuItemDescNext(it)
+        }
+        cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
+        cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", " + numToStr(nItems) + ", " + itemsName))
+        cpUiBuf.add(toText("};"))
+        cpUiBuf.add(toText(""))
+        i = i + 1
+    }
+}
+
+func cpEmitUiDescs() {
+    cpEmitWindowDescs()
+    cpEmitMenuDescs()
+}
+
 // cpEmitGlobalsInit declares every global as a bare (uninitialized-in-C)
 // file-scope variable, then defines clar_init_globals, which applies each
 // one's default (RecordLayout defaults for a nil-Init Rec; the type's zero/
@@ -1490,6 +1875,9 @@ func cpResetBuffers() {
     while cpRecBuf.count > 0 {
         cpRecBuf.pop()
     }
+    while cpUiBuf.count > 0 {
+        cpUiBuf.pop()
+    }
     while cpRestBuf.count > 0 {
         cpRestBuf.pop()
     }
@@ -1544,12 +1932,19 @@ func emitProgram(): text {
     cpEmitStrLits()
     cpEmitRecords()
     cpEmitEnums()
+    cpEmitUiDescs()
     cpEmitGlobalsInit()
     cpEmitFuncs()
     cpEmitMain()
 
     cpAppendLine(out, "/* Generated by clarus (internal/cprint). Do not edit. */")
     cpAppendLine(out, "#include \"rt.h\"")
+    if irWindowDescs.count > 0 or irMenuDescs.count > 0 {
+        // Only when the program actually declares a window/menu -- a
+        // UI-free program's emitted C must stay byte-identical to before
+        // this task (the differential suite enforces it).
+        cpAppendLine(out, "#include \"rt_ui.h\"")
+    }
     cpAppendLine(out, "#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
     cpAppendLine(out, "")
     cpAppendTextList(out, cpTypeBuf)
@@ -1558,6 +1953,13 @@ func emitProgram(): text {
     cpAppendLine(out, "")
     cpAppendTextList(out, cpRecBuf)
     cpAppendLine(out, "")
+    if irWindowDescs.count > 0 or irMenuDescs.count > 0 {
+        // Gated exactly like the #include above: a UI-free program's cpUiBuf
+        // is always empty, and emitting an unconditional extra blank line
+        // here would perturb byte-identical UI-free output.
+        cpAppendTextList(out, cpUiBuf)
+        cpAppendLine(out, "")
+    }
     cpAppendTextList(out, cpRestBuf)
 
     return out

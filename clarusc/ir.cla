@@ -100,6 +100,20 @@ enum IRKind {
     KEnum
     KArr
     KErr
+
+    // KWinRef/KUiState (Task 4: UI lowering) are always `void *` in C --
+    // rt_ui's whole ABI addresses window instances and their per-instance
+    // state opaquely (rt_ui_open/front/state all traffic in void*). `name`
+    // (IRType's named-type-identity field, same slot KRec/KEnum use) carries
+    // the window TYPE name: for KWinRef so `open`/`.front`/`nil` all agree on
+    // which window type's C spelling to produce (see IUiOpen/IUiFront's
+    // cprint case, which reads it back off the Intr node's own `ty`); for
+    // KUiState so the one rt_ui_state() cast this type always wraps (see
+    // IUiState's cprint case) casts to the right window's clar_uistate_NAME
+    // struct. KUiState is never a real variable's type -- only the transient
+    // base of a per-instance-var FieldRef (lower.cla's lowWindowInstSelect).
+    KWinRef
+    KUiState
 }
 
 enum IRStmtKind {
@@ -223,6 +237,90 @@ record IREnumLayout {
     membersHead: int
 }
 
+// ---- UI descriptor IR (Task 4) ----
+// window/menu declarations -> static rt_ui_*_desc tables. Shape mirrors
+// check.cla's own already-validated side tables (widgetInfos/
+// windowVarsHead/windowWidgetsHead, the DkMenuEntry chain) field-for-field;
+// lower.cla (lowWindowDecl/lowWidgetDesc/lowMenuDecl) copies that data in,
+// cprint.cla owns turning it into rt_ui.h's exact C spelling (macro names,
+// Str255 literal syntax) -- the same lower-extracts/cprint-spells division
+// IRRecordLayout/IRFieldSlot already establish for record structs, reused
+// here rather than invented afresh.
+
+// IRWidgetDesc: one entry in a window's rt_ui_widget_desc[] (Ch8: Widgets,
+// Layout). kindIdx is the interned widget-kind word ("button"/"check"/
+// "canvas"/"label" -- the whole rt_ui widget surface); captionIdx is the
+// interned raw caption/text/label content (-1 if the widget has none, e.g.
+// canvas). atKind: 0 = explicit `at: x, y`; 1 = `at: next, ...` (x taken
+// from the previous widget by the runtime; this entry's own `x` is an
+// unused placeholder, always 0); 2 = `at: right, ...` (x similarly
+// runtime-computed, placeholder 0). yIsBottom/widthIsFill mark the
+// `bottom`/`fill` sentinels (`y`/`width` are unused placeholders, 0, when
+// their sentinel flag is set) -- Ch8's "at: next, bottom" and "width: fill".
+record IRWidgetDesc {
+    nameIdx: int
+    kindIdx: int
+    captionIdx: int
+    atKind: int
+    x: int
+    yIsBottom: bool
+    y: int
+    widthIsFill: bool
+    width: int
+    fillBoth: bool
+    isDefault: bool
+    isCancel: bool
+    isBuffered: bool
+    next: int
+}
+
+// IRWindowDesc: one window TYPE's whole rt_ui_window_desc (Ch8). titleIdx
+// is -1 if the window body gave no `title:` property. widgetsHead chains
+// irWidgetDescs (-1 if the window declares none); stateFieldsHead chains
+// irFieldSlots (reusing the exact same arena/shape record structs use) for
+// the window's per-instance `var`s (-1 if none) -- cprint.cla emits these
+// as a plain typedef (no clar_new_NAME ctor: a UI state block is allocated
+// and zeroed by the runtime, not constructed by user-facing code).
+record IRWindowDesc {
+    nameIdx: int
+    titleIdx: int
+    w: int
+    h: int
+    resizable: bool
+    minW: int
+    minH: int
+    widgetsHead: int
+    stateFieldsHead: int
+}
+
+// IRMenuItemDesc: one entry in a menu's rt_ui_item_desc[] (Ch9) -- a real
+// item (nameIdx/captionIdx/keyIdx set, isSeparator false) or a bare
+// `separator` (nameIdx/captionIdx/keyIdx all -1, isSeparator true).
+// keyIdx is the interned raw one-character key-equivalent content, -1 if
+// none. Separators occupy a real array slot, like every other entry --
+// `rt_ui_menu_enable`'s itemIdx is this entry's 0-based position in the
+// FULL declared list, separators included (see probe_ui.c's kProbeMenuItems
+// and lower.cla's lowMenuEnableAssign).
+record IRMenuItemDesc {
+    nameIdx: int
+    captionIdx: int
+    keyIdx: int
+    isSeparator: bool
+    next: int
+}
+
+// IRMenuDesc: one menu's whole rt_ui_menu_desc (Ch9). Clarus has no
+// separate menu-title syntax -- a menu's on-screen title is always its own
+// declared name -- so titleIdx is always nameIdx itself (kept as its own
+// field, not folded into nameIdx's use, so cprint's title-vs-C-name
+// spellings stay independently named at the call site, matching
+// IRWindowDesc's shape).
+record IRMenuDesc {
+    nameIdx: int
+    titleIdx: int
+    itemsHead: int
+}
+
 var irTypes: list of IRType
 var irStmts: list of IRStmt
 var irExprs: list of IRExpr
@@ -233,6 +331,10 @@ var irFieldSlots: list of IRFieldSlot
 var irRecords: list of IRRecordLayout
 var irEnumMembers: list of IREnumMember
 var irEnums: list of IREnumLayout
+var irWidgetDescs: list of IRWidgetDesc
+var irWindowDescs: list of IRWindowDesc
+var irMenuItemDescs: list of IRMenuItemDesc
+var irMenuDescs: list of IRMenuDesc
 
 // irStrLits is the literal pool (ir.go's Program.StrLits): each entry is a
 // strPool index, in the order literals are added; a StrConst's Idx field
@@ -288,6 +390,18 @@ func irReset() {
     }
     while irEnums.count > 0 {
         irEnums.pop()
+    }
+    while irWidgetDescs.count > 0 {
+        irWidgetDescs.pop()
+    }
+    while irWindowDescs.count > 0 {
+        irWindowDescs.pop()
+    }
+    while irMenuItemDescs.count > 0 {
+        irMenuItemDescs.pop()
+    }
+    while irMenuDescs.count > 0 {
+        irMenuDescs.pop()
     }
     while irStrLits.count > 0 {
         irStrLits.pop()
@@ -365,6 +479,19 @@ func irRecType(name: int): int {
 
 func irEnumType(name: int): int {
     return newIRType(KEnum, 0, -1, name)
+}
+
+// irWinRefType/irUiStateType build the two UI-only pointer IRTypes (see
+// IRKind's KWinRef/KUiState doc comment) -- name is the window TYPE's own
+// interned nameIdx (lower.cla always already has it as an interned index in
+// hand, from either the checked type table or an AST accessor; neither
+// constructor re-interns a string).
+func irWinRefType(name: int): int {
+    return newIRType(KWinRef, 0, -1, name)
+}
+
+func irUiStateType(name: int): int {
+    return newIRType(KUiState, 0, -1, name)
 }
 
 // ================================================================
@@ -1047,6 +1174,208 @@ func irEnumLayoutMembersHead(i: int): int {
 }
 
 // ================================================================
+// UI descriptor constructors and accessors (Task 4)
+// (irWidgetDescs / irWindowDescs / irMenuItemDescs / irMenuDescs arenas)
+// ================================================================
+
+func irWidgetDescListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irWidgetDescs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x: int, yIsBottom: bool, y: int, widthIsFill: bool, width: int, fillBoth: bool, isDefault: bool, isCancel: bool, isBuffered: bool): int {
+    var n: IRWidgetDesc
+
+    n.nameIdx = nameIdx
+    n.kindIdx = kindIdx
+    n.captionIdx = captionIdx
+    n.atKind = atKind
+    n.x = x
+    n.yIsBottom = yIsBottom
+    n.y = y
+    n.widthIsFill = widthIsFill
+    n.width = width
+    n.fillBoth = fillBoth
+    n.isDefault = isDefault
+    n.isCancel = isCancel
+    n.isBuffered = isBuffered
+    n.next = -1
+    irWidgetDescs.add(n)
+    return irWidgetDescs.count - 1
+}
+
+func irWidgetDescName(i: int): int {
+    return irWidgetDescs[i].nameIdx
+}
+
+func irWidgetDescKind(i: int): int {
+    return irWidgetDescs[i].kindIdx
+}
+
+func irWidgetDescCaption(i: int): int {
+    return irWidgetDescs[i].captionIdx
+}
+
+func irWidgetDescAtKind(i: int): int {
+    return irWidgetDescs[i].atKind
+}
+
+func irWidgetDescX(i: int): int {
+    return irWidgetDescs[i].x
+}
+
+func irWidgetDescYIsBottom(i: int): bool {
+    return irWidgetDescs[i].yIsBottom
+}
+
+func irWidgetDescY(i: int): int {
+    return irWidgetDescs[i].y
+}
+
+func irWidgetDescWidthIsFill(i: int): bool {
+    return irWidgetDescs[i].widthIsFill
+}
+
+func irWidgetDescWidth(i: int): int {
+    return irWidgetDescs[i].width
+}
+
+func irWidgetDescFillBoth(i: int): bool {
+    return irWidgetDescs[i].fillBoth
+}
+
+func irWidgetDescIsDefault(i: int): bool {
+    return irWidgetDescs[i].isDefault
+}
+
+func irWidgetDescIsCancel(i: int): bool {
+    return irWidgetDescs[i].isCancel
+}
+
+func irWidgetDescIsBuffered(i: int): bool {
+    return irWidgetDescs[i].isBuffered
+}
+
+func irWidgetDescNext(i: int): int {
+    return irWidgetDescs[i].next
+}
+
+func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int): int {
+    var n: IRWindowDesc
+
+    n.nameIdx = nameIdx
+    n.titleIdx = titleIdx
+    n.w = w
+    n.h = h
+    n.resizable = resizable
+    n.minW = minW
+    n.minH = minH
+    n.widgetsHead = widgetsHead
+    n.stateFieldsHead = stateFieldsHead
+    irWindowDescs.add(n)
+    return irWindowDescs.count - 1
+}
+
+func irWindowDescName(i: int): int {
+    return irWindowDescs[i].nameIdx
+}
+
+func irWindowDescTitle(i: int): int {
+    return irWindowDescs[i].titleIdx
+}
+
+func irWindowDescW(i: int): int {
+    return irWindowDescs[i].w
+}
+
+func irWindowDescH(i: int): int {
+    return irWindowDescs[i].h
+}
+
+func irWindowDescResizable(i: int): bool {
+    return irWindowDescs[i].resizable
+}
+
+func irWindowDescMinW(i: int): int {
+    return irWindowDescs[i].minW
+}
+
+func irWindowDescMinH(i: int): int {
+    return irWindowDescs[i].minH
+}
+
+func irWindowDescWidgetsHead(i: int): int {
+    return irWindowDescs[i].widgetsHead
+}
+
+func irWindowDescStateFieldsHead(i: int): int {
+    return irWindowDescs[i].stateFieldsHead
+}
+
+func irMenuItemDescListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irMenuItemDescs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRMenuItemDesc(nameIdx: int, captionIdx: int, keyIdx: int, isSeparator: bool): int {
+    var n: IRMenuItemDesc
+
+    n.nameIdx = nameIdx
+    n.captionIdx = captionIdx
+    n.keyIdx = keyIdx
+    n.isSeparator = isSeparator
+    n.next = -1
+    irMenuItemDescs.add(n)
+    return irMenuItemDescs.count - 1
+}
+
+func irMenuItemDescName(i: int): int {
+    return irMenuItemDescs[i].nameIdx
+}
+
+func irMenuItemDescCaption(i: int): int {
+    return irMenuItemDescs[i].captionIdx
+}
+
+func irMenuItemDescKey(i: int): int {
+    return irMenuItemDescs[i].keyIdx
+}
+
+func irMenuItemDescIsSeparator(i: int): bool {
+    return irMenuItemDescs[i].isSeparator
+}
+
+func irMenuItemDescNext(i: int): int {
+    return irMenuItemDescs[i].next
+}
+
+func newIRMenuDesc(nameIdx: int, titleIdx: int, itemsHead: int): int {
+    var n: IRMenuDesc
+
+    n.nameIdx = nameIdx
+    n.titleIdx = titleIdx
+    n.itemsHead = itemsHead
+    irMenuDescs.add(n)
+    return irMenuDescs.count - 1
+}
+
+func irMenuDescName(i: int): int {
+    return irMenuDescs[i].nameIdx
+}
+
+func irMenuDescTitle(i: int): int {
+    return irMenuDescs[i].titleIdx
+}
+
+func irMenuDescItemsHead(i: int): int {
+    return irMenuDescs[i].itemsHead
+}
+
+// ================================================================
 // irStrLits (literal pool) constructors and accessors
 // ================================================================
 
@@ -1289,4 +1618,90 @@ func IFileWriteText(): int {
 
 func IFileName(): int {
     return intern("file_name")
+}
+
+// -- UI (Task 4: Ch7-11 windows/widgets/menus/canvas -> runtime/mac/rt_ui.h).
+// One intrinsic per concrete rt_ui operation (not one generic call taking a
+// runtime-selected property/op as data) -- matching this table's existing
+// style (IStrLen/IStrIndex/... are one-op-per-name too) and letting each
+// cprint.cla case hardcode its own fixed rt_ui.h macro name textually, so no
+// macro-spelling data ever has to flow through an IR node's fields.
+func IUiOpen(): int {
+    return intern("ui_open")
+}
+
+func IUiClose(): int {
+    return intern("ui_close")
+}
+
+func IUiFront(): int {
+    return intern("ui_front")
+}
+
+func IUiState(): int {
+    return intern("ui_state")
+}
+
+func IUiSetTitle(): int {
+    return intern("ui_set_title")
+}
+
+func IUiSetCaption(): int {
+    return intern("ui_set_caption")
+}
+
+func IUiSetText(): int {
+    return intern("ui_set_text")
+}
+
+func IUiGetChecked(): int {
+    return intern("ui_get_checked")
+}
+
+func IUiSetChecked(): int {
+    return intern("ui_set_checked")
+}
+
+func IUiGetEnabled(): int {
+    return intern("ui_get_enabled")
+}
+
+func IUiSetEnabled(): int {
+    return intern("ui_set_enabled")
+}
+
+func IUiGetWidth(): int {
+    return intern("ui_get_width")
+}
+
+func IUiGetHeight(): int {
+    return intern("ui_get_height")
+}
+
+func IUiMenuEnable(): int {
+    return intern("ui_menu_enable")
+}
+
+func IUiCanvasClear(): int {
+    return intern("ui_canvas_clear")
+}
+
+func IUiCanvasLine(): int {
+    return intern("ui_canvas_line")
+}
+
+func IUiCanvasRect(): int {
+    return intern("ui_canvas_rect")
+}
+
+func IUiCanvasCircle(): int {
+    return intern("ui_canvas_circle")
+}
+
+func IUiCanvasFillCircle(): int {
+    return intern("ui_canvas_fill_circle")
+}
+
+func IUiCanvasDrawText(): int {
+    return intern("ui_canvas_draw_text")
 }

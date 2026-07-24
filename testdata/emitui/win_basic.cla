@@ -1,0 +1,58 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// win_basic.cla: emitui golden fixture -- one window, all four rt_ui widget
+// kinds (button/check/canvas/label), and every layout variant (at/next/
+// right/bottom, width fill, fill both). The launch handler exercises every
+// UI expression/statement Task 4 lowers: open (both statement and
+// expression form), close, `.front`, per-instance var read+write, widget
+// runtime property get/set, and canvas drawing ops. No widget-event
+// handlers appear here (Task 5's job).
+
+window Main {
+    title: "Main"
+    size: 300, 200
+    resizable: min(220, 130)
+
+    button Go    { at: 20, 20; caption: "Go"; width: fill; default }
+    check On     { at: right, 22; caption: "On" }
+    label Status { at: next, bottom; text: "Off" }
+    label Note   { at: 20, bottom; text: "Below Status" }
+    canvas Board { at: next, bottom; fill: both; buffered }
+
+    var clicks: int
+}
+
+on App.launch {
+    var m: Main
+
+    open Main
+    m = open Main
+    m.title = "Main Window"
+    m.clicks = m.clicks + 1
+
+    m.Go.caption = "Stop"
+    m.Go.enabled = false
+    m.On.checked = true
+    if m.On.checked {
+        m.Status.text = "Ready"
+    }
+    if m.Go.enabled {
+        m.Status.text = "Enabled"
+    }
+
+    m.Board.clear()
+    m.Board.rect(0, 0, 10, 10)
+    m.Board.fillRect(10, 10, 10, 10)
+    m.Board.line(0, 0, 20, 20)
+    m.Board.circle(30, 30, 5)
+    m.Board.fillCircle(40, 40, 5)
+    m.Board.drawText(5, 5, "Hi")
+    if m.Board.width > 0 and m.Board.height > 0 {
+        m.Board.clear()
+    }
+
+    if Main.front != nil {
+        close m
+    }
+}
