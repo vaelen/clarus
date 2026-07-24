@@ -32,6 +32,19 @@ Living document — the authoritative sequencing and strategy record. Updated
    `TestSnapshotCurrent`: fails loudly with regeneration instructions if the
    snapshot drifts from clarusc's own source). **The Go compiler is now
    FROZEN** at the bootstrap-subset level — see the strategy section below.
+6. **Mac target 4a ("hello, Macintosh")** — Toolbox-native runtime
+   (`runtime/mac/rt_mac.c`, `runtime/mac/alert.r`) implementing the full
+   `rt.h` ABI (Handles, BlockMoveData, Str255, File Manager files, ALRT 128
+   alerts); `scripts/build-mac.sh` drives snapshot-bootstrapped clarusc emit →
+   Retro68 cmake → `.bin`/`.APPL`/`.dsk` under `build-mac/`;
+   `examples/hello-mac.cla` ran in Mini vMac (alert, clean exit) — milestone
+   verified on-screen. `testdata/run` was split into `lib/<name>.cla` logic +
+   thin wrapper pairs (harnesses untouched) plus a monolithic
+   `testdata/suite/test_suite.cla` (39 in-process tests; `emit_array`,
+   `emit_enum`, and the 6 runerr fixtures run as standalone abort apps).
+   `internal/mactest` gates Mac-vs-host byte-compare behind
+   `CLARUS_MAC_TESTS=1` — zero divergences across the corpus. Go compiler,
+   clarusc, and `rt.h`/`rt.c` untouched (frozen surfaces held).
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -46,7 +59,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
    the Go compiler with differential testing, through the three-stage
    bootstrap and the committed C snapshot (strategy below). **DONE** — see
    "Done" item 5.
-2. **Mac target** (4a "hello, Macintosh", then 4b windows/menus/events). **Next milestone.**
+2. **Mac target** (4a "hello, Macintosh", then 4b windows/menus/events).
+   4a **DONE** — see "Done" item 6. **4b is the next milestone.**
 3. Memory + forms runtime, then networking.
 4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
    target exists.
@@ -85,14 +99,14 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   cross-compiler; 68k printer build (after Mac target) = compiling on the Mac.
   The Mac-resident version is a GUI app (askOpen/alert), not a CLI.
 
-## Mac target (Plan 4, when taken — suggest splitting)
+## Mac target (Plan 4) — 4a done, 4b next
 
-- **4a "hello, Macintosh":** Toolbox runtime implementing the same intrinsic
-  ABI (Handles, BlockMove, real Str255), Retro68 pipeline
+- **4a "hello, Macintosh": DONE.** Toolbox runtime implementing the same
+  intrinsic ABI (Handles, BlockMove, real Str255), Retro68 pipeline
   (`/Users/andrew/repos/Retro68-build/toolchain` — note: built toolchain is in
-  Retro68-build, NOT the Retro68 source dir), `clarus build --mac`, alert-only
-  program in Mini vMac. Proves the printer seam.
-- **4b windows/menus/events:** UI declaration lowering (WIND/MENU/CNTL/DITL
+  Retro68-build, NOT the Retro68 source dir), `scripts/build-mac.sh`,
+  alert-only program in Mini vMac. Printer seam proven — see "Done" item 6.
+- **4b windows/menus/events (next):** UI declaration lowering (WIND/MENU/CNTL/DITL
   resources), WaitNextEvent runtime, window instances, canvas. Acceptance:
   the two Appendix C examples as double-clickable System 7 apps. Test loop is
   the weak point (emulator automation) — plan needs a testing-strategy section.

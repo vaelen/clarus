@@ -56,6 +56,12 @@ make -C build    # produces Name.bin (for LaunchAPPL), Name.APPL, Name.dsk
 toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
 ```
 
+- Build a Clarus program for Mac: `scripts/build-mac.sh <Name> <files.cla...> [--test]`
+  (snapshot-bootstrapped clarusc emit → Retro68 cmake → `.bin`/`.APPL`/`.dsk`
+  under `build-mac/`).
+- Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
+  `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
+
 - LaunchAPPL builds a stripped boot disk (System + AutoQuit + app), boots it
   in a fresh Mini vMac copy, and BLOCKS until the app quits — run it in the
   background. It creates a temp dir in the cwd (auto-removed on clean exit;
