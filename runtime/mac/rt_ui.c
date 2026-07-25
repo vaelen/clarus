@@ -145,6 +145,35 @@ extern void rt_quit(int32_t code);
 #define RTUI_LABEL_W  150
 #define RTUI_CANVAS_W 200
 
+/* field/textview natural size (mac-target-4c Task 1) -- same free-to-pick
+   status as the constants above; field's height matches a button/single
+   edit line, its width a typical labeled form field; textview's height
+   matches canvas's own natural (non-`fill:both`) default, wide enough to
+   be useful unfilled. Pinned here per the plan's own header-comment rule. */
+#define RTUI_FIELD_H       20
+#define RTUI_FIELD_W      200
+#define RTUI_TEXTVIEW_H   100
+#define RTUI_TEXTVIEW_W   200
+
+/* A field's `label:` property reuses the labels[]/TETextBox lane the
+   RTUI_LABEL kind already has (rt_ui_handle_update draws it the same way)
+   -- fixed-width lane rather than measured via StringWidth. ponytail:
+   fixed width, not text-measured; revisit if a long label routinely
+   truncates against it. RTUI_TE_FRAME_INSET is the gap between a field/
+   textview's own outer box and its TE view/dest rect, leaving room for the
+   FrameRect border drawn around it. RTUI_SCROLLBAR_W is the classic Mac
+   vertical scrollbar's fixed width. */
+#define RTUI_FIELD_LABEL_W  70
+#define RTUI_TE_FRAME_INSET  3
+#define RTUI_SCROLLBAR_W    15
+
+/* Field/textview text caps (mac-target-4c Task 1): a field's `text` is
+   Ch8's `string(255)`-shaped Str255, so 255 is a structural cap already
+   enforced by every Str255 call site; RTUI_TE_MAX (rt_ui.h, 32000) is the
+   textview `text` (rt_text, unbounded on its own) cap this runtime adds.
+   Both are enforced in one place: rt_ui_te_mutated's clamp, below. */
+#define RTUI_FIELD_TEXT_MAX 255
+
 /* Native menu IDs: 1 is conventionally the Apple menu (not built here, see
    the file header comment), so declared menus start at 2, one ID per
    `menus[]` array index in order. */
@@ -170,6 +199,21 @@ typedef struct rt_ui_winst {
     Handle rectsH; Rect *rects;           /* nWidgets entries, window-local coords */
     Handle labelsH; unsigned char (*labels)[256]; /* nWidgets entries; only LABEL kinds used */
     Handle canvasH; rt_ui_canvas_buf *canvases;   /* nWidgets entries; only buffered CANVAS kinds used */
+    /* mac-target-4c Task 1: TextEdit field/textview widgets. `tes` holds one
+       TEHandle per widget (NULL for every non-FIELD/TEXTVIEW kind); a
+       textview's own vertical scrollbar (when RTUI_SCROLL_V) is a normal
+       Control Manager control living in `ctrls[i]` like a button/check,
+       distinguished by contrlRfCon's high bit (0x8000|i) so click dispatch
+       can tell it apart from an ordinary widget index. `logicalEnabled`
+       fixes the pre-existing (mac-target-4b) blanket-HiliteControl bug: it
+       remembers which widgets the PROGRAM disabled via
+       RTUI_PROP_ENABLED, independent of the window's own active/inactive
+       dimming, so reactivating a window doesn't visually re-enable a
+       control the app explicitly turned off. `focusIdx` is the one
+       FIELD/TEXTVIEW with the caret (-1 = none). */
+    Handle teH; TEHandle *tes;
+    Handle enabledH; char *logicalEnabled;
+    short focusIdx;
 #ifdef RT_MAC_TEST
     short traceId;                    /* 1-based per-type instance counter for T OPEN/CLOSE/FRONT (Task 3) */
 #endif
@@ -388,14 +432,21 @@ static rt_ui_winst *rt_ui_winst_of(WindowPtr wp)
  * nearest widget in space). For the first widget, "previous" is treated
  * as an empty box at the origin -- undefined by the language reference,
  * but a graceful default for a widget declared with no predecessor. */
+/* Defined below, after widget creation (needs the TEHandle each widget owns)
+   -- forward-declared here so rt_ui_layout (immediately below) can call it
+   as the FIELD/TEXTVIEW counterpart to plain MoveControl/SizeControl. */
+static void rt_ui_te_relayout(rt_ui_winst *inst, short wIdx);
+
 static short rt_ui_kind_height(short kind)
 {
     switch (kind) {
-    case RTUI_BUTTON: return RTUI_BUTTON_H;
-    case RTUI_CHECK:  return RTUI_CHECK_H;
-    case RTUI_LABEL:  return RTUI_LABEL_H;
-    case RTUI_CANVAS: return RTUI_CANVAS_H;
-    default:          return RTUI_CHECK_H;
+    case RTUI_BUTTON:   return RTUI_BUTTON_H;
+    case RTUI_CHECK:    return RTUI_CHECK_H;
+    case RTUI_LABEL:    return RTUI_LABEL_H;
+    case RTUI_CANVAS:   return RTUI_CANVAS_H;
+    case RTUI_FIELD:    return RTUI_FIELD_H;
+    case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_H;
+    default:            return RTUI_CHECK_H;
     }
 }
 
@@ -405,11 +456,13 @@ static short rt_ui_kind_height(short kind)
 static short rt_ui_kind_width(short kind)
 {
     switch (kind) {
-    case RTUI_BUTTON: return RTUI_BUTTON_W;
-    case RTUI_CHECK:  return RTUI_CHECK_W;
-    case RTUI_LABEL:  return RTUI_LABEL_W;
-    case RTUI_CANVAS: return RTUI_CANVAS_W;
-    default:          return RTUI_CHECK_W;
+    case RTUI_BUTTON:   return RTUI_BUTTON_W;
+    case RTUI_CHECK:    return RTUI_CHECK_W;
+    case RTUI_LABEL:    return RTUI_LABEL_W;
+    case RTUI_CANVAS:   return RTUI_CANVAS_W;
+    case RTUI_FIELD:    return RTUI_FIELD_W;
+    case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_W;
+    default:            return RTUI_CHECK_W;
     }
 }
 
@@ -492,7 +545,14 @@ static void rt_ui_layout(rt_ui_winst *inst)
         }
 
         SetRect(&inst->rects[i], x, y, (short)(x + w), (short)(y + h));
-        if (inst->ctrls[i]) {
+        if (wd->kind == RTUI_FIELD || wd->kind == RTUI_TEXTVIEW) {
+            /* Derives the TE view/dest rect (and, for a textview, moves/
+               sizes its own scrollbar control) from inst->rects[i] just
+               set above -- covers both the initial layout and any later
+               resize re-layout (rt_ui_apply_resize calls this same
+               function), so there is no separate resize-path duplicate. */
+            rt_ui_te_relayout(inst, i);
+        } else if (inst->ctrls[i]) {
             MoveControl(inst->ctrls[i], x, y);
             SizeControl(inst->ctrls[i], w, h);
         }
@@ -519,9 +579,23 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
 {
     const rt_ui_window_desc *d;
     Rect placeholder;
+    GrafPtr savedPort;
     short i;
 
     d = inst->desc;
+    /* NewControl takes `inst->wp` explicitly and doesn't care about the
+       ambient port, which is why button/check/label never needed this --
+       but TENew has no window parameter at all: it captures whatever port
+       is CURRENT at the moment it's called as the TE's own inPort, and
+       nothing upstream of rt_ui_open actually guarantees inst->wp is
+       current by this point (NewWindow does NOT make the new window the
+       current port -- an earlier assumption in this file that turned out
+       to be false, caught by TextEdit's own inPort bookkeeping rather than
+       any control-position symptom, since controls never depended on it).
+       Self-assert/restore here, the one place in this function that
+       actually needs it. */
+    GetPort(&savedPort);
+    SetPort(inst->wp);
     SetRect(&placeholder, 0, 0, 0, 0);
     for (i = 0; i < d->nWidgets; i++) {
         const rt_ui_widget_desc *wd;
@@ -537,13 +611,276 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
             inst->ctrls[i] = NewControl(inst->wp, &placeholder, cap,
                                          (Boolean)1, 0, 0, 1, checkBoxProc, 0L);
             break;
+        case RTUI_FIELD:
+            /* `label:` reuses the labels[]/TETextBox lane RTUI_LABEL already
+               has (drawn in rt_ui_handle_update); the field itself is a TE,
+               not a Control Manager widget, same as label/canvas. */
+            inst->ctrls[i] = NULL;
+            rt_ui_pstrcpy(inst->labels[i], cap);
+            inst->tes[i] = TENew(&placeholder, &placeholder);
+            break;
+        case RTUI_TEXTVIEW:
+            inst->tes[i] = TENew(&placeholder, &placeholder);
+            if (wd->flags & RTUI_SCROLL_V) {
+                inst->ctrls[i] = NewControl(inst->wp, &placeholder, kEmptyPStr,
+                                             (Boolean)1, 0, 0, 0, scrollBarProc, 0L);
+                /* High bit tags this control as a textview's scrollbar (not
+                   a plain widget index) for rt_ui_handle_content_click and
+                   the scrollbar action proc to tell apart from FindControl's
+                   result -- set directly here rather than via the generic
+                   "if (inst->ctrls[i]) contrlRfCon = i" below, which this
+                   case skips (see that line's own guard). */
+                (*inst->ctrls[i])->contrlRfCon = (long)(0x8000 | i);
+            } else {
+                inst->ctrls[i] = NULL;
+            }
+            break;
         default: /* RTUI_LABEL, RTUI_CANVAS: no Control Manager backing */
             inst->ctrls[i] = NULL;
             rt_ui_pstrcpy(inst->labels[i], cap);
             break;
         }
-        if (inst->ctrls[i]) (*inst->ctrls[i])->contrlRfCon = i;
+        if (inst->ctrls[i] && wd->kind != RTUI_TEXTVIEW) (*inst->ctrls[i])->contrlRfCon = i;
     }
+    SetPort(savedPort);
+}
+
+/* ==================== TextEdit field/textview widgets (mac-target-4c Task 1) ====================
+ * A field or textview's `tes[i]` is a real TEHandle; layout derives its
+ * view/dest rect from the widget's own laid-out rect (rt_ui_te_relayout,
+ * called from rt_ui_layout for both the initial open and any resize
+ * re-layout); every content mutation (typing, `set_str`/`set_text`) funnels
+ * through rt_ui_te_mutated, the ONE hook that clamps to the kind's text
+ * cap, recomputes the scrollbar (if any), traces the change, and fires
+ * RTUI_WEV_CHANGE -- fires once per call, not coalesced (the plan's pinned
+ * policy: a single TEKey keystroke is one `change`, regardless of whether
+ * the byte count actually moved). */
+
+/* Recomputes a textview's scrollbar range from its current line count and
+   pins the control's value to the new range -- called after every layout
+   change and every content mutation. A no-op for a field (no scrollbar) or
+   a textview declared without RTUI_SCROLL_V (ctrls[wIdx] is NULL either
+   way). If the content shrank below the old scroll offset, scrolls the TE
+   back into view (TEScroll) rather than leaving it showing blank space
+   past the new end. */
+static void rt_ui_te_scroll_sync(rt_ui_winst *inst, short wIdx)
+{
+    TEHandle te;
+    ControlHandle sb;
+    short viewH, contentH, maxScroll, curVal;
+
+    te = inst->tes[wIdx];
+    sb = inst->ctrls[wIdx];
+    if (!te || !sb) return;
+    viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
+    contentH = (short)((*te)->nLines * (*te)->lineHeight);
+    maxScroll = (short)(contentH - viewH);
+    if (maxScroll < 0) maxScroll = 0;
+    SetControlMaximum(sb, maxScroll);
+    curVal = GetControlValue(sb);
+    if (curVal > maxScroll) {
+        short applied = (short)(curVal - maxScroll); /* positive: scroll back up */
+        SetControlValue(sb, maxScroll);
+        TEScroll(0, applied, te);
+    }
+}
+
+/* Enforces the kind's text cap (255 for a field's Str255-shaped text, the
+   plan's RTUI_TE_MAX for a textview's rt_text) after any mutation that
+   could have grown content past it (TEKey typing; set_str/set_text are
+   already within-cap by construction -- see their own comments -- so this
+   is a cheap early-return no-op for them). Preserves the caret/selection
+   start, clamped into range, same as any other truncating edit. */
+static void rt_ui_te_clamp(TEHandle te, short maxLen)
+{
+    CharsHandle th;
+    short sel;
+
+    if ((*te)->teLength <= maxLen) return;
+    th = TEGetText(te);
+    HLock((Handle)th);
+    TESetText(*th, maxLen, te);
+    HUnlock((Handle)th);
+    sel = (*te)->selStart;
+    if (sel > maxLen) sel = maxLen;
+    TESetSelect(sel, sel, te);
+    rt_set_lasterr(1, "string truncated");
+}
+
+/* The one mutation funnel every field/textview content change routes
+   through (TEKey below; rt_ui_widget_set_str's FIELD branch and
+   rt_ui_widget_set_text, further down). */
+static void rt_ui_te_mutated(rt_ui_winst *inst, short wIdx)
+{
+    const rt_ui_widget_desc *wd;
+    TEHandle te;
+
+    wd = &inst->desc->widgets[wIdx];
+    te = inst->tes[wIdx];
+    if (te) rt_ui_te_clamp(te, (short)(wd->kind == RTUI_FIELD ? RTUI_FIELD_TEXT_MAX : RTUI_TE_MAX));
+    rt_ui_te_scroll_sync(inst, wIdx);
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire2(inst->desc->name, wd->name, "change");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->widget)
+        inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_CHANGE, 0, 0);
+}
+
+/* Derives widget i's TE view/dest rect (and, for a textview, its
+   scrollbar's rect) from inst->rects[i], already SetRect by the caller
+   (rt_ui_layout) -- see that function's own comment. TENew has no "move"
+   call of its own; TERec's destRect/viewRect are plain fields, the
+   documented way to reposition one (Inside Macintosh's own TESample does
+   the same), followed by TECalText to re-wrap against the new width. */
+static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
+{
+    const rt_ui_widget_desc *wd;
+    TEHandle te;
+    Rect box, teRect, sbRect;
+
+    wd = &inst->desc->widgets[i];
+    te = inst->tes[i];
+    if (!te) return;
+    box = inst->rects[i];
+    if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0)
+        box.left = (short)(box.left + RTUI_FIELD_LABEL_W);
+    teRect = box;
+    if (wd->kind == RTUI_TEXTVIEW && inst->ctrls[i]) {
+        SetRect(&sbRect, (short)(box.right - RTUI_SCROLLBAR_W), box.top, box.right, box.bottom);
+        MoveControl(inst->ctrls[i], sbRect.left, sbRect.top);
+        SizeControl(inst->ctrls[i], (short)(sbRect.right - sbRect.left), (short)(sbRect.bottom - sbRect.top));
+        teRect.right = (short)(teRect.right - RTUI_SCROLLBAR_W);
+    }
+    InsetRect(&teRect, RTUI_TE_FRAME_INSET, RTUI_TE_FRAME_INSET);
+    if (teRect.right < teRect.left) teRect.right = teRect.left;
+    if (teRect.bottom < teRect.top) teRect.bottom = teRect.top;
+    (*te)->destRect = teRect;
+    (*te)->viewRect = teRect;
+    TECalText(te);
+    rt_ui_te_scroll_sync(inst, i);
+}
+
+/* Click-to-focus (Behavior contract: "one focused TE per window"):
+   TEDeactivate's the previously focused TE (if any) and TEActivate's the
+   new one. A no-op when the click lands on the already-focused TE. */
+static void rt_ui_te_set_focus(rt_ui_winst *inst, short newIdx)
+{
+    if (inst->focusIdx == newIdx) return;
+    if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) TEDeactivate(inst->tes[inst->focusIdx]);
+    inst->focusIdx = newIdx;
+    if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) TEActivate(inst->tes[inst->focusIdx]);
+}
+
+/* Hit-tests against each FIELD/TEXTVIEW's own (already-derived) TE
+   viewRect -- not the widget's full outer box -- so a click on a field's
+   label lane or a textview's scrollbar lane (handled separately via
+   FindControl) never focuses the TE. `local` is window-local, same
+   convention rt_ui_canvas_hit already uses. */
+static int rt_ui_te_hit(rt_ui_winst *inst, Point local, short *outIdx)
+{
+    short i;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        short k = inst->desc->widgets[i].kind;
+        if ((k == RTUI_FIELD || k == RTUI_TEXTVIEW) && inst->tes[i] &&
+            PtInRect(local, &(*inst->tes[i])->viewRect)) {
+            *outIdx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Continuous scroll-button/page-button tracking (TrackControl's actionProc,
+   called repeatedly while the mouse stays down over an arrow/page part --
+   never called for inThumb, which TrackControl tracks live on its own).
+   Looks up the owning window via the control's own contrlOwner since an
+   action proc only receives the ControlHandle. */
+static pascal void rt_ui_scrollbar_action(ControlHandle ctrl, short part)
+{
+    rt_ui_winst *inst;
+    short wIdx, lineH, viewH, step;
+    TEHandle te;
+
+    if (part == 0) return;
+    inst = rt_ui_winst_of((*ctrl)->contrlOwner);
+    if (!inst) return;
+    wIdx = (short)((*ctrl)->contrlRfCon & 0x7FFF);
+    te = inst->tes[wIdx];
+    if (!te) return;
+    lineH = (*te)->lineHeight;
+    if (lineH <= 0) lineH = 1;
+    viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
+    switch (part) {
+    case kControlUpButtonPart:   step = (short)-lineH; break;
+    case kControlDownButtonPart: step = lineH; break;
+    case kControlPageUpPart:     step = (short)-viewH; break;
+    case kControlPageDownPart:   step = viewH; break;
+    default: return;
+    }
+    {
+        short oldVal, newVal, maxVal, applied;
+        oldVal = GetControlValue(ctrl);
+        maxVal = GetControlMaximum(ctrl);
+        newVal = (short)(oldVal + step);
+        if (newVal < 0) newVal = 0;
+        if (newVal > maxVal) newVal = maxVal;
+        applied = (short)(oldVal - newVal);
+        if (applied == 0) return;
+        SetControlValue(ctrl, newVal);
+        TEScroll(0, applied, te);
+    }
+}
+
+/* FindControl resolved a click to a textview's scrollbar (contrlRfCon's
+   high bit set, see rt_ui_make_widgets) -- dispatched separately from an
+   ordinary widget control (rt_ui_handle_content_click), since a scrollbar
+   click never fires a widget event, only scrolls its TE. */
+static void rt_ui_handle_scrollbar_click(rt_ui_winst *inst, ControlHandle ctrl, short wIdx, short cpart, Point where)
+{
+#ifdef RT_MAC_TEST
+    if (gUiScripted) {
+        /* No real mouse to hold an arrow down or drag the thumb (the same
+           reason button clicks bypass TrackControl in scripted mode, see
+           rt_ui_handle_content_click) -- a script `click` on a scrollbar
+           part is one discrete nudge via the same action routine real
+           tracking calls once per part hit. Thumb clicks aren't
+           meaningfully scriptable (no drag distance) and are a no-op here;
+           no scenario exercises them yet. */
+        if (cpart == kControlUpButtonPart || cpart == kControlDownButtonPart ||
+            cpart == kControlPageUpPart || cpart == kControlPageDownPart)
+            rt_ui_scrollbar_action(ctrl, cpart);
+        return;
+    }
+#endif
+    if (cpart == kControlIndicatorPart) {
+        short oldVal, newVal;
+        oldVal = GetControlValue(ctrl);
+        if (TrackControl(ctrl, where, NULL) != 0) {
+            newVal = GetControlValue(ctrl);
+            if (newVal != oldVal && inst->tes[wIdx]) TEScroll(0, (short)(oldVal - newVal), inst->tes[wIdx]);
+        }
+    } else {
+        TrackControl(ctrl, where, NewControlActionUPP(rt_ui_scrollbar_action));
+    }
+}
+
+/* TEIdle blinks the caret; called once per real event-loop iteration and
+   once per scripted `tick` (Behavior contract) for the FRONTMOST window's
+   focused TE only -- background windows never blink a caret, same
+   convention any classic Mac app follows. */
+static void rt_ui_te_idle_front(void)
+{
+    WindowPtr wp;
+    rt_ui_winst *inst;
+    GrafPtr saved;
+
+    wp = FrontWindow();
+    inst = rt_ui_winst_of(wp);
+    if (!inst || inst->focusIdx < 0 || !inst->tes[inst->focusIdx]) return;
+    GetPort(&saved);
+    SetPort(wp);
+    TEIdle(inst->tes[inst->focusIdx]);
+    SetPort(saved);
 }
 
 /* ==================== canvas offscreen buffers (Ch11 buffered) ====================
@@ -921,6 +1258,28 @@ static void rt_ui_handle_update(WindowPtr wp)
                 unsigned char *s;
                 s = inst->labels[i];
                 TETextBox(s + 1, s[0], &inst->rects[i], teJustLeft);
+            } else if (wd->kind == RTUI_FIELD || wd->kind == RTUI_TEXTVIEW) {
+                /* Field/textview draw a frame around their TE view (un-
+                   insetting rt_ui_te_relayout's own inset gives back
+                   exactly the box that inset came from -- see that
+                   function), then TEUpdate for the text/caret itself; a
+                   field additionally draws its `label:` lane the same
+                   TETextBox way RTUI_LABEL does, just narrower. */
+                TEHandle te = inst->tes[i];
+                if (te) {
+                    Rect frame = (*te)->viewRect;
+                    InsetRect(&frame, -RTUI_TE_FRAME_INSET, -RTUI_TE_FRAME_INSET);
+                    FrameRect(&frame);
+                    TEUpdate(&(*te)->viewRect, te);
+                }
+                if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0) {
+                    Rect labelRect;
+                    unsigned char *s;
+                    labelRect = inst->rects[i];
+                    labelRect.right = (short)(labelRect.left + RTUI_FIELD_LABEL_W - 4);
+                    s = inst->labels[i];
+                    TETextBox(s + 1, s[0], &labelRect, teJustLeft);
+                }
             } else if (wd->kind == RTUI_BUTTON && (wd->flags & RTUI_DEFAULT)) {
                 rt_ui_draw_default_outline(&inst->rects[i]);
             }
@@ -932,11 +1291,21 @@ static void rt_ui_handle_update(WindowPtr wp)
 
 /* Ch8 exposes no user-visible "activate" event -- only the Toolbox-visual
    effect (dimming every control on deactivate, undimming on activate)
-   needs handling here. ponytail: this blanket dim/undim doesn't remember
-   which controls the app itself had already disabled via
-   rt_ui_widget_set_bool(..., RTUI_PROP_ENABLED, 0) before a deactivate --
-   add per-widget "logically enabled" tracking if/when Task 2's multi-
-   window probe shows that mattering in practice. */
+   needs handling here. Deactivating always dims regardless of an
+   individual control's logical enabled state (an inactive window's
+   controls all look dim, same Mac convention either way); reactivating
+   only undims a control the program hasn't itself disabled --
+   `logicalEnabled` (mac-target-4c Task 1) is exactly that memory, fixing
+   the mac-target-4b bug this comment used to describe (a deactivate/
+   reactivate cycle no longer visually re-enables a control
+   rt_ui_widget_set_bool(..., RTUI_PROP_ENABLED, 0) had turned off). Every
+   existing scenario always disables a widget while its window is already
+   frontmost (never mid-deactivate), so this is a no-op change for all of
+   them: logicalEnabled starts at 1 for every widget and nothing in those
+   scenarios ever sets it otherwise. Also (de)activates the window's one
+   focused TE, if any -- a field/textview's caret should stop blinking (and
+   its selection un-hilite) when its own window isn't frontmost, same as
+   any Toolbox-native TE-backed window. */
 static void rt_ui_handle_activate(WindowPtr wp, int activating)
 {
     rt_ui_winst *inst;
@@ -946,7 +1315,14 @@ static void rt_ui_handle_activate(WindowPtr wp, int activating)
     if (!inst) return;
     SetPort(wp);
     for (i = 0; i < inst->desc->nWidgets; i++) {
-        if (inst->ctrls[i]) HiliteControl(inst->ctrls[i], (short)(activating ? 0 : 255));
+        if (inst->ctrls[i]) {
+            int on = activating && inst->logicalEnabled[i];
+            HiliteControl(inst->ctrls[i], (short)(on ? 0 : 255));
+        }
+    }
+    if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) {
+        if (activating) TEActivate(inst->tes[inst->focusIdx]);
+        else TEDeactivate(inst->tes[inst->focusIdx]);
     }
 }
 
@@ -1040,7 +1416,7 @@ static void rt_ui_handle_canvas_click(WindowPtr wp, rt_ui_winst *inst, short wId
     }
 }
 
-static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point where)
+static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point where, Boolean shiftDown)
 {
     ControlHandle ctrl;
     short cpart;
@@ -1049,34 +1425,59 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
     GlobalToLocal(&where);
     cpart = FindControl(where, wp, &ctrl);
     if (cpart != 0 && ctrl != NULL) {
-        short wIdx;
-        wIdx = (short)(*ctrl)->contrlRfCon;
-#ifdef RT_MAC_TEST
-        /* The ONE sanctioned real/scripted divergence (Task 3, see the
-           plan's self-review notes): TrackControl's modal tracking loop
-           blocks waiting for a REAL mouse-up, which a scripted `click`
-           command never produces (there is no live mouse in RT_MAC_TEST
-           scripted mode -- gUiScripted is set only for the duration of
-           rt_ui_run_scripted). A synthetic click that FindControl
-           resolves to one of our own controls is dispatched directly --
-           exactly as if TrackControl had returned "released inside the
-           control" -- instead of calling TrackControl at all. Traced
-           identically to a real click either way: rt_ui_fire_widget is
-           the one shared "this widget just activated" entry point real
-           clicks and Return/Escape-key wiring already used before this
-           task; nothing downstream can tell the difference. */
-        if (gUiScripted) { rt_ui_fire_widget(inst, wIdx); return; }
-#endif
+        long rfCon = (*ctrl)->contrlRfCon;
+        if (rfCon & 0x8000L) {
+            /* A textview's own scrollbar (mac-target-4c Task 1), tagged at
+               creation time (rt_ui_make_widgets) -- never a widget index,
+               dispatched separately: it scrolls its TE, it never fires a
+               widget event. */
+            rt_ui_handle_scrollbar_click(inst, ctrl, (short)(rfCon & 0x7FFF), cpart, where);
+            return;
+        }
         {
-            short trackPart = TrackControl(ctrl, where, NULL);
-            if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
+            short wIdx = (short)rfCon;
+#ifdef RT_MAC_TEST
+            /* The ONE sanctioned real/scripted divergence (Task 3, see the
+               plan's self-review notes): TrackControl's modal tracking loop
+               blocks waiting for a REAL mouse-up, which a scripted `click`
+               command never produces (there is no live mouse in RT_MAC_TEST
+               scripted mode -- gUiScripted is set only for the duration of
+               rt_ui_run_scripted). A synthetic click that FindControl
+               resolves to one of our own controls is dispatched directly --
+               exactly as if TrackControl had returned "released inside the
+               control" -- instead of calling TrackControl at all. Traced
+               identically to a real click either way: rt_ui_fire_widget is
+               the one shared "this widget just activated" entry point real
+               clicks and Return/Escape-key wiring already used before this
+               task; nothing downstream can tell the difference. */
+            if (gUiScripted) { rt_ui_fire_widget(inst, wIdx); return; }
+#endif
+            {
+                short trackPart = TrackControl(ctrl, where, NULL);
+                if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
+            }
         }
         return;
     }
     {
         short cIdx;
-        if (rt_ui_canvas_hit(inst, where, &cIdx))
+        if (rt_ui_canvas_hit(inst, where, &cIdx)) {
             rt_ui_handle_canvas_click(wp, inst, cIdx, where);
+            return;
+        }
+    }
+    {
+        short tIdx;
+        if (rt_ui_te_hit(inst, where, &tIdx)) {
+            /* click-to-focus (Behavior contract): switching focus always
+               TEDeactivate/TEActivate's; shift-click extends the CURRENT
+               selection only when it lands back in the ALREADY-focused TE
+               (extending across a focus switch isn't meaningful -- the old
+               TE's selection is about to be deactivated away). */
+            Boolean extend = (Boolean)(shiftDown && tIdx == inst->focusIdx);
+            rt_ui_te_set_focus(inst, tIdx);
+            TEClick(where, extend, inst->tes[tIdx]);
+        }
     }
 }
 
@@ -1113,7 +1514,7 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
             break;
         }
         inst = rt_ui_winst_of(wp);
-        if (inst) rt_ui_handle_content_click(wp, inst, ev->where);
+        if (inst) rt_ui_handle_content_click(wp, inst, ev->where, (Boolean)((ev->modifiers & shiftKey) != 0));
         break;
     case inMenuBar:
         rt_ui_menu_dispatch(MenuSelect(ev->where));
@@ -1153,6 +1554,49 @@ static void rt_ui_handle_key(const EventRecord *ev)
     wp = FrontWindow();
     inst = rt_ui_winst_of(wp);
     if (!inst) return;
+
+    /* Focused-TE ordering (Behavior contract): cmdKey (above) -> a focused
+       FIELD's Return/Enter fires `enter` (no insertion) -> a focused TE's
+       other keys go to TEKey -> only THEN the pre-existing default/cancel/
+       generic-key chain. A focused TE swallows Return/typing entirely (a
+       textview's own Return inserts a CR rather than falling through to
+       the window's default button -- pressing Return while editing a
+       multi-line field should never also trigger OK); Escape is the one
+       exception, left to fall through to the Cancel-button check below
+       even while a TE is focused, since Escape-cancels-the-dialog is the
+       Mac convention regardless of which control has focus. Every existing
+       scenario has no FIELD/TEXTVIEW widgets, so focusIdx is always -1 and
+       every line below this block runs exactly as it did before this
+       task -- zero risk to any existing golden. */
+    if (inst->focusIdx >= 0) {
+        const rt_ui_widget_desc *fwd = &inst->desc->widgets[inst->focusIdx];
+        if (fwd->kind == RTUI_FIELD && (ch == 13 || ch == 3)) {
+#ifdef RT_MAC_TEST
+            rt_ui_trace_fire2(inst->desc->name, fwd->name, "enter");
+#endif
+            if (inst->desc->handlers && inst->desc->handlers->widget)
+                inst->desc->handlers->widget(inst, inst->focusIdx, RTUI_WEV_ENTER, 0, 0);
+            return;
+        }
+        if (ch != 27 && (ch < 28 || ch > 31)) {
+            /* Ordinary typing/editing key (not Escape, not an arrow code) --
+               ponytail: this task wires no arrow-key cursor navigation
+               (TEKey itself doesn't handle arrow codes either -- passing
+               one through would literally insert the control byte as
+               text), silently swallowed instead; add real cursor-key
+               support if a later task needs it. */
+            GrafPtr saved;
+            GetPort(&saved);
+            SetPort(wp);
+            TEKey((CharParameter)ch, inst->tes[inst->focusIdx]);
+            rt_ui_te_mutated(inst, inst->focusIdx);
+            SetPort(saved);
+            return;
+        }
+        if (ch >= 28 && ch <= 31) return; /* arrow keys: swallowed, see above */
+        /* ch == 27 (Escape): falls through to the Cancel-button check below. */
+    }
+
     if ((ch == 13 || ch == 3) && rt_ui_find_flagged(inst, RTUI_DEFAULT, &wIdx)) {
         rt_ui_fire_widget(inst, wIdx);
         return;
@@ -1418,6 +1862,7 @@ static void rt_ui_script_tick(long n)
 {
     gVirtualTicks += (unsigned long)n;
     rt_ui_script_every_pump();
+    rt_ui_te_idle_front(); /* blink the focused TE's caret, same as the real loop's per-iteration TEIdle */
     rt_ui_flush_all_buffered(); /* same "returns control to the event loop" point real rt_ui_run uses, Ch11 */
 }
 
@@ -1506,6 +1951,20 @@ static void rt_ui_run_scripted(void)
             rt_ui_script_drag((short)atoi(arg1), (short)atoi(arg2));
         } else if (strcmp(verb, "key") == 0) {
             rt_ui_script_key((unsigned char)arg1[0]);
+        } else if (strcmp(verb, "type") == 0) {
+            /* `type <rest-of-line>` (mac-target-4c Task 1): unlike every
+               other verb's args, the typed text can contain spaces (and
+               even a literal CR byte, value 13, to script a Return
+               keystroke mid-string -- only '\n' terminates a script line,
+               see rt_ui_script_next_line), so it is NOT read via sscanf's
+               %63s (which stops at the first space and truncates). Skip
+               past the verb itself and exactly one separating space, then
+               feed every remaining byte through rt_ui_script_key one at a
+               time -- the same per-character path a run of individual
+               `key` lines would produce. */
+            const char *p = line + 4; /* strlen("type") */
+            if (*p == ' ') p++;
+            for (; *p != '\0'; p++) rt_ui_script_key((unsigned char)*p);
         } else if (strcmp(verb, "menu") == 0) {
             rt_ui_script_menu((short)atoi(arg1), (short)atoi(arg2));
         } else if (strcmp(verb, "close") == 0) {
@@ -1537,7 +1996,17 @@ void rt_ui_run(void)
     }
 #endif
     for (;;) {
-        WaitNextEvent(everyEvent, &ev, (short)(gNEvery > 0 ? 1 : 30), NULL);
+        /* Sleep argument drops to 1 tick whenever there's a live `every`
+           timer (unchanged from Task 2) OR the frontmost window has a
+           focused field/textview (mac-target-4c Task 1) -- either way,
+           something needs to keep running close to on schedule (a timer
+           firing, or TEIdle blinking a caret) rather than the plain
+           30-tick polling cadence a window with neither gets. */
+        {
+            rt_ui_winst *frontInst = rt_ui_winst_of(FrontWindow());
+            short sleepTicks = (short)((gNEvery > 0 || (frontInst && frontInst->focusIdx >= 0)) ? 1 : 30);
+            WaitNextEvent(everyEvent, &ev, sleepTicks, NULL);
+        }
         switch (ev.what) {
         case mouseDown:
             rt_ui_handle_mouse_down(&ev);
@@ -1556,6 +2025,7 @@ void rt_ui_run(void)
             break;
         }
         rt_ui_every_pump();
+        rt_ui_te_idle_front();
         rt_ui_flush_all_buffered(); /* "returns control to the event loop" point, Ch11 */
     }
 }
@@ -1580,9 +2050,15 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->rects = (Rect *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(Rect), &inst->rectsH);
     inst->labels = (unsigned char (*)[256])rt_ui_alloc_locked((Size)d->nWidgets * 256, &inst->labelsH);
     inst->canvases = (rt_ui_canvas_buf *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(rt_ui_canvas_buf), &inst->canvasH);
+    inst->tes = (TEHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(TEHandle), &inst->teH);
+    inst->logicalEnabled = (char *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(char), &inst->enabledH);
+    inst->focusIdx = -1;
     {
         short wi;
-        for (wi = 0; wi < d->nWidgets; wi++) inst->canvases[wi].patLevel = 8;
+        for (wi = 0; wi < d->nWidgets; wi++) {
+            inst->canvases[wi].patLevel = 8;
+            inst->logicalEnabled[wi] = 1; /* NewHandleClear zeroes this to "disabled" by default -- every widget starts logically enabled */
+        }
     }
 
     screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
@@ -1657,13 +2133,18 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
 
     {
         short i;
-        for (i = 0; i < inst->desc->nWidgets; i++) rt_ui_canvas_dispose(&inst->canvases[i]);
+        for (i = 0; i < inst->desc->nWidgets; i++) {
+            rt_ui_canvas_dispose(&inst->canvases[i]);
+            if (inst->tes[i]) TEDispose(inst->tes[i]); /* TEHandle is its own separate Handle, not covered by DisposeHandle(inst->teH) below */
+        }
     }
     if (inst->stateH) DisposeHandle(inst->stateH);
     DisposeHandle(inst->ctrlsH);
     DisposeHandle(inst->rectsH);
     DisposeHandle(inst->labelsH);
     DisposeHandle(inst->canvasH);
+    DisposeHandle(inst->teH);
+    DisposeHandle(inst->enabledH);
     DisposeHandle(inst->selfH);
     return 1;
 }
@@ -1749,7 +2230,95 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
         InvalRect(&inst->rects[wIdx]);
     } else if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_CAPTION && inst->ctrls[wIdx]) {
         SetControlTitle(inst->ctrls[wIdx], s);
+    } else if (wd->kind == RTUI_FIELD && prop == RTUI_PROP_TEXT && inst->tes[wIdx]) {
+        /* Str255 is already capped at 255 bytes structurally (s[0] can
+           never exceed that), so rt_ui_te_mutated's own clamp is a no-op
+           safety net here, not a real truncation path -- unlike textview's
+           set_text below, which can genuinely exceed RTUI_TE_MAX. */
+        unsigned char len = s ? s[0] : 0;
+        TESetText(s + 1, len, inst->tes[wIdx]);
+        TECalText(inst->tes[wIdx]);
+        InvalRect(&(*inst->tes[wIdx])->viewRect);
+        rt_ui_te_mutated(inst, wIdx);
     }
+    SetPort(savedPort);
+}
+
+/* rt_ui_widget_get_str (mac-target-4c Task 1): see rt_ui.h's own comment.
+   Fill-in-place read; a non-matching kind/prop writes a length-0 Pascal
+   string rather than leaving dst255 untouched. */
+void rt_ui_widget_get_str(void *instV, short wIdx, short prop, unsigned char *dst255)
+{
+    rt_ui_winst *inst;
+    const rt_ui_widget_desc *wd;
+
+    inst = (rt_ui_winst *)instV;
+    wd = &inst->desc->widgets[wIdx];
+    dst255[0] = 0;
+    if (wd->kind == RTUI_FIELD && prop == RTUI_PROP_TEXT && inst->tes[wIdx]) {
+        TEHandle te = inst->tes[wIdx];
+        Handle th = (*te)->hText;
+        short len = (*te)->teLength;
+        if (len > 255) len = 255; /* defensive only -- rt_ui_te_mutated already keeps a field's own content <=255 */
+        HLock(th);
+        BlockMoveData(*th, dst255 + 1, len);
+        HUnlock(th);
+        dst255[0] = (unsigned char)len;
+    }
+}
+
+/* rt_ui_widget_get_text/set_text (mac-target-4c Task 1): textview's
+   RTUI_PROP_TEXT, bridged via rt_text_from_bytes/rt_text_to_bytes (rt.h).
+   No RT_MAC_TEST trace line: the plan's pinned trace vocabulary has no
+   `T SET`-style entry for an rt_text value (unlike the Str255 `T SET`
+   lines rt_ui_trace_set_str prints), and set_text's own mutation funnel
+   call already traces `T FIRE <Win>.<W>.change`, which is the observable
+   effect a script cares about. */
+void rt_ui_widget_get_text(void *instV, short wIdx, rt_text *out)
+{
+    rt_ui_winst *inst;
+    const rt_ui_widget_desc *wd;
+    TEHandle te;
+
+    inst = (rt_ui_winst *)instV;
+    wd = &inst->desc->widgets[wIdx];
+    if (wd->kind != RTUI_TEXTVIEW || !inst->tes[wIdx]) {
+        rt_text_from_bytes(out, (const unsigned char *)"", 0, 0);
+        return;
+    }
+    te = inst->tes[wIdx];
+    HLock((Handle)(*te)->hText);
+    rt_text_from_bytes(out, (const unsigned char *)*(*te)->hText, (*te)->teLength, (*te)->teLength);
+    HUnlock((Handle)(*te)->hText);
+}
+
+void rt_ui_widget_set_text(void *instV, short wIdx, const rt_text *t)
+{
+    rt_ui_winst *inst;
+    const rt_ui_widget_desc *wd;
+    GrafPtr savedPort;
+    Ptr buf;
+    long copied;
+
+    inst = (rt_ui_winst *)instV;
+    wd = &inst->desc->widgets[wIdx];
+    if (wd->kind != RTUI_TEXTVIEW || !inst->tes[wIdx]) return;
+    GetPort(&savedPort);
+    SetPort(inst->wp);
+    /* A heap scratch buffer, not a stack one: RTUI_TE_MAX (32000) bytes
+       would blow a 68k app's small default stack. rt_text_to_bytes itself
+       clamps to bufcap and calls rt_set_lasterr("string truncated") on
+       overflow (rt.h/rt_mac.c) -- the same truncation-reporting convention
+       every other rt_str_ and rt_text_ fill-in-place call already uses, so
+       no separate clamp/lasterr call is needed here. */
+    buf = NewPtr((Size)RTUI_TE_MAX);
+    if (!buf) rt_panic("out of memory");
+    copied = rt_text_to_bytes(t, (unsigned char *)buf, RTUI_TE_MAX);
+    TESetText(buf, copied, inst->tes[wIdx]);
+    DisposePtr(buf);
+    TECalText(inst->tes[wIdx]);
+    InvalRect(&(*inst->tes[wIdx])->viewRect);
+    rt_ui_te_mutated(inst, wIdx);
     SetPort(savedPort);
 }
 
@@ -1769,7 +2338,20 @@ void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
     if (wd->kind == RTUI_CHECK && prop == RTUI_PROP_CHECKED && inst->ctrls[wIdx]) {
         SetControlValue(inst->ctrls[wIdx], (short)(v ? 1 : 0));
     } else if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_ENABLED && inst->ctrls[wIdx]) {
-        HiliteControl(inst->ctrls[wIdx], (short)(v ? 0 : 255));
+        /* logicalEnabled (mac-target-4c Task 1) remembers this independent
+           of the window's own active/inactive dimming -- see
+           rt_ui_handle_activate's comment. Only actually undim right now
+           if this window is currently frontmost; enabling a widget in a
+           background window defers the visible undim to its next
+           activate (undimming it immediately would look wrong under an
+           inactive window, and HiliteControl(...,0) on an inactive
+           window's control is exactly the pre-existing bug this fixes).
+           Every existing scenario only ever calls this while its window
+           is already frontmost, so the HiliteControl call below still
+           fires exactly when it used to -- no behavior change for them. */
+        inst->logicalEnabled[wIdx] = (char)(v ? 1 : 0);
+        if (inst->wp == FrontWindow())
+            HiliteControl(inst->ctrls[wIdx], (short)(v ? 0 : 255));
     }
     SetPort(savedPort);
 }
@@ -1785,7 +2367,11 @@ int rt_ui_widget_get_bool(void *instV, short wIdx, short prop)
         return GetControlValue(inst->ctrls[wIdx]) != 0;
     }
     if (wd->kind == RTUI_BUTTON && prop == RTUI_PROP_ENABLED && inst->ctrls[wIdx]) {
-        return (*inst->ctrls[wIdx])->contrlHilite == 0;
+        /* logicalEnabled, not contrlHilite (mac-target-4c Task 1 fix): the
+           old contrlHilite read reported "disabled" for any button in a
+           merely-INACTIVE window, even one the program never disabled --
+           see rt_ui_handle_activate's comment for the full bug. */
+        return inst->logicalEnabled[wIdx] != 0;
     }
     return 0;
 }

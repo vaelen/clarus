@@ -236,15 +236,62 @@ static const rt_ui_menu_handler kProbeMenuHandlers[] = {
     { probe_menu_quit,   "Probe", "Quit",   0, 3, 0 }
 };
 
+/* ==================== TextProbe window (Task 1, mac-target-4c) ====================
+ * Exercises RTUI_FIELD (with a `label:`) and RTUI_TEXTVIEW (`fill: both` +
+ * RTUI_SCROLL_V) -- click-to-focus, typing via TEKey, a field's Return
+ * firing `enter` (vs. a textview's Return inserting a newline), and the
+ * mutation funnel's `change` trace/event. Both widgets are pushed well down
+ * the window (y: 175/RTUI_BOTTOM in a 320x280 window) so their screen rects
+ * fall entirely below Probe's (bottom 214) and Bounce's (bottom 204) own
+ * content -- opened FIRST (see main(), below), so it starts furthest back
+ * in z-order, but nothing else ever covers that lower band, keeping every
+ * existing events.c click target (which never mentions TextProbe at all)
+ * completely unaffected: front-to-back window order for Probe/Bounce is
+ * unchanged from Task 1/2/3. */
+
+enum { T_NAME = 0, T_BODY = 1 };
+
+/* Proves a focused field's Return reaches app code as `enter` (rt_ui.c
+   itself already emits the T FIRE trace and RTUI_WEV_CHANGE for both
+   widgets' `change` automatically -- nothing extra needed for those). */
+static void textprobe_widget_event(void *inst, short widgetIndex, short event, long a, long b)
+{
+    (void)a; (void)b;
+    if (widgetIndex == T_NAME && event == RTUI_WEV_ENTER)
+        rt_ui_set_title(inst, (const unsigned char *)"\pEntered");
+}
+
+static const rt_ui_widget_desc kTextProbeWidgets[] = {
+    { RTUI_FIELD, "Name", (const unsigned char *)"\pName:",
+      RTUI_AT_XY, 20, 175, 220, RTUI_FILL_NONE, 0 },
+    { RTUI_TEXTVIEW, "Body", (const unsigned char *)0,
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_BOTH, RTUI_SCROLL_V }
+};
+
+static const rt_ui_handlers kTextProbeHandlers = { 0, textprobe_widget_event };
+
+static const rt_ui_window_desc kTextProbeWindow = {
+    "TextProbe", (const unsigned char *)"\pText Probe",
+    320, 280, 1, 250, 200,
+    2, kTextProbeWidgets,
+    0,
+    &kTextProbeHandlers
+};
+
 /* ==================== wiring ==================== */
 
-static const rt_ui_window_desc *kWindows[] = { &kProbeWindow, &kBounceWindow };
+static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow };
 static const rt_ui_menu_desc *kMenus[] = { &kProbeMenu };
 
 int main(void)
 {
     rt_args_init(0, (char **)0);
-    rt_ui_startup(kWindows, 2, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
+    rt_ui_startup(kWindows, 3, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
+    /* TextProbe opens FIRST -- Probe-then-Bounce below is the exact same
+       relative open order Task 1/2/3 already had, so Bounce is still
+       frontmost at startup, exactly as events.c's own header comment
+       documents (TextProbe, opened even earlier, ends up furthest back). */
+    rt_ui_open(&kTextProbeWindow);
     rt_ui_open(&kProbeWindow);
     rt_ui_open(&kBounceWindow);
     rt_ui_run();

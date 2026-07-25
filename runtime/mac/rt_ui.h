@@ -23,10 +23,12 @@
  * raw numbers. */
 
 /* rt_ui_widget_desc.kind */
-#define RTUI_BUTTON 0
-#define RTUI_CHECK  1
-#define RTUI_CANVAS 2
-#define RTUI_LABEL  3
+#define RTUI_BUTTON   0
+#define RTUI_CHECK    1
+#define RTUI_CANVAS   2
+#define RTUI_LABEL    3
+#define RTUI_FIELD    4   /* single-line TextEdit, `label:` reuses the caption slot (mac-target-4c Task 1) */
+#define RTUI_TEXTVIEW 5   /* multi-line TextEdit, optional scrollbar via flags below */
 
 /* rt_ui_widget_desc.atKind (Ch8 Layout: "at x,y" / "at right,y" / "at next,bottom") */
 #define RTUI_AT_XY    0   /* x, y both explicit */
@@ -47,6 +49,13 @@
 #define RTUI_DEFAULT  1   /* button: wires the Return key (Ch8) */
 #define RTUI_CANCEL   2   /* button: wires the Escape key (Ch8) */
 #define RTUI_BUFFERED 4   /* canvas: offscreen GrafPort (Ch11, Task 2) */
+#define RTUI_SCROLL_V 8   /* textview: vertical scrollbar (mac-target-4c Task 1) */
+#define RTUI_SCROLL_H 16  /* textview: horizontal scrollbar -- reference names it (`scrollbar: both`)
+                             but this task wires only RTUI_SCROLL_V; a textview declaring
+                             RTUI_SCROLL_H gets no horizontal scrollbar control and no
+                             behavior change (silent no-op), same disclosed-limitation
+                             shape as other free-to-pick gaps in this file. Revisit if a
+                             later task needs real horizontal scrolling. */
 
 /* rt_ui_handlers.winEvent `event` values (Ch8 Window Events) */
 #define RTUI_EV_OPENED       0
@@ -57,14 +66,24 @@
 
 /* rt_ui_handlers.widget `event` values (Ch8 widget Events column) */
 #define RTUI_WEV_CLICK  0        /* button */
-#define RTUI_WEV_CHANGE 1        /* check: a = new bool value (0/1) */
+#define RTUI_WEV_CHANGE 1        /* check: a = new bool value (0/1); field/textview: content changed */
 #define RTUI_WEV_DRAG   2        /* canvas (Task 2): a = x, b = y */
+#define RTUI_WEV_ENTER  3        /* field (mac-target-4c Task 1): Return/Enter pressed while
+                                    focused -- no character is inserted; textview's Return
+                                    inserts a CR instead and never fires this event */
+
+/* TextEdit content cap (mac-target-4c Task 1): every field/textview mutation
+   path (TEKey, cut/paste, rt_ui_widget_set_str/set_text) clamps to this many
+   bytes and calls rt_set_lasterr (rt.h) on truncation -- pinned by the plan,
+   not derived from any Toolbox limit (TextEdit's own ~32K-line-table ceiling
+   is unrelated and much larger). */
+#define RTUI_TE_MAX 32000
 
 /* `prop` values for rt_ui_widget_get/set_* -- one per Ch8 runtime-property
  * cell; not individually spelled out in the plan's ABI sketch either, same
  * free-to-pick status as the kind/flags constants above. */
 #define RTUI_PROP_CAPTION  0   /* button */
-#define RTUI_PROP_TEXT     1   /* label (field/textview in later tasks) */
+#define RTUI_PROP_TEXT     1   /* label; field (string, via *_get_str/set_str); textview (rt_text, via *_get_text/set_text) */
 #define RTUI_PROP_ENABLED  2   /* button */
 #define RTUI_PROP_CHECKED  3   /* check */
 #define RTUI_PROP_SELECTED 4   /* popup, table (later tasks) */
@@ -120,6 +139,14 @@ typedef struct rt_ui_app_desc {
 } rt_ui_app_desc;
 extern const rt_ui_app_desc rt_ui_app_info;
 
+/* Opaque forward declaration ONLY -- textview's `text` runtime property is
+   an rt_text* (internal/build/rt/rt.h's growable byte buffer), but this
+   header must never #include rt.h (rt_ui.c includes both directly; see its
+   own file header). rt_ui_widget_get_text/set_text below are the only
+   entry points that touch it, both by pointer, so the incomplete type is
+   enough for callers too (mac-target-4c Task 1). */
+typedef struct rt_text rt_text;
+
 /* ==================== runtime API (called by emitted code / probe) ==================== */
 
 /* PORT DISCIPLINE RULE: every rt_ui entry point below that touches
@@ -163,6 +190,21 @@ void *rt_ui_front(const rt_ui_window_desc *d);       /* `W.front`, NULL if none 
 void *rt_ui_state(void *inst);                       /* per-instance user vars */
 void  rt_ui_set_title(void *inst, const unsigned char *s);
 void  rt_ui_widget_set_str(void *inst, short wIdx, short prop, const unsigned char *s);
+/* rt_ui_widget_get_str (mac-target-4c Task 1): fill-in-place read of a
+   Str255-shaped runtime property -- currently only RTUI_FIELD's
+   RTUI_PROP_TEXT (no existing dispatcher reads back a widget's string; the
+   label/button captions were write-only before this task). dst255 must
+   have room for a full Str255 (256 bytes); a no-match (wrong kind/prop)
+   writes a length-0 Pascal string rather than leaving dst255 untouched. */
+void  rt_ui_widget_get_str (void *inst, short wIdx, short prop, unsigned char *dst255);
+/* rt_ui_widget_get_text/set_text (mac-target-4c Task 1): textview's
+   RTUI_PROP_TEXT, bridged to/from the TE's own byte buffer via
+   rt_text_from_bytes/rt_text_to_bytes (rt.h) -- `out`/`t` are never NULL.
+   set_text clamps to RTUI_TE_MAX and calls rt_set_lasterr (rt.h) on
+   truncation, then runs the same mutation funnel TEKey/cut/paste use
+   (scrollbar recompute, `T FIRE <Win>.<W>.change` trace, RTUI_WEV_CHANGE). */
+void  rt_ui_widget_get_text(void *inst, short wIdx, rt_text *out);
+void  rt_ui_widget_set_text(void *inst, short wIdx, const rt_text *t);
 void  rt_ui_widget_set_bool(void *inst, short wIdx, short prop, int v);
 int   rt_ui_widget_get_bool(void *inst, short wIdx, short prop);
 short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width/height */
