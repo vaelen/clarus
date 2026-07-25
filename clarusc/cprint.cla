@@ -1903,7 +1903,12 @@ func cpEmitMenuItemsArray(menuName: string, headIdx: int): string {
 }
 
 // cpEmitMenuDescs prints every menu's items array + rt_ui_menu_desc, in
-// declaration order, into cpUiBuf.
+// declaration order, into cpUiBuf. A `standard edit` menu (mac-target-4c
+// Task 3) skips the items array entirely -- the runtime builds Undo/Cut/
+// Copy/Paste/Clear itself -- and emits the pinned `0, 0, 1` tail instead of
+// a real item count/array; every OTHER menu now also gains the trailing
+// `standardEdit` field (always 0), since rt_ui_menu_desc (rt_ui.h) gained
+// that field for every menu, not just standard-edit ones.
 func cpEmitMenuDescs() {
     var i: int
     var name: string
@@ -1914,17 +1919,24 @@ func cpEmitMenuDescs() {
     i = 0
     while i < irMenuDescs.count {
         name = poolGet(irMenuDescName(i))
-        itemsName = cpEmitMenuItemsArray(name, irMenuDescItemsHead(i))
-        nItems = 0
-        it = irMenuDescItemsHead(i)
-        while it != -1 {
-            nItems = nItems + 1
-            it = irMenuItemDescNext(it)
+        if irMenuDescIsStandardEdit(i) {
+            cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
+            cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", 0, 0, 1"))
+            cpUiBuf.add(toText("};"))
+            cpUiBuf.add(toText(""))
+        } else {
+            itemsName = cpEmitMenuItemsArray(name, irMenuDescItemsHead(i))
+            nItems = 0
+            it = irMenuDescItemsHead(i)
+            while it != -1 {
+                nItems = nItems + 1
+                it = irMenuItemDescNext(it)
+            }
+            cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
+            cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", " + numToStr(nItems) + ", " + itemsName + ", 0"))
+            cpUiBuf.add(toText("};"))
+            cpUiBuf.add(toText(""))
         }
-        cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
-        cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", " + numToStr(nItems) + ", " + itemsName))
-        cpUiBuf.add(toText("};"))
-        cpUiBuf.add(toText(""))
         i = i + 1
     }
 }

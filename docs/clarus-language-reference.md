@@ -941,7 +941,7 @@ A `menu` block declares a menu — like `window`, it is a declaration compiled t
 menu Edit { standard edit }
 ```
 
-`standard edit` supplies the Mac-standard Edit menu items (Undo/Cut/Copy/Paste) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`.
+`standard edit` supplies the Mac-standard Edit menu items (Undo/Cut/Copy/Paste/Clear) with clipboard behavior already wired to `field` and `textview` widgets — required for a native feel (and for desk accessories) but otherwise pure boilerplate. The behavior comes from the `edit` keyword, not from the menu's own name — a menu declared under a different name could still use `standard edit`. Cut/Copy/Paste/Clear act on whichever `field` or `textview` currently has the caret, dim together when nothing does, and forward to the frontmost desk accessory instead when one is active. Undo is always present but permanently dimmed — there is no undo stack — an honest placeholder for the standard menu shape rather than a working command.
 
 ### Item Events
 
@@ -1481,7 +1481,7 @@ menu File {
     item Quit   "Quit"      key "Q"
 }
 
-menu Edit { standard edit }        // Undo/Cut/Copy/Paste, pre-wired
+menu Edit { standard edit }        // Undo (dimmed)/Cut/Copy/Paste/Clear, pre-wired
 
 func openPath(p: string) {
     var d: Doc

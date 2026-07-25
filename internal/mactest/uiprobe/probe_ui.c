@@ -227,7 +227,7 @@ static const rt_ui_item_desc kProbeMenuItems[] = {
 };
 
 static const rt_ui_menu_desc kProbeMenu = {
-    "Probe", (const unsigned char *)"\pProbe", 4, kProbeMenuItems
+    "Probe", (const unsigned char *)"\pProbe", 4, kProbeMenuItems, 0
 };
 
 static const rt_ui_menu_handler kProbeMenuHandlers[] = {

@@ -319,11 +319,17 @@ record IRMenuItemDesc {
 // declared name -- so titleIdx is always nameIdx itself (kept as its own
 // field, not folded into nameIdx's use, so cprint's title-vs-C-name
 // spellings stay independently named at the call site, matching
-// IRWindowDesc's shape).
+// IRWindowDesc's shape). isStandardEdit (mac-target-4c Task 3) marks
+// `menu M { standard edit }`: itemsHead is then whatever (normally -1) the
+// entries loop happened to build -- cprint ignores it entirely and emits
+// the pinned `{ nItems: 0, items: 0, standardEdit: 1 }` tail instead, since
+// the runtime builds Undo/Cut/Copy/Paste/Clear itself rather than reading
+// a declared item array for this menu.
 record IRMenuDesc {
     nameIdx: int
     titleIdx: int
     itemsHead: int
+    isStandardEdit: bool
 }
 
 // ---- UI handler/dispatch IR (Task 5) ----
@@ -1519,12 +1525,13 @@ func irMenuItemDescNext(i: int): int {
     return irMenuItemDescs[i].next
 }
 
-func newIRMenuDesc(nameIdx: int, titleIdx: int, itemsHead: int): int {
+func newIRMenuDesc(nameIdx: int, titleIdx: int, itemsHead: int, isStandardEdit: bool): int {
     var n: IRMenuDesc
 
     n.nameIdx = nameIdx
     n.titleIdx = titleIdx
     n.itemsHead = itemsHead
+    n.isStandardEdit = isStandardEdit
     irMenuDescs.add(n)
     return irMenuDescs.count - 1
 }
@@ -1539,6 +1546,10 @@ func irMenuDescTitle(i: int): int {
 
 func irMenuDescItemsHead(i: int): int {
     return irMenuDescs[i].itemsHead
+}
+
+func irMenuDescIsStandardEdit(i: int): bool {
+    return irMenuDescs[i].isStandardEdit
 }
 
 // ================================================================

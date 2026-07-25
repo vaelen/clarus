@@ -2306,6 +2306,7 @@ func lowMenuDecl(d: int) {
     var itemsTail: int
     var idx: int
     var it: int
+    var isStdEdit: bool
 
     nameIdx = menuDeclName(d)
     menuName = poolGet(nameIdx)
@@ -2318,25 +2319,34 @@ func lowMenuDecl(d: int) {
     itemsHead = -1
     itemsTail = -1
     idx = 0
+    isStdEdit = false
     e = menuDeclEntriesHead(d)
     while e != -1 {
+        // `standard edit` (Ch9, mac-target-4c Task 3) contributes no
+        // IRMenuItemDesc of its own -- the runtime builds Undo/Cut/Copy/
+        // Paste/Clear itself from the isStandardEdit flag alone, so this
+        // entry doesn't occupy an item-array slot (idx stays put).
         if menuEntryIsStandardEdit(e) {
-            lowUnsupported("standard edit")
-        }
-        if menuEntryIsItem(e) {
+            isStdEdit = true
+        } else if menuEntryIsItem(e) {
             uiMenuItemIdx[menuKey(menuName, poolGet(menuEntryName(e)))] = idx
             it = newIRMenuItemDesc(menuEntryName(e), menuEntryCaption(e), menuEntryKey(e), false)
+            if itemsHead == -1 {
+                itemsHead = it
+            }
+            itemsTail = irMenuItemDescListAppend(itemsTail, it)
+            idx = idx + 1
         } else {
             it = newIRMenuItemDesc(-1, -1, -1, true)
+            if itemsHead == -1 {
+                itemsHead = it
+            }
+            itemsTail = irMenuItemDescListAppend(itemsTail, it)
+            idx = idx + 1
         }
-        if itemsHead == -1 {
-            itemsHead = it
-        }
-        itemsTail = irMenuItemDescListAppend(itemsTail, it)
-        idx = idx + 1
         e = declNext(e)
     }
-    newIRMenuDesc(nameIdx, nameIdx, itemsHead)
+    newIRMenuDesc(nameIdx, nameIdx, itemsHead, isStdEdit)
 }
 
 // ================================================================

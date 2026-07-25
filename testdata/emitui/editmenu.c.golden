@@ -10,23 +10,15 @@ typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
 
 static const rt_ui_item_desc clar_ui_items_File[] = {
-    { "New", (const unsigned char *)"\pNew", 'N', 0 },
-    { "Open", (const unsigned char *)"\pOpen", 'O', 0 },
-    { 0, 0, 0, 1 },
     { "Quit", (const unsigned char *)"\pQuit", 'Q', 0 },
 };
 
 static const rt_ui_menu_desc clar_ui_menu_File = {
-    "File", (const unsigned char *)"\pFile", 4, clar_ui_items_File, 0
-};
-
-static const rt_ui_item_desc clar_ui_items_Edit[] = {
-    { "Copy", (const unsigned char *)"\pCopy", 'C', 0 },
-    { "Paste", (const unsigned char *)"\pPaste", 'V', 0 },
+    "File", (const unsigned char *)"\pFile", 1, clar_ui_items_File, 0
 };
 
 static const rt_ui_menu_desc clar_ui_menu_Edit = {
-    "Edit", (const unsigned char *)"\pEdit", 2, clar_ui_items_Edit, 0
+    "Edit", (const unsigned char *)"\pEdit", 0, 0, 1
 };
 
 
@@ -36,12 +28,6 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 static void clar_init_globals(void) {
 }
 
-static void clar_fn_handler_App_launch(void);
-
-static void clar_fn_handler_App_launch(void) {
-    rt_ui_menu_enable(0, 3, (int32_t)(0));
-    rt_ui_menu_enable(1, 0, (int32_t)(1));
-}
 
 static const rt_ui_menu_desc *clar_ui_menus[] = {
     &clar_ui_menu_File,
@@ -52,7 +38,6 @@ int main(int argc, char **argv) {
     clar_init_globals();
     rt_args_init(argc, argv);
     rt_ui_startup(0, 0, clar_ui_menus, 2, 0, 0, 0, 0);
-    clar_fn_handler_App_launch();
     rt_ui_run();
     return 0;
 }

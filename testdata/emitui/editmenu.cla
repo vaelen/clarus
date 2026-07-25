@@ -1,0 +1,16 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// editmenu.cla: emitui golden fixture -- `menu Edit { standard edit }`
+// (Ch9, mac-target-4c Task 3): proves the standard-edit rt_ui_menu_desc
+// shape (nItems 0, items NULL, standardEdit 1), alongside an ordinary menu
+// (File) so the fixture also proves that kind still emits standardEdit 0
+// with its normal items array untouched.
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+menu Edit {
+    standard edit
+}

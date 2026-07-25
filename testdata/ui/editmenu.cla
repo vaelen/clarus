@@ -1,0 +1,73 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// editmenu.cla: gated UI scenario (Task 3, mac-target-4c) -- `menu Edit {
+// standard edit }` end to end on real m68k hardware: a window with two
+// textviews (A stacked above B), scripted cut-from-A/paste-into-B via a
+// real scrap round trip, Copy's no-mutation/no-change-event pin, Undo's
+// permanent disablement, and the Cut/Copy/Paste/Clear dimming transitions
+// tied to "does the front window have a focused field/textview".
+//
+// Menu bar position 1 is always the Apple menu, so Edit (the only declared
+// menu) is position 2; its fixed item layout (rt_ui_build_menus) is
+// 1=Undo, 2=separator, 3=Cut, 4=Copy, 5=Paste, 6=Clear.
+//
+// editmenu.events, step by step (click/drag Y coordinates land 5px inside
+// each textview's first text line -- window-local view-rect top + a small
+// margin -- clicking further down lands BELOW the only line of text TE
+// ever lays out here, which TextEdit resolves as "past the end", collapsing
+// to a useless empty selection; found the hard way while blessing this
+// scenario, see the task report):
+//   click 200 72    -- focuses A (empty, no prior focus anywhere) ->
+//                      T DIM Edit.Cut/Copy/Paste/Clear 1 (undimmed: a TE
+//                      is now focused)
+//   type Hello World -- 11 keystrokes into A, each firing A.change
+//   click 133 72    -- a second plain click on the same already-focused TE
+//                      lands inside real Toolbox double-click timing, so
+//                      TEClick treats it as a word-select ("Hello",
+//                      selStart/selEnd 0/5) rather than a collapsed caret --
+//                      harmless here, since the very next line only cares
+//                      about the FINAL extended range, not this
+//                      intermediate anchor
+//   drag 190 72     -- extends A's selection to this point (mac-target-4c
+//                      Task 3's `drag`-extends-the-focused-TE addition --
+//                      see rt_ui_script_drag's own comment for why this is
+//                      the real TEClick-extend mechanism, not a fake) ->
+//                      selStart/selEnd settle at 0/9, i.e. "Hello Wor"
+//   menu 2 3        -- Cut: removes "Hello Wor" from A (leaving "ld"),
+//                      scraps it (ZeroScrap+TEToScrap) -> A.change fires
+//   click 200 180   -- focuses B (already-undimmed: no new T DIM line)
+//   menu 2 5        -- Paste: TEFromScrap+TEPaste "Hello Wor" into B ->
+//                      B.change fires
+//   snap cutpaste    -- proves the text actually moved: A now shows "ld",
+//                      B shows "Hello Wor"
+//   click 133 180   -- anchor inside B's now-pasted text (same word-select
+//                      caveat as A's second click, above)
+//   drag 190 180    -- extends B's selection
+//   menu 2 4        -- Copy: scraps the selection but MUST NOT fire a
+//                      change event/trace (pinned: Copy never mutates) --
+//                      no new trace line appears between this and the next
+//   menu 2 1        -- Undo: permanently disabled: a real click/cmd-key
+//                      can never reach it (DisableItem blocks MenuSelect
+//                      from returning it), and this scripted call bypasses
+//                      that native gate directly into rt_ui_menu_dispatch
+//                      -- must produce NO trace line at all
+//   quit            -- closes Main (the only open window): frontmost goes
+//                      to none, so the standard-edit items re-dim ->
+//                      T DIM Edit.Cut/Copy/Paste/Clear 0
+
+window Main {
+    title: "Edit Demo"
+    size: 300, 260
+
+    textview A { at: 20, 20 }
+    textview B { at: 20, bottom }
+}
+
+menu Edit {
+    standard edit
+}
+
+on App.launch {
+    open Main
+}

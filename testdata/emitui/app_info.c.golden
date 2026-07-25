@@ -24,7 +24,7 @@ static const rt_ui_item_desc clar_ui_items_File[] = {
 };
 
 static const rt_ui_menu_desc clar_ui_menu_File = {
-    "File", (const unsigned char *)"\pFile", 1, clar_ui_items_File
+    "File", (const unsigned char *)"\pFile", 1, clar_ui_items_File, 0
 };
 
 

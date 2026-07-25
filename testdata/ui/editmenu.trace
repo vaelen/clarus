@@ -1,0 +1,26 @@
+T OPEN Main 1
+T FRONT Main 1
+T DIM Edit.Cut 1
+T DIM Edit.Copy 1
+T DIM Edit.Paste 1
+T DIM Edit.Clear 1
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.A.change
+T FIRE Main.B.change
+T FIRE Main.closeRequest
+T CLOSE Main 1
+T DIM Edit.Cut 0
+T DIM Edit.Copy 0
+T DIM Edit.Paste 0
+T DIM Edit.Clear 0
+T FIRE Main.closed

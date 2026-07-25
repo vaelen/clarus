@@ -108,7 +108,12 @@ typedef struct { const char *name; const unsigned char *title;  /* Str255 */
                  const struct rt_ui_handlers *handlers; } rt_ui_window_desc;
 
 typedef struct { const char *name; const unsigned char *title;
-                 short nItems; const struct rt_ui_item_desc *items; } rt_ui_menu_desc;
+                 short nItems; const struct rt_ui_item_desc *items;
+                 short standardEdit; /* mac-target-4c Task 3: `menu M { standard edit }` --
+                                        nItems/items are 0/NULL for such a menu (the runtime
+                                        builds Undo/Cut/Copy/Paste/Clear itself); every OTHER
+                                        menu emits standardEdit 0 with its normal items array. */
+} rt_ui_menu_desc;
 
 typedef struct rt_ui_item_desc { const char *name; const unsigned char *label;
                  unsigned char key; short separator; } rt_ui_item_desc;

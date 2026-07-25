@@ -231,6 +231,17 @@ func TestPatternUIScenario(t *testing.T) {
 	runUIScenario(t, "pattern", 0)
 }
 
+// TestEditMenuUIScenario (Task 3, mac-target-4c): `menu Edit { standard
+// edit }` end to end -- cut from textview A, paste into B (the snap proves
+// the text moved), Copy's no-change-event pin, Undo's unreachable dispatch
+// (asserted by the golden trace having no line for it at all), and the
+// Cut/Copy/Paste/Clear dim transitions on focus-gain and on the window
+// closing again. See testdata/ui/editmenu.cla's own header comment for the
+// full scripted walkthrough.
+func TestEditMenuUIScenario(t *testing.T) {
+	runUIScenario(t, "editmenu", 0)
+}
+
 // TestUIAbout: an `app` section with all four About-relevant properties set
 // -- the Apple menu's About item becomes "About AboutProbe..." and selecting
 // it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT

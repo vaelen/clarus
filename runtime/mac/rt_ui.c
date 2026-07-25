@@ -66,6 +66,7 @@
 #include <Memory.h>
 #include <ToolUtils.h>
 #include <Menus.h>
+#include <Scrap.h>     /* ZeroScrap/TEToScrap/TEFromScrap -- standard-edit cut/copy/paste (Task 3) */
 #include <Dialogs.h>   /* NoteAlert, for the About item (Ch9) */
 #include <Devices.h>   /* OpenDeskAcc, for the Apple menu's desk-accessory list */
 #include <LowMem.h>    /* LMGetCurApName -- the running app's name, for About (Ch9) */
@@ -437,6 +438,14 @@ static rt_ui_winst *rt_ui_winst_of(WindowPtr wp)
    as the FIELD/TEXTVIEW counterpart to plain MoveControl/SizeControl. */
 static void rt_ui_te_relayout(rt_ui_winst *inst, short wIdx);
 
+/* Defined below (needs gMenuHandlerTable/gStdEditMenuIdx, both set up at
+   startup) -- forward-declared here so rt_ui_te_set_focus (Task 3) can
+   recompute standard-edit-item dimming right when TE focus changes WITHIN
+   a window (the front-window-changed call sites already wrap this same
+   call via rt_ui_after_front_change; a same-window focus switch has no
+   front-window change to piggyback on, so it calls this directly). */
+static void rt_ui_menu_recompute_dim(void);
+
 static short rt_ui_kind_height(short kind)
 {
     switch (kind) {
@@ -794,6 +803,12 @@ static void rt_ui_te_set_focus(rt_ui_winst *inst, short newIdx)
     if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) TEDeactivate(inst->tes[inst->focusIdx]);
     inst->focusIdx = newIdx;
     if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) TEActivate(inst->tes[inst->focusIdx]);
+    /* Standard-edit Cut/Copy/Paste/Clear dim on "does the front window have
+       a focused TE" (Task 3) -- a no-op when no standard-edit menu exists
+       (rt_ui_menu_recompute_dim's dedicated block below is gated on
+       gStdEditMenuIdx >= 0), so this costs nothing for every pre-existing
+       scenario. */
+    rt_ui_menu_recompute_dim();
 }
 
 /* Hit-tests against each FIELD/TEXTVIEW's own (already-derived) TE
@@ -1007,6 +1022,21 @@ static const rt_ui_menu_handler *gMenuHandlerTable = NULL;
 static short gNMenuHandlers = 0;
 static MenuHandle gAppleMenu = NULL;
 
+/* `standard edit` (Ch9, mac-target-4c Task 3): which declared menu (0-based,
+   same indexing as gMenuHandles) is the standard-edit one, -1 if the
+   program declares none. Accept-first if a program somehow declares more
+   than one -- ponytail: one standard-edit menu per program is the only
+   case the reference's own example shows, so the second and later ones
+   just build their fixed Undo/Cut/Copy/Paste/Clear items (rt_ui_build_menus
+   still gives every one of them the real menu items and the disabled
+   Undo) but are never the dispatch/dim target; revisit with a per-menu
+   flag array if a program ever needs more than one wired up. */
+static short gStdEditMenuIdx = -1;
+#ifdef RT_MAC_TEST
+static const char *gStdEditMenuName = NULL; /* for T DIM trace lines */
+static char gStdEditDimPrev = 0;            /* last computed on/off, valid once !gDimFirst */
+#endif
+
 #define RTUI_APPLE_MENU_ID 1
 
 /* Ch9: "The Apple menu and its About item are provided by the runtime
@@ -1097,6 +1127,30 @@ static void rt_ui_build_menus(const rt_ui_menu_desc **menus, short nMenus)
 
         md = menus[i];
         mh = NewMenu((short)(RTUI_MENU_ID_BASE + i), md->title);
+        if (md->standardEdit) {
+            /* Fixed Ch9 shape: Undo (permanently disabled -- no undo stack,
+               a disclosed limitation), separator, Cut/Copy/Paste (cmd-key
+               via AppendMenu's `/K` metachar, same idiom the generic item
+               loop below uses dynamically -- these four captions/keys are
+               compile-time fixed, so a literal Pascal string is simpler),
+               Clear (no standard cmd-key equivalent). */
+            AppendMenu(mh, (const unsigned char *)"\pUndo/Z");
+            AppendMenu(mh, (const unsigned char *)"\p-");
+            AppendMenu(mh, (const unsigned char *)"\pCut/X");
+            AppendMenu(mh, (const unsigned char *)"\pCopy/C");
+            AppendMenu(mh, (const unsigned char *)"\pPaste/V");
+            AppendMenu(mh, (const unsigned char *)"\pClear");
+            DisableItem(mh, 1); /* Undo: permanently dimmed */
+            if (gStdEditMenuIdx < 0) {
+                gStdEditMenuIdx = i;
+#ifdef RT_MAC_TEST
+                gStdEditMenuName = md->name;
+#endif
+            }
+            InsertMenu(mh, 0);
+            gMenuHandles[i] = mh;
+            continue;
+        }
         for (j = 0; j < md->nItems; j++) {
             const rt_ui_item_desc *it = &md->items[j];
             if (it->separator) {
@@ -1159,6 +1213,30 @@ static void rt_ui_menu_recompute_dim(void)
         if (gDimPrev) gDimPrev[k] = (char)on;
 #endif
     }
+    /* Standard-edit menu (Ch9 `standard edit`, Task 3): Cut/Copy/Paste/
+       Clear (itemIdx 2-5) dim together, on iff the frontmost window is
+       ours AND has a focused field/textview. No gMenuHandlerTable entry
+       exists for these (the runtime, not the program, owns them), so they
+       get their own prev/trace bookkeeping instead of a loop slot above.
+       Undo (itemIdx 0) is untouched here -- disabled once at build time,
+       never re-enabled. */
+    if (gStdEditMenuIdx >= 0) {
+        rt_ui_winst *front;
+        int on;
+        short j;
+
+        front = rt_ui_winst_of(FrontWindow());
+        on = front != NULL && front->focusIdx >= 0;
+        for (j = 2; j <= 5; j++) rt_ui_menu_enable(gStdEditMenuIdx, j, on);
+#ifdef RT_MAC_TEST
+        if (!gDimFirst && gStdEditDimPrev != (char)on) {
+            static const char *kStdEditItems[4] = { "Cut", "Copy", "Paste", "Clear" };
+            short m;
+            for (m = 0; m < 4; m++) rt_ui_trace_dim(gStdEditMenuName, kStdEditItems[m], on);
+        }
+        gStdEditDimPrev = (char)on;
+#endif
+    }
 #ifdef RT_MAC_TEST
     gDimFirst = 0;
 #endif
@@ -1177,6 +1255,64 @@ static void rt_ui_after_front_change(void)
 #endif
 }
 
+/* Ch9 `standard edit`'s dispatch (Task 3): itemIdx is 0-based, matching the
+   fixed layout rt_ui_build_menus appended above (0=Undo, 1=separator,
+   2=Cut, 3=Copy, 4=Paste, 5=Clear). DA-frontmost check FIRST: SystemEdit's
+   own editCmd convention (0=undo/1=cut/2=copy/3=paste/4=clear) is
+   identical to this function's itemIdx, so no translation is needed.
+   Otherwise acts on the front rt_ui window's focused field/textview, if
+   any -- native dimming ordinarily keeps a real click/cmd-key from
+   reaching here with Undo selected or nothing focused, but a scripted
+   `menu M I` call (rt_ui_script_menu) bypasses that gate by calling
+   rt_ui_menu_dispatch directly, so both are guarded defensively here too:
+   Undo/the separator fall out silently, no focused TE is a silent no-op.
+   Cut/Paste/Clear route their TE mutation through rt_ui_te_mutated (change
+   trace/event + clamp + scrollbar sync, same funnel typing and set_text
+   use); Copy does not mutate, so it fires no change event/trace at all
+   (pinned: Copy is observably silent). PORT DISCIPLINE RULE (rt_ui.h):
+   self-asserts/restores the port around the TE calls, which draw. */
+static void rt_ui_std_edit_dispatch(short itemIdx)
+{
+    rt_ui_winst *inst;
+    TEHandle te;
+    GrafPtr savedPort;
+
+    if (!rt_ui_is_ours(FrontWindow())) {
+        SystemEdit(itemIdx);
+        return;
+    }
+    if (itemIdx < 2 || itemIdx > 5) return; /* Undo (permanently disabled) or the separator */
+    inst = rt_ui_winst_of(FrontWindow());
+    if (!inst || inst->focusIdx < 0) return;
+    te = inst->tes[inst->focusIdx];
+    if (!te) return;
+    GetPort(&savedPort);
+    SetPort(inst->wp);
+    switch (itemIdx) {
+    case 2: /* Cut */
+        TECut(te);
+        ZeroScrap();
+        TEToScrap();
+        rt_ui_te_mutated(inst, inst->focusIdx);
+        break;
+    case 3: /* Copy: no mutation -- no change trace/event (pinned) */
+        TECopy(te);
+        ZeroScrap();
+        TEToScrap();
+        break;
+    case 4: /* Paste */
+        TEFromScrap();
+        TEPaste(te);
+        rt_ui_te_mutated(inst, inst->focusIdx);
+        break;
+    case 5: /* Clear */
+        TEDelete(te);
+        rt_ui_te_mutated(inst, inst->focusIdx);
+        break;
+    }
+    SetPort(savedPort);
+}
+
 /* Shared by MenuSelect (mouseDown in the menu bar) and MenuKey (cmdKey
    keyDown) -- both return the same packed (menuID, item) long. */
 static void rt_ui_menu_dispatch(long result)
@@ -1193,6 +1329,10 @@ static void rt_ui_menu_dispatch(long result)
     }
     menuIdx = (short)(menuID - RTUI_MENU_ID_BASE);
     itemIdx = (short)(itemNum - 1);
+    if (menuIdx == gStdEditMenuIdx) {
+        rt_ui_std_edit_dispatch(itemIdx);
+        return;
+    }
     for (k = 0; k < gNMenuHandlers; k++) {
         const rt_ui_menu_handler *h = &gMenuHandlerTable[k];
         void *front;
@@ -1798,12 +1938,30 @@ static void rt_ui_script_click(short x, short y)
    entry point real dragging uses, just without TrackControl/StillDown's
    real-mouse machinery in between. A point that misses (no window, wrong
    window, not over a canvas) is a silent no-op, same as a real drag that
-   wanders off every hit-testable widget. */
+   wanders off every hit-testable widget.
+
+   mac-target-4c Task 3 addition: a drag landing inside the ALREADY-focused
+   field/textview extends its selection to this point instead (script
+   `click <start>` then `drag <end>`, mirroring a real mouse-down-drag-
+   release select). TEClick's own `extend` flag (Inside Macintosh's
+   shift-click affordance) is the exact mechanism a real click already
+   uses for shift-extend (rt_ui_handle_content_click computes the same
+   `extend` bool from the shift key) -- calling it here with extend=true
+   produces the identical final anchor/endpoint selection state a real
+   click-hold-drag-release to the same point would, since TE's own
+   selection math only depends on the anchor and the final point, never
+   the path between them (the live tracking redraw a real drag also does
+   is the only thing scripted mode can't reproduce, and it has no
+   observable effect on the eventual selection or on any snap/trace this
+   harness can assert against). Deliberately does NOT start a new TE's
+   focus on a drag (only extends the CURRENTLY-focused one, checked via
+   tIdx == inst->focusIdx) -- "drag" is a continuation of a prior click,
+   not an independent click of its own. */
 static void rt_ui_script_drag(short x, short y)
 {
     WindowPtr wp;
     Point where, local;
-    short part, cIdx;
+    short part, cIdx, tIdx;
     rt_ui_winst *inst;
 
     where.h = x;
@@ -1815,7 +1973,13 @@ static void rt_ui_script_drag(short x, short y)
     SetPort(wp);
     local = where;
     GlobalToLocal(&local);
-    if (rt_ui_canvas_hit(inst, local, &cIdx)) rt_ui_fire_canvas_xy(inst, cIdx, RTUI_WEV_DRAG, local);
+    if (rt_ui_canvas_hit(inst, local, &cIdx)) {
+        rt_ui_fire_canvas_xy(inst, cIdx, RTUI_WEV_DRAG, local);
+        return;
+    }
+    if (rt_ui_te_hit(inst, local, &tIdx) && tIdx == inst->focusIdx && inst->tes[tIdx]) {
+        TEClick(local, (Boolean)1, inst->tes[tIdx]);
+    }
 }
 
 /* `key C`: synthesizes a keyDown EventRecord for the exact same
