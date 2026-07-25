@@ -486,6 +486,21 @@ static void rt_ui_layout(rt_ui_winst *inst)
     short contentW, contentH;
     short prevLeft, prevRight, prevBottom;
     short i;
+    GrafPtr savedPort;
+
+    /* Self-assert/restore (rt_ui.h's PORT DISCIPLINE RULE): this function's
+       own MoveControl/SizeControl calls don't care about the ambient port
+       (same as NewControl, they take the control handle directly), but
+       rt_ui_te_relayout's TECalText/TEScroll do -- same port-capture gap
+       TENew's own fix (rt_ui_make_widgets) closed one layer up. Bracketing
+       here (rather than at each of this function's three call sites --
+       rt_ui_open, rt_ui_apply_resize, and any future one) covers all of
+       them in one place. Neither existing caller was asserting this
+       before: rt_ui_open calls rt_ui_layout AFTER rt_ui_make_widgets has
+       already restored ITS OWN saved (pre-widget-creation) port, and
+       rt_ui_apply_resize has no port handling of its own at all. */
+    GetPort(&savedPort);
+    SetPort(inst->wp);
 
     d = inst->desc;
     contentW = wp_content_width(inst->wp);
@@ -561,6 +576,7 @@ static void rt_ui_layout(rt_ui_winst *inst)
         prevRight = (short)(x + w);
         prevBottom = (short)(y + h);
     }
+    SetPort(savedPort);
 }
 
 /* ==================== widget creation ==================== */
@@ -690,7 +706,16 @@ static void rt_ui_te_scroll_sync(rt_ui_winst *inst, short wIdx)
    could have grown content past it (TEKey typing; set_str/set_text are
    already within-cap by construction -- see their own comments -- so this
    is a cheap early-return no-op for them). Preserves the caret/selection
-   start, clamped into range, same as any other truncating edit. */
+   start, clamped into range, same as any other truncating edit.
+   Disclosed limitation: truncation always keeps bytes [0, maxLen) and
+   drops the END of the buffer -- correct when the just-typed character IS
+   the one that pushed teLength over maxLen (the caret is normally at the
+   end), but if the caret is NOT at the end (e.g. after TESetSelect moved
+   it, or a future paste-in-the-middle), the byte actually dropped is the
+   buffer's last byte, not the one just typed at the caret. No scenario in
+   this task exercises typing away from the end while already at the cap,
+   so this hasn't been observed in practice; a real fix would need to
+   delete the character at/after the caret rather than truncate the tail. */
 static void rt_ui_te_clamp(TEHandle te, short maxLen)
 {
     CharsHandle th;
