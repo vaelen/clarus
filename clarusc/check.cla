@@ -1017,6 +1017,10 @@ func buildMethodTables() {
 
     sigStart()
     sigAdd(psPlain(IntT))
+    canvasMethods["pattern"] = sigEnd(-1)
+
+    sigStart()
+    sigAdd(psPlain(IntT))
     sigAdd(psPlain(IntT))
     sigAdd(psPlain(strT(255)))
     canvasMethods["drawText"] = sigEnd(-1)

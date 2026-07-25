@@ -2074,6 +2074,10 @@ func IUiCanvasFillCircle(): int {
     return intern("ui_canvas_fill_circle")
 }
 
+func IUiCanvasPattern(): int {
+    return intern("ui_canvas_pattern")
+}
+
 func IUiCanvasDrawText(): int {
     return intern("ui_canvas_draw_text")
 }

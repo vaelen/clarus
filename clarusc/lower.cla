@@ -794,6 +794,8 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
         intrName = IUiCanvasCircle()
     } else if nm == "fillCircle" {
         intrName = IUiCanvasFillCircle()
+    } else if nm == "pattern" {
+        intrName = IUiCanvasPattern()
     } else if nm == "drawText" {
         intrName = IUiCanvasDrawText()
     } else {

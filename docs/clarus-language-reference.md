@@ -1064,10 +1064,13 @@ c.line(x1, y1, x2, y2: int)
 c.rect(x, y, w, h: int)        c.fillRect(x, y, w, h: int)
 c.circle(x, y, r: int)         c.fillCircle(x, y, r: int)
 c.drawText(x, y: int, s: string)
+c.pattern(level: int)          // fill pattern for fillRect/fillCircle
 c.width  c.height              // runtime properties, int
 ```
 
 `clear` erases the canvas to white. `line` draws a line from `(x1, y1)` to `(x2, y2)`. `rect`/`fillRect` draw a rectangle outline or a filled rectangle at `(x, y)` with width `w` and height `h`. `circle`/`fillCircle` draw a circle outline or a filled circle centered at `(x, y)` with radius `r`. `drawText` draws `s` with its baseline at `(x, y)`. `width` and `height` are read-only runtime properties giving the canvas's current size in pixels.
+
+`pattern` sets the canvas's current fill pattern: `level` runs 0 (white) through 8 (black), with 1–7 ordered-dither grays of increasing density; out-of-range values clamp. The pattern applies to `fillRect` and `fillCircle` only — `rect`, `circle`, `line`, `drawText`, and `clear` are unaffected. Each canvas starts at level 8 (black), and the setting persists until changed. Patterns align to the window, not to the filled rectangle, so adjacent fills of any size tile into one seamless dither.
 
 All coordinates are `int` pixels. The origin `(0, 0)` is the canvas's top-left corner; `x` increases rightward, `y` increases downward.
 

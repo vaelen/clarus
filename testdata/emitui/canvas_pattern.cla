@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// canvas_pattern.cla: lowering fixture for the canvas `pattern` method
+// (Ch11) -- one buffered canvas whose every-block sets a dither level and
+// fills with it; the golden pins the rt_ui_canvas_pattern emission shape.
+
+window W {
+    title: "P"
+    size: 100, 100
+
+    canvas C { at: 0, 0; fill: both; buffered }
+}
+
+on App.launch {
+    open W
+}
+
+every 1 ticks {
+    var w: W = W.front
+    if w != nil {
+        w.C.pattern(4)
+        w.C.fillRect(0, 0, 10, 10)
+    }
+}

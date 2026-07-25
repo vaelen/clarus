@@ -974,6 +974,9 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiCanvasFillCircle() {
         fpEmit("rt_ui_canvas_fill_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
         return toText("")
+    } else if nm == IUiCanvasPattern() {
+        fpEmit("rt_ui_canvas_pattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
+        return toText("")
     } else if nm == IUiCanvasDrawText() {
         fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
         return toText("")
