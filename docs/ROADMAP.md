@@ -45,6 +45,10 @@ Living document — the authoritative sequencing and strategy record. Updated
    `internal/mactest` gates Mac-vs-host byte-compare behind
    `CLARUS_MAC_TESTS=1` — zero divergences across the corpus. Go compiler,
    clarusc, and `rt.h`/`rt.c` untouched (frozen surfaces held).
+   (Count basis for the "N gated tests" figures below, items 7/8: top-level
+   `go test ./internal/mactest -list '.*'` entries under `CLARUS_MAC_TESTS=1`
+   at each phase's own merge, not the count including per-file subtests —
+   4a's own count is untracked, having predated this convention.)
 7. **Mac target 4b (core UI: windows, menus, events)** — core UI runtime
    (`runtime/mac/rt_ui.{h,c}`): windows/instances, button/check/canvas/label,
    Ch8 layout with resize re-pinning, menus (Apple menu + app/window-scoped
@@ -59,7 +63,9 @@ Living document — the authoritative sequencing and strategy record. Updated
    an event script into test builds. `internal/mactest` adds a gated UI
    scenario harness (trace + PBM snap goldens under `testdata/ui` and
    `testdata/uisnaps`, `CLARUS_MAC_BLESS=1` bless mode) plus smokes of both
-   acceptance apps — 34 gated tests total. Acceptance:
+   acceptance apps — 9 gated tests total (same count basis as item 8 below;
+   corrected from an earlier "34", which used an untracked, inconsistent
+   basis). Acceptance:
    `testdata/valid/bounce.cla` (now opens its window via `App.launch`) and
    `examples/menu-demo.cla` run as real Mac apps, verified with real input.
    Two real clarusc bugs (menu index base; window `var` defaults dropped)
@@ -81,7 +87,8 @@ Living document — the authoritative sequencing and strategy record. Updated
    round trip, the two-dirty-document quit-cascade (cancel aborts mid-cascade,
    already-closed windows stay closed, unvisited ones stay open), and the
    too-large-file open guard (alert + clean close, no truncated content
-   ever shown) — 25 gated `internal/mactest` tests total.
+   ever shown) — 25 gated `internal/mactest` tests total (same count basis
+   as item 7 above: top-level test functions, cumulative over 4a+4b+4c).
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -184,6 +191,17 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 - `text + char` concatenation does not exist (append accepts char; `+` does
   not). Deliberate for now; revisit if it keeps surprising. (`char + string`
   and `string + text` WERE added 2026-07-23 — see the reference Ch4.)
+- **Widget-property out-param fill-in-place gap (found during mac-target-4c
+  final review):** the reference's own Appendix C Text Editor calls
+  `file.readText(p, d.Body.text)` — a widget property passed directly as a
+  fill-in-place out-parameter. clarusc's lowering compiles this without
+  error, but the read materializes into a discarded temporary (a widget
+  property read is a fresh copy, not a real binding to the underlying TE
+  buffer) rather than filling `d.Body.text` itself. `examples/texteditor.cla`
+  (the shipped acceptance app) works around this with a local `var t: text`
+  read then a separate `d.Body.text = t` assignment. Proper fix — a loud
+  compile-time error for this shape, or a real fill-in-place binding for
+  widget properties — is 4d's binding-walker work.
 - Parking lot (deferred features, from the design spec §14 + later
   decisions): HTTP layer, UDP/DDP, auto-generated forms, float/SANE,
   case-insensitive maps, handle-backed map values, printing, color QuickDraw,

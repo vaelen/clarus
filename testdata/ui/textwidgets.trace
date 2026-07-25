@@ -7,7 +7,6 @@ T FIRE TextWin.Name.change
 T FIRE TextWin.Name.change
 T FIRE TextWin.Name.enter
 T SET TextWin.Name.text Hello
-T FIRE TextWin.Name.change
 T FIRE TextWin.Body.change
 T FIRE TextWin.Body.change
 T FIRE TextWin.Body.change
@@ -18,9 +17,7 @@ T FIRE TextWin.Body.change
 T FIRE TextWin.Body.change
 T FIRE TextWin.Body.change
 T FIRE TextWin.Fill32000.click
-T FIRE TextWin.Body.change
 T FIRE TextWin.Fill32001.click
-T FIRE TextWin.Body.change
 T FIRE TextWin.closeRequest
 T CLOSE TextWin 1
 T FIRE TextWin.closed

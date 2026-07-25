@@ -14,10 +14,8 @@ T FIRE Doc.SaveBtn.click
 T ASKSAVE DialogsTest.txt
 T SET Doc.Status.text saved: DialogsTest.txt
 T FIRE Doc.ClearBtn.click
-T FIRE Doc.Body.change
 T FIRE Doc.OpenBtn.click
 T ASKOPEN DialogsTest.txt
-T FIRE Doc.Body.change
 T SET Doc.Status.text opened
 T FIRE Doc.OpenBtn.click
 T ASKOPEN cancel

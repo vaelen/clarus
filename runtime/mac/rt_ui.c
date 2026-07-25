@@ -766,12 +766,21 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
  * A field or textview's `tes[i]` is a real TEHandle; layout derives its
  * view/dest rect from the widget's own laid-out rect (rt_ui_te_relayout,
  * called from rt_ui_layout for both the initial open and any resize
- * re-layout); every content mutation (typing, `set_str`/`set_text`) funnels
- * through rt_ui_te_mutated, the ONE hook that clamps to the kind's text
- * cap, recomputes the scrollbar (if any), traces the change, and fires
- * RTUI_WEV_CHANGE -- fires once per call, not coalesced (the plan's pinned
- * policy: a single TEKey keystroke is one `change`, regardless of whether
- * the byte count actually moved). */
+ * re-layout); every content mutation (typing, cut/paste/clear, `set_str`/
+ * `set_text`) funnels through rt_ui_te_mutated, the ONE hook that clamps to
+ * the kind's text cap and recomputes the scrollbar (if any) -- always, for
+ * both funnel branches. Its `userEdit` flag (final review fix, mac-target-4c)
+ * splits the two: a USER edit (typing, cut, paste, clear -- the caller
+ * passes 1) additionally traces `T FIRE <Win>.<W>.change` and fires
+ * RTUI_WEV_CHANGE; a PROGRAMMATIC set (`set_str`'s FIELD branch, `set_text`
+ * -- the caller passes 0) does neither, matching every OTHER widget kind's
+ * runtime property setter (rt_ui_widget_set_bool/set_str's LABEL/BUTTON
+ * branches never fire their own event either) and making the reference's
+ * own `on Body.change { dirty = true }` + openPath idiom (Ch8/Appendix C)
+ * behave: a freshly opened document's programmatic Body.text fill must NOT
+ * mark it dirty. Fires once per call, not coalesced, when it does fire (the
+ * plan's pinned policy: a single TEKey keystroke is one `change`, regardless
+ * of whether the byte count actually moved). */
 
 /* Recomputes a textview's scrollbar range from its current line count and
    pins the control's value to the new range -- called after every layout
@@ -835,8 +844,12 @@ static void rt_ui_te_clamp(TEHandle te, short maxLen)
 
 /* The one mutation funnel every field/textview content change routes
    through (TEKey below; rt_ui_widget_set_str's FIELD branch and
-   rt_ui_widget_set_text, further down). */
-static void rt_ui_te_mutated(rt_ui_winst *inst, short wIdx)
+   rt_ui_widget_set_text, further down). `userEdit` is 1 for a real user
+   action (TEKey typing, standard-edit Cut/Paste/Clear) and 0 for a
+   programmatic set (set_str/set_text) -- see this section's own header
+   comment just above for why the two must diverge past the shared
+   clamp/scroll-sync. */
+static void rt_ui_te_mutated(rt_ui_winst *inst, short wIdx, int userEdit)
 {
     const rt_ui_widget_desc *wd;
     TEHandle te;
@@ -845,6 +858,7 @@ static void rt_ui_te_mutated(rt_ui_winst *inst, short wIdx)
     te = inst->tes[wIdx];
     if (te) rt_ui_te_clamp(te, (short)(wd->kind == RTUI_FIELD ? RTUI_FIELD_TEXT_MAX : RTUI_TE_MAX));
     rt_ui_te_scroll_sync(inst, wIdx);
+    if (!userEdit) return; /* programmatic set: clamp + scroll-sync only, no trace/event -- see header comment */
 #ifdef RT_MAC_TEST
     rt_ui_trace_fire2(inst->desc->name, wd->name, "change");
 #endif
@@ -1441,19 +1455,24 @@ static void rt_ui_after_front_change(void)
 /* Ch9 `standard edit`'s dispatch (Task 3): itemIdx is 0-based, matching the
    fixed layout rt_ui_build_menus appended above (0=Undo, 1=separator,
    2=Cut, 3=Copy, 4=Paste, 5=Clear). DA-frontmost check FIRST: SystemEdit's
-   own editCmd convention (0=undo/1=cut/2=copy/3=paste/4=clear) is
-   identical to this function's itemIdx, so no translation is needed.
-   Otherwise acts on the front rt_ui window's focused field/textview, if
-   any -- native dimming ordinarily keeps a real click/cmd-key from
-   reaching here with Undo selected or nothing focused, but a scripted
-   `menu M I` call (rt_ui_script_menu) bypasses that gate by calling
-   rt_ui_menu_dispatch directly, so both are guarded defensively here too:
-   Undo/the separator fall out silently, no focused TE is a silent no-op.
-   Cut/Paste/Clear route their TE mutation through rt_ui_te_mutated (change
-   trace/event + clamp + scrollbar sync, same funnel typing and set_text
-   use); Copy does not mutate, so it fires no change event/trace at all
-   (pinned: Copy is observably silent). PORT DISCIPLINE RULE (rt_ui.h):
-   self-asserts/restores the port around the TE calls, which draw. */
+   own editCmd convention (0=undo, 2=cut, 3=copy, 4=paste, 5=clear -- item 1
+   is the separator, never passed to SystemEdit) is on the SAME numeric
+   scale as this function's itemIdx (both skip 1 the same way), so no
+   translation is needed; a previous revision of this comment mis-stated
+   SystemEdit's numbering as 0/1/2/3/4 -- the CODE was always correct, only
+   the parenthetical lied. Otherwise acts on the front rt_ui window's
+   focused field/textview, if any -- native dimming ordinarily keeps a real
+   click/cmd-key from reaching here with Undo selected or nothing focused,
+   but a scripted `menu M I` call (rt_ui_script_menu) bypasses that gate by
+   calling rt_ui_menu_dispatch directly, so both are guarded defensively
+   here too: Undo/the separator fall out silently, no focused TE is a
+   silent no-op. Cut/Paste/Clear route their TE mutation through
+   rt_ui_te_mutated as a USER edit (change trace/event + clamp + scrollbar
+   sync, same funnel typing and set_text use, `userEdit`=1 -- final review
+   fix, mac-target-4c: see that function's own header comment); Copy does
+   not mutate, so it fires no change event/trace at all (pinned: Copy is
+   observably silent). PORT DISCIPLINE RULE (rt_ui.h): self-asserts/
+   restores the port around the TE calls, which draw. */
 static void rt_ui_std_edit_dispatch(short itemIdx)
 {
     rt_ui_winst *inst;
@@ -1476,21 +1495,40 @@ static void rt_ui_std_edit_dispatch(short itemIdx)
         TECut(te);
         ZeroScrap();
         TEToScrap();
-        rt_ui_te_mutated(inst, inst->focusIdx);
+        rt_ui_te_mutated(inst, inst->focusIdx, 1);
         break;
     case 3: /* Copy: no mutation -- no change trace/event (pinned) */
         TECopy(te);
         ZeroScrap();
         TEToScrap();
         break;
-    case 4: /* Paste */
+    case 4: /* Paste (final review fix, mac-target-4c): guarded against a
+               TEXTVIEW overflow BEFORE calling TEPaste at all -- teLength
+               is a `short`, so pasting enough scrap to push it past 32,767
+               wraps NEGATIVE, and rt_ui_te_clamp's `<= maxLen` check then
+               waves the (apparently-tiny-or-negative) length straight
+               through uncaught, corrupting the TE. Computing newLen as a
+               `long` BEFORE the paste lands catches this while it's still
+               exact, and skips the paste entirely (no partial insert) --
+               same rt_set_lasterr code/message family as rt_ui_te_clamp's
+               own truncation report. A FIELD's own post-paste clamp is
+               left alone: Str255's 255-byte structural cap can never
+               approach the short-overflow hazard a 32,000-byte textview
+               can. */
         TEFromScrap();
-        TEPaste(te);
-        rt_ui_te_mutated(inst, inst->focusIdx);
+        {
+            long newLen = (long)(*te)->teLength - ((*te)->selEnd - (*te)->selStart) + TEGetScrapLength();
+            if (inst->desc->widgets[inst->focusIdx].kind == RTUI_TEXTVIEW && newLen > RTUI_TE_MAX) {
+                rt_set_lasterr(1, "string truncated");
+            } else {
+                TEPaste(te);
+                rt_ui_te_mutated(inst, inst->focusIdx, 1);
+            }
+        }
         break;
     case 5: /* Clear */
         TEDelete(te);
-        rt_ui_te_mutated(inst, inst->focusIdx);
+        rt_ui_te_mutated(inst, inst->focusIdx, 1);
         break;
     }
     SetPort(savedPort);
@@ -1937,7 +1975,7 @@ static void rt_ui_handle_key(const EventRecord *ev)
             GetPort(&saved);
             SetPort(wp);
             TEKey((CharParameter)ch, inst->tes[inst->focusIdx]);
-            rt_ui_te_mutated(inst, inst->focusIdx);
+            rt_ui_te_mutated(inst, inst->focusIdx, 1); /* USER edit -- see rt_ui_te_mutated's header comment */
             SetPort(saved);
             return;
         }
@@ -2165,6 +2203,10 @@ static pascal OSErr rt_ui_ae_odoc(const AppleEvent *evt, AppleEvent *reply, long
             rt_ui_pstrcpy(path255, spec.name);
             if (gAeOpenDoc) gAeOpenDoc(path255);
         }
+        /* No App.openDocument handler (final review fix, mac-target-4c):
+           mirror the GetAppFiles/System-6 fallback above -- run startEmpty
+           once rather than silently opening nothing. */
+        if (!gAeOpenDoc && gAeStartEmpty) gAeStartEmpty();
     }
     AEDisposeDesc(&docList);
     err = rt_ui_ae_check_missed(evt);
@@ -2300,7 +2342,13 @@ void rt_ui_launch(void (*openDoc)(const uint8_t *path255), void (*startEmpty)(vo
                    nothing. */
                 startEmpty();
             }
-            ClrAppFiles(0);
+            /* ClrAppFiles' index is 1-based PER FILE (Inside Macintosh),
+               not a single call with a 0 "clear everything" sentinel --
+               final review fix, mac-target-4c: the previous single
+               `ClrAppFiles(0)` call was wrong per IM, though harmless in
+               practice (nothing here re-reads the AppFiles list after this
+               point). */
+            for (i = 1; i <= count; i++) ClrAppFiles(i);
         } else if (startEmpty) {
             startEmpty();
         }
@@ -2790,6 +2838,38 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     rt_ui_layout(inst);
     rt_ui_canvas_realloc_all(inst);
 
+    /* Auto-focus the FIRST field/textview-kind widget (final review fix,
+       mac-target-4c): Ch8 gives a freshly opened window no caret at all
+       until something clicks a field/textview by hand -- every period
+       text-entry dialog auto-focuses its one text control instead, and
+       typing right after `open` should go somewhere. Same focus path a
+       click uses (rt_ui_te_set_focus: TEActivate + standard-edit dim
+       recompute), and traces no differently than a click does either --
+       no line of its own, only whatever DIM side effect falls out. MUST
+       run here, BEFORE ShowWindow/SelectWindow below: rt_ui_menu_
+       recompute_dim (inside rt_ui_te_set_focus) keys off FrontWindow(),
+       which never returns a still-invisible window, so this call's own
+       recompute is a same-behavior no-op (this window isn't front yet) --
+       the real dim flip happens once, moments later, in
+       rt_ui_after_front_change's own recompute call below, which by then
+       sees BOTH "front changed" and "focus already set" together and
+       traces them as one merged DIM group ahead of T FRONT. Self-asserts/
+       restores the port (PORT DISCIPLINE RULE, rt_ui.h): rt_ui_layout just
+       above already restored the CALLER's port, not this window's. */
+    {
+        short wi;
+        for (wi = 0; wi < d->nWidgets; wi++) {
+            if (d->widgets[wi].kind == RTUI_FIELD || d->widgets[wi].kind == RTUI_TEXTVIEW) {
+                GrafPtr savedPort;
+                GetPort(&savedPort);
+                SetPort(inst->wp);
+                rt_ui_te_set_focus(inst, wi);
+                SetPort(savedPort);
+                break;
+            }
+        }
+    }
+
     ShowWindow(inst->wp);
     SelectWindow(inst->wp);
 #ifdef RT_MAC_TEST
@@ -2956,7 +3036,7 @@ void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned ch
         TESetText(s + 1, len, inst->tes[wIdx]);
         TECalText(inst->tes[wIdx]);
         InvalRect(&(*inst->tes[wIdx])->viewRect);
-        rt_ui_te_mutated(inst, wIdx);
+        rt_ui_te_mutated(inst, wIdx, 0); /* PROGRAMMATIC set -- no trace/event, see rt_ui_te_mutated's header comment */
     }
     SetPort(savedPort);
 }
@@ -3035,7 +3115,7 @@ void rt_ui_widget_set_text(void *instV, short wIdx, const rt_text *t)
     DisposePtr(buf);
     TECalText(inst->tes[wIdx]);
     InvalRect(&(*inst->tes[wIdx])->viewRect);
-    rt_ui_te_mutated(inst, wIdx);
+    rt_ui_te_mutated(inst, wIdx, 0); /* PROGRAMMATIC set -- no trace/event, see rt_ui_te_mutated's header comment */
     SetPort(savedPort);
 }
 

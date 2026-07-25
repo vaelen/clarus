@@ -6,5 +6,4 @@ close
 answer-open texteditor-roundtrip.txt
 menu 2 2
 snap roundtrip
-answer-changes discard
 quit

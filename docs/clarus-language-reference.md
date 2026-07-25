@@ -1389,6 +1389,8 @@ The following table is the complete per-resource inventory of every event handle
 | serviceBrowser | failed | `on b.failed(err: error) { }` |
 | (timer) | — | `every N ticks { }` |
 
+For `field`/`textview`/`check`/`popup`, `change` fires for a user edit — typing, cut, paste, or clear — and never for a program's own assignment to the widget's property (e.g. `Body.text = t`), the same "programmatic writes are silent" rule every other runtime property already follows.
+
 ## Appendix C: Worked Examples
 
 ### Bookmark Manager

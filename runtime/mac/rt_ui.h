@@ -99,13 +99,15 @@
 
 /* ==================== descriptors (static const in emitted C / probe) ==================== */
 
-typedef struct { short kind;              /* RTUI_BUTTON/CHECK/CANVAS/LABEL */
+typedef struct { short kind;              /* RTUI_BUTTON/CHECK/CANVAS/LABEL/FIELD/TEXTVIEW
+                                              (FIELD/TEXTVIEW added mac-target-4c Task 1) */
                  const char *name;        /* widget name for traces */
                  const unsigned char *caption;  /* Str255 or NULL */
                  short atKind, x, y;      /* RTUI_AT_XY/NEXT/RIGHT; y or RTUI_BOTTOM */
                  short width;             /* px, or RTUI_FILL */
                  short fill;              /* RTUI_FILL_NONE/BOTH */
-                 short flags;             /* RTUI_DEFAULT|RTUI_CANCEL|RTUI_BUFFERED */
+                 short flags;             /* RTUI_DEFAULT|RTUI_CANCEL|RTUI_BUFFERED|RTUI_SCROLL_V|RTUI_SCROLL_H
+                                              (RTUI_SCROLL_V/H added mac-target-4c Task 1) */
 } rt_ui_widget_desc;
 
 typedef struct { const char *name; const unsigned char *title;  /* Str255 */
@@ -231,8 +233,10 @@ void  rt_ui_widget_get_str (void *inst, short wIdx, short prop, unsigned char *d
    RTUI_PROP_TEXT, bridged to/from the TE's own byte buffer via
    rt_text_from_bytes/rt_text_to_bytes (rt.h) -- `out`/`t` are never NULL.
    set_text clamps to RTUI_TE_MAX and calls rt_set_lasterr (rt.h) on
-   truncation, then runs the same mutation funnel TEKey/cut/paste use
-   (scrollbar recompute, `T FIRE <Win>.<W>.change` trace, RTUI_WEV_CHANGE). */
+   truncation, then runs the same clamp/scrollbar-recompute funnel TEKey/
+   cut/paste use -- but, being a PROGRAMMATIC set, fires neither the
+   `T FIRE <Win>.<W>.change` trace nor RTUI_WEV_CHANGE (final review fix,
+   mac-target-4c: only a real user edit does; see rt_ui.c's rt_ui_te_mutated). */
 void  rt_ui_widget_get_text(void *inst, short wIdx, rt_text *out);
 void  rt_ui_widget_set_text(void *inst, short wIdx, const rt_text *t);
 void  rt_ui_widget_set_bool(void *inst, short wIdx, short prop, int v);
