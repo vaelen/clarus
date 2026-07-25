@@ -813,7 +813,7 @@ A program has at most one `app` section; a second is an error. Every property is
 
 | Property | Meaning |
 |---|---|
-| `name` | The program's name, shown in the menu bar and `Get Info`. Falls back to the compiled program's file name if omitted. |
+| `name` | The program's name, shown in the menu bar and `Get Info`. If omitted, falls back to the `app` section's own label (e.g. `Mandelbrot` in `app Mandelbrot { }`); if there is no `app` section either, falls back to the first input file's basename. |
 | `version` | Version string, shown in `Get Info`. |
 | `author` | Author/copyright string, shown in `Get Info`. |
 | `about` | A one-line description, shown in `Get Info`. |
