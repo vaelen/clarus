@@ -1,0 +1,5 @@
+T OPEN Pal 1
+T FRONT Pal 1
+T FIRE Pal.closeRequest
+T CLOSE Pal 1
+T FIRE Pal.closed

@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// pattern.cla: gated UI scenario for the canvas `pattern` method (Ch11).
+// One buffered canvas, painted once from `opened`: the nine dither levels
+// as a swatch row (0..8, white -> black), two clamp swatches (-3 -> 0,
+// 99 -> 8), a mid-gray fillCircle (FillOval path), and a black `rect`
+// outline proving frames ignore the fill pattern. pattern.events snaps S1
+// after one tick (buffered blit happens on the run-loop iteration) and
+// quits; the S1 PBM golden IS the visual proof of the dither ramp.
+
+window Pal {
+    title: "Patterns"
+    size: 460, 140
+
+    canvas Board { at: 0, 0; fill: both; buffered }
+}
+
+on App.launch {
+    open Pal
+}
+
+extend Pal {
+    on opened {
+        var lvl: int
+        lvl = 0
+        while lvl <= 8 {
+            Board.pattern(lvl)
+            Board.fillRect(6 + lvl * 48, 6, 40, 40)
+            lvl = lvl + 1
+        }
+        Board.pattern(-3)
+        Board.fillRect(6, 56, 40, 40)
+        Board.pattern(99)
+        Board.fillRect(54, 56, 40, 40)
+        Board.pattern(4)
+        Board.fillCircle(140, 76, 20)
+        Board.rect(170, 56, 40, 40)
+    }
+}

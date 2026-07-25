@@ -189,6 +189,13 @@ func TestCanvasUIScenario(t *testing.T) {
 	}
 }
 
+// TestPatternUIScenario: the canvas `pattern` method (Ch11) -- one snap
+// showing the 9-level dither ramp, clamped out-of-range levels, the
+// FillOval path, and a frame op unaffected by the fill pattern.
+func TestPatternUIScenario(t *testing.T) {
+	runUIScenario(t, "pattern", 0)
+}
+
 // TestSmokeBounceUIScenario is the gated-forever counterpart to Task 7's
 // real-input verification of the Ch11 bounce acceptance example: builds
 // testdata/valid/bounce.cla ITSELF (not a copy under testdata/ui/), scripts
