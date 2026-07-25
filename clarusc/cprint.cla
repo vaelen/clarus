@@ -1884,8 +1884,24 @@ func cpEmitMenuDescs() {
 // program declares no `app` section at all (rt_ui.c's weak default covers
 // that case at link time).
 func cpEmitAppInfo() {
+    var line: text
+
     if not irHasApp { return }
-    cpRestBuf.add(toText("const rt_ui_app_desc rt_ui_app_info = { " + cpUiTitleStr(irAppName) + ", " + cpUiTitleStr(irAppVersion) + ", " + cpUiTitleStr(irAppAuthor) + ", " + cpUiTitleStr(irAppAbout) + " };"))
+    // Built as `text` field-by-field, not one `string` concatenation: the
+    // four cpUiTitleStr() results plus separators can together exceed 255
+    // bytes (an about string alone can run to 255), and `string + string`
+    // silently clamps at 255 (rt_str_concat, Ch4) -- exactly the mid-literal
+    // C-string truncation this file's `text` convention exists to avoid.
+    line = toText("const rt_ui_app_desc rt_ui_app_info = { ")
+    line.append(cpUiTitleStr(irAppName))
+    line.append(", ")
+    line.append(cpUiTitleStr(irAppVersion))
+    line.append(", ")
+    line.append(cpUiTitleStr(irAppAuthor))
+    line.append(", ")
+    line.append(cpUiTitleStr(irAppAbout))
+    line.append(" };")
+    cpRestBuf.add(line)
     cpRestBuf.add(toText(""))
 }
 

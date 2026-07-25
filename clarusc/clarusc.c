@@ -22386,39 +22386,34 @@ static void clar_fn_cpEmitMenuDescs(void) {
 }
 
 static void clar_fn_cpEmitAppInfo(void) {
+    rt_text * cv_line;
+    cv_line = rt_text_new();
     if (!(cv_irHasApp)) {
         return;
     }
+    cv_line = clar_fn_toText(clar_lit_917);
     clar_str_255 t1;
     t1 = clar_fn_cpUiTitleStr(cv_irAppName);
+    rt_text_append_str(cv_line, (const uint8_t*)&(t1));
+    rt_text_append_str(cv_line, (const uint8_t*)&(clar_lit_333));
     clar_str_255 t2;
-    rt_str_concat((uint8_t*)&t2, (const uint8_t*)&(clar_lit_917), (const uint8_t*)&(t1));
+    t2 = clar_fn_cpUiTitleStr(cv_irAppVersion);
+    rt_text_append_str(cv_line, (const uint8_t*)&(t2));
+    rt_text_append_str(cv_line, (const uint8_t*)&(clar_lit_333));
     clar_str_255 t3;
-    rt_str_concat((uint8_t*)&t3, (const uint8_t*)&(t2), (const uint8_t*)&(clar_lit_333));
+    t3 = clar_fn_cpUiTitleStr(cv_irAppAuthor);
+    rt_text_append_str(cv_line, (const uint8_t*)&(t3));
+    rt_text_append_str(cv_line, (const uint8_t*)&(clar_lit_333));
     clar_str_255 t4;
-    t4 = clar_fn_cpUiTitleStr(cv_irAppVersion);
-    clar_str_255 t5;
-    rt_str_concat((uint8_t*)&t5, (const uint8_t*)&(t3), (const uint8_t*)&(t4));
-    clar_str_255 t6;
-    rt_str_concat((uint8_t*)&t6, (const uint8_t*)&(t5), (const uint8_t*)&(clar_lit_333));
-    clar_str_255 t7;
-    t7 = clar_fn_cpUiTitleStr(cv_irAppAuthor);
-    clar_str_255 t8;
-    rt_str_concat((uint8_t*)&t8, (const uint8_t*)&(t6), (const uint8_t*)&(t7));
-    clar_str_255 t9;
-    rt_str_concat((uint8_t*)&t9, (const uint8_t*)&(t8), (const uint8_t*)&(clar_lit_333));
-    clar_str_255 t10;
-    t10 = clar_fn_cpUiTitleStr(cv_irAppAbout);
-    clar_str_255 t11;
-    rt_str_concat((uint8_t*)&t11, (const uint8_t*)&(t9), (const uint8_t*)&(t10));
-    clar_str_255 t12;
-    rt_str_concat((uint8_t*)&t12, (const uint8_t*)&(t11), (const uint8_t*)&(clar_lit_902));
-    rt_text * t13;
-    t13 = clar_fn_toText(t12);
-    rt_list_push(cv_cpRestBuf, &(t13));
-    rt_text * t14;
-    t14 = clar_fn_toText(clar_lit_3);
-    rt_list_push(cv_cpRestBuf, &(t14));
+    t4 = clar_fn_cpUiTitleStr(cv_irAppAbout);
+    rt_text_append_str(cv_line, (const uint8_t*)&(t4));
+    rt_text_append_str(cv_line, (const uint8_t*)&(clar_lit_902));
+    rt_text * t5;
+    t5 = cv_line;
+    rt_list_push(cv_cpRestBuf, &(t5));
+    rt_text * t6;
+    t6 = clar_fn_toText(clar_lit_3);
+    rt_list_push(cv_cpRestBuf, &(t6));
 }
 
 static void clar_fn_cpEmitUiDescs(void) {

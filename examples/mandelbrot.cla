@@ -25,6 +25,15 @@
 // File menu: New (reopens the window if closed -- closing does not quit
 // -- or restarts the render if open), Quit.
 
+app Mandelbrot {
+    name: "Mandelbrot"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "An example Clarus application that displays the Mandelbrot set in a window."
+    icon: "mandelbrot.pbm"
+    id: "MNDL"
+}
+
 const BUDGET: int = 16
 const MAXITER: int = 32
 
