@@ -1,0 +1,29 @@
+// sample.cla probe fixture -- need not compile  TODO tidy
+include "lib.cla"
+
+const LIMIT: int = 0x1F
+var ratio: fixed = 1.5
+var msg: string = "a\n b\q"
+var ch: char = 'x'
+
+window Main {
+    title: "Demo"
+    size: 300, 200
+}
+
+menu File {
+    item New "New" key "N"
+    separator
+}
+
+func size(at: int): int {
+    return at mod 2
+}
+
+on App.launch {
+    open Main
+}
+
+every 60 ticks {
+    quit
+}
