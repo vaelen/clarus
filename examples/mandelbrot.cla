@@ -1,0 +1,177 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// mandelbrot.cla: progressive Mandelbrot renderer -- the acceptance app
+// for the canvas `pattern` method (Ch11), and a worked example of the
+// budget-limited `every` pattern for long computations that must keep the
+// UI responsive (no code runs outside a handler or timer, so the render
+// is sliced into BUDGET-sample chunks, one chunk per tick).
+//
+// Rendering: successive-refinement grid passes. Pass 1 samples every 16th
+// pixel and fills 16x16 blocks (a rough full-screen image in seconds on a
+// Mac Plus); then 8, 4, 2, 1. Passes after the first skip points already
+// sampled by a coarser pass -- the coarse block already shows exactly
+// that sample's pattern, so the skip saves both the compute AND the draw.
+//
+// Escape-time coloring: escape at iteration i -> dither level min(i-1, 7)
+// (fast escape = white, slow = dark halo); never escaped in 32 -> 8
+// (black interior). All math is 16.16 fixed (Ch3): view fits the full set
+// to the canvas height (y in [-1.25, 1.25], x centered on -0.75).
+//
+// 504x298 is the largest clean window on the 512x342 Mac Plus screen:
+// the runtime centers windows with top = 44 (512 wide would clamp to
+// left = 4 and hang off the right edge).
+//
+// File menu: New (reopens the window if closed -- closing does not quit
+// -- or restarts the render if open), Quit.
+
+const BUDGET: int = 16
+const MAXITER: int = 32
+
+window Fractal {
+    title: "Mandelbrot"
+    size: 504, 298
+
+    canvas Plot { at: 0, 0; fill: both; buffered }
+
+    var step: int
+    var px: int
+    var py: int
+    var done: bool
+    var x0: fixed
+    var y0: fixed
+    var d: fixed
+}
+
+menu File {
+    item New  "New"  key "N"
+    separator
+    item Quit "Quit" key "Q"
+}
+
+on App.launch {
+    open Fractal
+}
+
+extend Fractal {
+    on opened {
+        resetFractal(window)
+    }
+}
+
+extend File {
+    on New.select {
+        var f: Fractal = Fractal.front
+        if f == nil {
+            open Fractal
+        } else {
+            resetFractal(f)
+        }
+    }
+    on Quit.select {
+        quit
+    }
+}
+
+every 1 ticks {
+    var f: Fractal = Fractal.front
+    if f != nil and not f.done {
+        renderChunk(f)
+    }
+}
+
+// resetFractal (re)starts the render: pass cursor to the top-left of the
+// 16px pass, view scale fit to the canvas's current height.
+func resetFractal(f: Fractal) {
+    f.step = 16
+    f.px = 0
+    f.py = 0
+    f.done = false
+    f.d = 2.5 / fixed(f.Plot.height)
+    f.y0 = -1.25
+    f.x0 = -0.75 - fixed(f.Plot.width / 2) * f.d
+    f.Plot.clear()
+}
+
+// mandelLevel: dither level 0..8 for the point c = (cx, cy).
+func mandelLevel(cx: fixed, cy: fixed): int {
+    var zx: fixed
+    var zy: fixed
+    var xx: fixed
+    var yy: fixed
+    var i: int
+
+    zx = 0.0
+    zy = 0.0
+    i = 1
+    while i <= MAXITER {
+        xx = zx * zx
+        yy = zy * zy
+        if xx + yy > 4.0 {
+            if i > 8 {
+                return 7
+            }
+            return i - 1
+        }
+        zy = zx * zy + zx * zy + cy
+        zx = xx - yy + cx
+        i = i + 1
+    }
+    return 8
+}
+
+// renderChunk computes and draws up to BUDGET samples, then returns so
+// the event loop stays responsive. Skipped (already-sampled) points cost
+// no budget.
+func renderChunk(f: Fractal) {
+    var n: int
+    var lvl: int
+    var w: int
+    var h: int
+    var cx: fixed
+    var cy: fixed
+
+    n = 0
+    while n < BUDGET {
+        if f.done {
+            return
+        }
+        if f.step < 16 and f.px mod (f.step * 2) == 0 and f.py mod (f.step * 2) == 0 {
+            // sampled by a coarser pass; block already painted correctly
+        } else {
+            cx = f.x0 + fixed(f.px) * f.d
+            cy = f.y0 + fixed(f.py) * f.d
+            lvl = mandelLevel(cx, cy)
+            w = f.step
+            h = f.step
+            if f.px + w > f.Plot.width {
+                w = f.Plot.width - f.px
+            }
+            if f.py + h > f.Plot.height {
+                h = f.Plot.height - f.py
+            }
+            f.Plot.pattern(lvl)
+            f.Plot.fillRect(f.px, f.py, w, h)
+            n = n + 1
+        }
+        advance(f)
+    }
+}
+
+// advance moves the pass cursor one sample; at the end of a pass, halves
+// the step, and after the 1px pass sets done.
+func advance(f: Fractal) {
+    f.px = f.px + f.step
+    if f.px >= f.Plot.width {
+        f.px = 0
+        f.py = f.py + f.step
+        if f.py >= f.Plot.height {
+            f.py = 0
+            if f.step == 1 {
+                f.done = true
+            } else {
+                f.step = f.step / 2
+            }
+        }
+    }
+}

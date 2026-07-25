@@ -231,3 +231,28 @@ func TestSmokeBounceUIScenario(t *testing.T) {
 func TestSmokeMenuDemoUIScenario(t *testing.T) {
 	runUIScenarioSrc(t, "smoke_menudemo", filepath.Join("..", "..", "examples", "menu-demo.cla"), 0)
 }
+
+// TestSmokeMandelUIScenario builds examples/mandelbrot.cla ITSELF (the
+// canvas-pattern acceptance app) and scripts its progressive render: S1
+// after 10 ticks (a rough 16px band), S2 after 40 (first pass complete,
+// second underway) -- must differ (refinement actually progressed); then
+// File > New resets, S3 after 3 more ticks must differ from S2 (the New
+// clear + fresh coarse samples), and File > Quit exits 0. Fixed-point
+// math plus the constant per-tick budget makes all three snaps
+// deterministic.
+func TestSmokeMandelUIScenario(t *testing.T) {
+	snaps := runUIScenarioSrc(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0)
+	byName := map[string][]byte{}
+	for _, s := range snaps {
+		byName[s.name] = s.bytes
+	}
+	if byName["S1"] == nil || byName["S2"] == nil || byName["S3"] == nil {
+		t.Fatalf("smoke_mandel: expected snaps S1, S2, S3; got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(byName["S1"], byName["S2"]) {
+		t.Fatalf("smoke_mandel: S1 == S2 -- the render did not progress between snaps")
+	}
+	if bytes.Equal(byName["S2"], byName["S3"]) {
+		t.Fatalf("smoke_mandel: S2 == S3 -- File > New did not restart the render")
+	}
+}
