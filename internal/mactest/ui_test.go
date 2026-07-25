@@ -90,9 +90,19 @@ func pbmBytes(raw []byte) []byte {
 // (snap size and exit code are still asserted even while blessing).
 func runUIScenario(t *testing.T, scenario string, wantExit int) []uiSnap {
 	t.Helper()
+	return runUIScenarioSrc(t, scenario, filepath.Join("..", "..", "testdata", "ui", scenario+".cla"), wantExit)
+}
+
+// runUIScenarioSrc is runUIScenario with an explicit source .cla path
+// (package-dir-relative) instead of the default testdata/ui/<scenario>.cla
+// convention -- Task 7 (mac-target-4b)'s acceptance-example smokes build
+// the EXAMPLES THEMSELVES (testdata/valid/bounce.cla, examples/menu-demo.cla)
+// directly, with only the .events script (and the trace/snap goldens) living
+// under testdata/ui/ per the usual convention.
+func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
+	t.Helper()
 	requireMac(t)
 	root := repoRoot(t)
-	claRel := filepath.Join("..", "..", "testdata", "ui", scenario+".cla")
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
 	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
 
@@ -177,4 +187,40 @@ func TestCanvasUIScenario(t *testing.T) {
 	if bytes.Equal(s1, s2) {
 		t.Fatalf("canvas: snap S1 == S2 -- animation did not move the square between snaps")
 	}
+}
+
+// TestSmokeBounceUIScenario is the gated-forever counterpart to Task 7's
+// real-input verification of the Ch11 bounce acceptance example: builds
+// testdata/valid/bounce.cla ITSELF (not a copy under testdata/ui/), scripts
+// its `every 1 ticks` bounce with smoke_bounce.events, and asserts the two
+// snaps taken after different amounts of ticking differ -- the ball moved,
+// same non-accidental-golden guard TestCanvasUIScenario uses.
+func TestSmokeBounceUIScenario(t *testing.T) {
+	snaps := runUIScenarioSrc(t, "smoke_bounce", filepath.Join("..", "..", "testdata", "valid", "bounce.cla"), 0)
+	var s1, s2 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil {
+		t.Fatalf("smoke_bounce: expected snaps S1 and S2, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("smoke_bounce: snap S1 == S2 -- the ball did not move between snaps")
+	}
+}
+
+// TestSmokeMenuDemoUIScenario is the gated-forever counterpart to Task 7's
+// real-input verification of the menu-demo acceptance example: builds
+// examples/menu-demo.cla ITSELF, scripts a menu selection (Toggle),
+// opening the scoped window (New Aux, undimming Aux Only), selecting the
+// now-enabled window-scoped item, closing it again (re-dimming), and a
+// snap, then quits via the menu -- covering menu select, the dim/undim
+// transition pair, and a snap in one gated scenario.
+func TestSmokeMenuDemoUIScenario(t *testing.T) {
+	runUIScenarioSrc(t, "smoke_menudemo", filepath.Join("..", "..", "examples", "menu-demo.cla"), 0)
 }

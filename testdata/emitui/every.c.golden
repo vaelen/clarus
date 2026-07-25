@@ -18,12 +18,15 @@ static const rt_ui_widget_desc clar_ui_widgets_Game[] = {
     { RTUI_CANVAS, "Board", 0, RTUI_AT_XY, 0, 0, 0, RTUI_FILL_BOTH, RTUI_BUFFERED },
 };
 
+static void clar_ui_winevent_Game(void *inst, short event, long a, long b);
+static const rt_ui_handlers clar_ui_handlers_Game = { clar_ui_winevent_Game, 0 };
+
 static const rt_ui_window_desc clar_ui_window_Game = {
     "Game", (const unsigned char *)"\pTicker",
     200, 200, 0, 0, 0,
     1, clar_ui_widgets_Game,
     (short)sizeof(clar_uistate_Game),
-    0
+    &clar_ui_handlers_Game
 };
 
 
@@ -38,6 +41,7 @@ static void clar_init_globals(void) {
 
 static void clar_fn_ui_every_0(void);
 static void clar_fn_ui_every_1(void);
+static void clar_fn_ui_Game_opened(void * cv_window);
 
 static void clar_fn_ui_every_0(void) {
     void * cv_g;
@@ -55,6 +59,18 @@ static void clar_fn_ui_every_0(void) {
 
 static void clar_fn_ui_every_1(void) {
     cv_ticks = (cv_ticks + 1);
+}
+
+static void clar_fn_ui_Game_opened(void * cv_window) {
+    ((*(clar_uistate_Game *)rt_ui_state(cv_window))).cv_x = 655360;
+    ((*(clar_uistate_Game *)rt_ui_state(cv_window))).cv_dx = 131072;
+}
+
+static void clar_ui_winevent_Game(void *inst, short event, long a, long b) {
+    switch (event) {
+    case RTUI_EV_OPENED: clar_fn_ui_Game_opened(inst); break;
+    default: break;
+    }
 }
 
 static const rt_ui_every_desc clar_ui_every[] = {

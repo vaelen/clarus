@@ -10,6 +10,16 @@ window Game {
     var dx: fixed = 2.0
 }
 
+// Ch11's own listing is a fragment illustrating `every`/`fixed` alone (the
+// window-opening boilerplate is already covered in Ch8) and never opens
+// Game -- fine for the Task 5 compile/link gate, but Task 7 (mac-target-4b)
+// needs this file to actually run as a human-usable demo, so App.launch is
+// added here: without it Game.front is always nil and the every-block below
+// is a permanent no-op.
+on App.launch {
+    open Game
+}
+
 every 1 ticks {
     var g: Game = Game.front
     if g != nil {

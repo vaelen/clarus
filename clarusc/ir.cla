@@ -1136,6 +1136,33 @@ func irFuncBodyHead(i: int): int {
     return irFuncs[i].bodyHead
 }
 
+// irFuncSetBodyHead overwrites an already-constructed IRFunc's body chain
+// (Task 7, mac-target-4b: lower.cla's window-var-default fix needs to
+// prepend synthesized default-assignment statements onto an explicit
+// `on opened` handler's existing body, after lowHandlerFunc has already
+// built it).
+func irFuncSetBodyHead(i: int, bodyHead: int) {
+    irFuncs[i].bodyHead = bodyHead
+}
+
+// findIRFuncIdxByName returns irFuncs' arena index for the func whose name
+// (an interned pool index, as returned by lowHandlerFunc/lowFuncDecl/etc.)
+// equals nameIdx, or -1 if none -- a linear scan, fine for the rare,
+// one-per-window-with-defaults lookup lowPrependWinVarDefaults needs
+// (Task 7, mac-target-4b).
+func findIRFuncIdxByName(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irFuncs.count {
+        if irFuncName(i) == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // ================================================================
 // IRGlobal constructors and accessors (irGlobals arena -- Program.Globals)
 // ================================================================

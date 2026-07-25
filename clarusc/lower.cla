@@ -104,6 +104,55 @@ var lowCurWinType: int
 // block" contract. progGen-prefixed like uiMenuIdx, for the same reason.
 var uiWinHandlersIdx: map of int
 
+// WinVarDefault/winVarDefaults/winVarDefaultsHead (Task 7, mac-target-4b
+// acceptance-example fix): a per-instance window `var` declared with an
+// initializer (Ch8's own `var dirty: bool = false` example) was checked for
+// type-compatibility (check.cla's checkWindowVar) but the initializer AST
+// node itself was then discarded -- lowWindowDecl's OWN header comment used
+// to document this as deliberate ("applying a default is wiring the opened
+// handler owns, not this task"), but Task 5 never actually wired it either,
+// so a declared default was silently never applied: the runtime allocates
+// a per-instance state block zeroed (rt_ui_alloc_locked/NewHandleClear),
+// nothing else ever touched it. Surfaced by real-input testing of
+// testdata/valid/bounce.cla (Ch11's own worked example, `var x: fixed =
+// 10.0`) never animating. Fixed by recording each defaulted var's (name,
+// init-AST, type) here during lowWindowDecl, then applying it as ordinary
+// per-instance-field assignment statements -- prepended to an explicit
+// `on opened` handler's body if one exists (lowWindowHandlerEntry), or a
+// freshly synthesized opened handler if not (lowSynthesizeMissingOpenedHandlers,
+// called once at the end of lowerProgram) -- entirely at the IR level, no
+// rt_ui.h/rt_ui.c runtime change needed, since `opened` dispatch already
+// exists for exactly this purpose. progGen-prefixed like uiWinHandlersIdx,
+// for the same reason; the winVarDefaults arena itself is never reset
+// (matching uiMenuIdx/uiWinHandlersIdx's own precedent -- namespacing by
+// key is what makes reuse across generations safe, not clearing the arena).
+record WinVarDefault {
+    fieldNameIdx: int
+    initAST: int
+    typeIdx: int
+    next: int
+}
+var winVarDefaults: list of WinVarDefault
+var winVarDefaultsHead: map of int
+
+func newWinVarDefault(fieldNameIdx: int, initAST: int, typeIdx: int): int {
+    var n: WinVarDefault
+
+    n.fieldNameIdx = fieldNameIdx
+    n.initAST = initAST
+    n.typeIdx = typeIdx
+    n.next = -1
+    winVarDefaults.add(n)
+    return winVarDefaults.count - 1
+}
+
+func winVarDefaultListAppend(tailIdx: int, idx: int): int {
+    if tailIdx != -1 {
+        winVarDefaults[tailIdx].next = idx
+    }
+    return idx
+}
+
 func lowPushScope() {
     var s: LowScope
 
@@ -2078,13 +2127,17 @@ func lowWidgetDesc(w: int): int {
 // window-body properties (title/size/resizable), each widget (lowWidgetDesc,
 // in declaration order -- the SAME order uiWidgetIndex and rt_ui's widget
 // indices rely on), and each per-instance `var` (an IRFieldSlot, reusing
-// the record-layout arena -- see IRWindowDesc's doc comment in ir.cla). Per-
-// var INIT expressions are not lowered here: a UI state block is allocated
-// and zeroed by the runtime, and applying a `var x: int = N` default is
-// wiring the (Task 5) `opened` handler owns, not this task. `form for` is
-// Ch10 (out of scope; host-unsupported here).
+// the record-layout arena -- see IRWindowDesc's doc comment in ir.cla). A
+// var's own INIT expression (if any) is recorded into winVarDefaultsHead
+// (this function's own doc comment on that var explains why and how it's
+// later applied) rather than lowered here directly: it's an ordinary
+// per-instance-field assignment, which needs `window`/lowCurWinType wiring
+// only lowHandlerFunc's machinery sets up, not available at this point in
+// lowering a bare window declaration. `form for` is Ch10 (out of scope;
+// host-unsupported here).
 func lowWindowDecl(d: int) {
     var winNameIdx: int
+    var winName: string
     var item: int
     var titleIdx: int
     var w: int
@@ -2096,12 +2149,17 @@ func lowWindowDecl(d: int) {
     var widgetsTail: int
     var stateHead: int
     var stateTail: int
+    var defHead: int
+    var defTail: int
+    var defIdx: int
     var vh: int
     var pname: string
     var wd: int
     var fslot: int
+    var fty: int
 
     winNameIdx = windowDeclName(d)
+    winName = poolGet(winNameIdx)
     titleIdx = -1
     w = 0
     h = 0
@@ -2112,6 +2170,8 @@ func lowWindowDecl(d: int) {
     widgetsTail = -1
     stateHead = -1
     stateTail = -1
+    defHead = -1
+    defTail = -1
 
     item = windowDeclItemsHead(d)
     while item != -1 {
@@ -2131,11 +2191,19 @@ func lowWindowDecl(d: int) {
                 }
             }
         } else if declKind(item) == DkVar {
-            fslot = newIRFieldSlot(varDeclName(item), lowResolveType(varDeclType(item)), 0, -1)
+            fty = lowResolveType(varDeclType(item))
+            fslot = newIRFieldSlot(varDeclName(item), fty, 0, -1)
             if stateHead == -1 {
                 stateHead = fslot
             }
             stateTail = irFieldSlotListAppend(stateTail, fslot)
+            if varDeclInit(item) != -1 {
+                defIdx = newWinVarDefault(varDeclName(item), varDeclInit(item), fty)
+                if defHead == -1 {
+                    defHead = defIdx
+                }
+                defTail = winVarDefaultListAppend(defTail, defIdx)
+            }
         } else if declKind(item) == DkWidget {
             wd = lowWidgetDesc(item)
             if widgetsHead == -1 {
@@ -2153,6 +2221,9 @@ func lowWindowDecl(d: int) {
         // absent from the language reference's own bare-`resizable` example.
         minW = w
         minH = h
+    }
+    if defHead != -1 {
+        winVarDefaultsHead[numToStr(progGen) + "|" + winName] = defHead
     }
     newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead)
 }
@@ -2332,6 +2403,69 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     return nameIdx
 }
 
+// lowWinVarDefaultsStmts builds the IR assignment-statement chain (in
+// declaration order) that applies winName's per-instance `var` default
+// initializers (see winVarDefaultsHead's own doc comment for why this
+// exists). Requires lowCurWinType already set to winName's window type
+// (caller's job, matching lowHandlerFunc's own convention -- lowExpr and
+// lowBareWindowMemberRef both read it). Returns -1 if winName has no
+// defaulted vars.
+func lowWinVarDefaultsStmts(winName: string): int {
+    var defIdx: int
+    var head: int
+    var tail: int
+    var dst: int
+    var src: int
+    var st: int
+
+    head = -1
+    tail = -1
+    defIdx = winVarDefaultsHead.get(numToStr(progGen) + "|" + winName, -1)
+    while defIdx != -1 {
+        dst = lowBareWindowMemberRef(winVarDefaults[defIdx].fieldNameIdx, winVarDefaults[defIdx].typeIdx)
+        src = lowExpr(winVarDefaults[defIdx].initAST)
+        st = lowStoreStmt(dst, src, winVarDefaults[defIdx].typeIdx)
+        if head == -1 {
+            head = st
+        }
+        tail = irStmtListAppend(tail, st)
+        defIdx = winVarDefaults[defIdx].next
+    }
+    return head
+}
+
+// lowPrependWinVarDefaults splices winName's default-assignment statements
+// (if any) onto the FRONT of the already-lowered function fnNameIdx names
+// (an explicit user `on opened` handler, just built by lowHandlerFunc) --
+// called right after that lowHandlerFunc call, before the result is wired
+// into irWinHandlersSetOpenedFn, so an explicit handler's own code always
+// runs AFTER the defaults, same ordering a hand-written `on opened { x = 10;
+// ...; <user code> }` would have. A no-op if winName has no defaulted vars.
+func lowPrependWinVarDefaults(winName: string, winType: int, fnNameIdx: int) {
+    var savedWinType: int
+    var defsHead: int
+    var defsTail: int
+    var fIdx: int
+
+    if not winVarDefaultsHead.has(numToStr(progGen) + "|" + winName) {
+        return
+    }
+    savedWinType = lowCurWinType
+    lowCurWinType = winType
+    defsHead = lowWinVarDefaultsStmts(winName)
+    lowCurWinType = savedWinType
+    if defsHead == -1 {
+        return
+    }
+    defsTail = defsHead
+    while irStmtNext(defsTail) != -1 {
+        defsTail = irStmtNext(defsTail)
+    }
+    fIdx = findIRFuncIdxByName(fnNameIdx)
+    irStmtListAppend(defsTail, irFuncBodyHead(fIdx))
+    irFuncSetBodyHead(fIdx, defsHead)
+}
+
 // lowWindowHandlerEntry lowers one DkHandler child of `extend Win { ... }`
 // -- a bare window event (Ch8) or `Widget.event` -- into its own IRFunc,
 // wired into win's IRWinHandlers entry.
@@ -2340,6 +2474,7 @@ func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
     var parts: list of string
     var event: string
     var cName: string
+    var fnNameIdx: int
 
     displayName = poolGet(handlerDeclPath(h))
     parts = splitDots(displayName)
@@ -2347,7 +2482,9 @@ func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
         event = parts[0]
         cName = "ui_" + winName + "_" + event
         if event == "opened" {
-            irWinHandlersSetOpenedFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+            fnNameIdx = lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h))
+            lowPrependWinVarDefaults(winName, winType, fnNameIdx)
+            irWinHandlersSetOpenedFn(whIdx, fnNameIdx)
         } else if event == "closeRequest" {
             irWinHandlersSetCloseRequestFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
         } else if event == "closed" {
@@ -2519,6 +2656,56 @@ func lowDecl(d: int) {
     }
 }
 
+// lowSynthesizeMissingOpenedHandlers (Task 7, mac-target-4b) is
+// winVarDefaultsHead's other half: for every window type that has >=1
+// defaulted var but reached the end of the program with NO explicit
+// `on opened` handler registered (either no `extend` block at all, or one
+// with other handlers but not `opened` -- lowPrependWinVarDefaults already
+// covered the "explicit opened handler exists" case inline, as each
+// `extend` block was lowered), synthesize a fresh opened handler whose
+// entire body is the default-assignment statements, so the defaults are
+// still applied when the instance opens. Run once, after lowerProgram's
+// main pass, so every window/extend declaration has already been lowered
+// (curScope/symbols are still the checker's own read-only leftovers at this
+// point -- see lowResolveType's header comment on why that's safe).
+func lowSynthesizeMissingOpenedHandlers() {
+    var prefix: string
+    var winName: string
+    var symIdx: int
+    var winType: int
+    var whIdx: int
+    var stmtsHead: int
+    var instLoc: int
+    var fnNameIdx: int
+
+    prefix = numToStr(progGen) + "|"
+    for key, defHead in winVarDefaultsHead {
+        if key.length < prefix.length or key[0, prefix.length] != prefix {
+            continue
+        }
+        winName = key[prefix.length, key.length - prefix.length]
+        symIdx = scopeLookup(curScope, intern(winName))
+        if symIdx == -1 or not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyWindowRef {
+            continue
+        }
+        winType = symbols[symIdx].typeIdx
+        whIdx = lowGetOrCreateWinHandlers(winName)
+        if irWinHandlersOpenedFn(whIdx) != -1 {
+            continue
+        }
+        lowCurWinType = winType
+        stmtsHead = lowWinVarDefaultsStmts(winName)
+        lowCurWinType = -1
+        if stmtsHead == -1 {
+            continue
+        }
+        instLoc = newIRLocal(intern("window"), irWinRefType(typeNameIdx(winType)))
+        fnNameIdx = intern("ui_" + winName + "_opened")
+        newIRFunc(fnNameIdx, instLoc, irVoidT, -1, stmtsHead)
+        irWinHandlersSetOpenedFn(whIdx, fnNameIdx)
+    }
+}
+
 // lowerProgram walks the assembled top-level decl chain (declHead, linked via
 // declNext), populating the ir.cla arenas + Program flags. Returns 0 (ir.cla
 // has no wrapping Program value: the arenas ARE the program). irReset() must
@@ -2535,5 +2722,6 @@ func lowerProgram(declHead: int): int {
         lowDecl(d)
         d = declNext(d)
     }
+    lowSynthesizeMissingOpenedHandlers()
     return 0
 }

@@ -1,0 +1,102 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// menu-demo.cla: a double-clickable acceptance example for the 4b Mac
+// target. Two window types, an app-scope menu, and a window-scoped menu
+// item whose enabled state the runtime dims/undims automatically:
+//
+//   - Main: a button/check/label trio (Ping sets Status; Toggle, from the
+//     View menu, flips On and Status together) plus a Clock label flipped
+//     "Tick"/"Tock" once a second by a top-level `every` block, so the
+//     window is visibly alive even with no user input.
+//   - Aux: opened from the View menu (New Aux); a second window type so
+//     the window-scoped item below has something to be scoped to.
+//   - View menu: Toggle and New Aux are app-scope (always enabled).
+//     Aux Only is declared under `extend Aux { extend View { ... } }`, so
+//     the runtime enables it only while an Aux window is frontmost and
+//     dims it otherwise -- no code needed for the dimming itself. Selecting
+//     it retitles the frontmost Aux, a visible confirmation that the
+//     window-scoped path actually fired.
+//
+// Kept strictly to 4b's checked/implemented surface: window/menu/button/
+// check/label/canvas widgets, `extend`/window-scoped menu nesting, and
+// top-level `every` -- no field/textview/popup/table/forms/standard edit.
+
+window Main {
+    title: "Menu Demo"
+    size: 300, 180
+
+    button Ping   { at: 20, 20; caption: "Ping" }
+    check On      { at: right, 22; caption: "On" }
+    label Status  { at: 20, 60; text: "Idle" }
+    label Clock   { at: 20, 90; text: "Tick" }
+
+    var tock: bool
+}
+
+window Aux {
+    title: "Aux"
+    size: 220, 100
+
+    label Note { at: 20, 20; text: "Aux window" }
+}
+
+menu View {
+    item Toggle  "Toggle On" key "T"
+    item NewAux  "New Aux"   key "N"
+    item AuxOnly "Aux Only"  key "A"
+    separator
+    item Quit    "Quit"      key "Q"
+}
+
+on App.launch {
+    open Main
+}
+
+extend Main {
+    on Ping.click {
+        Status.text = "Pinged"
+    }
+}
+
+extend View {
+    on Toggle.select {
+        var m: Main = Main.front
+        if m != nil {
+            if m.On.checked {
+                m.On.checked = false
+                m.Status.text = "Off"
+            } else {
+                m.On.checked = true
+                m.Status.text = "On"
+            }
+        }
+    }
+    on NewAux.select {
+        open Aux
+    }
+    on Quit.select {
+        quit
+    }
+}
+
+extend Aux {
+    extend View {
+        on AuxOnly.select {
+            title = "Aux Selected!"
+        }
+    }
+}
+
+every 60 ticks {
+    var m: Main = Main.front
+    if m != nil {
+        if m.tock {
+            m.Clock.text = "Tick"
+            m.tock = false
+        } else {
+            m.Clock.text = "Tock"
+            m.tock = true
+        }
+    }
+}
