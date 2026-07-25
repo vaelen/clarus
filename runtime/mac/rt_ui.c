@@ -145,7 +145,7 @@ extern void rt_quit(int32_t code);
    OpenPort/SetPortBits/PortSize want a real, permanently-fixed GrafPort
    record to install as the current port -- same "never relocates" property
    a locked Handle gives, just via the more direct API these calls expect. */
-typedef struct { GrafPtr port; BitMap bits; Ptr pixels; } rt_ui_canvas_buf;
+typedef struct { GrafPtr port; BitMap bits; Ptr pixels; short patLevel; } rt_ui_canvas_buf;
 
 typedef struct rt_ui_winst {
     Handle selfH;                    /* this struct's own locked box */
@@ -1489,6 +1489,10 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->rects = (Rect *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(Rect), &inst->rectsH);
     inst->labels = (unsigned char (*)[256])rt_ui_alloc_locked((Size)d->nWidgets * 256, &inst->labelsH);
     inst->canvases = (rt_ui_canvas_buf *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(rt_ui_canvas_buf), &inst->canvasH);
+    {
+        short wi;
+        for (wi = 0; wi < d->nWidgets; wi++) inst->canvases[wi].patLevel = 8;
+    }
 
     screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
     left = (short)((screenW - d->w) / 2);
@@ -1742,6 +1746,32 @@ static void rt_ui_canvas_end(rt_ui_canvas_target t)
     SetPort(t.savedPort);
 }
 
+/* Nine 8x8 fill patterns, level 0 (white) .. 8 (black): an ordered-dither
+   density ramp (levels 5-7 are the bitwise complements of 3-1). QuickDraw
+   aligns patterns to the port, not the filled rect, so adjacent fills at
+   any rect size tile into one seamless dither (Ch11: pattern). */
+static const Pattern rt_ui_gray_pats[9] = {
+    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},   /* 0: white  */
+    {{0x88, 0x00, 0x22, 0x00, 0x88, 0x00, 0x22, 0x00}},   /* 1: 12.5%  */
+    {{0x88, 0x22, 0x88, 0x22, 0x88, 0x22, 0x88, 0x22}},   /* 2: 25%    */
+    {{0xAA, 0x22, 0xAA, 0x88, 0xAA, 0x22, 0xAA, 0x88}},   /* 3: 37.5%  */
+    {{0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55}},   /* 4: 50%    */
+    {{0x55, 0xDD, 0x55, 0x77, 0x55, 0xDD, 0x55, 0x77}},   /* 5: 62.5%  */
+    {{0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD, 0x77, 0xDD}},   /* 6: 75%    */
+    {{0x77, 0xFF, 0xDD, 0xFF, 0x77, 0xFF, 0xDD, 0xFF}},   /* 7: 87.5%  */
+    {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},   /* 8: black  */
+};
+
+void rt_ui_canvas_pattern(void *instV, short wIdx, short level)
+{
+    rt_ui_winst *inst;
+
+    inst = (rt_ui_winst *)instV;
+    if (level < 0) level = 0;
+    if (level > 8) level = 8;
+    inst->canvases[wIdx].patLevel = level;
+}
+
 void rt_ui_canvas_clear(void *instV, short wIdx)
 {
     rt_ui_winst *inst;
@@ -1777,7 +1807,7 @@ void rt_ui_canvas_rect(void *instV, short wIdx, short x, short y, short w, short
     inst = (rt_ui_winst *)instV;
     t = rt_ui_canvas_begin(inst, wIdx);
     SetRect(&r, (short)(x + t.dx), (short)(y + t.dy), (short)(x + t.dx + w), (short)(y + t.dy + h));
-    if (fill) PaintRect(&r);
+    if (fill) FillRect(&r, &rt_ui_gray_pats[inst->canvases[wIdx].patLevel]);
     else FrameRect(&r);
     rt_ui_canvas_end(t);
 }
@@ -1791,7 +1821,7 @@ void rt_ui_canvas_fill_circle(void *instV, short wIdx, short x, short y, short r
     inst = (rt_ui_winst *)instV;
     t = rt_ui_canvas_begin(inst, wIdx);
     SetRect(&box, (short)(x + t.dx - r), (short)(y + t.dy - r), (short)(x + t.dx + r), (short)(y + t.dy + r));
-    PaintOval(&box);
+    FillOval(&box, &rt_ui_gray_pats[inst->canvases[wIdx].patLevel]);
     rt_ui_canvas_end(t);
 }
 

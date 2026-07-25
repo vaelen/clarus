@@ -169,6 +169,7 @@ void  rt_ui_canvas_fill_circle(void *inst, short wIdx, short x, short y, short r
 void  rt_ui_canvas_circle(void *inst, short wIdx, short x, short y, short r);      /* Ch11 outline circle -- added, Task 2 */
 void  rt_ui_canvas_line(void *inst, short wIdx, short x0, short y0, short x1, short y1);
 void  rt_ui_canvas_rect(void *inst, short wIdx, short x, short y, short w, short h, int fill);
+void  rt_ui_canvas_pattern(void *inst, short wIdx, short level);
 void  rt_ui_canvas_draw_text(void *inst, short wIdx, short x, short y, const unsigned char *s); /* Ch11 drawText -- added, Task 2; s is Str255-compatible like other rt_ui string params */
 
 /* ==================== RT_MAC_TEST scripted events (Task 3) ====================
