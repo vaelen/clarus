@@ -936,6 +936,26 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiSetText() {
         fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
         return toText("")
+    } else if nm == IUiGetFieldText() {
+        // field.text read (mac-target-4c Task 2) -- same fpNewTmp("clar_str_255")
+        // + fill-in-place-call pattern as IFileName above.
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_ui_widget_get_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
+        return t
+    } else if nm == IUiGetTextviewText() {
+        // textview.text read (mac-target-4c Task 2) -- a fresh rt_text
+        // handle (rt_text_new(), same as fpTextConcat/ITextOfStr above),
+        // filled in place by rt_ui_widget_get_text.
+        t = fpNewTmp("rt_text *")
+        fpEmit(t + " = rt_text_new();")
+        fpEmit("rt_ui_widget_get_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
+        return t
+    } else if nm == IUiSetTextviewText() {
+        // textview.text write (mac-target-4c Task 2) -- a2 is already an
+        // rt_text* (the checker requires a Text-typed rhs, TextT), so no
+        // fpStrAddr/temp is needed, unlike IUiSetText's Str-shaped a2.
+        fpEmit("rt_ui_widget_set_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        return toText("")
     } else if nm == IUiGetChecked() {
         return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
     } else if nm == IUiSetChecked() {
@@ -1567,6 +1587,13 @@ func cpMenuKeyChar(keyIdx: int): string {
     return "'" + s + "'"
 }
 
+// cpWidgetKindMacro is an explicit five-way dispatch over rt_ui's whole
+// widget-kind surface (mac-target-4c Task 2) -- lower.cla's lowWidgetDesc
+// already rejects every other kind before an IRWidgetDesc can exist, so
+// reaching the fallthrough below means an IRWidgetDesc was constructed with
+// a kind that guard didn't validate (an internal-invariant break, not a
+// user-facing error), reported loudly rather than silently mis-emitted as
+// RTUI_LABEL the way the old default fallthrough did.
 func cpWidgetKindMacro(kindIdx: int): string {
     var kind: string
 
@@ -1580,7 +1607,18 @@ func cpWidgetKindMacro(kindIdx: int): string {
     if kind == "canvas" {
         return "RTUI_CANVAS"
     }
-    return "RTUI_LABEL" // lower.cla's lowWidgetDesc rejects every other kind
+    if kind == "label" {
+        return "RTUI_LABEL"
+    }
+    if kind == "field" {
+        return "RTUI_FIELD"
+    }
+    if kind == "textview" {
+        return "RTUI_TEXTVIEW"
+    }
+    log("cprint: unknown widget kind " + kind)
+    quit 1
+    return ""
 }
 
 func cpAtKindMacro(k: int): string {
@@ -1600,7 +1638,7 @@ func cpFillMacro(fillBoth: bool): string {
     return "RTUI_FILL_NONE"
 }
 
-func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool): string {
+func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool, isScrollV: bool, isScrollH: bool): string {
     var s: string
 
     s = ""
@@ -1619,6 +1657,20 @@ func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool): stri
             s = "RTUI_BUFFERED"
         } else {
             s = s + " | RTUI_BUFFERED"
+        }
+    }
+    if isScrollV {
+        if s == "" {
+            s = "RTUI_SCROLL_V"
+        } else {
+            s = s + " | RTUI_SCROLL_V"
+        }
+    }
+    if isScrollH {
+        if s == "" {
+            s = "RTUI_SCROLL_H"
+        } else {
+            s = s + " | RTUI_SCROLL_H"
         }
     }
     if s == "" {
@@ -1673,7 +1725,7 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
             cpUiCaptionOrNull(irWidgetDescCaption(w)) + ", " +
             cpAtKindMacro(irWidgetDescAtKind(w)) + ", " + numToStr(irWidgetDescX(w)) + ", " + yStr + ", " + widthStr + ", " +
             cpFillMacro(irWidgetDescFillBoth(w)) + ", " +
-            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w)) + " },"))
+            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w), irWidgetDescIsScrollV(w), irWidgetDescIsScrollH(w)) + " },"))
         w = irWidgetDescNext(w)
     }
     cpUiBuf.add(toText("};"))
@@ -1700,10 +1752,10 @@ func cpFindWinHandlers(winName: string): int {
 }
 
 // cpWidgetKindForIndex returns the widget kind word ("button"/"check"/
-// "canvas"/"label") at position widgetIndex in window winName's declared
-// widget list -- cpEmitOneWidgetDispatcher needs this to pick each widget's
-// calling convention (0 args for button click/check change vs. (x, y) from
-// a/b for canvas click/drag).
+// "canvas"/"label"/"field"/"textview") at position widgetIndex in window
+// winName's declared widget list -- cpEmitOneWidgetDispatcher needs this to
+// pick each widget's calling convention (0 args for button click/check
+// change/field enter vs. (x, y) from a/b for canvas click/drag).
 func cpWidgetKindForIndex(winName: string, widgetIndex: int): string {
     var i: int
     var w: int
@@ -2011,13 +2063,17 @@ func cpEmitOneWidgetDispatcher(winName: string, whIdx: int) {
                 cpRestBuf.add(toText("        if (event == RTUI_WEV_DRAG) clar_fn_" + poolGet(irWidgetHandlerEntryDragFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
             }
         } else {
-            // button (click only) / check (change only): both are
-            // zero-param Clarus handlers (Ch8's event table).
+            // button (click only) / check/field/textview (change only) /
+            // field (enter, mac-target-4c Task 2): all zero-param Clarus
+            // handlers (Ch8's event table).
             if irWidgetHandlerEntryClickFn(wEntry) != -1 {
                 cpRestBuf.add(toText("        if (event == RTUI_WEV_CLICK) clar_fn_" + poolGet(irWidgetHandlerEntryClickFn(wEntry)) + "(inst);"))
             }
             if irWidgetHandlerEntryChangeFn(wEntry) != -1 {
                 cpRestBuf.add(toText("        if (event == RTUI_WEV_CHANGE) clar_fn_" + poolGet(irWidgetHandlerEntryChangeFn(wEntry)) + "(inst);"))
+            }
+            if irWidgetHandlerEntryEnterFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_ENTER) clar_fn_" + poolGet(irWidgetHandlerEntryEnterFn(wEntry)) + "(inst);"))
             }
         }
         cpRestBuf.add(toText("        break;"))

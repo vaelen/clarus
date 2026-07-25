@@ -257,6 +257,9 @@ record IREnumLayout {
 // runtime-computed, placeholder 0). yIsBottom/widthIsFill mark the
 // `bottom`/`fill` sentinels (`y`/`width` are unused placeholders, 0, when
 // their sentinel flag is set) -- Ch8's "at: next, bottom" and "width: fill".
+// isScrollV/isScrollH (mac-target-4c Task 2) mark a textview's
+// `scrollbar: vertical` (isScrollV only) or `scrollbar: both` (both set) --
+// always false for every other widget kind.
 record IRWidgetDesc {
     nameIdx: int
     kindIdx: int
@@ -271,6 +274,8 @@ record IRWidgetDesc {
     isDefault: bool
     isCancel: bool
     isBuffered: bool
+    isScrollV: bool
+    isScrollH: bool
     next: int
 }
 
@@ -359,12 +364,15 @@ record IRWinHandlers {
 // (rt_ui.h's RTUI_WEV_CLICK is one event value shared by both widget kinds;
 // cprint.cla picks the right call shape -- 0 args vs. (x, y) from a/b -- by
 // the widget's OWN kind, already available via IRWidgetDesc), changeFn is
-// `check.change`, dragFn is `canvas.drag`.
+// `check.change`/`field.change`/`textview.change`, dragFn is `canvas.drag`,
+// enterFn is `field.enter` (mac-target-4c Task 2, RTUI_WEV_ENTER -- a
+// zero-arg call, same convention as clickFn/changeFn's non-canvas case).
 record IRWidgetHandlerEntry {
     widgetIndex: int
     clickFn: int
     changeFn: int
     dragFn: int
+    enterFn: int
     next: int
 }
 
@@ -1333,7 +1341,7 @@ func irWidgetDescListAppend(tailIdx: int, idx: int): int {
     return idx
 }
 
-func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x: int, yIsBottom: bool, y: int, widthIsFill: bool, width: int, fillBoth: bool, isDefault: bool, isCancel: bool, isBuffered: bool): int {
+func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x: int, yIsBottom: bool, y: int, widthIsFill: bool, width: int, fillBoth: bool, isDefault: bool, isCancel: bool, isBuffered: bool, isScrollV: bool, isScrollH: bool): int {
     var n: IRWidgetDesc
 
     n.nameIdx = nameIdx
@@ -1349,6 +1357,8 @@ func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x
     n.isDefault = isDefault
     n.isCancel = isCancel
     n.isBuffered = isBuffered
+    n.isScrollV = isScrollV
+    n.isScrollH = isScrollH
     n.next = -1
     irWidgetDescs.add(n)
     return irWidgetDescs.count - 1
@@ -1404,6 +1414,14 @@ func irWidgetDescIsCancel(i: int): bool {
 
 func irWidgetDescIsBuffered(i: int): bool {
     return irWidgetDescs[i].isBuffered
+}
+
+func irWidgetDescIsScrollV(i: int): bool {
+    return irWidgetDescs[i].isScrollV
+}
+
+func irWidgetDescIsScrollH(i: int): bool {
+    return irWidgetDescs[i].isScrollH
 }
 
 func irWidgetDescNext(i: int): int {
@@ -1603,6 +1621,7 @@ func irWinHandlersAppendWidgetEntry(i: int, widgetIndex: int): int {
     n.clickFn = -1
     n.changeFn = -1
     n.dragFn = -1
+    n.enterFn = -1
     n.next = -1
     irWidgetHandlerEntries.add(n)
     idx = irWidgetHandlerEntries.count - 1
@@ -1641,6 +1660,14 @@ func irWidgetHandlerEntryDragFn(i: int): int {
 
 func irWidgetHandlerEntrySetDragFn(i: int, fn: int) {
     irWidgetHandlerEntries[i].dragFn = fn
+}
+
+func irWidgetHandlerEntryEnterFn(i: int): int {
+    return irWidgetHandlerEntries[i].enterFn
+}
+
+func irWidgetHandlerEntrySetEnterFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].enterFn = fn
 }
 
 func irWidgetHandlerEntryNext(i: int): int {
@@ -2025,6 +2052,27 @@ func IUiSetCaption(): int {
 
 func IUiSetText(): int {
     return intern("ui_set_text")
+}
+
+// IUiGetFieldText (mac-target-4c Task 2): `field.text` read --
+// rt_ui_widget_get_str into a fresh clar_str_255 temp (cprint.cla, IFileName's
+// pattern). field.text WRITE reuses IUiSetText directly (identical
+// rt_ui_widget_set_str/RTUI_PROP_TEXT call shape to label.text's write --
+// see lower.cla's lowWidgetSetAssign), so there is no IUiSetFieldText.
+func IUiGetFieldText(): int {
+    return intern("ui_get_field_text")
+}
+
+// IUiGetTextviewText/IUiSetTextviewText (mac-target-4c Task 2):
+// `textview.text` read/write against rt_ui_widget_get_text/set_text's
+// rt_text* ABI -- distinct from field.text's Str255 shape, so these are
+// NOT interchangeable with IUiGetFieldText/IUiSetText.
+func IUiGetTextviewText(): int {
+    return intern("ui_get_textview_text")
+}
+
+func IUiSetTextviewText(): int {
+    return intern("ui_set_textview_text")
 }
 
 func IUiGetChecked(): int {

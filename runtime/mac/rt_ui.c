@@ -1831,6 +1831,39 @@ static void rt_ui_script_key(unsigned char ch)
     rt_ui_handle_key(&ev);
 }
 
+/* `key`'s arg1 decoder (mac-target-4c Task 2): a literal character (e.g.
+   `key x`) is the common case, but some keystrokes -- Return/Enter (13)
+   chief among them, needed to script a focused FIELD's `enter` event --
+   have no printable spelling a text-based .events script can carry
+   through scripts/build-mac.sh's `--events FILE` pipeline: that pipeline
+   C-escapes the file's raw BYTES into a string literal (see its own
+   comment), and a literal 0x0D byte there is mis-lexed as a source
+   line-ending by the C compiler (CR is a valid lone line terminator to
+   it), while a literal backslash-escape spelling (`\r`) gets its
+   backslash doubled by that same escaping pass and so decodes back to
+   the two characters `\`+`r`, not a CR byte -- there is no way to name
+   byte 13 in the FILE at all, only in hand-written C (e.g.
+   internal/mactest/uiprobe/events_text.c's `"...\r\n"`, a real source
+   escape, never routed through the shell-level pipeline). Decimal digits
+   were never a valid literal-character spelling in any existing script
+   (every current `key` line names a letter, e.g. buttons.events' `key
+   x`), so treating an all-digit arg1 as a decimal byte CODE instead of a
+   literal character is a purely additive, backward-compatible grammar
+   extension: `key 13` sends Return, `key x` still sends 'x'. */
+static unsigned char rt_ui_script_key_arg(const char *arg1)
+{
+    const char *p;
+    int allDigits;
+
+    if (arg1[0] == '\0') return 0;
+    allDigits = 1;
+    for (p = arg1; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9') { allDigits = 0; break; }
+    }
+    if (allDigits) return (unsigned char)atoi(arg1);
+    return (unsigned char)arg1[0];
+}
+
 /* `close`: "goAway click on frontmost" -- a real goAway click needs
    TrackGoAway to confirm the mouse-up landed back in the box (impossible
    to simulate meaningfully without a real mouse); a script `close` means
@@ -1975,7 +2008,7 @@ static void rt_ui_run_scripted(void)
         } else if (strcmp(verb, "drag") == 0) {
             rt_ui_script_drag((short)atoi(arg1), (short)atoi(arg2));
         } else if (strcmp(verb, "key") == 0) {
-            rt_ui_script_key((unsigned char)arg1[0]);
+            rt_ui_script_key(rt_ui_script_key_arg(arg1));
         } else if (strcmp(verb, "type") == 0) {
             /* `type <rest-of-line>` (mac-target-4c Task 1): unlike every
                other verb's args, the typed text can contain spaces (and

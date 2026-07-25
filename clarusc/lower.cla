@@ -1169,11 +1169,13 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
 // lowWidgetPropGet lowers `w.Widget.prop` (Ch8: Widgets' runtime-property
 // column) -- e is the OUTER select (the `.prop` one); wgSel is `w.Widget`,
 // itself never lowered as a standalone value (see lowSelect's TyWidget
-// case). Covers exactly the get half of rt_ui.h's ABI as built: bool props
-// via rt_ui_widget_get_bool (check/button `enabled`), int props via
-// rt_ui_widget_get_int (canvas `width`/`height`) -- there is no
-// rt_ui_widget_get_str, so a caption/text/label READ is unsupported here
-// (only ever a write, via lowWidgetSetAssign).
+// case). Covers the get half of rt_ui.h's ABI as built: bool props via
+// rt_ui_widget_get_bool (check/button `enabled`), int props via
+// rt_ui_widget_get_int (canvas `width`/`height`), field.text via
+// rt_ui_widget_get_str (mac-target-4c Task 2), textview.text via
+// rt_ui_widget_get_text -- a button/check/label caption/text READ is still
+// unsupported here (only ever a write, via lowWidgetSetAssign; label has no
+// get_str call at all yet).
 func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
     var recv: LowWidgetRecv
     var widgetKind: string
@@ -1196,6 +1198,10 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         intrName = IUiGetWidth()
     } else if widgetKind == "canvas" and propName == "height" {
         intrName = IUiGetHeight()
+    } else if widgetKind == "field" and propName == "text" {
+        intrName = IUiGetFieldText()
+    } else if widgetKind == "textview" and propName == "text" {
+        intrName = IUiGetTextviewText()
     }
     if intrName == -1 {
         lowUnsupported("read of " + widgetKind + "." + propName)
@@ -1506,11 +1512,18 @@ func lowMenuEnableAssign(lhs: int, rhsAst: int): int {
 }
 
 // lowWidgetSetAssign lowers `w.Widget.prop = rhs` (Ch8: Widgets' runtime
-// properties, write half) -- covers exactly rt_ui.h's ABI as built: caption
-// (button)/text (label) via rt_ui_widget_set_str, checked (check)/enabled
-// (button) via rt_ui_widget_set_bool. `title` is handled separately
-// (isWindowTitleSelect, above it in lowAssign) since it's a window property,
-// not a widget one.
+// properties, write half) -- covers rt_ui.h's ABI as built: caption
+// (button)/text (label, field) via rt_ui_widget_set_str, checked (check)/
+// enabled (button, field) via rt_ui_widget_set_bool, text (textview) via
+// rt_ui_widget_set_text (mac-target-4c Task 2). field.text reuses
+// IUiSetText directly rather than minting its own intrinsic: field.text is
+// strT(255) (check.cla's widgetRuntimeProps), the same Str shape label.text
+// already writes, so lowExpr(rhsAst) below produces an identical
+// fpStrAddr-able value either way and cprint.cla's IUiSetText case emits the
+// exact same rt_ui_widget_set_str(..., RTUI_PROP_TEXT, ...) call for both
+// widget kinds -- see cprint.cla's IUiSetText case. `title` is handled
+// separately (isWindowTitleSelect, above it in lowAssign) since it's a
+// window property, not a widget one.
 func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
     var wgSel: int
     var recv: LowWidgetRecv
@@ -1530,8 +1543,10 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
     intrName = -1
     if widgetKind == "button" and propName == "caption" {
         intrName = IUiSetCaption()
-    } else if widgetKind == "label" and propName == "text" {
+    } else if (widgetKind == "label" or widgetKind == "field") and propName == "text" {
         intrName = IUiSetText()
+    } else if widgetKind == "textview" and propName == "text" {
+        intrName = IUiSetTextviewText()
     } else if widgetKind == "check" and propName == "checked" {
         intrName = IUiSetChecked()
     } else if (widgetKind == "button" or widgetKind == "field") and propName == "enabled" {
@@ -2072,9 +2087,9 @@ func lowRequireIntLit(e: int): int {
 
 // lowWidgetDesc builds one widget's IRWidgetDesc from its DkWidget AST node
 // (w) -- Ch8: Widgets/Layout. Walks the exact same DkProperty chain
-// checkWidget already validated; this task's four widget kinds (button/
-// check/canvas/label) are rt_ui's whole widget surface (field/textview/
-// popup/table have no rt_ui support at all yet -- host-unsupported here,
+// checkWidget already validated; this covers rt_ui's whole widget surface
+// as of mac-target-4c Task 2 (button/check/canvas/label/field/textview --
+// popup/table still have no rt_ui support and remain host-unsupported here,
 // same as every other not-yet-ported construct in this file).
 func lowWidgetDesc(w: int): int {
     var kind: string
@@ -2092,10 +2107,13 @@ func lowWidgetDesc(w: int): int {
     var isDefault: bool
     var isCancel: bool
     var isBuffered: bool
+    var isScrollV: bool
+    var isScrollH: bool
+    var scrollVal: string
     var captionIdx: int
 
     kind = poolGet(widgetKindName(w))
-    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" {
+    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" and kind != "field" and kind != "textview" {
         lowUnsupported("widget kind " + kind)
     }
 
@@ -2109,6 +2127,8 @@ func lowWidgetDesc(w: int): int {
     isDefault = false
     isCancel = false
     isBuffered = false
+    isScrollV = false
+    isScrollH = false
     captionIdx = -1
 
     p = widgetPropsHead(w)
@@ -2153,11 +2173,20 @@ func lowWidgetDesc(w: int): int {
                 isCancel = true
             } else if pname == "buffered" {
                 isBuffered = true
+            } else if pname == "scrollbar" {
+                // Ch8: `scrollbar: vertical|both` (textview only; the
+                // checker's widgetDeclProps already limits this property to
+                // textview). `vertical` sets only RTUI_SCROLL_V; `both` sets
+                // RTUI_SCROLL_V|RTUI_SCROLL_H -- rt_ui.h's own values, not
+                // spelled out here (cprint.cla owns the C macro names).
+                scrollVal = poolGet(identName(vh))
+                isScrollV = true
+                isScrollH = scrollVal == "both"
             }
         }
         p = declNext(p)
     }
-    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered)
+    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH)
 }
 
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
@@ -2541,7 +2570,8 @@ func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
 }
 
 // lowWidgetHandlerEvent lowers `on Widget.event { }` inside `extend Win`
-// (Ch8: button.click, check.change, canvas.click/drag).
+// (Ch8: button.click, check.change, canvas.click/drag, field/textview.change,
+// field.enter -- mac-target-4c Task 2).
 func lowWidgetHandlerEvent(winType: int, winName: string, whIdx: int, wgName: string, event: string, h: int) {
     var widgetIdx: int
     var entryIdx: int
@@ -2558,6 +2588,8 @@ func lowWidgetHandlerEvent(winType: int, winName: string, whIdx: int, wgName: st
         irWidgetHandlerEntrySetChangeFn(entryIdx, fnName)
     } else if event == "drag" {
         irWidgetHandlerEntrySetDragFn(entryIdx, fnName)
+    } else if event == "enter" {
+        irWidgetHandlerEntrySetEnterFn(entryIdx, fnName)
     } else {
         lowUnsupported("widget event " + event)
     }

@@ -1,0 +1,10 @@
+click 181 74
+type Hello
+key 13
+click 254 214
+type Hi there
+key 13
+click 264 74
+click 352 74
+snap S1
+quit

@@ -1,0 +1,40 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// textwidgets.cla: emitui golden fixture -- field/textview widgets
+// (mac-target-4c Task 2): descriptor rows (RTUI_FIELD/RTUI_TEXTVIEW, the
+// scrollbar flag), field.text read/write (rt_ui_widget_get_str/set_str,
+// reusing IUiSetText's exact call shape on the write side -- see
+// lower.cla's lowWidgetSetAssign), textview.text read/write
+// (rt_ui_widget_get_text/set_text against an rt_text handle), and
+// field.enter (RTUI_WEV_ENTER, zero-arg like every other widget event
+// besides canvas's).
+
+window TextWin {
+    title: "Text"
+    size: 320, 260
+
+    field Name    { label: "Name:"; at: 20, 20; width: 200 }
+    textview Body { at: 20, 50; fill: both; scrollbar: vertical }
+
+    var nameStr: string
+    var bodyText: text
+}
+
+on App.launch {
+    open TextWin
+}
+
+extend TextWin {
+    on Name.change {
+        nameStr = Name.text
+    }
+    on Name.enter {
+        Name.text = nameStr
+        title = "Entered"
+    }
+    on Body.change {
+        bodyText = Body.text
+        Body.text = bodyText
+    }
+}

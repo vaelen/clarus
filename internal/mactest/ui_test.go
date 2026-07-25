@@ -164,6 +164,20 @@ func TestMenusUIScenario(t *testing.T) {
 	runUIScenario(t, "menus", 0)
 }
 
+// TestTextwidgetsUIScenario (mac-target-4c Task 2): field/textview widgets
+// end to end -- field.change/enter and textview.change dispatch, field.text/
+// textview.text read+write, and the CARRIED review requirement from Task 1:
+// the RTUI_TE_MAX (32,000-byte) clamp boundary on textview.text set, both
+// sides (exactly at the clamp: no truncation, no lastError; one byte over:
+// truncated to 32,000 + lastError set), each round-tripped into the window
+// title and verified via the final snap's title bar (rt_ui_set_title has no
+// RT_MAC_TEST trace line of its own). See testdata/ui/textwidgets.cla's own
+// header comment for the full scripted walkthrough and why the .events file
+// uses `key 13` rather than an embedded raw CR byte.
+func TestTextwidgetsUIScenario(t *testing.T) {
+	runUIScenario(t, "textwidgets", 0)
+}
+
 // TestCanvasUIScenario: buffered canvas animated by an every-block; two
 // snaps (S1, S2) taken after different amounts of virtual-tick animation
 // must differ (the moving square's position proves it) -- checked here
