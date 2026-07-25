@@ -1,0 +1,19 @@
+click 100 150
+type Hello file
+answer-save DialogsTest.txt
+click 204 74
+click 380 74
+answer-open DialogsTest.txt
+click 116 74
+snap roundtrip
+answer-cancel
+click 116 74
+answer-cancel
+click 204 74
+answer-changes save
+click 292 74
+answer-changes discard
+click 292 74
+answer-changes cancel
+click 292 74
+quit

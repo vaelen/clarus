@@ -242,6 +242,19 @@ func TestEditMenuUIScenario(t *testing.T) {
 	runUIScenario(t, "editmenu", 0)
 }
 
+// TestDialogsUIScenario (Task 4, mac-target-4c): askOpen/askSave/
+// askSaveChanges end to end via the RT_MAC_TEST answer queue -- both
+// dialogs' fill+true path, both dialogs' Cancel (false, path untouched)
+// path, and all three saveChoice branches -- plus a REAL file round-trip
+// through the boot volume (askSave writes DialogsTest.txt, the textview is
+// cleared, then askOpen the SAME path + file.readText refill it), proven
+// by the "roundtrip" snap showing the content came back from disk rather
+// than surviving in memory. See testdata/ui/dialogs.cla's own header
+// comment for the full scripted walkthrough.
+func TestDialogsUIScenario(t *testing.T) {
+	runUIScenario(t, "dialogs", 0)
+}
+
 // TestUIAbout: an `app` section with all four About-relevant properties set
 // -- the Apple menu's About item becomes "About AboutProbe..." and selecting
 // it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT

@@ -214,6 +214,19 @@ void  rt_ui_widget_set_bool(void *inst, short wIdx, short prop, int v);
 int   rt_ui_widget_get_bool(void *inst, short wIdx, short prop);
 short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width/height */
 void  rt_ui_menu_enable(short menuIdx, short itemIdx, int on);
+
+/* Ch12 Dialogs (mac-target-4c Task 4): askOpen/askSave/askSaveChanges.
+ * path255/name are Str255-shaped, same as every other rt_ui string
+ * parameter. rt_ui_ask_open/rt_ui_ask_save fill path255 IN PLACE (a real
+ * build via Standard File's SFGetFile/SFPutFile; RT_MAC_TEST via the
+ * scripted answer queue below) and return 1 on a successful pick, 0 on
+ * Cancel (path255 untouched on 0). rt_ui_ask_save_changes returns the
+ * saveChoice enum word (0=Save 1=Discard 2=Cancel) clarusc's lowering
+ * already treats as a plain int (types.cla's seeded saveChoice enum). */
+int   rt_ui_ask_open(unsigned char *path255);
+int   rt_ui_ask_save(unsigned char *path255, const unsigned char *suggested);
+short rt_ui_ask_save_changes(const unsigned char *name);
+
 /* canvas ops (Ch11 subset used by bounce + demos).
  *
  * ABI ADJUSTMENT (Task 2, per the plan's "reference wins" rule): Ch11 lists

@@ -68,6 +68,7 @@
 #include <Menus.h>
 #include <Scrap.h>     /* ZeroScrap/TEToScrap/TEFromScrap -- standard-edit cut/copy/paste (Task 3) */
 #include <Dialogs.h>   /* NoteAlert, for the About item (Ch9) */
+#include <StandardFile.h> /* SFGetFile/SFPutFile, for askOpen/askSave (Ch12, Task 4) */
 #include <Devices.h>   /* OpenDeskAcc, for the Apple menu's desk-accessory list */
 #include <LowMem.h>    /* LMGetCurApName -- the running app's name, for About (Ch9) */
 #ifdef RT_MAC_TEST
@@ -409,6 +410,75 @@ static int gDimFirst = 1;
 /* Set for the duration of rt_ui_run_scripted (see below): governs the one
    sanctioned real/scripted divergence in rt_ui_handle_content_click. */
 static int gUiScripted = 0;
+
+/* ==================== dialogs (Ch12): scripted answer queue (Task 4) ====
+ * askOpen/askSave/askSaveChanges (below, near rt_ui_menu_enable) consume
+ * this queue INSTEAD of a real Standard File dialog or Alert(130) whenever
+ * RT_MAC_TEST is defined -- same "a scripted build never shows a modal the
+ * script reader can't dismiss" policy as rt_ui_apple_select's About
+ * substitution above, and unconditional on the macro (not gUiScripted): an
+ * interactive --test build with an empty script still can't drive a real
+ * modal SF dialog or Alert either, so there is no real/scripted fork to
+ * make here, only RT_MAC_TEST/not. Fed by the answer-open/answer-save/
+ * answer-changes/answer-cancel script verbs (rt_ui_run_scripted below).
+ * Fixed 8-entry ring buffer: no script ever queues more than a couple of
+ * dialogs ahead of where it consumes them. */
+#define RT_UI_ANS_OPEN    0
+#define RT_UI_ANS_SAVE    1
+#define RT_UI_ANS_CHANGES 2
+#define RT_UI_ANS_CANCEL  3
+
+typedef struct { short kind; short val; unsigned char str[256]; } rt_ui_answer;
+
+static rt_ui_answer gAnswerQ[8];
+static int gAnswerHead = 0; /* next entry to consume */
+static int gAnswerTail = 0; /* next free slot to fill */
+
+static void rt_ui_answer_push_path(short kind, const char *path)
+{
+    rt_ui_answer *a;
+    size_t n;
+
+    a = &gAnswerQ[gAnswerTail];
+    n = strlen(path);
+    if (n > 255) n = 255; /* Str255 cap, same silent clamp as every other Pascal-string fill in this file */
+    a->kind = kind;
+    a->str[0] = (unsigned char)n;
+    memcpy(a->str + 1, path, n);
+    gAnswerTail = (gAnswerTail + 1) % 8;
+}
+
+static void rt_ui_answer_push_val(short kind, short val)
+{
+    gAnswerQ[gAnswerTail].kind = kind;
+    gAnswerQ[gAnswerTail].val = val;
+    gAnswerTail = (gAnswerTail + 1) % 8;
+}
+
+static const rt_ui_answer *rt_ui_answer_pop(void)
+{
+    const rt_ui_answer *a;
+
+    if (gAnswerHead == gAnswerTail) rt_panic("scripted dialog with no queued answer");
+    a = &gAnswerQ[gAnswerHead];
+    gAnswerHead = (gAnswerHead + 1) % 8;
+    return a;
+}
+
+/* `T ASKOPEN <path>` / `T ASKSAVE <path>` -- the queued path is a Pascal
+   string (a->str); the trace line wants a plain C string, same
+   byte-by-byte copy rt_ui_trace_about uses for its Pascal fields above. */
+static void rt_ui_trace_ask_path(const char *verb, const unsigned char *pstr)
+{
+    char buf[300];
+    int n, i, p;
+
+    n = pstr[0];
+    p = sprintf(buf, "T %s ", verb);
+    for (i = 0; i < n && p < (int)sizeof(buf) - 1; i++) buf[p++] = (char)pstr[1 + i];
+    buf[p] = '\0';
+    rt_test_emit(buf);
+}
 #endif /* RT_MAC_TEST */
 
 static int rt_ui_is_ours(WindowPtr wp)
@@ -1191,6 +1261,97 @@ void rt_ui_menu_enable(short menuIdx, short itemIdx, int on)
     if (!mh) return;
     if (on) EnableItem(mh, (short)(itemIdx + 1));
     else DisableItem(mh, (short)(itemIdx + 1));
+}
+
+/* ==================== dialogs (Ch12: Task 4) ====================
+ * askOpen/askSave/askSaveChanges. A real build shows Standard File's
+ * SFGetFile/SFPutFile (fixed {100,100} corner -- System 6 has no
+ * auto-center convention, unlike {-1,-1} on later systems) or a
+ * ParamText+Alert(130) three-way confirmation; a RT_MAC_TEST build
+ * consumes the scripted answer queue above instead of any of that (see
+ * its own header comment for why). SetVol(NULL, reply.vRefNum) after a
+ * good SFGetFile/SFPutFile makes the picked file's volume the DEFAULT
+ * volume, so the plain (vRefNum-0) path rt_file_read_text/rt_file_write_text
+ * hand FSOpen/Create resolves correctly afterward -- RT_MAC_TEST paths
+ * skip this entirely and are used as-is on the boot volume, per the
+ * plan. */
+
+int rt_ui_ask_open(unsigned char *path255)
+{
+#ifdef RT_MAC_TEST
+    const rt_ui_answer *a;
+
+    a = rt_ui_answer_pop();
+    if (a->kind == RT_UI_ANS_CANCEL) {
+        rt_test_emit("T ASKOPEN cancel");
+        return 0;
+    }
+    if (a->kind != RT_UI_ANS_OPEN) rt_panic("askOpen: scripted answer kind mismatch");
+    rt_ui_pstrcpy(path255, a->str);
+    rt_ui_trace_ask_path("ASKOPEN", a->str);
+    return 1;
+#else
+    Point where;
+    SFTypeList types;
+    SFReply reply;
+
+    where.h = 100;
+    where.v = 100;
+    types[0] = 'TEXT';
+    SFGetFile(where, (const unsigned char *)"\p", NULL, 1, types, NULL, &reply);
+    if (!reply.good) return 0;
+    SetVol(NULL, reply.vRefNum);
+    rt_ui_pstrcpy(path255, reply.fName);
+    return 1;
+#endif
+}
+
+int rt_ui_ask_save(unsigned char *path255, const unsigned char *suggested)
+{
+#ifdef RT_MAC_TEST
+    const rt_ui_answer *a;
+
+    a = rt_ui_answer_pop();
+    if (a->kind == RT_UI_ANS_CANCEL) {
+        rt_test_emit("T ASKSAVE cancel");
+        return 0;
+    }
+    if (a->kind != RT_UI_ANS_SAVE) rt_panic("askSave: scripted answer kind mismatch");
+    rt_ui_pstrcpy(path255, a->str);
+    rt_ui_trace_ask_path("ASKSAVE", a->str);
+    return 1;
+#else
+    Point where;
+    SFReply reply;
+
+    where.h = 100;
+    where.v = 100;
+    SFPutFile(where, (const unsigned char *)"\pSave as:", suggested, NULL, &reply);
+    if (!reply.good) return 0;
+    SetVol(NULL, reply.vRefNum);
+    rt_ui_pstrcpy(path255, reply.fName);
+    return 1;
+#endif
+}
+
+short rt_ui_ask_save_changes(const unsigned char *name)
+{
+#ifdef RT_MAC_TEST
+    const rt_ui_answer *a;
+    char buf[32];
+
+    a = rt_ui_answer_pop();
+    if (a->kind != RT_UI_ANS_CHANGES) rt_panic("askSaveChanges: scripted answer kind mismatch");
+    sprintf(buf, "T ASKCHANGES %s", a->val == 0 ? "save" : (a->val == 1 ? "discard" : "cancel"));
+    rt_test_emit(buf);
+    return a->val;
+#else
+    short item;
+
+    ParamText(name, (const unsigned char *)"\p", (const unsigned char *)"\p", (const unsigned char *)"\p");
+    item = Alert(130, NULL);
+    return (short)(item - 1); /* item 1/2/3 -> Save/Discard/Cancel 0/1/2 */
+#endif
 }
 
 /* Recomputes native enable state for every window-scoped menu handler,
@@ -2202,6 +2363,32 @@ static void rt_ui_run_scripted(void)
                               cancelled the whole quit -- rt_quit(0) inside
                               never returns, so falling through to the
                               bottom of the loop means "keep scripting" */
+        } else if (strcmp(verb, "answer-open") == 0) {
+            /* `answer-open <rest-of-line path>` (Task 4): same rest-of-line
+               parsing as `type` above -- a path can contain spaces, so it
+               is read past the verb and one separating space, not via
+               sscanf's %63s arg1 (already populated above but unused
+               here). */
+            const char *p = line + 11; /* strlen("answer-open") */
+            if (*p == ' ') p++;
+            rt_ui_answer_push_path(RT_UI_ANS_OPEN, p);
+        } else if (strcmp(verb, "answer-save") == 0) {
+            const char *p = line + 11; /* strlen("answer-save") */
+            if (*p == ' ') p++;
+            rt_ui_answer_push_path(RT_UI_ANS_SAVE, p);
+        } else if (strcmp(verb, "answer-changes") == 0) {
+            short v;
+            if (strcmp(arg1, "save") == 0) v = 0;
+            else if (strcmp(arg1, "discard") == 0) v = 1;
+            else if (strcmp(arg1, "cancel") == 0) v = 2;
+            else { rt_panic("answer-changes: bad argument (want save|discard|cancel)"); v = 0; }
+            rt_ui_answer_push_val(RT_UI_ANS_CHANGES, v);
+        } else if (strcmp(verb, "answer-cancel") == 0) {
+            /* Queues a cancel for whichever of askOpen/askSave consumes it
+               next -- rt_ui_ask_open/rt_ui_ask_save both recognize
+               RT_UI_ANS_CANCEL; rt_ui_ask_save_changes does not (its own
+               three-way cancel is `answer-changes cancel` instead). */
+            rt_ui_answer_push_val(RT_UI_ANS_CANCEL, 0);
         }
         rt_ui_pump_passive();
     }

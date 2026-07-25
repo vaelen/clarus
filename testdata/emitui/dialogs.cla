@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// dialogs.cla: emitui golden fixture -- the three Ch12 dialog builtins
+// (Task 4, mac-target-4c): askOpen(p) and askSave(p, suggested) (both fill
+// their path argument IN PLACE and return bool; rt_ui_ask_open/
+// rt_ui_ask_save), a file round-trip through the filled path
+// (file.readText/file.writeText, reusing IFileReadText/IFileWriteText
+// unchanged), and askSaveChanges(name), whose saveChoice result is
+// compared against all three built-in enum members (Save/Discard/Cancel).
+// Compile-check only (m68k, via internal/emitui's own gate) -- the real
+// scripted behavior (both cancels, all three saveChoice branches, the
+// on-disk file round-trip) is testdata/ui/dialogs.cla instead.
+
+window DocWin {
+    title: "Doc"
+    size: 320, 240
+
+    textview Body { at: 20, 20; fill: both }
+}
+
+on App.launch {
+    var p: string(255)
+    var suggested: string(255)
+    var ok: bool
+    var choice: saveChoice
+    var t: text
+    var w: DocWin
+
+    w = open DocWin
+
+    ok = askOpen(p)
+    if ok {
+        file.readText(p, t)
+        w.Body.text = t
+    }
+
+    suggested = "untitled.txt"
+    ok = askSave(p, suggested)
+    if ok {
+        t = w.Body.text
+        file.writeText(p, t)
+    }
+
+    choice = askSaveChanges("Doc")
+    if choice == Save {
+        file.writeText(p, t)
+    } else if choice == Discard {
+        alert("discarded")
+    } else {
+        alert("cancelled")
+    }
+}

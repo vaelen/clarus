@@ -2128,6 +2128,28 @@ func IUiCancel(): int {
     return intern("ui_cancel")
 }
 
+// IUiAskOpen/IUiAskSave/IUiAskSaveChanges (Task 4, mac-target-4c): the three
+// built-in Standard File / save-confirmation dialogs (Ch12 Dialogs) --
+// runtime/mac/rt_ui.c's rt_ui_ask_open/rt_ui_ask_save/rt_ui_ask_save_changes.
+// askOpen/askSave fill their path argument IN PLACE (the runtime writes
+// through the pointer cprint.cla passes, the same fill-in-place convention
+// file.readText/file.name already use) and return a C int (0/1) embedded
+// directly as the Bool result; askSaveChanges returns the raw saveChoice
+// enum word (0/1/2), embedded directly since Save/Discard/Cancel already
+// fold to the same int consts at compile time (types.cla's seeded
+// saveChoice enum).
+func IUiAskOpen(): int {
+    return intern("ui_ask_open")
+}
+
+func IUiAskSave(): int {
+    return intern("ui_ask_save")
+}
+
+func IUiAskSaveChanges(): int {
+    return intern("ui_ask_save_changes")
+}
+
 func IUiCanvasClear(): int {
     return intern("ui_canvas_clear")
 }

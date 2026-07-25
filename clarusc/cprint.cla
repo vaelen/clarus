@@ -979,6 +979,25 @@ func fpIntrCall(x: int): text {
         // cpEmitOneWinEventDispatcher's RTUI_EV_CLOSEREQUEST case).
         fpEmit("*clar_ui_cur_cancel = 1;")
         return toText("")
+    } else if nm == IUiAskOpen() {
+        // `askOpen(p)` -- p is filled IN PLACE by the runtime, so its
+        // address is passed non-const (unlike fpStrAddr's const cast, used
+        // for every read-only Str255 argument elsewhere in this function),
+        // the same "(uint8_t*)&(<addrable lvalue>)" shape IStrSetIndex uses
+        // above for its own out-parameter. Embedded directly (no temp): the
+        // call's own int (0/1) result IS the Bool value, same as every
+        // other int-returning rt_* call in this function (e.g. IStrCmp).
+        return "rt_ui_ask_open((uint8_t*)&(" + fpAddrable(a0) + "))"
+    } else if nm == IUiAskSave() {
+        // `askSave(p, suggested)` -- p filled in place (see IUiAskOpen
+        // above); suggested is read-only, so it takes the ordinary
+        // fpStrAddr const-cast path.
+        return "rt_ui_ask_save((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
+    } else if nm == IUiAskSaveChanges() {
+        // `askSaveChanges(name)` -- name is read-only; the result is the
+        // raw saveChoice enum word (0/1/2), embedded directly like
+        // IUiGetWidth/IUiGetHeight's `short` results just below.
+        return "rt_ui_ask_save_changes(" + fpStrAddr(a0) + ")"
     } else if nm == IUiCanvasClear() {
         fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")

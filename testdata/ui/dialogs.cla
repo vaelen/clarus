@@ -1,0 +1,90 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// dialogs.cla: gated UI scenario (Task 4, mac-target-4c) -- askOpen,
+// askSave, and askSaveChanges end to end, scripted by dialogs.events via
+// the RT_MAC_TEST answer queue (answer-open/answer-save/answer-changes/
+// answer-cancel), plus a REAL file round-trip through the boot volume
+// (askSave -> file.writeText -> Clear -> askOpen the SAME path ->
+// file.readText -> Body.text, proven by a snap showing the content came
+// back from disk, not just from memory):
+//
+//   click <Body>          -- focuses Body (TEActivate/TEClick)
+//   type Hello file        -- types content via TEKey (each char fires
+//                             Body.change)
+//   answer-save DialogsTest.txt
+//   click <SaveBtn>        -- askSave fills path, file.writeText writes it;
+//                             T ASKSAVE DialogsTest.txt
+//   click <ClearBtn>       -- Body.text = "" (empty text), proves the
+//                             content that comes back next is really read
+//                             off disk, not left over from the click above
+//   answer-open DialogsTest.txt
+//   click <OpenBtn>        -- askOpen fills the SAME path, file.readText
+//                             refills Body.text; T ASKOPEN DialogsTest.txt
+//   snap roundtrip          -- Body shows "Hello file" again
+//   answer-cancel
+//   click <OpenBtn>        -- T ASKOPEN cancel; Body untouched
+//   answer-cancel
+//   click <SaveBtn>        -- T ASKSAVE cancel; no file write
+//   answer-changes save
+//   click <AskBtn>         -- T ASKCHANGES save; T SET Doc.Status.text
+//                             changes-save
+//   answer-changes discard
+//   click <AskBtn>         -- T ASKCHANGES discard; ...changes-discard
+//   answer-changes cancel
+//   click <AskBtn>         -- T ASKCHANGES cancel; ...changes-cancel
+//   quit
+
+window Doc {
+    title: "Doc"
+    size: 400, 260
+
+    button OpenBtn  { at: 20, 20; caption: "Open" }
+    button SaveBtn  { at: right, 20; caption: "Save" }
+    button AskBtn   { at: right, 20; caption: "Ask" }
+    button ClearBtn { at: right, 20; caption: "Clear" }
+    label Status    { at: 20, bottom; text: "" }
+    textview Body   { at: 20, bottom; fill: both }
+}
+
+on App.launch {
+    open Doc
+}
+
+extend Doc {
+    on OpenBtn.click {
+        var p: string(255)
+        var t: text
+        if askOpen(p) {
+            file.readText(p, t)
+            Body.text = t
+            Status.text = "opened"
+        } else {
+            Status.text = "open-cancel"
+        }
+    }
+    on SaveBtn.click {
+        var p: string(255)
+        if askSave(p, "untitled.txt") {
+            file.writeText(p, Body.text)
+            Status.text = "saved"
+        } else {
+            Status.text = "save-cancel"
+        }
+    }
+    on AskBtn.click {
+        var c: saveChoice
+        c = askSaveChanges("Doc")
+        if c == Save {
+            Status.text = "changes-save"
+        } else if c == Discard {
+            Status.text = "changes-discard"
+        } else {
+            Status.text = "changes-cancel"
+        }
+    }
+    on ClearBtn.click {
+        var e: text
+        Body.text = e
+    }
+}

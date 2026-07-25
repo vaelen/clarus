@@ -1,0 +1,39 @@
+T OPEN Doc 1
+T FRONT Doc 1
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.SaveBtn.click
+T ASKSAVE DialogsTest.txt
+T SET Doc.Status.text saved
+T FIRE Doc.ClearBtn.click
+T FIRE Doc.Body.change
+T FIRE Doc.OpenBtn.click
+T ASKOPEN DialogsTest.txt
+T FIRE Doc.Body.change
+T SET Doc.Status.text opened
+T FIRE Doc.OpenBtn.click
+T ASKOPEN cancel
+T SET Doc.Status.text open-cancel
+T FIRE Doc.SaveBtn.click
+T ASKSAVE cancel
+T SET Doc.Status.text save-cancel
+T FIRE Doc.AskBtn.click
+T ASKCHANGES save
+T SET Doc.Status.text changes-save
+T FIRE Doc.AskBtn.click
+T ASKCHANGES discard
+T SET Doc.Status.text changes-discard
+T FIRE Doc.AskBtn.click
+T ASKCHANGES cancel
+T SET Doc.Status.text changes-cancel
+T FIRE Doc.closeRequest
+T CLOSE Doc 1
+T FIRE Doc.closed

@@ -668,6 +668,12 @@ func lowCall(e: int): int {
             return newIRConv(CvIntToFixed, lowExpr(callArgsHead(e)), -1, ty)
         } else if name == "char" {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
+        } else if name == "askOpen" {
+            return newIRIntr(IUiAskOpen(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "askSave" {
+            return newIRIntr(IUiAskSave(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "askSaveChanges" {
+            return newIRIntr(IUiAskSaveChanges(), lowArgs(callArgsHead(e)), ty)
         }
         symIdx = scopeLookup(curScope, identName(fn))
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
