@@ -194,6 +194,7 @@ void  rt_ui_quit(void);
 void *rt_ui_front(const rt_ui_window_desc *d);       /* `W.front`, NULL if none */
 void *rt_ui_state(void *inst);                       /* per-instance user vars */
 void  rt_ui_set_title(void *inst, const unsigned char *s);
+void  rt_ui_get_title(void *inst, unsigned char *dst255);    /* GetWTitle, fill-in-place */
 void  rt_ui_widget_set_str(void *inst, short wIdx, short prop, const unsigned char *s);
 /* rt_ui_widget_get_str (mac-target-4c Task 1): fill-in-place read of a
    Str255-shaped runtime property -- currently only RTUI_FIELD's

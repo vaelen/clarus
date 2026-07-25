@@ -520,8 +520,8 @@ func lowIsUnshadowedLastError(nameIdx: int): bool {
 // bare `title` reference matches no fieldInfos entry (it's a synthetic
 // windowScope symbol, not a real per-instance var) and so is deliberately
 // NOT resolved by this function -- lowIdent's caller handles bare `title`
-// as its own explicit unsupported-read case, matching lowWindowInstSelect's
-// existing "title read is unsupported" behavior for the explicit form.
+// as its own explicit case (IUiGetTitle, mac-target-4b Task 4b), matching
+// lowWindowInstSelect's IUiGetTitle handling for the explicit form.
 func lowBareWindowMemberRef(nm: int, ty: int): int {
     var winName: string
     var fh: int
@@ -547,11 +547,11 @@ func lowBareWindowMemberRef(nm: int, ty: int): int {
 // cv_lastError global to reference (see lowSelect's ErrorType case for the
 // matching .code/.message read path). Task 5 adds: inside a window-scoped
 // handler body, a bare per-instance-var name (lowBareWindowMemberRef) or the
-// bare `title` (unsupported here, matching the explicit form's read gap --
-// rt_ui.h has no getter) resolve against the firing instance BEFORE the
-// local/global fallback, mirroring windowScope's own scope-nesting order
-// (Ch8: "bare names resolve first against the firing instance's properties,
-// fields, and widgets, then against globals").
+// bare `title` (IUiGetTitle, mac-target-4b Task 4b -- rt_ui_get_title)
+// resolve against the firing instance BEFORE the local/global fallback,
+// mirroring windowScope's own scope-nesting order (Ch8: "bare names resolve
+// first against the firing instance's properties, fields, and widgets, then
+// against globals").
 func lowIdent(e: int): int {
     var nm: int
     var global: bool
@@ -580,8 +580,7 @@ func lowIdent(e: int): int {
             return winRef
         }
         if poolGet(nm) == "title" {
-            lowUnsupported("read of title")
-            return -1
+            return newIRIntr(IUiGetTitle(), lowWinInstRef(), ty)
         }
     }
     global = not lowIsLocal(nm)
@@ -1146,12 +1145,12 @@ func uiWidgetIndex(winName: string, wgName: string): int {
 // (xk == TyWindowRef): either a per-instance `var` (Ch8) -- read through
 // the rt_ui_state() cast (IUiState + an ordinary FieldRef, so the same
 // FieldRef printer that already knows how to render "(X).cv_name" does all
-// the work; see IRKind's KUiState doc comment in ir.cla) -- or `.title`,
-// which rt_ui.h has no getter for yet (rt_ui_set_title is write-only) and
-// so is unsupported as a read here (lowAssign intercepts the WRITE form
-// directly, before ever calling this). A widget-select (`w.Widget`) is
-// never reached here as a value in its own right -- the OUTER property
-// select peels both levels itself (lowWidgetPropGet).
+// the work; see IRKind's KUiState doc comment in ir.cla) -- or `.title`
+// (mac-target-4b Task 4b: IUiGetTitle/rt_ui_get_title, checked AFTER the
+// fieldInfos walk since "title" is a synthetic windowScope symbol, never a
+// real per-instance var entry). A widget-select (`w.Widget`) is never
+// reached here as a value in its own right -- the OUTER property select
+// peels both levels itself (lowWidgetPropGet).
 func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
     var winNameIdx: int
     var winName: string
@@ -1167,6 +1166,9 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
             return newIRFieldRef(stateExpr, intern(propName), ty)
         }
         fh = fieldInfos[fh].next
+    }
+    if propName == "title" {
+        return newIRIntr(IUiGetTitle(), lowExpr(xExpr), ty)
     }
     lowUnsupported("select ." + propName)
     return -1
@@ -1415,9 +1417,10 @@ func lowReturn(s: int): int {
 // routes through lowIndexAssign; everything else (a plain variable) is a
 // normal store through lowStoreStmt.
 // isWindowTitleSelect reports whether e is `w.title` where w is a window
-// INSTANCE value (Ch8: title is "assignable at runtime"; rt_ui_set_title is
-// write-only, so this shape is only ever handled as an assignment LHS --
-// there is no matching read path in lowWindowInstSelect).
+// INSTANCE value (Ch8: title is "assignable at runtime") -- used to route
+// the ASSIGNMENT form to IUiSetTitle directly, before ever reaching
+// lowSelect/lowWindowInstSelect (whose own `.title` case, IUiGetTitle,
+// handles the READ form instead -- see that function's doc comment).
 func isWindowTitleSelect(e: int): bool {
     if exprKind(e) != ExSelect {
         return false

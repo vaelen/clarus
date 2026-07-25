@@ -930,6 +930,12 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiSetTitle() {
         fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
         return toText("")
+    } else if nm == IUiGetTitle() {
+        // `title` read (mac-target-4b Task 4b) -- same fpNewTmp("clar_str_255")
+        // + fill-in-place-call pattern as IFileName/IUiGetFieldText above.
+        t = fpNewTmp("clar_str_255")
+        fpEmit("rt_ui_get_title(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
+        return t
     } else if nm == IUiSetCaption() {
         fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
         return toText("")

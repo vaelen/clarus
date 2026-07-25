@@ -31,7 +31,12 @@ window DocWin {
 
 extend DocWin {
     on SaveBtn.click {
+        var c: saveChoice
         askSave(path, "Untitled")
+        // Task 4b: bare `title` READ (Appendix C's `askSaveChanges(title)`
+        // shape) -- window-scoped handler, resolves against the firing
+        // instance same as any other bare per-instance name.
+        c = askSaveChanges(title)
     }
 }
 
@@ -42,8 +47,11 @@ on App.launch {
     var choice: saveChoice
     var t: text
     var w: DocWin
+    var wt: string(255)
 
     w = open DocWin
+    // Task 4b: explicit `w.title` READ off a window-instance value.
+    wt = w.title
 
     ok = askOpen(p)
     if ok {

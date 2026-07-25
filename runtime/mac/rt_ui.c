@@ -2628,6 +2628,11 @@ void rt_ui_set_title(void *inst, const unsigned char *s)
     SetWTitle(((rt_ui_winst *)inst)->wp, s);
 }
 
+void rt_ui_get_title(void *inst, unsigned char *dst255)
+{
+    GetWTitle(((rt_ui_winst *)inst)->wp, dst255);
+}
+
 void rt_ui_widget_set_str(void *instV, short wIdx, short prop, const unsigned char *s)
 {
     rt_ui_winst *inst;

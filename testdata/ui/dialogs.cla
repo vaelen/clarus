@@ -16,17 +16,24 @@
 // a successful askSave is a breadcrumb proving the fill actually landed in
 // the real per-instance field rather than a throwaway copy: the
 // "saved-title" snap shows the window's title bar has become the picked
-// filename, not the constant "Doc" it opened with.
+// filename, not the constant "Doc" it opened with. The very next line,
+// `Status.text = "saved: " + title` (Task 4b), READS that same bare
+// `title` back through a REAL GetWTitle call (rt_ui_get_title) -- the
+// "saved-title" snap's Status label shows the filename a second time,
+// proving the read round-trips through the Toolbox window record rather
+// than echoing a cached value.
 //
 //   click <Body>          -- focuses Body (TEActivate/TEClick)
 //   type Hello file        -- types content via TEKey (each char fires
 //                             Body.change)
 //   answer-save DialogsTest.txt
 //   click <SaveBtn>        -- askSave fills the STATE var `path`,
-//                             file.writeText writes it, `title = path`;
+//                             file.writeText writes it, `title = path`,
+//                             then Status.text reads `title` back;
 //                             T ASKSAVE DialogsTest.txt
-//   snap saved-title        -- title bar now reads "DialogsTest.txt" --
-//                             proves the state-var fill-in-place stuck
+//   snap saved-title        -- title bar AND Status label both now read
+//                             "DialogsTest.txt" -- proves the state-var
+//                             fill-in-place AND the title read both stuck
 //   click <ClearBtn>       -- Body.text = "" (empty text), proves the
 //                             content that comes back next is really read
 //                             off disk, not left over from the click above
@@ -81,7 +88,10 @@ extend Doc {
         if askSave(path, "untitled.txt") {
             file.writeText(path, Body.text)
             title = path
-            Status.text = "saved"
+            // Task 4b: bare `title` READ right after the write above --
+            // proves the read comes back through rt_ui_get_title (a REAL
+            // GetWTitle call), not just the local `path` value.
+            Status.text = "saved: " + title
         } else {
             Status.text = "save-cancel"
         }

@@ -2057,6 +2057,15 @@ func IUiSetTitle(): int {
     return intern("ui_set_title")
 }
 
+// IUiGetTitle (mac-target-4b Task 4b): `title` READ -- both the bare form
+// (inside a window-scoped handler, lowIdent) and the explicit `w.title`
+// form (lowWindowInstSelect) lower to this, taking the window-instance IR
+// value as its one arg and yielding a fresh clar_str_255 temp filled by
+// rt_ui_get_title (cprint.cla, IFileName's fill-in-place temp pattern).
+func IUiGetTitle(): int {
+    return intern("ui_get_title")
+}
+
 func IUiSetCaption(): int {
     return intern("ui_set_caption")
 }
