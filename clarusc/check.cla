@@ -1821,6 +1821,7 @@ func checkAppDecl(d: int) {
     var hasIcon: bool
     var hasId: bool
     var idVal: string
+    var k: DeclKind
 
     if appDeclSeen {
         emitDiag(declLine(d), declCol(d), "duplicate app section")
@@ -1831,26 +1832,31 @@ func checkAppDecl(d: int) {
     hasId = false
     item = appDeclPropsHead(d)
     while item != -1 {
-        pname = poolGet(propertyName(item))
-        if not appProps.has(pname) {
-            emitDiag(declLine(item), declCol(item), "unknown property " + pname + " for app")
-        } else if declared.has(pname) {
-            emitDiag(declLine(item), declCol(item), "redeclaration of " + pname)
+        k = declKind(item)
+        if k == DkColumn {
+            emitDiag(declLine(item), declCol(item), "unknown property column for app")
         } else {
-            declared[pname] = 1
-            vh = propertyValuesHead(item)
-            if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExStringLit {
-                emitDiag(declLine(item), declCol(item), "app property " + pname + " requires a string literal")
+            pname = poolGet(propertyName(item))
+            if not appProps.has(pname) {
+                emitDiag(declLine(item), declCol(item), "unknown property " + pname + " for app")
+            } else if declared.has(pname) {
+                emitDiag(declLine(item), declCol(item), "redeclaration of " + pname)
             } else {
-                if pname == "id" {
-                    hasId = true
-                    idVal = poolGet(stringLitIdx(vh))
-                    checkAppId(idVal, declLine(item), declCol(item))
-                }
-                if pname == "icon" {
-                    hasIcon = true
-                    iconLine = declLine(item)
-                    iconCol = declCol(item)
+                declared[pname] = 1
+                vh = propertyValuesHead(item)
+                if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExStringLit {
+                    emitDiag(declLine(item), declCol(item), "app property " + pname + " requires a string literal")
+                } else {
+                    if pname == "id" {
+                        hasId = true
+                        idVal = poolGet(stringLitIdx(vh))
+                        checkAppId(idVal, declLine(item), declCol(item))
+                    }
+                    if pname == "icon" {
+                        hasIcon = true
+                        iconLine = declLine(item)
+                        iconCol = declCol(item)
+                    }
                 }
             }
         }
@@ -1863,7 +1869,10 @@ func checkAppDecl(d: int) {
 
 // checkAppId validates an `id: "XXXX"` value: exactly 4 printable
 // characters, not all lowercase (all-lowercase four-char codes are
-// reserved by Apple for system use, Ch7 of the reference).
+// reserved by Apple for system use, Ch7 of the reference), and no quote
+// characters (build-mac.sh interpolates the id raw into Rez and CMake
+// source, so a quote-bearing id would pass this check and then break with
+// a confusing syntax error at those later stages).
 func checkAppId(v: string, line: int, col: int) {
     var i: int
     var allLower: bool
@@ -1877,6 +1886,10 @@ func checkAppId(v: string, line: int, col: int) {
     while i < 4 {
         if v[i] < ' ' or v[i] > '~' {
             emitDiag(line, col, "app id must be exactly 4 printable characters")
+            return
+        }
+        if v[i] == '"' or v[i] == '\'' {
+            emitDiag(line, col, "app id must not contain quote characters")
             return
         }
         if v[i] < 'a' or v[i] > 'z' { allLower = false }

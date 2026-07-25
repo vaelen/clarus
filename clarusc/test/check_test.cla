@@ -553,7 +553,31 @@ on App.startEmpty {
     ln(src, "}")
     runCase("app-icon-without-id", src)
 
-    // Case 36: exprTypeOf pins the checker's resolved type for a known
+    // Case 36: a `column` clause inside an app body -- parseProperty
+    // dispatches to parseColumn for the `column` keyword regardless of
+    // enclosing decl, so an app section can receive a DkColumn node just
+    // like a window can. The column's header ("name") collides with a
+    // real app property name, so this also pins that checkAppDecl must
+    // recognize the non-DkProperty node before ever treating it as one
+    // (previously: propertyValuesHead/exprNext misread DkColumn's other
+    // fields as exprs-arena data and crashed with an out-of-range index).
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    column \"name\" shows x width 10")
+    ln(src, "}")
+    runCase("app-column-item", src)
+
+    // Case 37: an id containing a quote character -- printable ASCII, so
+    // it would otherwise sail through checkAppId, but build-mac.sh
+    // interpolates the id raw into Rez/CMake source and a quote breaks
+    // that generated syntax with a confusing downstream error.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    id: \"M'DL\"")
+    ln(src, "}")
+    runCase("app-id-quote", src)
+
+    // Case 38: exprTypeOf pins the checker's resolved type for a known
     // expression's own arena index -- "a + b" (the RHS of c's assignment,
     // the third statement in f's body) -- so lower.cla's mustType can
     // later read it back via exprTypeGet. Reached by walking the parsed

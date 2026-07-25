@@ -69,5 +69,9 @@ check_test.cla:2:5: app id must be exactly 4 printable characters
 check_test.cla:2:5: app id must not be all lowercase
 === app-icon-without-id ===
 check_test.cla:2:5: app icon requires an id property
+=== app-column-item ===
+check_test.cla:2:5: unknown property column for app
+=== app-id-quote ===
+check_test.cla:2:5: app id must not contain quote characters
 === exprtype-pin ===
 a + b : int

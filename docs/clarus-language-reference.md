@@ -796,7 +796,7 @@ The number is a tick count; each tick is 1/60 second. The block runs on the main
 
 ### Application Identity
 
-An optional top-level `app` section names the program and feeds its Finder-facing identity (menu bar title, `Get Info` fields, and the four-character creator/signature the classic Mac OS uses to associate documents with their owning application):
+An optional top-level `app` section names the program and feeds its Finder-facing identity (the Apple menu's About item and About box, the `vers` resource that `Get Info` reads for the version line, and the four-character creator/signature the classic Mac OS uses to associate documents with their owning application):
 
 ```
 app Bookmarks {
@@ -813,12 +813,12 @@ A program has at most one `app` section; a second is an error. Every property is
 
 | Property | Meaning |
 |---|---|
-| `name` | The program's name, shown in the menu bar and `Get Info`. If omitted, falls back to the `app` section's own label (e.g. `Mandelbrot` in `app Mandelbrot { }`); if there is no `app` section either, falls back to the first input file's basename. |
-| `version` | Version string, shown in `Get Info`. |
-| `author` | Author/copyright string, shown in `Get Info`. |
-| `about` | A one-line description, shown in `Get Info`. |
+| `name` | The program's name: it appears in the Apple menu's About item ("About _name_...") and About box, and in the `vers` resource's long version string ("_name_ _version_"), which is what `Get Info` shows. If omitted, falls back to the `app` section's own label (e.g. `Mandelbrot` in `app Mandelbrot { }`); if there is no `app` section either, falls back to the first input file's basename. An explicitly empty `name: ""` behaves the same as omitting it — it falls back to the app label (or filename) and the About item/box fall back to their legacy no-app-section behavior. |
+| `version` | Version string, shown in the About box and in the `vers` resource (which `Get Info` reads). |
+| `author` | Author/copyright string, shown only in the About box (`ParamText`'s `^2` slot) — no Finder-visible resource carries it. |
+| `about` | A one-line description, shown only in the About box (`ParamText`'s `^3` slot) — no Finder-visible resource carries it. |
 | `icon` | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other. |
-| `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters and not all lowercase — an all-lowercase four-character code is reserved by Apple for system use. |
+| `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters, not all lowercase (an all-lowercase four-character code is reserved by Apple for system use), and must not contain a `"` or `'` character (the build interpolates it verbatim into generated Rez and CMake source). |
 
 ## Chapter 8: Windows and Widgets
 
