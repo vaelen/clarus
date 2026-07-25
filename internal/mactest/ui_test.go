@@ -196,6 +196,13 @@ func TestPatternUIScenario(t *testing.T) {
 	runUIScenario(t, "pattern", 0)
 }
 
+// TestUIAbout: an `app` section with all four About-relevant properties set
+// -- the Apple menu's About item becomes "About AboutProbe..." and selecting
+// it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT
+// trace line (rt_ui_trace_about) instead of the name-only NoteAlert path a
+// program with no `app` section takes. No snaps.
+func TestUIAbout(t *testing.T) { runUIScenario(t, "about", 0) }
+
 // TestSmokeBounceUIScenario is the gated-forever counterpart to Task 7's
 // real-input verification of the Ch11 bounce acceptance example: builds
 // testdata/valid/bounce.cla ITSELF (not a copy under testdata/ui/), scripts

@@ -977,7 +977,7 @@ File.Save.enabled = false
 
 ### The Apple Menu
 
-The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. In the current version, the About item shows the application's name only — a richer About dialog will come later on.
+The Apple menu and its About item are provided by the runtime automatically; no declaration is needed. With an `app` section (Chapter 7), the About item reads `About <name>…` and shows the application's name, version, author, about text, and icon. Without one, the About item shows the application's name only.
 
 ## Chapter 10: Forms and Tables
 

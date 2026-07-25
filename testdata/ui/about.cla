@@ -1,0 +1,32 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// about.cla: gated UI scenario (Task 3, app-section plan) -- an `app`
+// section with all four About-relevant properties set, one plain window, no
+// menus of its own. Exercises the Apple-menu About item the runtime builds
+// automatically: with a non-empty rt_ui_app_info.name, item 1 is
+// "About AboutProbe..." and selecting it (native menuID 1, item 1 -- there
+// is no declared menu here, so the Apple menu is the ONLY entry in the bar)
+// emits the ABOUT trace line instead of the name-only NoteAlert path.
+//
+// about.events:
+//   menu 1 1  -- Apple menu, item 1 (About AboutProbe...) -> T ABOUT line
+//   quit      -- Quit has no menu item here; `quit` is a script verb, same
+//                rt_ui_quit() cascade a Quit menu item would trigger
+
+app AboutProbe {
+    name: "AboutProbe"
+    version: "9.9"
+    author: "Probe Author"
+    about: "Probe about text."
+    id: "PRBA"
+}
+
+window Main {
+    title: "Main"
+    size: 200, 100
+}
+
+on App.launch {
+    open Main
+}

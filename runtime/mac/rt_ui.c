@@ -243,6 +243,35 @@ static void rt_ui_trace_dim(const char *menu, const char *item, int on)
     rt_test_emit(buf);
 }
 
+/* `T ABOUT <name>|<version>|<author>|<about>` -- rt_ui_apple_select's
+   RT_MAC_TEST substitute for the real ParamText+Alert(129) About box (the
+   scripted event reader can't dismiss a modal ALRT, so the four fields it
+   would have shown are traced as plain text instead). Each is a Pascal
+   string (rt_ui_app_info's fields, all ASCII per the reference's `app`
+   section grammar), copied byte-by-byte the same bounded way
+   rt_ui_trace_set_str copies a widget's text/caption. Only called when
+   rt_ui_app_info.name[0] != 0, so all four fields come from the program's
+   own `app` section (never the all-empty weak default). */
+static void rt_ui_trace_about(void)
+{
+    char buf[1040]; /* "T ABOUT " + 4 * 255-byte fields + 3 '|' separators + NUL */
+    const unsigned char *fields[4];
+    int n, f, i, len;
+
+    fields[0] = rt_ui_app_info.name;
+    fields[1] = rt_ui_app_info.version;
+    fields[2] = rt_ui_app_info.author;
+    fields[3] = rt_ui_app_info.about;
+    n = sprintf(buf, "T ABOUT ");
+    for (f = 0; f < 4; f++) {
+        if (f > 0 && n < (int)sizeof(buf) - 1) buf[n++] = '|';
+        len = fields[f] ? fields[f][0] : 0;
+        for (i = 0; i < len && n < (int)sizeof(buf) - 1; i++) buf[n++] = (char)fields[f][1 + i];
+    }
+    buf[n] = '\0';
+    rt_test_emit(buf);
+}
+
 /* Runtime-property names exactly as Ch8's widget table spells them
    (`caption`/`text`/`enabled`/`checked`/`selected`/`width`/`height`) --
    the SET trace line names the property the way `.cla` source names it,
@@ -620,15 +649,42 @@ static MenuHandle gAppleMenu = NULL;
 
 /* Ch9: "The Apple menu and its About item are provided by the runtime
    automatically; no declaration is needed." Standard System 6 shape: an
-   About item (Ch9 pins its content to "the application's name only" --
-   shown via the same ALRT 128 / DITL "^0" resource rt_mac.c's own
-   rt_alert uses, substituting the app's name instead of an error message),
-   a separator, then the desk-accessory list. Inserted before the declared
-   menus so it lands leftmost in the bar. */
+   About item, a separator, then the desk-accessory list. Inserted before
+   the declared menus so it lands leftmost in the bar.
+   Without an `app` section (rt_ui_app_info.name empty, the weak default),
+   the About item stays "About This Application" and selecting it shows the
+   name-only ALRT 128 / DITL "^0" resource rt_mac.c's own rt_alert uses,
+   substituting the app's name instead of an error message. WITH an `app`
+   section (Task 2's strong rt_ui_app_info), the item instead reads
+   "About <name>..." and selecting it shows the richer ALRT 129 (name,
+   version, author, about via ParamText's four ^0-^3 substitutions) --
+   see rt_ui_apple_select below. */
 static void rt_ui_build_apple_menu(void)
 {
     gAppleMenu = NewMenu(RTUI_APPLE_MENU_ID, (const unsigned char *)"\p\024");
-    AppendMenu(gAppleMenu, (const unsigned char *)"\pAbout This Application;-");
+    if (rt_ui_app_info.name[0] != 0) {
+        /* "About <name>..." -- same buf/append-then-fix-count-byte idiom as
+           the /K cmd-key append above (:673-684), just appending a literal
+           prefix and suffix around the name's own bytes instead of a `/K`
+           pair. Two of the same disclosed limitations apply: not escaped
+           against AppendMenu metacharacters (;/!<() -- the app's name isn't
+           expected to contain any -- and the Pascal count byte wraps
+           (silently) rather than truncates if "About " + name + the
+           ellipsis exceeds 255 bytes, same as an over-long caption+/K
+           combination above. */
+        unsigned char buf[264]; /* 255-byte Str255 name + "About " (6) + ellipsis (1) + count byte */
+        unsigned char n;
+        rt_ui_pstrcpy(buf, (const unsigned char *)"\pAbout ");
+        n = buf[0];
+        rt_ui_pstrcpy(buf + n, rt_ui_app_info.name); /* pstrcpy overwrites buf[n], a count byte we don't need here */
+        n = (unsigned char)(n + buf[n]);
+        buf[1 + n] = (unsigned char)0xC9; /* MacRoman ellipsis */
+        buf[0] = (unsigned char)(n + 1);
+        AppendMenu(gAppleMenu, buf);
+        AppendMenu(gAppleMenu, (const unsigned char *)"\p-");
+    } else {
+        AppendMenu(gAppleMenu, (const unsigned char *)"\pAbout This Application;-");
+    }
     AppendResMenu(gAppleMenu, 'DRVR');
     InsertMenu(gAppleMenu, 0);
 }
@@ -636,10 +692,22 @@ static void rt_ui_build_apple_menu(void)
 static void rt_ui_apple_select(short itemNum)
 {
     if (itemNum == 1) {
-        ParamText(LMGetCurApName(), (const unsigned char *)"\p",
-                  (const unsigned char *)"\p", (const unsigned char *)"\p");
-        NoteAlert(128, NULL);
-    } else {
+        if (rt_ui_app_info.name[0] != 0) {
+#ifdef RT_MAC_TEST
+            rt_ui_trace_about();   /* modal Alert would block the script reader */
+#else
+            ParamText(rt_ui_app_info.name, rt_ui_app_info.version,
+                      rt_ui_app_info.author, rt_ui_app_info.about);
+            Alert(129, NULL);      /* plain Alert: never draws a system icon */
+#endif
+        } else {
+            ParamText(LMGetCurApName(), (const unsigned char *)"\p",
+                      (const unsigned char *)"\p", (const unsigned char *)"\p");
+            NoteAlert(128, NULL);
+        }
+        return;
+    }
+    {
         Str255 name;
         GetMenuItemText(gAppleMenu, itemNum, name);
         OpenDeskAcc(name); /* item 2 is the separator; the Menu Manager never returns it as a selection */
