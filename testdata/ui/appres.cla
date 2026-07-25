@@ -1,0 +1,27 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// appres.cla: gated UI scenario (Task 6, app-section plan) -- an `app`
+// section with an icon (unlike about.cla), used to exercise build-mac.sh's
+// appinfo-driven naming, the generated appres.r (ALRT/DITL/vers/ICN#/BNDL/
+// FREF), and the setbundle bundle-bit stamping. Not run as a UI trace
+// scenario (no .events file) -- TestAppRes* in internal/mactest assert on
+// the build outputs directly.
+
+app AppResProbe {
+    name: "App Res Probe"
+    version: "2.5"
+    author: "Probe Author"
+    about: "Resource probe."
+    icon: "appres-icon.pbm"
+    id: "PRBR"
+}
+
+window Main {
+    title: "Main"
+    size: 200, 100
+}
+
+on App.launch {
+    open Main
+}
