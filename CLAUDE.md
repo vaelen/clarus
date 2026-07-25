@@ -61,6 +61,15 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   under `build-mac/`).
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
+- UI test scenarios live in `testdata/ui`, with blessed goldens (trace +
+  PBM framebuffer snaps) under `testdata/uisnaps` — the snaps are viewable
+  PBMs. `CLARUS_MAC_BLESS=1` regenerates both. `scripts/build-mac.sh` takes
+  `--events FILE` to compile a scripted event sequence into a test build for
+  deterministic UI driving (no real input needed).
+- This sandboxed display has a short (well under a minute of zero real HID
+  activity) idle-lock; a naive long `sleep` with no synthetic input during
+  manual real-input testing can look identical to a frozen app — nudge with
+  a synthetic `CGEvent(mouseMoved)` (no click) periodically during waits.
 
 - LaunchAPPL builds a stripped boot disk (System + AutoQuit + app), boots it
   in a fresh Mini vMac copy, and BLOCKS until the app quits — run it in the

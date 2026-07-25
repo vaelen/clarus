@@ -45,6 +45,25 @@ Living document — the authoritative sequencing and strategy record. Updated
    `internal/mactest` gates Mac-vs-host byte-compare behind
    `CLARUS_MAC_TESTS=1` — zero divergences across the corpus. Go compiler,
    clarusc, and `rt.h`/`rt.c` untouched (frozen surfaces held).
+7. **Mac target 4b (core UI: windows, menus, events)** — core UI runtime
+   (`runtime/mac/rt_ui.{h,c}`): windows/instances, button/check/canvas/label,
+   Ch8 layout with resize re-pinning, menus (Apple menu + app/window-scoped
+   with auto-dimming), every-tick timers, WaitNextEvent loop; `RT_MAC_TEST`
+   adds UI trace lines, scripted event injection (deterministic virtual
+   time), and 21,888-byte framebuffer snaps, all through the 4a `out`
+   capture channel. clarusc lowers window/menu declarations to C descriptor
+   tables + UI intrinsics + handler dispatch/every tables/UI main (snapshot
+   regenerated; bootstrap fixed point holds; UI-free emission stays
+   byte-identical; new ungated `internal/emitui` golden tests).
+   `scripts/build-mac.sh` links `rt_ui.c` always; `--events FILE` compiles
+   an event script into test builds. `internal/mactest` adds a gated UI
+   scenario harness (trace + PBM snap goldens under `testdata/ui` and
+   `testdata/uisnaps`, `CLARUS_MAC_BLESS=1` bless mode) plus smokes of both
+   acceptance apps — 34 gated tests total. Acceptance:
+   `testdata/valid/bounce.cla` (now opens its window via `App.launch`) and
+   `examples/menu-demo.cla` run as real Mac apps, verified with real input.
+   Two real clarusc bugs (menu index base; window `var` defaults dropped)
+   were found by the harness/real usage — evidence the test strategy works.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -59,8 +78,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
    the Go compiler with differential testing, through the three-stage
    bootstrap and the committed C snapshot (strategy below). **DONE** — see
    "Done" item 5.
-2. **Mac target** (4a "hello, Macintosh", then 4b windows/menus/events).
-   4a **DONE** — see "Done" item 6. **4b is the next milestone.**
+2. **Mac target** (4a "hello, Macintosh", then 4b core UI, then 4c text
+   editing, then 4d forms/binding). 4a **DONE** — see "Done" item 6. 4b
+   **DONE** — see "Done" item 7. **4c is the next milestone.**
 3. Memory + forms runtime, then networking.
 4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
    target exists.
@@ -99,20 +119,28 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   cross-compiler; 68k printer build (after Mac target) = compiling on the Mac.
   The Mac-resident version is a GUI app (askOpen/alert), not a CLI.
 
-## Mac target (Plan 4) — 4a done, 4b next
+## Mac target (Plan 4) — 4a and 4b done, 4c next
 
 - **4a "hello, Macintosh": DONE.** Toolbox runtime implementing the same
   intrinsic ABI (Handles, BlockMove, real Str255), Retro68 pipeline
   (`/Users/andrew/repos/Retro68-build/toolchain` — note: built toolchain is in
   Retro68-build, NOT the Retro68 source dir), `scripts/build-mac.sh`,
   alert-only program in Mini vMac. Printer seam proven — see "Done" item 6.
-- **4b windows/menus/events (next):** UI declaration lowering (WIND/MENU/CNTL/DITL
-  resources), WaitNextEvent runtime, window instances, canvas. Acceptance:
-  the two Appendix C examples as double-clickable System 7 apps. Test loop is
-  the weak point (emulator automation) — plan needs a testing-strategy section.
-- Then: memory+forms runtime (real Handles, binding walker, List Manager,
-  Standard File, file.save/load), then networking (MacTCP + ADSP/NBP; needs
-  Basilisk II or real hardware — Mini vMac networking is limited).
+- **4b core UI (windows/menus/events): DONE.** Windows, widgets
+  (button/check/canvas/label), Ch8 layout, menus, every-tick timers, the
+  WaitNextEvent loop, and a deterministic scripted-event test harness — see
+  "Done" item 7. Acceptance: bounce + menu demo as double-clickable apps,
+  real-input verified.
+- **Phase re-split (decided 2026-07-24, superseding the old "both Appendix C
+  examples" 4b acceptance — each phase ships a real artifact):**
+  - **4c (next):** `textview`/`field` (TextEdit), `standard edit` menu,
+    Standard File (`askOpen`/`askSave`), `App.openDocument`. Acceptance: the
+    Appendix C Text Editor.
+  - **4d:** forms + binding walker, `popup`, `table`/List Manager, real
+    Handle-backed records, `file.save`/`load`. Acceptance: the Appendix C
+    Bookmark Manager.
+- Then: networking (MacTCP + ADSP/NBP; needs Basilisk II or real hardware —
+  Mini vMac networking is limited).
 
 ## Small open items (not yet scheduled)
 

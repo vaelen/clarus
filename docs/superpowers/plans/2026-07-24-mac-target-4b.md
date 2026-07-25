@@ -179,7 +179,8 @@ scripts/build-mac.sh                 gains --events FILE (generates events.c)
 **Files:** Modify `clarusc/*.cla` (+ snapshot), extend `testdata/emitui/` fixtures (add `handlers.cla`/`every.cla` + goldens).
 
 - [ ] Lower `extend` bodies: window/widget/menu handlers → C functions with the rt_ui_handlers signatures (widget/event indices resolved at compile time; window-scoped menu handlers get their scope descriptor), `every` blocks → rt_ui_every_desc table entries, `quit` inside UI programs → the cascade entry point.
-- [ ] Emitted main() for UI programs: rt_args_init → clar_init_globals → rt_ui_startup(tables) → launch/start handlers → rt_ui_run(). UI-free programs emit exactly as before (byte-stable — assert via differential suite).
+- [ ] Emitted main() for UI programs: clar_init_globals → rt_args_init → rt_ui_startup(tables) → launch/start handlers → rt_ui_run(). UI-free programs emit exactly as before (byte-stable — assert via differential suite).
+  (Ledger note from Task 5: `clar_init_globals` runs BEFORE `rt_args_init` — matches the pre-existing UI-free path; this line originally had the order backwards.)
 - [ ] Acceptance-in-small: `./clarusc emit` of `testdata/valid/bounce.cla` succeeds and the output compiles (m68k, link against rt_ui+rt_mac — full link this time).
 - [ ] Snapshot regen + selfhost suite; emitui goldens extended; `go test ./...` green.
 - [ ] Commit `clarusc: lower handlers/every/dispatch; UI programs emit runnable main`.
