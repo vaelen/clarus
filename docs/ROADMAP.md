@@ -64,6 +64,24 @@ Living document — the authoritative sequencing and strategy record. Updated
    `examples/menu-demo.cla` run as real Mac apps, verified with real input.
    Two real clarusc bugs (menu index base; window `var` defaults dropped)
    were found by the harness/real usage — evidence the test strategy works.
+8. **Mac target 4c (text editing: TextEdit, Standard File, document
+   launch)** — `field`/`textview` widgets (TENew, click-to-focus, TEKey
+   with the 32,000-byte clamp + `lastError`, vertical scrollbar, real
+   scrap-backed `standard edit`); `askOpen`/`askSave`/`askSaveChanges`
+   (Standard File, scripted via an `RT_MAC_TEST` answer queue); bare
+   `title` reads (`GetWTitle`); `App.openDocument` on both System 6
+   (`GetAppFiles`) and System 7+ (AppleEvents, gated on an `app` section's
+   `SIZE(-1)` `isHighLevelEventAware` bit); the `app` section itself
+   (name/version/author/about/icon/creator id — About box, `vers`,
+   `ICN#`/`ICON`/`FREF`/`BNDL`). Acceptance: `examples/texteditor.cla`,
+   Appendix C's Text Editor verbatim plus an `app` section and an
+   over-32,000-byte open guard, builds a real double-clickable
+   `Text-Editor.{bin,APPL,dsk}` (SIZE(-1), both document/app icons, both
+   FREFs) and passes three new gated scenarios: a real save/reopen file
+   round trip, the two-dirty-document quit-cascade (cancel aborts mid-cascade,
+   already-closed windows stay closed, unvisited ones stay open), and the
+   too-large-file open guard (alert + clean close, no truncated content
+   ever shown) — 25 gated `internal/mactest` tests total.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -80,7 +98,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
    "Done" item 5.
 2. **Mac target** (4a "hello, Macintosh", then 4b core UI, then 4c text
    editing, then 4d forms/binding). 4a **DONE** — see "Done" item 6. 4b
-   **DONE** — see "Done" item 7. **4c is the next milestone.**
+   **DONE** — see "Done" item 7. 4c **DONE** — see "Done" item 8. **4d is
+   the next milestone.**
 3. Memory + forms runtime, then networking.
 4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
    target exists.
@@ -119,7 +138,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   cross-compiler; 68k printer build (after Mac target) = compiling on the Mac.
   The Mac-resident version is a GUI app (askOpen/alert), not a CLI.
 
-## Mac target (Plan 4) — 4a and 4b done, 4c next
+## Mac target (Plan 4) — 4a, 4b, and 4c done, 4d next
 
 - **4a "hello, Macintosh": DONE.** Toolbox runtime implementing the same
   intrinsic ABI (Handles, BlockMove, real Str255), Retro68 pipeline
@@ -131,12 +150,17 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   WaitNextEvent loop, and a deterministic scripted-event test harness — see
   "Done" item 7. Acceptance: bounce + menu demo as double-clickable apps,
   real-input verified.
+- **4c text editing (TextEdit, Standard File, document launch): DONE.**
+  `textview`/`field`, `standard edit`, `askOpen`/`askSave`/
+  `askSaveChanges`, bare `title` reads, `App.openDocument` (System 6
+  `GetAppFiles` + System 7+ AppleEvents), and the `app` section (Finder
+  identity, About box, icon) — see "Done" item 8. Acceptance: the
+  Appendix C Text Editor (`examples/texteditor.cla`), a real
+  double-clickable app with a save/reopen round trip, the multi-window
+  quit-cascade, and the too-large-file guard all verified.
 - **Phase re-split (decided 2026-07-24, superseding the old "both Appendix C
   examples" 4b acceptance — each phase ships a real artifact):**
-  - **4c (next):** `textview`/`field` (TextEdit), `standard edit` menu,
-    Standard File (`askOpen`/`askSave`), `App.openDocument`. Acceptance: the
-    Appendix C Text Editor.
-  - **4d:** forms + binding walker, `popup`, `table`/List Manager, real
+  - **4d (next):** forms + binding walker, `popup`, `table`/List Manager, real
     Handle-backed records, `file.save`/`load`. Acceptance: the Appendix C
     Bookmark Manager.
 - Then: networking (MacTCP + ADSP/NBP; needs Basilisk II or real hardware —

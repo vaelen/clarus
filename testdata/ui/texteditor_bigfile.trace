@@ -1,0 +1,10 @@
+T OPENDOC texteditor-bigfile.txt
+T OPEN Doc 1
+T DIM File.Save 1
+T DIM File.SaveAs 1
+T FRONT Doc 1
+T FIRE Doc.closeRequest
+T CLOSE Doc 1
+T DIM File.Save 0
+T DIM File.SaveAs 0
+T FIRE Doc.closed

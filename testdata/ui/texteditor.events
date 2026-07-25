@@ -1,0 +1,10 @@
+click 200 60
+type Hello, Clarus!
+answer-save texteditor-roundtrip.txt
+menu 2 3
+close
+answer-open texteditor-roundtrip.txt
+menu 2 2
+snap roundtrip
+answer-changes discard
+quit

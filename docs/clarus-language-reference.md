@@ -903,6 +903,10 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 
+**Mac note — textview capacity:** on the Macintosh, a `textview`'s `text` property holds at most 32,000 bytes (a classic TextEdit limit). Setting it (directly, or by reading a longer file into it) with more content than that truncates to the first 32,000 bytes and sets `lastError` (Chapter 12), the same as any other clamped string store; execution continues with the truncated content. A program that must reject an oversized document outright — rather than silently show a truncated one — reads the file into an uncapped local `text` (Chapter 3), checks its length, and only assigns it to the `textview` if it fits (Appendix C's Text Editor does this in `openPath`). Separately: pathological content shaped as one unbroken word of several tens of thousands of bytes (no spaces or line breaks at all) makes classic TextEdit's line-wrap search effectively quadratic — real text, which breaks on whitespace at normal intervals, does not hit this.
+
+**Mac note — `scrollbar: both`:** the Macintosh implementation currently draws and drives only the vertical scrollbar; the horizontal half of `both` is accepted but has no effect (a plain `vertical` declaration behaves identically). Vertical-only content, the common case, is unaffected.
+
 ```rust
 window Doc {
     title: "Untitled"

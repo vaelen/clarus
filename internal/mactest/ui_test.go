@@ -344,3 +344,108 @@ func TestOpenDocUIScenario(t *testing.T) {
 func TestOpenDocEmptyUIScenario(t *testing.T) {
 	runUIScenarioSrc(t, "opendoc_empty", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0)
 }
+
+// TestTexteditorUIScenario (Task 6, mac-target-4c) drives examples/
+// texteditor.cla ITSELF -- the 4c acceptance app -- through a real save/
+// reopen round trip: type into the startEmpty document, File > Save
+// (askSave fills the path, file.writeText writes it for real), a clean
+// `close` (dirty was reset by the successful save, so no askSaveChanges
+// prompt), then File > Open the SAME path (askOpen fills it again,
+// file.readText reads the real bytes back via openPath -- the identical
+// function App.openDocument would call) and a snap proving the reopened
+// window shows the same content. See texteditor.events for the full
+// script.
+func TestTexteditorUIScenario(t *testing.T) {
+	runUIScenarioSrc(t, "texteditor", filepath.Join("..", "..", "examples", "texteditor.cla"), 0)
+}
+
+// TestTexteditorQuitUIScenario (Task 6, mac-target-4c) is the 4b
+// carry-over multi-window quit-cascade fixture: two dirty documents (Doc1
+// from App.startEmpty, Doc2 from File > New, frontmost). The first `quit`
+// cascades front-to-back (rt_ui_quit, runtime/mac/rt_ui.c): Doc2 answers
+// Save (+ askSave's own path prompt) and closes for real; Doc1 answers
+// Cancel, aborting the WHOLE quit where it stands. Per the quit-cascade
+// contract (Ch7 "Quit Semantics"), Doc2 -- already closed before the
+// cancel -- stays closed, and Doc1 -- not yet visited -- stays open; the
+// trace must show exactly one CLOSE before the abort and none after. The
+// second `quit` then finds only Doc1 still open and discards it, exiting
+// 0.
+func TestTexteditorQuitUIScenario(t *testing.T) {
+	runUIScenarioSrc(t, "texteditor_quit", filepath.Join("..", "..", "examples", "texteditor.cla"), 0)
+}
+
+// texteditorBigfileAlertMsg is the exact string examples/texteditor.cla's
+// openPath guard passes to alert() when a document exceeds the textview's
+// 32,000-byte cap -- kept in sync with that literal by eye (there is no
+// shared constant across a .cla file and a Go test).
+const texteditorBigfileAlertMsg = "That file is too large to open (over 32,000 bytes)."
+
+// TestTexteditorBigfileUIScenario (Task 6, mac-target-4c) exercises the
+// too-large guard added to examples/texteditor.cla's openPath: a real
+// file over 32,000 bytes, opened via `launchdoc`, must be rejected (alert
+// + close) rather than silently truncated by the textview's own clamp.
+//
+// The fixture is entirely self-written, in the SAME boot the guard is
+// tested in -- there is no mechanism in this harness to pre-stage a file
+// onto the ephemeral disk LaunchAPPL builds per run (it boots from the
+// .bin alone; any earlier RunMac's disk is gone with its temp dir), so a
+// genuinely separate "write it in one launch, open it in a later one" is
+// not possible here. testdata/ui/texteditor_bigfile_setup.cla -- compiled
+// alongside examples/texteditor.cla as a second source file for this
+// scenario only -- writes a real 36,000-byte file via `on App.launch`
+// (see that file's own comment for why `launch`, not `startEmpty`);
+// texteditor_bigfile.events then `launchdoc`s that same path, all within
+// one continuous run.
+//
+// alert() text is NOT part of the RT_MAC_TEST trace/snap vocabulary --
+// runtime/mac/rt_mac.c's RT_MAC_TEST rt_alert appends the message as a
+// bare CRLF-translated line straight into the SAME capture stream
+// parseUIOutput reads, and parseUIOutput treats any line that isn't a "T "
+// trace line, a snap block, or blank as a FATAL parse error (by design,
+// to catch capture corruption). Rather than reusing runUIScenarioSrc
+// (which would abort on that line), this test reads the raw capture
+// itself: asserts the alert text is present verbatim, strips that one
+// line out, and only THEN feeds the remainder through the normal
+// trace-golden compare -- so the alert's occurrence is checked (the guard
+// really did fire) even though its literal text isn't part of the trace
+// golden. The trace itself proves the rest of the guard's contract: the
+// document opens (T OPEN) and then closes cleanly (T FIRE closeRequest/
+// closed, T CLOSE) with no Body.change in between -- it was never shown
+// truncated content, per the guard running before any assignment to
+// Body.text.
+func TestTexteditorBigfileUIScenario(t *testing.T) {
+	requireMac(t)
+	root := repoRoot(t)
+	scenario := "texteditor_bigfile"
+
+	bin := runBuildMac(t, "UITexteditorBigfile",
+		filepath.Join("..", "..", "examples", "texteditor.cla"),
+		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
+		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", scenario+".events"))
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+
+	if !strings.Contains(out, texteditorBigfileAlertMsg) {
+		t.Fatalf("%s: expected alert message %q in capture, got: %q", scenario, texteditorBigfileAlertMsg, out)
+	}
+	filtered := strings.Replace(out, texteditorBigfileAlertMsg+"\n", "", 1)
+	trace, _ := parseUIOutput(t, filtered)
+
+	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")
+	if blessUI() {
+		if err := os.WriteFile(traceGolden, []byte(trace), 0o644); err != nil {
+			t.Fatalf("writing trace golden: %v", err)
+		}
+	} else {
+		want, err := os.ReadFile(traceGolden)
+		if err != nil {
+			t.Fatalf("reading trace golden %s: %v", traceGolden, err)
+		}
+		if trace != string(want) {
+			t.Fatalf("%s: trace mismatch:%s", scenario, firstDiff(string(want), trace))
+		}
+	}
+
+	if exitCode != 0 {
+		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
+	}
+}
