@@ -794,6 +794,32 @@ every 60 ticks {
 
 The number is a tick count; each tick is 1/60 second. The block runs on the main event loop and is never re-entered while a previous run is still executing.
 
+### Application Identity
+
+An optional top-level `app` section names the program and feeds its Finder-facing identity (menu bar title, `Get Info` fields, and the four-character creator/signature the classic Mac OS uses to associate documents with their owning application):
+
+```
+app Bookmarks {
+    name: "Bookmarks"
+    version: "1.0"
+    author: "A. Programmer"
+    about: "Keeps track of your favorite places."
+    icon: "bookmarks.pbm"
+    id: "BMRK"
+}
+```
+
+A program has at most one `app` section; a second is an error. Every property is optional, and all six take a bare string literal — no expressions, no concatenation:
+
+| Property | Meaning |
+|---|---|
+| `name` | The program's name, shown in the menu bar and `Get Info`. Falls back to the compiled program's file name if omitted. |
+| `version` | Version string, shown in `Get Info`. |
+| `author` | Author/copyright string, shown in `Get Info`. |
+| `about` | A one-line description, shown in `Get Info`. |
+| `icon` | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other. |
+| `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters and not all lowercase — an all-lowercase four-character code is reserved by Apple for system use. |
+
 ## Chapter 8: Windows and Widgets
 
 ### Window Declaration
@@ -1238,7 +1264,7 @@ Clarus reports failures in four ways, depending on where they occur:
 program     = { topDecl } ;
 topDecl     = includeDecl | recordDecl | enumDecl | constDecl | varDecl
             | funcDecl | windowDecl | menuDecl | extendDecl | handlerDecl
-            | everyDecl ;
+            | everyDecl | appDecl ;
 
 includeDecl = "include" STRING ;
 
@@ -1264,6 +1290,7 @@ param       = IDENT ":" type ;
 
 windowDecl  = "window" IDENT "{" { windowItem } "}" ;
 windowItem  = property | widgetDecl | varDecl | "form" "for" IDENT ;
+appDecl     = "app" IDENT "{" { property } "}" ;
 widgetDecl  = widgetKind IDENT [ "{" propertyList "}" ] ;
 widgetKind  = "button" | "field" | "textview" | "check" | "popup"
             | "table" | "canvas" | "label" ;
@@ -1316,7 +1343,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above.
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above. `app` is contextual the same way, recognized only when it starts a top-level declaration and is followed by an IDENT; unlike `include` it may appear anywhere among the top-level declarations, but at most once per program (Chapter 7).
 
 ## Appendix B: Event Handler Quick Reference
 

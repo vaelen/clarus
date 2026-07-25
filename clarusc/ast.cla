@@ -131,6 +131,8 @@
 //                a=caption (interned, -1 if none); b=key (interned, -1 if
 //                none); intVal=flags bitmask (bit0 IsItem, bit1
 //                IsSeparator, bit2 IsStandardEdit)
+//   DkApp        nameIdx=label; a=props head (DkProperty chain); b=path
+//                pool idx
 //
 // ---- TypeExprKind (typeExprs arena) ----
 //   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
@@ -198,6 +200,7 @@ enum DeclKind {
     DkFormFor
     DkWidget
     DkMenuEntry
+    DkApp
 }
 
 enum TypeExprKind {
@@ -1272,6 +1275,32 @@ func funcDeclRetType(i: int): int {
 
 func funcDeclBody(i: int): int {
     return decls[i].c
+}
+
+func newAppDecl(nameIdx: int, propsHead: int, pathIdx: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkApp
+    n.nameIdx = nameIdx
+    n.a = propsHead
+    n.b = pathIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
+}
+
+func appDeclName(i: int): int {
+    return decls[i].nameIdx
+}
+
+func appDeclPropsHead(i: int): int {
+    return decls[i].a
+}
+
+func appDeclPathIdx(i: int): int {
+    return decls[i].b
 }
 
 func newWindowDecl(nameIdx: int, itemsHead: int, line: int, col: int): int {

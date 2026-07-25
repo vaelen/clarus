@@ -472,7 +472,88 @@ on App.startEmpty {
     ln(src, "}")
     runCase("window-menu-extend-clean", src)
 
-    // Case 27: exprTypeOf pins the checker's resolved type for a known
+    // ---- Task 1 (app section): application identity ----
+
+    // Case 27: a clean app section -- all six properties, a well-formed
+    // four-character id, plus a startCLI handler (app section and app
+    // entry points are independent features, so this also confirms the
+    // parser doesn't confuse the two).
+    src = ""
+    ln(src, "app Demo {")
+    ln(src, "    name: \"Demo\"")
+    ln(src, "    version: \"1.0\"")
+    ln(src, "    author: \"Someone\"")
+    ln(src, "    about: \"A demo app\"")
+    ln(src, "    icon: \"demo.pbm\"")
+    ln(src, "    id: \"MNDL\"")
+    ln(src, "}")
+    ln(src, "on App.startCLI(args: list of string) {")
+    ln(src, "}")
+    runCase("app-clean", src)
+
+    // Case 28: a second app section is rejected outright, at its own
+    // line/col, without re-validating its properties.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    name: \"A\"")
+    ln(src, "}")
+    ln(src, "app B {")
+    ln(src, "    name: \"B\"")
+    ln(src, "}")
+    runCase("app-duplicate-section", src)
+
+    // Case 29: the same property declared twice within one app section.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    name: \"A\"")
+    ln(src, "    name: \"B\"")
+    ln(src, "}")
+    runCase("app-duplicate-key", src)
+
+    // Case 30: a property name the app section doesn't recognize.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    flavor: \"x\"")
+    ln(src, "}")
+    runCase("app-unknown-key", src)
+
+    // Case 31: a non-string-literal value.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    name: 1 + 2")
+    ln(src, "}")
+    runCase("app-non-literal", src)
+
+    // Case 32: a bare property with no value at all.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    name")
+    ln(src, "}")
+    runCase("app-missing-value", src)
+
+    // Case 33: an id that isn't exactly four characters.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    id: \"TOOLONG\"")
+    ln(src, "}")
+    runCase("app-bad-id-len", src)
+
+    // Case 34: an id that's four characters but all lowercase (reserved).
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    id: \"mndl\"")
+    ln(src, "}")
+    runCase("app-bad-id-lower", src)
+
+    // Case 35: icon declared without an id -- reported at the icon
+    // property's own line/col, not the app section's.
+    src = ""
+    ln(src, "app A {")
+    ln(src, "    icon: \"x.pbm\"")
+    ln(src, "}")
+    runCase("app-icon-without-id", src)
+
+    // Case 36: exprTypeOf pins the checker's resolved type for a known
     // expression's own arena index -- "a + b" (the RHS of c's assignment,
     // the third statement in f's body) -- so lower.cla's mustType can
     // later read it back via exprTypeGet. Reached by walking the parsed

@@ -354,6 +354,11 @@ func exprTypeGet(e: int): int {
 var loopDepth: int
 var inCloseRequest: bool
 
+// appDeclSeen is true once a program's (at most one) app section has been
+// checked -- checkAppDecl uses it to reject a second one outright, rather
+// than re-validating its properties.
+var appDeclSeen: bool
+
 // progGen is bumped by every checkReset so the per-program menuItems set
 // (below) can namespace its keys and never consult a stale entry from a
 // previous program compiled in the same process (maps have no bulk-clear
@@ -425,11 +430,19 @@ func menuKey(menuName: string, itemName: string): string {
 var windowTopProps: map of int
 var widgetDeclProps: map of int
 var widgetRuntimeProps: map of int
+var appProps: map of int
 
 func buildUiTables() {
     windowTopProps["title"] = 1
     windowTopProps["size"] = 1
     windowTopProps["resizable"] = 1
+
+    appProps["name"] = 1
+    appProps["version"] = 1
+    appProps["author"] = 1
+    appProps["about"] = 1
+    appProps["icon"] = 1
+    appProps["id"] = 1
 
     widgetDeclProps["button.caption"] = 1
     widgetDeclProps["button.at"] = 1
@@ -1790,6 +1803,87 @@ func checkWindowDecl(d: int) {
     sym.isMenu = false
     if not scopeDeclare(curScope, sym) {
         emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(winNameIdx))
+    }
+}
+
+// checkAppDecl checks the (at most one) `app` section -- a flat property
+// list, so it shares unknown-property/redeclaration checking with
+// checkWindowDecl's item loop but skips that function's items-list handling
+// entirely (an app body is nothing but properties). Every declared property
+// must be a bare string literal; `id` and `icon` get extra validation.
+func checkAppDecl(d: int) {
+    var item: int
+    var pname: string
+    var vh: int
+    var declared: map of int
+    var iconLine: int
+    var iconCol: int
+    var hasIcon: bool
+    var hasId: bool
+    var idVal: string
+
+    if appDeclSeen {
+        emitDiag(declLine(d), declCol(d), "duplicate app section")
+        return
+    }
+    appDeclSeen = true
+    hasIcon = false
+    hasId = false
+    item = appDeclPropsHead(d)
+    while item != -1 {
+        pname = poolGet(propertyName(item))
+        if not appProps.has(pname) {
+            emitDiag(declLine(item), declCol(item), "unknown property " + pname + " for app")
+        } else if declared.has(pname) {
+            emitDiag(declLine(item), declCol(item), "redeclaration of " + pname)
+        } else {
+            declared[pname] = 1
+            vh = propertyValuesHead(item)
+            if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExStringLit {
+                emitDiag(declLine(item), declCol(item), "app property " + pname + " requires a string literal")
+            } else {
+                if pname == "id" {
+                    hasId = true
+                    idVal = poolGet(stringLitIdx(vh))
+                    checkAppId(idVal, declLine(item), declCol(item))
+                }
+                if pname == "icon" {
+                    hasIcon = true
+                    iconLine = declLine(item)
+                    iconCol = declCol(item)
+                }
+            }
+        }
+        item = declNext(item)
+    }
+    if hasIcon and not hasId {
+        emitDiag(iconLine, iconCol, "app icon requires an id property")
+    }
+}
+
+// checkAppId validates an `id: "XXXX"` value: exactly 4 printable
+// characters, not all lowercase (all-lowercase four-char codes are
+// reserved by Apple for system use, Ch7 of the reference).
+func checkAppId(v: string, line: int, col: int) {
+    var i: int
+    var allLower: bool
+
+    if v.length != 4 {
+        emitDiag(line, col, "app id must be exactly 4 printable characters")
+        return
+    }
+    allLower = true
+    i = 0
+    while i < 4 {
+        if v[i] < ' ' or v[i] > '~' {
+            emitDiag(line, col, "app id must be exactly 4 printable characters")
+            return
+        }
+        if v[i] < 'a' or v[i] > 'z' { allLower = false }
+        i = i + 1
+    }
+    if allLower {
+        emitDiag(line, col, "app id must not be all lowercase")
     }
 }
 
@@ -3686,6 +3780,7 @@ func checkReset() {
 
     loopDepth = 0
     inCloseRequest = false
+    appDeclSeen = false
     progGen = progGen + 1
 
     while paramSpecs.count > 0 {
@@ -3742,6 +3837,9 @@ func checkTopDeclPhase1(d: int) {
     }
     case DkMenu {
         checkMenuDecl(d)
+    }
+    case DkApp {
+        checkAppDecl(d)
     }
     }
 }

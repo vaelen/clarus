@@ -1329,6 +1329,9 @@ func parseTopDecl(): int {
     if curKind() == TkExtend { return parseExtendDecl() }
     if curKind() == TkOn { return parseHandlerDecl() }
     if curKind() == TkEvery { return parseEveryDecl() }
+    if curKind() == TkIdent and poolGet(curTok().nameIdx) == "app" and peekKind() == TkIdent {
+        return parseAppDecl()
+    }
     parseErrorf(curLine(), curCol(), "expected declaration, found " + tokKindQuoted(curKind()))
     return -1
 }
@@ -1377,6 +1380,36 @@ func parseWindowDecl(): int {
     }
     advance() // consume '}'
     return newWindowDecl(name.nameIdx, itemsHead, line, col)
+}
+
+// parseAppDecl parses `"app" IDENT "{" { property } "}"` (contextual:
+// "app" is an IDENT recognized by text at top-level declaration start, the
+// same idiom as `include`). Unlike parseWindowItem's body, an app body is
+// nothing but properties -- no vars, widgets, or `form for`.
+func parseAppDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var propsHead: int
+    var propsTail: int
+    var pIdx: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'app'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    propsHead = -1
+    propsTail = -1
+    skipItemSeps()
+    while curKind() != TkRBrace and not parseAborted {
+        pIdx = parseProperty()
+        if propsHead == -1 { propsHead = pIdx }
+        propsTail = declListAppend(propsTail, pIdx)
+        skipItemSeps()
+    }
+    advance() // consume '}'
+    return newAppDecl(name.nameIdx, propsHead, curPathIdx, line, col)
 }
 
 // parseWindowItem parses one windowItem: a `var` declaration, `form for

@@ -51,5 +51,23 @@ check_test.cla:5:5: handler T.select takes (i: int)
 check_test.cla:1:1: tick count must be at least 1
 === window-menu-extend-clean ===
 clean
+=== app-clean ===
+clean
+=== app-duplicate-section ===
+check_test.cla:4:1: duplicate app section
+=== app-duplicate-key ===
+check_test.cla:3:5: redeclaration of name
+=== app-unknown-key ===
+check_test.cla:2:5: unknown property flavor for app
+=== app-non-literal ===
+check_test.cla:2:5: app property name requires a string literal
+=== app-missing-value ===
+check_test.cla:2:5: app property name requires a string literal
+=== app-bad-id-len ===
+check_test.cla:2:5: app id must be exactly 4 printable characters
+=== app-bad-id-lower ===
+check_test.cla:2:5: app id must not be all lowercase
+=== app-icon-without-id ===
+check_test.cla:2:5: app icon requires an id property
 === exprtype-pin ===
 a + b : int
