@@ -2,6 +2,7 @@ click 100 150
 type Hello file
 answer-save DialogsTest.txt
 click 204 74
+snap saved-title
 click 380 74
 answer-open DialogsTest.txt
 click 116 74

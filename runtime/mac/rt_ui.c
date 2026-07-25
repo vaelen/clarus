@@ -421,8 +421,12 @@ static int gUiScripted = 0;
  * modal SF dialog or Alert either, so there is no real/scripted fork to
  * make here, only RT_MAC_TEST/not. Fed by the answer-open/answer-save/
  * answer-changes/answer-cancel script verbs (rt_ui_run_scripted below).
- * Fixed 8-entry ring buffer: no script ever queues more than a couple of
- * dialogs ahead of where it consumes them. */
+ * Fixed 8-slot ring buffer (7 usable -- the full/empty ambiguity of a
+ * head==tail ring is broken by never letting tail catch up to head, the
+ * usual one-slot-sacrificed idiom): no script ever queues more than a
+ * couple of dialogs ahead of where it consumes them, and a script that
+ * DOES overflow this gets a loud rt_panic rather than silently clobbering
+ * an unconsumed entry. */
 #define RT_UI_ANS_OPEN    0
 #define RT_UI_ANS_SAVE    1
 #define RT_UI_ANS_CHANGES 2
@@ -434,11 +438,20 @@ static rt_ui_answer gAnswerQ[8];
 static int gAnswerHead = 0; /* next entry to consume */
 static int gAnswerTail = 0; /* next free slot to fill */
 
+/* Shared full-check: called before every push (see call sites below) --
+   both push functions write gAnswerQ[gAnswerTail] and must never do so
+   when that slot is still the unconsumed head one ring-lap ahead. */
+static void rt_ui_answer_check_room(void)
+{
+    if ((gAnswerTail + 1) % 8 == gAnswerHead) rt_panic("scripted dialog answer queue overflow");
+}
+
 static void rt_ui_answer_push_path(short kind, const char *path)
 {
     rt_ui_answer *a;
     size_t n;
 
+    rt_ui_answer_check_room();
     a = &gAnswerQ[gAnswerTail];
     n = strlen(path);
     if (n > 255) n = 255; /* Str255 cap, same silent clamp as every other Pascal-string fill in this file */
@@ -450,6 +463,7 @@ static void rt_ui_answer_push_path(short kind, const char *path)
 
 static void rt_ui_answer_push_val(short kind, short val)
 {
+    rt_ui_answer_check_room();
     gAnswerQ[gAnswerTail].kind = kind;
     gAnswerQ[gAnswerTail].val = val;
     gAnswerTail = (gAnswerTail + 1) % 8;

@@ -11,12 +11,28 @@
 // Compile-check only (m68k, via internal/emitui's own gate) -- the real
 // scripted behavior (both cancels, all three saveChoice branches, the
 // on-disk file round-trip) is testdata/ui/dialogs.cla instead.
+//
+// SaveBtn.click's `askSave(path, "Untitled")` is the coverage Task 6's
+// Text Editor depends on: `path` is a per-instance window var (not a
+// local), so its fill-in-place argument must resolve through IUiState
+// (rt_ui_state) to the REAL clar_uistate_DocWin storage -- fpAddrable's
+// EFieldRef case -- not a throwaway copy that would silently discard the
+// picked path once the handler returns.
 
 window DocWin {
     title: "Doc"
     size: 320, 240
 
-    textview Body { at: 20, 20; fill: both }
+    button SaveBtn { at: 20, 20; caption: "Save" }
+    textview Body  { at: 20, bottom; fill: both }
+
+    var path: string(255)
+}
+
+extend DocWin {
+    on SaveBtn.click {
+        askSave(path, "Untitled")
+    }
 }
 
 on App.launch {

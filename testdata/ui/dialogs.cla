@@ -7,25 +7,38 @@
 // answer-cancel), plus a REAL file round-trip through the boot volume
 // (askSave -> file.writeText -> Clear -> askOpen the SAME path ->
 // file.readText -> Body.text, proven by a snap showing the content came
-// back from disk, not just from memory):
+// back from disk, not just from memory).
+//
+// `path` is a PER-INSTANCE window var (clar_uistate_Doc.cv_path, not a
+// handler-local) -- both askOpen and askSave fill it in place through
+// rt_ui_state, the same shape review flagged as Task 6's Text Editor
+// dependency (`d.path` there). SaveBtn.click's `title = path` right after
+// a successful askSave is a breadcrumb proving the fill actually landed in
+// the real per-instance field rather than a throwaway copy: the
+// "saved-title" snap shows the window's title bar has become the picked
+// filename, not the constant "Doc" it opened with.
 //
 //   click <Body>          -- focuses Body (TEActivate/TEClick)
 //   type Hello file        -- types content via TEKey (each char fires
 //                             Body.change)
 //   answer-save DialogsTest.txt
-//   click <SaveBtn>        -- askSave fills path, file.writeText writes it;
+//   click <SaveBtn>        -- askSave fills the STATE var `path`,
+//                             file.writeText writes it, `title = path`;
 //                             T ASKSAVE DialogsTest.txt
+//   snap saved-title        -- title bar now reads "DialogsTest.txt" --
+//                             proves the state-var fill-in-place stuck
 //   click <ClearBtn>       -- Body.text = "" (empty text), proves the
 //                             content that comes back next is really read
 //                             off disk, not left over from the click above
 //   answer-open DialogsTest.txt
-//   click <OpenBtn>        -- askOpen fills the SAME path, file.readText
-//                             refills Body.text; T ASKOPEN DialogsTest.txt
+//   click <OpenBtn>        -- askOpen refills the SAME state var `path`,
+//                             file.readText refills Body.text;
+//                             T ASKOPEN DialogsTest.txt
 //   snap roundtrip          -- Body shows "Hello file" again
 //   answer-cancel
-//   click <OpenBtn>        -- T ASKOPEN cancel; Body untouched
+//   click <OpenBtn>        -- T ASKOPEN cancel; Body/path untouched
 //   answer-cancel
-//   click <SaveBtn>        -- T ASKSAVE cancel; no file write
+//   click <SaveBtn>        -- T ASKSAVE cancel; no file write, no title set
 //   answer-changes save
 //   click <AskBtn>         -- T ASKCHANGES save; T SET Doc.Status.text
 //                             changes-save
@@ -45,6 +58,8 @@ window Doc {
     button ClearBtn { at: right, 20; caption: "Clear" }
     label Status    { at: 20, bottom; text: "" }
     textview Body   { at: 20, bottom; fill: both }
+
+    var path: string(255)
 }
 
 on App.launch {
@@ -53,10 +68,9 @@ on App.launch {
 
 extend Doc {
     on OpenBtn.click {
-        var p: string(255)
         var t: text
-        if askOpen(p) {
-            file.readText(p, t)
+        if askOpen(path) {
+            file.readText(path, t)
             Body.text = t
             Status.text = "opened"
         } else {
@@ -64,9 +78,9 @@ extend Doc {
         }
     }
     on SaveBtn.click {
-        var p: string(255)
-        if askSave(p, "untitled.txt") {
-            file.writeText(p, Body.text)
+        if askSave(path, "untitled.txt") {
+            file.writeText(path, Body.text)
+            title = path
             Status.text = "saved"
         } else {
             Status.text = "save-cancel"
