@@ -19,6 +19,14 @@ menu File {
 menu Edit { standard edit }
 
 func size(at: int): int {
+    if true {
+        return 1
+    } else {
+        return 0
+    }
+    while nil == nil {
+        break
+    }
     return at mod 2
 }
 

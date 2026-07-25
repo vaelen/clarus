@@ -33,3 +33,7 @@ Prints `OK` (exit 0) or per-probe failures (exit 1).
 - Type names highlight everywhere, not only in type positions.
 - Property keywords (`size`, `at`, ...) highlight only when followed by
   `:`; a record field reusing such a name colors as a label.
+- Table-column lines (`column "Hdr" shows field width fill`) are not
+  specially highlighted (safe default; no examples use tables yet).
+- `include` highlights everywhere, though the language treats it as
+  contextual and top-of-file only.
