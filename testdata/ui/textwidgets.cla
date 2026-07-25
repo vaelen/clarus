@@ -5,12 +5,17 @@
 // textview widgets end to end on real m68k hardware: field.change/enter,
 // textview.change, field.text/textview.text read+write, and the carried
 // review requirement from Task 1 -- the RTUI_TE_MAX (32,000-byte) clamp
-// boundary on textview.text set. Fill32000/Fill32001 each build a `text`
-// value in a loop (exactly at, and one past, the clamp) and assign it to
-// Body.text; the outcome (ok vs. truncated + lastError) is round-tripped
-// into the window title -- rt_ui_set_title has no RT_MAC_TEST trace line of
-// its own, so this is verified via the final snap's title bar, not a trace
-// line. Scripted by textwidgets.events (`key 13`, not
+// boundary on textview.text set, BOTH sides independently observable.
+// Fill32000/Fill32001 each build a `text` value in a loop (exactly at, and
+// one past, the clamp) and assign it to Body.text; the outcome (ok vs.
+// truncated + lastError) is round-tripped into the window title --
+// rt_ui_set_title has no RT_MAC_TEST trace line of its own, so this is
+// verified via a snap's title bar, not a trace line -- and each click gets
+// its OWN snap (immediately after, before the other button's click
+// clobbers the title/content) so an off-by-one clamp regression in either
+// direction fails a specific golden rather than being masked by the other
+// click's title/content overwriting it. Scripted by textwidgets.events
+// (`key 13`, not
 // an embedded raw CR byte in a `type` line -- scripts/build-mac.sh's
 // --events pipeline C-escapes a script FILE's raw bytes into a string
 // literal, and a literal CR byte there is mis-lexed as a source line
@@ -31,10 +36,13 @@
 //   click <Fill32000 button> -- appends exactly 32,000 bytes and sets
 //                                Body.text; no truncation, title becomes
 //                                "ok:32000"
+//   snap ok32000              -- title/content prove the exact-clamp,
+//                                no-truncation path
 //   click <Fill32001 button> -- appends 32,001 bytes and sets Body.text;
 //                                truncated to 32,000 + lastError set,
 //                                title becomes lastError.message
-//   snap S1
+//   snap trunc32001            -- title proves the one-past-clamp,
+//                                truncated+lastError path
 //   quit
 
 window TextWin {

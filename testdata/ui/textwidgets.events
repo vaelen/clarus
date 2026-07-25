@@ -5,6 +5,7 @@ click 254 214
 type Hi there
 key 13
 click 264 74
+snap ok32000
 click 352 74
-snap S1
+snap trunc32001
 quit

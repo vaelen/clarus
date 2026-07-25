@@ -167,15 +167,36 @@ func TestMenusUIScenario(t *testing.T) {
 // TestTextwidgetsUIScenario (mac-target-4c Task 2): field/textview widgets
 // end to end -- field.change/enter and textview.change dispatch, field.text/
 // textview.text read+write, and the CARRIED review requirement from Task 1:
-// the RTUI_TE_MAX (32,000-byte) clamp boundary on textview.text set, both
-// sides (exactly at the clamp: no truncation, no lastError; one byte over:
-// truncated to 32,000 + lastError set), each round-tripped into the window
-// title and verified via the final snap's title bar (rt_ui_set_title has no
-// RT_MAC_TEST trace line of its own). See testdata/ui/textwidgets.cla's own
-// header comment for the full scripted walkthrough and why the .events file
-// uses `key 13` rather than an embedded raw CR byte.
+// the RTUI_TE_MAX (32,000-byte) clamp boundary on textview.text set, BOTH
+// sides independently snapped (exactly at the clamp: no truncation, no
+// lastError, snap "ok32000"; one byte over: truncated to 32,000 + lastError
+// set, snap "trunc32001") so an off-by-one clamp regression in either
+// direction fails a specific golden rather than being masked by the other
+// click's title/content overwrite -- each outcome is round-tripped into the
+// window title and verified via its own snap's title bar (rt_ui_set_title
+// has no RT_MAC_TEST trace line of its own). The two snaps asserted
+// different here guards against both being blessed identical by accident
+// (same non-accidental-golden guard TestCanvasUIScenario uses). See
+// testdata/ui/textwidgets.cla's own header comment for the full scripted
+// walkthrough and why the .events file uses `key 13` rather than an
+// embedded raw CR byte.
 func TestTextwidgetsUIScenario(t *testing.T) {
-	runUIScenario(t, "textwidgets", 0)
+	snaps := runUIScenario(t, "textwidgets", 0)
+	var ok, trunc []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "ok32000":
+			ok = s.bytes
+		case "trunc32001":
+			trunc = s.bytes
+		}
+	}
+	if ok == nil || trunc == nil {
+		t.Fatalf("textwidgets: expected snaps ok32000 and trunc32001, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(ok, trunc) {
+		t.Fatalf("textwidgets: snap ok32000 == trunc32001 -- the clamp/lastError outcome did not actually change the title between the two clicks")
+	}
 }
 
 // TestCanvasUIScenario: buffered canvas animated by an every-block; two
