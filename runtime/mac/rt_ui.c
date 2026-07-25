@@ -663,21 +663,30 @@ static void rt_ui_build_apple_menu(void)
 {
     gAppleMenu = NewMenu(RTUI_APPLE_MENU_ID, (const unsigned char *)"\p\024");
     if (rt_ui_app_info.name[0] != 0) {
-        /* "About <name>..." -- same buf/append-then-fix-count-byte idiom as
-           the /K cmd-key append above (:673-684), just appending a literal
+        /* "About <name>..." -- same buf/fix-up-the-count-byte idiom as the
+           /K cmd-key append above (:673-684), just appending a literal
            prefix and suffix around the name's own bytes instead of a `/K`
-           pair. Two of the same disclosed limitations apply: not escaped
-           against AppendMenu metacharacters (;/!<() -- the app's name isn't
+           pair. Pascal chars live in buf[1..n], so appending the name means
+           copying ONLY its characters into buf[1+n .. n+len] -- rt_ui_pstrcpy
+           can't be reused here as a shortcut the way the /K case doesn't
+           need to: calling it on buf+n would write name's own count byte
+           into buf[n], clobbering the prefix's last character (the trailing
+           space) instead of landing in a free slot. BlockMoveData copies
+           just the characters, leaving n (still "About "'s length, 6) to
+           advance by name's length by hand. Worked example: prefix 6 +
+           name "Mandelbrot" (10) -> chars 1-6 "About ", 7-16 "Mandelbrot",
+           17 ellipsis, count byte (buf[0]) 17. Two of the same disclosed
+           limitations as the /K case still apply: not escaped against
+           AppendMenu metacharacters (;/!<() -- the app's name isn't
            expected to contain any -- and the Pascal count byte wraps
            (silently) rather than truncates if "About " + name + the
-           ellipsis exceeds 255 bytes, same as an over-long caption+/K
-           combination above. */
+           ellipsis exceeds 255 bytes. */
         unsigned char buf[264]; /* 255-byte Str255 name + "About " (6) + ellipsis (1) + count byte */
         unsigned char n;
         rt_ui_pstrcpy(buf, (const unsigned char *)"\pAbout ");
-        n = buf[0];
-        rt_ui_pstrcpy(buf + n, rt_ui_app_info.name); /* pstrcpy overwrites buf[n], a count byte we don't need here */
-        n = (unsigned char)(n + buf[n]);
+        n = buf[0]; /* 6: prefix occupies buf[1..6], buf[6] is its trailing space */
+        BlockMoveData((Ptr)(rt_ui_app_info.name + 1), (Ptr)(buf + 1 + n), rt_ui_app_info.name[0]);
+        n = (unsigned char)(n + rt_ui_app_info.name[0]);
         buf[1 + n] = (unsigned char)0xC9; /* MacRoman ellipsis */
         buf[0] = (unsigned char)(n + 1);
         AppendMenu(gAppleMenu, buf);
