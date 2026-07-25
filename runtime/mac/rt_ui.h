@@ -105,6 +105,21 @@ typedef struct { void (*fire)(void); long ticks; } rt_ui_every_desc;
 typedef struct { void (*fire)(void *frontInstOrNull); const char *menu, *item;
                  short menuIndex, itemIndex; const rt_ui_window_desc *scope; } rt_ui_menu_handler;
 
+/* The (at most one) `app` section (Ch7 Application Identity): name/version/
+ * author/about, each a Str255 or the empty Pascal string ("\p", len 0)
+ * when the property (or the whole `app` section) is absent -- icon/id are
+ * build-time-only (app icon resource, bundle/creator code) and never reach
+ * this struct. clarusc emits a strong `rt_ui_app_info` only when the
+ * program declares an `app` section at all (Task 2); rt_ui.c's weak
+ * default below covers every other program. */
+typedef struct rt_ui_app_desc {
+    const unsigned char *name;     /* Pascal; len 0 = no app section */
+    const unsigned char *version;
+    const unsigned char *author;
+    const unsigned char *about;
+} rt_ui_app_desc;
+extern const rt_ui_app_desc rt_ui_app_info;
+
 /* ==================== runtime API (called by emitted code / probe) ==================== */
 
 /* PORT DISCIPLINE RULE: every rt_ui entry point below that touches

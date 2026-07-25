@@ -2688,8 +2688,33 @@ func lowDecl(d: int) {
         lowExtendDecl(d)
     } else if k == DkEvery {
         lowEveryDecl(d)
+    } else if k == DkApp {
+        lowAppDecl(d)
     } else {
         lowUnsupported("declaration kind " + numToStr(int(k)))
+    }
+}
+
+// lowAppDecl records the (at most one, checker-validated) `app` section's
+// string properties as pool indices for cprint's rt_ui_app_info emission --
+// icon/id are deliberately not read here (build-time only, per the Task 2
+// brief); no validation needed, checkAppDecl already rejected everything
+// wrong by the time lowering runs.
+func lowAppDecl(d: int) {
+    var item: int
+    var pname: string
+    var vh: int
+
+    irHasApp = true
+    item = appDeclPropsHead(d)
+    while item != -1 {
+        pname = poolGet(propertyName(item))
+        vh = propertyValuesHead(item)
+        if pname == "name" { irAppName = stringLitIdx(vh) }
+        if pname == "version" { irAppVersion = stringLitIdx(vh) }
+        if pname == "author" { irAppAuthor = stringLitIdx(vh) }
+        if pname == "about" { irAppAbout = stringLitIdx(vh) }
+        item = declNext(item)
     }
 }
 

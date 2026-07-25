@@ -434,6 +434,16 @@ var irHasLaunch: bool
 var irHasStartEmpty: bool
 var irHasStartCLI: bool
 
+// The (at most one) `app` section's string properties, as string-pool
+// indices (-1 = property absent) -- icon/id are build-time-only (Task 1's
+// checker already validated them) and never reach IR. irHasApp is false
+// when the program declares no `app` section at all.
+var irAppName: int
+var irAppVersion: int
+var irAppAuthor: int
+var irAppAbout: int
+var irHasApp: bool
+
 // Singletons for the kind-only IRTypes -- set by irReset(), matching
 // types.cla's IntT/BoolT/... pattern. KStr/KList/KMap/KRec/KEnum/KArr are
 // parametrized (capacity/elem/name) and so are never singletons.
@@ -510,6 +520,11 @@ func irReset() {
     irHasLaunch = false
     irHasStartEmpty = false
     irHasStartCLI = false
+    irAppName = -1
+    irAppVersion = -1
+    irAppAuthor = -1
+    irAppAbout = -1
+    irHasApp = false
     irMenuHandlersHead = -1
     irMenuHandlersTail = -1
     irMenuHandlerCount = 0

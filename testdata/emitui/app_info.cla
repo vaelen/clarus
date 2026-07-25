@@ -1,0 +1,29 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// app_info.cla: emitui golden fixture -- a full `app` section (name/
+// version/author/about; icon/id deliberately omitted, they don't affect
+// emission -- Task 1's checker already validated everything by the time
+// lowering runs) alongside a window and a menu, exercising the strong
+// rt_ui_app_info definition (Task 2) in an otherwise-ordinary UI program.
+// The `about` value carries a `"` and a `\` to exercise cpEscapeCStr.
+
+app Bookmarks {
+    name: "Bookmarks"
+    version: "1.0"
+    author: "A. Programmer"
+    about: "Keeps \"favorite\" places, backslash: \\."
+}
+
+window Main {
+    title: "Main"
+    size: 200, 120
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+on App.launch {
+    open Main
+}

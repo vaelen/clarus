@@ -79,6 +79,20 @@
    (see runtime/mac/rt_mac.c). */
 extern void rt_mac_init_toolbox(void);
 
+/* Weak default for rt_ui.h's rt_ui_app_info -- every field the empty
+   Pascal string, meaning "no `app` section". Same weak-override contract
+   as rt_ui_test_script below (rt_ui.h), but NOT test-only: this one exists
+   in every build, test or not, since a program with no `app` section is
+   the common case, not a test fixture. clarusc emits ONE strong,
+   non-empty definition of this exact symbol (Task 2, cprint.cla's
+   cpEmitAppInfo) only for a program that declares an `app` section,
+   overriding this default at link time; every other program links
+   against this weak definition unchanged. */
+__attribute__((weak)) const rt_ui_app_desc rt_ui_app_info = {
+    (const unsigned char *)"\p", (const unsigned char *)"\p",
+    (const unsigned char *)"\p", (const unsigned char *)"\p"
+};
+
 #ifdef RT_MAC_TEST
 /* rt_mac.c's shared capture-stream hook (Task 3): every trace line and
    framebuffer snap chunk below goes through this single entry point, so
