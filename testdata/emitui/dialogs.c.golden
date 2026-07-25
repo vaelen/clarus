@@ -116,6 +116,7 @@ int main(int argc, char **argv) {
     rt_args_init(argc, argv);
     rt_ui_startup(clar_ui_windows, 1, 0, 0, 0, 0, 0, 0);
     clar_fn_handler_App_launch();
+    rt_ui_launch(0, 0);
     rt_ui_run();
     return 0;
 }

@@ -770,6 +770,8 @@ The `quit` statement (Chapter 5) requests that the application exit. The runtime
 
 These events correspond to the classic Macintosh OAPP and ODOC Apple events sent by the Finder; design rationale appears in the language design spec.
 
+**System 6 vs. System 7+:** On System 6, `App.openDocument` fires only for documents the Finder handed the application at launch (via the pre-AppleEvents Segment Loader mechanism) — a document dropped on an *already-running* Clarus program never arrives at all. Receiving documents while the program is already running requires System 7's AppleEvents, which in turn requires the program to declare an `app` section (Application Identity, below): declaring one is what makes the build high-level-event aware, the flag the Finder and the toolbox check before routing a dropped document as an Apple event instead of a fresh launch. A program with no `app` section still gets `App.openDocument` for documents present at launch on both systems — only the "drop while running" behavior is System-7-and-`app`-section-only.
+
 ### Command-Line Programs
 
 A tool built for a command-line host does its work in `App.startCLI`, which delivers the arguments the way `openDocument` delivers a path — documents opened from the Finder never arrive as arguments:

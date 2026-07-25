@@ -71,6 +71,14 @@
 #include <StandardFile.h> /* SFGetFile/SFPutFile, for askOpen/askSave (Ch12, Task 4) */
 #include <Devices.h>   /* OpenDeskAcc, for the Apple menu's desk-accessory list */
 #include <LowMem.h>    /* LMGetCurApName -- the running app's name, for About (Ch9) */
+#include <AppleEvents.h> /* AEInstallEventHandler + kCoreEventClass/kAEOpen.../kAEQuit... (Task 5) */
+#include <Gestalt.h>     /* Gestalt(gestaltAppleEventsAttr, ...) (Task 5); NOT GestaltEqu.h, which
+                            is a compatibility shim that #errors telling you to use this one instead */
+#include <SegLoad.h>     /* CountAppFiles/GetAppFiles/ClrAppFiles -- System 6's pre-AppleEvents
+                            "documents at launch" mechanism (Task 5) */
+#include <Files.h>       /* FSSpec/OpenWD/SetVol (Task 5) -- already pulled in transitively by
+                            StandardFile.h above; included directly too since rt_ui_launch's own
+                            AE path uses it by name, not just through StandardFile's dialogs */
 #ifdef RT_MAC_TEST
 #include <stdio.h>     /* sprintf/sscanf -- trace-line formatting and script-line parsing (Task 3) */
 #include <string.h>    /* strcmp -- script verb dispatch (Task 3) */
@@ -2032,6 +2040,228 @@ void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
     rt_ui_build_every(ev, nEv);
 }
 
+/* ==================== App.openDocument launch dispatch (Task 5) ====================
+ * rt_ui_launch (rt_ui.h) is called once at startup, AFTER rt_ui_startup and
+ * the program's own App.launch handler and BEFORE rt_ui_run, and decides
+ * Ch7's openDocument-vs-startEmpty split. Three dispatch modes:
+ *
+ *   1. RT_MAC_TEST (below, in the #ifdef): the compiled-in script is
+ *      pre-scanned HERE, once, for every `launchdoc <path>` line -- see
+ *      that #ifdef block's own comment.
+ *
+ *   2. Real build, AppleEvents available (this function's #else, first
+ *      branch): Gestalt(gestaltAppleEventsAttr) succeeds AND this
+ *      program's own SIZE(-1) resource has isHighLevelEventAware set
+ *      (build-mac.sh's appres.r sets that bit only when the program
+ *      declares an `app` section -- Ch7's Mac note, docs/clarus-language-
+ *      reference.md). AEInstallEventHandler is installed for
+ *      oapp/odoc/pdoc/quit and this function returns WITHOUT calling
+ *      openDoc/startEmpty directly -- the Finder's first AppleEvent
+ *      (delivered through rt_ui_run's kHighLevelEvent case, below) decides
+ *      which one fires, exactly once. This is the ONLY path where a
+ *      document dropped on an ALREADY-RUNNING app can open (Ch7's Mac
+ *      note: System 6 documents arrive at launch only).
+ *
+ *   3. Real build, System 6 (or no HLE flag) (this function's #else,
+ *      second branch): CountAppFiles/GetAppFiles/ClrAppFiles, the
+ *      pre-AppleEvents Segment Loader mechanism -- fires once, at launch,
+ *      never again.
+ *
+ * SIZE flag-bit derivation (RT_UI_SIZE_HLE_MASK below): Processes.r's
+ * `type 'SIZE'` template (the Rez template every SIZE(-1) resource,
+ * including build-mac.sh's appres.r override, is declared against) lists
+ * 16 one-bit boolean fields before its two closing longword memory-size
+ * fields; Rez packs consecutive boolean fields MSB-first into the
+ * containing 16-bit word (field N, 1-indexed, occupies bit 16-N).
+ * Counting Processes.r's own field order -- reserved(1); ignoreSuspend
+ * ResumeEvents/acceptSuspendResumeEvents(2); reserved(3); cannotBackground/
+ * canBackground(4); needsActivateOnFGSwitch/doesActivateOnFGSwitch(5);
+ * backgroundAndForeground/onlyBackground(6); dontGetFrontClicks/
+ * getFrontClicks(7); ignoreAppDiedEvents/acceptAppDiedEvents(8);
+ * not32BitCompatible/is32BitCompatible(9); notHighLevelEventAware/
+ * isHighLevelEventAware(10); ... -- the HLE field is the 10th, so bit
+ * 16-10 = 6 (mask 0x0040). Cross-checked independently against Retro68's
+ * own multiversal glue header (toolchain/multiversal/CIncludes/
+ * Multiverse.h), whose hand-transcribed `SZ_t` enum lists
+ * `SZisHighLevelEventAware = 1 << 6` at the same position -- two
+ * independently derived readings agree. */
+#define RT_UI_SIZE_HLE_MASK 0x0040 /* isHighLevelEventAware -- see derivation above */
+
+#ifndef RT_MAC_TEST
+/* Stashed by rt_ui_launch for the AE handlers below to call once the
+   Finder's first AppleEvent actually arrives -- same file-scope-static
+   convention rt_ui_startup already uses for gMenuHandlerTable/
+   gNMenuHandlers (there is exactly one live UI program per process, so one
+   slot each is enough). */
+static void (*gAeOpenDoc)(const uint8_t *path255) = 0;
+static void (*gAeStartEmpty)(void) = 0;
+
+static pascal OSErr rt_ui_ae_oapp(const AppleEvent *evt, AppleEvent *reply, long refcon)
+{
+    (void)evt; (void)reply; (void)refcon;
+    if (gAeStartEmpty) gAeStartEmpty();
+    return noErr;
+}
+
+/* kAEOpenDocuments: the direct object is a list of FSSpecs (one per
+   document); OpenWD+SetVol before each openDoc call mirrors this file's
+   existing askOpen/askSave SetVol(NULL, reply.vRefNum) convention -- makes
+   the picked file's volume the DEFAULT volume so a plain (vRefNum-0)
+   rt_file_read_text/rt_file_write_text resolves correctly inside the
+   handler. 'ERIK' is this WD entry's owner tag (OpenWD's `procID`
+   parameter) -- an arbitrary 4-char code, unrelated to the app's own
+   build-time creator code (build-mac.sh's CREATOR/APPID default '????');
+   its only job is to distinguish this app's own working-directory
+   entries from another process's, which any fixed constant does equally
+   well. */
+static pascal OSErr rt_ui_ae_odoc(const AppleEvent *evt, AppleEvent *reply, long refcon)
+{
+    AEDescList docList;
+    long n, i;
+
+    (void)reply; (void)refcon;
+    if (AEGetParamDesc(evt, keyDirectObject, typeAEList, &docList) != noErr) return noErr;
+    if (AECountItems(&docList, &n) == noErr) {
+        for (i = 1; i <= n; i++) {
+            FSSpec spec;
+            AEKeyword kw;
+            DescType actualType;
+            Size actualSize;
+            short wd;
+            unsigned char path255[256];
+
+            if (AEGetNthPtr(&docList, i, typeFSS, &kw, &actualType, &spec, (long)sizeof(spec), &actualSize) != noErr) continue;
+            if (OpenWD(spec.vRefNum, spec.parID, 'ERIK', &wd) == noErr) SetVol(NULL, wd);
+            rt_ui_pstrcpy(path255, spec.name);
+            if (gAeOpenDoc) gAeOpenDoc(path255);
+        }
+    }
+    AEDisposeDesc(&docList);
+    return noErr;
+}
+
+static pascal OSErr rt_ui_ae_pdoc(const AppleEvent *evt, AppleEvent *reply, long refcon)
+{
+    (void)evt; (void)reply; (void)refcon;
+    return errAEEventNotHandled; /* no printing support -- documented limitation, Ch7 */
+}
+
+static pascal OSErr rt_ui_ae_quit(const AppleEvent *evt, AppleEvent *reply, long refcon)
+{
+    (void)evt; (void)reply; (void)refcon;
+    rt_ui_quit(); /* the real quit cascade; may return if a closeRequest handler cancels
+                     the whole thing -- either way the AppleEvent itself WAS handled, so
+                     this always replies noErr, never errAEEventNotHandled */
+    return noErr;
+}
+#endif /* !RT_MAC_TEST */
+
+void rt_ui_launch(void (*openDoc)(const uint8_t *path255), void (*startEmpty)(void))
+{
+#ifdef RT_MAC_TEST
+    /* Pre-scan the WHOLE script for `launchdoc <path>` lines, once, before
+       rt_ui_run's own per-event scripted dispatch begins -- these are
+       documents the Finder handed the app AT LAUNCH, not an event fired
+       later, so they are consumed here rather than by
+       rt_ui_run_scripted's line-at-a-time reader (which explicitly skips
+       `launchdoc` lines the second time it walks the same script -- see
+       its own comment). A path may contain spaces (same "rest of line"
+       convention as the `type`/`answer-open` verbs), so this walks the
+       script by hand rather than via sscanf. No `launchdoc` line at all
+       is a bare launch: startEmpty, matching the real-build fallback for
+       zero documents below. */
+    const char *cursor = rt_ui_test_script;
+    char line[256];
+    int found = 0;
+
+    for (;;) {
+        int n = 0;
+        if (*cursor == '\0') break;
+        while (*cursor && *cursor != '\n') {
+            if (n < (int)sizeof(line) - 1) line[n++] = *cursor;
+            cursor++;
+        }
+        if (*cursor == '\n') cursor++;
+        line[n] = '\0';
+        if (strncmp(line, "launchdoc ", 10) == 0) {
+            const char *path = line + 10;
+            unsigned char path255[256];
+            size_t plen = strlen(path);
+            char buf[300];
+
+            found = 1;
+            if (plen > 255) plen = 255; /* Str255 cap, same silent clamp as every other
+                                            Pascal-string fill in this file */
+            path255[0] = (unsigned char)plen;
+            memcpy(path255 + 1, path, plen);
+            sprintf(buf, "T OPENDOC %s", path);
+            rt_test_emit(buf);
+            if (openDoc) openDoc(path255);
+        }
+    }
+    if (!found && startEmpty) startEmpty();
+#else
+    long resp;
+    int aeAware;
+
+    aeAware = 0;
+    if (Gestalt(gestaltAppleEventsAttr, &resp) == noErr && resp != 0) {
+        Handle sizeH = GetResource('SIZE', -1);
+        if (sizeH) {
+            HLock(sizeH);
+            if ((*(short *)*sizeH) & RT_UI_SIZE_HLE_MASK) aeAware = 1;
+            HUnlock(sizeH);
+            ReleaseResource(sizeH);
+        }
+    }
+
+    if (aeAware) {
+        gAeOpenDoc = openDoc;
+        gAeStartEmpty = startEmpty;
+        AEInstallEventHandler(kCoreEventClass, kAEOpenApplication, NewAEEventHandlerUPP(rt_ui_ae_oapp), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments, NewAEEventHandlerUPP(rt_ui_ae_odoc), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEPrintDocuments, NewAEEventHandlerUPP(rt_ui_ae_pdoc), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, NewAEEventHandlerUPP(rt_ui_ae_quit), 0, false);
+        return; /* the Finder's first AppleEvent decides -- do not call openDoc/startEmpty
+                    directly on this path */
+    }
+
+    {
+        short count, i;
+        OSErr msg;
+
+        /* msg comes back appOpen or appPrint for the WHOLE batch (System 6
+           has no per-file open/print mix); appPrint is treated exactly like
+           appOpen below -- no printing support, same documented limitation
+           the AE pdoc handler above states for System 7+. */
+        CountAppFiles(&msg, &count);
+        if (count > 0) {
+            if (openDoc) {
+                for (i = 1; i <= count; i++) {
+                    AppFile file;
+                    unsigned char path255[256];
+
+                    GetAppFiles(i, &file);
+                    SetVol(NULL, file.vRefNum);
+                    rt_ui_pstrcpy(path255, file.fName);
+                    openDoc(path255);
+                }
+            } else if (startEmpty) {
+                /* No App.openDocument handler: the reference says
+                   openDocument fires per document; a program that never
+                   declared the handler just ignores the docs -- startEmpty
+                   still runs so the app opens SOMETHING rather than
+                   nothing. */
+                startEmpty();
+            }
+            ClrAppFiles(0);
+        } else if (startEmpty) {
+            startEmpty();
+        }
+    }
+#endif
+}
+
 #ifdef RT_MAC_TEST
 /* ==================== RT_MAC_TEST scripted events (Task 3) ====================
  * `rt_ui_test_script` (weak, empty by default -- see rt_ui.h) is consumed
@@ -2403,6 +2633,12 @@ static void rt_ui_run_scripted(void)
                RT_UI_ANS_CANCEL; rt_ui_ask_save_changes does not (its own
                three-way cancel is `answer-changes cancel` instead). */
             rt_ui_answer_push_val(RT_UI_ANS_CANCEL, 0);
+        } else if (strcmp(verb, "launchdoc") == 0) {
+            /* Explicit no-op, not silent unknown-verb fallthrough (Task 5):
+               `launchdoc` lines are consumed once, up front, by
+               rt_ui_launch's own pre-scan (above) -- by the time this
+               per-event reader reaches one, it has already been dispatched
+               and must not fire a second time. */
         }
         rt_ui_pump_passive();
     }
@@ -2443,6 +2679,13 @@ void rt_ui_run(void)
             break;
         case activateEvt:
             rt_ui_handle_activate((WindowPtr)ev.message, (ev.modifiers & activeFlag) != 0);
+            break;
+        case kHighLevelEvent:
+            /* AppleEvents (Task 5) -- only ever arrives once rt_ui_launch's
+               AE-mode branch has installed handlers (harmless on System 6
+               or a non-HLE-aware build: no such event is ever posted
+               there, so this case just never fires). */
+            AEProcessAppleEvent(&ev);
             break;
         default:
             break;

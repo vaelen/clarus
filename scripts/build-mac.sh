@@ -91,6 +91,7 @@ if [ "$HASAPP" = "1" ]; then
     cat > "$APPRES" <<EOF
 #include "MacTypes.r"
 #include "Dialogs.r"
+#include "Processes.r"
 resource 'ALRT' (129, purgeable) {
     {40, 40, 220, 460}, 129,
     { OK, visible, silent, OK, visible, silent,
@@ -104,6 +105,37 @@ resource 'DITL' (129, purgeable) {
         {33, 70, 49, 410},   StaticText { disabled, "^2" },
         {60, 20, 140, 410},  StaticText { disabled, "^3" }$ICONITEM
     }
+};
+// SIZE(-1) (mac-target-4c Task 5, Ch7 Mac note): identical to Retro68's own
+// default (toolchain/m68k-apple-macos/RIncludes/Retro68APPL.r) EXCEPT
+// notHighLevelEventAware -> isHighLevelEventAware -- an app section (the
+// only case this whole appres.r exists at all) is what makes a Clarus
+// build AppleEvent-aware, per rt_ui_launch's own Gestalt+SIZE(-1) check
+// (runtime/mac/rt_ui.c). Emitted for EVERY app-section program, icon or
+// not: App.openDocument's AppleEvents dispatch mode doesn't depend on
+// having a custom icon. add_application's rsrc_files ordering
+// (Retro68/cmake/add_application.cmake:66-72) makes this OVERRIDE
+// retrocrt's own default SIZE(-1) at link time -- appres.r is always
+// listed after the app's other sources, and the later one wins.
+resource 'SIZE' (-1) {
+	reserved,
+	ignoreSuspendResumeEvents,
+	reserved,
+	cannotBackground,
+	needsActivateOnFGSwitch,
+	backgroundAndForeground,
+	dontGetFrontClicks,
+	ignoreChildDiedEvents,
+	is32BitCompatible,
+	isHighLevelEventAware,
+	onlyLocalHLEvents,
+	notStationeryAware,
+	dontUseTextEditServices,
+	reserved,
+	reserved,
+	reserved,
+	1024 * 1024,
+	1024 * 1024
 };
 EOF
     if [ -n "$VERSION" ]; then
@@ -122,9 +154,14 @@ EOF
 type '$APPID' as 'STR ';
 resource '$APPID' (0, purgeable) { "$RAWNAME $VERSION" };
 resource 'FREF' (128, purgeable) { 'APPL', 0, "" };
+// FREF 129 (mac-target-4c Task 5): the app's own document icon (local ID
+// 1, below) -- 'TEXT' is the only document type Clarus's file builtins
+// read/write (Ch12), so every icon-bearing program gets exactly one
+// document FREF, not one per declared window document type.
+resource 'FREF' (129, purgeable) { 'TEXT', 1, "" };
 resource 'BNDL' (128, purgeable) {
     '$APPID', 0,
-    { 'ICN#', { 0, 128 }, 'FREF', { 0, 128 } }
+    { 'ICN#', { 0, 128, 1, 129 }, 'FREF', { 0, 128, 1, 129 } }
 };
 EOF
         # pbm2icn: bitmap -> Rez 'ICN#' text (cached, like the clarusc bootstrap)
@@ -133,6 +170,47 @@ EOF
             cc -O1 -o "$PBM2ICN" "$ROOT/scripts/pbm2icn.c"
         fi
         "$PBM2ICN" "$ICONPBM" >> "$APPRES"
+
+        # Static generic document icon (ICN#/ICON 129, mac-target-4c Task 5):
+        # a hand-drawn 32x32 dog-eared-page glyph (rectangle outline + folded
+        # top-right corner + two short "text lines"), unlike the app icon
+        # above (128, derived per-program from the declared `icon:` PBM via
+        # pbm2icn) -- every icon-bearing Clarus program gets the SAME
+        # document icon; there is no per-document-type icon declaration to
+        # derive one from.
+        cat >> "$APPRES" <<'EOF'
+resource 'ICN#' (129, purgeable) {
+	{
+		$"0000 0000 0000 0000 0000 0000 03FF F000"
+		$"0200 1800 0200 1400 0200 1200 0200 1100"
+		$"0200 1080 0200 1040 0200 0040 0200 0040"
+		$"0200 0040 0200 0040 027F FE40 0200 0040"
+		$"0200 0040 0200 0040 027F F040 0200 0040"
+		$"0200 0040 0200 0040 0200 0040 0200 0040"
+		$"0200 0040 0200 0040 0200 0040 0200 0040"
+		$"03FF FFC0 0000 0000 0000 0000 0000 0000",
+		$"0000 0000 0000 0000 0000 0000 03FF F000"
+		$"03FF F800 03FF FC00 03FF FE00 03FF FF00"
+		$"03FF FF80 03FF FFC0 03FF FFC0 03FF FFC0"
+		$"03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0"
+		$"03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0"
+		$"03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0"
+		$"03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0"
+		$"03FF FFC0 0000 0000 0000 0000 0000 0000"
+	}
+};
+
+resource 'ICON' (129, purgeable) {
+		$"0000 0000 0000 0000 0000 0000 03FF F000"
+		$"0200 1800 0200 1400 0200 1200 0200 1100"
+		$"0200 1080 0200 1040 0200 0040 0200 0040"
+		$"0200 0040 0200 0040 027F FE40 0200 0040"
+		$"0200 0040 0200 0040 027F F040 0200 0040"
+		$"0200 0040 0200 0040 0200 0040 0200 0040"
+		$"0200 0040 0200 0040 0200 0040 0200 0040"
+		$"03FF FFC0 0000 0000 0000 0000 0000 0000"
+};
+EOF
 
         # setbundle: stamps the Finder bundle bit on the built .dsk (cached)
         SETBUNDLE="$ROOT/build-mac/setbundle"

@@ -447,6 +447,8 @@ var irStrLits: list of int
 var irHasLaunch: bool
 var irHasStartEmpty: bool
 var irHasStartCLI: bool
+// irHasOpenDocument (mac-target-4c Task 5): `on App.openDocument(path: string)`.
+var irHasOpenDocument: bool
 
 // The (at most one) `app` section's string properties, as string-pool
 // indices (-1 = property absent) -- icon/id are build-time-only (Task 1's
@@ -534,6 +536,7 @@ func irReset() {
     irHasLaunch = false
     irHasStartEmpty = false
     irHasStartCLI = false
+    irHasOpenDocument = false
     irAppName = -1
     irAppVersion = -1
     irAppAuthor = -1
@@ -2057,7 +2060,7 @@ func IUiSetTitle(): int {
     return intern("ui_set_title")
 }
 
-// IUiGetTitle (mac-target-4b Task 4b): `title` READ -- both the bare form
+// IUiGetTitle (mac-target-4c Task 4b): `title` READ -- both the bare form
 // (inside a window-scoped handler, lowIdent) and the explicit `w.title`
 // form (lowWindowInstSelect) lower to this, taking the window-instance IR
 // value as its one arg and yielding a fresh clar_str_255 temp filled by

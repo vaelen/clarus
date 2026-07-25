@@ -931,7 +931,7 @@ func fpIntrCall(x: int): text {
         fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
         return toText("")
     } else if nm == IUiGetTitle() {
-        // `title` read (mac-target-4b Task 4b) -- same fpNewTmp("clar_str_255")
+        // `title` read (mac-target-4c Task 4b) -- same fpNewTmp("clar_str_255")
         // + fill-in-place-call pattern as IFileName/IUiGetFieldText above.
         t = fpNewTmp("clar_str_255")
         fpEmit("rt_ui_get_title(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
@@ -2290,10 +2290,12 @@ func cpEmitStrLits() {
 // (Task 5): rt_args_init/clar_init_globals (same relative order as the
 // non-UI path below -- nothing depends on the other), the window-desc and
 // menu-desc pointer arrays rt_ui_startup wants, rt_ui_startup itself,
-// launch/startEmpty (Ch7: startCLI never fires on the Macintosh, so a UI
-// program's own `on App.startCLI` handler, if any, is simply never called
-// here -- dead per the reference, not a lowering gap), then rt_ui_run
-// (returns on quit).
+// launch (Ch7: startCLI never fires on the Macintosh, so a UI program's own
+// `on App.startCLI` handler, if any, is simply never called here -- dead
+// per the reference, not a lowering gap), then rt_ui_launch (mac-target-4c
+// Task 5) -- which decides openDocument-vs-startEmpty itself (GetAppFiles/
+// AppleEvents on a real build, the scripted `launchdoc` verb under
+// RT_MAC_TEST) -- then rt_ui_run (returns on quit).
 func cpEmitUiMain() {
     var i: int
     var winsExpr: string
@@ -2304,6 +2306,8 @@ func cpEmitUiMain() {
     var mhCount: string
     var evExpr: string
     var evCount: string
+    var openDocExpr: string
+    var startEmptyExpr: string
 
     winsExpr = "0"
     winsCount = "0"
@@ -2349,6 +2353,33 @@ func cpEmitUiMain() {
         evCount = numToStr(irEveryCount)
     }
 
+    // openDocument's handler takes its `path: string` by value (clar_str_255,
+    // same convention as every other by-value string param -- see
+    // cpFuncProto), but rt_ui_launch's fnptr ABI (rt_ui.h) is pinned to
+    // `void (*)(const uint8_t *path255)` so rt_ui.c -- which never sees
+    // clar_str_255, a per-program typedef -- can call it without knowing the
+    // emitted program's own types. clar_str_255 and a Str255-shaped
+    // `path255` buffer are the SAME 256-byte layout (uint8_t len + 255
+    // bytes), the same identity every other rt_ui string call site already
+    // relies on (e.g. rt_ui_ask_open's `(uint8_t*)&(clar_str_255_var)`), so
+    // the wrapper below is a bare reinterpret + by-value call, no copy.
+    openDocExpr = "0"
+    if irHasOpenDocument {
+        cpRestBuf.add(toText("static void clar_ui_opendoc_wrap(const uint8_t *path255) {"))
+        cpRestBuf.add(toText("    clar_fn_handler_App_openDocument(*(const clar_str_255 *)path255);"))
+        cpRestBuf.add(toText("}"))
+        cpRestBuf.add(toText(""))
+        openDocExpr = "clar_ui_opendoc_wrap"
+    }
+
+    // startEmpty already matches rt_ui_launch's `void (*)(void)` exactly
+    // (no params) -- no wrapper needed, the bare function name decays to a
+    // pointer like any other C function reference.
+    startEmptyExpr = "0"
+    if irHasStartEmpty {
+        startEmptyExpr = "clar_fn_handler_App_startEmpty"
+    }
+
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
@@ -2356,9 +2387,7 @@ func cpEmitUiMain() {
     if irHasLaunch {
         cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
     }
-    if irHasStartEmpty {
-        cpRestBuf.add(toText("    clar_fn_handler_App_startEmpty();"))
-    }
+    cpRestBuf.add(toText("    rt_ui_launch(" + openDocExpr + ", " + startEmptyExpr + ");"))
     cpRestBuf.add(toText("    rt_ui_run();"))
     cpRestBuf.add(toText("    return 0;"))
     cpRestBuf.add(toText("}"))

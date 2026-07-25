@@ -15,6 +15,13 @@
 #ifndef CLARUS_RT_UI_H
 #define CLARUS_RT_UI_H
 
+#include <stdint.h> /* uint8_t -- rt_ui_launch's openDoc fnptr (mac-target-4c Task 5).
+                        Safe to include unconditionally: rt_ui.c includes this header
+                        BEFORE rt.h (which also pulls stdint.h), and every OTHER caller
+                        (clarusc's emitted C) already includes rt.h first anyway -- this
+                        is the one file-header addition needed to make rt_ui.c's own
+                        (reversed) include order still see uint8_t at this point. */
+
 /* ==================== kinds, layout sentinels, flags (RTUI_*) ====================
  * Not all of these constants are individually spelled out in the plan's
  * ABI sketch (only the *fields* that hold them are pinned); the specific
@@ -173,6 +180,23 @@ void  rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
                     const rt_ui_menu_handler *mh, short nMh,
                     const rt_ui_every_desc *ev, short nEv);
 void  rt_ui_run(void);                       /* the event loop; returns on quit */
+/* rt_ui_launch (mac-target-4c Task 5, Ch7): called once at startup, AFTER
+ * rt_ui_startup and the program's own App.launch handler, and BEFORE
+ * rt_ui_run -- decides openDocument-vs-startEmpty, the same call for every
+ * build: RT_MAC_TEST dispatches the compiled-in script's `launchdoc <path>`
+ * lines (one openDoc call per line, in order; none at all -> startEmpty);
+ * a real System 7+ build with AppleEvents (Gestalt + this app's own SIZE(-1)
+ * isHighLevelEventAware bit) installs AEInstallEventHandler for
+ * oapp/odoc/pdoc/quit and returns immediately WITHOUT calling either --
+ * the Finder's first AppleEvent decides, once, later; a real System 6 (or
+ * non-HLE-aware) build uses CountAppFiles/GetAppFiles, which only ever
+ * fires at launch (Ch7's Mac note: documents dropped on a running System 6
+ * app never arrive at all -- that needs AppleEvents, hence System 7+).
+ * openDoc/startEmpty are each the program's own handler or 0 (absent);
+ * either being 0 is a normal, supported shape, not an error -- rt_ui.c
+ * documents the exact fallback each dispatch path takes when openDoc is 0
+ * but the launch actually carried documents. */
+void  rt_ui_launch(void (*openDoc)(const uint8_t *path255), void (*startEmpty)(void));
 void *rt_ui_open(const rt_ui_window_desc *d);        /* `open W`  -> instance */
 void  rt_ui_close(void *inst);                       /* `close w` */
 /* `quit` in a UI program (reference doc's Quit Semantics, normative,

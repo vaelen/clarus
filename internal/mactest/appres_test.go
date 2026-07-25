@@ -69,8 +69,11 @@ func TestAppResNaming(t *testing.T) {
 }
 
 // TestAppResResources asserts the generated appres.r contains the about
-// ALRT/DITL, vers, and (since appres.cla declares an icon) BNDL/ICN#/id
-// signature, and that the CMakeLists.txt passes the app's id as CREATOR.
+// ALRT/DITL, vers, SIZE(-1) (mac-target-4c Task 5: isHighLevelEventAware,
+// for every app-section program), and (since appres.cla declares an icon)
+// BNDL/ICN#/FREF/id signature -- including the Task 5 document icon (FREF
+// 129 + ICN#/ICON 129) and the BNDL arrays extended to list it -- and that
+// the CMakeLists.txt passes the app's id as CREATOR.
 func TestAppResResources(t *testing.T) {
 	requireMac(t)
 	dir := buildAppRes(t)
@@ -83,10 +86,16 @@ func TestAppResResources(t *testing.T) {
 	for _, want := range []string{
 		"resource 'ALRT' (129",
 		"resource 'vers' (1",
+		"resource 'SIZE' (-1",
+		"isHighLevelEventAware",
 		"resource 'BNDL' (128",
+		"{ 'ICN#', { 0, 128, 1, 129 }, 'FREF', { 0, 128, 1, 129 } }",
 		"'PRBR'",
 		"resource 'ICN#' (128",
 		"resource 'ICON' (128",
+		"resource 'FREF' (129, purgeable) { 'TEXT', 1, \"\" };",
+		"resource 'ICN#' (129",
+		"resource 'ICON' (129",
 	} {
 		if !strings.Contains(rs, want) {
 			t.Errorf("appres.r missing %q:\n%s", want, rs)

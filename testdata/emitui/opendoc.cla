@@ -1,0 +1,31 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// opendoc.cla: emitui golden fixture (mac-target-4c Task 5) -- App.
+// openDocument alongside App.startEmpty, exercising cpEmitUiMain's new
+// rt_ui_launch shape: the emitted main() calls rt_ui_launch(openDoc,
+// startEmpty) instead of calling startEmpty directly, and openDocument's
+// `path: string` param goes through the clar_ui_opendoc_wrap adapter
+// (Str255-shaped `const uint8_t*` -> clar_str_255 by value).
+
+window Reader {
+    title: "Reader"
+    size: 320, 240
+
+    textview Body { at: 20, 20; fill: both }
+
+    var content: text
+}
+
+on App.startEmpty {
+    open Reader
+}
+
+on App.openDocument(p: string) {
+    var w: Reader
+    var ok: bool
+
+    w = open Reader
+    ok = file.readText(p, w.content)
+    w.Body.text = w.content
+}

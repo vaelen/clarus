@@ -322,3 +322,25 @@ func TestSmokeMandelUIScenario(t *testing.T) {
 		t.Fatalf("smoke_mandel: S2 == S3 -- File > New did not restart the render")
 	}
 }
+
+// TestOpenDocUIScenario (mac-target-4c Task 5) drives testdata/ui/
+// opendoc.cla under the "opendoc" scenario name -- its own opendoc.events
+// lists two `launchdoc` lines (the second path containing a space),
+// consumed by rt_ui_launch's pre-scan (runtime/mac/rt_ui.c) before
+// rt_ui_run's per-event loop starts. Each line opens its own Reader
+// window and labels it with the exact path received; the trace's two `T
+// OPENDOC <path>` lines plus the "docs" snap of the frontmost (second,
+// space-containing) document's window are the two independent proofs
+// both documents arrived intact.
+func TestOpenDocUIScenario(t *testing.T) {
+	runUIScenarioSrc(t, "opendoc", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0)
+}
+
+// TestOpenDocEmptyUIScenario (mac-target-4c Task 5) drives the SAME
+// testdata/ui/opendoc.cla under the "opendoc_empty" scenario name --
+// opendoc_empty.events names no `launchdoc` line at all, so rt_ui_launch's
+// pre-scan finds nothing and falls back to App.startEmpty, same as a real
+// System 6/7 launch with zero documents (CountAppFiles/AppleEvents alike).
+func TestOpenDocEmptyUIScenario(t *testing.T) {
+	runUIScenarioSrc(t, "opendoc_empty", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0)
+}

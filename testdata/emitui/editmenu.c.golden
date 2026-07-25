@@ -38,6 +38,7 @@ int main(int argc, char **argv) {
     clar_init_globals();
     rt_args_init(argc, argv);
     rt_ui_startup(0, 0, clar_ui_menus, 2, 0, 0, 0, 0);
+    rt_ui_launch(0, 0);
     rt_ui_run();
     return 0;
 }

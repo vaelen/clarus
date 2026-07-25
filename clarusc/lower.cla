@@ -520,7 +520,7 @@ func lowIsUnshadowedLastError(nameIdx: int): bool {
 // bare `title` reference matches no fieldInfos entry (it's a synthetic
 // windowScope symbol, not a real per-instance var) and so is deliberately
 // NOT resolved by this function -- lowIdent's caller handles bare `title`
-// as its own explicit case (IUiGetTitle, mac-target-4b Task 4b), matching
+// as its own explicit case (IUiGetTitle, mac-target-4c Task 4b), matching
 // lowWindowInstSelect's IUiGetTitle handling for the explicit form.
 func lowBareWindowMemberRef(nm: int, ty: int): int {
     var winName: string
@@ -547,7 +547,7 @@ func lowBareWindowMemberRef(nm: int, ty: int): int {
 // cv_lastError global to reference (see lowSelect's ErrorType case for the
 // matching .code/.message read path). Task 5 adds: inside a window-scoped
 // handler body, a bare per-instance-var name (lowBareWindowMemberRef) or the
-// bare `title` (IUiGetTitle, mac-target-4b Task 4b -- rt_ui_get_title)
+// bare `title` (IUiGetTitle, mac-target-4c Task 4b -- rt_ui_get_title)
 // resolve against the firing instance BEFORE the local/global fallback,
 // mirroring windowScope's own scope-nesting order (Ch8: "bare names resolve
 // first against the firing instance's properties, fields, and widgets, then
@@ -1146,7 +1146,7 @@ func uiWidgetIndex(winName: string, wgName: string): int {
 // the rt_ui_state() cast (IUiState + an ordinary FieldRef, so the same
 // FieldRef printer that already knows how to render "(X).cv_name" does all
 // the work; see IRKind's KUiState doc comment in ir.cla) -- or `.title`
-// (mac-target-4b Task 4b: IUiGetTitle/rt_ui_get_title, checked AFTER the
+// (mac-target-4c Task 4b: IUiGetTitle/rt_ui_get_title, checked AFTER the
 // fieldInfos walk since "title" is a synthetic windowScope symbol, never a
 // real per-instance var entry). A widget-select (`w.Widget`) is never
 // reached here as a value in its own right -- the OUTER property select
@@ -1951,9 +1951,11 @@ func lowTopHandler(d: int) {
     } else if path == "App.startCLI" {
         lowFuncBody(intern("handler_App_startCLI"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
         irHasStartCLI = true
+    } else if path == "App.openDocument" {
+        lowFuncBody(intern("handler_App_openDocument"), handlerDeclParamsHead(d), irVoidT, handlerDeclBody(d))
+        irHasOpenDocument = true
     } else {
-        // Task 4+: `on App.openDocument` and resource handlers are
-        // unsupported.
+        // Task 4+: resource handlers are unsupported.
         lowUnsupported("handler " + path)
     }
 }
