@@ -64,10 +64,12 @@ app Mandelbrot {
 
 Reuse the weak-symbol pattern already proven by `rt_ui_test_script`:
 
-- `rt_ui.h` declares `rt_app_info` — C-string fields `name`, `version`,
-  `author`, `about` (empty string = absent; `icon`/`id` are build-time
-  only and never reach the runtime struct).
-- `rt_ui.c` defines a **weak** all-empty default.
+- `rt_ui.h` declares `rt_ui_app_desc` — **Pascal-string** fields `name`,
+  `version`, `author`, `about` (`const unsigned char *`; length-0 pstring
+  = absent). Pascal because every consumer (ParamText, AppendMenu) wants
+  Str255, and clarusc already emits Pascal literals for titles.
+  `icon`/`id` are build-time only and never reach the runtime struct.
+- `rt_ui.c` defines a **weak** all-empty default (`rt_ui_app_info`).
 - When an `app` section exists, clarusc emits a **strong**
   `const rt_app_info` definition in the generated C. No
   `rt_ui_startup` signature change; non-UI programs may carry the
@@ -79,8 +81,9 @@ With a non-empty `rt_app_info.name`:
 
 - Apple menu item becomes `About <name>…` (built at menu-setup time from
   the struct, replacing the static "About This Application").
-- Selecting it shows a new fixed-size **ALRT/DITL 129** (alert.r), the
-  approved icon + text block layout:
+- Selecting it shows a new fixed-size **ALRT/DITL 129**, shown with plain
+  `Alert()` (never draws a system icon; our DITL supplies the visual),
+  the approved icon + text block layout:
 
 ```
 ┌──────────────────────────────────┐
@@ -99,13 +102,16 @@ With a non-empty `rt_app_info.name`:
 
 - Text arrives via ParamText: `^0` name, `^1` version, `^2` author,
   `^3` about. Static text items wrap the about text automatically.
-- The DITL's icon item (ICN# 128) is included **only when an icon is
-  declared** — the base alert.r DITL 129 has no icon item; the build's
-  generated per-app resource file (Part 4) supplies an overriding
-  DITL 129 with the icon item when `icon:` is set. (Exact override
-  mechanism — separate resource ID picked at runtime vs. Rez replace —
-  is a plan-time decision; the contract is: icon declared ⇒ icon shown,
-  else clean text-only layout, never a missing-resource artifact.)
+- ALRT/DITL 129 live entirely in the build's generated per-app resource
+  file (`appres.r`, Part 4) — generated whenever an `app` section is
+  present; the icon item (ICN# 128) is included in the DITL only when
+  `icon:` is declared. alert.r stays untouched; no Rez duplicate-ID
+  semantics involved. Contract: icon declared ⇒ icon shown, else clean
+  text-only layout, never a missing-resource artifact.
+- In `RT_MAC_TEST` builds the About selection emits a trace line
+  (`T ABOUT name|version|author|about`) instead of the modal alert —
+  modal `Alert()` would block the scripted-event reader; layout is
+  verified manually in the emulator.
 - **No `app` section (or empty name): exactly today's behavior** —
   "About This Application" → name-only NoteAlert 128. Existing examples
   and blessed UI goldens are untouched.
@@ -126,11 +132,13 @@ With a non-empty `rt_app_info.name`:
   `BNDL`/`FREF`/signature resources (creator = `id`), the icon-bearing
   DITL 129 override, and a `'vers'` 1 resource from `version` + `name`
   (Finder Get Info).
-- Creator/type stamping goes through Retro68's `add_application`.
-  **Plan-time risk to verify:** whether Retro68 sets CREATOR and the
-  Finder *bundle bit* (needed for the icon to show on the desktop); if
-  not, stamp the file attributes on the .dsk with hfsutils
-  (`toolchain/bin` h* tools) as a build-mac.sh post-step.
+- Creator/type stamping goes through Retro68's `add_application`
+  (verified: it accepts `TYPE`/`CREATOR` and passes them to Rez `-t`/`-c`).
+  **Verified risk:** nothing in the Retro68 pipeline or hfsutils CLI sets
+  the Finder *bundle bit* (needed for the icon to show on the desktop),
+  so a small libhfs helper `scripts/setbundle.c` (compiled on the fly)
+  stamps `HFS_FNDR_HASBUNDLE` on the app inside the `.dsk` as a
+  build-mac.sh post-step.
 
 ## Part 5 — Output naming
 
@@ -140,11 +148,15 @@ Resolved name, in order of preference:
 2. The `app` label (`app Mandelbrot {}`)
 3. First input filename's basename (today's behavior)
 
-- clarusc gains a tiny `appname FILE...` subcommand printing the resolved
-  name (runs the front end far enough to read the section).
+- clarusc gains a tiny `appinfo FILE...` subcommand printing key=value
+  lines (`app=1` when a section is present, plus `name=`, `version=`,
+  `id=`, `icon=` for declared fields; `name=` always, resolved per the
+  preference order). It runs the full front end (parse + check) and
+  exits 1 with diagnostics on error. build-mac.sh reads it for both
+  naming and resource generation.
 - build-mac.sh: an explicit NAME first argument **still wins** (keeps
   mactest and existing callers working unchanged); if the first argument
-  is a `.cla` file, the script asks `clarusc appname`.
+  is a `.cla` file, the script derives the name from `clarusc appinfo`.
 - The resolved name is used **verbatim** for display (About box, `vers`);
   for the CMake target and output filenames it is **sanitized**
   (any char outside `[A-Za-z0-9_-]` → `-`), since CMake target names
