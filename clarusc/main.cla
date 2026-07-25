@@ -65,6 +65,28 @@ func dirOf(path: string): string {
     return path[0, last + 1]
 }
 
+// baseNameNoExt returns path's final path segment with a trailing ".cla"
+// stripped (if present) -- used by appinfo's filename-fallback rung.
+func baseNameNoExt(path: string): string {
+    var i: int
+    var last: int
+    var base: string
+
+    last = -1
+    i = 0
+    while i < path.length {
+        if path[i] == '/' {
+            last = i
+        }
+        i = i + 1
+    }
+    base = path[last + 1, path.length - (last + 1)]
+    if base.length >= 4 and base[base.length - 4, 4] == ".cla" {
+        base = base[0, base.length - 4]
+    }
+    return base
+}
+
 // joinPath resolves an include's path relative to dir (filepath.Join): an
 // absolute name (leading '/') wins outright, otherwise it hangs off dir.
 func joinPath(dir: string, name: string): string {
@@ -161,12 +183,23 @@ on App.startCLI(args: list of string) {
     var tail: int
     var h: int
     var emitMode: bool
+    var appinfoMode: bool
     var startArg: int
     var outPath: string
     var haveOutPath: bool
     var fileArgs: list of string
     var cSrc: text
     var wrote: bool
+    var d: int
+    var appIdx: int
+    var resolved: string
+    var nameV: string
+    var versionV: string
+    var idV: string
+    var iconV: string
+    var item: int
+    var pname: string
+    var vh: int
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -176,7 +209,7 @@ on App.startCLI(args: list of string) {
     astReset()
 
     if args.count == 0 {
-        log("usage: clarusc [emit -o OUT.c] FILE...")
+        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
         quit 2
     }
 
@@ -184,16 +217,25 @@ on App.startCLI(args: list of string) {
     // the default check, then -- only if there are zero diagnostics -- lowers
     // to IR, builds the C translation unit, and writes it to OUT.c via
     // file.writeText (byte-faithful, no per-line length cap -- unlike stdout
-    // via alert, which is capped at a string's 255 bytes per line). The
-    // default (no `emit`) checks and prints diagnostics exactly as before.
+    // via alert, which is capped at a string's 255 bytes per line). Subcommand
+    // `clarusc appinfo FILE...` runs the same check pipeline and, on success,
+    // prints the program's app metadata as key=value lines instead of
+    // emitting (see the appinfoMode block below). emit and appinfo are
+    // mutually exclusive; the default (neither) checks and prints
+    // diagnostics exactly as before.
     emitMode = false
+    appinfoMode = false
     startArg = 0
     if args[0] == "emit" {
         emitMode = true
         startArg = 1
     }
+    if args[0] == "appinfo" {
+        appinfoMode = true
+        startArg = 1
+    }
     if startArg >= args.count {
-        log("usage: clarusc [emit -o OUT.c] FILE...")
+        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
         quit 2
     }
 
@@ -221,7 +263,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if fileArgs.count == 0 {
-        log("usage: clarusc [emit -o OUT.c] FILE...")
+        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
         quit 2
     }
 
@@ -276,6 +318,47 @@ on App.startCLI(args: list of string) {
     // and quit 1, exactly as the default check path does.
     if diags.count > 0 {
         quit 1
+    }
+
+    // appinfo path: print the checked program's app metadata as key=value
+    // lines, in the fixed order Task 6's shell parser depends on (app=1,
+    // name=, version=, id=, icon=, only lines that apply -- name= always).
+    // name resolves name-property > app label > first file's basename minus
+    // ".cla". icon is joined against the app section's OWN declaring file's
+    // directory (appDeclPathIdx), not the entry file's -- an app section
+    // reached via include lives in a different directory than the entry.
+    if appinfoMode {
+        d = combined
+        appIdx = -1
+        while d != -1 {
+            if declKind(d) == DkApp { appIdx = d }
+            d = declNext(d)
+        }
+        resolved = ""
+        nameV = ""
+        versionV = ""
+        idV = ""
+        iconV = ""
+        if appIdx != -1 {
+            alert("app=1")
+            item = appDeclPropsHead(appIdx)
+            while item != -1 {
+                pname = poolGet(propertyName(item))
+                vh = propertyValuesHead(item)
+                if pname == "name" { nameV = poolGet(stringLitIdx(vh)) }
+                if pname == "version" { versionV = poolGet(stringLitIdx(vh)) }
+                if pname == "id" { idV = poolGet(stringLitIdx(vh)) }
+                if pname == "icon" { iconV = poolGet(stringLitIdx(vh)) }
+                item = declNext(item)
+            }
+            if nameV != "" { resolved = nameV } else { resolved = poolGet(appDeclName(appIdx)) }
+        }
+        if resolved == "" { resolved = baseNameNoExt(fileArgs[0]) }
+        alert("name=" + resolved)
+        if versionV != "" { alert("version=" + versionV) }
+        if idV != "" { alert("id=" + idV) }
+        if iconV != "" { alert("icon=" + joinPath(dirOf(poolGet(appDeclPathIdx(appIdx))), iconV)) }
+        quit 0
     }
 
     // Emit path: lower the checked-clean program to IR, build its C into one
