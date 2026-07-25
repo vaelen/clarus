@@ -8,6 +8,10 @@
 "   - type names color everywhere, not only in type positions.
 "   - property keywords color only when followed by `:`; a record field
 "     that reuses such a name (`size: int`) therefore colors as Label.
+"   - menu keywords (`item`/`separator`/`standard`/`key`) are matched by
+"     line anchoring and lookaheads rather than a menu-scoped region, so a
+"     pathological identifier use of one of those names at the start of a
+"     line inside some other block could miscolor (accepted).
 
 if exists("b:current_syntax")
   finish
@@ -53,6 +57,7 @@ syn match clarusTicks "\(\<\d\+\s\+\)\@<=ticks\>"
 " matches instead, per the brief's pre-authorized substitution.
 syn match clarusMenuKeyword "^\s*\zs\%(item\|separator\|standard\)\>\%(\s*[=.(:]\)\@!"
 syn match clarusMenuKeyword "\<key\>\ze\s\+\""
+syn match clarusMenuKeyword "\<standard\>\ze\s\+edit\>"
 
 " ---- literals ---------------------------------------------------------
 syn match clarusNumber "\<\d\+\>"

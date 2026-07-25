@@ -279,6 +279,10 @@ Implementation notes for debugging (only if a probe fails):
   substitution in your report.
 - Match definition ORDER matters for same-position starts (last wins):
   clarusFixed and clarusHex must stay defined after clarusNumber.
+- `\zs` does not survive vim's keyword-over-match priority when the
+  pattern's match START falls on a keyword (`:help :syn-priority`);
+  rewriting such patterns with `\@<=` look-behind (as done for
+  clarusFuncName, clarusEventName, clarusTicks) is the sanctioned fix.
 
 - [ ] **Step 5: Write the ftplugin**
 

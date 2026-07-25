@@ -16,6 +16,8 @@ menu File {
     separator
 }
 
+menu Edit { standard edit }
+
 func size(at: int): int {
     return at mod 2
 }
