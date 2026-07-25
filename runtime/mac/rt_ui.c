@@ -2096,9 +2096,32 @@ void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
 static void (*gAeOpenDoc)(const uint8_t *path255) = 0;
 static void (*gAeStartEmpty)(void) = 0;
 
+/* Standard AppleEvent completeness check (part of the Apple Event Manager's
+   own contract for every installed handler, not a Clarus-specific rule):
+   AEGetAttributePtr for keyMissedKeywordAttr SUCCEEDS iff the incoming
+   event carried some REQUIRED parameter this handler never fetched --
+   oapp/quit take no parameters at all (so any required one is necessarily
+   missed) and odoc only ever fetches keyDirectObject, so all three route
+   through this one check. It FAILING (typically errAEDescNotFound --
+   there is no such attribute) is the normal "nothing missed" case. */
+static OSErr rt_ui_ae_check_missed(const AppleEvent *evt)
+{
+    DescType actualType;
+    Size actualSize;
+
+    if (AEGetAttributePtr(evt, keyMissedKeywordAttr, typeWildCard, &actualType, NULL, 0, &actualSize) == noErr) {
+        return errAEParamMissed;
+    }
+    return noErr;
+}
+
 static pascal OSErr rt_ui_ae_oapp(const AppleEvent *evt, AppleEvent *reply, long refcon)
 {
-    (void)evt; (void)reply; (void)refcon;
+    OSErr err;
+
+    (void)reply; (void)refcon;
+    err = rt_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
     if (gAeStartEmpty) gAeStartEmpty();
     return noErr;
 }
@@ -2113,11 +2136,18 @@ static pascal OSErr rt_ui_ae_oapp(const AppleEvent *evt, AppleEvent *reply, long
    build-time creator code (build-mac.sh's CREATOR/APPID default '????');
    its only job is to distinguish this app's own working-directory
    entries from another process's, which any fixed constant does equally
-   well. */
+   well.
+   ponytail: each OpenWD here is never matched by a CloseWD -- one WD
+   refnum leaks per document opened this way, for the life of the process.
+   Bounded (a real launch opens a handful of documents, not thousands) and
+   period-typical (plenty of real System 7 apps did the same); add
+   CloseWD(wd) right after the openDoc call above if a program that opens
+   documents by the hundreds ever makes this matter. */
 static pascal OSErr rt_ui_ae_odoc(const AppleEvent *evt, AppleEvent *reply, long refcon)
 {
     AEDescList docList;
     long n, i;
+    OSErr err;
 
     (void)reply; (void)refcon;
     if (AEGetParamDesc(evt, keyDirectObject, typeAEList, &docList) != noErr) return noErr;
@@ -2137,21 +2167,37 @@ static pascal OSErr rt_ui_ae_odoc(const AppleEvent *evt, AppleEvent *reply, long
         }
     }
     AEDisposeDesc(&docList);
+    err = rt_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
     return noErr;
 }
 
 static pascal OSErr rt_ui_ae_pdoc(const AppleEvent *evt, AppleEvent *reply, long refcon)
 {
     (void)evt; (void)reply; (void)refcon;
-    return errAEEventNotHandled; /* no printing support -- documented limitation, Ch7 */
+    /* No rt_ui_ae_check_missed call here: this handler unconditionally
+       declines the event (no printing support -- documented limitation,
+       Ch7), so there is no "normal" path whose completeness needs
+       checking -- errAEEventNotHandled is returned either way. */
+    return errAEEventNotHandled;
 }
 
 static pascal OSErr rt_ui_ae_quit(const AppleEvent *evt, AppleEvent *reply, long refcon)
 {
-    (void)evt; (void)reply; (void)refcon;
-    rt_ui_quit(); /* the real quit cascade; may return if a closeRequest handler cancels
-                     the whole thing -- either way the AppleEvent itself WAS handled, so
-                     this always replies noErr, never errAEEventNotHandled */
+    OSErr err;
+
+    (void)reply; (void)refcon;
+    err = rt_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
+    /* rt_ui_quit() is the real quit cascade: if every window's closeRequest
+       lets it through, this calls rt_quit(0) (ExitToShell), which does NOT
+       return -- the process ends right here, inside the handler, and no
+       reply is ever sent. That IS the period-standard, deliberate
+       behavior for a quit handler (there is no app left to reply from).
+       `return noErr` below is reached ONLY on the cancelled path (some
+       window's closeRequest ran `cancel`), where the app stays open and
+       genuinely did handle the event. */
+    rt_ui_quit();
     return noErr;
 }
 #endif /* !RT_MAC_TEST */
