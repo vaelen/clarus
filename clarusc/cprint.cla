@@ -913,6 +913,14 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiClose() {
         fpEmit("rt_ui_close(" + fpExpr(a0) + ");")
         return toText("")
+    } else if nm == IUiQuit() {
+        // `quit` in a UI program (Ch7 Quit Semantics) -- the closeRequest
+        // cascade, runtime/mac/rt_ui.c's rt_ui_quit. No args: see ir.cla's
+        // IUiQuit doc comment for why an exit-code expression, if any, is
+        // evaluated by a separate statement lowQuit emits before this one,
+        // not passed in here.
+        fpEmit("rt_ui_quit();")
+        return toText("")
     } else if nm == IUiState() {
         // Casts rt_ui_state's void* to the firing window's state struct and
         // dereferences it inline, so the ENCLOSING FieldRef's ordinary

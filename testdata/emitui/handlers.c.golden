@@ -105,7 +105,7 @@ static void clar_fn_ui_menuh_File_Save_Widgets(void * cv_window) {
 }
 
 static void clar_fn_ui_menuh_File_Quit_app(void * cv_menuArg) {
-    rt_quit((int32_t)(0));
+    rt_ui_quit();
 }
 
 static void clar_ui_winevent_Widgets(void *inst, short event, long a, long b) {

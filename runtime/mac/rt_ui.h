@@ -128,6 +128,22 @@ void  rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
 void  rt_ui_run(void);                       /* the event loop; returns on quit */
 void *rt_ui_open(const rt_ui_window_desc *d);        /* `open W`  -> instance */
 void  rt_ui_close(void *inst);                       /* `close w` */
+/* `quit` in a UI program (reference doc's Quit Semantics, normative,
+ * ~line 767): sends closeRequest to every open window, front-to-back
+ * (the exact cascade rt_ui_close's own closeRequest/closed pair uses, one
+ * window at a time). Any handler that cancels aborts the WHOLE quit and
+ * leaves the app running -- windows already closed earlier in the same
+ * pass stay closed; windows not yet visited stay open. If nothing
+ * cancels, every window ends up closed and the app exits (rt_quit(0), the
+ * same primitive a non-UI `quit` already compiles to). clarusc lowers
+ * `quit` to a call to this function in any program that declares a
+ * window/menu; the RT_MAC_TEST scripted `quit` verb and script exhaustion
+ * (rt_ui.c) call it too -- there is exactly one quit-cascade
+ * implementation, not a scripted-mode copy of it. Does not touch the
+ * QuickDraw port itself (DisposeWindow does, transitively, same as
+ * rt_ui_close already accepts) -- not a PORT DISCIPLINE RULE entry point
+ * by the definition above, since it draws nothing of its own. */
+void  rt_ui_quit(void);
 void *rt_ui_front(const rt_ui_window_desc *d);       /* `W.front`, NULL if none */
 void *rt_ui_state(void *inst);                       /* per-instance user vars */
 void  rt_ui_set_title(void *inst, const unsigned char *s);

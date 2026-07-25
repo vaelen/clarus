@@ -14,3 +14,8 @@ T DIM Ops.Scoped 0
 T FRONT Main 1
 T FIRE Aux.closed
 T FIRE Ops.Quit.select
+T FIRE Main.closeRequest
+T FIRE Ops.Quit.select
+T FIRE Main.closeRequest
+T CLOSE Main 1
+T FIRE Main.closed

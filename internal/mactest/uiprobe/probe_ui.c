@@ -207,8 +207,16 @@ static void probe_menu_scoped(void *frontInst)
 
 static void probe_menu_quit(void *frontInstOrNull)
 {
+    /* mac-target-4b final review: route through the real quit cascade
+       (runtime/mac/rt_ui.c's rt_ui_quit) instead of exiting directly, for
+       the same reason clarusc now lowers a UI program's `quit` to this
+       call -- Probe/Bounce are both real rt_ui windows with no
+       closeRequest handler of their own (probe_win_event's default case),
+       so neither cancels; this Quit item now closes both (CLOSE/closed
+       for each, front-to-back) before the run ends, where it previously
+       ended the run without closing either. */
     (void)frontInstOrNull;
-    rt_quit(0);
+    rt_ui_quit();
 }
 
 static const rt_ui_item_desc kProbeMenuItems[] = {

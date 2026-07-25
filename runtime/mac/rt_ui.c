@@ -49,8 +49,11 @@
        drops to 1 tick so timers fire close to on schedule (unchanged at
        30 ticks when there are none, preserving Task 1's polling cadence).
 
-   RT_MAC_TEST scripted events/trace/snaps are Task 3; nothing in this file
-   branches on RT_MAC_TEST, so it compiles identically in both modes. */
+   RT_MAC_TEST scripted events/trace/snaps are Task 3: rt_ui_run_scripted,
+   the T-line trace helpers, and the `snap` hex-dump all live behind
+   #ifdef RT_MAC_TEST below and compile out of a normal (non-test) build
+   entirely -- everything else in this file (windows, widgets, menus,
+   canvas, timers, the quit cascade) is the SAME code in both modes. */
 #include "rt_ui.h"
 #include "rt.h"
 #include <Quickdraw.h>
@@ -84,15 +87,13 @@ extern void rt_mac_init_toolbox(void);
    side (see rt_mac.c's own header comment). */
 extern void rt_test_emit(const char *line);
 
-/* rt_ui_run's real WaitNextEvent loop wires `quit` (the menu item, the
-   close-to-quit path, etc.) through rt_quit (internal/build/rt/rt.h) --
-   the plain process-exit primitive every non-UI `quit` statement already
-   compiles to. The scripted `quit` command and script exhaustion (Task 3)
-   go through the exact same function: rt_ui.c has no richer "quit cascade"
-   of its own yet (that is future clarusc-lowering work, per the design
-   doc's aspirational note -- out of this task's scope), so "same path as
-   the quit statement" means literally this call, not a hand-rolled
-   window-closing loop. */
+/* rt_ui_quit (below) is the real quit cascade: closeRequest to every open
+   window front-to-back, any cancel aborts the whole quit, otherwise
+   rt_quit(0) -- the plain process-exit primitive every non-UI `quit`
+   statement already compiles to (internal/build/rt/rt.h). The scripted
+   `quit` command and script exhaustion (Task 3) call rt_ui_quit() too, not
+   rt_quit() directly: "same path as the quit statement" (the design doc's
+   pinned contract) means literally the same function, cascade included. */
 extern void rt_quit(int32_t code);
 #endif
 
@@ -1403,7 +1404,7 @@ static void rt_ui_run_scripted(void)
     HideCursor(); /* determinism for `snap` -- scripted-mode startup only, per the contract */
     for (;;) {
         int nf;
-        if (!rt_ui_script_next_line(line, sizeof(line))) { rt_quit(0); return; }
+        if (!rt_ui_script_next_line(line, sizeof(line))) { rt_ui_quit(); return; }
         arg1[0] = '\0';
         arg2[0] = '\0';
         nf = sscanf(line, "%31s %63s %63s", verb, arg1, arg2);
@@ -1425,8 +1426,10 @@ static void rt_ui_run_scripted(void)
         } else if (strcmp(verb, "snap") == 0) {
             rt_ui_test_snap(arg1);
         } else if (strcmp(verb, "quit") == 0) {
-            rt_quit(0);
-            return;
+            rt_ui_quit(); /* returns here only if a closeRequest handler
+                              cancelled the whole quit -- rt_quit(0) inside
+                              never returns, so falling through to the
+                              bottom of the loop means "keep scripting" */
         }
         rt_ui_pump_passive();
     }
@@ -1521,19 +1524,25 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     return inst;
 }
 
-void rt_ui_close(void *instV)
+/* Shared close-cascade primitive: fires closeRequest and, unless the
+   handler cancels, disposes the window and fires closed. Returns 1 if the
+   window closed, 0 if closeRequest cancelled it (the window, its widgets,
+   and its state are untouched -- exactly as if this call had never
+   happened). rt_ui_close (a single window, `close w`) and rt_ui_quit (the
+   whole open-window list, `quit`) both funnel through here so "cancel"
+   means the identical thing -- and produces the identical trace -- from
+   either caller. */
+static int rt_ui_close_internal(rt_ui_winst *inst)
 {
-    rt_ui_winst *inst;
     long cancelFlag;
 
-    inst = (rt_ui_winst *)instV;
     cancelFlag = 0;
 #ifdef RT_MAC_TEST
     rt_ui_trace_fire1(inst->desc->name, "closeRequest");
 #endif
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSEREQUEST, (long)&cancelFlag, 0);
-    if (cancelFlag) return;
+    if (cancelFlag) return 0;
 
     /* Ch8: "on closed ... The window has finished closing; its per-instance
        state is about to be freed" -- so the window is gone (DisposeWindow,
@@ -1561,6 +1570,37 @@ void rt_ui_close(void *instV)
     DisposeHandle(inst->labelsH);
     DisposeHandle(inst->canvasH);
     DisposeHandle(inst->selfH);
+    return 1;
+}
+
+void rt_ui_close(void *instV)
+{
+    rt_ui_close_internal((rt_ui_winst *)instV);
+}
+
+/* `quit` in a UI program -- see this function's declaration in rt_ui.h for
+   the pinned semantics (reference doc's Quit Semantics, ~line 767) and
+   rt_ui_close_internal's comment for the shared cascade primitive both
+   rt_ui_close and this walk through.
+
+   Front-to-back order: FrontWindow()/WindowPeek.nextWindow is the OS's own
+   front-to-back window list -- rt_ui_front (below) walks it the same way
+   to find a type's frontmost instance. `next` is captured before the
+   close call because DisposeWindow (inside rt_ui_close_internal) unlinks
+   the window from that very list; walking off a pointer already freed as
+   a side effect of visiting it would be a use-after-free. */
+void rt_ui_quit(void)
+{
+    WindowPtr wp, next;
+    rt_ui_winst *inst;
+
+    for (wp = FrontWindow(); wp != NULL; wp = next) {
+        next = (WindowPtr)((WindowPeek)wp)->nextWindow;
+        if (!rt_ui_is_ours(wp)) continue;
+        inst = (rt_ui_winst *)GetWRefCon(wp);
+        if (!rt_ui_close_internal(inst)) return; /* cancelled: abort the quit, leave the rest open */
+    }
+    rt_quit(0);
 }
 
 void *rt_ui_front(const rt_ui_window_desc *d)

@@ -1641,10 +1641,45 @@ func lowIf(s: int): int {
     return newIRIf(cond, thenHead, elseHead)
 }
 
-// lowQuit lowers `quit [code]` to Intr(IQuit) with exactly one int argument
-// (bare `quit` supplies IntConst 0) -- stmt.go's lowerQuit.
+// lowQuit lowers `quit [code]` -- stmt.go's lowerQuit, extended for
+// mac-target-4b's final-review fix (the quit cascade, reference doc's Quit
+// Semantics ~line 767): a UI-free program still lowers to Intr(IQuit)
+// (bare `quit` supplies IntConst 0) exactly as before -- the differential
+// suite pins this byte-for-byte. A UI program (irIsUiProgram(), cprint.cla
+// -- the same predicate that gates main()/dispatcher emission) instead
+// lowers to a call to IUiQuit (runtime/mac/rt_ui.c's rt_ui_quit: the
+// closeRequest cascade over every open window). Relies on irIsUiProgram()
+// already being accurate at THIS point in lowerProgram's single top-to-
+// bottom pass -- true as long as every window/menu/every declaration in
+// the source comes before the code that needs it, the only order Clarus
+// source ever writes it in (see uiMenuIdx's own doc comment above for the
+// same documented assumption elsewhere in this file).
 func lowQuit(s: int): int {
     var code: int
+    var codeStmt: int
+    var call: int
+
+    if irIsUiProgram() {
+        call = newIRExprStmt(newIRIntr(IUiQuit(), -1, irVoidT))
+        if quitCode(s) == -1 {
+            return call
+        }
+        // Ch5/line 624: the exit code is accepted-and-ignored on the
+        // Macintosh -- the VALUE, not its evaluation, so a user-supplied
+        // expression still runs once, for any side effects, right before
+        // the cascade (same relative order a non-UI `quit` already gives
+        // it as rt_quit's argument).
+        // ponytail: a literal-only code expr (`quit 5`, no side effects)
+        // prints as a no-op statement here (e.g. "5;") -- harmless at
+        // runtime but would trip -Wunused-value under -Wall/-Werror; no
+        // scenario in this codebase writes `quit <expr>` in a UI program
+        // (only bare `quit`, which returns above and never reaches this
+        // line) to have caught it. Upgrade path if one ever does: skip
+        // this statement when lowExpr's node is a plain IntConst/etc.
+        codeStmt = newIRExprStmt(lowExpr(quitCode(s)))
+        irStmtListAppend(codeStmt, call)
+        return codeStmt
+    }
 
     if quitCode(s) == -1 {
         code = newIRIntConst(0, irIntT)

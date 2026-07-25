@@ -27,7 +27,16 @@
 //   menu 2 3   -- Scoped (window-scoped to Aux, now enabled): retitles Aux
 //   close      -- goAway on Aux (frontmost) -> T DIM Ops.Scoped 0 (Aux is
 //                 gone) and T FRONT Main 1 (Main becomes frontmost again)
-//   menu 2 5   -- Quit (app-scope): ends the run
+//   menu 2 5   -- Quit (app-scope): the cascade (reference doc's Quit
+//                 Semantics, ~line 767) sends closeRequest to Main (the
+//                 only window left open). Main's closeRequest CANCELS its
+//                 first call (quitAttempts goes 0 -> 1) -- the whole quit
+//                 aborts, Main stays open, no CLOSE/closed trace lines.
+//   menu 2 5   -- Quit again: closeRequest fires a second time
+//                 (quitAttempts 1 -> 2, no cancel this time) -> Main
+//                 closes and the run ends -- proves cancel-then-succeed,
+//                 the "any cancel aborts the whole quit" half of the
+//                 semantics the first Quit alone can't exercise.
 //
 // No snaps -- this scenario is entirely about trace order.
 
@@ -37,6 +46,8 @@ window Main {
 
     check On     { at: 20, 20; caption: "On" }
     label Status { at: next, bottom; text: "Off" }
+
+    var quitAttempts: int
 }
 
 window Aux {
@@ -78,6 +89,20 @@ extend Aux {
     extend Ops {
         on Scoped.select {
             title = "Scoped!"
+        }
+    }
+}
+
+extend Main {
+    // Cancels the FIRST quit cascade that reaches Main (quitAttempts
+    // starts at 0, zeroed by the runtime's own per-instance-state
+    // allocation -- Ch8 gives every declared `var` a zero default with no
+    // `on opened` needed), lets the second one through -- see menus.events'
+    // two `menu 2 5` lines and this file's header comment.
+    on closeRequest {
+        quitAttempts = quitAttempts + 1
+        if quitAttempts == 1 {
+            cancel
         }
     }
 }

@@ -1977,6 +1977,21 @@ func IUiClose(): int {
     return intern("ui_close")
 }
 
+// IUiQuit (mac-target-4b final review) is `quit` in a UI program (Ch7
+// Quit Semantics -> runtime/mac/rt_ui.c's rt_ui_quit): the closeRequest
+// cascade over every open window, front-to-back, any cancel aborting the
+// whole quit. No args, same "writes through a fixed runtime entry point,
+// nothing to pass" shape as IUiCancel below -- a UI program's `quit` never
+// carries operands into the C call itself (an optional exit-code
+// expression, if present, is still evaluated by lowQuit for its side
+// effects, just not passed in: Ch5/line 624 pins the value as
+// accepted-and-ignored on the Macintosh). UI-free programs keep the plain
+// IQuit intrinsic (rt_quit) unchanged -- see lowQuit's irIsUiProgram()
+// branch.
+func IUiQuit(): int {
+    return intern("ui_quit")
+}
+
 func IUiFront(): int {
     return intern("ui_front")
 }

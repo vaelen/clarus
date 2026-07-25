@@ -8,3 +8,6 @@ T FIRE every.0
 T FIRE every.0
 T FIRE every.0
 T FIRE every.0
+T FIRE Anim.closeRequest
+T CLOSE Anim 1
+T FIRE Anim.closed

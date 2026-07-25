@@ -18,7 +18,9 @@
                        scripted mode); the Bounce window's every-block is
                        due within 120 ticks and fires at least once.
      snap S1        -- one framebuffer checkpoint.
-     quit           -- ends the run (rt_quit(0), same as the quit statement). */
+     quit           -- ends the run (rt_ui_quit(), same as the quit statement:
+                       closeRequest to Probe and Bounce, front-to-back, then
+                       rt_quit(0) since neither cancels). */
 const char rt_ui_test_script[] =
     "click 166 74\n"
     "click 166 74\n"

@@ -10,3 +10,6 @@ T FIRE every.0
 T FIRE every.0
 T FIRE every.0
 T FIRE every.0
+T FIRE Game.closeRequest
+T CLOSE Game 1
+T FIRE Game.closed
