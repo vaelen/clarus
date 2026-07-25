@@ -86,6 +86,7 @@ func TestAppResResources(t *testing.T) {
 		"resource 'BNDL' (128",
 		"'PRBR'",
 		"resource 'ICN#' (128",
+		"resource 'ICON' (128",
 	} {
 		if !strings.Contains(rs, want) {
 			t.Errorf("appres.r missing %q:\n%s", want, rs)

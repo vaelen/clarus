@@ -140,13 +140,14 @@ func expectedMask(bits []bool) []byte {
 
 var hexBlockRe = regexp.MustCompile(`\$"([0-9A-Fa-f ]+)"`)
 
-// extractHexBlocks parses the icon and mask hex blocks (8 lines of 16
-// bytes each) out of pbm2icn's Rez output.
-func extractHexBlocks(t *testing.T, out string) (icon, mask []byte) {
+// extractHexBlocks parses the ICN# icon/mask hex blocks and the trailing
+// ICON icon hex block (8 lines of 16 bytes each) out of pbm2icn's Rez
+// output.
+func extractHexBlocks(t *testing.T, out string) (icon, mask, iconRes []byte) {
 	t.Helper()
 	matches := hexBlockRe.FindAllStringSubmatch(out, -1)
-	if len(matches) != 16 {
-		t.Fatalf("expected 16 hex-string lines (8 icon + 8 mask), got %d:\n%s", len(matches), out)
+	if len(matches) != 24 {
+		t.Fatalf("expected 24 hex-string lines (8 ICN# icon + 8 ICN# mask + 8 ICON), got %d:\n%s", len(matches), out)
 	}
 	join := func(lines [][]string) []byte {
 		var hexStr strings.Builder
@@ -162,7 +163,7 @@ func extractHexBlocks(t *testing.T, out string) (icon, mask []byte) {
 		}
 		return b
 	}
-	return join(matches[:8]), join(matches[8:])
+	return join(matches[:8]), join(matches[8:16]), join(matches[16:24])
 }
 
 func TestPbm2Icn(t *testing.T) {
@@ -180,12 +181,18 @@ func TestPbm2Icn(t *testing.T) {
 	if !strings.Contains(out, "resource 'ICN#' (128, purgeable)") {
 		t.Fatalf("missing ICN# resource header:\n%s", out)
 	}
-	gotIcon, gotMask := extractHexBlocks(t, out)
+	if !strings.Contains(out, "resource 'ICON' (128, purgeable)") {
+		t.Fatalf("missing ICON resource header:\n%s", out)
+	}
+	gotIcon, gotMask, gotIconRes := extractHexBlocks(t, out)
 	if !bytes.Equal(gotIcon, wantIcon) {
 		t.Errorf("icon bytes mismatch:\n got  %X\n want %X", gotIcon, wantIcon)
 	}
 	if !bytes.Equal(gotMask, wantMask) {
 		t.Errorf("mask bytes mismatch:\n got  %X\n want %X", gotMask, wantMask)
+	}
+	if !bytes.Equal(gotIconRes, wantIcon) {
+		t.Errorf("ICON resource bytes mismatch (should equal icon, not mask):\n got  %X\n want %X", gotIconRes, wantIcon)
 	}
 
 	// Spot-check the center row: the ring's interior hole is white (icon

@@ -1,7 +1,9 @@
-/* pbm2icn.c -- convert a 32x32 1-bit PBM (P1 or P4) into a Rez 'ICN#'
- * resource (128, purgeable): the icon bitmap plus a derived transparency
- * mask. Output goes to stdout; Task 6 shells this and appends the text
- * verbatim into a generated .r file.
+/* pbm2icn.c -- convert a 32x32 1-bit PBM (P1 or P4) into Rez 'ICN#' and
+ * 'ICON' resources (128, purgeable): the icon bitmap plus a derived
+ * transparency mask ('ICN#', used by the Finder), and the bare icon
+ * bitmap alone ('ICON', what the Dialog Manager's DITL Icon item actually
+ * draws via GetIcon -- no mask). Output goes to stdout; Task 6 shells
+ * this and appends the text verbatim into a generated .r file.
  *
  * Usage: pbm2icn ICON.pbm
  * Exit 1 with a one-line stderr message on: unreadable file, not P1/P4,
@@ -185,6 +187,13 @@ int main(int argc, char **argv) {
     print_block(icon, 1);
     print_block(mask, 0);
     printf("\t}\n");
+    printf("};\n");
+
+    /* 'ICON' is a bare hex string[128], not an array -- no mask, no inner
+     * braces (unlike ICN#'s `array { hex string[128] }`). */
+    printf("\n");
+    printf("resource 'ICON' (128, purgeable) {\n");
+    print_block(icon, 0);
     printf("};\n");
 
     free(data);
