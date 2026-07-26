@@ -40,21 +40,18 @@
 // left to keep it visible -- S4 shows the text shifted left relative to S3
 // with the H bar's thumb advanced accordingly.
 //
-// The literal is routed through a local `text` var rather than assigned to
-// Body.text directly: clarusc's widget-property-set lowering
-// (lowWidgetSetAssign/IUiSetTextviewText) skips the ordinary
+// The literal is assigned to Body.text directly in `opened` -- this used to
+// require routing through a handler-local `text` var, working around two
+// clarusc-ui-gaps fixed on this branch: (1) widget-property-set lowering
+// (lowWidgetSetAssign/IUiSetTextviewText) used to skip the ordinary
 // String->Text assignment coercion (Ch3) that a plain `var: text`
-// assignment gets, so `Body.text = "literal"` fails to compile (a2 isn't
-// actually already rt_text* despite cprint.cla's IUiSetTextviewText
-// comment claiming so) -- a pre-existing clarusc gap, out of scope for
-// this task (context.md: no clarusc changes needed; stop and report
-// instead of fixing it here). `body` is a HANDLER-LOCAL var, not a
-// window-scope one: a window-scope `var: text` field is never
-// initialized to a live rt_text_new() handle (only a function-local
-// `var: text` declaration gets that init emitted), so a window-scope
-// `var body: text` here would compile but crash at runtime storing
-// through a NULL handle -- also a pre-existing clarusc gap, same
-// out-of-scope treatment.
+// assignment gets, so `Body.text = "literal"` failed to compile; and (2) a
+// window-scope `var: text` field used to never be initialized to a live
+// rt_text_new() handle (only a function-local `var: text` declaration got
+// that init emitted), so a window-scope text var crashed at runtime storing
+// through a NULL handle. The direct literal assignment below is deliberate
+// regression coverage for fix (1); fix (2) is covered by
+// testdata/ui/textwidgets.cla's window-scope `var bodyText: text`.
 //
 // hscroll.events primes with `menu 0 0` before the first `snap`, same fix
 // and same reason as zoomwin.events (see that file's own comment): a
@@ -75,8 +72,6 @@ on App.launch {
 
 extend HWin {
     on opened {
-        var body: text
-        body = "The quick brown fox jumps over the lazy dog and keeps running well past the right edge of the view rectangle"
-        Body.text = body
+        Body.text = "The quick brown fox jumps over the lazy dog and keeps running well past the right edge of the view rectangle"
     }
 }

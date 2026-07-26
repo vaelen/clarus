@@ -108,7 +108,6 @@ extend Doc {
         }
     }
     on ClearBtn.click {
-        var e: text
-        Body.text = e
+        Body.text = ""
     }
 }
