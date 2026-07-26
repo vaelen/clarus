@@ -191,7 +191,9 @@ extern void rt_quit(int32_t code);
 #define RTUI_FIELD_LABEL_W  70
 #define RTUI_TE_FRAME_INSET  3
 #define RTUI_SCROLLBAR_W    15
-#define RTUI_TE_NOWRAP_W  2000 /* no-wrap destRect width == horizontal scroll ceiling; longest-line tracking rejected in the spec */
+#define RTUI_TE_NOWRAP_W  2000 /* no-wrap destRect width -- wider than any real line so a crOnly TE
+                                   never wraps; NOT the horizontal scroll ceiling (fix-hbar: the H
+                                   bar's range tracks the widest LINE, see rt_ui_te_widest_line) */
 #define RTUI_HSCROLL_STEP 8    /* horizontal arrow nudge, roughly one character */
 
 /* Field/textview text caps (mac-target-4c Task 1): a field's `text` is
@@ -770,6 +772,11 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
             break;
         case RTUI_TEXTVIEW:
             inst->tes[i] = TENew(&placeholder, &placeholder);
+            /* fix-hbar: keep the caret visible on typing/arrow-keys/clicks,
+               both axes -- textviews only (a FIELD's single-line clamp
+               already keeps its own caret in view via TE's own selection
+               scrolling, and fields have no scrollbar to re-sync anyway). */
+            TEAutoView((Boolean)1, inst->tes[i]);
             if (wd->flags & RTUI_SCROLL_V) {
                 inst->ctrls[i] = NewControl(inst->wp, &placeholder, kEmptyPStr,
                                              (Boolean)1, 0, 0, 0, scrollBarProc, 0L);
@@ -822,6 +829,43 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
  * plan's pinned policy: a single TEKey keystroke is one `change`, regardless
  * of whether the byte count actually moved). */
 
+/* Widest line of a crOnly TE, in pixels (fix-hbar: classic H-scrollbar
+   range tracks content, not a fixed destRect width). O(teLength) TextWidth
+   walk -- acceptable for the 32,000-byte cap this widget already enforces;
+   if live typing on multi-KB documents feels sluggish (verify on the
+   emulator at 1x), the escalation path is a current-line fast path with
+   full rescans only on shrinking/bulk edits (spec addendum). */
+static short rt_ui_te_widest_line(TEHandle te)
+{
+    GrafPtr save;
+    short n, i, w, widest;
+    char state;
+
+    widest = 0;
+    n = (*te)->nLines;
+    GetPort(&save);
+    SetPort((*te)->inPort);
+    TextFont((*te)->txFont);
+    TextSize((*te)->txSize);
+    TextFace((*te)->txFace);
+    state = HGetState((*te)->hText);
+    HLock((*te)->hText);
+    for (i = 0; i < n; i++) {
+        short a, b;
+        a = (*te)->lineStarts[i];
+        b = (*te)->lineStarts[i + 1]; /* lineStarts[nLines] is TE's own sentinel (== teLength) */
+        /* a line's terminating CR contributes no width; TextWidth of the
+           raw span including CR measures a garbage glyph on some fonts,
+           so trim it */
+        if (b > a && (*(*te)->hText)[b - 1] == '\r') b--;
+        w = TextWidth(*(*te)->hText, a, (short)(b - a));
+        if (w > widest) widest = w;
+    }
+    HSetState((*te)->hText, state);
+    SetPort(save);
+    return widest;
+}
+
 /* Recomputes a textview's scrollbar range(s) from its current content and
    pins each control's value to its TE's *actual* view/dest offset -- called
    after every layout change and every content mutation. A no-op for a
@@ -832,7 +876,11 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
    the old clamp-only code could leave a thumb pointing at a scroll
    position the TE no longer had. If the derived offset exceeds the new
    max, scrolls the TE back into view (TEScroll) rather than leaving it
-   showing blank space past the new end. */
+   showing blank space past the new end. The H bar's range (fix-hbar) is
+   the widest LINE, not destRect's fixed no-wrap width -- destRect stays
+   RTUI_TE_NOWRAP_W wide only so crOnly TE never wraps; when the content
+   fits the view, max is 0 and the standard scrollbar CDEF draws the
+   thumbless inactive bar and ignores clicks ("dimmed when not needed"). */
 static void rt_ui_te_scroll_sync(rt_ui_winst *inst, short wIdx)
 {
     TEHandle te;
@@ -857,11 +905,11 @@ static void rt_ui_te_scroll_sync(rt_ui_winst *inst, short wIdx)
         SetControlValue(sb, offset);
     }
     if (hb) {
-        short viewW, destW;
+        short viewW, widest;
 
         viewW = (short)((*te)->viewRect.right - (*te)->viewRect.left);
-        destW = (short)((*te)->destRect.right - (*te)->destRect.left);
-        maxScroll = (short)(destW - viewW);
+        widest = rt_ui_te_widest_line(te);
+        maxScroll = (short)(widest - viewW);
         if (maxScroll < 0) maxScroll = 0;
         SetControlMaximum(hb, maxScroll);
         offset = (short)((*te)->viewRect.left - (*te)->destRect.left);
@@ -1875,6 +1923,11 @@ static void rt_ui_handle_activate(WindowPtr wp, int activating)
             int on = activating && inst->logicalEnabled[i];
             HiliteControl(inst->ctrls[i], (short)(on ? 0 : 255));
         }
+        /* fix-hbar: the H bar joins the same dim loop as the V bar (ctrls[i]
+           above, for a textview) -- no logicalEnabled gate, that array is
+           only ever set for BUTTONs. */
+        if (inst->hbars[i])
+            HiliteControl(inst->hbars[i], (short)(activating ? 0 : 255));
     }
     if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) {
         if (activating) TEActivate(inst->tes[inst->focusIdx]);
@@ -2122,6 +2175,12 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
             Boolean extend = (Boolean)(shiftDown && tIdx == inst->focusIdx);
             rt_ui_te_set_focus(inst, tIdx);
             TEClick(where, extend, inst->tes[tIdx]);
+            /* fix-hbar: TEAutoView keeps the click's landing point visible,
+               so a click near an edge can scroll the view -- re-sync the
+               bars' thumbs from the TE's new actual offset. Not a
+               mutation (no text changed), so this does NOT go through
+               rt_ui_te_mutated's change trace/event funnel. */
+            rt_ui_te_scroll_sync(inst, tIdx);
         }
     }
 }
@@ -2228,22 +2287,31 @@ static void rt_ui_handle_key(const EventRecord *ev)
                 inst->desc->handlers->widget(inst, inst->focusIdx, RTUI_WEV_ENTER, 0, 0);
             return;
         }
-        if (ch != 27 && (ch < 28 || ch > 31)) {
-            /* Ordinary typing/editing key (not Escape, not an arrow code) --
-               ponytail: this task wires no arrow-key cursor navigation
-               (TEKey itself doesn't handle arrow codes either -- passing
-               one through would literally insert the control byte as
-               text), silently swallowed instead; add real cursor-key
-               support if a later task needs it. */
+        if (ch != 27) {
+            /* Every non-Escape key while a TE is focused goes to TEKey,
+               including the four arrow codes (28-31, fix-hbar review fix):
+               a PRE-EXISTING comment here claimed "TEKey itself doesn't
+               handle arrow codes either" and swallowed them before ever
+               reaching TEKey -- wrong. Inside Macintosh's TEKey has always
+               special-cased those four codes itself (move/collapse the
+               caret, no insertion); the old code never gave it the chance.
+               Every TEKey call -- mutating or not -- must be followed by a
+               scroll-sync (TEAutoView can move the view even for a caret-
+               only arrow key), but only a MUTATING key (not an arrow) goes
+               through rt_ui_te_mutated's change trace/event funnel: an
+               arrow key moves the caret, it doesn't edit text. */
             GrafPtr saved;
             GetPort(&saved);
             SetPort(wp);
             TEKey((CharParameter)ch, inst->tes[inst->focusIdx]);
-            rt_ui_te_mutated(inst, inst->focusIdx, 1); /* USER edit -- see rt_ui_te_mutated's header comment */
+            if (ch >= 28 && ch <= 31) {
+                rt_ui_te_scroll_sync(inst, inst->focusIdx); /* caret move only: no change trace/event */
+            } else {
+                rt_ui_te_mutated(inst, inst->focusIdx, 1); /* USER edit -- see rt_ui_te_mutated's header comment */
+            }
             SetPort(saved);
             return;
         }
-        if (ch >= 28 && ch <= 31) return; /* arrow keys: swallowed, see above */
         /* ch == 27 (Escape): falls through to the Cancel-button check below. */
     }
 

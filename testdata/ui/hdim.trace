@@ -1,0 +1,5 @@
+T OPEN DimWin 1
+T FRONT DimWin 1
+T FIRE DimWin.closeRequest
+T CLOSE DimWin 1
+T FIRE DimWin.closed

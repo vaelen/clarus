@@ -59,9 +59,12 @@
 #define RTUI_SCROLL_V 8   /* textview: vertical scrollbar (mac-target-4c Task 1) */
 #define RTUI_SCROLL_H 16  /* textview: horizontal scrollbar (window-zoom-hscroll Task 2).
                              Implies no word wrap: the TE is created crOnly (lines break
-                             only at CR) with a fixed RTUI_TE_NOWRAP_W-wide destRect --
-                             the wrap-off + wide-dest pair is the classic TE idiom, and
-                             the fixed width doubles as the scroll range ceiling. */
+                             only at CR) with a fixed RTUI_TE_NOWRAP_W-wide destRect, the
+                             classic wrap-off + wide-dest TE idiom -- but the scroll RANGE
+                             (fix-hbar) tracks the widest line, not that fixed destRect
+                             width: content that fits the view leaves the bar dimmed
+                             (thumbless), and the view auto-scrolls to keep the caret
+                             visible (TEAutoView). */
 
 /* rt_ui_handlers.winEvent `event` values (Ch8 Window Events) */
 #define RTUI_EV_OPENED       0

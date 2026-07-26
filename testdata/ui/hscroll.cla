@@ -1,12 +1,14 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// hscroll.cla: gated UI scenario (window-zoom-hscroll Task 2) --
-// `scrollbar: both` end to end: no-wrap (the long line set in `opened`
-// stays on one line, clipped at the view's right edge -- under the old
-// wrap behavior it would fold into several lines), a horizontal page-right
-// via a scripted click in the bar's track (S1 vs S2), and a grow through
-// the same relayout funnel with both bars present (S3).
+// hscroll.cla: gated UI scenario (window-zoom-hscroll Task 2; H-bar range/
+// autoscroll behavior fix-hbar) -- `scrollbar: both` end to end: no-wrap
+// (the long line set in `opened` stays on one line, clipped at the view's
+// right edge -- under the old wrap behavior it would fold into several
+// lines), a horizontal page-right via a scripted click in the bar's track
+// (S1 vs S2), a grow through the same relayout funnel with both bars
+// present (S3), and (fix-hbar) a click into the text followed by a run of
+// right-arrow keys that autoscrolls the view (S4).
 //
 // Coordinate math (mirrors buttons.cla's convention): 300x200 content
 // opens centered-left at global (106, 44). Body has both scrollbars on
@@ -19,6 +21,24 @@
 // right end stopped 16px short of the V bar's lane). A click at local
 // (200,193) = global (306,237) lands in the H track right of the thumb ->
 // one page-right nudge (scripted scrollbar clicks are discrete).
+//
+// fix-hbar (S4): after `resize 340 220`, the box grows to local (10,10)-
+// (341,221) by the same +1-flush convention, so Body's TE viewRect (box
+// minus the 16px V/H bar lanes, then inset RTUI_TE_FRAME_INSET(3) on every
+// side -- rt_ui_te_relayout's own order) is local (13,13)-(322,202): 309px
+// wide. `opened`'s line measures ~700px (per rt_ui_te_widest_line), so at
+// S3 the view is showing only its first ~309px (character offset 0, the
+// dest/view offset TEScroll leaves it at after relayout). `click 406 64`
+// (global) = local (300,20) -- inside the viewRect, near its right edge,
+// still on the visible (unscrolled) span of the line -- focuses Body and
+// places the caret near the last character the S3 view already shows.
+// Forty `key 29` lines (byte 29 = right arrow, rt_ui_script_key_arg's
+// all-digit convention) walk the caret forward one character at a time;
+// TEKey moves it without inserting text (fix-hbar: TEKey has always
+// special-cased arrow codes, see rt_ui.c's rt_ui_handle_key comment), and
+// once the caret passes the view's right edge TEAutoView scrolls the view
+// left to keep it visible -- S4 shows the text shifted left relative to S3
+// with the H bar's thumb advanced accordingly.
 //
 // The literal is routed through a local `text` var rather than assigned to
 // Body.text directly: clarusc's widget-property-set lowering
