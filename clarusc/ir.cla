@@ -589,18 +589,26 @@ func irtName(i: int): int {
     return irTypes[i].name
 }
 
-// irtNeedsCtor reports whether a value of type t is handle-backed and so
-// needs runtime construction before first use (Text/List/Map/Rec -- exactly
-// the kinds cpDefaultInit (cprint.cla) emits a call for; every other kind's
-// zero value is already valid, needing no construction). Shared by
-// lower.cla (gating IUiStateDefaults insertion/synthesis-widening) and
-// cprint.cla (filtering which window state fields IUiStateDefaults'
-// cprint case constructs) so the "which kinds need construction" list
-// lives in exactly one place.
+// irtNeedsCtor reports whether a value of type t's all-zero representation
+// (what NewHandleClear leaves a fresh window state block holding) is NOT a
+// valid value of t -- i.e. whether t needs runtime construction before
+// first use. True for Text/List/Map/Rec (each is a handle; a zeroed handle
+// is NULL, not an empty value) directly, and for Arr recursively (an array
+// needs construction iff its ELEMENT type does -- KArr of KArr included --
+// matching cpDefaultInit's own KArr branch, cprint.cla, which already
+// recurses into the element type to build its construction loop). Every
+// other kind's zero value is already a valid value, needing no
+// construction. Shared by lower.cla (gating IUiStateDefaults
+// insertion/synthesis-widening) and cprint.cla (filtering which window
+// state fields IUiStateDefaults' cprint case constructs) so the "which
+// types need construction" rule lives in exactly one place.
 func irtNeedsCtor(t: int): bool {
     var k: IRKind
 
     k = irtKind(t)
+    if k == KArr {
+        return irtNeedsCtor(irtElem(t))
+    }
     return k == KText or k == KList or k == KMap or k == KRec
 }
 

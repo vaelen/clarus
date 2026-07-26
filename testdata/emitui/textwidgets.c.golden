@@ -8,7 +8,9 @@ typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
 static const clar_str_255 clar_lit_0 = {7, {69, 110, 116, 101, 114, 101, 100}};
 static const clar_str_255 clar_lit_1 = {1, {120}};
 static const clar_str_255 clar_lit_2 = {12, {102, 114, 111, 109, 32, 108, 105, 116, 101, 114, 97, 108}};
-static const clar_str_255 clar_lit_3 = {2, {104, 105}};
+static const clar_str_255 clar_lit_3 = {11, {78, 111, 116, 101, 115, 32, 82, 101, 97, 100, 121}};
+static const clar_str_255 clar_lit_4 = {3, {104, 105, 50}};
+static const clar_str_255 clar_lit_5 = {2, {104, 105}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -18,6 +20,13 @@ typedef struct {
     rt_text * cv_log;
     rt_text * cv_note;
 } clar_uistate_TextWin;
+
+typedef struct { rt_text * e[2]; } clar_arr_text_2;
+typedef struct {
+    rt_text * cv_scratch;
+    rt_text * cv_greeting;
+    clar_arr_text_2 cv_buf;
+} clar_uistate_NoteWin;
 
 
 static const rt_ui_widget_desc clar_ui_widgets_TextWin[] = {
@@ -37,6 +46,17 @@ static const rt_ui_window_desc clar_ui_window_TextWin = {
     &clar_ui_handlers_TextWin
 };
 
+static void clar_ui_winevent_NoteWin(void *inst, short event, long a, long b);
+static const rt_ui_handlers clar_ui_handlers_NoteWin = { clar_ui_winevent_NoteWin, 0 };
+
+static const rt_ui_window_desc clar_ui_window_NoteWin = {
+    "NoteWin", (const unsigned char *)"\pNotes",
+    200, 160, 0, 0, 0,
+    0, 0,
+    (short)sizeof(clar_uistate_NoteWin),
+    &clar_ui_handlers_NoteWin
+};
+
 
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
@@ -48,10 +68,12 @@ static void clar_fn_handler_App_launch(void);
 static void clar_fn_ui_TextWin_Name_change(void * cv_window);
 static void clar_fn_ui_TextWin_Name_enter(void * cv_window);
 static void clar_fn_ui_TextWin_Body_change(void * cv_window);
+static void clar_fn_ui_NoteWin_opened(void * cv_window);
 static void clar_fn_ui_TextWin_opened(void * cv_window);
 
 static void clar_fn_handler_App_launch(void) {
     rt_ui_open(&clar_ui_window_TextWin);
+    rt_ui_open(&clar_ui_window_NoteWin);
 }
 
 static void clar_fn_ui_TextWin_Name_change(void * cv_window) {
@@ -78,11 +100,21 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     rt_ui_widget_set_text(cv_window, 1, t2);
 }
 
+static void clar_fn_ui_NoteWin_opened(void * cv_window) {
+    ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_scratch = rt_text_new();
+    ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting = rt_text_new();
+    for (int32_t ix1 = 0; ix1 < 2; ix1++) {
+        ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_buf.e[ix1] = rt_text_new();
+    }
+    rt_text_store(((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting, (const uint8_t*)&(clar_lit_4));
+    rt_ui_set_title(cv_window, (const uint8_t*)&(clar_lit_3));
+}
+
 static void clar_fn_ui_TextWin_opened(void * cv_window) {
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = rt_text_new();
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_log = rt_text_new();
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note = rt_text_new();
-    rt_text_store(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note, (const uint8_t*)&(clar_lit_3));
+    rt_text_store(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note, (const uint8_t*)&(clar_lit_5));
 }
 
 static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b) {
@@ -105,14 +137,22 @@ static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, l
     }
 }
 
+static void clar_ui_winevent_NoteWin(void *inst, short event, long a, long b) {
+    switch (event) {
+    case RTUI_EV_OPENED: clar_fn_ui_NoteWin_opened(inst); break;
+    default: break;
+    }
+}
+
 static const rt_ui_window_desc *clar_ui_windows[] = {
     &clar_ui_window_TextWin,
+    &clar_ui_window_NoteWin,
 };
 
 int main(int argc, char **argv) {
     clar_init_globals();
     rt_args_init(argc, argv);
-    rt_ui_startup(clar_ui_windows, 1, 0, 0, 0, 0, 0, 0);
+    rt_ui_startup(clar_ui_windows, 2, 0, 0, 0, 0, 0, 0);
     clar_fn_handler_App_launch();
     rt_ui_launch(0, 0);
     rt_ui_run();

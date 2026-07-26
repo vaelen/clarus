@@ -13457,6 +13457,9 @@ static int32_t clar_fn_irtNeedsCtor(int32_t cv_t) {
     int32_t cv_k;
     cv_k = 0;
     cv_k = clar_fn_irtKind(cv_t);
+    if (cv_k == 11) {
+        return clar_fn_irtNeedsCtor(clar_fn_irtElem(cv_t));
+    }
     return ((((cv_k == 6) || (cv_k == 7)) || (cv_k == 8)) || (cv_k == 9));
     return 0;
 }
@@ -22350,13 +22353,18 @@ static clar_str_255 clar_fn_cpWidgetFlagsMacro(int32_t cv_isDefault, int32_t cv_
 static void clar_fn_cpEmitUiStateStruct(clar_str_255 cv_name, int32_t cv_fieldsHead) {
     int32_t cv_f;
     cv_f = 0;
+    cv_f = cv_fieldsHead;
+    while (1) {
+        if (!((cv_f != (-(1))))) break;
+        clar_fn_cpEnsureType(clar_fn_irFieldSlotType(cv_f));
+        cv_f = clar_fn_irFieldSlotNext(cv_f);
+    }
     rt_text * t1;
     t1 = clar_fn_toText(clar_lit_876);
     rt_list_push(cv_cpRecBuf, &(t1));
     cv_f = cv_fieldsHead;
     while (1) {
         if (!((cv_f != (-(1))))) break;
-        clar_fn_cpEnsureType(clar_fn_irFieldSlotType(cv_f));
         clar_str_255 t2;
         t2 = clar_fn_cpCType(clar_fn_irFieldSlotType(cv_f));
         clar_str_255 t3;

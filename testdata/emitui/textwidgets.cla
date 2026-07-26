@@ -16,7 +16,17 @@
 // in-place use, even one that never assigns a value at all -- and a
 // declared default must apply AFTER construction, never before (see
 // IUiStateDefaults' cprint case). `log.append` in Name.enter exercises the
-// bare, no-default var's in-place mutation.
+// bare, no-default var's in-place mutation. This is the SYNTHESIZED-opened
+// path (no explicit `on opened` handler above).
+//
+// NoteWin (below) covers the OTHER glue path (Fix round 1, item 3):
+// lowPrependWinVarDefaults, construction prepended onto an EXPLICIT `on
+// opened` -- ctor -> declared defaults -> the handler's own user statement,
+// same ordering. Its `buf: text[2]` also locks Fix round 1 item 1: an
+// array of handle-backed elements needs the same construction as a bare
+// scalar handle-backed var (irtNeedsCtor recurses into KArr's element
+// type), and cpDefaultInit's existing Arr branch already emits the correct
+// per-element construction loop with no printer change needed.
 
 window TextWin {
     title: "Text"
@@ -31,8 +41,18 @@ window TextWin {
     var note: text = "hi"
 }
 
+window NoteWin {
+    title: "Notes"
+    size: 200, 160
+
+    var scratch: text
+    var greeting: text = "hi2"
+    var buf: text[2]
+}
+
 on App.launch {
     open TextWin
+    open NoteWin
 }
 
 extend TextWin {
@@ -48,5 +68,11 @@ extend TextWin {
         bodyText = Body.text
         Body.text = bodyText
         Body.text = "from literal"
+    }
+}
+
+extend NoteWin {
+    on opened {
+        title = "Notes Ready"
     }
 }

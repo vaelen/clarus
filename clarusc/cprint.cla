@@ -1738,13 +1738,24 @@ func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool, isScr
 // routed through cpEmitRecords: a UI state block is allocated and zeroed by
 // rt_ui itself (rt_ui_state's Handle), never via a clar_new_NAME
 // constructor, so there is no per-field default-init body to emit here.
+// Two passes over fieldsHead, same shape as cpEmitRecords: an Arr-typed
+// field's cpEnsureType lazily appends its clar_arr_ELEM_N wrapper typedef to
+// this SAME cpRecBuf, which would otherwise land in the middle of this
+// struct's own still-open "typedef struct {" (clarusc-ui-gaps Fix round 1 --
+// no window state field was Arr-typed before item 1 widened construction
+// into arrays, so this ordering bug was latent until now) -- every
+// referenced type must already exist before the struct opens.
 func cpEmitUiStateStruct(name: string, fieldsHead: int) {
     var f: int
 
-    cpRecBuf.add(toText("typedef struct {"))
     f = fieldsHead
     while f != -1 {
         cpEnsureType(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    cpRecBuf.add(toText("typedef struct {"))
+    f = fieldsHead
+    while f != -1 {
         cpRecBuf.add(toText("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
         f = irFieldSlotNext(f)
     }
