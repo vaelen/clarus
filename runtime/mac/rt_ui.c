@@ -1750,7 +1750,7 @@ static void rt_ui_apply_resize(WindowPtr wp, rt_ui_winst *inst, short newW, shor
 static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
 {
     Rect limits, content;
-    short screenW, screenH, maxW, maxH;
+    short screenW, screenH, maxW, maxH, minW, minH;
     long newSize;
 
     if (!inst->desc->resizable) return;
@@ -1768,10 +1768,18 @@ static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
     if (maxW < 1) maxW = 1;
     if (maxH < 1) maxH = 1;
 
-    SetRect(&limits,
-            (short)(inst->desc->minW > 0 ? inst->desc->minW : 1),
-            (short)(inst->desc->minH > 0 ? inst->desc->minH : 1),
-            maxW, maxH);
+    minW = (short)(inst->desc->minW > 0 ? inst->desc->minW : 1);
+    minH = (short)(inst->desc->minH > 0 ? inst->desc->minH : 1);
+    /* review fix: a window dragged far enough right/down can leave less
+       screen room than the declared minimum -- floor max at min so
+       GrowWindow's limit rect never inverts (which silently let the
+       window collapse below its declared minimum). This corner case
+       means the window may grow partly off-screen again; that's the
+       lesser bug next to violating a declared minimum. */
+    if (maxW < minW) maxW = minW;
+    if (maxH < minH) maxH = minH;
+
+    SetRect(&limits, minW, minH, maxW, maxH);
     newSize = GrowWindow(wp, where, &limits);
     if (newSize == 0) return;
     rt_ui_apply_resize(wp, inst, LoWord(newSize), HiWord(newSize));
