@@ -6,7 +6,7 @@ window Doc {
     size: 460, 320
     resizable: min(200, 120)
 
-    textview Body { fill: both;  scrollbar: vertical }
+    textview Body { fill: both;  scrollbar: both }
 
     var path: string(255)          // empty until first saved
     var dirty: bool = false

@@ -836,12 +836,14 @@ A `window` block is a declaration, not code: it compiles to a real resource (WIN
 |---|---|---|
 | `title` | `title: "Untitled"` | initial title; assignable at runtime (`w.title = ...`) |
 | `size` | `size: 400, 300` | content size in pixels |
-| `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + optional minimum |
+| `resizable` | `resizable` or `resizable: min(300, 200)` | grow box + zoom box + optional minimum |
 | `form for T` | `form for Bookmark` | marks a form window (Chapter 10) |
 
 One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
 
 **Mac note — `size` on a small screen:** `size` is a request, not a guarantee. On a Macintosh screen too small for the declared size (e.g. a Mac Plus's 512×342 against a 460×320 window), the runtime clamps the window's position and, if that alone isn't enough, its size too, so the whole window — including the grow box — stays on-screen.
+
+**Mac note — zoom:** a resizable window's zoom box toggles it between its current size and position and a standard state — the full screen minus the menu bar, clamped to the screen the same way `size` is at open. Zooming (either direction) fires the window's `resized` event.
 
 ```rust
 window Doc {
@@ -887,7 +889,7 @@ window Doc {
 | `opened` | `on opened { }` | The instance has just been created and its window opened. |
 | `closeRequest` | `on closeRequest { }` | The close box was clicked, or the app is quitting; `cancel` aborts the close. |
 | `closed` | `on closed { }` | The window has finished closing; its per-instance state is about to be freed. |
-| `resized` | `on resized { }` | The user resized the window (resizable windows only). |
+| `resized` | `on resized { }` | The user resized or zoomed the window (resizable windows only). |
 | `key` | `on key(k: char) { }` | A key was typed while the window is frontmost and no widget consumed it. |
 
 A window's own events are handled with the bare event name inside its `extend` block, e.g. `extend Doc { on closeRequest { ... } }`; widget events use `on Widget.event { }` in the same block (Chapter 9 covers nesting menu handlers there too).
@@ -911,7 +913,7 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 
 **Mac note — textview capacity:** on the Macintosh, a `textview`'s `text` property holds at most 32,000 bytes (a classic TextEdit limit). Setting it (directly, or by reading a longer file into it) with more content than that truncates to the first 32,000 bytes and sets `lastError` (Chapter 12), the same as any other clamped string store; execution continues with the truncated content. A program that must reject an oversized document outright — rather than silently show a truncated one — reads the file into an uncapped local `text` (Chapter 3), checks its length, and only assigns it to the `textview` if it fits (Appendix C's Text Editor does this in `openPath`). Separately: pathological content shaped as one unbroken word of several tens of thousands of bytes (no spaces or line breaks at all) makes classic TextEdit's line-wrap search effectively quadratic — real text, which breaks on whitespace at normal intervals, does not hit this.
 
-**Mac note — `scrollbar: both`:** the Macintosh implementation currently draws and drives only the vertical scrollbar; the horizontal half of `both` is accepted but has no effect (a plain `vertical` declaration behaves identically). Vertical-only content, the common case, is unaffected.
+**Mac note — `scrollbar: both`:** `scrollbar: vertical` wraps text at the view's width (prose style). `scrollbar: both` turns word wrap off — lines break only at Return, long lines extend right (code and log style) — and adds a horizontal scrollbar. The horizontal scroll range is a fixed 2,000 pixels: text beyond that width is retained but cannot be scrolled into view.
 
 ```rust
 window Doc {
@@ -1480,7 +1482,7 @@ window Doc {
     size: 460, 320
     resizable: min(200, 120)
 
-    textview Body { fill: both;  scrollbar: vertical }
+    textview Body { fill: both;  scrollbar: both }
 
     var path: string(255)          // empty until first saved
     var dirty: bool = false
