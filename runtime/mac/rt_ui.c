@@ -1652,6 +1652,20 @@ static void rt_ui_handle_update(WindowPtr wp)
     inst = rt_ui_winst_of(wp);
     if (inst) {
         DrawControls(wp);
+        if (inst->desc->resizable) {
+            Rect corner;
+            RgnHandle saveClip;
+
+            corner = wp->portRect;
+            corner.left = (short)(corner.right - RTUI_SCROLLBAR_W);
+            corner.top = (short)(corner.bottom - RTUI_SCROLLBAR_W);
+            saveClip = NewRgn();
+            GetClip(saveClip);
+            ClipRect(&corner); /* corner only: widgets are inset from the window edge, the full-edge lane lines would cut through them */
+            DrawGrowIcon(wp);
+            SetClip(saveClip);
+            DisposeRgn(saveClip);
+        }
         for (i = 0; i < inst->desc->nWidgets; i++) {
             const rt_ui_widget_desc *wd;
             wd = &inst->desc->widgets[i];
@@ -1735,9 +1749,26 @@ static void rt_ui_handle_activate(WindowPtr wp, int activating)
    reallocating buffered-canvas offscreen buffers, and firing the
    `resized` handler -- is identical whether that size came from a real
    interactive GrowWindow drag or a script line. */
+static void rt_ui_inval_grow_corner(WindowPtr wp)
+{
+    Rect r;
+
+    r = wp->portRect;
+    r.left = (short)(r.right - RTUI_SCROLLBAR_W);
+    r.top = (short)(r.bottom - RTUI_SCROLLBAR_W);
+    InvalRect(&r);
+}
+
 static void rt_ui_apply_resize(WindowPtr wp, rt_ui_winst *inst, short newW, short newH)
 {
+    GrafPtr save;
+
+    GetPort(&save);
+    SetPort(wp);
+    rt_ui_inval_grow_corner(wp); /* old corner: erase the stale grow icon */
     SizeWindow(wp, newW, newH, (Boolean)1);
+    rt_ui_inval_grow_corner(wp); /* new corner */
+    SetPort(save);
     rt_ui_layout(inst);
     rt_ui_canvas_realloc_all(inst); /* buffered canvas sizes may have tracked the resize (fill: both) */
 #ifdef RT_MAC_TEST
@@ -1783,6 +1814,46 @@ static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
     newSize = GrowWindow(wp, where, &limits);
     if (newSize == 0) return;
     rt_ui_apply_resize(wp, inst, LoWord(newSize), HiWord(newSize));
+}
+
+/* Zoom shares rt_ui_apply_resize's post-size funnel. stdState is refreshed
+   before every zoom-out: the full screen minus menu bar (same constants as
+   the open-time clamp), so zoom can never put the title bar off-screen.
+   ZoomWindow itself saves the current rect into userState on inZoomOut and
+   restores it on inZoomIn. */
+static void rt_ui_apply_zoom(WindowPtr wp, rt_ui_winst *inst, short part)
+{
+    GrafPtr save;
+
+    if (part == inZoomOut) {
+        WStateData **ws;
+        Rect std;
+        short screenW, screenH;
+
+        screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
+        screenH = (short)(qd.screenBits.bounds.bottom - qd.screenBits.bounds.top);
+        SetRect(&std, 4, RTUI_MENUBAR_H + RTUI_TITLEBAR_H,
+                (short)(screenW - RTUI_SCREEN_MARGIN),
+                (short)(screenH - RTUI_SCREEN_MARGIN));
+        ws = (WStateData **)((WindowPeek)wp)->dataHandle;
+        if (ws) (*ws)->stdState = std;
+    }
+    GetPort(&save);
+    SetPort(wp);
+    EraseRect(&wp->portRect); /* classic pre-ZoomWindow erase: avoids the old content flashing inside the new frame */
+    ZoomWindow(wp, part, (Boolean)(wp == FrontWindow()));
+    InvalRect(&wp->portRect);
+    SetPort(save);
+    rt_ui_apply_resize(wp, inst,
+                       (short)(wp->portRect.right - wp->portRect.left),
+                       (short)(wp->portRect.bottom - wp->portRect.top));
+}
+
+static void rt_ui_handle_zoom(WindowPtr wp, rt_ui_winst *inst, Point where, short part)
+{
+    if (!inst->desc->resizable) return; /* can't happen (no zoom box without zoomDocProc); cheap symmetry with handle_grow */
+    if (!TrackBox(wp, where, part)) return;
+    rt_ui_apply_zoom(wp, inst, part);
 }
 
 /* `where` arrives as ev->where, which EventRecord always carries in GLOBAL
@@ -1930,6 +2001,11 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
     case inGrow:
         inst = rt_ui_winst_of(wp);
         if (inst) rt_ui_handle_grow(wp, inst, ev->where);
+        break;
+    case inZoomIn:
+    case inZoomOut:
+        inst = rt_ui_winst_of(wp);
+        if (inst) rt_ui_handle_zoom(wp, inst, ev->where, part);
         break;
     case inContent:
         if (wp != FrontWindow()) {
@@ -2598,6 +2674,30 @@ static void rt_ui_script_resize(short w, short h)
     if (inst && inst->desc->resizable) rt_ui_apply_resize(wp, inst, w, h);
 }
 
+/* `zoom`: real zooming is interactive (TrackBox blocks on a real mouse);
+   a script toggles directly. Direction: if the window already occupies the
+   standard state, zoom back in; otherwise zoom out. */
+static void rt_ui_script_zoom(void)
+{
+    WindowPtr wp;
+    rt_ui_winst *inst;
+    Rect content, std;
+    short screenW, screenH, part;
+
+    wp = FrontWindow();
+    if (!wp) return;
+    inst = rt_ui_winst_of(wp);
+    if (!inst || !inst->desc->resizable) return;
+    screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
+    screenH = (short)(qd.screenBits.bounds.bottom - qd.screenBits.bounds.top);
+    SetRect(&std, 4, RTUI_MENUBAR_H + RTUI_TITLEBAR_H,
+            (short)(screenW - RTUI_SCREEN_MARGIN),
+            (short)(screenH - RTUI_SCREEN_MARGIN));
+    content = (*((WindowPeek)wp)->contRgn)->rgnBBox;
+    part = EqualRect(&content, &std) ? inZoomIn : inZoomOut;
+    rt_ui_apply_zoom(wp, inst, part);
+}
+
 /* `tick N`: advances the VIRTUAL tick counter (TickCount is never
    consulted in scripted mode) and pumps the every-table off of it, once --
    same "reschedule from now, no burst catch-up" policy rt_ui_every_pump
@@ -2730,6 +2830,8 @@ static void rt_ui_run_scripted(void)
             rt_ui_script_close();
         } else if (strcmp(verb, "resize") == 0) {
             rt_ui_script_resize((short)atoi(arg1), (short)atoi(arg2));
+        } else if (strcmp(verb, "zoom") == 0) {
+            rt_ui_script_zoom();
         } else if (strcmp(verb, "tick") == 0) {
             rt_ui_script_tick((long)atoi(arg1));
         } else if (strcmp(verb, "snap") == 0) {
@@ -2890,7 +2992,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     SetRect(&bounds, left, top, (short)(left + w), (short)(top + h));
 
     inst->wp = NewWindow(NULL, &bounds, d->title, (Boolean)0,
-                          d->resizable ? documentProc : noGrowDocProc,
+                          d->resizable ? zoomDocProc : noGrowDocProc,
                           (WindowPtr)-1L, (Boolean)1, 0L);
     if (!inst->wp) rt_panic("out of memory");
     ((WindowPeek)inst->wp)->windowKind = RTUI_WINDOW_KIND;

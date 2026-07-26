@@ -224,6 +224,34 @@ func TestCanvasUIScenario(t *testing.T) {
 	}
 }
 
+// TestZoomwinUIScenario (window-zoom-hscroll Task 1): the zoom box end to
+// end -- zoom out must change the screen (S1 != S2) and zoom back in must
+// restore the exact original geometry (S1 == S3), on top of the golden
+// trace/snap compares (two `resized` fires).
+func TestZoomwinUIScenario(t *testing.T) {
+	snaps := runUIScenario(t, "zoomwin", 0)
+	var s1, s2, s3 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		case "S3":
+			s3 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil || s3 == nil {
+		t.Fatalf("zoomwin: expected snaps S1, S2, S3; got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("zoom out changed nothing (S1 == S2)")
+	}
+	if !bytes.Equal(s1, s3) {
+		t.Fatalf("zoom in did not restore the original geometry (S1 != S3)")
+	}
+}
+
 // TestPatternUIScenario: the canvas `pattern` method (Ch11) -- one snap
 // showing the 9-level dither ramp, clamped out-of-range levels, the
 // FillOval path, and a frame op unaffected by the fill pattern.
