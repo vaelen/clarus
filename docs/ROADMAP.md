@@ -202,6 +202,14 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   read then a separate `d.Body.text = t` assignment. Proper fix — a loud
   compile-time error for this shape, or a real fill-in-place binding for
   widget properties — is 4d's binding-walker work.
+- **Two clarusc gaps found during window-zoom-hscroll (2026-07-26,
+  documented in testdata/ui/hscroll.cla's header):** (1) assigning a string
+  literal to a widget `text` property (`Body.text = "lit"`) fails to
+  compile — the IUiSetTextviewText lowering site inserts no Str→Text
+  coercion, unlike ordinary assignment (clarusc/cprint.cla ~:959); (2) a
+  window-scope `var: text` crashes at runtime on a NULL handle (per-instance
+  text vars are never initialized the way locals are). The second is a
+  user-facing crash — schedule with (or before) 4d's binding work.
 - Parking lot (deferred features, from the design spec §14 + later
   decisions): HTTP layer, UDP/DDP, auto-generated forms, float/SANE,
   case-insensitive maps, handle-backed map values, printing, color QuickDraw,
