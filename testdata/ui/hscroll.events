@@ -1,0 +1,7 @@
+menu 0 0
+snap S1
+click 306 228
+snap S2
+resize 340 220
+snap S3
+close

@@ -1,0 +1,6 @@
+T OPEN HWin 1
+T FRONT HWin 1
+T FIRE HWin.resized
+T FIRE HWin.closeRequest
+T CLOSE HWin 1
+T FIRE HWin.closed

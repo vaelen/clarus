@@ -191,6 +191,8 @@ extern void rt_quit(int32_t code);
 #define RTUI_FIELD_LABEL_W  70
 #define RTUI_TE_FRAME_INSET  3
 #define RTUI_SCROLLBAR_W    15
+#define RTUI_TE_NOWRAP_W  2000 /* no-wrap destRect width == horizontal scroll ceiling; longest-line tracking rejected in the spec */
+#define RTUI_HSCROLL_STEP 8    /* horizontal arrow nudge, roughly one character */
 
 /* Field/textview text caps (mac-target-4c Task 1): a field's `text` is
    Ch8's `string(255)`-shaped Str255, so 255 is a structural cap already
@@ -227,16 +229,19 @@ typedef struct rt_ui_winst {
     /* mac-target-4c Task 1: TextEdit field/textview widgets. `tes` holds one
        TEHandle per widget (NULL for every non-FIELD/TEXTVIEW kind); a
        textview's own vertical scrollbar (when RTUI_SCROLL_V) is a normal
-       Control Manager control living in `ctrls[i]` like a button/check,
-       distinguished by contrlRfCon's high bit (0x8000|i) so click dispatch
-       can tell it apart from an ordinary widget index. `logicalEnabled`
-       fixes the pre-existing (mac-target-4b) blanket-HiliteControl bug: it
+       Control Manager control living in `ctrls[i]` like a button/check.
+       refCon scheme (window-zoom-hscroll Task 2): ordinary widget `i`;
+       textview V bar `0x8000|i`; textview H bar `0xC000|i` (`hbars[i]`,
+       below); scrollbar test is `rfCon & 0x8000L`, horizontal test
+       `rfCon & 0x4000L`, index mask `0x3FFF`. `logicalEnabled` fixes the
+       pre-existing (mac-target-4b) blanket-HiliteControl bug: it
        remembers which widgets the PROGRAM disabled via
        RTUI_PROP_ENABLED, independent of the window's own active/inactive
        dimming, so reactivating a window doesn't visually re-enable a
        control the app explicitly turned off. `focusIdx` is the one
        FIELD/TEXTVIEW with the caret (-1 = none). */
     Handle teH; TEHandle *tes;
+    Handle hbarsH; ControlHandle *hbars; /* nWidgets; textview horizontal scrollbar (RTUI_SCROLL_H) or NULL */
     Handle enabledH; char *logicalEnabled;
     short focusIdx;
 #ifdef RT_MAC_TEST
@@ -766,6 +771,14 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
             } else {
                 inst->ctrls[i] = NULL;
             }
+            if (wd->flags & RTUI_SCROLL_H) {
+                (*inst->tes[i])->crOnly = -1; /* no word wrap: lines break only at CR */
+                inst->hbars[i] = NewControl(inst->wp, &placeholder, kEmptyPStr,
+                                             (Boolean)1, 0, 0, 0, scrollBarProc, 0L);
+                (*inst->hbars[i])->contrlRfCon = (long)(0xC000L | i);
+            } else {
+                inst->hbars[i] = NULL;
+            }
             break;
         default: /* RTUI_LABEL, RTUI_CANVAS: no Control Manager backing */
             inst->ctrls[i] = NULL;
@@ -797,32 +810,54 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
  * plan's pinned policy: a single TEKey keystroke is one `change`, regardless
  * of whether the byte count actually moved). */
 
-/* Recomputes a textview's scrollbar range from its current line count and
-   pins the control's value to the new range -- called after every layout
-   change and every content mutation. A no-op for a field (no scrollbar) or
-   a textview declared without RTUI_SCROLL_V (ctrls[wIdx] is NULL either
-   way). If the content shrank below the old scroll offset, scrolls the TE
-   back into view (TEScroll) rather than leaving it showing blank space
-   past the new end. */
+/* Recomputes a textview's scrollbar range(s) from its current content and
+   pins each control's value to its TE's *actual* view/dest offset -- called
+   after every layout change and every content mutation. A no-op for a
+   field (no scrollbar) or a textview declared without RTUI_SCROLL_V/H
+   (ctrls[wIdx]/hbars[wIdx] is NULL either way). Deriving value-from-offset
+   (rather than only clamping the control's OLD value downward) matters
+   because relayout resets destRect to the view origin: after any resize
+   the old clamp-only code could leave a thumb pointing at a scroll
+   position the TE no longer had. If the derived offset exceeds the new
+   max, scrolls the TE back into view (TEScroll) rather than leaving it
+   showing blank space past the new end. */
 static void rt_ui_te_scroll_sync(rt_ui_winst *inst, short wIdx)
 {
     TEHandle te;
-    ControlHandle sb;
-    short viewH, contentH, maxScroll, curVal;
+    ControlHandle sb, hb;
+    short viewH, contentH, maxScroll, offset;
 
     te = inst->tes[wIdx];
+    if (!te) return;
     sb = inst->ctrls[wIdx];
-    if (!te || !sb) return;
-    viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
-    contentH = (short)((*te)->nLines * (*te)->lineHeight);
-    maxScroll = (short)(contentH - viewH);
-    if (maxScroll < 0) maxScroll = 0;
-    SetControlMaximum(sb, maxScroll);
-    curVal = GetControlValue(sb);
-    if (curVal > maxScroll) {
-        short applied = (short)(curVal - maxScroll); /* positive: scroll back up */
-        SetControlValue(sb, maxScroll);
-        TEScroll(0, applied, te);
+    hb = inst->hbars[wIdx];
+    if (sb) {
+        viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
+        contentH = (short)((*te)->nLines * (*te)->lineHeight);
+        maxScroll = (short)(contentH - viewH);
+        if (maxScroll < 0) maxScroll = 0;
+        SetControlMaximum(sb, maxScroll);
+        offset = (short)((*te)->viewRect.top - (*te)->destRect.top);
+        if (offset > maxScroll) {
+            TEScroll(0, (short)(offset - maxScroll), te); /* positive dv: content back down */
+            offset = maxScroll;
+        }
+        SetControlValue(sb, offset);
+    }
+    if (hb) {
+        short viewW, destW;
+
+        viewW = (short)((*te)->viewRect.right - (*te)->viewRect.left);
+        destW = (short)((*te)->destRect.right - (*te)->destRect.left);
+        maxScroll = (short)(destW - viewW);
+        if (maxScroll < 0) maxScroll = 0;
+        SetControlMaximum(hb, maxScroll);
+        offset = (short)((*te)->viewRect.left - (*te)->destRect.left);
+        if (offset > maxScroll) {
+            TEScroll((short)(offset - maxScroll), 0, te);
+            offset = maxScroll;
+        }
+        SetControlValue(hb, offset);
     }
 }
 
@@ -891,28 +926,70 @@ static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
 {
     const rt_ui_widget_desc *wd;
     TEHandle te;
-    Rect box, teRect, sbRect;
+    Rect box, teRect, sbRect, frame;
 
     wd = &inst->desc->widgets[i];
     te = inst->tes[i];
     if (!te) return;
+    /* The frame border (FrameRect of viewRect outset by RTUI_TE_FRAME_INSET,
+       drawn directly by the update handler) isn't self-maintaining the way
+       a Control's own MoveControl/SizeControl is: when a relayout (a
+       resize/grow, real or scripted) moves it, the OLD border's painted
+       pixels just sit there as garbage otherwise -- SizeWindow only
+       auto-invalidates the newly-exposed margin, never the interior a
+       relayout moved widgets within, and InvalRect alone only marks a
+       region eligible for the NEXT paint call that happens to touch it;
+       it doesn't erase anything itself (FrameRect draws a one-pixel
+       outline, not a filled erase-then-frame). EraseRect the old position
+       right now (before it's overwritten below), matching the same
+       erase-before-resize idiom rt_ui_apply_zoom already uses for the
+       whole window; InvalRect the new position at the bottom of this
+       function so the update handler's FrameRect/TEUpdate actually runs
+       there. A harmless no-op-ish erase the first time a widget is laid
+       out (viewRect is still TENew's zero placeholder). */
+    frame = (*te)->viewRect;
+    InsetRect(&frame, -RTUI_TE_FRAME_INSET, -RTUI_TE_FRAME_INSET);
+    EraseRect(&frame);
     box = inst->rects[i];
     if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0)
         box.left = (short)(box.left + RTUI_FIELD_LABEL_W);
     teRect = box;
-    if (wd->kind == RTUI_TEXTVIEW && inst->ctrls[i]) {
-        SetRect(&sbRect, (short)(box.right - RTUI_SCROLLBAR_W), box.top, box.right, box.bottom);
-        MoveControl(inst->ctrls[i], sbRect.left, sbRect.top);
-        SizeControl(inst->ctrls[i], (short)(sbRect.right - sbRect.left), (short)(sbRect.bottom - sbRect.top));
-        teRect.right = (short)(teRect.right - RTUI_SCROLLBAR_W);
+    if (wd->kind == RTUI_TEXTVIEW) {
+        Boolean hasV, hasH;
+
+        hasV = inst->ctrls[i] != NULL;
+        hasH = inst->hbars[i] != NULL;
+        if (hasV) {
+            /* stops RTUI_SCROLLBAR_W short of the bottom when an H bar
+               shares the corner -- the standard grow-notch square */
+            SetRect(&sbRect, (short)(box.right - RTUI_SCROLLBAR_W), box.top,
+                    box.right, (short)(box.bottom - (hasH ? RTUI_SCROLLBAR_W : 0)));
+            MoveControl(inst->ctrls[i], sbRect.left, sbRect.top);
+            SizeControl(inst->ctrls[i], (short)(sbRect.right - sbRect.left),
+                        (short)(sbRect.bottom - sbRect.top));
+            teRect.right = (short)(teRect.right - RTUI_SCROLLBAR_W);
+        }
+        if (hasH) {
+            SetRect(&sbRect, box.left, (short)(box.bottom - RTUI_SCROLLBAR_W),
+                    (short)(box.right - (hasV ? RTUI_SCROLLBAR_W : 0)), box.bottom);
+            MoveControl(inst->hbars[i], sbRect.left, sbRect.top);
+            SizeControl(inst->hbars[i], (short)(sbRect.right - sbRect.left),
+                        (short)(sbRect.bottom - sbRect.top));
+            teRect.bottom = (short)(teRect.bottom - RTUI_SCROLLBAR_W);
+        }
     }
     InsetRect(&teRect, RTUI_TE_FRAME_INSET, RTUI_TE_FRAME_INSET);
     if (teRect.right < teRect.left) teRect.right = teRect.left;
     if (teRect.bottom < teRect.top) teRect.bottom = teRect.top;
-    (*te)->destRect = teRect;
     (*te)->viewRect = teRect;
+    (*te)->destRect = teRect;
+    if (wd->kind == RTUI_TEXTVIEW && inst->hbars[i])
+        (*te)->destRect.right = (short)(teRect.left + RTUI_TE_NOWRAP_W);
     TECalText(te);
     rt_ui_te_scroll_sync(inst, i);
+    frame = teRect;
+    InsetRect(&frame, -RTUI_TE_FRAME_INSET, -RTUI_TE_FRAME_INSET);
+    InvalRect(&frame);
 }
 
 /* Click-to-focus (Behavior contract: "one focused TE per window"):
@@ -959,24 +1036,43 @@ static int rt_ui_te_hit(rt_ui_winst *inst, Point local, short *outIdx)
 static pascal void rt_ui_scrollbar_action(ControlHandle ctrl, short part)
 {
     rt_ui_winst *inst;
-    short wIdx, lineH, viewH, step;
+    short wIdx, step;
     TEHandle te;
+    long rfCon;
+    Boolean horiz;
 
     if (part == 0) return;
     inst = rt_ui_winst_of((*ctrl)->contrlOwner);
     if (!inst) return;
-    wIdx = (short)((*ctrl)->contrlRfCon & 0x7FFF);
+    rfCon = (*ctrl)->contrlRfCon;
+    horiz = (rfCon & 0x4000L) != 0;
+    wIdx = (short)(rfCon & 0x3FFFL);
     te = inst->tes[wIdx];
     if (!te) return;
-    lineH = (*te)->lineHeight;
-    if (lineH <= 0) lineH = 1;
-    viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
-    switch (part) {
-    case kControlUpButtonPart:   step = (short)-lineH; break;
-    case kControlDownButtonPart: step = lineH; break;
-    case kControlPageUpPart:     step = (short)-viewH; break;
-    case kControlPageDownPart:   step = viewH; break;
-    default: return;
+    if (horiz) {
+        short viewW;
+
+        viewW = (short)((*te)->viewRect.right - (*te)->viewRect.left);
+        switch (part) {
+        case kControlUpButtonPart:   step = (short)-RTUI_HSCROLL_STEP; break; /* left arrow */
+        case kControlDownButtonPart: step = RTUI_HSCROLL_STEP; break;         /* right arrow */
+        case kControlPageUpPart:     step = (short)-viewW; break;
+        case kControlPageDownPart:   step = viewW; break;
+        default: return;
+        }
+    } else {
+        short lineH, viewH;
+
+        lineH = (*te)->lineHeight;
+        if (lineH <= 0) lineH = 1;
+        viewH = (short)((*te)->viewRect.bottom - (*te)->viewRect.top);
+        switch (part) {
+        case kControlUpButtonPart:   step = (short)-lineH; break;
+        case kControlDownButtonPart: step = lineH; break;
+        case kControlPageUpPart:     step = (short)-viewH; break;
+        case kControlPageDownPart:   step = viewH; break;
+        default: return;
+        }
     }
     {
         short oldVal, newVal, maxVal, applied;
@@ -988,7 +1084,8 @@ static pascal void rt_ui_scrollbar_action(ControlHandle ctrl, short part)
         applied = (short)(oldVal - newVal);
         if (applied == 0) return;
         SetControlValue(ctrl, newVal);
-        TEScroll(0, applied, te);
+        if (horiz) TEScroll(applied, 0, te);
+        else       TEScroll(0, applied, te);
     }
 }
 
@@ -1015,10 +1112,16 @@ static void rt_ui_handle_scrollbar_click(rt_ui_winst *inst, ControlHandle ctrl, 
 #endif
     if (cpart == kControlIndicatorPart) {
         short oldVal, newVal;
+        Boolean horiz;
+
+        horiz = ((*ctrl)->contrlRfCon & 0x4000L) != 0;
         oldVal = GetControlValue(ctrl);
         if (TrackControl(ctrl, where, NULL) != 0) {
             newVal = GetControlValue(ctrl);
-            if (newVal != oldVal && inst->tes[wIdx]) TEScroll(0, (short)(oldVal - newVal), inst->tes[wIdx]);
+            if (newVal != oldVal && inst->tes[wIdx]) {
+                if (horiz) TEScroll((short)(oldVal - newVal), 0, inst->tes[wIdx]);
+                else       TEScroll(0, (short)(oldVal - newVal), inst->tes[wIdx]);
+            }
         }
     } else {
         TrackControl(ctrl, where, NewControlActionUPP(rt_ui_scrollbar_action));
@@ -1756,6 +1859,15 @@ static void rt_ui_inval_grow_corner(WindowPtr wp)
     r = wp->portRect;
     r.left = (short)(r.right - RTUI_SCROLLBAR_W);
     r.top = (short)(r.bottom - RTUI_SCROLLBAR_W);
+    /* EraseRect, not just InvalRect (this call's own "erase the stale grow
+       icon" comment at its call site was already the intent -- InvalRect
+       alone only marks the region eligible for the next paint call that
+       happens to touch it; it never actually clears anything, so the OLD
+       corner's DrawGrowIcon pixels survived as a floating stale glyph
+       until window-zoom-hscroll Task 2's hscroll.events became the first
+       scenario to snap-verify a plain `resize` -- zoom's own wrapper
+       masked this by EraseRect'ing the WHOLE window first). */
+    EraseRect(&r);
     InvalRect(&r);
 }
 
@@ -1926,7 +2038,7 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                creation time (rt_ui_make_widgets) -- never a widget index,
                dispatched separately: it scrolls its TE, it never fires a
                widget event. */
-            rt_ui_handle_scrollbar_click(inst, ctrl, (short)(rfCon & 0x7FFF), cpart, where);
+            rt_ui_handle_scrollbar_click(inst, ctrl, (short)(rfCon & 0x3FFFL), cpart, where);
             return;
         }
         {
@@ -2951,6 +3063,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->labels = (unsigned char (*)[256])rt_ui_alloc_locked((Size)d->nWidgets * 256, &inst->labelsH);
     inst->canvases = (rt_ui_canvas_buf *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(rt_ui_canvas_buf), &inst->canvasH);
     inst->tes = (TEHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(TEHandle), &inst->teH);
+    inst->hbars = (ControlHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(ControlHandle), &inst->hbarsH);
     inst->logicalEnabled = (char *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(char), &inst->enabledH);
     inst->focusIdx = -1;
     {
@@ -3100,6 +3213,7 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
     DisposeHandle(inst->labelsH);
     DisposeHandle(inst->canvasH);
     DisposeHandle(inst->teH);
+    DisposeHandle(inst->hbarsH);
     DisposeHandle(inst->enabledH);
     DisposeHandle(inst->selfH);
     return 1;

@@ -1,0 +1,57 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// hscroll.cla: gated UI scenario (window-zoom-hscroll Task 2) --
+// `scrollbar: both` end to end: no-wrap (the long line set in `opened`
+// stays on one line, clipped at the view's right edge -- under the old
+// wrap behavior it would fold into several lines), a horizontal page-right
+// via a scripted click in the bar's track (S1 vs S2), and a grow through
+// the same relayout funnel with both bars present (S3).
+//
+// Coordinate math (mirrors buttons.cla's convention): 300x200 content
+// opens centered-left at global (106, 44). Body fills from local (10,10)
+// to (292,192) (8px RTUI_GAP). H bar spans local (10,177)-(277,192) (15px
+// lane, right end stopped 15px short of the V bar's lane). A click at
+// local (200,184) = global (306,228) lands in the H track right of the
+// thumb -> one page-right nudge (scripted scrollbar clicks are discrete).
+//
+// The literal is routed through a local `text` var rather than assigned to
+// Body.text directly: clarusc's widget-property-set lowering
+// (lowWidgetSetAssign/IUiSetTextviewText) skips the ordinary
+// String->Text assignment coercion (Ch3) that a plain `var: text`
+// assignment gets, so `Body.text = "literal"` fails to compile (a2 isn't
+// actually already rt_text* despite cprint.cla's IUiSetTextviewText
+// comment claiming so) -- a pre-existing clarusc gap, out of scope for
+// this task (context.md: no clarusc changes needed; stop and report
+// instead of fixing it here). `body` is a HANDLER-LOCAL var, not a
+// window-scope one: a window-scope `var: text` field is never
+// initialized to a live rt_text_new() handle (only a function-local
+// `var: text` declaration gets that init emitted), so a window-scope
+// `var body: text` here would compile but crash at runtime storing
+// through a NULL handle -- also a pre-existing clarusc gap, same
+// out-of-scope treatment.
+//
+// hscroll.events primes with `menu 0 0` before the first `snap`, same fix
+// and same reason as zoomwin.events (see that file's own comment): a
+// `snap` as the literal first scripted verb captures the screen before
+// the first update pump, so S1 would otherwise show a blank content area.
+
+window HWin {
+    title: "HScroll"
+    size: 300, 200
+    resizable: min(200, 120)
+
+    textview Body { at: 10, 10; fill: both; scrollbar: both }
+}
+
+on App.launch {
+    open HWin
+}
+
+extend HWin {
+    on opened {
+        var body: text
+        body = "The quick brown fox jumps over the lazy dog and keeps running well past the right edge of the view rectangle"
+        Body.text = body
+    }
+}

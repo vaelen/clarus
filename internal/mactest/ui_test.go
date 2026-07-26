@@ -252,6 +252,30 @@ func TestZoomwinUIScenario(t *testing.T) {
 	}
 }
 
+// TestHscrollUIScenario (window-zoom-hscroll Task 2): `scrollbar: both` on a
+// textview end to end -- no word wrap (a click below page-rights the
+// unwrapped long line, S1 != S2) and a grow through the same relayout
+// funnel with both bars present (S3), on top of the golden trace/snap
+// compares.
+func TestHscrollUIScenario(t *testing.T) {
+	snaps := runUIScenario(t, "hscroll", 0)
+	var s1, s2 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil {
+		t.Fatalf("hscroll: expected snaps S1 and S2, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("horizontal page-right changed nothing (S1 == S2)")
+	}
+}
+
 // TestPatternUIScenario: the canvas `pattern` method (Ch11) -- one snap
 // showing the 9-level dither ramp, clamped out-of-range levels, the
 // FillOval path, and a frame op unaffected by the fill pattern.

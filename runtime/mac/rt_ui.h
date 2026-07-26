@@ -57,12 +57,11 @@
 #define RTUI_CANCEL   2   /* button: wires the Escape key (Ch8) */
 #define RTUI_BUFFERED 4   /* canvas: offscreen GrafPort (Ch11, Task 2) */
 #define RTUI_SCROLL_V 8   /* textview: vertical scrollbar (mac-target-4c Task 1) */
-#define RTUI_SCROLL_H 16  /* textview: horizontal scrollbar -- reference names it (`scrollbar: both`)
-                             but this task wires only RTUI_SCROLL_V; a textview declaring
-                             RTUI_SCROLL_H gets no horizontal scrollbar control and no
-                             behavior change (silent no-op), same disclosed-limitation
-                             shape as other free-to-pick gaps in this file. Revisit if a
-                             later task needs real horizontal scrolling. */
+#define RTUI_SCROLL_H 16  /* textview: horizontal scrollbar (window-zoom-hscroll Task 2).
+                             Implies no word wrap: the TE is created crOnly (lines break
+                             only at CR) with a fixed RTUI_TE_NOWRAP_W-wide destRect --
+                             the wrap-off + wide-dest pair is the classic TE idiom, and
+                             the fixed width doubles as the scroll range ceiling. */
 
 /* rt_ui_handlers.winEvent `event` values (Ch8 Window Events) */
 #define RTUI_EV_OPENED       0
