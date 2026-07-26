@@ -127,6 +127,21 @@ extern void rt_quit(int32_t code);
    range Inside Macintosh reserves for application use. */
 #define RTUI_WINDOW_KIND 2001
 
+/* Screen-clamp constants (bugfix, mac-target-4c-fixes): rt_ui_open's
+   NewWindow bounds and rt_ui_handle_grow's GrowWindow max limit both need
+   "how much screen is actually usable", so both are pinned here.
+   RTUI_MENUBAR_H is the fixed 20px menu bar height -- these Universal
+   Interfaces (Retro68/InterfacesAndLibraries) don't declare GetMBarHeight,
+   so this is the plain System 6/7 constant, not a live call.
+   RTUI_TITLEBAR_H is a document window's fixed 19px title bar.
+   RTUI_SCREEN_MARGIN is 2px of breathing room against the RIGHT and
+   BOTTOM screen edges, consistent with rt_ui_open's pre-existing
+   left>=4 convention (a slightly bigger margin on the left/top, where a
+   window's own title bar furniture already reads close to the edge). */
+#define RTUI_MENUBAR_H      20
+#define RTUI_TITLEBAR_H     19
+#define RTUI_SCREEN_MARGIN   2
+
 /* Layout constants (Ch8 doesn't specify pixel values, only relative
    placement rules) -- ponytail: fixed per-kind control heights and one
    shared gap/margin constant, tuned to look like a normal System 6 dialog.
@@ -1734,14 +1749,29 @@ static void rt_ui_apply_resize(WindowPtr wp, rt_ui_winst *inst, short newW, shor
 
 static void rt_ui_handle_grow(WindowPtr wp, rt_ui_winst *inst, Point where)
 {
-    Rect limits;
+    Rect limits, content;
+    short screenW, screenH, maxW, maxH;
     long newSize;
 
     if (!inst->desc->resizable) return;
+
+    /* BUG FIX (mac-target-4c-fixes): the old 32767 max let GrowWindow drag
+       a window's bottom/right edge arbitrarily far off-screen. Cap growth
+       at however much screen is left from the window's CURRENT top-left --
+       contRgn's bbox is the content rect in global coords, valid even if
+       DragWindow has since moved the window from where rt_ui_open put it. */
+    content = (*((WindowPeek)wp)->contRgn)->rgnBBox;
+    screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
+    screenH = (short)(qd.screenBits.bounds.bottom - qd.screenBits.bounds.top);
+    maxW = (short)(screenW - content.left - RTUI_SCREEN_MARGIN);
+    maxH = (short)(screenH - content.top - RTUI_SCREEN_MARGIN);
+    if (maxW < 1) maxW = 1;
+    if (maxH < 1) maxH = 1;
+
     SetRect(&limits,
             (short)(inst->desc->minW > 0 ? inst->desc->minW : 1),
             (short)(inst->desc->minH > 0 ? inst->desc->minH : 1),
-            32767, 32767);
+            maxW, maxH);
     newSize = GrowWindow(wp, where, &limits);
     if (newSize == 0) return;
     rt_ui_apply_resize(wp, inst, LoWord(newSize), HiWord(newSize));
@@ -2795,7 +2825,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     rt_ui_winst *inst;
     Handle instH;
     Rect bounds;
-    short screenW, left, top;
+    short screenW, screenH, left, top, w, h;
 
     inst = (rt_ui_winst *)rt_ui_alloc_locked(sizeof(rt_ui_winst), &instH);
     inst->selfH = instH;
@@ -2821,11 +2851,35 @@ void *rt_ui_open(const rt_ui_window_desc *d)
         }
     }
 
+    /* BUG FIX (mac-target-4c-fixes): `size:` in a .cla program is a
+       REQUEST, not a guarantee (Ch8 Mac-note) -- a window taller or wider
+       than the actual screen used to open partway off-screen (bottom rows
+       and the grow icon unreachable). Clamp both position and size to fit
+       qd.screenBits.bounds before NewWindow ever sees the rect. */
     screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
+    screenH = (short)(qd.screenBits.bounds.bottom - qd.screenBits.bounds.top);
     left = (short)((screenW - d->w) / 2);
     if (left < 4) left = 4;
+    w = d->w;
+    if (w > (short)(screenW - left - RTUI_SCREEN_MARGIN)) {
+        w = (short)(screenW - left - RTUI_SCREEN_MARGIN);
+        if (w < 1) w = 1; /* degenerate screen; NewWindow still needs a positive rect */
+    }
+
+    /* Preferred top (pre-existing convention: menu bar + title bar + a
+       few px breathing room). If the window doesn't fit there, pull it up
+       flush under the title bar instead; if it STILL doesn't fit even
+       there, the size itself has to give -- clamp the height too. */
     top = 44;
-    SetRect(&bounds, left, top, (short)(left + d->w), (short)(top + d->h));
+    h = d->h;
+    if ((short)(top + h + RTUI_SCREEN_MARGIN) > screenH) {
+        top = RTUI_MENUBAR_H + RTUI_TITLEBAR_H; /* 39: flush under the title bar */
+        if ((short)(top + h + RTUI_SCREEN_MARGIN) > screenH) {
+            h = (short)(screenH - top - RTUI_SCREEN_MARGIN);
+            if (h < 1) h = 1;
+        }
+    }
+    SetRect(&bounds, left, top, (short)(left + w), (short)(top + h));
 
     inst->wp = NewWindow(NULL, &bounds, d->title, (Boolean)0,
                           d->resizable ? documentProc : noGrowDocProc,

@@ -837,6 +837,8 @@ A `window` block is a declaration, not code: it compiles to a real resource (WIN
 
 One additional window declaration — the document file-type declaration for Finder integration — is described in Chapter 12; its syntax is settled alongside the toolchain.
 
+**Mac note — `size` on a small screen:** `size` is a request, not a guarantee. On a Macintosh screen too small for the declared size (e.g. a Mac Plus's 512×342 against a 460×320 window), the runtime clamps the window's position and, if that alone isn't enough, its size too, so the whole window — including the grow box — stays on-screen.
+
 ```rust
 window Doc {
     title: "Untitled"
