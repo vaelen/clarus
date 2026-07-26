@@ -633,6 +633,7 @@ static void rt_ui_layout(rt_ui_winst *inst)
     for (i = 0; i < d->nWidgets; i++) {
         const rt_ui_widget_desc *wd;
         short x, y, w, h;
+        Boolean flushR, flushB;
 
         wd = &d->widgets[i];
         h = rt_ui_kind_height(wd->kind);
@@ -667,8 +668,19 @@ static void rt_ui_layout(rt_ui_winst *inst)
            RTUI_FILL_BOTH) and emitted descriptors, rather than duplicating
            the "fill:both implies width:fill" rule in clarusc's lowering
            too. */
+        /* Classic flush scrollbars (window-zoom-hscroll fix-flush): a
+           fill-to-edge textview with a scrollbar on that edge puts the bar
+           IN the window frame (Inside Mac / TESample geometry) rather than
+           floating RTUI_GAP px inside it -- see rt_ui_te_relayout and the
+           fix-flush-brief for the full policy. Non-textview widgets and
+           textviews without a scrollbar on the filled edge are unaffected
+           and keep the plain RTUI_GAP margin below. */
+        flushR = (Boolean)(wd->kind == RTUI_TEXTVIEW && (wd->flags & RTUI_SCROLL_V) &&
+                            (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH));
+        flushB = (Boolean)(wd->kind == RTUI_TEXTVIEW && (wd->flags & RTUI_SCROLL_H) &&
+                            wd->fill == RTUI_FILL_BOTH);
         if (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH) {
-            w = (short)(contentW - x - RTUI_GAP);
+            w = flushR ? (short)(contentW - x + 1) : (short)(contentW - x - RTUI_GAP);
         } else if (wd->width == 0) {
             w = rt_ui_kind_width(wd->kind); /* no `width:` given (or none exists for this kind) -- see RTUI_*_W's comment */
         } else {
@@ -676,7 +688,7 @@ static void rt_ui_layout(rt_ui_winst *inst)
         }
         if (w < 0) w = 0;
         if (wd->fill == RTUI_FILL_BOTH) {
-            h = (short)(contentH - y - RTUI_GAP);
+            h = flushB ? (short)(contentH - y + 1) : (short)(contentH - y - RTUI_GAP);
             if (h < 0) h = 0;
         }
 
@@ -927,10 +939,22 @@ static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
     const rt_ui_widget_desc *wd;
     TEHandle te;
     Rect box, teRect, sbRect, frame;
+    Boolean flushR, flushB;
+    short vW, hH;
 
     wd = &inst->desc->widgets[i];
     te = inst->tes[i];
     if (!te) return;
+    /* Same flushR/flushB tests as rt_ui_layout (kept in sync there); a
+       flush edge's lane is 16px, not the usual 15 -- the extra pixel is
+       the frame line shared with the window frame itself (see the
+       fix-flush-brief sanity check reproduced below). */
+    flushR = (Boolean)(wd->kind == RTUI_TEXTVIEW && (wd->flags & RTUI_SCROLL_V) &&
+                        (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH));
+    flushB = (Boolean)(wd->kind == RTUI_TEXTVIEW && (wd->flags & RTUI_SCROLL_H) &&
+                        wd->fill == RTUI_FILL_BOTH);
+    vW = (short)(RTUI_SCROLLBAR_W + (flushR ? 1 : 0));
+    hH = (short)(RTUI_SCROLLBAR_W + (flushB ? 1 : 0));
     /* The frame border (FrameRect of viewRect outset by RTUI_TE_FRAME_INSET,
        drawn directly by the update handler) isn't self-maintaining the way
        a Control's own MoveControl/SizeControl is: when a relayout (a
@@ -960,22 +984,27 @@ static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
         hasV = inst->ctrls[i] != NULL;
         hasH = inst->hbars[i] != NULL;
         if (hasV) {
-            /* stops RTUI_SCROLLBAR_W short of the bottom when an H bar
-               shares the corner -- the standard grow-notch square */
-            SetRect(&sbRect, (short)(box.right - RTUI_SCROLLBAR_W), box.top,
-                    box.right, (short)(box.bottom - (hasH ? RTUI_SCROLLBAR_W : 0)));
+            /* stops hH short of the bottom when an H bar shares the corner
+               -- the standard grow-notch square. vTop: a bar starting at
+               the content top extends 1px under the title-bar line,
+               classic style (only actually reaches -1 when box.top is 0,
+               i.e. this textview is flush to the window top too). */
+            short vTop = (short)(box.top <= 0 ? -1 : box.top);
+            SetRect(&sbRect, (short)(box.right - vW), vTop,
+                    box.right, (short)(box.bottom - (hasH ? hH : 0)));
             MoveControl(inst->ctrls[i], sbRect.left, sbRect.top);
             SizeControl(inst->ctrls[i], (short)(sbRect.right - sbRect.left),
                         (short)(sbRect.bottom - sbRect.top));
-            teRect.right = (short)(teRect.right - RTUI_SCROLLBAR_W);
+            teRect.right = (short)(teRect.right - vW);
         }
         if (hasH) {
-            SetRect(&sbRect, box.left, (short)(box.bottom - RTUI_SCROLLBAR_W),
-                    (short)(box.right - (hasV ? RTUI_SCROLLBAR_W : 0)), box.bottom);
+            short hLeft = (short)(box.left <= 0 ? -1 : box.left);
+            SetRect(&sbRect, hLeft, (short)(box.bottom - hH),
+                    (short)(box.right - (hasV ? vW : 0)), box.bottom);
             MoveControl(inst->hbars[i], sbRect.left, sbRect.top);
             SizeControl(inst->hbars[i], (short)(sbRect.right - sbRect.left),
                         (short)(sbRect.bottom - sbRect.top));
-            teRect.bottom = (short)(teRect.bottom - RTUI_SCROLLBAR_W);
+            teRect.bottom = (short)(teRect.bottom - hH);
         }
     }
     InsetRect(&teRect, RTUI_TE_FRAME_INSET, RTUI_TE_FRAME_INSET);
@@ -1787,6 +1816,15 @@ static void rt_ui_handle_update(WindowPtr wp)
                 if (te) {
                     Rect frame = (*te)->viewRect;
                     InsetRect(&frame, -RTUI_TE_FRAME_INSET, -RTUI_TE_FRAME_INSET);
+                    /* Flush edges (fix-flush): push a frame edge that lands
+                       on the portRect boundary 1px outward so it merges
+                       with the window frame instead of doubling just
+                       inside it -- right/bottom flush edges need no such
+                       push, their frame line already coincides with the
+                       scrollbar's own frame line at the same pixel
+                       column/row. */
+                    if (frame.left <= 0) frame.left = -1;
+                    if (frame.top  <= 0) frame.top  = -1;
                     FrameRect(&frame);
                     TEUpdate(&(*te)->viewRect, te);
                 }
