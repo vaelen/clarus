@@ -24,7 +24,7 @@ window Main {
         column "URL"  shows url      width fill
         column "Fav"  shows favorite width 30
     }
-    button Add    { at: 10, bottom;   caption: "Add‚Ä¶" }
+    button Add    { at: 10, bottom;   caption: "Add…" }
     button Remove { at: next, bottom; caption: "Remove" }
 }
 

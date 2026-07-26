@@ -27,6 +27,21 @@ From the repo root:
 
 Prints `OK` (exit 0) or per-probe failures (exit 1).
 
+## Encoding
+
+`.cla` source files are Mac OS Roman (MacRoman) encoded, not UTF-8 (see
+Chapter 2, "Source Encoding" in `docs/clarus-language-reference.md`) — so
+they stay editable on a period Mac. Vim's `fileencodings` autodetection
+does not reliably guess MacRoman on read, so open/save `.cla` files
+explicitly:
+
+    :e ++enc=macroman file.cla
+    :w ++enc=macroman
+
+(No autocmd is set up for this — an fread-time `fileencodings` guess is
+not reliable enough to do automatically here, so it's a manual step
+instead of fragile magic.)
+
 ## Known tradeoffs
 
 - `mod` highlights as an operator everywhere (it is not reserved).

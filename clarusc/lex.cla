@@ -3,15 +3,15 @@
 
 include "tok.cla"
 
-// lex.cla: the lexer â€” a port of internal/lexer/lexer.go. Global state
+// lex.cla: the lexer Ñ a port of internal/lexer/lexer.go. Global state
 // stands in for Go's *Lexer receiver (this task's driver only ever lexes
 // one file at a time, per the brief's "single global lexer" option).
 //
 // Byte-vs-escape gotcha this port has to route around: Clarus's own char
-// escape `\n` decodes to CR (13, "the Mac newline" â€” Chapter 2), NOT to the
+// escape `\n` decodes to CR (13, "the Mac newline" Ñ Chapter 2), NOT to the
 // LF (10) byte that actually ends a line in a .cla file's raw bytes. Every
 // place below that means "the raw newline byte in the source being lexed"
-// therefore spells it char(10), never '\n' â€” using '\n' there would silently
+// therefore spells it char(10), never '\n' Ñ using '\n' there would silently
 // compare against 13 instead of 10. Where Go's decodeEscape produces the
 // *value* 13 for its own 'n' escape case, '\n' is correct (both this host
 // compiler and the ported one agree CR = 13), and is used as such.
@@ -433,7 +433,7 @@ func lexDecodeEscape(quote: char): bool {
 }
 
 // lexResyncCharLit advances past a malformed character literal's closing
-// quote on the current line â€” or to end of line if there is none â€” so a bad
+// quote on the current line Ñ or to end of line if there is none Ñ so a bad
 // literal ('ab', '\q) never leaves stray tokens for the caller to trip over.
 func lexResyncCharLit() {
     while lexOff < lexSrc.length and lexSrc[lexOff] != char(10) {

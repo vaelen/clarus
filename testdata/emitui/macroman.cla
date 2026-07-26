@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// macroman.cla: emitui golden fixture -- pins MacRoman source-byte
+// pass-through (docs/clarus-language-reference.md's "Source encoding"
+// section, Chapter 2): .cla source files are MacRoman, not UTF-8, so a
+// menu caption containing the MacRoman ellipsis glyph (byte 0xC9) and an
+// alert string containing MacRoman curly quotes (bytes 0xD2/0xD3) must
+// reach the emitted C's string literals as the identical raw bytes,
+// verbatim -- no re-encoding. Modeled on the real-world bug this pins:
+// examples/texteditor.cla's menu captions and alert once carried UTF-8
+// typographic bytes instead (mac-target-4c Fix 2).
+
+menu File {
+    item Open "Open…" key "O"
+}
+
+on App.launch {
+    alert("Saved “ok”")
+}

@@ -48,7 +48,7 @@ func runRecords() {
     var q: recordsPerson
 
     // defaults: age from its own default, status from Status's first
-    // member (Active = 5, a NON-zero explicit value â€” pins a bug where the
+    // member (Active = 5, a NON-zero explicit value Ñ pins a bug where the
     // default path assumed member 0 always means value 0), home.zip from
     // the nested record's own zero default.
     recordsShow("default age = ", p.age)

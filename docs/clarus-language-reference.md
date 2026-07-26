@@ -89,6 +89,10 @@ Includes are expanded depth-first: each included file's own leading includes are
 
 ## Chapter 2: Lexical Structure
 
+### Source Encoding
+
+Clarus source files (`.cla`) are Mac OS Roman (MacRoman) encoded, not UTF-8 — so a `.cla` file can be opened and edited on a period Mac. Bytes 0x00-0x7F are plain ASCII; program text (identifiers, keywords, operators) must stay within this ASCII range. Bytes 0x80-0xFF are permitted inside comments and string/character literals, where they pass through to the compiled program verbatim, byte for byte — the compiler never re-encodes them. This document is itself a modern UTF-8 file, and its example listings use real Unicode typography (curly quotes, em dashes, ellipses) for readability; when transcribing an example into an actual `.cla` file, that typography must be saved as MacRoman, not left as UTF-8, or the corresponding glyphs will render as junk bytes on a real Mac screen. On a modern editor, save/open the file with a MacRoman encoding — e.g. VS Code's "Western (Mac Roman)" encoding, or vim's `:e ++enc=macroman`.
+
 ### Identifiers
 
 Identifiers begin with a letter and continue with letters, digits, or underscores. Identifiers are case-sensitive. An identifier may be at most 255 bytes; longer is a compile error.

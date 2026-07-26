@@ -3,12 +3,12 @@
 
 include "lib.cla"
 
-// tok.cla: token kinds and the Token record â€” a port of
+// tok.cla: token kinds and the Token record Ñ a port of
 // internal/token/token.go. Enum member order matches token.go's Kind
 // constants exactly: the operator members (TkAssign..TkTilde) MUST stay
 // contiguous and last, because lex.cla's isOperatorKind relies on a single
 // int(k) range test over that span (mirroring token.go's
-// `k >= token.ASSIGN && k <= token.TILDE`) â€” Clarus enums only support ==/!=
+// `k >= token.ASSIGN && k <= token.TILDE`) Ñ Clarus enums only support ==/!=
 // directly, so the range test goes through int(k).
 enum TokKind {
     TkEOF
@@ -87,7 +87,7 @@ enum TokKind {
 // interned identifier/string/char text (IDENT, STRINGLIT, CHARLIT); intVal
 // holds INT's and CHARLIT's numeric value; fixVal holds FIXEDLIT's raw
 // 16.16 value; line/col replace Go's lazily-computed source.Pos (the
-// Clarus lexer tracks line/col incrementally as it scans â€” see lex.cla).
+// Clarus lexer tracks line/col incrementally as it scans Ñ see lex.cla).
 // Fields unused by a given kind are left at zero.
 record Token {
     kind: TokKind
@@ -99,7 +99,7 @@ record Token {
 }
 
 // keywordKind maps nameIdx (the interned index of an identifier's text) to
-// its keyword TokKind, or TkIdent â€” the sentinel meaning "not a keyword,
+// its keyword TokKind, or TkIdent Ñ the sentinel meaning "not a keyword,
 // this is an ordinary identifier". Mirrors token.Keywords.
 func keywordKind(nameIdx: int): TokKind {
     if nameIdx == intern("var") { return TkVar }
@@ -140,7 +140,7 @@ func keywordKind(nameIdx: int): TokKind {
 
 // tokKindName renders a short debug name for k, e.g. for lex_test.cla's
 // golden output. This is a display helper for clarusc's own tests, NOT a
-// port of Go's Kind.String() â€” that table's quoted diagnostic forms
+// port of Go's Kind.String() Ñ that table's quoted diagnostic forms
 // ("'if'", "identifier", "';'", ...) belong to the parser's error messages
 // (Task 7) and are deferred to that task.
 func tokKindName(k: TokKind): string {

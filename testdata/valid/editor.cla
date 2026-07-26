@@ -14,9 +14,9 @@ window Doc {
 
 menu File {
     item New    "New"       key "N"
-    item Open   "Open‚Ä¶"     key "O"
+    item Open   "Open…"     key "O"
     item Save   "Save"      key "S"
-    item SaveAs "Save As‚Ä¶"
+    item SaveAs "Save As…"
     separator
     item Quit   "Quit"      key "Q"
 }
@@ -31,7 +31,7 @@ func openPath(p: string) {
         d.path = p
         d.title = file.name(p)
     } else {
-        alert("Couldn't open ‚Äú" + file.name(p) + "‚Äù")
+        alert("Couldn't open “" + file.name(p) + "”")
         close d
     }
 }
@@ -85,7 +85,7 @@ extend Doc {
         dirty = true
     }
 
-    on closeRequest {              // close box ‚Äî and each window at quit
+    on closeRequest {              // close box — and each window at quit
         var c: saveChoice
 
         if dirty {
