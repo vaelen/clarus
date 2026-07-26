@@ -9,6 +9,14 @@
 // (rt_ui_widget_get_text/set_text against an rt_text handle), and
 // field.enter (RTUI_WEV_ENTER, zero-arg like every other widget event
 // besides canvas's).
+//
+// `log` (bare, uninitialized) and `note` (declared default "hi") are
+// clarusc-ui-gaps Task 2's own fixture: a window with a handle-backed
+// per-instance var must get it constructed (rt_text_new()) before ANY
+// in-place use, even one that never assigns a value at all -- and a
+// declared default must apply AFTER construction, never before (see
+// IUiStateDefaults' cprint case). `log.append` in Name.enter exercises the
+// bare, no-default var's in-place mutation.
 
 window TextWin {
     title: "Text"
@@ -19,6 +27,8 @@ window TextWin {
 
     var nameStr: string
     var bodyText: text
+    var log: text
+    var note: text = "hi"
 }
 
 on App.launch {
@@ -32,6 +42,7 @@ extend TextWin {
     on Name.enter {
         Name.text = nameStr
         title = "Entered"
+        log.append("x")
     }
     on Body.change {
         bodyText = Body.text

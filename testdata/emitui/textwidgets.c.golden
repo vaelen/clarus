@@ -6,13 +6,17 @@
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
 
 static const clar_str_255 clar_lit_0 = {7, {69, 110, 116, 101, 114, 101, 100}};
-static const clar_str_255 clar_lit_1 = {12, {102, 114, 111, 109, 32, 108, 105, 116, 101, 114, 97, 108}};
+static const clar_str_255 clar_lit_1 = {1, {120}};
+static const clar_str_255 clar_lit_2 = {12, {102, 114, 111, 109, 32, 108, 105, 116, 101, 114, 97, 108}};
+static const clar_str_255 clar_lit_3 = {2, {104, 105}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
 typedef struct {
     clar_str_255 cv_nameStr;
     rt_text * cv_bodyText;
+    rt_text * cv_log;
+    rt_text * cv_note;
 } clar_uistate_TextWin;
 
 
@@ -21,8 +25,9 @@ static const rt_ui_widget_desc clar_ui_widgets_TextWin[] = {
     { RTUI_TEXTVIEW, "Body", 0, RTUI_AT_XY, 20, 50, 0, RTUI_FILL_BOTH, RTUI_SCROLL_V },
 };
 
+static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b);
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_TextWin = { 0, clar_ui_widget_TextWin };
+static const rt_ui_handlers clar_ui_handlers_TextWin = { clar_ui_winevent_TextWin, clar_ui_widget_TextWin };
 
 static const rt_ui_window_desc clar_ui_window_TextWin = {
     "TextWin", (const unsigned char *)"\pText",
@@ -43,6 +48,7 @@ static void clar_fn_handler_App_launch(void);
 static void clar_fn_ui_TextWin_Name_change(void * cv_window);
 static void clar_fn_ui_TextWin_Name_enter(void * cv_window);
 static void clar_fn_ui_TextWin_Body_change(void * cv_window);
+static void clar_fn_ui_TextWin_opened(void * cv_window);
 
 static void clar_fn_handler_App_launch(void) {
     rt_ui_open(&clar_ui_window_TextWin);
@@ -57,6 +63,7 @@ static void clar_fn_ui_TextWin_Name_change(void * cv_window) {
 static void clar_fn_ui_TextWin_Name_enter(void * cv_window) {
     rt_ui_widget_set_str(cv_window, 0, RTUI_PROP_TEXT, (const uint8_t*)&(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_nameStr));
     rt_ui_set_title(cv_window, (const uint8_t*)&(clar_lit_0));
+    rt_text_append_str(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_log, (const uint8_t*)&(clar_lit_1));
 }
 
 static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
@@ -67,8 +74,22 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     rt_ui_widget_set_text(cv_window, 1, ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
     rt_text * t2;
     t2 = rt_text_new();
-    rt_text_store(t2, (const uint8_t*)&(clar_lit_1));
+    rt_text_store(t2, (const uint8_t*)&(clar_lit_2));
     rt_ui_widget_set_text(cv_window, 1, t2);
+}
+
+static void clar_fn_ui_TextWin_opened(void * cv_window) {
+    ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = rt_text_new();
+    ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_log = rt_text_new();
+    ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note = rt_text_new();
+    rt_text_store(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note, (const uint8_t*)&(clar_lit_3));
+}
+
+static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b) {
+    switch (event) {
+    case RTUI_EV_OPENED: clar_fn_ui_TextWin_opened(inst); break;
+    default: break;
+    }
 }
 
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b) {

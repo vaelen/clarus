@@ -648,6 +648,9 @@ func fpIntrCall(x: int): text {
     var m: text
     var k: text
     var dv: text
+    var winName: string
+    var inst: text
+    var fld: int
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -927,6 +930,26 @@ func fpIntrCall(x: int): text {
         // "(X).cv_name" printer (fpFieldRef) needs no special case at all --
         // see ir.cla's KUiState doc comment.
         return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)rt_ui_state(" + fpExpr(a0) + "))"
+    } else if nm == IUiStateDefaults() {
+        // Constructs every handle-backed (Text/List/Map/Rec) per-instance
+        // var in the firing window's state block -- the FIRST statement of
+        // `opened` glue (lower.cla's lowPrependWinVarDefaults/
+        // lowSynthesizeMissingOpenedHandlers), before any declared default,
+        // since rt_ui_open only zeroes the block (NewHandleClear) and never
+        // constructs anything in it (cpEmitUiStateStruct's own header
+        // comment). Reuses cpDefaultInit for the actual construction -- no
+        // duplicated type switch here, just the irtNeedsCtor (ir.cla) filter
+        // so an inline-typed field (already correctly zero) emits nothing.
+        winName = poolGet(irtName(irExprType(x)))
+        inst = fpExpr(a0)
+        fld = cpFindWindowStateFields(winName)
+        while fld != -1 {
+            if irtNeedsCtor(irFieldSlotType(fld)) {
+                cpDefaultInit("((*(clar_uistate_" + winName + " *)rt_ui_state(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
+            }
+            fld = irFieldSlotNext(fld)
+        }
+        return toText("")
     } else if nm == IUiSetTitle() {
         fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
         return toText("")
@@ -1776,6 +1799,24 @@ func cpFindWinHandlers(winName: string): int {
     while i < irWinHandlers.count {
         if poolGet(irWinHandlersName(i)) == winName {
             return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cpFindWindowStateFields (clarusc-ui-gaps Task 2) returns winName's
+// per-instance state fields list head (irWindowDescStateFieldsHead), or -1
+// if winName names no window -- IUiStateDefaults' cprint case (fpIntrCall)
+// walks this to find which fields need construction. Linear scan over
+// irWindowDescs, same precedent as cpFindWinHandlers just above.
+func cpFindWindowStateFields(winName: string): int {
+    var i: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        if poolGet(irWindowDescName(i)) == winName {
+            return irWindowDescStateFieldsHead(i)
         }
         i = i + 1
     }

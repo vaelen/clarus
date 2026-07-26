@@ -589,6 +589,21 @@ func irtName(i: int): int {
     return irTypes[i].name
 }
 
+// irtNeedsCtor reports whether a value of type t is handle-backed and so
+// needs runtime construction before first use (Text/List/Map/Rec -- exactly
+// the kinds cpDefaultInit (cprint.cla) emits a call for; every other kind's
+// zero value is already valid, needing no construction). Shared by
+// lower.cla (gating IUiStateDefaults insertion/synthesis-widening) and
+// cprint.cla (filtering which window state fields IUiStateDefaults'
+// cprint case constructs) so the "which kinds need construction" list
+// lives in exactly one place.
+func irtNeedsCtor(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    return k == KText or k == KList or k == KMap or k == KRec
+}
+
 // irSimpleType builds a kind-only IRType (no capacity/elem/name) -- used
 // for the singleton scalar kinds.
 func irSimpleType(k: IRKind): int {
@@ -2054,6 +2069,24 @@ func IUiFront(): int {
 
 func IUiState(): int {
     return intern("ui_state")
+}
+
+// IUiStateDefaults (clarusc-ui-gaps Task 2) constructs every handle-backed
+// (text/list/map/rec) per-instance var in a window's state block -- rt_ui_open
+// only zeroes that block (NewHandleClear, rt_ui.c), it never constructs
+// anything in it (cpEmitUiStateStruct's own header comment), so a bare
+// `var t: text` (or any Text/List/Map/Rec state var, defaulted or not) is a
+// NULL handle on first in-place use without this. Single arg: the firing
+// window instance (same shape as IUiState); its `ty` (a KUiState IRType,
+// same as IUiState's) names which window's clar_uistate_NAME struct to walk.
+// lower.cla inserts it as the FIRST statement of `opened` glue -- before
+// WinVarDefault assignments, which stay before user statements -- in both
+// lowPrependWinVarDefaults and lowSynthesizeMissingOpenedHandlers, for every
+// window with >=1 such field. See its cprint.cla case (fpIntrCall) for the
+// per-field construction, which reuses cpDefaultInit -- no duplicated type
+// switch.
+func IUiStateDefaults(): int {
+    return intern("ui_state_defaults")
 }
 
 func IUiSetTitle(): int {

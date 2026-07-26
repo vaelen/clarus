@@ -501,6 +501,35 @@ func lowWinInstRef(): int {
     return newIRVarRef(intern("window"), false, irWinRefType(typeNameIdx(lowCurWinType)))
 }
 
+// lowWinHasCtorField (clarusc-ui-gaps Task 2) reports whether winType's
+// per-instance state has ANY handle-backed var (irtNeedsCtor, ir.cla) --
+// exactly the windows whose `opened` glue needs an IUiStateDefaults
+// statement prepended. Linear scan over irWindowDescs by name, cheap given
+// a program's handful of window types (same precedent as cprint.cla's
+// cpFindWinHandlers).
+func lowWinHasCtorField(winType: int): bool {
+    var nameIdx: int
+    var i: int
+    var f: int
+
+    nameIdx = typeNameIdx(winType)
+    i = 0
+    while i < irWindowDescs.count {
+        if irWindowDescName(i) == nameIdx {
+            f = irWindowDescStateFieldsHead(i)
+            while f != -1 {
+                if irtNeedsCtor(irFieldSlotType(f)) {
+                    return true
+                }
+                f = irFieldSlotNext(f)
+            }
+            return false
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // lowIsUnshadowedLastError reports whether nameIdx is the built-in global
 // `lastError` -- as opposed to a local variable that happens to shadow that
 // name -- the distinction lowIdent and lowSelect both need to route a
@@ -2521,32 +2550,60 @@ func lowWinVarDefaultsStmts(winName: string): int {
     return head
 }
 
-// lowPrependWinVarDefaults splices winName's default-assignment statements
-// (if any) onto the FRONT of the already-lowered function fnNameIdx names
-// (an explicit user `on opened` handler, just built by lowHandlerFunc) --
-// called right after that lowHandlerFunc call, before the result is wired
-// into irWinHandlersSetOpenedFn, so an explicit handler's own code always
-// runs AFTER the defaults, same ordering a hand-written `on opened { x = 10;
-// ...; <user code> }` would have. A no-op if winName has no defaulted vars.
+// lowPrependWinVarDefaults splices winName's construction + default-assignment
+// statements (if any) onto the FRONT of the already-lowered function
+// fnNameIdx (an explicit user `on opened` handler, just built by
+// lowHandlerFunc) -- called right after that lowHandlerFunc call, before the
+// result is wired into irWinHandlersSetOpenedFn, so an explicit handler's own
+// code always runs AFTER them, same ordering a hand-written `on opened {
+// log = clar_text_new(); x = 10; ...; <user code> }` would have. Ordering is
+// construction (IUiStateDefaults, clarusc-ui-gaps Task 2 -- every
+// handle-backed state var must exist before ANY in-place use, even a bare
+// `var t: text` with no declared default) THEN declared defaults
+// (WinVarDefault) THEN the user's own statements. A no-op if winName has
+// neither a handle-backed var nor a defaulted var.
 func lowPrependWinVarDefaults(winName: string, winType: int, fnNameIdx: int) {
     var savedWinType: int
+    var hasDefaults: bool
+    var needsCtor: bool
+    var ctorHead: int
+    var declHead: int
     var defsHead: int
     var defsTail: int
     var fIdx: int
 
-    if not winVarDefaultsHead.has(numToStr(progGen) + "|" + winName) {
+    hasDefaults = winVarDefaultsHead.has(numToStr(progGen) + "|" + winName)
+    needsCtor = lowWinHasCtorField(winType)
+    if not hasDefaults and not needsCtor {
         return
     }
     savedWinType = lowCurWinType
     lowCurWinType = winType
-    defsHead = lowWinVarDefaultsStmts(winName)
+    ctorHead = -1
+    if needsCtor {
+        ctorHead = newIRExprStmt(newIRIntr(IUiStateDefaults(), lowWinInstRef(), irUiStateType(typeNameIdx(winType))))
+    }
+    declHead = -1
+    if hasDefaults {
+        declHead = lowWinVarDefaultsStmts(winName)
+    }
     lowCurWinType = savedWinType
+
+    defsHead = ctorHead
+    defsTail = ctorHead
+    if declHead != -1 {
+        if defsHead == -1 {
+            defsHead = declHead
+        } else {
+            irStmtListAppend(defsTail, declHead)
+        }
+        defsTail = declHead
+        while irStmtNext(defsTail) != -1 {
+            defsTail = irStmtNext(defsTail)
+        }
+    }
     if defsHead == -1 {
         return
-    }
-    defsTail = defsHead
-    while irStmtNext(defsTail) != -1 {
-        defsTail = irStmtNext(defsTail)
     }
     fIdx = findIRFuncIdxByName(fnNameIdx)
     irStmtListAppend(defsTail, irFuncBodyHead(fIdx))
@@ -2771,46 +2828,89 @@ func lowAppDecl(d: int) {
     }
 }
 
-// lowSynthesizeMissingOpenedHandlers (Task 7, mac-target-4b) is
-// winVarDefaultsHead's other half: for every window type that has >=1
-// defaulted var but reached the end of the program with NO explicit
-// `on opened` handler registered (either no `extend` block at all, or one
-// with other handlers but not `opened` -- lowPrependWinVarDefaults already
-// covered the "explicit opened handler exists" case inline, as each
-// `extend` block was lowered), synthesize a fresh opened handler whose
-// entire body is the default-assignment statements, so the defaults are
-// still applied when the instance opens. Run once, after lowerProgram's
-// main pass, so every window/extend declaration has already been lowered
-// (curScope/symbols are still the checker's own read-only leftovers at this
-// point -- see lowResolveType's header comment on why that's safe).
+// lowSynthesizeMissingOpenedHandlers (Task 7, mac-target-4b; widened by
+// clarusc-ui-gaps Task 2 to cover construction, not just declared defaults)
+// is lowPrependWinVarDefaults' other half: for every window type that has
+// >=1 handle-backed state var (needing construction) or >=1 defaulted var,
+// but reached the end of the program with NO explicit `on opened` handler
+// registered (either no `extend` block at all, or one with other handlers
+// but not `opened` -- lowPrependWinVarDefaults already covered the
+// "explicit opened handler exists" case inline, as each `extend` block was
+// lowered), synthesize a fresh opened handler whose entire body is
+// construction (IUiStateDefaults) then the default-assignment statements,
+// same ordering lowPrependWinVarDefaults gives an explicit handler. Iterates
+// irWindowDescs directly (not just winVarDefaultsHead's keys, as before)
+// since a window can now need this with zero declared defaults -- safe to
+// scan un-prefixed because irReset() clears irWindowDescs every program
+// generation (unlike winVarDefaultsHead/uiMenuIdx, which persist and so
+// stay progGen-prefixed), so it holds only the CURRENT program's windows.
+// Run once, after lowerProgram's main pass, so every window/extend
+// declaration has already been lowered (curScope/symbols are still the
+// checker's own read-only leftovers at this point -- see
+// lowResolveType's header comment on why that's safe).
 func lowSynthesizeMissingOpenedHandlers() {
-    var prefix: string
+    var i: int
     var winName: string
     var symIdx: int
     var winType: int
     var whIdx: int
+    var hasDefaults: bool
+    var needsCtor: bool
+    var ctorHead: int
+    var declHead: int
     var stmtsHead: int
+    var stmtsTail: int
     var instLoc: int
     var fnNameIdx: int
 
-    prefix = numToStr(progGen) + "|"
-    for key, defHead in winVarDefaultsHead {
-        if key.length < prefix.length or key[0, prefix.length] != prefix {
-            continue
-        }
-        winName = key[prefix.length, key.length - prefix.length]
+    i = 0
+    while i < irWindowDescs.count {
+        winName = poolGet(irWindowDescName(i))
+        i = i + 1
         symIdx = scopeLookup(curScope, intern(winName))
         if symIdx == -1 or not symbols[symIdx].isType or typeKind(symbols[symIdx].typeIdx) != TyWindowRef {
             continue
         }
         winType = symbols[symIdx].typeIdx
+        hasDefaults = winVarDefaultsHead.has(numToStr(progGen) + "|" + winName)
+        needsCtor = lowWinHasCtorField(winType)
+        if not hasDefaults and not needsCtor {
+            // Neither: don't touch this window's handlers entry at all --
+            // lowGetOrCreateWinHandlers CREATES one on first call, and a
+            // window with no `extend` block must keep printing its
+            // rt_ui_handlers field as the bare 0 placeholder (cpFindWinHandlers'
+            // own "absence means no extend block" contract), not an
+            // all-zero-but-present struct.
+            continue
+        }
         whIdx = lowGetOrCreateWinHandlers(winName)
         if irWinHandlersOpenedFn(whIdx) != -1 {
             continue
         }
         lowCurWinType = winType
-        stmtsHead = lowWinVarDefaultsStmts(winName)
+        ctorHead = -1
+        if needsCtor {
+            ctorHead = newIRExprStmt(newIRIntr(IUiStateDefaults(), lowWinInstRef(), irUiStateType(typeNameIdx(winType))))
+        }
+        declHead = -1
+        if hasDefaults {
+            declHead = lowWinVarDefaultsStmts(winName)
+        }
         lowCurWinType = -1
+
+        stmtsHead = ctorHead
+        stmtsTail = ctorHead
+        if declHead != -1 {
+            if stmtsHead == -1 {
+                stmtsHead = declHead
+            } else {
+                irStmtListAppend(stmtsTail, declHead)
+            }
+            stmtsTail = declHead
+            while irStmtNext(stmtsTail) != -1 {
+                stmtsTail = irStmtNext(stmtsTail)
+            }
+        }
         if stmtsHead == -1 {
             continue
         }

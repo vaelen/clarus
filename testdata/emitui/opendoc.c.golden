@@ -17,12 +17,15 @@ static const rt_ui_widget_desc clar_ui_widgets_Reader[] = {
     { RTUI_TEXTVIEW, "Body", 0, RTUI_AT_XY, 20, 20, 0, RTUI_FILL_BOTH, 0 },
 };
 
+static void clar_ui_winevent_Reader(void *inst, short event, long a, long b);
+static const rt_ui_handlers clar_ui_handlers_Reader = { clar_ui_winevent_Reader, 0 };
+
 static const rt_ui_window_desc clar_ui_window_Reader = {
     "Reader", (const unsigned char *)"\pReader",
     320, 240, 0, 0, 0,
     1, clar_ui_widgets_Reader,
     (short)sizeof(clar_uistate_Reader),
-    0
+    &clar_ui_handlers_Reader
 };
 
 
@@ -34,6 +37,7 @@ static void clar_init_globals(void) {
 
 static void clar_fn_handler_App_startEmpty(void);
 static void clar_fn_handler_App_openDocument(clar_str_255 cv_p);
+static void clar_fn_ui_Reader_opened(void * cv_window);
 
 static void clar_fn_handler_App_startEmpty(void) {
     rt_ui_open(&clar_ui_window_Reader);
@@ -47,6 +51,17 @@ static void clar_fn_handler_App_openDocument(clar_str_255 cv_p) {
     cv_w = rt_ui_open(&clar_ui_window_Reader);
     cv_ok = rt_file_read_text((const uint8_t*)&(cv_p), ((*(clar_uistate_Reader *)rt_ui_state(cv_w))).cv_content);
     rt_ui_widget_set_text(cv_w, 0, ((*(clar_uistate_Reader *)rt_ui_state(cv_w))).cv_content);
+}
+
+static void clar_fn_ui_Reader_opened(void * cv_window) {
+    ((*(clar_uistate_Reader *)rt_ui_state(cv_window))).cv_content = rt_text_new();
+}
+
+static void clar_ui_winevent_Reader(void *inst, short event, long a, long b) {
+    switch (event) {
+    case RTUI_EV_OPENED: clar_fn_ui_Reader_opened(inst); break;
+    default: break;
+    }
 }
 
 static const rt_ui_window_desc *clar_ui_windows[] = {
