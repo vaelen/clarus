@@ -1568,7 +1568,7 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
 
     head = recv.instIR
     tail = irExprListAppend(head, newIRIntConst(widgetIdx, irIntT))
-    tail = irExprListAppend(tail, lowExpr(rhsAst))
+    tail = irExprListAppend(tail, lowCoerceStr(lowMustType(lhs), lowExpr(rhsAst)))
     return newIRExprStmt(newIRIntr(intrName, head, irVoidT))
 }
 

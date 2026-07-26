@@ -16878,7 +16878,7 @@ static int32_t clar_fn_lowWidgetSetAssign(int32_t cv_lhs, int32_t cv_rhsAst) {
     }
     cv_head = (cv_recv).cv_instIR;
     cv_tail = clar_fn_irExprListAppend(cv_head, clar_fn_newIRIntConst(cv_widgetIdx, cv_irIntT));
-    cv_tail = clar_fn_irExprListAppend(cv_tail, clar_fn_lowExpr(cv_rhsAst));
+    cv_tail = clar_fn_irExprListAppend(cv_tail, clar_fn_lowCoerceStr(clar_fn_lowMustType(cv_lhs), clar_fn_lowExpr(cv_rhsAst)));
     return clar_fn_newIRExprStmt(clar_fn_newIRIntr(cv_intrName, cv_head, cv_irVoidT));
     return 0;
 }

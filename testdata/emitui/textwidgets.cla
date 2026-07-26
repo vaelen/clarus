@@ -36,5 +36,6 @@ extend TextWin {
     on Body.change {
         bodyText = Body.text
         Body.text = bodyText
+        Body.text = "from literal"
     }
 }

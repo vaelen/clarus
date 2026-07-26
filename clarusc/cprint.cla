@@ -957,9 +957,15 @@ func fpIntrCall(x: int): text {
         fpEmit("rt_ui_widget_get_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
         return t
     } else if nm == IUiSetTextviewText() {
-        // textview.text write (mac-target-4c Task 2) -- a2 is already an
-        // rt_text* (the checker requires a Text-typed rhs, TextT), so no
-        // fpStrAddr/temp is needed, unlike IUiSetText's Str-shaped a2.
+        // textview.text write (mac-target-4c Task 2) -- lowWidgetSetAssign
+        // (lower.cla) coerces the RHS through lowCoerceStr against the
+        // property's IR type (TextT for textview.text, widgetRuntimeProps'
+        // table via lowMustType(lhs)) before it ever reaches this printer,
+        // so a2 is always an rt_text* here BY CONSTRUCTION: a Str-typed
+        // literal/expr RHS was already wrapped in ITextOfStr (materializing
+        // a fresh rt_text handle) at the funnel, and a Text-typed RHS
+        // passes through lowCoerceStr unchanged. No fpStrAddr/temp is
+        // needed here, unlike IUiSetText's Str-shaped a2.
         fpEmit("rt_ui_widget_set_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
         return toText("")
     } else if nm == IUiGetChecked() {
