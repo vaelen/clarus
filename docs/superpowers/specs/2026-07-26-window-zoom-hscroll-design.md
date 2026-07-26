@@ -98,3 +98,21 @@ to be nil — the plan verifies this.
 - Zoom for non-resizable windows, a separate `zoomable` property, and a
   `wrap` property — all rejected in brainstorming.
 - Horizontal scrollbars on any widget other than `textview`.
+
+## Addendum (2026-07-26, branch review feedback)
+
+Andrew, reviewing the branch live, requested classic scrollbar behavior for
+the horizontal bar, superseding two "out of scope" lines above:
+
+- Scroll range tracks the widest line (longest-line tracking is now IN
+  scope); when the content fits the view, max = 0 — the standard
+  thumbless inactive bar ("dimmed when not needed").
+- The view auto-scrolls to keep the caret visible (TEAutoView, both axes,
+  textviews only), with scrollbars re-synced from the TE's actual
+  view/dest offset afterward.
+- The horizontal bar joins the deactivate HiliteControl dim loop (closing
+  the deferred Task 2 minor).
+
+Known ceiling, accepted: widest-line measurement is O(text length) per
+content change; if live typing feel on a multi-KB document is sluggish,
+add a current-line fast path (full rescan only on shrinking/bulk edits).
