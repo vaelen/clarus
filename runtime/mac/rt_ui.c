@@ -829,6 +829,12 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
  * plan's pinned policy: a single TEKey keystroke is one `change`, regardless
  * of whether the byte count actually moved). */
 
+/* TextWidth's own return is a signed short: chunk every line to at most
+   this many bytes per call and accumulate into a long instead (fix-hbar
+   review round 1) -- QuickDraw bitmap-font widths are additive across a
+   split (no kerning to lose), so summing chunk widths is exact. */
+#define RTUI_TE_WIDTH_CHUNK 1024
+
 /* Widest line of a crOnly TE, in pixels (fix-hbar: classic H-scrollbar
    range tracks content, not a fixed destRect width). O(teLength) TextWidth
    walk -- acceptable for the 32,000-byte cap this widget already enforces;
@@ -838,7 +844,7 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
 static short rt_ui_te_widest_line(TEHandle te)
 {
     GrafPtr save;
-    short n, i, w, widest;
+    short n, i, widest;
     char state;
 
     widest = 0;
@@ -851,15 +857,35 @@ static short rt_ui_te_widest_line(TEHandle te)
     state = HGetState((*te)->hText);
     HLock((*te)->hText);
     for (i = 0; i < n; i++) {
-        short a, b;
+        short a, b, pos;
+        long lineW;
+
         a = (*te)->lineStarts[i];
         b = (*te)->lineStarts[i + 1]; /* lineStarts[nLines] is TE's own sentinel (== teLength) */
         /* a line's terminating CR contributes no width; TextWidth of the
            raw span including CR measures a garbage glyph on some fonts,
            so trim it */
         if (b > a && (*(*te)->hText)[b - 1] == '\r') b--;
-        w = TextWidth(*(*te)->hText, a, (short)(b - a));
-        if (w > widest) widest = w;
+        /* A single line past ~5,500 system-font characters (well under
+           the 32,000-byte textview cap -- squarely inside the "code and
+           log style" content scrollbar:both exists for) overflows
+           TextWidth's signed-short return if measured in one call.
+           RTUI_TE_WIDTH_CHUNK-byte spans, summed into `lineW` (a long),
+           sidestep that; the per-line total is then clamped to 32767 (a
+           short's own max, and SetControlMaximum's parameter type) --
+           past that ceiling the H bar can't report a wider range than a
+           short holds, but every byte up to the ceiling stays reachable
+           by scrolling. */
+        lineW = 0;
+        pos = a;
+        while (pos < b) {
+            short chunkLen = (short)(b - pos);
+            if (chunkLen > RTUI_TE_WIDTH_CHUNK) chunkLen = RTUI_TE_WIDTH_CHUNK;
+            lineW += TextWidth(*(*te)->hText, pos, chunkLen);
+            if (lineW > 32767) { lineW = 32767; break; }
+            pos = (short)(pos + chunkLen);
+        }
+        if (lineW > widest) widest = (short)lineW;
     }
     HSetState((*te)->hText, state);
     SetPort(save);
