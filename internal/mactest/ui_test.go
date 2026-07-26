@@ -303,6 +303,20 @@ func TestHdimUIScenario(t *testing.T) {
 	runUIScenario(t, "hdim", 0)
 }
 
+// TestWinvarUIScenario (clarusc-ui-gaps Task 3b): execution-level proof for
+// the window-var construction fix -- LogWin's window-scope `var log: text`
+// has no initializer and LogWin declares no `on opened` handler at all, so
+// the handle is constructed solely by clarusc's fabricated opened glue.
+// Pre-fix, that glue never constructed it, and Add.click's in-place
+// `log.append(...)` dereferenced a NULL rt_text*. Two clicks before the
+// single snap: the golden PBM showing "clickedclicked" in Body is the
+// assertion (rt_ui_widget_set_text has no RT_MAC_TEST trace line of its
+// own, so there is nothing for the trace golden to add beyond the two
+// Add.click fires -- see winvar.cla's own header comment).
+func TestWinvarUIScenario(t *testing.T) {
+	runUIScenario(t, "winvar", 0)
+}
+
 // TestEditMenuUIScenario (Task 3, mac-target-4c): `menu Edit { standard
 // edit }` end to end -- cut from textview A, paste into B (the snap proves
 // the text moved), Copy's no-change-event pin, Undo's unreachable dispatch

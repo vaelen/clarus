@@ -50,8 +50,10 @@
 // rt_text_new() handle (only a function-local `var: text` declaration got
 // that init emitted), so a window-scope text var crashed at runtime storing
 // through a NULL handle. The direct literal assignment below is deliberate
-// regression coverage for fix (1); fix (2) is covered by
-// testdata/ui/textwidgets.cla's window-scope `var bodyText: text`.
+// regression coverage for fix (1); fix (2) is covered at execution level by
+// testdata/ui/winvar.cla (textwidgets.cla's window-scope `var bodyText:
+// text` is only ever pointer-rebound from `Body.text`, never mutated in
+// place, so it never dereferences the constructed handle at all).
 //
 // hscroll.events primes with `menu 0 0` before the first `snap`, same fix
 // and same reason as zoomwin.events (see that file's own comment): a

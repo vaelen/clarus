@@ -1,0 +1,7 @@
+T OPEN LogWin 1
+T FRONT LogWin 1
+T FIRE LogWin.Add.click
+T FIRE LogWin.Add.click
+T FIRE LogWin.closeRequest
+T CLOSE LogWin 1
+T FIRE LogWin.closed
