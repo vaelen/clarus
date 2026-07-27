@@ -221,6 +221,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   case-insensitive maps, handle-backed map values, printing, color QuickDraw,
   labeled break, const arithmetic, `switch` on text, substring/indexOf as
   library code conventions for clarusc.
+- **S7 native popup CDEF (parked 2026-07-28):** `rt_ui.c` has dormant
+  scaffolding behind `RTUI_POPUP_CDEF` (0); enabling requires clarusc/
+  build-mac.sh to emit real per-popup `'MENU'` resources (enum labels are
+  compile-time constants) so the CDEF's `initCntl` `GetMenu` succeeds;
+  private-data poke alone verified non-functional on 7.1.
 
 ## Process conventions that worked (for future sessions)
 

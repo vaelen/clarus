@@ -228,6 +228,34 @@ extern void rt_quit(int32_t code);
    never going to declare 998 menus) and of the Apple menu (1). */
 #define RTUI_POPUP_MENU_ID_BASE 1000
 
+/* System 7 popup CDEF path (mac-target-4d Task 8) -- PARKED, 2026-07-28.
+   Gate for the native popupMenuProc Control scaffolding in
+   rt_ui_make_widgets' RTUI_POPUP case: manually verified on real System 7.1
+   (Mac II, Mini vMac) that the classic popup CDEF's initCntl handling
+   requires a REAL 'MENU' resource at the control's contrlMin (it calls
+   GetMenu(contrlMin) there) to become interactive -- a programmatically
+   built menu (NewMenu/AppendMenu + InsertMenu, never a resource) plus a
+   post-creation private-data poke of the real MenuHandle is NOT sufficient:
+   the control draws a bare fragment (no title, no item text, no box) and
+   never responds to FindControl/TrackControl, while an ordinary checkbox
+   in the same window works fine (see task-8-report.md, Fix round 1, for
+   the full evidence: CDEF 63 confirmed present in the System file, four
+   NewControl parameter variants tried, none clickable). The manual
+   PopUpMenuSelect path (Task 3) is therefore what ships on every system,
+   S6 and S7 alike, until the enable path below exists.
+
+   Flip to 1 only once clarusc/build-mac.sh emit a real per-popup 'MENU'
+   resource (ID RTUI_POPUP_MENU_ID_BASE+widgetIndex, built from the bound
+   enum's compile-time labels) into the app's resource fork, so GetMenu at
+   initCntl succeeds on its own and this scaffolding's private-data poke
+   becomes redundant belt-and-suspenders rather than the only mechanism.
+   See docs/ROADMAP.md's small-open-items list. Every downstream site that
+   branches on the popup Control's presence (draw, hit-test, click
+   dispatch, get/set, dispose) keys off `inst->ctrls[wIdx] != NULL`, which
+   this gate keeps NULL for every popup on every system -- one gate here is
+   the whole fix, nothing downstream needed its own #if. */
+#define RTUI_POPUP_CDEF 0
+
 /* ==================== per-instance state ==================== */
 
 /* One offscreen 1-bit GrafPort+BitMap per buffered canvas widget. `port`
@@ -1272,7 +1300,16 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
                popup control backed by a programmatically-built menu): the
                CDEF's own PopUpMenuSelect/tracking uses THIS field, not the
                menu ID. SetControlMaximum fixes up the item count NewControl
-               itself doesn't take (`max` is unused by this CDEF, IM VI). */
+               itself doesn't take (`max` is unused by this CDEF, IM VI).
+
+               PARKED (see RTUI_POPUP_CDEF's own comment above): dormant on
+               every system, S6 and S7 alike, until a real 'MENU' resource
+               route exists -- inst->ctrls[i] stays NULL for every popup,
+               which is exactly what makes every downstream draw/hit-test/
+               click/get-set/dispose site (all keyed on `ctrls[wIdx] !=
+               NULL`) fall through to the manual PopUpMenuSelect path
+               without any #if of their own. */
+#if RTUI_POPUP_CDEF
             if (gSys7) {
                 ControlHandle c = NewControl(inst->wp, &placeholder, cap, (Boolean)1,
                                               (short)(inst->popupSel[i] + 1),
@@ -1288,6 +1325,9 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
                 }
                 inst->ctrls[i] = c;
             }
+#else
+            (void)count; /* only consumed by the parked CDEF branch above */
+#endif
             break;
         }
         case RTUI_TABLE: {
