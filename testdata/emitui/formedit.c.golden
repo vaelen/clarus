@@ -53,7 +53,7 @@ static const rt_ui_col_desc clar_ui_cols_Main_Marks[] = {
 static const rt_ui_table_desc clar_ui_table_Main_Marks = { &cv_bookmarks, &clar_layout_Bookmark, 3, clar_ui_cols_Main_Marks };
 
 static const rt_ui_widget_desc clar_ui_widgets_Main[] = {
-    { RTUI_TABLE, "Marks", 0, RTUI_AT_XY, 0, 0, RTUI_FILL, RTUI_FILL_NONE, 0, (const void *)&clar_ui_table_Main_Marks },
+    { RTUI_TABLE, "Marks", 0, RTUI_AT_AUTO, 0, 0, RTUI_FILL, RTUI_FILL_NONE, 0, (const void *)&clar_ui_table_Main_Marks },
     { RTUI_BUTTON, "Add", (const unsigned char *)"\pAdd…", RTUI_AT_XY, 10, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "Remove", (const unsigned char *)"\pRemove", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "EditCur", (const unsigned char *)"\pEdit Current", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
@@ -72,13 +72,13 @@ static const rt_ui_window_desc clar_ui_window_Main = {
 };
 
 static const rt_ui_widget_desc clar_ui_widgets_EditForm[] = {
-    { RTUI_FIELD, "Name", (const unsigned char *)"\pName:", RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_FIELD, "Url", (const unsigned char *)"\pURL:", RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_FIELD, "Port", (const unsigned char *)"\pPort:", RTUI_AT_XY, 0, 0, 60, RTUI_FILL_NONE, 0 },
-    { RTUI_POPUP, "Proto", (const unsigned char *)"\pProtocol:", RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_CHECK, "Fav", (const unsigned char *)"\pFavorite", RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_BUTTON, "OK", 0, RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, RTUI_DEFAULT },
-    { RTUI_BUTTON, "Cancel", 0, RTUI_AT_XY, 0, 0, 0, RTUI_FILL_NONE, RTUI_CANCEL },
+    { RTUI_FIELD, "Name", (const unsigned char *)"\pName:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_FIELD, "Url", (const unsigned char *)"\pURL:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_FIELD, "Port", (const unsigned char *)"\pPort:", RTUI_AT_AUTO, 0, 0, 60, RTUI_FILL_NONE, 0 },
+    { RTUI_POPUP, "Proto", (const unsigned char *)"\pProtocol:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_CHECK, "Fav", (const unsigned char *)"\pFavorite", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "OK", 0, RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, RTUI_DEFAULT },
+    { RTUI_BUTTON, "Cancel", 0, RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, RTUI_CANCEL },
 };
 
 static void clar_ui_winevent_EditForm(void *inst, short event, long a, long b);

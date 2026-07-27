@@ -254,7 +254,11 @@ record IREnumLayout {
 // canvas). atKind: 0 = explicit `at: x, y`; 1 = `at: next, ...` (x taken
 // from the previous widget by the runtime; this entry's own `x` is an
 // unused placeholder, always 0); 2 = `at: right, ...` (x similarly
-// runtime-computed, placeholder 0). yIsBottom/widthIsFill mark the
+// runtime-computed, placeholder 0); 3 = no `at:` property given at all
+// (mac-target-4d Task 9) -- the runtime vertical-stacks it instead, x/y
+// unused placeholders, always 0 (see lowWidgetDesc's own fillBoth
+// exception: a `fill: both` widget with no `at:` keeps atKind 0/(0,0)
+// instead, unchanged from before this task). yIsBottom/widthIsFill mark the
 // `bottom`/`fill` sentinels (`y`/`width` are unused placeholders, 0, when
 // their sentinel flag is set) -- Ch8's "at: next, bottom" and "width: fill".
 // isScrollV/isScrollH (mac-target-4c Task 2) mark a textview's

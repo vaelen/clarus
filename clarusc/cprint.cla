@@ -1946,6 +1946,9 @@ func cpAtKindMacro(k: int): string {
     if k == 2 {
         return "RTUI_AT_RIGHT"
     }
+    if k == 3 {
+        return "RTUI_AT_AUTO"
+    }
     return "RTUI_AT_XY"
 }
 

@@ -2410,6 +2410,7 @@ func lowWidgetDesc(w: int, winName: string): int {
     var vh: int
     var v1: int
     var atKind: int
+    var sawAt: bool
     var x: int
     var yIsBottom: bool
     var y: int
@@ -2439,6 +2440,7 @@ func lowWidgetDesc(w: int, winName: string): int {
     }
 
     atKind = 0
+    sawAt = false
     x = 0
     yIsBottom = false
     y = 0
@@ -2464,6 +2466,7 @@ func lowWidgetDesc(w: int, winName: string): int {
             if pname == "caption" or pname == "text" or pname == "label" {
                 captionIdx = stringLitIdx(vh)
             } else if pname == "at" {
+                sawAt = true
                 v1 = exprNext(vh)
                 if exprKind(vh) == ExIdent and poolGet(identName(vh)) == "next" {
                     atKind = 1
@@ -2510,6 +2513,26 @@ func lowWidgetDesc(w: int, winName: string): int {
             }
         }
         p = declNext(p)
+    }
+
+    // Layout default (mac-target-4d Task 9, Ch8 Layout doc addition): a
+    // widget with NO `at:` property at all (the language reference's own
+    // Appendix C EditForm gives none to any of its five bound widgets or
+    // two buttons) gets a vertical-stack position from the runtime instead
+    // of literally stacking at (0,0) -- see rt_ui_layout's RTUI_AT_AUTO
+    // case. The one exception is `fill: both`: a widget already meant to
+    // occupy the whole window regardless of declaration order keeps the
+    // pre-existing (0,0)-origin default untouched (examples/texteditor.cla's
+    // `textview Body { fill: both; ... }`, and every canvas fixture, rely on
+    // exactly that combination already) -- this is the only place in this
+    // function fillBoth is read before table's own forced widthIsFill
+    // override below, so it reflects only what the widget's own `fill:`
+    // property said, never a table's implicit fill.
+    if not sawAt and not fillBoth {
+        atKind = 3
+        x = 0
+        yIsBottom = false
+        y = 0
     }
 
     if kind == "field" or kind == "check" or kind == "popup" {

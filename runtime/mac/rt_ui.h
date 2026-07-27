@@ -63,6 +63,12 @@
 #define RTUI_AT_XY    0   /* x, y both explicit */
 #define RTUI_AT_NEXT  1   /* x = previous widget's x; y = RTUI_BOTTOM or explicit */
 #define RTUI_AT_RIGHT 2   /* x = previous widget's right edge + gap; y explicit */
+#define RTUI_AT_AUTO  3   /* no `at:` property at all (mac-target-4d Task 9, Ch8 Layout doc
+                              addition) -- vertical stack, one gap below the previous widget
+                              (or the window top, for the first), at a fixed left margin; x/y
+                              unused placeholders. Not emitted for a `fill: both` widget with no
+                              `at:` -- that keeps RTUI_AT_XY/(0,0), unchanged (clarusc's
+                              lowWidgetDesc). See rt_ui_layout/rt_ui_natural_size. */
 
 /* rt_ui_widget_desc.y sentinel, meaningful only with RTUI_AT_NEXT */
 #define RTUI_BOTTOM (-1)

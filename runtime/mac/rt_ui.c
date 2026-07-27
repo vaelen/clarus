@@ -150,6 +150,11 @@ extern void rt_quit(int32_t code);
    shared gap/margin constant, tuned to look like a normal System 6 dialog.
    Revisit if a future widget kind needs a different natural height. */
 #define RTUI_GAP        8
+/* Left margin for an RTUI_AT_AUTO (no `at:` at all) widget's vertical stack
+   -- ponytail: RTUI_GAP plus a bit of extra breathing room so an auto-
+   stacked form doesn't look flush against the window frame the same plain
+   gap value would give it; free to retune, nothing round-trips through it. */
+#define RTUI_AUTO_MARGIN (RTUI_GAP + 4)
 #define RTUI_BUTTON_H  20
 #define RTUI_CHECK_H   16
 #define RTUI_LABEL_H   16
@@ -744,6 +749,40 @@ static short rt_ui_kind_width(short kind)
     }
 }
 
+/* Effective label-lane width for a FIELD widget's own `label:` (bugfix,
+   mac-target-4d Task 9): RTUI_FIELD_LABEL_W is a FIXED lane width, but a
+   field declared narrower than that (Ch8's own `width:` property is free
+   to be any value -- Appendix C's Bookmark Manager `Port` field is
+   exactly 60px, narrower than the 70px lane) would otherwise leave zero
+   or negative room for the actual edit box: rt_ui_te_relayout's own
+   clamp (`if (teRect.right < teRect.left) teRect.right = teRect.left`)
+   already stops it going negative, but a ZERO-width TE view is still a
+   completely unclickable field (rt_ui_te_hit's PtInRect can never match
+   inside an empty rect) -- discovered by this task's own verbatim
+   appendix reproduction, not by anything Task 9 was asked to change
+   about widget layout defaults; a narrow-but-nonzero fix, not a new
+   feature. Clamps the lane so at least RTUI_FIELD_MIN_EDIT_W px of edit
+   box always remains, shrinking the label lane instead (crowding the
+   caption against the box) rather than losing the field entirely.
+   Shared by rt_ui_te_relayout (the actual TE view/click target) and the
+   update handler's own labelRect draw immediately below, so the two
+   never disagree about where the lane ends. ponytail: an arbitrary but
+   small minimum, free to retune; no existing widget in this codebase
+   comes anywhere near it (the narrowest labeled field in any RUN Mac
+   scenario is testdata/ui/formedit.cla's 120px Port, safely above
+   70+20 -- only the never-executed testdata/emitui/formedit.cla golden
+   and this task's own examples/bookmarks.cla exercise this clamp at
+   all). */
+#define RTUI_FIELD_MIN_EDIT_W 20
+
+static short rt_ui_field_label_lane(short fieldW)
+{
+    short lw = RTUI_FIELD_LABEL_W;
+    if (lw > (short)(fieldW - RTUI_FIELD_MIN_EDIT_W)) lw = (short)(fieldW - RTUI_FIELD_MIN_EDIT_W);
+    if (lw < 0) lw = 0;
+    return lw;
+}
+
 /* A popup's visible menu-button box, in window-local coords -- the same
    "reuse the RTUI_FIELD_LABEL_W label lane when there's a caption" rule
    RTUI_FIELD's own label uses (rt_ui_te_relayout), just without a TE
@@ -818,6 +857,12 @@ static void rt_ui_layout(rt_ui_winst *inst)
         case RTUI_AT_NEXT:
             x = prevLeft;
             break;
+        case RTUI_AT_AUTO:
+            /* mac-target-4d Task 9 (Ch8 Layout doc addition): no `at:` at
+               all -- fixed left margin, y forced below regardless of the
+               (unused, always 0) wd->y placeholder -- see the y line below. */
+            x = RTUI_AUTO_MARGIN;
+            break;
         case RTUI_AT_XY:
         default:
             x = wd->x;
@@ -826,8 +871,9 @@ static void rt_ui_layout(rt_ui_winst *inst)
         /* RTUI_BOTTOM is a valid y sentinel regardless of atKind (Ch8's
            "bottom" keyword is a propValue in its own right, e.g.
            `at: 10, bottom` is at-xy with an explicit x) -- resolve it here,
-           once, rather than only inside the RTUI_AT_NEXT case. */
-        y = (wd->y == RTUI_BOTTOM) ? (short)(prevBottom + RTUI_GAP) : wd->y;
+           once, rather than only inside the RTUI_AT_NEXT case. RTUI_AT_AUTO
+           always stacks below the previous widget too, same rule. */
+        y = (wd->y == RTUI_BOTTOM || wd->atKind == RTUI_AT_AUTO) ? (short)(prevBottom + RTUI_GAP) : wd->y;
         /* BUG FIX (Task 6, mac-target-4b): Ch8 says `fill: both` "stretch[es]
            a widget to fill remaining width, or both dimensions" -- i.e.
            fill:both implies width:fill too, not just a height override. A
@@ -1878,7 +1924,7 @@ static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
     EraseRect(&frame);
     box = inst->rects[i];
     if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0)
-        box.left = (short)(box.left + RTUI_FIELD_LABEL_W);
+        box.left = (short)(box.left + rt_ui_field_label_lane((short)(box.right - box.left)));
     teRect = box;
     if (wd->kind == RTUI_TEXTVIEW) {
         Boolean hasV, hasH;
@@ -2780,7 +2826,8 @@ static void rt_ui_handle_update(WindowPtr wp)
                     Rect labelRect;
                     unsigned char *s;
                     labelRect = inst->rects[i];
-                    labelRect.right = (short)(labelRect.left + RTUI_FIELD_LABEL_W - 4);
+                    labelRect.right = (short)(labelRect.left +
+                        rt_ui_field_label_lane((short)(labelRect.right - labelRect.left)) - 4);
                     s = inst->labels[i];
                     TETextBox(s + 1, s[0], &labelRect, teJustLeft);
                 }
@@ -4433,12 +4480,64 @@ void rt_ui_run(void)
     }
 }
 
+/* Natural content size for a window declared with no `size:` at all
+   (mac-target-4d Task 9, Ch8 Layout doc addition: the reference was
+   previously silent on this -- clarusc's own default, unconditionally,
+   was w=h=0, which rt_ui_open would otherwise hand straight to NewWindow
+   as a degenerate zero-size rect). Mirrors rt_ui_layout's own x/y math
+   (including the RTUI_AT_AUTO vertical stack) without an actual port/
+   content rect to lay out against yet -- a width:fill/fill:both widget
+   in a sizeless window has no content width to fill against, so it just
+   falls back to its own kind's natural width/height, same as an unset
+   `width:` would elsewhere. ponytail: no sizeless-window + fill-widget
+   combination exists in any current .cla source; revisit if one shows up
+   wanting something smarter than the kind default. */
+static void rt_ui_natural_size(const rt_ui_window_desc *d, short *outW, short *outH)
+{
+    short i, maxRight, prevLeft, prevRight, prevBottom;
+
+    maxRight = 0;
+    prevLeft = 0;
+    prevRight = 0;
+    prevBottom = 0;
+    for (i = 0; i < d->nWidgets; i++) {
+        const rt_ui_widget_desc *wd = &d->widgets[i];
+        short x, y, w, h, right;
+
+        h = rt_ui_kind_height(wd->kind);
+        switch (wd->atKind) {
+        case RTUI_AT_RIGHT: x = (short)(prevRight + RTUI_GAP); break;
+        case RTUI_AT_NEXT:  x = prevLeft; break;
+        case RTUI_AT_AUTO:  x = RTUI_AUTO_MARGIN; break;
+        case RTUI_AT_XY:
+        default:            x = wd->x; break;
+        }
+        y = (wd->y == RTUI_BOTTOM || wd->atKind == RTUI_AT_AUTO) ? (short)(prevBottom + RTUI_GAP) : wd->y;
+        if (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH) {
+            w = rt_ui_kind_width(wd->kind); /* no content rect to fill against yet -- see header comment */
+        } else if (wd->width == 0) {
+            w = rt_ui_kind_width(wd->kind);
+        } else {
+            w = wd->width;
+        }
+        if (wd->fill == RTUI_FILL_BOTH) h = rt_ui_kind_height(wd->kind);
+
+        right = (short)(x + w);
+        if (right > maxRight) maxRight = right;
+        prevLeft = x;
+        prevRight = right;
+        prevBottom = (short)(y + h);
+    }
+    *outW = (short)(maxRight + RTUI_GAP);
+    *outH = (short)(prevBottom + RTUI_GAP);
+}
+
 void *rt_ui_open(const rt_ui_window_desc *d)
 {
     rt_ui_winst *inst;
     Handle instH;
     Rect bounds;
-    short screenW, screenH, left, top, w, h;
+    short screenW, screenH, left, top, w, h, reqW, reqH;
 
     inst = (rt_ui_winst *)rt_ui_alloc_locked(sizeof(rt_ui_winst), &instH);
     inst->selfH = instH;
@@ -4468,6 +4567,17 @@ void *rt_ui_open(const rt_ui_window_desc *d)
         }
     }
 
+    /* Sizeless window (mac-target-4d Task 9, Ch8 Layout doc addition): no
+       `size:` at all lowers to d->w == d->h == 0 (clarusc's pre-existing
+       default); derive a natural size from the widgets instead of handing
+       NewWindow a degenerate zero-size rect. A REAL `size: 0, ...` is not
+       a sentence anyone would write and is indistinguishable from
+       "omitted" at this layer either way -- same reasoning the pre-existing
+       RTUI_*_W "unset width" comment already gives. */
+    reqW = d->w;
+    reqH = d->h;
+    if (reqW == 0) rt_ui_natural_size(d, &reqW, &reqH);
+
     /* BUG FIX (mac-target-4c-fixes): `size:` in a .cla program is a
        REQUEST, not a guarantee (Ch8 Mac-note) -- a window taller or wider
        than the actual screen used to open partway off-screen (bottom rows
@@ -4475,9 +4585,9 @@ void *rt_ui_open(const rt_ui_window_desc *d)
        qd.screenBits.bounds before NewWindow ever sees the rect. */
     screenW = (short)(qd.screenBits.bounds.right - qd.screenBits.bounds.left);
     screenH = (short)(qd.screenBits.bounds.bottom - qd.screenBits.bounds.top);
-    left = (short)((screenW - d->w) / 2);
+    left = (short)((screenW - reqW) / 2);
     if (left < 4) left = 4;
-    w = d->w;
+    w = reqW;
     if (w > (short)(screenW - left - RTUI_SCREEN_MARGIN)) {
         w = (short)(screenW - left - RTUI_SCREEN_MARGIN);
         if (w < 1) w = 1; /* degenerate screen; NewWindow still needs a positive rect */
@@ -4488,7 +4598,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
        flush under the title bar instead; if it STILL doesn't fit even
        there, the size itself has to give -- clamp the height too. */
     top = 44;
-    h = d->h;
+    h = reqH;
     if ((short)(top + h + RTUI_SCREEN_MARGIN) > screenH) {
         top = RTUI_MENUBAR_H + RTUI_TITLEBAR_H; /* 39: flush under the title bar */
         if ((short)(top + h + RTUI_SCREEN_MARGIN) > screenH) {
