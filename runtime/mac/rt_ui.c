@@ -81,6 +81,7 @@
 #include <Files.h>       /* FSSpec/OpenWD/SetVol (Task 5) -- already pulled in transitively by
                             StandardFile.h above; included directly too since rt_ui_launch's own
                             AE path uses it by name, not just through StandardFile's dialogs */
+#include <Sound.h>       /* SysBeep -- modality-filter and validation-failure beeps (mac-target-4d Task 6) */
 #ifdef RT_MAC_TEST
 #include <stdio.h>     /* sprintf/sscanf -- trace-line formatting and script-line parsing (Task 3) */
 #include <string.h>    /* strcmp -- script verb dispatch (Task 3) */
@@ -301,6 +302,35 @@ static void *rt_ui_alloc_locked(Size sz, Handle *outH)
     return *h;
 }
 
+/* ==================== modal form state (mac-target-4d Task 6) ====================
+ * File-scope, ONE modal form at a time (rt_ui_edit panics if `active` is
+ * already set) -- the whole point of a movable-modal dialog (Ch10 forms).
+ * `buf`/`bufH` is a locked Handle of `d->form->layout->recSize` bytes, a
+ * scratch COPY of the record being edited (never the caller's own memory):
+ * the walker fills widgets from it at open, mutates it field-by-field as
+ * each bind validates during OK, and only the ACCEPT path ever propagates
+ * it onward (to `addr`/`lst`+`idx`/`mp`+`key255`, per `wbKind`). `isNew` is
+ * read back by `rt_ui_form_is_new` (valid while `active`, i.e. from the
+ * moment `rt_ui_edit` opens the window through the end of its own
+ * accepted/cancelled handler dispatch). `key255` is a 256-byte OWN copy of
+ * the map key (rt_map's own MAP_KEYBLOCK size, rt.c) taken at `rt_ui_edit`
+ * time, not a pointer to the caller's -- the caller's argument might be a
+ * transient buffer that doesn't outlive the call. */
+typedef struct {
+    int active;
+    rt_ui_winst *inst;
+    Handle bufH;
+    void *buf;
+    short isNew;
+    short wbKind;
+    void *addr;
+    rt_list *lst;
+    long idx;
+    rt_map *mp;
+    unsigned char key255[256];
+} rt_ui_modal_state;
+static rt_ui_modal_state gModal;
+
 #ifdef RT_MAC_TEST
 /* ==================== RT_MAC_TEST trace lines (Task 3) ====================
  * One line per contract-listed action (docs/superpowers/plans/
@@ -330,6 +360,20 @@ static void rt_ui_trace_fire2(const char *name, const char *wname, const char *e
 {
     char buf[300];
     sprintf(buf, "T FIRE %s.%s.%s", name, wname, event);
+    rt_test_emit(buf);
+}
+
+/* `T FIRE <Win>.invalid.<widgetName>` (mac-target-4d Task 6, walker-only):
+   deliberately NOT `rt_ui_trace_fire2`'s usual `<Win>.<Widget>.<event>`
+   order -- the brief pins this exact shape, `invalid` in the widget-name
+   slot and the widget name last. rt_field_desc (rt.h) carries no field
+   name at all (only offset/ftype/strCap/enum data), so the only name
+   available to trace is the BOUND WIDGET's own (desc->widgets[...].name),
+   which is what's passed here. */
+static void rt_ui_trace_invalid(const char *name, const char *wname)
+{
+    char buf[300];
+    sprintf(buf, "T FIRE %s.invalid.%s", name, wname);
     rt_test_emit(buf);
 }
 
@@ -1631,6 +1675,47 @@ static void rt_ui_te_clamp(TEHandle te, short maxLen)
     rt_set_lasterr(1, "string truncated");
 }
 
+/* Finds the bind (if any) whose widgetIndex is `wIdx` -- same linear-scan
+   pattern rt_ui_make_widgets' own popup-binding lookup already uses
+   (mac-target-4d Task 3); shared here (Task 6) by the field-cap lookup
+   below, the fill/validate walker, and the typing filter, so there is one
+   place that knows how a form's binds array is searched. NULL `form` (a
+   non-form window, or a form widget with no matching bind) is a normal,
+   defensive "not bound" result, not an error. */
+static const rt_ui_bind_desc *rt_ui_form_find_bind(const rt_ui_form_desc *form, short wIdx)
+{
+    short b;
+    if (!form) return NULL;
+    for (b = 0; b < form->nBinds; b++)
+        if (form->binds[b].widgetIndex == wIdx) return &form->binds[b];
+    return NULL;
+}
+
+/* A FIELD's text cap: RTUI_FIELD_TEXT_MAX (255, Str255's own structural
+   limit) by default, UNLESS this exact widget is the CURRENTLY open modal
+   form's own STR-bound field with a smaller `strCap` (a `string(n)`'s own
+   declared cap, rt.h's rt_field_desc) or its CHAR-bound field (cap 1) --
+   reuses the existing RTUI_FIELD_TEXT_MAX clamp mechanism (rt_ui_te_clamp,
+   just above) with a SMALLER ceiling rather than adding a second clamp path
+   (mac-target-4d Task 6, per the task brief's own instruction). Only ever
+   tighter than RTUI_FIELD_TEXT_MAX, never looser: an INT/FIXED/ENUM bind
+   (or no bind at all) falls through to the plain default. */
+static short rt_ui_field_cap(rt_ui_winst *inst, short wIdx)
+{
+    const rt_ui_bind_desc *bind;
+
+    if (inst->desc->widgets[wIdx].kind != RTUI_FIELD) return RTUI_FIELD_TEXT_MAX;
+    if (!gModal.active || gModal.inst != inst) return RTUI_FIELD_TEXT_MAX;
+    bind = rt_ui_form_find_bind(inst->desc->form, wIdx);
+    if (!bind) return RTUI_FIELD_TEXT_MAX;
+    {
+        const rt_field_desc *fd = &inst->desc->form->layout->fields[bind->fieldIndex];
+        if (fd->ftype == RT_FT_STR && fd->strCap < RTUI_FIELD_TEXT_MAX) return fd->strCap;
+        if (fd->ftype == RT_FT_CHAR) return 1;
+    }
+    return RTUI_FIELD_TEXT_MAX;
+}
+
 /* The one mutation funnel every field/textview content change routes
    through (TEKey below; rt_ui_widget_set_str's FIELD branch and
    rt_ui_widget_set_text, further down). `userEdit` is 1 for a real user
@@ -1645,7 +1730,7 @@ static void rt_ui_te_mutated(rt_ui_winst *inst, short wIdx, int userEdit)
 
     wd = &inst->desc->widgets[wIdx];
     te = inst->tes[wIdx];
-    if (te) rt_ui_te_clamp(te, (short)(wd->kind == RTUI_FIELD ? RTUI_FIELD_TEXT_MAX : RTUI_TE_MAX));
+    if (te) rt_ui_te_clamp(te, (short)(wd->kind == RTUI_FIELD ? rt_ui_field_cap(inst, wIdx) : RTUI_TE_MAX));
     rt_ui_te_scroll_sync(inst, wIdx);
     if (!userEdit) return; /* programmatic set: clamp + scroll-sync only, no trace/event -- see header comment */
 #ifdef RT_MAC_TEST
@@ -2445,12 +2530,26 @@ static void rt_ui_menu_dispatch(long result)
     }
 }
 
+/* Forward declarations: the modal-form walker (defined near rt_ui_edit,
+   below rt_ui_open/rt_ui_close in this file) is called from TWO earlier
+   choke points -- rt_ui_fire_widget's RTUI_BUTTON case, right below, and
+   rt_ui_handle_mouse_down's inGoAway case, further down -- both well
+   before its own definition in file order. */
+static void rt_ui_form_accept(rt_ui_winst *inst);
+static void rt_ui_form_cancel(rt_ui_winst *inst);
+
 /* ==================== widget click/change dispatch ====================
  * Shared by real mouse clicks (after TrackControl confirms the release
  * landed back inside the control) and by the Return/Escape default/cancel
  * key wiring (Ch8: "default and cancel on a button wire the Return and
  * Escape keys respectively") -- both are "this widget just got activated",
- * modeled identically. */
+ * modeled identically. mac-target-4d Task 6: this is also the ONE choke
+ * point every DEFAULT/CANCEL button reaches regardless of source (real
+ * TrackControl click, scripted click, or this same Return/Escape key
+ * wiring) -- picked as the single place to intercept a modal FORM
+ * window's OK/Cancel buttons (walker-validate/accept, or cancel) instead
+ * of a plain click fire, rather than duplicating the check at each of
+ * those call sites. */
 static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
 {
     const rt_ui_widget_desc *wd;
@@ -2477,6 +2576,14 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
         break;
     }
     case RTUI_BUTTON:
+        if (gModal.active && gModal.inst == inst && (wd->flags & RTUI_DEFAULT)) {
+            rt_ui_form_accept(inst); /* may tear down (free) `inst` -- nothing below touches it again */
+            break;
+        }
+        if (gModal.active && gModal.inst == inst && (wd->flags & RTUI_CANCEL)) {
+            rt_ui_form_cancel(inst); /* likewise may free `inst` */
+            break;
+        }
 #ifdef RT_MAC_TEST
         rt_ui_trace_fire2(inst->desc->name, wd->name, "click");
 #endif
@@ -3064,11 +3171,43 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
     rt_ui_winst *inst;
 
     part = FindWindow(ev->where, &wp);
+
+    /* Modality filter (mac-target-4d Task 6): while a form is open, a click
+       that isn't headed for IT gets a beep instead -- the menu bar (any
+       item, since there's no per-item way to tell without opening it) and
+       any OTHER window of ours (a real System 6 modal dialog blocks the
+       whole app, not just its own window). DragWindow ON the modal itself
+       is explicitly allowed (falls through to the inDrag case below
+       unfiltered); System 6/DA windows (never `rt_ui_is_ours`) and every
+       other event kind (updates, activates, timers, TEIdle) are untouched
+       -- this is the ONE gate, nothing else in the loop changes. The
+       scripted dispatch path (rt_ui_script_click) calls this exact same
+       function, so scripts get the identical filtering for free. */
+    if (gModal.active) {
+        if (part == inMenuBar) { SysBeep(1); return; }
+        if (wp != NULL && rt_ui_is_ours(wp) && wp != gModal.inst->wp) {
+            SysBeep(1);
+            return;
+        }
+    }
+
     switch (part) {
     case inGoAway:
         if (wp != NULL && TrackGoAway(wp, ev->where)) {
             inst = rt_ui_winst_of(wp);
-            if (inst) rt_ui_close(inst);
+            if (inst) {
+                /* Close box on a form window is CANCEL, not the normal
+                   close cascade (mac-target-4d Task 6, Ch10: "Escape,
+                   Cancel, or the close box all cancel a form the same
+                   way") -- `inst` can only equal gModal.inst here if this
+                   IS the modal window (the filter above already turned
+                   away every OTHER one of our windows while gModal is
+                   active). */
+                if (gModal.active && inst == gModal.inst)
+                    rt_ui_form_cancel(inst);
+                else
+                    rt_ui_close(inst);
+            }
         }
         break;
     case inDrag: {
@@ -3116,6 +3255,50 @@ static int rt_ui_find_flagged(rt_ui_winst *inst, short flag, short *outIdx)
             *outIdx = i;
             return 1;
         }
+    }
+    return 0;
+}
+
+/* Modal-form typing filter (mac-target-4d Task 6): whether a CONTENT
+   keystroke `ch` may insert into a bound INT/FIXED field, per the task
+   brief -- INT allows digits and a LEADING `-` only; FIXED additionally
+   allows one `.`. Called only for a keystroke that would otherwise reach
+   TEKey as an insertion (the caller already excludes backspace and the
+   four arrow codes, which always pass through unfiltered -- deleting/
+   navigating is never blocked). "Leading" `-` means the caret sits at
+   position 0 AND the text doesn't already start with one (inserting a
+   minus ahead of already-typed digits, e.g. "5" -> "-5", is still a
+   leading minus by this rule, just not the FIRST keystroke); at most one
+   `.` anywhere in the field, regardless of caret position -- a simpler
+   rule than "no `.` already between here and the nearest boundary", which
+   would also need to treat a replace-selection specially; documented
+   simplification, not exercised by any FIXED-bound field in this task's
+   own probe scenario (str/int/bool/enum only, per the brief). */
+static int rt_ui_form_char_ok(TEHandle te, unsigned char ch, short ftype)
+{
+    Handle th;
+    short len, i;
+
+    if (ch >= '0' && ch <= '9') return 1;
+    if (ch == '-') {
+        unsigned char first;
+        if ((*te)->selStart != 0) return 0;
+        if ((*te)->teLength == 0) return 1;
+        th = (*te)->hText;
+        HLock(th);
+        first = (unsigned char)(*th)[0];
+        HUnlock(th);
+        return first != '-';
+    }
+    if (ch == '.' && ftype == RT_FT_FIXED) {
+        th = (*te)->hText;
+        len = (*te)->teLength;
+        HLock(th);
+        for (i = 0; i < len; i++) {
+            if ((unsigned char)(*th)[i] == '.') { HUnlock(th); return 0; }
+        }
+        HUnlock(th);
+        return 1;
     }
     return 0;
 }
@@ -3173,6 +3356,27 @@ static void rt_ui_handle_key(const EventRecord *ev)
                through rt_ui_te_mutated's change trace/event funnel: an
                arrow key moves the caret, it doesn't edit text. */
             GrafPtr saved;
+
+            /* Modal-form typing filter (mac-target-4d Task 6): a bound
+               INT/FIXED field only accepts the characters
+               rt_ui_form_char_ok allows -- every other keystroke that
+               would otherwise INSERT (arrows/backspace are never filtered,
+               they don't insert) beeps and is dropped before it ever
+               reaches TEKey. A STR/CHAR/unbound field, or any field in a
+               non-form window, is untouched (falls straight through to
+               the plain TEKey call below, same as before this task). */
+            if (gModal.active && gModal.inst == inst && ch != 8 && !(ch >= 28 && ch <= 31)) {
+                const rt_ui_bind_desc *bind = rt_ui_form_find_bind(inst->desc->form, inst->focusIdx);
+                if (bind) {
+                    const rt_field_desc *fd = &inst->desc->form->layout->fields[bind->fieldIndex];
+                    if ((fd->ftype == RT_FT_INT || fd->ftype == RT_FT_FIXED) &&
+                        !rt_ui_form_char_ok(inst->tes[inst->focusIdx], ch, fd->ftype)) {
+                        SysBeep(1);
+                        return;
+                    }
+                }
+            }
+
             GetPort(&saved);
             SetPort(wp);
             TEKey((CharParameter)ch, inst->tes[inst->focusIdx]);
@@ -3260,14 +3464,13 @@ static void rt_ui_every_pump(void)
 }
 
 /* Cached System 7+ probe (mac-target-4d Task 3): set once here, read by
-   Tasks 6/8 (AppleEvents-aware document handling needs to know whether
-   it's safe to assume System 7's Process/AppleEvent Managers are present
-   at all -- see rt_ui_launch's own header comment on the same split).
-   gestaltSystemVersion's response is a BCD version word (0x0700 = 7.0,
-   0x0605 = 6.0.5, ...) -- >= 0x0700 is exactly "System 7 or later". Not
-   consumed anywhere yet in THIS task; `(void)gSys7;` below keeps -Wunused
-   quiet in the meantime, same as any other "wired up now, used later"
-   plumbing in this file. */
+   rt_ui_open (Task 6: a form window's movable-modal WDEF proc, System 7's
+   movableDBoxProc vs. System 6's plain noGrowDocProc -- see that call
+   site) and Task 8 (AppleEvents-aware document handling needs to know
+   whether it's safe to assume System 7's Process/AppleEvent Managers are
+   present at all -- see rt_ui_launch's own header comment on the same
+   split). gestaltSystemVersion's response is a BCD version word (0x0700 =
+   7.0, 0x0605 = 6.0.5, ...) -- >= 0x0700 is exactly "System 7 or later". */
 static short gSys7 = 0;
 
 void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
@@ -3281,7 +3484,6 @@ void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
     rt_mac_init_toolbox(); /* eager: subsumes rt_mac.c's own lazy init */
     FlushEvents(everyEvent, 0);
     gSys7 = (short)(Gestalt(gestaltSystemVersion, &gestaltResponse) == noErr && gestaltResponse >= 0x0700);
-    (void)gSys7;
     rt_ui_build_apple_menu(); /* inserted first so it lands leftmost in the bar */
     rt_ui_build_menus(menus, nMenus);
     gMenuHandlerTable = mh;
@@ -3764,7 +3966,10 @@ static unsigned char rt_ui_script_key_arg(const char *arg1)
    to simulate meaningfully without a real mouse); a script `close` means
    "the close box was clicked and released", so it goes directly to
    rt_ui_close, exactly what a successful TrackGoAway leads to in
-   rt_ui_handle_mouse_down's inGoAway case. */
+   rt_ui_handle_mouse_down's inGoAway case -- including that same case's
+   modal-form carve-out (mac-target-4d Task 6): a scripted `close` against
+   the currently-open form is cancel, not the plain close cascade, so
+   scripts get the identical behavior a real close-box click would. */
 static void rt_ui_script_close(void)
 {
     WindowPtr wp;
@@ -3773,7 +3978,9 @@ static void rt_ui_script_close(void)
     wp = FrontWindow();
     if (!wp) return;
     inst = rt_ui_winst_of(wp);
-    if (inst) rt_ui_close(inst);
+    if (!inst) return;
+    if (gModal.active && inst == gModal.inst) rt_ui_form_cancel(inst);
+    else rt_ui_close(inst);
 }
 
 /* `resize W H`: real resizing is interactive (GrowWindow blocks on a real
@@ -4124,8 +4331,20 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     }
     SetRect(&bounds, left, top, (short)(left + w), (short)(top + h));
 
+    /* A form window (d->form != NULL, mac-target-4d Task 6 -- see
+       rt_ui_window_desc's own comment: `form` IS "this window type is a
+       Ch10 form", never incidental) always opens movable-modal, never
+       zoomable/growable: movableDBoxProc on System 7+ (the real movable
+       dialog proc -- a plain dBoxProc/noGrowDocProc box can't be dragged
+       at all), falling back to noGrowDocProc on System 6, which has no
+       movable-dBox WDEF at all (Inside Macintosh I; System 6 dialogs used
+       ModalDialog's own drag-by-hand emulation, out of scope here -- a
+       System 6 form is simply not draggable, same as any other
+       noGrowDocProc window). A NON-form window's own resizable flag picks
+       zoomDocProc/noGrowDocProc exactly as before this task. */
     inst->wp = NewWindow(NULL, &bounds, d->title, (Boolean)0,
-                          d->resizable ? zoomDocProc : noGrowDocProc,
+                          d->form ? (gSys7 ? movableDBoxProc : noGrowDocProc)
+                                   : (d->resizable ? zoomDocProc : noGrowDocProc),
                           (WindowPtr)-1L, (Boolean)1, 0L);
     if (!inst->wp) rt_panic("out of memory");
     ((WindowPeek)inst->wp)->windowKind = RTUI_WINDOW_KIND;
@@ -4196,26 +4415,17 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     return inst;
 }
 
-/* Shared close-cascade primitive: fires closeRequest and, unless the
-   handler cancels, disposes the window and fires closed. Returns 1 if the
-   window closed, 0 if closeRequest cancelled it (the window, its widgets,
-   and its state are untouched -- exactly as if this call had never
-   happened). rt_ui_close (a single window, `close w`) and rt_ui_quit (the
-   whole open-window list, `quit`) both funnel through here so "cancel"
-   means the identical thing -- and produces the identical trace -- from
-   either caller. */
-static int rt_ui_close_internal(rt_ui_winst *inst)
+/* Actual window teardown -- DisposeWindow, `closed` trace/event, then every
+   per-widget/per-instance Handle. Split out of rt_ui_close_internal
+   (mac-target-4d Task 6) so a form window's accepted/cancelled path
+   (rt_ui_form_teardown, below) can run the SAME teardown while skipping
+   the closeRequest gate entirely -- a form has no unsaved-changes hook of
+   its own (Ch10: accept/cancel already IS the close decision), but still
+   fires `closed` like any other window's lifecycle end. Never returns
+   "cancelled": by the time anything calls this, the close is happening
+   unconditionally. */
+static void rt_ui_teardown_window(rt_ui_winst *inst)
 {
-    long cancelFlag;
-
-    cancelFlag = 0;
-#ifdef RT_MAC_TEST
-    rt_ui_trace_fire1(inst->desc->name, "closeRequest");
-#endif
-    if (inst->desc->handlers && inst->desc->handlers->winEvent)
-        inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSEREQUEST, (long)&cancelFlag, 0);
-    if (cancelFlag) return 0;
-
     /* Ch8: "on closed ... The window has finished closing; its per-instance
        state is about to be freed" -- so the window is gone (DisposeWindow,
        which also disposes its Controls) before `closed` fires, and our own
@@ -4284,12 +4494,404 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
     DisposeHandle(inst->popupSelH);
     DisposeHandle(inst->listsH);
     DisposeHandle(inst->selfH);
+}
+
+/* Shared close-cascade primitive: fires closeRequest and, unless the
+   handler cancels, tears the window down (rt_ui_teardown_window, above).
+   Returns 1 if the window closed, 0 if closeRequest cancelled it (the
+   window, its widgets, and its state are untouched -- exactly as if this
+   call had never happened). rt_ui_close (a single window, `close w`) and
+   rt_ui_quit (the whole open-window list, `quit`) both funnel through here
+   so "cancel" means the identical thing -- and produces the identical
+   trace -- from either caller. NOT used by a form window's own OK/Cancel
+   teardown (rt_ui_form_teardown) -- see rt_ui_teardown_window's comment. */
+static int rt_ui_close_internal(rt_ui_winst *inst)
+{
+    long cancelFlag;
+
+    cancelFlag = 0;
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "closeRequest");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->winEvent)
+        inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSEREQUEST, (long)&cancelFlag, 0);
+    if (cancelFlag) return 0;
+    rt_ui_teardown_window(inst);
     return 1;
 }
 
 void rt_ui_close(void *instV)
 {
     rt_ui_close_internal((rt_ui_winst *)instV);
+}
+
+/* ==================== modal forms (mac-target-4d Task 6, Ch10) ====================
+ * rt_ui_edit opens a movable-modal window bound to a record (rt_ui_window_
+ * desc.form) and copies its value into gModal's own scratch buffer; the
+ * walker below fills the bound widgets from that buffer, validates and
+ * writes them back into it when OK is pressed (rt_ui_fire_widget's choke
+ * point, above), and only THEN propagates it onward per wbKind. Cancel
+ * (button, Escape, or close box) never touches the buffer at all. */
+
+/* Tears down a form's modal state -- clears gModal (so a nested rt_ui_edit
+   is legal again and rt_ui_form_is_new stops answering) and frees the
+   scratch buffer -- THEN the window itself (rt_ui_teardown_window: no
+   closeRequest gate, see its own comment). Order matters: gModal must
+   still read `active`/`isNew` while the accepted/cancelled handler runs
+   (rt_ui_form_accept/rt_ui_form_cancel, below, call this only AFTER that
+   handler returns), so clearing it happens here, right before the window
+   actually goes away, not any earlier. */
+static void rt_ui_form_teardown(rt_ui_winst *inst)
+{
+    Handle bufH = gModal.bufH;
+
+    gModal.active = 0;
+    gModal.inst = NULL;
+    DisposeHandle(bufH);
+    rt_ui_teardown_window(inst);
+}
+
+static void rt_ui_form_cancel(rt_ui_winst *inst)
+{
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "cancelled");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->winEvent)
+        inst->desc->handlers->winEvent(inst, RTUI_EV_CANCELLED, 0, 0);
+    rt_ui_form_teardown(inst);
+}
+
+/* Manual decimal parse, int32 out (rt.h's RT_FT_INT, "4B BE" -- no
+   fractional part): NO libc atoi/strtol, which can't reliably distinguish
+   "0" from "malformed" or detect overflow -- both are validation FAILURES
+   this walker must catch (task brief: "empty/malformed/int32-overflow
+   fails"), not silently-wrong results. Optional leading `-`, at least one
+   digit, no other bytes. ponytail: rejects the single extreme value
+   INT32_MIN (-2147483648) as "overflow" even though it fits -- the
+   overflow guard below caps BOTH signs' magnitude at 2147483647 rather
+   than special-casing the negative side's one extra representable value;
+   a UI form field is not a realistic place to need exactly that one
+   number, and accepting it would need a second, sign-aware comparison for
+   a single edge case. */
+static int rt_ui_parse_int(const unsigned char *p, short len, int32_t *out)
+{
+    short i = 0;
+    int neg = 0;
+    long v = 0;
+    int anyDigit = 0;
+
+    if (len == 0) return 0;
+    if (p[0] == '-') { neg = 1; i = 1; }
+    if (i >= len) return 0; /* empty, or just "-" */
+    for (; i < len; i++) {
+        if (p[i] < '0' || p[i] > '9') return 0;
+        if (v > (2147483647L - (p[i] - '0')) / 10) return 0; /* would overflow */
+        v = v * 10 + (p[i] - '0');
+        anyDigit = 1;
+    }
+    if (!anyDigit) return 0;
+    *out = neg ? (int32_t)(-v) : (int32_t)v;
+    return 1;
+}
+
+/* Manual decimal parse, 16.16 fixed out (rt.h's RT_FT_FIXED) -- mirrors
+   rt_ui_fixed_to_str's OWN place-value scheme (see that function's header
+   comment for the representation) in reverse: no string->fixed parser
+   existed anywhere in this codebase before this (grepped rt.c/rt_mac.c per
+   the task brief). Integer part: same overflow-checked accumulation as
+   rt_ui_parse_int, capped at 32767 (a fixed value's integer half can never
+   exceed that magnitude regardless of fraction, so a bigger integer part
+   is rejected here as overflow rather than silently wrapping). Fraction
+   part: digit-by-digit REVERSE Horner (`frac = (frac + digit*65536) / 10`,
+   walked last-digit-first) -- the textbook decimal-fraction-to-binary-
+   fraction conversion; exact for power-of-two fractions (.5, .25, .125,
+   .0625, ...) and close (off by at most one unit) for others.
+   ROUND-TRIP CAVEAT: rt_ui_fixed_to_str's own display already FLOORS 65536
+   fractional levels down to 4 decimal digits -- printing a value then
+   re-parsing those same unedited digits is therefore not guaranteed to
+   reproduce the identical bit pattern for an arbitrary fraction (only for
+   one rt_ui_fixed_to_str would have printed losslessly), since 10000
+   decimal levels and 65536 binary levels don't divide evenly. Not
+   exercised by this task's own probe scenario (str/int/bool/enum binds
+   only, per the brief) -- implemented for completeness against the full
+   walker spec, and this caveat is the reason why. */
+static int rt_ui_parse_fixed(const unsigned char *p, short len, int32_t *out)
+{
+    short i = 0, dot = -1, j;
+    int neg = 0;
+    long ipart = 0, frac = 0;
+    int anyDigit = 0;
+
+    if (len == 0) return 0;
+    if (p[0] == '-') { neg = 1; i = 1; }
+    if (i >= len) return 0;
+    for (; i < len; i++) {
+        if (p[i] == '.' && dot < 0) { dot = i; continue; }
+        if (p[i] < '0' || p[i] > '9') return 0; /* stray char, or a 2nd '.' */
+        anyDigit = 1;
+    }
+    if (!anyDigit) return 0;
+
+    for (j = (short)(neg ? 1 : 0); j < (dot >= 0 ? dot : len); j++) {
+        if (ipart > (32767L - (p[j] - '0')) / 10) return 0; /* won't fit a fixed's integer half */
+        ipart = ipart * 10 + (p[j] - '0');
+    }
+    for (j = (short)(len - 1); j > dot; j--) {
+        frac = (frac + (long)(p[j] - '0') * 65536L) / 10;
+    }
+    {
+        long v = (ipart << 16) | frac;
+        *out = neg ? (int32_t)(-v) : (int32_t)v;
+    }
+    return 1;
+}
+
+/* Validation-failure UI (task brief): beep, refocus the offending field
+   (same click-to-focus path a real click uses) with its ENTIRE content
+   selected (TESetSelect(0, 32767): 32767 as "past the end" is the
+   documented TextEdit idiom for "select to the end" regardless of actual
+   length), and trace the walker-only `T FIRE <Win>.invalid.<widgetName>`
+   line (rt_ui_trace_invalid, above -- see its own comment on the
+   deliberately non-standard field order). Caller is already inside
+   rt_ui_fire_widget's port bracket (the only call site), so no port
+   dance here. */
+static void rt_ui_form_invalid(rt_ui_winst *inst, short wIdx)
+{
+    SysBeep(1);
+    rt_ui_te_set_focus(inst, wIdx);
+    TESetSelect(0, 32767, inst->tes[wIdx]);
+#ifdef RT_MAC_TEST
+    rt_ui_trace_invalid(inst->desc->name, inst->desc->widgets[wIdx].name);
+#endif
+}
+
+/* The walker's FILL half (called once by rt_ui_edit, right after
+   rt_ui_open): per bind, formats gModal.buf's current field value into its
+   bound widget -- FIELD gets formatted text (int/fixed/str/char per
+   ftype), CHECK gets SetControlValue, POPUP gets the ordinal of its
+   value's position in the bound enum (rt.h's rt_field_desc.enumValues; a
+   value with no match -- shouldn't happen for data this runtime itself
+   wrote, but defensive regardless -- falls back to item 0, same "draw
+   something, never crash" contract rt_ui_table_draw_field's own ENUM case
+   already documents). Runs under rt_ui_open's already-current port
+   (rt_ui_edit calls this immediately after rt_ui_open returns, before any
+   other event reaches this window). */
+static void rt_ui_form_fill(rt_ui_winst *inst)
+{
+    const rt_ui_form_desc *form;
+    short b;
+    GrafPtr savedPort;
+
+    form = inst->desc->form;
+    GetPort(&savedPort);
+    SetPort(inst->wp);
+    for (b = 0; b < form->nBinds; b++) {
+        const rt_ui_bind_desc *bind = &form->binds[b];
+        const rt_field_desc *fd = &form->layout->fields[bind->fieldIndex];
+        const rt_ui_widget_desc *wd = &inst->desc->widgets[bind->widgetIndex];
+        const unsigned char *base = (const unsigned char *)gModal.buf + fd->offset;
+        short wIdx = bind->widgetIndex;
+
+        if (wd->kind == RTUI_FIELD && inst->tes[wIdx]) {
+            Str255 text;
+            switch (fd->ftype) {
+            case RT_FT_STR:
+                text[0] = (base[0] > fd->strCap) ? (unsigned char)fd->strCap : base[0];
+                BlockMoveData(base + 1, text + 1, text[0]);
+                break;
+            case RT_FT_INT:
+                NumToString(*(const int32_t *)base, text);
+                break;
+            case RT_FT_FIXED:
+                rt_ui_fixed_to_str(*(const int32_t *)base, text);
+                break;
+            case RT_FT_CHAR:
+                text[0] = *base ? 1 : 0;
+                if (*base) text[1] = *base;
+                break;
+            default:
+                text[0] = 0;
+                break;
+            }
+            TESetText(text + 1, text[0], inst->tes[wIdx]);
+            TECalText(inst->tes[wIdx]);
+        } else if (wd->kind == RTUI_CHECK && inst->ctrls[wIdx]) {
+            int32_t v = *(const int32_t *)base; /* bool: full int32_t, not a raw byte -- Task 1 fix */
+            SetControlValue(inst->ctrls[wIdx], (short)(v != 0 ? 1 : 0));
+        } else if (wd->kind == RTUI_POPUP) {
+            int32_t v = *(const int32_t *)base;
+            short k, sel = 0;
+            for (k = 0; k < fd->enumCount; k++) {
+                if (fd->enumValues[k] == v) { sel = k; break; }
+            }
+            inst->popupSel[wIdx] = sel;
+        }
+    }
+    SetPort(savedPort);
+}
+
+/* The walker's VALIDATE+WRITEBACK+ACCEPT half -- the RTUI_DEFAULT button's
+   choke-point target (rt_ui_fire_widget, above). Declaration order over
+   binds (task brief): only INT/FIXED can actually fail; every other kind
+   (STR/CHAR/BOOL/ENUM) always succeeds, so writing it into gModal.buf and
+   moving on is safe even though a LATER bind might still fail -- the
+   partially-updated buf is harmless scratch state, not yet visible to the
+   program (nothing propagates until every bind has passed). On the first
+   failure: rt_ui_form_invalid (beep/focus/select/trace), stop, stay open
+   -- no writeback, no accepted. On full success: apply gModal.wbKind's
+   writeback, THEN fire `T FIRE <Win>.accepted` + RTUI_EV_ACCEPTED(a=buf)
+   -- gModal is still `active` for the whole handler call, so
+   rt_ui_form_is_new() answers correctly from inside it -- and only after
+   the handler returns does rt_ui_form_teardown clear gModal and close the
+   window. */
+static void rt_ui_form_accept(rt_ui_winst *inst)
+{
+    const rt_ui_form_desc *form = inst->desc->form;
+    short b;
+
+    for (b = 0; b < form->nBinds; b++) {
+        const rt_ui_bind_desc *bind = &form->binds[b];
+        const rt_field_desc *fd = &form->layout->fields[bind->fieldIndex];
+        unsigned char *base = (unsigned char *)gModal.buf + fd->offset;
+        short wIdx = bind->widgetIndex;
+
+        switch (fd->ftype) {
+        case RT_FT_INT: {
+            Str255 text;
+            int32_t v;
+            rt_ui_widget_get_str(inst, wIdx, RTUI_PROP_TEXT, text);
+            if (!rt_ui_parse_int(text + 1, text[0], &v)) {
+                rt_ui_form_invalid(inst, wIdx);
+                return;
+            }
+            *(int32_t *)base = v;
+            break;
+        }
+        case RT_FT_FIXED: {
+            Str255 text;
+            int32_t v;
+            rt_ui_widget_get_str(inst, wIdx, RTUI_PROP_TEXT, text);
+            if (!rt_ui_parse_fixed(text + 1, text[0], &v)) {
+                rt_ui_form_invalid(inst, wIdx);
+                return;
+            }
+            *(int32_t *)base = v;
+            break;
+        }
+        case RT_FT_STR: {
+            Str255 text;
+            short len;
+            rt_ui_widget_get_str(inst, wIdx, RTUI_PROP_TEXT, text);
+            len = (text[0] > fd->strCap) ? (short)fd->strCap : text[0];
+            base[0] = (unsigned char)len;
+            BlockMoveData(text + 1, base + 1, len);
+            /* zero-pad the fixed-width tail (rt.h RT_FT_STR: "1 len byte +
+               strCap data bytes, fixed width, zero-padded") */
+            {
+                short z;
+                for (z = len; z < fd->strCap; z++) base[1 + z] = 0;
+            }
+            break;
+        }
+        case RT_FT_BOOL:
+            *(int32_t *)base = (inst->ctrls[wIdx] && GetControlValue(inst->ctrls[wIdx])) ? 1 : 0;
+            break;
+        case RT_FT_CHAR: {
+            Str255 text;
+            rt_ui_widget_get_str(inst, wIdx, RTUI_PROP_TEXT, text);
+            *base = (text[0] > 0) ? text[1] : 0;
+            break;
+        }
+        case RT_FT_ENUM: {
+            short sel = inst->popupSel[wIdx];
+            *(int32_t *)base = (fd->enumCount > 0 && sel >= 0 && sel < fd->enumCount) ? fd->enumValues[sel] : 0;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    switch (gModal.wbKind) {
+    case RT_UI_WB_ADDR:
+        if (gModal.addr) BlockMoveData(gModal.buf, gModal.addr, form->layout->recSize);
+        break;
+    case RT_UI_WB_LIST:
+        if (gModal.lst && gModal.idx >= 0 && gModal.idx < rt_list_count(gModal.lst))
+            BlockMoveData(gModal.buf, rt_list_at(gModal.lst, gModal.idx), form->layout->recSize);
+        /* idx out of range: the row vanished under the form (removed while
+           it was open) -- skip the writeback silently, still fire accepted
+           (task brief). */
+        break;
+    case RT_UI_WB_MAP:
+        if (gModal.mp) rt_map_set(gModal.mp, gModal.key255, gModal.buf);
+        break;
+    default:
+        break; /* RT_UI_WB_NONE: nothing to propagate */
+    }
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire1(inst->desc->name, "accepted");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->winEvent)
+        inst->desc->handlers->winEvent(inst, RTUI_EV_ACCEPTED, (long)gModal.buf, 0);
+    rt_ui_form_teardown(inst);
+}
+
+/* `edit W` (Ch10) -- opens W (which MUST declare a `form`) modally, its
+   widgets filled from `*src`. `wbKind`/`addr`/`lst`/`idx`/`mp`/`key255`
+   describe where OK's writeback goes (rt_ui.h's RT_UI_WB_* -- exactly one
+   of `addr`/(`lst`+`idx`)/(`mp`+`key255`) is meaningful per wbKind, the
+   others ignored). One modal at a time: nesting (calling this again
+   before the first form closes) is a program bug, not a runtime state
+   this can recover from, so it panics rather than queuing or silently
+   replacing gModal -- exactly like every other rt_panic in this codebase
+   (a Clarus-language contract violation, not a recoverable I/O failure). */
+void rt_ui_edit(const rt_ui_window_desc *d, const void *src, short isNew,
+                short wbKind, void *addr, rt_list *lst, long idx,
+                rt_map *mp, const unsigned char *key255)
+{
+    Size recSize;
+    void *buf;
+    Handle bufH;
+    rt_ui_winst *inst;
+
+    if (gModal.active) rt_panic("edit while a form is already open");
+    if (!d->form) rt_panic("edit: window has no form");
+
+    recSize = (Size)d->form->layout->recSize;
+    buf = rt_ui_alloc_locked(recSize, &bufH);
+    BlockMoveData((Ptr)src, (Ptr)buf, recSize);
+
+    gModal.active = 1;
+    gModal.inst = NULL; /* set below, once rt_ui_open returns it */
+    gModal.bufH = bufH;
+    gModal.buf = buf;
+    gModal.isNew = isNew;
+    gModal.wbKind = wbKind;
+    gModal.addr = addr;
+    gModal.lst = lst;
+    gModal.idx = idx;
+    gModal.mp = mp;
+    gModal.key255[0] = 0;
+    if (wbKind == RT_UI_WB_MAP && key255) {
+        short klen = key255[0];
+        if (klen > 255) klen = 255;
+        BlockMoveData((Ptr)key255, (Ptr)gModal.key255, (Size)(klen + 1));
+    }
+
+    inst = (rt_ui_winst *)rt_ui_open(d);
+    gModal.inst = inst;
+    rt_ui_form_fill(inst);
+}
+
+/* Valid only while a form is open (`active`) -- in practice, from
+   rt_ui_edit through the end of its accepted/cancelled handler dispatch
+   (rt_ui_form_accept/rt_ui_form_cancel fire the handler BEFORE clearing
+   gModal, per their own comments); 0 once no form is open, same as "no
+   form, no answer" rather than an undefined read. */
+short rt_ui_form_is_new(void)
+{
+    return (short)(gModal.active ? gModal.isNew : 0);
 }
 
 /* `quit` in a UI program -- see this function's declaration in rt_ui.h for

@@ -94,6 +94,16 @@
 #define RTUI_EV_CLOSED       2
 #define RTUI_EV_RESIZED      3
 #define RTUI_EV_KEY          4  /* a = the typed char */
+/* mac-target-4d Task 6 (Ch10 forms): fired ONLY on a window opened via
+   rt_ui_edit (below), while gModal is still active -- rt_ui_form_is_new
+   answers correctly from inside either handler call. RTUI_EV_ACCEPTED's
+   `a` is (long)&buffer, a clar_rec_T* pointing at the walker's own scratch
+   copy (already fully validated and, per wbKind, already propagated to
+   its real destination by the time this fires); RTUI_EV_CANCELLED carries
+   nothing (a=b=0). Neither fires closeRequest/closed -- see rt_ui_edit's
+   own comment on why a form skips that hook. */
+#define RTUI_EV_ACCEPTED     5
+#define RTUI_EV_CANCELLED    6
 
 /* rt_ui_handlers.widget `event` values (Ch8 widget Events column) */
 #define RTUI_WEV_CLICK  0        /* button */
@@ -289,6 +299,53 @@ void  rt_ui_run(void);                       /* the event loop; returns on quit 
 void  rt_ui_launch(void (*openDoc)(const uint8_t *path255), void (*startEmpty)(void));
 void *rt_ui_open(const rt_ui_window_desc *d);        /* `open W`  -> instance */
 void  rt_ui_close(void *inst);                       /* `close w` */
+
+/* `edit W` (Ch10 forms, mac-target-4d Task 6): opens `d` (which MUST
+ * declare a `form` -- rt_panics otherwise, same as re-entering while
+ * another form is already open: at most ONE modal form at a time) as a
+ * movable-modal window, its bound widgets filled from `*src` (a
+ * `d->form->layout->recSize`-byte record, copied -- `src` itself is never
+ * touched again after this call returns). `isNew` is echoed back by
+ * rt_ui_form_is_new (below) during the accepted/cancelled dispatch, for a
+ * handler that presents "Add" vs. "Edit" differently. OK validates every
+ * bound field (declaration order; the first INT/FIXED bind that's empty,
+ * malformed, or doesn't fit an int32 beeps/refocuses/stays open instead)
+ * and, once every bind passes, writes the record to exactly ONE
+ * destination per `wbKind`:
+ *   RT_UI_WB_NONE -- nowhere (a program that only reacts to the accepted
+ *                    event's own `a` pointer, e.g. to validate/act on it
+ *                    without a backing store of its own).
+ *   RT_UI_WB_ADDR -- `*(clar_rec_T *)addr = record` (a global or
+ *                    window-state variable; `lst`/`idx`/`mp`/`key255`
+ *                    unused).
+ *   RT_UI_WB_LIST -- `rt_list_at(lst, idx)`, RE-DERIVED at writeback time
+ *                    (not cached from when `edit` was called) with a
+ *                    bounds check: `idx` outside the list's CURRENT count
+ *                    (the row was removed while the form was open) skips
+ *                    the writeback silently -- `accepted` still fires.
+ *   RT_UI_WB_MAP  -- `rt_map_set(mp, key255, &record)`; `key255` is
+ *                    copied into the modal's own state at `edit`-call
+ *                    time (not re-read later), a Str255-shaped (len-byte-
+ *                    prefixed) key exactly like every other rt_ui string
+ *                    parameter.
+ * Fires RTUI_EV_ACCEPTED (a = (long)&<the walker's own validated record>)
+ * or RTUI_EV_CANCELLED (Cancel button, Escape, or the close box) on `d`'s
+ * own winEvent handler, THEN tears the window down WITHOUT the normal
+ * closeRequest hook (a form's accept/cancel decision already IS the close
+ * decision -- Ch10 forms have no separate unsaved-changes prompt). */
+#define RT_UI_WB_NONE 0
+#define RT_UI_WB_ADDR 1   /* global or window-state record */
+#define RT_UI_WB_LIST 2   /* re-derived rt_list_at(l, idx) at writeback; dropped if idx >= count */
+#define RT_UI_WB_MAP  3   /* rt_map_set(m, key, buf) */
+void  rt_ui_edit(const rt_ui_window_desc *d, const void *src, short isNew,
+                 short wbKind, void *addr, rt_list *lst, long idx,
+                 rt_map *mp, const unsigned char *key255);
+/* Valid ONLY during rt_ui_edit's own accepted/cancelled handler dispatch
+ * (0 otherwise, i.e. whenever no form is currently open) -- answers the
+ * `isNew` a program's own `edit` call passed in, for a handler that wants
+ * to tell "just created" apart from "editing an existing record" without
+ * threading its own extra flag through. */
+short rt_ui_form_is_new(void);
 /* `quit` in a UI program (reference doc's Quit Semantics, normative,
  * ~line 767): sends closeRequest to every open window, front-to-back
  * (the exact cascade rt_ui_close's own closeRequest/closed pair uses, one

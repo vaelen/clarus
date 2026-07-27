@@ -454,22 +454,173 @@ static const rt_ui_window_desc kTableProbeWindow = {
     &kTableProbeHandlers
 };
 
+/* ==================== FormProbe / FormLauncher (Task 6, mac-target-4d) ====
+ * Exercises rt_ui_edit end to end: FormProbe is a modal ("form") window
+ * bound to a plain record (str/int/bool/enum fields -- the SAME
+ * rt_field_desc shapes PopupProbe/TableProbe already use, per the task
+ * brief's own scope) via rt_ui_form_desc/rt_ui_bind_desc. It is NEVER
+ * opened at startup -- only via rt_ui_edit, triggered by FormLauncher's
+ * one "Edit" button. FormLauncher opens LAST (frontmost at startup, same
+ * precedent as PopupProbe/TableProbe -- no click-to-front step needed for
+ * its own button). FormProbe is still listed in kWindows[] below (every
+ * window TYPE needs to be, for the T OPEN/CLOSE/FRONT per-type instance
+ * counter -- rt_ui_trace_next_id), even though `main` never rt_ui_opens it
+ * directly.
+ *
+ * gFormRec/gFormEverAccepted model "the record this launcher edits":
+ * first Edit click is isNew=1 (defaults); after any successful accept,
+ * gFormEverAccepted flips true and the NEXT Edit reopens the now-real data
+ * with isNew=0 -- both digits end up in FormLauncher's own Result label
+ * (`T SET FormLauncher.Result.text ...`), so a script can verify isNew via
+ * the ordinary golden-diffed trace, no new vocabulary needed for that
+ * part. formprobe_win_event (FormProbe's OWN handler, called while gModal
+ * is still active) does the actual writing: it looks up FormLauncher's
+ * front instance the same way bounce_tick looks up Bounce's, since
+ * RTUI_EV_ACCEPTED/CANCELLED only ever hand it FormProbe's own inst. */
+
+typedef struct { unsigned char name[21]; /* 1 len + 20 data bytes (strCap 20) */
+                 int32_t qty; int32_t active; int32_t color; } FormRec;
+
+static FormRec gFormRec;
+static int gFormEverAccepted = 0;
+
+static const rt_field_desc kFormFields[] = {
+    { RT_FT_STR,  20, offsetof(FormRec, name),   0, NULL, NULL },
+    { RT_FT_INT,   0, offsetof(FormRec, qty),    0, NULL, NULL },
+    { RT_FT_BOOL,  0, offsetof(FormRec, active), 0, NULL, NULL },
+    { RT_FT_ENUM,  0, offsetof(FormRec, color),  3, kColorValues, kColorNames }
+};
+static const rt_layout_desc kFormLayout = { (long)sizeof(FormRec), 4, kFormFields };
+
+enum { F_NAME = 0, F_QTY = 1, F_ACTIVE = 2, F_COLOR = 3, F_OK = 4, F_CANCEL = 5 };
+
+static const rt_ui_bind_desc kFormBinds[] = {
+    { F_NAME, 0 }, { F_QTY, 1 }, { F_ACTIVE, 2 }, { F_COLOR, 3 }
+};
+static const rt_ui_form_desc kFormForm = { &kFormLayout, 4, kFormBinds };
+
+enum { FL_EDIT = 0, FL_RESULT = 1 };
+static const rt_ui_window_desc kFormLauncherWindow; /* forward: formprobe_win_event needs it below */
+
+/* Builds FormLauncher's Result text from the CURRENT gFormRec plus a tag
+   ('A'ccepted/'C'ancelled) and, for accepted, isNew's digit -- no sprintf,
+   no rt_text, same "no libc" spirit as ui8_to_pstr/build_status above.
+   Qty is printed via ui8_to_pstr, so this probe only ever types small
+   (0..99) quantities into FormProbe's Qty field. */
+static void build_form_result(unsigned char *out, char tag, int isNewFlag)
+{
+    unsigned char n = 0, i;
+    out[1 + n++] = (unsigned char)tag;
+    out[1 + n++] = ' ';
+    for (i = 0; i < gFormRec.name[0]; i++) out[1 + n + i] = gFormRec.name[1 + i];
+    n = (unsigned char)(n + gFormRec.name[0]);
+    out[1 + n++] = ' ';
+    {
+        unsigned char num[4];
+        ui8_to_pstr(num, (int)gFormRec.qty);
+        for (i = 0; i < num[0]; i++) out[1 + n + i] = num[1 + i];
+        n = (unsigned char)(n + num[0]);
+    }
+    out[1 + n++] = ' ';
+    out[1 + n++] = (unsigned char)(gFormRec.active ? 'Y' : 'N');
+    out[1 + n++] = ' ';
+    out[1 + n++] = (unsigned char)('0' + gFormRec.color);
+    if (tag == 'A') {
+        out[1 + n++] = ' ';
+        out[1 + n++] = (unsigned char)('0' + isNewFlag);
+    }
+    out[0] = n;
+}
+
+static void formprobe_win_event(void *inst, short event, long a, long b)
+{
+    void *launcher;
+    unsigned char result[48];
+
+    (void)a; (void)b;
+    launcher = rt_ui_front(&kFormLauncherWindow);
+    if (event == RTUI_EV_ACCEPTED) {
+        gFormEverAccepted = 1;
+        build_form_result(result, 'A', rt_ui_form_is_new());
+        if (launcher) rt_ui_widget_set_str(launcher, FL_RESULT, RTUI_PROP_TEXT, result);
+    } else if (event == RTUI_EV_CANCELLED) {
+        static const unsigned char kCancelled[] = "\pCancelled";
+        if (launcher) rt_ui_widget_set_str(launcher, FL_RESULT, RTUI_PROP_TEXT, kCancelled);
+    }
+    (void)inst;
+}
+
+static const rt_ui_handlers kFormHandlers = { formprobe_win_event, 0 };
+
+static const rt_ui_widget_desc kFormWidgets[] = {
+    { RTUI_FIELD, "Name", (const unsigned char *)"\pName:",
+      RTUI_AT_XY, 20, 20, 200, RTUI_FILL_NONE, 0 },
+    { RTUI_FIELD, "Qty", (const unsigned char *)"\pQty:",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 200, RTUI_FILL_NONE, 0 },
+    { RTUI_CHECK, "Active", (const unsigned char *)"\pActive",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_POPUP, "Color", (const unsigned char *)"\pColor:",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "OK", (const unsigned char *)"\pOK",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 80, RTUI_FILL_NONE, RTUI_DEFAULT },
+    { RTUI_BUTTON, "Cancel", (const unsigned char *)"\pCancel",
+      RTUI_AT_RIGHT, 0, 128, 80, RTUI_FILL_NONE, RTUI_CANCEL }
+};
+
+static const rt_ui_window_desc kFormWindow = {
+    "FormProbe", (const unsigned char *)"\pForm Probe",
+    280, 200, 0, 0, 0,
+    6, kFormWidgets,
+    0,
+    &kFormHandlers,
+    &kFormForm
+};
+
+static void formlauncher_widget_event(void *inst, short widgetIndex, short event, long a, long b)
+{
+    (void)inst; (void)a; (void)b;
+    if (widgetIndex == FL_EDIT && event == RTUI_WEV_CLICK) {
+        rt_ui_edit(&kFormWindow, &gFormRec, (short)!gFormEverAccepted,
+                   RT_UI_WB_ADDR, &gFormRec, NULL, 0, NULL, NULL);
+    }
+}
+
+static const rt_ui_widget_desc kFormLauncherWidgets[] = {
+    { RTUI_BUTTON, "Edit", (const unsigned char *)"\pEdit",
+      RTUI_AT_XY, 20, 20, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_LABEL, "Result", (const unsigned char *)"\p-",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 }
+};
+
+static const rt_ui_handlers kFormLauncherHandlers = { 0, formlauncher_widget_event };
+
+static const rt_ui_window_desc kFormLauncherWindow = {
+    "FormLauncher", (const unsigned char *)"\pForm Launcher",
+    240, 100, 0, 0, 0,
+    2, kFormLauncherWidgets,
+    0,
+    &kFormLauncherHandlers
+};
+
 /* ==================== wiring ==================== */
 
-static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow, &kPopupProbeWindow, &kTableProbeWindow };
+static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow, &kPopupProbeWindow, &kTableProbeWindow, &kFormWindow, &kFormLauncherWindow };
 static const rt_ui_menu_desc *kMenus[] = { &kProbeMenu };
 
 int main(void)
 {
     rt_args_init(0, (char **)0);
-    rt_ui_startup(kWindows, 5, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
+    rt_ui_startup(kWindows, 7, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
     /* TextProbe opens FIRST -- Probe-then-Bounce below is the exact same
        relative open order Task 1/2/3 already had, so Bounce is still
        frontmost at startup, exactly as events.c's own header comment
        documents (TextProbe, opened even earlier, ends up furthest back).
-       PopupProbe (Task 3) opens next-to-last; TableProbe (Task 4) opens
-       LAST -- frontmost, so events_table.c's clicks land on it without a
-       click-to-front step, same precedent PopupProbe itself set. */
+       PopupProbe (Task 3) opens next-to-last; TableProbe (Task 4) then
+       FormLauncher (Task 6) open LAST -- FormLauncher ends up frontmost,
+       so events_form.c's clicks land on it (and, once opened, FormProbe
+       itself) without a click-to-front step, same precedent PopupProbe/
+       TableProbe already set. FormProbe is never rt_ui_open'd here at all
+       -- only via rt_ui_edit, from FormLauncher's own Edit button. */
     gTableRows = rt_list_new((int32_t)sizeof(TableRow));
     {
         TableRow r;
@@ -477,11 +628,16 @@ int main(void)
         set_pname(r.name, "Beta");  r.qty = 20; r.done = 1; rt_list_push(gTableRows, &r);
         set_pname(r.name, "Gamma"); r.qty = 30; r.done = 0; rt_list_push(gTableRows, &r);
     }
+    set_pname(gFormRec.name, "");
+    gFormRec.qty = 0;
+    gFormRec.active = 0;
+    gFormRec.color = 0;
     rt_ui_open(&kTextProbeWindow);
     rt_ui_open(&kProbeWindow);
     rt_ui_open(&kBounceWindow);
     rt_ui_open(&kPopupProbeWindow);
     rt_ui_open(&kTableProbeWindow);
+    rt_ui_open(&kFormLauncherWindow);
     rt_ui_run();
     return 0;
 }
