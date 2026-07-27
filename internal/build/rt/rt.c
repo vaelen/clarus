@@ -577,6 +577,12 @@ void rt_map_remove(rt_map *m, const uint8_t *key) {
 
 int32_t rt_map_count(const rt_map *m) { return m->count; }
 
+/* count = 0; capacity kept -- same growth-preserving pattern as pop/remove
+   above (Task 1, mac-target-4d: rt_file_load clears the target before
+   filling it back in from a saved list/map). */
+void rt_list_clear(rt_list *l) { l->count = 0; }
+void rt_map_clear(rt_map *m) { m->count = 0; }
+
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255) {
     if (i < 0 || i >= m->count) rt_panic("map key not found");
     memmove(key255, map_key_slot(m, i), MAP_KEYBLOCK);
@@ -680,3 +686,26 @@ void rt_file_name(uint8_t *dst255, const uint8_t *path) {
     memmove(dst255 + 1, path + 1 + start, (size_t)len);
     dst255[0] = len;
 }
+
+/* ==================== serialization (Task 1, mac-target-4d) ====================
+ * rt_ser.inc's own per-runtime primitive: a fopen/fwrite clone of
+ * rt_file_write_text above (no type/creator concept on the host
+ * filesystem, unlike the Mac 'CLRD' file). */
+static int rt_file_write_data(const uint8_t *path, const rt_text *t) {
+    char cpath[256];
+    path_to_cstr(cpath, path);
+    FILE *f = fopen(cpath, "wb");
+    if (!f) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    size_t wrote = t->len > 0 ? fwrite(t->data, 1, (size_t)t->len, f) : 0;
+    int closeErr = fclose(f);
+    if ((int32_t)wrote != t->len || closeErr != 0) {
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    return 1;
+}
+
+#include "rt_ser.inc"

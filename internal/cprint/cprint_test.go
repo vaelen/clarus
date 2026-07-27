@@ -70,10 +70,17 @@ func buildExe(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rtSerInc, err := os.ReadFile("../build/rt/rt_ser.inc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "rt.h"), rtH, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "rt.c"), rtC, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_ser.inc"), rtSerInc, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "prog")

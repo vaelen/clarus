@@ -105,4 +105,39 @@ int rt_text_cmp(const rt_text *a, const rt_text *b);
 int rt_file_read_text(const uint8_t *path, rt_text *t);        /* whole-file read into t; false + lastError on open/read failure */
 int rt_file_write_text(const uint8_t *path, const rt_text *t); /* create/truncate write of t's contents; false + lastError on failure */
 void rt_file_name(uint8_t *dst255, const uint8_t *path);       /* basename of path; always succeeds */
+
+/* ---- record serialization (Task 1, mac-target-4d) ----
+   Canonical big-endian, field-wise file format shared verbatim between the
+   host and Mac runtimes via rt_ser.inc (#included at the bottom of each
+   runtime's .c file): 'C' 'L' 'R' 'S', a version byte (1), a container
+   byte, then the payload. REC = fields in layout order (RT_FT_* below);
+   LIST = 4B BE count + that many records; MAP = 4B BE count + (1 len byte
+   + key bytes + record) entries in natural (ascending) key order. */
+#define RT_FT_INT   0  /* int32, 4B BE */
+#define RT_FT_FIXED 1  /* 4B BE, raw runtime representation */
+#define RT_FT_BOOL  2  /* 1B */
+#define RT_FT_CHAR  3  /* 1B */
+#define RT_FT_STR   4  /* 1 len byte + strCap data bytes (fixed width, zero-padded) */
+#define RT_FT_ENUM  5  /* int32 value, 4B BE; load validates membership in enumValues */
+
+typedef struct { short ftype; short strCap; long offset;
+                 short enumCount; const int32_t *enumValues;
+                 const unsigned char *const *enumLabels; /* Str255s, popup/table render */
+} rt_field_desc;
+typedef struct { long recSize; short nFields; const rt_field_desc *fields; } rt_layout_desc;
+
+#define RT_SER_REC  0
+#define RT_SER_LIST 1
+#define RT_SER_MAP  2
+int rt_file_save(const uint8_t *path, short container, const void *data, const rt_layout_desc *ld);
+int rt_file_load(const uint8_t *path, short container, void *data,       const rt_layout_desc *ld);
+void rt_list_clear(rt_list *l); /* count = 0; capacity kept, same growth-preserving pattern as pop/remove */
+void rt_map_clear (rt_map *m);  /* count = 0; capacity kept */
+
+/* Mac data-file creator, distinct from the 'TEXT' documents rt_file_write_text
+   produces (files saved via rt_file_save get type 'CLRD'). Weak zero default
+   in rt_mac.c (every Mac link includes rt_mac.c, so CLI-only programs still
+   link); clarusc overrides it with a strong definition when an `app` section
+   declares an id (Task 2) -- same weak/strong precedent as rt_ui_app_info. */
+extern const unsigned long rt_app_creator;
 #endif

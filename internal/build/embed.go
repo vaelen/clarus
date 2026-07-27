@@ -7,3 +7,6 @@ var rtH []byte
 
 //go:embed rt/rt.c
 var rtC []byte
+
+//go:embed rt/rt_ser.inc
+var rtSerInc []byte

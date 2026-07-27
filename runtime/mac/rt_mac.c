@@ -970,6 +970,14 @@ void rt_map_remove(rt_map *m, const uint8_t *key)
 
 int32_t rt_map_count(const rt_map *m) { return m->count; }
 
+/* count = 0; capacity kept -- mirrors the host's rt_list_clear/rt_map_clear
+   exactly (same growth-preserving pattern as this file's own remove/pop:
+   no SetHandleSize call, the Handle just keeps whatever capacity it had).
+   Task 1, mac-target-4d: rt_file_load clears the target before filling it
+   back in from a saved list/map. */
+void rt_list_clear(rt_list *l) { l->count = 0; }
+void rt_map_clear(rt_map *m) { m->count = 0; }
+
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255)
 {
     if (i < 0 || i >= m->count) rt_panic("map key not found");
@@ -1067,3 +1075,44 @@ void rt_file_name(uint8_t *dst255, const uint8_t *path)
     BlockMoveData(path + 1 + start, dst255 + 1, (Size)len);
     dst255[0] = len;
 }
+
+/* Weak default for rt.h's rt_app_creator -- '????' until clarusc emits a
+   strong definition for a program whose `app` section declares an id
+   (Task 2). rt_mac.c is in every Mac link (unlike rt_ui.c), so CLI-only
+   programs still resolve this symbol. Same weak/strong precedent as
+   rt_ui.c's rt_ui_app_info. */
+const unsigned long rt_app_creator __attribute__((weak)) = 0x3F3F3F3FUL; /* '????' */
+
+/* ==================== serialization (Task 1, mac-target-4d) ====================
+ * rt_ser.inc's own per-runtime primitive: same File Manager shape as
+ * rt_file_write_text above, but type 'CLRD' (not 'TEXT') and creator
+ * rt_app_creator (not the fixed 'MPS ') -- so saved data files stay
+ * distinguishable from documents in the Finder. */
+static int rt_file_write_data(const uint8_t *path, const rt_text *t)
+{
+    short ref;
+    long count;
+
+    Create(path, 0, rt_app_creator, 'CLRD');
+    if (FSOpen(path, 0, &ref) != noErr) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    SetEOF(ref, 0);
+    count = t->len;
+    if (t->len > 0 && FSWrite(ref, &count, *t->h) != noErr) {
+        FSClose(ref);
+        FlushVol(NULL, 0);
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    FSClose(ref);
+    FlushVol(NULL, 0);
+    if (count != t->len) {
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    return 1;
+}
+
+#include "rt_ser.inc"

@@ -55,6 +55,7 @@ func Build(paths []string, out string) ([]source.Diag, error) {
 	mainPath := filepath.Join(workdir, "main.c")
 	rtHPath := filepath.Join(workdir, "rt.h")
 	rtCPath := filepath.Join(workdir, "rt.c")
+	rtSerIncPath := filepath.Join(workdir, "rt_ser.inc")
 	if err := os.WriteFile(mainPath, c, 0o644); err != nil {
 		return nil, err
 	}
@@ -62,6 +63,9 @@ func Build(paths []string, out string) ([]source.Diag, error) {
 		return nil, err
 	}
 	if err := os.WriteFile(rtCPath, rtC, 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(rtSerIncPath, rtSerInc, 0o644); err != nil {
 		return nil, err
 	}
 
