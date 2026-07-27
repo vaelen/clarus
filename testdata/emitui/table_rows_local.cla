@@ -1,0 +1,36 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// table_rows_local.cla: emitui error fixture -- a table's `rows:` property
+// names a window-local (per-instance) `var`, not a top-level global. Every
+// widget-declaration-time property is checked against curScope == the
+// program's TOP-LEVEL scope only (checkWindowDecl/checkWidget never push a
+// nested scope, and a window's per-instance vars are a separate side table
+// -- windowVarsHead -- never scope-declared for a bare-name lookup at this
+// point), so this is rejected by the CHECKER itself ("undefined:
+// localRows") before lowering ever runs -- lower.cla's own table-rows guard
+// (which would otherwise print "table rows must be a global list
+// variable") never gets a chance to fire for this exact shape, by
+// construction; kept anyway as the literal "window-local expression" arm.
+// No .c.golden: this fixture never successfully emits.
+
+record Bookmark {
+    name: string(63)
+}
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    var localRows: list of Bookmark
+
+    table Marks {
+        at: 10, 10
+        rows: localRows
+        column "Name" shows name width 140
+    }
+}
+
+on App.launch {
+    open Main
+}

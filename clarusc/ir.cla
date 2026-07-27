@@ -260,6 +260,15 @@ record IREnumLayout {
 // isScrollV/isScrollH (mac-target-4c Task 2) mark a textview's
 // `scrollbar: vertical` (isScrollV only) or `scrollbar: both` (both set) --
 // always false for every other widget kind.
+//
+// bindsIdx/rowsGlobalIdx/columnsHead (mac-target-4d Task 5) are -1 for every
+// widget kind except popup/table: bindsIdx is popup's bound form-record
+// field name (interned, check.cla's WidgetInfo.bindsIdx precedent -- -1
+// means no `binds:` given); rowsGlobalIdx is a table's `rows:` global list
+// variable's own interned NAME (not an arena index -- cprint.cla's
+// cpFindGlobalRecName scans irGlobals by this name to find the row record's
+// clar_layout_NAME); columnsHead chains this table's IRColumnDesc list (-1
+// if none, though a real table always has >=1 column by Ch10 grammar).
 record IRWidgetDesc {
     nameIdx: int
     kindIdx: int
@@ -276,6 +285,23 @@ record IRWidgetDesc {
     isBuffered: bool
     isScrollV: bool
     isScrollH: bool
+    bindsIdx: int
+    rowsGlobalIdx: int
+    columnsHead: int
+    next: int
+}
+
+// IRColumnDesc: one `column "Header" shows field width N|fill` entry (Ch10)
+// in a table widget's rt_ui_col_desc[] -- chained off IRWidgetDesc.columnsHead,
+// same arena-with-next idiom as IRMenuItemDesc. fieldIndex is the SHOWS
+// field's 0-based position in the row record's own field order (the same
+// order cpEmitLayouts' rt_field_desc[] uses), resolved once at lowering time
+// (lower.cla's lowColumnFieldIndex) so cprint never re-walks the record.
+record IRColumnDesc {
+    headerIdx: int
+    fieldIndex: int
+    widthPx: int
+    widthFill: bool
     next: int
 }
 
@@ -370,15 +396,21 @@ record IRWinHandlers {
 // (rt_ui.h's RTUI_WEV_CLICK is one event value shared by both widget kinds;
 // cprint.cla picks the right call shape -- 0 args vs. (x, y) from a/b -- by
 // the widget's OWN kind, already available via IRWidgetDesc), changeFn is
-// `check.change`/`field.change`/`textview.change`, dragFn is `canvas.drag`,
-// enterFn is `field.enter` (mac-target-4c Task 2, RTUI_WEV_ENTER -- a
-// zero-arg call, same convention as clickFn/changeFn's non-canvas case).
+// `check.change`/`field.change`/`textview.change`/`popup.change`, dragFn is
+// `canvas.drag`, enterFn is `field.enter` (mac-target-4c Task 2, RTUI_WEV_ENTER --
+// a zero-arg call, same convention as clickFn/changeFn's non-canvas case).
+// selectFn/doubleClickFn (mac-target-4d Task 5) are `table.select`/
+// `table.doubleClick` -- a one-arg call (the clicked row index, RTUI_WEV_SELECT/
+// RTUI_WEV_DBLCLICK's `a`), the same (int32_t)a convention canvas's
+// click/drag already use for a/b.
 record IRWidgetHandlerEntry {
     widgetIndex: int
     clickFn: int
     changeFn: int
     dragFn: int
     enterFn: int
+    selectFn: int
+    doubleClickFn: int
     next: int
 }
 
@@ -420,6 +452,7 @@ var irRecords: list of IRRecordLayout
 var irEnumMembers: list of IREnumMember
 var irEnums: list of IREnumLayout
 var irWidgetDescs: list of IRWidgetDesc
+var irColumnDescs: list of IRColumnDesc
 var irWindowDescs: list of IRWindowDesc
 var irMenuItemDescs: list of IRMenuItemDesc
 var irMenuDescs: list of IRMenuDesc
@@ -1395,7 +1428,7 @@ func irWidgetDescListAppend(tailIdx: int, idx: int): int {
     return idx
 }
 
-func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x: int, yIsBottom: bool, y: int, widthIsFill: bool, width: int, fillBoth: bool, isDefault: bool, isCancel: bool, isBuffered: bool, isScrollV: bool, isScrollH: bool): int {
+func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x: int, yIsBottom: bool, y: int, widthIsFill: bool, width: int, fillBoth: bool, isDefault: bool, isCancel: bool, isBuffered: bool, isScrollV: bool, isScrollH: bool, bindsIdx: int, rowsGlobalIdx: int, columnsHead: int): int {
     var n: IRWidgetDesc
 
     n.nameIdx = nameIdx
@@ -1413,6 +1446,9 @@ func newIRWidgetDesc(nameIdx: int, kindIdx: int, captionIdx: int, atKind: int, x
     n.isBuffered = isBuffered
     n.isScrollV = isScrollV
     n.isScrollH = isScrollH
+    n.bindsIdx = bindsIdx
+    n.rowsGlobalIdx = rowsGlobalIdx
+    n.columnsHead = columnsHead
     n.next = -1
     irWidgetDescs.add(n)
     return irWidgetDescs.count - 1
@@ -1478,8 +1514,62 @@ func irWidgetDescIsScrollH(i: int): bool {
     return irWidgetDescs[i].isScrollH
 }
 
+func irWidgetDescBindsIdx(i: int): int {
+    return irWidgetDescs[i].bindsIdx
+}
+
+func irWidgetDescRowsGlobalIdx(i: int): int {
+    return irWidgetDescs[i].rowsGlobalIdx
+}
+
+func irWidgetDescColumnsHead(i: int): int {
+    return irWidgetDescs[i].columnsHead
+}
+
 func irWidgetDescNext(i: int): int {
     return irWidgetDescs[i].next
+}
+
+// ---- IRColumnDesc constructor + accessors (mac-target-4d Task 5) ----
+// Same arena/chain idiom as IRMenuItemDesc (:1544 above).
+
+func irColumnDescListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irColumnDescs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRColumnDesc(headerIdx: int, fieldIndex: int, widthPx: int, widthFill: bool): int {
+    var n: IRColumnDesc
+
+    n.headerIdx = headerIdx
+    n.fieldIndex = fieldIndex
+    n.widthPx = widthPx
+    n.widthFill = widthFill
+    n.next = -1
+    irColumnDescs.add(n)
+    return irColumnDescs.count - 1
+}
+
+func irColumnDescHeader(i: int): int {
+    return irColumnDescs[i].headerIdx
+}
+
+func irColumnDescFieldIndex(i: int): int {
+    return irColumnDescs[i].fieldIndex
+}
+
+func irColumnDescWidthPx(i: int): int {
+    return irColumnDescs[i].widthPx
+}
+
+func irColumnDescWidthFill(i: int): bool {
+    return irColumnDescs[i].widthFill
+}
+
+func irColumnDescNext(i: int): int {
+    return irColumnDescs[i].next
 }
 
 func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int): int {
@@ -1681,6 +1771,8 @@ func irWinHandlersAppendWidgetEntry(i: int, widgetIndex: int): int {
     n.changeFn = -1
     n.dragFn = -1
     n.enterFn = -1
+    n.selectFn = -1
+    n.doubleClickFn = -1
     n.next = -1
     irWidgetHandlerEntries.add(n)
     idx = irWidgetHandlerEntries.count - 1
@@ -1727,6 +1819,22 @@ func irWidgetHandlerEntryEnterFn(i: int): int {
 
 func irWidgetHandlerEntrySetEnterFn(i: int, fn: int) {
     irWidgetHandlerEntries[i].enterFn = fn
+}
+
+func irWidgetHandlerEntrySelectFn(i: int): int {
+    return irWidgetHandlerEntries[i].selectFn
+}
+
+func irWidgetHandlerEntrySetSelectFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].selectFn = fn
+}
+
+func irWidgetHandlerEntryDoubleClickFn(i: int): int {
+    return irWidgetHandlerEntries[i].doubleClickFn
+}
+
+func irWidgetHandlerEntrySetDoubleClickFn(i: int, fn: int) {
+    irWidgetHandlerEntries[i].doubleClickFn = fn
 }
 
 func irWidgetHandlerEntryNext(i: int): int {
@@ -2263,6 +2371,18 @@ func IUiCanvasFillCircle(): int {
 
 func IUiCanvasPattern(): int {
     return intern("ui_canvas_pattern")
+}
+
+// IUiGetSelected/IUiSetSelected (mac-target-4d Task 5): popup/table's
+// `selected` runtime property (Ch8/Ch10) -- rt_ui_widget_get_int/set_int's
+// RTUI_PROP_SELECTED, same shape as IUiGetWidth/IUiGetHeight's int-typed
+// get and IUiSetChecked's bool-typed set (but through *_int, not *_bool).
+func IUiGetSelected(): int {
+    return intern("ui_get_selected")
+}
+
+func IUiSetSelected(): int {
+    return intern("ui_set_selected")
 }
 
 func IUiCanvasDrawText(): int {

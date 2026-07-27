@@ -341,6 +341,42 @@ func TestDialogsUIScenario(t *testing.T) {
 	runUIScenario(t, "dialogs", 0)
 }
 
+// TestPopuptableUIScenario (mac-target-4d Task 5): the table widget end to
+// end -- `rows:` bound to a global list, real click resolving to the
+// correct row (Result.text proves the row index, not just that select
+// fired), scripted `dblclick` firing select THEN doubleClick for the SAME
+// row, `Add`'s handler pushing a 4th record with no table-specific call
+// (S1: 4 rows), a subsequent click resolving to that new tail row followed
+// by `Remove` (S2: back to 3 rows), and both directions of `selected` --
+// `SetSel` writes it programmatically (asserted by the golden trace's `T
+// SET` line, no change event) and `ReadSel` reads it back into the title
+// (S3, since title has no trace line of its own). See
+// testdata/ui/popuptable.cla's own header comment for the full scripted
+// walkthrough and coordinate derivation.
+func TestPopuptableUIScenario(t *testing.T) {
+	snaps := runUIScenario(t, "popuptable", 0)
+	var s1, s2, s3 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		case "S3":
+			s3 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil || s3 == nil {
+		t.Fatalf("popuptable: expected snaps S1, S2, and S3, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("popuptable: snap S1 == S2 -- Add/Remove did not actually change the table's row count")
+	}
+	if bytes.Equal(s2, s3) {
+		t.Fatalf("popuptable: snap S2 == S3 -- ReadSel's title write did not change the window between snaps")
+	}
+}
+
 // TestUIAbout: an `app` section with all four About-relevant properties set
 // -- the Apple menu's About item becomes "About AboutProbe..." and selecting
 // it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT

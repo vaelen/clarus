@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// popup_unbound.cla: emitui error fixture -- a popup with no `binds:`
+// property at all, in a plain (non-form) window. Ch10: "A popup declared
+// without binds: is rejected at build time" -- checkWidget accepts this
+// syntactically (popup.binds is an ALLOWED, not required, property), so
+// the rejection is lowering's job (lower.cla's lowWidgetDesc popup guard),
+// not the checker's. No .c.golden: this fixture never successfully emits.
+
+enum Protocol {
+    Gopher
+    Ftp
+}
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    popup Proto { at: 10, 10; label: "Protocol:" }
+}
+
+on App.launch {
+    open Main
+}

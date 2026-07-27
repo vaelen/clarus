@@ -1,0 +1,54 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// popuptable.cla: emitui golden fixture -- table widget lowering
+// (mac-target-4d Task 5): a global `list of` record bound via `rows:`, a
+// 3-column table (fixed-width string / fill-width string / bool), a
+// `select`/`doubleClick` handler pair (the clicked row index, RTUI_WEV_SELECT/
+// DBLCLICK), and both directions of the `selected` runtime property (a get
+// into a per-instance var, a set from the handler's own row index).
+//
+// Popup lowering (also landing this task) has no fixture here: a popup
+// needs `binds:` inside a `form for` window, and `form for` itself still
+// aborts (Task 7) -- see the task report for the guard's negative-arm
+// coverage instead (a non-form window, tested separately, no golden).
+
+record Bookmark {
+    name:     string(63)
+    url:      string(255)
+    favorite: bool
+}
+
+var bookmarks: list of Bookmark
+
+window Main {
+    title: "Bookmarks"
+    size: 400, 300
+
+    table Marks {
+        at: 10, 10
+        rows: bookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 40
+    }
+
+    label Result { at: next, bottom; text: "" }
+
+    var sel: int
+}
+
+on App.launch {
+    open Main
+}
+
+extend Main {
+    on Marks.select(i: int) {
+        sel = Marks.selected
+        Result.text = "select"
+    }
+    on Marks.doubleClick(i: int) {
+        Marks.selected = i
+        Result.text = "double"
+    }
+}

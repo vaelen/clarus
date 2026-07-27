@@ -883,7 +883,7 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         } else {
             recNameIdx = typeNameIdx(typeElem(xt))
         }
-        lowCheckSerializableFields(recNameIdx, nm)
+        lowCheckSerializableFields(recNameIdx, "file." + nm)
         irMarkLayoutNeeded(recNameIdx)
         intrName = IFileSave()
         if nm == "load" {
@@ -895,17 +895,25 @@ func lowFileCall(e: int, fn: int, ty: int): int {
     return -1
 }
 
-// lowCheckSerializableFields is file.save/load's value-field guard (Ch12:
-// "every field of the record ... must be a by-value type"; a `text`,
-// `list`, or `map` field is a build-time error). Walks ONLY the record's own
-// fields, one level deep -- a nested-record field is rejected outright
-// (TyRec isn't in the allow-list below) rather than recursed into, and
-// likewise a fixed-array field (TyArr), because rt.h's rt_field_desc (Task
-// 1) has no RT_FT_* encoding for either shape, so neither is serializable
-// yet regardless of what it itself contains. Reuses the exact
-// recordFieldsHead/fieldInfos walk lowRecordDecl (:2000ish above) already
-// established for reading back check.cla's field-layout side table.
-func lowCheckSerializableFields(recNameIdx: int, callName: string) {
+// lowCheckSerializableFields is the value-field guard shared by file.save/
+// load (Ch12: "every field of the record ... must be a by-value type"; a
+// `text`, `list`, or `map` field is a build-time error) and a table
+// widget's row record (mac-target-4d Task 5: a table's row reaches this
+// same cpEmitLayouts registry, so the identical invariant applies -- see
+// cpFieldDescRow's own comment on why every field reaching cpEmitLayouts
+// MUST already be a value type). Walks ONLY the record's own fields, one
+// level deep -- a nested-record field is rejected outright (TyRec isn't in
+// the allow-list below) rather than recursed into, and likewise a
+// fixed-array field (TyArr), because rt.h's rt_field_desc (Task 1) has no
+// RT_FT_* encoding for either shape, so neither is serializable yet
+// regardless of what it itself contains. Reuses the exact recordFieldsHead/
+// fieldInfos walk lowRecordDecl (:2000ish above) already established for
+// reading back check.cla's field-layout side table. ctx prefixes the
+// diagnostic ("file.save"/"file.load"/"table rows") -- callers pass their
+// own already-composed context string rather than a bare op name, so this
+// function stays reusable across both call sites' differently-shaped
+// messages.
+func lowCheckSerializableFields(recNameIdx: int, ctx: string) {
     var fi: int
     var ft: int
     var k: TypeKind
@@ -915,7 +923,7 @@ func lowCheckSerializableFields(recNameIdx: int, callName: string) {
         ft = fieldInfos[fi].typeIdx
         k = typeKind(ft)
         if not (k == TyInt or k == TyBool or k == TyFixed or k == TyChar or k == TyStr or k == TyEnum) {
-            lowUnsupported("file." + callName + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is not a value type")
+            lowUnsupported(ctx + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is not a value type")
         }
         fi = fieldInfos[fi].next
     }
@@ -1292,6 +1300,8 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         intrName = IUiGetFieldText()
     } else if widgetKind == "textview" and propName == "text" {
         intrName = IUiGetTextviewText()
+    } else if (widgetKind == "popup" or widgetKind == "table") and propName == "selected" {
+        intrName = IUiGetSelected()
     }
     if intrName == -1 {
         lowUnsupported("read of " + widgetKind + "." + propName)
@@ -1642,6 +1652,8 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
         intrName = IUiSetChecked()
     } else if (widgetKind == "button" or widgetKind == "field") and propName == "enabled" {
         intrName = IUiSetEnabled()
+    } else if (widgetKind == "popup" or widgetKind == "table") and propName == "selected" {
+        intrName = IUiSetSelected()
     }
     if intrName == -1 {
         lowUnsupported("set of " + widgetKind + "." + propName)
@@ -2178,14 +2190,113 @@ func lowRequireIntLit(e: int): int {
     return intLitVal(e)
 }
 
+// widgetBindsIdx returns widget wgName's checker-resolved bindsIdx (the
+// interned bound form-record field name, or -1) from window winName's
+// widgetInfos chain -- check.cla's checkBindsProperty already computed and
+// stored this (WidgetInfo.bindsIdx); lower.cla only ever needs to read it
+// back, exact same linear-scan idiom as uiWidgetIndex just above (both walk
+// windowWidgetsHead/widgetInfos to correlate an AST widget name with its
+// side-table entry).
+func widgetBindsIdx(winName: string, wgName: string): int {
+    var wi: int
+
+    wi = windowWidgetsHead.get(winName, -1)
+    while wi != -1 {
+        if poolGet(widgetInfos[wi].nameIdx) == wgName {
+            return widgetInfos[wi].bindsIdx
+        }
+        wi = widgetInfos[wi].next
+    }
+    return -1 // unreachable in a checker-clean program
+}
+
+// lowColumnFieldIndex returns showsName's 0-based position in row record
+// rowRecType's own field order -- the SAME order cpEmitLayouts' rt_field_desc[]
+// walk uses (lowRecordDecl builds irRecords' fieldsHead by walking this
+// exact recordFieldsHead/fieldInfos chain in lockstep with the AST field
+// list), so this index is exactly what rt_ui_col_desc.fieldIndex must be.
+// checkColumn (check.cla) already validated showsName names a real field of
+// rowRecType, so the fallthrough below is unreachable for a checker-clean
+// program.
+func lowColumnFieldIndex(rowRecType: int, showsName: string): int {
+    var fi: int
+    var idx: int
+
+    fi = recordFieldsHead(typeNameIdx(rowRecType))
+    idx = 0
+    while fi != -1 {
+        if poolGet(fieldInfos[fi].nameIdx) == showsName {
+            return idx
+        }
+        fi = fieldInfos[fi].next
+        idx = idx + 1
+    }
+    return -1 // unreachable in a checker-clean program
+}
+
+// lowTableRowsVh returns a table's `rows: expr` (Ch10) property VALUE node,
+// or -1 if the widget declares no `rows:` property at all -- a bare linear
+// scan over widgetPropsHead, since DkColumn nodes are interleaved in the
+// same chain (ast.cla's own doc comment on DkColumn/DkProperty ordering)
+// and a table's own `at`/`fill`/`width` properties can appear before OR
+// after `rows:` (checkWidget itself runs this identical two-pass shape: a
+// dedicated first pass just for `rows:`, THEN a second pass validating
+// everything else against the now-resolved row type).
+func lowTableRowsVh(w: int): int {
+    var p: int
+    var rowsVh: int
+
+    rowsVh = -1
+    p = widgetPropsHead(w)
+    while p != -1 {
+        if declKind(p) == DkProperty and poolGet(propertyName(p)) == "rows" {
+            rowsVh = propertyValuesHead(p)
+        }
+        p = declNext(p)
+    }
+    return rowsVh
+}
+
+// lowTableRowsGlobalName resolves a table's `rows: expr` (Ch10) to the
+// interned NAME of a bare top-level `list of Record` variable -- the only
+// shape this task's runtime contract supports (rt_ui_table_desc.rows is a
+// pointer to the PROGRAM's own rt_list* variable cell, rt_ui.h's own doc
+// comment on double indirection). Every widget-declaration-time expression
+// (this one included) is checked with curScope == the program's top-level
+// scope (checkWindowDecl/checkWidget never push a nested scope -- see
+// checkFuncSig's fnScope = scopeNew(curScope) for the ONE place that
+// actually would), so a bare ExIdent resolving here names a global by
+// construction; anything else (a call, a binary expr, an absent `rows:` at
+// all, or an ExIdent that somehow resolves to a func/type/const/menu name
+// rather than a plain var) is rejected with the brief's pinned message.
+// Returns -1 only via lowUnsupported's own quit (never a normal return),
+// same "abort, don't return a sentinel the caller must remember to check"
+// shape lowRequireIntLit already uses above.
+func lowTableRowsGlobalName(rowsVh: int): int {
+    var symIdx: int
+
+    if rowsVh == -1 or exprKind(rowsVh) != ExIdent {
+        lowUnsupported("table rows must be a global list variable")
+        return -1
+    }
+    symIdx = scopeLookup(curScope, identName(rowsVh))
+    if symIdx == -1 or symbols[symIdx].isFunc or symbols[symIdx].isType or symbols[symIdx].isConst or symbols[symIdx].isMenu {
+        lowUnsupported("table rows must be a global list variable")
+        return -1
+    }
+    return identName(rowsVh)
+}
+
 // lowWidgetDesc builds one widget's IRWidgetDesc from its DkWidget AST node
-// (w) -- Ch8: Widgets/Layout. Walks the exact same DkProperty chain
-// checkWidget already validated; this covers rt_ui's whole widget surface
-// as of mac-target-4c Task 2 (button/check/canvas/label/field/textview --
-// popup/table still have no rt_ui support and remain host-unsupported here,
-// same as every other not-yet-ported construct in this file).
-func lowWidgetDesc(w: int): int {
+// (w) -- Ch8/Ch10: Widgets/Layout. Walks the exact same DkProperty/DkColumn
+// chain checkWidget already validated; this covers rt_ui's whole widget
+// surface as of mac-target-4d Task 5 (button/check/canvas/label/field/
+// textview/popup/table). winName is the OWNING window's name -- needed for
+// popup's binds/form-window guard (widgetBindsIdx/windowIsForm) and table's
+// desc/column C-name composition (cprint.cla's clar_ui_table_<Win>_<W>).
+func lowWidgetDesc(w: int, winName: string): int {
     var kind: string
+    var wgName: string
     var p: int
     var pname: string
     var vh: int
@@ -2204,9 +2315,18 @@ func lowWidgetDesc(w: int): int {
     var isScrollH: bool
     var scrollVal: string
     var captionIdx: int
+    var bindsIdx: int
+    var rowsGlobalIdx: int
+    var columnsHead: int
+    var colsTail: int
+    var rowRecType: int
+    var recNameIdx: int
+    var fieldIdx: int
+    var col: int
 
     kind = poolGet(widgetKindName(w))
-    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" and kind != "field" and kind != "textview" {
+    wgName = poolGet(widgetName(w))
+    if kind != "button" and kind != "check" and kind != "canvas" and kind != "label" and kind != "field" and kind != "textview" and kind != "popup" and kind != "table" {
         lowUnsupported("widget kind " + kind)
     }
 
@@ -2223,6 +2343,10 @@ func lowWidgetDesc(w: int): int {
     isScrollV = false
     isScrollH = false
     captionIdx = -1
+    bindsIdx = -1
+    rowsGlobalIdx = -1
+    columnsHead = -1
+    colsTail = -1
 
     p = widgetPropsHead(w)
     while p != -1 {
@@ -2279,7 +2403,51 @@ func lowWidgetDesc(w: int): int {
         }
         p = declNext(p)
     }
-    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH)
+
+    if kind == "popup" {
+        // Ch10: a popup finds its item labels through the OWNING window's
+        // form binding (rt_ui_form_desc, Task 7) -- both pieces that walk
+        // needs are checker-resolved already: bindsIdx (WidgetInfo, via
+        // widgetBindsIdx) and windowIsForm. Neither guard is reachable via
+        // any PASSING fixture this task (a form window still aborts at
+        // `form for` itself, lowUnsupported("form for") in lowWindowDecl
+        // below) -- see this task's brief on why: the guard fires INSTEAD of
+        // that abort only when this popup is declared textually BEFORE
+        // `form for` in source (lowWindowDecl's item loop is source-order),
+        // which is exactly how this task's negative fixtures are written.
+        bindsIdx = widgetBindsIdx(winName, wgName)
+        if bindsIdx == -1 or windowIsForm.get(winName, 0) != 1 {
+            lowUnsupported("popup requires binds inside a form window")
+        }
+    } else if kind == "table" {
+        // Ch10's table grammar has no `width:` property at all (checker's
+        // widgetDeclProps only allows table.rows/at/fill) -- a table always
+        // fills the window's remaining width, the only sensible behavior
+        // absent any per-widget knob to say otherwise (rt_ui.h's
+        // RTUI_TABLE_W natural-size fallback exists only for hand-rolled
+        // descs like uiprobe's; clarusc always emits the fill sentinel).
+        widthIsFill = true
+        rowsGlobalIdx = lowTableRowsGlobalName(lowTableRowsVh(w))
+        rowRecType = typeElem(exprTypeGet(lowTableRowsVh(w)))
+        recNameIdx = typeNameIdx(rowRecType)
+        lowCheckSerializableFields(recNameIdx, "table rows")
+        irMarkLayoutNeeded(recNameIdx)
+
+        p = widgetPropsHead(w)
+        while p != -1 {
+            if declKind(p) == DkColumn {
+                fieldIdx = lowColumnFieldIndex(rowRecType, poolGet(columnShows(p)))
+                col = newIRColumnDesc(columnHeader(p), fieldIdx, columnWidthPx(p), columnWidthFill(p))
+                if columnsHead == -1 {
+                    columnsHead = col
+                }
+                colsTail = irColumnDescListAppend(colsTail, col)
+            }
+            p = declNext(p)
+        }
+    }
+
+    return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
 }
 
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
@@ -2364,7 +2532,7 @@ func lowWindowDecl(d: int) {
                 defTail = winVarDefaultListAppend(defTail, defIdx)
             }
         } else if declKind(item) == DkWidget {
-            wd = lowWidgetDesc(item)
+            wd = lowWidgetDesc(item, winName)
             if widgetsHead == -1 {
                 widgetsHead = wd
             }
@@ -2721,6 +2889,10 @@ func lowWidgetHandlerEvent(winType: int, winName: string, whIdx: int, wgName: st
         irWidgetHandlerEntrySetDragFn(entryIdx, fnName)
     } else if event == "enter" {
         irWidgetHandlerEntrySetEnterFn(entryIdx, fnName)
+    } else if event == "select" {
+        irWidgetHandlerEntrySetSelectFn(entryIdx, fnName)
+    } else if event == "doubleClick" {
+        irWidgetHandlerEntrySetDoubleClickFn(entryIdx, fnName)
     } else {
         lowUnsupported("widget event " + event)
     }

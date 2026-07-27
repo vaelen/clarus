@@ -1,0 +1,18 @@
+T OPEN Main 1
+T FRONT Main 1
+T FIRE Main.Marks.select
+T SET Main.Result.text Beta
+T FIRE Main.Marks.select
+T SET Main.Result.text Alpha
+T FIRE Main.Marks.doubleClick
+T SET Main.Result.text dbl:Alpha
+T FIRE Main.Add.click
+T FIRE Main.Marks.select
+T SET Main.Result.text Delta
+T FIRE Main.Remove.click
+T FIRE Main.SetSel.click
+T SET Main.Marks.selected 1
+T FIRE Main.ReadSel.click
+T FIRE Main.closeRequest
+T CLOSE Main 1
+T FIRE Main.closed

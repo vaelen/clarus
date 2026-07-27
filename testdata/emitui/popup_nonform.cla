@@ -1,0 +1,35 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// popup_nonform.cla: emitui error fixture -- a popup's `binds:` property
+// naming a real field, but its window is NOT a form (no `form for`). The
+// CHECKER itself already enforces this precondition (check.cla's
+// checkBindsProperty: "binds: requires the window to declare form for"),
+// which is exactly why lower.cla's own popup guard (lowWidgetDesc:
+// `bindsIdx == -1 or windowIsForm.get(winName, 0) != 1`) can never actually
+// reach its second (windowIsForm) half via a checker-clean program today --
+// bindsIdx is -1 whenever the window isn't a form, by construction. Kept as
+// its own fixture/arm anyway (documents the invariant the lowering guard's
+// second clause defends against, in case a future front-end change ever
+// loosens checkBindsProperty). No .c.golden: this fixture never
+// successfully emits.
+
+enum Protocol {
+    Gopher
+    Ftp
+}
+
+record Bookmark {
+    protocol: Protocol
+}
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    popup Proto { at: 10, 10; label: "Protocol:"; binds: protocol }
+}
+
+on App.launch {
+    open Main
+}

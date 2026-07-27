@@ -200,3 +200,55 @@ func TestEmitUiErrConstAt(t *testing.T) {
 		t.Errorf("stderr %q missing %q", stderr.String(), want)
 	}
 }
+
+// TestEmitUiTablePopupGuards asserts clarusc's mac-target-4d Task 5
+// popup/table lowering guards: each fixture below is checker-clean syntax
+// (or, for popup_nonform.cla, syntax the checker itself already rejects --
+// see that fixture's own doc comment on why) that clarusc emit must still
+// reject loudly with a nonzero exit and a matching stderr message. No
+// golden for any of them: none ever successfully emits.
+func TestEmitUiTablePopupGuards(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildClarusc(t)
+
+	cases := []struct {
+		fixture string
+		want    string
+	}{
+		// lower.cla's lowWidgetDesc popup guard (lowUnsupported -> log ->
+		// stderr): no `binds:` at all.
+		{"popup_unbound.cla", "popup requires binds inside a form window"},
+		// check.cla's checkBindsProperty: binds given, but the window
+		// isn't a form -- caught by the CHECKER before lowering runs (see
+		// the fixture's own doc comment). Checker diagnostics print via
+		// `alert` (main.cla), which is stdout, not stderr -- unlike the
+		// two lowUnsupported-driven cases here.
+		{"popup_nonform.cla", "binds: requires the window to declare form for"},
+		// lower.cla's lowWidgetDesc table guard: `rows:` is a call
+		// expression, not a bare identifier.
+		{"table_rows_expr.cla", "table rows must be a global list variable"},
+		// Checker-level rejection (stdout, see popup_nonform.cla's note
+		// above): `rows:` names a window-local var, invisible to
+		// widget-declaration-time property checking (see the fixture's
+		// own doc comment).
+		{"table_rows_local.cla", "undefined: localRows"},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.fixture, func(t *testing.T) {
+			fixture := filepath.Join(root, "testdata", "emitui", c.fixture)
+			cmd := exec.Command(exe, "emit", "-o", filepath.Join(t.TempDir(), "out.c"), fixture)
+			var out bytes.Buffer
+			cmd.Stdout = &out
+			cmd.Stderr = &out
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("clarusc emit %s: want nonzero exit, got success (output: %s)", fixture, out.String())
+			}
+			if !strings.Contains(out.String(), c.want) {
+				t.Errorf("output %q missing %q", out.String(), c.want)
+			}
+		})
+	}
+}

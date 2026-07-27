@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// table_rows_expr.cla: emitui error fixture -- a table's `rows:` property
+// is a call expression (`getRows()`), not a bare identifier. checkRowsProperty
+// only requires the VALUE be `list of record` typed (a function call
+// satisfies that fine, so the checker accepts this), but
+// rt_ui_table_desc.rows must be the ADDRESS of the program's own global
+// list variable cell (rt_ui.h's double-indirection contract) -- there is no
+// such lvalue for an arbitrary expression, so lower.cla's lowWidgetDesc
+// table guard (lowTableRowsGlobalName: `exprKind(rowsVh) != ExIdent`)
+// rejects it at build time. No .c.golden: this fixture never successfully
+// emits.
+
+record Bookmark {
+    name: string(63)
+}
+
+var bookmarks: list of Bookmark
+
+func getRows(): list of Bookmark {
+    return bookmarks
+}
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    table Marks {
+        at: 10, 10
+        rows: getRows()
+        column "Name" shows name width 140
+    }
+}
+
+on App.launch {
+    open Main
+}

@@ -1039,6 +1039,15 @@ func fpIntrCall(x: int): text {
         return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
     } else if nm == IUiGetHeight() {
         return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
+    } else if nm == IUiGetSelected() {
+        // popup/table `selected` read (mac-target-4d Task 5) -- rt_ui.h's
+        // rt_ui_widget_get_int returns `short`; the implicit short->int32_t
+        // widening on return needs no explicit cast, same as
+        // IUiGetWidth/IUiGetHeight just above.
+        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
+    } else if nm == IUiSetSelected() {
+        fpEmit("rt_ui_widget_set_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
+        return toText("")
     } else if nm == IUiMenuEnable() {
         fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
@@ -1849,6 +1858,12 @@ func cpWidgetKindMacro(kindIdx: int): string {
     if kind == "textview" {
         return "RTUI_TEXTVIEW"
     }
+    if kind == "popup" {
+        return "RTUI_POPUP"
+    }
+    if kind == "table" {
+        return "RTUI_TABLE"
+    }
     log("cprint: unknown widget kind " + kind)
     quit 1
     return ""
@@ -1953,6 +1968,20 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
     var yStr: string
     var widthStr: string
 
+    // Pre-pass (mac-target-4d Task 5): any table widget's cols[]/table_desc
+    // must already exist before the widget array below takes their address
+    // (same "declare before use" reasoning as cpEmitMenuItemsArray's own
+    // call-before-reference in cpEmitMenuDescs) -- a window with no table at
+    // all makes this loop a no-op, so every pre-Task-5 golden's cpUiBuf text
+    // is completely untouched.
+    w = headIdx
+    while w != -1 {
+        if poolGet(irWidgetDescKind(w)) == "table" {
+            cpEmitOneTableDesc(winName, w)
+        }
+        w = irWidgetDescNext(w)
+    }
+
     name = "clar_ui_widgets_" + winName
     cpUiBuf.add(toText("static const rt_ui_widget_desc " + name + "[] = {"))
     w = headIdx
@@ -1969,7 +1998,8 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
             cpUiCaptionOrNull(irWidgetDescCaption(w)) + ", " +
             cpAtKindMacro(irWidgetDescAtKind(w)) + ", " + numToStr(irWidgetDescX(w)) + ", " + yStr + ", " + widthStr + ", " +
             cpFillMacro(irWidgetDescFillBoth(w)) + ", " +
-            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w), irWidgetDescIsScrollV(w), irWidgetDescIsScrollH(w)) + " },"))
+            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w), irWidgetDescIsScrollV(w), irWidgetDescIsScrollH(w)) +
+            cpUiWidgetExtra(winName, w) + " },"))
         w = irWidgetDescNext(w)
     }
     cpUiBuf.add(toText("};"))
@@ -2011,6 +2041,90 @@ func cpFindWindowStateFields(winName: string): int {
         i = i + 1
     }
     return -1
+}
+
+// cpFindGlobalRecName (mac-target-4d Task 5) returns the row-record type
+// name of the global list variable named globalNameIdx (IRWidgetDesc's own
+// rowsGlobalIdx -- lower.cla stores only the global's NAME, not its record
+// type, so cprint re-derives clar_layout_<RecName> from irGlobals here, the
+// one place that needs it). Linear scan, same precedent as
+// cpFindWinHandlers/cpFindWindowStateFields above.
+func cpFindGlobalRecName(globalNameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irGlobals.count {
+        if irGlobalName(i) == globalNameIdx {
+            return irtName(irtElem(irGlobalType(i)))
+        }
+        i = i + 1
+    }
+    log("cprint: unknown table rows global " + poolGet(globalNameIdx))
+    quit 1
+    return -1
+}
+
+// cpEmitOneTableDesc (mac-target-4d Task 4) prints, for one table widget,
+// its rt_ui_col_desc[] array and rt_ui_table_desc into cpUiBuf -- the same
+// cpEmitMenuItemsArray precedent (Task 2), called from cpEmitWidgetDescArray's
+// pre-pass BEFORE that window's own rt_ui_widget_desc[] array (whose table
+// row takes this table_desc's ADDRESS, so it must already exist). Also
+// forward-declares the bound `rows:` global as a bare tentative definition
+// (`static rt_list *cv_NAME;`, no initializer) -- legal C even though
+// cpEmitGlobalsInit (called later in emitProgram, but printing into
+// cpRestBuf, which assembles AFTER cpUiBuf) declares the SAME global again;
+// multiple tentative definitions of one static object merge under C's own
+// rules, so this is the simplest way to satisfy "declared before used"
+// without reordering cpEmitGlobalsInit's own buffer (which every OTHER
+// existing golden's byte-identical output depends on staying put).
+func cpEmitOneTableDesc(winName: string, w: int): string {
+    var wgName: string
+    var globalName: string
+    var recName: string
+    var colsName: string
+    var tableName: string
+    var c: int
+    var nCols: int
+    var widthFillStr: string
+
+    wgName = poolGet(irWidgetDescName(w))
+    globalName = poolGet(irWidgetDescRowsGlobalIdx(w))
+    recName = poolGet(cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(w)))
+
+    cpUiBuf.add(toText("static rt_list *cv_" + globalName + ";"))
+
+    colsName = "clar_ui_cols_" + winName + "_" + wgName
+    cpUiBuf.add(toText("static const rt_ui_col_desc " + colsName + "[] = {"))
+    c = irWidgetDescColumnsHead(w)
+    nCols = 0
+    while c != -1 {
+        widthFillStr = "0"
+        if irColumnDescWidthFill(c) {
+            widthFillStr = "1"
+        }
+        cpUiBuf.add(toText("    { " + cpUiCaptionOrNull(irColumnDescHeader(c)) + ", " + numToStr(irColumnDescWidthPx(c)) + ", " + widthFillStr + ", " + numToStr(irColumnDescFieldIndex(c)) + " },"))
+        nCols = nCols + 1
+        c = irColumnDescNext(c)
+    }
+    cpUiBuf.add(toText("};"))
+
+    tableName = "clar_ui_table_" + winName + "_" + wgName
+    cpUiBuf.add(toText("static const rt_ui_table_desc " + tableName + " = { &cv_" + globalName + ", &clar_layout_" + recName + ", " + numToStr(nCols) + ", " + colsName + " };"))
+    cpUiBuf.add(toText(""))
+    return tableName
+}
+
+// cpUiWidgetExtra returns the trailing rt_ui_widget_desc `extra` field text
+// (", (const void *)&clar_ui_table_<Win>_<W>", comma-prefixed to append onto
+// an already-open row literal) for a table widget, or "" for every other
+// kind -- the row keeps its old 9-field shape when extra is empty, so every
+// pre-Task-5 golden (no table/popup ever reaches here) stays byte-identical
+// (mac-target-4d Task 5's own "10th field only when non-NULL" contract).
+func cpUiWidgetExtra(winName: string, w: int): string {
+    if poolGet(irWidgetDescKind(w)) == "table" {
+        return ", (const void *)&clar_ui_table_" + winName + "_" + poolGet(irWidgetDescName(w))
+    }
+    return ""
 }
 
 // cpWidgetKindForIndex returns the widget kind word ("button"/"check"/
@@ -2374,6 +2488,16 @@ func cpEmitOneWidgetDispatcher(winName: string, whIdx: int) {
             }
             if irWidgetHandlerEntryDragFn(wEntry) != -1 {
                 cpRestBuf.add(toText("        if (event == RTUI_WEV_DRAG) clar_fn_" + poolGet(irWidgetHandlerEntryDragFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
+            }
+        } else if kind == "table" {
+            // table.select/doubleClick (mac-target-4d Task 5): one-arg
+            // handlers, the clicked row index (RTUI_WEV_SELECT/DBLCLICK's
+            // `a`) -- same (int32_t)a cast canvas's click/drag already use.
+            if irWidgetHandlerEntrySelectFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_SELECT) clar_fn_" + poolGet(irWidgetHandlerEntrySelectFn(wEntry)) + "(inst, (int32_t)a);"))
+            }
+            if irWidgetHandlerEntryDoubleClickFn(wEntry) != -1 {
+                cpRestBuf.add(toText("        if (event == RTUI_WEV_DBLCLICK) clar_fn_" + poolGet(irWidgetHandlerEntryDoubleClickFn(wEntry)) + "(inst, (int32_t)a);"))
             }
         } else {
             // button (click only) / check/field/textview (change only) /
