@@ -1,0 +1,102 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// bookmarks.cla: the 4d acceptance app -- Appendix C's Bookmark Manager
+// (docs/clarus-language-reference.md, "### Bookmark Manager") VERBATIM,
+// plus exactly three additions: this `app` section (name, version, author,
+// about text, icon, creator id); a `file.load` call in `App.startEmpty`
+// restoring any previously saved bookmarks before `open Main` (a bare call
+// statement -- Ch5 -- discarding the returned bool: no data file on first
+// launch is not an error, it's an empty list); and a `saveAll` helper
+// (`file.save`) called from EditForm's `accepted` handler and Main's
+// `Remove.click`, persisting the list after every mutation. The Bookmark
+// Manager block itself (enum/record/var/both windows/on App.startEmpty's
+// `open Main`/both `extend` blocks) is untouched from the reference.
+//
+// EditForm's window declares no `size:` and none of its five bound widgets
+// (nor its two buttons) declare an `at:` -- reproduced exactly as the
+// appendix itself gives it. Ch8's Layout section (mac-target-4d Task 9) now
+// documents the runtime default this relies on: an `at:`-less widget
+// vertical-stacks below the previous one, and a `size:`-less window sizes
+// itself to fit that stack.
+
+app Bookmarks {
+    name: "Bookmarks"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "A simple bookmark manager for System 6/7."
+    icon: "bookmarks.pbm"
+    id: "CBKM"
+}
+
+enum Protocol { Gopher, HTTP, Telnet }
+
+record Bookmark {
+    name:     string(63)
+    url:      string(255)
+    port:     int = 80
+    protocol: Protocol
+    favorite: bool
+}
+
+var bookmarks: list of Bookmark
+
+window Main {
+    title: "Bookmarks"
+    size: 420, 300
+    resizable
+
+    table Marks {
+        rows: bookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 30
+    }
+    button Add    { at: 10, bottom;   caption: "Add…" }
+    button Remove { at: next, bottom; caption: "Remove" }
+}
+
+window EditForm {
+    title: "Edit Bookmark"
+    form for Bookmark
+
+    field Name     { binds: name;     label: "Name:" }
+    field Url      { binds: url;      label: "URL:" }
+    field Port     { binds: port;     label: "Port:";  width: 60 }
+    popup Proto    { binds: protocol; label: "Protocol:" }
+    check Fav      { binds: favorite; caption: "Favorite" }
+
+    button OK      { default }
+    button Cancel  { cancel }
+}
+
+on App.startEmpty {
+    file.load("Bookmarks Data", bookmarks)     // no file yet on first launch -- false, ignored
+    open Main
+}
+
+func saveAll() {
+    file.save("Bookmarks Data", bookmarks)
+}
+
+extend Main {
+    on Add.click {
+        edit EditForm, new Bookmark
+    }
+
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+
+    on Remove.click {
+        bookmarks.remove(Marks.selected)
+        saveAll()
+    }
+}
+
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew { bookmarks.add(b) }
+        saveAll()
+    }
+}

@@ -1,0 +1,33 @@
+click 96 185
+click 296 62
+type MyPlace
+click 296 90
+type http://x.com
+answer-popup 2
+click 296 146
+click 196 172
+click 208 118
+type 99999999999
+click 196 198
+snap S1
+type 8080
+click 196 198
+snap S2
+click 96 185
+click 296 62
+type SecondSite
+click 296 90
+type http://second.com
+answer-popup 1
+click 296 146
+click 196 198
+snap S3
+dblclick 90 75
+click 340 62
+type X
+click 196 198
+snap S4
+click 90 75
+click 96 213
+snap S5
+quit

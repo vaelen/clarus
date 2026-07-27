@@ -610,3 +610,75 @@ func TestTexteditorBigfileUIScenario(t *testing.T) {
 		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
 	}
 }
+
+// TestBookmarksUIScenario (mac-target-4d Task 9) drives examples/
+// bookmarks.cla ITSELF -- the 4d acceptance app, Appendix C's Bookmark
+// Manager verbatim plus an `app` section and file.load/file.save
+// persistence -- through a real add/edit/remove pass: startEmpty loads
+// "Bookmarks Data" (no such file exists yet on a fresh boot disk, so
+// file.load returns false and is silently ignored, per Ch12); Add opens
+// EditForm on `new Bookmark` -- itself a real exercise of this task's own
+// layout-default fix, since neither EditForm's window nor any of its
+// seven widgets declare a `size:`/`at:` at all, unlike every other form
+// fixture in this codebase. First bookmark: Name/URL typed, Telnet picked
+// via `answer-popup`, Favorite checked, and an overflowing Port value
+// (11 digits, blows past int32) beeps and re-selects the field (S1) before
+// a fix + OK fires `accepted`, adds the row, and saves (S2). Second
+// bookmark: Name/URL typed, HTTP picked, OK accepted with Port left at its
+// default 80 (still valid -- the brief's "port-validation failure
+// exercised once" is deliberately a ONE-time thing, not repeated) --
+// table now shows two rows (S3). A dblclick-edit round renames the first
+// row and re-accepts (writeback, S4), then Remove deletes it, leaving only
+// the second (S5).
+//
+// Persistence coverage (why this scenario does NOT also prove a real
+// cross-run reload): LaunchAPPL boots a fresh, disposable disk image every
+// single run (this harness's own plumbing), so there is no way to quit and
+// relaunch the SAME app instance against a data file it just wrote --
+// "relaunch, see the data survive" is not scriptable inside this gated
+// suite at all, by construction, regardless of what the .cla program does.
+// What IS provable here, and is exactly what this scenario proves: the
+// save/load WIRING fires at the right moments (Remove.click and
+// EditForm.accepted both call saveAll(), which calls file.save -- the
+// trace and the table snaps above are the observable proof those handlers
+// ran to completion without panicking on the real Toolbox file calls).
+// The on-disk byte FORMAT file.save/file.load produce is already pinned
+// byte-for-byte by Task 2's own host round-trip test
+// (internal/sertest/roundtrip.cla, gated by nothing -- runs in the normal
+// host suite). The one thing neither of those covers -- an actual
+// quit-then-relaunch on the SAME disk restoring the SAME rows -- is a real
+// LaunchAPPL/Finder check, done live in Final Validation step 1, not
+// invented as a test-only reload button in the app itself.
+func TestBookmarksUIScenario(t *testing.T) {
+	snaps := runUIScenarioSrc(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0)
+	var s1, s2, s3, s4, s5 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		case "S3":
+			s3 = s.bytes
+		case "S4":
+			s4 = s.bytes
+		case "S5":
+			s5 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil || s3 == nil || s4 == nil || s5 == nil {
+		t.Fatalf("bookmarks: expected snaps S1-S5, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("bookmarks: snap S1 == S2 -- fixing the port and accepting did not add a row")
+	}
+	if bytes.Equal(s2, s3) {
+		t.Fatalf("bookmarks: snap S2 == S3 -- adding the second bookmark did not add a row")
+	}
+	if bytes.Equal(s3, s4) {
+		t.Fatalf("bookmarks: snap S3 == S4 -- the edit round did not change the table's row")
+	}
+	if bytes.Equal(s4, s5) {
+		t.Fatalf("bookmarks: snap S4 == S5 -- Remove did not delete a row")
+	}
+}

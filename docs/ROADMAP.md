@@ -89,6 +89,38 @@ Living document — the authoritative sequencing and strategy record. Updated
    too-large-file open guard (alert + clean close, no truncated content
    ever shown) — 25 gated `internal/mactest` tests total (same count basis
    as item 7 above: top-level test functions, cumulative over 4a+4b+4c).
+9. **Mac target 4d (forms, binding, tables, persistence): DONE.** Real
+   Handle-backed records; `form for`, the binding walker (`binds:` on
+   `field`/`check`/`popup`), the `edit` statement (movable-modal, all four
+   target shapes: `new T`/lvalue var/list element/map element),
+   `accepted`/`cancelled` and the synthetic `isNew`; `popup` (System 6
+   manual `PopUpMenuSelect`, System 7 CDEF scaffolding parked — see the
+   small-open-items list); `table`/List Manager (JMP-stub LDEF, live
+   add/remove/writeback redraw, column binding); `file.save`/`file.load`
+   record and list/map serialization. Layout-default gap (found by this
+   phase's own acceptance app, not by any earlier task): the reference's
+   Appendix C `EditForm` declares no `size:` and none of its widgets an
+   `at:` at all — Ch8's Layout section now documents the runtime default
+   this relies on (a vertical stack, one gap below the previous widget, at
+   a fixed left margin — unless `fill: both`, which keeps the pre-existing
+   origin default — and a window with no `size:` sizes itself to fit that
+   stack); implemented in `clarusc/lower.cla` (a new `RTUI_AT_AUTO` atKind
+   for a widget with no `at:` property at all) and `runtime/mac/rt_ui.c`
+   (`rt_ui_natural_size`, the `RTUI_AT_AUTO` layout case). A second,
+   related runtime fix landed alongside it: a `field`'s fixed 70px label
+   lane could reduce a narrower declared `width:` (Appendix C's own `Port`
+   field is 60px) to a zero-width, permanently unclickable edit box —
+   clamped to leave a minimum usable width instead. Neither fix moved any
+   pre-existing golden (verified byte-identical; every prior fixture
+   declares explicit `at:`/`size:`/wide-enough `width:`). Acceptance: the
+   Appendix C Bookmark Manager (`examples/bookmarks.cla`) verbatim plus an
+   `app` section and `file.save`/`file.load` persistence (`Remove.click`
+   and `accepted` both save; `App.startEmpty` loads, ignoring a missing
+   file), builds a real double-clickable `Bookmarks.{bin,APPL,dsk}`, and
+   passes a new gated add/edit/remove scenario (popup pick, favorite
+   check, one port-validation failure, a dblclick-edit writeback round, and
+   a remove) — 32 gated `internal/mactest` tests total (same count basis
+   as items 7/8 above).
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -105,8 +137,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
    "Done" item 5.
 2. **Mac target** (4a "hello, Macintosh", then 4b core UI, then 4c text
    editing, then 4d forms/binding). 4a **DONE** — see "Done" item 6. 4b
-   **DONE** — see "Done" item 7. 4c **DONE** — see "Done" item 8. **4d is
-   the next milestone.**
+   **DONE** — see "Done" item 7. 4c **DONE** — see "Done" item 8. 4d
+   **DONE** — see "Done" item 9. **4e (memory-management audit) is the
+   next milestone.**
 3. Memory + forms runtime, then networking.
 4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
    target exists.
@@ -145,7 +178,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   cross-compiler; 68k printer build (after Mac target) = compiling on the Mac.
   The Mac-resident version is a GUI app (askOpen/alert), not a CLI.
 
-## Mac target (Plan 4) — 4a, 4b, and 4c done, 4d next
+## Mac target (Plan 4) — 4a, 4b, 4c, and 4d done, 4e next
 
 - **4a "hello, Macintosh": DONE.** Toolbox runtime implementing the same
   intrinsic ABI (Handles, BlockMove, real Str255), Retro68 pipeline
@@ -167,9 +200,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   quit-cascade, and the too-large-file guard all verified.
 - **Phase re-split (decided 2026-07-24, superseding the old "both Appendix C
   examples" 4b acceptance — each phase ships a real artifact):**
-  - **4d (in progress, branch mac-target-4d):** forms + binding walker,
+  - **4d (branch mac-target-4d): DONE.** Forms + binding walker,
     `popup`, `table`/List Manager, real Handle-backed records, `file.save`/
-    `load`. Acceptance: the Appendix C Bookmark Manager.
+    `load` — see "Done" item 9. Acceptance: the Appendix C Bookmark
+    Manager (`examples/bookmarks.cla`), verbatim plus persistence.
   - **4e (post-4d): memory-management audit** — Handle/close leak sweep:
     lists, text, maps, menus, window instances, the deferred ClosePort item;
     decide per-site free-vs-leak-by-design and document.
