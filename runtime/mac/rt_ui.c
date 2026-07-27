@@ -675,6 +675,14 @@ static void rt_ui_table_relayout(rt_ui_winst *inst, short i);
    front-window change to piggyback on, so it calls this directly). */
 static void rt_ui_menu_recompute_dim(void);
 
+/* Cached System 7+ probe -- real definition (with the full comment) sits
+   with rt_ui_startup, which sets it once at program start, well before any
+   window (and so rt_ui_make_widgets) ever runs. Forward-declared here (a
+   tentative definition merges with the later one, same object) so
+   rt_ui_make_widgets' popup case (mac-target-4d Task 8: the System 7 popup
+   CDEF path) can read it despite being defined earlier in the file. */
+static short gSys7;
+
 static short rt_ui_kind_height(short kind)
 {
     switch (kind) {
@@ -1197,11 +1205,12 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
                label/canvas -- it draws itself in rt_ui_handle_update. */
             MenuHandle mh;
             const rt_ui_form_desc *form;
-            short b;
+            short b, count;
 
             inst->ctrls[i] = NULL;
             rt_ui_pstrcpy(inst->labels[i], cap);
             inst->popupSel[i] = 0;
+            count = 0;
             mh = NewMenu((short)(RTUI_POPUP_MENU_ID_BASE + i), (const unsigned char *)"\p");
             /* Items = the bound enum's labels (rt_ui.h's rt_ui_form_desc
                comment): find the bind whose widgetIndex is this widget,
@@ -1232,12 +1241,53 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
                             AppendMenu(mh, (const unsigned char *)"\px");
                             SetMenuItemText(mh, (short)(n + 1), fd->enumLabels[n]);
                         }
+                        count = fd->enumCount;
                         break;
                     }
                 }
             }
             InsertMenu(mh, -1); /* NEVER 0 (the bar) -- see the header comment above */
             inst->popups[i] = mh;
+
+            /* System 7 CDEF path (mac-target-4d Task 8): on gSys7, ALSO
+               build a real Control Manager popup-button control (procID
+               popupMenuProc = 1008, Universal Interfaces' ControlDefinitions.h
+               -- already #included above, this file's existing pushButProc/
+               checkBoxProc/scrollBarProc come from the same header) so
+               DrawControls/FindControl/TrackControl own this widget's
+               draw+interaction exactly like button/check, instead of the
+               manual box above (which the update-draw and content-click
+               paths below both skip once inst->ctrls[i] is non-NULL).
+               `cap` becomes the control's own title -- the CDEF draws it
+               (left) plus the current item + arrow (right, in its own
+               bezel) together, so the manual label/box lane is entirely
+               redundant here, not just its box part.
+
+               NewControl's own initCntl handling for this procID already
+               allocated the private-data Handle and (since `min` here IS
+               a menu ID) called GetMenu(1000+i) to populate its mHandle --
+               finds nothing, as this menu was built in memory and never a
+               resource, so mHandle comes back NULL. We overwrite it with
+               OUR live MenuHandle right after (the documented trick for a
+               popup control backed by a programmatically-built menu): the
+               CDEF's own PopUpMenuSelect/tracking uses THIS field, not the
+               menu ID. SetControlMaximum fixes up the item count NewControl
+               itself doesn't take (`max` is unused by this CDEF, IM VI). */
+            if (gSys7) {
+                ControlHandle c = NewControl(inst->wp, &placeholder, cap, (Boolean)1,
+                                              (short)(inst->popupSel[i] + 1),
+                                              (short)(RTUI_POPUP_MENU_ID_BASE + i), 0,
+                                              (short)(popupMenuProc + popupFixedWidth), (long)i);
+                if (c) {
+                    PopupPrivateDataHandle priv = (PopupPrivateDataHandle)(*c)->contrlData;
+                    if (priv) {
+                        (*priv)->mHandle = mh;
+                        (*priv)->mID = (short)(RTUI_POPUP_MENU_ID_BASE + i);
+                    }
+                    SetControlMaximum(c, count);
+                }
+                inst->ctrls[i] = c;
+            }
             break;
         }
         case RTUI_TABLE: {
@@ -2694,8 +2744,17 @@ static void rt_ui_handle_update(WindowPtr wp)
                     s = inst->labels[i];
                     TETextBox(s + 1, s[0], &labelRect, teJustLeft);
                 }
-            } else if (wd->kind == RTUI_POPUP) {
-                /* label lane (same TETextBox lane a field's own `label:`
+            } else if (wd->kind == RTUI_POPUP && !inst->ctrls[i]) {
+                /* System 6 manual box, System 7's own CDEF replaces this
+                   whole branch (mac-target-4d Task 8): once
+                   rt_ui_make_widgets built a real popupMenuProc Control
+                   for this widget (inst->ctrls[i] non-NULL), DrawControls
+                   -- already called unconditionally above -- draws its
+                   title AND current-item/arrow bezel together itself, so
+                   even the label lane below (not just the box) would be
+                   redundant duplicate drawing here.
+
+                   label lane (same TETextBox lane a field's own `label:`
                    uses, per rt_ui.h's rt_ui_form_desc header comment), then
                    the box itself: FrameRect + a 1px drop shadow (bottom
                    and right offset lines, classic System 6 button-well
@@ -3005,12 +3064,24 @@ static void rt_ui_handle_canvas_click(WindowPtr wp, rt_ui_winst *inst, short wId
    drawing/anchor box, this tests the FULL widget rect (label lane
    included) -- a click anywhere on the widget opens its popup, same as
    clicking a Control Manager control's whole bounds regardless of where
-   its own label sits within it. */
+   its own label sits within it.
+
+   mac-target-4d Task 8: this is the manual (System 6) hit lane -- normally
+   unreachable for a control-backed popup anyway (FindControl, tried first
+   in rt_ui_handle_content_click, claims the click and returns before
+   control ever reaches this later fallback section), but explicitly
+   skipping here too (rather than relying on that call-order accident)
+   means a control-backed popup NEVER falls back to the manual
+   PopUpMenuSelect path even in a scenario this task didn't anticipate --
+   e.g. FindControl declining a click for some Toolbox-level reason this
+   runtime doesn't control. Matches the manual DRAW branch's own
+   `!inst->ctrls[i]` guard (rt_ui_handle_update) for the identical reason. */
 static int rt_ui_popup_hit(rt_ui_winst *inst, Point local, short *outIdx)
 {
     short i;
     for (i = 0; i < inst->desc->nWidgets; i++) {
-        if (inst->desc->widgets[i].kind == RTUI_POPUP && PtInRect(local, &inst->rects[i])) {
+        if (inst->desc->widgets[i].kind == RTUI_POPUP && !inst->ctrls[i] &&
+            PtInRect(local, &inst->rects[i])) {
             *outIdx = i;
             return 1;
         }
@@ -3093,6 +3164,42 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
         }
         {
             short wIdx = (short)rfCon;
+            if (inst->desc->widgets[wIdx].kind == RTUI_POPUP) {
+                /* System 7 popup CDEF (mac-target-4d Task 8): FindControl
+                   claims this click same as any other widget control (plain
+                   refCon = wIdx, set at creation), but it must NOT fall into
+                   the generic button-style TrackControl+rt_ui_fire_widget
+                   path below -- a popup fires `change`, via the SAME
+                   rt_ui_popup_pick tail the System 6 manual path (further
+                   down this function) and the scripted bypass both use, not
+                   a plain widget-activated event. The scripted bypass is
+                   checked FIRST, structurally ahead of ever calling
+                   TrackControl, same reasoning as the generic branch's own
+                   (RT_MAC_TEST has no live mouse for TrackControl's modal
+                   loop to block on) -- moot in practice since gSys7 is
+                   never true under the S6 golden test image, but the
+                   ordering must hold regardless. */
+#ifdef RT_MAC_TEST
+                if (gUiScripted) {
+                    const rt_ui_answer *a = rt_ui_answer_pop();
+                    if (a->kind != RT_UI_ANS_POPUP) rt_panic("popup: scripted answer kind mismatch");
+                    rt_ui_popup_pick(inst, wIdx, a->val);
+                    return;
+                }
+#endif
+                /* popupMenuProc's own autoTrack handling owns the entire
+                   mouse-down-to-mouse-up interaction (pops the menu via the
+                   MenuHandle we poked into its private data, tracks the
+                   pick, updates its own contrlValue) -- TrackControl's
+                   return part is not meaningful here (unlike a pushbutton,
+                   there is no separate "did it fire" question), so the new
+                   selection is simply read back after tracking returns,
+                   whether it changed or not; rt_ui_popup_pick's own no-op
+                   guard covers a cancelled/unchanged pick for free. */
+                TrackControl(ctrl, where, NULL);
+                rt_ui_popup_pick(inst, wIdx, (short)(GetControlValue(ctrl) - 1));
+                return;
+            }
 #ifdef RT_MAC_TEST
             /* The ONE sanctioned real/scripted divergence (Task 3, see the
                plan's self-review notes): TrackControl's modal tracking loop
@@ -4472,6 +4579,30 @@ static void rt_ui_teardown_window(rt_ui_winst *inst)
             }
         }
     }
+    {
+        /* System 7 popup CDEF path (mac-target-4d Task 8): DisposeWindow
+           (next) disposes every Control still in the window, including a
+           popup's -- and per Inside Macintosh VI, the popup CDEF's own
+           dispCntl handling disposes whatever MenuHandle sits in its
+           private data. rt_ui_make_widgets poked OUR live MenuHandle in
+           there (so the CDEF's own PopUpMenuSelect/tracking would use it),
+           so left alone here it would be freed TWICE: once by the CDEF
+           during DisposeWindow, once by this same function's unchanged
+           popups[i]/DeleteMenu/DisposeMenu loop just below. Restore the
+           private data's mHandle to NULL -- what NewControl's own initCntl
+           handling put there originally (GetMenu(1000+i) finds no such
+           resource, since this menu was built in memory and never one) --
+           so the CDEF's dispose finds nothing of ours to free (DisposeMenu
+           on a NULL handle is a documented no-op, same as DisposeHandle);
+           the loop below stays the single, unchanged owner. */
+        short i;
+        for (i = 0; i < inst->desc->nWidgets; i++) {
+            if (inst->desc->widgets[i].kind == RTUI_POPUP && inst->ctrls[i]) {
+                PopupPrivateDataHandle priv = (PopupPrivateDataHandle)(*inst->ctrls[i])->contrlData;
+                if (priv) (*priv)->mHandle = NULL;
+            }
+        }
+    }
     DisposeWindow(inst->wp);
 #ifdef RT_MAC_TEST
     rt_ui_trace_id("CLOSE", inst->desc->name, inst->traceId);
@@ -5186,6 +5317,11 @@ void rt_ui_widget_set_int(void *instV, short wIdx, short prop, long v)
         if (count > 0 && sel > (short)(count - 1)) sel = (short)(count - 1);
         if (count == 0) sel = 0;
         inst->popupSel[wIdx] = sel;
+        /* System 7 CDEF path (mac-target-4d Task 8): once a real popup
+           Control exists, IT is what DrawControls actually renders --
+           popupSel[wIdx] alone (the System 6 manual path's only state)
+           would leave the on-screen control showing the OLD item. */
+        if (inst->ctrls[wIdx]) SetControlValue(inst->ctrls[wIdx], (short)(sel + 1));
         InvalRect(&inst->rects[wIdx]);
 #ifdef RT_MAC_TEST
         rt_ui_trace_set_int(inst->desc->name, wd->name, prop, (long)sel);
@@ -5236,8 +5372,15 @@ short rt_ui_widget_get_int(void *instV, short wIdx, short prop)
     inst = (rt_ui_winst *)instV;
     if (prop == RTUI_PROP_HEIGHT)
         return (short)(inst->rects[wIdx].bottom - inst->rects[wIdx].top);
-    if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_POPUP)
-        return inst->popupSel[wIdx]; /* mac-target-4d Task 3 */
+    if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_POPUP) {
+        /* mac-target-4d Task 3 (System 6 manual path); Task 8: a System 7
+           popup Control's own contrlValue is authoritative once it exists
+           (rt_ui_popup_pick and the setter above both keep popupSel[wIdx]
+           mirroring it, but read the control directly rather than trust
+           that mirror). */
+        if (inst->ctrls[wIdx]) return (short)(GetControlValue(inst->ctrls[wIdx]) - 1);
+        return inst->popupSel[wIdx];
+    }
     if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_TABLE)
         return rt_ui_table_get_selected(inst->lists[wIdx]); /* mac-target-4d Task 4 */
     return (short)(inst->rects[wIdx].right - inst->rects[wIdx].left); /* default: width */
