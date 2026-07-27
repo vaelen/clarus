@@ -167,9 +167,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   quit-cascade, and the too-large-file guard all verified.
 - **Phase re-split (decided 2026-07-24, superseding the old "both Appendix C
   examples" 4b acceptance — each phase ships a real artifact):**
-  - **4d (next):** forms + binding walker, `popup`, `table`/List Manager, real
-    Handle-backed records, `file.save`/`load`. Acceptance: the Appendix C
-    Bookmark Manager.
+  - **4d (in progress, branch mac-target-4d):** forms + binding walker,
+    `popup`, `table`/List Manager, real Handle-backed records, `file.save`/
+    `load`. Acceptance: the Appendix C Bookmark Manager.
+  - **4e (post-4d): memory-management audit** — Handle/close leak sweep:
+    lists, text, maps, menus, window instances, the deferred ClosePort item;
+    decide per-site free-vs-leak-by-design and document.
 - Then: networking (MacTCP + ADSP/NBP; needs Basilisk II or real hardware —
   Mini vMac networking is limited).
 

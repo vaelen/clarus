@@ -1024,6 +1024,8 @@ A bound widget's behavior comes from the type of the field it binds to, with not
 | `bool` | `check` | checkbox; `checked` mirrors the field |
 | enum | `popup` | popup items are the enum's member labels (member name when unlabeled — Chapter 3), in declaration order |
 
+A `popup`'s items always come from its bound enum field — there is no form of `popup` with items given directly. A `popup` declared without `binds:` is rejected at build time.
+
 ### The Edit Statement
 
 `edit FormWindow, target` (Chapter 5) opens a form window bound to a value of its `form for T` type:
@@ -1041,6 +1043,8 @@ edit EditForm, new Bookmark     // new record: exists only in the form's buffer
 ```
 
 With `new T` there is no lvalue to write back to, so `accepted`'s `rec.isNew` is `true` for that call — the handler's cue to `add` the record rather than treat it as an update to something already stored.
+
+`isNew` is defined only on the parameter of an `accepted` handler; any other use of it is a build-time error. The one exception is a record type that declares its own literal `isNew` field — that field shadows the synthetic one entirely, and behaves as an ordinary field with no special meaning.
 
 A form window must be declared explicitly, as above. Generating one automatically from `edit someRecord` alone is not yet supported.
 
@@ -1243,6 +1247,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `name` | `file.name(path: string): string` | the file's display name; always succeeds |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
+
+Every field of the record — transitively, for a `list of` or `map of` payload — must be a by-value type (Chapter 3); a `text`, `list`, or `map` field is a build-time error, since a reference has no meaningful serialized form.
 
 **Binary faithfulness:** `readText` and `writeText` transfer content verbatim, byte for byte — no newline translation, and every byte value 0–255 (including 0) round-trips unchanged. Since a `text` is a byte buffer (Chapter 3), these two functions are also the way to read and write binary data.
 
