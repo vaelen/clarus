@@ -180,6 +180,12 @@ extern void rt_quit(int32_t code);
 #define RTUI_TEXTVIEW_H   100
 #define RTUI_TEXTVIEW_W   200
 
+/* popup natural size (mac-target-4d Task 3) -- same free-to-pick status,
+   height matching a button/field's single control line, width a typical
+   unfilled popup. */
+#define RTUI_POPUP_H       20
+#define RTUI_POPUP_W      200
+
 /* A field's `label:` property reuses the labels[]/TETextBox lane the
    RTUI_LABEL kind already has (rt_ui_handle_update draws it the same way)
    -- fixed-width lane rather than measured via StringWidth. ponytail:
@@ -207,6 +213,12 @@ extern void rt_quit(int32_t code);
    the file header comment), so declared menus start at 2, one ID per
    `menus[]` array index in order. */
 #define RTUI_MENU_ID_BASE 2
+
+/* Native menu ID base for a popup widget's own (never-in-the-bar) menu
+   (mac-target-4d Task 3): widget index i's menu is 1000+i, comfortably
+   clear of RTUI_MENU_ID_BASE's declared-menu range (a real program is
+   never going to declare 998 menus) and of the Apple menu (1). */
+#define RTUI_POPUP_MENU_ID_BASE 1000
 
 /* ==================== per-instance state ==================== */
 
@@ -246,6 +258,15 @@ typedef struct rt_ui_winst {
     Handle hbarsH; ControlHandle *hbars; /* nWidgets; textview horizontal scrollbar (RTUI_SCROLL_H) or NULL */
     Handle enabledH; char *logicalEnabled;
     short focusIdx;
+    /* mac-target-4d Task 3: RTUI_POPUP widgets. `popups[i]` is the native
+       MenuHandle built at creation time (NULL for every non-popup kind);
+       its native ID is 1000+i (rt_ui_make_widgets), inserted into the menu
+       list (InsertMenu(mh, -1), never the bar) so it never collides with a
+       declared menu's own 2..N+1 IDs. `popupSel[i]` is the 0-based index of
+       the currently selected item (0 for every widget, popup or not, until
+       rt_ui_make_widgets/rt_ui_widget_set_int/a real pick changes it). */
+    Handle popupsH; MenuHandle *popups;
+    Handle popupSelH; short *popupSel;
 #ifdef RT_MAC_TEST
     short traceId;                    /* 1-based per-type instance counter for T OPEN/CLOSE/FRONT (Task 3) */
 #endif
@@ -387,6 +408,17 @@ static void rt_ui_trace_set_bool(const char *name, const char *wname, short prop
     rt_test_emit(buf);
 }
 
+/* `T SET <Win>.<Widget>.<prop> <value>` for an integer-valued property --
+   currently only popup's RTUI_PROP_SELECTED (rt_ui_widget_set_int,
+   mac-target-4d Task 3), same naming convention as rt_ui_trace_set_bool
+   just above. */
+static void rt_ui_trace_set_int(const char *name, const char *wname, short prop, long v)
+{
+    char buf[300];
+    sprintf(buf, "T SET %s.%s.%s %ld", name, wname, rt_ui_prop_name(prop), v);
+    rt_test_emit(buf);
+}
+
 /* Per-WinType 1-based instance counter for T OPEN/CLOSE/FRONT ids (Task 3).
    Sized off rt_ui_startup's own `wins` array -- linear scan is plenty for
    the handful of window types any real program declares. */
@@ -437,8 +469,10 @@ static void rt_ui_trace_front_check(void)
 static char *gDimPrev = NULL;
 static int gDimFirst = 1;
 
-/* Set for the duration of rt_ui_run_scripted (see below): governs the one
-   sanctioned real/scripted divergence in rt_ui_handle_content_click. */
+/* Set for the duration of rt_ui_run_scripted (see below): governs the
+   sanctioned real/scripted divergences in rt_ui_handle_content_click (a
+   Control Manager widget's TrackControl, mac-target-4b Task 3; a popup's
+   PopUpMenuSelect, mac-target-4d Task 3). */
 static int gUiScripted = 0;
 
 /* ==================== dialogs (Ch12): scripted answer queue (Task 4) ====
@@ -451,6 +485,11 @@ static int gUiScripted = 0;
  * modal SF dialog or Alert either, so there is no real/scripted fork to
  * make here, only RT_MAC_TEST/not. Fed by the answer-open/answer-save/
  * answer-changes/answer-cancel script verbs (rt_ui_run_scripted below).
+ * mac-target-4d Task 3 adds RT_UI_ANS_POPUP/`answer-popup`, consumed by
+ * rt_ui_handle_content_click's popup lane instead -- same queue, same
+ * ring-buffer discipline, just gated on gUiScripted (like every OTHER
+ * content-click divergence) rather than unconditionally on RT_MAC_TEST,
+ * since a popup click is a real widget interaction, not a modal dialog.
  * Fixed 8-slot ring buffer (7 usable -- the full/empty ambiguity of a
  * head==tail ring is broken by never letting tail catch up to head, the
  * usual one-slot-sacrificed idiom): no script ever queues more than a
@@ -461,6 +500,7 @@ static int gUiScripted = 0;
 #define RT_UI_ANS_SAVE    1
 #define RT_UI_ANS_CHANGES 2
 #define RT_UI_ANS_CANCEL  3
+#define RT_UI_ANS_POPUP   4
 
 typedef struct { short kind; short val; unsigned char str[256]; } rt_ui_answer;
 
@@ -569,6 +609,7 @@ static short rt_ui_kind_height(short kind)
     case RTUI_CANVAS:   return RTUI_CANVAS_H;
     case RTUI_FIELD:    return RTUI_FIELD_H;
     case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_H;
+    case RTUI_POPUP:    return RTUI_POPUP_H;
     default:            return RTUI_CHECK_H;
     }
 }
@@ -585,8 +626,26 @@ static short rt_ui_kind_width(short kind)
     case RTUI_CANVAS:   return RTUI_CANVAS_W;
     case RTUI_FIELD:    return RTUI_FIELD_W;
     case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_W;
+    case RTUI_POPUP:    return RTUI_POPUP_W;
     default:            return RTUI_CHECK_W;
     }
+}
+
+/* A popup's visible menu-button box, in window-local coords -- the same
+   "reuse the RTUI_FIELD_LABEL_W label lane when there's a caption" rule
+   RTUI_FIELD's own label uses (rt_ui_te_relayout), just without a TE
+   involved: inst->rects[wIdx] is the WHOLE widget (label lane + box), this
+   returns only the box part actually framed/PopUpMenuSelect-anchored.
+   Shared by the update-loop draw branch and the click path below so the
+   two can never disagree about where the box is. Hit-testing, however,
+   deliberately does NOT call this -- see rt_ui_handle_content_click's own
+   comment on that. */
+static Rect rt_ui_popup_box(rt_ui_winst *inst, short wIdx)
+{
+    Rect box;
+    box = inst->rects[wIdx];
+    if (inst->labels[wIdx][0] > 0) box.left = (short)(box.left + RTUI_FIELD_LABEL_W);
+    return box;
 }
 
 /* portRect helpers: a WindowPtr is a GrafPtr, and window content-local
@@ -799,6 +858,60 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
                 inst->hbars[i] = NULL;
             }
             break;
+        case RTUI_POPUP: {
+            /* System 6 manual popup (mac-target-4d Task 3): a native menu,
+               never inserted into the bar (InsertMenu(mh, -1) -- see the
+               pinned comment at rt_ui_script_menu's own header on why the
+               bar's position==ID identity must never be disturbed), just
+               held here for PopUpMenuSelect (real path) or purely as a
+               labels/count source (scripted path, which never actually
+               calls PopUpMenuSelect). No Control Manager backing, same as
+               label/canvas -- it draws itself in rt_ui_handle_update. */
+            MenuHandle mh;
+            const rt_ui_form_desc *form;
+            short b;
+
+            inst->ctrls[i] = NULL;
+            rt_ui_pstrcpy(inst->labels[i], cap);
+            inst->popupSel[i] = 0;
+            mh = NewMenu((short)(RTUI_POPUP_MENU_ID_BASE + i), (const unsigned char *)"\p");
+            /* Items = the bound enum's labels (rt_ui.h's rt_ui_form_desc
+               comment): find the bind whose widgetIndex is this widget,
+               read its field's enumLabels/enumCount off the window's own
+               `form`. No form, or no matching bind: 0 items -- the menu (and
+               this popup) stays empty rather than crashing (rt_ui.h pins
+               this as the defensive contract; Task 7's compiler is what
+               actually prevents an unbound popup from being declared). */
+            form = inst->desc->form;
+            if (form) {
+                for (b = 0; b < form->nBinds; b++) {
+                    if (form->binds[b].widgetIndex == i) {
+                        const rt_field_desc *fd = &form->layout->fields[form->binds[b].fieldIndex];
+                        short n;
+                        for (n = 0; n < fd->enumCount; n++) {
+                            /* AppendMenu a one-char placeholder item, then
+                               overwrite its text with SetMenuItemText --
+                               an enum label's own bytes might contain an
+                               AppendMenu metacharacter (;/!<() with no
+                               escaping intended, and SetMenuItemText (the
+                               classic `SetItem`, spelled the modern way so
+                               it doesn't depend on OLDROUTINENAMES) sets
+                               literal item text with none of AppendMenu's
+                               parsing (unlike rt_ui_build_menus' declared-
+                               menu items above, which DO want AppendMenu's
+                               `/K` cmd-key metachar and so escape only that
+                               one). */
+                            AppendMenu(mh, (const unsigned char *)"\px");
+                            SetMenuItemText(mh, (short)(n + 1), fd->enumLabels[n]);
+                        }
+                        break;
+                    }
+                }
+            }
+            InsertMenu(mh, -1); /* NEVER 0 (the bar) -- see the header comment above */
+            inst->popups[i] = mh;
+            break;
+        }
         default: /* RTUI_LABEL, RTUI_CANVAS: no Control Manager backing */
             inst->ctrls[i] = NULL;
             rt_ui_pstrcpy(inst->labels[i], cap);
@@ -1910,6 +2023,54 @@ static void rt_ui_handle_update(WindowPtr wp)
                     s = inst->labels[i];
                     TETextBox(s + 1, s[0], &labelRect, teJustLeft);
                 }
+            } else if (wd->kind == RTUI_POPUP) {
+                /* label lane (same TETextBox lane a field's own `label:`
+                   uses, per rt_ui.h's rt_ui_form_desc header comment), then
+                   the box itself: FrameRect + a 1px drop shadow (bottom
+                   and right offset lines, classic System 6 button-well
+                   look), the current item's text, and a small filled
+                   down-arrow triangle at the right end -- mac-target-4d
+                   Task 3. */
+                Rect box;
+                if (inst->labels[i][0] > 0) {
+                    Rect labelRect;
+                    unsigned char *s;
+                    labelRect = inst->rects[i];
+                    labelRect.right = (short)(labelRect.left + RTUI_FIELD_LABEL_W - 4);
+                    s = inst->labels[i];
+                    TETextBox(s + 1, s[0], &labelRect, teJustLeft);
+                }
+                box = rt_ui_popup_box(inst, i);
+                FrameRect(&box);
+                MoveTo((short)(box.left + 1), (short)(box.bottom + 1));
+                LineTo((short)(box.right + 1), (short)(box.bottom + 1));
+                LineTo((short)(box.right + 1), (short)(box.top + 1));
+                if (inst->popups[i]) {
+                    Rect textRect;
+                    unsigned char itemText[256];
+                    short cx, cy, k;
+
+                    /* Zeroed first: an empty popup (NULL form, or no bind
+                       matched this widget -- rt_ui_make_widgets built a
+                       0-item menu) leaves GetMenuItemText's out-of-range
+                       behavior on item 1 unspecified -- pre-zeroing
+                       guarantees "draws empty" (rt_ui.h's defensive
+                       contract) rather than whatever garbage happened to
+                       be on the stack. */
+                    itemText[0] = 0;
+                    GetMenuItemText(inst->popups[i], (short)(inst->popupSel[i] + 1), itemText);
+                    textRect = box;
+                    InsetRect(&textRect, 4, 2);
+                    textRect.right = (short)(textRect.right - 16); /* room for the arrow */
+                    TETextBox(itemText + 1, itemText[0], &textRect, teJustLeft);
+
+                    cx = (short)(box.right - 10);
+                    cy = (short)((box.top + box.bottom) / 2 - 2);
+                    for (k = 0; k < 5; k++) {
+                        MoveTo((short)(cx - k), (short)(cy + k));
+                        LineTo((short)(cx + k), (short)(cy + k));
+                    }
+                }
             } else if (wd->kind == RTUI_BUTTON && (wd->flags & RTUI_DEFAULT)) {
                 rt_ui_draw_default_outline(&inst->rects[i]);
             }
@@ -2140,6 +2301,41 @@ static void rt_ui_handle_canvas_click(WindowPtr wp, rt_ui_winst *inst, short wId
     }
 }
 
+/* Popup hit-test (mac-target-4d Task 3): unlike rt_ui_popup_box's narrowed
+   drawing/anchor box, this tests the FULL widget rect (label lane
+   included) -- a click anywhere on the widget opens its popup, same as
+   clicking a Control Manager control's whole bounds regardless of where
+   its own label sits within it. */
+static int rt_ui_popup_hit(rt_ui_winst *inst, Point local, short *outIdx)
+{
+    short i;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        if (inst->desc->widgets[i].kind == RTUI_POPUP && PtInRect(local, &inst->rects[i])) {
+            *outIdx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Shared post-pick logic (mac-target-4d Task 3): both the real
+   PopUpMenuSelect path and the scripted answer-queue path converge here
+   once each has its own new 0-based item index -- the only two things that
+   ever differ between them. A no-op pick (same index re-selected) does
+   NOTHING: no redraw, no trace, no event, matching a real popup click that
+   releases back on the already-showing item. */
+static void rt_ui_popup_pick(rt_ui_winst *inst, short wIdx, short newIndex)
+{
+    if (newIndex == inst->popupSel[wIdx]) return;
+    inst->popupSel[wIdx] = newIndex;
+    InvalRect(&inst->rects[wIdx]);
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire2(inst->desc->name, inst->desc->widgets[wIdx].name, "change");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->widget)
+        inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_CHANGE, (long)newIndex, 0);
+}
+
 static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point where, Boolean shiftDown)
 {
     ControlHandle ctrl;
@@ -2207,6 +2403,42 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                mutation (no text changed), so this does NOT go through
                rt_ui_te_mutated's change trace/event funnel. */
             rt_ui_te_scroll_sync(inst, tIdx);
+        }
+    }
+    {
+        short pIdx;
+        if (rt_ui_popup_hit(inst, where, &pIdx)) {
+#ifdef RT_MAC_TEST
+            /* Same ONE sanctioned real/scripted divergence as the Control
+               Manager lane above, just for PopUpMenuSelect's modal tracking
+               loop instead of TrackControl's: a scripted `click` consumes
+               the queued RT_UI_ANS_POPUP answer (mac-target-4d Task 3)
+               instead of ever calling PopUpMenuSelect, and the two paths
+               converge on the SAME rt_ui_popup_pick call immediately after
+               -- see that function's own comment. */
+            if (gUiScripted) {
+                const rt_ui_answer *a = rt_ui_answer_pop();
+                if (a->kind != RT_UI_ANS_POPUP) rt_panic("popup: scripted answer kind mismatch");
+                rt_ui_popup_pick(inst, pIdx, a->val);
+                return;
+            }
+#endif
+            {
+                Rect box;
+                Point anchor;
+                long result;
+                short newItem;
+
+                box = rt_ui_popup_box(inst, pIdx);
+                anchor.h = box.left;
+                anchor.v = box.top;
+                LocalToGlobal(&anchor);
+                result = PopUpMenuSelect(inst->popups[pIdx], anchor.v, anchor.h,
+                                          (short)(inst->popupSel[pIdx] + 1));
+                newItem = LoWord(result);
+                if (newItem != 0) rt_ui_popup_pick(inst, pIdx, (short)(newItem - 1));
+            }
+            return;
         }
     }
 }
@@ -2413,14 +2645,29 @@ static void rt_ui_every_pump(void)
     }
 }
 
+/* Cached System 7+ probe (mac-target-4d Task 3): set once here, read by
+   Tasks 6/8 (AppleEvents-aware document handling needs to know whether
+   it's safe to assume System 7's Process/AppleEvent Managers are present
+   at all -- see rt_ui_launch's own header comment on the same split).
+   gestaltSystemVersion's response is a BCD version word (0x0700 = 7.0,
+   0x0605 = 6.0.5, ...) -- >= 0x0700 is exactly "System 7 or later". Not
+   consumed anywhere yet in THIS task; `(void)gSys7;` below keeps -Wunused
+   quiet in the meantime, same as any other "wired up now, used later"
+   plumbing in this file. */
+static short gSys7 = 0;
+
 void rt_ui_startup(const rt_ui_window_desc **wins, short nWins,
                     const rt_ui_menu_desc **menus, short nMenus,
                     const rt_ui_menu_handler *mh, short nMh,
                     const rt_ui_every_desc *ev, short nEv)
 {
+    long gestaltResponse;
+
     (void)wins; (void)nWins;
     rt_mac_init_toolbox(); /* eager: subsumes rt_mac.c's own lazy init */
     FlushEvents(everyEvent, 0);
+    gSys7 = (short)(Gestalt(gestaltSystemVersion, &gestaltResponse) == noErr && gestaltResponse >= 0x0700);
+    (void)gSys7;
     rt_ui_build_apple_menu(); /* inserted first so it lands leftmost in the bar */
     rt_ui_build_menus(menus, nMenus);
     gMenuHandlerTable = mh;
@@ -3111,6 +3358,14 @@ static void rt_ui_run_scripted(void)
                RT_UI_ANS_CANCEL; rt_ui_ask_save_changes does not (its own
                three-way cancel is `answer-changes cancel` instead). */
             rt_ui_answer_push_val(RT_UI_ANS_CANCEL, 0);
+        } else if (strcmp(verb, "answer-popup") == 0) {
+            /* `answer-popup N` (mac-target-4d Task 3): queues the 0-based
+               item index a scripted popup click picks next -- consumed by
+               rt_ui_handle_content_click's popup lane, not by any dialog
+               path (RT_MAC_TEST-unconditional like every other answer-*
+               verb here, but this one is fed to a real widget click, not a
+               modal). */
+            rt_ui_answer_push_val(RT_UI_ANS_POPUP, (short)atoi(arg1));
         } else if (strcmp(verb, "launchdoc") == 0) {
             /* Explicit no-op, not silent unknown-verb fallthrough (Task 5):
                `launchdoc` lines are consumed once, up front, by
@@ -3197,6 +3452,8 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->tes = (TEHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(TEHandle), &inst->teH);
     inst->hbars = (ControlHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(ControlHandle), &inst->hbarsH);
     inst->logicalEnabled = (char *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(char), &inst->enabledH);
+    inst->popups = (MenuHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(MenuHandle), &inst->popupsH);
+    inst->popupSel = (short *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(short), &inst->popupSelH);
     inst->focusIdx = -1;
     {
         short wi;
@@ -3337,6 +3594,18 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
         for (i = 0; i < inst->desc->nWidgets; i++) {
             rt_ui_canvas_dispose(&inst->canvases[i]);
             if (inst->tes[i]) TEDispose(inst->tes[i]); /* TEHandle is its own separate Handle, not covered by DisposeHandle(inst->teH) below */
+            if (inst->popups[i]) {
+                /* A popup's menu lives in the Menu Manager's own list
+                   (InsertMenu at creation, never the bar), independent of
+                   this window's Toolbox objects -- DisposeWindow above
+                   doesn't touch it, so it needs its own explicit teardown:
+                   DeleteMenu first (removes it from that list; a no-op-safe
+                   call even though it was never in the bar), then
+                   DisposeMenu frees the handle itself (mac-target-4d
+                   Task 3). */
+                DeleteMenu((short)(RTUI_POPUP_MENU_ID_BASE + i));
+                DisposeMenu(inst->popups[i]);
+            }
         }
     }
     if (inst->stateH) DisposeHandle(inst->stateH);
@@ -3347,6 +3616,8 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
     DisposeHandle(inst->teH);
     DisposeHandle(inst->hbarsH);
     DisposeHandle(inst->enabledH);
+    DisposeHandle(inst->popupsH);
+    DisposeHandle(inst->popupSelH);
     DisposeHandle(inst->selfH);
     return 1;
 }
@@ -3563,6 +3834,37 @@ void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
     SetPort(savedPort);
 }
 
+/* rt_ui_widget_set_int (mac-target-4d Task 3): popup's RTUI_PROP_SELECTED
+   only -- see rt_ui.h's own header comment on this function for the
+   clamp/redraw/trace/no-change-event contract. Port-disciplined like every
+   other setter above (rt_ui.h's PORT DISCIPLINE RULE). */
+void rt_ui_widget_set_int(void *instV, short wIdx, short prop, long v)
+{
+    rt_ui_winst *inst;
+    const rt_ui_widget_desc *wd;
+    GrafPtr savedPort;
+
+    inst = (rt_ui_winst *)instV;
+    GetPort(&savedPort);
+    SetPort(inst->wp);
+    wd = &inst->desc->widgets[wIdx];
+    if (wd->kind == RTUI_POPUP && prop == RTUI_PROP_SELECTED) {
+        short count, sel;
+
+        count = inst->popups[wIdx] ? CountMItems(inst->popups[wIdx]) : 0;
+        sel = (short)v;
+        if (sel < 0) sel = 0;
+        if (count > 0 && sel > (short)(count - 1)) sel = (short)(count - 1);
+        if (count == 0) sel = 0;
+        inst->popupSel[wIdx] = sel;
+        InvalRect(&inst->rects[wIdx]);
+#ifdef RT_MAC_TEST
+        rt_ui_trace_set_int(inst->desc->name, wd->name, prop, (long)sel);
+#endif
+    }
+    SetPort(savedPort);
+}
+
 int rt_ui_widget_get_bool(void *instV, short wIdx, short prop)
 {
     rt_ui_winst *inst;
@@ -3589,6 +3891,8 @@ short rt_ui_widget_get_int(void *instV, short wIdx, short prop)
     inst = (rt_ui_winst *)instV;
     if (prop == RTUI_PROP_HEIGHT)
         return (short)(inst->rects[wIdx].bottom - inst->rects[wIdx].top);
+    if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_POPUP)
+        return inst->popupSel[wIdx]; /* mac-target-4d Task 3 */
     return (short)(inst->rects[wIdx].right - inst->rects[wIdx].left); /* default: width */
 }
 

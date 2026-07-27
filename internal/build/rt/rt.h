@@ -124,7 +124,15 @@ typedef struct { short ftype; short strCap; long offset;
                  short enumCount; const int32_t *enumValues;
                  const unsigned char *const *enumLabels; /* Str255s, popup/table render */
 } rt_field_desc;
-typedef struct { long recSize; short nFields; const rt_field_desc *fields; } rt_layout_desc;
+/* Tagged (not anonymous) specifically so runtime/mac/rt_ui.h -- which must
+   never #include this header -- can forward-declare the SAME type via
+   `typedef struct rt_layout_desc rt_layout_desc;` (mac-target-4d Task 3,
+   same opaque-forward-declare convention as rt_text above) and have it
+   resolve to this exact complete definition wherever both headers are
+   included together (rt_ui.c, uiprobe). An anonymous struct here would
+   give rt_ui.h's forward declaration nothing to eventually complete
+   against -- two unrelated types spelled the same. */
+typedef struct rt_layout_desc { long recSize; short nFields; const rt_field_desc *fields; } rt_layout_desc;
 
 #define RT_SER_REC  0
 #define RT_SER_LIST 1

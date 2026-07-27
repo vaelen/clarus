@@ -11,7 +11,16 @@
    below was amended against Ch11 during Task 2 (see the comment just above
    the canvas prototypes) -- `rt_ui_canvas_circle` and
    `rt_ui_canvas_draw_text` are additions beyond this plan's original ABI
-   sketch, per the plan's own "the reference wins" rule. */
+   sketch, per the plan's own "the reference wins" rule.
+
+   mac-target-4d Task 3 adds RTUI_POPUP (the System 6 manual PopUpMenuSelect
+   path), rt_ui_widget_set_int, and the form/bind descriptors a popup uses
+   to find its bound enum's labels (rt_ui_form_desc/rt_ui_bind_desc, below).
+   Both rt_ui_widget_desc and rt_ui_window_desc gained ONE new field each,
+   appended at the END of the struct (`extra` and `form` respectively) --
+   every existing positional initializer (probe and emitted C alike) still
+   compiles unchanged, the new trailing field simply zero-inits. Do the same
+   for any FUTURE addition to either struct: append, never insert. */
 #ifndef CLARUS_RT_UI_H
 #define CLARUS_RT_UI_H
 
@@ -36,6 +45,7 @@
 #define RTUI_LABEL    3
 #define RTUI_FIELD    4   /* single-line TextEdit, `label:` reuses the caption slot (mac-target-4c Task 1) */
 #define RTUI_TEXTVIEW 5   /* multi-line TextEdit, optional scrollbar via flags below */
+#define RTUI_POPUP    6   /* System 6 popup menu (manual PopUpMenuSelect path), mac-target-4d Task 3 */
 
 /* rt_ui_widget_desc.atKind (Ch8 Layout: "at x,y" / "at right,y" / "at next,bottom") */
 #define RTUI_AT_XY    0   /* x, y both explicit */
@@ -110,13 +120,22 @@ typedef struct { short kind;              /* RTUI_BUTTON/CHECK/CANVAS/LABEL/FIEL
                  short fill;              /* RTUI_FILL_NONE/BOTH */
                  short flags;             /* RTUI_DEFAULT|RTUI_CANCEL|RTUI_BUFFERED|RTUI_SCROLL_V|RTUI_SCROLL_H
                                               (RTUI_SCROLL_V/H added mac-target-4c Task 1) */
+                 const void *extra;       /* mac-target-4d Task 3: reserved for a future per-kind
+                                              descriptor (a table's column list, say); RTUI_POPUP
+                                              leaves this NULL and finds its items via the OWNING
+                                              WINDOW's `form` field instead (rt_ui_window_desc,
+                                              below), not through this pointer. */
 } rt_ui_widget_desc;
 
 typedef struct { const char *name; const unsigned char *title;  /* Str255 */
                  short w, h; short resizable, minW, minH;
                  short nWidgets; const rt_ui_widget_desc *widgets;
                  short stateSize;         /* per-instance user-var struct size */
-                 const struct rt_ui_handlers *handlers; } rt_ui_window_desc;
+                 const struct rt_ui_handlers *handlers;
+                 const struct rt_ui_form_desc *form; /* mac-target-4d Task 3: NULL = not a form (no
+                                                          popup in this window can find bound enum
+                                                          labels); see rt_ui_form_desc below. */
+} rt_ui_window_desc;
 
 typedef struct { const char *name; const unsigned char *title;
                  short nItems; const struct rt_ui_item_desc *items;
@@ -162,6 +181,27 @@ extern const rt_ui_app_desc rt_ui_app_info;
    entry points that touch it, both by pointer, so the incomplete type is
    enough for callers too (mac-target-4c Task 1). */
 typedef struct rt_text rt_text;
+
+/* Opaque forward declaration ONLY, same convention as rt_text above --
+   rt_layout_desc/rt_field_desc are internal/build/rt/rt.h's record-layout
+   descriptors (mac-target-4d Task 1); this header must never #include
+   rt.h, so a popup's form binding below refers to it only by pointer.
+   rt_ui.c (and any hand-written caller, e.g. uiprobe) sees the full struct
+   by including rt.h directly alongside this header. */
+typedef struct rt_layout_desc rt_layout_desc;
+
+/* Popup binding (mac-target-4d Task 3, Ch8): a `form`'s `binds` array pairs
+   a window's popup WIDGET index with the FIELD index (into its `layout`)
+   whose bound enum supplies that popup's item labels -- rt_ui_make_widgets
+   finds the bind whose widgetIndex matches, then reads
+   layout->fields[fieldIndex].enumLabels/enumCount (rt.h's rt_field_desc)
+   to build the native menu. A popup in a window with a NULL `form`, or with
+   no matching bind, draws empty rather than crashing -- the compiler is
+   expected to reject that shape before it ever reaches here (a later task),
+   so this runtime stays defensive only, not a validator. */
+typedef struct { short widgetIndex; short fieldIndex; } rt_ui_bind_desc;
+typedef struct rt_ui_form_desc { const rt_layout_desc *layout;
+                                 short nBinds; const rt_ui_bind_desc *binds; } rt_ui_form_desc;
 
 /* ==================== runtime API (called by emitted code / probe) ==================== */
 
@@ -243,7 +283,14 @@ void  rt_ui_widget_get_text(void *inst, short wIdx, rt_text *out);
 void  rt_ui_widget_set_text(void *inst, short wIdx, const rt_text *t);
 void  rt_ui_widget_set_bool(void *inst, short wIdx, short prop, int v);
 int   rt_ui_widget_get_bool(void *inst, short wIdx, short prop);
-short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width/height */
+short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width/height; popup SELECTED (mac-target-4d Task 3) */
+/* rt_ui_widget_set_int (mac-target-4d Task 3): popup's RTUI_PROP_SELECTED
+   only so far -- clamps v to [0, item count - 1], redraws (InvalRect), and
+   traces `T SET <Win>.<W>.selected <v>` under RT_MAC_TEST, but fires NEITHER
+   the change trace NOR RTUI_WEV_CHANGE (same "a PROGRAMMATIC set doesn't
+   fire `change`" rule as set_str/set_text/set_bool -- only an actual user
+   pick through the popup does). */
+void  rt_ui_widget_set_int(void *inst, short wIdx, short prop, long v);
 void  rt_ui_menu_enable(short menuIdx, short itemIdx, int on);
 
 /* Ch12 Dialogs (mac-target-4c Task 4): askOpen/askSave/askSaveChanges.

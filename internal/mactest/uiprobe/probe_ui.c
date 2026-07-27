@@ -278,22 +278,92 @@ static const rt_ui_window_desc kTextProbeWindow = {
     &kTextProbeHandlers
 };
 
+/* ==================== PopupProbe window (Task 3, mac-target-4d) ====================
+ * Exercises RTUI_POPUP end to end: a hand-rolled rt_field_desc/
+ * rt_ui_form_desc pair (the same shapes clarusc's own lowering will emit,
+ * Task 4/5) binds the "Color" popup to a 3-member enum (Red/Green/Blue);
+ * "Get" reads the popup's current selection via rt_ui_widget_get_int and
+ * writes the matching name into the "Result" label; "Set Red" calls
+ * rt_ui_widget_set_int directly (RTUI_PROP_SELECTED, index 0) to prove the
+ * setter's own clamp/redraw/trace WITHOUT a change event, independent of
+ * any popup click. Opened LAST in main() (below) so it's frontmost at
+ * startup -- no click-to-front step needed before its own widgets are
+ * reachable, unlike TextProbe's own first click (see that window's header
+ * comment). */
+
+enum { PP_COLOR = 0, PP_GET = 1, PP_SETRED = 2, PP_RESULT = 3 };
+
+static const unsigned char kColorRed[]   = "\pRed";
+static const unsigned char kColorGreen[] = "\pGreen";
+static const unsigned char kColorBlue[]  = "\pBlue";
+/* Reused both as the popup's own item labels (via kColorField.enumLabels
+   below) and, here in the probe, as the "Get" handler's index->name lookup
+   for the Result label -- the same array serves both roles because a
+   popup's displayed item text and a program's own reverse lookup are
+   naturally the same list. */
+static const unsigned char *const kColorNames[] = { kColorRed, kColorGreen, kColorBlue };
+static const int32_t kColorValues[] = { 0, 1, 2 };
+
+static const rt_field_desc kColorField = {
+    RT_FT_ENUM, 0, 0, 3, kColorValues, kColorNames
+};
+static const rt_layout_desc kPopupLayout = { 0, 1, &kColorField };
+static const rt_ui_bind_desc kPopupBinds[] = { { PP_COLOR, 0 } };
+static const rt_ui_form_desc kPopupForm = { &kPopupLayout, 1, kPopupBinds };
+
+static void popupprobe_widget_event(void *inst, short widgetIndex, short event, long a, long b)
+{
+    (void)a; (void)b;
+    if (event != RTUI_WEV_CLICK) return;
+    if (widgetIndex == PP_GET) {
+        short sel = (short)rt_ui_widget_get_int(inst, PP_COLOR, RTUI_PROP_SELECTED);
+        rt_ui_widget_set_str(inst, PP_RESULT, RTUI_PROP_TEXT, kColorNames[sel]);
+    } else if (widgetIndex == PP_SETRED) {
+        rt_ui_widget_set_int(inst, PP_COLOR, RTUI_PROP_SELECTED, 0);
+    }
+}
+
+static const rt_ui_widget_desc kPopupProbeWidgets[] = {
+    { RTUI_POPUP, "Color", (const unsigned char *)"\pColor:",
+      RTUI_AT_XY, 20, 20, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "Get", (const unsigned char *)"\pGet",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "SetRed", (const unsigned char *)"\pSet Red",
+      RTUI_AT_RIGHT, 0, 48, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_LABEL, "Result", (const unsigned char *)"\p-",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 }
+};
+
+static const rt_ui_handlers kPopupProbeHandlers = { 0, popupprobe_widget_event };
+
+static const rt_ui_window_desc kPopupProbeWindow = {
+    "PopupProbe", (const unsigned char *)"\pPopup Probe",
+    280, 120, 1, 200, 100,
+    4, kPopupProbeWidgets,
+    0,
+    &kPopupProbeHandlers,
+    &kPopupForm
+};
+
 /* ==================== wiring ==================== */
 
-static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow };
+static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow, &kPopupProbeWindow };
 static const rt_ui_menu_desc *kMenus[] = { &kProbeMenu };
 
 int main(void)
 {
     rt_args_init(0, (char **)0);
-    rt_ui_startup(kWindows, 3, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
+    rt_ui_startup(kWindows, 4, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
     /* TextProbe opens FIRST -- Probe-then-Bounce below is the exact same
        relative open order Task 1/2/3 already had, so Bounce is still
        frontmost at startup, exactly as events.c's own header comment
-       documents (TextProbe, opened even earlier, ends up furthest back). */
+       documents (TextProbe, opened even earlier, ends up furthest back).
+       PopupProbe (Task 3, mac-target-4d) opens LAST -- frontmost, so
+       events_popup.c's clicks land on it without a click-to-front step. */
     rt_ui_open(&kTextProbeWindow);
     rt_ui_open(&kProbeWindow);
     rt_ui_open(&kBounceWindow);
+    rt_ui_open(&kPopupProbeWindow);
     rt_ui_run();
     return 0;
 }
