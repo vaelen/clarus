@@ -2555,6 +2555,7 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
     const rt_ui_widget_desc *wd;
     ControlHandle ctrl;
     GrafPtr savedPort;
+    int wasModalInst;
 
     /* Self-asserts and restores its own port (see the rt_ui.h header
        comment on this rule) -- Return/Escape-key dispatch reaches here
@@ -2563,6 +2564,12 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
     SetPort(inst->wp);
     wd = &inst->desc->widgets[wIdx];
     ctrl = inst->ctrls[wIdx];
+    /* Captured BEFORE the switch, not re-read after: a successful
+       rt_ui_form_accept/any rt_ui_form_cancel below disposes `inst` (and
+       its window) outright, so `inst` itself must never be dereferenced
+       again once that's happened -- this bool is the only thing checked
+       past that point (Fix round 1, see the port-restore comment below). */
+    wasModalInst = (gModal.active && gModal.inst == inst);
     switch (wd->kind) {
     case RTUI_CHECK: {
         short newVal;
@@ -2576,12 +2583,12 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
         break;
     }
     case RTUI_BUTTON:
-        if (gModal.active && gModal.inst == inst && (wd->flags & RTUI_DEFAULT)) {
-            rt_ui_form_accept(inst); /* may tear down (free) `inst` -- nothing below touches it again */
+        if (wasModalInst && (wd->flags & RTUI_DEFAULT)) {
+            rt_ui_form_accept(inst); /* a validation failure leaves `inst` open/untouched; success tears it down -- see below */
             break;
         }
-        if (gModal.active && gModal.inst == inst && (wd->flags & RTUI_CANCEL)) {
-            rt_ui_form_cancel(inst); /* likewise may free `inst` */
+        if (wasModalInst && (wd->flags & RTUI_CANCEL)) {
+            rt_ui_form_cancel(inst); /* always tears down */
             break;
         }
 #ifdef RT_MAC_TEST
@@ -2593,7 +2600,24 @@ static void rt_ui_fire_widget(rt_ui_winst *inst, short wIdx)
     default:
         break;
     }
-    SetPort(savedPort);
+    /* Fix round 1 (review minor): a REAL click reaches here with the port
+       already SetPort'd to inst->wp by rt_ui_handle_content_click before
+       TrackControl even ran, so the plain GetPort snapshot above (savedPort)
+       IS inst->wp itself in that case -- if rt_ui_form_accept/cancel just
+       DisposeWindow'd it (wasModalInst was true, and gModal is no longer
+       active/pointing at this inst -- a validation failure instead leaves
+       gModal untouched, so this stays false then), blindly restoring
+       savedPort would leave the CURRENT port pointing at freed
+       WindowRecord memory. Fall back to whatever window is front NOW
+       instead; if none is left at all, there's nothing valid to set and
+       the app is about to quit or sit idle with no port-sensitive call
+       pending anyway. */
+    if (wasModalInst && !gModal.active) {
+        WindowPtr front = FrontWindow();
+        if (front) SetPort(front);
+    } else {
+        SetPort(savedPort);
+    }
 }
 
 /* ==================== update / activate ==================== */
@@ -3193,21 +3217,18 @@ static void rt_ui_handle_mouse_down(const EventRecord *ev)
 
     switch (part) {
     case inGoAway:
+        /* Close box on a form window is CANCEL, not the normal close
+           cascade (mac-target-4d Task 6, Ch10: "Escape, Cancel, or the
+           close box all cancel a form the same way") -- Fix round 1: this
+           used to check gModal itself and branch to rt_ui_form_cancel vs.
+           rt_ui_close here; that carve-out is now centralized in
+           rt_ui_close_internal (rt_ui_close's own callee), which every
+           caller reaching it -- this one, `close w`, and `quit`'s cascade
+           -- gets for free, so a plain unconditional rt_ui_close is
+           correct here too. */
         if (wp != NULL && TrackGoAway(wp, ev->where)) {
             inst = rt_ui_winst_of(wp);
-            if (inst) {
-                /* Close box on a form window is CANCEL, not the normal
-                   close cascade (mac-target-4d Task 6, Ch10: "Escape,
-                   Cancel, or the close box all cancel a form the same
-                   way") -- `inst` can only equal gModal.inst here if this
-                   IS the modal window (the filter above already turned
-                   away every OTHER one of our windows while gModal is
-                   active). */
-                if (gModal.active && inst == gModal.inst)
-                    rt_ui_form_cancel(inst);
-                else
-                    rt_ui_close(inst);
-            }
+            if (inst) rt_ui_close(inst);
         }
         break;
     case inDrag: {
@@ -3967,9 +3988,10 @@ static unsigned char rt_ui_script_key_arg(const char *arg1)
    "the close box was clicked and released", so it goes directly to
    rt_ui_close, exactly what a successful TrackGoAway leads to in
    rt_ui_handle_mouse_down's inGoAway case -- including that same case's
-   modal-form carve-out (mac-target-4d Task 6): a scripted `close` against
-   the currently-open form is cancel, not the plain close cascade, so
-   scripts get the identical behavior a real close-box click would. */
+   modal-form carve-out, which (Fix round 1) now lives centrally in
+   rt_ui_close_internal (see its own comment) rather than here, so a plain
+   unconditional rt_ui_close is correct: scripts still get the identical
+   behavior a real close-box click would. */
 static void rt_ui_script_close(void)
 {
     WindowPtr wp;
@@ -3978,9 +4000,7 @@ static void rt_ui_script_close(void)
     wp = FrontWindow();
     if (!wp) return;
     inst = rt_ui_winst_of(wp);
-    if (!inst) return;
-    if (gModal.active && inst == gModal.inst) rt_ui_form_cancel(inst);
-    else rt_ui_close(inst);
+    if (inst) rt_ui_close(inst);
 }
 
 /* `resize W H`: real resizing is interactive (GrowWindow blocks on a real
@@ -4503,11 +4523,37 @@ static void rt_ui_teardown_window(rt_ui_winst *inst)
    call had never happened). rt_ui_close (a single window, `close w`) and
    rt_ui_quit (the whole open-window list, `quit`) both funnel through here
    so "cancel" means the identical thing -- and produces the identical
-   trace -- from either caller. NOT used by a form window's own OK/Cancel
-   teardown (rt_ui_form_teardown) -- see rt_ui_teardown_window's comment. */
+   trace -- from either caller.
+
+   Fix round 1 (mac-target-4d Task 6 review): a form window reaching this
+   function AT ALL -- via `close w`, or via `quit`'s cascade walking every
+   open window front-to-back -- used to fire a plain closeRequest (wrong:
+   forms never get that hook) and, worse, never ran rt_ui_form_teardown, so
+   gModal stayed `active` with `inst` pointing at a Handle this function was
+   about to free -- every later click dereferenced that dangling pointer
+   (use-after-free) and `rt_ui_edit` panicked forever, permanently bricking
+   the app the moment anything in a `quit` cascade after the form (e.g. a
+   dirty-document window) cancelled the whole quit and left the app running
+   with the form-that-thinks-it's-still-open. Root-caused HERE, the one
+   choke point every caller (rt_ui_close, rt_ui_quit, and any future one)
+   already funnels through, rather than patching rt_ui_quit's loop alone:
+   the currently-modal window routes to rt_ui_form_cancel (same carve-out
+   the close-box path already had) BEFORE the generic closeRequest path even
+   runs, and ALWAYS reports "closed" (1) -- a form has no dirty-document
+   veto of its own, so there's nothing to abort. rt_ui_form_cancel disposes
+   the window itself, so this returns immediately after -- nothing below
+   double-closes it. This also makes the close-box (rt_ui_handle_mouse_down)
+   and scripted-`close` (rt_ui_script_close) carve-outs that used to check
+   gModal themselves before calling rt_ui_close redundant -- simplified back
+   to a plain unconditional call, see their own comments. */
 static int rt_ui_close_internal(rt_ui_winst *inst)
 {
     long cancelFlag;
+
+    if (gModal.active && inst == gModal.inst) {
+        rt_ui_form_cancel(inst);
+        return 1;
+    }
 
     cancelFlag = 0;
 #ifdef RT_MAC_TEST
@@ -4599,22 +4645,27 @@ static int rt_ui_parse_int(const unsigned char *p, short len, int32_t *out)
    comment for the representation) in reverse: no string->fixed parser
    existed anywhere in this codebase before this (grepped rt.c/rt_mac.c per
    the task brief). Integer part: same overflow-checked accumulation as
-   rt_ui_parse_int, capped at 32767 (a fixed value's integer half can never
-   exceed that magnitude regardless of fraction, so a bigger integer part
-   is rejected here as overflow rather than silently wrapping). Fraction
-   part: digit-by-digit REVERSE Horner (`frac = (frac + digit*65536) / 10`,
-   walked last-digit-first) -- the textbook decimal-fraction-to-binary-
-   fraction conversion; exact for power-of-two fractions (.5, .25, .125,
-   .0625, ...) and close (off by at most one unit) for others.
+   rt_ui_parse_int, capped at 32767 for EITHER sign -- a ponytail
+   simplification, same spirit as rt_ui_parse_int's own INT32_MIN carve-out:
+   the true negative floor is -32768.0 (one more than 32767 in magnitude),
+   not symmetric with the positive side, but a UI form field rejecting that
+   one extreme value as "overflow" isn't worth a second, sign-aware
+   comparison. Fraction part: digit-by-digit REVERSE Horner
+   (`frac = (frac + digit*65536) / 10`, walked last-digit-first) -- the
+   textbook decimal-fraction-to-binary-fraction conversion; exact for
+   power-of-two fractions (.5, .25, .125, .0625, ...) and close (off by at
+   most one unit) for others -- run ONLY when a `.` is actually present
+   (`dot >= 0`): a whole number like "7" or "42" has NO fraction at all, so
+   `frac` stays 0 -- Fix round 1's bug was this loop running unconditionally
+   (`for (j = len-1; j > dot; j--)` with `dot` still -1 re-walks the WHOLE
+   string, integer digits included, as if they were fractional, e.g. "7" ->
+   327680+... instead of 7<<16 = 458752; "42" corrupted the same way).
    ROUND-TRIP CAVEAT: rt_ui_fixed_to_str's own display already FLOORS 65536
    fractional levels down to 4 decimal digits -- printing a value then
    re-parsing those same unedited digits is therefore not guaranteed to
    reproduce the identical bit pattern for an arbitrary fraction (only for
    one rt_ui_fixed_to_str would have printed losslessly), since 10000
-   decimal levels and 65536 binary levels don't divide evenly. Not
-   exercised by this task's own probe scenario (str/int/bool/enum binds
-   only, per the brief) -- implemented for completeness against the full
-   walker spec, and this caveat is the reason why. */
+   decimal levels and 65536 binary levels don't divide evenly. */
 static int rt_ui_parse_fixed(const unsigned char *p, short len, int32_t *out)
 {
     short i = 0, dot = -1, j;
@@ -4636,8 +4687,10 @@ static int rt_ui_parse_fixed(const unsigned char *p, short len, int32_t *out)
         if (ipart > (32767L - (p[j] - '0')) / 10) return 0; /* won't fit a fixed's integer half */
         ipart = ipart * 10 + (p[j] - '0');
     }
-    for (j = (short)(len - 1); j > dot; j--) {
-        frac = (frac + (long)(p[j] - '0') * 65536L) / 10;
+    if (dot >= 0) {
+        for (j = (short)(len - 1); j > dot; j--) {
+            frac = (frac + (long)(p[j] - '0') * 65536L) / 10;
+        }
     }
     {
         long v = (ipart << 16) | frac;
@@ -4904,7 +4957,15 @@ short rt_ui_form_is_new(void)
    to find a type's frontmost instance. `next` is captured before the
    close call because DisposeWindow (inside rt_ui_close_internal) unlinks
    the window from that very list; walking off a pointer already freed as
-   a side effect of visiting it would be a use-after-free. */
+   a side effect of visiting it would be a use-after-free -- same reasoning
+   covers rt_ui_close_internal's modal carve-out disposing the window via
+   rt_ui_form_cancel instead, when this cascade reaches the open form
+   (Fix round 1). If something LATER in the cascade cancels the whole
+   quit (a dirty-document window's own closeRequest handler), the form has
+   already been cleanly cancelled and closed by that point -- gModal is
+   clear, nothing dangles, and the app is left running normally with the
+   rest of its windows (the ones not yet visited) still open, same as any
+   other cancelled quit. */
 void rt_ui_quit(void)
 {
     WindowPtr wp, next;

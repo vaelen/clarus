@@ -19,6 +19,7 @@
 #include "rt_ui.h"
 #include "rt.h"
 #include <stddef.h> /* offsetof -- TableProbe's rt_field_desc offsets (Task 4, mac-target-4d) */
+#include <NumberFormatting.h> /* NumToString -- FormProbe's Price/fixed result trace (Task 6 fix round 1) */
 
 /* ==================== Probe window (Task 1, extended) ==================== */
 
@@ -479,25 +480,29 @@ static const rt_ui_window_desc kTableProbeWindow = {
  * RTUI_EV_ACCEPTED/CANCELLED only ever hand it FormProbe's own inst. */
 
 typedef struct { unsigned char name[21]; /* 1 len + 20 data bytes (strCap 20) */
-                 int32_t qty; int32_t active; int32_t color; } FormRec;
+                 int32_t qty; int32_t active; int32_t color;
+                 int32_t price; /* RT_FT_FIXED, 16.16 -- Fix round 1 coverage
+                                    for rt_ui_parse_fixed's whole-number bug */
+} FormRec;
 
 static FormRec gFormRec;
 static int gFormEverAccepted = 0;
 
 static const rt_field_desc kFormFields[] = {
-    { RT_FT_STR,  20, offsetof(FormRec, name),   0, NULL, NULL },
-    { RT_FT_INT,   0, offsetof(FormRec, qty),    0, NULL, NULL },
-    { RT_FT_BOOL,  0, offsetof(FormRec, active), 0, NULL, NULL },
-    { RT_FT_ENUM,  0, offsetof(FormRec, color),  3, kColorValues, kColorNames }
+    { RT_FT_STR,   20, offsetof(FormRec, name),   0, NULL, NULL },
+    { RT_FT_INT,    0, offsetof(FormRec, qty),    0, NULL, NULL },
+    { RT_FT_BOOL,   0, offsetof(FormRec, active), 0, NULL, NULL },
+    { RT_FT_ENUM,   0, offsetof(FormRec, color),  3, kColorValues, kColorNames },
+    { RT_FT_FIXED,  0, offsetof(FormRec, price),  0, NULL, NULL }
 };
-static const rt_layout_desc kFormLayout = { (long)sizeof(FormRec), 4, kFormFields };
+static const rt_layout_desc kFormLayout = { (long)sizeof(FormRec), 5, kFormFields };
 
-enum { F_NAME = 0, F_QTY = 1, F_ACTIVE = 2, F_COLOR = 3, F_OK = 4, F_CANCEL = 5 };
+enum { F_NAME = 0, F_QTY = 1, F_ACTIVE = 2, F_COLOR = 3, F_PRICE = 4, F_OK = 5, F_CANCEL = 6 };
 
 static const rt_ui_bind_desc kFormBinds[] = {
-    { F_NAME, 0 }, { F_QTY, 1 }, { F_ACTIVE, 2 }, { F_COLOR, 3 }
+    { F_NAME, 0 }, { F_QTY, 1 }, { F_ACTIVE, 2 }, { F_COLOR, 3 }, { F_PRICE, 4 }
 };
-static const rt_ui_form_desc kFormForm = { &kFormLayout, 4, kFormBinds };
+static const rt_ui_form_desc kFormForm = { &kFormLayout, 5, kFormBinds };
 
 enum { FL_EDIT = 0, FL_RESULT = 1 };
 static const rt_ui_window_desc kFormLauncherWindow; /* forward: formprobe_win_event needs it below */
@@ -506,7 +511,11 @@ static const rt_ui_window_desc kFormLauncherWindow; /* forward: formprobe_win_ev
    ('A'ccepted/'C'ancelled) and, for accepted, isNew's digit -- no sprintf,
    no rt_text, same "no libc" spirit as ui8_to_pstr/build_status above.
    Qty is printed via ui8_to_pstr, so this probe only ever types small
-   (0..99) quantities into FormProbe's Qty field. */
+   (0..99) quantities into FormProbe's Qty field. Price is printed via
+   NumToString as the RAW 16.16 fixed int32 (not re-formatted through
+   rt_ui_fixed_to_str) specifically so the trace shows the exact stored bit
+   pattern -- Fix round 1's coverage for rt_ui_parse_fixed's whole-number
+   bug wants to see "458752" (7<<16) for a typed "7", not "7.0000". */
 static void build_form_result(unsigned char *out, char tag, int isNewFlag)
 {
     unsigned char n = 0, i;
@@ -525,6 +534,13 @@ static void build_form_result(unsigned char *out, char tag, int isNewFlag)
     out[1 + n++] = (unsigned char)(gFormRec.active ? 'Y' : 'N');
     out[1 + n++] = ' ';
     out[1 + n++] = (unsigned char)('0' + gFormRec.color);
+    out[1 + n++] = ' ';
+    {
+        Str255 pricebuf;
+        NumToString((long)gFormRec.price, pricebuf);
+        for (i = 0; i < pricebuf[0]; i++) out[1 + n + i] = pricebuf[1 + i];
+        n = (unsigned char)(n + pricebuf[0]);
+    }
     if (tag == 'A') {
         out[1 + n++] = ' ';
         out[1 + n++] = (unsigned char)('0' + isNewFlag);
@@ -561,16 +577,18 @@ static const rt_ui_widget_desc kFormWidgets[] = {
       RTUI_AT_XY, 20, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_POPUP, "Color", (const unsigned char *)"\pColor:",
       RTUI_AT_XY, 20, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_FIELD, "Price", (const unsigned char *)"\pPrice:",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, 200, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "OK", (const unsigned char *)"\pOK",
       RTUI_AT_XY, 20, RTUI_BOTTOM, 80, RTUI_FILL_NONE, RTUI_DEFAULT },
     { RTUI_BUTTON, "Cancel", (const unsigned char *)"\pCancel",
-      RTUI_AT_RIGHT, 0, 128, 80, RTUI_FILL_NONE, RTUI_CANCEL }
+      RTUI_AT_RIGHT, 0, 156, 80, RTUI_FILL_NONE, RTUI_CANCEL }
 };
 
 static const rt_ui_window_desc kFormWindow = {
     "FormProbe", (const unsigned char *)"\pForm Probe",
     280, 200, 0, 0, 0,
-    6, kFormWidgets,
+    7, kFormWidgets,
     0,
     &kFormHandlers,
     &kFormForm
@@ -632,6 +650,7 @@ int main(void)
     gFormRec.qty = 0;
     gFormRec.active = 0;
     gFormRec.color = 0;
+    gFormRec.price = 0;
     rt_ui_open(&kTextProbeWindow);
     rt_ui_open(&kProbeWindow);
     rt_ui_open(&kBounceWindow);
