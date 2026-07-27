@@ -97,6 +97,21 @@ var uiMenuItemIdx: map of int
 // against the firing instance's properties, fields, and widgets").
 var lowCurWinType: int
 
+// lowCurHandlerEvent/lowCurAcceptedParam (Task 7, Ch10 forms) scope `isNew`
+// to exactly one place: a read of the `accepted` handler's own declared
+// parameter. Saved/set/restored around a handler body's own lowHandlerFunc
+// call in lowWindowHandlerEntry (the same save-set-restore shape lowCurWinType
+// itself uses, just driven from the caller that actually knows the event
+// name/param, rather than from lowHandlerFunc -- widget/menu/every handlers
+// have no such concept at all). -1 outside any accepted/cancelled handler
+// body. lowCurAcceptedParam (the accepted param's own interned name, e.g.
+// "b" for `on accepted(b: Bookmark)`) is meaningful only while
+// lowCurHandlerEvent == intern("accepted"); consulted by lowSelect's TyRec
+// case (`b.isNew`) to tell "the accepted param itself" apart from any other
+// record read that happens to spell a field `isNew`.
+var lowCurHandlerEvent: int
+var lowCurAcceptedParam: int
+
 // uiWinHandlersIdx (Task 5) maps a window type name to its irWinHandlers
 // arena index, lazily created on that window's FIRST registered handler
 // (lowGetOrCreateWinHandlers) -- a window with no `extend` block at all
@@ -1139,6 +1154,23 @@ func lowIndex(e: int): int {
     return -1
 }
 
+// lowRecHasLiteralField reports whether record type recType declares a REAL
+// field named fieldName -- the same recordFieldsHead/fieldInfos walk
+// check.cla's readOnlyPropName (TyRec case) already uses to decide whether
+// `isNew` is the synthetic pseudo-property or a shadowing real field.
+func lowRecHasLiteralField(recType: int, fieldName: string): bool {
+    var fh: int
+
+    fh = recordFieldsHead(typeNameIdx(recType))
+    while fh != -1 {
+        if poolGet(fieldInfos[fh].nameIdx) == fieldName {
+            return true
+        }
+        fh = fieldInfos[fh].next
+    }
+    return false
+}
+
 // lowSelect lowers a bare `a.b` -- a record field, or a no-argument
 // property (.length/.count, lastError's .code/.message) -- a port of
 // expr.go's lowerSelect. Method calls go through lowMethodCall instead,
@@ -1178,6 +1210,19 @@ func lowSelect(e: int): int {
     } else if xk == TyWindowRef {
         return lowWindowInstSelect(e, xExpr, propName, ty)
     } else if xk == TyRec {
+        if propName == "isNew" and not lowRecHasLiteralField(exprTypeGet(xExpr), "isNew") {
+            // Ch10: `isNew` reads back the `edit`/`accepted` call's own
+            // isNew flag -- but ONLY on the accepted handler's own
+            // parameter (see lowCurHandlerEvent/lowCurAcceptedParam's doc
+            // comment); a record that happens to declare a REAL field
+            // named isNew shadows this entirely (falls through to the
+            // ordinary FieldRef below, per checkSelect's own field-walk-
+            // first order) and never reaches this branch at all.
+            if lowCurHandlerEvent == intern("accepted") and exprKind(xExpr) == ExIdent and identName(xExpr) == lowCurAcceptedParam {
+                return newIRIntr(IUiFormIsNew(), -1, ty)
+            }
+            lowUnsupported("isNew is only defined on the accepted handler's parameter")
+        }
         return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
     } else if xk == TyErrorType {
         // `lastError.code`/`.message` read the runtime's rt_lasterr_*
@@ -1425,8 +1470,71 @@ func lowStmt(s: int): int {
         // scratch-pointer convention it writes through.
         return newIRExprStmt(newIRIntr(IUiCancel(), -1, irVoidT))
     }
+    case StEdit {
+        return lowEditStmt(s)
+    }
     }
     lowUnsupported("statement kind " + numToStr(int(stmtKind(s))))
+    return -1
+}
+
+// lowEditEmit builds the IUiEdit Intr call (ir.cla's IUiEdit doc comment
+// pins the arg shape) for one of lowEditStmt's three non-`new` target
+// kinds: 1=RT_UI_WB_ADDR (opA the lvalue, opB unused/-1), 2=RT_UI_WB_LIST
+// (opA the list, opB the index), 3=RT_UI_WB_MAP (opA the map, opB the key)
+// -- opA/opB are already-lowered IR exprs. Shared tail so lowEditStmt's own
+// branches stay flat.
+func lowEditEmit(winNameIdx: int, kind: int, opA: int, opB: int): int {
+    var kindConst: int
+
+    kindConst = newIRIntConst(kind, irIntT)
+    irExprListAppend(kindConst, opA)
+    if opB != -1 {
+        irExprListAppend(opA, opB)
+    }
+    return newIRExprStmt(newIRIntr(IUiEdit(), kindConst, irWinRefType(winNameIdx)))
+}
+
+// lowEditStmt lowers `edit F, target` / `edit F, new T` (Ch10: The Edit
+// Statement). checkEditStmt already guarantees F is a form window and
+// (isNew case) T matches its form record, or (target case) target's type
+// equals the form record type -- but NOT that target is one of the four
+// runtime-supported lvalue shapes (checkExpr accepts any expr of the right
+// TYPE, including a shape like `xs[i].nested` that happens to select a
+// field of the form record's own type nested inside another record): this
+// function is what actually restricts target to a bare variable (global or
+// window-scoped per-instance, both via lowExpr -- lowIdent/lowSelect's
+// TyWindowRef case already produce an addressable FieldRef/VarRef either
+// way), a list element, or a map element, rejecting anything else with the
+// brief's own pinned message.
+func lowEditStmt(s: int): int {
+    var winNameIdx: int
+    var target: int
+    var xk: TypeKind
+
+    winNameIdx = editForm(s)
+
+    if editIsNew(s) {
+        return lowEditEmit(winNameIdx, 0, -1, -1)
+    }
+
+    target = editTarget(s)
+    if exprKind(target) == ExIdent {
+        return lowEditEmit(winNameIdx, 1, lowExpr(target), -1)
+    }
+    if exprKind(target) == ExSelect and typeKind(exprTypeGet(selectX(target))) == TyWindowRef {
+        return lowEditEmit(winNameIdx, 1, lowExpr(target), -1)
+    }
+    if exprKind(target) == ExIndex {
+        xk = typeKind(exprTypeGet(indexX(target)))
+        if xk == TyList {
+            return lowEditEmit(winNameIdx, 2, lowExpr(indexX(target)), lowExpr(indexI(target)))
+        }
+        if xk == TyMap {
+            return lowEditEmit(winNameIdx, 3, lowExpr(indexX(target)), lowExpr(indexI(target)))
+        }
+    }
+    lowUnsupported("edit target must be a variable, list element, or map element")
     return -1
 }
 
@@ -2404,18 +2512,24 @@ func lowWidgetDesc(w: int, winName: string): int {
         p = declNext(p)
     }
 
+    if kind == "field" or kind == "check" or kind == "popup" {
+        // `binds:` (Ch10) is checker-validated (WidgetInfo.bindsIdx) for all
+        // three of field/check/popup, but Task 5 only ever READ it back here
+        // for popup (its own form-window guard, just below) -- field/check's
+        // bindsIdx silently never reached this widget's own IRWidgetDesc at
+        // all, a latent gap invisible until Task 7's form fixture (the first
+        // to actually declare a bound field/check) needed the bind table
+        // built from THIS field, not re-derived elsewhere. Capturing it here
+        // uniformly is what makes lowWindowDecl's own bind-table walk (which
+        // reads irWidgetDescBindsIdx back off each widget) see field/check
+        // binds at all, not just popup's.
+        bindsIdx = widgetBindsIdx(winName, wgName)
+    }
     if kind == "popup" {
         // Ch10: a popup finds its item labels through the OWNING window's
         // form binding (rt_ui_form_desc, Task 7) -- both pieces that walk
-        // needs are checker-resolved already: bindsIdx (WidgetInfo, via
-        // widgetBindsIdx) and windowIsForm. Neither guard is reachable via
-        // any PASSING fixture this task (a form window still aborts at
-        // `form for` itself, lowUnsupported("form for") in lowWindowDecl
-        // below) -- see this task's brief on why: the guard fires INSTEAD of
-        // that abort only when this popup is declared textually BEFORE
-        // `form for` in source (lowWindowDecl's item loop is source-order),
-        // which is exactly how this task's negative fixtures are written.
-        bindsIdx = widgetBindsIdx(winName, wgName)
+        // needs are checker-resolved already: bindsIdx (just above) and
+        // windowIsForm.
         if bindsIdx == -1 or windowIsForm.get(winName, 0) != 1 {
             lowUnsupported("popup requires binds inside a form window")
         }
@@ -2445,6 +2559,14 @@ func lowWidgetDesc(w: int, winName: string): int {
             }
             p = declNext(p)
         }
+        if columnsHead == -1 {
+            // Deferred minor from Task 5 (reviewer-recommended): the checker
+            // never enforced Ch10's "a table declares >=1 column" -- a
+            // zero-column table widget passed checking and would have
+            // emitted a `static const rt_ui_col_desc clar_ui_cols_W_T[] =
+            // { };`, invalid C (an empty array initializer).
+            lowUnsupported("table must have at least one column")
+        }
     }
 
     return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
@@ -2460,8 +2582,20 @@ func lowWidgetDesc(w: int, winName: string): int {
 // later applied) rather than lowered here directly: it's an ordinary
 // per-instance-field assignment, which needs `window`/lowCurWinType wiring
 // only lowHandlerFunc's machinery sets up, not available at this point in
-// lowering a bare window declaration. `form for` is Ch10 (out of scope;
-// host-unsupported here).
+// lowering a bare window declaration.
+//
+// `form for` (Ch10, Task 7): resolved up front from check.cla's own
+// windowIsForm/windowFormRecType side tables (already fully populated --
+// checkWindowDecl's OWN first pass resolves `form for` before validating
+// anything else in the body, and checking has run to completion before any
+// lowering starts at all, per lowCurWinType's doc comment) rather than by
+// re-walking the item loop below for the DkFormFor node -- so this reads
+// the same regardless of where `form for` appears textually in the body.
+// The per-window bind table (IRBindDesc chain, widgetIndex -> fieldIndex)
+// is built AFTER the item loop, once widgetsHead is fully assembled: each
+// bound widget's field name (widgetBindsIdx, checker's WidgetInfo.bindsIdx)
+// resolves to its 0-based field-layout position via lowColumnFieldIndex,
+// the exact same resolution a table's own columns already use.
 func lowWindowDecl(d: int) {
     var winNameIdx: int
     var winName: string
@@ -2484,6 +2618,15 @@ func lowWindowDecl(d: int) {
     var wd: int
     var fslot: int
     var fty: int
+    var formRecNameIdx: int
+    var formRecType: int
+    var bindsHead: int
+    var bindsTail: int
+    var bw: int
+    var bWidgetIdx: int
+    var bFieldNameIdx: int
+    var bFieldIdx: int
+    var nb: int
 
     winNameIdx = windowDeclName(d)
     winName = poolGet(winNameIdx)
@@ -2499,6 +2642,14 @@ func lowWindowDecl(d: int) {
     stateTail = -1
     defHead = -1
     defTail = -1
+
+    formRecNameIdx = -1
+    formRecType = windowFormRecType.get(winName, -1)
+    if windowIsForm.get(winName, 0) == 1 and formRecType != -1 {
+        formRecNameIdx = typeNameIdx(formRecType)
+        lowCheckSerializableFields(formRecNameIdx, "form for")
+        irMarkLayoutNeeded(formRecNameIdx)
+    }
 
     item = windowDeclItemsHead(d)
     while item != -1 {
@@ -2538,7 +2689,8 @@ func lowWindowDecl(d: int) {
             }
             widgetsTail = irWidgetDescListAppend(widgetsTail, wd)
         } else if declKind(item) == DkFormFor {
-            lowUnsupported("form for")
+            // Already resolved up front (see this function's own doc
+            // comment) -- nothing left to do per-occurrence.
         }
         item = declNext(item)
     }
@@ -2552,7 +2704,28 @@ func lowWindowDecl(d: int) {
     if defHead != -1 {
         winVarDefaultsHead[numToStr(progGen) + "|" + winName] = defHead
     }
-    newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead)
+
+    bindsHead = -1
+    bindsTail = -1
+    if formRecNameIdx != -1 {
+        bw = widgetsHead
+        bWidgetIdx = 0
+        while bw != -1 {
+            bFieldNameIdx = widgetBindsIdx(winName, poolGet(irWidgetDescName(bw)))
+            if bFieldNameIdx != -1 {
+                bFieldIdx = lowColumnFieldIndex(formRecType, poolGet(bFieldNameIdx))
+                nb = newIRBindDesc(bWidgetIdx, bFieldIdx)
+                if bindsHead == -1 {
+                    bindsHead = nb
+                }
+                bindsTail = irBindDescListAppend(bindsTail, nb)
+            }
+            bWidgetIdx = bWidgetIdx + 1
+            bw = irWidgetDescNext(bw)
+        }
+    }
+
+    newIRWindowDesc(winNameIdx, titleIdx, w, h, resizable, minW, minH, widgetsHead, stateHead, formRecNameIdx, bindsHead)
 }
 
 // lowMenuDecl lowers `menu M { ... }` (Ch9) into an IRMenuDesc, and records
@@ -2622,12 +2795,19 @@ func lowMenuDecl(d: int) {
 func lowGetOrCreateWinHandlers(winName: string): int {
     var key: string
     var idx: int
+    var formRecNameIdx: int
+    var formRecType: int
 
     key = numToStr(progGen) + "|" + winName
     if uiWinHandlersIdx.has(key) {
         return uiWinHandlersIdx.get(key, -1)
     }
-    idx = newIRWinHandlers(intern(winName))
+    formRecNameIdx = -1
+    formRecType = windowFormRecType.get(winName, -1)
+    if windowIsForm.get(winName, 0) == 1 and formRecType != -1 {
+        formRecNameIdx = typeNameIdx(formRecType)
+    }
+    idx = newIRWinHandlers(intern(winName), formRecNameIdx)
     uiWinHandlersIdx[key] = idx
     return idx
 }
@@ -2840,6 +3020,8 @@ func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
     var event: string
     var cName: string
     var fnNameIdx: int
+    var savedEvent: int
+    var savedParam: int
 
     displayName = poolGet(handlerDeclPath(h))
     parts = splitDots(displayName)
@@ -2858,9 +3040,26 @@ func lowWindowHandlerEntry(winType: int, winName: string, whIdx: int, h: int) {
             irWinHandlersSetResizedFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
         } else if event == "key" {
             irWinHandlersSetKeyFn(whIdx, lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h)))
+        } else if event == "accepted" {
+            // Ch10: `on accepted(b: T)` -- lowCurHandlerEvent/lowCurAcceptedParam
+            // scope `b.isNew` (lowSelect's TyRec case) to exactly this body;
+            // checkWindowHandler already guarantees exactly one declared
+            // param, typed as the form's own record.
+            savedEvent = lowCurHandlerEvent
+            savedParam = lowCurAcceptedParam
+            lowCurHandlerEvent = intern("accepted")
+            lowCurAcceptedParam = paramName(handlerDeclParamsHead(h))
+            fnNameIdx = lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h))
+            lowCurHandlerEvent = savedEvent
+            lowCurAcceptedParam = savedParam
+            irWinHandlersSetAcceptedFn(whIdx, fnNameIdx)
+        } else if event == "cancelled" {
+            savedEvent = lowCurHandlerEvent
+            lowCurHandlerEvent = intern("cancelled")
+            fnNameIdx = lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h))
+            lowCurHandlerEvent = savedEvent
+            irWinHandlersSetCancelledFn(whIdx, fnNameIdx)
         } else {
-            // Form-window events (Ch10: `accepted`/`cancelled`) are
-            // host-unsupported here, like Task 4's own `form for` gap.
             lowUnsupported("window event " + event)
         }
     } else {
@@ -3160,6 +3359,8 @@ func lowerProgram(declHead: int): int {
     lowSwitchN = 0
     uiMenuCount = 0
     lowCurWinType = -1
+    lowCurHandlerEvent = -1
+    lowCurAcceptedParam = -1
     lowBuiltinSaveChoiceLayout()
     d = declHead
     while d != -1 {

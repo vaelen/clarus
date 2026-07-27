@@ -377,6 +377,45 @@ func TestPopuptableUIScenario(t *testing.T) {
 	}
 }
 
+// TestFormeditUIScenario (mac-target-4d Task 7): form windows/binds/edit/
+// accepted/cancelled end to end -- Add opens EditForm on `new Bookmark`
+// (all four bound widget kinds: field(str)/field(int)/popup(enum)/
+// check(bool)), an overflowing Port value beeps and re-focuses (S1), a fix
+// + OK fires `accepted` and adds the row (S2: table shows it), a
+// dblclick-edit round renames it and re-accepts, writing back (S3: table
+// redraws), and a second edit on the same row is cancelled via Escape (S4:
+// byte-identical to S3 -- cancelling truly changed nothing). See
+// testdata/ui/formedit.cla's own header comment for the coordinate
+// derivation.
+func TestFormeditUIScenario(t *testing.T) {
+	snaps := runUIScenario(t, "formedit", 0)
+	var s1, s2, s3, s4 []byte
+	for _, s := range snaps {
+		switch s.name {
+		case "S1":
+			s1 = s.bytes
+		case "S2":
+			s2 = s.bytes
+		case "S3":
+			s3 = s.bytes
+		case "S4":
+			s4 = s.bytes
+		}
+	}
+	if s1 == nil || s2 == nil || s3 == nil || s4 == nil {
+		t.Fatalf("formedit: expected snaps S1, S2, S3, and S4, got %d snap(s)", len(snaps))
+	}
+	if bytes.Equal(s1, s2) {
+		t.Fatalf("formedit: snap S1 == S2 -- accepting the new bookmark did not add a row to the table")
+	}
+	if bytes.Equal(s2, s3) {
+		t.Fatalf("formedit: snap S2 == S3 -- the lvalue-edit round did not change the table's row")
+	}
+	if !bytes.Equal(s3, s4) {
+		t.Fatalf("formedit: snap S3 != S4 -- cancelling the second edit changed the table anyway")
+	}
+}
+
 // TestUIAbout: an `app` section with all four About-relevant properties set
 // -- the Apple menu's About item becomes "About AboutProbe..." and selecting
 // it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT

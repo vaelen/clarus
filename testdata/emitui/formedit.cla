@@ -1,0 +1,105 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// formedit.cla: emitui golden fixture -- mac-target-4d Task 7's whole
+// surface: `form for`, the per-window bind table (field(str)/field(int)/
+// popup(enum)/check(bool), all bound), the `edit` statement across all
+// four runtime-supported target shapes (global record var, list element,
+// map element, `new T`), `accepted`/`cancelled`, and scoped `isNew`.
+// Modeled on the language reference's own Appendix C Bookmark Manager, with
+// two extra buttons/handlers (EditCur/EditMap) added solely to reach the
+// ADDR and MAP edit-target shapes the appendix's own example never
+// exercises (it only ever uses `new T` and a list element). EditForm is
+// given an explicit `size:` -- the appendix's own EditForm has none, but
+// this task's brief scopes natural-sizing (rt_ui_open's own w==0 fallback)
+// to Task 9/the runtime, not this fixture; see the task report's own
+// concerns section.
+enum Protocol {
+    Gopher
+    HTTP
+    Telnet
+}
+
+record Bookmark {
+    name:     string(63)
+    url:      string(255)
+    port:     int = 80
+    protocol: Protocol
+    favorite: bool
+}
+
+var bookmarks: list of Bookmark
+var current: Bookmark
+var byName: map of Bookmark
+
+window Main {
+    title: "Bookmarks"
+    size: 420, 320
+    resizable
+
+    table Marks {
+        rows: bookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 30
+    }
+    button Add     { at: 10, bottom;   caption: "Add…" }
+    button Remove  { at: next, bottom; caption: "Remove" }
+    button EditCur { at: next, bottom; caption: "Edit Current" }
+    button EditMap { at: next, bottom; caption: "Edit ByName" }
+}
+
+window EditForm {
+    title: "Edit Bookmark"
+    size: 300, 200
+    form for Bookmark
+
+    field Name     { binds: name;     label: "Name:" }
+    field Url      { binds: url;      label: "URL:" }
+    field Port     { binds: port;     label: "Port:";  width: 60 }
+    popup Proto    { binds: protocol; label: "Protocol:" }
+    check Fav      { binds: favorite; caption: "Favorite" }
+
+    button OK      { default }
+    button Cancel  { cancel }
+}
+
+on App.startEmpty {
+    open Main
+}
+
+extend Main {
+    on Add.click {
+        edit EditForm, new Bookmark
+    }
+
+    on Marks.doubleClick(i: int) {
+        edit EditForm, bookmarks[i]
+    }
+
+    on Remove.click {
+        bookmarks.remove(Marks.selected)
+    }
+
+    on EditCur.click {
+        edit EditForm, current
+    }
+
+    on EditMap.click {
+        edit EditForm, byName["default"]
+    }
+}
+
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if b.isNew {
+            bookmarks.add(b)
+        }
+        current = b
+        byName[b.name] = b
+    }
+
+    on cancelled {
+        log("cancelled")
+    }
+}

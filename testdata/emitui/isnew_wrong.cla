@@ -1,0 +1,39 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// isnew_wrong.cla: emitui error fixture -- `isNew` (Ch10) read on a record
+// that is NOT the `accepted` handler's own parameter. The checker accepts
+// this (checkSelect resolves any TyRec receiver's `isNew` to BoolT, since
+// it can't tell "the accepted param" from "some other record variable"
+// apart -- that scoping is lower.cla's job, lowCurHandlerEvent/
+// lowCurAcceptedParam), so this must be rejected during lowering instead.
+// No .c.golden: this fixture never successfully emits.
+
+record Bookmark {
+    name: string(63)
+}
+
+var bookmarks: list of Bookmark
+var other: Bookmark
+
+window EditForm {
+    title: "Edit"
+    size: 200, 100
+    form for Bookmark
+
+    field Name { binds: name; label: "Name:" }
+    button OK { default }
+    button Cancel { cancel }
+}
+
+on App.launch {
+    open EditForm
+}
+
+extend EditForm {
+    on accepted(b: Bookmark) {
+        if other.isNew {
+            bookmarks.add(b)
+        }
+    }
+}

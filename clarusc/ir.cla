@@ -305,6 +305,19 @@ record IRColumnDesc {
     next: int
 }
 
+// IRBindDesc: one entry in a form window's rt_ui_bind_desc[] (Ch10) --
+// chained off IRWindowDesc.formBindsHead, same arena-with-next idiom as
+// IRColumnDesc. widgetIndex is the bound widget's 0-based position in the
+// window's OWN declared widget list (uiWidgetIndex's order); fieldIndex is
+// the bound field's 0-based position in the form record's own field order
+// (lower.cla's lowColumnFieldIndex, reused verbatim -- same resolved-at-
+// lowering-time contract IRColumnDesc's own doc comment describes).
+record IRBindDesc {
+    widgetIndex: int
+    fieldIndex: int
+    next: int
+}
+
 // IRWindowDesc: one window TYPE's whole rt_ui_window_desc (Ch8). titleIdx
 // is -1 if the window body gave no `title:` property. widgetsHead chains
 // irWidgetDescs (-1 if the window declares none); stateFieldsHead chains
@@ -312,6 +325,15 @@ record IRColumnDesc {
 // the window's per-instance `var`s (-1 if none) -- cprint.cla emits these
 // as a plain typedef (no clar_new_NAME ctor: a UI state block is allocated
 // and zeroed by the runtime, not constructed by user-facing code).
+//
+// formRecNameIdx/formBindsHead (mac-target-4d Task 7, Ch10 forms): -1/-1 for
+// every window that has no `form for` -- cprint.cla's window-desc printer
+// then leaves the struct's trailing `form` field un-initialized (C's own
+// "fewer initializers than fields" zero-fill), so every pre-Task-7 golden
+// (no form window ever reaches here) stays byte-identical. A form window's
+// formRecNameIdx is its `form for T`'s T (interned); formBindsHead chains
+// IRBindDesc, built once in lowWindowDecl by walking the already-lowered
+// widgetsHead for any widget with a checker-resolved `binds:` (bindsIdx).
 record IRWindowDesc {
     nameIdx: int
     titleIdx: int
@@ -322,6 +344,8 @@ record IRWindowDesc {
     minH: int
     widgetsHead: int
     stateFieldsHead: int
+    formRecNameIdx: int
+    formBindsHead: int
 }
 
 // IRMenuItemDesc: one entry in a menu's rt_ui_item_desc[] (Ch9) -- a real
@@ -380,6 +404,14 @@ record IRMenuDesc {
 // window's IRWindowDesc is built (lowWindowDecl) BEFORE its `extend` block
 // (a separate top-level decl) is ever seen, and nothing else needs the
 // reverse link.
+// acceptedFn/cancelledFn (mac-target-4d Task 7, Ch10 forms) are `on
+// accepted`/`on cancelled` -- -1 if the window's `extend` block declares
+// neither. formRecNameIdx is a COPY of this window's IRWindowDesc.formRecNameIdx
+// (-1 if not a form), carried here too so cpEmitOneWinEventDispatcher's
+// RTUI_EV_ACCEPTED case can spell the `*(clar_rec_T *)a` cast without a
+// second irWindowDescs scan (cpFindWinHandlers already looked this arena up
+// by name; the window desc itself is a separate arena, built earlier by a
+// separate lowWindowDecl call).
 record IRWinHandlers {
     winTypeNameIdx: int
     openedFn: int
@@ -387,6 +419,9 @@ record IRWinHandlers {
     closedFn: int
     resizedFn: int
     keyFn: int
+    acceptedFn: int
+    cancelledFn: int
+    formRecNameIdx: int
     widgetHead: int   // -1; chains IRWidgetHandlerEntry
     widgetTail: int   // -1; append cursor (see lower.cla's lowGetOrCreateWidgetHandlerEntry)
 }
@@ -453,6 +488,7 @@ var irEnumMembers: list of IREnumMember
 var irEnums: list of IREnumLayout
 var irWidgetDescs: list of IRWidgetDesc
 var irColumnDescs: list of IRColumnDesc
+var irBindDescs: list of IRBindDesc
 var irWindowDescs: list of IRWindowDesc
 var irMenuItemDescs: list of IRMenuItemDesc
 var irMenuDescs: list of IRMenuDesc
@@ -561,6 +597,9 @@ func irReset() {
     }
     while irWidgetDescs.count > 0 {
         irWidgetDescs.pop()
+    }
+    while irBindDescs.count > 0 {
+        irBindDescs.pop()
     }
     while irWindowDescs.count > 0 {
         irWindowDescs.pop()
@@ -1572,7 +1611,7 @@ func irColumnDescNext(i: int): int {
     return irColumnDescs[i].next
 }
 
-func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int): int {
+func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: bool, minW: int, minH: int, widgetsHead: int, stateFieldsHead: int, formRecNameIdx: int, formBindsHead: int): int {
     var n: IRWindowDesc
 
     n.nameIdx = nameIdx
@@ -1584,6 +1623,8 @@ func newIRWindowDesc(nameIdx: int, titleIdx: int, w: int, h: int, resizable: boo
     n.minH = minH
     n.widgetsHead = widgetsHead
     n.stateFieldsHead = stateFieldsHead
+    n.formRecNameIdx = formRecNameIdx
+    n.formBindsHead = formBindsHead
     irWindowDescs.add(n)
     return irWindowDescs.count - 1
 }
@@ -1622,6 +1663,43 @@ func irWindowDescWidgetsHead(i: int): int {
 
 func irWindowDescStateFieldsHead(i: int): int {
     return irWindowDescs[i].stateFieldsHead
+}
+
+func irWindowDescFormRecName(i: int): int {
+    return irWindowDescs[i].formRecNameIdx
+}
+
+func irWindowDescFormBindsHead(i: int): int {
+    return irWindowDescs[i].formBindsHead
+}
+
+func irBindDescListAppend(tailIdx: int, idx: int): int {
+    if tailIdx >= 0 {
+        irBindDescs[tailIdx].next = idx
+    }
+    return idx
+}
+
+func newIRBindDesc(widgetIndex: int, fieldIndex: int): int {
+    var n: IRBindDesc
+
+    n.widgetIndex = widgetIndex
+    n.fieldIndex = fieldIndex
+    n.next = -1
+    irBindDescs.add(n)
+    return irBindDescs.count - 1
+}
+
+func irBindDescWidgetIndex(i: int): int {
+    return irBindDescs[i].widgetIndex
+}
+
+func irBindDescFieldIndex(i: int): int {
+    return irBindDescs[i].fieldIndex
+}
+
+func irBindDescNext(i: int): int {
+    return irBindDescs[i].next
 }
 
 func irMenuItemDescListAppend(tailIdx: int, idx: int): int {
@@ -1696,7 +1774,7 @@ func irMenuDescIsStandardEdit(i: int): bool {
 // irEveryEntries arenas)
 // ================================================================
 
-func newIRWinHandlers(winTypeNameIdx: int): int {
+func newIRWinHandlers(winTypeNameIdx: int, formRecNameIdx: int): int {
     var n: IRWinHandlers
 
     n.winTypeNameIdx = winTypeNameIdx
@@ -1705,6 +1783,9 @@ func newIRWinHandlers(winTypeNameIdx: int): int {
     n.closedFn = -1
     n.resizedFn = -1
     n.keyFn = -1
+    n.acceptedFn = -1
+    n.cancelledFn = -1
+    n.formRecNameIdx = formRecNameIdx
     n.widgetHead = -1
     n.widgetTail = -1
     irWinHandlers.add(n)
@@ -1753,6 +1834,26 @@ func irWinHandlersKeyFn(i: int): int {
 
 func irWinHandlersSetKeyFn(i: int, fn: int) {
     irWinHandlers[i].keyFn = fn
+}
+
+func irWinHandlersAcceptedFn(i: int): int {
+    return irWinHandlers[i].acceptedFn
+}
+
+func irWinHandlersSetAcceptedFn(i: int, fn: int) {
+    irWinHandlers[i].acceptedFn = fn
+}
+
+func irWinHandlersCancelledFn(i: int): int {
+    return irWinHandlers[i].cancelledFn
+}
+
+func irWinHandlersSetCancelledFn(i: int, fn: int) {
+    irWinHandlers[i].cancelledFn = fn
+}
+
+func irWinHandlersFormRecName(i: int): int {
+    return irWinHandlers[i].formRecNameIdx
 }
 
 func irWinHandlersWidgetHead(i: int): int {
@@ -2387,4 +2488,27 @@ func IUiSetSelected(): int {
 
 func IUiCanvasDrawText(): int {
     return intern("ui_canvas_draw_text")
+}
+
+// IUiEdit (mac-target-4d Task 7, Ch10's Edit Statement) is `edit F, target`
+// (or `edit F, new T`) -- always a bare statement (SExprStmt wrapping this
+// Intr), never assigned, so its own `ty` is hijacked to carry the form
+// window's name (irWinRefType(winName), the same "ty carries the payload,
+// not just the C type" trick IUiOpen/IUiFront already use for their own
+// window-name lookup) rather than a real return type. args: a0 is an
+// IntConst tag (0=`new T`, 1=RT_UI_WB_ADDR, 2=RT_UI_WB_LIST, 3=RT_UI_WB_MAP
+// -- deliberately the SAME numbers rt_ui.h's own RT_UI_WB_* use, since 1-3
+// map straight through and 0 doubles as WB_NONE's value for the `new T`
+// case); a1/a2 (kind 1: lvalue, -; kind 2: list, index; kind 3: map, key)
+// are already-lowered IR exprs, -1/absent for kind 0. See cprint.cla's
+// fpUiEditStmt for the four call shapes this decodes into.
+func IUiEdit(): int {
+    return intern("ui_edit")
+}
+
+// IUiFormIsNew (Task 7) is `x.isNew` read on the `accepted` handler's own
+// parameter (lower.cla's lowSelect TyRec case, gated by lowCurHandlerEvent/
+// lowCurAcceptedParam) -- rt_ui_form_is_new(), no args.
+func IUiFormIsNew(): int {
+    return intern("ui_form_is_new")
 }

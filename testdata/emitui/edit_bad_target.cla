@@ -1,0 +1,37 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// edit_bad_target.cla: emitui error fixture -- `edit F, target` where
+// target is a nested field of a list element (`holders[0].b`). checkEditStmt
+// only requires target's TYPE match the form record (Bookmark, here nested
+// inside Holder) -- it accepts this fine, since checkExpr never restricts
+// the target's own AST shape. lower.cla's lowEditStmt is what actually
+// limits target to a bare variable, list element, or map element (the only
+// shapes rt_ui_edit's ABI supports); anything else, including this one, is
+// rejected at build time. No .c.golden: this fixture never successfully
+// emits.
+
+record Bookmark {
+    name: string(63)
+}
+
+record Holder {
+    b: Bookmark
+}
+
+var holders: list of Holder
+
+window EditForm {
+    title: "Edit"
+    size: 200, 100
+    form for Bookmark
+
+    field Name { binds: name; label: "Name:" }
+    button OK { default }
+    button Cancel { cancel }
+}
+
+on App.launch {
+    open EditForm
+    edit EditForm, holders[0].b
+}

@@ -232,6 +232,15 @@ func TestEmitUiTablePopupGuards(t *testing.T) {
 		// widget-declaration-time property checking (see the fixture's
 		// own doc comment).
 		{"table_rows_local.cla", "undefined: localRows"},
+		// mac-target-4d Task 7: a zero-column table (deferred minor from
+		// Task 5) -- lower.cla's lowWidgetDesc table branch.
+		{"table_zero_cols.cla", "table must have at least one column"},
+		// Task 7: `isNew` read on a record that isn't the accepted
+		// handler's own parameter -- lower.cla's lowSelect TyRec case.
+		{"isnew_wrong.cla", "isNew is only defined on the accepted handler's parameter"},
+		// Task 7: an edit target shape lower.cla's lowEditStmt doesn't
+		// support (a nested field of a list element).
+		{"edit_bad_target.cla", "edit target must be a variable, list element, or map element"},
 	}
 
 	for _, c := range cases {

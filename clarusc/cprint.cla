@@ -1097,8 +1097,78 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiCanvasDrawText() {
         fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
         return toText("")
+    } else if nm == IUiEdit() {
+        fpUiEditStmt(x, a0, a1, a2)
+        return toText("")
+    } else if nm == IUiFormIsNew() {
+        return "(rt_ui_form_is_new())"
     }
     return toText("")
+}
+
+// fpUiEditStmt prints one `edit F, target` / `edit F, new T` call (Ch10;
+// ir.cla's IUiEdit doc comment pins the arg shape this decodes: kindArg is
+// an IntConst tag, 0=`new T`/RT_UI_WB_NONE, 1=RT_UI_WB_ADDR, 2=RT_UI_WB_LIST,
+// 3=RT_UI_WB_MAP). winName comes off the Intr node's OWN hijacked `ty`
+// (irWinRefType), same trick IUiOpen/IUiFront use for their own window name.
+//
+// LIST's index and MAP's key are each evaluated into a fresh temp EXACTLY
+// ONCE (fpExpr(opB)/fpStrAddr(opB) called a single time each) even though
+// the emitted call site's own src-pointer expression and its own idx/key
+// parameter both need that same value -- an index/key expr with a side
+// effect (a function call, say) must not run twice for one `edit`
+// statement. The list/map CONTAINER itself (opA) is always a plain
+// variable/per-instance-field reference (never an arbitrary expression --
+// same "always a bare global" shape lowTableRowsGlobalName already pins for
+// a table's `rows:`), so referencing its printed text twice is safe with no
+// temp needed.
+func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
+    var winName: string
+    var kind: int
+    var recName: string
+    var t: text
+    var lstText: text
+    var mapText: text
+    var idxT: text
+    var keyT: text
+    var addrText: text
+
+    winName = poolGet(irtName(irExprType(x)))
+    kind = irIntConstV(kindArg)
+
+    if kind == 0 {
+        // `edit F, new T` -- T is F's own form record type.
+        recName = poolGet(cpFindWindowFormRecName(winName))
+        t = fpNewTmp("clar_rec_" + recName)
+        fpEmit(t + " = clar_new_" + recName + "();")
+        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 1, RT_UI_WB_NONE, 0, 0, 0, 0, 0);")
+    } else if kind == 1 {
+        // Global or window-scoped per-instance record variable.
+        addrText = fpAddrable(opA)
+        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&(" + addrText + "), 0, RT_UI_WB_ADDR, (void *)&(" + addrText + "), 0, 0, 0, 0);")
+    } else if kind == 2 {
+        // List element -- src is rt_list_at, RE-DERIVED right here (rt_ui_edit
+        // copies immediately, so the transient pointer is safe).
+        lstText = fpExpr(opA)
+        idxT = fpNewTmp("int32_t")
+        fpEmit(idxT + " = (int32_t)(" + fpExpr(opB) + ");")
+        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)rt_list_at(" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+    } else if kind == 3 {
+        // Map element -- rt_map has no pointer-returning lookup (only a
+        // copy-out get), so the initial value is fetched into a fresh
+        // record temp (defaulted via clar_new_T, then overwritten if the
+        // key is already present) before the call; the key itself is
+        // copied into its own Str255 temp once, reused for both the lookup
+        // and the RT_UI_WB_MAP key255 argument.
+        mapText = fpExpr(opA)
+        keyT = fpNewTmp("clar_str_255")
+        fpEmit("rt_str_store((uint8_t*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
+        recName = poolGet(cpFindWindowFormRecName(winName))
+        t = fpNewTmp("clar_rec_" + recName)
+        fpEmit(t + " = clar_new_" + recName + "();")
+        fpEmit("rt_map_get_dv(" + mapText + ", (const uint8_t*)&" + keyT + ", &" + t + ");")
+        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 0, RT_UI_WB_MAP, 0, 0, 0, " + mapText + ", (const unsigned char*)&" + keyT + ");")
+    }
 }
 
 // fpStoreStr prints a clamped string store: `rt_str_store(&dst, CAP, &src);`
@@ -2043,6 +2113,24 @@ func cpFindWindowStateFields(winName: string): int {
     return -1
 }
 
+// cpFindWindowFormRecName (mac-target-4d Task 7) returns winName's form
+// record type name (interned), or -1 if winName isn't a form window --
+// fpUiEditStmt's own lookup for the `new T`/map-target temp's `clar_rec_T`
+// spelling. Same linear-scan precedent as cpFindWindowStateFields just
+// above.
+func cpFindWindowFormRecName(winName: string): int {
+    var i: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        if poolGet(irWindowDescName(i)) == winName {
+            return irWindowDescFormRecName(i)
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // cpFindGlobalRecName (mac-target-4d Task 5) returns the row-record type
 // name of the global list variable named globalNameIdx (IRWidgetDesc's own
 // rowsGlobalIdx -- lower.cla stores only the global's NAME, not its record
@@ -2161,7 +2249,7 @@ func cpWidgetKindForIndex(winName: string, widgetIndex: int): string {
 // struct (cpEmitWinHandlersFwd) and whether to define its dispatcher body
 // at all (cpEmitUiDispatchers).
 func cpWinHandlersHasWinEvent(whIdx: int): bool {
-    return irWinHandlersOpenedFn(whIdx) != -1 or irWinHandlersCloseRequestFn(whIdx) != -1 or irWinHandlersClosedFn(whIdx) != -1 or irWinHandlersResizedFn(whIdx) != -1 or irWinHandlersKeyFn(whIdx) != -1
+    return irWinHandlersOpenedFn(whIdx) != -1 or irWinHandlersCloseRequestFn(whIdx) != -1 or irWinHandlersClosedFn(whIdx) != -1 or irWinHandlersResizedFn(whIdx) != -1 or irWinHandlersKeyFn(whIdx) != -1 or irWinHandlersAcceptedFn(whIdx) != -1 or irWinHandlersCancelledFn(whIdx) != -1
 }
 
 func cpWinHandlersHasWidget(whIdx: int): bool {
@@ -2204,8 +2292,53 @@ func cpEmitWinHandlersFwd(winName: string): string {
     return "clar_ui_handlers_" + winName
 }
 
+// cpEmitOneFormDesc (mac-target-4d Task 7) prints, for one form window, its
+// rt_ui_bind_desc[] array (if it has >=1 bound widget; a bare "0" pointer
+// otherwise -- an empty-braces array isn't valid C, and rt_ui_form_desc's
+// own nBinds=0 already tells the runtime never to read the pointer) and its
+// rt_ui_form_desc, into cpUiBuf -- the same cpEmitOneTableDesc precedent
+// (Task 4). Returns the form desc's own C name, for the window desc's
+// trailing `form` field to reference.
+func cpEmitOneFormDesc(winName: string, formRecNameIdx: int, bindsHead: int): string {
+    var bindsName: string
+    var formName: string
+    var b: int
+    var nBinds: int
+    var bindsRef: string
+
+    bindsName = "clar_ui_binds_" + winName
+    nBinds = 0
+    b = bindsHead
+    while b != -1 {
+        nBinds = nBinds + 1
+        b = irBindDescNext(b)
+    }
+
+    bindsRef = "0"
+    if nBinds > 0 {
+        cpUiBuf.add(toText("static const rt_ui_bind_desc " + bindsName + "[] = {"))
+        b = bindsHead
+        while b != -1 {
+            cpUiBuf.add(toText("    { " + numToStr(irBindDescWidgetIndex(b)) + ", " + numToStr(irBindDescFieldIndex(b)) + " },"))
+            b = irBindDescNext(b)
+        }
+        cpUiBuf.add(toText("};"))
+        bindsRef = bindsName
+    }
+
+    formName = "clar_ui_form_" + winName
+    cpUiBuf.add(toText("static const rt_ui_form_desc " + formName + " = { &clar_layout_" + poolGet(formRecNameIdx) + ", " + numToStr(nBinds) + ", " + bindsRef + " };"))
+    cpUiBuf.add(toText(""))
+    return formName
+}
+
 // cpEmitWindowDescs prints every window TYPE's widget array + state struct +
-// rt_ui_window_desc, in declaration order, into cpUiBuf/cpRecBuf.
+// rt_ui_window_desc, in declaration order, into cpUiBuf/cpRecBuf. A form
+// window (mac-target-4d Task 7) additionally gets its bind table/form desc
+// (cpEmitOneFormDesc) and the window desc's own trailing `form` field,
+// appended ONLY when set (irWindowDescFormRecName(i) != -1) -- every
+// non-form window's own 11-field literal stays byte-identical to every
+// pre-Task-7 golden.
 func cpEmitWindowDescs() {
     var i: int
     var name: string
@@ -2213,6 +2346,7 @@ func cpEmitWindowDescs() {
     var nWidgets: int
     var w: int
     var handlersName: string
+    var formDescName: string
 
     i = 0
     while i < irWindowDescs.count {
@@ -2243,12 +2377,22 @@ func cpEmitWindowDescs() {
             handlersName = "&" + handlersName
         }
 
+        formDescName = "0"
+        if irWindowDescFormRecName(i) != -1 {
+            formDescName = "&" + cpEmitOneFormDesc(name, irWindowDescFormRecName(i), irWindowDescFormBindsHead(i))
+        }
+
         cpUiBuf.add(toText("static const rt_ui_window_desc clar_ui_window_" + name + " = {"))
         cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irWindowDescTitle(i)) + ","))
         cpUiBuf.add(toText("    " + numToStr(irWindowDescW(i)) + ", " + numToStr(irWindowDescH(i)) + ", " + cpBoolLit(irWindowDescResizable(i)) + ", " + numToStr(irWindowDescMinW(i)) + ", " + numToStr(irWindowDescMinH(i)) + ","))
         cpUiBuf.add(toText("    " + numToStr(nWidgets) + ", " + widgetsArrName + ","))
         cpUiBuf.add(toText("    (short)sizeof(clar_uistate_" + name + "),"))
-        cpUiBuf.add(toText("    " + handlersName))
+        if formDescName == "0" {
+            cpUiBuf.add(toText("    " + handlersName))
+        } else {
+            cpUiBuf.add(toText("    " + handlersName + ","))
+            cpUiBuf.add(toText("    " + formDescName))
+        }
         cpUiBuf.add(toText("};"))
         cpUiBuf.add(toText(""))
         i = i + 1
@@ -2454,6 +2598,15 @@ func cpEmitOneWinEventDispatcher(winName: string, whIdx: int) {
     }
     if irWinHandlersKeyFn(whIdx) != -1 {
         cpRestBuf.add(toText("    case RTUI_EV_KEY: clar_fn_" + poolGet(irWinHandlersKeyFn(whIdx)) + "(inst, (char)a); break;"))
+    }
+    if irWinHandlersAcceptedFn(whIdx) != -1 {
+        // Ch10: `on accepted(b: T)` -- `a` is (long)&<the walker's own
+        // validated record>; the handler's own declared param is BY VALUE
+        // (cast+deref), never a pointer (rt_ui.h's RTUI_EV_ACCEPTED comment).
+        cpRestBuf.add(toText("    case RTUI_EV_ACCEPTED: clar_fn_" + poolGet(irWinHandlersAcceptedFn(whIdx)) + "(inst, *(clar_rec_" + poolGet(irWinHandlersFormRecName(whIdx)) + " *)a); break;"))
+    }
+    if irWinHandlersCancelledFn(whIdx) != -1 {
+        cpRestBuf.add(toText("    case RTUI_EV_CANCELLED: clar_fn_" + poolGet(irWinHandlersCancelledFn(whIdx)) + "(inst); break;"))
     }
     cpRestBuf.add(toText("    default: break;"))
     cpRestBuf.add(toText("    }"))

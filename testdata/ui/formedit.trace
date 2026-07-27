@@ -1,0 +1,66 @@
+T OPEN Main 1
+T FRONT Main 1
+T FIRE Main.Add.click
+T OPEN EditForm 1
+T FRONT EditForm 1
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Name.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Url.change
+T FIRE EditForm.Proto.change
+T FIRE EditForm.Fav.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.invalid.Port
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.Port.change
+T FIRE EditForm.accepted
+T CLOSE EditForm 1
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.Marks.select
+T FIRE Main.Marks.doubleClick
+T OPEN EditForm 2
+T FRONT EditForm 2
+T FIRE EditForm.Name.change
+T FIRE EditForm.accepted
+T CLOSE EditForm 2
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.Marks.select
+T FIRE Main.Marks.doubleClick
+T OPEN EditForm 3
+T FRONT EditForm 3
+T FIRE EditForm.cancelled
+T CLOSE EditForm 3
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.closeRequest
+T CLOSE Main 1
+T FIRE Main.closed

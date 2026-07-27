@@ -1,0 +1,30 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// table_zero_cols.cla: emitui error fixture -- a table widget with `rows:`
+// but no `column` at all. checkWidget never enforces Ch10's "a table
+// declares >=1 column" (a deferred minor from mac-target-4d Task 5,
+// addressed here in Task 7): a zero-column table would otherwise reach
+// cprint.cla's cpEmitOneTableDesc and emit an empty `rt_ui_col_desc[]`
+// array initializer, invalid C. lower.cla's lowWidgetDesc table branch now
+// rejects it directly. No .c.golden: this fixture never successfully
+// emits.
+
+record Bookmark {
+    name: string(63)
+}
+
+var bookmarks: list of Bookmark
+
+window Main {
+    title: "Main"
+    size: 300, 200
+
+    table Marks {
+        rows: bookmarks
+    }
+}
+
+on App.launch {
+    open Main
+}
