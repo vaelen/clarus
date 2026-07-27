@@ -1,0 +1,7 @@
+rec save ok
+rec roundtrip ok
+list save ok
+list roundtrip ok
+map save ok
+map roundtrip ok
+missing-file load returns false ok

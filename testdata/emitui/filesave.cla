@@ -1,0 +1,67 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// filesave.cla: emitui golden fixture -- file.save/file.load (Task 2,
+// mac-target-4d) lowered through an emitted per-record layout table
+// (cpEmitLayouts): a record mixing every serializable field kind
+// (string(n)/int/bool/char/fixed/enum), saved/loaded as a bare record, a
+// `list of` container, and a `map of` container -- exercising all three
+// RT_SER_* shapes and the REC-passes-address-vs-LIST/MAP-passes-handle
+// split in one fixture. The enum carries an explicit label with a quote and
+// a backslash to exercise cpUiCaptionOrNull's escaping being reused for
+// clar_enumlabels_Protocol. The `app` section's id also exercises the
+// strong rt_app_creator override emitted beside rt_ui_app_info.
+// Compile-check only (m68k, via internal/emitui's own gate) -- the real
+// round-trip (byte-exact saved file, loaded-back equality) is
+// testdata/sertest/roundtrip.cla instead, run host-side.
+
+app Bookmarks {
+    name: "Bookmarks"
+    id: "CBKM"
+}
+
+enum Protocol {
+    Gopher
+    Ftp
+    Http "HTTP, \"secure\" or not: \\"
+}
+
+record Bookmark {
+    name:     string(63)
+    port:     int
+    enabled:  bool
+    kind:     char
+    weight:   fixed
+    protocol: Protocol
+}
+
+var one: Bookmark
+var many: list of Bookmark
+var byName: map of Bookmark
+
+on App.startCLI(args: list of string) {
+    var ok: bool
+
+    one.name = "Example"
+    one.port = 70
+    one.enabled = true
+    one.kind = 'B'
+    one.weight = 1.5
+    one.protocol = Ftp
+
+    ok = file.save("bookmark.dat", one)
+    ok = file.load("bookmark.dat", one)
+
+    many.push(one)
+    ok = file.save("bookmarks.dat", many)
+    ok = file.load("bookmarks.dat", many)
+
+    byName["example"] = one
+    ok = file.save("byname.dat", byName)
+    ok = file.load("byname.dat", byName)
+
+    if ok {
+        alert("file.save/file.load ok")
+    }
+    quit 0
+}

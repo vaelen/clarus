@@ -451,14 +451,35 @@ var irHasStartCLI: bool
 var irHasOpenDocument: bool
 
 // The (at most one) `app` section's string properties, as string-pool
-// indices (-1 = property absent) -- icon/id are build-time-only (Task 1's
-// checker already validated them) and never reach IR. irHasApp is false
-// when the program declares no `app` section at all.
+// indices (-1 = property absent) -- icon stays build-time-only (check.cla's
+// checkAppDecl already validated it) and never reaches IR. id DOES reach IR
+// as of Task 2 (mac-target-4d): cprint's cpEmitAppInfo reads it back to emit
+// the strong rt_app_creator override beside rt_ui_app_info. irHasApp is
+// false when the program declares no `app` section at all.
 var irAppName: int
 var irAppVersion: int
 var irAppAuthor: int
 var irAppAbout: int
+var irAppId: int
 var irHasApp: bool
+
+// irLayoutNeededByName (Task 2, mac-target-4d) marks which record types
+// reached file.save/load (lower.cla's lowFileCall) and so need a
+// clar_layout_NAME table -- cprint's cpEmitLayouts walks irRecords in
+// declaration order and emits only the ones this registry names. Keyed by
+// name (poolGet), same plain-name-key idiom as check.cla's
+// recFieldsHeadByName (no per-generation namespacing: one clarusc emit
+// invocation lowers exactly one program, main.cla's own "one program per
+// process" contract).
+var irLayoutNeededByName: map of int
+
+func irMarkLayoutNeeded(nameIdx: int) {
+    irLayoutNeededByName[poolGet(nameIdx)] = 1
+}
+
+func irLayoutNeeded(nameIdx: int): bool {
+    return irLayoutNeededByName.get(poolGet(nameIdx), 0) == 1
+}
 
 // Singletons for the kind-only IRTypes -- set by irReset(), matching
 // types.cla's IntT/BoolT/... pattern. KStr/KList/KMap/KRec/KEnum/KArr are
@@ -541,6 +562,7 @@ func irReset() {
     irAppVersion = -1
     irAppAuthor = -1
     irAppAbout = -1
+    irAppId = -1
     irHasApp = false
     irMenuHandlersHead = -1
     irMenuHandlersTail = -1
@@ -2040,6 +2062,22 @@ func IFileWriteText(): int {
 
 func IFileName(): int {
     return intern("file_name")
+}
+
+// -- files (record serialization, Task 2 mac-target-4d -> rt_file_save/
+// rt_file_load, rt.h's Task 1 contract). Both intrinsics take the same two
+// lowered args (path, data) as IFileReadText/IFileWriteText above; unlike
+// those two, everything else the cprint arm needs (the RT_SER_* container
+// tag, and which clar_layout_NAME to pass) is read straight back off the
+// data arg's own IR type at print time (KRec directly, or KList/KMap's
+// elem), never carried as extra IR fields -- see cprint.cla's fpIntrCall
+// case.
+func IFileSave(): int {
+    return intern("file_save")
+}
+
+func IFileLoad(): int {
+    return intern("file_load")
 }
 
 // -- UI (Task 4: Ch7-11 windows/widgets/menus/canvas -> runtime/mac/rt_ui.h).

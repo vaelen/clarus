@@ -651,6 +651,11 @@ func fpIntrCall(x: int): text {
     var winName: string
     var inst: text
     var fld: int
+    var dataT: int
+    var dataKind: IRKind
+    var recName: string
+    var container: string
+    var dataExpr: text
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -905,6 +910,35 @@ func fpIntrCall(x: int): text {
         t = fpNewTmp("clar_str_255")
         fpEmit("rt_file_name((uint8_t*)&" + t + ", " + s0 + ");")
         return t
+    } else if nm == IFileSave() or nm == IFileLoad() {
+        // file.save/file.load (Ch12, Task 2 mac-target-4d). a1 is the
+        // lowered data arg -- its OWN IR type carries everything else this
+        // call needs: KRec directly names the record (REC container,
+        // address passed via fpAddrable); KList/KMap's elem names the
+        // record (LIST/MAP container, the list/map HANDLE passed via
+        // fpExpr, not its address -- rt_list*/rt_map* is already a
+        // pointer). checker's AnyRecordish (builtins.go/check.cla) already
+        // guarantees a1 is one of these three shapes.
+        dataT = irExprType(a1)
+        dataKind = irtKind(dataT)
+        if dataKind == KRec {
+            recName = poolGet(irtName(dataT))
+            container = "RT_SER_REC"
+            dataExpr = "(void*)&(" + fpAddrable(a1) + ")"
+        } else if dataKind == KList {
+            recName = poolGet(irtName(irtElem(dataT)))
+            container = "RT_SER_LIST"
+            dataExpr = "(void*)(" + fpExpr(a1) + ")"
+        } else {
+            recName = poolGet(irtName(irtElem(dataT)))
+            container = "RT_SER_MAP"
+            dataExpr = "(void*)(" + fpExpr(a1) + ")"
+        }
+        fn = "rt_file_save"
+        if nm == IFileLoad() {
+            fn = "rt_file_load"
+        }
+        return fn + "(" + fpStrAddr(a0) + ", " + container + ", " + dataExpr + ", &clar_layout_" + recName + ")"
 
     // ---- UI (Task 4: Ch7-11 -> runtime/mac/rt_ui.h) ----
     } else if nm == IUiOpen() {
@@ -1513,6 +1547,151 @@ func cpEmitRecords() {
     }
 }
 
+// cpEnumArraysEmitted dedupes clar_enumvals_NAME/clar_enumlabels_NAME array
+// emission (cpEmitEnumArraysOnce below) across every record field that
+// references the same enum type -- keyed by name like cpStrCapsEmitted/
+// cpArrEmitted above (neither of those is reset in cpResetBuffers either;
+// same "one emitProgram call per process" precedent this follows).
+var cpEnumArraysEmitted: map of int
+
+// cpEmitEnumArraysOnce emits enumNameIdx's clar_enumvals_NAME/
+// clar_enumlabels_NAME arrays into cpRecBuf the first time enumNameIdx is
+// seen. Walks irEnums for the matching IREnumLayout (same linear scan as
+// cpEnumCount above); labels reuse cpUiCaptionOrNull's Pascal-string
+// escaping -- lowEnumDecl (lower.cla) guarantees every member has a label
+// (its own, or its name default), so idx == -1 never reaches
+// cpUiCaptionOrNull here.
+func cpEmitEnumArraysOnce(enumNameIdx: int) {
+    var name: string
+    var i: int
+    var m: int
+    var vals: text
+    var labels: text
+    var first: bool
+
+    name = poolGet(enumNameIdx)
+    if cpEnumArraysEmitted.has(name) {
+        return
+    }
+    cpEnumArraysEmitted[name] = 1
+
+    i = 0
+    while i < irEnums.count {
+        if irEnumLayoutName(i) == enumNameIdx {
+            vals = ""
+            labels = ""
+            first = true
+            m = irEnumLayoutMembersHead(i)
+            while m != -1 {
+                if not first {
+                    vals.append(", ")
+                    labels.append(", ")
+                }
+                first = false
+                vals.append(numToStr(irEnumMemberValue(m)))
+                labels.append(cpUiCaptionOrNull(irEnumMemberLabel(m)))
+                m = irEnumMemberNext(m)
+            }
+            cpRecBuf.add(toText("static const int32_t clar_enumvals_" + name + "[] = {") + vals + toText("};"))
+            cpRecBuf.add(toText("static const unsigned char *const clar_enumlabels_" + name + "[] = {") + labels + toText("};"))
+            return
+        }
+        i = i + 1
+    }
+    log("cprint: unknown enum " + name)
+    quit 1
+}
+
+// cpFieldDescRow renders one clar_fields_NAME[] entry (an rt_field_desc
+// literal, rt.h's Task 1 contract) for field slot f of record recName. Only
+// KInt/KFixed/KBool/KChar/KStr/KEnum can appear here -- lower.cla's
+// lowCheckSerializableFields already rejected every other field kind before
+// a record could reach cpEmitLayouts, so KEnum is the correctness-preserving
+// fallthrough (not a silent default).
+func cpFieldDescRow(recName: string, f: int): string {
+    var t: int
+    var k: IRKind
+    var ftype: string
+    var strCap: int
+    var enumCount: int
+    var enumVals: string
+    var enumLabels: string
+
+    t = irFieldSlotType(f)
+    k = irtKind(t)
+    strCap = 0
+    enumCount = 0
+    enumVals = "0"
+    enumLabels = "0"
+    if k == KInt {
+        ftype = "RT_FT_INT"
+    } else if k == KFixed {
+        ftype = "RT_FT_FIXED"
+    } else if k == KBool {
+        ftype = "RT_FT_BOOL"
+    } else if k == KChar {
+        ftype = "RT_FT_CHAR"
+    } else if k == KStr {
+        ftype = "RT_FT_STR"
+        strCap = irtN(t)
+    } else {
+        ftype = "RT_FT_ENUM"
+        enumCount = cpEnumCount(irtName(t))
+        enumVals = "clar_enumvals_" + poolGet(irtName(t))
+        enumLabels = "clar_enumlabels_" + poolGet(irtName(t))
+    }
+    return "{ " + ftype + ", " + numToStr(strCap) + ", (long)offsetof(clar_rec_" + recName + ", cv_" + poolGet(irFieldSlotName(f)) + "), " + numToStr(enumCount) + ", " + enumVals + ", " + enumLabels + " }"
+}
+
+// cpEmitLayouts (Task 2, mac-target-4d) prints, for every record type
+// lower.cla's irLayoutNeeded registry marked (i.e. one that reached
+// file.save/load), a static rt_field_desc[] + rt_layout_desc pair into
+// cpRecBuf -- cprint.go has no equivalent (this whole feature postdates the
+// Go reference compiler's freeze). Appended right after cpEmitRecords'
+// clar_rec_NAME structs (same buffer, in the SAME call to emitProgram, so
+// every offsetof/sizeof below always follows its target typedef) and so
+// always before cpUiBuf's window descs in emitProgram's fixed assembly
+// order (cpRecBuf prints first). Enum sub-arrays are emitted once per enum
+// type via cpEmitEnumArraysOnce, walked BEFORE this record's own fields
+// array so they're always declared above their first use.
+func cpEmitLayouts() {
+    var i: int
+    var f: int
+    var name: int
+    var recName: string
+    var ft: int
+    var nFields: int
+
+    i = 0
+    while i < irRecords.count {
+        name = irRecordLayoutName(i)
+        if irLayoutNeeded(name) {
+            recName = poolGet(name)
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                ft = irFieldSlotType(f)
+                if irtKind(ft) == KEnum {
+                    cpEmitEnumArraysOnce(irtName(ft))
+                }
+                f = irFieldSlotNext(f)
+            }
+
+            cpRecBuf.add(toText("static const rt_field_desc clar_fields_" + recName + "[] = {"))
+            nFields = 0
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                cpRecBuf.add(toText("    " + cpFieldDescRow(recName, f) + ","))
+                nFields = nFields + 1
+                f = irFieldSlotNext(f)
+            }
+            cpRecBuf.add(toText("};"))
+            cpRecBuf.add(toText("static const rt_layout_desc clar_layout_" + recName + " = { (long)sizeof(clar_rec_" + recName + "), " + numToStr(nFields) + ", clar_fields_" + recName + " };"))
+            cpRecBuf.add(toText(""))
+        }
+        i = i + 1
+    }
+}
+
 // cpEmitEnums prints each enum's value table (for the checked int->enum
 // conversion, rt_enum_from_int) plus a matching _count constant, into
 // cpRestBuf -- cprint.go's emitEnums. Marked __attribute__((unused)): a
@@ -2049,7 +2228,46 @@ func cpEmitAppInfo() {
     line.append(cpUiTitleStr(irAppAbout))
     line.append(" };")
     cpRestBuf.add(line)
+    if irAppId != -1 {
+        // Strong override beside rt_ui_app_info -- overrides Task 1's weak
+        // '????' rt_app_creator default (rt.h/rt_mac.c) so saved data files
+        // carry this app's own creator. Only emitted when the app section
+        // actually declared an id (checkAppDecl requires icon to imply id,
+        // but id alone is legal without an icon).
+        cpRestBuf.add(toText("const unsigned long rt_app_creator = " + cpAppCreatorHex(irAppId) + "UL; /* '" + poolGet(irAppId) + "' */"))
+    }
     cpRestBuf.add(toText(""))
+}
+
+// cpAppCreatorHex renders idIdx's 4-character app id (check.cla's
+// checkAppId already validated exactly 4 printable ASCII characters) as the
+// big-endian hex literal rt_app_creator's strong override needs -- e.g.
+// "CBKM" -> "0x43424B4D".
+func cpAppCreatorHex(idIdx: int): string {
+    var s: string
+    var out: string
+    var i: int
+
+    s = poolGet(idIdx)
+    out = "0x"
+    i = 0
+    while i < 4 {
+        out = out + cpHexByte(int(s[i]))
+        i = i + 1
+    }
+    return out
+}
+
+// cpHexByte renders b (0-255) as 2 uppercase hex digits.
+func cpHexByte(b: int): string {
+    var digits: string
+    var out: string
+
+    digits = "0123456789ABCDEF"
+    out = ""
+    out = out + digits[(b >> 4) & 15]
+    out = out + digits[b & 15]
+    return out
 }
 
 func cpEmitUiDescs() {
@@ -2546,6 +2764,7 @@ func emitProgram(): text {
 
     cpEmitStrLits()
     cpEmitRecords()
+    cpEmitLayouts()
     cpEmitEnums()
     cpEmitUiDescs()
     cpEmitAppInfo()

@@ -1,0 +1,123 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// roundtrip.cla: internal/sertest's host round-trip fixture for file.save/
+// file.load (Task 2, mac-target-4d) -- a record mixing every serializable
+// field kind (string(n)/int/bool/char/fixed/enum), exercised through all
+// three RT_SER_* shapes: a bare record, a `list of`, and a `map of`.
+// "rec.dat" (the bare-record save) is the byte-exact golden
+// (roundtrip.bytes.golden) that pins the file format; every printed line
+// below is compared against roundtrip.out.golden.
+
+enum Protocol {
+    Gopher
+    Ftp
+    Http "HTTP"
+}
+
+record Bookmark {
+    name:     string(63)
+    port:     int
+    enabled:  bool
+    kind:     char
+    weight:   fixed
+    protocol: Protocol
+}
+
+func bookmarksEqual(a: Bookmark, b: Bookmark): bool {
+    var ok: bool
+
+    ok = a.name == b.name
+    ok = ok and a.port == b.port
+    ok = ok and a.enabled == b.enabled
+    ok = ok and a.kind == b.kind
+    ok = ok and a.weight == b.weight
+    ok = ok and a.protocol == b.protocol
+    return ok
+}
+
+on App.startCLI(args: list of string) {
+    var rec1: Bookmark
+    var rec2: Bookmark
+    var list1: list of Bookmark
+    var list2: list of Bookmark
+    var map1: map of Bookmark
+    var map2: map of Bookmark
+    var ok: bool
+    var second: Bookmark
+
+    // ---- bare record: rec.dat is the byte-exact golden ----
+    rec1.name = "Example"
+    rec1.port = 70
+    rec1.enabled = true
+    rec1.kind = 'B'
+    rec1.weight = 1.5
+    rec1.protocol = Ftp
+
+    ok = file.save("rec.dat", rec1)
+    if ok {
+        alert("rec save ok")
+    } else {
+        alert("rec save FAIL")
+    }
+
+    ok = file.load("rec.dat", rec2)
+    if ok and bookmarksEqual(rec1, rec2) {
+        alert("rec roundtrip ok")
+    } else {
+        alert("rec roundtrip FAIL")
+    }
+
+    // ---- list of Bookmark ----
+    second.name = "Second"
+    second.port = 21
+    second.enabled = false
+    second.kind = 'S'
+    second.weight = 0.25
+    second.protocol = Gopher
+
+    list1.push(rec1)
+    list1.push(second)
+
+    ok = file.save("list.dat", list1)
+    if ok {
+        alert("list save ok")
+    } else {
+        alert("list save FAIL")
+    }
+
+    ok = file.load("list.dat", list2)
+    if ok and list2.count == 2 and bookmarksEqual(list1[0], list2[0]) and bookmarksEqual(list1[1], list2[1]) {
+        alert("list roundtrip ok")
+    } else {
+        alert("list roundtrip FAIL")
+    }
+
+    // ---- map of Bookmark ----
+    map1["alpha"] = rec1
+    map1["beta"] = second
+
+    ok = file.save("map.dat", map1)
+    if ok {
+        alert("map save ok")
+    } else {
+        alert("map save FAIL")
+    }
+
+    ok = file.load("map.dat", map2)
+    if ok and map2.count == 2 and bookmarksEqual(map1["alpha"], map2["alpha"]) and bookmarksEqual(map1["beta"], map2["beta"]) {
+        alert("map roundtrip ok")
+    } else {
+        alert("map roundtrip FAIL")
+    }
+
+    // ---- load failure: a path that was never written ----
+    ok = file.load("nonexistent.dat", rec2)
+    if not ok {
+        alert("missing-file load returns false ok")
+    } else {
+        alert("missing-file load returns false FAIL")
+    }
+
+    quit 0
+}

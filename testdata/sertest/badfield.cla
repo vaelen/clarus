@@ -1,0 +1,21 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// badfield.cla: internal/sertest's negative fixture -- a record with a
+// `text` field reaching file.save must abort clarusc emit with the
+// value-field guard's message (lower.cla's lowCheckSerializableFields),
+// same loud log+quit shape as every other lowUnsupported site. No golden:
+// the test only asserts nonzero exit + the message on stderr.
+
+record Note {
+    title: string(63)
+    body:  text
+}
+
+on App.startCLI(args: list of string) {
+    var n: Note
+    var ok: bool
+
+    ok = file.save("note.dat", n)
+    quit 0
+}

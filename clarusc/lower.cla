@@ -852,9 +852,21 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
 
 // lowFileCall lowers `file.fn(args)` (expr.go's lowerFileCall): readText/
 // writeText/name are host-supported and map to the matching file intrinsics;
-// save/load are not host-supported.
+// save/load (Task 2, mac-target-4d) resolve the record type reached through
+// data's checker type (TyRec directly, or the elem of TyList/TyMap -- the
+// only shapes checkParamArg's AnyRecordish accepts), run the value-field
+// guard over it, register it for cpEmitLayouts, and lower to the matching
+// intrinsic. Both share one arg-lowering call (lowArgs), same as the three
+// host-supported cases above -- the container tag and layout name cprint
+// needs are read back off the data arg's own IR type at print time (see
+// ir.cla's IFileSave/IFileLoad doc comment), never carried as extra args
+// here.
 func lowFileCall(e: int, fn: int, ty: int): int {
     var nm: string
+    var dataAst: int
+    var xt: int
+    var recNameIdx: int
+    var intrName: int
 
     nm = poolGet(selectName(fn))
     if nm == "readText" {
@@ -863,9 +875,50 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         return newIRIntr(IFileWriteText(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "name" {
         return newIRIntr(IFileName(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "save" or nm == "load" {
+        dataAst = exprNext(callArgsHead(e))
+        xt = exprTypeGet(dataAst)
+        if typeKind(xt) == TyRec {
+            recNameIdx = typeNameIdx(xt)
+        } else {
+            recNameIdx = typeNameIdx(typeElem(xt))
+        }
+        lowCheckSerializableFields(recNameIdx, nm)
+        irMarkLayoutNeeded(recNameIdx)
+        intrName = IFileSave()
+        if nm == "load" {
+            intrName = IFileLoad()
+        }
+        return newIRIntr(intrName, lowArgs(callArgsHead(e)), ty)
     }
     lowUnsupported("file." + nm)
     return -1
+}
+
+// lowCheckSerializableFields is file.save/load's value-field guard (Ch12:
+// "every field of the record ... must be a by-value type"; a `text`,
+// `list`, or `map` field is a build-time error). Walks ONLY the record's own
+// fields, one level deep -- a nested-record field is rejected outright
+// (TyRec isn't in the allow-list below) rather than recursed into, and
+// likewise a fixed-array field (TyArr), because rt.h's rt_field_desc (Task
+// 1) has no RT_FT_* encoding for either shape, so neither is serializable
+// yet regardless of what it itself contains. Reuses the exact
+// recordFieldsHead/fieldInfos walk lowRecordDecl (:2000ish above) already
+// established for reading back check.cla's field-layout side table.
+func lowCheckSerializableFields(recNameIdx: int, callName: string) {
+    var fi: int
+    var ft: int
+    var k: TypeKind
+
+    fi = recordFieldsHead(recNameIdx)
+    while fi != -1 {
+        ft = fieldInfos[fi].typeIdx
+        k = typeKind(ft)
+        if not (k == TyInt or k == TyBool or k == TyFixed or k == TyChar or k == TyStr or k == TyEnum) {
+            lowUnsupported("file." + callName + ": record " + poolGet(recNameIdx) + " field " + poolGet(fieldInfos[fi].nameIdx) + " is not a value type")
+        }
+        fi = fieldInfos[fi].next
+    }
 }
 
 // lowListMethod lowers `l.name(args)` for a List receiver (expr.go's
@@ -2807,8 +2860,11 @@ func lowDecl(d: int) {
 
 // lowAppDecl records the (at most one, checker-validated) `app` section's
 // string properties as pool indices for cprint's rt_ui_app_info emission --
-// icon/id are deliberately not read here (build-time only, per the Task 2
-// brief); no validation needed, checkAppDecl already rejected everything
+// icon is deliberately not read here (build-time only, per the Task 2
+// brief). id IS read (Task 2, mac-target-4d): cpEmitAppInfo turns it into
+// the strong rt_app_creator override, so saved data files carry the app's
+// own creator instead of Task 1's weak '????' default. No validation
+// needed either way, checkAppDecl/checkAppId already rejected everything
 // wrong by the time lowering runs.
 func lowAppDecl(d: int) {
     var item: int
@@ -2824,6 +2880,7 @@ func lowAppDecl(d: int) {
         if pname == "version" { irAppVersion = stringLitIdx(vh) }
         if pname == "author" { irAppAuthor = stringLitIdx(vh) }
         if pname == "about" { irAppAbout = stringLitIdx(vh) }
+        if pname == "id" { irAppId = stringLitIdx(vh) }
         item = declNext(item)
     }
 }
