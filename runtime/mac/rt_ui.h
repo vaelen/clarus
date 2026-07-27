@@ -20,7 +20,18 @@
    appended at the END of the struct (`extra` and `form` respectively) --
    every existing positional initializer (probe and emitted C alike) still
    compiles unchanged, the new trailing field simply zero-inits. Do the same
-   for any FUTURE addition to either struct: append, never insert. */
+   for any FUTURE addition to either struct: append, never insert.
+
+   mac-target-4d Task 4 adds RTUI_TABLE (the List Manager, JMP-stub LDEF):
+   a table widget's `extra` (unused by every other kind so far) is a
+   `const rt_ui_table_desc *` -- its own column list and a pointer to the
+   rt_list* holding its rows, below. RTUI_WEV_SELECT/RTUI_WEV_DBLCLICK join
+   the widget-event vocabulary; RTUI_PROP_SELECTED (already popup's) is
+   reused for a table's current row. rt_ui_tables_sync (below) is the one
+   new runtime-API entry point: it re-syncs every open table's native List
+   Manager row count to its bound rt_list's current count, called from both
+   event loops (rt_ui.c) so a program that push/removes rows never needs to
+   poke the table itself. */
 #ifndef CLARUS_RT_UI_H
 #define CLARUS_RT_UI_H
 
@@ -46,6 +57,7 @@
 #define RTUI_FIELD    4   /* single-line TextEdit, `label:` reuses the caption slot (mac-target-4c Task 1) */
 #define RTUI_TEXTVIEW 5   /* multi-line TextEdit, optional scrollbar via flags below */
 #define RTUI_POPUP    6   /* System 6 popup menu (manual PopUpMenuSelect path), mac-target-4d Task 3 */
+#define RTUI_TABLE    7   /* List Manager-backed table (JMP-stub LDEF), mac-target-4d Task 4 */
 
 /* rt_ui_widget_desc.atKind (Ch8 Layout: "at x,y" / "at right,y" / "at next,bottom") */
 #define RTUI_AT_XY    0   /* x, y both explicit */
@@ -90,6 +102,10 @@
 #define RTUI_WEV_ENTER  3        /* field (mac-target-4c Task 1): Return/Enter pressed while
                                     focused -- no character is inserted; textview's Return
                                     inserts a CR instead and never fires this event */
+#define RTUI_WEV_SELECT   4     /* table (mac-target-4d Task 4): a = row index clicked/selected */
+#define RTUI_WEV_DBLCLICK 5     /* table (mac-target-4d Task 4): a = row index double-clicked;
+                                    always preceded by its own RTUI_WEV_SELECT (select fires
+                                    first, matching real-Mac click-then-double semantics) */
 
 /* TextEdit content cap (mac-target-4c Task 1): every field/textview mutation
    path (TEKey, cut/paste, rt_ui_widget_set_str/set_text) clamps to this many
@@ -105,7 +121,7 @@
 #define RTUI_PROP_TEXT     1   /* label; field (string, via *_get_str/set_str); textview (rt_text, via *_get_text/set_text) */
 #define RTUI_PROP_ENABLED  2   /* button */
 #define RTUI_PROP_CHECKED  3   /* check */
-#define RTUI_PROP_SELECTED 4   /* popup, table (later tasks) */
+#define RTUI_PROP_SELECTED 4   /* popup; table (mac-target-4d Task 4): current row, -1 if none */
 #define RTUI_PROP_WIDTH    5   /* canvas */
 #define RTUI_PROP_HEIGHT   6   /* canvas */
 
@@ -121,10 +137,11 @@ typedef struct { short kind;              /* RTUI_BUTTON/CHECK/CANVAS/LABEL/FIEL
                  short flags;             /* RTUI_DEFAULT|RTUI_CANCEL|RTUI_BUFFERED|RTUI_SCROLL_V|RTUI_SCROLL_H
                                               (RTUI_SCROLL_V/H added mac-target-4c Task 1) */
                  const void *extra;       /* mac-target-4d Task 3: reserved for a future per-kind
-                                              descriptor (a table's column list, say); RTUI_POPUP
-                                              leaves this NULL and finds its items via the OWNING
-                                              WINDOW's `form` field instead (rt_ui_window_desc,
-                                              below), not through this pointer. */
+                                              descriptor; RTUI_POPUP leaves this NULL and finds its
+                                              items via the OWNING WINDOW's `form` field instead
+                                              (rt_ui_window_desc, below), not through this pointer.
+                                              mac-target-4d Task 4: RTUI_TABLE is the first kind to
+                                              actually use it -- a `const rt_ui_table_desc *` (below). */
 } rt_ui_widget_desc;
 
 typedef struct { const char *name; const unsigned char *title;  /* Str255 */
@@ -202,6 +219,35 @@ typedef struct rt_layout_desc rt_layout_desc;
 typedef struct { short widgetIndex; short fieldIndex; } rt_ui_bind_desc;
 typedef struct rt_ui_form_desc { const rt_layout_desc *layout;
                                  short nBinds; const rt_ui_bind_desc *binds; } rt_ui_form_desc;
+
+/* Opaque forward declarations ONLY, same convention as rt_text/rt_layout_desc
+   above -- rt_list is internal/build/rt/rt.h's growable-array type (a
+   table's rows); rt_map is forward-declared alongside it for the same
+   future-proofing reason as rt_text (no widget needs it yet, but this
+   header must never #include rt.h to find out later). rt_ui.c and any
+   hand-written caller (uiprobe) see the full definitions by including
+   rt.h directly alongside this header (mac-target-4d Task 4). */
+typedef struct rt_list rt_list;
+typedef struct rt_map  rt_map;
+
+/* Table column (mac-target-4d Task 4, Ch8): `header` is a Str255 drawn in
+   the header strip; `widthPx` is a fixed pixel width; `widthFill` marks
+   the (at most one) column that instead absorbs whatever width is left
+   over after every fixed column (view width - sum of fixed widthPx) --
+   widthPx is ignored on a widthFill column. `fieldIndex` indexes the
+   bound rt_layout_desc's `fields` array (the SAME rt_field_desc shape a
+   popup's bound enum already uses), telling the runtime both the value's
+   type (rt_field_desc.ftype: STR/INT/FIXED/BOOL/CHAR/ENUM, each rendered
+   differently) and its byte offset into one row record. */
+typedef struct { const unsigned char *header; short widthPx; short widthFill;
+                 short fieldIndex; } rt_ui_col_desc;
+/* A table's `extra` (rt_ui_widget_desc, above): `rows` is a pointer to the
+   PROGRAM's own rt_list* variable (double indirection, not the list
+   itself) so the runtime always re-reads the CURRENT list via `*rows` --
+   never caches a stale rt_list* across calls, since the list can grow/move
+   (Handle-backed) or be reassigned by the program between draws. */
+typedef struct rt_ui_table_desc { rt_list **rows; const rt_layout_desc *layout;
+                                  short nCols; const rt_ui_col_desc *cols; } rt_ui_table_desc;
 
 /* ==================== runtime API (called by emitted code / probe) ==================== */
 
@@ -291,6 +337,17 @@ short rt_ui_widget_get_int(void *inst, short wIdx, short prop);  /* canvas width
    fire `change`" rule as set_str/set_text/set_bool -- only an actual user
    pick through the popup does). */
 void  rt_ui_widget_set_int(void *inst, short wIdx, short prop, long v);
+/* rt_ui_tables_sync (mac-target-4d Task 4): re-syncs every OPEN table's
+   native List Manager row count to its bound rt_list's CURRENT
+   rt_list_count -- a program pushes/removes rows on its own rt_list
+   directly (no table-specific mutation API), so this is what makes that
+   change actually visible. Called by rt_ui.c itself at the loop-bottom of
+   both the real WaitNextEvent loop and the RT_MAC_TEST scripted pump, so
+   callers never need to invoke it directly; exposed here only because it
+   is, structurally, a normal runtime-API entry point like every other
+   function in this section (idempotent and cheap to call again when
+   nothing changed). */
+void  rt_ui_tables_sync(void);
 void  rt_ui_menu_enable(short menuIdx, short itemIdx, int on);
 
 /* Ch12 Dialogs (mac-target-4c Task 4): askOpen/askSave/askSaveChanges.

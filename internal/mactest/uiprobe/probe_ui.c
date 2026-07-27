@@ -18,6 +18,7 @@
    close box. */
 #include "rt_ui.h"
 #include "rt.h"
+#include <stddef.h> /* offsetof -- TableProbe's rt_field_desc offsets (Task 4, mac-target-4d) */
 
 /* ==================== Probe window (Task 1, extended) ==================== */
 
@@ -345,25 +346,142 @@ static const rt_ui_window_desc kPopupProbeWindow = {
     &kPopupForm
 };
 
+/* ==================== TableProbe window (Task 4, mac-target-4d) ====================
+ * Exercises RTUI_TABLE end to end: a hand-rolled record layout (STR/INT/
+ * BOOL columns -- Name/Qty/Done, the same rt_field_desc shape PopupProbe's
+ * bound enum already uses) over a plain rt_list seeded with 3 rows in
+ * main(). "Add" pushes a 4th row directly onto that rt_list (liveness:
+ * proves rt_ui_tables_sync picks it up with no table-specific mutation
+ * call); "Remove" removes whatever row is currently selected (read via
+ * rt_ui_widget_get_int's RTUI_PROP_SELECTED). The table's own SELECT/
+ * DBLCLICK events are wired to rewrite the "Result" label with the
+ * clicked row's name plus an S<row>/D<row> suffix -- ground truth for the
+ * events script to verify against (rather than trusting pixel-coordinate
+ * guesses alone), since the T FIRE trace line itself carries no row
+ * number (`select`/`doubleClick`, same 2-part shape as every other
+ * fire2 trace in this file). Opened LAST in main() (below) so it's
+ * frontmost at startup -- no click-to-front step needed, same as
+ * PopupProbe's own precedent. */
+
+typedef struct { unsigned char name[21]; /* 1 len + 20 data bytes (strCap 20) */
+                 int32_t qty; int32_t done; } TableRow;
+
+static rt_list *gTableRows = NULL;
+
+static const rt_field_desc kTableFields[] = {
+    { RT_FT_STR,  20, offsetof(TableRow, name), 0, NULL, NULL },
+    { RT_FT_INT,   0, offsetof(TableRow, qty),  0, NULL, NULL },
+    { RT_FT_BOOL,  0, offsetof(TableRow, done), 0, NULL, NULL }
+};
+static const rt_layout_desc kTableLayout = { (long)sizeof(TableRow), 3, kTableFields };
+
+static const unsigned char kColName[] = "\pName";
+static const unsigned char kColQty[]  = "\pQty";
+static const unsigned char kColDone[] = "\pDone";
+static const rt_ui_col_desc kTableCols[] = {
+    { kColName, 0,  1, 0 }, /* the one fill column */
+    { kColQty,  60, 0, 1 },
+    { kColDone, 50, 0, 2 }
+};
+static const rt_ui_table_desc kTableDesc = { &gTableRows, &kTableLayout, 3, kTableCols };
+
+enum { TP_ADD = 0, TP_REMOVE = 1, TP_RESULT = 2, TP_TABLE = 3 };
+
+/* n: 0..20, all this probe ever needs for a row name -- no sprintf, no
+   rt_text, mirrors ui8_to_pstr's own "no libc" spirit above. */
+static void set_pname(unsigned char *dst, const char *s)
+{
+    unsigned char n = 0;
+    while (s[n] != '\0' && n < 20) { dst[1 + n] = (unsigned char)s[n]; n++; }
+    dst[0] = n;
+}
+
+static void tableprobe_widget_event(void *inst, short widgetIndex, short event, long a, long b)
+{
+    (void)b;
+    if (widgetIndex == TP_ADD && event == RTUI_WEV_CLICK) {
+        TableRow row;
+        set_pname(row.name, "Extra");
+        row.qty = 40;
+        row.done = 1;
+        rt_list_push(gTableRows, &row);
+    } else if (widgetIndex == TP_REMOVE && event == RTUI_WEV_CLICK) {
+        short sel = (short)rt_ui_widget_get_int(inst, TP_TABLE, RTUI_PROP_SELECTED);
+        if (sel >= 0) rt_list_remove(gTableRows, sel);
+    } else if (widgetIndex == TP_TABLE && (event == RTUI_WEV_SELECT || event == RTUI_WEV_DBLCLICK)) {
+        unsigned char out[32];
+        unsigned char num[4];
+        long count;
+        unsigned char i;
+
+        count = rt_list_count(gTableRows);
+        if (a >= 0 && a < count) {
+            TableRow *r = (TableRow *)rt_list_at(gTableRows, a);
+            for (i = 0; i < r->name[0]; i++) out[1 + i] = r->name[1 + i];
+            out[0] = r->name[0];
+        } else {
+            out[0] = 3; out[1] = 'O'; out[2] = 'O'; out[3] = 'R';
+        }
+        out[1 + out[0]] = ' ';
+        out[0]++;
+        out[1 + out[0]] = (unsigned char)(event == RTUI_WEV_SELECT ? 'S' : 'D');
+        out[0]++;
+        ui8_to_pstr(num, (int)a);
+        for (i = 0; i < num[0]; i++) out[1 + out[0] + i] = num[1 + i];
+        out[0] = (unsigned char)(out[0] + num[0]);
+        rt_ui_widget_set_str(inst, TP_RESULT, RTUI_PROP_TEXT, out);
+    }
+}
+
+static const rt_ui_widget_desc kTableProbeWidgets[] = {
+    { RTUI_BUTTON, "Add", (const unsigned char *)"\pAdd",
+      RTUI_AT_XY, 20, 20, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "Remove", (const unsigned char *)"\pRemove",
+      RTUI_AT_RIGHT, 0, 20, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_LABEL, "Result", (const unsigned char *)"\p-",
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0 },
+    { RTUI_TABLE, "Items", (const unsigned char *)0,
+      RTUI_AT_XY, 20, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_BOTH, 0, (const void *)&kTableDesc }
+};
+
+static const rt_ui_handlers kTableProbeHandlers = { 0, tableprobe_widget_event };
+
+static const rt_ui_window_desc kTableProbeWindow = {
+    "TableProbe", (const unsigned char *)"\pTable Probe",
+    320, 240, 1, 240, 160,
+    4, kTableProbeWidgets,
+    0,
+    &kTableProbeHandlers
+};
+
 /* ==================== wiring ==================== */
 
-static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow, &kPopupProbeWindow };
+static const rt_ui_window_desc *kWindows[] = { &kTextProbeWindow, &kProbeWindow, &kBounceWindow, &kPopupProbeWindow, &kTableProbeWindow };
 static const rt_ui_menu_desc *kMenus[] = { &kProbeMenu };
 
 int main(void)
 {
     rt_args_init(0, (char **)0);
-    rt_ui_startup(kWindows, 4, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
+    rt_ui_startup(kWindows, 5, kMenus, 1, kProbeMenuHandlers, 3, kEvery, 1);
     /* TextProbe opens FIRST -- Probe-then-Bounce below is the exact same
        relative open order Task 1/2/3 already had, so Bounce is still
        frontmost at startup, exactly as events.c's own header comment
        documents (TextProbe, opened even earlier, ends up furthest back).
-       PopupProbe (Task 3, mac-target-4d) opens LAST -- frontmost, so
-       events_popup.c's clicks land on it without a click-to-front step. */
+       PopupProbe (Task 3) opens next-to-last; TableProbe (Task 4) opens
+       LAST -- frontmost, so events_table.c's clicks land on it without a
+       click-to-front step, same precedent PopupProbe itself set. */
+    gTableRows = rt_list_new((int32_t)sizeof(TableRow));
+    {
+        TableRow r;
+        set_pname(r.name, "Alpha"); r.qty = 10; r.done = 0; rt_list_push(gTableRows, &r);
+        set_pname(r.name, "Beta");  r.qty = 20; r.done = 1; rt_list_push(gTableRows, &r);
+        set_pname(r.name, "Gamma"); r.qty = 30; r.done = 0; rt_list_push(gTableRows, &r);
+    }
     rt_ui_open(&kTextProbeWindow);
     rt_ui_open(&kProbeWindow);
     rt_ui_open(&kBounceWindow);
     rt_ui_open(&kPopupProbeWindow);
+    rt_ui_open(&kTableProbeWindow);
     rt_ui_run();
     return 0;
 }

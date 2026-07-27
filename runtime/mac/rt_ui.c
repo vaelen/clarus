@@ -66,6 +66,8 @@
 #include <Memory.h>
 #include <ToolUtils.h>
 #include <Menus.h>
+#include <Lists.h>     /* List Manager -- RTUI_TABLE (mac-target-4d Task 4) */
+#include <NumberFormatting.h> /* NumToString -- table cell int/fixed rendering, no libc needed (Task 4) */
 #include <Scrap.h>     /* ZeroScrap/TEToScrap/TEFromScrap -- standard-edit cut/copy/paste (Task 3) */
 #include <Dialogs.h>   /* NoteAlert, for the About item (Ch9) */
 #include <StandardFile.h> /* SFGetFile/SFPutFile, for askOpen/askSave (Ch12, Task 4) */
@@ -186,6 +188,11 @@ extern void rt_quit(int32_t code);
 #define RTUI_POPUP_H       20
 #define RTUI_POPUP_W      200
 
+/* table natural size (mac-target-4d Task 4) -- same free-to-pick status;
+   tall enough to show a handful of rows plus its header strip unfilled. */
+#define RTUI_TABLE_H      120
+#define RTUI_TABLE_W      300
+
 /* A field's `label:` property reuses the labels[]/TETextBox lane the
    RTUI_LABEL kind already has (rt_ui_handle_update draws it the same way)
    -- fixed-width lane rather than measured via StringWidth. ponytail:
@@ -267,6 +274,13 @@ typedef struct rt_ui_winst {
        rt_ui_make_widgets/rt_ui_widget_set_int/a real pick changes it). */
     Handle popupsH; MenuHandle *popups;
     Handle popupSelH; short *popupSel;
+    /* mac-target-4d Task 4: RTUI_TABLE widgets. `lists[i]` is the native
+       ListHandle (NULL for every non-table kind), its listDefProc replaced
+       with our own JMP-stub LDEF (rt_ui_ldef) right after LNew; its refCon
+       is set to the widget's own rt_ui_table_desc* (the LDEF's ONLY state
+       -- see that function). No separate selection array: `LGetSelect`
+       is cheap and authoritative, so nothing here caches it. */
+    Handle listsH; ListHandle *lists;
 #ifdef RT_MAC_TEST
     short traceId;                    /* 1-based per-type instance counter for T OPEN/CLOSE/FRONT (Task 3) */
 #endif
@@ -475,6 +489,17 @@ static int gDimFirst = 1;
    PopUpMenuSelect, mac-target-4d Task 3). */
 static int gUiScripted = 0;
 
+/* Set only for the duration of a scripted `dblclick` verb's synthetic
+   click (rt_ui_script_click, mac-target-4d Task 4) -- consumed solely by
+   the table scripted-click lane (rt_ui_table_click) to ALSO fire
+   RTUI_WEV_DBLCLICK after the select it always fires; a `dblclick` that
+   lands on anything other than a table is indistinguishable from a plain
+   `click` (per the brief: "non-table targets: treat as plain click"),
+   which falls out for free since nothing else ever reads this flag. */
+#ifdef RT_MAC_TEST
+static int gUiScriptDbl = 0;
+#endif
+
 /* ==================== dialogs (Ch12): scripted answer queue (Task 4) ====
  * askOpen/askSave/askSaveChanges (below, near rt_ui_menu_enable) consume
  * this queue INSTEAD of a real Standard File dialog or Alert(130) whenever
@@ -592,6 +617,12 @@ static rt_ui_winst *rt_ui_winst_of(WindowPtr wp)
    as the FIELD/TEXTVIEW counterpart to plain MoveControl/SizeControl. */
 static void rt_ui_te_relayout(rt_ui_winst *inst, short wIdx);
 
+/* Defined later (needs LNew/LSize, both introduced with widget creation
+   below) -- forward-declared here so rt_ui_layout (immediately below) can
+   call it as the RTUI_TABLE counterpart to rt_ui_te_relayout just above
+   (mac-target-4d Task 4). */
+static void rt_ui_table_relayout(rt_ui_winst *inst, short i);
+
 /* Defined below (needs gMenuHandlerTable/gStdEditMenuIdx, both set up at
    startup) -- forward-declared here so rt_ui_te_set_focus (Task 3) can
    recompute standard-edit-item dimming right when TE focus changes WITHIN
@@ -610,6 +641,7 @@ static short rt_ui_kind_height(short kind)
     case RTUI_FIELD:    return RTUI_FIELD_H;
     case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_H;
     case RTUI_POPUP:    return RTUI_POPUP_H;
+    case RTUI_TABLE:    return RTUI_TABLE_H;
     default:            return RTUI_CHECK_H;
     }
 }
@@ -627,6 +659,7 @@ static short rt_ui_kind_width(short kind)
     case RTUI_FIELD:    return RTUI_FIELD_W;
     case RTUI_TEXTVIEW: return RTUI_TEXTVIEW_W;
     case RTUI_POPUP:    return RTUI_POPUP_W;
+    case RTUI_TABLE:    return RTUI_TABLE_W;
     default:            return RTUI_CHECK_W;
     }
 }
@@ -761,6 +794,10 @@ static void rt_ui_layout(rt_ui_winst *inst)
                resize re-layout (rt_ui_apply_resize calls this same
                function), so there is no separate resize-path duplicate. */
             rt_ui_te_relayout(inst, i);
+        } else if (wd->kind == RTUI_TABLE) {
+            /* Same "derive from inst->rects[i], just SetRect above" pattern
+               as the TE branch just above (mac-target-4d Task 4). */
+            rt_ui_table_relayout(inst, i);
         } else if (inst->ctrls[i]) {
             MoveControl(inst->ctrls[i], x, y);
             SizeControl(inst->ctrls[i], w, h);
@@ -784,6 +821,253 @@ static void rt_ui_pstrcpy(unsigned char *dst, const unsigned char *src)
 }
 
 static const unsigned char kEmptyPStr[1] = { 0 };
+
+/* ==================== table widgets: LDEF (mac-target-4d Task 4) ====================
+ * A table widget's List Manager list uses exactly ONE LM column spanning
+ * the widget's full row width (dataBounds.right == 1, `cellSize.h` kept in
+ * sync with the view width by rt_ui_table_relayout below) -- the
+ * rt_ui_col_desc[] x-slicing this widget actually renders happens entirely
+ * INSIDE the LDEF below, not through LM's own multi-column mechanism.
+ * `lCell.v` is therefore simply the ROW index; `lCell.h` is always 0.
+ *
+ * The LDEF is a hand-built JMP-stub Handle (rt_ui_make_ldef_stub), not a
+ * resource: LNew(theProc=0) installs the STANDARD text LDEF as a
+ * placeholder, and rt_ui_make_widgets immediately overwrites
+ * `(*lh)->listDefProc` with this stub, which is nothing but a 3-word
+ * `JMP rt_ui_ldef` -- List Manager calls through a Handle as a code
+ * pointer either way, so it can't tell the difference. The stub's only
+ * job is redirecting that call to a real, ordinary C function (rather
+ * than requiring a genuine 'LDEF' code resource in the app's resource
+ * fork, which this build has no pipeline for).
+ *
+ * The LDEF's only per-list state is `(*lh)->refCon`, set once at creation
+ * to the widget's own `const rt_ui_table_desc *` -- everything the LDEF
+ * needs (rows/layout/cols) hangs off that one pointer, so it never needs
+ * to find its owning rt_ui_winst/widget index at all. */
+
+static void rt_ui_table_draw_field(const void *rec, const rt_field_desc *fd, const Rect *colRect);
+static void rt_ui_fixed_to_str(int32_t v, unsigned char *out255);
+
+/* Sums every FIXED-width column's widthPx and returns however much of
+   totalW is left over for the (at most one) widthFill column -- shared by
+   the LDEF's own per-row draw below and the header-strip draw
+   (rt_ui_handle_update), so the two can never disagree about column
+   boundaries. */
+static short rt_ui_table_fill_width(const rt_ui_table_desc *td, short totalW)
+{
+    long fixedSum;
+    short k, fillW;
+
+    fixedSum = 0;
+    for (k = 0; k < td->nCols; k++)
+        if (!td->cols[k].widthFill) fixedSum += td->cols[k].widthPx;
+    fillW = (short)(totalW - fixedSum);
+    if (fillW < 0) fillW = 0;
+    return fillW;
+}
+
+/* pascal, matching Lists.h's ListDefProcPtr exactly (short lMessage,
+   Boolean lSelect, Rect *lRect, Cell lCell, short lDataOffset,
+   short lDataLen, ListHandle lHandle) -- List Manager calls through the
+   JMP-stub Handle with this signature; lDataOffset/lDataLen (meaningful
+   only for LM's OWN cell-data storage, which this table never uses) are
+   unused. */
+static pascal void rt_ui_ldef(short lMessage, Boolean lSelect, Rect *lRect, Cell lCell,
+                               short lDataOffset, short lDataLen, ListHandle lHandle)
+{
+    (void)lDataOffset;
+    (void)lDataLen;
+    switch (lMessage) {
+    case lInitMsg:
+    case lCloseMsg:
+        break;
+    case lHiliteMsg:
+        /* Selection toggle only (no content redraw) -- InvertRect per the
+           standard LM hilite convention. */
+        InvertRect(lRect);
+        break;
+    case lDrawMsg: {
+        const rt_ui_table_desc *td;
+        rt_list *rows;
+        long count;
+
+        td = (const rt_ui_table_desc *)(*lHandle)->refCon;
+        EraseRect(lRect);
+        rows = *(td->rows);
+        count = rt_list_count(rows);
+        /* Row out of range (sync lag between LM's own row count and the
+           live rt_list -- rt_ui_tables_sync closes this gap on the next
+           chokepoint, but a draw can land here mid-lag) draws blank,
+           never touches rt_list_at OOB. */
+        if (lCell.v >= 0 && (long)lCell.v < count) {
+            void *rec;
+            short x, k, fillW;
+
+            /* ALWAYS re-derive via rt_list_at, fresh, every call -- never
+               cache a pointer across LDEF invocations (rt_list is
+               Handle-backed and can move/grow between draws). */
+            rec = rt_list_at(rows, lCell.v);
+            fillW = rt_ui_table_fill_width(td, (short)(lRect->right - lRect->left));
+            x = lRect->left;
+            for (k = 0; k < td->nCols; k++) {
+                const rt_ui_col_desc *cd = &td->cols[k];
+                short w = cd->widthFill ? fillW : cd->widthPx;
+                Rect colRect;
+                RgnHandle saveClip;
+
+                SetRect(&colRect, x, lRect->top, (short)(x + w), lRect->bottom);
+                saveClip = NewRgn();
+                GetClip(saveClip);
+                ClipRect(&colRect);
+                rt_ui_table_draw_field(rec, &td->layout->fields[cd->fieldIndex], &colRect);
+                SetClip(saveClip);
+                DisposeRgn(saveClip);
+                x = (short)(x + w);
+            }
+        }
+        if (lSelect) InvertRect(lRect);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+/* Fixed's "raw runtime representation" (rt.h) is a plain 16.16 signed
+   value (rt_fix_mul/rt_fix_div's own `(a*b)>>16` math) -- no existing
+   to-string helper for it anywhere in this codebase (grepped rt.c/rt_mac.c
+   per the brief; there isn't one yet), so this is a small new one, built
+   only from NumToString (no libc). Formats as "-123.4567" (4 fraction
+   digits, zero-padded) -- cosmetic table-cell rendering only, not a
+   parser/round-trip format. ponytail: `-(long)v` on INT32_MIN would
+   overflow; not guarded -- a fixed value that extreme is not a realistic
+   table cell and this is a display helper, not a trust boundary. */
+static void rt_ui_fixed_to_str(int32_t v, unsigned char *out255)
+{
+    Str255 ibuf, fbuf;
+    unsigned long uv;
+    long frac;
+    short n, i, pad;
+
+    uv = (v < 0) ? (unsigned long)(-(long)v) : (unsigned long)v;
+    NumToString((long)(uv >> 16), ibuf);
+    frac = (long)(((uv & 0xFFFFUL) * 10000UL) / 65536UL);
+    NumToString(frac, fbuf);
+
+    n = 0;
+    if (v < 0) out255[++n] = '-';
+    for (i = 0; i < ibuf[0]; i++) out255[++n] = ibuf[1 + i];
+    out255[++n] = '.';
+    pad = (short)(4 - fbuf[0]);
+    for (i = 0; i < pad; i++) out255[++n] = '0';
+    for (i = 0; i < fbuf[0]; i++) out255[++n] = fbuf[1 + i];
+    out255[0] = (unsigned char)n;
+}
+
+/* Renders one field's value into colRect (already ClipRect'd by the
+   caller) by rt_field_desc.ftype -- mirrors rt_ser.inc's own ser_put_field
+   byte layout exactly (same file this codebase's record serializer uses),
+   including its one documented gotcha: BOOL's emitted C field is a full
+   int32_t (cprint.cla), never a raw byte at the field's base address. */
+static void rt_ui_table_draw_field(const void *rec, const rt_field_desc *fd, const Rect *colRect)
+{
+    const unsigned char *base;
+    int32_t v;
+    Str255 numbuf; /* NumToString/rt_ui_fixed_to_str both want a full Str255 out-param, per NumberFormatting.h's own declared signature */
+    unsigned char ch;
+    short k;
+
+    base = (const unsigned char *)rec + fd->offset;
+    MoveTo((short)(colRect->left + 2), (short)(colRect->bottom - 3));
+    switch (fd->ftype) {
+    case RT_FT_STR:
+        DrawText(base + 1, 0, base[0]);
+        break;
+    case RT_FT_INT:
+        v = *(const int32_t *)base;
+        NumToString((long)v, numbuf);
+        DrawText(numbuf + 1, 0, numbuf[0]);
+        break;
+    case RT_FT_FIXED:
+        v = *(const int32_t *)base;
+        rt_ui_fixed_to_str(v, numbuf);
+        DrawText(numbuf + 1, 0, numbuf[0]);
+        break;
+    case RT_FT_BOOL:
+        v = *(const int32_t *)base; /* int32_t, not a raw byte -- see rt_ser.inc's own comment on this exact gotcha */
+        if (v != 0) {
+            ch = 0xC3; /* MacRoman check mark ('\xC3' -- literal byte, source stays ASCII) */
+            DrawText(&ch, 0, 1);
+        }
+        break;
+    case RT_FT_CHAR:
+        ch = *base;
+        DrawText(&ch, 0, 1);
+        break;
+    case RT_FT_ENUM:
+        v = *(const int32_t *)base;
+        for (k = 0; k < fd->enumCount; k++) {
+            if (fd->enumValues[k] == v) {
+                const unsigned char *lbl = fd->enumLabels[k];
+                DrawText(lbl + 1, 0, lbl[0]);
+                return;
+            }
+        }
+        DrawText("?", 0, 1); /* unknown value -- rt_ui.h's defensive "draw something, never crash" contract */
+        break;
+    }
+}
+
+/* Row height (a table's LM cellSize.v) and header-strip height (that plus
+   4px) both derive from the CURRENT port's font metrics -- read fresh at
+   creation and at every relayout rather than cached, since nothing in
+   this file ever changes the window's default font (grepped: no
+   TextFont/TextSize call anywhere outside the TE code, which only ever
+   touches its OWN inPort), so this is always consistent between the two
+   call sites without needing to share state. */
+static short rt_ui_table_row_h(void)
+{
+    FontInfo fi;
+    short h;
+
+    GetFontInfo(&fi);
+    h = (short)(fi.ascent + fi.descent + fi.leading);
+    return (h > 0) ? h : 1;
+}
+
+static short rt_ui_table_header_h(void)
+{
+    return (short)(rt_ui_table_row_h() + 4);
+}
+
+/* The 6-byte JMP-stub Handle installed as a table's `listDefProc` --
+   `0x4EF9` (JMP absolute long) followed by rt_ui_ldef's own flat code
+   address, as three 16-bit words. Locked forever (HLock, never unlocked):
+   List Manager calls through this Handle as CODE for the table's entire
+   lifetime, so it must never move or be purged. Freed explicitly by the
+   close cascade (rt_ui_close_internal) -- List Manager only owns/frees a
+   RESOURCE-backed LDEF (the one LNew(theProc=0) initially installs, which
+   this immediately replaces and never touches again), never a
+   caller-supplied Handle like this one. */
+static Handle rt_ui_make_ldef_stub(void)
+{
+    Handle h;
+    short *p;
+    unsigned long addr;
+
+    h = NewHandleClear(6);
+    if (!h) rt_panic("out of memory");
+    HLock(h);
+    p = (short *)*h;
+    p[0] = (short)0x4EF9;
+    addr = (unsigned long)rt_ui_ldef;
+    p[1] = (short)(addr >> 16);
+    p[2] = (short)(addr & 0xFFFF);
+    /* ponytail: no FlushCodeCache -- 68000 target (Mini vMac / a real Mac
+       Plus has no instruction cache to flush); revisit if this ever
+       targets a real 68030+ with one. */
+    return h;
+}
 
 static void rt_ui_make_widgets(rt_ui_winst *inst)
 {
@@ -912,6 +1196,55 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
             inst->popups[i] = mh;
             break;
         }
+        case RTUI_TABLE: {
+            /* List Manager table (mac-target-4d Task 4). Created against
+               the same zero placeholder rect every other widget kind uses
+               here -- rt_ui_layout's very next pass (rt_ui_table_relayout)
+               gives it its real view rect/cell width; row COUNT starts at
+               0 too, populated once layout has run (rt_ui_open, right
+               after its own rt_ui_layout call) rather than here, since
+               LAddRow's internal visible-range math needs a real,
+               non-degenerate cellSize.h/rView first. */
+            Rect dataBounds;
+            Point cellSize;
+
+            inst->ctrls[i] = NULL;
+            cellSize.v = rt_ui_table_row_h();
+            /* NOT 0 (bug found by manual gate: LNew's own internal geometry
+               setup divides BY cellSize.h immediately, at creation time --
+               a 0 here crashes the Mac ("divide by zero") before the
+               relayout that would otherwise fix it up ever gets a chance
+               to run). 1 is a safe, harmless placeholder: the very next
+               rt_ui_layout call in this same rt_ui_open (before the window
+               is ever shown, drawn, or clickable) overwrites it with the
+               real view width via rt_ui_table_relayout. */
+            cellSize.h = 1;
+            SetRect(&dataBounds, 0, 0, 1, 0); /* 1 LM column (see the LDEF section's own comment), 0 rows */
+            /* drawIt (5th bool) is FALSE, same "don't draw yet, the window
+               isn't shown" reasoning as every other widget's placeholder
+               creation -- but unlike a Control (whose drawing is simply
+               deferred, a one-shot concern), List Manager's drawIt ALSO
+               sets the list's persistent drawing-mode flag (Inside Mac's
+               LSetDrawingMode bit), which stays off permanently -- LUpdate
+               never calls the LDEF again for content OR the hilite toggle
+               -- until something turns it back on. Manual-gate finding
+               (Task 4): confirmed empirically (a temporary per-call trace
+               inside rt_ui_ldef showed LM invoking it exactly once, for
+               lCloseMsg only, with drawIt=false and no later
+               LSetDrawingMode call; adding the call below made lDrawMsg/
+               lHiliteMsg fire normally). Not documented as such by this
+               header's own stripped comments (no prose, just signatures),
+               so this is a real interface behavior this task's manual gate
+               surfaced, not something inferable from the .h alone. */
+            inst->lists[i] = LNew(&placeholder, &dataBounds, cellSize, 0, inst->wp,
+                                  (Boolean)0, (Boolean)0, (Boolean)0, (Boolean)1);
+            if (!inst->lists[i]) rt_panic("out of memory");
+            (*inst->lists[i])->selFlags = lOnlyOne; /* single-selection table */
+            (*inst->lists[i])->refCon = (long)wd->extra; /* the LDEF's only state -- see rt_ui_ldef */
+            (*inst->lists[i])->listDefProc = rt_ui_make_ldef_stub();
+            LSetDrawingMode((Boolean)1, inst->lists[i]); /* see the drawIt comment just above */
+            break;
+        }
         default: /* RTUI_LABEL, RTUI_CANVAS: no Control Manager backing */
             inst->ctrls[i] = NULL;
             rt_ui_pstrcpy(inst->labels[i], cap);
@@ -920,6 +1253,213 @@ static void rt_ui_make_widgets(rt_ui_winst *inst)
         if (inst->ctrls[i] && wd->kind != RTUI_TEXTVIEW) (*inst->ctrls[i])->contrlRfCon = i;
     }
     SetPort(savedPort);
+}
+
+/* ==================== table widgets: layout, selection, click, sync (mac-target-4d Task 4) ==== */
+
+/* Derives widget i's List Manager view rect (and cell width) from
+   inst->rects[i], just SetRect by the caller (rt_ui_layout) -- same
+   "already-set rect in, derived Toolbox-object geometry out" shape as
+   rt_ui_te_relayout above. The header strip is carved off the TOP of the
+   full widget rect; the LM view is everything below it. */
+static void rt_ui_table_relayout(rt_ui_winst *inst, short i)
+{
+    ListHandle lh;
+    Rect box, listRect;
+    short headerH;
+
+    lh = inst->lists[i];
+    if (!lh) return;
+    box = inst->rects[i];
+    headerH = rt_ui_table_header_h();
+    listRect = box;
+    listRect.top = (short)(listRect.top + headerH);
+    if (listRect.bottom < listRect.top) listRect.bottom = listRect.top;
+    /* List Manager has no dedicated "move" call (Inside Macintosh: LSize
+       changes ONLY width/height, keeping the view rect's existing
+       top-left) -- poke rView's position directly first (a plain public
+       ListRec field, same "just poke the struct field" idiom
+       rt_ui_te_relayout uses for a TE's viewRect/destRect), then LSize to
+       apply the new width/height and let LM recompute the visible-cell
+       range and reposition its own scrollbar to match. cellSize.h is kept
+       equal to the FULL view width (this table's single LM column spans
+       it entirely -- see the LDEF section's header comment) so LClick's
+       own cell hit-testing covers the whole row, not just some earlier,
+       possibly stale, width. */
+    (*lh)->rView.left = listRect.left;
+    (*lh)->rView.top  = listRect.top;
+    (*lh)->cellSize.h = (short)(listRect.right - listRect.left);
+    if ((*lh)->cellSize.h < 1) (*lh)->cellSize.h = 1;
+    LSize((short)(listRect.right - listRect.left), (short)(listRect.bottom - listRect.top), lh);
+    InvalRect(&box);
+}
+
+/* Scans from row 0 for the (single, lOnlyOne) selected cell -- shared by
+   rt_ui_widget_get_int's RTUI_PROP_SELECTED case and the real click path's
+   own "which row did LClick just select" lookup, so the two can never
+   disagree. -1 if nothing is selected.
+
+   Manual-gate finding (Task 4): NOT `LGetSelect(next=true, ...)` starting
+   from an off-list hint cell ({0,-1}) -- confirmed empirically (a
+   temporary trace) that this ALWAYS returns false/nothing, even with a
+   real selection present, on this toolchain. A per-cell scan with
+   next=FALSE (checked directly against the trace: LGetSelect(false, {0,N},
+   lh) correctly reports N's own selection state) is what the brief itself
+   describes ("LGetSelect scan from row 0") and is what actually works. */
+static short rt_ui_table_get_selected(ListHandle lh)
+{
+    long count;
+    short row;
+
+    count = (*lh)->dataBounds.bottom;
+    for (row = 0; row < (short)count; row++) {
+        Cell cell;
+        cell.h = 0;
+        cell.v = row;
+        if (LGetSelect((Boolean)0, &cell, lh)) return row;
+    }
+    return -1;
+}
+
+/* Deselects whatever is currently selected (if anything), then selects
+   `row` (unless negative, meaning "deselect only") -- LSetSelect itself
+   does not enforce single-selection, so this is what "exclusively" means
+   for the two paths that need it without relying on a real click's own
+   LClick (which, combined with lOnlyOne, already does this for us): the
+   scripted click lane and rt_ui_widget_set_int's programmatic setter. */
+static void rt_ui_table_select_exclusive(ListHandle lh, short row)
+{
+    Cell cell;
+    short cur;
+
+    cur = rt_ui_table_get_selected(lh);
+    cell.h = 0;
+    if (cur >= 0) { cell.v = cur; LSetSelect((Boolean)0, cell, lh); }
+    if (row >= 0) { cell.v = row; LSetSelect((Boolean)1, cell, lh); }
+}
+
+/* Hit-tests against each table's own LM view rect (rView) -- NOT the full
+   widget rect (the header strip above it is inert, per the brief), and
+   not the scrollbar strip either (that is a real Control Manager control,
+   resolved separately by FindControl in rt_ui_handle_content_click before
+   this is ever consulted). */
+static int rt_ui_table_hit(rt_ui_winst *inst, Point local, short *outIdx)
+{
+    short i;
+    for (i = 0; i < inst->desc->nWidgets; i++) {
+        if (inst->desc->widgets[i].kind == RTUI_TABLE && inst->lists[i] &&
+            PtInRect(local, &(*inst->lists[i])->rView)) {
+            *outIdx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void rt_ui_table_fire_select(rt_ui_winst *inst, short wIdx, short row)
+{
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire2(inst->desc->name, inst->desc->widgets[wIdx].name, "select");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->widget)
+        inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_SELECT, (long)row, 0);
+}
+
+static void rt_ui_table_fire_dblclick(rt_ui_winst *inst, short wIdx, short row)
+{
+#ifdef RT_MAC_TEST
+    rt_ui_trace_fire2(inst->desc->name, inst->desc->widgets[wIdx].name, "doubleClick");
+#endif
+    if (inst->desc->handlers && inst->desc->handlers->widget)
+        inst->desc->handlers->widget(inst, wIdx, RTUI_WEV_DBLCLICK, (long)row, 0);
+}
+
+/* A click that landed in table wIdx's cell area (rt_ui_table_hit already
+   matched) -- real path: LClick does its own tracking (including
+   selection, via lOnlyOne) and returns whether it was a double-click; the
+   row it selected is read back via rt_ui_table_get_selected right after,
+   same shared helper get_int uses. Scripted path (no real mouse for
+   LClick's modal tracking, same reason the popup/Control Manager lanes
+   fork too): the row is computed directly from the click point against
+   the list's own live geometry ((**lh).visible.top is the first VISIBLE
+   row, so a click's distance from rView.top in cellSize.v-sized steps
+   lands on the right absolute row even when scrolled), then selected
+   exclusively. Both paths converge on firing select (always -- this is a
+   click-type event, unlike popup's change-type "only if the value
+   differed") and, on a double-click, ALSO dblclick, select first either
+   way. */
+static void rt_ui_table_click(rt_ui_winst *inst, short wIdx, Point local, short mods)
+{
+    ListHandle lh;
+    short row;
+
+    lh = inst->lists[wIdx];
+#ifdef RT_MAC_TEST
+    if (gUiScripted) {
+        row = (short)((*lh)->visible.top + (local.v - (*lh)->rView.top) / (*lh)->cellSize.v);
+        if (row < 0) row = 0; /* ponytail: no upper clamp against rt_list_count -- our own scripts only ever click real rows */
+        rt_ui_table_select_exclusive(lh, row);
+        rt_ui_table_fire_select(inst, wIdx, row);
+        if (gUiScriptDbl) rt_ui_table_fire_dblclick(inst, wIdx, row);
+        return;
+    }
+#endif
+    {
+        Boolean dbl = LClick(local, (EventModifiers)mods, lh);
+        row = rt_ui_table_get_selected(lh);
+        rt_ui_table_fire_select(inst, wIdx, row);
+        if (dbl) rt_ui_table_fire_dblclick(inst, wIdx, row);
+    }
+}
+
+/* Re-syncs ONE table's native LM row count to its bound rt_list's current
+   count -- diff, then LAddRow/LDelRow AT THE END (per the brief: this
+   keeps every rendered row's CONTENT correct regardless of where in the
+   underlying list a push/remove actually happened, since the LDEF always
+   re-derives content by fresh index; it can leave a stale LM selection
+   bit on whatever row index was previously highlighted if a MIDDLE row
+   was the one removed -- see the Task 4 report's self-review for this
+   known, brief-prescribed limitation). Idempotent: a no-op, cheap check
+   when nothing changed, which is the common case at every chokepoint
+   this is called from. */
+static void rt_ui_table_sync_one(rt_ui_winst *inst, short wIdx)
+{
+    ListHandle lh;
+    const rt_ui_table_desc *td;
+    long dataCount, lmCount;
+    GrafPtr saved;
+
+    lh = inst->lists[wIdx];
+    if (!lh) return;
+    td = (const rt_ui_table_desc *)inst->desc->widgets[wIdx].extra;
+    dataCount = rt_list_count(*(td->rows));
+    lmCount = (*lh)->dataBounds.bottom;
+    if (dataCount == lmCount) return;
+    GetPort(&saved);
+    SetPort(inst->wp);
+    if (dataCount > lmCount) LAddRow((short)(dataCount - lmCount), (short)lmCount, lh);
+    else LDelRow((short)(lmCount - dataCount), (short)dataCount, lh);
+    InvalRect(&(*lh)->rView);
+    SetPort(saved);
+}
+
+/* Public (rt_ui.h): re-syncs EVERY open window's EVERY table. Walks the
+   Window Manager's own window list exactly like rt_ui_flush_all_buffered
+   above (same FrontWindow()/nextWindow front-to-back walk, same
+   windowKind filter) -- proven already to reach every one of our windows
+   regardless of visibility by that function's own long-shipped use in
+   rt_ui_quit. */
+void rt_ui_tables_sync(void)
+{
+    WindowPeek w;
+    for (w = (WindowPeek)FrontWindow(); w != NULL; w = w->nextWindow) {
+        if (w->windowKind == RTUI_WINDOW_KIND) {
+            rt_ui_winst *inst = (rt_ui_winst *)GetWRefCon((WindowPtr)w);
+            short i;
+            for (i = 0; i < inst->desc->nWidgets; i++)
+                if (inst->desc->widgets[i].kind == RTUI_TABLE) rt_ui_table_sync_one(inst, i);
+        }
+    }
 }
 
 /* ==================== TextEdit field/textview widgets (mac-target-4c Task 1) ====================
@@ -2071,6 +2611,34 @@ static void rt_ui_handle_update(WindowPtr wp)
                         LineTo((short)(cx + k), (short)(cy + k));
                     }
                 }
+            } else if (wd->kind == RTUI_TABLE && inst->lists[i]) {
+                /* Header strip (mac-target-4d Task 4): a frame around the
+                   whole widget, column headers drawn at each column's x
+                   position (same rt_ui_table_fill_width the LDEF uses, so
+                   the two can never disagree on boundaries), a divider
+                   line under the strip, then LUpdate to let the LDEF draw
+                   the actual cell rows for whatever part of the update
+                   region falls inside the LM view. */
+                const rt_ui_table_desc *td = (const rt_ui_table_desc *)wd->extra;
+                ListHandle lh = inst->lists[i];
+                Rect box = inst->rects[i];
+                Rect headerRect = box;
+                short fillW, x, k;
+
+                FrameRect(&box);
+                headerRect.bottom = (*lh)->rView.top;
+                fillW = rt_ui_table_fill_width(td, (short)(box.right - box.left));
+                x = box.left;
+                for (k = 0; k < td->nCols; k++) {
+                    const rt_ui_col_desc *cd = &td->cols[k];
+                    short w = cd->widthFill ? fillW : cd->widthPx;
+                    MoveTo((short)(x + 2), (short)(headerRect.bottom - 3));
+                    DrawText(cd->header + 1, 0, cd->header[0]);
+                    x = (short)(x + w);
+                }
+                MoveTo(box.left, headerRect.bottom);
+                LineTo(box.right, headerRect.bottom);
+                LUpdate(((GrafPtr)wp)->visRgn, lh);
             } else if (wd->kind == RTUI_BUTTON && (wd->flags & RTUI_DEFAULT)) {
                 rt_ui_draw_default_outline(&inst->rects[i]);
             }
@@ -2115,6 +2683,7 @@ static void rt_ui_handle_activate(WindowPtr wp, int activating)
            only ever set for BUTTONs. */
         if (inst->hbars[i])
             HiliteControl(inst->hbars[i], (short)(activating ? 0 : 255));
+        if (inst->lists[i]) LActivate((Boolean)activating, inst->lists[i]); /* mac-target-4d Task 4 */
     }
     if (inst->focusIdx >= 0 && inst->tes[inst->focusIdx]) {
         if (activating) TEActivate(inst->tes[inst->focusIdx]);
@@ -2345,6 +2914,43 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
     GlobalToLocal(&where);
     cpart = FindControl(where, wp, &ctrl);
     if (cpart != 0 && ctrl != NULL) {
+        /* A table's OWN vertical scrollbar (mac-target-4d Task 4): List
+           Manager creates it as a real Control Manager control (hasVScroll
+           at LNew), so FindControl resolves a click on it same as any
+           other control -- but it carries none of OUR refCon tag bits (the
+           generic 0x8000 scrollbar-tag branch just below is for a
+           textview's own hand-built bar, not this one), so it must be
+           recognized and routed to LClick BEFORE that generic branch would
+           otherwise misroute it. Identified by comparing the control
+           itself against each table's own (**lh).vScroll, not by refCon. */
+        {
+            short ti;
+            for (ti = 0; ti < inst->desc->nWidgets; ti++) {
+                if (inst->desc->widgets[ti].kind == RTUI_TABLE && inst->lists[ti] &&
+                    ctrl == (ControlHandle)(*inst->lists[ti])->vScroll) {
+#ifdef RT_MAC_TEST
+                    /* No live mouse to hold an arrow/thumb in scripted mode
+                       (same reason the textview scrollbar's own scripted
+                       lane, rt_ui_handle_scrollbar_click, only nudges
+                       discrete arrow/page parts and treats a thumb-drag as
+                       a no-op) -- List Manager's bar has no separate nudge
+                       primitive at all (LClick is the only entry point for
+                       both cells AND the bar), so a scripted click landing
+                       in the scrollbar strip is simply a no-op here; no
+                       scenario in this task's grammar targets it. */
+                    if (gUiScripted) return;
+#endif
+                    /* A pure scrollbar interaction never selects a row or
+                       fires anything (real Mac list-scrolling doesn't
+                       change selection) -- LClick's own return (whether
+                       this was "a double-click") is meaningless here too,
+                       since no cell was clicked; both are ignored. */
+                    LClick(where, (EventModifiers)(shiftDown ? shiftKey : 0), inst->lists[ti]);
+                    return;
+                }
+            }
+        }
+        {
         long rfCon = (*ctrl)->contrlRfCon;
         if (rfCon & 0x8000L) {
             /* A textview's own scrollbar (mac-target-4c Task 1), tagged at
@@ -2376,6 +2982,7 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                 short trackPart = TrackControl(ctrl, where, NULL);
                 if (trackPart != 0) rt_ui_fire_widget(inst, wIdx);
             }
+        }
         }
         return;
     }
@@ -2438,6 +3045,13 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                 newItem = LoWord(result);
                 if (newItem != 0) rt_ui_popup_pick(inst, pIdx, (short)(newItem - 1));
             }
+            return;
+        }
+    }
+    {
+        short tIdx;
+        if (rt_ui_table_hit(inst, where, &tIdx)) {
+            rt_ui_table_click(inst, tIdx, where, (short)(shiftDown ? shiftKey : 0));
             return;
         }
     }
@@ -3010,25 +3624,38 @@ static int rt_ui_script_next_line(char *buf, int bufsz)
 static void rt_ui_pump_passive(void)
 {
     EventRecord ev;
+    /* mac-target-4d Task 4: sync BEFORE draining queued update/activate
+       events -- a row-count change LAddRow/LDelRow just InvalRect'd
+       (inside rt_ui_tables_sync) needs to already be queued as an
+       updateEvt by the time the loop below drains it, matching what a
+       real WaitNextEvent-driven pass would have processed by now. */
+    rt_ui_tables_sync();
     while (GetNextEvent(updateMask | activMask, &ev)) {
         if (ev.what == updateEvt) rt_ui_handle_update((WindowPtr)ev.message);
         else if (ev.what == activateEvt) rt_ui_handle_activate((WindowPtr)ev.message, (ev.modifiers & activeFlag) != 0);
     }
 }
 
-/* `click X Y` (GLOBAL coords): synthesizes a mouseDown EventRecord and
-   feeds it through the EXACT SAME rt_ui_handle_mouse_down real clicks use
-   -- goAway/drag/grow/menu-bar/content all resolve identically; the one
-   divergence (button clicks skip TrackControl's modal loop) is documented
-   at its call site in rt_ui_handle_content_click. */
-static void rt_ui_script_click(short x, short y)
+/* `click X Y` / `dblclick X Y` (GLOBAL coords): synthesizes a mouseDown
+   EventRecord and feeds it through the EXACT SAME rt_ui_handle_mouse_down
+   real clicks use -- goAway/drag/grow/menu-bar/content all resolve
+   identically; the one divergence (button clicks skip TrackControl's
+   modal loop) is documented at its call site in
+   rt_ui_handle_content_click. `dbl` (mac-target-4d Task 4) is set only for
+   the duration of this one synthetic click via gUiScriptDbl, consumed
+   solely by the table scripted-click lane (rt_ui_table_click) -- a
+   `dblclick` landing anywhere else behaves exactly like a plain `click`,
+   since nothing else ever reads the flag. */
+static void rt_ui_script_click(short x, short y, int dbl)
 {
     EventRecord ev;
     ev.what = mouseDown;
     ev.where.h = x;
     ev.where.v = y;
     ev.modifiers = 0;
+    gUiScriptDbl = dbl;
     rt_ui_handle_mouse_down(&ev);
+    gUiScriptDbl = 0;
 }
 
 /* `drag X Y` (GLOBAL coords): "mouse-moved-while-down" has no Toolbox
@@ -3296,7 +3923,9 @@ static void rt_ui_run_scripted(void)
         nf = sscanf(line, "%31s %63s %63s", verb, arg1, arg2);
         if (nf < 1) continue;
         if (strcmp(verb, "click") == 0) {
-            rt_ui_script_click((short)atoi(arg1), (short)atoi(arg2));
+            rt_ui_script_click((short)atoi(arg1), (short)atoi(arg2), 0);
+        } else if (strcmp(verb, "dblclick") == 0) {
+            rt_ui_script_click((short)atoi(arg1), (short)atoi(arg2), 1);
         } else if (strcmp(verb, "drag") == 0) {
             rt_ui_script_drag((short)atoi(arg1), (short)atoi(arg2));
         } else if (strcmp(verb, "key") == 0) {
@@ -3426,6 +4055,7 @@ void rt_ui_run(void)
         rt_ui_every_pump();
         rt_ui_te_idle_front();
         rt_ui_flush_all_buffered(); /* "returns control to the event loop" point, Ch11 */
+        rt_ui_tables_sync(); /* mac-target-4d Task 4: re-sync every table's LM row count before the next WaitNextEvent */
     }
 }
 
@@ -3454,6 +4084,7 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     inst->logicalEnabled = (char *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(char), &inst->enabledH);
     inst->popups = (MenuHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(MenuHandle), &inst->popupsH);
     inst->popupSel = (short *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(short), &inst->popupSelH);
+    inst->lists = (ListHandle *)rt_ui_alloc_locked((Size)d->nWidgets * sizeof(ListHandle), &inst->listsH);
     inst->focusIdx = -1;
     {
         short wi;
@@ -3503,6 +4134,18 @@ void *rt_ui_open(const rt_ui_window_desc *d)
     rt_ui_make_widgets(inst);
     rt_ui_layout(inst);
     rt_ui_canvas_realloc_all(inst);
+    /* Initial row population for any table (mac-target-4d Task 4): AFTER
+       layout, not inside rt_ui_make_widgets -- LAddRow's internal
+       visible-range math needs the real (non-degenerate) cellSize.h/rView
+       rt_ui_layout's own rt_ui_table_relayout pass just gave it, not the
+       zero placeholder LNew was created against. Per-instance, not the
+       global rt_ui_tables_sync walk (which starts from FrontWindow() and
+       would skip this window before ShowWindow below makes it visible). */
+    {
+        short wi;
+        for (wi = 0; wi < d->nWidgets; wi++)
+            if (d->widgets[wi].kind == RTUI_TABLE) rt_ui_table_sync_one(inst, wi);
+    }
 
     /* Auto-focus the FIRST field/textview-kind widget (final review fix,
        mac-target-4c): Ch8 gives a freshly opened window no caret at all
@@ -3578,6 +4221,27 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
        which also disposes its Controls) before `closed` fires, and our own
        bookkeeping Handles (which still hold valid data at this point) are
        freed only after the handler returns. */
+    {
+        /* Tables' ListHandles are disposed BEFORE DisposeWindow, unlike
+           everything in the loop below (mac-target-4d Task 4): a list's
+           vertical scrollbar is a real Control Manager control living in
+           THIS window's own control list, so it would be silently
+           double-torn-down if DisposeWindow ran first (DisposeWindow
+           disposes every control still in that list itself). LDispose
+           tears the scrollbar down properly; our own JMP-stub
+           listDefProc Handle is ours to free separately -- List Manager
+           only owns/frees a RESOURCE-backed LDEF, never a caller-supplied
+           one -- captured BEFORE LDispose, which frees the ListRec it
+           lives in. */
+        short i;
+        for (i = 0; i < inst->desc->nWidgets; i++) {
+            if (inst->lists[i]) {
+                Handle ldefH = (*inst->lists[i])->listDefProc;
+                LDispose(inst->lists[i]);
+                DisposeHandle(ldefH);
+            }
+        }
+    }
     DisposeWindow(inst->wp);
 #ifdef RT_MAC_TEST
     rt_ui_trace_id("CLOSE", inst->desc->name, inst->traceId);
@@ -3618,6 +4282,7 @@ static int rt_ui_close_internal(rt_ui_winst *inst)
     DisposeHandle(inst->enabledH);
     DisposeHandle(inst->popupsH);
     DisposeHandle(inst->popupSelH);
+    DisposeHandle(inst->listsH);
     DisposeHandle(inst->selfH);
     return 1;
 }
@@ -3834,10 +4499,11 @@ void rt_ui_widget_set_bool(void *instV, short wIdx, short prop, int v)
     SetPort(savedPort);
 }
 
-/* rt_ui_widget_set_int (mac-target-4d Task 3): popup's RTUI_PROP_SELECTED
-   only -- see rt_ui.h's own header comment on this function for the
-   clamp/redraw/trace/no-change-event contract. Port-disciplined like every
-   other setter above (rt_ui.h's PORT DISCIPLINE RULE). */
+/* rt_ui_widget_set_int: popup's RTUI_PROP_SELECTED (Task 3) and, as of
+   mac-target-4d Task 4, a table's -- see rt_ui.h's own header comment on
+   this function for the clamp/redraw/trace/no-change-event contract.
+   Port-disciplined like every other setter above (rt_ui.h's PORT
+   DISCIPLINE RULE). */
 void rt_ui_widget_set_int(void *instV, short wIdx, short prop, long v)
 {
     rt_ui_winst *inst;
@@ -3860,6 +4526,22 @@ void rt_ui_widget_set_int(void *instV, short wIdx, short prop, long v)
         InvalRect(&inst->rects[wIdx]);
 #ifdef RT_MAC_TEST
         rt_ui_trace_set_int(inst->desc->name, wd->name, prop, (long)sel);
+#endif
+    }
+    if (wd->kind == RTUI_TABLE && prop == RTUI_PROP_SELECTED) {
+        /* mac-target-4d Task 4: deselect-all + LSetSelect(v) when v >= 0 --
+           same clamp/redraw/trace/no-change-event contract as popup's own
+           setter just above, just via rt_ui_table_select_exclusive instead
+           of a direct popupSel[] write. */
+        ListHandle lh = inst->lists[wIdx];
+        long count = rt_list_count(*(((const rt_ui_table_desc *)wd->extra)->rows));
+        short row = (short)v;
+
+        if (row >= (short)count) row = (short)(count - 1);
+        rt_ui_table_select_exclusive(lh, row);
+        InvalRect(&(*lh)->rView);
+#ifdef RT_MAC_TEST
+        rt_ui_trace_set_int(inst->desc->name, wd->name, prop, (long)row);
 #endif
     }
     SetPort(savedPort);
@@ -3893,6 +4575,8 @@ short rt_ui_widget_get_int(void *instV, short wIdx, short prop)
         return (short)(inst->rects[wIdx].bottom - inst->rects[wIdx].top);
     if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_POPUP)
         return inst->popupSel[wIdx]; /* mac-target-4d Task 3 */
+    if (prop == RTUI_PROP_SELECTED && inst->desc->widgets[wIdx].kind == RTUI_TABLE)
+        return rt_ui_table_get_selected(inst->lists[wIdx]); /* mac-target-4d Task 4 */
     return (short)(inst->rects[wIdx].right - inst->rects[wIdx].left); /* default: width */
 }
 
