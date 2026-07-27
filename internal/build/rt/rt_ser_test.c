@@ -8,8 +8,12 @@
  * Test record layout (declaration order matters -- it IS the file order):
  *   a:     RT_FT_INT    int32
  *   f:     RT_FT_FIXED  int32 (raw 16.16 representation)
- *   flag:  RT_FT_BOOL   1 byte
- *   ch:    RT_FT_CHAR   1 byte
+ *   flag:  RT_FT_BOOL   int32 in memory (cprint.cla's emitted C type for
+ *          `bool`), 1 byte on disk -- deliberately NOT uint8_t here: a
+ *          1-byte in-memory type would make the field's base address and
+ *          its only meaningful byte the same address on every host,
+ *          masking exactly the endian bug fixed in "Fix round 1" below.
+ *   ch:    RT_FT_CHAR   1 byte (genuinely uint8_t, cprint.cla)
  *   name:  RT_FT_STR    strCap=8 (1 len byte + 8 data bytes)
  *   color: RT_FT_ENUM   int32, members {0,1,2}
  */
@@ -22,7 +26,7 @@
 typedef struct {
     int32_t a;
     int32_t f;
-    uint8_t flag;
+    int32_t flag;
     uint8_t ch;
     uint8_t name[1 + 8];
     int32_t color;
@@ -280,12 +284,43 @@ static void test_str_len_overflow(void) {
     CHECK(rt_str_cmp(rt_lasterr_msg, (const uint8_t *)"\x0f""bad file format") == 0, "str len > strCap lastError message");
 }
 
+/* Fix round 1 regression: bool's emitted C field is int32_t, not uint8_t.
+ * The naive "one byte at the field's base address" implementation happened
+ * to pass on a little-endian host (base address == LSB) but silently wrote
+ * the wrong byte -- 0 for a true value with a nonzero high byte -- on the
+ * big-endian 68k Mac, and left 3 stale high-order bytes behind on load. */
+static void test_bool_endian(void) {
+    uint8_t path[256];
+    test_rec r, loaded;
+    uint8_t *filebuf;
+    long filelen, boolOff;
+
+    mkpath(path, "boolendian.dat");
+    r = mkrec1();
+    r.flag = 0x00000100; /* nonzero int32, but LSB is 0 -- old LE-host code emitted byte 0x00 */
+    CHECK(rt_file_save(path, RT_SER_REC, &r, &test_layout), "bool-endian save should succeed");
+
+    readFile("boolendian.dat", &filebuf, &filelen);
+    boolOff = 6 + 4 + 4; /* header(6) + a(4) + f(4) precede flag's 1-byte slot */
+    CHECK(filelen > boolOff, "bool-endian file has a flag byte");
+    if (filelen > boolOff) {
+        CHECK(filebuf[boolOff] == 1, "bool field serializes to canonical byte 1 for any nonzero int32, not just when the LSB is set");
+    }
+    free(filebuf);
+
+    loaded = mkrec1();
+    loaded.flag = (int32_t)0xFFFFFFFF; /* stale garbage before load */
+    CHECK(rt_file_load(path, RT_SER_REC, &loaded, &test_layout), "bool-endian load should succeed");
+    CHECK(loaded.flag == 1, "bool field loads to exactly int32 value 1 -- no stale high bytes survive");
+}
+
 int main(void) {
     test_rec_roundtrip();
     test_list_roundtrip();
     test_map_roundtrip();
     test_failure_modes();
     test_str_len_overflow();
+    test_bool_endian();
     if (failed) {
         fprintf(stderr, "FAILED\n");
         return 1;
