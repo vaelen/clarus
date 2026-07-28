@@ -1,11 +1,12 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Standing regression fixture for ARC Task 6 review round 2 (reviewer
-// Critical): a global's OWN Init expression never routed through
-// lowCountedStore's retain-on-store -- cpEmitGlobalsInit's Init-emission
-// path plain-assigned a bare-alias Init's handle with NO retain
-// (`cv_g2 = cv_g1;`), so Task 6's new unconditional cl_free_globals
+// Standing regression fixture for ARC Task 6 review, rounds 2 and 3.
+//
+// Round 2 (reviewer Critical): a global's OWN Init expression never routed
+// through lowCountedStore's retain-on-store -- cpEmitGlobalsInit's
+// Init-emission path plain-assigned a bare-alias Init's handle with NO
+// retain (`cv_g2 = cv_g1;`), so Task 6's new unconditional cl_free_globals
 // double-released an rc==1 handle: reviewer-reproduced `rt_rc:
 // over-release`, exit 134, under CLARUS_MEM_STRICT+CLARUS_MEM_PARANOID.
 // Fixed by giving the Init path its own birth-vs-retain classification
@@ -15,33 +16,35 @@
 // cpEmitGlobalsInit's own comment (cprint.cla) has the full account.
 //
 // gaT1/gaT2 pin the reviewer's exact TEXT repro (`var g2: text = g1`).
-// gaL1/gaL2 pin the LIST-OF-TEXT variant (`var g2: list of text = g1`) --
-// same missing-retain bug, one level up: the retain is on the LIST
+// gaL1/gaL2 pin the LIST-OF-TEXT variant -- the retain lands on the LIST
 // CONTAINER's own handle (cpEmitRetain's KList branch), not its elements.
 //
-// gaL1 is emptied again (`pop()`) before the function returns, so the
-// shared list is EMPTY by the time cl_free_globals runs at exit -- this is
-// deliberate, not incidental: a SEPARATE, pre-existing gap (cpEmitRelease's
-// deep element-release walk runs unconditionally on EVERY release
-// call-site, never gated on the container's own refcount actually reaching
-// 0) means two globals that still share a list/map handle WITH elements
-// present AT EXIT double-release those elements -- confirmed reproducible
-// (both via an alias Init and via a plain runtime `g2 = g1` reassignment)
-// during this fix's own verification, but it is a DIFFERENT bug class (an
-// unconditional deep-walk on every release call-site, not a missing
-// retain) and NOT fixed by this task -- see task-6-report.md's fix-round-2
-// addendum for the full writeup and reproduction. This fixture stays
-// entirely inside the currently-safe "empty at exit" envelope while still
-// proving the CONTAINER-level alias is real: `gaL2.push`-visible-via-
-// `gaL1` (and vice versa) is exactly Ch3's documented reference semantics
-// ("all references to the same handle point to the same underlying data"),
-// which only holds if the Init actually shared the handle rather than
-// silently copying an independent empty list.
+// Round 3 (reviewer Critical, found during round 2's own verification and
+// escalated back into this task rather than deferred): cpEmitRelease's
+// element-release walk (list/map deep release) ran UNCONDITIONALLY on
+// every release call-site, before the container's own release -- so once
+// gaL1/gaL2 shared one list handle (round 2's fix), a list WITH an element
+// present at exit crashed anyway: the first release site walked and freed
+// the element, the second site walked the SAME (already-freed) element
+// again. Fixed by gating the element walk on rt_list_lastref/
+// rt_map_lastref (internal/build/rt/rt_core.inc) -- a NULL-safe "is this
+// the box's only live reference" (rc==1) check read BEFORE either site's
+// own release call decrements it. gaL1/gaL2 below now push an element and
+// leave it in place at exit (round 2's version popped it back out first,
+// working around round 3's bug without saying so out loud in the code --
+// no longer necessary). gaM1/gaM2 pin the MAP-OF-TEXT variant of the same
+// shape. gaL3/local2 (inside the func body) pin a local aliasing a global
+// container WITH an element present -- confirmed (by reading the emitted
+// C, not just assumed) this shape was NEVER actually vulnerable: Task 4's
+// per-function escape pass (lowFreeUnsafe) already disqualifies an ALIASED
+// local from a DEEP scope-exit release (shallow `rt_list_release` only, no
+// element walk) precisely because its value isn't provably unshared -- so
+// only ONE release site (the global's own, in cl_free_globals) ever walks
+// gaL3's elements, guard or no guard. Kept as a fixture anyway: it pins
+// that disposition permanently, not just as of this commit.
 //
 // Expected strict-mode leak count: 0 (see ../arc_global_alias.leaks --
-// absent, defaults to want-0). Both pairs are fully balanced: one retain
-// at the alias Init, two matching releases at exit (rc 1 -> 2 -> 1 -> 0 for
-// each pair, never touching 0 early and never double-freeing).
+// absent, defaults to want-0) for all three pairs plus the local case.
 
 var gaT1: text = "hello"
 var gaT2: text = gaT1
@@ -49,11 +52,16 @@ var gaT2: text = gaT1
 var gaL1: list of text
 var gaL2: list of text = gaL1
 
+var gaM1: map of text
+var gaM2: map of text = gaM1
+
+var gaL3: list of text
+
 func runArcGlobalAlias() {
     var buf: char[64]
     var n: int
     var s: string
-    var popped: text
+    var local2: list of text
 
     n = gaT1.toBytes(buf)
     s.fromBytes(buf, n)
@@ -69,8 +77,19 @@ func runArcGlobalAlias() {
     } else {
         alert("list-alias-bad")
     }
-    popped = gaL1.pop()
-    n = popped.toBytes(buf)
-    s.fromBytes(buf, n)
-    alert(s)
+
+    gaM1["k"] = "v"
+    if gaM2.has("k") and gaM2["k"] == "v" {
+        alert("map-alias-ok")
+    } else {
+        alert("map-alias-bad")
+    }
+
+    gaL3.push("loc")
+    local2 = gaL3
+    if local2.count == 1 and local2.first() == "loc" {
+        alert("local-alias-ok")
+    } else {
+        alert("local-alias-bad")
+    }
 }

@@ -744,6 +744,26 @@ static void rt_rc_check(void *box, int32_t rc)
 }
 #endif
 
+/* rt_text_lastref/rt_list_lastref/rt_map_lastref (ARC Task 6 fix round 3):
+ * NULL-safe "is this the box's only live reference" predicate -- true iff
+ * x is non-NULL and its rc is exactly 1. cpEmitRelease's element-release
+ * walk (every element released BEFORE the container's own rc decrements)
+ * is unsafe whenever the CONTAINER itself is shared: two release call
+ * sites for the same rc>=2 container would each walk the SAME backing
+ * array, the second re-releasing elements the first already freed. The
+ * compiler now gates that walk on this predicate, reading rc BEFORE
+ * either site's own retain/release call runs -- no race with
+ * rt_rc_check's own abort path (that only fires INSIDE a retain/release
+ * call, never during this bare read). The box structs are opaque outside
+ * this file (rt.h only forward-declares them), so the predicate has to
+ * live here, next to their own `rc` field. Plain struct reads, no
+ * host-only ledger lookup -- unlike rt_rc_check, deliberately NOT inside
+ * the #if defined(__m68k__) || defined(macintosh) guard above: these
+ * compile and behave identically on every target, Mac included. */
+int rt_text_lastref(const rt_text *t) { return t != 0 && t->rc == 1; }
+int rt_list_lastref(const rt_list *l) { return l != 0 && l->rc == 1; }
+int rt_map_lastref(const rt_map *m) { return m != 0 && m->rc == 1; }
+
 /* ---- dispose (4e, now the rc==0 arm of release). Shallow: a list/map of
    text frees only its own storage; the compiler emits element
    retains/releases where it knows the types. */

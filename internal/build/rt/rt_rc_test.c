@@ -169,6 +169,42 @@ static void test_over_release_aborts(void)
     CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, "over-release aborts with SIGABRT");
 }
 
+/* 8 (ARC Task 6 fix round 3): rt_*_lastref -- true only at rc==1, false
+   once retained, true again after the matching release, and NULL-safe
+   false for all three kinds. */
+static void test_lastref(void)
+{
+    rt_text *t = rt_text_new();
+    rt_list *l = rt_list_new(sizeof(int32_t));
+    rt_map *m = rt_map_new(sizeof(int32_t));
+
+    CHECK(rt_text_lastref(t), "fresh text is its own last ref");
+    rt_text_retain(t);
+    CHECK(!rt_text_lastref(t), "retained text is not the last ref");
+    rt_text_release(t);
+    CHECK(rt_text_lastref(t), "text back to last ref after matching release");
+
+    CHECK(rt_list_lastref(l), "fresh list is its own last ref");
+    rt_list_retain(l);
+    CHECK(!rt_list_lastref(l), "retained list is not the last ref");
+    rt_list_release(l);
+    CHECK(rt_list_lastref(l), "list back to last ref after matching release");
+
+    CHECK(rt_map_lastref(m), "fresh map is its own last ref");
+    rt_map_retain(m);
+    CHECK(!rt_map_lastref(m), "retained map is not the last ref");
+    rt_map_release(m);
+    CHECK(rt_map_lastref(m), "map back to last ref after matching release");
+
+    CHECK(!rt_text_lastref(NULL), "NULL text is never the last ref");
+    CHECK(!rt_list_lastref(NULL), "NULL list is never the last ref");
+    CHECK(!rt_map_lastref(NULL), "NULL map is never the last ref");
+
+    rt_text_release(t);
+    rt_list_release(l);
+    rt_map_release(m);
+}
+
 int main(void)
 {
     test_text_new_rc();
@@ -178,6 +214,7 @@ int main(void)
     test_list_and_map_cycle();
     test_free_is_release_alias();
     test_over_release_aborts();
+    test_lastref();
 
     if (failed) {
         fprintf(stderr, "FAILED\n");

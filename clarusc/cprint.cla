@@ -2064,13 +2064,25 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
     } else if k == KList {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "    { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_release(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
+            // ARC Task 6 fix round 3 (reviewer Critical: shared-container
+            // element double-free): the element walk only runs when THIS
+            // release is the container's own LAST reference
+            // (rt_list_lastref reads rc BEFORE the rt_list_release call
+            // below decrements it) -- two release call sites sharing one
+            // rc>=2 list must not each walk and re-release the same
+            // elements; only the site that actually drops the container to
+            // 0 may free what it owns. Every caller of cpEmitRelease (local
+            // scope-exit, window-var teardown, cl_free_globals, record
+            // element/field recursion via cpEmitRcWalks) funnels through
+            // this one branch, so the guard covers all of them at once.
+            cpAppendLine(dst, "    if (rt_list_lastref(" + cexpr + ")) { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_release(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
         }
         cpAppendLine(dst, "    rt_list_release(" + cexpr + ");")
     } else if k == KMap {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_release(v); } }")
+            // Same guard, same reasoning as KList just above.
+            cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_release(v); } }")
         }
         cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
     } else if k == KArr {

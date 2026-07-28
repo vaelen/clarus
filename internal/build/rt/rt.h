@@ -93,6 +93,16 @@ void rt_list_release(rt_list *l);
 void rt_map_retain(rt_map *m);
 void rt_map_release(rt_map *m);
 
+/* ARC Task 6 fix round 3: NULL-safe "is this the box's only live
+   reference" predicate (true iff non-NULL and rc == 1) -- the compiler
+   gates a container's ELEMENT-release walk on this before releasing the
+   container itself, so two references sharing one list/map don't each
+   walk and re-release the same elements. See rt_core.inc's own comment
+   for the full account. */
+int rt_text_lastref(const rt_text *t);
+int rt_list_lastref(const rt_list *l);
+int rt_map_lastref(const rt_map *m);
+
 /* ---- dispose (4e) ---- shallow, NULL-safe; compiler emits element frees.
    Now one-line aliases for the corresponding release above. */
 void rt_text_free(rt_text *t);
