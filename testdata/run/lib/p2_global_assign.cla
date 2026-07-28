@@ -9,8 +9,9 @@
 // semantics), then `cl_free_globals` froze both: SIGSEGV. The whole-program
 // globals escape pre-pass (lower.cla's `lowRunGlobalsEscapePrepass`, Task
 // 8's window-var trick reused for globals) fixed the crash by disqualifying
-// both names from `cl_free_globals` (still true today -- that pass is
-// Task 6's, untouched by ARC Task 4).
+// both names from `cl_free_globals` -- ARC Task 6 (below) later made that
+// pre-pass's disqualification moot by giving every store a real, balanced
+// retain/release instead.
 //
 // ARC Task 4 (counted named-slot stores): `p2G2 = p2G1` is a NAMED-SLOT
 // store (a global, same funnel as a local -- `lowCountedStore`) whose
@@ -19,13 +20,18 @@
 // Task-4, the permanent "orphan-on-overwrite" leak this comment used to
 // describe as unfixable): `p2G2`'s original handle is properly freed the
 // moment the store runs, confirmed against the emitted C (`rt_text_retain
-// (cv_p2G1); rt_text_release(cv_p2G2); cv_p2G2 = cv_p2G1;`). Expected
-// strict-mode leak count: 2 (see ../p2_global_assign.leaks, dropped from 4)
-// -- `p2G1`'s shared "one" handle only (2 blocks): the store's own retain
-// gave it rc==2, but `cl_free_globals` still never runs (both names stay
-// disqualified there, Task 6's still-unmigrated slot class), so nothing
-// ever decrements it back to zero. Not a bug -- a global's cleanup walk is
-// explicitly out of this task's scope, staged for Task 6.
+// (cv_p2G1); rt_text_release(cv_p2G2); cv_p2G2 = cv_p2G1;`).
+//
+// ARC Task 6 (globals release unconditionally): `cl_free_globals` no longer
+// consults `lowGlobalsVarQualifies` -- it walks every global regardless,
+// so both `p2G1` and `p2G2` are released now (declaration order: `p2G1`
+// first, dropping the shared "one" text from rc==2 to rc==1; `p2G2` next,
+// releasing the SAME handle again, dropping it from 1 to 0 and freeing it).
+// Expected strict-mode leak count: 0 (../p2_global_assign.leaks deleted --
+// was 2). Safe, not a double-free: Task 4's retain-at-store gave `p2G1`'s
+// handle its own independent +1 the moment `p2G2 = p2G1` ran, so the two
+// releases here are draining that same rc==2 back to 0, not freeing
+// something already gone.
 
 var p2G1: text = "one"
 var p2G2: text = "two"

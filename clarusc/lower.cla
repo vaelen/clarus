@@ -2032,9 +2032,13 @@ var lowFreeTypes: map of int
 // found to violate rule 3 or rule 4 anywhere in the CURRENT function's body.
 //
 // ARC Task 4 reinterprets this map's meaning for the PER-FUNCTION-LOCAL
-// pass only (globals/window vars, their OWN separate gens, are untouched --
-// see lowWinVarQualifies/lowGlobalsVarQualifies, still "skip if disqualified"
-// exactly as before): a name in lowFreeDisq is no longer "unsafe to release
+// pass only (globals/window vars, their OWN separate gens, were untouched at
+// the time -- see lowWinVarQualifies/lowGlobalsVarQualifies; ARC Task 6 made
+// both moot by making cl_free_globals/clar_ui_release_<Win> release
+// unconditionally, so neither gen's disqualification entries are consulted
+// by anything anymore, though lowRunWinVarEscapePrepass/
+// lowRunGlobalsEscapePrepass themselves are still deferred to Task 8 to
+// delete): a name in lowFreeDisq is no longer "unsafe to release
 // at all" -- lowCountedStore's retain-on-store means most of rule 3/4's old
 // handoff reasons are now PROVABLY safe to release (the consuming store
 // retains, so the source keeps its own independent +1) -- it now means
@@ -5074,15 +5078,14 @@ func lowerProgram(declHead: int): int {
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
     lowBuiltinSaveChoiceLayout()
-    // Task 8: must run before the per-decl loop below mints any real
-    // function's lowFuncGen (lowRunWinVarEscapePrepass mints its own,
-    // lowWinEscGen, first) -- see that function's own doc comment. Final-
-    // review fix (Critical 1): lowRunGlobalsEscapePrepass runs the same way
-    // right after, minting its own lowGlobalsEscGen -- order between the
-    // two prepasses doesn't matter, each is fully self-contained (resets
-    // lowFreeNames, uses its own reserved gen).
-    lowRunWinVarEscapePrepass(declHead)
-    lowRunGlobalsEscapePrepass(declHead)
+    // ARC Task 6: cpEmitWinReleaseFn/cpEmitGlobalsInit no longer consult
+    // lowWinVarQualifies/lowGlobalsVarQualifies (both release unconditionally
+    // now that Tasks 4-5 make every store into a global/window var counted),
+    // so running these two prepasses just to populate lowFreeDisq entries
+    // nobody reads is wasted work -- stop calling them. The pass functions
+    // themselves, and lowWinVarQualifies/lowGlobalsVarQualifies, are left in
+    // place (dead code) for Task 8 to delete alongside the rest of the
+    // escape machinery.
     d = declHead
     while d != -1 {
         lowDecl(d)

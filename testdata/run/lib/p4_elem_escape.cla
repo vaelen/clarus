@@ -29,23 +29,26 @@
 // `p4GSaved`'s own retain above), so the walk's release only drops rc to 1,
 // never to 0.
 //
-// `p4GSaved` itself stays globally-unqualified -- but for a DIFFERENT,
-// UNRELATED rule than the one Task 5 deleted: `lowEscapeWalkAssign`'s own
-// rule 4 (`p4GSaved = p4Items[0]`, a bare-identifier LHS reassigned from a
-// rhs `lowEscapeFreshInit` doesn't recognize as fresh -- an `ExIndex` read
+// Through Task 5, `p4GSaved` itself stayed globally-unqualified for a
+// DIFFERENT, UNRELATED rule than the one Task 5 deleted: `lowEscapeWalkAssign`'s
+// own rule 4 (`p4GSaved = p4Items[0]`, a bare-identifier LHS reassigned from
+// a rhs `lowEscapeFreshInit` doesn't recognize as fresh -- an `ExIndex` read
 // is not one of that check's four fresh shapes, literal/concat/slice/[Task-
-// 4-added, `lowStoreIsBirth`-only]call) -- this is Task 4's OWN pre-
-// existing freshness test for DEEP-release/globals-qualification
-// eligibility, entirely orthogonal to container-element counting, and
-// untouched by Task 5. Confirmed against the emitted C: `cl_free_globals`
-// stays empty (`p4GSaved` never appears in it). Expected strict-mode leak
-// count: 2 (see ../p4_elem_escape.leaks, UNCHANGED by Task 5 -- the same
-// total, now for a more precisely attributable reason) -- the shared
-// `"a"+"b"` text's own remaining rc==1 (2 blocks), held solely by
-// `p4GSaved`, itself never released (`cl_free_globals` stays empty for it
-// -- Task 6's still-unmigrated globals-qualification scope, via rule 4's
-// own non-fresh-reassignment test, not the deleted element-read consult).
-// Not a bug -- globals-qualification is explicitly out of Task 5's scope.
+// 4-added, `lowStoreIsBirth`-only]call) -- Task 4's OWN pre-existing
+// freshness test for DEEP-release/globals-qualification eligibility,
+// entirely orthogonal to container-element counting, and untouched by
+// Task 5.
+//
+// ARC Task 6 (globals release unconditionally) makes that rule moot:
+// `cl_free_globals` no longer consults `lowGlobalsVarQualifies` (rule 4's
+// disqualification of `p4GSaved`) at all -- it releases every global,
+// `p4GSaved` included. Confirmed against the emitted C: `cl_free_globals`
+// now contains `rt_text_release(cv_p4GSaved);`. Expected strict-mode leak
+// count: 0 (../p4_elem_escape.leaks deleted -- was 2) -- the local
+// `p4Items`'s scope-exit deep release and `cl_free_globals`'s release of
+// `p4GSaved` are draining the shared `"a"+"b"` text's two independent
+// owners (rc==2, from `p4GSaved`'s own retain-at-store) back to 0, not
+// double-freeing: each side only ever touches its own +1.
 
 var p4GSaved: text
 

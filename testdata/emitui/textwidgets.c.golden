@@ -38,6 +38,7 @@ static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b);
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b);
 static void clar_ui_release_TextWin(void *inst)
 {
+    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_bodyText);
     rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
     rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
 

@@ -3043,19 +3043,20 @@ func cpWinHandlersHasWidget(whIdx: int): bool {
 
 // cpEmitWinReleaseFn (memory-audit-4e Task 8) emits, for winName's state
 // block, a static void clar_ui_release_<Win>(void *inst) freeing every
-// irtNeedsCtor per-instance var that QUALIFIES (lowWinVarQualifies --
-// lower.cla's whole-program reuse of Task 7's escape walker: a var aliased
-// anywhere as an RHS/argument/return/stored value stays leaked-by-design
-// instead of risking a use-after-free on whatever it was handed to). Exact
-// mirror of fpIntrCall's IUiStateDefaults() case above (the constructor
-// this is the destructor for), freeing instead of constructing, via the
-// same cpEmitRelease helper Task 5's globals and Task 7's locals already
-// use. No forward-declare/define split like winFn/widgetFn below needs:
-// this body only ever calls cpEmitRelease's own rt_*_release runtime calls,
-// never a clar_fn_ handler name, so it can be defined here directly.
-// Returns the function's own C name, or "0" if winName has no qualifying
-// field at all (callers wire a plain 0 into rt_ui_handlers.releaseVars
-// instead of a pointer to an empty function).
+// irtNeedsCtor per-instance var, UNCONDITIONALLY (ARC Task 6 -- Tasks 4-5
+// made every store into a window var counted, so the old lowWinVarQualifies
+// escape-walker consult guarding against a double-freed alias is now
+// provably unnecessary; see cpEmitGlobalsInit's matching comment for the
+// globals-side version of this same argument). Exact mirror of
+// fpIntrCall's IUiStateDefaults() case above (the constructor this is the
+// destructor for), freeing instead of constructing, via the same
+// cpEmitRelease helper Task 5's globals and Task 7's locals already use. No
+// forward-declare/define split like winFn/widgetFn below needs: this body
+// only ever calls cpEmitRelease's own rt_*_release runtime calls, never a
+// clar_fn_ handler name, so it can be defined here directly. Returns the
+// function's own C name, or "0" if winName has no needs-ctor field at all
+// (callers wire a plain 0 into rt_ui_handlers.releaseVars instead of a
+// pointer to an empty function).
 func cpEmitWinReleaseFn(winName: string): string {
     var fld: int
     var any: bool
@@ -3066,7 +3067,7 @@ func cpEmitWinReleaseFn(winName: string): string {
     any = false
     body = ""
     while fld != -1 {
-        if irtNeedsCtor(irFieldSlotType(fld)) and lowWinVarQualifies(poolGet(irFieldSlotName(fld))) {
+        if irtNeedsCtor(irFieldSlotType(fld)) {
             any = true
             cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
         }
@@ -3598,15 +3599,17 @@ func cpEmitUiWiring() {
 // function calls, and C requires file-scope initializers to be constant
 // expressions. Right after clar_init_globals, also emits cl_free_globals
 // (memory-audit Task 5): the destructor mirror of the init loop above,
-// walking the same irGlobals arena and calling cpEmitRelease per global --
-// EXCEPT a global lowGlobalsVarQualifies (lower.cla's whole-program reuse
-// of Task 7/8's escape walker, run over EVERY function/handler/extend/every
-// body, not just Init expressions) says is aliased anywhere at runtime: an
-// Init that's a bare reference to another global (`var alias: text = g`,
-// same handle per Ch3), a runtime assignment/push/element-read/record-field
-// store that aliases two globals, or any other rule-3/rule-4 handoff --
-// stays leaked-by-design instead of risking a double-free (final-review
-// Critical 1: the old version only ever caught the Init-expression shape).
+// walking the same irGlobals arena and calling cpEmitRelease per global,
+// UNCONDITIONALLY (ARC Task 6) -- Tasks 4-5 made every store into a global
+// (its own Init included: an alias Init like `var alias: text = g` retains
+// at the store, same as a runtime assignment/push/element-read/record-field
+// store that aliases two globals) counted, so both roots of any alias now
+// carry their own independent +1 and releasing every global's slot here is
+// sound. This replaces the old lowGlobalsVarQualifies escape-walker consult
+// (final-review Critical 1's fix, formerly guarding against exactly that
+// double-free) -- now provably unnecessary; cpEmitRelease itself no-ops for
+// a non-ctor type, so the call is unconditional rather than re-testing
+// irtNeedsCtor here too.
 func cpEmitGlobalsInit() {
     var i: int
     var gt: int
@@ -3676,9 +3679,7 @@ func cpEmitGlobalsInit() {
     while i < irGlobals.count {
         gt = irGlobalType(i)
         nm = poolGet(irGlobalName(i))
-        if not irtNeedsCtor(gt) or lowGlobalsVarQualifies(nm) {
-            cpEmitRelease(freeBuf, "cv_" + nm, gt)
-        }
+        cpEmitRelease(freeBuf, "cv_" + nm, gt)
         i = i + 1
     }
     cpRestBuf.add(toText("static void cl_free_globals(void) {"))

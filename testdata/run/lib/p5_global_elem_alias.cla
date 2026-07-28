@@ -30,18 +30,22 @@
 // retained independently above), so the walk's release only drops rc to 1,
 // never to 0.
 //
-// `p5GSaved` itself stays globally-unqualified, for the SAME orthogonal
-// rule p4_elem_escape.cla's own updated comment explains in full (rule 4:
-// a bare-identifier LHS reassigned from a rhs -- `p5Gl[0]`, an ExIndex --
-// `lowEscapeFreshInit` doesn't recognize as fresh; untouched by Task 5).
-// Expected strict-mode leak count: 2 (see ../p5_global_elem_alias.leaks,
-// dropped from 4) -- `p5Gl`'s own list structure (struct box +
-// backing-array handle) is now freed (2 blocks closed); the shared "xy"
-// text's own remaining rc==1 (2 blocks) is held solely by `p5GSaved`,
-// itself never released (`cl_free_globals` stays empty for it -- Task 6's
-// still-unmigrated globals-qualification scope, via rule 4, not the
-// deleted element-read consult). Not a bug -- explicitly out of Task 5's
-// scope.
+// Through Task 5, `p5GSaved` itself stayed globally-unqualified for the
+// SAME orthogonal rule p4_elem_escape.cla's own updated comment explains in
+// full (rule 4: a bare-identifier LHS reassigned from a rhs -- `p5Gl[0]`,
+// an ExIndex -- `lowEscapeFreshInit` doesn't recognize as fresh; untouched
+// by Task 5).
+//
+// ARC Task 6 (globals release unconditionally) makes that rule moot too:
+// `cl_free_globals` no longer consults `lowGlobalsVarQualifies`, so
+// `p5GSaved` is released along with `p5Gl` now (confirmed against the
+// emitted C: `cl_free_globals` gains `rt_text_release(cv_p5GSaved);` after
+// `p5Gl`'s own deep-release block). Expected strict-mode leak count: 0
+// (../p5_global_elem_alias.leaks deleted -- was 2). Safe: the shared "xy"
+// text's rc==2 (one from `p5Gl`'s own retained element, one from
+// `p5GSaved`'s retain-at-store) is drained back to 0 by the two
+// independent releases, in declaration order (`p5Gl` first, `p5GSaved`
+// second) -- neither side ever touches the other's +1.
 
 var p5Gl: list of text
 var p5GSaved: text

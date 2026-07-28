@@ -8,26 +8,35 @@
 // record's own base -- `cl_free_globals` still recursed into `p8GRec`'s
 // fields, freeing `body` (== `p8Gt`'s handle, after the store), then
 // separately froze `p8Gt` itself: SIGSEGV. The fix disqualifies the BASE
-// identifier (`p8GRec`) too -- still true today, unchanged by ARC Task 4:
-// `cl_free_globals` stays empty, skipping `p8GRec` entirely (records are
-// Task 7's still-unmigrated slot class; globals cleanup is Task 6's).
+// identifier (`p8GRec`) too, so `cl_free_globals` stayed empty for it
+// through ARC Task 5, skipping `p8GRec` entirely.
 //
 // ARC Task 4 (counted named-slot stores): `p8GRec.body = p8Gt` is a
 // SELECT-LHS store -- `lowAssign`'s generic fallthrough doesn't
 // distinguish a record field from a window var, so this ALSO routes
-// through `lowCountedStore` (an early, incidental win Task 7 will
-// formalize, not a bug: retaining a field store can only ever be a leak
-// if unbalanced, never a UAF). Confirmed against the emitted C:
-// `rt_text_retain(cv_p8Gt); rt_text_release((cv_p8GRec).cv_body);
+// through `lowCountedStore` (an early, incidental win Task 7's record
+// copy-site work will formalize, not a bug: retaining a field store can
+// only ever be a leak if unbalanced, never a UAF). Confirmed against the
+// emitted C: `rt_text_retain(cv_p8Gt); rt_text_release((cv_p8GRec).cv_body);
 // (cv_p8GRec).cv_body = cv_p8Gt;` -- `p8ProbeNote`'s original `body = "hi"`
 // default handle is properly freed now (no longer the permanent
 // orphan-on-overwrite this comment used to describe), and `p8Gt` is
-// retained into the field. Expected strict-mode leak count: 2 (see
-// ../p8_rec_field.leaks, dropped from 4) -- `p8Gt`'s "keep" text only
-// (struct box + data handle, 2 blocks; rc==2 after the retain, shared with
-// `p8GRec.body`, counted once) -- never released, since neither global
-// cleanup (Task 6) nor a record field release-walk (Task 7) exist yet. Not
-// a bug -- both are explicitly out of this task's scope.
+// retained into the field.
+//
+// ARC Task 6 (globals release unconditionally) drops the `p8GRec`
+// disqualification: `cl_free_globals` now walks EVERY global, including
+// `p8GRec`, via `cpEmitRelease`'s existing (pre-ARC) KRec case, which
+// already recurses into every needs-ctor field unconditionally -- that
+// per-field walk was never gated, only the TOP-LEVEL `p8GRec` slot was.
+// `p8Gt` (declared first) is also no longer disqualified, so both release:
+// declaration order releases `p8Gt`'s own handle first (rc==2 -> 1), then
+// `p8GRec`'s field walk releases the SAME handle via `body` (rc==1 -> 0,
+// freed). Expected strict-mode leak count: 0 (../p8_rec_field.leaks
+// deleted -- was 2). Safe: `p8Gt`'s retain-at-store (Task 4) gave the
+// shared "keep" text its own independent +1, so the two releases are
+// draining that rc==2 back to 0, not double-freeing. A record copy site
+// (whole-record assignment/param/return/element -- Task 7's scope, not
+// exercised by this fixture) is a separate, still-open question.
 
 record p8ProbeNote {
     body: text = "hi"

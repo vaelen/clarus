@@ -2297,17 +2297,105 @@ static void clar_init_globals(void) {
 
 static void cl_free_globals(void) {
     rt_list_release(cv_strPool);
+    rt_map_release(cv_strIndex);
+    rt_list_release(cv_diags);
+    rt_list_release(cv_diagPaths);
+    rt_list_release(cv_declFileTab);
+    rt_text_release(cv_lexSrc);
+    rt_list_release(cv_toks);
+    rt_list_release(cv_exprs);
+    rt_list_release(cv_stmts);
+    rt_list_release(cv_decls);
+    rt_list_release(cv_typeExprs);
+    rt_list_release(cv_typeArena);
+    rt_list_release(cv_enumMembers);
+    rt_list_release(cv_funcSigs);
+    rt_list_release(cv_symbols);
+    rt_list_release(cv_scopes);
+    rt_list_release(cv_fieldInfos);
+    rt_map_release(cv_recFieldsHeadByName);
+    rt_list_release(cv_paramSpecs);
+    rt_list_release(cv_methodSigs);
+    rt_map_release(cv_stringTextMethods);
+    rt_map_release(cv_textOnlyMethods);
+    rt_map_release(cv_connectionMethods);
+    rt_map_release(cv_listenerMethods);
+    rt_map_release(cv_serviceBrowserMethods);
+    rt_map_release(cv_fileFuncs);
+    rt_map_release(cv_canvasMethods);
     rt_map_release(cv_canvasProperties);
+    rt_map_release(cv_funcScopeByDecl);
+    rt_map_release(cv_funcRetByDecl);
+    rt_map_release(cv_enumConstOf);
+    rt_map_release(cv_constUseIsStr);
+    rt_map_release(cv_constUseInt);
+    rt_map_release(cv_constUseStr);
+    rt_map_release(cv_exprTypeOf);
+    rt_list_release(cv_widgetInfos);
+    rt_map_release(cv_windowIsForm);
+    rt_map_release(cv_windowFormRecType);
+    rt_map_release(cv_windowVarsHead);
+    rt_map_release(cv_windowWidgetsHead);
     rt_map_release(cv_menuItems);
     rt_map_release(cv_windowTopProps);
     rt_map_release(cv_widgetDeclProps);
+    rt_map_release(cv_widgetRuntimeProps);
     rt_map_release(cv_appProps);
+    rt_list_release(cv_eventParams);
+    rt_list_release(cv_eventSpecs);
+    rt_map_release(cv_eventTable);
+    rt_list_release(cv_irTypes);
+    rt_list_release(cv_irStmts);
+    rt_list_release(cv_irExprs);
+    rt_list_release(cv_irLocals);
+    rt_list_release(cv_irFuncs);
+    rt_list_release(cv_irGlobals);
+    rt_list_release(cv_irFieldSlots);
+    rt_list_release(cv_irRecords);
+    rt_list_release(cv_irEnumMembers);
+    rt_list_release(cv_irEnums);
+    rt_list_release(cv_irWidgetDescs);
     rt_list_release(cv_irColumnDescs);
+    rt_list_release(cv_irBindDescs);
+    rt_list_release(cv_irWindowDescs);
+    rt_list_release(cv_irMenuItemDescs);
+    rt_list_release(cv_irMenuDescs);
+    rt_list_release(cv_irWinHandlers);
+    rt_list_release(cv_irWidgetHandlerEntries);
+    rt_list_release(cv_irMenuHandlerEntries);
+    rt_list_release(cv_irEveryEntries);
+    rt_list_release(cv_irStrLits);
+    rt_map_release(cv_irLayoutNeededByName);
+    rt_map_release(cv_irRcWalkNeededByName);
+    rt_list_release(cv_lowScopes);
+    rt_map_release(cv_lowStrIdx);
+    rt_map_release(cv_uiMenuIdx);
+    rt_map_release(cv_uiMenuItemIdx);
+    rt_map_release(cv_uiWinHandlersIdx);
     rt_list_release(cv_winVarDefaults);
+    rt_map_release(cv_winVarDefaultsHead);
+    rt_list_release(cv_lowFreeNames);
+    rt_map_release(cv_lowFreeTypes);
     rt_map_release(cv_lowFreeDisq);
     rt_map_release(cv_lowFreeUnsafe);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_cpTypeBuf); i++) rt_text_release(*(rt_text **)rt_list_at(cv_cpTypeBuf, i)); }
+    rt_list_release(cv_cpTypeBuf);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_cpLitBuf); i++) rt_text_release(*(rt_text **)rt_list_at(cv_cpLitBuf, i)); }
+    rt_list_release(cv_cpLitBuf);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_cpRecBuf); i++) rt_text_release(*(rt_text **)rt_list_at(cv_cpRecBuf, i)); }
+    rt_list_release(cv_cpRecBuf);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_cpUiBuf); i++) rt_text_release(*(rt_text **)rt_list_at(cv_cpUiBuf, i)); }
+    rt_list_release(cv_cpUiBuf);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_cpRestBuf); i++) rt_text_release(*(rt_text **)rt_list_at(cv_cpRestBuf, i)); }
+    rt_list_release(cv_cpRestBuf);
     rt_map_release(cv_cpStrCapsEmitted);
     rt_map_release(cv_cpArrEmitted);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_fpBody); i++) rt_text_release(*(rt_text **)rt_list_at(cv_fpBody, i)); }
+    rt_list_release(cv_fpBody);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_fpStmtTmps); i++) rt_text_release(*(rt_text **)rt_list_at(cv_fpStmtTmps, i)); }
+    rt_list_release(cv_fpStmtTmps);
+    { int32_t i; for (i = 0; i < rt_list_count(cv_fpStmtTmpRel); i++) rt_text_release(*(rt_text **)rt_list_at(cv_fpStmtTmpRel, i)); }
+    rt_list_release(cv_fpStmtTmpRel);
     rt_map_release(cv_cpEnumArraysEmitted);
     rt_map_release(cv_seenPaths);
     rt_list_release(cv_asmHeads);
@@ -20611,8 +20699,6 @@ static int32_t clar_fn_lowerProgram(int32_t cv_declHead) {
     cv_lowCurHandlerEvent = (-(1));
     cv_lowCurAcceptedParam = (-(1));
     clar_fn_lowBuiltinSaveChoiceLayout();
-    clar_fn_lowRunWinVarEscapePrepass(cv_declHead);
-    clar_fn_lowRunGlobalsEscapePrepass(cv_declHead);
     cv_d = cv_declHead;
     while (1) {
         if (!((cv_d != (-(1))))) break;
@@ -30140,7 +30226,7 @@ static clar_str_255 clar_fn_cpEmitWinReleaseFn(clar_str_255 cv_winName) {
     cv___store144 = 0;
     while (1) {
         if (!((cv_fld != (-(1))))) break;
-        if (clar_fn_irtNeedsCtor(clar_fn_irFieldSlotType(cv_fld)) && clar_fn_lowWinVarQualifies(clar_fn_poolGet(clar_fn_irFieldSlotName(cv_fld)))) {
+        if (clar_fn_irtNeedsCtor(clar_fn_irFieldSlotType(cv_fld))) {
             cv_any = 1;
             clar_str_255 t2;
             rt_str_concat((uint8_t*)&t2, (const uint8_t*)&(clar_lit_849), (const uint8_t*)&(cv_winName));
@@ -31475,11 +31561,9 @@ static void clar_fn_cpEmitGlobalsInit(void) {
         clar_str_255 t30;
         t30 = clar_fn_poolGet(clar_fn_irGlobalName(cv_i));
         rt_str_store((uint8_t*)&(cv_nm), 255, (const uint8_t*)&(t30));
-        if ((!(clar_fn_irtNeedsCtor(cv_gt))) || clar_fn_lowGlobalsVarQualifies(cv_nm)) {
-            clar_str_255 t31;
-            rt_str_concat((uint8_t*)&t31, (const uint8_t*)&(clar_lit_724), (const uint8_t*)&(cv_nm));
-            clar_fn_cpEmitRelease(cv_freeBuf, t31, cv_gt);
-        }
+        clar_str_255 t31;
+        rt_str_concat((uint8_t*)&t31, (const uint8_t*)&(clar_lit_724), (const uint8_t*)&(cv_nm));
+        clar_fn_cpEmitRelease(cv_freeBuf, t31, cv_gt);
         cv_i = (cv_i + 1);
     }
     rt_text * t32 = NULL;

@@ -25,18 +25,16 @@
 // rt_text_release(*(rt_text **)rt_list_at(cv_p1Gl, i)); }
 // rt_list_release(cv_p1Gl);`) -- safe precisely because the element it
 // walks is `p1Gl`'s OWN retained copy (rc==2 after the push), so releasing
-// it only drops the count back to 1, never to 0. `p1Gt` itself is STILL
-// disqualified (a push argument is still `lowFreeUnsafe` at the PER-
-// FUNCTION-LOCAL scope-exit-release layer -- but `p1Gt` is a GLOBAL here,
-// with no scope-exit release at all; its only possible release is
-// `cl_free_globals`, which still skips it: `lowEscapeHandoff` still marks
-// it `lowFreeDisq`, unaffected by Task 5's own carve-out, which only
-// widened push's SHALLOW-safety for locals, not globals-qualification).
-// Expected strict-mode leak count: 2 (see ../p1_push_global.leaks, dropped
-// from 4) -- `p1Gt`'s own text (struct box + data handle, 2 blocks; rc==1
-// remaining after `p1Gl`'s element-release drops it from 2), never
-// released. Not a bug -- `p1Gt`'s own globals-qualification is Task 6's
-// still-unmigrated slot class.
+// it only drops the count back to 1, never to 0.
+//
+// ARC Task 6 (globals release unconditionally): `cl_free_globals` no longer
+// consults `lowGlobalsVarQualifies` at all -- it walks EVERY global,
+// including `p1Gt`, which is now released too (declaration order: `p1Gt`
+// releases first, dropping the shared text from rc==2 to rc==1; `p1Gl`'s
+// deep release then drops its own element copy from 1 to 0, freeing it).
+// Expected strict-mode leak count: 0 (../p1_push_global.leaks deleted --
+// was 2). Both roots are independently retained (Task 4/5) and both are now
+// walked (Task 6), so nothing is left unreleased and nothing double-frees.
 
 var p1Gt: text = "hello"
 var p1Gl: list of text
