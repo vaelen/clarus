@@ -89,8 +89,8 @@ Living document — the authoritative sequencing and strategy record. Updated
    too-large-file open guard (alert + clean close, no truncated content
    ever shown) — 25 gated `internal/mactest` tests total (same count basis
    as item 7 above: top-level test functions, cumulative over 4a+4b+4c).
-9. **Mac target 4d (forms, binding, tables, persistence): DONE.** Real
-   Handle-backed records; `form for`, the binding walker (`binds:` on
+9. **Mac target 4d (forms, binding, tables, persistence): DONE.**
+   `form for`, the binding walker (`binds:` on
    `field`/`check`/`popup`), the `edit` statement (movable-modal, all four
    target shapes: `new T`/lvalue var/list element/map element),
    `accepted`/`cancelled` and the synthetic `isNew`; `popup` (System 6
@@ -120,7 +120,9 @@ Living document — the authoritative sequencing and strategy record. Updated
    passes a new gated add/edit/remove scenario (popup pick, favorite
    check, one port-validation failure, a dblclick-edit writeback round, and
    a remove) — 32 gated `internal/mactest` tests total (same count basis
-   as items 7/8 above).
+   as items 7/8 above). Handle-backed records were dropped per the 4d spec —
+   records stay value types per the reference; the underlying Handle-hygiene
+   concern moved to the 4e memory audit.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -201,9 +203,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 - **Phase re-split (decided 2026-07-24, superseding the old "both Appendix C
   examples" 4b acceptance — each phase ships a real artifact):**
   - **4d (branch mac-target-4d): DONE.** Forms + binding walker,
-    `popup`, `table`/List Manager, real Handle-backed records, `file.save`/
-    `load` — see "Done" item 9. Acceptance: the Appendix C Bookmark
-    Manager (`examples/bookmarks.cla`), verbatim plus persistence.
+    `popup`, `table`/List Manager, `file.save`/`load` — see "Done" item 9.
+    Acceptance: the Appendix C Bookmark Manager (`examples/bookmarks.cla`),
+    verbatim plus persistence. Handle-backed records were dropped per the
+    4d spec — records stay value types per the reference; the underlying
+    Handle-hygiene concern moved to the 4e memory audit.
   - **4e (post-4d): memory-management audit** — Handle/close leak sweep:
     lists, text, maps, menus, window instances, the deferred ClosePort item;
     decide per-site free-vs-leak-by-design and document.
@@ -267,6 +271,25 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   reproduce the exact zero-width, unclickable-box collision the field fix
   resolved. No current fixture declares one. Fix: route both call sites
   through `rt_ui_field_label_lane` the same way the field ones now do.
+- **Unreproduced live-input popup anomaly (mac-target-4d final validation):**
+  the Protocol popup failed to open on repeat Edit Bookmark dialogs in ONE
+  live session; 20+ deliberate repro attempts across System 6 and System 7
+  failed, and the popup's menu-list bookkeeping was proven correct on the
+  evidence available. Guarded by the `rt_ui_popup_assert_alive` menu-integrity
+  tripwire, now wired into both scripted popup lanes — if that tripwire ever
+  fires, the anomaly is real; investigate menu lifecycle across form reopen.
+- **Modal form map-element writeback upserts (mac-target-4d final review):**
+  `rt_ui.c`'s `RT_UI_WB_MAP` writeback case uses `rt_map_set` (upsert), so a
+  key removed by a timer mid-edit is re-inserted on OK. Deliberate; the spec
+  said drop-writeback on a vanished target — if upsert proves wrong in
+  practice, the writeback descriptor carries what's needed to check-then-set
+  instead.
+- **Reference erratum candidate (mac-target-4d final review):** Appendix C's
+  Bookmark Manager `Remove.click` calls `bookmarks.remove(Marks.selected)`
+  without guarding `selected == -1` — a user clicking Remove with no
+  selection panics the app. Since the example is normative and shipped
+  verbatim, fix reference-side (guard in the appendix example) in a future
+  docs pass rather than papering over it in the acceptance app.
 
 ## Process conventions that worked (for future sessions)
 

@@ -1003,6 +1003,8 @@ The Apple menu and its About item are provided by the runtime automatically; no 
 
 A window with `form for T` (Chapter 8) is a *form window*: its widgets bind to the fields of a value of type `T` rather than being addressed piecemeal by handler code. A `field`, `check`, or `popup` inside such a window declares `binds: name`, where `name` is resolved against `T`'s fields — inside a form window's widget declarations, the record's fields are the innermost scope, so a bare name is written, never a dotted path.
 
+`form for T` requires every field of `T` to be a by-value type (Chapter 3) — the same restriction, and the same build-time error, as `file.save`/`file.load` (Chapter 12) — since the form buffer the `edit` statement copies into and out of (below) is a flat copy.
+
 ```rust
 window EditForm {
     form for Bookmark
