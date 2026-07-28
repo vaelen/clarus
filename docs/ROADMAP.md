@@ -154,12 +154,14 @@ Living document — the authoritative sequencing and strategy record. Updated
     goldens (default 0) as a permanent ratchet — 31 of 40 programs are at
     zero, the other 9 are blessed goldens tracing to documented
     leak-by-design classes that remain until ARC (user-call-result/bare-alias
-    reassignment orphans, containers disqualified by element reads, record
-    fields being out of the local-free pre-pass's scope, disqualified window
-    vars, and cross-window name collisions). Go compiler, its emitted output,
-    and the bootstrap chain are unaffected — frees are unobservable in
-    program output. Full spec + per-site dispositions:
-    `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
+    reassignment orphans, containers disqualified by element reads, and
+    record fields being out of the local-free pre-pass's scope — the host
+    corpus has no window declarations, so window-var disqualification and
+    cross-window name collisions are a separate Task 8 leak-by-design class
+    exercised by the Mac UI test suite, not by any of the 9 goldens). Go
+    compiler, its emitted output, and the bootstrap chain are unaffected —
+    frees are unobservable in program output. Full spec + per-site
+    dispositions: `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 

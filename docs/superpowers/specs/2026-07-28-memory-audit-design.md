@@ -178,12 +178,12 @@ subset rule hold (snapshot regenerated per `TestSnapshotCurrent`).
 
 | Site | Disposition |
 |---|---|
-| `rt_ser.inc` save/load temp text (per-call, both runtimes) | **Fixed** — freed on all exit paths (Task 2) |
-| Struct box Handle discarded (`rt_mac_new_struct`, rt_mac.c:493) | **Fixed** — box is a `NewPtr` in the unified `rt_core.inc` (Task 3) |
-| Handler locals + expression temporaries | **Fixed** — conservative default-deny lowering: statement-level temps (Task 5), non-escaping scope-exit locals incl. if-condition temps on branch jumps (Tasks 6–7) |
-| Escaping values | **Leak by design until ARC** — ratchet-goldened; 9 of 40 corpus programs nonzero, all traced to documented gaps (user-call-result/bare-alias reassignment orphans, element-read-disqualified containers, record fields out of local-free scope, disqualified window vars, cross-window name collisions) (Task 9) |
+| `rt_ser.inc` save/load temp text (per-call, both runtimes) | **Fixed** — freed on all exit paths (Task 4; distinct from Task 2's `rt_ser` fix, the list-save stale-pointer-under-relocation bug) |
+| Struct box Handle discarded (`rt_mac_new_struct`, rt_mac.c:493) | **Fixed** — box is a `NewPtr` in the unified `rt_core.inc` (Task 2; Task 3 rewired `rt_mac.c` to consume it) |
+| Handler locals + expression temporaries | **Fixed** — conservative default-deny lowering: statement-level temps (Task 6), non-escaping scope-exit locals incl. if-condition temps on branch jumps (Tasks 6–7) |
+| Escaping values | **Leak by design until ARC** — ratchet-goldened; 9 of 40 corpus programs nonzero, all traced to documented gaps in the (window-free) host corpus: user-call-result/bare-alias reassignment orphans, element-read-disqualified containers, record fields out of local-free scope (Task 9). Window-var disqualification and cross-window name collisions are a separate leak-by-design class (Task 8), exercised by the Mac UI test suite, not by any of these 9 goldens. |
 | Window vars never freed at close (rt_mac.c:479) | **Fixed** — generated per-window release function called from `rt_ui_teardown_window` (Task 8) |
-| Globals live at exit | **Fixed** — `cl_free_globals()` via `rt_register_cleanup` (Task 6) |
+| Globals live at exit | **Fixed** — `cl_free_globals()` via `rt_register_cleanup` (Task 5) |
 | `rt_list_clear`/`rt_map_clear` keep capacity | **Kept** — deliberate amortization |
 | Process-lifetime one-shots (menu bar menus, `gMenuHandles`, AE UPPs, `gEveryDue`, trace arrays, args list, `rt_test_log`) | **Leak by design** — reclaimed at exit; `rt_mem_note`-tagged host-side |
 | `OpenWD` refnum (rt_ui.c:3873) | Not memory — existing comment stands |
