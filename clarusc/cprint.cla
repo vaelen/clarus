@@ -797,6 +797,8 @@ func fpIntrCall(x: int): text {
     var container: string
     var dataExpr: text
     var freeVarBuf: text
+    var argT: int
+    var argK: IRKind
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -820,6 +822,44 @@ func fpIntrCall(x: int): text {
         return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == IFixDiv() {
         return "rt_fix_div((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+
+    // ---- retain/release (ARC Task 2) ----
+    } else if nm == IRetain() or nm == IRelease() {
+        // a0 is the reference to retain/release, dispatched on ITS OWN IR
+        // type (never x's -- both intrinsics are void): a plain heap handle
+        // (KText/KList/KMap) prints as a direct rt_*_retain/rt_*_release
+        // call; a by-value record (KRec) prints as a call to that record
+        // type's generated clar_retain_NAME/clar_release_NAME walk helper
+        // (cpEmitRcWalks), marking the record type needed the first time
+        // it's seen here. fpAddrable (not fpExpr) because the KRec branch
+        // takes cexpr's address -- it must be a real addressable lvalue,
+        // never a bare rvalue. Dormant: lower.cla doesn't emit either
+        // intrinsic yet (a later ARC task inserts the call sites).
+        s0 = fpAddrable(a0)
+        argT = irExprType(a0)
+        argK = irtKind(argT)
+        if argK == KRec {
+            recName = poolGet(irtName(argT))
+            irMarkRcWalkNeeded(irtName(argT))
+            if nm == IRetain() {
+                fpEmit("clar_retain_" + recName + "(&(" + s0 + "));")
+            } else {
+                fpEmit("clar_release_" + recName + "(&(" + s0 + "));")
+            }
+        } else {
+            fn = "rt_text"
+            if argK == KList {
+                fn = "rt_list"
+            } else if argK == KMap {
+                fn = "rt_map"
+            }
+            if nm == IRetain() {
+                fpEmit(fn + "_retain(" + s0 + ");")
+            } else {
+                fpEmit(fn + "_release(" + s0 + ");")
+            }
+        }
+        return toText("")
 
     // ---- strings ----
     } else if nm == IStrConcat() {
@@ -1005,18 +1045,19 @@ func fpIntrCall(x: int): text {
     } else if nm == IListCount() {
         return "rt_list_count(" + fpExpr(a0) + ")"
     } else if nm == IListFreeVar() {
-        // memory-audit Task 7: reuse Task 5's cpEmitFree (element-free loop
-        // for a KText element type, then rt_list_free) rather than
-        // reimplementing it -- cpEmitFree appends into a caller-owned `text`
-        // buffer via cpAppendLine (its own fixed one-level indent), so the
-        // whole (possibly multi-line) result is emitted as ONE fpBody entry
-        // here, the same trick cpEmitGlobalsInit uses for cl_free_globals's
-        // body. Indentation is the only thing that can differ from a
-        // hand-rolled fpEmit-per-line version (purely cosmetic -- C doesn't
-        // care), and correctness (double-free, element ordering) is
-        // entirely cpEmitFree's own, already-reviewed logic.
+        // memory-audit Task 7: reuse Task 5's cpEmitRelease (element-release
+        // loop for a KText element type, then rt_list_release) rather than
+        // reimplementing it -- cpEmitRelease appends into a caller-owned
+        // `text` buffer via cpAppendLine (its own fixed one-level indent),
+        // so the whole (possibly multi-line) result is emitted as ONE
+        // fpBody entry here, the same trick cpEmitGlobalsInit uses for
+        // cl_free_globals's body. Indentation is the only thing that can
+        // differ from a hand-rolled fpEmit-per-line version (purely
+        // cosmetic -- C doesn't care), and correctness (double-free,
+        // element ordering) is entirely cpEmitRelease's own,
+        // already-reviewed logic.
         freeVarBuf = ""
-        cpEmitFree(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
+        cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
         fpEmit(freeVarBuf)
         return toText("")
 
@@ -1070,7 +1111,7 @@ func fpIntrCall(x: int): text {
     } else if nm == IMapFreeVar() {
         // memory-audit Task 7 -- see IListFreeVar's doc comment.
         freeVarBuf = ""
-        cpEmitFree(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
+        cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
         fpEmit(freeVarBuf)
         return toText("")
 
@@ -1749,18 +1790,23 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     }
 }
 
-// cpEmitFree appends to dst the free statement(s) that release cexpr's (an
-// lvalue C expression) storage per IR type t -- the shallow-plus rule
-// (memory-audit spec, Task 5): KText frees its own buffer; KList/KMap free
-// their own handle, plus -- only when the element/value type is itself
-// KText -- a loop freeing each element's text handle first (an element type
-// that is itself KList/KMap is left alone: shallow only, matching Ch3
-// reference semantics, until ARC); KArr/KRec recurse into exactly the slots
-// cpDefaultInit constructs (mirroring its KArr/KRec branches above, so free
-// walks precisely what init built); every other kind emits nothing. A
-// reusable helper -- called here for globals, and again by later tasks for
-// function-local and record-field disposal.
-func cpEmitFree(dst: text, cexpr: string, t: int) {
+// cpEmitRelease (ARC Task 2: renamed+upgraded from memory-audit Task 5's
+// cpEmitFree, now that Task 1's runtime made rt_text_free/rt_list_free/
+// rt_map_free one-line aliases for rt_text_release/rt_list_release/
+// rt_map_release -- identical behavior at rc==1, the only case any
+// call site below actually reaches yet) appends to dst the release
+// statement(s) that drop cexpr's (an lvalue C expression) OWN reference at
+// IR type t -- the shallow-plus rule (memory-audit spec, Task 5, unchanged
+// by this rename): KText releases its own buffer; KList/KMap release their
+// own handle, plus -- only when the element/value type is itself KText --
+// a loop releasing each element's text handle first (an element type that
+// is itself KList/KMap is left alone: shallow only, matching Ch3 reference
+// semantics, until a later ARC task); KArr/KRec recurse into exactly the
+// slots cpDefaultInit constructs (mirroring its KArr/KRec branches above,
+// so the release walk precisely mirrors what init built); every other kind
+// emits nothing. A reusable helper -- called here for globals, and again by
+// later tasks for function-local and record-field disposal.
+func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var k: IRKind
     var et: int
     var f: int
@@ -1769,26 +1815,26 @@ func cpEmitFree(dst: text, cexpr: string, t: int) {
 
     k = irtKind(t)
     if k == KText {
-        cpAppendLine(dst, "    rt_text_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_text_release(" + cexpr + ");")
     } else if k == KList {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "    { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_free(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
+            cpAppendLine(dst, "    { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_release(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
         }
-        cpAppendLine(dst, "    rt_list_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_list_release(" + cexpr + ");")
     } else if k == KMap {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_free(v); } }")
+            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_release(v); } }")
         }
-        cpAppendLine(dst, "    rt_map_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
     } else if k == KArr {
         et = irtElem(t)
         if irtNeedsCtor(et) {
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
             cpAppendLine(dst, "    for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
-            cpEmitFree(dst, cexpr + ".e[" + ix + "]", et)
+            cpEmitRelease(dst, cexpr + ".e[" + ix + "]", et)
             cpAppendLine(dst, "    }")
         }
     } else if k == KRec {
@@ -1798,7 +1844,7 @@ func cpEmitFree(dst: text, cexpr: string, t: int) {
                 f = irRecordLayoutFieldsHead(ri)
                 while f != -1 {
                     if irtNeedsCtor(irFieldSlotType(f)) {
-                        cpEmitFree(dst, cexpr + ".cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+                        cpEmitRelease(dst, cexpr + ".cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
                     }
                     f = irFieldSlotNext(f)
                 }
@@ -1807,6 +1853,113 @@ func cpEmitFree(dst: text, cexpr: string, t: int) {
                 ri = ri + 1
             }
         }
+    }
+}
+
+// cpEmitRetain (ARC Task 2) appends to dst the retain statement(s) that add
+// ONE more owner of cexpr's OWN reference at IR type t -- the retain-side
+// mirror of cpEmitRelease immediately above, walking exactly the same
+// KArr/KRec slots cpEmitRelease/cpDefaultInit do. Deliberately NOT
+// symmetric with cpEmitRelease's KList/KMap element loop: retaining a
+// container only needs to bump the CONTAINER's own rc (its elements stay
+// owned by that one container reference, same as before this reference was
+// copied) -- see the ARC design doc's "deep release, shallow retain"
+// rationale. Used by cpEmitRcWalks below to build a record type's
+// generated clar_retain_NAME walk helper.
+func cpEmitRetain(dst: text, cexpr: string, t: int) {
+    var k: IRKind
+    var et: int
+    var f: int
+    var ix: string
+    var ri: int
+
+    k = irtKind(t)
+    if k == KText {
+        cpAppendLine(dst, "    rt_text_retain(" + cexpr + ");")
+    } else if k == KList {
+        cpAppendLine(dst, "    rt_list_retain(" + cexpr + ");")
+    } else if k == KMap {
+        cpAppendLine(dst, "    rt_map_retain(" + cexpr + ");")
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            cpLoopN = cpLoopN + 1
+            ix = "ix" + numToStr(cpLoopN)
+            cpAppendLine(dst, "    for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
+            cpEmitRetain(dst, cexpr + ".e[" + ix + "]", et)
+            cpAppendLine(dst, "    }")
+        }
+    } else if k == KRec {
+        ri = 0
+        while ri < irRecords.count {
+            if irRecordLayoutName(ri) == irtName(t) {
+                f = irRecordLayoutFieldsHead(ri)
+                while f != -1 {
+                    if irtNeedsCtor(irFieldSlotType(f)) {
+                        cpEmitRetain(dst, cexpr + ".cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+                    }
+                    f = irFieldSlotNext(f)
+                }
+                ri = irRecords.count
+            } else {
+                ri = ri + 1
+            }
+        }
+    }
+}
+
+// cpEmitRcWalks (ARC Task 2) emits, for every record type IRetain/
+// IRelease's fpIntrCall case marked via irMarkRcWalkNeeded (nothing does
+// yet -- dormant until a later ARC task's lowering starts emitting those
+// intrinsics over record-typed values), a
+// `static void clar_retain_<Rec>(clar_rec_<Rec> *r)` /
+// `static void clar_release_<Rec>(clar_rec_<Rec> *r)` pair into cpRecBuf,
+// right after cpEmitRecords' own clar_new_<Rec> constructors (emitProgram
+// calls this immediately after cpEmitRecords). Mirrors cpEmitWinReleaseFn's
+// any-flag gating just below: a marked record type with zero handle-backed
+// fields (irtNeedsCtor per field, same test cpEmitRelease's own KRec branch
+// already applies) gets no walk pair at all -- retaining/releasing it would
+// be a no-op, so there's nothing to generate.
+func cpEmitRcWalks() {
+    var i: int
+    var f: int
+    var name: int
+    var recName: string
+    var ctype: string
+    var any: bool
+    var retainBody: text
+    var releaseBody: text
+
+    i = 0
+    while i < irRecords.count {
+        name = irRecordLayoutName(i)
+        if irRcWalkNeeded(name) {
+            recName = poolGet(name)
+            ctype = "clar_rec_" + recName
+            any = false
+            retainBody = ""
+            releaseBody = ""
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                if irtNeedsCtor(irFieldSlotType(f)) {
+                    any = true
+                    cpEmitRetain(retainBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+                    cpEmitRelease(releaseBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+                }
+                f = irFieldSlotNext(f)
+            }
+            if any {
+                cpRecBuf.add(toText("static void clar_retain_" + recName + "(" + ctype + " *r) {"))
+                cpRecBuf.add(retainBody)
+                cpRecBuf.add(toText("}"))
+                cpRecBuf.add(toText(""))
+                cpRecBuf.add(toText("static void clar_release_" + recName + "(" + ctype + " *r) {"))
+                cpRecBuf.add(releaseBody)
+                cpRecBuf.add(toText("}"))
+                cpRecBuf.add(toText(""))
+            }
+        }
+        i = i + 1
     }
 }
 
@@ -2651,13 +2804,13 @@ func cpWinHandlersHasWidget(whIdx: int): bool {
 // instead of risking a use-after-free on whatever it was handed to). Exact
 // mirror of fpIntrCall's IUiStateDefaults() case above (the constructor
 // this is the destructor for), freeing instead of constructing, via the
-// same cpEmitFree helper Task 5's globals and Task 7's locals already use.
-// No forward-declare/define split like winFn/widgetFn below needs: this
-// body only ever calls cpEmitFree's own rt_*_free runtime calls, never a
-// clar_fn_ handler name, so it can be defined here directly. Returns the
-// function's own C name, or "0" if winName has no qualifying field at all
-// (callers wire a plain 0 into rt_ui_handlers.releaseVars instead of a
-// pointer to an empty function).
+// same cpEmitRelease helper Task 5's globals and Task 7's locals already
+// use. No forward-declare/define split like winFn/widgetFn below needs:
+// this body only ever calls cpEmitRelease's own rt_*_release runtime calls,
+// never a clar_fn_ handler name, so it can be defined here directly.
+// Returns the function's own C name, or "0" if winName has no qualifying
+// field at all (callers wire a plain 0 into rt_ui_handlers.releaseVars
+// instead of a pointer to an empty function).
 func cpEmitWinReleaseFn(winName: string): string {
     var fld: int
     var any: bool
@@ -2670,7 +2823,7 @@ func cpEmitWinReleaseFn(winName: string): string {
     while fld != -1 {
         if irtNeedsCtor(irFieldSlotType(fld)) and lowWinVarQualifies(poolGet(irFieldSlotName(fld))) {
             any = true
-            cpEmitFree(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
+            cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
         }
         fld = irFieldSlotNext(fld)
     }
@@ -3200,7 +3353,7 @@ func cpEmitUiWiring() {
 // function calls, and C requires file-scope initializers to be constant
 // expressions. Right after clar_init_globals, also emits cl_free_globals
 // (memory-audit Task 5): the destructor mirror of the init loop above,
-// walking the same irGlobals arena and calling cpEmitFree per global --
+// walking the same irGlobals arena and calling cpEmitRelease per global --
 // EXCEPT a global lowGlobalsVarQualifies (lower.cla's whole-program reuse
 // of Task 7/8's escape walker, run over EVERY function/handler/extend/every
 // body, not just Init expressions) says is aliased anywhere at runtime: an
@@ -3279,7 +3432,7 @@ func cpEmitGlobalsInit() {
         gt = irGlobalType(i)
         nm = poolGet(irGlobalName(i))
         if not irtNeedsCtor(gt) or lowGlobalsVarQualifies(nm) {
-            cpEmitFree(freeBuf, "cv_" + nm, gt)
+            cpEmitRelease(freeBuf, "cv_" + nm, gt)
         }
         i = i + 1
     }
@@ -3518,6 +3671,7 @@ func emitProgram(): text {
 
     cpEmitStrLits()
     cpEmitRecords()
+    cpEmitRcWalks()
     cpEmitLayouts()
     cpEmitEnums()
     cpEmitUiDescs()

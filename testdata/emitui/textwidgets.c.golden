@@ -38,8 +38,8 @@ static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b);
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b);
 static void clar_ui_release_TextWin(void *inst)
 {
-    rt_text_free((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
-    rt_text_free((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
+    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
+    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
 
 }
 
@@ -56,10 +56,10 @@ static const rt_ui_window_desc clar_ui_window_TextWin = {
 static void clar_ui_winevent_NoteWin(void *inst, short event, long a, long b);
 static void clar_ui_release_NoteWin(void *inst)
 {
-    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_scratch);
-    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_greeting);
+    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_scratch);
+    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_greeting);
     for (int32_t ix1 = 0; ix1 < 2; ix1++) {
-    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_buf.e[ix1]);
+    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_buf.e[ix1]);
     }
 
 }

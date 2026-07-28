@@ -554,6 +554,24 @@ func irLayoutNeeded(nameIdx: int): bool {
     return irLayoutNeededByName.get(poolGet(nameIdx), 0) == 1
 }
 
+// irRcWalkNeededByName (ARC Task 2) marks which record types were seen as
+// the KRec-typed argument of an IRetain/IRelease intrinsic (cprint.cla's
+// fpIntrCall) -- cprint's cpEmitRcWalks walks irRecords in declaration
+// order and emits a clar_retain_NAME/clar_release_NAME pair only for the
+// ones this registry names. Same mark/query pair idiom as
+// irMarkLayoutNeeded/irLayoutNeeded just above, keyed by name (poolGet) for
+// the same reason. Nothing marks this yet -- lower.cla doesn't emit either
+// intrinsic until a later ARC task -- so cpEmitRcWalks stays dormant.
+var irRcWalkNeededByName: map of int
+
+func irMarkRcWalkNeeded(nameIdx: int) {
+    irRcWalkNeededByName[poolGet(nameIdx)] = 1
+}
+
+func irRcWalkNeeded(nameIdx: int): bool {
+    return irRcWalkNeededByName.get(poolGet(nameIdx), 0) == 1
+}
+
 // Singletons for the kind-only IRTypes -- set by irReset(), matching
 // types.cla's IntT/BoolT/... pattern. KStr/KList/KMap/KRec/KEnum/KArr are
 // parametrized (capacity/elem/name) and so are never singletons.
@@ -2250,6 +2268,25 @@ func IMapCount(): int {
 // IMapFreeVar -- see ITextFreeVar's doc comment.
 func IMapFreeVar(): int {
     return intern("map_free_var")
+}
+
+// -- retain/release (ARC Task 2) --
+// IRetain/IRelease each take one expression argument (the reference to
+// retain/release), typed by that argument's own IR type -- never a result
+// (void), printed via cprint.cla's fpIntrCall as a bare statement, same
+// statement-position shape as ITextStore. A KText/KList/KMap argument
+// prints as a direct rt_*_retain/rt_*_release call; a KRec argument prints
+// as a call to that record type's generated clar_retain_NAME/
+// clar_release_NAME walk helper (cpEmitRcWalks), marking the record type
+// needed the first time it's seen. lower.cla doesn't emit either intrinsic
+// yet -- inserted starting with a later ARC task -- so this plumbing is
+// dormant until then.
+func IRetain(): int {
+    return intern("retain")
+}
+
+func IRelease(): int {
+    return intern("release")
 }
 
 // -- fixed 16.16 --
