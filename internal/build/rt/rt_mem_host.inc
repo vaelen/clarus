@@ -22,6 +22,10 @@
 #define RT_MEM_GUARD_BYTE 0x47
 #define RT_MEM_SCRAMBLE_BYTE 0xA5
 
+/* Quarantine caps for rt_mem_retire_raw (below): whichever trips first. */
+#define RT_MEM_QUARANTINE_MAX_BLOCKS 64
+#define RT_MEM_QUARANTINE_MAX_BYTES (1024L * 1024L)
+
 /* Block record. The Handle a caller holds is &b->p, and because p is the
    FIRST member, (rt_mem_block *)h recovers the record. Records are
    malloc'd individually and never freed (ledger keeps dead records to
@@ -68,16 +72,76 @@ static void rt_mem_check_guards(rt_mem_block *b)
     }
 }
 
-/* Scrambles a moved-from/disposed raw block and retires it. Deliberately
-   NOT freed: some allocators (macOS's tiny zone, confirmed empirically
-   here) write live freelist bookkeeping into a chunk the instant free()
-   runs, overwriting exactly the poison bytes a use-after-free test wants
-   to read back. This file only ever links into host test/debug builds,
-   never a Mac build -- trading a few leaked bytes per disposal for
-   byte-stable poison across the run is the right side of that trade. */
+/* FIFO quarantine node for rt_mem_retire_raw: a scrambled raw block sits
+   here (still resident, still readable, still poisoned) until the
+   quarantine's size or byte cap is exceeded, at which point the oldest
+   entries are actually free()'d. */
+typedef struct rt_mem_qnode {
+    unsigned char *raw;
+    size_t rawsize;
+    struct rt_mem_qnode *next;
+} rt_mem_qnode;
+
+static rt_mem_qnode *rt_mem_qhead = NULL; /* oldest */
+static rt_mem_qnode *rt_mem_qtail = NULL; /* newest */
+static int rt_mem_qcount = 0;
+static size_t rt_mem_qbytes = 0;
+
+static void rt_mem_quarantine_evict(void)
+{
+    rt_mem_qnode *node;
+
+    while ((rt_mem_qcount > RT_MEM_QUARANTINE_MAX_BLOCKS
+            || (long)rt_mem_qbytes > RT_MEM_QUARANTINE_MAX_BYTES)
+           && rt_mem_qhead != NULL) {
+        node = rt_mem_qhead;
+        rt_mem_qhead = node->next;
+        if (rt_mem_qhead == NULL) rt_mem_qtail = NULL;
+        rt_mem_qcount--;
+        rt_mem_qbytes -= node->rawsize;
+        free(node->raw);
+        free(node);
+    }
+}
+
+/* Scrambles a moved-from/disposed raw block, then quarantines it rather
+   than freeing it immediately: some allocators (macOS's tiny zone,
+   confirmed empirically here) write live freelist bookkeeping into a
+   chunk the instant free() runs, overwriting exactly the poison bytes a
+   use-after-free test wants to read back. But this file backs every host
+   binary once Task 2 wires it into rt.c -- including full clarusc
+   bootstrap compiles -- so leaking every disposal forever would grow
+   with allocation churn, not live-set size.
+   ponytail: bounded FIFO quarantine, capped at RT_MEM_QUARANTINE_MAX_BLOCKS
+   (64) blocks or RT_MEM_QUARANTINE_MAX_BYTES (1 MiB) total, whichever
+   trips first -- past the cap the oldest quarantined blocks are actually
+   free()'d. Recently-disposed memory (what the scramble-readback test
+   reads) stays poisoned; long-run churn is bounded. Raise the caps if a
+   test needs poisoned memory to survive more churn than that. */
 static void rt_mem_retire_raw(unsigned char *raw, Size size)
 {
-    memset(raw, RT_MEM_SCRAMBLE_BYTE, (size_t)size + 2 * RT_MEM_GUARD_LEN);
+    rt_mem_qnode *node;
+    size_t rawsize;
+
+    rawsize = (size_t)size + 2 * RT_MEM_GUARD_LEN;
+    memset(raw, RT_MEM_SCRAMBLE_BYTE, rawsize);
+
+    node = malloc(sizeof(rt_mem_qnode));
+    if (node == NULL) {
+        /* Can't track it for delayed free -- free now rather than leak
+           unconditionally. */
+        free(raw);
+        return;
+    }
+    node->raw = raw;
+    node->rawsize = rawsize;
+    node->next = NULL;
+    if (rt_mem_qtail != NULL) rt_mem_qtail->next = node; else rt_mem_qhead = node;
+    rt_mem_qtail = node;
+    rt_mem_qcount++;
+    rt_mem_qbytes += rawsize;
+
+    rt_mem_quarantine_evict();
 }
 
 /* Never called on locked or is_ptr blocks -- callers (rt_mem_upheaval,
@@ -193,6 +257,25 @@ void rt_mem_set_handle_size(Handle h, Size n)
     if (h == NULL) { rt_mem_err = nilHandleErr; return; }
     b = (rt_mem_block *)h;
     rt_mem_check_guards(b);
+
+    if (b->locked) {
+        if (n > b->size) {
+            /* A locked handle never moves. This shim never over-allocates
+               headroom for future growth, so growing in place is never
+               possible once locked -- exactly like a real Memory Manager
+               heap fragmented tight around a locked block. Surface it as
+               the OOM it would be there: that's the discipline violation
+               this shim exists to make visible. */
+            rt_mem_err = memFullErr;
+            return;
+        }
+        /* Shrink (or same-size) in place: same raw allocation and
+           address, just move the tail guard down to the new size. */
+        rt_mem_fill_guards((unsigned char *)b->p - RT_MEM_GUARD_LEN, n);
+        b->size = n;
+        rt_mem_err = noErr;
+        return;
+    }
 
     newraw = malloc((size_t)n + 2 * RT_MEM_GUARD_LEN);
     if (newraw == NULL) { rt_mem_err = memFullErr; return; }

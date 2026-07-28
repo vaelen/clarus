@@ -50,6 +50,36 @@ static void test_new_handle_and_resize(void)
     DisposeHandle(h);
 }
 
+/* Review fix (Critical): a locked handle must never move. Growing beyond
+   the current raw allocation must fail with memFullErr and leave the
+   handle/address/size untouched; shrinking resizes in place. */
+static void test_locked_resize(void)
+{
+    Handle h;
+    char *p;
+    Size sz;
+
+    h = NewHandle(16);
+    HLock(h);
+    p = *h;
+    sz = GetHandleSize(h);
+
+    SetHandleSize(h, 4096); /* grow while locked: must fail, must not move */
+    CHECK(*h == p, "locked grow: address unchanged");
+    CHECK(MemError() == memFullErr, "locked grow: MemError is memFullErr");
+    CHECK(GetHandleSize(h) == sz, "locked grow: size unchanged");
+
+    SetHandleSize(h, 8); /* shrink while locked: resizes in place */
+    CHECK(*h == p, "locked shrink: address unchanged");
+    CHECK(GetHandleSize(h) == 8, "locked shrink: size updated");
+
+    HUnlock(h);
+    SetHandleSize(h, 4096); /* grow now allowed: relocates */
+    CHECK(GetHandleSize(h) == 4096, "grow succeeds again once unlocked");
+
+    DisposeHandle(h);
+}
+
 /* 3: paranoid relocation sweep -- run only in the re-exec'd child. */
 static void test_paranoid(void)
 {
@@ -140,6 +170,7 @@ int main(int argc, char **argv)
     }
 
     test_new_handle_and_resize();
+    test_locked_resize();
 
     {
         char cmd[1024];
