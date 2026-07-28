@@ -112,12 +112,23 @@ var fpIndent: int
 // referenced (by a deferred free) after the block's closing brace.
 var fpStmtTmps: list of text
 
+// fpStmtTmpRel is fpStmtTmps' parallel list: the release call (bare
+// function name, e.g. "rt_text_release") for the entry at the same index
+// (ARC Task 3). Text-only in memory-audit Task 6; widened here so the same
+// tracker can own List/Map temps too (a call result, or a first/last/
+// map-get/map-getDefault alias read) -- every push/remove/pop of
+// fpStmtTmps below has a matching push/remove/pop here, kept in lockstep.
+var fpStmtTmpRel: list of text
+
 func fpReset(indent: int) {
     while fpBody.count > 0 {
         fpBody.pop()
     }
     while fpStmtTmps.count > 0 {
         fpStmtTmps.pop()
+    }
+    while fpStmtTmpRel.count > 0 {
+        fpStmtTmpRel.pop()
     }
     fpTmpN = 0
     fpIndent = indent
@@ -153,6 +164,14 @@ func fpEmit(line: text) {
 // :428, whose construction can be skipped by short-circuiting) and tracked
 // in fpStmtTmps for a later free (fpStmt's end-of-statement flush, or
 // fpAndOr's own in-block flush for a captured-branch temp).
+//
+// NOT widened to `rt_list *`/`rt_map *` here (ARC Task 3): those ctypes are
+// ALSO used for plain borrowed aliases (fpForListStmt/fpForMapStmt's own
+// loop-list handle, never an owned reference), so ctype string alone can't
+// tell an owned temp from a borrow. A List/Map temp that IS owned (a call
+// result, a first/last/map-get/map-getDefault read) goes through
+// fpNewTrackedTmp instead, which tracks explicitly rather than by sniffing
+// the ctype string.
 func fpNewTmp(ctype: string): text {
     var name: text
 
@@ -161,20 +180,56 @@ func fpNewTmp(ctype: string): text {
     if ctype == "rt_text *" {
         fpEmit(ctype + " " + name + " = NULL;")
         fpStmtTmps.add(name)
+        fpStmtTmpRel.add(toText("rt_text_release"))
     } else {
         fpEmit(ctype + " " + name + ";")
     }
     return name
 }
 
-// fpHandoff marks a tracked text temp as having escaped the current
-// statement -- its ownership moved into a variable, a return value, a
-// list/map element, or a callee that may retain it -- so fpStmt's
-// end-of-statement free must skip it (memory-audit Task 6). A no-op unless
-// cexpr is EXACTLY a name currently in fpStmtTmps: a temp's own bare name is
-// only ever printed as itself (fpTextConcat et al. return the raw temp
-// name), so an exact match can only mean "this IS that temp," never an
-// expression that merely mentions it.
+// fpHeapFn names the rt_* stem ("rt_text"/"rt_list"/"rt_map") for a heap IR
+// kind -- ARC Task 3. Compose with "_retain"/"_release" at the call site
+// (mirrors fpIntrCall's own IRetain/IRelease dispatch's KText/KList/KMap
+// arm below, but is needed here too: the printer inserts retain calls
+// directly at a few intrinsic print sites below, not via the IRetain IR
+// node).
+func fpHeapFn(k: IRKind): string {
+    if k == KList {
+        return "rt_list"
+    } else if k == KMap {
+        return "rt_map"
+    }
+    return "rt_text"
+}
+
+// fpNewTrackedTmp declares a fresh NULL-initialized temp of IR type t and
+// tracks it in fpStmtTmps/fpStmtTmpRel for release at end of statement
+// unless handed off -- ARC Task 3's explicit-tracking counterpart to
+// fpNewTmp's ctype-string sniffing, safe to use for List/Map (or Text)
+// results that are genuinely owned (a call result, a first/last/map-get/
+// map-getDefault alias read -- all +1 now, same ownership shape as a text
+// concat temp).
+func fpNewTrackedTmp(t: int): text {
+    var name: text
+    var ctype: string
+
+    ctype = cpCType(t)
+    fpTmpN = fpTmpN + 1
+    name = "t" + numToStr(fpTmpN)
+    fpEmit(ctype + " " + name + " = NULL;")
+    fpStmtTmps.add(name)
+    fpStmtTmpRel.add(toText(fpHeapFn(irtKind(t)) + "_release"))
+    return name
+}
+
+// fpHandoff marks a tracked temp as having escaped the current statement --
+// its ownership moved into a variable, a return value, a list/map element,
+// or a callee that may retain it -- so fpStmt's end-of-statement release
+// must skip it (memory-audit Task 6; widened to List/Map temps by ARC Task
+// 3). A no-op unless cexpr is EXACTLY a name currently in fpStmtTmps: a
+// temp's own bare name is only ever printed as itself (fpTextConcat et al.
+// return the raw temp name), so an exact match can only mean "this IS that
+// temp," never an expression that merely mentions it.
 func fpHandoff(cexpr: text) {
     var i: int
 
@@ -182,15 +237,18 @@ func fpHandoff(cexpr: text) {
     while i < fpStmtTmps.count {
         if fpStmtTmps[i] == cexpr {
             fpStmtTmps.remove(i)
+            fpStmtTmpRel.remove(i)
             return
         }
         i = i + 1
     }
 }
 
-// fpFreeStmtTmps emits `rt_text_free(tN);` for every name still in
-// fpStmtTmps and empties the list (memory-audit Task 6). Called at the tail
-// of fpStmt (the common case: temps live for the whole statement) and, by
+// fpFreeStmtTmps emits the release call for every name still in fpStmtTmps
+// (memory-audit Task 6's `rt_text_free`, upgraded by ARC Task 3 to each
+// entry's own tracked release call -- fpStmtTmpRel -- so List/Map temps
+// release correctly too) and empties both lists. Called at the tail of
+// fpStmt (the common case: temps live for the whole statement) and, by
 // fpWhileStmt, right after the per-iteration condition check (a text temp a
 // while-condition creates is rebuilt fresh every iteration -- see
 // fpWhileStmt's own comment -- so it must be freed there, not hoisted out
@@ -200,11 +258,14 @@ func fpFreeStmtTmps() {
 
     i = 0
     while i < fpStmtTmps.count {
-        fpEmit("rt_text_free(" + fpStmtTmps[i] + ");")
+        fpEmit(fpStmtTmpRel[i] + "(" + fpStmtTmps[i] + ");")
         i = i + 1
     }
     while fpStmtTmps.count > 0 {
         fpStmtTmps.pop()
+    }
+    while fpStmtTmpRel.count > 0 {
+        fpStmtTmpRel.pop()
     }
 }
 
@@ -397,18 +458,18 @@ func fpIsHandleType(t: int): bool {
 // would risk a use-after-free. Conservative: a callee that does NOT retain
 // it leaks that allocation instead -- the safe side of the tradeoff.
 //
-// The RETURN value (this function's own return text) is deliberately NEVER
-// materialized into a tracked temp, even when the call sits in a
-// sub-expression that would otherwise get one (e.g. `f(x) == "y"`,
-// `g(a) + "z"`): a callee's returned text can just as easily be an alias of
-// something still live (`func f(): text { return gKeep }`) as a fresh
-// allocation, and nothing here can tell the two apart without whole-program
-// interprocedural escape analysis. Same conservative call as
-// IListPop/IListFirst/IMapGet above: track-then-immediately-hand-off would
-// produce byte-identical leaked-forever behavior to never tracking it at
-// all, just with a needless extra local in the emitted C -- so this is a
-// deliberate, accepted leak (escaping-until-ARC), not an oversight;
-// confirmed via review (memory-audit Task 6 fix pass).
+// ARC Task 3: the RETURN value is now a +1-transfer (lower.cla's lowReturn
+// retains every heap-typed return before handing it back), so the OLD
+// "never materialize -- can't tell alias from allocation" carve-out is gone:
+// the callee's retain already answered that question for us. A heap-typed
+// result is always materialized into a tracked temp (fpNewTrackedTmp), so
+// fpStmt's end-of-statement flush releases it -- UNLESS this call sits
+// directly as an SAssign dst's RHS or an SReturn's value (those sites' own
+// fpHandoff call untracks it: the +1 becomes the slot's ownership / the
+// return's own transfer) or as another user call's argument (handed off
+// above, into that call's own statement). `pop`/`shift` stay a plain
+// transfer with no retain (see IListPop/IListShift below) -- unaffected by
+// this convention.
 func fpCallFn(e: int): text {
     var args: text
     var a: int
@@ -416,6 +477,8 @@ func fpCallFn(e: int): text {
     var f: int
     var p: int
     var argText: text
+    var call: text
+    var t: text
 
     args = ""
     first = true
@@ -441,7 +504,13 @@ func fpCallFn(e: int): text {
             p = irLocalNext(p)
         }
     }
-    return "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
+    call = "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
+    if fpIsHandleType(irExprType(e)) {
+        t = fpNewTrackedTmp(irExprType(e))
+        fpEmit(t + " = " + call + ";")
+        return t
+    }
+    return call
 }
 
 // fpFieldRef prints an EFieldRef node (funcprint.go's expr's *ir.FieldRef
@@ -585,8 +654,9 @@ func fpAndOr(e: int): text {
     }
     fpEmit(t + " = " + cap.value + ";")
     while fpStmtTmps.count > markCount {
-        fpEmit("rt_text_free(" + fpStmtTmps[fpStmtTmps.count - 1] + ");")
+        fpEmit(fpStmtTmpRel[fpStmtTmps.count - 1] + "(" + fpStmtTmps[fpStmtTmps.count - 1] + ");")
         fpStmtTmps.pop()
+        fpStmtTmpRel.pop()
     }
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))
@@ -833,8 +903,9 @@ func fpIntrCall(x: int): text {
         // (cpEmitRcWalks), marking the record type needed the first time
         // it's seen here. fpAddrable (not fpExpr) because the KRec branch
         // takes cexpr's address -- it must be a real addressable lvalue,
-        // never a bare rvalue. Dormant: lower.cla doesn't emit either
-        // intrinsic yet (a later ARC task inserts the call sites).
+        // never a bare rvalue. lower.cla emits IRetain at every heap-typed
+        // `return` (ARC Task 3); the KRec arm stays dormant until records
+        // are ARC'd (a later task inserts those call sites).
         s0 = fpAddrable(a0)
         argT = irExprType(a0)
         argK = irtKind(argT)
@@ -1016,28 +1087,44 @@ func fpIntrCall(x: int): text {
         }
         fpEmit(fn + "(" + l + ", &(" + v + "));")
         return toText("")
-    } else if nm == IListPop() or nm == IListShift() or nm == IListFirst() or nm == IListLast() {
+    } else if nm == IListPop() or nm == IListShift() {
         l = fpExpr(a0)
         t = fpNewTmp(cpCType(irExprType(x)))
         fn = "rt_list_pop"
         if nm == IListShift() {
             fn = "rt_list_shift"
-        } else if nm == IListFirst() {
-            fn = "rt_list_first"
-        } else if nm == IListLast() {
-            fn = "rt_list_last"
         }
         fpEmit(fn + "(" + l + ", &" + t + ");")
-        // memory-audit Task 6: this copies the ELEMENT'S bytes (a text
-        // element's bytes ARE its handle -- Ch3 reference semantics) out of
-        // l's backing store into t. first/last don't even remove it from l
-        // -- t and l's own slot alias the SAME object. pop/shift do remove
-        // l's slot, but l is never the only other reference: the element
-        // could have been pushed into ANOTHER container earlier (aliased
-        // there too), which this purely statement-local tracking has no way
-        // to see. Never auto-free t -- untrack it unconditionally, same as
+        // memory-audit Task 6 / ARC Task 3: pop/shift TRANSFER ownership --
+        // this copies the ELEMENT'S bytes (a text element's bytes ARE its
+        // handle -- Ch3 reference semantics) out of l's backing store into
+        // t AND removes l's slot, so the count doesn't change: no retain.
+        // Never auto-free/release t -- untrack it unconditionally, same as
         // any other "the caller must reason about this" handle.
         fpHandoff(t)
+        return t
+    } else if nm == IListFirst() or nm == IListLast() {
+        l = fpExpr(a0)
+        fn = "rt_list_first"
+        if nm == IListLast() {
+            fn = "rt_list_last"
+        }
+        // ARC Task 3: unlike pop/shift, first/last do NOT remove the
+        // element from l -- t and l's own slot alias the SAME object after
+        // the copy below. A heap-typed element (text/list/map) is retained
+        // immediately, making t a genuine +1 owned reference (same
+        // convention as a user call result); tracked, so it releases at end
+        // of statement unless handed off. A by-value element (int/bool/
+        // fixed/char/enum/Rec) has nothing to retain -- Rec stays 4e's
+        // escape-qualified path until Task 7.
+        if fpIsHandleType(irExprType(x)) {
+            t = fpNewTrackedTmp(irExprType(x))
+            fpEmit(fn + "(" + l + ", &" + t + ");")
+            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+        } else {
+            t = fpNewTmp(cpCType(irExprType(x)))
+            fpEmit(fn + "(" + l + ", &" + t + ");")
+        }
         return t
     } else if nm == IListRemove() {
         fpEmit("rt_list_remove(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
@@ -1082,24 +1169,36 @@ func fpIntrCall(x: int): text {
     } else if nm == IMapGet() {
         m = fpExpr(a0)
         k = fpStrAddr(a1)
-        t = fpNewTmp(cpCType(irExprType(x)))
-        fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
-        // memory-audit Task 6: aliases m's own stored value (same reasoning
-        // as IListFirst/IListLast above) -- never auto-free.
-        fpHandoff(t)
+        // ARC Task 3: aliases m's own stored value (same reasoning as
+        // IListFirst/IListLast above) -- a heap-typed result is retained
+        // immediately into a tracked temp, same +1-and-tracked convention.
+        if fpIsHandleType(irExprType(x)) {
+            t = fpNewTrackedTmp(irExprType(x))
+            fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+        } else {
+            t = fpNewTmp(cpCType(irExprType(x)))
+            fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+        }
         return t
     } else if nm == IMapGetDv() {
         m = fpExpr(a0)
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv) // dv's own temp (if any) is about to alias into t
-        t = fpNewTmp(cpCType(irExprType(x)))
-        fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
-        fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
         // Whether t ends up holding dv (key absent) or m's own stored value
-        // (key present), both are aliases outside this statement's
-        // ownership -- never auto-free (same as IMapGet above).
-        fpHandoff(t)
+        // (key present), a heap-typed result is retained immediately into a
+        // tracked temp (ARC Task 3, same as IMapGet above).
+        if fpIsHandleType(irExprType(x)) {
+            t = fpNewTrackedTmp(irExprType(x))
+            fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
+            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+        } else {
+            t = fpNewTmp(cpCType(irExprType(x)))
+            fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
+            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+        }
         return t
     } else if nm == IMapHas() {
         return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
@@ -1429,10 +1528,14 @@ func fpStmt(s: int) {
     var v: text
     var saved: list of text
     var fresh: list of text
+    var savedRel: list of text
+    var freshRel: list of text
     var terminal: bool
 
     saved = fpStmtTmps
     fpStmtTmps = fresh
+    savedRel = fpStmtTmpRel
+    fpStmtTmpRel = freshRel
     terminal = false
 
     if irStmtKind(s) == SExprStmt {
@@ -1445,9 +1548,11 @@ func fpStmt(s: int) {
     } else if irStmtKind(s) == SAssign {
         d = fpExpr(irAssignDst(s))
         v = fpExpr(irAssignSrc(s))
-        if irtKind(irExprType(irAssignDst(s))) == KText {
-            // A text temp assigned into a variable IS that variable's new
-            // value now -- handed off, not freed here.
+        if fpIsHandleType(irExprType(irAssignDst(s))) {
+            // A tracked temp assigned into a variable IS that variable's
+            // new value now -- handed off, not freed here (ARC Task 3:
+            // widened from text-only to List/Map -- the +1 becomes the
+            // var's own ownership).
             fpHandoff(v)
         }
         fpEmit(d + " = " + v + ";")
@@ -1490,6 +1595,7 @@ func fpStmt(s: int) {
         fpFreeStmtTmps()
     }
     fpStmtTmps = saved
+    fpStmtTmpRel = savedRel
 }
 
 // fpForListStmt lowers `for x in l { ... }` to an index loop over a count

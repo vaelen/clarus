@@ -119,7 +119,7 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     t2 = rt_text_new();
     rt_text_store(t2, (const uint8_t*)&(clar_lit_2));
     rt_ui_widget_set_text(cv_window, 1, t2);
-    rt_text_free(t2);
+    rt_text_release(t2);
 }
 
 static void clar_fn_ui_NoteWin_opened(void * cv_window) {

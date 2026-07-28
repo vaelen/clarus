@@ -2296,6 +2296,20 @@ func lowAppendTrailingFrees(bodyHead: int): int {
 // name;`), just at the IR/lower.cla level instead of at print time. A bare
 // `return` (no value) has no expression to protect, so its frees can
 // precede it directly.
+//
+// ARC Task 3: the +1-return convention -- every heap-typed (text/list/map)
+// user-function return is retained by the callee, so the caller always owns
+// a fresh reference to release. This means the synthetic-local
+// materialization above must now run for EVERY heap-typed return, not only
+// the (rarer) case of a function with qualifying Task-7 locals still to
+// free: the retain has to see the SAME already-evaluated value the `return`
+// statement hands back, exactly the double-evaluation hazard the doc
+// comment above already solved for frees. So the gate widens from
+// `freesHead != -1` to `freesHead != -1 or heapRet` -- once materialized,
+// the retain is appended right before the (possibly frees-preceded)
+// `return`. Records (KRec) aren't ARC'd until a later task -- lowEscapeTrackableKind
+// (Text/List/Map only) is the correct heap-typed test here, same as
+// everywhere else this pass draws that line.
 func lowReturn(s: int): int {
     var x: int
     var freesHead: int
@@ -2303,6 +2317,8 @@ func lowReturn(s: int): int {
     var tmpNameIdx: int
     var storeStmt: int
     var retRef: int
+    var heapRet: bool
+    var head: int
 
     x = -1
     if returnX(s) != -1 {
@@ -2310,10 +2326,10 @@ func lowReturn(s: int): int {
     }
 
     freesHead = lowBuildScopeExitFrees()
-    if freesHead == -1 {
-        return newIRReturn(x)
-    }
     if x == -1 {
+        if freesHead == -1 {
+            return newIRReturn(-1)
+        }
         tail = freesHead
         while irStmtNext(tail) != -1 {
             tail = irStmtNext(tail)
@@ -2322,17 +2338,51 @@ func lowReturn(s: int): int {
         return freesHead
     }
 
+    heapRet = lowEscapeTrackableKind(irtKind(lowCurFuncRet))
+    if freesHead == -1 and not heapRet {
+        return newIRReturn(x)
+    }
+
     tmpNameIdx = lowNewReturnTemp()
     lowAddLocal(tmpNameIdx, lowCurFuncRet)
     retRef = newIRVarRef(tmpNameIdx, false, lowCurFuncRet)
+    head = -1
+    if heapRet {
+        // cpEmitFunc's function-prologue default-init (cpDefaultInit)
+        // unconditionally constructs EVERY declared local at function
+        // entry, including this synthetic one -- a fresh, unshared,
+        // rc==1 handle nothing else can reach before the store below
+        // overwrites it. Release it here or every heap-typed return would
+        // leak one allocation per call now that this synthetic local is
+        // created for ALL of them (not just the rarer frees-needed case) --
+        // this is the same "default-init orphan" class Task 4 later closes
+        // generically for every local store, but that mechanism doesn't
+        // exist yet and this synthetic local is Task 3's own creation, so
+        // it can't wait.
+        head = newIRExprStmt(newIRIntr(IRelease(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT))
+    }
     storeStmt = lowStoreStmt(retRef, x, lowCurFuncRet)
-    irStmtListAppend(storeStmt, freesHead)
-    tail = freesHead
+    if head == -1 {
+        head = storeStmt
+    } else {
+        irStmtListAppend(head, storeStmt)
+    }
+    tail = storeStmt
     while irStmtNext(tail) != -1 {
         tail = irStmtNext(tail)
     }
+    if freesHead != -1 {
+        irStmtListAppend(tail, freesHead)
+        tail = freesHead
+        while irStmtNext(tail) != -1 {
+            tail = irStmtNext(tail)
+        }
+    }
+    if heapRet {
+        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
+    }
     irStmtListAppend(tail, newIRReturn(newIRVarRef(tmpNameIdx, false, lowCurFuncRet)))
-    return storeStmt
+    return head
 }
 
 // lowAssign lowers `lvalue = expr` (stmt.go's lowerAssign): `l[i] = v`
