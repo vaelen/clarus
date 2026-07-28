@@ -3,15 +3,24 @@
 
 // bookmarks.cla: the 4d acceptance app -- Appendix C's Bookmark Manager
 // (docs/clarus-language-reference.md, "### Bookmark Manager") VERBATIM,
-// plus exactly three additions: this `app` section (name, version, author,
+// plus exactly four additions: this `app` section (name, version, author,
 // about text, icon, creator id); a `file.load` call in `App.startEmpty`
 // restoring any previously saved bookmarks before `open Main` (a bare call
 // statement -- Ch5 -- discarding the returned bool: no data file on first
-// launch is not an error, it's an empty list); and a `saveAll` helper
+// launch is not an error, it's an empty list); a `saveAll` helper
 // (`file.save`) called from EditForm's `accepted` handler and Main's
-// `Remove.click`, persisting the list after every mutation. The Bookmark
-// Manager block itself (enum/record/var/both windows/on App.startEmpty's
-// `open Main`/both `extend` blocks) is untouched from the reference.
+// `Remove.click`, persisting the list after every mutation; and a minimal
+// `File` menu (Quit only, key Q) wired to the `quit` statement -- final-
+// validation found this acceptance app had no in-app quit path at all (no
+// `menu` section means only the runtime's automatic Apple menu exists), so
+// a real double-clickable build could only be stopped by a forced quit.
+// This mirrors examples/texteditor.cla's own minimal `File`/`Quit` wiring,
+// trimmed to just the one item this app needs -- an authorized deviation
+// from the appendix (an ADDITION to the acceptance app, like persistence,
+// not a reference/appendix change: the appendix's own Bookmark Manager text
+// stays untouched). The Bookmark Manager block itself (enum/record/var/both
+// windows/on App.startEmpty's `open Main`/both `extend` blocks) is untouched
+// from the reference.
 //
 // EditForm's window declares no `size:` and none of its five bound widgets
 // (nor its two buttons) declare an `at:` -- reproduced exactly as the
@@ -52,7 +61,7 @@ window Main {
         column "URL"  shows url      width fill
         column "Fav"  shows favorite width 30
     }
-    button Add    { at: 10, bottom;   caption: "AddÉ" }
+    button Add    { at: 10, bottom;   caption: "Addï¿½" }
     button Remove { at: next, bottom; caption: "Remove" }
 }
 
@@ -70,6 +79,10 @@ window EditForm {
     button Cancel  { cancel }
 }
 
+menu File {
+    item Quit "Quit" key "Q"
+}
+
 on App.startEmpty {
     file.load("Bookmarks Data", bookmarks)     // no file yet on first launch -- false, ignored
     open Main
@@ -78,6 +91,10 @@ on App.startEmpty {
 func saveAll() {
     file.save("Bookmarks Data", bookmarks)
 }
+
+extend File {
+    on Quit.select { quit }        // runtime sends closeRequest to every
+}                                  // open window; any cancel aborts quit
 
 extend Main {
     on Add.click {
