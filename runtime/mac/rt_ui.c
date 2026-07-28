@@ -2883,7 +2883,11 @@ static void rt_ui_handle_update(WindowPtr wp)
                    the two can never disagree on boundaries), a divider
                    line under the strip, then LUpdate to let the LDEF draw
                    the actual cell rows for whatever part of the update
-                   region falls inside the LM view. */
+                   region falls inside the LM view. The divider is drawn at
+                   rView.top - 1, not rView.top: that row is the shared
+                   border with the LM view and with the scrollbar's top
+                   frame line, so the LDEF's per-cell EraseRect (which
+                   covers rView.top and below) can never erase it. */
                 const rt_ui_table_desc *td = (const rt_ui_table_desc *)wd->extra;
                 ListHandle lh = inst->lists[i];
                 Rect box = inst->rects[i];
@@ -2902,8 +2906,8 @@ static void rt_ui_handle_update(WindowPtr wp)
                     DrawText(cd->header + 1, 0, cd->header[0]);
                     x = (short)(x + w);
                 }
-                MoveTo(box.left, headerRect.bottom);
-                LineTo(box.right, headerRect.bottom);
+                MoveTo(box.left, (short)(headerRect.bottom - 1));
+                LineTo(box.right, (short)(headerRect.bottom - 1));
                 LUpdate(((GrafPtr)wp)->visRgn, lh);
             } else if (wd->kind == RTUI_BUTTON && (wd->flags & RTUI_DEFAULT)) {
                 rt_ui_draw_default_outline(&inst->rects[i]);
