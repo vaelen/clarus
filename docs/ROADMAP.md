@@ -155,6 +155,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   reference (`docs/clarus-language-reference.md`) + clarusc first; the Go
   compiler is updated only as needed for differential coverage of those
   features, not as a first-class implementation target.
+- **One-feature freeze exception: `\xHH` string/char escapes backported to
+  the Go compiler, 2026-07-28, at Andrew's explicit direction.** Rationale:
+  it's a spec-level lexical feature, not a new implementation target, and
+  without it the reference's Appendix C fences and the differential corpus
+  would have to keep working around a byte-escape the reference itself
+  documents. The freeze remains in force for everything else — this is a
+  named, deliberate exception, not a reopening.
 - **Bootstrap chain — HOLDS:** Go compiler compiles clarusc.cla → stage1;
   stage1 compiles clarusc → stage2; stage2 compiles clarusc → stage3; stage2
   and stage3 outputs are byte-identical (fixed point: 885,785 bytes —
