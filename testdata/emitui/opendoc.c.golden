@@ -18,7 +18,7 @@ static const rt_ui_widget_desc clar_ui_widgets_Reader[] = {
 };
 
 static void clar_ui_winevent_Reader(void *inst, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_Reader = { clar_ui_winevent_Reader, 0 };
+static const rt_ui_handlers clar_ui_handlers_Reader = { clar_ui_winevent_Reader, 0, 0 };
 
 static const rt_ui_window_desc clar_ui_window_Reader = {
     "Reader", (const unsigned char *)"\pReader",

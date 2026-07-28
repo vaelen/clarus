@@ -185,6 +185,7 @@ typedef struct rt_ui_item_desc { const char *name; const unsigned char *label;
 typedef struct rt_ui_handlers {
   void (*winEvent)(void *inst, short event, long a, long b); /* RTUI_EV_* */
   void (*widget)(void *inst, short widgetIndex, short event, long a, long b);
+  void (*releaseVars)(void *inst); /* frees handle-backed window vars; may be NULL */
 } rt_ui_handlers;
 
 typedef struct { void (*fire)(void); long ticks; } rt_ui_every_desc;

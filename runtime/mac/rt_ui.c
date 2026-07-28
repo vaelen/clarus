@@ -4800,6 +4800,14 @@ static void rt_ui_teardown_window(rt_ui_winst *inst)
     if (inst->desc->handlers && inst->desc->handlers->winEvent)
         inst->desc->handlers->winEvent(inst, RTUI_EV_CLOSED, 0, 0);
 
+    /* Generated window-var release (mac-target-4e Task 8): must run while
+       inst->state is still a valid locked pointer -- it dies at
+       DisposeHandle(inst->stateH) below -- but after `closed` has fired,
+       matching the constructor (IUiStateDefaults) semantics of "state is
+       alive for the whole close sequence". */
+    if (inst->desc->handlers && inst->desc->handlers->releaseVars && inst->state)
+        inst->desc->handlers->releaseVars(inst);
+
     {
         short i;
         for (i = 0; i < inst->desc->nWidgets; i++) {

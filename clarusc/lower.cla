@@ -1724,13 +1724,28 @@ func lowEscapeFreshInit(e: int): bool {
 // derived value, to whatever positional slot e fills (an assignment RHS, a
 // user-call argument, a return operand, a push/unshift/get-default
 // argument, a form-edit target). A no-op for any other expression shape
-// (concat, a call, an index/select, ...): those produce or read a DIFFERENT
-// value, never `x`'s own handle, so they cannot disqualify `x` merely by
+// (concat, a call, an index, ...): those produce or read a DIFFERENT value,
+// never `x`'s own handle, so they cannot disqualify `x` merely by
 // containing it -- see lowEscapeWalkExpr for the recursive part that still
 // checks what's INSIDE such a shape.
+//
+// ALSO disqualifies-by-field-name when e is a bare `base.field` select --
+// Task 8's own reuse of this function for window vars needs it: a window
+// var is reachable from OUTSIDE its own window's handlers via
+// check.cla's checkWindowRefSelect (`w.content` off an explicit window-ref
+// value), a shape Task 7's own local-var pass never needed to recognize
+// (a function local is never selected off anything). Name-only, same as
+// everywhere else in this pass: a select whose field happens to share a
+// name with some unrelated local/window var disqualifies that name too --
+// conservative, never a false "safe".
 func lowEscapeHandoff(e: int) {
-    if e != -1 and exprKind(e) == ExIdent {
+    if e == -1 {
+        return
+    }
+    if exprKind(e) == ExIdent {
         lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(e))] = 1
+    } else if exprKind(e) == ExSelect {
+        lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(selectName(e))] = 1
     }
 }
 
@@ -3248,6 +3263,145 @@ func lowWidgetDesc(w: int, winName: string): int {
     return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
 }
 
+// ================================================================
+// Task 8: whole-program window-var escape pre-pass (reuses Task 7's walker)
+// ================================================================
+//
+// Handle-backed per-instance window vars (Text/List/Map/Rec, same
+// irtNeedsCtor set cpEmitFree/IUiStateDefaults already use) are constructed
+// at open but never freed at close -- the rt_mac.c:479 leak this task
+// closes via a generated clar_ui_release_<Win>, wired through rt_ui's new
+// releaseVars slot. The same UAF risk Task 7 guards against for locals
+// applies here: a handler can hand a window var's own handle to something
+// that outlives the window (`gKeep = winvar`), and freeing it at teardown
+// would then free live memory out from under whatever it was handed to.
+//
+// Rather than a new walker, this reuses Task 7's lowEscapeWalk* machinery
+// verbatim -- same rule 3 (RHS-is-bare-x/argument/return/push-or-get-value
+// handoff positions), same default-deny fallback -- just with the tracked
+// "candidate" set being every window's own handle-backed var names instead
+// of one function's own locals, and the walk covering EVERY func/handler/
+// every/menu-handler body in the program instead of one function's body
+// (a window var can be read by name from any of its own window's handlers,
+// declared via `extend Win { ... }` anywhere in the file).
+//
+// KEPT DELIBERATELY SIMPLE (ponytail): tracked by NAME only, not per-window
+// -- two different windows whose vars happen to share a name share one
+// fate. This can only make a safe var wrongly stay leaked-by-design, never
+// the reverse (an escaping var wrongly freed), so it's conservative, not
+// unsound. This is also why lowEscapeHandoff (above) now disqualifies a
+// bare `base.field` select by field name, not just a bare identifier: a
+// window var is reachable from OUTSIDE its own window's handlers via
+// check.cla's checkWindowRefSelect (`w.content` off an explicit window-ref
+// value -- opendoc.cla's own App.openDocument handler does exactly this),
+// a shape Task 7's local-var pass never needed since a function local is
+// never selected off anything.
+//
+// lowWinEscGen is this program's own reserved lowFuncGen value (minted
+// exactly like any real per-function gen, so it can never collide with
+// one -- see lowFuncGen's own doc comment on why gens are never reused)
+// for lowFreeDisq's namespacing during this pass. Set once per program by
+// lowRunWinVarEscapePrepass (called from lowerProgram, BEFORE its per-decl
+// loop mints any real function's gen) and read back by cprint.cla's
+// cpEmitWinReleaseFn via lowWinVarQualifies, after lowerProgram returns for
+// this same program and before the next one (if any) overwrites it.
+var lowWinEscGen: int
+
+// lowWinVarEscCollect adds every DkWindow's handle-backed (irtNeedsCtor --
+// not Task 7's narrower Text/List/Map-only lowEscapeTrackableKind: a Rec
+// window var can alias through its own ctor-needing fields exactly like a
+// global one can, Task 5's own widening precedent) per-instance var name in
+// declHead to lowFreeNames/lowFreeTypes -- the tracked-name universe for
+// lowRunWinVarEscapePrepass's walk, below.
+func lowWinVarEscCollect(declHead: int) {
+    var d: int
+    var item: int
+    var t: int
+    var nm: string
+
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkWindow {
+            item = windowDeclItemsHead(d)
+            while item != -1 {
+                if declKind(item) == DkVar {
+                    t = lowResolveType(varDeclType(item))
+                    if irtNeedsCtor(t) {
+                        nm = poolGet(varDeclName(item))
+                        if not lowFreeTypes.has(nm) {
+                            lowFreeNames.add(nm)
+                        }
+                        lowFreeTypes[nm] = t
+                    }
+                }
+                item = declNext(item)
+            }
+        }
+        d = declNext(d)
+    }
+}
+
+// lowWinVarEscWalkChildren walks one `extend` block's DkHandler/nested-
+// DkExtend children (lowWindowExtend/lowMenuExtend's own dispatch, mirrored
+// here read-only -- classification only, no IR built) for the escape scan.
+func lowWinVarEscWalkChildren(childrenHead: int) {
+    var c: int
+
+    c = childrenHead
+    while c != -1 {
+        if declKind(c) == DkHandler {
+            lowEscapeWalkBlock(handlerDeclBody(c))
+        } else if declKind(c) == DkExtend {
+            lowWinVarEscWalkChildren(extendDeclChildrenHead(c))
+        }
+        c = declNext(c)
+    }
+}
+
+// lowRunWinVarEscapePrepass runs Task 7's escape walker once, program-wide,
+// with every window's handle-backed per-instance var name as the tracked
+// set (instead of one function's own locals) -- see this section's header
+// comment for the full rationale. Called once from lowerProgram, BEFORE its
+// own per-decl loop (so lowFreeNames/lowFuncGen are still untouched by any
+// real function's own Task 7 pass when this collects/walks).
+func lowRunWinVarEscapePrepass(declHead: int) {
+    var d: int
+
+    while lowFreeNames.count > 0 {
+        lowFreeNames.pop()
+    }
+    lowFuncGen = lowFuncGen + 1
+    lowWinEscGen = lowFuncGen
+    lowWinVarEscCollect(declHead)
+    if lowFreeNames.count == 0 {
+        return
+    }
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkFunc {
+            lowEscapeWalkBlock(funcDeclBody(d))
+        } else if declKind(d) == DkHandler {
+            lowEscapeWalkBlock(handlerDeclBody(d))
+        } else if declKind(d) == DkExtend {
+            lowWinVarEscWalkChildren(extendDeclChildrenHead(d))
+        } else if declKind(d) == DkEvery {
+            lowEscapeWalkBlock(everyDeclBody(d))
+        }
+        d = declNext(d)
+    }
+}
+
+// lowWinVarQualifies reports whether window-var name `name` (as scanned by
+// lowRunWinVarEscapePrepass) is safe to free at window teardown -- cprint's
+// clar_ui_release_<Win> emitter (cpEmitWinReleaseFn) consults this per
+// irtNeedsCtor field. A name lowRunWinVarEscapePrepass never tracked at all
+// (shouldn't happen for an actual window var, but harmless if it does)
+// reads as qualifying -- lowFreeDisq only ever contains entries for names
+// the walk actually disqualified.
+func lowWinVarQualifies(name: string): bool {
+    return not lowFreeDisq.has(numToStr(lowWinEscGen) + "|" + name)
+}
+
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
 // window-body properties (title/size/resizable), each widget (lowWidgetDesc,
 // in declaration order -- the SAME order uiWidgetIndex and rt_ui's widget
@@ -4040,6 +4194,10 @@ func lowerProgram(declHead: int): int {
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
     lowBuiltinSaveChoiceLayout()
+    // Task 8: must run before the per-decl loop below mints any real
+    // function's lowFuncGen (lowRunWinVarEscapePrepass mints its own,
+    // lowWinEscGen, first) -- see that function's own doc comment.
+    lowRunWinVarEscapePrepass(declHead)
     d = declHead
     while d != -1 {
         lowDecl(d)

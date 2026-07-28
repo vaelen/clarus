@@ -24,7 +24,7 @@ static const rt_ui_widget_desc clar_ui_widgets_DocWin[] = {
 };
 
 static void clar_ui_widget_DocWin(void *inst, short widgetIndex, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_DocWin = { 0, clar_ui_widget_DocWin };
+static const rt_ui_handlers clar_ui_handlers_DocWin = { 0, clar_ui_widget_DocWin, 0 };
 
 static const rt_ui_window_desc clar_ui_window_DocWin = {
     "DocWin", (const unsigned char *)"\pDoc",

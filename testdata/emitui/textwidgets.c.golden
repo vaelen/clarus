@@ -36,7 +36,14 @@ static const rt_ui_widget_desc clar_ui_widgets_TextWin[] = {
 
 static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b);
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_TextWin = { clar_ui_winevent_TextWin, clar_ui_widget_TextWin };
+static void clar_ui_release_TextWin(void *inst)
+{
+    rt_text_free((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
+    rt_text_free((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
+
+}
+
+static const rt_ui_handlers clar_ui_handlers_TextWin = { clar_ui_winevent_TextWin, clar_ui_widget_TextWin, clar_ui_release_TextWin };
 
 static const rt_ui_window_desc clar_ui_window_TextWin = {
     "TextWin", (const unsigned char *)"\pText",
@@ -47,7 +54,17 @@ static const rt_ui_window_desc clar_ui_window_TextWin = {
 };
 
 static void clar_ui_winevent_NoteWin(void *inst, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_NoteWin = { clar_ui_winevent_NoteWin, 0 };
+static void clar_ui_release_NoteWin(void *inst)
+{
+    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_scratch);
+    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_greeting);
+    for (int32_t ix1 = 0; ix1 < 2; ix1++) {
+    rt_text_free((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_buf.e[ix1]);
+    }
+
+}
+
+static const rt_ui_handlers clar_ui_handlers_NoteWin = { clar_ui_winevent_NoteWin, 0, clar_ui_release_NoteWin };
 
 static const rt_ui_window_desc clar_ui_window_NoteWin = {
     "NoteWin", (const unsigned char *)"\pNotes",
@@ -108,8 +125,8 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
 static void clar_fn_ui_NoteWin_opened(void * cv_window) {
     ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_scratch = rt_text_new();
     ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting = rt_text_new();
-    for (int32_t ix1 = 0; ix1 < 2; ix1++) {
-        ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_buf.e[ix1] = rt_text_new();
+    for (int32_t ix2 = 0; ix2 < 2; ix2++) {
+        ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_buf.e[ix2] = rt_text_new();
     }
     rt_text_store(((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting, (const uint8_t*)&(clar_lit_4));
     rt_ui_set_title(cv_window, (const uint8_t*)&(clar_lit_3));

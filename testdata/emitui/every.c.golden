@@ -19,7 +19,7 @@ static const rt_ui_widget_desc clar_ui_widgets_Game[] = {
 };
 
 static void clar_ui_winevent_Game(void *inst, short event, long a, long b);
-static const rt_ui_handlers clar_ui_handlers_Game = { clar_ui_winevent_Game, 0 };
+static const rt_ui_handlers clar_ui_handlers_Game = { clar_ui_winevent_Game, 0, 0 };
 
 static const rt_ui_window_desc clar_ui_window_Game = {
     "Game", (const unsigned char *)"\pTicker",

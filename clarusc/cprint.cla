@@ -2643,6 +2643,49 @@ func cpWinHandlersHasWidget(whIdx: int): bool {
     return irWinHandlersWidgetHead(whIdx) != -1
 }
 
+// cpEmitWinReleaseFn (memory-audit-4e Task 8) emits, for winName's state
+// block, a static void clar_ui_release_<Win>(void *inst) freeing every
+// irtNeedsCtor per-instance var that QUALIFIES (lowWinVarQualifies --
+// lower.cla's whole-program reuse of Task 7's escape walker: a var aliased
+// anywhere as an RHS/argument/return/stored value stays leaked-by-design
+// instead of risking a use-after-free on whatever it was handed to). Exact
+// mirror of fpIntrCall's IUiStateDefaults() case above (the constructor
+// this is the destructor for), freeing instead of constructing, via the
+// same cpEmitFree helper Task 5's globals and Task 7's locals already use.
+// No forward-declare/define split like winFn/widgetFn below needs: this
+// body only ever calls cpEmitFree's own rt_*_free runtime calls, never a
+// clar_fn_ handler name, so it can be defined here directly. Returns the
+// function's own C name, or "0" if winName has no qualifying field at all
+// (callers wire a plain 0 into rt_ui_handlers.releaseVars instead of a
+// pointer to an empty function).
+func cpEmitWinReleaseFn(winName: string): string {
+    var fld: int
+    var any: bool
+    var body: text
+    var fname: string
+
+    fld = cpFindWindowStateFields(winName)
+    any = false
+    body = ""
+    while fld != -1 {
+        if irtNeedsCtor(irFieldSlotType(fld)) and lowWinVarQualifies(poolGet(irFieldSlotName(fld))) {
+            any = true
+            cpEmitFree(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
+        }
+        fld = irFieldSlotNext(fld)
+    }
+    if not any {
+        return "0"
+    }
+    fname = "clar_ui_release_" + winName
+    cpUiBuf.add(toText("static void " + fname + "(void *inst)"))
+    cpUiBuf.add(toText("{"))
+    cpUiBuf.add(body)
+    cpUiBuf.add(toText("}"))
+    cpUiBuf.add(toText(""))
+    return fname
+}
+
 // cpEmitWinHandlersFwd prints (into cpUiBuf, BEFORE any clar_fn_ handler-body
 // prototype exists anywhere in the emitted file -- cpEmitFuncs's own
 // "prototypes up front" pass hasn't run yet at this point in emitProgram's
@@ -2659,6 +2702,7 @@ func cpEmitWinHandlersFwd(winName: string): string {
     var whIdx: int
     var winFn: string
     var widgetFn: string
+    var releaseFn: string
 
     whIdx = cpFindWinHandlers(winName)
     if whIdx == -1 {
@@ -2674,7 +2718,8 @@ func cpEmitWinHandlersFwd(winName: string): string {
         widgetFn = "clar_ui_widget_" + winName
         cpUiBuf.add(toText("static void " + widgetFn + "(void *inst, short widgetIndex, short event, long a, long b);"))
     }
-    cpUiBuf.add(toText("static const rt_ui_handlers clar_ui_handlers_" + winName + " = { " + winFn + ", " + widgetFn + " };"))
+    releaseFn = cpEmitWinReleaseFn(winName)
+    cpUiBuf.add(toText("static const rt_ui_handlers clar_ui_handlers_" + winName + " = { " + winFn + ", " + widgetFn + ", " + releaseFn + " };"))
     cpUiBuf.add(toText(""))
     return "clar_ui_handlers_" + winName
 }
