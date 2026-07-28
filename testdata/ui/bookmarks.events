@@ -1,4 +1,16 @@
 click 96 185
+answer-popup 1
+click 296 146
+click 196 226
+click 96 185
+answer-popup 2
+click 296 146
+click 196 226
+click 96 185
+answer-popup 0
+click 296 146
+click 196 226
+click 96 185
 click 296 62
 type MyPlace
 click 296 90

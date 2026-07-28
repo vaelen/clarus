@@ -3,6 +3,29 @@ T FRONT Main 1
 T FIRE Main.Add.click
 T OPEN EditForm 1
 T FRONT EditForm 1
+T FIRE EditForm.Proto.change
+T FIRE EditForm.cancelled
+T CLOSE EditForm 1
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.Add.click
+T OPEN EditForm 2
+T FRONT EditForm 2
+T FIRE EditForm.Proto.change
+T FIRE EditForm.cancelled
+T CLOSE EditForm 2
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.Add.click
+T OPEN EditForm 3
+T FRONT EditForm 3
+T FIRE EditForm.cancelled
+T CLOSE EditForm 3
+T FRONT Main 1
+T FIRE EditForm.closed
+T FIRE Main.Add.click
+T OPEN EditForm 4
+T FRONT EditForm 4
 T FIRE EditForm.Name.change
 T FIRE EditForm.Name.change
 T FIRE EditForm.Name.change
@@ -41,12 +64,12 @@ T FIRE EditForm.Port.change
 T FIRE EditForm.Port.change
 T FIRE EditForm.Port.change
 T FIRE EditForm.accepted
-T CLOSE EditForm 1
+T CLOSE EditForm 4
 T FRONT Main 1
 T FIRE EditForm.closed
 T FIRE Main.Add.click
-T OPEN EditForm 2
-T FRONT EditForm 2
+T OPEN EditForm 5
+T FRONT EditForm 5
 T FIRE EditForm.Name.change
 T FIRE EditForm.Name.change
 T FIRE EditForm.Name.change
@@ -76,16 +99,16 @@ T FIRE EditForm.Url.change
 T FIRE EditForm.Url.change
 T FIRE EditForm.Proto.change
 T FIRE EditForm.accepted
-T CLOSE EditForm 2
+T CLOSE EditForm 5
 T FRONT Main 1
 T FIRE EditForm.closed
 T FIRE Main.Marks.select
 T FIRE Main.Marks.doubleClick
-T OPEN EditForm 3
-T FRONT EditForm 3
+T OPEN EditForm 6
+T FRONT EditForm 6
 T FIRE EditForm.Name.change
 T FIRE EditForm.accepted
-T CLOSE EditForm 3
+T CLOSE EditForm 6
 T FRONT Main 1
 T FIRE EditForm.closed
 T FIRE Main.Marks.select

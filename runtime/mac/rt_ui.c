@@ -3176,6 +3176,45 @@ static int rt_ui_popup_hit(rt_ui_winst *inst, Point local, short *outIdx)
     return 0;
 }
 
+#ifdef RT_MAC_TEST
+/* FIX 2b (mac-target-4d final-validation report, Finding 4): the scripted
+   answer-popup bypass used to consume the queued pick without ever
+   touching the Menu Manager, so the gated suite could never catch the
+   close/reopen popup-menu bug the real manual-click PopUpMenuSelect path
+   hit in live-emulator testing. This asserts the popup's menu is ACTUALLY
+   alive in the menu list -- GetMenuHandle(1000+wIdx) must find the SAME
+   MenuHandle rt_ui_make_widgets built for THIS instance, with its bound
+   enum's item count intact -- before the scripted path is allowed to fake
+   a pick. A stale/missing entry (e.g. a close that failed to DeleteMenu/
+   DisposeMenu, or an ID collision with a leaked one) panics here with a
+   specific message instead of silently no-op'ing through the bypass. */
+static void rt_ui_popup_assert_alive(rt_ui_winst *inst, short wIdx)
+{
+    MenuHandle mh;
+    const rt_ui_form_desc *form;
+    short b, expect;
+
+    mh = GetMenuHandle((short)(RTUI_POPUP_MENU_ID_BASE + wIdx));
+    if (mh == NULL)
+        rt_panic("popup: GetMenuHandle found no menu in the menu list for this widget (close/reopen left it undeleted or never reinserted)");
+    if (mh != inst->popups[wIdx])
+        rt_panic("popup: GetMenuHandle returned a menu handle that isn't this instance's own (stale/leaked entry under the same ID)");
+
+    expect = 0;
+    form = inst->desc->form;
+    if (form) {
+        for (b = 0; b < form->nBinds; b++) {
+            if (form->binds[b].widgetIndex == wIdx) {
+                expect = form->layout->fields[form->binds[b].fieldIndex].enumCount;
+                break;
+            }
+        }
+    }
+    if (CountMItems(mh) != expect)
+        rt_panic("popup: menu item count doesn't match the bound enum (rebuilt with stale/leftover items)");
+}
+#endif
+
 /* Shared post-pick logic (mac-target-4d Task 3): both the real
    PopUpMenuSelect path and the scripted answer-queue path converge here
    once each has its own new 0-based item index -- the only two things that
@@ -3268,7 +3307,9 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                    ordering must hold regardless. */
 #ifdef RT_MAC_TEST
                 if (gUiScripted) {
-                    const rt_ui_answer *a = rt_ui_answer_pop();
+                    const rt_ui_answer *a;
+                    rt_ui_popup_assert_alive(inst, wIdx);
+                    a = rt_ui_answer_pop();
                     if (a->kind != RT_UI_ANS_POPUP) rt_panic("popup: scripted answer kind mismatch");
                     rt_ui_popup_pick(inst, wIdx, a->val);
                     return;
@@ -3349,7 +3390,9 @@ static void rt_ui_handle_content_click(WindowPtr wp, rt_ui_winst *inst, Point wh
                converge on the SAME rt_ui_popup_pick call immediately after
                -- see that function's own comment. */
             if (gUiScripted) {
-                const rt_ui_answer *a = rt_ui_answer_pop();
+                const rt_ui_answer *a;
+                rt_ui_popup_assert_alive(inst, pIdx);
+                a = rt_ui_answer_pop();
                 if (a->kind != RT_UI_ANS_POPUP) rt_panic("popup: scripted answer kind mismatch");
                 rt_ui_popup_pick(inst, pIdx, a->val);
                 return;
