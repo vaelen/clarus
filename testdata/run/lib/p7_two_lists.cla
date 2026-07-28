@@ -5,27 +5,26 @@
 // whole-branch review, probe P7): one LOCAL text pushed into TWO qualifying
 // LOCAL lists. Originally (4e): both `p7L1` and `p7L2` kept their
 // scope-exit element-free loops (only the pushed VALUE was disqualified),
-// so both loops freed the one handle `p7X` shares with them: SIGSEGV.
-// Critical 2's rule disqualifies BOTH receivers' DEEP release,
-// independently, the moment each push sees a non-fresh (bare-identifier)
-// value -- still true today, unchanged by ARC Task 4 (container elements
-// are Task 5's still-unmigrated slot class: push never retains, so a deep
-// element-walk on either list would still double-free the shared handle).
+// so both loops freed the one handle `p7X` shares with them: SIGSEGV. The
+// 4e/pre-ARC fix disqualified BOTH receivers' DEEP release, independently,
+// the moment each push saw a non-fresh (bare-identifier) value. Expected
+// 4e/ARC-Task-4 leak count: 2 -- `p7X`'s text only (`p7X` itself was
+// `lowFreeUnsafe`, handed to two push arguments, skipped entirely at scope
+// exit; `p7L1`/`p7L2` themselves got only a shallow release each).
 //
-// ARC Task 4 (counted named-slot stores + unconditional local release):
-// `p7X` is disqualified for a DIFFERENT, still-genuinely-unsafe reason
-// (`lowFreeUnsafe`): handed to TWO push arguments, neither a consumer this
-// task's migration covers -- so `p7X` is SKIPPED entirely at scope exit,
-// not shallow-released (see p6_dup_push_local.cla's own comment for the
-// same reasoning, one push site instead of two). `p7L1`/`p7L2` themselves,
-// by contrast, ARE real named-slot locals now covered by unconditional
-// release -- each gets a genuine shallow release at scope exit (confirmed
-// against the emitted C: bare `rt_list_release` for both, no element
-// loop). Expected strict-mode leak count: 2 (see ../p7_two_lists.leaks,
-// dropped from 6) -- `p7X`'s text only (struct box + data handle, 2
-// blocks; the one handle both lists share, still never freed). Not a bug
-// -- container-element ownership is explicitly out of this task's scope,
-// staged for Task 5.
+// ARC Task 5 (counted container element slots) closes this fixture to
+// ZERO -- the two-receiver twin of p6_dup_push_local.cla's own updated
+// comment (same mechanism, one shared value pushed into TWO containers
+// instead of one container twice): both pushes now retain `p7X`'s value
+// first (non-birth, bare identifier -- rc==3: `p7X`'s own +1 plus one
+// retain per push); Task 5 deleted the non-fresh-push receiver consult, so
+// BOTH `p7L1` and `p7L2` now qualify for a real DEEP scope-exit release
+// (confirmed against the emitted C: an element-walk-then-release for each,
+// rc 3 -> 2 -> 1); and `p7X`'s own push-argument handoff moved off
+// `lowFreeUnsafe` onto shallow-safe (`lowEscapeWalkArgsSafeHandoff`), so
+// `p7X` itself gets a real shallow release too (rc 1 -> 0). Three releases
+// (two element-walks, one local scope-exit) exactly balance the three
+// owners: no leak, no double-free.
 
 func runP7TwoLists() {
     var p7L1: list of text

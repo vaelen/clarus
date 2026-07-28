@@ -7,31 +7,45 @@
 // the IR level -- a raw `rt_list_at` borrow, never itself retained by
 // cprint, unlike a MAP subscript's `IMapGet` intrinsic, which does retain
 // internally -- see `lowStoreIntrOwnsResult`'s own doc comment for that
-// distinction) -- reading it disqualifies `p4Items` from a DEEP scope-exit
-// release (the escape walker's `lowEscapeContainerElemRisky` rule: an
-// element handle the container itself still owns can escape through an
-// index read), same rule/reasoning as before ARC Task 4, untouched by it
-// (container elements are Task 5's still-unmigrated slot class).
+// distinction).
 //
 // ARC Task 4 (counted named-slot stores): `p4GSaved = p4Items[0]` is a
 // NAMED-SLOT store (global) whose source is a non-birth element read --
 // `lowCountedStore` retains it FIRST (confirmed against the emitted C:
 // `rt_text_retain(cv___store1)` immediately after the `rt_list_at` borrow),
-// THEN releases `p4GSaved`'s OLD (default-empty) handle -- a real free now,
-// not the permanent orphan-on-overwrite this comment used to describe.
-// `p4Items` itself (the container's OWN handle, disqualified from DEEP
-// release only) still gets a real, unconditional SHALLOW release at scope
-// exit (`rt_list_release(cv_p4Items)`, confirmed against the emitted C --
-// Task 4's own "unconditional local release" applying to `p4Items`'s own
-// box, not its elements) -- so the list's struct box + backing array are no
-// longer leaked either. Expected strict-mode leak count: 2 (see
-// ../p4_elem_escape.leaks, dropped from 6) -- only the shared `"a"+"b"`
-// text handle itself (2 blocks): `p4Items`'s shallow release disposes the
-// container without walking into it (deep release stays gated on the SAME
-// proof 4e always required -- Task 5's still-unmigrated container-element
-// class), and `p4GSaved`, a global, is never itself released
-// (`cl_free_globals` stays empty -- Task 6's still-unmigrated slot class).
-// Not a bug -- both are explicitly out of this task's scope.
+// THEN releases `p4GSaved`'s OLD (default-empty) handle.
+//
+// ARC Task 5 (counted container element slots) DELETED the old
+// `lowEscapeContainerElemRisky`-gated "index-read disqualifies the
+// container" consult that USED to be `p4Items`'s own disqualification
+// reason -- but `p4Items` was ALSO always eligible for a real shallow
+// release regardless (Task 4's unconditional local release), so that
+// deletion changes `p4Items`'s DISPOSITION here, not its leak count:
+// `p4Items` now qualifies for a DEEP release (confirmed against the
+// emitted C: `{ int32_t i; for (...) rt_text_release(*(rt_text
+// **)rt_list_at(cv_p4Items, i)); } rt_list_release(cv_p4Items);`, was a
+// bare `rt_list_release` before) -- safe because the element it walks is
+// `p4Items`'s OWN retained copy of the shared "ab" text (rc==2, from
+// `p4GSaved`'s own retain above), so the walk's release only drops rc to 1,
+// never to 0.
+//
+// `p4GSaved` itself stays globally-unqualified -- but for a DIFFERENT,
+// UNRELATED rule than the one Task 5 deleted: `lowEscapeWalkAssign`'s own
+// rule 4 (`p4GSaved = p4Items[0]`, a bare-identifier LHS reassigned from a
+// rhs `lowEscapeFreshInit` doesn't recognize as fresh -- an `ExIndex` read
+// is not one of that check's four fresh shapes, literal/concat/slice/[Task-
+// 4-added, `lowStoreIsBirth`-only]call) -- this is Task 4's OWN pre-
+// existing freshness test for DEEP-release/globals-qualification
+// eligibility, entirely orthogonal to container-element counting, and
+// untouched by Task 5. Confirmed against the emitted C: `cl_free_globals`
+// stays empty (`p4GSaved` never appears in it). Expected strict-mode leak
+// count: 2 (see ../p4_elem_escape.leaks, UNCHANGED by Task 5 -- the same
+// total, now for a more precisely attributable reason) -- the shared
+// `"a"+"b"` text's own remaining rc==1 (2 blocks), held solely by
+// `p4GSaved`, itself never released (`cl_free_globals` stays empty for it
+// -- Task 6's still-unmigrated globals-qualification scope, via rule 4's
+// own non-fresh-reassignment test, not the deleted element-read consult).
+// Not a bug -- globals-qualification is explicitly out of Task 5's scope.
 
 var p4GSaved: text
 

@@ -2233,6 +2233,21 @@ func IListUnshift(): int {
     return intern("list_unshift")
 }
 
+// IListPushRetain/IListUnshiftRetain -- ARC Task 5: the retaining sibling of
+// IListPush/IListUnshift, chosen by lowListMethod (lower.cla) instead of the
+// plain form whenever the pushed value is NON-birth (lowElemIsBirth false --
+// a bare local/global/element read, not a fresh literal/concat/slice/call
+// result) -- cprint.cla's shared IListPush(Retain)/IListUnshift(Retain)
+// printer branch is the only place that reads which of the two names it is;
+// everywhere else (arg shape, coercion) is identical to the plain form.
+func IListPushRetain(): int {
+    return intern("list_push_retain")
+}
+
+func IListUnshiftRetain(): int {
+    return intern("list_unshift_retain")
+}
+
 func IListFirst(): int {
     return intern("list_first")
 }
@@ -2243,6 +2258,28 @@ func IListLast(): int {
 
 func IListRemove(): int {
     return intern("list_remove")
+}
+
+// IListSet/IListSetRetain -- ARC Task 5: `lst[i] = v` on a heap-typed
+// element (lowIndexAssign, lower.cla), replacing that pre-Task-5 path's
+// plain lowStoreStmt/IndexRef-as-lvalue Assign, which (a) never released
+// the replaced element and (b) for a Str->Text source, mutated the existing
+// element's box IN PLACE (lowStoreStmt's own ITextStore branch) -- unsafe
+// once elements are aliasable/counted, the same class of bug ARC Task 4's
+// Bug 2 fixed for named slots. Args: (list, index, new value) -- cprint's
+// shared printer computes the list/index ONCE and reuses both C strings for
+// the old-element read+release AND the new-element write, so an
+// index expression with a side effect is never evaluated twice. IListSet is
+// the birth/transfer form (no retain); IListSetRetain additionally retains
+// the new value BEFORE reading/releasing the old one (self-overwrite safety
+// -- `lst[i] = lst[i]`: retaining first guarantees the shared handle's rc
+// never transiently reaches zero from the old-element release that follows).
+func IListSet(): int {
+    return intern("list_set")
+}
+
+func IListSetRetain(): int {
+    return intern("list_set_retain")
 }
 
 func IListCount(): int {
@@ -2257,6 +2294,20 @@ func IListFreeVar(): int {
 // -- map (string keys; value size known at creation) --
 func IMapSet(): int {
     return intern("map_set")
+}
+
+// IMapSetRetain -- ARC Task 5's retaining sibling of IMapSet, chosen by
+// lowIndexAssign (lower.cla) whenever the stored value is NON-birth. Both
+// names share cprint.cla's single printer branch: `m[k] = v` is an UPSERT,
+// so the printer ALWAYS emits a has/get/release guard for the value CURRENTLY
+// at k (if any) before storing, regardless of which name was chosen -- only
+// the new value's retain is conditional on IMapSetRetain vs IMapSet. See
+// fpMapReleaseGuard's own doc comment for why the guard's own read is a raw,
+// non-retaining rt_map_get (never the retaining IMapGet intrinsic, which
+// would leave the guard's own release netting to a no-op instead of the
+// intended -1).
+func IMapSetRetain(): int {
+    return intern("map_set_retain")
 }
 
 func IMapGet(): int {

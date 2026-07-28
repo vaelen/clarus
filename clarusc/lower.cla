@@ -951,22 +951,47 @@ func lowCheckSerializableFields(recNameIdx: int, ctx: string) {
 // checker's compatible() accepts any Str capacity against elem but
 // IListPush/IListUnshift's C printer copies the value's OWN struct type,
 // sized to fit the list's declared element size.
+//
+// ARC Task 5: add/push/unshift additionally pick the *Retain intrinsic
+// variant whenever the value is NON-birth (lowElemIsBirth false) and the
+// element kind is heap-tracked -- the SAME retain-unless-birth rule Task 4
+// established for named-slot stores (lowCountedStore), now applied to
+// container element slots: the container is a counted owner, so a
+// non-birth push needs its own +1 (cprint.cla's shared IListPush(Retain)/
+// IListUnshift(Retain) printer branch emits it). Birth classification runs
+// on rawV (argsHead lowered but NOT yet coerced), mirroring
+// lowCountedStore's own src-before-coercion timing -- lowCoerceStr's
+// Str->Text override is folded into lowElemIsBirth itself, same as
+// lowCountedStore's.
 func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
     var nm: string
     var elemT: int
+    var rawV: int
     var v: int
+    var pushName: int
+    var unshiftName: int
 
     nm = poolGet(selectName(sel))
     if nm == "add" or nm == "push" {
         elemT = irtElem(irExprType(recv))
-        v = lowCoerceStr(elemT, lowExpr(argsHead))
+        rawV = lowExpr(argsHead)
+        pushName = IListPush()
+        if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
+            pushName = IListPushRetain()
+        }
+        v = lowCoerceStr(elemT, rawV)
         irExprListAppend(recv, v)
-        return newIRIntr(IListPush(), recv, ty)
+        return newIRIntr(pushName, recv, ty)
     } else if nm == "unshift" {
         elemT = irtElem(irExprType(recv))
-        v = lowCoerceStr(elemT, lowExpr(argsHead))
+        rawV = lowExpr(argsHead)
+        unshiftName = IListUnshift()
+        if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
+            unshiftName = IListUnshiftRetain()
+        }
+        v = lowCoerceStr(elemT, rawV)
         irExprListAppend(recv, v)
-        return newIRIntr(IListUnshift(), recv, ty)
+        return newIRIntr(unshiftName, recv, ty)
     } else if nm == "pop" {
         return newIRIntr(IListPop(), recv, ty)
     } else if nm == "shift" {
@@ -1545,6 +1570,35 @@ func lowStoreIntrOwnsResult(src: int): bool {
     return nm == IUiGetTextviewText() or nm == IMapGet()
 }
 
+// lowElemIsBirth is ARC Task 5's container-ELEMENT-store counterpart to
+// lowCountedStore's own two birth checks -- the IDENTICAL birth-vs-retain
+// rule Task 4 established for named-slot stores, reused verbatim: a
+// container element slot is just another counted owner now, no different in
+// kind from a local/global/window-var slot (lowListMethod's push/unshift,
+// lowIndexAssign's list/map index-write -- every ARC Task 5 store site).
+//
+// srcAst is the un-lowered AST source; rawSrc is srcAst's ALREADY-LOWERED IR
+// form, taken BEFORE any lowCoerceStr coercion -- mirrors lowCountedStore's
+// own `src = lowExpr(srcAst)` timing exactly (lowStoreIntrOwnsResult needs
+// the lowered-but-uncoerced shape, same as lowCountedStore's own call site).
+// elemT is the destination element's IR type (a list's own element type, or
+// a map's).
+func lowElemIsBirth(srcAst: int, rawSrc: int, elemT: int): bool {
+    if irtKind(elemT) == KText and irtKind(irExprType(rawSrc)) == KStr {
+        // Same override lowCountedStore's own KStr branch uses: a Str
+        // source feeding a Text-typed element always coerces through
+        // lowCoerceStr's ITextOfStr, which ALWAYS constructs a fresh box
+        // (Ch3: "the conversion always creates a fresh text copy"),
+        // regardless of srcAst's own shape -- see lowCountedStore's doc
+        // comment for the full argument; kept here as a second, independent
+        // application of the SAME override rather than folded into
+        // lowStoreIntrOwnsResult, whose own doc comment explicitly
+        // documents deferring to this IR-type check instead.
+        return true
+    }
+    return lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(rawSrc)
+}
+
 // lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
 // NAMED slot (a local, a global, or a window var's per-instance field --
 // every lowAssign/lowBlock-declared-initializer/window-var-default call
@@ -2008,12 +2062,23 @@ var lowFreeDisq: map of int
 //     (fpCallFn's own doc comment: "the callee may retain the handle...
 //     leaks instead" -- the SAME conservative assumption, just now
 //     enforced by skipping the release instead of by leaking forever).
-//   - a list/map push/add/unshift/get argument (lowEscapeWalkArgsHandoff,
-//     the lowEscapeWalkMethodCall branch) -- container ELEMENT stores
-//     stay 4e-qualified until Task 5 gives them their own retain; this is
-//     the reviewer's own reported repro class (`x` pushed into a global
-//     `list of text`, then released here on a shallow-release-for-all
-//     read: `rt_text_append_text` dereferencing a disposed box).
+//   - a map `.get(k, dv)` call's OWN key/default-value arguments
+//     (lowEscapeWalkArgsHandoff, still reached from the
+//     lowEscapeWalkMethodCall "get" branch) -- ARC Task 5 REMOVED
+//     push/add/unshift's value argument from this set (see below): a
+//     push/unshift value now lands in a COUNTED container element slot
+//     (lowListMethod's own retain-unless-birth store, mirroring
+//     lowCountedStore), so the source keeps its own independent +1 the
+//     same way a migrated named-slot store's source does -- shallow
+//     release is provably safe now (lowEscapeWalkArgsSafeHandoff, not
+//     this function). `get`'s OWN arguments are UNTOUCHED by that
+//     reasoning: neither is ever stored into the map at all (the key is a
+//     lookup, the default is a caller-owned fallback returned only on
+//     absence) -- this is a separate, pre-existing conservatism
+//     (IMapGetDv's own printer already retains the default into its own
+//     tracked result independently of this classification) that predates
+//     and is unrelated to Task 5's container-element scope, not audited or
+//     changed here.
 //   - a form `edit` target (StEdit) -- handed to the form UI, which is
 //     never proven to retain it (not one of ARC's migration classes at
 //     all; forms/records overlap, deferred to a later task).
@@ -2161,9 +2226,14 @@ func lowEscapeWalkArgsSafe(argsHead: int) {
 }
 
 // lowEscapeWalkArgsHandoff walks a call's argument list as rule-3 handoff
-// positions (a user function's arguments; list push/add/unshift's value;
-// map get's key AND default-value -- the key is always a string so can
-// never match a candidate name, making it harmless to treat uniformly here).
+// positions where the consuming site is NOT one of ARC's migrated store
+// funnels: a user function's arguments (the callee might stash one into an
+// unmigrated slot -- see lowFreeUnsafe's own doc comment); map `get`'s key
+// AND default-value (a separate, pre-existing conservatism unrelated to
+// container elements -- see lowFreeUnsafe's doc comment). ARC Task 5:
+// list/map push/add/unshift's OWN value argument no longer routes through
+// here -- see lowEscapeWalkArgsSafeHandoff, below, and lowEscapeWalkMethodCall's
+// own dispatch.
 func lowEscapeWalkArgsHandoff(argsHead: int) {
     var a: int
 
@@ -2171,11 +2241,32 @@ func lowEscapeWalkArgsHandoff(argsHead: int) {
     while a != -1 {
         // ARC Task 4: lowEscapeHandoffUnsafe, not just lowEscapeHandoff --
         // every caller of this function hands a value to a consumer
-        // lowCountedStore doesn't cover (a user-function call argument, or
-        // a list/map push/add/unshift/get argument -- container elements
-        // stay 4e-qualified until Task 5), so the source can't be proven to
+        // lowCountedStore doesn't cover, so the source can't be proven to
         // keep its own independent +1 the way a named-slot store now does.
         lowEscapeHandoffUnsafe(a)
+        lowEscapeWalkExpr(a)
+        a = exprNext(a)
+    }
+}
+
+// lowEscapeWalkArgsSafeHandoff is ARC Task 5's counterpart to
+// lowEscapeWalkArgsHandoff for list/map push/add/unshift's value argument
+// specifically -- the ONLY handoff position this task's own migration newly
+// covers (lowListMethod's retain-unless-birth container-element store,
+// mirroring lowCountedStore's named-slot store). Shallow release only
+// (lowEscapeHandoff, never lowEscapeHandoffUnsafe's full lowFreeUnsafe
+// skip): the consuming store now retains its own independent +1 the same
+// way a migrated named-slot store does, so a bare-identifier source stays
+// safe to release (even though its OWN handle is now also shared with the
+// container) -- exactly Task 4's own established reasoning for
+// lowFreeDisq's post-migration meaning, just extended to this new handoff
+// site.
+func lowEscapeWalkArgsSafeHandoff(argsHead: int) {
+    var a: int
+
+    a = argsHead
+    while a != -1 {
+        lowEscapeHandoff(a)
         lowEscapeWalkExpr(a)
         a = exprNext(a)
     }
@@ -2189,26 +2280,32 @@ func lowEscapeWalkArgsHandoff(argsHead: int) {
 // disqualified for exactly those five method names (not just their
 // arguments), REGARDLESS of whether the removal (`pop`/`shift`) makes THIS
 // particular read safe in practice -- the coordinator's ruling is maximally
-// conservative on purpose: don't special-case pop/shift back to safe. Every
-// other method (append, indexOf, fromBytes, toBytes, has, remove, count,
-// plus every canvas/file method) still treats the receiver as a safe read
-// (rule 3: "method receiver ... is fine" -- none of those hand back an
-// element). push/add/unshift/get additionally route their OWN arguments
-// through the handoff rule (lowEscapeWalkArgsHandoff's own comment covers
-// why `get` is included there too).
+// conservative on purpose: don't special-case pop/shift back to safe. This
+// rule predates ARC and is DELIBERATELY left standing by ARC Task 5: it
+// isn't "because elements weren't counted" (element counting doesn't change
+// whether reading via get/first/last/pop/shift hands back a receiver-owned
+// alias -- it does, independent of retention) -- it's a separate, maximally
+// conservative choice about the READ side, out of this task's own named
+// scope ("element-read and non-fresh-push receiver rules" -- this is
+// neither; it's the get/first/last/pop/shift-as-EXPRESSION-RESULT rule).
+// Every other method (append, indexOf, fromBytes, toBytes, has, remove,
+// count, plus every canvas/file method) still treats the receiver as a safe
+// read (rule 3: "method receiver ... is fine" -- none of those hand back an
+// element).
 //
-// Final-review fix (Critical 2): push/add/unshift additionally disqualify
-// the RECEIVER (not just the value argument) whenever the value fails
-// lowEscapeFreshInit -- a non-fresh value (bare ident, element read, call
-// result: anything but a literal/concat/slice) hands the CONTAINER a handle
-// someone else already owns, so the container's own scope-exit/teardown
-// element-free loop would double-free it (probes P1/P3/P6/P7: same local or
-// global pushed twice, or into two containers). A fresh value can only ever
-// be pushed once (temps are consumed), so a container that only ever
-// receives fresh values keeps its element-free loop -- the common case is
-// unaffected. `get`'s default-value argument is a pure read fallback, never
-// stored into the map, so `get` is deliberately excluded here (only from
-// the args-handoff dispatch above, not this receiver check).
+// ARC Task 5 DELETED the OLD "push/add/unshift additionally disqualify the
+// RECEIVER whenever the value fails lowEscapeFreshInit" rule here (the
+// brief's own "non-fresh-push receiver rule"): a pushed/unshifted value is
+// now ALWAYS retained-unless-birth by the store itself (lowListMethod), so
+// the container's own element-free loop can no longer double-free a
+// non-fresh push's value -- the container holds its OWN, independently
+// retained copy regardless of what else references the same handle. push/
+// add/unshift's OWN value argument now routes through
+// lowEscapeWalkArgsSafeHandoff (shallow-safe, see its own doc comment)
+// instead of lowEscapeWalkArgsHandoff (lowFreeUnsafe/full-skip) -- `get`'s
+// key/default-value arguments are UNCHANGED (still lowEscapeWalkArgsHandoff
+// -- see lowFreeUnsafe's own doc comment for why that's a separate,
+// pre-existing conservatism this task doesn't touch).
 func lowEscapeWalkMethodCall(e: int, fn: int) {
     var nm: string
 
@@ -2217,11 +2314,10 @@ func lowEscapeWalkMethodCall(e: int, fn: int) {
         lowEscapeHandoff(selectX(fn))
     }
     lowEscapeWalkExpr(selectX(fn))
-    if nm == "push" or nm == "add" or nm == "unshift" or nm == "get" {
+    if nm == "push" or nm == "add" or nm == "unshift" {
+        lowEscapeWalkArgsSafeHandoff(callArgsHead(e))
+    } else if nm == "get" {
         lowEscapeWalkArgsHandoff(callArgsHead(e))
-        if nm != "get" and not lowEscapeFreshInit(callArgsHead(e)) {
-            lowEscapeHandoff(selectX(fn))
-        }
     } else {
         lowEscapeWalkArgsSafe(callArgsHead(e))
     }
@@ -2260,23 +2356,6 @@ func lowEscapeWalkCall(e: int) {
     lowEscapeDisqAll()
 }
 
-// lowEscapeContainerElemRisky reports whether xT (a checked type, the base
-// of an index-read/element-read op) is a List/Map whose element kind can
-// itself carry a handle -- Text/List/Map directly, or (conservatively, no
-// transitive field walk) a Rec/Arr, which could embed one. int/bool/fixed/
-// char/enum/string elements are copied by value on every read (Ch3): no
-// handle to alias, so a `list of int`/`map of string` base is never
-// disqualified by this check.
-func lowEscapeContainerElemRisky(xT: int): bool {
-    var ek: TypeKind
-
-    if typeKind(xT) != TyList and typeKind(xT) != TyMap {
-        return false
-    }
-    ek = typeKind(typeElem(xT))
-    return not (ek == TyInt or ek == TyBool or ek == TyFixed or ek == TyChar or ek == TyEnum or ek == TyStr)
-}
-
 // lowEscapeWalkExpr recurses through e classifying every child position by
 // the rules above; it never disqualifies e's OWN top-level identity (that's
 // the caller's job -- see lowEscapeHandoff, called separately at each of
@@ -2297,26 +2376,16 @@ func lowEscapeWalkExpr(e: int) {
         lowEscapeWalkExpr(binLeft(e))
         lowEscapeWalkExpr(binRight(e))
     } else if k == ExIndex {
-        // Review fix (Critical): `l[i]`/`m[k]` reads back the SAME element
-        // handle the container itself still owns (Ch3 reference semantics)
-        // -- if that handle later escapes (assigned to a global, returned,
-        // ...) and the container is ALSO freed at scope exit, that's a
-        // double-free (reviewer's repro: `gSaved = items[0]` then `items`'s
-        // own scope-exit element-free loop frees the same handle `gSaved`
-        // holds). The plan's rule 3 said "index-read source is fine" --
-        // true for Str/Text (a byte/char copy, no handle) but not for
-        // List/Map (the coordinator's ruling: default-deny/no-UAF governs
-        // over that wording here). Disqualify the CONTAINER whenever it's
-        // index-READ (not index-WRITE -- lowEscapeWalkAssign's own LHS
-        // branch never reaches this via a plain write-target base, only via
-        // a nested read inside a computed base/index, where disqualifying
-        // is still correct). Kept the by-value-vs-reference element
-        // distinction (lowEscapeContainerElemRisky) rather than
-        // disqualifying uniformly: it's one extra typeKind check, and it
-        // keeps a `list of int` (no element handles at all) freeable.
-        if lowEscapeContainerElemRisky(exprTypeGet(indexX(e))) {
-            lowEscapeHandoff(indexX(e))
-        }
+        // ARC Task 5 DELETED the pre-Task-5 "disqualify the container
+        // whenever it's index-READ" rule that used to live here (`l[i]`/
+        // `m[k]` reading back the same element handle the container itself
+        // still owns -- the pre-ARC 4e double-free class this rule existed
+        // to prevent): `l[i]`/`m[k]` feeding a NAMED-SLOT store now always
+        // retains its own independent copy (lowCountedStore's own
+        // retain-unless-birth rule, Task 4; a map subscript is additionally
+        // ALREADY retained at the READ itself, IMapGet's own printer, Task
+        // 3) -- the container's own scope-exit release only ever touches
+        // its OWN reference, never the escaped copy's. Just recurse.
         lowEscapeWalkExpr(indexX(e))
         lowEscapeWalkExpr(indexI(e))
     } else if k == ExSlice {
@@ -2359,18 +2428,14 @@ func lowEscapeWalkAssign(s: int) {
         // index-READ of `matrix` (needed to reach the inner container),
         // walked normally here and so still caught.
         //
-        // Final-review fix (Critical 2, same rule as
-        // lowEscapeWalkMethodCall's push/add/unshift above): `m[k] = v`
-        // (IMapSet -- lowIndexAssign) stores v's own handle straight into an
-        // element slot exactly like push does. lowEscapeContainerElemRisky
-        // already gates this to List/Map bases whose element kind can carry
-        // a handle (a `map of int`/`list of int` element write copies a
-        // value, no aliasing risk); when it does apply and rhs isn't fresh,
-        // the container must be disqualified too, or its own element-free
-        // loop double-frees whatever handle rhs still shares ownership of.
-        if lowEscapeContainerElemRisky(exprTypeGet(indexX(lhs))) and not lowEscapeFreshInit(rhs) {
-            lowEscapeHandoff(indexX(lhs))
-        }
+        // ARC Task 5 DELETED the pre-Task-5 "`m[k] = v`/`lst[i] = v` with a
+        // non-fresh rhs also disqualifies the container" rule that used to
+        // live here (the "non-fresh-push receiver" rule's index-assign
+        // twin): lowIndexAssign now ALWAYS retains a non-birth element
+        // store before it lands (IListSetRetain/IMapSetRetain), so the
+        // container holds its own independently-owned copy regardless of
+        // what else references the same handle -- its own scope-exit
+        // release is sound unconditionally now. Just recurse.
         lowEscapeWalkExpr(indexX(lhs))
         lowEscapeWalkExpr(indexI(lhs))
     } else {
@@ -3042,28 +3107,63 @@ func lowAssign(s: int): int {
     return lowCountedStore(lowExpr(lhs), assignRHS(s), ty)
 }
 
-// lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign): an
-// array/list element write reuses IndexRef as an lvalue through
-// lowStoreStmt (same printer contract as a read); string/text writes have
-// no lvalue form and lower to their set-index intrinsic as an ExprStmt
-// instead; a map write's rhs goes through lowCoerceStr against the map's
-// OWN elem type -- IMapSet's C printer copies rhs's OWN struct type into a
-// temp before taking its address (same class of bug lowListMethod's
-// push/unshift value guards against).
+// lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign): a fixed
+// ARRAY element write (never heap-typed -- Ch12's serializable-field rules
+// and this language's own array usage never construct a Text/List/Map
+// array; ARC's own staged migration leaves arrays qualified/untouched, same
+// as record fields, pending a later task) reuses IndexRef as an lvalue
+// through lowStoreStmt (same printer contract as a read); string/text
+// writes have no lvalue form and lower to their set-index intrinsic as an
+// ExprStmt instead.
+//
+// ARC Task 5: a LIST element write of a heap-tracked elem type routes
+// through the NEW IListSet/IListSetRetain intrinsic pair instead of
+// lowStoreStmt -- lowStoreStmt's own ITextStore branch mutates an EXISTING
+// Text box IN PLACE (safe only when provably unshared), which a container
+// element is NOT once elements are aliasable/counted (the same class of bug
+// ARC Task 4's Bug 2 fixed for named slots); IListSet(Retain) additionally
+// releases the REPLACED element, which the old plain-Assign path never did
+// at all. A non-heap-tracked list element (int/bool/fixed/char/enum/string)
+// keeps the OLD lowStoreStmt/IndexRef path unchanged -- no rc traffic to
+// add there. A MAP write's rhs goes through lowCoerceStr against the map's
+// OWN elem type -- IMapSet(Retain)'s C printer copies rhs's OWN struct type
+// into a temp before taking its address (same class of bug lowListMethod's
+// push/unshift value guards against) -- and, for a heap-tracked value type,
+// picks IMapSetRetain over IMapSet by the SAME retain-unless-birth rule
+// lowListMethod's push/unshift now use (lowElemIsBirth); cprint.cla's
+// shared IMapSet(Retain) printer branch ALWAYS emits the upsert's
+// has/get/release guard for the replaced value, regardless of which name is
+// chosen (see fpMapReleaseGuard's own doc comment).
 func lowIndexAssign(lhs: int, rhsAst: int): int {
     var xk: TypeKind
     var x: int
     var i: int
     var rhs: int
+    var rawRhs: int
     var elemTy: int
+    var intrName: int
 
     xk = typeKind(exprTypeGet(indexX(lhs)))
     x = lowExpr(indexX(lhs))
     i = lowExpr(indexI(lhs))
     rhs = lowExpr(rhsAst)
-    if xk == TyArr or xk == TyList {
+    if xk == TyArr {
         elemTy = lowMustType(lhs)
         return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
+    } else if xk == TyList {
+        elemTy = lowMustType(lhs)
+        if not lowEscapeTrackableKind(irtKind(elemTy)) {
+            return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
+        }
+        rawRhs = rhs
+        intrName = IListSet()
+        if not lowElemIsBirth(rhsAst, rawRhs, elemTy) {
+            intrName = IListSetRetain()
+        }
+        rhs = lowCoerceStr(elemTy, rawRhs)
+        irExprListAppend(x, i)
+        irExprListAppend(i, rhs)
+        return newIRExprStmt(newIRIntr(intrName, x, irVoidT))
     } else if xk == TyStr {
         irExprListAppend(x, i)
         irExprListAppend(i, rhs)
@@ -3074,10 +3174,14 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         return newIRExprStmt(newIRIntr(ITextSetIndex(), x, irVoidT))
     } else if xk == TyMap {
         elemTy = irtElem(irExprType(x))
+        intrName = IMapSet()
+        if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
+            intrName = IMapSetRetain()
+        }
         rhs = lowCoerceStr(elemTy, rhs)
         irExprListAppend(x, i)
         irExprListAppend(i, rhs)
-        return newIRExprStmt(newIRIntr(IMapSet(), x, irVoidT))
+        return newIRExprStmt(newIRIntr(intrName, x, irVoidT))
     }
     lowUnsupported("index-assign of unsupported kind " + numToStr(int(xk)))
     return -1

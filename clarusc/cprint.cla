@@ -815,6 +815,47 @@ func fpTextConcat(a: int, b: int): text {
     return t
 }
 
+// fpMapReleaseGuard emits `if (rt_map_has(m, k)) { <ctype> old; rt_map_get(m,
+// k, &old); <heapFn>_release(old); }` -- the ARC Task 5 guard shared by
+// IMapSet(Retain) (an upsert must release whatever value k currently holds
+// before overwriting it) and IMapRemove (same, before removing the entry).
+// rt_map_get PANICS on an absent key (rt.h: "panics absent: map key not
+// found"), so the release only happens when rt_map_has confirms presence --
+// a fresh key's upsert (nothing to release) and remove's own documented
+// "silently succeeds if absent" (language reference) both fall through the
+// guard's false branch as a no-op either way.
+//
+// m/k are ALREADY-COMPUTED C expression strings (fpExpr(a0)/fpStrAddr(a1)),
+// never raw IR nodes -- callers compute them exactly ONCE and pass the
+// resulting text here, so a side-effecting key expression (e.g.
+// `m[f()] = v`) is never re-evaluated by the has-check, the get, AND the
+// caller's own later set/remove call: reusing an already-printed STRING in
+// multiple fpEmit lines is safe (no re-execution), unlike calling fpExpr/
+// fpStrAddr on the SAME IR node a second time (which WOULD re-run the
+// underlying C computation -- see ARC Task 4's Bug 1).
+//
+// The guard's own read is a raw `rt_map_get`, deliberately NOT the existing
+// IMapGet intrinsic (which always retains its result into a tracked temp,
+// per ARC Task 3): reusing IMapGet here would retain then immediately
+// release the SAME value, netting to a no-op instead of the intended -1 --
+// a silent leak (the evicted old value never actually gets released),
+// caught only by a `.leaks` count staying nonzero when it should hit zero,
+// not by any crash.
+func fpMapReleaseGuard(m: text, k: text, elemT: int) {
+    var ctype: string
+    var old: text
+
+    ctype = cpCType(elemT)
+    old = fpNewTmp(ctype)
+    fpHandoff(old) // this guard's own explicit release below is old's only release
+    fpEmit("if (rt_map_has(" + m + ", " + k + ")) {")
+    fpIndent = fpIndent + 1
+    fpEmit("rt_map_get(" + m + ", " + k + ", &" + old + ");")
+    fpEmit(fpHeapFn(irtKind(elemT)) + "_release(" + old + ");")
+    fpIndent = fpIndent - 1
+    fpEmit(toText("}"))
+}
+
 // fpArgAt walks n steps down an Intr's argument chain from head (via
 // irExprNext) and returns the expr index found there -- for the UI canvas
 // intrinsics below, whose fixed positional argument count (inst, widget
@@ -869,6 +910,11 @@ func fpIntrCall(x: int): text {
     var freeVarBuf: text
     var argT: int
     var argK: IRKind
+    var elemT: int
+    var ctype: string
+    var old: text
+    var ref: text
+    var heapFn: string
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -1069,7 +1115,7 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- list ----
-    } else if nm == IListPush() or nm == IListUnshift() {
+    } else if nm == IListPush() or nm == IListUnshift() or nm == IListPushRetain() or nm == IListUnshiftRetain() {
         // v goes through fpCopyToTemp, not fpAddrable: push/unshift can
         // realloc a0's backing store, and if v were instead a raw
         // rt_list_at pointer (fpAddrable's IndexRef shortcut, e.g.
@@ -1081,8 +1127,21 @@ func fpIntrCall(x: int): text {
         // by the list) -- untrack it so it isn't freed at end of statement
         // (memory-audit Task 6; a no-op if v isn't text).
         fpHandoff(v)
+        // ARC Task 5: lowListMethod (lower.cla) picks the *Retain name
+        // whenever the pushed value is NON-birth (a bare local/global/
+        // element read, not a fresh literal/concat/slice/call result) --
+        // the container is a counted owner now, so a non-birth push needs
+        // its OWN +1, the same retain-unless-birth rule lowCountedStore
+        // established for named-slot stores. Retain BEFORE the push call --
+        // v is already the fully-materialized, single-evaluated value at
+        // this point (fpCopyToTemp above), so ordering here can't
+        // re-trigger any side effect, only correctly bump the right box's
+        // rc before the list takes its own reference to it.
+        if nm == IListPushRetain() or nm == IListUnshiftRetain() {
+            fpEmit(fpHeapFn(irtKind(irExprType(a1))) + "_retain(" + v + ");")
+        }
         fn = "rt_list_push"
-        if nm == IListUnshift() {
+        if nm == IListUnshift() or nm == IListUnshiftRetain() {
             fn = "rt_list_unshift"
         }
         fpEmit(fn + "(" + l + ", &(" + v + "));")
@@ -1127,7 +1186,58 @@ func fpIntrCall(x: int): text {
         }
         return t
     } else if nm == IListRemove() {
-        fpEmit("rt_list_remove(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
+        // ARC Task 5: release the removed element BEFORE rt_list_remove --
+        // once removed, it's unreachable through l, so this is the last
+        // chance to release the container's own reference to it. l/a1's own
+        // C strings are computed ONCE (l, s0 below) and reused for both the
+        // read and the removal call, so an index expression with a side
+        // effect (e.g. `items.remove(f())`) is never evaluated twice.
+        l = fpExpr(a0)
+        s0 = fpExpr(a1)
+        elemT = irtElem(irExprType(a0))
+        if fpIsHandleType(elemT) {
+            ctype = cpCType(elemT)
+            old = fpNewTmp(ctype)
+            fpHandoff(old) // never auto-freed -- this branch's own release below is the only one
+            fpEmit(old + " = (*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")));")
+            fpEmit(fpHeapFn(irtKind(elemT)) + "_release(" + old + ");")
+        }
+        fpEmit("rt_list_remove(" + l + ", (int32_t)(" + s0 + "));")
+        return toText("")
+    } else if nm == IListSet() or nm == IListSetRetain() {
+        // ARC Task 5: `lst[i] = v` for a heap-typed element (lowIndexAssign,
+        // lower.cla) -- replaces the pre-Task-5 plain-Assign/IndexRef-lvalue
+        // path for exactly this case (a non-heap element's index-write is
+        // still the ordinary Assign path, untouched). l/i are each computed
+        // ONCE (l, s0) and reused for BOTH the old-element read+release and
+        // the new-element write, so an index expression with a side effect
+        // is never evaluated twice -- same reasoning as IListRemove above.
+        //
+        // Retain-new-BEFORE-release-old (IListSetRetain only) is the
+        // self-overwrite safety ordering (`lst[i] = lst[i]`): a list
+        // index-READ is an unretained borrow (unlike a map subscript read,
+        // which IMapGet always retains -- see fpMapReleaseGuard's own
+        // comment for why map-set's guard can safely run release-before-
+        // retain instead), so if new and old happen to be the SAME handle,
+        // retaining first guarantees the release that follows can never
+        // drop its rc to zero. v goes through fpCopyToTemp, not fpAddrable,
+        // for the same realloc-safety reason as IListPush/IMapSet above.
+        l = fpExpr(a0)
+        s0 = fpExpr(a1)
+        elemT = irExprType(a2)
+        ctype = cpCType(elemT)
+        ref = "(*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")))"
+        v = fpCopyToTemp(a2)
+        fpHandoff(v)
+        heapFn = fpHeapFn(irtKind(elemT))
+        if nm == IListSetRetain() {
+            fpEmit(heapFn + "_retain(" + v + ");")
+        }
+        old = fpNewTmp(ctype)
+        fpHandoff(old)
+        fpEmit(old + " = " + ref + ";")
+        fpEmit(heapFn + "_release(" + old + ");")
+        fpEmit(ref + " = " + v + ";")
         return toText("")
     } else if nm == IListCount() {
         return "rt_list_count(" + fpExpr(a0) + ")"
@@ -1149,7 +1259,7 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- map ----
-    } else if nm == IMapSet() {
+    } else if nm == IMapSet() or nm == IMapSetRetain() {
         // v goes through fpCopyToTemp, not fpAddrable, for the same reason
         // as list_push/unshift above: map_set grows m's key/value arrays on
         // a new key, so a raw rt_list_at-derived pointer passed as v (e.g.
@@ -1160,10 +1270,30 @@ func fpIntrCall(x: int): text {
         // see IMapGet below.)
         m = fpExpr(a0)
         k = fpStrAddr(a1)
+        // ARC Task 5: `m[k] = v` is an UPSERT -- whatever k currently holds
+        // (if anything) is about to be discarded, so it must be released
+        // first, guarded by rt_map_has (rt_map_get panics on an absent key,
+        // rt.h) -- see fpMapReleaseGuard's own doc comment for the guard's
+        // exact shape and why it's a raw, non-retaining get.
+        if fpIsHandleType(irExprType(a2)) {
+            fpMapReleaseGuard(m, k, irExprType(a2))
+        }
         v = fpCopyToTemp(a2)
         // v is stored into the map -- same handoff reasoning as
         // IListPush/IListUnshift above (memory-audit Task 6).
         fpHandoff(v)
+        // ARC Task 5: lowIndexAssign picks IMapSetRetain whenever v is
+        // NON-birth (same retain-unless-birth rule as IListPush(Retain)
+        // above) -- ordering relative to the guard above doesn't matter for
+        // correctness (a non-birth source can never alias m's OWN current,
+        // unretained slot value: the only way to read that value at all,
+        // `m[k]`, always retains via IMapGet, making it birth, never
+        // non-birth -- see IMapSetRetain's own ir.cla doc comment), so this
+        // matches the brief's own worked example ordering (guard, then
+        // retain, then set) directly.
+        if nm == IMapSetRetain() {
+            fpEmit(fpHeapFn(irtKind(irExprType(a2))) + "_retain(" + v + ");")
+        }
         fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
         return toText("")
     } else if nm == IMapGet() {
@@ -1203,7 +1333,16 @@ func fpIntrCall(x: int): text {
     } else if nm == IMapHas() {
         return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IMapRemove() {
-        fpEmit("rt_map_remove(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        // ARC Task 5: `m.remove(k)` "silently succeeds if absent" (language
+        // reference) -- release whatever k currently holds (if anything)
+        // via the SAME has-guarded raw read IMapSet(Retain) uses, then
+        // remove regardless of whether the guard fired.
+        m = fpExpr(a0)
+        k = fpStrAddr(a1)
+        if fpIsHandleType(irtElem(irExprType(a0))) {
+            fpMapReleaseGuard(m, k, irtElem(irExprType(a0)))
+        }
+        fpEmit("rt_map_remove(" + m + ", " + k + ");")
         return toText("")
     } else if nm == IMapCount() {
         return "rt_map_count(" + fpExpr(a0) + ")"

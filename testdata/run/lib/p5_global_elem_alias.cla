@@ -7,26 +7,41 @@
 // aliasing analysis, so it always froze both `p5Gl` (element-freeing its
 // one stored handle) and `p5GSaved` (freeing the very same handle again):
 // SIGSEGV. The globals escape pre-pass fixed the crash by disqualifying
-// both from `cl_free_globals` -- still true today (Task 6's pass, untouched
-// by ARC Task 4): both `p5Gl` and `p5GSaved` are globals, so NEITHER gets a
-// scope-exit release at all (that only ever applies to locals) -- their
-// only possible release is `cl_free_globals`, which stays empty.
+// both from `cl_free_globals`.
 //
 // ARC Task 4 (counted named-slot stores): `p5GSaved = p5Gl[0]` is a
 // NAMED-SLOT store (global) whose source is a non-birth list-index read
 // (`EIndexRef`, a raw borrow -- see p4_elem_escape.cla's own comment for
 // why that's different from a map subscript) -- `lowCountedStore` retains
-// it FIRST, then releases `p5GSaved`'s OLD (default-empty) handle: a real
-// free now, not the permanent orphan-on-overwrite this comment used to
-// describe (confirmed against the emitted C: `rt_text_retain(cv___store1);
-// rt_text_release(cv_p5GSaved); cv_p5GSaved = cv___store1;`). Expected
-// strict-mode leak count: 4 (see ../p5_global_elem_alias.leaks, dropped
-// from 6) -- `p5Gl`'s own list (struct box + backing-array handle, 2
-// blocks; a global, never released -- Task 6's still-unmigrated slot class)
-// plus the one `"x"+"y"` text handle it holds (2 blocks, shared with
-// `p5GSaved`'s now-live retained reference, counted once; also never
-// released, same reason). Not a bug -- global cleanup is explicitly out of
-// this task's scope, staged for Task 6.
+// it FIRST, then releases `p5GSaved`'s OLD (default-empty) handle
+// (confirmed against the emitted C: `rt_text_retain(cv___store1);
+// rt_text_release(cv_p5GSaved); cv_p5GSaved = cv___store1;`).
+//
+// ARC Task 5 (counted container element slots) DELETED the old
+// index-read-disqualifies-the-container consult -- `p5Gl` is no longer
+// disqualified by `p5GSaved = p5Gl[0]`'s own read at all, and (unlike
+// `p5GSaved`) nothing ELSE in this fixture disqualifies it either (`p5Gl`'s
+// own push source, `"x"+"y"`, is a fresh concat -- rule 2 never fires), so
+// `p5Gl` now QUALIFIES for `cl_free_globals`'s real, deep release --
+// confirmed against the emitted C: `cl_free_globals` now contains `{
+// int32_t i; for (...) rt_text_release(*(rt_text **)rt_list_at(cv_p5Gl,
+// i)); } rt_list_release(cv_p5Gl);`. Safe: the element it walks is `p5Gl`'s
+// OWN reference to the shared "xy" text (rc==2, since `p5GSaved`'s own read
+// retained independently above), so the walk's release only drops rc to 1,
+// never to 0.
+//
+// `p5GSaved` itself stays globally-unqualified, for the SAME orthogonal
+// rule p4_elem_escape.cla's own updated comment explains in full (rule 4:
+// a bare-identifier LHS reassigned from a rhs -- `p5Gl[0]`, an ExIndex --
+// `lowEscapeFreshInit` doesn't recognize as fresh; untouched by Task 5).
+// Expected strict-mode leak count: 2 (see ../p5_global_elem_alias.leaks,
+// dropped from 4) -- `p5Gl`'s own list structure (struct box +
+// backing-array handle) is now freed (2 blocks closed); the shared "xy"
+// text's own remaining rc==1 (2 blocks) is held solely by `p5GSaved`,
+// itself never released (`cl_free_globals` stays empty for it -- Task 6's
+// still-unmigrated globals-qualification scope, via rule 4, not the
+// deleted element-read consult). Not a bug -- explicitly out of Task 5's
+// scope.
 
 var p5Gl: list of text
 var p5GSaved: text

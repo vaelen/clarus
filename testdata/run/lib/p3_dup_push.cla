@@ -5,16 +5,36 @@
 // whole-branch review, probe P3): the same LOCAL text pushed twice into a
 // GLOBAL list of text. Before the fix, a non-fresh push value disqualified
 // only the value itself, never the receiving container -- `p3Gl`'s
-// element-free loop (now reachable at all once globals are tracked, per
-// Critical 1) would free `p3X`'s handle twice, once per element slot.
-// Critical 2's rule disqualifies the receiver too, the first time a
-// non-literal/non-concat value is pushed: `p3Gl` never gets an element-free
-// loop, so both slots (aliasing the one handle) are simply abandoned.
-// Expected strict-mode leak count: 4 (see ../p3_dup_push.leaks) -- `p3X`'s
-// text (struct box + data handle, 2 blocks; already disqualified by the
-// existing local-var escape pass, since it's handed to `push` by bare
-// identifier) plus `p3Gl`'s own list (struct box + backing-array handle
-// holding two pointers to that one shared text handle, 2 blocks).
+// element-free loop (once globals were tracked at all, per Critical 1)
+// would have freed `p3X`'s handle twice, once per element slot. The
+// 4e/pre-ARC fix disqualified the receiver too, on the first non-fresh
+// push: `p3Gl` never got an element-free loop, so both slots (aliasing the
+// one handle) were simply abandoned. Expected 4e/pre-ARC leak count: 4 --
+// `p3X`'s text (struct box + data handle, 2 blocks) plus `p3Gl`'s own list
+// (struct box + backing-array handle, 2 blocks).
+//
+// ARC Task 5 (counted container element slots) closes this fixture to
+// ZERO, by two independent, jointly-necessary changes, both confirmed
+// against the emitted C:
+//   1. EVERY push now retains its non-birth value first (`p3X` is a bare
+//      identifier, non-birth) -- `p3Gl`'s TWO element slots each carry
+//      their OWN +1 of the shared handle after both pushes run (rc==3:
+//      `p3X`'s own original +1, plus one retain per push).
+//   2. Task 5 DELETED the "non-fresh-push disqualifies the receiver"
+//      consult that used to keep `p3Gl` out of ANY deep release --
+//      `p3Gl` now qualifies for `cl_free_globals`'s real element-walk
+//      release (`{ int32_t i; for (...) rt_text_release(*(rt_text
+//      **)rt_list_at(cv_p3Gl, i)); } rt_list_release(cv_p3Gl);`), which
+//      releases BOTH slots -- rc 3 -> 2 -> 1, still never zero from this
+//      walk alone.
+// `p3X` itself, as a LOCAL fed to two push arguments, is now a
+// shallow-release-safe handoff (Task 5's own `lowEscapeWalkArgsSafeHandoff`
+// -- the pushed-value argument no longer routes through `lowFreeUnsafe`'s
+// full skip) -- confirmed against the emitted C: `rt_text_release(cv_p3X);`
+// at scope exit, dropping rc 1 -> 0, the FINAL release that actually
+// disposes the box. No leak, no double-free: the three releases (two
+// element-walk, one local scope-exit) exactly balance the three owners
+// (`p3X`'s own reference plus the two independent push retains).
 
 var p3Gl: list of text
 
