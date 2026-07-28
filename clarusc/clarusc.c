@@ -2083,6 +2083,7 @@ static rt_list * cv_lowFreeNames;
 static rt_map * cv_lowFreeTypes;
 static rt_map * cv_lowFreeDisq;
 static int32_t cv_lowRetTempN;
+static int32_t cv_lowRetTempIdx;
 static int32_t cv_lowWinEscGen;
 static int32_t cv_lowGlobalsEscGen;
 static rt_list * cv_cpTypeBuf;
@@ -2258,6 +2259,7 @@ static void clar_init_globals(void) {
     cv_lowFreeTypes = rt_map_new(sizeof(int32_t));
     cv_lowFreeDisq = rt_map_new(sizeof(int32_t));
     cv_lowRetTempN = 0;
+    cv_lowRetTempIdx = 0;
     cv_lowWinEscGen = 0;
     cv_lowGlobalsEscGen = 0;
     cv_cpTypeBuf = rt_list_new(sizeof(rt_text *));
@@ -17510,12 +17512,16 @@ static int32_t clar_fn_lowFor(int32_t cv_s) {
 }
 
 static int32_t clar_fn_lowNewReturnTemp(void) {
+    if (cv_lowRetTempIdx != (-(1))) {
+        return cv_lowRetTempIdx;
+    }
     cv_lowRetTempN = (cv_lowRetTempN + 1);
     clar_str_255 t1;
     t1 = clar_fn_numToStr(cv_lowRetTempN);
     clar_str_255 t2;
     rt_str_concat((uint8_t*)&t2, (const uint8_t*)&(clar_lit_634), (const uint8_t*)&(t1));
-    return clar_fn_intern(t2);
+    cv_lowRetTempIdx = clar_fn_intern(t2);
+    return cv_lowRetTempIdx;
     return 0;
 }
 
@@ -17941,6 +17947,7 @@ static void clar_fn_lowEscapeCollectCandidates(int32_t cv_bodyBlk) {
 
 static void clar_fn_lowRunEscapePrepass(int32_t cv_bodyBlk) {
     cv_lowFuncGen = (cv_lowFuncGen + 1);
+    cv_lowRetTempIdx = (-(1));
     while (1) {
         if (!((rt_list_count(cv_lowFreeNames) > 0))) break;
         clar_str_255 t1;
@@ -20741,111 +20748,89 @@ static rt_text * clar_fn_fpExpr(int32_t cv_e) {
     cv___switch29 = 0;
     rt_text * cv___ret6;
     cv___ret6 = rt_text_new();
-    rt_text * cv___ret7;
-    cv___ret7 = rt_text_new();
-    rt_text * cv___ret8;
-    cv___ret8 = rt_text_new();
-    rt_text * cv___ret9;
-    cv___ret9 = rt_text_new();
-    rt_text * cv___ret10;
-    cv___ret10 = rt_text_new();
-    rt_text * cv___ret11;
-    cv___ret11 = rt_text_new();
-    rt_text * cv___ret12;
-    cv___ret12 = rt_text_new();
-    rt_text * cv___ret13;
-    cv___ret13 = rt_text_new();
-    rt_text * cv___ret14;
-    cv___ret14 = rt_text_new();
-    rt_text * cv___ret15;
-    cv___ret15 = rt_text_new();
-    rt_text * cv___ret16;
-    cv___ret16 = rt_text_new();
-    rt_text * cv___ret17;
-    cv___ret17 = rt_text_new();
     cv___switch29 = clar_fn_irExprKind(cv_e);
     if (cv___switch29 == 0) {
-        rt_text_release(cv___ret16);
+        rt_text_release(cv___ret6);
         rt_text * t1 = NULL;
         t1 = clar_fn_toText(clar_fn_numToStr(clar_fn_irIntConstV(cv_e)));
-        cv___ret16 = t1;
-        rt_text_retain(cv___ret16);
-        return cv___ret16;
+        cv___ret6 = t1;
+        rt_text_retain(cv___ret6);
+        return cv___ret6;
     } else {
         if (cv___switch29 == 1) {
-            rt_text_release(cv___ret15);
+            rt_text_release(cv___ret6);
             clar_str_255 t2;
             t2 = clar_fn_numToStr(clar_fn_irStrConstIdx(cv_e));
             clar_str_255 t3;
             rt_str_concat((uint8_t*)&t3, (const uint8_t*)&(clar_lit_719), (const uint8_t*)&(t2));
             rt_text * t4 = NULL;
             t4 = clar_fn_toText(t3);
-            cv___ret15 = t4;
-            rt_text_retain(cv___ret15);
-            return cv___ret15;
+            cv___ret6 = t4;
+            rt_text_retain(cv___ret6);
+            return cv___ret6;
         } else {
             if (cv___switch29 == 2) {
-                rt_text_release(cv___ret14);
+                rt_text_release(cv___ret6);
                 clar_str_255 t5;
                 t5 = clar_fn_poolGet(clar_fn_irVarRefName(cv_e));
                 clar_str_255 t6;
                 rt_str_concat((uint8_t*)&t6, (const uint8_t*)&(clar_lit_718), (const uint8_t*)&(t5));
                 rt_text * t7 = NULL;
                 t7 = clar_fn_toText(t6);
-                cv___ret14 = t7;
-                rt_text_retain(cv___ret14);
-                return cv___ret14;
+                cv___ret6 = t7;
+                rt_text_retain(cv___ret6);
+                return cv___ret6;
             } else {
                 if (cv___switch29 == 5) {
-                    rt_text_release(cv___ret13);
+                    rt_text_release(cv___ret6);
                     rt_text * t8 = NULL;
                     t8 = clar_fn_fpBin(cv_e);
-                    cv___ret13 = t8;
-                    rt_text_retain(cv___ret13);
-                    return cv___ret13;
+                    cv___ret6 = t8;
+                    rt_text_retain(cv___ret6);
+                    return cv___ret6;
                 } else {
                     if (cv___switch29 == 6) {
-                        rt_text_release(cv___ret12);
+                        rt_text_release(cv___ret6);
                         rt_text * t9 = NULL;
                         t9 = clar_fn_fpUn(cv_e);
-                        cv___ret12 = t9;
-                        rt_text_retain(cv___ret12);
-                        return cv___ret12;
+                        cv___ret6 = t9;
+                        rt_text_retain(cv___ret6);
+                        return cv___ret6;
                     } else {
                         if (cv___switch29 == 7) {
-                            rt_text_release(cv___ret11);
+                            rt_text_release(cv___ret6);
                             rt_text * t10 = NULL;
                             t10 = clar_fn_fpConv(cv_e);
-                            cv___ret11 = t10;
-                            rt_text_retain(cv___ret11);
-                            return cv___ret11;
+                            cv___ret6 = t10;
+                            rt_text_retain(cv___ret6);
+                            return cv___ret6;
                         } else {
                             if (cv___switch29 == 9) {
-                                rt_text_release(cv___ret10);
+                                rt_text_release(cv___ret6);
                                 rt_text * t11 = NULL;
                                 t11 = clar_fn_fpIntrCall(cv_e);
-                                cv___ret10 = t11;
-                                rt_text_retain(cv___ret10);
-                                return cv___ret10;
+                                cv___ret6 = t11;
+                                rt_text_retain(cv___ret6);
+                                return cv___ret6;
                             } else {
                                 if (cv___switch29 == 4) {
-                                    rt_text_release(cv___ret9);
+                                    rt_text_release(cv___ret6);
                                     rt_text * t12 = NULL;
                                     t12 = clar_fn_fpIndexRef(cv_e);
-                                    cv___ret9 = t12;
-                                    rt_text_retain(cv___ret9);
-                                    return cv___ret9;
+                                    cv___ret6 = t12;
+                                    rt_text_retain(cv___ret6);
+                                    return cv___ret6;
                                 } else {
                                     if (cv___switch29 == 3) {
-                                        rt_text_release(cv___ret8);
+                                        rt_text_release(cv___ret6);
                                         rt_text * t13 = NULL;
                                         t13 = clar_fn_fpFieldRef(cv_e);
-                                        cv___ret8 = t13;
-                                        rt_text_retain(cv___ret8);
-                                        return cv___ret8;
+                                        cv___ret6 = t13;
+                                        rt_text_retain(cv___ret6);
+                                        return cv___ret6;
                                     } else {
                                         if (cv___switch29 == 10) {
-                                            rt_text_release(cv___ret7);
+                                            rt_text_release(cv___ret6);
                                             clar_str_255 t14;
                                             t14 = clar_fn_poolGet(clar_fn_irNewRecName(cv_e));
                                             clar_str_255 t15;
@@ -20854,9 +20839,9 @@ static rt_text * clar_fn_fpExpr(int32_t cv_e) {
                                             rt_str_concat((uint8_t*)&t16, (const uint8_t*)&(t15), (const uint8_t*)&(clar_lit_717));
                                             rt_text * t17 = NULL;
                                             t17 = clar_fn_toText(t16);
-                                            cv___ret7 = t17;
-                                            rt_text_retain(cv___ret7);
-                                            return cv___ret7;
+                                            cv___ret6 = t17;
+                                            rt_text_retain(cv___ret6);
+                                            return cv___ret6;
                                         } else {
                                             if (cv___switch29 == 8) {
                                                 rt_text_release(cv___ret6);
@@ -20876,12 +20861,12 @@ static rt_text * clar_fn_fpExpr(int32_t cv_e) {
             }
         }
     }
-    rt_text_release(cv___ret17);
+    rt_text_release(cv___ret6);
     rt_text * t19 = NULL;
     t19 = clar_fn_toText(clar_lit_3);
-    cv___ret17 = t19;
-    rt_text_retain(cv___ret17);
-    return cv___ret17;
+    cv___ret6 = t19;
+    rt_text_retain(cv___ret6);
+    return cv___ret6;
     return NULL;
 }
 
@@ -20910,10 +20895,8 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
     cv_call = rt_text_new();
     rt_text * cv_t;
     cv_t = rt_text_new();
-    rt_text * cv___ret18;
-    cv___ret18 = rt_text_new();
-    rt_text * cv___ret19;
-    cv___ret19 = rt_text_new();
+    rt_text * cv___ret7;
+    cv___ret7 = rt_text_new();
     rt_text_store(cv_args, (const uint8_t*)&(clar_lit_3));
     cv_first = 1;
     cv_a = clar_fn_irCallFnArgsHead(cv_e);
@@ -20977,27 +20960,25 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
         clar_fn_fpEmit(t12);
         rt_text_release(t10);
         rt_text_release(t11);
-        rt_text_release(cv___ret18);
-        cv___ret18 = cv_t;
+        rt_text_release(cv___ret7);
+        cv___ret7 = cv_t;
         rt_text_free(cv_args);
-        rt_text_retain(cv___ret18);
-        return cv___ret18;
+        rt_text_retain(cv___ret7);
+        return cv___ret7;
     }
-    rt_text_release(cv___ret19);
-    cv___ret19 = cv_call;
+    rt_text_release(cv___ret7);
+    cv___ret7 = cv_call;
     rt_text_free(cv_args);
-    rt_text_retain(cv___ret19);
-    return cv___ret19;
+    rt_text_retain(cv___ret7);
+    return cv___ret7;
     return NULL;
 }
 
 static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
-    rt_text * cv___ret20;
-    cv___ret20 = rt_text_new();
-    rt_text * cv___ret21;
-    cv___ret21 = rt_text_new();
+    rt_text * cv___ret8;
+    cv___ret8 = rt_text_new();
     if (clar_fn_irtKind(clar_fn_irExprType(clar_fn_irFieldRefX(cv_e))) == 12) {
-        rt_text_release(cv___ret20);
+        rt_text_release(cv___ret8);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(clar_fn_irFieldRefX(cv_e));
         rt_text * t2 = NULL;
@@ -21011,14 +20992,14 @@ static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
         clar_str_255 t5;
         t5 = clar_fn_poolGet(clar_fn_irFieldRefName(cv_e));
         rt_text_concat(t4, t3, (const uint8_t*)&(t5), NULL);
-        cv___ret20 = t4;
+        cv___ret8 = t4;
         rt_text_release(t1);
         rt_text_release(t2);
         rt_text_release(t3);
-        rt_text_retain(cv___ret20);
-        return cv___ret20;
+        rt_text_retain(cv___ret8);
+        return cv___ret8;
     }
-    rt_text_release(cv___ret21);
+    rt_text_release(cv___ret8);
     rt_text * t6 = NULL;
     t6 = clar_fn_fpExpr(clar_fn_irFieldRefX(cv_e));
     rt_text * t7 = NULL;
@@ -21032,27 +21013,23 @@ static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
     clar_str_255 t10;
     t10 = clar_fn_poolGet(clar_fn_irFieldRefName(cv_e));
     rt_text_concat(t9, t8, (const uint8_t*)&(t10), NULL);
-    cv___ret21 = t9;
+    cv___ret8 = t9;
     rt_text_release(t6);
     rt_text_release(t7);
     rt_text_release(t8);
-    rt_text_retain(cv___ret21);
-    return cv___ret21;
+    rt_text_retain(cv___ret8);
+    return cv___ret8;
     return NULL;
 }
 
 static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
     int32_t cv_xt;
     cv_xt = 0;
-    rt_text * cv___ret22;
-    cv___ret22 = rt_text_new();
-    rt_text * cv___ret23;
-    cv___ret23 = rt_text_new();
-    rt_text * cv___ret24;
-    cv___ret24 = rt_text_new();
+    rt_text * cv___ret9;
+    cv___ret9 = rt_text_new();
     cv_xt = clar_fn_irExprType(clar_fn_irIndexRefX(cv_e));
     if (clar_fn_irtKind(cv_xt) == 11) {
-        rt_text_release(cv___ret22);
+        rt_text_release(cv___ret9);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(clar_fn_irIndexRefX(cv_e));
         rt_text * t2 = NULL;
@@ -21077,7 +21054,7 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
         rt_text * t9 = NULL;
         t9 = rt_text_new();
         rt_text_concat(t9, t7, (const uint8_t*)&(clar_lit_726), NULL);
-        cv___ret22 = t9;
+        cv___ret9 = t9;
         rt_text_release(t1);
         rt_text_release(t2);
         rt_text_release(t3);
@@ -21085,11 +21062,11 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
         rt_text_release(t5);
         rt_text_release(t6);
         rt_text_release(t7);
-        rt_text_retain(cv___ret22);
-        return cv___ret22;
+        rt_text_retain(cv___ret9);
+        return cv___ret9;
     } else {
         if (clar_fn_irtKind(cv_xt) == 7) {
-            rt_text_release(cv___ret23);
+            rt_text_release(cv___ret9);
             clar_str_255 t10;
             t10 = clar_fn_cpCType(clar_fn_irExprType(cv_e));
             clar_str_255 t11;
@@ -21112,22 +21089,22 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
             rt_text * t18 = NULL;
             t18 = rt_text_new();
             rt_text_concat(t18, t16, (const uint8_t*)&(clar_lit_730), NULL);
-            cv___ret23 = t18;
+            cv___ret9 = t18;
             rt_text_release(t13);
             rt_text_release(t14);
             rt_text_release(t15);
             rt_text_release(t16);
             rt_text_release(t17);
-            rt_text_retain(cv___ret23);
-            return cv___ret23;
+            rt_text_retain(cv___ret9);
+            return cv___ret9;
         }
     }
-    rt_text_release(cv___ret24);
+    rt_text_release(cv___ret9);
     rt_text * t19 = NULL;
     t19 = clar_fn_toText(clar_lit_3);
-    cv___ret24 = t19;
-    rt_text_retain(cv___ret24);
-    return cv___ret24;
+    cv___ret9 = t19;
+    rt_text_retain(cv___ret9);
+    return cv___ret9;
     return NULL;
 }
 
@@ -21150,22 +21127,20 @@ static clar_str_255 clar_fn_cOp(clar_str_255 cv_op) {
 static rt_text * clar_fn_fpBin(int32_t cv_e) {
     clar_str_255 cv_op;
     cv_op = (clar_str_255){0};
-    rt_text * cv___ret25;
-    cv___ret25 = rt_text_new();
-    rt_text * cv___ret26;
-    cv___ret26 = rt_text_new();
+    rt_text * cv___ret10;
+    cv___ret10 = rt_text_new();
     clar_str_255 t1;
     t1 = clar_fn_poolGet(clar_fn_irBinOp(cv_e));
     rt_str_store((uint8_t*)&(cv_op), 255, (const uint8_t*)&(t1));
     if ((rt_str_cmp((const uint8_t*)&(cv_op), (const uint8_t*)&(clar_lit_22)) == 0) || (rt_str_cmp((const uint8_t*)&(cv_op), (const uint8_t*)&(clar_lit_23)) == 0)) {
-        rt_text_release(cv___ret25);
+        rt_text_release(cv___ret10);
         rt_text * t2 = NULL;
         t2 = clar_fn_fpAndOr(cv_e);
-        cv___ret25 = t2;
-        rt_text_retain(cv___ret25);
-        return cv___ret25;
+        cv___ret10 = t2;
+        rt_text_retain(cv___ret10);
+        return cv___ret10;
     }
-    rt_text_release(cv___ret26);
+    rt_text_release(cv___ret10);
     rt_text * t3 = NULL;
     t3 = clar_fn_fpExpr(clar_fn_irBinX(cv_e));
     rt_text * t4 = NULL;
@@ -21190,7 +21165,7 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
     rt_text * t11 = NULL;
     t11 = rt_text_new();
     rt_text_concat(t11, t9, (const uint8_t*)&(clar_lit_382), NULL);
-    cv___ret26 = t11;
+    cv___ret10 = t11;
     rt_text_release(t3);
     rt_text_release(t4);
     rt_text_release(t5);
@@ -21198,8 +21173,8 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
     rt_text_release(t8);
     rt_text_release(t9);
     rt_text_release(t10);
-    rt_text_retain(cv___ret26);
-    return cv___ret26;
+    rt_text_retain(cv___ret10);
+    return cv___ret10;
     return NULL;
 }
 
@@ -21238,10 +21213,8 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     cv_i = 0;
     int32_t cv_markCount;
     cv_markCount = 0;
-    rt_text * cv___ret27;
-    cv___ret27 = rt_text_new();
-    rt_text * cv___ret28;
-    cv___ret28 = rt_text_new();
+    rt_text * cv___ret11;
+    cv___ret11 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irBinX(cv_e));
     cv_x = t1;
@@ -21251,7 +21224,7 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     cv_markCount = rt_list_count(cv_fpStmtTmps);
     cv_cap = clar_fn_fpCaptureExpr(clar_fn_irBinY(cv_e));
     if (rt_list_count((cv_cap).cv_stmts) == 0) {
-        rt_text_release(cv___ret27);
+        rt_text_release(cv___ret11);
         rt_text * t3 = NULL;
         t3 = rt_text_new();
         rt_text_concat_sl(t3, (const uint8_t*)&(clar_lit_695), cv_x);
@@ -21272,14 +21245,14 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
         rt_text * t9 = NULL;
         t9 = rt_text_new();
         rt_text_concat(t9, t8, (const uint8_t*)&(clar_lit_382), NULL);
-        cv___ret27 = t9;
+        cv___ret11 = t9;
         rt_text_release(t3);
         rt_text_release(t4);
         rt_text_release(t5);
         rt_text_release(t7);
         rt_text_release(t8);
-        rt_text_retain(cv___ret27);
-        return cv___ret27;
+        rt_text_retain(cv___ret11);
+        return cv___ret11;
     }
     rt_text * t10 = NULL;
     t10 = clar_fn_fpNewTmp(clar_fn_cpCType(clar_fn_irExprType(cv_e)));
@@ -21357,10 +21330,10 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     rt_text * t26 = NULL;
     t26 = clar_fn_toText(clar_lit_737);
     clar_fn_fpEmit(t26);
-    rt_text_release(cv___ret28);
-    cv___ret28 = cv_t;
-    rt_text_retain(cv___ret28);
-    return cv___ret28;
+    rt_text_release(cv___ret11);
+    cv___ret11 = cv_t;
+    rt_text_retain(cv___ret11);
+    return cv___ret11;
     return NULL;
 }
 
@@ -21369,14 +21342,8 @@ static rt_text * clar_fn_fpUn(int32_t cv_e) {
     cv_x = rt_text_new();
     clar_str_255 cv_op;
     cv_op = (clar_str_255){0};
-    rt_text * cv___ret29;
-    cv___ret29 = rt_text_new();
-    rt_text * cv___ret30;
-    cv___ret30 = rt_text_new();
-    rt_text * cv___ret31;
-    cv___ret31 = rt_text_new();
-    rt_text * cv___ret32;
-    cv___ret32 = rt_text_new();
+    rt_text * cv___ret12;
+    cv___ret12 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irUnX(cv_e));
     cv_x = t1;
@@ -21384,52 +21351,52 @@ static rt_text * clar_fn_fpUn(int32_t cv_e) {
     t2 = clar_fn_poolGet(clar_fn_irUnOp(cv_e));
     rt_str_store((uint8_t*)&(cv_op), 255, (const uint8_t*)&(t2));
     if (rt_str_cmp((const uint8_t*)&(cv_op), (const uint8_t*)&(clar_lit_4)) == 0) {
-        rt_text_release(cv___ret29);
+        rt_text_release(cv___ret12);
         rt_text * t3 = NULL;
         t3 = rt_text_new();
         rt_text_concat_sl(t3, (const uint8_t*)&(clar_lit_738), cv_x);
         rt_text * t4 = NULL;
         t4 = rt_text_new();
         rt_text_concat(t4, t3, (const uint8_t*)&(clar_lit_739), NULL);
-        cv___ret29 = t4;
+        cv___ret12 = t4;
         rt_text_release(t3);
-        rt_text_retain(cv___ret29);
-        return cv___ret29;
+        rt_text_retain(cv___ret12);
+        return cv___ret12;
     } else {
         if (rt_str_cmp((const uint8_t*)&(cv_op), (const uint8_t*)&(clar_lit_24)) == 0) {
-            rt_text_release(cv___ret30);
+            rt_text_release(cv___ret12);
             rt_text * t5 = NULL;
             t5 = rt_text_new();
             rt_text_concat_sl(t5, (const uint8_t*)&(clar_lit_740), cv_x);
             rt_text * t6 = NULL;
             t6 = rt_text_new();
             rt_text_concat(t6, t5, (const uint8_t*)&(clar_lit_739), NULL);
-            cv___ret30 = t6;
+            cv___ret12 = t6;
             rt_text_release(t5);
-            rt_text_retain(cv___ret30);
-            return cv___ret30;
+            rt_text_retain(cv___ret12);
+            return cv___ret12;
         } else {
             if (rt_str_cmp((const uint8_t*)&(cv_op), (const uint8_t*)&(clar_lit_130)) == 0) {
-                rt_text_release(cv___ret31);
+                rt_text_release(cv___ret12);
                 rt_text * t7 = NULL;
                 t7 = rt_text_new();
                 rt_text_concat_sl(t7, (const uint8_t*)&(clar_lit_741), cv_x);
                 rt_text * t8 = NULL;
                 t8 = rt_text_new();
                 rt_text_concat(t8, t7, (const uint8_t*)&(clar_lit_739), NULL);
-                cv___ret31 = t8;
+                cv___ret12 = t8;
                 rt_text_release(t7);
-                rt_text_retain(cv___ret31);
-                return cv___ret31;
+                rt_text_retain(cv___ret12);
+                return cv___ret12;
             }
         }
     }
-    rt_text_release(cv___ret32);
+    rt_text_release(cv___ret12);
     rt_text * t9 = NULL;
     t9 = clar_fn_toText(clar_lit_3);
-    cv___ret32 = t9;
-    rt_text_retain(cv___ret32);
-    return cv___ret32;
+    cv___ret12 = t9;
+    rt_text_retain(cv___ret12);
+    return cv___ret12;
     return NULL;
 }
 
@@ -21440,77 +21407,67 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
     cv_op = 0;
     int32_t cv_n;
     cv_n = 0;
-    rt_text * cv___ret33;
-    cv___ret33 = rt_text_new();
-    rt_text * cv___ret34;
-    cv___ret34 = rt_text_new();
-    rt_text * cv___ret35;
-    cv___ret35 = rt_text_new();
-    rt_text * cv___ret36;
-    cv___ret36 = rt_text_new();
-    rt_text * cv___ret37;
-    cv___ret37 = rt_text_new();
-    rt_text * cv___ret38;
-    cv___ret38 = rt_text_new();
+    rt_text * cv___ret13;
+    cv___ret13 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irConvX(cv_e));
     cv_x = t1;
     cv_op = clar_fn_irConvOp(cv_e);
     if (cv_op == 0) {
-        rt_text_release(cv___ret33);
+        rt_text_release(cv___ret13);
         rt_text * t2 = NULL;
         t2 = rt_text_new();
         rt_text_concat_sl(t2, (const uint8_t*)&(clar_lit_742), cv_x);
         rt_text * t3 = NULL;
         t3 = rt_text_new();
         rt_text_concat(t3, t2, (const uint8_t*)&(clar_lit_743), NULL);
-        cv___ret33 = t3;
+        cv___ret13 = t3;
         rt_text_release(t2);
-        rt_text_retain(cv___ret33);
-        return cv___ret33;
+        rt_text_retain(cv___ret13);
+        return cv___ret13;
     } else {
         if (cv_op == 1) {
-            rt_text_release(cv___ret34);
+            rt_text_release(cv___ret13);
             rt_text * t4 = NULL;
             t4 = rt_text_new();
             rt_text_concat_sl(t4, (const uint8_t*)&(clar_lit_744), cv_x);
             rt_text * t5 = NULL;
             t5 = rt_text_new();
             rt_text_concat(t5, t4, (const uint8_t*)&(clar_lit_745), NULL);
-            cv___ret34 = t5;
+            cv___ret13 = t5;
             rt_text_release(t4);
-            rt_text_retain(cv___ret34);
-            return cv___ret34;
+            rt_text_retain(cv___ret13);
+            return cv___ret13;
         } else {
             if (cv_op == 2) {
-                rt_text_release(cv___ret35);
+                rt_text_release(cv___ret13);
                 rt_text * t6 = NULL;
                 t6 = rt_text_new();
                 rt_text_concat_sl(t6, (const uint8_t*)&(clar_lit_746), cv_x);
                 rt_text * t7 = NULL;
                 t7 = rt_text_new();
                 rt_text_concat(t7, t6, (const uint8_t*)&(clar_lit_739), NULL);
-                cv___ret35 = t7;
+                cv___ret13 = t7;
                 rt_text_release(t6);
-                rt_text_retain(cv___ret35);
-                return cv___ret35;
+                rt_text_retain(cv___ret13);
+                return cv___ret13;
             } else {
                 if ((cv_op == 3) || (cv_op == 4)) {
-                    rt_text_release(cv___ret36);
+                    rt_text_release(cv___ret13);
                     rt_text * t8 = NULL;
                     t8 = rt_text_new();
                     rt_text_concat_sl(t8, (const uint8_t*)&(clar_lit_747), cv_x);
                     rt_text * t9 = NULL;
                     t9 = rt_text_new();
                     rt_text_concat(t9, t8, (const uint8_t*)&(clar_lit_739), NULL);
-                    cv___ret36 = t9;
+                    cv___ret13 = t9;
                     rt_text_release(t8);
-                    rt_text_retain(cv___ret36);
-                    return cv___ret36;
+                    rt_text_retain(cv___ret13);
+                    return cv___ret13;
                 } else {
                     if (cv_op == 5) {
                         cv_n = clar_fn_cpEnumCount(clar_fn_irConvEnumName(cv_e));
-                        rt_text_release(cv___ret37);
+                        rt_text_release(cv___ret13);
                         clar_str_255 t10;
                         t10 = clar_fn_poolGet(clar_fn_irConvEnumName(cv_e));
                         clar_str_255 t11;
@@ -21529,21 +21486,21 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
                         rt_text * t17 = NULL;
                         t17 = rt_text_new();
                         rt_text_concat(t17, t16, (const uint8_t*)&(clar_lit_739), NULL);
-                        cv___ret37 = t17;
+                        cv___ret13 = t17;
                         rt_text_release(t16);
-                        rt_text_retain(cv___ret37);
-                        return cv___ret37;
+                        rt_text_retain(cv___ret13);
+                        return cv___ret13;
                     }
                 }
             }
         }
     }
-    rt_text_release(cv___ret38);
+    rt_text_release(cv___ret13);
     rt_text * t18 = NULL;
     t18 = clar_fn_toText(clar_lit_3);
-    cv___ret38 = t18;
-    rt_text_retain(cv___ret38);
-    return cv___ret38;
+    cv___ret13 = t18;
+    rt_text_retain(cv___ret13);
+    return cv___ret13;
     return NULL;
 }
 
@@ -21582,25 +21539,23 @@ static int32_t clar_fn_cpEnumCount(int32_t cv_nameIdx) {
 static rt_text * clar_fn_fpAddrable(int32_t cv_e) {
     int32_t cv_k;
     cv_k = 0;
-    rt_text * cv___ret39;
-    cv___ret39 = rt_text_new();
-    rt_text * cv___ret40;
-    cv___ret40 = rt_text_new();
+    rt_text * cv___ret14;
+    cv___ret14 = rt_text_new();
     cv_k = clar_fn_irExprKind(cv_e);
     if (((((cv_k == 2) || (cv_k == 3)) || (cv_k == 4)) || (cv_k == 1)) || (cv_k == 9)) {
-        rt_text_release(cv___ret39);
+        rt_text_release(cv___ret14);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(cv_e);
-        cv___ret39 = t1;
-        rt_text_retain(cv___ret39);
-        return cv___ret39;
+        cv___ret14 = t1;
+        rt_text_retain(cv___ret14);
+        return cv___ret14;
     }
-    rt_text_release(cv___ret40);
+    rt_text_release(cv___ret14);
     rt_text * t2 = NULL;
     t2 = clar_fn_fpCopyToTemp(cv_e);
-    cv___ret40 = t2;
-    rt_text_retain(cv___ret40);
-    return cv___ret40;
+    cv___ret14 = t2;
+    rt_text_retain(cv___ret14);
+    return cv___ret14;
     return NULL;
 }
 
@@ -21609,8 +21564,8 @@ static rt_text * clar_fn_fpCopyToTemp(int32_t cv_e) {
     cv_v = rt_text_new();
     rt_text * cv_t;
     cv_t = rt_text_new();
-    rt_text * cv___ret41;
-    cv___ret41 = rt_text_new();
+    rt_text * cv___ret15;
+    cv___ret15 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(cv_e);
     cv_v = t1;
@@ -21630,17 +21585,17 @@ static rt_text * clar_fn_fpCopyToTemp(int32_t cv_e) {
     clar_fn_fpEmit(t5);
     rt_text_release(t3);
     rt_text_release(t4);
-    rt_text_release(cv___ret41);
-    cv___ret41 = cv_t;
-    rt_text_retain(cv___ret41);
-    return cv___ret41;
+    rt_text_release(cv___ret15);
+    cv___ret15 = cv_t;
+    rt_text_retain(cv___ret15);
+    return cv___ret15;
     return NULL;
 }
 
 static rt_text * clar_fn_fpStrAddr(int32_t cv_e) {
-    rt_text * cv___ret42;
-    cv___ret42 = rt_text_new();
-    rt_text_release(cv___ret42);
+    rt_text * cv___ret16;
+    cv___ret16 = rt_text_new();
+    rt_text_release(cv___ret16);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpAddrable(cv_e);
     rt_text * t2 = NULL;
@@ -21649,11 +21604,11 @@ static rt_text * clar_fn_fpStrAddr(int32_t cv_e) {
     rt_text * t3 = NULL;
     t3 = rt_text_new();
     rt_text_concat(t3, t2, (const uint8_t*)&(clar_lit_382), NULL);
-    cv___ret42 = t3;
+    cv___ret16 = t3;
     rt_text_release(t1);
     rt_text_release(t2);
-    rt_text_retain(cv___ret42);
-    return cv___ret42;
+    rt_text_retain(cv___ret16);
+    return cv___ret16;
     return NULL;
 }
 
@@ -21662,16 +21617,12 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
     cv_atk = 0;
     int32_t cv_btk;
     cv_btk = 0;
-    rt_text * cv___ret43;
-    cv___ret43 = rt_text_new();
-    rt_text * cv___ret44;
-    cv___ret44 = rt_text_new();
-    rt_text * cv___ret45;
-    cv___ret45 = rt_text_new();
+    rt_text * cv___ret17;
+    cv___ret17 = rt_text_new();
     cv_atk = clar_fn_irtKind(clar_fn_irExprType(cv_a));
     cv_btk = clar_fn_irtKind(clar_fn_irExprType(cv_b));
     if ((cv_atk == 6) && (cv_btk == 6)) {
-        rt_text_release(cv___ret43);
+        rt_text_release(cv___ret17);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(cv_a);
         rt_text * t2 = NULL;
@@ -21688,17 +21639,17 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
         rt_text * t6 = NULL;
         t6 = rt_text_new();
         rt_text_concat(t6, t4, (const uint8_t*)&(clar_lit_382), NULL);
-        cv___ret43 = t6;
+        cv___ret17 = t6;
         rt_text_release(t1);
         rt_text_release(t2);
         rt_text_release(t3);
         rt_text_release(t4);
         rt_text_release(t5);
-        rt_text_retain(cv___ret43);
-        return cv___ret43;
+        rt_text_retain(cv___ret17);
+        return cv___ret17;
     } else {
         if ((cv_atk == 6) && (cv_btk == 5)) {
-            rt_text_release(cv___ret44);
+            rt_text_release(cv___ret17);
             rt_text * t7 = NULL;
             t7 = clar_fn_fpExpr(cv_a);
             rt_text * t8 = NULL;
@@ -21715,17 +21666,17 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
             rt_text * t12 = NULL;
             t12 = rt_text_new();
             rt_text_concat(t12, t10, (const uint8_t*)&(clar_lit_382), NULL);
-            cv___ret44 = t12;
+            cv___ret17 = t12;
             rt_text_release(t7);
             rt_text_release(t8);
             rt_text_release(t9);
             rt_text_release(t10);
             rt_text_release(t11);
-            rt_text_retain(cv___ret44);
-            return cv___ret44;
+            rt_text_retain(cv___ret17);
+            return cv___ret17;
         }
     }
-    rt_text_release(cv___ret45);
+    rt_text_release(cv___ret17);
     rt_text * t13 = NULL;
     t13 = clar_fn_fpExpr(cv_b);
     rt_text * t14 = NULL;
@@ -21742,14 +21693,14 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
     rt_text * t18 = NULL;
     t18 = rt_text_new();
     rt_text_concat(t18, t16, (const uint8_t*)&(clar_lit_739), NULL);
-    cv___ret45 = t18;
+    cv___ret17 = t18;
     rt_text_release(t13);
     rt_text_release(t14);
     rt_text_release(t15);
     rt_text_release(t16);
     rt_text_release(t17);
-    rt_text_retain(cv___ret45);
-    return cv___ret45;
+    rt_text_retain(cv___ret17);
+    return cv___ret17;
     return NULL;
 }
 
@@ -21758,8 +21709,8 @@ static rt_text * clar_fn_fpTextConcat(int32_t cv_a, int32_t cv_b) {
     cv_ae = rt_text_new();
     rt_text * cv_t;
     cv_t = rt_text_new();
-    rt_text * cv___ret46;
-    cv___ret46 = rt_text_new();
+    rt_text * cv___ret18;
+    cv___ret18 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(cv_a);
     cv_ae = t1;
@@ -21827,10 +21778,10 @@ static rt_text * clar_fn_fpTextConcat(int32_t cv_a, int32_t cv_b) {
         rt_text_release(t15);
         rt_text_release(t16);
     }
-    rt_text_release(cv___ret46);
-    cv___ret46 = cv_t;
-    rt_text_retain(cv___ret46);
-    return cv___ret46;
+    rt_text_release(cv___ret18);
+    cv___ret18 = cv_t;
+    rt_text_retain(cv___ret18);
+    return cv___ret18;
     return NULL;
 }
 
@@ -21903,190 +21854,8 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_argT = 0;
     int32_t cv_argK;
     cv_argK = 0;
-    rt_text * cv___ret47;
-    cv___ret47 = rt_text_new();
-    rt_text * cv___ret48;
-    cv___ret48 = rt_text_new();
-    rt_text * cv___ret49;
-    cv___ret49 = rt_text_new();
-    rt_text * cv___ret50;
-    cv___ret50 = rt_text_new();
-    rt_text * cv___ret51;
-    cv___ret51 = rt_text_new();
-    rt_text * cv___ret52;
-    cv___ret52 = rt_text_new();
-    rt_text * cv___ret53;
-    cv___ret53 = rt_text_new();
-    rt_text * cv___ret54;
-    cv___ret54 = rt_text_new();
-    rt_text * cv___ret55;
-    cv___ret55 = rt_text_new();
-    rt_text * cv___ret56;
-    cv___ret56 = rt_text_new();
-    rt_text * cv___ret57;
-    cv___ret57 = rt_text_new();
-    rt_text * cv___ret58;
-    cv___ret58 = rt_text_new();
-    rt_text * cv___ret59;
-    cv___ret59 = rt_text_new();
-    rt_text * cv___ret60;
-    cv___ret60 = rt_text_new();
-    rt_text * cv___ret61;
-    cv___ret61 = rt_text_new();
-    rt_text * cv___ret62;
-    cv___ret62 = rt_text_new();
-    rt_text * cv___ret63;
-    cv___ret63 = rt_text_new();
-    rt_text * cv___ret64;
-    cv___ret64 = rt_text_new();
-    rt_text * cv___ret65;
-    cv___ret65 = rt_text_new();
-    rt_text * cv___ret66;
-    cv___ret66 = rt_text_new();
-    rt_text * cv___ret67;
-    cv___ret67 = rt_text_new();
-    rt_text * cv___ret68;
-    cv___ret68 = rt_text_new();
-    rt_text * cv___ret69;
-    cv___ret69 = rt_text_new();
-    rt_text * cv___ret70;
-    cv___ret70 = rt_text_new();
-    rt_text * cv___ret71;
-    cv___ret71 = rt_text_new();
-    rt_text * cv___ret72;
-    cv___ret72 = rt_text_new();
-    rt_text * cv___ret73;
-    cv___ret73 = rt_text_new();
-    rt_text * cv___ret74;
-    cv___ret74 = rt_text_new();
-    rt_text * cv___ret75;
-    cv___ret75 = rt_text_new();
-    rt_text * cv___ret76;
-    cv___ret76 = rt_text_new();
-    rt_text * cv___ret77;
-    cv___ret77 = rt_text_new();
-    rt_text * cv___ret78;
-    cv___ret78 = rt_text_new();
-    rt_text * cv___ret79;
-    cv___ret79 = rt_text_new();
-    rt_text * cv___ret80;
-    cv___ret80 = rt_text_new();
-    rt_text * cv___ret81;
-    cv___ret81 = rt_text_new();
-    rt_text * cv___ret82;
-    cv___ret82 = rt_text_new();
-    rt_text * cv___ret83;
-    cv___ret83 = rt_text_new();
-    rt_text * cv___ret84;
-    cv___ret84 = rt_text_new();
-    rt_text * cv___ret85;
-    cv___ret85 = rt_text_new();
-    rt_text * cv___ret86;
-    cv___ret86 = rt_text_new();
-    rt_text * cv___ret87;
-    cv___ret87 = rt_text_new();
-    rt_text * cv___ret88;
-    cv___ret88 = rt_text_new();
-    rt_text * cv___ret89;
-    cv___ret89 = rt_text_new();
-    rt_text * cv___ret90;
-    cv___ret90 = rt_text_new();
-    rt_text * cv___ret91;
-    cv___ret91 = rt_text_new();
-    rt_text * cv___ret92;
-    cv___ret92 = rt_text_new();
-    rt_text * cv___ret93;
-    cv___ret93 = rt_text_new();
-    rt_text * cv___ret94;
-    cv___ret94 = rt_text_new();
-    rt_text * cv___ret95;
-    cv___ret95 = rt_text_new();
-    rt_text * cv___ret96;
-    cv___ret96 = rt_text_new();
-    rt_text * cv___ret97;
-    cv___ret97 = rt_text_new();
-    rt_text * cv___ret98;
-    cv___ret98 = rt_text_new();
-    rt_text * cv___ret99;
-    cv___ret99 = rt_text_new();
-    rt_text * cv___ret100;
-    cv___ret100 = rt_text_new();
-    rt_text * cv___ret101;
-    cv___ret101 = rt_text_new();
-    rt_text * cv___ret102;
-    cv___ret102 = rt_text_new();
-    rt_text * cv___ret103;
-    cv___ret103 = rt_text_new();
-    rt_text * cv___ret104;
-    cv___ret104 = rt_text_new();
-    rt_text * cv___ret105;
-    cv___ret105 = rt_text_new();
-    rt_text * cv___ret106;
-    cv___ret106 = rt_text_new();
-    rt_text * cv___ret107;
-    cv___ret107 = rt_text_new();
-    rt_text * cv___ret108;
-    cv___ret108 = rt_text_new();
-    rt_text * cv___ret109;
-    cv___ret109 = rt_text_new();
-    rt_text * cv___ret110;
-    cv___ret110 = rt_text_new();
-    rt_text * cv___ret111;
-    cv___ret111 = rt_text_new();
-    rt_text * cv___ret112;
-    cv___ret112 = rt_text_new();
-    rt_text * cv___ret113;
-    cv___ret113 = rt_text_new();
-    rt_text * cv___ret114;
-    cv___ret114 = rt_text_new();
-    rt_text * cv___ret115;
-    cv___ret115 = rt_text_new();
-    rt_text * cv___ret116;
-    cv___ret116 = rt_text_new();
-    rt_text * cv___ret117;
-    cv___ret117 = rt_text_new();
-    rt_text * cv___ret118;
-    cv___ret118 = rt_text_new();
-    rt_text * cv___ret119;
-    cv___ret119 = rt_text_new();
-    rt_text * cv___ret120;
-    cv___ret120 = rt_text_new();
-    rt_text * cv___ret121;
-    cv___ret121 = rt_text_new();
-    rt_text * cv___ret122;
-    cv___ret122 = rt_text_new();
-    rt_text * cv___ret123;
-    cv___ret123 = rt_text_new();
-    rt_text * cv___ret124;
-    cv___ret124 = rt_text_new();
-    rt_text * cv___ret125;
-    cv___ret125 = rt_text_new();
-    rt_text * cv___ret126;
-    cv___ret126 = rt_text_new();
-    rt_text * cv___ret127;
-    cv___ret127 = rt_text_new();
-    rt_text * cv___ret128;
-    cv___ret128 = rt_text_new();
-    rt_text * cv___ret129;
-    cv___ret129 = rt_text_new();
-    rt_text * cv___ret130;
-    cv___ret130 = rt_text_new();
-    rt_text * cv___ret131;
-    cv___ret131 = rt_text_new();
-    rt_text * cv___ret132;
-    cv___ret132 = rt_text_new();
-    rt_text * cv___ret133;
-    cv___ret133 = rt_text_new();
-    rt_text * cv___ret134;
-    cv___ret134 = rt_text_new();
-    rt_text * cv___ret135;
-    cv___ret135 = rt_text_new();
-    rt_text * cv___ret136;
-    cv___ret136 = rt_text_new();
-    rt_text * cv___ret137;
-    cv___ret137 = rt_text_new();
-    rt_text * cv___ret138;
-    cv___ret138 = rt_text_new();
+    rt_text * cv___ret19;
+    cv___ret19 = rt_text_new();
     cv_nm = clar_fn_irIntrName(cv_x);
     cv_a0 = clar_fn_irIntrArgsHead(cv_x);
     if (cv_a0 != (-(1))) {
@@ -22107,13 +21876,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
         clar_fn_fpEmit(t3);
         rt_text_release(t1);
         rt_text_release(t2);
-        rt_text_release(cv___ret47);
+        rt_text_release(cv___ret19);
         rt_text * t4 = NULL;
         t4 = clar_fn_toText(clar_lit_3);
-        cv___ret47 = t4;
+        cv___ret19 = t4;
         rt_text_free(cv_dataExpr);
-        rt_text_retain(cv___ret47);
-        return cv___ret47;
+        rt_text_retain(cv___ret19);
+        return cv___ret19;
     } else {
         if (cv_nm == clar_fn_ILog()) {
             rt_text * t5 = NULL;
@@ -22127,13 +21896,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
             clar_fn_fpEmit(t7);
             rt_text_release(t5);
             rt_text_release(t6);
-            rt_text_release(cv___ret48);
+            rt_text_release(cv___ret19);
             rt_text * t8 = NULL;
             t8 = clar_fn_toText(clar_lit_3);
-            cv___ret48 = t8;
+            cv___ret19 = t8;
             rt_text_free(cv_dataExpr);
-            rt_text_retain(cv___ret48);
-            return cv___ret48;
+            rt_text_retain(cv___ret19);
+            return cv___ret19;
         } else {
             if (cv_nm == clar_fn_IQuit()) {
                 rt_text * t9 = NULL;
@@ -22147,16 +21916,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                 clar_fn_fpEmit(t11);
                 rt_text_release(t9);
                 rt_text_release(t10);
-                rt_text_release(cv___ret49);
+                rt_text_release(cv___ret19);
                 rt_text * t12 = NULL;
                 t12 = clar_fn_toText(clar_lit_3);
-                cv___ret49 = t12;
+                cv___ret19 = t12;
                 rt_text_free(cv_dataExpr);
-                rt_text_retain(cv___ret49);
-                return cv___ret49;
+                rt_text_retain(cv___ret19);
+                return cv___ret19;
             } else {
                 if (cv_nm == clar_fn_IFixMul()) {
-                    rt_text_release(cv___ret50);
+                    rt_text_release(cv___ret19);
                     rt_text * t13 = NULL;
                     t13 = clar_fn_fpExpr(cv_a0);
                     rt_text * t14 = NULL;
@@ -22173,18 +21942,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                     rt_text * t18 = NULL;
                     t18 = rt_text_new();
                     rt_text_concat(t18, t16, (const uint8_t*)&(clar_lit_739), NULL);
-                    cv___ret50 = t18;
+                    cv___ret19 = t18;
                     rt_text_release(t13);
                     rt_text_release(t14);
                     rt_text_release(t15);
                     rt_text_release(t16);
                     rt_text_release(t17);
                     rt_text_free(cv_dataExpr);
-                    rt_text_retain(cv___ret50);
-                    return cv___ret50;
+                    rt_text_retain(cv___ret19);
+                    return cv___ret19;
                 } else {
                     if (cv_nm == clar_fn_IFixDiv()) {
-                        rt_text_release(cv___ret51);
+                        rt_text_release(cv___ret19);
                         rt_text * t19 = NULL;
                         t19 = clar_fn_fpExpr(cv_a0);
                         rt_text * t20 = NULL;
@@ -22201,15 +21970,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                         rt_text * t24 = NULL;
                         t24 = rt_text_new();
                         rt_text_concat(t24, t22, (const uint8_t*)&(clar_lit_739), NULL);
-                        cv___ret51 = t24;
+                        cv___ret19 = t24;
                         rt_text_release(t19);
                         rt_text_release(t20);
                         rt_text_release(t21);
                         rt_text_release(t22);
                         rt_text_release(t23);
                         rt_text_free(cv_dataExpr);
-                        rt_text_retain(cv___ret51);
-                        return cv___ret51;
+                        rt_text_retain(cv___ret19);
+                        return cv___ret19;
                     } else {
                         if ((cv_nm == clar_fn_IRetain()) || (cv_nm == clar_fn_IRelease())) {
                             rt_text * t25 = NULL;
@@ -22282,13 +22051,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                     rt_text_release(t39);
                                 }
                             }
-                            rt_text_release(cv___ret52);
+                            rt_text_release(cv___ret19);
                             rt_text * t41 = NULL;
                             t41 = clar_fn_toText(clar_lit_3);
-                            cv___ret52 = t41;
+                            cv___ret19 = t41;
                             rt_text_free(cv_dataExpr);
-                            rt_text_retain(cv___ret52);
-                            return cv___ret52;
+                            rt_text_retain(cv___ret19);
+                            return cv___ret19;
                         } else {
                             if (cv_nm == clar_fn_IStrConcat()) {
                                 rt_text * t42 = NULL;
@@ -22324,11 +22093,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                 rt_text_release(t47);
                                 rt_text_release(t48);
                                 rt_text_release(t49);
-                                rt_text_release(cv___ret53);
-                                cv___ret53 = cv_t;
+                                rt_text_release(cv___ret19);
+                                cv___ret19 = cv_t;
                                 rt_text_free(cv_dataExpr);
-                                rt_text_retain(cv___ret53);
-                                return cv___ret53;
+                                rt_text_retain(cv___ret19);
+                                return cv___ret19;
                             } else {
                                 if (cv_nm == clar_fn_IStrConcatChar()) {
                                     rt_text * t51 = NULL;
@@ -22364,11 +22133,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                     rt_text_release(t56);
                                     rt_text_release(t57);
                                     rt_text_release(t58);
-                                    rt_text_release(cv___ret54);
-                                    cv___ret54 = cv_t;
+                                    rt_text_release(cv___ret19);
+                                    cv___ret19 = cv_t;
                                     rt_text_free(cv_dataExpr);
-                                    rt_text_retain(cv___ret54);
-                                    return cv___ret54;
+                                    rt_text_retain(cv___ret19);
+                                    return cv___ret19;
                                 } else {
                                     if (cv_nm == clar_fn_IStrPrependChar()) {
                                         rt_text * t60 = NULL;
@@ -22404,14 +22173,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                         rt_text_release(t65);
                                         rt_text_release(t66);
                                         rt_text_release(t67);
-                                        rt_text_release(cv___ret55);
-                                        cv___ret55 = cv_t;
+                                        rt_text_release(cv___ret19);
+                                        cv___ret19 = cv_t;
                                         rt_text_free(cv_dataExpr);
-                                        rt_text_retain(cv___ret55);
-                                        return cv___ret55;
+                                        rt_text_retain(cv___ret19);
+                                        return cv___ret19;
                                     } else {
                                         if (cv_nm == clar_fn_IStrCmp()) {
-                                            rt_text_release(cv___ret56);
+                                            rt_text_release(cv___ret19);
                                             rt_text * t69 = NULL;
                                             t69 = clar_fn_fpStrAddr(cv_a0);
                                             rt_text * t70 = NULL;
@@ -22428,18 +22197,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                             rt_text * t74 = NULL;
                                             t74 = rt_text_new();
                                             rt_text_concat(t74, t72, (const uint8_t*)&(clar_lit_382), NULL);
-                                            cv___ret56 = t74;
+                                            cv___ret19 = t74;
                                             rt_text_release(t69);
                                             rt_text_release(t70);
                                             rt_text_release(t71);
                                             rt_text_release(t72);
                                             rt_text_release(t73);
                                             rt_text_free(cv_dataExpr);
-                                            rt_text_retain(cv___ret56);
-                                            return cv___ret56;
+                                            rt_text_retain(cv___ret19);
+                                            return cv___ret19;
                                         } else {
                                             if (cv_nm == clar_fn_IStrLen()) {
-                                                rt_text_release(cv___ret57);
+                                                rt_text_release(cv___ret19);
                                                 rt_text * t75 = NULL;
                                                 t75 = clar_fn_fpStrAddr(cv_a0);
                                                 rt_text * t76 = NULL;
@@ -22448,15 +22217,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                 rt_text * t77 = NULL;
                                                 t77 = rt_text_new();
                                                 rt_text_concat(t77, t76, (const uint8_t*)&(clar_lit_382), NULL);
-                                                cv___ret57 = t77;
+                                                cv___ret19 = t77;
                                                 rt_text_release(t75);
                                                 rt_text_release(t76);
                                                 rt_text_free(cv_dataExpr);
-                                                rt_text_retain(cv___ret57);
-                                                return cv___ret57;
+                                                rt_text_retain(cv___ret19);
+                                                return cv___ret19;
                                             } else {
                                                 if (cv_nm == clar_fn_IStrIndex()) {
-                                                    rt_text_release(cv___ret58);
+                                                    rt_text_release(cv___ret19);
                                                     rt_text * t78 = NULL;
                                                     t78 = clar_fn_fpStrAddr(cv_a0);
                                                     rt_text * t79 = NULL;
@@ -22473,15 +22242,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                     rt_text * t83 = NULL;
                                                     t83 = rt_text_new();
                                                     rt_text_concat(t83, t81, (const uint8_t*)&(clar_lit_739), NULL);
-                                                    cv___ret58 = t83;
+                                                    cv___ret19 = t83;
                                                     rt_text_release(t78);
                                                     rt_text_release(t79);
                                                     rt_text_release(t80);
                                                     rt_text_release(t81);
                                                     rt_text_release(t82);
                                                     rt_text_free(cv_dataExpr);
-                                                    rt_text_retain(cv___ret58);
-                                                    return cv___ret58;
+                                                    rt_text_retain(cv___ret19);
+                                                    return cv___ret19;
                                                 } else {
                                                     if (cv_nm == clar_fn_IStrSetIndex()) {
                                                         rt_text * t84 = NULL;
@@ -22517,13 +22286,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                         rt_text_release(t89);
                                                         rt_text_release(t90);
                                                         rt_text_release(t91);
-                                                        rt_text_release(cv___ret59);
+                                                        rt_text_release(cv___ret19);
                                                         rt_text * t93 = NULL;
                                                         t93 = clar_fn_toText(clar_lit_3);
-                                                        cv___ret59 = t93;
+                                                        cv___ret19 = t93;
                                                         rt_text_free(cv_dataExpr);
-                                                        rt_text_retain(cv___ret59);
-                                                        return cv___ret59;
+                                                        rt_text_retain(cv___ret19);
+                                                        return cv___ret19;
                                                     } else {
                                                         if (cv_nm == clar_fn_IStrFromBytes()) {
                                                             rt_text * t94 = NULL;
@@ -22581,13 +22350,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                             rt_text_release(t105);
                                                             rt_text_release(t106);
                                                             rt_text_release(t107);
-                                                            rt_text_release(cv___ret60);
+                                                            rt_text_release(cv___ret19);
                                                             rt_text * t109 = NULL;
                                                             t109 = clar_fn_toText(clar_lit_3);
-                                                            cv___ret60 = t109;
+                                                            cv___ret19 = t109;
                                                             rt_text_free(cv_dataExpr);
-                                                            rt_text_retain(cv___ret60);
-                                                            return cv___ret60;
+                                                            rt_text_retain(cv___ret19);
+                                                            return cv___ret19;
                                                         } else {
                                                             if (cv_nm == clar_fn_IStrToBytes()) {
                                                                 rt_text * t110 = NULL;
@@ -22597,7 +22366,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                 t111 = clar_fn_fpAddrable(cv_a1);
                                                                 cv_s1 = t111;
                                                                 cv_cap1 = clar_fn_irtN(clar_fn_irExprType(cv_a1));
-                                                                rt_text_release(cv___ret61);
+                                                                rt_text_release(cv___ret19);
                                                                 rt_text * t112 = NULL;
                                                                 t112 = rt_text_new();
                                                                 rt_text_concat_sl(t112, (const uint8_t*)&(clar_lit_784), cv_s0);
@@ -22618,15 +22387,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                 rt_text * t118 = NULL;
                                                                 t118 = rt_text_new();
                                                                 rt_text_concat(t118, t116, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                cv___ret61 = t118;
+                                                                cv___ret19 = t118;
                                                                 rt_text_release(t112);
                                                                 rt_text_release(t113);
                                                                 rt_text_release(t114);
                                                                 rt_text_release(t115);
                                                                 rt_text_release(t116);
                                                                 rt_text_free(cv_dataExpr);
-                                                                rt_text_retain(cv___ret61);
-                                                                return cv___ret61;
+                                                                rt_text_retain(cv___ret19);
+                                                                return cv___ret19;
                                                             } else {
                                                                 if (cv_nm == clar_fn_IStrCoerce()) {
                                                                     rt_text * t119 = NULL;
@@ -22661,11 +22430,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                     rt_text_release(t123);
                                                                     rt_text_release(t125);
                                                                     rt_text_release(t126);
-                                                                    rt_text_release(cv___ret62);
-                                                                    cv___ret62 = cv_t;
+                                                                    rt_text_release(cv___ret19);
+                                                                    cv___ret19 = cv_t;
                                                                     rt_text_free(cv_dataExpr);
-                                                                    rt_text_retain(cv___ret62);
-                                                                    return cv___ret62;
+                                                                    rt_text_retain(cv___ret19);
+                                                                    return cv___ret19;
                                                                 } else {
                                                                     if (cv_nm == clar_fn_IStrSlice()) {
                                                                         rt_text * t128 = NULL;
@@ -22712,14 +22481,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                         rt_text_release(t136);
                                                                         rt_text_release(t137);
                                                                         rt_text_release(t138);
-                                                                        rt_text_release(cv___ret63);
-                                                                        cv___ret63 = cv_t;
+                                                                        rt_text_release(cv___ret19);
+                                                                        cv___ret19 = cv_t;
                                                                         rt_text_free(cv_dataExpr);
-                                                                        rt_text_retain(cv___ret63);
-                                                                        return cv___ret63;
+                                                                        rt_text_retain(cv___ret19);
+                                                                        return cv___ret19;
                                                                     } else {
                                                                         if (cv_nm == clar_fn_IStrIndexOfStr()) {
-                                                                            rt_text_release(cv___ret64);
+                                                                            rt_text_release(cv___ret19);
                                                                             rt_text * t140 = NULL;
                                                                             t140 = clar_fn_fpStrAddr(cv_a0);
                                                                             rt_text * t141 = NULL;
@@ -22736,18 +22505,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                             rt_text * t145 = NULL;
                                                                             t145 = rt_text_new();
                                                                             rt_text_concat(t145, t143, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                            cv___ret64 = t145;
+                                                                            cv___ret19 = t145;
                                                                             rt_text_release(t140);
                                                                             rt_text_release(t141);
                                                                             rt_text_release(t142);
                                                                             rt_text_release(t143);
                                                                             rt_text_release(t144);
                                                                             rt_text_free(cv_dataExpr);
-                                                                            rt_text_retain(cv___ret64);
-                                                                            return cv___ret64;
+                                                                            rt_text_retain(cv___ret19);
+                                                                            return cv___ret19;
                                                                         } else {
                                                                             if (cv_nm == clar_fn_IStrIndexOfChar()) {
-                                                                                rt_text_release(cv___ret65);
+                                                                                rt_text_release(cv___ret19);
                                                                                 rt_text * t146 = NULL;
                                                                                 t146 = clar_fn_fpStrAddr(cv_a0);
                                                                                 rt_text * t147 = NULL;
@@ -22764,33 +22533,33 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                 rt_text * t151 = NULL;
                                                                                 t151 = rt_text_new();
                                                                                 rt_text_concat(t151, t149, (const uint8_t*)&(clar_lit_739), NULL);
-                                                                                cv___ret65 = t151;
+                                                                                cv___ret19 = t151;
                                                                                 rt_text_release(t146);
                                                                                 rt_text_release(t147);
                                                                                 rt_text_release(t148);
                                                                                 rt_text_release(t149);
                                                                                 rt_text_release(t150);
                                                                                 rt_text_free(cv_dataExpr);
-                                                                                rt_text_retain(cv___ret65);
-                                                                                return cv___ret65;
+                                                                                rt_text_retain(cv___ret19);
+                                                                                return cv___ret19;
                                                                             } else {
                                                                                 if (cv_nm == clar_fn_ITextCmp()) {
-                                                                                    rt_text_release(cv___ret66);
+                                                                                    rt_text_release(cv___ret19);
                                                                                     rt_text * t152 = NULL;
                                                                                     t152 = clar_fn_fpTextCmp(cv_a0, cv_a1);
-                                                                                    cv___ret66 = t152;
+                                                                                    cv___ret19 = t152;
                                                                                     rt_text_free(cv_dataExpr);
-                                                                                    rt_text_retain(cv___ret66);
-                                                                                    return cv___ret66;
+                                                                                    rt_text_retain(cv___ret19);
+                                                                                    return cv___ret19;
                                                                                 } else {
                                                                                     if (cv_nm == clar_fn_ITextConcat()) {
-                                                                                        rt_text_release(cv___ret67);
+                                                                                        rt_text_release(cv___ret19);
                                                                                         rt_text * t153 = NULL;
                                                                                         t153 = clar_fn_fpTextConcat(cv_a0, cv_a1);
-                                                                                        cv___ret67 = t153;
+                                                                                        cv___ret19 = t153;
                                                                                         rt_text_free(cv_dataExpr);
-                                                                                        rt_text_retain(cv___ret67);
-                                                                                        return cv___ret67;
+                                                                                        rt_text_retain(cv___ret19);
+                                                                                        return cv___ret19;
                                                                                     } else {
                                                                                         if (cv_nm == clar_fn_ITextConcatSL()) {
                                                                                             rt_text * t154 = NULL;
@@ -22830,11 +22599,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                             rt_text_release(t160);
                                                                                             rt_text_release(t161);
                                                                                             rt_text_release(t162);
-                                                                                            rt_text_release(cv___ret68);
-                                                                                            cv___ret68 = cv_t;
+                                                                                            rt_text_release(cv___ret19);
+                                                                                            cv___ret19 = cv_t;
                                                                                             rt_text_free(cv_dataExpr);
-                                                                                            rt_text_retain(cv___ret68);
-                                                                                            return cv___ret68;
+                                                                                            rt_text_retain(cv___ret19);
+                                                                                            return cv___ret19;
                                                                                         } else {
                                                                                             if (cv_nm == clar_fn_ITextStore()) {
                                                                                                 rt_text * t164 = NULL;
@@ -22859,16 +22628,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                 rt_text_release(t166);
                                                                                                 rt_text_release(t167);
                                                                                                 rt_text_release(t168);
-                                                                                                rt_text_release(cv___ret69);
+                                                                                                rt_text_release(cv___ret19);
                                                                                                 rt_text * t170 = NULL;
                                                                                                 t170 = clar_fn_toText(clar_lit_3);
-                                                                                                cv___ret69 = t170;
+                                                                                                cv___ret19 = t170;
                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                rt_text_retain(cv___ret69);
-                                                                                                return cv___ret69;
+                                                                                                rt_text_retain(cv___ret19);
+                                                                                                return cv___ret19;
                                                                                             } else {
                                                                                                 if (cv_nm == clar_fn_ITextLen()) {
-                                                                                                    rt_text_release(cv___ret70);
+                                                                                                    rt_text_release(cv___ret19);
                                                                                                     rt_text * t171 = NULL;
                                                                                                     t171 = clar_fn_fpExpr(cv_a0);
                                                                                                     rt_text * t172 = NULL;
@@ -22877,15 +22646,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                     rt_text * t173 = NULL;
                                                                                                     t173 = rt_text_new();
                                                                                                     rt_text_concat(t173, t172, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                    cv___ret70 = t173;
+                                                                                                    cv___ret19 = t173;
                                                                                                     rt_text_release(t171);
                                                                                                     rt_text_release(t172);
                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                    rt_text_retain(cv___ret70);
-                                                                                                    return cv___ret70;
+                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                    return cv___ret19;
                                                                                                 } else {
                                                                                                     if (cv_nm == clar_fn_ITextIndex()) {
-                                                                                                        rt_text_release(cv___ret71);
+                                                                                                        rt_text_release(cv___ret19);
                                                                                                         rt_text * t174 = NULL;
                                                                                                         t174 = clar_fn_fpExpr(cv_a0);
                                                                                                         rt_text * t175 = NULL;
@@ -22902,15 +22671,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                         rt_text * t179 = NULL;
                                                                                                         t179 = rt_text_new();
                                                                                                         rt_text_concat(t179, t177, (const uint8_t*)&(clar_lit_739), NULL);
-                                                                                                        cv___ret71 = t179;
+                                                                                                        cv___ret19 = t179;
                                                                                                         rt_text_release(t174);
                                                                                                         rt_text_release(t175);
                                                                                                         rt_text_release(t176);
                                                                                                         rt_text_release(t177);
                                                                                                         rt_text_release(t178);
                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                        rt_text_retain(cv___ret71);
-                                                                                                        return cv___ret71;
+                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                        return cv___ret19;
                                                                                                     } else {
                                                                                                         if (cv_nm == clar_fn_ITextSetIndex()) {
                                                                                                             rt_text * t180 = NULL;
@@ -22946,13 +22715,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                             rt_text_release(t185);
                                                                                                             rt_text_release(t186);
                                                                                                             rt_text_release(t187);
-                                                                                                            rt_text_release(cv___ret72);
+                                                                                                            rt_text_release(cv___ret19);
                                                                                                             rt_text * t189 = NULL;
                                                                                                             t189 = clar_fn_toText(clar_lit_3);
-                                                                                                            cv___ret72 = t189;
+                                                                                                            cv___ret19 = t189;
                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                            rt_text_retain(cv___ret72);
-                                                                                                            return cv___ret72;
+                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                            return cv___ret19;
                                                                                                         } else {
                                                                                                             if (cv_nm == clar_fn_ITextFromBytes()) {
                                                                                                                 rt_text * t190 = NULL;
@@ -22999,13 +22768,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                 rt_text_release(t198);
                                                                                                                 rt_text_release(t199);
                                                                                                                 rt_text_release(t200);
-                                                                                                                rt_text_release(cv___ret73);
+                                                                                                                rt_text_release(cv___ret19);
                                                                                                                 rt_text * t202 = NULL;
                                                                                                                 t202 = clar_fn_toText(clar_lit_3);
-                                                                                                                cv___ret73 = t202;
+                                                                                                                cv___ret19 = t202;
                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                rt_text_retain(cv___ret73);
-                                                                                                                return cv___ret73;
+                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                return cv___ret19;
                                                                                                             } else {
                                                                                                                 if (cv_nm == clar_fn_ITextToBytes()) {
                                                                                                                     rt_text * t203 = NULL;
@@ -23015,7 +22784,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                     t204 = clar_fn_fpAddrable(cv_a1);
                                                                                                                     cv_s1 = t204;
                                                                                                                     cv_cap1 = clar_fn_irtN(clar_fn_irExprType(cv_a1));
-                                                                                                                    rt_text_release(cv___ret74);
+                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                     rt_text * t205 = NULL;
                                                                                                                     t205 = rt_text_new();
                                                                                                                     rt_text_concat_sl(t205, (const uint8_t*)&(clar_lit_796), cv_s0);
@@ -23036,15 +22805,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                     rt_text * t211 = NULL;
                                                                                                                     t211 = rt_text_new();
                                                                                                                     rt_text_concat(t211, t209, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                    cv___ret74 = t211;
+                                                                                                                    cv___ret19 = t211;
                                                                                                                     rt_text_release(t205);
                                                                                                                     rt_text_release(t206);
                                                                                                                     rt_text_release(t207);
                                                                                                                     rt_text_release(t208);
                                                                                                                     rt_text_release(t209);
                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                    rt_text_retain(cv___ret74);
-                                                                                                                    return cv___ret74;
+                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                    return cv___ret19;
                                                                                                                 } else {
                                                                                                                     if (cv_nm == clar_fn_ITextSlice()) {
                                                                                                                         rt_text * t212 = NULL;
@@ -23091,14 +22860,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                         rt_text_release(t220);
                                                                                                                         rt_text_release(t221);
                                                                                                                         rt_text_release(t222);
-                                                                                                                        rt_text_release(cv___ret75);
-                                                                                                                        cv___ret75 = cv_t;
+                                                                                                                        rt_text_release(cv___ret19);
+                                                                                                                        cv___ret19 = cv_t;
                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                        rt_text_retain(cv___ret75);
-                                                                                                                        return cv___ret75;
+                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                        return cv___ret19;
                                                                                                                     } else {
                                                                                                                         if (cv_nm == clar_fn_ITextIndexOfStr()) {
-                                                                                                                            rt_text_release(cv___ret76);
+                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                             rt_text * t224 = NULL;
                                                                                                                             t224 = clar_fn_fpExpr(cv_a0);
                                                                                                                             rt_text * t225 = NULL;
@@ -23115,18 +22884,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                             rt_text * t229 = NULL;
                                                                                                                             t229 = rt_text_new();
                                                                                                                             rt_text_concat(t229, t227, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                            cv___ret76 = t229;
+                                                                                                                            cv___ret19 = t229;
                                                                                                                             rt_text_release(t224);
                                                                                                                             rt_text_release(t225);
                                                                                                                             rt_text_release(t226);
                                                                                                                             rt_text_release(t227);
                                                                                                                             rt_text_release(t228);
                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                            rt_text_retain(cv___ret76);
-                                                                                                                            return cv___ret76;
+                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                            return cv___ret19;
                                                                                                                         } else {
                                                                                                                             if (cv_nm == clar_fn_ITextIndexOfChar()) {
-                                                                                                                                rt_text_release(cv___ret77);
+                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                 rt_text * t230 = NULL;
                                                                                                                                 t230 = clar_fn_fpExpr(cv_a0);
                                                                                                                                 rt_text * t231 = NULL;
@@ -23143,15 +22912,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                 rt_text * t235 = NULL;
                                                                                                                                 t235 = rt_text_new();
                                                                                                                                 rt_text_concat(t235, t233, (const uint8_t*)&(clar_lit_739), NULL);
-                                                                                                                                cv___ret77 = t235;
+                                                                                                                                cv___ret19 = t235;
                                                                                                                                 rt_text_release(t230);
                                                                                                                                 rt_text_release(t231);
                                                                                                                                 rt_text_release(t232);
                                                                                                                                 rt_text_release(t233);
                                                                                                                                 rt_text_release(t234);
                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                rt_text_retain(cv___ret77);
-                                                                                                                                return cv___ret77;
+                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                return cv___ret19;
                                                                                                                             } else {
                                                                                                                                 if (cv_nm == clar_fn_ITextAppendStr()) {
                                                                                                                                     rt_text * t236 = NULL;
@@ -23176,13 +22945,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                     rt_text_release(t238);
                                                                                                                                     rt_text_release(t239);
                                                                                                                                     rt_text_release(t240);
-                                                                                                                                    rt_text_release(cv___ret78);
+                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                     rt_text * t242 = NULL;
                                                                                                                                     t242 = clar_fn_toText(clar_lit_3);
-                                                                                                                                    cv___ret78 = t242;
+                                                                                                                                    cv___ret19 = t242;
                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                    rt_text_retain(cv___ret78);
-                                                                                                                                    return cv___ret78;
+                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                    return cv___ret19;
                                                                                                                                 } else {
                                                                                                                                     if (cv_nm == clar_fn_ITextAppendChar()) {
                                                                                                                                         rt_text * t243 = NULL;
@@ -23207,13 +22976,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                         rt_text_release(t245);
                                                                                                                                         rt_text_release(t246);
                                                                                                                                         rt_text_release(t247);
-                                                                                                                                        rt_text_release(cv___ret79);
+                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                         rt_text * t249 = NULL;
                                                                                                                                         t249 = clar_fn_toText(clar_lit_3);
-                                                                                                                                        cv___ret79 = t249;
+                                                                                                                                        cv___ret19 = t249;
                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                        rt_text_retain(cv___ret79);
-                                                                                                                                        return cv___ret79;
+                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                        return cv___ret19;
                                                                                                                                     } else {
                                                                                                                                         if (cv_nm == clar_fn_ITextAppendText()) {
                                                                                                                                             rt_text * t250 = NULL;
@@ -23238,13 +23007,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                             rt_text_release(t252);
                                                                                                                                             rt_text_release(t253);
                                                                                                                                             rt_text_release(t254);
-                                                                                                                                            rt_text_release(cv___ret80);
+                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                             rt_text * t256 = NULL;
                                                                                                                                             t256 = clar_fn_toText(clar_lit_3);
-                                                                                                                                            cv___ret80 = t256;
+                                                                                                                                            cv___ret19 = t256;
                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                            rt_text_retain(cv___ret80);
-                                                                                                                                            return cv___ret80;
+                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                            return cv___ret19;
                                                                                                                                         } else {
                                                                                                                                             if (cv_nm == clar_fn_ITextOfStr()) {
                                                                                                                                                 rt_text * t257 = NULL;
@@ -23273,11 +23042,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                 rt_text_release(t260);
                                                                                                                                                 rt_text_release(t261);
                                                                                                                                                 rt_text_release(t262);
-                                                                                                                                                rt_text_release(cv___ret81);
-                                                                                                                                                cv___ret81 = cv_t;
+                                                                                                                                                rt_text_release(cv___ret19);
+                                                                                                                                                cv___ret19 = cv_t;
                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                rt_text_retain(cv___ret81);
-                                                                                                                                                return cv___ret81;
+                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                return cv___ret19;
                                                                                                                                             } else {
                                                                                                                                                 if (cv_nm == clar_fn_ITextFreeVar()) {
                                                                                                                                                     rt_text * t264 = NULL;
@@ -23291,13 +23060,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                     clar_fn_fpEmit(t266);
                                                                                                                                                     rt_text_release(t264);
                                                                                                                                                     rt_text_release(t265);
-                                                                                                                                                    rt_text_release(cv___ret82);
+                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                     rt_text * t267 = NULL;
                                                                                                                                                     t267 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                    cv___ret82 = t267;
+                                                                                                                                                    cv___ret19 = t267;
                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                    rt_text_retain(cv___ret82);
-                                                                                                                                                    return cv___ret82;
+                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                    return cv___ret19;
                                                                                                                                                 } else {
                                                                                                                                                     if ((cv_nm == clar_fn_IListPush()) || (cv_nm == clar_fn_IListUnshift())) {
                                                                                                                                                         rt_text * t268 = NULL;
@@ -23329,13 +23098,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                         rt_text_release(t271);
                                                                                                                                                         rt_text_release(t272);
                                                                                                                                                         rt_text_release(t273);
-                                                                                                                                                        rt_text_release(cv___ret83);
+                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                         rt_text * t275 = NULL;
                                                                                                                                                         t275 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                        cv___ret83 = t275;
+                                                                                                                                                        cv___ret19 = t275;
                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                        rt_text_retain(cv___ret83);
-                                                                                                                                                        return cv___ret83;
+                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                        return cv___ret19;
                                                                                                                                                     } else {
                                                                                                                                                         if ((cv_nm == clar_fn_IListPop()) || (cv_nm == clar_fn_IListShift())) {
                                                                                                                                                             rt_text * t276 = NULL;
@@ -23367,11 +23136,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                             rt_text_release(t280);
                                                                                                                                                             rt_text_release(t281);
                                                                                                                                                             clar_fn_fpHandoff(cv_t);
-                                                                                                                                                            rt_text_release(cv___ret84);
-                                                                                                                                                            cv___ret84 = cv_t;
+                                                                                                                                                            rt_text_release(cv___ret19);
+                                                                                                                                                            cv___ret19 = cv_t;
                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                            rt_text_retain(cv___ret84);
-                                                                                                                                                            return cv___ret84;
+                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                            return cv___ret19;
                                                                                                                                                         } else {
                                                                                                                                                             if ((cv_nm == clar_fn_IListFirst()) || (cv_nm == clar_fn_IListLast())) {
                                                                                                                                                                 rt_text * t283 = NULL;
@@ -23438,11 +23207,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                     rt_text_release(t297);
                                                                                                                                                                     rt_text_release(t298);
                                                                                                                                                                 }
-                                                                                                                                                                rt_text_release(cv___ret85);
-                                                                                                                                                                cv___ret85 = cv_t;
+                                                                                                                                                                rt_text_release(cv___ret19);
+                                                                                                                                                                cv___ret19 = cv_t;
                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                rt_text_retain(cv___ret85);
-                                                                                                                                                                return cv___ret85;
+                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                return cv___ret19;
                                                                                                                                                             } else {
                                                                                                                                                                 if (cv_nm == clar_fn_IListRemove()) {
                                                                                                                                                                     rt_text * t300 = NULL;
@@ -23467,16 +23236,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                     rt_text_release(t302);
                                                                                                                                                                     rt_text_release(t303);
                                                                                                                                                                     rt_text_release(t304);
-                                                                                                                                                                    rt_text_release(cv___ret86);
+                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                     rt_text * t306 = NULL;
                                                                                                                                                                     t306 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                    cv___ret86 = t306;
+                                                                                                                                                                    cv___ret19 = t306;
                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                    rt_text_retain(cv___ret86);
-                                                                                                                                                                    return cv___ret86;
+                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                 } else {
                                                                                                                                                                     if (cv_nm == clar_fn_IListCount()) {
-                                                                                                                                                                        rt_text_release(cv___ret87);
+                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                         rt_text * t307 = NULL;
                                                                                                                                                                         t307 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                         rt_text * t308 = NULL;
@@ -23485,12 +23254,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                         rt_text * t309 = NULL;
                                                                                                                                                                         t309 = rt_text_new();
                                                                                                                                                                         rt_text_concat(t309, t308, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                        cv___ret87 = t309;
+                                                                                                                                                                        cv___ret19 = t309;
                                                                                                                                                                         rt_text_release(t307);
                                                                                                                                                                         rt_text_release(t308);
                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                        rt_text_retain(cv___ret87);
-                                                                                                                                                                        return cv___ret87;
+                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                     } else {
                                                                                                                                                                         if (cv_nm == clar_fn_IListFreeVar()) {
                                                                                                                                                                             rt_text_store(cv_freeVarBuf, (const uint8_t*)&(clar_lit_3));
@@ -23500,13 +23269,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                             rt_str_concat((uint8_t*)&t311, (const uint8_t*)&(clar_lit_718), (const uint8_t*)&(t310));
                                                                                                                                                                             clar_fn_cpEmitRelease(cv_freeVarBuf, t311, clar_fn_irExprType(cv_a0));
                                                                                                                                                                             clar_fn_fpEmit(cv_freeVarBuf);
-                                                                                                                                                                            rt_text_release(cv___ret88);
+                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                             rt_text * t312 = NULL;
                                                                                                                                                                             t312 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                            cv___ret88 = t312;
+                                                                                                                                                                            cv___ret19 = t312;
                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                            rt_text_retain(cv___ret88);
-                                                                                                                                                                            return cv___ret88;
+                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                         } else {
                                                                                                                                                                             if (cv_nm == clar_fn_IMapSet()) {
                                                                                                                                                                                 rt_text * t313 = NULL;
@@ -23543,13 +23312,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                 rt_text_release(t318);
                                                                                                                                                                                 rt_text_release(t319);
                                                                                                                                                                                 rt_text_release(t320);
-                                                                                                                                                                                rt_text_release(cv___ret89);
+                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                 rt_text * t322 = NULL;
                                                                                                                                                                                 t322 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                cv___ret89 = t322;
+                                                                                                                                                                                cv___ret19 = t322;
                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                rt_text_retain(cv___ret89);
-                                                                                                                                                                                return cv___ret89;
+                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                             } else {
                                                                                                                                                                                 if (cv_nm == clar_fn_IMapGet()) {
                                                                                                                                                                                     rt_text * t323 = NULL;
@@ -23627,11 +23396,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                         rt_text_release(t340);
                                                                                                                                                                                         rt_text_release(t341);
                                                                                                                                                                                     }
-                                                                                                                                                                                    rt_text_release(cv___ret90);
-                                                                                                                                                                                    cv___ret90 = cv_t;
+                                                                                                                                                                                    rt_text_release(cv___ret19);
+                                                                                                                                                                                    cv___ret19 = cv_t;
                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                    rt_text_retain(cv___ret90);
-                                                                                                                                                                                    return cv___ret90;
+                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                 } else {
                                                                                                                                                                                     if (cv_nm == clar_fn_IMapGetDv()) {
                                                                                                                                                                                         rt_text * t343 = NULL;
@@ -23737,14 +23506,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                             rt_text_release(t367);
                                                                                                                                                                                             rt_text_release(t368);
                                                                                                                                                                                         }
-                                                                                                                                                                                        rt_text_release(cv___ret91);
-                                                                                                                                                                                        cv___ret91 = cv_t;
+                                                                                                                                                                                        rt_text_release(cv___ret19);
+                                                                                                                                                                                        cv___ret19 = cv_t;
                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                        rt_text_retain(cv___ret91);
-                                                                                                                                                                                        return cv___ret91;
+                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                     } else {
                                                                                                                                                                                         if (cv_nm == clar_fn_IMapHas()) {
-                                                                                                                                                                                            rt_text_release(cv___ret92);
+                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                             rt_text * t370 = NULL;
                                                                                                                                                                                             t370 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                             rt_text * t371 = NULL;
@@ -23761,15 +23530,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                             rt_text * t375 = NULL;
                                                                                                                                                                                             t375 = rt_text_new();
                                                                                                                                                                                             rt_text_concat(t375, t373, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                            cv___ret92 = t375;
+                                                                                                                                                                                            cv___ret19 = t375;
                                                                                                                                                                                             rt_text_release(t370);
                                                                                                                                                                                             rt_text_release(t371);
                                                                                                                                                                                             rt_text_release(t372);
                                                                                                                                                                                             rt_text_release(t373);
                                                                                                                                                                                             rt_text_release(t374);
                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                            rt_text_retain(cv___ret92);
-                                                                                                                                                                                            return cv___ret92;
+                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                         } else {
                                                                                                                                                                                             if (cv_nm == clar_fn_IMapRemove()) {
                                                                                                                                                                                                 rt_text * t376 = NULL;
@@ -23794,16 +23563,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                 rt_text_release(t378);
                                                                                                                                                                                                 rt_text_release(t379);
                                                                                                                                                                                                 rt_text_release(t380);
-                                                                                                                                                                                                rt_text_release(cv___ret93);
+                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                 rt_text * t382 = NULL;
                                                                                                                                                                                                 t382 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                cv___ret93 = t382;
+                                                                                                                                                                                                cv___ret19 = t382;
                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                rt_text_retain(cv___ret93);
-                                                                                                                                                                                                return cv___ret93;
+                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                             } else {
                                                                                                                                                                                                 if (cv_nm == clar_fn_IMapCount()) {
-                                                                                                                                                                                                    rt_text_release(cv___ret94);
+                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                     rt_text * t383 = NULL;
                                                                                                                                                                                                     t383 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                     rt_text * t384 = NULL;
@@ -23812,12 +23581,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                     rt_text * t385 = NULL;
                                                                                                                                                                                                     t385 = rt_text_new();
                                                                                                                                                                                                     rt_text_concat(t385, t384, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                    cv___ret94 = t385;
+                                                                                                                                                                                                    cv___ret19 = t385;
                                                                                                                                                                                                     rt_text_release(t383);
                                                                                                                                                                                                     rt_text_release(t384);
                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                    rt_text_retain(cv___ret94);
-                                                                                                                                                                                                    return cv___ret94;
+                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                 } else {
                                                                                                                                                                                                     if (cv_nm == clar_fn_IMapFreeVar()) {
                                                                                                                                                                                                         rt_text_store(cv_freeVarBuf, (const uint8_t*)&(clar_lit_3));
@@ -23827,22 +23596,22 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                         rt_str_concat((uint8_t*)&t387, (const uint8_t*)&(clar_lit_718), (const uint8_t*)&(t386));
                                                                                                                                                                                                         clar_fn_cpEmitRelease(cv_freeVarBuf, t387, clar_fn_irExprType(cv_a0));
                                                                                                                                                                                                         clar_fn_fpEmit(cv_freeVarBuf);
-                                                                                                                                                                                                        rt_text_release(cv___ret95);
+                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                         rt_text * t388 = NULL;
                                                                                                                                                                                                         t388 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                        cv___ret95 = t388;
+                                                                                                                                                                                                        cv___ret19 = t388;
                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                        rt_text_retain(cv___ret95);
-                                                                                                                                                                                                        return cv___ret95;
+                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                     } else {
                                                                                                                                                                                                         if (cv_nm == clar_fn_ILastErrCode()) {
-                                                                                                                                                                                                            rt_text_release(cv___ret96);
+                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                             rt_text * t389 = NULL;
                                                                                                                                                                                                             t389 = clar_fn_toText(clar_lit_820);
-                                                                                                                                                                                                            cv___ret96 = t389;
+                                                                                                                                                                                                            cv___ret19 = t389;
                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                            rt_text_retain(cv___ret96);
-                                                                                                                                                                                                            return cv___ret96;
+                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                         } else {
                                                                                                                                                                                                             if (cv_nm == clar_fn_ILastErrMsg()) {
                                                                                                                                                                                                                 rt_text * t390 = NULL;
@@ -23856,11 +23625,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                 rt_text_concat(t392, t391, (const uint8_t*)&(clar_lit_821), NULL);
                                                                                                                                                                                                                 clar_fn_fpEmit(t392);
                                                                                                                                                                                                                 rt_text_release(t391);
-                                                                                                                                                                                                                rt_text_release(cv___ret97);
-                                                                                                                                                                                                                cv___ret97 = cv_t;
+                                                                                                                                                                                                                rt_text_release(cv___ret19);
+                                                                                                                                                                                                                cv___ret19 = cv_t;
                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                rt_text_retain(cv___ret97);
-                                                                                                                                                                                                                return cv___ret97;
+                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                 if (cv_nm == clar_fn_ILastErr()) {
                                                                                                                                                                                                                     rt_text * t393 = NULL;
@@ -23878,14 +23647,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                     rt_text_concat(t396, t395, (const uint8_t*)&(clar_lit_823), NULL);
                                                                                                                                                                                                                     clar_fn_fpEmit(t396);
                                                                                                                                                                                                                     rt_text_release(t395);
-                                                                                                                                                                                                                    rt_text_release(cv___ret98);
-                                                                                                                                                                                                                    cv___ret98 = cv_t;
+                                                                                                                                                                                                                    rt_text_release(cv___ret19);
+                                                                                                                                                                                                                    cv___ret19 = cv_t;
                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                    rt_text_retain(cv___ret98);
-                                                                                                                                                                                                                    return cv___ret98;
+                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                     if (cv_nm == clar_fn_IFileReadText()) {
-                                                                                                                                                                                                                        rt_text_release(cv___ret99);
+                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                         rt_text * t397 = NULL;
                                                                                                                                                                                                                         t397 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                                                                                                                         rt_text * t398 = NULL;
@@ -23902,18 +23671,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                         rt_text * t402 = NULL;
                                                                                                                                                                                                                         t402 = rt_text_new();
                                                                                                                                                                                                                         rt_text_concat(t402, t400, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                        cv___ret99 = t402;
+                                                                                                                                                                                                                        cv___ret19 = t402;
                                                                                                                                                                                                                         rt_text_release(t397);
                                                                                                                                                                                                                         rt_text_release(t398);
                                                                                                                                                                                                                         rt_text_release(t399);
                                                                                                                                                                                                                         rt_text_release(t400);
                                                                                                                                                                                                                         rt_text_release(t401);
                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                        rt_text_retain(cv___ret99);
-                                                                                                                                                                                                                        return cv___ret99;
+                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                         if (cv_nm == clar_fn_IFileWriteText()) {
-                                                                                                                                                                                                                            rt_text_release(cv___ret100);
+                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                             rt_text * t403 = NULL;
                                                                                                                                                                                                                             t403 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                                                                                                                             rt_text * t404 = NULL;
@@ -23930,15 +23699,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                             rt_text * t408 = NULL;
                                                                                                                                                                                                                             t408 = rt_text_new();
                                                                                                                                                                                                                             rt_text_concat(t408, t406, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                            cv___ret100 = t408;
+                                                                                                                                                                                                                            cv___ret19 = t408;
                                                                                                                                                                                                                             rt_text_release(t403);
                                                                                                                                                                                                                             rt_text_release(t404);
                                                                                                                                                                                                                             rt_text_release(t405);
                                                                                                                                                                                                                             rt_text_release(t406);
                                                                                                                                                                                                                             rt_text_release(t407);
                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                            rt_text_retain(cv___ret100);
-                                                                                                                                                                                                                            return cv___ret100;
+                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                             if (cv_nm == clar_fn_IFileName()) {
                                                                                                                                                                                                                                 rt_text * t409 = NULL;
@@ -23963,11 +23732,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                 rt_text_release(t411);
                                                                                                                                                                                                                                 rt_text_release(t412);
                                                                                                                                                                                                                                 rt_text_release(t413);
-                                                                                                                                                                                                                                rt_text_release(cv___ret101);
-                                                                                                                                                                                                                                cv___ret101 = cv_t;
+                                                                                                                                                                                                                                rt_text_release(cv___ret19);
+                                                                                                                                                                                                                                cv___ret19 = cv_t;
                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                rt_text_retain(cv___ret101);
-                                                                                                                                                                                                                                return cv___ret101;
+                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                 if ((cv_nm == clar_fn_IFileSave()) || (cv_nm == clar_fn_IFileLoad())) {
                                                                                                                                                                                                                                     cv_dataT = clar_fn_irExprType(cv_a1);
@@ -24027,7 +23796,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IFileLoad()) {
                                                                                                                                                                                                                                         rt_str_store((uint8_t*)&(cv_fn), 255, (const uint8_t*)&(clar_lit_833));
                                                                                                                                                                                                                                     }
-                                                                                                                                                                                                                                    rt_text_release(cv___ret102);
+                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                     clar_str_255 t427;
                                                                                                                                                                                                                                     rt_str_concat((uint8_t*)&t427, (const uint8_t*)&(cv_fn), (const uint8_t*)&(clar_lit_695));
                                                                                                                                                                                                                                     rt_text * t428 = NULL;
@@ -24056,7 +23825,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                     rt_text * t436 = NULL;
                                                                                                                                                                                                                                     t436 = rt_text_new();
                                                                                                                                                                                                                                     rt_text_concat(t436, t435, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                                    cv___ret102 = t436;
+                                                                                                                                                                                                                                    cv___ret19 = t436;
                                                                                                                                                                                                                                     rt_text_release(t428);
                                                                                                                                                                                                                                     rt_text_release(t429);
                                                                                                                                                                                                                                     rt_text_release(t430);
@@ -24066,11 +23835,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                     rt_text_release(t434);
                                                                                                                                                                                                                                     rt_text_release(t435);
                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                    rt_text_retain(cv___ret102);
-                                                                                                                                                                                                                                    return cv___ret102;
+                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiOpen()) {
-                                                                                                                                                                                                                                        rt_text_release(cv___ret103);
+                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                         rt_text * t437 = NULL;
                                                                                                                                                                                                                                         t437 = rt_text_new();
                                                                                                                                                                                                                                         clar_str_255 t438;
@@ -24080,13 +23849,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                         clar_str_255 t440;
                                                                                                                                                                                                                                         rt_str_concat((uint8_t*)&t440, (const uint8_t*)&(t439), (const uint8_t*)&(clar_lit_382));
                                                                                                                                                                                                                                         rt_text_store(t437, (const uint8_t*)&(t440));
-                                                                                                                                                                                                                                        cv___ret103 = t437;
+                                                                                                                                                                                                                                        cv___ret19 = t437;
                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                        rt_text_retain(cv___ret103);
-                                                                                                                                                                                                                                        return cv___ret103;
+                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiFront()) {
-                                                                                                                                                                                                                                            rt_text_release(cv___ret104);
+                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                             rt_text * t441 = NULL;
                                                                                                                                                                                                                                             t441 = rt_text_new();
                                                                                                                                                                                                                                             clar_str_255 t442;
@@ -24096,10 +23865,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                             clar_str_255 t444;
                                                                                                                                                                                                                                             rt_str_concat((uint8_t*)&t444, (const uint8_t*)&(t443), (const uint8_t*)&(clar_lit_382));
                                                                                                                                                                                                                                             rt_text_store(t441, (const uint8_t*)&(t444));
-                                                                                                                                                                                                                                            cv___ret104 = t441;
+                                                                                                                                                                                                                                            cv___ret19 = t441;
                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                            rt_text_retain(cv___ret104);
-                                                                                                                                                                                                                                            return cv___ret104;
+                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiClose()) {
                                                                                                                                                                                                                                                 rt_text * t445 = NULL;
@@ -24113,29 +23882,29 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                 clar_fn_fpEmit(t447);
                                                                                                                                                                                                                                                 rt_text_release(t445);
                                                                                                                                                                                                                                                 rt_text_release(t446);
-                                                                                                                                                                                                                                                rt_text_release(cv___ret105);
+                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                 rt_text * t448 = NULL;
                                                                                                                                                                                                                                                 t448 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                cv___ret105 = t448;
+                                                                                                                                                                                                                                                cv___ret19 = t448;
                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                rt_text_retain(cv___ret105);
-                                                                                                                                                                                                                                                return cv___ret105;
+                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiQuit()) {
                                                                                                                                                                                                                                                     rt_text * t449 = NULL;
                                                                                                                                                                                                                                                     t449 = rt_text_new();
                                                                                                                                                                                                                                                     rt_text_store(t449, (const uint8_t*)&(clar_lit_838));
                                                                                                                                                                                                                                                     clar_fn_fpEmit(t449);
-                                                                                                                                                                                                                                                    rt_text_release(cv___ret106);
+                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                     rt_text * t450 = NULL;
                                                                                                                                                                                                                                                     t450 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                    cv___ret106 = t450;
+                                                                                                                                                                                                                                                    cv___ret19 = t450;
                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                    rt_text_retain(cv___ret106);
-                                                                                                                                                                                                                                                    return cv___ret106;
+                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiState()) {
-                                                                                                                                                                                                                                                        rt_text_release(cv___ret107);
+                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                         clar_str_255 t451;
                                                                                                                                                                                                                                                         t451 = clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_x)));
                                                                                                                                                                                                                                                         clar_str_255 t452;
@@ -24150,12 +23919,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                         rt_text * t456 = NULL;
                                                                                                                                                                                                                                                         t456 = rt_text_new();
                                                                                                                                                                                                                                                         rt_text_concat(t456, t455, (const uint8_t*)&(clar_lit_739), NULL);
-                                                                                                                                                                                                                                                        cv___ret107 = t456;
+                                                                                                                                                                                                                                                        cv___ret19 = t456;
                                                                                                                                                                                                                                                         rt_text_release(t454);
                                                                                                                                                                                                                                                         rt_text_release(t455);
                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                        rt_text_retain(cv___ret107);
-                                                                                                                                                                                                                                                        return cv___ret107;
+                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiStateDefaults()) {
                                                                                                                                                                                                                                                             clar_str_255 t457;
@@ -24189,13 +23958,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                 }
                                                                                                                                                                                                                                                                 cv_fld = clar_fn_irFieldSlotNext(cv_fld);
                                                                                                                                                                                                                                                             }
-                                                                                                                                                                                                                                                            rt_text_release(cv___ret108);
+                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                             rt_text * t465 = NULL;
                                                                                                                                                                                                                                                             t465 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                            cv___ret108 = t465;
+                                                                                                                                                                                                                                                            cv___ret19 = t465;
                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                            rt_text_retain(cv___ret108);
-                                                                                                                                                                                                                                                            return cv___ret108;
+                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetTitle()) {
                                                                                                                                                                                                                                                                 rt_text * t466 = NULL;
@@ -24220,13 +23989,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                 rt_text_release(t468);
                                                                                                                                                                                                                                                                 rt_text_release(t469);
                                                                                                                                                                                                                                                                 rt_text_release(t470);
-                                                                                                                                                                                                                                                                rt_text_release(cv___ret109);
+                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                 rt_text * t472 = NULL;
                                                                                                                                                                                                                                                                 t472 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                cv___ret109 = t472;
+                                                                                                                                                                                                                                                                cv___ret19 = t472;
                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                rt_text_retain(cv___ret109);
-                                                                                                                                                                                                                                                                return cv___ret109;
+                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetTitle()) {
                                                                                                                                                                                                                                                                     rt_text * t473 = NULL;
@@ -24251,11 +24020,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                     rt_text_release(t475);
                                                                                                                                                                                                                                                                     rt_text_release(t476);
                                                                                                                                                                                                                                                                     rt_text_release(t477);
-                                                                                                                                                                                                                                                                    rt_text_release(cv___ret110);
-                                                                                                                                                                                                                                                                    cv___ret110 = cv_t;
+                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
+                                                                                                                                                                                                                                                                    cv___ret19 = cv_t;
                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret110);
-                                                                                                                                                                                                                                                                    return cv___ret110;
+                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetCaption()) {
                                                                                                                                                                                                                                                                         rt_text * t479 = NULL;
@@ -24291,13 +24060,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                         rt_text_release(t484);
                                                                                                                                                                                                                                                                         rt_text_release(t485);
                                                                                                                                                                                                                                                                         rt_text_release(t486);
-                                                                                                                                                                                                                                                                        rt_text_release(cv___ret111);
+                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                         rt_text * t488 = NULL;
                                                                                                                                                                                                                                                                         t488 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                        cv___ret111 = t488;
+                                                                                                                                                                                                                                                                        cv___ret19 = t488;
                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret111);
-                                                                                                                                                                                                                                                                        return cv___ret111;
+                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiSetText()) {
                                                                                                                                                                                                                                                                             rt_text * t489 = NULL;
@@ -24333,13 +24102,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                             rt_text_release(t494);
                                                                                                                                                                                                                                                                             rt_text_release(t495);
                                                                                                                                                                                                                                                                             rt_text_release(t496);
-                                                                                                                                                                                                                                                                            rt_text_release(cv___ret112);
+                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                             rt_text * t498 = NULL;
                                                                                                                                                                                                                                                                             t498 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                            cv___ret112 = t498;
+                                                                                                                                                                                                                                                                            cv___ret19 = t498;
                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret112);
-                                                                                                                                                                                                                                                                            return cv___ret112;
+                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiGetFieldText()) {
                                                                                                                                                                                                                                                                                 rt_text * t499 = NULL;
@@ -24375,11 +24144,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                 rt_text_release(t504);
                                                                                                                                                                                                                                                                                 rt_text_release(t505);
                                                                                                                                                                                                                                                                                 rt_text_release(t506);
-                                                                                                                                                                                                                                                                                rt_text_release(cv___ret113);
-                                                                                                                                                                                                                                                                                cv___ret113 = cv_t;
+                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
+                                                                                                                                                                                                                                                                                cv___ret19 = cv_t;
                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret113);
-                                                                                                                                                                                                                                                                                return cv___ret113;
+                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetTextviewText()) {
                                                                                                                                                                                                                                                                                     rt_text * t508 = NULL;
@@ -24419,11 +24188,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                     rt_text_release(t514);
                                                                                                                                                                                                                                                                                     rt_text_release(t515);
                                                                                                                                                                                                                                                                                     rt_text_release(t516);
-                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret114);
-                                                                                                                                                                                                                                                                                    cv___ret114 = cv_t;
+                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
+                                                                                                                                                                                                                                                                                    cv___ret19 = cv_t;
                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret114);
-                                                                                                                                                                                                                                                                                    return cv___ret114;
+                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetTextviewText()) {
                                                                                                                                                                                                                                                                                         rt_text * t518 = NULL;
@@ -24459,16 +24228,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                         rt_text_release(t523);
                                                                                                                                                                                                                                                                                         rt_text_release(t524);
                                                                                                                                                                                                                                                                                         rt_text_release(t525);
-                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret115);
+                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                         rt_text * t527 = NULL;
                                                                                                                                                                                                                                                                                         t527 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                        cv___ret115 = t527;
+                                                                                                                                                                                                                                                                                        cv___ret19 = t527;
                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret115);
-                                                                                                                                                                                                                                                                                        return cv___ret115;
+                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetChecked()) {
-                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret116);
+                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                             rt_text * t528 = NULL;
                                                                                                                                                                                                                                                                                             t528 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                                                                                                             rt_text * t529 = NULL;
@@ -24485,15 +24254,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                             rt_text * t533 = NULL;
                                                                                                                                                                                                                                                                                             t533 = rt_text_new();
                                                                                                                                                                                                                                                                                             rt_text_concat(t533, t531, (const uint8_t*)&(clar_lit_854), NULL);
-                                                                                                                                                                                                                                                                                            cv___ret116 = t533;
+                                                                                                                                                                                                                                                                                            cv___ret19 = t533;
                                                                                                                                                                                                                                                                                             rt_text_release(t528);
                                                                                                                                                                                                                                                                                             rt_text_release(t529);
                                                                                                                                                                                                                                                                                             rt_text_release(t530);
                                                                                                                                                                                                                                                                                             rt_text_release(t531);
                                                                                                                                                                                                                                                                                             rt_text_release(t532);
                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret116);
-                                                                                                                                                                                                                                                                                            return cv___ret116;
+                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetChecked()) {
                                                                                                                                                                                                                                                                                                 rt_text * t534 = NULL;
@@ -24529,16 +24298,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                 rt_text_release(t539);
                                                                                                                                                                                                                                                                                                 rt_text_release(t540);
                                                                                                                                                                                                                                                                                                 rt_text_release(t541);
-                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret117);
+                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                 rt_text * t543 = NULL;
                                                                                                                                                                                                                                                                                                 t543 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                cv___ret117 = t543;
+                                                                                                                                                                                                                                                                                                cv___ret19 = t543;
                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret117);
-                                                                                                                                                                                                                                                                                                return cv___ret117;
+                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetEnabled()) {
-                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret118);
+                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                     rt_text * t544 = NULL;
                                                                                                                                                                                                                                                                                                     t544 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                                                                                                                     rt_text * t545 = NULL;
@@ -24555,15 +24324,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                     rt_text * t549 = NULL;
                                                                                                                                                                                                                                                                                                     t549 = rt_text_new();
                                                                                                                                                                                                                                                                                                     rt_text_concat(t549, t547, (const uint8_t*)&(clar_lit_857), NULL);
-                                                                                                                                                                                                                                                                                                    cv___ret118 = t549;
+                                                                                                                                                                                                                                                                                                    cv___ret19 = t549;
                                                                                                                                                                                                                                                                                                     rt_text_release(t544);
                                                                                                                                                                                                                                                                                                     rt_text_release(t545);
                                                                                                                                                                                                                                                                                                     rt_text_release(t546);
                                                                                                                                                                                                                                                                                                     rt_text_release(t547);
                                                                                                                                                                                                                                                                                                     rt_text_release(t548);
                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret118);
-                                                                                                                                                                                                                                                                                                    return cv___ret118;
+                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetEnabled()) {
                                                                                                                                                                                                                                                                                                         rt_text * t550 = NULL;
@@ -24599,16 +24368,16 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                         rt_text_release(t555);
                                                                                                                                                                                                                                                                                                         rt_text_release(t556);
                                                                                                                                                                                                                                                                                                         rt_text_release(t557);
-                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret119);
+                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                         rt_text * t559 = NULL;
                                                                                                                                                                                                                                                                                                         t559 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                        cv___ret119 = t559;
+                                                                                                                                                                                                                                                                                                        cv___ret19 = t559;
                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret119);
-                                                                                                                                                                                                                                                                                                        return cv___ret119;
+                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetWidth()) {
-                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret120);
+                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                             rt_text * t560 = NULL;
                                                                                                                                                                                                                                                                                                             t560 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                                                                                                                             rt_text * t561 = NULL;
@@ -24625,18 +24394,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                             rt_text * t565 = NULL;
                                                                                                                                                                                                                                                                                                             t565 = rt_text_new();
                                                                                                                                                                                                                                                                                                             rt_text_concat(t565, t563, (const uint8_t*)&(clar_lit_860), NULL);
-                                                                                                                                                                                                                                                                                                            cv___ret120 = t565;
+                                                                                                                                                                                                                                                                                                            cv___ret19 = t565;
                                                                                                                                                                                                                                                                                                             rt_text_release(t560);
                                                                                                                                                                                                                                                                                                             rt_text_release(t561);
                                                                                                                                                                                                                                                                                                             rt_text_release(t562);
                                                                                                                                                                                                                                                                                                             rt_text_release(t563);
                                                                                                                                                                                                                                                                                                             rt_text_release(t564);
                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret120);
-                                                                                                                                                                                                                                                                                                            return cv___ret120;
+                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiGetHeight()) {
-                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret121);
+                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                 rt_text * t566 = NULL;
                                                                                                                                                                                                                                                                                                                 t566 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                                                                                                                                 rt_text * t567 = NULL;
@@ -24653,18 +24422,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                 rt_text * t571 = NULL;
                                                                                                                                                                                                                                                                                                                 t571 = rt_text_new();
                                                                                                                                                                                                                                                                                                                 rt_text_concat(t571, t569, (const uint8_t*)&(clar_lit_861), NULL);
-                                                                                                                                                                                                                                                                                                                cv___ret121 = t571;
+                                                                                                                                                                                                                                                                                                                cv___ret19 = t571;
                                                                                                                                                                                                                                                                                                                 rt_text_release(t566);
                                                                                                                                                                                                                                                                                                                 rt_text_release(t567);
                                                                                                                                                                                                                                                                                                                 rt_text_release(t568);
                                                                                                                                                                                                                                                                                                                 rt_text_release(t569);
                                                                                                                                                                                                                                                                                                                 rt_text_release(t570);
                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret121);
-                                                                                                                                                                                                                                                                                                                return cv___ret121;
+                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetSelected()) {
-                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret122);
+                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                     rt_text * t572 = NULL;
                                                                                                                                                                                                                                                                                                                     t572 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                                                                                                                                                                     rt_text * t573 = NULL;
@@ -24681,15 +24450,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                     rt_text * t577 = NULL;
                                                                                                                                                                                                                                                                                                                     t577 = rt_text_new();
                                                                                                                                                                                                                                                                                                                     rt_text_concat(t577, t575, (const uint8_t*)&(clar_lit_862), NULL);
-                                                                                                                                                                                                                                                                                                                    cv___ret122 = t577;
+                                                                                                                                                                                                                                                                                                                    cv___ret19 = t577;
                                                                                                                                                                                                                                                                                                                     rt_text_release(t572);
                                                                                                                                                                                                                                                                                                                     rt_text_release(t573);
                                                                                                                                                                                                                                                                                                                     rt_text_release(t574);
                                                                                                                                                                                                                                                                                                                     rt_text_release(t575);
                                                                                                                                                                                                                                                                                                                     rt_text_release(t576);
                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret122);
-                                                                                                                                                                                                                                                                                                                    return cv___ret122;
+                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetSelected()) {
                                                                                                                                                                                                                                                                                                                         rt_text * t578 = NULL;
@@ -24725,13 +24494,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                         rt_text_release(t583);
                                                                                                                                                                                                                                                                                                                         rt_text_release(t584);
                                                                                                                                                                                                                                                                                                                         rt_text_release(t585);
-                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret123);
+                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                         rt_text * t587 = NULL;
                                                                                                                                                                                                                                                                                                                         t587 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                        cv___ret123 = t587;
+                                                                                                                                                                                                                                                                                                                        cv___ret19 = t587;
                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret123);
-                                                                                                                                                                                                                                                                                                                        return cv___ret123;
+                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiMenuEnable()) {
                                                                                                                                                                                                                                                                                                                             rt_text * t588 = NULL;
@@ -24767,29 +24536,29 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                             rt_text_release(t593);
                                                                                                                                                                                                                                                                                                                             rt_text_release(t594);
                                                                                                                                                                                                                                                                                                                             rt_text_release(t595);
-                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret124);
+                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                             rt_text * t597 = NULL;
                                                                                                                                                                                                                                                                                                                             t597 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                            cv___ret124 = t597;
+                                                                                                                                                                                                                                                                                                                            cv___ret19 = t597;
                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret124);
-                                                                                                                                                                                                                                                                                                                            return cv___ret124;
+                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiCancel()) {
                                                                                                                                                                                                                                                                                                                                 rt_text * t598 = NULL;
                                                                                                                                                                                                                                                                                                                                 t598 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                 rt_text_store(t598, (const uint8_t*)&(clar_lit_866));
                                                                                                                                                                                                                                                                                                                                 clar_fn_fpEmit(t598);
-                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret125);
+                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                 rt_text * t599 = NULL;
                                                                                                                                                                                                                                                                                                                                 t599 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                cv___ret125 = t599;
+                                                                                                                                                                                                                                                                                                                                cv___ret19 = t599;
                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret125);
-                                                                                                                                                                                                                                                                                                                                return cv___ret125;
+                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiAskOpen()) {
-                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret126);
+                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                     rt_text * t600 = NULL;
                                                                                                                                                                                                                                                                                                                                     t600 = clar_fn_fpAddrable(cv_a0);
                                                                                                                                                                                                                                                                                                                                     rt_text * t601 = NULL;
@@ -24798,15 +24567,15 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                     rt_text * t602 = NULL;
                                                                                                                                                                                                                                                                                                                                     t602 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                     rt_text_concat(t602, t601, (const uint8_t*)&(clar_lit_739), NULL);
-                                                                                                                                                                                                                                                                                                                                    cv___ret126 = t602;
+                                                                                                                                                                                                                                                                                                                                    cv___ret19 = t602;
                                                                                                                                                                                                                                                                                                                                     rt_text_release(t600);
                                                                                                                                                                                                                                                                                                                                     rt_text_release(t601);
                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret126);
-                                                                                                                                                                                                                                                                                                                                    return cv___ret126;
+                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiAskSave()) {
-                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret127);
+                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                         rt_text * t603 = NULL;
                                                                                                                                                                                                                                                                                                                                         t603 = clar_fn_fpAddrable(cv_a0);
                                                                                                                                                                                                                                                                                                                                         rt_text * t604 = NULL;
@@ -24823,18 +24592,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                         rt_text * t608 = NULL;
                                                                                                                                                                                                                                                                                                                                         t608 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                         rt_text_concat(t608, t606, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                                                                                                                                        cv___ret127 = t608;
+                                                                                                                                                                                                                                                                                                                                        cv___ret19 = t608;
                                                                                                                                                                                                                                                                                                                                         rt_text_release(t603);
                                                                                                                                                                                                                                                                                                                                         rt_text_release(t604);
                                                                                                                                                                                                                                                                                                                                         rt_text_release(t605);
                                                                                                                                                                                                                                                                                                                                         rt_text_release(t606);
                                                                                                                                                                                                                                                                                                                                         rt_text_release(t607);
                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret127);
-                                                                                                                                                                                                                                                                                                                                        return cv___ret127;
+                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiAskSaveChanges()) {
-                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret128);
+                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                             rt_text * t609 = NULL;
                                                                                                                                                                                                                                                                                                                                             t609 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                                                                                                                                                                                                                                             rt_text * t610 = NULL;
@@ -24843,12 +24612,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                             rt_text * t611 = NULL;
                                                                                                                                                                                                                                                                                                                                             t611 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                             rt_text_concat(t611, t610, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                                                                                                                                            cv___ret128 = t611;
+                                                                                                                                                                                                                                                                                                                                            cv___ret19 = t611;
                                                                                                                                                                                                                                                                                                                                             rt_text_release(t609);
                                                                                                                                                                                                                                                                                                                                             rt_text_release(t610);
                                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret128);
-                                                                                                                                                                                                                                                                                                                                            return cv___ret128;
+                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiCanvasClear()) {
                                                                                                                                                                                                                                                                                                                                                 rt_text * t612 = NULL;
@@ -24873,13 +24642,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t614);
                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t615);
                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t616);
-                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret129);
+                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                 rt_text * t618 = NULL;
                                                                                                                                                                                                                                                                                                                                                 t618 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                cv___ret129 = t618;
+                                                                                                                                                                                                                                                                                                                                                cv___ret19 = t618;
                                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret129);
-                                                                                                                                                                                                                                                                                                                                                return cv___ret129;
+                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiCanvasLine()) {
                                                                                                                                                                                                                                                                                                                                                     rt_text * t619 = NULL;
@@ -24948,13 +24717,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t633);
                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t634);
                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t635);
-                                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret130);
+                                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                     rt_text * t637 = NULL;
                                                                                                                                                                                                                                                                                                                                                     t637 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                    cv___ret130 = t637;
+                                                                                                                                                                                                                                                                                                                                                    cv___ret19 = t637;
                                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret130);
-                                                                                                                                                                                                                                                                                                                                                    return cv___ret130;
+                                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiCanvasRect()) {
                                                                                                                                                                                                                                                                                                                                                         rt_text * t638 = NULL;
@@ -25034,13 +24803,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t655);
                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t656);
                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t657);
-                                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret131);
+                                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                         rt_text * t659 = NULL;
                                                                                                                                                                                                                                                                                                                                                         t659 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                        cv___ret131 = t659;
+                                                                                                                                                                                                                                                                                                                                                        cv___ret19 = t659;
                                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret131);
-                                                                                                                                                                                                                                                                                                                                                        return cv___ret131;
+                                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiCanvasCircle()) {
                                                                                                                                                                                                                                                                                                                                                             rt_text * t660 = NULL;
@@ -25098,13 +24867,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                             rt_text_release(t671);
                                                                                                                                                                                                                                                                                                                                                             rt_text_release(t672);
                                                                                                                                                                                                                                                                                                                                                             rt_text_release(t673);
-                                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret132);
+                                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                             rt_text * t675 = NULL;
                                                                                                                                                                                                                                                                                                                                                             t675 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                            cv___ret132 = t675;
+                                                                                                                                                                                                                                                                                                                                                            cv___ret19 = t675;
                                                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret132);
-                                                                                                                                                                                                                                                                                                                                                            return cv___ret132;
+                                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiCanvasFillCircle()) {
                                                                                                                                                                                                                                                                                                                                                                 rt_text * t676 = NULL;
@@ -25162,13 +24931,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t687);
                                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t688);
                                                                                                                                                                                                                                                                                                                                                                 rt_text_release(t689);
-                                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret133);
+                                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                                 rt_text * t691 = NULL;
                                                                                                                                                                                                                                                                                                                                                                 t691 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                                cv___ret133 = t691;
+                                                                                                                                                                                                                                                                                                                                                                cv___ret19 = t691;
                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret133);
-                                                                                                                                                                                                                                                                                                                                                                return cv___ret133;
+                                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiCanvasPattern()) {
                                                                                                                                                                                                                                                                                                                                                                     rt_text * t692 = NULL;
@@ -25204,13 +24973,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t697);
                                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t698);
                                                                                                                                                                                                                                                                                                                                                                     rt_text_release(t699);
-                                                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret134);
+                                                                                                                                                                                                                                                                                                                                                                    rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                                     rt_text * t701 = NULL;
                                                                                                                                                                                                                                                                                                                                                                     t701 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                                    cv___ret134 = t701;
+                                                                                                                                                                                                                                                                                                                                                                    cv___ret19 = t701;
                                                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret134);
-                                                                                                                                                                                                                                                                                                                                                                    return cv___ret134;
+                                                                                                                                                                                                                                                                                                                                                                    rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                                    return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiCanvasDrawText()) {
                                                                                                                                                                                                                                                                                                                                                                         rt_text * t702 = NULL;
@@ -25268,33 +25037,33 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t713);
                                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t714);
                                                                                                                                                                                                                                                                                                                                                                         rt_text_release(t715);
-                                                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret135);
+                                                                                                                                                                                                                                                                                                                                                                        rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                                         rt_text * t717 = NULL;
                                                                                                                                                                                                                                                                                                                                                                         t717 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                                        cv___ret135 = t717;
+                                                                                                                                                                                                                                                                                                                                                                        cv___ret19 = t717;
                                                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret135);
-                                                                                                                                                                                                                                                                                                                                                                        return cv___ret135;
+                                                                                                                                                                                                                                                                                                                                                                        rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                                        return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiEdit()) {
                                                                                                                                                                                                                                                                                                                                                                             clar_fn_fpUiEditStmt(cv_x, cv_a0, cv_a1, cv_a2);
-                                                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret136);
+                                                                                                                                                                                                                                                                                                                                                                            rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                                             rt_text * t718 = NULL;
                                                                                                                                                                                                                                                                                                                                                                             t718 = clar_fn_toText(clar_lit_3);
-                                                                                                                                                                                                                                                                                                                                                                            cv___ret136 = t718;
+                                                                                                                                                                                                                                                                                                                                                                            cv___ret19 = t718;
                                                                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret136);
-                                                                                                                                                                                                                                                                                                                                                                            return cv___ret136;
+                                                                                                                                                                                                                                                                                                                                                                            rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                                            return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiFormIsNew()) {
-                                                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret137);
+                                                                                                                                                                                                                                                                                                                                                                                rt_text_release(cv___ret19);
                                                                                                                                                                                                                                                                                                                                                                                 rt_text * t719 = NULL;
                                                                                                                                                                                                                                                                                                                                                                                 t719 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                                                                 rt_text_store(t719, (const uint8_t*)&(clar_lit_877));
-                                                                                                                                                                                                                                                                                                                                                                                cv___ret137 = t719;
+                                                                                                                                                                                                                                                                                                                                                                                cv___ret19 = t719;
                                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret137);
-                                                                                                                                                                                                                                                                                                                                                                                return cv___ret137;
+                                                                                                                                                                                                                                                                                                                                                                                rt_text_retain(cv___ret19);
+                                                                                                                                                                                                                                                                                                                                                                                return cv___ret19;
                                                                                                                                                                                                                                                                                                                                                                             }
                                                                                                                                                                                                                                                                                                                                                                         }
                                                                                                                                                                                                                                                                                                                                                                     }
@@ -25386,13 +25155,13 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
             }
         }
     }
-    rt_text_release(cv___ret138);
+    rt_text_release(cv___ret19);
     rt_text * t720 = NULL;
     t720 = clar_fn_toText(clar_lit_3);
-    cv___ret138 = t720;
+    cv___ret19 = t720;
     rt_text_free(cv_dataExpr);
-    rt_text_retain(cv___ret138);
-    return cv___ret138;
+    rt_text_retain(cv___ret19);
+    return cv___ret19;
     return NULL;
 }
 
@@ -26194,17 +25963,13 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
     cv_c = 0;
     rt_text * cv_r;
     cv_r = rt_text_new();
-    rt_text * cv___ret139;
-    cv___ret139 = rt_text_new();
-    rt_text * cv___ret140;
-    cv___ret140 = rt_text_new();
-    rt_text * cv___ret141;
-    cv___ret141 = rt_text_new();
+    rt_text * cv___ret20;
+    cv___ret20 = rt_text_new();
     if (((rt_text_len(cv_s) < 2) || (rt_text_index(cv_s, (int32_t)(0)) != 40)) || (rt_text_index(cv_s, (int32_t)((rt_text_len(cv_s) - 1))) != 41)) {
-        rt_text_release(cv___ret139);
-        cv___ret139 = cv_s;
-        rt_text_retain(cv___ret139);
-        return cv___ret139;
+        rt_text_release(cv___ret20);
+        cv___ret20 = cv_s;
+        rt_text_retain(cv___ret20);
+        return cv___ret20;
     }
     cv_depth = 0;
     cv_i = 0;
@@ -26217,10 +25982,10 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
             if (cv_c == 41) {
                 cv_depth = (cv_depth - 1);
                 if ((cv_depth == 0) && (cv_i != (rt_text_len(cv_s) - 1))) {
-                    rt_text_release(cv___ret140);
-                    cv___ret140 = cv_s;
-                    rt_text_retain(cv___ret140);
-                    return cv___ret140;
+                    rt_text_release(cv___ret20);
+                    cv___ret20 = cv_s;
+                    rt_text_retain(cv___ret20);
+                    return cv___ret20;
                 }
             }
         }
@@ -26233,10 +25998,10 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
         rt_text_append_char(cv_r, (uint8_t)(rt_text_index(cv_s, (int32_t)(cv_i))));
         cv_i = (cv_i + 1);
     }
-    rt_text_release(cv___ret141);
-    cv___ret141 = cv_r;
-    rt_text_retain(cv___ret141);
-    return cv___ret141;
+    rt_text_release(cv___ret20);
+    cv___ret20 = cv_r;
+    rt_text_retain(cv___ret20);
+    return cv___ret20;
     return NULL;
 }
 
@@ -26314,8 +26079,8 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     cv_p = 0;
     int32_t cv_first;
     cv_first = 0;
-    rt_text * cv___ret142;
-    cv___ret142 = rt_text_new();
+    rt_text * cv___ret21;
+    cv___ret21 = rt_text_new();
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(clar_lit_3);
     cv_params = t1;
@@ -26353,7 +26118,7 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
         t8 = clar_fn_toText(clar_lit_342);
         cv_params = t8;
     }
-    rt_text_release(cv___ret142);
+    rt_text_release(cv___ret21);
     clar_str_255 t9;
     t9 = clar_fn_cpCType(clar_fn_irFuncRet(cv_f));
     clar_str_255 t10;
@@ -26376,12 +26141,12 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     rt_text * t18 = NULL;
     t18 = clar_fn_toText(clar_lit_382);
     rt_text_concat(t17, t16, NULL, t18);
-    cv___ret142 = t17;
+    cv___ret21 = t17;
     rt_text_release(t15);
     rt_text_release(t16);
     rt_text_release(t18);
-    rt_text_retain(cv___ret142);
-    return cv___ret142;
+    rt_text_retain(cv___ret21);
+    return cv___ret21;
     return NULL;
 }
 
@@ -30063,8 +29828,8 @@ static void clar_fn_cpAppendTextList(rt_text * cv_out, rt_list * cv_buf) {
 static rt_text * clar_fn_emitProgram(void) {
     rt_text * cv_out;
     cv_out = rt_text_new();
-    rt_text * cv___ret143;
-    cv___ret143 = rt_text_new();
+    rt_text * cv___ret22;
+    cv___ret22 = rt_text_new();
     rt_text_store(cv_out, (const uint8_t*)&(clar_lit_3));
     clar_fn_cpResetBuffers();
     clar_fn_cpEnsureStr(255);
@@ -30107,10 +29872,10 @@ static rt_text * clar_fn_emitProgram(void) {
         clar_fn_cpAppendLine(cv_out, clar_lit_3);
     }
     clar_fn_cpAppendTextList(cv_out, cv_cpRestBuf);
-    rt_text_release(cv___ret143);
-    cv___ret143 = cv_out;
-    rt_text_retain(cv___ret143);
-    return cv___ret143;
+    rt_text_release(cv___ret22);
+    cv___ret22 = cv_out;
+    rt_text_retain(cv___ret22);
+    return cv___ret22;
     return NULL;
 }
 

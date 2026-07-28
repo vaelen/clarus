@@ -1680,19 +1680,39 @@ var lowFreeTypes: map of int
 var lowFreeDisq: map of int
 
 // lowRetTempN counts synthesized `return`-value temps program-wide (never
-// per-function/per-scope) -- see lowNewReturnTemp's own doc comment.
+// reused across functions -- see lowNewReturnTemp's own doc comment.
 var lowRetTempN: int
 
-// lowNewReturnTemp names a fresh synthetic local (never colliding with a
-// user identifier -- Clarus identifiers can't start with `_`) used ONLY by
-// lowReturn (below) to hold a `return` expression's computed value when at
-// least one qualifying local also needs a scope-exit free at this same
-// return point. Program-wide counter, exactly like lowNewSwitchTemp: two
-// such temps landing in the same or sibling functions must never collide
-// on one C variable name.
+// lowRetTempIdx caches the CURRENT function's own return-value synthetic
+// local (its interned name-pool index), or -1 if this function hasn't
+// needed one yet. Reset to -1 once per function/handler body by
+// lowRunEscapePrepass (below), the same per-function reset point
+// lowFuncGen/lowFreeNames already use -- lowReturn (below) is only ever
+// called while lowering ONE function's body, so this is never live across
+// two functions at once.
+var lowRetTempIdx: int
+
+// lowNewReturnTemp returns the CURRENT function's own return-value
+// synthetic local, creating it (a fresh, program-wide-unique name, never
+// colliding with a user identifier -- Clarus identifiers can't start with
+// `_`) on first use and reusing it for every subsequent `return` site in
+// the SAME function (ARC Task 3 review fix: a function's return type is
+// fixed for its whole body, so one shared local across all its `return`s
+// is type-safe -- and required: a distinct local per return SITE, as this
+// used to mint, means cpEmitFunc's function-prologue default-init
+// (cpDefaultInit) constructs one fresh heap handle per un-taken sibling
+// return, per call, that nothing ever releases -- a leak scaling with a
+// function's return-statement count, not its call count. One shared local
+// means exactly one prologue default-init, released by whichever return
+// site actually executes -- see lowReturn's own release-before-store
+// comment).
 func lowNewReturnTemp(): int {
+    if lowRetTempIdx != -1 {
+        return lowRetTempIdx
+    }
     lowRetTempN = lowRetTempN + 1
-    return intern("__ret" + numToStr(lowRetTempN))
+    lowRetTempIdx = intern("__ret" + numToStr(lowRetTempN))
+    return lowRetTempIdx
 }
 
 // lowEscapeTrackableKind reports whether t is one of the three types this
@@ -2191,9 +2211,13 @@ func lowEscapeCollectCandidates(bodyBlk: int) {
 // handler body, BEFORE lowBlock lowers that same AST -- called from
 // lowFuncBody and lowHandlerFunc. Populates lowFreeNames/lowFreeTypes/
 // lowFreeDisq for lowBuildScopeExitFrees (below) and lowReturn to consult
-// while lowering this same body.
+// while lowering this same body. Also resets lowRetTempIdx (ARC Task 3
+// review fix) -- lowNewReturnTemp's per-function cache -- to -1, so each
+// function/handler body mints (at most) its own one shared return-value
+// synthetic, never a stale one left over from the previous function.
 func lowRunEscapePrepass(bodyBlk: int) {
     lowFuncGen = lowFuncGen + 1
+    lowRetTempIdx = -1
     while lowFreeNames.count > 0 {
         lowFreeNames.pop()
     }
