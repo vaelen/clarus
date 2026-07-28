@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 1 (memory-audit-4e
+// whole-branch review, probe P5): an element of one global container read
+// into another global. Before the fix, `cl_free_globals` had no runtime-
+// aliasing analysis, so it always froze both `p5Gl` (element-freeing its
+// one stored handle) and `p5GSaved` (freeing the very same handle again):
+// SIGSEGV. Now the globals escape pre-pass reuses the existing ExIndex-read
+// rule (already applied to locals/window vars): reading `p5Gl[0]`
+// disqualifies `p5Gl` (it can hand back an element the container still
+// owns), and rule 4 disqualifies `p5GSaved` (assigned from a non-fresh
+// ExIndex read). Neither is freed. Expected strict-mode leak count: 6 (see
+// ../p5_global_elem_alias.leaks) -- `p5Gl`'s own list (struct box +
+// backing-array handle, 2 blocks) plus the one `"x"+"y"` text handle it
+// holds (2 blocks, shared with `p5GSaved`, counted once) plus `p5GSaved`'s
+// own original empty-text default handle (2 blocks), orphaned when the
+// index-read store overwrites it without freeing the old value first --
+// same orphan-on-overwrite class as P2's `p2G2`, independent of this fix.
+
+var p5Gl: list of text
+var p5GSaved: text
+
+func runP5GlobalElemAlias() {
+    p5Gl.push("x" + "y")
+    p5GSaved = p5Gl[0]
+    alert("p5 done")
+}

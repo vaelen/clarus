@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/p5_global_elem_alias.cla"
+
+on App.launch {
+    runP5GlobalElemAlias()
+}

@@ -2064,6 +2064,7 @@ static rt_map * cv_lowFreeTypes;
 static rt_map * cv_lowFreeDisq;
 static int32_t cv_lowRetTempN;
 static int32_t cv_lowWinEscGen;
+static int32_t cv_lowGlobalsEscGen;
 static rt_list * cv_cpTypeBuf;
 static rt_list * cv_cpLitBuf;
 static rt_list * cv_cpRecBuf;
@@ -2236,6 +2237,7 @@ static void clar_init_globals(void) {
     cv_lowFreeDisq = rt_map_new(sizeof(int32_t));
     cv_lowRetTempN = 0;
     cv_lowWinEscGen = 0;
+    cv_lowGlobalsEscGen = 0;
     cv_cpTypeBuf = rt_list_new(sizeof(rt_text *));
     cv_cpLitBuf = rt_list_new(sizeof(rt_text *));
     cv_cpRecBuf = rt_list_new(sizeof(rt_text *));
@@ -2255,105 +2257,16 @@ static void clar_init_globals(void) {
 }
 
 static void cl_free_globals(void) {
-    rt_list_free(cv_strPool);
-    rt_map_free(cv_strIndex);
-    rt_list_free(cv_diags);
-    rt_list_free(cv_diagPaths);
-    rt_list_free(cv_declFileTab);
-    rt_text_free(cv_lexSrc);
-    rt_list_free(cv_toks);
-    rt_list_free(cv_exprs);
-    rt_list_free(cv_stmts);
-    rt_list_free(cv_decls);
-    rt_list_free(cv_typeExprs);
-    rt_list_free(cv_typeArena);
-    rt_list_free(cv_enumMembers);
-    rt_list_free(cv_funcSigs);
-    rt_list_free(cv_symbols);
-    rt_list_free(cv_scopes);
-    rt_list_free(cv_fieldInfos);
-    rt_map_free(cv_recFieldsHeadByName);
-    rt_list_free(cv_paramSpecs);
-    rt_list_free(cv_methodSigs);
-    rt_map_free(cv_stringTextMethods);
-    rt_map_free(cv_textOnlyMethods);
-    rt_map_free(cv_connectionMethods);
-    rt_map_free(cv_listenerMethods);
-    rt_map_free(cv_serviceBrowserMethods);
-    rt_map_free(cv_fileFuncs);
-    rt_map_free(cv_canvasMethods);
     rt_map_free(cv_canvasProperties);
-    rt_map_free(cv_funcScopeByDecl);
-    rt_map_free(cv_funcRetByDecl);
-    rt_map_free(cv_enumConstOf);
-    rt_map_free(cv_constUseIsStr);
-    rt_map_free(cv_constUseInt);
-    rt_map_free(cv_constUseStr);
-    rt_map_free(cv_exprTypeOf);
-    rt_list_free(cv_widgetInfos);
-    rt_map_free(cv_windowIsForm);
-    rt_map_free(cv_windowFormRecType);
-    rt_map_free(cv_windowVarsHead);
-    rt_map_free(cv_windowWidgetsHead);
     rt_map_free(cv_menuItems);
     rt_map_free(cv_windowTopProps);
     rt_map_free(cv_widgetDeclProps);
-    rt_map_free(cv_widgetRuntimeProps);
     rt_map_free(cv_appProps);
-    rt_list_free(cv_eventParams);
-    rt_list_free(cv_eventSpecs);
-    rt_map_free(cv_eventTable);
-    rt_list_free(cv_irTypes);
-    rt_list_free(cv_irStmts);
-    rt_list_free(cv_irExprs);
-    rt_list_free(cv_irLocals);
-    rt_list_free(cv_irFuncs);
-    rt_list_free(cv_irGlobals);
-    rt_list_free(cv_irFieldSlots);
-    rt_list_free(cv_irRecords);
-    rt_list_free(cv_irEnumMembers);
-    rt_list_free(cv_irEnums);
-    rt_list_free(cv_irWidgetDescs);
-    rt_list_free(cv_irColumnDescs);
-    rt_list_free(cv_irBindDescs);
-    rt_list_free(cv_irWindowDescs);
-    rt_list_free(cv_irMenuItemDescs);
-    rt_list_free(cv_irMenuDescs);
-    rt_list_free(cv_irWinHandlers);
-    rt_list_free(cv_irWidgetHandlerEntries);
-    rt_list_free(cv_irMenuHandlerEntries);
-    rt_list_free(cv_irEveryEntries);
-    rt_list_free(cv_irStrLits);
-    rt_map_free(cv_irLayoutNeededByName);
-    rt_list_free(cv_lowScopes);
-    rt_map_free(cv_lowStrIdx);
-    rt_map_free(cv_uiMenuIdx);
-    rt_map_free(cv_uiMenuItemIdx);
-    rt_map_free(cv_uiWinHandlersIdx);
-    rt_list_free(cv_winVarDefaults);
-    rt_map_free(cv_winVarDefaultsHead);
-    rt_list_free(cv_lowFreeNames);
-    rt_map_free(cv_lowFreeTypes);
     rt_map_free(cv_lowFreeDisq);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_cpTypeBuf); i++) rt_text_free(*(rt_text **)rt_list_at(cv_cpTypeBuf, i)); }
-    rt_list_free(cv_cpTypeBuf);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_cpLitBuf); i++) rt_text_free(*(rt_text **)rt_list_at(cv_cpLitBuf, i)); }
-    rt_list_free(cv_cpLitBuf);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_cpRecBuf); i++) rt_text_free(*(rt_text **)rt_list_at(cv_cpRecBuf, i)); }
-    rt_list_free(cv_cpRecBuf);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_cpUiBuf); i++) rt_text_free(*(rt_text **)rt_list_at(cv_cpUiBuf, i)); }
-    rt_list_free(cv_cpUiBuf);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_cpRestBuf); i++) rt_text_free(*(rt_text **)rt_list_at(cv_cpRestBuf, i)); }
-    rt_list_free(cv_cpRestBuf);
     rt_map_free(cv_cpStrCapsEmitted);
     rt_map_free(cv_cpArrEmitted);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_fpBody); i++) rt_text_free(*(rt_text **)rt_list_at(cv_fpBody, i)); }
-    rt_list_free(cv_fpBody);
-    { int32_t i; for (i = 0; i < rt_list_count(cv_fpStmtTmps); i++) rt_text_free(*(rt_text **)rt_list_at(cv_fpStmtTmps, i)); }
-    rt_list_free(cv_fpStmtTmps);
     rt_map_free(cv_cpEnumArraysEmitted);
     rt_map_free(cv_seenPaths);
-    rt_list_free(cv_asmHeads);
 
 }
 
@@ -3240,6 +3153,9 @@ static void clar_fn_lowWinVarEscCollect(int32_t cv_declHead);
 static void clar_fn_lowWinVarEscWalkChildren(int32_t cv_childrenHead);
 static void clar_fn_lowRunWinVarEscapePrepass(int32_t cv_declHead);
 static int32_t clar_fn_lowWinVarQualifies(clar_str_255 cv_name);
+static void clar_fn_lowGlobalsEscCollect(int32_t cv_declHead);
+static void clar_fn_lowRunGlobalsEscapePrepass(int32_t cv_declHead);
+static int32_t clar_fn_lowGlobalsVarQualifies(clar_str_255 cv_name);
 static void clar_fn_lowWindowDecl(int32_t cv_d);
 static void clar_fn_lowMenuDecl(int32_t cv_d);
 static int32_t clar_fn_lowGetOrCreateWinHandlers(clar_str_255 cv_winName);
@@ -11654,8 +11570,6 @@ static void clar_fn_checkHandlerBody(clar_str_255 cv_displayName, int32_t cv_par
     cv_curFuncRet = cv_savedRet;
     cv_curWindow = cv_savedWin;
     cv_inCloseRequest = cv_savedCR;
-        rt_list_free(cv_paramTypes);
-
 }
 
 static void clar_fn_checkTopHandlerDecl(int32_t cv_d) {
@@ -17647,6 +17561,9 @@ static void clar_fn_lowEscapeWalkMethodCall(int32_t cv_e, int32_t cv_fn) {
     clar_fn_lowEscapeWalkExpr(clar_fn_selectX(cv_fn));
     if ((((rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_388)) == 0) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_387)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_389)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_397)) == 0)) {
         clar_fn_lowEscapeWalkArgsHandoff(clar_fn_callArgsHead(cv_e));
+        if ((rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_397)) != 0) && (!(clar_fn_lowEscapeFreshInit(clar_fn_callArgsHead(cv_e))))) {
+            clar_fn_lowEscapeHandoff(clar_fn_selectX(cv_fn));
+        }
     } else {
         clar_fn_lowEscapeWalkArgsSafe(clar_fn_callArgsHead(cv_e));
     }
@@ -17765,6 +17682,9 @@ static void clar_fn_lowEscapeWalkAssign(int32_t cv_s) {
         }
     } else {
         if (clar_fn_exprKind(cv_lhs) == 11) {
+            if (clar_fn_lowEscapeContainerElemRisky(clar_fn_exprTypeGet(clar_fn_indexX(cv_lhs))) && (!(clar_fn_lowEscapeFreshInit(cv_rhs)))) {
+                clar_fn_lowEscapeHandoff(clar_fn_indexX(cv_lhs));
+            }
             clar_fn_lowEscapeWalkExpr(clar_fn_indexX(cv_lhs));
             clar_fn_lowEscapeWalkExpr(clar_fn_indexI(cv_lhs));
         } else {
@@ -17780,6 +17700,7 @@ static void clar_fn_lowEscapeWalkAssign(int32_t cv_s) {
                 int32_t t10;
                 t10 = 1;
                 rt_map_set(cv_lowFreeDisq, (const uint8_t*)&(t9), &(t10));
+                clar_fn_lowEscapeHandoff(clar_fn_selectX(cv_lhs));
             }
             clar_fn_lowEscapeWalkExpr(cv_lhs);
         }
@@ -18471,8 +18392,6 @@ static int32_t clar_fn_lowSwitch(int32_t cv_s) {
     cv_cond = 0;
     int32_t cv_body;
     cv_body = 0;
-    int32_t cv___ret2;
-    cv___ret2 = 0;
     cv_subjT = clar_fn_exprTypeGet(clar_fn_switchSubject(cv_s));
     cv_ty = clar_fn_lowType(cv_subjT);
     cv_tmpNameIdx = clar_fn_lowNewSwitchTemp();
@@ -18499,10 +18418,7 @@ static int32_t clar_fn_lowSwitch(int32_t cv_s) {
         cv_i = (cv_i - 1);
     }
     clar_fn_irStmtListAppend(cv_storeIdx, cv_tailHead);
-    cv___ret2 = cv_storeIdx;
-        rt_list_free(cv_caseIdxs);
-
-    return cv___ret2;
+    return cv_storeIdx;
     return 0;
 }
 
@@ -19201,6 +19117,95 @@ static void clar_fn_lowRunWinVarEscapePrepass(int32_t cv_declHead) {
 static int32_t clar_fn_lowWinVarQualifies(clar_str_255 cv_name) {
     clar_str_255 t1;
     t1 = clar_fn_numToStr(cv_lowWinEscGen);
+    clar_str_255 t2;
+    rt_str_concat((uint8_t*)&t2, (const uint8_t*)&(t1), (const uint8_t*)&(clar_lit_124));
+    clar_str_255 t3;
+    rt_str_concat((uint8_t*)&t3, (const uint8_t*)&(t2), (const uint8_t*)&(cv_name));
+    return (!(rt_map_has(cv_lowFreeDisq, (const uint8_t*)&(t3))));
+    return 0;
+}
+
+static void clar_fn_lowGlobalsEscCollect(int32_t cv_declHead) {
+    int32_t cv_d;
+    cv_d = 0;
+    int32_t cv_t;
+    cv_t = 0;
+    clar_str_255 cv_nm;
+    cv_nm = (clar_str_255){0};
+    cv_d = cv_declHead;
+    while (1) {
+        if (!((cv_d != (-(1))))) break;
+        if (clar_fn_declKind(cv_d) == 1) {
+            cv_t = clar_fn_lowResolveType(clar_fn_varDeclType(cv_d));
+            if (clar_fn_irtNeedsCtor(cv_t)) {
+                clar_str_255 t1;
+                t1 = clar_fn_poolGet(clar_fn_varDeclName(cv_d));
+                rt_str_store((uint8_t*)&(cv_nm), 255, (const uint8_t*)&(t1));
+                if (!(rt_map_has(cv_lowFreeTypes, (const uint8_t*)&(cv_nm)))) {
+                    clar_str_255 t2;
+                    t2 = cv_nm;
+                    rt_list_push(cv_lowFreeNames, &(t2));
+                }
+                int32_t t3;
+                t3 = cv_t;
+                rt_map_set(cv_lowFreeTypes, (const uint8_t*)&(cv_nm), &(t3));
+                if ((clar_fn_varDeclInit(cv_d) != (-(1))) && (!(clar_fn_lowEscapeFreshInit(clar_fn_varDeclInit(cv_d))))) {
+                    clar_str_255 t4;
+                    t4 = clar_fn_numToStr(cv_lowFuncGen);
+                    clar_str_255 t5;
+                    rt_str_concat((uint8_t*)&t5, (const uint8_t*)&(t4), (const uint8_t*)&(clar_lit_124));
+                    clar_str_255 t6;
+                    rt_str_concat((uint8_t*)&t6, (const uint8_t*)&(t5), (const uint8_t*)&(cv_nm));
+                    int32_t t7;
+                    t7 = 1;
+                    rt_map_set(cv_lowFreeDisq, (const uint8_t*)&(t6), &(t7));
+                }
+            }
+        }
+        cv_d = clar_fn_declNext(cv_d);
+    }
+}
+
+static void clar_fn_lowRunGlobalsEscapePrepass(int32_t cv_declHead) {
+    int32_t cv_d;
+    cv_d = 0;
+    while (1) {
+        if (!((rt_list_count(cv_lowFreeNames) > 0))) break;
+        clar_str_255 t1;
+        rt_list_pop(cv_lowFreeNames, &t1);
+        t1;
+    }
+    cv_lowFuncGen = (cv_lowFuncGen + 1);
+    cv_lowGlobalsEscGen = cv_lowFuncGen;
+    clar_fn_lowGlobalsEscCollect(cv_declHead);
+    if (rt_list_count(cv_lowFreeNames) == 0) {
+        return;
+    }
+    cv_d = cv_declHead;
+    while (1) {
+        if (!((cv_d != (-(1))))) break;
+        if (clar_fn_declKind(cv_d) == 5) {
+            clar_fn_lowEscapeWalkBlock(clar_fn_funcDeclBody(cv_d));
+        } else {
+            if (clar_fn_declKind(cv_d) == 9) {
+                clar_fn_lowEscapeWalkBlock(clar_fn_handlerDeclBody(cv_d));
+            } else {
+                if (clar_fn_declKind(cv_d) == 8) {
+                    clar_fn_lowWinVarEscWalkChildren(clar_fn_extendDeclChildrenHead(cv_d));
+                } else {
+                    if (clar_fn_declKind(cv_d) == 10) {
+                        clar_fn_lowEscapeWalkBlock(clar_fn_everyDeclBody(cv_d));
+                    }
+                }
+            }
+        }
+        cv_d = clar_fn_declNext(cv_d);
+    }
+}
+
+static int32_t clar_fn_lowGlobalsVarQualifies(clar_str_255 cv_name) {
+    clar_str_255 t1;
+    t1 = clar_fn_numToStr(cv_lowGlobalsEscGen);
     clar_str_255 t2;
     rt_str_concat((uint8_t*)&t2, (const uint8_t*)&(t1), (const uint8_t*)&(clar_lit_124));
     clar_str_255 t3;
@@ -20137,6 +20142,7 @@ static int32_t clar_fn_lowerProgram(int32_t cv_declHead) {
     cv_lowCurAcceptedParam = (-(1));
     clar_fn_lowBuiltinSaveChoiceLayout();
     clar_fn_lowRunWinVarEscapePrepass(cv_declHead);
+    clar_fn_lowRunGlobalsEscapePrepass(cv_declHead);
     cv_d = cv_declHead;
     while (1) {
         if (!((cv_d != (-(1))))) break;
@@ -20622,8 +20628,8 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
     cv_p = 0;
     rt_text * cv_argText;
     cv_argText = rt_text_new();
-    rt_text * cv___ret3;
-    cv___ret3 = rt_text_new();
+    rt_text * cv___ret2;
+    cv___ret2 = rt_text_new();
     rt_text_store(cv_args, (const uint8_t*)&(clar_lit_3));
     cv_first = 1;
     cv_a = clar_fn_irCallFnArgsHead(cv_e);
@@ -20667,10 +20673,10 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
     rt_text * t7 = NULL;
     t7 = rt_text_new();
     rt_text_concat(t7, t6, (const uint8_t*)&(clar_lit_382), NULL);
-    cv___ret3 = t7;
+    cv___ret2 = t7;
     rt_text_free(t6);
     rt_text_free(cv_args);
-    return cv___ret3;
+    return cv___ret2;
     return NULL;
 }
 
@@ -21357,6 +21363,8 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_dataExpr = rt_text_new();
     rt_text * cv_freeVarBuf;
     cv_freeVarBuf = rt_text_new();
+    rt_text * cv___ret3;
+    cv___ret3 = rt_text_new();
     rt_text * cv___ret4;
     cv___ret4 = rt_text_new();
     rt_text * cv___ret5;
@@ -21535,8 +21543,6 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv___ret91 = rt_text_new();
     rt_text * cv___ret92;
     cv___ret92 = rt_text_new();
-    rt_text * cv___ret93;
-    cv___ret93 = rt_text_new();
     cv_nm = clar_fn_irIntrName(cv_x);
     cv_a0 = clar_fn_irIntrArgsHead(cv_x);
     if (cv_a0 != (-(1))) {
@@ -21554,9 +21560,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
         rt_text_concat(t2, t1, (const uint8_t*)&(clar_lit_689), NULL);
         clar_fn_fpEmit(t2);
         rt_text_free(t1);
-        cv___ret4 = clar_fn_toText(clar_lit_3);
+        cv___ret3 = clar_fn_toText(clar_lit_3);
         rt_text_free(cv_dataExpr);
-        return cv___ret4;
+        return cv___ret3;
     } else {
         if (cv_nm == clar_fn_ILog()) {
             rt_text * t3 = NULL;
@@ -21567,9 +21573,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
             rt_text_concat(t4, t3, (const uint8_t*)&(clar_lit_689), NULL);
             clar_fn_fpEmit(t4);
             rt_text_free(t3);
-            cv___ret5 = clar_fn_toText(clar_lit_3);
+            cv___ret4 = clar_fn_toText(clar_lit_3);
             rt_text_free(cv_dataExpr);
-            return cv___ret5;
+            return cv___ret4;
         } else {
             if (cv_nm == clar_fn_IQuit()) {
                 rt_text * t5 = NULL;
@@ -21580,9 +21586,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                 rt_text_concat(t6, t5, (const uint8_t*)&(clar_lit_756), NULL);
                 clar_fn_fpEmit(t6);
                 rt_text_free(t5);
-                cv___ret6 = clar_fn_toText(clar_lit_3);
+                cv___ret5 = clar_fn_toText(clar_lit_3);
                 rt_text_free(cv_dataExpr);
-                return cv___ret6;
+                return cv___ret5;
             } else {
                 if (cv_nm == clar_fn_IFixMul()) {
                     rt_text * t7 = NULL;
@@ -21597,12 +21603,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                     rt_text * t10 = NULL;
                     t10 = rt_text_new();
                     rt_text_concat(t10, t9, (const uint8_t*)&(clar_lit_733), NULL);
-                    cv___ret7 = t10;
+                    cv___ret6 = t10;
                     rt_text_free(t7);
                     rt_text_free(t8);
                     rt_text_free(t9);
                     rt_text_free(cv_dataExpr);
-                    return cv___ret7;
+                    return cv___ret6;
                 } else {
                     if (cv_nm == clar_fn_IFixDiv()) {
                         rt_text * t11 = NULL;
@@ -21617,12 +21623,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                         rt_text * t14 = NULL;
                         t14 = rt_text_new();
                         rt_text_concat(t14, t13, (const uint8_t*)&(clar_lit_733), NULL);
-                        cv___ret8 = t14;
+                        cv___ret7 = t14;
                         rt_text_free(t11);
                         rt_text_free(t12);
                         rt_text_free(t13);
                         rt_text_free(cv_dataExpr);
-                        return cv___ret8;
+                        return cv___ret7;
                     } else {
                         if (cv_nm == clar_fn_IStrConcat()) {
                             cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -21652,9 +21658,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                             rt_text_free(t17);
                             rt_text_free(t18);
                             rt_text_free(t19);
-                            cv___ret9 = cv_t;
+                            cv___ret8 = cv_t;
                             rt_text_free(cv_dataExpr);
-                            return cv___ret9;
+                            return cv___ret8;
                         } else {
                             if (cv_nm == clar_fn_IStrConcatChar()) {
                                 cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -21684,9 +21690,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                 rt_text_free(t23);
                                 rt_text_free(t24);
                                 rt_text_free(t25);
-                                cv___ret10 = cv_t;
+                                cv___ret9 = cv_t;
                                 rt_text_free(cv_dataExpr);
-                                return cv___ret10;
+                                return cv___ret9;
                             } else {
                                 if (cv_nm == clar_fn_IStrPrependChar()) {
                                     cv_s0 = clar_fn_fpExpr(cv_a0);
@@ -21716,9 +21722,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                     rt_text_free(t29);
                                     rt_text_free(t30);
                                     rt_text_free(t31);
-                                    cv___ret11 = cv_t;
+                                    cv___ret10 = cv_t;
                                     rt_text_free(cv_dataExpr);
-                                    return cv___ret11;
+                                    return cv___ret10;
                                 } else {
                                     if (cv_nm == clar_fn_IStrCmp()) {
                                         rt_text * t33 = NULL;
@@ -21733,12 +21739,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                         rt_text * t36 = NULL;
                                         t36 = rt_text_new();
                                         rt_text_concat(t36, t35, (const uint8_t*)&(clar_lit_382), NULL);
-                                        cv___ret12 = t36;
+                                        cv___ret11 = t36;
                                         rt_text_free(t33);
                                         rt_text_free(t34);
                                         rt_text_free(t35);
                                         rt_text_free(cv_dataExpr);
-                                        return cv___ret12;
+                                        return cv___ret11;
                                     } else {
                                         if (cv_nm == clar_fn_IStrLen()) {
                                             rt_text * t37 = NULL;
@@ -21747,10 +21753,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                             rt_text * t38 = NULL;
                                             t38 = rt_text_new();
                                             rt_text_concat(t38, t37, (const uint8_t*)&(clar_lit_382), NULL);
-                                            cv___ret13 = t38;
+                                            cv___ret12 = t38;
                                             rt_text_free(t37);
                                             rt_text_free(cv_dataExpr);
-                                            return cv___ret13;
+                                            return cv___ret12;
                                         } else {
                                             if (cv_nm == clar_fn_IStrIndex()) {
                                                 rt_text * t39 = NULL;
@@ -21765,12 +21771,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                 rt_text * t42 = NULL;
                                                 t42 = rt_text_new();
                                                 rt_text_concat(t42, t41, (const uint8_t*)&(clar_lit_733), NULL);
-                                                cv___ret14 = t42;
+                                                cv___ret13 = t42;
                                                 rt_text_free(t39);
                                                 rt_text_free(t40);
                                                 rt_text_free(t41);
                                                 rt_text_free(cv_dataExpr);
-                                                return cv___ret14;
+                                                return cv___ret13;
                                             } else {
                                                 if (cv_nm == clar_fn_IStrSetIndex()) {
                                                     cv_s0 = clar_fn_fpAddrable(cv_a0);
@@ -21799,9 +21805,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                     rt_text_free(t45);
                                                     rt_text_free(t46);
                                                     rt_text_free(t47);
-                                                    cv___ret15 = clar_fn_toText(clar_lit_3);
+                                                    cv___ret14 = clar_fn_toText(clar_lit_3);
                                                     rt_text_free(cv_dataExpr);
-                                                    return cv___ret15;
+                                                    return cv___ret14;
                                                 } else {
                                                     if (cv_nm == clar_fn_IStrFromBytes()) {
                                                         cv_s0 = clar_fn_fpAddrable(cv_a0);
@@ -21852,9 +21858,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                         rt_text_free(t56);
                                                         rt_text_free(t58);
                                                         rt_text_free(t59);
-                                                        cv___ret16 = clar_fn_toText(clar_lit_3);
+                                                        cv___ret15 = clar_fn_toText(clar_lit_3);
                                                         rt_text_free(cv_dataExpr);
-                                                        return cv___ret16;
+                                                        return cv___ret15;
                                                     } else {
                                                         if (cv_nm == clar_fn_IStrToBytes()) {
                                                             cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -21880,14 +21886,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                             rt_text * t67 = NULL;
                                                             t67 = rt_text_new();
                                                             rt_text_concat(t67, t65, (const uint8_t*)&(clar_lit_382), NULL);
-                                                            cv___ret17 = t67;
+                                                            cv___ret16 = t67;
                                                             rt_text_free(t61);
                                                             rt_text_free(t62);
                                                             rt_text_free(t63);
                                                             rt_text_free(t64);
                                                             rt_text_free(t65);
                                                             rt_text_free(cv_dataExpr);
-                                                            return cv___ret17;
+                                                            return cv___ret16;
                                                         } else {
                                                             if (cv_nm == clar_fn_IStrCoerce()) {
                                                                 cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -21918,9 +21924,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                 rt_text_free(t70);
                                                                 rt_text_free(t72);
                                                                 rt_text_free(t73);
-                                                                cv___ret18 = cv_t;
+                                                                cv___ret17 = cv_t;
                                                                 rt_text_free(cv_dataExpr);
-                                                                return cv___ret18;
+                                                                return cv___ret17;
                                                             } else {
                                                                 if (cv_nm == clar_fn_IStrSlice()) {
                                                                     cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -21958,9 +21964,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                     rt_text_free(t79);
                                                                     rt_text_free(t80);
                                                                     rt_text_free(t81);
-                                                                    cv___ret19 = cv_t;
+                                                                    cv___ret18 = cv_t;
                                                                     rt_text_free(cv_dataExpr);
-                                                                    return cv___ret19;
+                                                                    return cv___ret18;
                                                                 } else {
                                                                     if (cv_nm == clar_fn_IStrIndexOfStr()) {
                                                                         rt_text * t83 = NULL;
@@ -21975,12 +21981,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                         rt_text * t86 = NULL;
                                                                         t86 = rt_text_new();
                                                                         rt_text_concat(t86, t85, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                        cv___ret20 = t86;
+                                                                        cv___ret19 = t86;
                                                                         rt_text_free(t83);
                                                                         rt_text_free(t84);
                                                                         rt_text_free(t85);
                                                                         rt_text_free(cv_dataExpr);
-                                                                        return cv___ret20;
+                                                                        return cv___ret19;
                                                                     } else {
                                                                         if (cv_nm == clar_fn_IStrIndexOfChar()) {
                                                                             rt_text * t87 = NULL;
@@ -21995,22 +22001,22 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                             rt_text * t90 = NULL;
                                                                             t90 = rt_text_new();
                                                                             rt_text_concat(t90, t89, (const uint8_t*)&(clar_lit_733), NULL);
-                                                                            cv___ret21 = t90;
+                                                                            cv___ret20 = t90;
                                                                             rt_text_free(t87);
                                                                             rt_text_free(t88);
                                                                             rt_text_free(t89);
                                                                             rt_text_free(cv_dataExpr);
-                                                                            return cv___ret21;
+                                                                            return cv___ret20;
                                                                         } else {
                                                                             if (cv_nm == clar_fn_ITextCmp()) {
-                                                                                cv___ret22 = clar_fn_fpTextCmp(cv_a0, cv_a1);
+                                                                                cv___ret21 = clar_fn_fpTextCmp(cv_a0, cv_a1);
                                                                                 rt_text_free(cv_dataExpr);
-                                                                                return cv___ret22;
+                                                                                return cv___ret21;
                                                                             } else {
                                                                                 if (cv_nm == clar_fn_ITextConcat()) {
-                                                                                    cv___ret23 = clar_fn_fpTextConcat(cv_a0, cv_a1);
+                                                                                    cv___ret22 = clar_fn_fpTextConcat(cv_a0, cv_a1);
                                                                                     rt_text_free(cv_dataExpr);
-                                                                                    return cv___ret23;
+                                                                                    return cv___ret22;
                                                                                 } else {
                                                                                     if (cv_nm == clar_fn_ITextConcatSL()) {
                                                                                         cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -22044,9 +22050,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                         rt_text_free(t94);
                                                                                         rt_text_free(t95);
                                                                                         rt_text_free(t96);
-                                                                                        cv___ret24 = cv_t;
+                                                                                        cv___ret23 = cv_t;
                                                                                         rt_text_free(cv_dataExpr);
-                                                                                        return cv___ret24;
+                                                                                        return cv___ret23;
                                                                                     } else {
                                                                                         if (cv_nm == clar_fn_ITextStore()) {
                                                                                             rt_text * t98 = NULL;
@@ -22065,9 +22071,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                             rt_text_free(t98);
                                                                                             rt_text_free(t99);
                                                                                             rt_text_free(t100);
-                                                                                            cv___ret25 = clar_fn_toText(clar_lit_3);
+                                                                                            cv___ret24 = clar_fn_toText(clar_lit_3);
                                                                                             rt_text_free(cv_dataExpr);
-                                                                                            return cv___ret25;
+                                                                                            return cv___ret24;
                                                                                         } else {
                                                                                             if (cv_nm == clar_fn_ITextLen()) {
                                                                                                 rt_text * t102 = NULL;
@@ -22076,10 +22082,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                 rt_text * t103 = NULL;
                                                                                                 t103 = rt_text_new();
                                                                                                 rt_text_concat(t103, t102, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                cv___ret26 = t103;
+                                                                                                cv___ret25 = t103;
                                                                                                 rt_text_free(t102);
                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                return cv___ret26;
+                                                                                                return cv___ret25;
                                                                                             } else {
                                                                                                 if (cv_nm == clar_fn_ITextIndex()) {
                                                                                                     rt_text * t104 = NULL;
@@ -22094,12 +22100,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                     rt_text * t107 = NULL;
                                                                                                     t107 = rt_text_new();
                                                                                                     rt_text_concat(t107, t106, (const uint8_t*)&(clar_lit_733), NULL);
-                                                                                                    cv___ret27 = t107;
+                                                                                                    cv___ret26 = t107;
                                                                                                     rt_text_free(t104);
                                                                                                     rt_text_free(t105);
                                                                                                     rt_text_free(t106);
                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                    return cv___ret27;
+                                                                                                    return cv___ret26;
                                                                                                 } else {
                                                                                                     if (cv_nm == clar_fn_ITextSetIndex()) {
                                                                                                         cv_s0 = clar_fn_fpExpr(cv_a0);
@@ -22128,9 +22134,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                         rt_text_free(t110);
                                                                                                         rt_text_free(t111);
                                                                                                         rt_text_free(t112);
-                                                                                                        cv___ret28 = clar_fn_toText(clar_lit_3);
+                                                                                                        cv___ret27 = clar_fn_toText(clar_lit_3);
                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                        return cv___ret28;
+                                                                                                        return cv___ret27;
                                                                                                     } else {
                                                                                                         if (cv_nm == clar_fn_ITextFromBytes()) {
                                                                                                             cv_s0 = clar_fn_fpExpr(cv_a0);
@@ -22170,9 +22176,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                             rt_text_free(t118);
                                                                                                             rt_text_free(t120);
                                                                                                             rt_text_free(t121);
-                                                                                                            cv___ret29 = clar_fn_toText(clar_lit_3);
+                                                                                                            cv___ret28 = clar_fn_toText(clar_lit_3);
                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                            return cv___ret29;
+                                                                                                            return cv___ret28;
                                                                                                         } else {
                                                                                                             if (cv_nm == clar_fn_ITextToBytes()) {
                                                                                                                 cv_s0 = clar_fn_fpExpr(cv_a0);
@@ -22198,14 +22204,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                 rt_text * t129 = NULL;
                                                                                                                 t129 = rt_text_new();
                                                                                                                 rt_text_concat(t129, t127, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                cv___ret30 = t129;
+                                                                                                                cv___ret29 = t129;
                                                                                                                 rt_text_free(t123);
                                                                                                                 rt_text_free(t124);
                                                                                                                 rt_text_free(t125);
                                                                                                                 rt_text_free(t126);
                                                                                                                 rt_text_free(t127);
                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                return cv___ret30;
+                                                                                                                return cv___ret29;
                                                                                                             } else {
                                                                                                                 if (cv_nm == clar_fn_ITextSlice()) {
                                                                                                                     cv_s0 = clar_fn_fpExpr(cv_a0);
@@ -22243,9 +22249,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                     rt_text_free(t134);
                                                                                                                     rt_text_free(t135);
                                                                                                                     rt_text_free(t136);
-                                                                                                                    cv___ret31 = cv_t;
+                                                                                                                    cv___ret30 = cv_t;
                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                    return cv___ret31;
+                                                                                                                    return cv___ret30;
                                                                                                                 } else {
                                                                                                                     if (cv_nm == clar_fn_ITextIndexOfStr()) {
                                                                                                                         rt_text * t138 = NULL;
@@ -22260,12 +22266,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                         rt_text * t141 = NULL;
                                                                                                                         t141 = rt_text_new();
                                                                                                                         rt_text_concat(t141, t140, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                        cv___ret32 = t141;
+                                                                                                                        cv___ret31 = t141;
                                                                                                                         rt_text_free(t138);
                                                                                                                         rt_text_free(t139);
                                                                                                                         rt_text_free(t140);
                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                        return cv___ret32;
+                                                                                                                        return cv___ret31;
                                                                                                                     } else {
                                                                                                                         if (cv_nm == clar_fn_ITextIndexOfChar()) {
                                                                                                                             rt_text * t142 = NULL;
@@ -22280,12 +22286,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                             rt_text * t145 = NULL;
                                                                                                                             t145 = rt_text_new();
                                                                                                                             rt_text_concat(t145, t144, (const uint8_t*)&(clar_lit_733), NULL);
-                                                                                                                            cv___ret33 = t145;
+                                                                                                                            cv___ret32 = t145;
                                                                                                                             rt_text_free(t142);
                                                                                                                             rt_text_free(t143);
                                                                                                                             rt_text_free(t144);
                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                            return cv___ret33;
+                                                                                                                            return cv___ret32;
                                                                                                                         } else {
                                                                                                                             if (cv_nm == clar_fn_ITextAppendStr()) {
                                                                                                                                 rt_text * t146 = NULL;
@@ -22304,9 +22310,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                 rt_text_free(t146);
                                                                                                                                 rt_text_free(t147);
                                                                                                                                 rt_text_free(t148);
-                                                                                                                                cv___ret34 = clar_fn_toText(clar_lit_3);
+                                                                                                                                cv___ret33 = clar_fn_toText(clar_lit_3);
                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                return cv___ret34;
+                                                                                                                                return cv___ret33;
                                                                                                                             } else {
                                                                                                                                 if (cv_nm == clar_fn_ITextAppendChar()) {
                                                                                                                                     rt_text * t150 = NULL;
@@ -22325,9 +22331,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                     rt_text_free(t150);
                                                                                                                                     rt_text_free(t151);
                                                                                                                                     rt_text_free(t152);
-                                                                                                                                    cv___ret35 = clar_fn_toText(clar_lit_3);
+                                                                                                                                    cv___ret34 = clar_fn_toText(clar_lit_3);
                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                    return cv___ret35;
+                                                                                                                                    return cv___ret34;
                                                                                                                                 } else {
                                                                                                                                     if (cv_nm == clar_fn_ITextAppendText()) {
                                                                                                                                         rt_text * t154 = NULL;
@@ -22346,9 +22352,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                         rt_text_free(t154);
                                                                                                                                         rt_text_free(t155);
                                                                                                                                         rt_text_free(t156);
-                                                                                                                                        cv___ret36 = clar_fn_toText(clar_lit_3);
+                                                                                                                                        cv___ret35 = clar_fn_toText(clar_lit_3);
                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                        return cv___ret36;
+                                                                                                                                        return cv___ret35;
                                                                                                                                     } else {
                                                                                                                                         if (cv_nm == clar_fn_ITextOfStr()) {
                                                                                                                                             cv_t = clar_fn_fpNewTmp(clar_lit_684);
@@ -22373,9 +22379,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                             rt_text_free(t159);
                                                                                                                                             rt_text_free(t160);
                                                                                                                                             rt_text_free(t161);
-                                                                                                                                            cv___ret37 = cv_t;
+                                                                                                                                            cv___ret36 = cv_t;
                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                            return cv___ret37;
+                                                                                                                                            return cv___ret36;
                                                                                                                                         } else {
                                                                                                                                             if (cv_nm == clar_fn_ITextFreeVar()) {
                                                                                                                                                 rt_text * t163 = NULL;
@@ -22386,9 +22392,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                 rt_text_concat(t164, t163, (const uint8_t*)&(clar_lit_689), NULL);
                                                                                                                                                 clar_fn_fpEmit(t164);
                                                                                                                                                 rt_text_free(t163);
-                                                                                                                                                cv___ret38 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                cv___ret37 = clar_fn_toText(clar_lit_3);
                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                return cv___ret38;
+                                                                                                                                                return cv___ret37;
                                                                                                                                             } else {
                                                                                                                                                 if ((cv_nm == clar_fn_IListPush()) || (cv_nm == clar_fn_IListUnshift())) {
                                                                                                                                                     cv_l = clar_fn_fpExpr(cv_a0);
@@ -22416,9 +22422,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                     rt_text_free(t166);
                                                                                                                                                     rt_text_free(t167);
                                                                                                                                                     rt_text_free(t168);
-                                                                                                                                                    cv___ret39 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                    cv___ret38 = clar_fn_toText(clar_lit_3);
                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                    return cv___ret39;
+                                                                                                                                                    return cv___ret38;
                                                                                                                                                 } else {
                                                                                                                                                     if ((((cv_nm == clar_fn_IListPop()) || (cv_nm == clar_fn_IListShift())) || (cv_nm == clar_fn_IListFirst())) || (cv_nm == clar_fn_IListLast())) {
                                                                                                                                                         cv_l = clar_fn_fpExpr(cv_a0);
@@ -22454,9 +22460,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                         rt_text_free(t172);
                                                                                                                                                         rt_text_free(t173);
                                                                                                                                                         clar_fn_fpHandoff(cv_t);
-                                                                                                                                                        cv___ret40 = cv_t;
+                                                                                                                                                        cv___ret39 = cv_t;
                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                        return cv___ret40;
+                                                                                                                                                        return cv___ret39;
                                                                                                                                                     } else {
                                                                                                                                                         if (cv_nm == clar_fn_IListRemove()) {
                                                                                                                                                             rt_text * t175 = NULL;
@@ -22475,9 +22481,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                             rt_text_free(t175);
                                                                                                                                                             rt_text_free(t176);
                                                                                                                                                             rt_text_free(t177);
-                                                                                                                                                            cv___ret41 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                            cv___ret40 = clar_fn_toText(clar_lit_3);
                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                            return cv___ret41;
+                                                                                                                                                            return cv___ret40;
                                                                                                                                                         } else {
                                                                                                                                                             if (cv_nm == clar_fn_IListCount()) {
                                                                                                                                                                 rt_text * t179 = NULL;
@@ -22486,10 +22492,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                 rt_text * t180 = NULL;
                                                                                                                                                                 t180 = rt_text_new();
                                                                                                                                                                 rt_text_concat(t180, t179, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                cv___ret42 = t180;
+                                                                                                                                                                cv___ret41 = t180;
                                                                                                                                                                 rt_text_free(t179);
                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                return cv___ret42;
+                                                                                                                                                                return cv___ret41;
                                                                                                                                                             } else {
                                                                                                                                                                 if (cv_nm == clar_fn_IListFreeVar()) {
                                                                                                                                                                     rt_text_store(cv_freeVarBuf, (const uint8_t*)&(clar_lit_3));
@@ -22499,9 +22505,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                     rt_str_concat((uint8_t*)&t182, (const uint8_t*)&(clar_lit_711), (const uint8_t*)&(t181));
                                                                                                                                                                     clar_fn_cpEmitFree(cv_freeVarBuf, t182, clar_fn_irExprType(cv_a0));
                                                                                                                                                                     clar_fn_fpEmit(cv_freeVarBuf);
-                                                                                                                                                                    cv___ret43 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                    cv___ret42 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                    return cv___ret43;
+                                                                                                                                                                    return cv___ret42;
                                                                                                                                                                 } else {
                                                                                                                                                                     if (cv_nm == clar_fn_IMapSet()) {
                                                                                                                                                                         cv_m = clar_fn_fpExpr(cv_a0);
@@ -22532,9 +22538,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                         rt_text_free(t185);
                                                                                                                                                                         rt_text_free(t186);
                                                                                                                                                                         rt_text_free(t187);
-                                                                                                                                                                        cv___ret44 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                        cv___ret43 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                        return cv___ret44;
+                                                                                                                                                                        return cv___ret43;
                                                                                                                                                                     } else {
                                                                                                                                                                         if (cv_nm == clar_fn_IMapGet()) {
                                                                                                                                                                             cv_m = clar_fn_fpExpr(cv_a0);
@@ -22565,9 +22571,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                             rt_text_free(t192);
                                                                                                                                                                             rt_text_free(t193);
                                                                                                                                                                             clar_fn_fpHandoff(cv_t);
-                                                                                                                                                                            cv___ret45 = cv_t;
+                                                                                                                                                                            cv___ret44 = cv_t;
                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                            return cv___ret45;
+                                                                                                                                                                            return cv___ret44;
                                                                                                                                                                         } else {
                                                                                                                                                                             if (cv_nm == clar_fn_IMapGetDv()) {
                                                                                                                                                                                 cv_m = clar_fn_fpExpr(cv_a0);
@@ -22612,9 +22618,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                 rt_text_free(t201);
                                                                                                                                                                                 rt_text_free(t202);
                                                                                                                                                                                 clar_fn_fpHandoff(cv_t);
-                                                                                                                                                                                cv___ret46 = cv_t;
+                                                                                                                                                                                cv___ret45 = cv_t;
                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                return cv___ret46;
+                                                                                                                                                                                return cv___ret45;
                                                                                                                                                                             } else {
                                                                                                                                                                                 if (cv_nm == clar_fn_IMapHas()) {
                                                                                                                                                                                     rt_text * t204 = NULL;
@@ -22629,12 +22635,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                     rt_text * t207 = NULL;
                                                                                                                                                                                     t207 = rt_text_new();
                                                                                                                                                                                     rt_text_concat(t207, t206, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                    cv___ret47 = t207;
+                                                                                                                                                                                    cv___ret46 = t207;
                                                                                                                                                                                     rt_text_free(t204);
                                                                                                                                                                                     rt_text_free(t205);
                                                                                                                                                                                     rt_text_free(t206);
                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                    return cv___ret47;
+                                                                                                                                                                                    return cv___ret46;
                                                                                                                                                                                 } else {
                                                                                                                                                                                     if (cv_nm == clar_fn_IMapRemove()) {
                                                                                                                                                                                         rt_text * t208 = NULL;
@@ -22653,9 +22659,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                         rt_text_free(t208);
                                                                                                                                                                                         rt_text_free(t209);
                                                                                                                                                                                         rt_text_free(t210);
-                                                                                                                                                                                        cv___ret48 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                        cv___ret47 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                        return cv___ret48;
+                                                                                                                                                                                        return cv___ret47;
                                                                                                                                                                                     } else {
                                                                                                                                                                                         if (cv_nm == clar_fn_IMapCount()) {
                                                                                                                                                                                             rt_text * t212 = NULL;
@@ -22664,10 +22670,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                             rt_text * t213 = NULL;
                                                                                                                                                                                             t213 = rt_text_new();
                                                                                                                                                                                             rt_text_concat(t213, t212, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                            cv___ret49 = t213;
+                                                                                                                                                                                            cv___ret48 = t213;
                                                                                                                                                                                             rt_text_free(t212);
                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                            return cv___ret49;
+                                                                                                                                                                                            return cv___ret48;
                                                                                                                                                                                         } else {
                                                                                                                                                                                             if (cv_nm == clar_fn_IMapFreeVar()) {
                                                                                                                                                                                                 rt_text_store(cv_freeVarBuf, (const uint8_t*)&(clar_lit_3));
@@ -22677,14 +22683,14 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                 rt_str_concat((uint8_t*)&t215, (const uint8_t*)&(clar_lit_711), (const uint8_t*)&(t214));
                                                                                                                                                                                                 clar_fn_cpEmitFree(cv_freeVarBuf, t215, clar_fn_irExprType(cv_a0));
                                                                                                                                                                                                 clar_fn_fpEmit(cv_freeVarBuf);
-                                                                                                                                                                                                cv___ret50 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                cv___ret49 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                return cv___ret50;
+                                                                                                                                                                                                return cv___ret49;
                                                                                                                                                                                             } else {
                                                                                                                                                                                                 if (cv_nm == clar_fn_ILastErrCode()) {
-                                                                                                                                                                                                    cv___ret51 = clar_fn_toText(clar_lit_808);
+                                                                                                                                                                                                    cv___ret50 = clar_fn_toText(clar_lit_808);
                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                    return cv___ret51;
+                                                                                                                                                                                                    return cv___ret50;
                                                                                                                                                                                                 } else {
                                                                                                                                                                                                     if (cv_nm == clar_fn_ILastErrMsg()) {
                                                                                                                                                                                                         cv_t = clar_fn_fpNewTmp(clar_lit_760);
@@ -22696,9 +22702,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                         rt_text_concat(t217, t216, (const uint8_t*)&(clar_lit_809), NULL);
                                                                                                                                                                                                         clar_fn_fpEmit(t217);
                                                                                                                                                                                                         rt_text_free(t216);
-                                                                                                                                                                                                        cv___ret52 = cv_t;
+                                                                                                                                                                                                        cv___ret51 = cv_t;
                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                        return cv___ret52;
+                                                                                                                                                                                                        return cv___ret51;
                                                                                                                                                                                                     } else {
                                                                                                                                                                                                         if (cv_nm == clar_fn_ILastErr()) {
                                                                                                                                                                                                             cv_t = clar_fn_fpNewTmp(clar_lit_692);
@@ -22714,9 +22720,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                             rt_text_concat(t220, t219, (const uint8_t*)&(clar_lit_811), NULL);
                                                                                                                                                                                                             clar_fn_fpEmit(t220);
                                                                                                                                                                                                             rt_text_free(t219);
-                                                                                                                                                                                                            cv___ret53 = cv_t;
+                                                                                                                                                                                                            cv___ret52 = cv_t;
                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                            return cv___ret53;
+                                                                                                                                                                                                            return cv___ret52;
                                                                                                                                                                                                         } else {
                                                                                                                                                                                                             if (cv_nm == clar_fn_IFileReadText()) {
                                                                                                                                                                                                                 rt_text * t221 = NULL;
@@ -22731,12 +22737,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                 rt_text * t224 = NULL;
                                                                                                                                                                                                                 t224 = rt_text_new();
                                                                                                                                                                                                                 rt_text_concat(t224, t223, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                cv___ret54 = t224;
+                                                                                                                                                                                                                cv___ret53 = t224;
                                                                                                                                                                                                                 rt_text_free(t221);
                                                                                                                                                                                                                 rt_text_free(t222);
                                                                                                                                                                                                                 rt_text_free(t223);
                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                return cv___ret54;
+                                                                                                                                                                                                                return cv___ret53;
                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                 if (cv_nm == clar_fn_IFileWriteText()) {
                                                                                                                                                                                                                     rt_text * t225 = NULL;
@@ -22751,12 +22757,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                     rt_text * t228 = NULL;
                                                                                                                                                                                                                     t228 = rt_text_new();
                                                                                                                                                                                                                     rt_text_concat(t228, t227, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                    cv___ret55 = t228;
+                                                                                                                                                                                                                    cv___ret54 = t228;
                                                                                                                                                                                                                     rt_text_free(t225);
                                                                                                                                                                                                                     rt_text_free(t226);
                                                                                                                                                                                                                     rt_text_free(t227);
                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                    return cv___ret55;
+                                                                                                                                                                                                                    return cv___ret54;
                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                     if (cv_nm == clar_fn_IFileName()) {
                                                                                                                                                                                                                         cv_s0 = clar_fn_fpStrAddr(cv_a0);
@@ -22777,9 +22783,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                         rt_text_free(t229);
                                                                                                                                                                                                                         rt_text_free(t230);
                                                                                                                                                                                                                         rt_text_free(t231);
-                                                                                                                                                                                                                        cv___ret56 = cv_t;
+                                                                                                                                                                                                                        cv___ret55 = cv_t;
                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                        return cv___ret56;
+                                                                                                                                                                                                                        return cv___ret55;
                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                         if ((cv_nm == clar_fn_IFileSave()) || (cv_nm == clar_fn_IFileLoad())) {
                                                                                                                                                                                                                             cv_dataT = clar_fn_irExprType(cv_a1);
@@ -22856,7 +22862,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                             rt_text * t250 = NULL;
                                                                                                                                                                                                                             t250 = rt_text_new();
                                                                                                                                                                                                                             rt_text_concat(t250, t249, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                            cv___ret57 = t250;
+                                                                                                                                                                                                                            cv___ret56 = t250;
                                                                                                                                                                                                                             rt_text_free(t243);
                                                                                                                                                                                                                             rt_text_free(t244);
                                                                                                                                                                                                                             rt_text_free(t245);
@@ -22865,7 +22871,7 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                             rt_text_free(t248);
                                                                                                                                                                                                                             rt_text_free(t249);
                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                            return cv___ret57;
+                                                                                                                                                                                                                            return cv___ret56;
                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiOpen()) {
                                                                                                                                                                                                                                 rt_text * t251 = NULL;
@@ -22877,9 +22883,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                 clar_str_255 t254;
                                                                                                                                                                                                                                 rt_str_concat((uint8_t*)&t254, (const uint8_t*)&(t253), (const uint8_t*)&(clar_lit_382));
                                                                                                                                                                                                                                 rt_text_store(t251, (const uint8_t*)&(t254));
-                                                                                                                                                                                                                                cv___ret58 = t251;
+                                                                                                                                                                                                                                cv___ret57 = t251;
                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                return cv___ret58;
+                                                                                                                                                                                                                                return cv___ret57;
                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiFront()) {
                                                                                                                                                                                                                                     rt_text * t255 = NULL;
@@ -22891,9 +22897,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                     clar_str_255 t258;
                                                                                                                                                                                                                                     rt_str_concat((uint8_t*)&t258, (const uint8_t*)&(t257), (const uint8_t*)&(clar_lit_382));
                                                                                                                                                                                                                                     rt_text_store(t255, (const uint8_t*)&(t258));
-                                                                                                                                                                                                                                    cv___ret59 = t255;
+                                                                                                                                                                                                                                    cv___ret58 = t255;
                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                    return cv___ret59;
+                                                                                                                                                                                                                                    return cv___ret58;
                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiClose()) {
                                                                                                                                                                                                                                         rt_text * t259 = NULL;
@@ -22904,18 +22910,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                         rt_text_concat(t260, t259, (const uint8_t*)&(clar_lit_689), NULL);
                                                                                                                                                                                                                                         clar_fn_fpEmit(t260);
                                                                                                                                                                                                                                         rt_text_free(t259);
-                                                                                                                                                                                                                                        cv___ret60 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                        cv___ret59 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                        return cv___ret60;
+                                                                                                                                                                                                                                        return cv___ret59;
                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiQuit()) {
                                                                                                                                                                                                                                             rt_text * t261 = NULL;
                                                                                                                                                                                                                                             t261 = rt_text_new();
                                                                                                                                                                                                                                             rt_text_store(t261, (const uint8_t*)&(clar_lit_826));
                                                                                                                                                                                                                                             clar_fn_fpEmit(t261);
-                                                                                                                                                                                                                                            cv___ret61 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                            cv___ret60 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                            return cv___ret61;
+                                                                                                                                                                                                                                            return cv___ret60;
                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiState()) {
                                                                                                                                                                                                                                                 clar_str_255 t262;
@@ -22930,10 +22936,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                 rt_text * t266 = NULL;
                                                                                                                                                                                                                                                 t266 = rt_text_new();
                                                                                                                                                                                                                                                 rt_text_concat(t266, t265, (const uint8_t*)&(clar_lit_733), NULL);
-                                                                                                                                                                                                                                                cv___ret62 = t266;
+                                                                                                                                                                                                                                                cv___ret61 = t266;
                                                                                                                                                                                                                                                 rt_text_free(t265);
                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                return cv___ret62;
+                                                                                                                                                                                                                                                return cv___ret61;
                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiStateDefaults()) {
                                                                                                                                                                                                                                                     clar_str_255 t267;
@@ -22965,9 +22971,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                         }
                                                                                                                                                                                                                                                         cv_fld = clar_fn_irFieldSlotNext(cv_fld);
                                                                                                                                                                                                                                                     }
-                                                                                                                                                                                                                                                    cv___ret63 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                    cv___ret62 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                    return cv___ret63;
+                                                                                                                                                                                                                                                    return cv___ret62;
                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetTitle()) {
                                                                                                                                                                                                                                                         rt_text * t274 = NULL;
@@ -22986,9 +22992,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                         rt_text_free(t274);
                                                                                                                                                                                                                                                         rt_text_free(t275);
                                                                                                                                                                                                                                                         rt_text_free(t276);
-                                                                                                                                                                                                                                                        cv___ret64 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                        cv___ret63 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                        return cv___ret64;
+                                                                                                                                                                                                                                                        return cv___ret63;
                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetTitle()) {
                                                                                                                                                                                                                                                             cv_t = clar_fn_fpNewTmp(clar_lit_760);
@@ -23008,9 +23014,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                             rt_text_free(t278);
                                                                                                                                                                                                                                                             rt_text_free(t279);
                                                                                                                                                                                                                                                             rt_text_free(t280);
-                                                                                                                                                                                                                                                            cv___ret65 = cv_t;
+                                                                                                                                                                                                                                                            cv___ret64 = cv_t;
                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                            return cv___ret65;
+                                                                                                                                                                                                                                                            return cv___ret64;
                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetCaption()) {
                                                                                                                                                                                                                                                                 rt_text * t282 = NULL;
@@ -23037,9 +23043,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                 rt_text_free(t284);
                                                                                                                                                                                                                                                                 rt_text_free(t285);
                                                                                                                                                                                                                                                                 rt_text_free(t286);
-                                                                                                                                                                                                                                                                cv___ret66 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                cv___ret65 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                return cv___ret66;
+                                                                                                                                                                                                                                                                return cv___ret65;
                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiSetText()) {
                                                                                                                                                                                                                                                                     rt_text * t288 = NULL;
@@ -23066,9 +23072,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                     rt_text_free(t290);
                                                                                                                                                                                                                                                                     rt_text_free(t291);
                                                                                                                                                                                                                                                                     rt_text_free(t292);
-                                                                                                                                                                                                                                                                    cv___ret67 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                    cv___ret66 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                    return cv___ret67;
+                                                                                                                                                                                                                                                                    return cv___ret66;
                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiGetFieldText()) {
                                                                                                                                                                                                                                                                         cv_t = clar_fn_fpNewTmp(clar_lit_760);
@@ -23096,9 +23102,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                         rt_text_free(t296);
                                                                                                                                                                                                                                                                         rt_text_free(t297);
                                                                                                                                                                                                                                                                         rt_text_free(t298);
-                                                                                                                                                                                                                                                                        cv___ret68 = cv_t;
+                                                                                                                                                                                                                                                                        cv___ret67 = cv_t;
                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                        return cv___ret68;
+                                                                                                                                                                                                                                                                        return cv___ret67;
                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetTextviewText()) {
                                                                                                                                                                                                                                                                             cv_t = clar_fn_fpNewTmp(clar_lit_684);
@@ -23130,9 +23136,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                             rt_text_free(t303);
                                                                                                                                                                                                                                                                             rt_text_free(t304);
                                                                                                                                                                                                                                                                             rt_text_free(t305);
-                                                                                                                                                                                                                                                                            cv___ret69 = cv_t;
+                                                                                                                                                                                                                                                                            cv___ret68 = cv_t;
                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                            return cv___ret69;
+                                                                                                                                                                                                                                                                            return cv___ret68;
                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetTextviewText()) {
                                                                                                                                                                                                                                                                                 rt_text * t307 = NULL;
@@ -23159,9 +23165,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                 rt_text_free(t309);
                                                                                                                                                                                                                                                                                 rt_text_free(t310);
                                                                                                                                                                                                                                                                                 rt_text_free(t311);
-                                                                                                                                                                                                                                                                                cv___ret70 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                cv___ret69 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                return cv___ret70;
+                                                                                                                                                                                                                                                                                return cv___ret69;
                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetChecked()) {
                                                                                                                                                                                                                                                                                     rt_text * t313 = NULL;
@@ -23176,12 +23182,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                     rt_text * t316 = NULL;
                                                                                                                                                                                                                                                                                     t316 = rt_text_new();
                                                                                                                                                                                                                                                                                     rt_text_concat(t316, t315, (const uint8_t*)&(clar_lit_842), NULL);
-                                                                                                                                                                                                                                                                                    cv___ret71 = t316;
+                                                                                                                                                                                                                                                                                    cv___ret70 = t316;
                                                                                                                                                                                                                                                                                     rt_text_free(t313);
                                                                                                                                                                                                                                                                                     rt_text_free(t314);
                                                                                                                                                                                                                                                                                     rt_text_free(t315);
                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                    return cv___ret71;
+                                                                                                                                                                                                                                                                                    return cv___ret70;
                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiSetChecked()) {
                                                                                                                                                                                                                                                                                         rt_text * t317 = NULL;
@@ -23208,9 +23214,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                         rt_text_free(t319);
                                                                                                                                                                                                                                                                                         rt_text_free(t320);
                                                                                                                                                                                                                                                                                         rt_text_free(t321);
-                                                                                                                                                                                                                                                                                        cv___ret72 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                        cv___ret71 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                        return cv___ret72;
+                                                                                                                                                                                                                                                                                        return cv___ret71;
                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetEnabled()) {
                                                                                                                                                                                                                                                                                             rt_text * t323 = NULL;
@@ -23225,12 +23231,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                             rt_text * t326 = NULL;
                                                                                                                                                                                                                                                                                             t326 = rt_text_new();
                                                                                                                                                                                                                                                                                             rt_text_concat(t326, t325, (const uint8_t*)&(clar_lit_845), NULL);
-                                                                                                                                                                                                                                                                                            cv___ret73 = t326;
+                                                                                                                                                                                                                                                                                            cv___ret72 = t326;
                                                                                                                                                                                                                                                                                             rt_text_free(t323);
                                                                                                                                                                                                                                                                                             rt_text_free(t324);
                                                                                                                                                                                                                                                                                             rt_text_free(t325);
                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                            return cv___ret73;
+                                                                                                                                                                                                                                                                                            return cv___ret72;
                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetEnabled()) {
                                                                                                                                                                                                                                                                                                 rt_text * t327 = NULL;
@@ -23257,9 +23263,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                 rt_text_free(t329);
                                                                                                                                                                                                                                                                                                 rt_text_free(t330);
                                                                                                                                                                                                                                                                                                 rt_text_free(t331);
-                                                                                                                                                                                                                                                                                                cv___ret74 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                cv___ret73 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                return cv___ret74;
+                                                                                                                                                                                                                                                                                                return cv___ret73;
                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiGetWidth()) {
                                                                                                                                                                                                                                                                                                     rt_text * t333 = NULL;
@@ -23274,12 +23280,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                     rt_text * t336 = NULL;
                                                                                                                                                                                                                                                                                                     t336 = rt_text_new();
                                                                                                                                                                                                                                                                                                     rt_text_concat(t336, t335, (const uint8_t*)&(clar_lit_848), NULL);
-                                                                                                                                                                                                                                                                                                    cv___ret75 = t336;
+                                                                                                                                                                                                                                                                                                    cv___ret74 = t336;
                                                                                                                                                                                                                                                                                                     rt_text_free(t333);
                                                                                                                                                                                                                                                                                                     rt_text_free(t334);
                                                                                                                                                                                                                                                                                                     rt_text_free(t335);
                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                    return cv___ret75;
+                                                                                                                                                                                                                                                                                                    return cv___ret74;
                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiGetHeight()) {
                                                                                                                                                                                                                                                                                                         rt_text * t337 = NULL;
@@ -23294,12 +23300,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                         rt_text * t340 = NULL;
                                                                                                                                                                                                                                                                                                         t340 = rt_text_new();
                                                                                                                                                                                                                                                                                                         rt_text_concat(t340, t339, (const uint8_t*)&(clar_lit_849), NULL);
-                                                                                                                                                                                                                                                                                                        cv___ret76 = t340;
+                                                                                                                                                                                                                                                                                                        cv___ret75 = t340;
                                                                                                                                                                                                                                                                                                         rt_text_free(t337);
                                                                                                                                                                                                                                                                                                         rt_text_free(t338);
                                                                                                                                                                                                                                                                                                         rt_text_free(t339);
                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                        return cv___ret76;
+                                                                                                                                                                                                                                                                                                        return cv___ret75;
                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiGetSelected()) {
                                                                                                                                                                                                                                                                                                             rt_text * t341 = NULL;
@@ -23314,12 +23320,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                             rt_text * t344 = NULL;
                                                                                                                                                                                                                                                                                                             t344 = rt_text_new();
                                                                                                                                                                                                                                                                                                             rt_text_concat(t344, t343, (const uint8_t*)&(clar_lit_850), NULL);
-                                                                                                                                                                                                                                                                                                            cv___ret77 = t344;
+                                                                                                                                                                                                                                                                                                            cv___ret76 = t344;
                                                                                                                                                                                                                                                                                                             rt_text_free(t341);
                                                                                                                                                                                                                                                                                                             rt_text_free(t342);
                                                                                                                                                                                                                                                                                                             rt_text_free(t343);
                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                            return cv___ret77;
+                                                                                                                                                                                                                                                                                                            return cv___ret76;
                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiSetSelected()) {
                                                                                                                                                                                                                                                                                                                 rt_text * t345 = NULL;
@@ -23346,9 +23352,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                 rt_text_free(t347);
                                                                                                                                                                                                                                                                                                                 rt_text_free(t348);
                                                                                                                                                                                                                                                                                                                 rt_text_free(t349);
-                                                                                                                                                                                                                                                                                                                cv___ret78 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                cv___ret77 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                return cv___ret78;
+                                                                                                                                                                                                                                                                                                                return cv___ret77;
                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiMenuEnable()) {
                                                                                                                                                                                                                                                                                                                     rt_text * t351 = NULL;
@@ -23375,18 +23381,18 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                     rt_text_free(t353);
                                                                                                                                                                                                                                                                                                                     rt_text_free(t354);
                                                                                                                                                                                                                                                                                                                     rt_text_free(t355);
-                                                                                                                                                                                                                                                                                                                    cv___ret79 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                    cv___ret78 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                    return cv___ret79;
+                                                                                                                                                                                                                                                                                                                    return cv___ret78;
                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiCancel()) {
                                                                                                                                                                                                                                                                                                                         rt_text * t357 = NULL;
                                                                                                                                                                                                                                                                                                                         t357 = rt_text_new();
                                                                                                                                                                                                                                                                                                                         rt_text_store(t357, (const uint8_t*)&(clar_lit_854));
                                                                                                                                                                                                                                                                                                                         clar_fn_fpEmit(t357);
-                                                                                                                                                                                                                                                                                                                        cv___ret80 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                        cv___ret79 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                        return cv___ret80;
+                                                                                                                                                                                                                                                                                                                        return cv___ret79;
                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiAskOpen()) {
                                                                                                                                                                                                                                                                                                                             rt_text * t358 = NULL;
@@ -23395,10 +23401,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                             rt_text * t359 = NULL;
                                                                                                                                                                                                                                                                                                                             t359 = rt_text_new();
                                                                                                                                                                                                                                                                                                                             rt_text_concat(t359, t358, (const uint8_t*)&(clar_lit_733), NULL);
-                                                                                                                                                                                                                                                                                                                            cv___ret81 = t359;
+                                                                                                                                                                                                                                                                                                                            cv___ret80 = t359;
                                                                                                                                                                                                                                                                                                                             rt_text_free(t358);
                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                            return cv___ret81;
+                                                                                                                                                                                                                                                                                                                            return cv___ret80;
                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiAskSave()) {
                                                                                                                                                                                                                                                                                                                                 rt_text * t360 = NULL;
@@ -23413,12 +23419,12 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                 rt_text * t363 = NULL;
                                                                                                                                                                                                                                                                                                                                 t363 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                 rt_text_concat(t363, t362, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                                                                                                                                cv___ret82 = t363;
+                                                                                                                                                                                                                                                                                                                                cv___ret81 = t363;
                                                                                                                                                                                                                                                                                                                                 rt_text_free(t360);
                                                                                                                                                                                                                                                                                                                                 rt_text_free(t361);
                                                                                                                                                                                                                                                                                                                                 rt_text_free(t362);
                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                return cv___ret82;
+                                                                                                                                                                                                                                                                                                                                return cv___ret81;
                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiAskSaveChanges()) {
                                                                                                                                                                                                                                                                                                                                     rt_text * t364 = NULL;
@@ -23427,10 +23433,10 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                     rt_text * t365 = NULL;
                                                                                                                                                                                                                                                                                                                                     t365 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                     rt_text_concat(t365, t364, (const uint8_t*)&(clar_lit_382), NULL);
-                                                                                                                                                                                                                                                                                                                                    cv___ret83 = t365;
+                                                                                                                                                                                                                                                                                                                                    cv___ret82 = t365;
                                                                                                                                                                                                                                                                                                                                     rt_text_free(t364);
                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                    return cv___ret83;
+                                                                                                                                                                                                                                                                                                                                    return cv___ret82;
                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiCanvasClear()) {
                                                                                                                                                                                                                                                                                                                                         rt_text * t366 = NULL;
@@ -23449,9 +23455,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                         rt_text_free(t366);
                                                                                                                                                                                                                                                                                                                                         rt_text_free(t367);
                                                                                                                                                                                                                                                                                                                                         rt_text_free(t368);
-                                                                                                                                                                                                                                                                                                                                        cv___ret84 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                        cv___ret83 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                        return cv___ret84;
+                                                                                                                                                                                                                                                                                                                                        return cv___ret83;
                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiCanvasLine()) {
                                                                                                                                                                                                                                                                                                                                             rt_text * t370 = NULL;
@@ -23502,9 +23508,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                             rt_text_free(t378);
                                                                                                                                                                                                                                                                                                                                             rt_text_free(t379);
                                                                                                                                                                                                                                                                                                                                             rt_text_free(t380);
-                                                                                                                                                                                                                                                                                                                                            cv___ret85 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                            cv___ret84 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                            return cv___ret85;
+                                                                                                                                                                                                                                                                                                                                            return cv___ret84;
                                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiCanvasRect()) {
                                                                                                                                                                                                                                                                                                                                                 rt_text * t382 = NULL;
@@ -23563,9 +23569,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t392);
                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t393);
                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t394);
-                                                                                                                                                                                                                                                                                                                                                cv___ret86 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                cv___ret85 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                return cv___ret86;
+                                                                                                                                                                                                                                                                                                                                                return cv___ret85;
                                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiCanvasCircle()) {
                                                                                                                                                                                                                                                                                                                                                     rt_text * t396 = NULL;
@@ -23608,9 +23614,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                     rt_text_free(t402);
                                                                                                                                                                                                                                                                                                                                                     rt_text_free(t403);
                                                                                                                                                                                                                                                                                                                                                     rt_text_free(t404);
-                                                                                                                                                                                                                                                                                                                                                    cv___ret87 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                    cv___ret86 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                    return cv___ret87;
+                                                                                                                                                                                                                                                                                                                                                    return cv___ret86;
                                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiCanvasFillCircle()) {
                                                                                                                                                                                                                                                                                                                                                         rt_text * t406 = NULL;
@@ -23653,9 +23659,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                         rt_text_free(t412);
                                                                                                                                                                                                                                                                                                                                                         rt_text_free(t413);
                                                                                                                                                                                                                                                                                                                                                         rt_text_free(t414);
-                                                                                                                                                                                                                                                                                                                                                        cv___ret88 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                        cv___ret87 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                        return cv___ret88;
+                                                                                                                                                                                                                                                                                                                                                        return cv___ret87;
                                                                                                                                                                                                                                                                                                                                                     } else {
                                                                                                                                                                                                                                                                                                                                                         if (cv_nm == clar_fn_IUiCanvasPattern()) {
                                                                                                                                                                                                                                                                                                                                                             rt_text * t416 = NULL;
@@ -23682,9 +23688,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                             rt_text_free(t418);
                                                                                                                                                                                                                                                                                                                                                             rt_text_free(t419);
                                                                                                                                                                                                                                                                                                                                                             rt_text_free(t420);
-                                                                                                                                                                                                                                                                                                                                                            cv___ret89 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                            cv___ret88 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                             rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                            return cv___ret89;
+                                                                                                                                                                                                                                                                                                                                                            return cv___ret88;
                                                                                                                                                                                                                                                                                                                                                         } else {
                                                                                                                                                                                                                                                                                                                                                             if (cv_nm == clar_fn_IUiCanvasDrawText()) {
                                                                                                                                                                                                                                                                                                                                                                 rt_text * t422 = NULL;
@@ -23727,23 +23733,23 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t428);
                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t429);
                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(t430);
-                                                                                                                                                                                                                                                                                                                                                                cv___ret90 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                                cv___ret89 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                                 rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                return cv___ret90;
+                                                                                                                                                                                                                                                                                                                                                                return cv___ret89;
                                                                                                                                                                                                                                                                                                                                                             } else {
                                                                                                                                                                                                                                                                                                                                                                 if (cv_nm == clar_fn_IUiEdit()) {
                                                                                                                                                                                                                                                                                                                                                                     clar_fn_fpUiEditStmt(cv_x, cv_a0, cv_a1, cv_a2);
-                                                                                                                                                                                                                                                                                                                                                                    cv___ret91 = clar_fn_toText(clar_lit_3);
+                                                                                                                                                                                                                                                                                                                                                                    cv___ret90 = clar_fn_toText(clar_lit_3);
                                                                                                                                                                                                                                                                                                                                                                     rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                    return cv___ret91;
+                                                                                                                                                                                                                                                                                                                                                                    return cv___ret90;
                                                                                                                                                                                                                                                                                                                                                                 } else {
                                                                                                                                                                                                                                                                                                                                                                     if (cv_nm == clar_fn_IUiFormIsNew()) {
                                                                                                                                                                                                                                                                                                                                                                         rt_text * t432 = NULL;
                                                                                                                                                                                                                                                                                                                                                                         t432 = rt_text_new();
                                                                                                                                                                                                                                                                                                                                                                         rt_text_store(t432, (const uint8_t*)&(clar_lit_865));
-                                                                                                                                                                                                                                                                                                                                                                        cv___ret92 = t432;
+                                                                                                                                                                                                                                                                                                                                                                        cv___ret91 = t432;
                                                                                                                                                                                                                                                                                                                                                                         rt_text_free(cv_dataExpr);
-                                                                                                                                                                                                                                                                                                                                                                        return cv___ret92;
+                                                                                                                                                                                                                                                                                                                                                                        return cv___ret91;
                                                                                                                                                                                                                                                                                                                                                                     }
                                                                                                                                                                                                                                                                                                                                                                 }
                                                                                                                                                                                                                                                                                                                                                             }
@@ -23833,9 +23839,9 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
             }
         }
     }
-    cv___ret93 = clar_fn_toText(clar_lit_3);
+    cv___ret92 = clar_fn_toText(clar_lit_3);
     rt_text_free(cv_dataExpr);
-    return cv___ret93;
+    return cv___ret92;
     return NULL;
 }
 
@@ -27359,8 +27365,6 @@ static void clar_fn_cpEmitGlobalsInit(void) {
     cv_j = 0;
     rt_text * cv_freeBuf;
     cv_freeBuf = rt_text_new();
-    int32_t cv_aliasOfGlobal;
-    cv_aliasOfGlobal = 0;
     int32_t cv_fullReplace;
     cv_fullReplace = 0;
     cv_i = 0;
@@ -27459,14 +27463,7 @@ static void clar_fn_cpEmitGlobalsInit(void) {
         clar_str_255 t22;
         t22 = clar_fn_poolGet(clar_fn_irGlobalName(cv_i));
         rt_str_store((uint8_t*)&(cv_nm), 255, (const uint8_t*)&(t22));
-        cv_initE = clar_fn_irGlobalInit(cv_i);
-        cv_aliasOfGlobal = 0;
-        if (((cv_initE != (-(1))) && (clar_fn_irExprKind(cv_initE) == 2)) && clar_fn_irVarRefGlobal(cv_initE)) {
-            if (clar_fn_irtNeedsCtor(cv_gt)) {
-                cv_aliasOfGlobal = 1;
-            }
-        }
-        if (!(cv_aliasOfGlobal)) {
+        if ((!(clar_fn_irtNeedsCtor(cv_gt))) || clar_fn_lowGlobalsVarQualifies(cv_nm)) {
             clar_str_255 t23;
             rt_str_concat((uint8_t*)&t23, (const uint8_t*)&(clar_lit_711), (const uint8_t*)&(cv_nm));
             clar_fn_cpEmitFree(cv_freeBuf, t23, cv_gt);
@@ -28270,8 +28267,6 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
         }
     }
     rt_quit((int32_t)(0));
-        rt_list_free(cv_fileArgs);
-
 }
 
 int main(int argc, char **argv) {

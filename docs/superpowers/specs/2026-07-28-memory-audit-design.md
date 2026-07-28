@@ -78,8 +78,12 @@ internal/build/rt/rt.c` must keep working unchanged).
   calls). `rt_mem_note(h, "why")` marks a block leak-by-design (no-op
   macro on Mac). With env `CLARUS_MEM_STRICT=1`, an exit hook (atexit)
   first runs the registered cleanup (below), then reports every live
-  un-noted block to stderr and fails the process with a distinct exit
-  code (101).
+  un-noted block via `CLARUS_MEM_REPORT` (or stderr if unset) as a
+  `##CLARUS-MEM## live=<N>` line plus one `rt_mem: leak <tag> (<size>
+  bytes)` line per block. The process's exit code is unaffected — the
+  harness (`checkMemReport` in the Go test suite) compares the report
+  file's live count against each fixture's `.leaks` golden instead of
+  relying on a distinct exit code.
 
 ### rt_core.inc — the single value-type implementation
 

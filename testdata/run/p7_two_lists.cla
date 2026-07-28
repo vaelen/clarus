@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/p7_two_lists.cla"
+
+on App.launch {
+    runP7TwoLists()
+}

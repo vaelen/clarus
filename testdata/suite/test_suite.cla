@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // test_suite.cla: monolithic pure-Clarus test suite (Task 6). Includes
-// every logic file under testdata/run/lib/ (all 41, alphabetical by file
+// every logic file under testdata/run/lib/ (all 50, alphabetical by file
 // name) and calls each one's entry func(s) in a single App.launch handler,
 // alerting a "=== <lib file name> ===" delimiter before each. Multi-entry
 // libs (clifallback, launchorder) call their entry funcs in original
@@ -71,6 +71,15 @@ include "../run/lib/fixedmath.cla"
 include "../run/lib/hello.cla"
 include "../run/lib/launchorder.cla"
 include "../run/lib/mutrec.cla"
+include "../run/lib/p1_push_global.cla"
+include "../run/lib/p2_global_assign.cla"
+include "../run/lib/p3_dup_push.cla"
+include "../run/lib/p4_elem_escape.cla"
+include "../run/lib/p5_global_elem_alias.cla"
+include "../run/lib/p6_dup_push_local.cla"
+include "../run/lib/p7_two_lists.cla"
+include "../run/lib/p8_rec_field.cla"
+include "../run/lib/p9_while_cond.cla"
 include "../run/lib/records.cla"
 include "../run/lib/savechoice.cla"
 include "../run/lib/slices.cla"
@@ -149,6 +158,24 @@ on App.launch {
     runLaunchorderStart()
     alert("=== mutrec ===")
     runMutrec()
+    alert("=== p1_push_global ===")
+    runP1PushGlobal()
+    alert("=== p2_global_assign ===")
+    runP2GlobalAssign()
+    alert("=== p3_dup_push ===")
+    runP3DupPush()
+    alert("=== p4_elem_escape ===")
+    runP4ElemEscape()
+    alert("=== p5_global_elem_alias ===")
+    runP5GlobalElemAlias()
+    alert("=== p6_dup_push_local ===")
+    runP6DupPushLocal()
+    alert("=== p7_two_lists ===")
+    runP7TwoLists()
+    alert("=== p8_rec_field ===")
+    runP8RecField()
+    alert("=== p9_while_cond ===")
+    runP9WhileCond()
     alert("=== records ===")
     runRecords()
     alert("=== savechoice ===")

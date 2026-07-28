@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/p1_push_global.cla"
+
+on App.launch {
+    runP1PushGlobal()
+}

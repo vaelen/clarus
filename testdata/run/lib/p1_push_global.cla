@@ -1,0 +1,27 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 1 + Critical 2 (memory-
+// audit-4e whole-branch review, probe P1): a global `text` pushed into a
+// global `list of text`. Before the fix, `cl_free_globals` had no runtime-
+// aliasing analysis for globals at all -- it froze `p1Gt`'s handle into
+// `p1Gl`'s single element via a plain handle copy, then freed BOTH `p1Gt`
+// and (via `p1Gl`'s own element-free loop) the same handle again: SIGSEGV
+// at process exit. Now `p1Gt` is disqualified (bare-ident push-argument
+// handoff, an existing rule newly reaching globals) and `p1Gl` is
+// disqualified too (Critical 2's new rule: a push whose value fails
+// lowEscapeFreshInit disqualifies the receiving container, so `p1Gl`'s own
+// element-free loop never runs either). Both leak instead of double-
+// freeing. Expected strict-mode leak count: 4 (see ../p1_push_global.leaks)
+// -- `p1Gt`'s text (struct box + data handle, 2 blocks) plus `p1Gl`'s list
+// (struct box + backing-array handle, 2 blocks); the one text handle they
+// share in common is counted once (it's never actually freed, so it shows
+// up as `p1Gt`'s leak, not doubled by `p1Gl`'s).
+
+var p1Gt: text = "hello"
+var p1Gl: list of text
+
+func runP1PushGlobal() {
+    p1Gl.push(p1Gt)
+    alert("p1 done")
+}

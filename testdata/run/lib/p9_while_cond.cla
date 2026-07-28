@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture pinning a documented Minor finding from the
+// memory-audit-4e final whole-branch review (probe P9), not a bug this
+// fix wave changes: `clarusc/cprint.cla`'s `fpWhileStmt` frees a
+// text-producing while-condition's per-iteration temp AFTER the
+// `if (!(cond)) break;` check, so the FINAL (false) evaluation's temp is
+// never reached by any per-iteration free -- it leaks once per loop
+// EXECUTION (not per iteration). Bounded, leak-only, same class as the
+// while-condition-temp gaps the ARC milestone is expected to close (the
+// `fpIfStmt` flag-materialization trick already used elsewhere would fix
+// it). Landed here purely to pin the current behavior as a corpus
+// regression fixture -- the final-review fix wave (Criticals 1/2) doesn't
+// touch `fpWhileStmt`. Expected strict-mode leak count: 2 (see
+// ../p9_while_cond.leaks) -- one text object (struct box + data handle)
+// from the last `t + "b"` comparison's temp, evaluated once more (and
+// found false) after the loop body stops running.
+
+func runP9WhileCond() {
+    var p9T: text = "a"
+    var p9N: int = 0
+    while p9T + "b" == "ab" {
+        p9N = p9N + 1
+        if p9N > 0 { p9T.append("x") }
+    }
+    alert("p9 done")
+}

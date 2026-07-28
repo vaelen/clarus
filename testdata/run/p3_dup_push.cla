@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/p3_dup_push.cla"
+
+on App.launch {
+    runP3DupPush()
+}

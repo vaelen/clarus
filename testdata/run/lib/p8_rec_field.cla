@@ -1,0 +1,33 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 1, part (a) (memory-audit-4e
+// whole-branch review, probe P8): a global text aliased into a global
+// record's text field. Before the fix, the select-LHS store rule (Task 8's
+// own window-var protection) disqualified only the FIELD NAME on a
+// non-fresh store, never the record's own base -- `cl_free_globals` still
+// recursed into `p8GRec`'s fields, freeing `body` (== `p8Gt`'s handle,
+// after the store), then separately froze `p8Gt` itself: SIGSEGV. The fix
+// adds `lowEscapeHandoff(selectX(lhs))` alongside the existing field-name
+// disqualification, so a bare `base.field` store's BASE identifier
+// (`p8GRec`) is disqualified too -- `cl_free_globals` skips it entirely,
+// never recursing into its fields at all. Expected strict-mode leak count:
+// 4 (see ../p8_rec_field.leaks) -- `p8Gt`'s "keep" text (struct box + data
+// handle, 2 blocks; disqualified by the existing bare-ident-RHS-of-
+// assignment handoff rule, shared with `p8GRec.body` after the store, so
+// counted once) plus `p8ProbeNote`'s own default `body = "hi"` handle (2
+// blocks), orphaned the instant the store overwrites the field without
+// freeing the old value first -- same orphan-on-overwrite class as P2's
+// `p2G2`, independent of this fix.
+
+record p8ProbeNote {
+    body: text = "hi"
+}
+
+var p8Gt: text = "keep"
+var p8GRec: p8ProbeNote
+
+func runP8RecField() {
+    p8GRec.body = p8Gt
+    alert("p8 done")
+}

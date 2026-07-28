@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 2 (memory-audit-4e
+// whole-branch review, probe P7): one LOCAL text pushed into TWO qualifying
+// LOCAL lists. Before the fix, both `p7L1` and `p7L2` kept their
+// scope-exit element-free loops (only the pushed VALUE was disqualified),
+// so both loops freed the one handle `p7X` shares with them: SIGSEGV.
+// Critical 2's rule disqualifies BOTH receivers, independently, the moment
+// each push sees a non-fresh (bare-identifier) value. Expected strict-mode
+// leak count: 6 (see ../p7_two_lists.leaks) -- `p7X`'s text (struct box +
+// data handle, 2 blocks; already disqualified by the existing
+// push-argument handoff rule) plus `p7L1`'s own list (struct box +
+// backing-array handle, 2 blocks) plus `p7L2`'s own list (struct box +
+// backing-array handle, 2 blocks) -- three containers/values, none of them
+// freed, no double count of the shared text handle.
+
+func runP7TwoLists() {
+    var p7L1: list of text
+    var p7L2: list of text
+    var p7X: text = "shared"
+    p7L1.push(p7X)
+    p7L2.push(p7X)
+    alert("p7 done")
+}

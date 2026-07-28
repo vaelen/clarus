@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/p2_global_assign.cla"
+
+on App.launch {
+    runP2GlobalAssign()
+}

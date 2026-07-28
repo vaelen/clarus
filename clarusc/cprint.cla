@@ -3201,13 +3201,14 @@ func cpEmitUiWiring() {
 // expressions. Right after clar_init_globals, also emits cl_free_globals
 // (memory-audit Task 5): the destructor mirror of the init loop above,
 // walking the same irGlobals arena and calling cpEmitFree per global --
-// EXCEPT a global whose Init expression is a bare reference to another
-// global (`var alias: text = g`): Ch3 assigns that global the SAME handle,
-// so freeing both would double-free one block; freeing the one it was
-// aliased FROM (which every alias ultimately chains back to, since a
-// global's own storage is never itself an alias target before it exists)
-// already covers it. Literal/constructor/concat inits are always a fresh
-// handle, so only this one narrow shape needs the guard.
+// EXCEPT a global lowGlobalsVarQualifies (lower.cla's whole-program reuse
+// of Task 7/8's escape walker, run over EVERY function/handler/extend/every
+// body, not just Init expressions) says is aliased anywhere at runtime: an
+// Init that's a bare reference to another global (`var alias: text = g`,
+// same handle per Ch3), a runtime assignment/push/element-read/record-field
+// store that aliases two globals, or any other rule-3/rule-4 handoff --
+// stays leaked-by-design instead of risking a double-free (final-review
+// Critical 1: the old version only ever caught the Init-expression shape).
 func cpEmitGlobalsInit() {
     var i: int
     var gt: int
@@ -3215,7 +3216,6 @@ func cpEmitGlobalsInit() {
     var nm: string
     var j: int
     var freeBuf: text
-    var aliasOfGlobal: bool
     var fullReplace: bool
 
     i = 0
@@ -3278,14 +3278,7 @@ func cpEmitGlobalsInit() {
     while i < irGlobals.count {
         gt = irGlobalType(i)
         nm = poolGet(irGlobalName(i))
-        initE = irGlobalInit(i)
-        aliasOfGlobal = false
-        if initE != -1 and irExprKind(initE) == EVarRef and irVarRefGlobal(initE) {
-            if irtNeedsCtor(gt) {
-                aliasOfGlobal = true
-            }
-        }
-        if not aliasOfGlobal {
+        if not irtNeedsCtor(gt) or lowGlobalsVarQualifies(nm) {
             cpEmitFree(freeBuf, "cv_" + nm, gt)
         }
         i = i + 1

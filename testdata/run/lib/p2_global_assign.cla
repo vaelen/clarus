@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 1 (memory-audit-4e
+// whole-branch review, probe P2): a runtime global-to-global text
+// assignment. Before the fix, the only aliasing guard `cl_free_globals`
+// had covered a global's own INIT expression, never a later store in a
+// handler/function body -- `p2G2 = p2G1` copies `p2G1`'s handle into
+// `p2G2` (Ch3 reference semantics), then `cl_free_globals` froze both:
+// SIGSEGV. Now the whole-program globals escape pre-pass (lower.cla's
+// `lowRunGlobalsEscapePrepass`, Task 8's window-var trick reused for
+// globals) disqualifies `p2G1` (bare-ident RHS of an assignment is always a
+// handoff) and `p2G2` (rule 4: reassigned from a non-fresh RHS) -- neither
+// gets freed. Expected strict-mode leak count: 4 (see
+// ../p2_global_assign.leaks): `p2G1`'s shared "one" handle (2 blocks,
+// never freed since both names referencing it are disqualified) plus
+// `p2G2`'s ORIGINAL "two" handle (2 blocks), orphaned the instant the
+// assignment overwrites `p2G2`'s slot -- an inherent consequence of a
+// plain handle-copy store (no old-value free on overwrite), not something
+// this fix could or should change.
+
+var p2G1: text = "one"
+var p2G2: text = "two"
+
+func runP2GlobalAssign() {
+    p2G2 = p2G1
+    alert("p2 done")
+}

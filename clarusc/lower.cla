@@ -1806,6 +1806,19 @@ func lowEscapeWalkArgsHandoff(argsHead: int) {
 // element). push/add/unshift/get additionally route their OWN arguments
 // through the handoff rule (lowEscapeWalkArgsHandoff's own comment covers
 // why `get` is included there too).
+//
+// Final-review fix (Critical 2): push/add/unshift additionally disqualify
+// the RECEIVER (not just the value argument) whenever the value fails
+// lowEscapeFreshInit -- a non-fresh value (bare ident, element read, call
+// result: anything but a literal/concat/slice) hands the CONTAINER a handle
+// someone else already owns, so the container's own scope-exit/teardown
+// element-free loop would double-free it (probes P1/P3/P6/P7: same local or
+// global pushed twice, or into two containers). A fresh value can only ever
+// be pushed once (temps are consumed), so a container that only ever
+// receives fresh values keeps its element-free loop -- the common case is
+// unaffected. `get`'s default-value argument is a pure read fallback, never
+// stored into the map, so `get` is deliberately excluded here (only from
+// the args-handoff dispatch above, not this receiver check).
 func lowEscapeWalkMethodCall(e: int, fn: int) {
     var nm: string
 
@@ -1816,6 +1829,9 @@ func lowEscapeWalkMethodCall(e: int, fn: int) {
     lowEscapeWalkExpr(selectX(fn))
     if nm == "push" or nm == "add" or nm == "unshift" or nm == "get" {
         lowEscapeWalkArgsHandoff(callArgsHead(e))
+        if nm != "get" and not lowEscapeFreshInit(callArgsHead(e)) {
+            lowEscapeHandoff(selectX(fn))
+        }
     } else {
         lowEscapeWalkArgsSafe(callArgsHead(e))
     }
@@ -1952,6 +1968,19 @@ func lowEscapeWalkAssign(s: int) {
         // down: `matrix[i][j] = v`'s own base `matrix[i]` is itself an
         // index-READ of `matrix` (needed to reach the inner container),
         // walked normally here and so still caught.
+        //
+        // Final-review fix (Critical 2, same rule as
+        // lowEscapeWalkMethodCall's push/add/unshift above): `m[k] = v`
+        // (IMapSet -- lowIndexAssign) stores v's own handle straight into an
+        // element slot exactly like push does. lowEscapeContainerElemRisky
+        // already gates this to List/Map bases whose element kind can carry
+        // a handle (a `map of int`/`list of int` element write copies a
+        // value, no aliasing risk); when it does apply and rhs isn't fresh,
+        // the container must be disqualified too, or its own element-free
+        // loop double-frees whatever handle rhs still shares ownership of.
+        if lowEscapeContainerElemRisky(exprTypeGet(indexX(lhs))) and not lowEscapeFreshInit(rhs) {
+            lowEscapeHandoff(indexX(lhs))
+        }
         lowEscapeWalkExpr(indexX(lhs))
         lowEscapeWalkExpr(indexI(lhs))
     } else {
@@ -1969,8 +1998,22 @@ func lowEscapeWalkAssign(s: int) {
         // reassignment. A computed/nested lhs (anything but a bare
         // `base.field`) isn't this shape at all, so this only ever fires
         // for the direct case.
+        //
+        // Final-review fix (Critical 1, part a): a non-fresh store also
+        // disqualifies the BASE's own root name, not just the field
+        // (`gRec.body = gt` must disqualify `gRec` too -- otherwise
+        // cl_free_globals still frees the whole record, recursing into the
+        // aliased field and double-freeing gt's handle; the field-name-only
+        // rule above protects a window var reached via `w.content` from
+        // OUTSIDE its window, but never protected the record's own base).
+        // lowEscapeHandoff(selectX(lhs)) handles both shapes selectX(lhs)
+        // can be: a bare ExIdent base (disqualifies it directly) or a
+        // nested ExSelect base (disqualifies by its own field name, one
+        // level conservative -- deeper nesting isn't a shape any current
+        // caller produces).
         if exprKind(lhs) == ExSelect and not lowEscapeFreshInit(rhs) {
             lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(selectName(lhs))] = 1
+            lowEscapeHandoff(selectX(lhs))
         }
         lowEscapeWalkExpr(lhs)
     }
@@ -3425,6 +3468,111 @@ func lowWinVarQualifies(name: string): bool {
     return not lowFreeDisq.has(numToStr(lowWinEscGen) + "|" + name)
 }
 
+// ================================================================
+// Final-review fix (Critical 1): whole-program global-var escape pre-pass
+// ================================================================
+//
+// cl_free_globals (cprint.cla's cpEmitGlobalsInit) only ever guarded against
+// a global's own INIT expression aliasing another global -- nothing walked
+// handler/function bodies for a runtime store that aliases two globals
+// (`g2 = g1`), pushes one global into another (`gl.push(gt)`), reads an
+// element of one global into another (`gSaved = gl[0]`), or stores one
+// global into another's record field (`gRec.body = gt`). Any of those
+// leaves two roots holding one handle, and cl_free_globals frees both --
+// same double-free class Task 8 already closed for window vars.
+//
+// Fix: exactly Task 8's own trick (lowRunWinVarEscapePrepass, above) --
+// reuse Task 7's escape walker verbatim, a second whole-program pass with
+// every top-level global's own handle-backed name as the tracked candidate
+// set instead of one window's per-instance vars. Same conservative-only
+// guarantee: this can only make a safe global wrongly stay leaked-by-
+// design, never the reverse.
+//
+// lowGlobalsEscGen is this pass's own reserved lowFuncGen value (minted
+// like lowWinEscGen, so it can never collide with a real function's gen or
+// the window-var pass's own gen) for lowFreeDisq's namespacing. Set once
+// per program by lowRunGlobalsEscapePrepass (called from lowerProgram
+// alongside lowRunWinVarEscapePrepass, before its per-decl loop mints any
+// real function's gen) and read back by cprint.cla's cpEmitGlobalsInit via
+// lowGlobalsVarQualifies.
+var lowGlobalsEscGen: int
+
+// lowGlobalsEscCollect adds every top-level DkVar's handle-backed
+// (irtNeedsCtor -- same widened set lowWinVarEscCollect uses, not Task 7's
+// narrower Text/List/Map-only lowEscapeTrackableKind: a Rec global can
+// alias through its own ctor-needing fields exactly like a window var can)
+// name in declHead to lowFreeNames/lowFreeTypes, and immediately
+// disqualifies one whose own Init expression is a non-fresh bare reference
+// (`var alias: text = g` -- Ch3 assigns alias the SAME handle as g; this
+// replaces cpEmitGlobalsInit's old standalone aliasOfGlobal check with the
+// same rule the walker already applies everywhere else).
+func lowGlobalsEscCollect(declHead: int) {
+    var d: int
+    var t: int
+    var nm: string
+
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkVar {
+            t = lowResolveType(varDeclType(d))
+            if irtNeedsCtor(t) {
+                nm = poolGet(varDeclName(d))
+                if not lowFreeTypes.has(nm) {
+                    lowFreeNames.add(nm)
+                }
+                lowFreeTypes[nm] = t
+                if varDeclInit(d) != -1 and not lowEscapeFreshInit(varDeclInit(d)) {
+                    lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
+                }
+            }
+        }
+        d = declNext(d)
+    }
+}
+
+// lowRunGlobalsEscapePrepass runs Task 7's escape walker once, program-wide,
+// with every top-level global's handle-backed name as the tracked set --
+// see this section's header comment. Called once from lowerProgram,
+// alongside lowRunWinVarEscapePrepass and BEFORE its own per-decl loop.
+func lowRunGlobalsEscapePrepass(declHead: int) {
+    var d: int
+
+    while lowFreeNames.count > 0 {
+        lowFreeNames.pop()
+    }
+    lowFuncGen = lowFuncGen + 1
+    lowGlobalsEscGen = lowFuncGen
+    lowGlobalsEscCollect(declHead)
+    if lowFreeNames.count == 0 {
+        return
+    }
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkFunc {
+            lowEscapeWalkBlock(funcDeclBody(d))
+        } else if declKind(d) == DkHandler {
+            lowEscapeWalkBlock(handlerDeclBody(d))
+        } else if declKind(d) == DkExtend {
+            lowWinVarEscWalkChildren(extendDeclChildrenHead(d))
+        } else if declKind(d) == DkEvery {
+            lowEscapeWalkBlock(everyDeclBody(d))
+        }
+        d = declNext(d)
+    }
+}
+
+// lowGlobalsVarQualifies reports whether global name `name` (as scanned by
+// lowRunGlobalsEscapePrepass) is safe for cl_free_globals to free --
+// cprint.cla's cpEmitGlobalsInit consults this exactly like
+// cpEmitWinReleaseFn already consults lowWinVarQualifies. A name
+// lowRunGlobalsEscapePrepass never tracked at all (not irtNeedsCtor: a
+// plain int/bool/fixed/char/string/enum global) reads as qualifying --
+// harmless, since cpEmitGlobalsInit only lets this decide the fate of a
+// ctor-needing global in the first place.
+func lowGlobalsVarQualifies(name: string): bool {
+    return not lowFreeDisq.has(numToStr(lowGlobalsEscGen) + "|" + name)
+}
+
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
 // window-body properties (title/size/resizable), each widget (lowWidgetDesc,
 // in declaration order -- the SAME order uiWidgetIndex and rt_ui's widget
@@ -4219,8 +4367,13 @@ func lowerProgram(declHead: int): int {
     lowBuiltinSaveChoiceLayout()
     // Task 8: must run before the per-decl loop below mints any real
     // function's lowFuncGen (lowRunWinVarEscapePrepass mints its own,
-    // lowWinEscGen, first) -- see that function's own doc comment.
+    // lowWinEscGen, first) -- see that function's own doc comment. Final-
+    // review fix (Critical 1): lowRunGlobalsEscapePrepass runs the same way
+    // right after, minting its own lowGlobalsEscGen -- order between the
+    // two prepasses doesn't matter, each is fully self-contained (resets
+    // lowFreeNames, uses its own reserved gen).
     lowRunWinVarEscapePrepass(declHead)
+    lowRunGlobalsEscapePrepass(declHead)
     d = declHead
     while d != -1 {
         lowDecl(d)

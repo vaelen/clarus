@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 2 (memory-audit-4e
+// whole-branch review, probe P6): the same LOCAL text pushed twice into a
+// LOCAL list of text -- the purely-local shape of the same class C1's
+// fixtures cover for globals. Before the fix, `p6L` (fresh init, only ever
+// a push receiver) qualified for a scope-exit element-free loop, but that
+// loop would free `p6X`'s handle twice, once per element slot: SIGSEGV at
+// handler scope exit (a Mac composition of this would corrupt the heap
+// MID-RUN, not just at process exit, since this fires on ordinary handler
+// return, not `cl_free_globals`'s atexit path). The fix (one rule in
+// `lowEscapeWalkMethodCall`: a push/add/unshift value that fails
+// `lowEscapeFreshInit` disqualifies the receiver too) disqualifies `p6L`
+// the first time `p6X` -- a bare identifier, never fresh regardless of its
+// own initializer -- is pushed. Expected strict-mode leak count: 4 (see
+// ../p6_dup_push_local.leaks) -- `p6X`'s text (struct box + data handle, 2
+// blocks; already disqualified by the existing push-argument handoff rule)
+// plus `p6L`'s own list (struct box + backing-array handle holding two
+// pointers to that one shared handle, 2 blocks).
+
+func runP6DupPushLocal() {
+    var p6L: list of text
+    var p6X: text = "dup"
+    p6L.push(p6X)
+    p6L.push(p6X)
+    alert("p6 done")
+}

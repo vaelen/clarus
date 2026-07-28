@@ -151,17 +151,21 @@ Living document — the authoritative sequencing and strategy record. Updated
     a strict-mode (`CLARUS_MEM_STRICT=1`) exit hook reports every live
     un-noted block and fails the process; the full clarusc-emitted golden
     corpus now runs under strict+paranoid mode with per-program `.leaks`
-    goldens (default 0) as a permanent ratchet — 31 of 40 programs are at
-    zero, the other 9 are blessed goldens tracing to documented
+    goldens (default 0) as a permanent ratchet — 32 of 50 programs are at
+    zero, the other 18 are blessed goldens tracing to documented
     leak-by-design classes that remain until ARC (user-call-result/bare-alias
-    reassignment orphans, containers disqualified by element reads, and
-    record fields being out of the local-free pre-pass's scope — the host
-    corpus has no window declarations, so window-var disqualification and
-    cross-window name collisions are a separate Task 8 leak-by-design class
-    exercised by the Mac UI test suite, not by any of the 9 goldens). Go
-    compiler, its emitted output, and the bootstrap chain are unaffected —
-    frees are unobservable in program output. Full spec + per-site
-    dispositions: `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
+    reassignment orphans, containers disqualified by element reads, record
+    fields being out of the local-free pre-pass's scope, and — added by the
+    final whole-branch review's fix wave — a global disqualified by runtime
+    aliasing the Init-expression guard alone never caught, and a push/
+    map-set container disqualified because its value wasn't provably fresh
+    — the host corpus has no window declarations, so window-var
+    disqualification and cross-window name collisions are a separate Task 8
+    leak-by-design class exercised by the Mac UI test suite, not by any of
+    the 18 goldens). Go compiler, its emitted output, and the bootstrap
+    chain are unaffected — frees are unobservable in program output. Full
+    spec + per-site dispositions:
+    `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 

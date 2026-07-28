@@ -1,0 +1,26 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for final-review Critical 2 (memory-audit-4e
+// whole-branch review, probe P3): the same LOCAL text pushed twice into a
+// GLOBAL list of text. Before the fix, a non-fresh push value disqualified
+// only the value itself, never the receiving container -- `p3Gl`'s
+// element-free loop (now reachable at all once globals are tracked, per
+// Critical 1) would free `p3X`'s handle twice, once per element slot.
+// Critical 2's rule disqualifies the receiver too, the first time a
+// non-literal/non-concat value is pushed: `p3Gl` never gets an element-free
+// loop, so both slots (aliasing the one handle) are simply abandoned.
+// Expected strict-mode leak count: 4 (see ../p3_dup_push.leaks) -- `p3X`'s
+// text (struct box + data handle, 2 blocks; already disqualified by the
+// existing local-var escape pass, since it's handed to `push` by bare
+// identifier) plus `p3Gl`'s own list (struct box + backing-array handle
+// holding two pointers to that one shared text handle, 2 blocks).
+
+var p3Gl: list of text
+
+func runP3DupPush() {
+    var p3X: text = "dup"
+    p3Gl.push(p3X)
+    p3Gl.push(p3X)
+    alert("p3 done")
+}
