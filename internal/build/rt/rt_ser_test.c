@@ -165,6 +165,9 @@ static void test_list_roundtrip(void) {
         memcpy(&got, rt_list_at(l2, 1), sizeof(test_rec));
         CHECK(memcmp(&got, &r2, sizeof(test_rec)) == 0, "list[1] round-trips");
     }
+
+    rt_list_free(l);
+    rt_list_free(l2);
 }
 
 static void test_map_roundtrip(void) {
@@ -199,6 +202,9 @@ static void test_map_roundtrip(void) {
         rt_map_get(m2, keyFoo, &got);
         CHECK(memcmp(&got, &r1, sizeof(test_rec)) == 0, "map[foo] round-trips");
     }
+
+    rt_map_free(m);
+    rt_map_free(m2);
 }
 
 static void test_failure_modes(void) {

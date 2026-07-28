@@ -158,6 +158,7 @@ int rt_file_save(const uint8_t *path, short container, const void *data, const r
     }
 
     ok = rt_file_write_data(path, out);
+    rt_text_free(out);
     return ok;
 }
 
@@ -268,7 +269,7 @@ int rt_file_load(const uint8_t *path, short container, void *data, const rt_layo
     else if (container == RT_SER_MAP) rt_map_clear((rt_map *)data);
 
     in = rt_text_new();
-    if (!rt_file_read_text(path, in)) return 0; /* rt_file_read_text already set lastError */
+    if (!rt_file_read_text(path, in)) { rt_text_free(in); return 0; } /* rt_file_read_text already set lastError */
 
     r.t = in;
     r.pos = 0;
@@ -315,9 +316,11 @@ int rt_file_load(const uint8_t *path, short container, void *data, const rt_layo
     }
 
     if (r.bad || r.pos != rt_text_len(in)) goto fail; /* trailing bytes, or an earlier failure */
+    rt_text_free(in);
     return 1;
 
 fail:
+    rt_text_free(in); /* r.t aliases in; free in exactly once, not r.t too */
     if (container == RT_SER_LIST) rt_list_clear((rt_list *)data);
     else if (container == RT_SER_MAP) rt_map_clear((rt_map *)data);
     rt_set_lasterr(2, "bad file format");
