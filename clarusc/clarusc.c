@@ -17768,6 +17768,19 @@ static void clar_fn_lowEscapeWalkAssign(int32_t cv_s) {
             clar_fn_lowEscapeWalkExpr(clar_fn_indexX(cv_lhs));
             clar_fn_lowEscapeWalkExpr(clar_fn_indexI(cv_lhs));
         } else {
+            if ((clar_fn_exprKind(cv_lhs) == 13) && (!(clar_fn_lowEscapeFreshInit(cv_rhs)))) {
+                clar_str_255 t6;
+                t6 = clar_fn_numToStr(cv_lowFuncGen);
+                clar_str_255 t7;
+                rt_str_concat((uint8_t*)&t7, (const uint8_t*)&(t6), (const uint8_t*)&(clar_lit_124));
+                clar_str_255 t8;
+                t8 = clar_fn_poolGet(clar_fn_selectName(cv_lhs));
+                clar_str_255 t9;
+                rt_str_concat((uint8_t*)&t9, (const uint8_t*)&(t7), (const uint8_t*)&(t8));
+                int32_t t10;
+                t10 = 1;
+                rt_map_set(cv_lowFreeDisq, (const uint8_t*)&(t9), &(t10));
+            }
             clar_fn_lowEscapeWalkExpr(cv_lhs);
         }
     }
@@ -19111,6 +19124,17 @@ static void clar_fn_lowWinVarEscCollect(int32_t cv_declHead) {
                         int32_t t3;
                         t3 = cv_t;
                         rt_map_set(cv_lowFreeTypes, (const uint8_t*)&(cv_nm), &(t3));
+                        if ((clar_fn_varDeclInit(cv_item) != (-(1))) && (!(clar_fn_lowEscapeFreshInit(clar_fn_varDeclInit(cv_item))))) {
+                            clar_str_255 t4;
+                            t4 = clar_fn_numToStr(cv_lowFuncGen);
+                            clar_str_255 t5;
+                            rt_str_concat((uint8_t*)&t5, (const uint8_t*)&(t4), (const uint8_t*)&(clar_lit_124));
+                            clar_str_255 t6;
+                            rt_str_concat((uint8_t*)&t6, (const uint8_t*)&(t5), (const uint8_t*)&(cv_nm));
+                            int32_t t7;
+                            t7 = 1;
+                            rt_map_set(cv_lowFreeDisq, (const uint8_t*)&(t6), &(t7));
+                        }
                     }
                 }
                 cv_item = clar_fn_declNext(cv_item);

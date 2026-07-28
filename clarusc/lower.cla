@@ -1959,6 +1959,19 @@ func lowEscapeWalkAssign(s: int) {
         // base is always safe, rule 3), never disqualifying by itself --
         // still walked, to catch a nested call in a computed base
         // (`rec(f(x)).f = v`... any select's own base sub-expression).
+        //
+        // Task 8 fix round 1 (Critical 1): the FIELD ITSELF, when lhs is
+        // exactly a bare `base.field` select (`w.note = gShared`), can be a
+        // window var reached from OUTSIDE its own window
+        // (check.cla's checkWindowRefSelect) -- disqualify it by name
+        // unless rhs is provably fresh, the SAME rule-4 freshness test the
+        // ExIdent branch above already applies to a plain local
+        // reassignment. A computed/nested lhs (anything but a bare
+        // `base.field`) isn't this shape at all, so this only ever fires
+        // for the direct case.
+        if exprKind(lhs) == ExSelect and not lowEscapeFreshInit(rhs) {
+            lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(selectName(lhs))] = 1
+        }
         lowEscapeWalkExpr(lhs)
     }
 }
@@ -3332,6 +3345,16 @@ func lowWinVarEscCollect(declHead: int) {
                             lowFreeNames.add(nm)
                         }
                         lowFreeTypes[nm] = t
+                        // Task 8 fix round 1 (Critical 2): the var's OWN
+                        // declared default (`var note: text = gShared`) can
+                        // alias another handle exactly like a non-fresh
+                        // local initializer would (rule 2/lowEscapeCollect-
+                        // Candidates' own freshness test, reused here) --
+                        // disqualify immediately rather than waiting for a
+                        // handler body to ever mention the name again.
+                        if varDeclInit(item) != -1 and not lowEscapeFreshInit(varDeclInit(item)) {
+                            lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
+                        }
                     }
                 }
                 item = declNext(item)
