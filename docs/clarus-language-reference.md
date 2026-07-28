@@ -1443,7 +1443,7 @@ window Main {
         column "URL"  shows url      width fill
         column "Fav"  shows favorite width 30
     }
-    button Add    { at: 10, bottom;   caption: "Add\xC9" }
+    button Add    { at: 10, bottom;   caption: "Add…" }
     button Remove { at: next, bottom; caption: "Remove" }
 }
 
@@ -1485,6 +1485,8 @@ extend EditForm {
     }
 }
 ```
+
+The `Add…` caption above spells the ellipsis as a literal UTF-8 character so the frozen differential harness can compile this listing as-is; in your own sources, prefer the MacRoman escape `\xC9` (Chapter 3) instead — a literal ellipsis in a source file is UTF-8 and renders as three garbage glyphs on a real Mac.
 
 ### Text Editor
 
