@@ -1,0 +1,76 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Standing regression fixture for ARC Task 6 review round 2 (reviewer
+// Critical): a global's OWN Init expression never routed through
+// lowCountedStore's retain-on-store -- cpEmitGlobalsInit's Init-emission
+// path plain-assigned a bare-alias Init's handle with NO retain
+// (`cv_g2 = cv_g1;`), so Task 6's new unconditional cl_free_globals
+// double-released an rc==1 handle: reviewer-reproduced `rt_rc:
+// over-release`, exit 134, under CLARUS_MEM_STRICT+CLARUS_MEM_PARANOID.
+// Fixed by giving the Init path its own birth-vs-retain classification
+// (irGlobalInitBirth, set by lowGlobalVarDecl using the SAME
+// lowStoreIsBirth/lowStoreIntrOwnsResult rule a runtime store uses) and
+// retaining a non-birth Init's value right after the plain-assign --
+// cpEmitGlobalsInit's own comment (cprint.cla) has the full account.
+//
+// gaT1/gaT2 pin the reviewer's exact TEXT repro (`var g2: text = g1`).
+// gaL1/gaL2 pin the LIST-OF-TEXT variant (`var g2: list of text = g1`) --
+// same missing-retain bug, one level up: the retain is on the LIST
+// CONTAINER's own handle (cpEmitRetain's KList branch), not its elements.
+//
+// gaL1 is emptied again (`pop()`) before the function returns, so the
+// shared list is EMPTY by the time cl_free_globals runs at exit -- this is
+// deliberate, not incidental: a SEPARATE, pre-existing gap (cpEmitRelease's
+// deep element-release walk runs unconditionally on EVERY release
+// call-site, never gated on the container's own refcount actually reaching
+// 0) means two globals that still share a list/map handle WITH elements
+// present AT EXIT double-release those elements -- confirmed reproducible
+// (both via an alias Init and via a plain runtime `g2 = g1` reassignment)
+// during this fix's own verification, but it is a DIFFERENT bug class (an
+// unconditional deep-walk on every release call-site, not a missing
+// retain) and NOT fixed by this task -- see task-6-report.md's fix-round-2
+// addendum for the full writeup and reproduction. This fixture stays
+// entirely inside the currently-safe "empty at exit" envelope while still
+// proving the CONTAINER-level alias is real: `gaL2.push`-visible-via-
+// `gaL1` (and vice versa) is exactly Ch3's documented reference semantics
+// ("all references to the same handle point to the same underlying data"),
+// which only holds if the Init actually shared the handle rather than
+// silently copying an independent empty list.
+//
+// Expected strict-mode leak count: 0 (see ../arc_global_alias.leaks --
+// absent, defaults to want-0). Both pairs are fully balanced: one retain
+// at the alias Init, two matching releases at exit (rc 1 -> 2 -> 1 -> 0 for
+// each pair, never touching 0 early and never double-freeing).
+
+var gaT1: text = "hello"
+var gaT2: text = gaT1
+
+var gaL1: list of text
+var gaL2: list of text = gaL1
+
+func runArcGlobalAlias() {
+    var buf: char[64]
+    var n: int
+    var s: string
+    var popped: text
+
+    n = gaT1.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+
+    n = gaT2.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+
+    gaL1.push("shared")
+    if gaL2.count == 1 and gaL2.first() == "shared" {
+        alert("list-alias-ok")
+    } else {
+        alert("list-alias-bad")
+    }
+    popped = gaL1.pop()
+    n = popped.toBytes(buf)
+    s.fromBytes(buf, n)
+    alert(s)
+}

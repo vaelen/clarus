@@ -205,6 +205,14 @@ record IRGlobal {
     name: int
     t: int
     init: int
+    // initBirth (ARC Task 6 fix): whether `init` (if any) is a birth value
+    // per lowStoreIsBirth/lowStoreIntrOwnsResult -- lowGlobalVarDecl's own
+    // AST-time classification, mirroring lowCountedStore's for a runtime
+    // store. cpEmitGlobalsInit's Init-emission path never routes through
+    // lowCountedStore (it prints the Init directly, not via a statement
+    // chain), so this is how a non-birth (aliasing) Init tells the printer
+    // it needs a matching retain -- see cpEmitGlobalsInit's own comment.
+    initBirth: bool
 }
 
 // IRFieldSlot ports ir.go's FieldSlot: default is the scalar/enum/char/
@@ -1352,12 +1360,13 @@ func findIRFuncIdxByName(nameIdx: int): int {
 // IRGlobal constructors and accessors (irGlobals arena -- Program.Globals)
 // ================================================================
 
-func newIRGlobal(name: int, t: int, init: int): int {
+func newIRGlobal(name: int, t: int, init: int, initBirth: bool): int {
     var n: IRGlobal
 
     n.name = name
     n.t = t
     n.init = init
+    n.initBirth = initBirth
     irGlobals.add(n)
     return irGlobals.count - 1
 }
@@ -1368,6 +1377,10 @@ func irGlobalName(i: int): int {
 
 func irGlobalType(i: int): int {
     return irGlobals[i].t
+}
+
+func irGlobalInitBirth(i: int): bool {
+    return irGlobals[i].initBirth
 }
 
 func irGlobalInit(i: int): int {

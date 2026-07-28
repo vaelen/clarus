@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // test_suite.cla: monolithic pure-Clarus test suite (Task 6). Includes
-// every logic file under testdata/run/lib/ (all 50, alphabetical by file
+// every logic file under testdata/run/lib/ (all 51, alphabetical by file
 // name) and calls each one's entry func(s) in a single App.launch handler,
 // alerting a "=== <lib file name> ===" delimiter before each. Multi-entry
 // libs (clifallback, launchorder) call their entry funcs in original
@@ -42,6 +42,7 @@
 // future lib file silently dropped from this suite still fails that test.
 
 include "../run/lib/appendperf.cla"
+include "../run/lib/arc_global_alias.cla"
 include "../run/lib/arith.cla"
 include "../run/lib/binroundtrip.cla"
 include "../run/lib/breakcont.cla"
@@ -98,6 +99,8 @@ on App.launch {
 
     alert("=== appendperf ===")
     runAppendperf()
+    alert("=== arc_global_alias ===")
+    runArcGlobalAlias()
     alert("=== arith ===")
     runArith()
     alert("=== binroundtrip ===")

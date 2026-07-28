@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/arc_global_alias.cla"
+
+on App.launch {
+    runArcGlobalAlias()
+}

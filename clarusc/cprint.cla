@@ -3600,16 +3600,27 @@ func cpEmitUiWiring() {
 // expressions. Right after clar_init_globals, also emits cl_free_globals
 // (memory-audit Task 5): the destructor mirror of the init loop above,
 // walking the same irGlobals arena and calling cpEmitRelease per global,
-// UNCONDITIONALLY (ARC Task 6) -- Tasks 4-5 made every store into a global
-// (its own Init included: an alias Init like `var alias: text = g` retains
-// at the store, same as a runtime assignment/push/element-read/record-field
-// store that aliases two globals) counted, so both roots of any alias now
-// carry their own independent +1 and releasing every global's slot here is
-// sound. This replaces the old lowGlobalsVarQualifies escape-walker consult
-// (final-review Critical 1's fix, formerly guarding against exactly that
-// double-free) -- now provably unnecessary; cpEmitRelease itself no-ops for
-// a non-ctor type, so the call is unconditional rather than re-testing
-// irtNeedsCtor here too.
+// UNCONDITIONALLY (ARC Task 6) -- Tasks 4-5 made every RUNTIME store into a
+// global (assignment/push/element-read/record-field-store that aliases two
+// globals) counted, so both roots of a runtime alias carry their own
+// independent +1 and releasing every global's slot here is sound. This
+// replaces the old lowGlobalsVarQualifies escape-walker consult (final-
+// review Critical 1's fix, formerly guarding against exactly that double-
+// free) -- now provably unnecessary for RUNTIME stores; cpEmitRelease
+// itself no-ops for a non-ctor type, so the call is unconditional rather
+// than re-testing irtNeedsCtor here too.
+//
+// A global's OWN Init expression is a SEPARATE code path, though (this
+// function prints it directly below, never via lowCountedStore -- unlike
+// every runtime store) -- ARC Task 6 review round 1 shipped this function
+// still trusting an uncounted `else { cv_g2 = fpExpr(initE); }` plain
+// pointer-copy for a bare-alias Init (`var g2: text = g1`), which the new
+// unconditional release then double-released: reviewer-reproduced
+// over-release, fixed in round 2 by giving the Init path its own birth-vs-
+// retain classification (irGlobalInitBirth, set by lowGlobalVarDecl using
+// the SAME lowStoreIsBirth/lowStoreIntrOwnsResult rule a runtime store
+// uses) and retaining a non-birth Init's value right after the plain-assign
+// below -- see that branch's own comment.
 func cpEmitGlobalsInit() {
     var i: int
     var gt: int
@@ -3618,6 +3629,7 @@ func cpEmitGlobalsInit() {
     var j: int
     var freeBuf: text
     var fullReplace: bool
+    var initRetainBuf: text
 
     i = 0
     while i < irGlobals.count {
@@ -3657,6 +3669,31 @@ func cpEmitGlobalsInit() {
                 fpEmit("rt_text_store(cv_" + nm + ", " + fpStrAddr(initE) + ");")
             } else {
                 fpEmit("cv_" + nm + " = " + fpExpr(initE) + ";")
+                if irtNeedsCtor(gt) and not irGlobalInitBirth(i) {
+                    // ARC Task 6 fix (reviewer Critical): this plain
+                    // pointer-copy is a bare-alias (or other non-birth)
+                    // Init -- `cv_g2 = cv_g1` shares g1's handle with NO
+                    // retain, so cl_free_globals's now-unconditional
+                    // release of both g1 and g2 would over-release an
+                    // rc==1 handle. Retain here: lowGlobalVarDecl computed
+                    // irGlobalInitBirth using the SAME lowStoreIsBirth/
+                    // lowStoreIntrOwnsResult rule a real lowCountedStore
+                    // does for a runtime store. cpEmitRetain, not a bare
+                    // rt_*_retain call: it's the ALREADY-correct dispatcher
+                    // for every needs-ctor kind (KRec's own retain walk,
+                    // KArr's per-element loop, not just KText/KList/KMap --
+                    // same reason IListFreeVar's own retain/release
+                    // counterpart above reuses cpEmitRelease instead of
+                    // hand-rolling a kind switch). It appends into a
+                    // caller-owned `text` buffer (its own one-level indent),
+                    // so the whole result -- one line for a scalar handle,
+                    // several for a walked Arr/Rec -- is emitted as ONE
+                    // fpBody entry, same trick this function's OWN
+                    // cl_free_globals loop (below) and IListFreeVar use.
+                    initRetainBuf = ""
+                    cpEmitRetain(initRetainBuf, "cv_" + nm, gt)
+                    fpEmit(initRetainBuf)
+                }
             }
         }
         i = i + 1

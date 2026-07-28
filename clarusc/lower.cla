@@ -3655,13 +3655,25 @@ func lowEnumDecl(d: int) {
 func lowGlobalVarDecl(d: int) {
     var t: int
     var init: int
+    var initAst: int
+    var isBirth: bool
 
     t = lowResolveType(varDeclType(d))
     init = -1
-    if varDeclInit(d) != -1 {
-        init = lowExpr(varDeclInit(d))
+    isBirth = true
+    initAst = varDeclInit(d)
+    if initAst != -1 {
+        init = lowExpr(initAst)
+        // ARC Task 6 fix (reviewer Critical, reproduced double-free): a
+        // global's Init is printed directly by cpEmitGlobalsInit, never
+        // routed through lowCountedStore's own retain-on-store -- so a
+        // bare-alias Init (`var g2: text = g1`) needs the SAME birth-vs-
+        // retain classification lowCountedStore applies to a runtime
+        // store, computed here (AST is only available at lowering time)
+        // and carried on the IRGlobal for cpEmitGlobalsInit to consult.
+        isBirth = lowStoreIsBirth(initAst) or lowStoreIntrOwnsResult(init)
     }
-    newIRGlobal(varDeclName(d), t, init)
+    newIRGlobal(varDeclName(d), t, init, isBirth)
 }
 
 // lowBuiltinSaveChoiceLayout seeds irEnums with saveChoice's IREnumLayout
