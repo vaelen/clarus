@@ -2040,6 +2040,8 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
     var w: int
     var yStr: string
     var widthStr: string
+    var capIdx: int
+    var kind: string
 
     // Pre-pass (mac-target-4d Task 5): any table widget's cols[]/table_desc
     // must already exist before the widget array below takes their address
@@ -2067,8 +2069,29 @@ func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
         if not irWidgetDescWidthIsFill(w) {
             widthStr = numToStr(irWidgetDescWidth(w))
         }
+        // Ch8 doc addition (mac-target-4d final-validation Fix wave, FIX 1):
+        // a widget with no caption/label/text property at all (captionIdx
+        // -1) falls back to its own declared NAME -- the same "member name
+        // when unlabeled" rule Chapter 3 already gives an unlabeled enum
+        // member (lowEnumDecl, clarusc/lower.cla). Scoped to the five kinds
+        // that can even declare a caption-like property at all (checker's
+        // widgetDeclProps: button.caption, check.caption, field.label,
+        // popup.label, label.text -- the only ones rt_ui.c's `cap = wd->
+        // caption ? ... : kEmptyPStr` ever feeds into NewControl's title or
+        // a TETextBox lane); table/textview/canvas have no such property in
+        // the grammar, so their captionIdx is always -1 for an unrelated
+        // reason (there was never anything TO label), and baking a name in
+        // there would just be inert noise in the emitted C. One spot, not
+        // one per kind.
+        capIdx = irWidgetDescCaption(w)
+        if capIdx == -1 {
+            kind = poolGet(irWidgetDescKind(w))
+            if kind == "button" or kind == "check" or kind == "field" or kind == "popup" or kind == "label" {
+                capIdx = irWidgetDescName(w)
+            }
+        }
         cpUiBuf.add(toText("    { " + cpWidgetKindMacro(irWidgetDescKind(w)) + ", \"" + poolGet(irWidgetDescName(w)) + "\", " +
-            cpUiCaptionOrNull(irWidgetDescCaption(w)) + ", " +
+            cpUiCaptionOrNull(capIdx) + ", " +
             cpAtKindMacro(irWidgetDescAtKind(w)) + ", " + numToStr(irWidgetDescX(w)) + ", " + yStr + ", " + widthStr + ", " +
             cpFillMacro(irWidgetDescFillBoth(w)) + ", " +
             cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w), irWidgetDescIsScrollV(w), irWidgetDescIsScrollH(w)) +
