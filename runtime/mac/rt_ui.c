@@ -1455,6 +1455,18 @@ static void rt_ui_table_relayout(rt_ui_winst *inst, short i)
     listRect = box;
     listRect.top = (short)(listRect.top + headerH);
     if (listRect.bottom < listRect.top) listRect.bottom = listRect.top;
+    /* The LM view sits strictly INSIDE the FrameRect border (the LDEF's
+       per-cell EraseRect spans the full view width -- a view coextensive
+       with the frame erases the border's own pixels), and leaves the
+       classic 15px strip + shared border on the right for LM's vertical
+       scroll bar, which LNew(scrollVert) draws ADJACENT to rView: with
+       rView.right = box.right - 1 - RTUI_SCROLLBAR_W the bar's own frame
+       lands flush on the widget frame, standard System 6 list geometry. */
+    InsetRect(&listRect, 1, 0);
+    listRect.bottom = (short)(listRect.bottom - 1);
+    listRect.right = (short)(listRect.right - RTUI_SCROLLBAR_W);
+    if (listRect.bottom < listRect.top) listRect.bottom = listRect.top;
+    if (listRect.right < listRect.left) listRect.right = listRect.left;
     /* List Manager has no dedicated "move" call (Inside Macintosh: LSize
        changes ONLY width/height, keeping the view rect's existing
        top-left) -- poke rView's position directly first (a plain public
@@ -2901,11 +2913,12 @@ static void rt_ui_handle_update(WindowPtr wp)
                 Rect box = inst->rects[i];
                 Rect headerRect = box;
                 short fillW, x, k;
+                Rect view = (*lh)->rView;
 
                 FrameRect(&box);
-                headerRect.bottom = (*lh)->rView.top;
-                fillW = rt_ui_table_fill_width(td, (short)(box.right - box.left));
-                x = box.left;
+                headerRect.bottom = view.top;
+                fillW = rt_ui_table_fill_width(td, (short)(view.right - view.left));
+                x = view.left;
                 for (k = 0; k < td->nCols; k++) {
                     const rt_ui_col_desc *cd = &td->cols[k];
                     short w = cd->widthFill ? fillW : cd->widthPx;
