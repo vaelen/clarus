@@ -117,11 +117,25 @@ int rt_file_save(const uint8_t *path, short container, const void *data, const r
     } else if (container == RT_SER_LIST) {
         rt_list *l;
         int32_t count, i;
+        uint8_t tmp[RT_SER_MAX_REC];
         l = (rt_list *)data;
         count = rt_list_count(l);
         ser_put_i32(out, count);
         for (i = 0; i < count; i++) {
-            ser_put_rec(out, (const uint8_t *)rt_list_at(l, i), ld);
+            /* Copy out to a stack tmp BEFORE ser_put_rec, same as the MAP
+               branch below -- ser_put_rec calls rt_text_append_char in a
+               loop, each of which can grow `out`'s storage. On the Handle-
+               backed core (4e) that growth is a Memory Manager call, and on
+               real hardware the Memory Manager may compact/relocate ANY
+               other unlocked handle -- including l's own data handle -- on
+               ANY allocation, not just one affecting l. Holding the raw
+               rt_list_at pointer across those calls (the previous code)
+               reads through a handle that can have moved out from under it
+               partway through the record; the host's CLARUS_MEM_PARANOID
+               shim (which relocates every unlocked handle on every resize)
+               catches exactly this and was how it was found. */
+            memmove(tmp, rt_list_at(l, i), (size_t)ld->recSize);
+            ser_put_rec(out, tmp, ld);
         }
     } else { /* RT_SER_MAP */
         rt_map *m;

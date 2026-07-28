@@ -68,6 +68,15 @@ func compileCDir(cBytes []byte, dir string) (string, error) {
 	if err := os.WriteFile(filepath.Join(dir, "rt_ser.inc"), build.RuntimeSerInc(), 0o644); err != nil {
 		return "", err
 	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_mem.h"), build.RuntimeMemH(), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_mem_host.inc"), build.RuntimeMemHostInc(), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_core.inc"), build.RuntimeCoreInc(), 0o644); err != nil {
+		return "", err
+	}
 
 	bin := filepath.Join(dir, "prog")
 	cc := exec.Command(build.CCPath(), "-std=c99", "-O1", mainC, rtC, "-o", bin)

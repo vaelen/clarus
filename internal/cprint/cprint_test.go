@@ -74,6 +74,18 @@ func buildExe(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rtMemH, err := os.ReadFile("../build/rt/rt_mem.h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtMemHostInc, err := os.ReadFile("../build/rt/rt_mem_host.inc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtCoreInc, err := os.ReadFile("../build/rt/rt_core.inc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "rt.h"), rtH, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +93,15 @@ func buildExe(t *testing.T, src string) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "rt_ser.inc"), rtSerInc, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_mem.h"), rtMemH, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_mem_host.inc"), rtMemHostInc, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_core.inc"), rtCoreInc, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "prog")

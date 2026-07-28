@@ -82,6 +82,14 @@ int32_t rt_map_count(const rt_map *m);
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255);
 void rt_map_val_at(const rt_map *m, int32_t i, void *out);
 
+/* ---- dispose (4e) ---- shallow, NULL-safe; compiler emits element frees */
+void rt_text_free(rt_text *t);
+void rt_list_free(rt_list *l);
+void rt_map_free(rt_map *m);
+/* one-slot at-exit/quit hook; emitted main registers cl_free_globals */
+void rt_register_cleanup(void (*fn)(void));
+void rt_run_cleanup(void);
+
 /* ---- added by the C printer (Task 8) ---- */
 
 /* Fixed-array bounds check for `a[i]`: panics "array index out of range" if
