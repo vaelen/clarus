@@ -58,10 +58,15 @@ internal/build/rt/rt.c` must keep working unchanged).
 
 - Real double indirection: a master-pointer table; `*h` changes when a
   block relocates.
-- **Paranoia (stricter than a real Mac):** every allocation call
-  (`NewHandle`, `NewPtr`, `SetHandleSize`) relocates every unlocked
-  handle block. Any code that caches a dereferenced master pointer across
-  an allocating call breaks on host, in tests — not on a Mac Plus.
+- **Paranoia (stricter than a real Mac):** relocation-on-resize is
+  unconditional — `SetHandleSize` always moves the block, even without
+  paranoia enabled. The full every-allocation-moves-everything sweep
+  (`NewHandle`, `NewPtr`, `SetHandleSize` each relocating every other
+  unlocked handle block) is opt-in via `CLARUS_MEM_PARANOID=1`, enabled
+  by the corpus test lanes but not by bootstrap-scale runs — clarusc
+  compiling itself under an O(live-blocks)-per-allocation allocator would
+  be quadratic. Any code that caches a dereferenced master pointer across
+  an allocating call breaks on host, under paranoia — not on a Mac Plus.
   (`rt_mac.c`'s collections were written disciplined — fresh `*h` after
   every allocating call — and the shim now proves that property forever.)
 - Moved-from and disposed memory scrambled with `0xA5` (the MacsBug heap
