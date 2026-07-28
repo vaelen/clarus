@@ -269,9 +269,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   branch (`rt_ui.c`) still use the raw, unclamped `RTUI_FIELD_LABEL_W`; a
   `popup` with a `label:` and a declared `width:` under ~90px would
   reproduce the exact zero-width, unclickable-box collision the field fix
-  resolved. No current fixture declares one. Fix: apply the constant `RTUI_FIELD_LABEL_W`
-  lane pattern (as fields now do in `rt_ui_layout`) to both `rt_ui_popup_box` call sites;
-  field-clamp helper was deleted.
+  resolved. No current fixture declares one. Fix belongs in `rt_ui_layout`'s
+  width computation for labeled popups: mirror the labeled-field branch there
+  (the one that replaced the constant `RTUI_FIELD_LABEL_W` lane) instead of
+  the raw constant `rt_ui_popup_box` currently applies; field-clamp helper
+  was deleted.
 - **Unreproduced live-input popup anomaly (mac-target-4d final validation):**
   the Protocol popup failed to open on repeat Edit Bookmark dialogs in ONE
   live session; 20+ deliberate repro attempts across System 6 and System 7
