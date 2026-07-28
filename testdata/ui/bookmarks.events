@@ -18,7 +18,7 @@ type http://x.com
 answer-popup 2
 click 296 146
 click 196 172
-click 208 118
+click 250 118
 type 99999999999
 click 196 198
 snap S1

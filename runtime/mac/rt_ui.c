@@ -188,6 +188,12 @@ extern void rt_quit(int32_t code);
 #define RTUI_TEXTVIEW_H   100
 #define RTUI_TEXTVIEW_W   200
 
+/* Natural EDIT-BOX width for a labeled field (width-semantics fix,
+   ui-visual-fixes Task 4): `width:` on a labeled field sizes the edit box
+   alone, the RTUI_FIELD_LABEL_W lane is added on top -- so a labeled
+   field with no `width:` keeps exactly its old 200px overall footprint. */
+#define RTUI_FIELD_BOX_W (RTUI_FIELD_W - RTUI_FIELD_LABEL_W)
+
 /* popup natural size (mac-target-4d Task 3) -- same free-to-pick status,
    height matching a button/field's single control line, width a typical
    unfilled popup. */
@@ -749,40 +755,6 @@ static short rt_ui_kind_width(short kind)
     }
 }
 
-/* Effective label-lane width for a FIELD widget's own `label:` (bugfix,
-   mac-target-4d Task 9): RTUI_FIELD_LABEL_W is a FIXED lane width, but a
-   field declared narrower than that (Ch8's own `width:` property is free
-   to be any value -- Appendix C's Bookmark Manager `Port` field is
-   exactly 60px, narrower than the 70px lane) would otherwise leave zero
-   or negative room for the actual edit box: rt_ui_te_relayout's own
-   clamp (`if (teRect.right < teRect.left) teRect.right = teRect.left`)
-   already stops it going negative, but a ZERO-width TE view is still a
-   completely unclickable field (rt_ui_te_hit's PtInRect can never match
-   inside an empty rect) -- discovered by this task's own verbatim
-   appendix reproduction, not by anything Task 9 was asked to change
-   about widget layout defaults; a narrow-but-nonzero fix, not a new
-   feature. Clamps the lane so at least RTUI_FIELD_MIN_EDIT_W px of edit
-   box always remains, shrinking the label lane instead (crowding the
-   caption against the box) rather than losing the field entirely.
-   Shared by rt_ui_te_relayout (the actual TE view/click target) and the
-   update handler's own labelRect draw immediately below, so the two
-   never disagree about where the lane ends. ponytail: an arbitrary but
-   small minimum, free to retune; no existing widget in this codebase
-   comes anywhere near it (the narrowest labeled field in any RUN Mac
-   scenario is testdata/ui/formedit.cla's 120px Port, safely above
-   70+20 -- only the never-executed testdata/emitui/formedit.cla golden
-   and this task's own examples/bookmarks.cla exercise this clamp at
-   all). */
-#define RTUI_FIELD_MIN_EDIT_W 20
-
-static short rt_ui_field_label_lane(short fieldW)
-{
-    short lw = RTUI_FIELD_LABEL_W;
-    if (lw > (short)(fieldW - RTUI_FIELD_MIN_EDIT_W)) lw = (short)(fieldW - RTUI_FIELD_MIN_EDIT_W);
-    if (lw < 0) lw = 0;
-    return lw;
-}
-
 /* A popup's visible menu-button box, in window-local coords -- the same
    "reuse the RTUI_FIELD_LABEL_W label lane when there's a caption" rule
    RTUI_FIELD's own label uses (rt_ui_te_relayout), just without a TE
@@ -901,6 +873,11 @@ static void rt_ui_layout(rt_ui_winst *inst)
                             wd->fill == RTUI_FILL_BOTH);
         if (wd->width == RTUI_FILL || wd->fill == RTUI_FILL_BOTH) {
             w = flushR ? (short)(contentW - x + 1) : (short)(contentW - x - RTUI_GAP);
+        } else if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0) {
+            /* Labeled field: `width:` is the EDIT BOX; the label lane is
+               added here so every box in a form starts at the same x
+               regardless of per-field widths (Ch8 width-semantics fix). */
+            w = (short)(((wd->width == 0) ? RTUI_FIELD_BOX_W : wd->width) + RTUI_FIELD_LABEL_W);
         } else if (wd->width == 0) {
             w = rt_ui_kind_width(wd->kind); /* no `width:` given (or none exists for this kind) -- see RTUI_*_W's comment */
         } else {
@@ -1936,7 +1913,7 @@ static void rt_ui_te_relayout(rt_ui_winst *inst, short i)
     EraseRect(&frame);
     box = inst->rects[i];
     if (wd->kind == RTUI_FIELD && inst->labels[i][0] > 0)
-        box.left = (short)(box.left + rt_ui_field_label_lane((short)(box.right - box.left)));
+        box.left = (short)(box.left + RTUI_FIELD_LABEL_W);
     teRect = box;
     if (wd->kind == RTUI_TEXTVIEW) {
         Boolean hasV, hasH;
@@ -2838,8 +2815,7 @@ static void rt_ui_handle_update(WindowPtr wp)
                     Rect labelRect;
                     unsigned char *s;
                     labelRect = inst->rects[i];
-                    labelRect.right = (short)(labelRect.left +
-                        rt_ui_field_label_lane((short)(labelRect.right - labelRect.left)) - 4);
+                    labelRect.right = (short)(labelRect.left + RTUI_FIELD_LABEL_W - 4);
                     s = inst->labels[i];
                     TETextBox(s + 1, s[0], &labelRect, teJustLeft);
                 }
