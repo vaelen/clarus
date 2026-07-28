@@ -256,7 +256,7 @@ static void rt_core_grow(Handle h, int32_t *cap, int32_t need, int32_t elemsize)
 
 /* ==================== text ==================== */
 
-struct rt_text { Handle h; int32_t len; int32_t cap; };
+struct rt_text { int32_t rc; Handle h; int32_t len; int32_t cap; };
 
 static void rt_text_grow(rt_text *t, int32_t need)
 {
@@ -267,6 +267,7 @@ rt_text *rt_text_new(void)
 {
     rt_text *t;
     t = (rt_text *)rt_core_new_struct(sizeof(rt_text));
+    t->rc = 1;
     t->h = NewHandle(0);
     if (!t->h) rt_core_oom();
     t->len = 0;
@@ -480,6 +481,7 @@ int rt_text_cmp(const rt_text *a, const rt_text *b)
 /* ==================== list ==================== */
 
 struct rt_list {
+    int32_t rc;
     Handle data;
     int32_t elemsize;
     int32_t count;
@@ -490,6 +492,7 @@ rt_list *rt_list_new(int32_t elemsize)
 {
     rt_list *l;
     l = (rt_list *)rt_core_new_struct(sizeof(rt_list));
+    l->rc = 1;
     l->data = NewHandle(0);
     if (!l->data) rt_core_oom();
     l->elemsize = elemsize;
@@ -577,6 +580,7 @@ int32_t rt_list_count(const rt_list *l) { return l->count; }
 #define MAP_KEYBLOCK 256
 
 struct rt_map {
+    int32_t rc;
     Handle keys;     /* count * MAP_KEYBLOCK bytes */
     Handle vals;     /* count * valsize bytes */
     int32_t valsize;
@@ -589,6 +593,7 @@ rt_map *rt_map_new(int32_t valsize)
 {
     rt_map *m;
     m = (rt_map *)rt_core_new_struct(sizeof(rt_map));
+    m->rc = 1;
     m->keys = NewHandle(0);
     if (!m->keys) rt_core_oom();
     m->vals = NewHandle(0);
@@ -719,21 +724,66 @@ void rt_map_val_at(const rt_map *m, int32_t i, void *out)
     BlockMoveData(map_val_slot(m, i), out, (Size)m->valsize);
 }
 
-/* ---- dispose (4e). Shallow: a list/map of text frees only its own
-   storage; the compiler emits element frees where it knows the types. */
-void rt_text_free(rt_text *t)
+/* ---- reference counting (ARC Task 1) ----
+ * rc is the first field of every box (rt_text/rt_list/rt_map); constructors
+ * set rc = 1. Retain increments; release decrements and, at 0, runs the old
+ * dispose body (data handle(s) + the struct's own DisposePtr box). Host-only
+ * guard: a box whose rc is already <= 0 when retain/release reads it is an
+ * over-release (or a retain/release racing a disposed box) -- abort with its
+ * ledger tag. No-op on Mac (no ledger there, and the real Memory Manager has
+ * no equivalent lookup). */
+#if defined(__m68k__) || defined(macintosh)
+static void rt_rc_check(void *box, int32_t rc) { (void)box; (void)rc; }
+#else
+static void rt_rc_check(void *box, int32_t rc)
+{
+    if (rc <= 0) {
+        fprintf(stderr, "rt_rc: over-release at %s\n", rt_mem_tag_of(box));
+        abort();
+    }
+}
+#endif
+
+/* ---- dispose (4e, now the rc==0 arm of release). Shallow: a list/map of
+   text frees only its own storage; the compiler emits element
+   retains/releases where it knows the types. */
+void rt_text_retain(rt_text *t)
 {
     if (!t) return;
-    DisposeHandle(t->h);
-    DisposePtr((Ptr)t);
+    rt_rc_check(t, t->rc);
+    t->rc++;
 }
 
-void rt_list_free(rt_list *l)
+void rt_text_release(rt_text *t)
+{
+    if (!t) return;
+    rt_rc_check(t, t->rc);
+    if (--t->rc == 0) {
+        DisposeHandle(t->h);
+        DisposePtr((Ptr)t);
+    }
+}
+
+void rt_text_free(rt_text *t) { rt_text_release(t); }
+
+void rt_list_retain(rt_list *l)
 {
     if (!l) return;
-    DisposeHandle(l->data);
-    DisposePtr((Ptr)l);
+    rt_rc_check(l, l->rc);
+    l->rc++;
 }
+
+void rt_list_release(rt_list *l)
+{
+    if (!l) return;
+    rt_rc_check(l, l->rc);
+    if (--l->rc == 0) {
+        DisposeHandle(l->data);
+        DisposePtr((Ptr)l);
+    }
+}
+
+void rt_list_free(rt_list *l) { rt_list_release(l); }
 
 /* Not static: rt_mac.c includes this same core file but never calls this
    (Mac programs don't use rt_args_list); a static definition would then
@@ -744,13 +794,25 @@ void rt_list_note(rt_list *l, const char *why)
     rt_mem_note(l->data, why);
 }
 
-void rt_map_free(rt_map *m)
+void rt_map_retain(rt_map *m)
 {
     if (!m) return;
-    DisposeHandle(m->keys);
-    DisposeHandle(m->vals);
-    DisposePtr((Ptr)m);
+    rt_rc_check(m, m->rc);
+    m->rc++;
 }
+
+void rt_map_release(rt_map *m)
+{
+    if (!m) return;
+    rt_rc_check(m, m->rc);
+    if (--m->rc == 0) {
+        DisposeHandle(m->keys);
+        DisposeHandle(m->vals);
+        DisposePtr((Ptr)m);
+    }
+}
+
+void rt_map_free(rt_map *m) { rt_map_release(m); }
 
 static void (*rt_cleanup_fn)(void) = 0;
 void rt_register_cleanup(void (*fn)(void)) { rt_cleanup_fn = fn; }

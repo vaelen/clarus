@@ -406,6 +406,24 @@ void rt_mem_note_(void *block, const char *why)
     }
 }
 
+/* Ledger tag lookup for a box pointer (ARC Task 1's rt_rc_check): mirrors
+   rt_mem_note_'s linear scan and identity rule (a Handle's identity is
+   &b->p; a Ptr's identity is the bare payload b->p). Returns "?" if the
+   block isn't found -- doesn't require b->live, so a box already disposed
+   (the over-release case this exists for) still resolves to its original
+   allocation tag. */
+const char *rt_mem_tag_of(void *block)
+{
+    rt_mem_block *b;
+
+    for (b = rt_mem_blocks; b != NULL; b = b->next) {
+        if (b->is_ptr ? (b->p == (Ptr)block) : ((void *)b == block)) {
+            return b->tag;
+        }
+    }
+    return "?";
+}
+
 long rt_mem_live_count(void)
 {
     rt_mem_block *b;

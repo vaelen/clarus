@@ -82,7 +82,19 @@ int32_t rt_map_count(const rt_map *m);
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255);
 void rt_map_val_at(const rt_map *m, int32_t i, void *out);
 
-/* ---- dispose (4e) ---- shallow, NULL-safe; compiler emits element frees */
+/* ---- reference counting (ARC Task 1) ---- NULL-safe; retain increments,
+   release decrements and disposes at 0. rt_*_free remain declared as
+   aliases for rt_*_release (existing 4e-generated call sites keep working
+   unchanged; a value at rc==1 disposes exactly as free() used to). */
+void rt_text_retain(rt_text *t);
+void rt_text_release(rt_text *t);
+void rt_list_retain(rt_list *l);
+void rt_list_release(rt_list *l);
+void rt_map_retain(rt_map *m);
+void rt_map_release(rt_map *m);
+
+/* ---- dispose (4e) ---- shallow, NULL-safe; compiler emits element frees.
+   Now one-line aliases for the corresponding release above. */
 void rt_text_free(rt_text *t);
 void rt_list_free(rt_list *l);
 void rt_map_free(rt_map *m);
