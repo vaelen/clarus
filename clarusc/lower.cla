@@ -1776,18 +1776,29 @@ func lowEscapeWalkArgsHandoff(argsHead: int) {
     }
 }
 
-// lowEscapeWalkMethodCall handles `recv.name(args)` -- the receiver is
-// always a safe read (rule 3: "method receiver ... is fine"); push/add/
-// unshift/get route their arguments through the handoff rule (see
-// lowEscapeWalkArgsHandoff's own comment for why `get` is included), every
+// lowEscapeWalkMethodCall handles `recv.name(args)`. Review fix (Critical,
+// same double-free class as ExIndex's above): get/first/last/pop/shift can
+// each hand back an element handle the container itself still owns
+// (IMapGetDv/IListFirst/IListLast/IListPop/IListShift -- Task 6's own audit:
+// "can return an ALIAS, not a fresh value") -- so the RECEIVER is
+// disqualified for exactly those five method names (not just their
+// arguments), REGARDLESS of whether the removal (`pop`/`shift`) makes THIS
+// particular read safe in practice -- the coordinator's ruling is maximally
+// conservative on purpose: don't special-case pop/shift back to safe. Every
 // other method (append, indexOf, fromBytes, toBytes, has, remove, count,
-// first, last, pop, shift, plus every canvas/file method -- none of which
-// is named push/add/unshift/get) treats its arguments as safe reads.
+// plus every canvas/file method) still treats the receiver as a safe read
+// (rule 3: "method receiver ... is fine" -- none of those hand back an
+// element). push/add/unshift/get additionally route their OWN arguments
+// through the handoff rule (lowEscapeWalkArgsHandoff's own comment covers
+// why `get` is included there too).
 func lowEscapeWalkMethodCall(e: int, fn: int) {
     var nm: string
 
-    lowEscapeWalkExpr(selectX(fn))
     nm = poolGet(selectName(fn))
+    if nm == "get" or nm == "first" or nm == "last" or nm == "pop" or nm == "shift" {
+        lowEscapeHandoff(selectX(fn))
+    }
+    lowEscapeWalkExpr(selectX(fn))
     if nm == "push" or nm == "add" or nm == "unshift" or nm == "get" {
         lowEscapeWalkArgsHandoff(callArgsHead(e))
     } else {
@@ -1828,6 +1839,23 @@ func lowEscapeWalkCall(e: int) {
     lowEscapeDisqAll()
 }
 
+// lowEscapeContainerElemRisky reports whether xT (a checked type, the base
+// of an index-read/element-read op) is a List/Map whose element kind can
+// itself carry a handle -- Text/List/Map directly, or (conservatively, no
+// transitive field walk) a Rec/Arr, which could embed one. int/bool/fixed/
+// char/enum/string elements are copied by value on every read (Ch3): no
+// handle to alias, so a `list of int`/`map of string` base is never
+// disqualified by this check.
+func lowEscapeContainerElemRisky(xT: int): bool {
+    var ek: TypeKind
+
+    if typeKind(xT) != TyList and typeKind(xT) != TyMap {
+        return false
+    }
+    ek = typeKind(typeElem(xT))
+    return not (ek == TyInt or ek == TyBool or ek == TyFixed or ek == TyChar or ek == TyEnum or ek == TyStr)
+}
+
 // lowEscapeWalkExpr recurses through e classifying every child position by
 // the rules above; it never disqualifies e's OWN top-level identity (that's
 // the caller's job -- see lowEscapeHandoff, called separately at each of
@@ -1848,6 +1876,26 @@ func lowEscapeWalkExpr(e: int) {
         lowEscapeWalkExpr(binLeft(e))
         lowEscapeWalkExpr(binRight(e))
     } else if k == ExIndex {
+        // Review fix (Critical): `l[i]`/`m[k]` reads back the SAME element
+        // handle the container itself still owns (Ch3 reference semantics)
+        // -- if that handle later escapes (assigned to a global, returned,
+        // ...) and the container is ALSO freed at scope exit, that's a
+        // double-free (reviewer's repro: `gSaved = items[0]` then `items`'s
+        // own scope-exit element-free loop frees the same handle `gSaved`
+        // holds). The plan's rule 3 said "index-read source is fine" --
+        // true for Str/Text (a byte/char copy, no handle) but not for
+        // List/Map (the coordinator's ruling: default-deny/no-UAF governs
+        // over that wording here). Disqualify the CONTAINER whenever it's
+        // index-READ (not index-WRITE -- lowEscapeWalkAssign's own LHS
+        // branch never reaches this via a plain write-target base, only via
+        // a nested read inside a computed base/index, where disqualifying
+        // is still correct). Kept the by-value-vs-reference element
+        // distinction (lowEscapeContainerElemRisky) rather than
+        // disqualifying uniformly: it's one extra typeKind check, and it
+        // keeps a `list of int` (no element handles at all) freeable.
+        if lowEscapeContainerElemRisky(exprTypeGet(indexX(e))) {
+            lowEscapeHandoff(indexX(e))
+        }
         lowEscapeWalkExpr(indexX(e))
         lowEscapeWalkExpr(indexI(e))
     } else if k == ExSlice {
@@ -1879,12 +1927,23 @@ func lowEscapeWalkAssign(s: int) {
         if not lowEscapeFreshInit(rhs) {
             lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(lhs))] = 1
         }
+    } else if exprKind(lhs) == ExIndex {
+        // `x[i] = v`: x itself is WRITTEN into, not read -- unlike
+        // lowEscapeWalkExpr's own ExIndex case (used for genuine reads),
+        // do NOT disqualify x merely for being this write's base (inlined
+        // here rather than calling lowEscapeWalkExpr(lhs) directly, so that
+        // case's read-disqualification never fires for the outermost write
+        // target). A NESTED read still disqualifies correctly one level
+        // down: `matrix[i][j] = v`'s own base `matrix[i]` is itself an
+        // index-READ of `matrix` (needed to reach the inner container),
+        // walked normally here and so still caught.
+        lowEscapeWalkExpr(indexX(lhs))
+        lowEscapeWalkExpr(indexI(lhs))
     } else {
-        // `x[i] = v` / `rec.f = v` / `w.prop = v`: the LHS's own base(s)
-        // are read (an index-write base is the same safe shape as an
-        // index-read source, rule 3), never disqualifying by themselves --
-        // still walked, to catch a nested call in a computed base/index
-        // (`a[f(x)] = v`).
+        // `rec.f = v` / `w.prop = v`: the LHS's own base is read (a select
+        // base is always safe, rule 3), never disqualifying by itself --
+        // still walked, to catch a nested call in a computed base
+        // (`rec(f(x)).f = v`... any select's own base sub-expression).
         lowEscapeWalkExpr(lhs)
     }
 }
@@ -1948,6 +2007,15 @@ func lowEscapeWalkStmt(s: int) {
         lowEscapeWalkBlock(whileBody(s))
     }
     case StFor {
+        // Review fix (Critical, same class as ExIndex/get/first/last/pop/
+        // shift above): `for x in items { ... }` binds x to a fresh ALIAS
+        // of each element in turn (fpForListStmt's `cv_x = *(rt_text
+        // **)rt_list_at(...)`, fpForMapStmt likewise) -- iterating a
+        // container exposes every one of its elements as a potential
+        // handoff, so the sequence itself is disqualified unconditionally
+        // (forSeq(s) is an int expr for the range form, never a candidate,
+        // so this is a harmless no-op there).
+        lowEscapeHandoff(forSeq(s))
         lowEscapeWalkExpr(forSeq(s))
         lowEscapeWalkExpr(forTo(s))
         lowEscapeWalkBlock(forBody(s))

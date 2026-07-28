@@ -3187,6 +3187,7 @@ static void clar_fn_lowEscapeWalkArgsSafe(int32_t cv_argsHead);
 static void clar_fn_lowEscapeWalkArgsHandoff(int32_t cv_argsHead);
 static void clar_fn_lowEscapeWalkMethodCall(int32_t cv_e, int32_t cv_fn);
 static void clar_fn_lowEscapeWalkCall(int32_t cv_e);
+static int32_t clar_fn_lowEscapeContainerElemRisky(int32_t cv_xT);
 static void clar_fn_lowEscapeWalkExpr(int32_t cv_e);
 static void clar_fn_lowEscapeWalkAssign(int32_t cv_s);
 static void clar_fn_lowEscapeWalkElse(int32_t cv_elseNode);
@@ -17609,10 +17610,13 @@ static void clar_fn_lowEscapeWalkArgsHandoff(int32_t cv_argsHead) {
 static void clar_fn_lowEscapeWalkMethodCall(int32_t cv_e, int32_t cv_fn) {
     clar_str_255 cv_nm;
     cv_nm = (clar_str_255){0};
-    clar_fn_lowEscapeWalkExpr(clar_fn_selectX(cv_fn));
     clar_str_255 t1;
     t1 = clar_fn_poolGet(clar_fn_selectName(cv_fn));
     rt_str_store((uint8_t*)&(cv_nm), 255, (const uint8_t*)&(t1));
+    if (((((rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_397)) == 0) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_392)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_393)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_390)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_391)) == 0)) {
+        clar_fn_lowEscapeHandoff(clar_fn_selectX(cv_fn));
+    }
+    clar_fn_lowEscapeWalkExpr(clar_fn_selectX(cv_fn));
     if ((((rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_388)) == 0) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_387)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_389)) == 0)) || (rt_str_cmp((const uint8_t*)&(cv_nm), (const uint8_t*)&(clar_lit_397)) == 0)) {
         clar_fn_lowEscapeWalkArgsHandoff(clar_fn_callArgsHead(cv_e));
     } else {
@@ -17652,6 +17656,17 @@ static void clar_fn_lowEscapeWalkCall(int32_t cv_e) {
     clar_fn_lowEscapeDisqAll();
 }
 
+static int32_t clar_fn_lowEscapeContainerElemRisky(int32_t cv_xT) {
+    int32_t cv_ek;
+    cv_ek = 0;
+    if ((clar_fn_typeKind(cv_xT) != 10) && (clar_fn_typeKind(cv_xT) != 11)) {
+        return 0;
+    }
+    cv_ek = clar_fn_typeKind(clar_fn_typeElem(cv_xT));
+    return (!(((((((cv_ek == 1) || (cv_ek == 2)) || (cv_ek == 3)) || (cv_ek == 4)) || (cv_ek == 7)) || (cv_ek == 5))));
+    return 0;
+}
+
 static void clar_fn_lowEscapeWalkExpr(int32_t cv_e) {
     int32_t cv_k;
     cv_k = 0;
@@ -17670,6 +17685,9 @@ static void clar_fn_lowEscapeWalkExpr(int32_t cv_e) {
                 clar_fn_lowEscapeWalkExpr(clar_fn_binRight(cv_e));
             } else {
                 if (cv_k == 11) {
+                    if (clar_fn_lowEscapeContainerElemRisky(clar_fn_exprTypeGet(clar_fn_indexX(cv_e)))) {
+                        clar_fn_lowEscapeHandoff(clar_fn_indexX(cv_e));
+                    }
                     clar_fn_lowEscapeWalkExpr(clar_fn_indexX(cv_e));
                     clar_fn_lowEscapeWalkExpr(clar_fn_indexI(cv_e));
                 } else {
@@ -17718,7 +17736,12 @@ static void clar_fn_lowEscapeWalkAssign(int32_t cv_s) {
             rt_map_set(cv_lowFreeDisq, (const uint8_t*)&(t4), &(t5));
         }
     } else {
-        clar_fn_lowEscapeWalkExpr(cv_lhs);
+        if (clar_fn_exprKind(cv_lhs) == 11) {
+            clar_fn_lowEscapeWalkExpr(clar_fn_indexX(cv_lhs));
+            clar_fn_lowEscapeWalkExpr(clar_fn_indexI(cv_lhs));
+        } else {
+            clar_fn_lowEscapeWalkExpr(cv_lhs);
+        }
     }
 }
 
@@ -17780,6 +17803,7 @@ static void clar_fn_lowEscapeWalkStmt(int32_t cv_s) {
                         clar_fn_lowEscapeWalkBlock(clar_fn_whileBody(cv_s));
                     } else {
                         if (cv___switch26 == 5) {
+                            clar_fn_lowEscapeHandoff(clar_fn_forSeq(cv_s));
                             clar_fn_lowEscapeWalkExpr(clar_fn_forSeq(cv_s));
                             clar_fn_lowEscapeWalkExpr(clar_fn_forTo(cv_s));
                             clar_fn_lowEscapeWalkBlock(clar_fn_forBody(cv_s));
@@ -24992,8 +25016,6 @@ static void clar_fn_cpEmitFunc(int32_t cv_f) {
     t21 = clar_fn_toText(clar_lit_3);
     rt_list_push(cv_cpRestBuf, &(t21));
     clar_fn_fpReset(cv_fpIndent);
-        rt_map_free(cv_declared);
-
 }
 
 static void clar_fn_cpEmitFuncs(void) {
