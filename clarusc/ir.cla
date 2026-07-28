@@ -2172,6 +2172,18 @@ func ITextOfStr(): int {
     return intern("text_of_str")
 }
 
+// ITextFreeVar/IListFreeVar/IMapFreeVar (memory-audit Task 7): a scope-exit
+// (or pre-`return`) release of a function/handler LOCAL the escape pre-pass
+// (lower.cla's lowRunEscapePrepass) proved never escapes -- one EVarRef
+// argument (the local itself), no result (void), printed via cprint.cla's
+// fpIntrCall as a bare statement, never a sub-expression. Distinct from
+// Task 5's `cl_free_globals` (whole-program, at exit) and Task 6's
+// statement-temp frees (unnamed intermediates): these three name a real,
+// user-declared local by its own EVarRef.
+func ITextFreeVar(): int {
+    return intern("text_free_var")
+}
+
 // -- list (element size known at creation) --
 func IListPush(): int {
     return intern("list_push")
@@ -2205,6 +2217,11 @@ func IListCount(): int {
     return intern("list_count")
 }
 
+// IListFreeVar -- see ITextFreeVar's doc comment.
+func IListFreeVar(): int {
+    return intern("list_free_var")
+}
+
 // -- map (string keys; value size known at creation) --
 func IMapSet(): int {
     return intern("map_set")
@@ -2228,6 +2245,11 @@ func IMapRemove(): int {
 
 func IMapCount(): int {
     return intern("map_count")
+}
+
+// IMapFreeVar -- see ITextFreeVar's doc comment.
+func IMapFreeVar(): int {
+    return intern("map_free_var")
 }
 
 // -- fixed 16.16 --

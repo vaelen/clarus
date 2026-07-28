@@ -796,6 +796,7 @@ func fpIntrCall(x: int): text {
     var recName: string
     var container: string
     var dataExpr: text
+    var freeVarBuf: text
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -948,6 +949,13 @@ func fpIntrCall(x: int): text {
         s0 = fpStrAddr(a0)
         fpEmit("rt_text_store(" + t + ", " + s0 + ");")
         return t
+    } else if nm == ITextFreeVar() {
+        // memory-audit Task 7: a0 is always a bare EVarRef (the escape
+        // pre-pass's own qualifying-local set, lower.cla) -- a plain,
+        // single-line free, unlike the list/map cases below which may need
+        // an element-free loop first.
+        fpEmit("rt_text_free(" + fpExpr(a0) + ");")
+        return toText("")
 
     // ---- list ----
     } else if nm == IListPush() or nm == IListUnshift() {
@@ -996,6 +1004,21 @@ func fpIntrCall(x: int): text {
         return toText("")
     } else if nm == IListCount() {
         return "rt_list_count(" + fpExpr(a0) + ")"
+    } else if nm == IListFreeVar() {
+        // memory-audit Task 7: reuse Task 5's cpEmitFree (element-free loop
+        // for a KText element type, then rt_list_free) rather than
+        // reimplementing it -- cpEmitFree appends into a caller-owned `text`
+        // buffer via cpAppendLine (its own fixed one-level indent), so the
+        // whole (possibly multi-line) result is emitted as ONE fpBody entry
+        // here, the same trick cpEmitGlobalsInit uses for cl_free_globals's
+        // body. Indentation is the only thing that can differ from a
+        // hand-rolled fpEmit-per-line version (purely cosmetic -- C doesn't
+        // care), and correctness (double-free, element ordering) is
+        // entirely cpEmitFree's own, already-reviewed logic.
+        freeVarBuf = ""
+        cpEmitFree(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
+        fpEmit(freeVarBuf)
+        return toText("")
 
     // ---- map ----
     } else if nm == IMapSet() {
@@ -1044,6 +1067,12 @@ func fpIntrCall(x: int): text {
         return toText("")
     } else if nm == IMapCount() {
         return "rt_map_count(" + fpExpr(a0) + ")"
+    } else if nm == IMapFreeVar() {
+        // memory-audit Task 7 -- see IListFreeVar's doc comment.
+        freeVarBuf = ""
+        cpEmitFree(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
+        fpEmit(freeVarBuf)
+        return toText("")
 
     // ---- lastError ----
     } else if nm == ILastErrCode() {

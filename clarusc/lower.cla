@@ -1599,18 +1599,601 @@ func lowFor(s: int): int {
     return -1
 }
 
+// ================================================================
+// Task 7: scope-exit frees for provably sole-reference locals
+// ================================================================
+//
+// QUALIFICATION RULE. A function/handler local `x` of type text/list/map
+// qualifies for a scope-exit (or pre-`return`) free iff ALL of:
+//
+//   1. Declared at body top (every Clarus local is -- Ch4: `var` only at
+//      top of body). NOT a `for`-loop binding: those alias container
+//      elements and are never body-top vars in the first place (lowFor's
+//      locals live in their own pushed scope, never in blockVarsHead).
+//
+//   2. Its initializer is fresh: a string literal, absent (default
+//      constructor), a concat result (`+`, checked type Text), or a
+//      slice-of result (`x[a,b]`). NOT a bare reference to another
+//      variable/global/window var/field/element, and NOT a user-function-
+//      call result -- a callee's return may alias something still live
+//      elsewhere (`func f(): text { return gKeep }`), which this
+//      per-function pre-pass cannot see through. (List/Map have no literal
+//      or concat/slice form at all, so in practice only "absent" ever
+//      qualifies a List/Map local.)
+//
+//   3. `x` never appears, anywhere in the body, as: the RHS of any
+//      assignment (`a = x`, `rec.f = x`, `w.v = x`, `arr[i] = x` --
+//      whatever the LHS is); an argument to a user function call; a
+//      `return` operand; the value argument of `.push`/`.add`/`.unshift`
+//      into ANY list, or the default-value argument of a map `.get` (which
+//      can hand that very argument straight back to the caller, unchanged,
+//      when the key is absent -- confirmed alias-capable by Task 6's own
+//      IMapGetDv finding); a form-edit binding's target. Appearing as: a
+//      method RECEIVER (`x.append(...)`, bare `x.length`/`x.count`),
+//      an operand of concat/comparison/slice, an `alert`/`log`/`file.*`
+//      argument, or an index-READ source (`x[i]`, `x` as an index-assign's
+//      BASE) is fine -- none of those hand `x`'s own handle to anything
+//      that outlives this statement.
+//
+//   4. `x` is never reassigned (`x = ...`, LHS a bare `x`) from a
+//      non-fresh source later in the body -- the same freshness test as
+//      rule 2, applied to every subsequent plain reassignment. A
+//      reassignment FROM a fresh source is fine (the free at scope exit
+//      still releases whatever `x`'s FINAL handle is); it just means the
+//      handle `x` held before that reassignment is orphaned -- an
+//      ARC-era leak, not chased here, not a correctness problem.
+//
+// Default-deny throughout: any AST shape this walker doesn't explicitly
+// recognize as one of the "safe" positions above disqualifies every name
+// still tracked for the current function (lowEscapeDisqAll) rather than
+// silently treating it as safe -- a wrongly-freed escaping local is a
+// real Mac use-after-free, not a missed optimization.
+//
+// Runs once per function/handler body (lowRunEscapePrepass, called from
+// lowFuncBody/lowHandlerFunc before lowBlock lowers that same body), purely
+// over the AST (ast.cla) plus the checker's already-recorded expression
+// types (exprTypeGet) -- no lowering/IR state exists yet at this point, and
+// none is created here.
+
+// lowFuncGen disambiguates lowFreeDisq's keys across independent
+// lowRunEscapePrepass calls (one per function/handler body, never nested --
+// see lowFuncBody/lowHandlerFunc, both only ever called from top-level
+// per-declaration loops) -- the same never-reset, namespace-by-key idiom
+// uiMenuIdx/winVarDefaultsHead already use for exactly this reason (two
+// different functions can each declare a local named `t`; without
+// disambiguation a disqualification recorded for one would wrongly leak
+// into the other). lowFreeNames/lowFreeTypes need no such prefixing: both
+// are fully rebuilt from scratch (lowFreeNames emptied, every entry
+// overwritten) at the top of every lowRunEscapePrepass call, and only ever
+// consulted for names THIS call just added to lowFreeNames.
+var lowFuncGen: int
+
+// lowFreeNames: the CURRENT function's candidate names (rule 1 + rule 2),
+// in declaration order -- reset at the start of every lowRunEscapePrepass.
+var lowFreeNames: list of string
+
+// lowFreeTypes: candidate name -> IR type index (KText/KList/KMap only).
+var lowFreeTypes: map of int
+
+// lowFreeDisq: "<lowFuncGen>|<name>" -> 1 for any name (candidate or not)
+// found to violate rule 3 or rule 4 anywhere in the CURRENT function's body.
+var lowFreeDisq: map of int
+
+// lowRetTempN counts synthesized `return`-value temps program-wide (never
+// per-function/per-scope) -- see lowNewReturnTemp's own doc comment.
+var lowRetTempN: int
+
+// lowNewReturnTemp names a fresh synthetic local (never colliding with a
+// user identifier -- Clarus identifiers can't start with `_`) used ONLY by
+// lowReturn (below) to hold a `return` expression's computed value when at
+// least one qualifying local also needs a scope-exit free at this same
+// return point. Program-wide counter, exactly like lowNewSwitchTemp: two
+// such temps landing in the same or sibling functions must never collide
+// on one C variable name.
+func lowNewReturnTemp(): int {
+    lowRetTempN = lowRetTempN + 1
+    return intern("__ret" + numToStr(lowRetTempN))
+}
+
+// lowEscapeTrackableKind reports whether t is one of the three types this
+// pass ever tracks (rule 1).
+func lowEscapeTrackableKind(k: IRKind): bool {
+    return k == KText or k == KList or k == KMap
+}
+
+// lowEscapeFreshInit implements rule 2 (and, applied again at every plain
+// reassignment, rule 4)'s freshness test. e is -1 for "no initializer".
+func lowEscapeFreshInit(e: int): bool {
+    if e == -1 {
+        return true
+    }
+    if exprKind(e) == ExStringLit {
+        return true
+    }
+    if exprKind(e) == ExBinary and binOp(e) == OpAdd and typeKind(exprTypeGet(e)) == TyText {
+        return true
+    }
+    if exprKind(e) == ExSlice {
+        return true
+    }
+    return false
+}
+
+// lowEscapeHandoff marks name (if e is exactly a bare identifier) as
+// disqualified -- the one shape that hands `x`'s own handle, rather than a
+// derived value, to whatever positional slot e fills (an assignment RHS, a
+// user-call argument, a return operand, a push/unshift/get-default
+// argument, a form-edit target). A no-op for any other expression shape
+// (concat, a call, an index/select, ...): those produce or read a DIFFERENT
+// value, never `x`'s own handle, so they cannot disqualify `x` merely by
+// containing it -- see lowEscapeWalkExpr for the recursive part that still
+// checks what's INSIDE such a shape.
+func lowEscapeHandoff(e: int) {
+    if e != -1 and exprKind(e) == ExIdent {
+        lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(e))] = 1
+    }
+}
+
+// lowEscapeDisqAll disqualifies every name this function currently tracks
+// -- the default-deny fallback for a statement/expression shape this
+// walker doesn't explicitly recognize.
+func lowEscapeDisqAll() {
+    var nm: string
+
+    for nm in lowFreeNames {
+        lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
+    }
+}
+
+// lowEscapeWalkArgsSafe walks a call's argument list as pure reads (rule 3:
+// "alert"/"log"/"file.*"/int/fixed/char/askOpen/askSave/askSaveChanges
+// arguments, and every string/text/list/map method argument other than
+// push/add/unshift/get's -- append and indexOf copy bytes out of a text
+// argument rather than retaining it, per Task 6's own audit of
+// ITextAppendText/ITextAppendStr).
+func lowEscapeWalkArgsSafe(argsHead: int) {
+    var a: int
+
+    a = argsHead
+    while a != -1 {
+        lowEscapeWalkExpr(a)
+        a = exprNext(a)
+    }
+}
+
+// lowEscapeWalkArgsHandoff walks a call's argument list as rule-3 handoff
+// positions (a user function's arguments; list push/add/unshift's value;
+// map get's key AND default-value -- the key is always a string so can
+// never match a candidate name, making it harmless to treat uniformly here).
+func lowEscapeWalkArgsHandoff(argsHead: int) {
+    var a: int
+
+    a = argsHead
+    while a != -1 {
+        lowEscapeHandoff(a)
+        lowEscapeWalkExpr(a)
+        a = exprNext(a)
+    }
+}
+
+// lowEscapeWalkMethodCall handles `recv.name(args)` -- the receiver is
+// always a safe read (rule 3: "method receiver ... is fine"); push/add/
+// unshift/get route their arguments through the handoff rule (see
+// lowEscapeWalkArgsHandoff's own comment for why `get` is included), every
+// other method (append, indexOf, fromBytes, toBytes, has, remove, count,
+// first, last, pop, shift, plus every canvas/file method -- none of which
+// is named push/add/unshift/get) treats its arguments as safe reads.
+func lowEscapeWalkMethodCall(e: int, fn: int) {
+    var nm: string
+
+    lowEscapeWalkExpr(selectX(fn))
+    nm = poolGet(selectName(fn))
+    if nm == "push" or nm == "add" or nm == "unshift" or nm == "get" {
+        lowEscapeWalkArgsHandoff(callArgsHead(e))
+    } else {
+        lowEscapeWalkArgsSafe(callArgsHead(e))
+    }
+}
+
+// lowEscapeWalkCall handles a plain `name(args)` call -- alert/log/int/
+// fixed/char/askOpen/askSave/askSaveChanges and an enum conversion are
+// non-retaining (safe-read args); any other resolvable name is a user
+// function call (rule 3: every argument is a handoff position); an
+// ExSelect target is a method call, handled separately. Mirrors lowCall's
+// own dispatch (lower.cla) closely enough to stay in sync with it, without
+// sharing code: lowCall builds IR, this only classifies AST shape.
+func lowEscapeWalkCall(e: int) {
+    var fn: int
+    var nm: string
+    var symIdx: int
+
+    fn = callFn(e)
+    if exprKind(fn) == ExIdent {
+        nm = poolGet(identName(fn))
+        if nm == "alert" or nm == "log" or nm == "int" or nm == "fixed" or nm == "char" or nm == "askOpen" or nm == "askSave" or nm == "askSaveChanges" {
+            lowEscapeWalkArgsSafe(callArgsHead(e))
+            return
+        }
+        symIdx = scopeLookup(curScope, identName(fn))
+        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
+            lowEscapeWalkArgsSafe(callArgsHead(e))
+            return
+        }
+        lowEscapeWalkArgsHandoff(callArgsHead(e))
+        return
+    } else if exprKind(fn) == ExSelect {
+        lowEscapeWalkMethodCall(e, fn)
+        return
+    }
+    lowEscapeDisqAll()
+}
+
+// lowEscapeWalkExpr recurses through e classifying every child position by
+// the rules above; it never disqualifies e's OWN top-level identity (that's
+// the caller's job -- see lowEscapeHandoff, called separately at each of
+// the handful of positions rule 3 actually names) -- default-deny for any
+// ExprKind this chain doesn't recognize.
+func lowEscapeWalkExpr(e: int) {
+    var k: ExprKind
+
+    if e == -1 {
+        return
+    }
+    k = exprKind(e)
+    if k == ExIdent or k == ExIntLit or k == ExFixedLit or k == ExCharLit or k == ExStringLit or k == ExBoolLit or k == ExNilLit or k == ExWindowSelf or k == ExNew or k == ExOpen {
+        return
+    } else if k == ExUnary {
+        lowEscapeWalkExpr(unaryX(e))
+    } else if k == ExBinary {
+        lowEscapeWalkExpr(binLeft(e))
+        lowEscapeWalkExpr(binRight(e))
+    } else if k == ExIndex {
+        lowEscapeWalkExpr(indexX(e))
+        lowEscapeWalkExpr(indexI(e))
+    } else if k == ExSlice {
+        lowEscapeWalkExpr(sliceX(e))
+        lowEscapeWalkExpr(sliceStart(e))
+        lowEscapeWalkExpr(sliceLen(e))
+    } else if k == ExSelect {
+        lowEscapeWalkExpr(selectX(e))
+    } else if k == ExCall {
+        lowEscapeWalkCall(e)
+    } else {
+        lowEscapeDisqAll()
+    }
+}
+
+// lowEscapeWalkAssign implements rule 3 (RHS-is-bare-x, whatever the LHS
+// is) and rule 4 (LHS-is-bare-x reassigned from a non-fresh RHS).
+func lowEscapeWalkAssign(s: int) {
+    var lhs: int
+    var rhs: int
+
+    lhs = assignLHS(s)
+    rhs = assignRHS(s)
+
+    lowEscapeHandoff(rhs)
+    lowEscapeWalkExpr(rhs)
+
+    if exprKind(lhs) == ExIdent {
+        if not lowEscapeFreshInit(rhs) {
+            lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(lhs))] = 1
+        }
+    } else {
+        // `x[i] = v` / `rec.f = v` / `w.prop = v`: the LHS's own base(s)
+        // are read (an index-write base is the same safe shape as an
+        // index-read source, rule 3), never disqualifying by themselves --
+        // still walked, to catch a nested call in a computed base/index
+        // (`a[f(x)] = v`).
+        lowEscapeWalkExpr(lhs)
+    }
+}
+
+// lowEscapeWalkElse handles StIf's else slot: -1 (no else), a StBlock, or
+// another StIf (an else-if chain) -- mirrors lowIf's own dispatch.
+func lowEscapeWalkElse(elseNode: int) {
+    if elseNode == -1 {
+        return
+    } else if stmtKind(elseNode) == StBlock {
+        lowEscapeWalkBlock(elseNode)
+    } else if stmtKind(elseNode) == StIf {
+        lowEscapeWalkStmt(elseNode)
+    } else {
+        lowEscapeDisqAll()
+    }
+}
+
+// lowEscapeWalkCases walks a StSwitch's StCase chain directly (StCase is an
+// auxiliary node, never reached through lowEscapeWalkStmt's own dispatch --
+// see ast.cla's schema comment): each case's labels are literals/consts
+// (walked defensively, as safe reads) and its body is an ordinary StBlock.
+func lowEscapeWalkCases(casesHead: int) {
+    var cs: int
+    var lbl: int
+
+    cs = casesHead
+    while cs != -1 {
+        lbl = caseLabelsHead(cs)
+        while lbl != -1 {
+            lowEscapeWalkExpr(lbl)
+            lbl = exprNext(lbl)
+        }
+        lowEscapeWalkBlock(caseBody(cs))
+        cs = stmtNext(cs)
+    }
+}
+
+// lowEscapeWalkStmt dispatches one statement by StmtKind -- every kind
+// ast.cla declares is listed explicitly (StCase excluded: never reached
+// this way, see lowEscapeWalkCases); an `else` default-denies anything
+// this chain doesn't recognize.
+func lowEscapeWalkStmt(s: int) {
+    switch stmtKind(s) {
+    case StBlock {
+        lowEscapeWalkBlock(s)
+    }
+    case StAssign {
+        lowEscapeWalkAssign(s)
+    }
+    case StExprStmt {
+        lowEscapeWalkExpr(exprStmtX(s))
+    }
+    case StIf {
+        lowEscapeWalkExpr(ifCond(s))
+        lowEscapeWalkBlock(ifThen(s))
+        lowEscapeWalkElse(ifElse(s))
+    }
+    case StWhile {
+        lowEscapeWalkExpr(whileCond(s))
+        lowEscapeWalkBlock(whileBody(s))
+    }
+    case StFor {
+        lowEscapeWalkExpr(forSeq(s))
+        lowEscapeWalkExpr(forTo(s))
+        lowEscapeWalkBlock(forBody(s))
+    }
+    case StReturn {
+        lowEscapeHandoff(returnX(s))
+        lowEscapeWalkExpr(returnX(s))
+    }
+    case StQuit {
+        lowEscapeWalkExpr(quitCode(s))
+    }
+    case StCancel, StBreak, StContinue {
+        // no operand
+    }
+    case StSwitch {
+        lowEscapeWalkExpr(switchSubject(s))
+        lowEscapeWalkCases(switchCasesHead(s))
+        if switchElse(s) != -1 {
+            lowEscapeWalkBlock(switchElse(s))
+        }
+    }
+    case StOpen {
+        // `open T` (stmt form) -- only a type name, no expression.
+    }
+    case StClose {
+        lowEscapeWalkExpr(closeX(s))
+    }
+    case StEdit {
+        if not editIsNew(s) {
+            // rule 3: "a form-edit binding" -- the edited value's own
+            // handle is handed to the form UI, which outlives this
+            // statement (Ch10). `new T` (isNew) carries only a type name,
+            // no expression, so nothing to check there.
+            lowEscapeHandoff(editTarget(s))
+            lowEscapeWalkExpr(editTarget(s))
+        }
+    }
+    else {
+        lowEscapeDisqAll()
+    }
+    }
+}
+
+func lowEscapeWalkStmtList(head: int) {
+    var s: int
+
+    s = head
+    while s != -1 {
+        lowEscapeWalkStmt(s)
+        s = stmtNext(s)
+    }
+}
+
+// lowEscapeWalkVarInits checks every var in blk's OWN vars list against
+// rule 3/4 as if each initializer were an assignment's RHS -- so `var b:
+// text = a` disqualifies `a` (rule 3: RHS of an assignment) exactly as `b =
+// a` would, on top of `b` itself already failing rule 2's freshness test
+// (a bare reference is never a fresh initializer). In practice this only
+// ever finds work for blk == the function's own body block: nested blocks
+// declare no vars of their own (Ch4), but is walked uniformly for every
+// block (see lowEscapeWalkBlock) since that costs nothing when empty.
+func lowEscapeWalkVarInits(blk: int) {
+    var v: int
+
+    v = blockVarsHead(blk)
+    while v != -1 {
+        if varDeclInit(v) != -1 {
+            lowEscapeHandoff(varDeclInit(v))
+            lowEscapeWalkExpr(varDeclInit(v))
+        }
+        v = declNext(v)
+    }
+}
+
+func lowEscapeWalkBlock(blk: int) {
+    lowEscapeWalkVarInits(blk)
+    lowEscapeWalkStmtList(blockStmtsHead(blk))
+}
+
+// lowEscapeCollectCandidates implements rule 1 + rule 2 over bodyBlk's OWN
+// vars list (the function/handler body's top-level `var`s -- never a
+// nested block's, which per Ch4 never has any): a body-top local of type
+// text/list/map whose initializer is fresh becomes a candidate.
+func lowEscapeCollectCandidates(bodyBlk: int) {
+    var v: int
+    var t: int
+    var nm: string
+
+    v = blockVarsHead(bodyBlk)
+    while v != -1 {
+        t = lowResolveType(varDeclType(v))
+        if lowEscapeTrackableKind(irtKind(t)) and lowEscapeFreshInit(varDeclInit(v)) {
+            nm = poolGet(varDeclName(v))
+            lowFreeNames.add(nm)
+            lowFreeTypes[nm] = t
+        }
+        v = declNext(v)
+    }
+}
+
+// lowRunEscapePrepass runs the whole Task 7 pre-pass over one function/
+// handler body, BEFORE lowBlock lowers that same AST -- called from
+// lowFuncBody and lowHandlerFunc. Populates lowFreeNames/lowFreeTypes/
+// lowFreeDisq for lowBuildScopeExitFrees (below) and lowReturn to consult
+// while lowering this same body.
+func lowRunEscapePrepass(bodyBlk: int) {
+    lowFuncGen = lowFuncGen + 1
+    while lowFreeNames.count > 0 {
+        lowFreeNames.pop()
+    }
+    lowEscapeCollectCandidates(bodyBlk)
+    lowEscapeWalkBlock(bodyBlk)
+}
+
+// lowBuildScopeExitFrees builds (and returns the head of) a fresh IR
+// statement chain -- one SExprStmt(EIntr(I*FreeVar, EVarRef(x))) per name
+// in lowFreeNames that lowRunEscapePrepass did NOT disqualify -- or -1 if
+// none qualify. Declaration order (lowFreeNames' own order).
+func lowBuildScopeExitFrees(): int {
+    var head: int
+    var tail: int
+    var nm: string
+    var t: int
+    var intrName: int
+    var st: int
+
+    head = -1
+    tail = -1
+    for nm in lowFreeNames {
+        if not lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
+            t = lowFreeTypes.get(nm, -1)
+            intrName = ITextFreeVar()
+            if irtKind(t) == KList {
+                intrName = IListFreeVar()
+            } else if irtKind(t) == KMap {
+                intrName = IMapFreeVar()
+            }
+            st = newIRExprStmt(newIRIntr(intrName, newIRVarRef(intern(nm), false, t), irVoidT))
+            if head == -1 {
+                head = st
+            }
+            tail = irStmtListAppend(tail, st)
+        }
+    }
+    return head
+}
+
+// lowAppendTrailingFrees appends lowBuildScopeExitFrees' chain onto the end
+// of bodyHead's top-level statement chain, UNLESS that chain's last
+// statement is already an SReturn (which lowReturn already prefixed with
+// its own copy of these same frees -- see lowReturn below) -- brief's Step
+// 3: "if the last IR statement isn't an SReturn, append the same frees at
+// the end." A body ending in `quit` (or any other non-SReturn statement
+// that transfers control away, e.g. a fully-exhaustive if/else where every
+// branch itself returns) still gets the frees appended textually here; they
+// are simply unreachable C in that case (rt_quit calls exit() and never
+// returns; a fully-exhaustive if/else's own branches already emitted their
+// own frees before their own returns) -- harmless dead code, not a
+// double-free, matching "quit mid-handler: no frees" by construction rather
+// than by special-casing StQuit here.
+func lowAppendTrailingFrees(bodyHead: int): int {
+    var tail: int
+    var freesHead: int
+
+    if bodyHead != -1 {
+        tail = bodyHead
+        while irStmtNext(tail) != -1 {
+            tail = irStmtNext(tail)
+        }
+        if irStmtKind(tail) == SReturn {
+            return bodyHead
+        }
+    }
+    freesHead = lowBuildScopeExitFrees()
+    if freesHead == -1 {
+        return bodyHead
+    }
+    if bodyHead == -1 {
+        return freesHead
+    }
+    irStmtListAppend(tail, freesHead)
+    return bodyHead
+}
+
 // lowReturn lowers `return` / `return expr` -- stmt.go's Return case. A
 // value clamps through lowCoerceStr against the enclosing function's
 // declared return type (lowCurFuncRet), exactly like a plain `var`
 // initializer's store.
+//
+// Task 7: every qualifying local still in scope gets a scope-exit free at
+// this return point. A bare `return x` for a qualifying x can't happen --
+// rule 3 already disqualifies x for appearing as a return operand at all
+// (lowEscapeWalkStmt's own StReturn case) -- but rule 3 explicitly ALLOWS a
+// qualifying local to appear as a SUB-expression of the return value
+// (`return "prefix" + t + "suffix"`, a concat operand -- "is fine"). If the
+// frees were simply emitted as statements preceding a plain `return
+// <expr>`, the generated C would free `cv_t` and only THEN evaluate an
+// expression that reads `cv_t` to build the actual return value -- a real
+// use-after-free (caught by the self-hosting bootstrap: cprint.cla's own
+// `fpCallFn` returns exactly this shape, `"clar_fn_" + name + "(" + args +
+// ")"` with `args` qualifying). Fix: whenever there's at least one free to
+// insert AND a value being returned, materialize that value into a fresh
+// synthetic local FIRST (its own store, while every qualifying local is
+// still alive), THEN free, THEN return the temp -- mirrors exactly how
+// cprint.cla's own SReturn printer (Task 6) already handles its
+// statement-level text temps (compute into a name, free, THEN emit `return
+// name;`), just at the IR/lower.cla level instead of at print time. A bare
+// `return` (no value) has no expression to protect, so its frees can
+// precede it directly.
 func lowReturn(s: int): int {
     var x: int
+    var freesHead: int
+    var tail: int
+    var tmpNameIdx: int
+    var storeStmt: int
+    var retRef: int
 
     x = -1
     if returnX(s) != -1 {
         x = lowCoerceStr(lowCurFuncRet, lowExpr(returnX(s)))
     }
-    return newIRReturn(x)
+
+    freesHead = lowBuildScopeExitFrees()
+    if freesHead == -1 {
+        return newIRReturn(x)
+    }
+    if x == -1 {
+        tail = freesHead
+        while irStmtNext(tail) != -1 {
+            tail = irStmtNext(tail)
+        }
+        irStmtListAppend(tail, newIRReturn(-1))
+        return freesHead
+    }
+
+    tmpNameIdx = lowNewReturnTemp()
+    lowAddLocal(tmpNameIdx, lowCurFuncRet)
+    retRef = newIRVarRef(tmpNameIdx, false, lowCurFuncRet)
+    storeStmt = lowStoreStmt(retRef, x, lowCurFuncRet)
+    irStmtListAppend(storeStmt, freesHead)
+    tail = freesHead
+    while irStmtNext(tail) != -1 {
+        tail = irStmtNext(tail)
+    }
+    irStmtListAppend(tail, newIRReturn(newIRVarRef(tmpNameIdx, false, lowCurFuncRet)))
+    return storeStmt
 }
 
 // lowAssign lowers `lvalue = expr` (stmt.go's lowerAssign): `l[i] = v`
@@ -2115,7 +2698,9 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     lowLocalsTail = -1
     savedRet = lowCurFuncRet
     lowCurFuncRet = ret
+    lowRunEscapePrepass(bodyBlk)
     bodyHead = lowBlock(bodyBlk)
+    bodyHead = lowAppendTrailingFrees(bodyHead)
     lowCurFuncRet = savedRet
 
     fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
@@ -2934,7 +3519,9 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     lowLocalsTail = -1
     savedRet = lowCurFuncRet
     lowCurFuncRet = irVoidT
+    lowRunEscapePrepass(body)
     bodyHead = lowBlock(body)
+    bodyHead = lowAppendTrailingFrees(bodyHead)
     lowCurFuncRet = savedRet
 
     lowCurWinType = savedWinType
