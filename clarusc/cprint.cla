@@ -1499,27 +1499,27 @@ func cpEmitFree(dst: text, cexpr: string, t: int) {
 
     k = irtKind(t)
     if k == KText {
-        cpAppendLine(dst, "rt_text_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_text_free(" + cexpr + ");")
     } else if k == KList {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "{ int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_free(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
+            cpAppendLine(dst, "    { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_free(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
         }
-        cpAppendLine(dst, "rt_list_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_list_free(" + cexpr + ");")
     } else if k == KMap {
         et = irtElem(t)
         if irtKind(et) == KText {
-            cpAppendLine(dst, "{ int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_free(v); } }")
+            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_free(v); } }")
         }
-        cpAppendLine(dst, "rt_map_free(" + cexpr + ");")
+        cpAppendLine(dst, "    rt_map_free(" + cexpr + ");")
     } else if k == KArr {
         et = irtElem(t)
         if irtNeedsCtor(et) {
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
-            cpAppendLine(dst, "for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
+            cpAppendLine(dst, "    for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
             cpEmitFree(dst, cexpr + ".e[" + ix + "]", et)
-            cpAppendLine(dst, "}")
+            cpAppendLine(dst, "    }")
         }
     } else if k == KRec {
         ri = 0
@@ -2966,7 +2966,7 @@ func cpEmitGlobalsInit() {
         initE = irGlobalInit(i)
         aliasOfGlobal = false
         if initE != -1 and irExprKind(initE) == EVarRef and irVarRefGlobal(initE) {
-            if irtKind(gt) == KText or irtKind(gt) == KList or irtKind(gt) == KMap {
+            if irtNeedsCtor(gt) {
                 aliasOfGlobal = true
             }
         }

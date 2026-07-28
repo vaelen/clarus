@@ -118,8 +118,8 @@ static void clar_init_globals(void) {
 }
 
 static void cl_free_globals(void) {
-rt_list_free(cv_bookmarks);
-rt_map_free(cv_byName);
+    rt_list_free(cv_bookmarks);
+    rt_map_free(cv_byName);
 
 }
 
