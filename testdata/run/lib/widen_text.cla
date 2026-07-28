@@ -20,6 +20,27 @@ func widenTextGetStr(): string {
     return "delta"
 }
 
+// Expected strict-mode leak count: 23 (see ../widen_text.leaks; verified
+// against the emitted C -- this function's body emits zero rt_text_free/
+// rt_list_free/rt_map_free calls at all, so every heap object it allocates
+// leaks: 9 `rt_text_new()` calls (2 blocks each = 18) + 1 `rt_list_new()`
+// (2 blocks) + 1 `rt_map_new()` (3 blocks) = 23). Every local here hits one
+// of the two documented clarusc Task 7 pre-pass gaps (memory-audit-4e), by
+// design of what this fixture is exercising:
+//   - `t1`/`t2`/`dv` are all reassigned from a non-fresh source (a
+//     user-call result for t1/t2, a bare alias of another local for dv --
+//     lower.cla's `lowEscapeFreshInit` rule 2/4), so none ever qualifies
+//     for a scope-exit free.
+//   - `lst`/`m` are both read by element (`rt_list_at`/`rt_map_get`/
+//     `rt_map_get_dv`), the documented element-read-disqualified-container
+//     class.
+//   - Every compiler-synthesized string-to-text widening temp (one per
+//     call argument, per list-push value, per map-set value, per
+//     map-get-default value) is the documented escaping-local class: Task
+//     5's temp-freeing machinery deliberately skips temps that hand off
+//     into a call/push/map-set/get-default, since ownership passes to the
+//     callee/container and freeing here would double-free or UAF.
+// Legitimate, not a bug.
 func runWidenText() {
     var pass: bool
     var s: string

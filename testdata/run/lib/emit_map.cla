@@ -9,6 +9,13 @@
 // alert("... ok") } else { alert("... FAIL") }`, same convention as
 // emit_list.cla. No user funcs (Task 9) -- just the handler-body subset
 // clarusc's self-hosted lower.cla/cprint.cla support at this task.
+//
+// Expected strict-mode leak count: 6 (see ../emit_map.leaks). `m` is read
+// by element (index reads, `.get`, `for k, v in m`) and `sm` is read by
+// element (`.get`) -- both are the documented element-read-disqualified-
+// container class (memory-audit-4e Task 6/7), so neither is freed at scope
+// exit. 3 blocks each (struct box + keys handle + vals handle) x 2 maps = 6.
+// Legitimate, not a bug.
 func runEmitMap(args: list of string) {
     var m: map of int
     var got: int

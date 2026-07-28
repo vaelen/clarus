@@ -1,6 +1,16 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+// Expected strict-mode leak count: 5 (see ../breakcont.leaks). runBreakcont's
+// locals `l: list of int` and `m: map of int` are both read by element (`for
+// x in l`, `for k, v in m`) -- the documented element-read-disqualified-
+// container class (memory-audit-4e Task 6/7): a container that is ever read
+// by element is not eligible for the non-escaping-local free clarusc emits
+// for everything else, so it's never freed at scope exit. `l` leaks its
+// struct box + data handle (2 blocks); `m` leaks its struct box + keys
+// handle + vals handle (3 blocks). Legitimate, not a bug -- see the ARC
+// milestone note in task-7-report.md.
+
 func breakcontShow(label: string, n: int) {
     var digits: char[12]
     var count: int = 0

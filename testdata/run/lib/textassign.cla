@@ -7,6 +7,24 @@ record textassignNote {
     body: text = "hi"
 }
 
+// Expected strict-mode leak count: 6 (see ../textassign.leaks) -- three
+// leaked `text` objects (2 blocks each: struct box + data handle), all
+// documented, pre-existing gaps in clarusc's Task 7 scope-exit-free
+// pre-pass (memory-audit-4e), not bugs introduced here:
+//   - `t2`'s `= "x" + "y"` initializer checked-types as a STRING concat
+//     (both operands strings), only widened to `text` at the assignment --
+//     lower.cla's `lowEscapeFreshInit` rule 2 only recognizes a concat
+//     whose OWN checked type is already Text as "fresh", so this
+//     conservatively fails and `t2` never qualifies for a scope-exit free
+//     at all (verified against the emitted C: no `rt_text_free(cv_t2)`).
+//   - `t = t + " world"` IS a checked-Text concat (fresh, rule 4), so `t`
+//     stays qualified and its FINAL handle is freed at scope exit -- but
+//     that reassignment pointer-swaps `t`'s handle, orphaning the handle
+//     it held right after `var t: text = "hello"`. Rule 4's own comment
+//     calls this out explicitly as an accepted ARC-era leak, not chased.
+//   - `note.body` is a text-typed record FIELD, not a body-top local --
+//     out of scope for Task 7's pre-pass entirely (it only tracks direct
+//     text/list/map locals), so it's simply never freed.
 func runTextassign() {
     var t: text = "hello"
     var t2: text = "x" + "y"

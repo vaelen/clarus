@@ -10,6 +10,13 @@
 // as emit_arith.cla/emit_control.cla. No user funcs (Task 9) -- just the
 // handler-body subset clarusc's self-hosted lower.cla/cprint.cla support at
 // this task.
+//
+// Expected strict-mode leak count: 4 (see ../emit_list.leaks). `l` is read
+// by element (IndexRef reads, `for x in l`) and `sl` is read by element
+// (`sl.first()`) -- both are the documented element-read-disqualified-
+// container class (memory-audit-4e Task 6/7), so neither is freed at scope
+// exit. 2 blocks each (struct box + data handle) x 2 containers = 4.
+// Legitimate, not a bug.
 func runEmitList(args: list of string) {
     var l: list of int
     var popped: int

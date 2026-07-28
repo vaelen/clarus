@@ -164,8 +164,10 @@ func TestEmitDifferential(t *testing.T) {
 				}
 			}
 
+			report := filepath.Join(t.TempDir(), "mem.txt")
 			cmd := exec.Command(bin, argv...)
 			cmd.Dir = t.TempDir()
+			cmd.Env = append(os.Environ(), "CLARUS_MEM_STRICT=1", "CLARUS_MEM_PARANOID=1", "CLARUS_MEM_REPORT="+report)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -188,7 +190,41 @@ func TestEmitDifferential(t *testing.T) {
 			if b, err := os.ReadFile(base + ".log"); err == nil && stderr.String() != string(b) {
 				t.Errorf("stderr:\n got: %q\nwant: %q", stderr.String(), string(b))
 			}
+
+			checkMemReport(t, report, base+".leaks")
 		})
+	}
+}
+
+// checkMemReport reads the rt_mem strict-mode leak report written by the
+// just-run binary (see rt_mem_host.inc's rt_mem_exit_check for the exact
+// "##CLARUS-MEM## live=<N>" + per-block "rt_mem: leak <tag> (<size> bytes)"
+// format) and compares the live count against leaksPath's expected integer
+// (0 if leaksPath doesn't exist -- most programs should free everything).
+// On mismatch it fails with the full report, whose per-block tag lines say
+// exactly what leaked and where it was allocated.
+func checkMemReport(t *testing.T, reportPath, leaksPath string) {
+	t.Helper()
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("runtime wrote no mem report — is STRICT plumbed? (%v)", err)
+	}
+
+	wantLeaks := 0
+	if s, err := os.ReadFile(leaksPath); err == nil {
+		wantLeaks, err = strconv.Atoi(strings.TrimSpace(string(s)))
+		if err != nil {
+			t.Fatalf("bad .leaks: %v", err)
+		}
+	}
+
+	firstLine, _, _ := strings.Cut(string(report), "\n")
+	var gotLeaks int
+	if _, err := fmt.Sscanf(firstLine, "##CLARUS-MEM## live=%d", &gotLeaks); err != nil {
+		t.Fatalf("mem report missing ##CLARUS-MEM## header: %q", string(report))
+	}
+	if gotLeaks != wantLeaks {
+		t.Errorf("live leaks: got %d want %d\n--- mem report ---\n%s", gotLeaks, wantLeaks, string(report))
 	}
 }
 
@@ -324,6 +360,12 @@ func TestEmitSelfEmits(t *testing.T) {
 // testdata/runerr/*.cla golden, emitted through clarusc and run, must abort
 // with exit 3 and a stderr containing the golden's .err substring — the same
 // oracle golden_test.go's TestRunErrGoldens holds the Go build to.
+//
+// Deliberately NOT wired to CLARUS_MEM_STRICT (unlike TestEmitDifferential):
+// these programs abort via rt_panic's exit(3), which does not unwind the
+// call stack, so whatever was live at the panic site stays "live" regardless
+// of how correct the program's normal free paths are. A leak count here
+// would measure how deep the call stack was at the panic, not a memory bug.
 func TestEmitRunErr(t *testing.T) {
 	exe, err := buildClarusc()
 	if err != nil {

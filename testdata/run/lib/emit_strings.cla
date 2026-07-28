@@ -13,6 +13,15 @@
 // task (no user funcs, no while/for, no list/map): see the task brief's
 // WATCH note on why no string is ever handed across a function-call
 // boundary here.
+//
+// Expected strict-mode leak count: 2 (see ../emit_strings.leaks). `var t2:
+// text` default-inits to a fresh empty handle; `t2 = a + t` then replaces
+// it via pointer-swap (the concat result is a new text object, not stored
+// byte-for-byte into the existing handle) -- orphaning the original empty
+// handle with nothing left to free it. This is the documented local
+// pointer-swap-init orphan (memory-audit-4e Task 6/7, left open for the ARC
+// milestone): 1 orphaned text = 2 blocks (struct box + data handle).
+// Legitimate, not a bug.
 func runEmitStrings(args: list of string) {
     var a: string = "hello"
     var b: string = " world"

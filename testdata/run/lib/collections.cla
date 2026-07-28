@@ -1,6 +1,14 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+// Expected strict-mode leak count: 5 (see ../collections.leaks). Same as
+// breakcont.cla: runCollections' `l: list of int` and `m: map of int` are
+// both read by element (`for x in l`, `for k, v in m`), which disqualifies
+// them from the non-escaping-local free clarusc emits -- the documented
+// element-read-disqualified-container class (memory-audit-4e Task 6/7).
+// `l` leaks 2 blocks (struct + data handle), `m` leaks 3 (struct + keys +
+// vals handles). Legitimate, not a bug.
+
 func collectionsShow(label: string, n: int) {
     var digits: char[12]
     var count: int = 0

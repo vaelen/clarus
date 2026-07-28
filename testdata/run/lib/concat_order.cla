@@ -1,6 +1,16 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+// Expected strict-mode leak count: 2 (see ../concat_order.leaks). `t: text
+// = ""` default-inits to a fresh empty handle; `t = "x" + t` then replaces
+// it via pointer-swap (the concat result is a new text object assigned
+// straight into `t`, not stored byte-for-byte into the existing handle) --
+// orphaning the original empty handle with nothing left to free it. This
+// is the documented local pointer-swap-init orphan (memory-audit-4e Task
+// 6/7, "left open, appropriately scoped to whoever picks up the ARC
+// milestone"): 1 orphaned text = 2 blocks (struct box + data handle).
+// Legitimate, not a bug.
+
 func runConcatOrder() {
     var s: string = "bc"
     var t: text = ""

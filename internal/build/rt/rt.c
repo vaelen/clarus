@@ -60,6 +60,18 @@ void rt_args_init(int argc, char **argv) {
     g_argc = argc;
     g_argv = argv;
     g_args_list = NULL; /* rebuild lazily on next rt_args_list() call */
+
+    /* Every emitted main() calls this first, before any Clarus code runs --
+     * unlike rt_mem_alloc_block's own atexit registration (which only fires
+     * once something is actually allocated), this guarantees the
+     * CLARUS_MEM_STRICT leak report gets written even for a program that
+     * allocates nothing through rt_mem at all (trivially zero leaks, but
+     * previously silent: no allocation ever happened => no report ever
+     * written => the differential harness saw a missing file, not a 0). */
+    if (!rt_mem_atexit_done) {
+        rt_mem_atexit_done = 1;
+        atexit(rt_mem_exit_check);
+    }
 }
 
 rt_list *rt_args_list(void) {
