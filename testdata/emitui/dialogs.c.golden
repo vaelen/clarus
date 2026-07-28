@@ -72,6 +72,8 @@ static void clar_fn_handler_App_launch(void) {
     cv_w = 0;
     clar_str_255 cv_wt;
     cv_wt = (clar_str_255){0};
+    rt_text * cv___store1;
+    cv___store1 = rt_text_new();
     cv_w = rt_ui_open(&clar_ui_window_DocWin);
     clar_str_255 t1;
     rt_ui_get_title(cv_w, (uint8_t*)&t1);
@@ -84,10 +86,15 @@ static void clar_fn_handler_App_launch(void) {
     rt_str_store((uint8_t*)&(cv_suggested), 255, (const uint8_t*)&(clar_lit_1));
     cv_ok = rt_ui_ask_save((uint8_t*)&(cv_p), (const uint8_t*)&(cv_suggested));
     if (cv_ok) {
+        rt_text_release(cv___store1);
         rt_text * t2 = NULL;
         t2 = rt_text_new();
         rt_ui_widget_get_text(cv_w, 1, t2);
-        cv_t = t2;
+        cv___store1 = t2;
+        rt_text_retain(cv___store1);
+        rt_text_release(cv_t);
+        cv_t = cv___store1;
+        cv___store1 = 0;
         rt_file_write_text((const uint8_t*)&(cv_p), cv_t);
     }
     cv_choice = rt_ui_ask_save_changes((const uint8_t*)&(clar_lit_2));
@@ -100,6 +107,7 @@ static void clar_fn_handler_App_launch(void) {
             rt_alert((const uint8_t*)&(clar_lit_4));
         }
     }
+    rt_text_release(cv_t);
 }
 
 static void clar_ui_widget_DocWin(void *inst, short widgetIndex, short event, long a, long b) {

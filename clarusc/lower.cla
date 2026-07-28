@@ -1419,6 +1419,243 @@ func lowStoreStmt(dst: int, src: int, t: int): int {
     return newIRAssign(dst, src)
 }
 
+// lowStoreTempN counts synthesized store-materialization temps program-wide
+// (lowNewStoreTemp, below) -- same never-reused-across-functions discipline
+// as lowRetTempN/lowSwitchN's own counters.
+var lowStoreTempN: int
+
+// lowNewStoreTemp names one lowCountedStore materialization temp (below).
+// Always a FRESH name (unlike lowNewReturnTemp's per-function cache): each
+// materialization is a strictly local, single-use scratch value consumed
+// immediately by the retain+store pair that follows it, never reused across
+// statements, so there is no leak-scaling reason to collapse repeat calls
+// within one function the way the return-value temp does.
+func lowNewStoreTemp(): int {
+    lowStoreTempN = lowStoreTempN + 1
+    return intern("__store" + numToStr(lowStoreTempN))
+}
+
+// lowStoreIsBirth is ARC Task 4's review-focus predicate: reports whether
+// srcAst syntactically produces a value that ALREADY carries its own,
+// uniquely-owned +1 -- so a store from it should be a HANDOFF (no lower.cla
+// retain; whatever already owns the +1 hands it straight to dst) rather
+// than a retain of a reference someone else still owns. Four birth shapes,
+// each independently verified fresh:
+//
+//   - ExStringLit: a string literal. Never reaches this predicate directly
+//     for a Str->Text coercion store (lowCountedStore special-cases that by
+//     IR TYPE, below, since Str is a by-value type any AST shape can
+//     produce -- not just a literal); kept here for the direct
+//     Text<-literal-of-Text-type case and for symmetry with
+//     lowEscapeFreshInit's own rule 2 (same shape, same reasoning: a
+//     literal is always a fresh construction).
+//   - ExBinary(OpAdd) at Text result type: text concatenation -- Ch3's
+//     "always a fresh copy" contract, same as lowEscapeFreshInit's rule.
+//   - ExSlice: text/string slicing -- likewise always a fresh copy (Ch3).
+//   - ExCall: ANY call (a plain user-function call OR a method call like
+//     .first()/.last()/.get()/.getDefault()/.pop()/.shift()) that types as
+//     Text/List/Map. This is the ARC Task 3-enabled addition beyond 4e's
+//     old rule 2 (which never trusted a call result as fresh, since 4e had
+//     no +1-return convention to make that trust sound): cprint.cla's own
+//     printer ALREADY balances every one of these -- fpCallFn materializes
+//     a user call's heap-typed result into a tracked temp (a genuine +1,
+//     the callee's own retain-before-return); IListFirst/IListLast/IMapGet/
+//     IMapGetDv retain+track their own alias read (also a genuine, freshly
+//     minted +1); IListPop/IListShift transfer without retaining (already
+//     +1, simply handed onward). In EVERY case the value cprint hands back
+//     is already a value nothing else owns a competing claim to -- retaining
+//     it AGAIN here would be a real, silent double-retain leak (rc off by
+//     one forever, never caught as a crash, only as a slowly climbing
+//     `.leaks` count). Since fpStmt's own SAssign/SReturn printer ALREADY
+//     hands off a tracked temp when it lands directly in a store/return
+//     (fpHandoff, ARC Task 3), lower.cla must stay out of the way for every
+//     call shape uniformly, not just plain user calls.
+//
+// Everything else -- a bare identifier (local, global, or an
+// in-handler-bare window-var name, all ExIdent at this AST level), a
+// `rec.field`/`w.field` select, or a `list[i]`/`map[k]` element read -- is a
+// REFERENCE to a value some other slot/container still owns: non-birth,
+// must retain its own copy. Default false: err toward retain (an
+// unnecessary retain is a leak, caught immediately by the `.leaks` corpus
+// gate; a missing one is a silent, much harder to catch UAF).
+func lowStoreIsBirth(srcAst: int): bool {
+    var k: ExprKind
+
+    k = exprKind(srcAst)
+    if k == ExStringLit {
+        return true
+    }
+    if k == ExBinary and binOp(srcAst) == OpAdd and typeKind(exprTypeGet(srcAst)) == TyText {
+        return true
+    }
+    if k == ExSlice {
+        return true
+    }
+    if k == ExCall {
+        return true
+    }
+    return false
+}
+
+// lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
+// NAMED slot (a local, a global, or a window var's per-instance field --
+// every lowAssign/lowBlock-declared-initializer/window-var-default call
+// site below): [IRetain(src) unless birth] -> IRelease(dst's OLD value) ->
+// the plain store. Non-heap destinations (int/bool/fixed/char/enum/Rec/Str,
+// and a Str<-Str coercion) fall straight through to lowStoreStmt, untouched
+// -- this wrapper only ever adds statements around a Text/List/Map dst.
+//
+// Order is load-bearing: retaining the NEW value BEFORE releasing the OLD
+// one is what makes a self-assign (`a = a`) safe -- src and dst can be the
+// SAME live handle, and bumping its rc to >=2 before the matching decrement
+// guarantees the decrement never sees rc reach 0 on a value that's still
+// referenced (by `a` itself). Retain-then-release is unconditional whenever
+// a retain is emitted at all; a birth store skips the retain (its own +1 is
+// already the whole story) but still releases dst's old value -- including
+// a local's `var x: text = someOtherText`-shaped DECLARED initializer
+// (dst=src both Text, the plain-Assign branch below, a genuine POINTER
+// REPLACEMENT), whose "old value" is cpDefaultInit's function-prologue
+// default-construction (4e's documented "default-init orphan": nothing
+// ever released it before this task) -- AND a Str->Text literal coercion
+// (`var x: text = "hi"`, `x = "hi"`): see the ITextOfStr rewrite just
+// below, which turns that case into an ordinary birth pointer-replacement
+// too (never lowStoreStmt's own in-place ITextStore branch -- that one
+// mutates dst's CURRENT box, unsafe whenever dst might be aliased).
+//
+// dst is the CALLER's already-lowered destination ref (reused directly for
+// both the release-old and the store's own LHS -- a bare EVarRef or the
+// EFieldRef-over-IUiState shape lowBareWindowMemberRef/lowWindowInstSelect
+// build for a window var, both pure, side-effect-free lvalue address
+// computations, safe to re-emit). srcAst is the UN-lowered source
+// expression -- lowStoreIsBirth needs the AST shape, and lowExpr must run
+// exactly once regardless of how many statements the wrapper below emits.
+func lowCountedStore(dst: int, srcAst: int, t: int): int {
+    var src: int
+    var isBirth: bool
+    var srcUsed: int
+    var tmpNameIdx: int
+    var head: int
+    var tail: int
+
+    if not lowEscapeTrackableKind(irtKind(t)) {
+        return lowStoreStmt(dst, lowExpr(srcAst), t)
+    }
+
+    tmpNameIdx = -1
+    src = lowExpr(srcAst)
+    isBirth = lowStoreIsBirth(srcAst)
+    if irtKind(t) == KText and irtKind(irExprType(src)) == KStr {
+        // A Text destination fed by a Str source: NEVER lowStoreStmt's own
+        // inline ITextStore branch here -- that intrinsic copies the
+        // string's bytes into dst's ALREADY-EXISTING buffer IN PLACE
+        // (cprint.cla's ITextStore case), which is only safe when dst's box
+        // is PROVABLY unshared. It is NOT: Ch3's own reference semantics
+        // ("assignment... copies the reference... all references to the
+        // same handle point to the same underlying data") mean dst's box
+        // may be ALIASED by another local/global sharing the same handle
+        // (`var b: text = a`) -- an in-place store would silently corrupt
+        // every alias, not just dst (hand-probe #2's exact repro: `var b:
+        // text = a; a = "other"` left `b` reading "other" too, no crash, no
+        // leak-count signal -- caught only by comparing VALUES). Route
+        // through lowCoerceStr's ITextOfStr instead: allocates a FRESH,
+        // unshared box and stores into THAT, an ordinary birth construction
+        // -- unifies with the general birth path below (materialize if not
+        // a bare ref, release dst's OLD reference, plain-assign the fresh
+        // box in). Overrides lowStoreIsBirth's own AST-based verdict:
+        // regardless of srcAst's shape (a bare Str variable read is
+        // syntactically non-birth, but the COERCION itself always
+        // constructs fresh), the value actually being stored here is
+        // always a brand-new box.
+        src = lowCoerceStr(t, src)
+        isBirth = true
+    }
+
+    srcUsed = src
+    head = -1
+    tail = -1
+    if exprKind(srcAst) != ExIdent {
+        // Not a bare name -- materialize once into a scratch temp, BEFORE
+        // dst's old value is released below, for TWO independent reasons:
+        //
+        //   1. (non-birth) so the retain and the store's own RHS read the
+        //      SAME already-computed value exactly once each -- reprinting
+        //      a non-bare-ref source expression (a field chain, and
+        //      especially a `list[i]`/`map[k]` element read whose
+        //      index/key can itself carry side effects, e.g. a function
+        //      call) a second time would re-evaluate it.
+        //   2. (birth OR non-birth) cprint's OWN C-level computation for a
+        //      non-bare expression -- e.g. ITextConcat's `t=rt_text_new();
+        //      rt_text_concat(t, ...)` -- only happens at PRINT time,
+        //      folded into whichever statement actually embeds the
+        //      expression. If that expression itself reads dst's CURRENT
+        //      value (the common case: `t = t + " world"`, a birth concat
+        //      that reads t as its own left operand), emitting dst's
+        //      release as an EARLIER, separate statement and deferring the
+        //      concat's own read of dst to the LATER store statement would
+        //      make the concat read an already-released (possibly
+        //      disposed/scrambled) dst -- a use-after-free, caught the hard
+        //      way (reviewer repro: `t = t + " world"` segfaulting inside
+        //      rt_text_concat, reading 0xa5-scrambled freed memory).
+        //      Materializing FIRST forces the expression's own computation
+        //      to run, and finish reading dst, before dst's release ever
+        //      executes -- true for every non-bare shape, birth or not.
+        //
+        // The materialization temp's role is purely transient -- compute,
+        // retain if non-birth, hand off to dst, forget -- but it is a
+        // REUSED C variable (declared once, at function-prologue scope;
+        // this statement may be lowered ONCE yet embedded inside a loop
+        // body, so its C runs many times per call). Releasing whatever it
+        // held BEFORE overwriting it is right on the FIRST run (its own
+        // cpDefaultInit prologue construction -- the usual "default-init
+        // orphan," same class lowReturn's synthetic already guards
+        // against) but WRONG on every later run: by then its previous
+        // value has already been aliased into dst with no independent
+        // ownership left on the temp's own side (birth: never retained at
+        // all; non-birth: the one retain belongs to dst, not to a second,
+        // phantom "the temp still owns it too" claim) -- releasing it
+        // again would double-release dst's own live reference (reviewer's
+        // exact repro: cprint.cla's own cpEmitStrLits, `bytesStr = bytesStr
+        // + numToStr(...)` inside a `while j < s.length` loop, aborted with
+        // `rt_rc: over-release` during the self-hosting bootstrap -- no
+        // corpus fixture loops large enough to trip this; the compiler
+        // compiling ITSELF, thousands of literals long, did).
+        //
+        // Fix: NULL the temp out (a plain `0`, NULL-safe for retain/release
+        // per rt.h's own contract) immediately after handing its value to
+        // dst, below -- so EVERY run's "release what the temp held before"
+        // is correct: the prologue box on the very first run, a safe
+        // release-of-NULL no-op on every run after.
+        tmpNameIdx = lowNewStoreTemp()
+        lowAddLocal(tmpNameIdx, t)
+        head = newIRExprStmt(newIRIntr(IRelease(), newIRVarRef(tmpNameIdx, false, t), irVoidT))
+        tail = irStmtListAppend(head, newIRAssign(newIRVarRef(tmpNameIdx, false, t), src))
+        srcUsed = newIRVarRef(tmpNameIdx, false, t)
+    }
+
+    if not isBirth {
+        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), srcUsed, irVoidT)))
+        if head == -1 {
+            head = tail
+        }
+    }
+
+    tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRelease(), dst, irVoidT)))
+    if head == -1 {
+        head = tail
+    }
+
+    tail = irStmtListAppend(tail, lowStoreStmt(dst, srcUsed, t))
+    if tmpNameIdx != -1 {
+        // Detach the materialization temp from the value it just handed
+        // to dst (see the materialization comment above) -- a plain `0`,
+        // NULL-safe for retain/release, so the NEXT run of this same
+        // statement's "release what the temp held before" (above) is a
+        // no-op instead of a double-release.
+        irStmtListAppend(tail, newIRAssign(newIRVarRef(tmpNameIdx, false, t), newIRIntConst(0, t)))
+    }
+    return head
+}
+
 // lowStmt lowers one statement, returning its irStmts index, or -1 for a
 // statement that contributes no IR node.
 func lowStmt(s: int): int {
@@ -1554,6 +1791,20 @@ func lowWhile(s: int): int {
 // stmt.go's lowerFor. Seq/ToExpr are lowered in the ENCLOSING scope
 // (mirroring checkForStmt's own scope nesting), THEN the loop variable(s)
 // are declared in a fresh scope wrapping the body.
+//
+// ARC Task 4: a list/map element-bound loop var (forV1's list branch,
+// forV1/forV2's map branch) deliberately gets NEITHER a retain on bind NOR
+// a release at scope exit -- it's a BORROW of the container's own element
+// storage (fpForListStmt/fpForMapStmt materialize it as a fresh alias each
+// iteration, never an owned +1), so retaining it would double-count an
+// element the container still solely owns, and releasing it at loop-body
+// scope exit would decrement a reference nothing here ever incremented (a
+// spurious release, undercounting the container's real element towards
+// zero while iterating it). This exclusion falls out of lowAddLocal here
+// NEVER routing through a `var`-decl AST node (lowEscapeCollectCandidates,
+// this task's own unconditional-release candidate collector, only ever
+// walks blockVarsHead's `var` list) -- no explicit skip needed, just
+// documented here so the omission reads as intentional.
 func lowFor(s: int): int {
     var seq: int
     var toExpr: int
@@ -1677,7 +1928,67 @@ var lowFreeTypes: map of int
 
 // lowFreeDisq: "<lowFuncGen>|<name>" -> 1 for any name (candidate or not)
 // found to violate rule 3 or rule 4 anywhere in the CURRENT function's body.
+//
+// ARC Task 4 reinterprets this map's meaning for the PER-FUNCTION-LOCAL
+// pass only (globals/window vars, their OWN separate gens, are untouched --
+// see lowWinVarQualifies/lowGlobalsVarQualifies, still "skip if disqualified"
+// exactly as before): a name in lowFreeDisq is no longer "unsafe to release
+// at all" -- lowCountedStore's retain-on-store means most of rule 3/4's old
+// handoff reasons are now PROVABLY safe to release (the consuming store
+// retains, so the source keeps its own independent +1) -- it now means
+// "safe to release the LOCAL'S OWN handle (shallow IRelease), but NOT
+// provably safe to DEEP-release (I*FreeVar's element walk), since container
+// elements are still Task 5's unmigrated slot class." See lowFreeUnsafe,
+// below, for the (smaller) set of handoff reasons that remain genuinely
+// unsafe to release AT ALL.
 var lowFreeDisq: map of int
+
+// lowFreeUnsafe: "<lowFuncGen>|<name>" -> 1 for a name handed to a
+// consumer that ARC hasn't migrated to retain-on-store yet, so releasing
+// the LOCAL that fed it (even shallowly) could dispose a handle the
+// consumer still references, uncounted -- a real UAF, not just a
+// leftover-leak class. lowBuildScopeExitFrees SKIPS these names entirely
+// (4e's original, still-correct behavior for this narrower set), never
+// just downgrading to shallow. A SUBSET of lowFreeDisq's names (every
+// lowFreeUnsafe entry is also a lowFreeDisq entry -- see
+// lowEscapeHandoffUnsafe, below), populated only at the specific handoff
+// sites this task's own migration doesn't cover:
+//   - a user-function CALL argument (lowEscapeWalkArgsHandoff, the
+//     lowEscapeWalkCall branch) -- the callee MIGHT stash it into an
+//     unmigrated slot (a record field, a container element) that this
+//     caller's own local release can't see or prove safe against
+//     (fpCallFn's own doc comment: "the callee may retain the handle...
+//     leaks instead" -- the SAME conservative assumption, just now
+//     enforced by skipping the release instead of by leaking forever).
+//   - a list/map push/add/unshift/get argument (lowEscapeWalkArgsHandoff,
+//     the lowEscapeWalkMethodCall branch) -- container ELEMENT stores
+//     stay 4e-qualified until Task 5 gives them their own retain; this is
+//     the reviewer's own reported repro class (`x` pushed into a global
+//     `list of text`, then released here on a shallow-release-for-all
+//     read: `rt_text_append_text` dereferencing a disposed box).
+//   - a form `edit` target (StEdit) -- handed to the form UI, which is
+//     never proven to retain it (not one of ARC's migration classes at
+//     all; forms/records overlap, deferred to a later task).
+//   - lowEscapeDisqAll's own default-deny fallback (an AST shape this
+//     walker doesn't recognize at all) -- maximally conservative for the
+//     genuinely-unanalyzed case.
+var lowFreeUnsafe: map of int
+
+// lowEscapeHandoffUnsafe is lowEscapeHandoff PLUS lowFreeUnsafe -- for the
+// handoff reasons enumerated on lowFreeUnsafe's own doc comment, where the
+// consuming site is NOT one of this task's migrated store funnels
+// (lowCountedStore) and so cannot be proven to retain what it's handed.
+func lowEscapeHandoffUnsafe(e: int) {
+    lowEscapeHandoff(e)
+    if e == -1 {
+        return
+    }
+    if exprKind(e) == ExIdent {
+        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + poolGet(identName(e))] = 1
+    } else if exprKind(e) == ExSelect {
+        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + poolGet(selectName(e))] = 1
+    }
+}
 
 // lowRetTempN counts synthesized `return`-value temps program-wide (never
 // reused across functions -- see lowNewReturnTemp's own doc comment.
@@ -1776,7 +2087,12 @@ func lowEscapeDisqAll() {
     var nm: string
 
     for nm in lowFreeNames {
+        // ARC Task 4: also lowFreeUnsafe (not just lowFreeDisq) -- an
+        // unrecognized AST shape is the genuinely-unanalyzed case, where
+        // "safe to shallow-release" can't be proven either; skip entirely,
+        // maximally conservative.
         lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
+        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + nm] = 1
     }
 }
 
@@ -1805,7 +2121,13 @@ func lowEscapeWalkArgsHandoff(argsHead: int) {
 
     a = argsHead
     while a != -1 {
-        lowEscapeHandoff(a)
+        // ARC Task 4: lowEscapeHandoffUnsafe, not just lowEscapeHandoff --
+        // every caller of this function hands a value to a consumer
+        // lowCountedStore doesn't cover (a user-function call argument, or
+        // a list/map push/add/unshift/get argument -- container elements
+        // stay 4e-qualified until Task 5), so the source can't be proven to
+        // keep its own independent +1 the way a named-slot store now does.
+        lowEscapeHandoffUnsafe(a)
         lowEscapeWalkExpr(a)
         a = exprNext(a)
     }
@@ -2139,8 +2461,12 @@ func lowEscapeWalkStmt(s: int) {
             // rule 3: "a form-edit binding" -- the edited value's own
             // handle is handed to the form UI, which outlives this
             // statement (Ch10). `new T` (isNew) carries only a type name,
-            // no expression, so nothing to check there.
-            lowEscapeHandoff(editTarget(s))
+            // no expression, so nothing to check there. ARC Task 4:
+            // lowEscapeHandoffUnsafe -- the form UI is not one of this
+            // task's migrated store funnels (forms/records overlap,
+            // deferred), so it can't be proven to retain what it's handed;
+            // skip release entirely, don't shallow-release.
+            lowEscapeHandoffUnsafe(editTarget(s))
             lowEscapeWalkExpr(editTarget(s))
         }
     }
@@ -2186,10 +2512,27 @@ func lowEscapeWalkBlock(blk: int) {
     lowEscapeWalkStmtList(blockStmtsHead(blk))
 }
 
-// lowEscapeCollectCandidates implements rule 1 + rule 2 over bodyBlk's OWN
-// vars list (the function/handler body's top-level `var`s -- never a
-// nested block's, which per Ch4 never has any): a body-top local of type
-// text/list/map whose initializer is fresh becomes a candidate.
+// lowEscapeCollectCandidates (ARC Task 4) implements rule 1 over bodyBlk's
+// OWN vars list (the function/handler body's top-level `var`s -- never a
+// nested block's, which per Ch4 never has any): EVERY body-top local of
+// type text/list/map is now an UNCONDITIONAL scope-exit-release candidate
+// -- retain-on-store (lowCountedStore, this task's own companion change)
+// means the slot provably owns its own handle regardless of what fed it,
+// so rule 2's old freshness GATE on candidacy itself is gone (was:
+// non-fresh-init locals never even became candidates, so they were never
+// released at all -- 4e's documented reassignment-orphan leak class).
+//
+// A non-fresh initializer still disqualifies the name from the DEEP
+// element-release walk, though (same rule lowGlobalsEscCollect/
+// lowWinVarEscCollect already apply to globals/window vars, reused here
+// verbatim): container elements are Task 5's still-unmigrated slot class,
+// so a container whose own initial handle might be shared (`= otherList`,
+// or a call whose OWN internal pushes we can't see) can't yet be PROVEN to
+// solely own whatever it's populated with. lowBuildScopeExitFrees reads
+// this same lowFreeDisq entry to choose shallow (IRelease -- the local's
+// own handle only, always safe) vs. deep (I*FreeVar -- handle + a walk
+// over Text-typed elements, only safe when nothing here disqualifies it)
+// release for that name.
 func lowEscapeCollectCandidates(bodyBlk: int) {
     var v: int
     var t: int
@@ -2198,10 +2541,13 @@ func lowEscapeCollectCandidates(bodyBlk: int) {
     v = blockVarsHead(bodyBlk)
     while v != -1 {
         t = lowResolveType(varDeclType(v))
-        if lowEscapeTrackableKind(irtKind(t)) and lowEscapeFreshInit(varDeclInit(v)) {
+        if lowEscapeTrackableKind(irtKind(t)) {
             nm = poolGet(varDeclName(v))
             lowFreeNames.add(nm)
             lowFreeTypes[nm] = t
+            if varDeclInit(v) != -1 and not lowEscapeFreshInit(varDeclInit(v)) {
+                lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
+            }
         }
         v = declNext(v)
     }
@@ -2226,9 +2572,24 @@ func lowRunEscapePrepass(bodyBlk: int) {
 }
 
 // lowBuildScopeExitFrees builds (and returns the head of) a fresh IR
-// statement chain -- one SExprStmt(EIntr(I*FreeVar, EVarRef(x))) per name
-// in lowFreeNames that lowRunEscapePrepass did NOT disqualify -- or -1 if
-// none qualify. Declaration order (lowFreeNames' own order).
+// statement chain -- one SExprStmt(EIntr(name, EVarRef(x))) per name in
+// lowFreeNames -- or -1 if lowFreeNames is empty. Declaration order
+// (lowFreeNames' own order).
+//
+// ARC Task 4: UNCONDITIONAL now -- every entry in lowFreeNames releases,
+// full stop (the old `if not disqualified { emit }` skip is gone: a
+// disqualified name used to get NOTHING, forever, one of 4e's own
+// documented leak classes). What lowFreeDisq still decides is WHICH
+// intrinsic: a disqualified name (see lowEscapeCollectCandidates's own
+// comment) gets the shallow IRelease (just this local's own handle -- always
+// safe, since lowCountedStore's retain-on-store makes it uniquely owned
+// regardless of provenance); a name that's NOT disqualified gets the
+// existing deep I*FreeVar (handle + a walk over Text-typed elements --
+// container elements, Task 5's still-unmigrated slot class, so the deep
+// walk stays gated on the SAME proof 4e already required: every push this
+// function made into it was independently fresh). For a Text local (no
+// elements to walk) the two intrinsics print IDENTICAL C -- this only ever
+// changes emitted output for List/Map.
 func lowBuildScopeExitFrees(): int {
     var head: int
     var tail: int
@@ -2240,20 +2601,35 @@ func lowBuildScopeExitFrees(): int {
     head = -1
     tail = -1
     for nm in lowFreeNames {
-        if not lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
-            t = lowFreeTypes.get(nm, -1)
+        // ARC Task 4: lowFreeUnsafe (a name handed to a consumer this
+        // task's migration doesn't cover -- a call argument, a container
+        // push, a form edit target) is skipped ENTIRELY, same as 4e always
+        // did -- releasing even shallowly could dispose a handle that
+        // consumer still references, uncounted. Everything else releases
+        // unconditionally now: lowFreeDisq (without lowFreeUnsafe) picks
+        // shallow (IRelease -- container elements, Task 5's still-
+        // unmigrated slot class, so no deep walk) vs. deep (I*FreeVar,
+        // the pre-Task-4 behavior, unchanged) -- see lowFreeDisq's and
+        // lowFreeUnsafe's own doc comments.
+        if lowFreeUnsafe.has(numToStr(lowFuncGen) + "|" + nm) {
+            continue
+        }
+        t = lowFreeTypes.get(nm, -1)
+        if lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
+            intrName = IRelease()
+        } else {
             intrName = ITextFreeVar()
             if irtKind(t) == KList {
                 intrName = IListFreeVar()
             } else if irtKind(t) == KMap {
                 intrName = IMapFreeVar()
             }
-            st = newIRExprStmt(newIRIntr(intrName, newIRVarRef(intern(nm), false, t), irVoidT))
-            if head == -1 {
-                head = st
-            }
-            tail = irStmtListAppend(tail, st)
         }
+        st = newIRExprStmt(newIRIntr(intrName, newIRVarRef(intern(nm), false, t), irVoidT))
+        if head == -1 {
+            head = st
+        }
+        tail = irStmtListAppend(tail, st)
     }
     return head
 }
@@ -2395,15 +2771,34 @@ func lowReturn(s: int): int {
     while irStmtNext(tail) != -1 {
         tail = irStmtNext(tail)
     }
+
+    // ARC Task 4 review-fix: the return-value retain MUST run BEFORE the
+    // scope-exit frees below, not after (the pre-Task-4 order). Before this
+    // task, a returned local was ALWAYS excluded from freesHead -- rule 3's
+    // StReturn handoff (lowEscapeWalkStmt) disqualified it, and
+    // disqualified meant SKIPPED entirely -- so the retain and the frees
+    // could never touch the SAME object and order was moot. Task 4 makes
+    // every local release unconditionally (freesHead's own disqualification
+    // now only ever picks shallow-vs-deep, never skip), including the one
+    // just returned. `return localVar` stores localVar's pointer into the
+    // synthetic just above (aliasing, no rc change yet) -- retaining the
+    // synthetic FIRST bumps rc to >=2 before freesHead's release of
+    // localVar decrements it back to >=1: the object survives long enough
+    // to be handed back at the final `return`. Retaining AFTER freesHead
+    // (the old position) would let localVar's own release drop a rc==1
+    // object to 0 -- disposed -- while the synthetic (the SAME pointer) is
+    // still about to be retained and returned: a use-after-free on the
+    // exact common case this function exists to protect (`return x` for a
+    // local `x`).
+    if heapRet {
+        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
+    }
     if freesHead != -1 {
         irStmtListAppend(tail, freesHead)
         tail = freesHead
         while irStmtNext(tail) != -1 {
             tail = irStmtNext(tail)
         }
-    }
-    if heapRet {
-        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
     }
     irStmtListAppend(tail, newIRReturn(newIRVarRef(tmpNameIdx, false, lowCurFuncRet)))
     return head
@@ -2596,7 +2991,7 @@ func lowAssign(s: int): int {
         return lowWidgetSetAssign(lhs, assignRHS(s))
     }
     ty = lowMustType(lhs)
-    return lowStoreStmt(lowExpr(lhs), lowExpr(assignRHS(s)), ty)
+    return lowCountedStore(lowExpr(lhs), assignRHS(s), ty)
 }
 
 // lowIndexAssign lowers `x[i] = rhs` (stmt.go's lowerIndexAssign): an
@@ -2678,31 +3073,63 @@ func lowIf(s: int): int {
 // the source comes before the code that needs it, the only order Clarus
 // source ever writes it in (see uiMenuIdx's own doc comment above for the
 // same documented assumption elsewhere in this file).
+// ARC Task 4: locals release before the quit call now (freesHead, both
+// branches) -- was a no-op (no frees ever emitted here) before this task;
+// safe now that a "free" is a release (Task 1's rt_*_free alias), and the
+// scope-exit walk is unconditional (lowBuildScopeExitFrees). Global cleanup
+// still runs via the existing rt_quit/rt_ui_quit hook, untouched here (Task
+// 6's scope). Ordering: any code-expression side effects evaluate FIRST
+// (unchanged from before this task), frees run next (locals are read, if
+// at all, only by that already-evaluated code expression), and the actual
+// quit call is always last.
 func lowQuit(s: int): int {
     var code: int
     var codeStmt: int
     var call: int
+    var freesHead: int
+    var head: int
+    var tail: int
+
+    head = -1
+    tail = -1
 
     if irIsUiProgram() {
+        if quitCode(s) != -1 {
+            // Ch5/line 624: the exit code is accepted-and-ignored on the
+            // Macintosh -- the VALUE, not its evaluation, so a
+            // user-supplied expression still runs once, for any side
+            // effects, right before the cascade (same relative order a
+            // non-UI `quit` already gives it as rt_quit's argument).
+            // ponytail: a literal-only code expr (`quit 5`, no side
+            // effects) prints as a no-op statement here (e.g. "5;") --
+            // harmless at runtime but would trip -Wunused-value under
+            // -Wall/-Werror; no scenario in this codebase writes `quit
+            // <expr>` in a UI program (only bare `quit`, which skips this
+            // branch entirely) to have caught it. Upgrade path if one ever
+            // does: skip this statement when lowExpr's node is a plain
+            // IntConst/etc.
+            codeStmt = newIRExprStmt(lowExpr(quitCode(s)))
+            head = codeStmt
+            tail = codeStmt
+        }
+        freesHead = lowBuildScopeExitFrees()
+        if freesHead != -1 {
+            if head == -1 {
+                head = freesHead
+            } else {
+                irStmtListAppend(tail, freesHead)
+            }
+            tail = freesHead
+            while irStmtNext(tail) != -1 {
+                tail = irStmtNext(tail)
+            }
+        }
         call = newIRExprStmt(newIRIntr(IUiQuit(), -1, irVoidT))
-        if quitCode(s) == -1 {
+        if head == -1 {
             return call
         }
-        // Ch5/line 624: the exit code is accepted-and-ignored on the
-        // Macintosh -- the VALUE, not its evaluation, so a user-supplied
-        // expression still runs once, for any side effects, right before
-        // the cascade (same relative order a non-UI `quit` already gives
-        // it as rt_quit's argument).
-        // ponytail: a literal-only code expr (`quit 5`, no side effects)
-        // prints as a no-op statement here (e.g. "5;") -- harmless at
-        // runtime but would trip -Wunused-value under -Wall/-Werror; no
-        // scenario in this codebase writes `quit <expr>` in a UI program
-        // (only bare `quit`, which returns above and never reaches this
-        // line) to have caught it. Upgrade path if one ever does: skip
-        // this statement when lowExpr's node is a plain IntConst/etc.
-        codeStmt = newIRExprStmt(lowExpr(quitCode(s)))
-        irStmtListAppend(codeStmt, call)
-        return codeStmt
+        irStmtListAppend(tail, call)
+        return head
     }
 
     if quitCode(s) == -1 {
@@ -2710,7 +3137,17 @@ func lowQuit(s: int): int {
     } else {
         code = lowExpr(quitCode(s))
     }
-    return newIRExprStmt(newIRIntr(IQuit(), code, irVoidT))
+    call = newIRExprStmt(newIRIntr(IQuit(), code, irVoidT))
+    freesHead = lowBuildScopeExitFrees()
+    if freesHead == -1 {
+        return call
+    }
+    tail = freesHead
+    while irStmtNext(tail) != -1 {
+        tail = irStmtNext(tail)
+    }
+    irStmtListAppend(tail, call)
+    return freesHead
 }
 
 // lowNewSwitchTemp names one switch desugar's subject temp. The "__switch"
@@ -2844,11 +3281,19 @@ func lowBlock(blk: int): int {
         lowDeclareLocal(varDeclName(v))
         if varDeclInit(v) != -1 {
             dst = newIRVarRef(varDeclName(v), false, t)
-            st = lowStoreStmt(dst, lowExpr(varDeclInit(v)), t)
+            st = lowCountedStore(dst, varDeclInit(v), t)
             if head == -1 {
                 head = st
             }
+            // lowCountedStore (ARC Task 4) can return a multi-node chain
+            // (retain/materialize + release + store), not always the single
+            // node lowStoreStmt alone used to -- walk to its TRUE end, same
+            // fix the statement loop just below already applies for
+            // lowSwitch's own multi-node return.
             tail = irStmtListAppend(tail, st)
+            while irStmtNext(tail) != -1 {
+                tail = irStmtNext(tail)
+            }
         }
         v = declNext(v)
     }
@@ -4009,7 +4454,6 @@ func lowWinVarDefaultsStmts(winName: string): int {
     var head: int
     var tail: int
     var dst: int
-    var src: int
     var st: int
 
     head = -1
@@ -4017,12 +4461,16 @@ func lowWinVarDefaultsStmts(winName: string): int {
     defIdx = winVarDefaultsHead.get(numToStr(progGen) + "|" + winName, -1)
     while defIdx != -1 {
         dst = lowBareWindowMemberRef(winVarDefaults[defIdx].fieldNameIdx, winVarDefaults[defIdx].typeIdx)
-        src = lowExpr(winVarDefaults[defIdx].initAST)
-        st = lowStoreStmt(dst, src, winVarDefaults[defIdx].typeIdx)
+        st = lowCountedStore(dst, winVarDefaults[defIdx].initAST, winVarDefaults[defIdx].typeIdx)
         if head == -1 {
             head = st
         }
+        // Walk to the true end -- lowCountedStore can return a multi-node
+        // chain now (see lowBlock's own identical fix/comment).
         tail = irStmtListAppend(tail, st)
+        while irStmtNext(tail) != -1 {
+            tail = irStmtNext(tail)
+        }
         defIdx = winVarDefaults[defIdx].next
     }
     return head
@@ -4086,6 +4534,18 @@ func lowPrependWinVarDefaults(winName: string, winType: int, fnNameIdx: int) {
     fIdx = findIRFuncIdxByName(fnNameIdx)
     irStmtListAppend(defsTail, irFuncBodyHead(fIdx))
     irFuncSetBodyHead(fIdx, defsHead)
+    // ARC Task 4: lowWinVarDefaultsStmts (via lowCountedStore) can mint a
+    // materialization temp through lowAddLocal, which only APPENDS to the
+    // shared lowLocalsHead/lowLocalsTail globals -- if the handler body
+    // above declared no `var`s of its own, lowHandlerFunc already froze
+    // localsHead=-1 into fIdx's IRFunc record before this function ever
+    // ran, so a temp minted here would otherwise never reach cpEmitFunc's
+    // C declaration walk at all (reviewer's exact repro: `bodyText =
+    // Body.text` inside a locals-free `on opened` handler emitted
+    // `rt_text_release(cv___store2);` with no matching declaration --
+    // caught by the m68k compile-check gate, not the corpus). Re-sync
+    // unconditionally; a harmless no-op when nothing new was minted.
+    irFuncSetLocalsHead(fIdx, lowLocalsHead)
 }
 
 // lowWindowHandlerEntry lowers one DkHandler child of `extend Win { ... }`
@@ -4393,6 +4853,26 @@ func lowSynthesizeMissingOpenedHandlers() {
             continue
         }
         lowCurWinType = winType
+        // ARC Task 4: reset the shared locals-accumulation globals for THIS
+        // window's own synthesized function, same as lowHandlerFunc/
+        // lowFuncBody already do at the start of every real function --
+        // lowWinVarDefaultsStmts (via lowCountedStore) can now mint a
+        // materialization temp through lowAddLocal (a non-fresh window-var
+        // default, e.g. `var note: text = "hi"`), and this loop iterates
+        // MULTIPLE windows without ever having needed a fresh locals chain
+        // per window before this task -- without the reset, one window's
+        // synthesized-opened temp silently accumulates onto (and gets
+        // mis-attributed to) another's, or -- since newIRFunc was always
+        // hardcoded to localsHead=-1 just below -- is orphaned from every
+        // function's C declaration walk entirely (reviewer's exact repro:
+        // TextWin's synthesized `note = "hi"` default used `cv___store3`
+        // with no declaration in clar_fn_ui_TextWin_opened, while
+        // NoteWin's unrelated, explicit-handler `on opened` -- a
+        // DIFFERENT, already-correct code path, lowPrependWinVarDefaults --
+        // ended up declaring it anyway, since the shared globals still
+        // pointed at the same never-reset chain).
+        lowLocalsHead = -1
+        lowLocalsTail = -1
         ctorHead = -1
         if needsCtor {
             ctorHead = newIRExprStmt(newIRIntr(IUiStateDefaults(), lowWinInstRef(), irUiStateType(typeNameIdx(winType))))
@@ -4421,7 +4901,10 @@ func lowSynthesizeMissingOpenedHandlers() {
         }
         instLoc = newIRLocal(intern("window"), irWinRefType(typeNameIdx(winType)))
         fnNameIdx = intern("ui_" + winName + "_opened")
-        newIRFunc(fnNameIdx, instLoc, irVoidT, -1, stmtsHead)
+        // lowLocalsHead (NOT a hardcoded -1): any materialization temp
+        // lowWinVarDefaultsStmts minted above for THIS window must reach
+        // this function's own C declaration walk.
+        newIRFunc(fnNameIdx, instLoc, irVoidT, lowLocalsHead, stmtsHead)
         irWinHandlersSetOpenedFn(whIdx, fnNameIdx)
     }
 }

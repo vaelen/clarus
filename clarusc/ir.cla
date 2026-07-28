@@ -1316,6 +1316,20 @@ func irFuncSetBodyHead(i: int, bodyHead: int) {
     irFuncs[i].bodyHead = bodyHead
 }
 
+// irFuncSetLocalsHead overwrites an already-constructed IRFunc's locals
+// chain (ARC Task 4: lowPrependWinVarDefaults's own lowWinVarDefaultsStmts
+// call can now mint a NEW local -- lowCountedStore's materialization temp,
+// via lowNewStoreTemp/lowAddLocal -- AFTER lowHandlerFunc has already
+// frozen the handler's localsHead into its IRFunc record; if that handler
+// body declared no `var`s of its own, lowLocalsHead was still -1 at freeze
+// time, so the newly-minted temp is otherwise orphaned from the function's
+// own C declaration walk -- cpEmitFunc would never see it, emitting a use
+// of an undeclared C variable. Same fix shape as irFuncSetBodyHead just
+// above.
+func irFuncSetLocalsHead(i: int, localsHead: int) {
+    irFuncs[i].localsHead = localsHead
+}
+
 // findIRFuncIdxByName returns irFuncs' arena index for the func whose name
 // (an interned pool index, as returned by lowHandlerFunc/lowFuncDecl/etc.)
 // equals nameIdx, or -1 if none -- a linear scan, fine for the rare,
