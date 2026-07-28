@@ -260,6 +260,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   build-mac.sh to emit real per-popup `'MENU'` resources (enum labels are
   compile-time constants) so the CDEF's `initCntl` `GetMenu` succeeds;
   private-data poke alone verified non-functional on 7.1.
+- **Popup label-lane latent bug (found alongside mac-target-4d Task 9's
+  field fix, not itself fixed):** `rt_ui_popup_box` and the popup draw
+  branch (`rt_ui.c`) still use the raw, unclamped `RTUI_FIELD_LABEL_W`; a
+  `popup` with a `label:` and a declared `width:` under ~90px would
+  reproduce the exact zero-width, unclickable-box collision the field fix
+  resolved. No current fixture declares one. Fix: route both call sites
+  through `rt_ui_field_label_lane` the same way the field ones now do.
 
 ## Process conventions that worked (for future sessions)
 
