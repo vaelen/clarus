@@ -117,6 +117,12 @@ static void clar_init_globals(void) {
     cv_byName = rt_map_new(sizeof(clar_rec_Bookmark));
 }
 
+static void cl_free_globals(void) {
+rt_list_free(cv_bookmarks);
+rt_map_free(cv_byName);
+
+}
+
 static void clar_fn_handler_App_startEmpty(void);
 static void clar_fn_ui_Main_Add_click(void * cv_window);
 static void clar_fn_ui_Main_Marks_doubleClick(void * cv_window, int32_t cv_i);
@@ -211,6 +217,7 @@ static const rt_ui_window_desc *clar_ui_windows[] = {
 
 int main(int argc, char **argv) {
     clar_init_globals();
+    rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     rt_ui_startup(clar_ui_windows, 2, 0, 0, 0, 0, 0, 0);
     rt_ui_launch(0, clar_fn_handler_App_startEmpty);

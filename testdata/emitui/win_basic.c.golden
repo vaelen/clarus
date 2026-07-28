@@ -41,6 +41,10 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 static void clar_init_globals(void) {
 }
 
+static void cl_free_globals(void) {
+
+}
+
 static void clar_fn_handler_App_launch(void);
 
 static void clar_fn_handler_App_launch(void) {
@@ -80,6 +84,7 @@ static const rt_ui_window_desc *clar_ui_windows[] = {
 
 int main(int argc, char **argv) {
     clar_init_globals();
+    rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     rt_ui_startup(clar_ui_windows, 1, 0, 0, 0, 0, 0, 0);
     clar_fn_handler_App_launch();

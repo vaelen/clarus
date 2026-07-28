@@ -64,6 +64,12 @@ static void clar_init_globals(void) {
     cv_byName = rt_map_new(sizeof(clar_rec_Bookmark));
 }
 
+static void cl_free_globals(void) {
+rt_list_free(cv_many);
+rt_map_free(cv_byName);
+
+}
+
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
@@ -95,6 +101,7 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
 
 int main(int argc, char **argv) {
     clar_init_globals();
+    rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     clar_fn_handler_App_startCLI(rt_args_list());
     return 0;

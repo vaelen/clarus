@@ -89,6 +89,10 @@ void rt_map_free(rt_map *m);
 /* one-slot at-exit/quit hook; emitted main registers cl_free_globals */
 void rt_register_cleanup(void (*fn)(void));
 void rt_run_cleanup(void);
+/* marks a list's two ledger blocks (struct box + data Handle) as a
+   deliberate process-lifetime allocation -- e.g. rt_args_list's cached
+   result -- so the host leak ledger doesn't flag it. No-op on Mac. */
+void rt_list_note(rt_list *l, const char *why);
 
 /* ---- added by the C printer (Task 8) ---- */
 

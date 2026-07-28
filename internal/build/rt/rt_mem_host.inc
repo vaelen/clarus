@@ -390,8 +390,20 @@ void rt_mem_note_(void *block, const char *why)
 
     (void)why;
     if (block == NULL) return;
-    b = (rt_mem_block *)block;
-    b->noted = 1;
+    /* Unlike DisposeHandle/DisposePtr (each hard-wired to one identity
+       scheme by the caller's declared type), this single void* entry point
+       must accept either: a Handle's identity IS &b->p (recoverable by a
+       direct cast, since p is the record's first member), but a Ptr's
+       identity is the bare payload b->p itself -- a linear scan comparing
+       against whichever identity each block actually uses (mirroring
+       DisposePtr's own lookup for the is_ptr case) is the only shape that
+       works for both. */
+    for (b = rt_mem_blocks; b != NULL; b = b->next) {
+        if (b->is_ptr ? (b->p == (Ptr)block) : ((void *)b == block)) {
+            b->noted = 1;
+            return;
+        }
+    }
 }
 
 long rt_mem_live_count(void)

@@ -735,6 +735,15 @@ void rt_list_free(rt_list *l)
     DisposePtr((Ptr)l);
 }
 
+/* Not static: rt_mac.c includes this same core file but never calls this
+   (Mac programs don't use rt_args_list); a static definition would then
+   warn as an unused function there. */
+void rt_list_note(rt_list *l, const char *why)
+{
+    rt_mem_note((Ptr)l, why);
+    rt_mem_note(l->data, why);
+}
+
 void rt_map_free(rt_map *m)
 {
     if (!m) return;

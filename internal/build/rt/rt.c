@@ -73,6 +73,7 @@ rt_list *rt_args_list(void) {
             arg[0] = (uint8_t)n;
             rt_list_push(g_args_list, arg);
         }
+        rt_list_note(g_args_list, "rt_args_list: process-lifetime argv snapshot"); /* ponytail: never freed by cl_free_globals -- not a program global, exempt by design */
     }
     return g_args_list;
 }

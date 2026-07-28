@@ -17,6 +17,10 @@ const rt_ui_app_desc rt_ui_app_info = { (const unsigned char *)"\pCountLines", (
 static void clar_init_globals(void) {
 }
 
+static void cl_free_globals(void) {
+
+}
+
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
@@ -25,6 +29,7 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
 
 int main(int argc, char **argv) {
     clar_init_globals();
+    rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     clar_fn_handler_App_startCLI(rt_args_list());
     return 0;

@@ -1479,6 +1479,67 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     }
 }
 
+// cpEmitFree appends to dst the free statement(s) that release cexpr's (an
+// lvalue C expression) storage per IR type t -- the shallow-plus rule
+// (memory-audit spec, Task 5): KText frees its own buffer; KList/KMap free
+// their own handle, plus -- only when the element/value type is itself
+// KText -- a loop freeing each element's text handle first (an element type
+// that is itself KList/KMap is left alone: shallow only, matching Ch3
+// reference semantics, until ARC); KArr/KRec recurse into exactly the slots
+// cpDefaultInit constructs (mirroring its KArr/KRec branches above, so free
+// walks precisely what init built); every other kind emits nothing. A
+// reusable helper -- called here for globals, and again by later tasks for
+// function-local and record-field disposal.
+func cpEmitFree(dst: text, cexpr: string, t: int) {
+    var k: IRKind
+    var et: int
+    var f: int
+    var ix: string
+    var ri: int
+
+    k = irtKind(t)
+    if k == KText {
+        cpAppendLine(dst, "rt_text_free(" + cexpr + ");")
+    } else if k == KList {
+        et = irtElem(t)
+        if irtKind(et) == KText {
+            cpAppendLine(dst, "{ int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_free(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
+        }
+        cpAppendLine(dst, "rt_list_free(" + cexpr + ");")
+    } else if k == KMap {
+        et = irtElem(t)
+        if irtKind(et) == KText {
+            cpAppendLine(dst, "{ int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_free(v); } }")
+        }
+        cpAppendLine(dst, "rt_map_free(" + cexpr + ");")
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            cpLoopN = cpLoopN + 1
+            ix = "ix" + numToStr(cpLoopN)
+            cpAppendLine(dst, "for (int32_t " + ix + " = 0; " + ix + " < " + numToStr(irtN(t)) + "; " + ix + "++) {")
+            cpEmitFree(dst, cexpr + ".e[" + ix + "]", et)
+            cpAppendLine(dst, "}")
+        }
+    } else if k == KRec {
+        ri = 0
+        while ri < irRecords.count {
+            if irRecordLayoutName(ri) == irtName(t) {
+                f = irRecordLayoutFieldsHead(ri)
+                while f != -1 {
+                    if irtNeedsCtor(irFieldSlotType(f)) {
+                        cpEmitFree(dst, cexpr + ".cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+                    }
+                    f = irFieldSlotNext(f)
+                }
+                ri = irRecords.count
+            } else {
+                ri = ri + 1
+            }
+        }
+    }
+}
+
 // cpZeroLiteral renders a type-correct placeholder value for t, for the
 // unreachable trailing return cpEmitFunc appends after a non-void body
 // (types.go's zeroLiteral).
@@ -1551,6 +1612,17 @@ func cpEmitFunc(f: int) {
     }
     cpRestBuf.add(toText("}"))
     cpRestBuf.add(toText(""))
+    // Harvesting above copies each line's `text` HANDLE into cpRestBuf (Ch3:
+    // text is a reference), not its bytes -- fpBody still points at those
+    // same handles until the NEXT cpEmitFunc call's fpReset clears it. For
+    // every function but the last one that's harmless (the next call's
+    // fpReset runs before fpBody is read again); for the LAST function
+    // compiled, nothing else ever clears fpBody, so cv_fpBody and
+    // cv_cpRestBuf would both still reference those handles at program
+    // exit -- cl_free_globals (memory-audit Task 5) would then double-free
+    // them. Clearing here (not disposing -- cpRestBuf now owns them) closes
+    // that gap unconditionally rather than relying on being non-last.
+    fpReset(fpIndent)
 }
 
 // cpEmitFuncs prints every prototype up front, then every definition
@@ -1622,6 +1694,11 @@ func cpEmitRecords() {
         cpRecBuf.add(toText("    return r;"))
         cpRecBuf.add(toText("}"))
         cpRecBuf.add(toText(""))
+        // See cpEmitFunc's matching comment: harvesting shares fpBody's text
+        // handles into cpRecBuf by reference; clear fpBody so a program
+        // whose LAST harvest happens to be a record ctor (no functions
+        // follow) doesn't leave cv_fpBody aliasing cv_cpRecBuf at exit.
+        fpReset(1)
         i = i + 1
     }
 }
@@ -2806,13 +2883,25 @@ func cpEmitUiWiring() {
 // emitGlobalsAndInit. Globals can't be given real C initializers at file
 // scope: several of their defaults (clar_new_NAME, rt_list_new, ...) are
 // function calls, and C requires file-scope initializers to be constant
-// expressions.
+// expressions. Right after clar_init_globals, also emits cl_free_globals
+// (memory-audit Task 5): the destructor mirror of the init loop above,
+// walking the same irGlobals arena and calling cpEmitFree per global --
+// EXCEPT a global whose Init expression is a bare reference to another
+// global (`var alias: text = g`): Ch3 assigns that global the SAME handle,
+// so freeing both would double-free one block; freeing the one it was
+// aliased FROM (which every alias ultimately chains back to, since a
+// global's own storage is never itself an alias target before it exists)
+// already covers it. Literal/constructor/concat inits are always a fresh
+// handle, so only this one narrow shape needs the guard.
 func cpEmitGlobalsInit() {
     var i: int
     var gt: int
     var initE: int
     var nm: string
     var j: int
+    var freeBuf: text
+    var aliasOfGlobal: bool
+    var fullReplace: bool
 
     i = 0
     while i < irGlobals.count {
@@ -2825,8 +2914,20 @@ func cpEmitGlobalsInit() {
     while i < irGlobals.count {
         gt = irGlobalType(i)
         nm = poolGet(irGlobalName(i))
-        cpDefaultInit(toText("cv_" + nm), gt, 0, -1)
         initE = irGlobalInit(i)
+        // A needs-ctor global (Text/List/Map/Rec/Arr) whose Init falls
+        // through to the plain `cv_x = fpExpr(initE);` replace below (every
+        // case except the KStr and Text<-Str special-cases, which store
+        // INTO the default-built handle rather than replacing it) would
+        // have cpDefaultInit's fresh handle immediately discarded and
+        // orphaned -- a leak cl_free_globals can never reach, since nothing
+        // still points to it once overwritten. Skip building it: the bare
+        // `static` C global is already zero/NULL, a safe placeholder for
+        // the one instant before the real assignment runs right after.
+        fullReplace = initE != -1 and irtNeedsCtor(gt) and not (irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr)
+        if not fullReplace {
+            cpDefaultInit(toText("cv_" + nm), gt, 0, -1)
+        }
         if initE != -1 {
             if irtKind(gt) == KStr {
                 fpStoreStr(newIRVarRef(irGlobalName(i), true, gt), initE)
@@ -2850,6 +2951,32 @@ func cpEmitGlobalsInit() {
         cpRestBuf.add(fpBody[j])
         j = j + 1
     }
+    cpRestBuf.add(toText("}"))
+    cpRestBuf.add(toText(""))
+    // See cpEmitFunc's matching comment: clear fpBody so a program with no
+    // functions at all (globals-init is the last fpBody harvest) doesn't
+    // leave cv_fpBody aliasing cv_cpRestBuf's just-copied handles at exit.
+    fpReset(1)
+
+    freeBuf = ""
+    i = 0
+    while i < irGlobals.count {
+        gt = irGlobalType(i)
+        nm = poolGet(irGlobalName(i))
+        initE = irGlobalInit(i)
+        aliasOfGlobal = false
+        if initE != -1 and irExprKind(initE) == EVarRef and irVarRefGlobal(initE) {
+            if irtKind(gt) == KText or irtKind(gt) == KList or irtKind(gt) == KMap {
+                aliasOfGlobal = true
+            }
+        }
+        if not aliasOfGlobal {
+            cpEmitFree(freeBuf, "cv_" + nm, gt)
+        }
+        i = i + 1
+    }
+    cpRestBuf.add(toText("static void cl_free_globals(void) {"))
+    cpRestBuf.add(freeBuf)
     cpRestBuf.add(toText("}"))
     cpRestBuf.add(toText(""))
 }
@@ -2975,6 +3102,7 @@ func cpEmitUiMain() {
 
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
+    cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
     cpRestBuf.add(toText("    rt_ui_startup(" + winsExpr + ", " + winsCount + ", " + menusExpr + ", " + menusCount + ", " + mhExpr + ", " + mhCount + ", " + evExpr + ", " + evCount + ");"))
     if irHasLaunch {
@@ -2998,6 +3126,7 @@ func cpEmitMain() {
     }
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
+    cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
     if irHasLaunch {
         cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))

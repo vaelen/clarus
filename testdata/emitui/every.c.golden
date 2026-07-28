@@ -39,6 +39,10 @@ static void clar_init_globals(void) {
     cv_ticks = 0;
 }
 
+static void cl_free_globals(void) {
+
+}
+
 static void clar_fn_ui_every_0(void);
 static void clar_fn_ui_every_1(void);
 static void clar_fn_ui_Game_opened(void * cv_window);
@@ -84,6 +88,7 @@ static const rt_ui_window_desc *clar_ui_windows[] = {
 
 int main(int argc, char **argv) {
     clar_init_globals();
+    rt_register_cleanup(cl_free_globals);
     rt_args_init(argc, argv);
     rt_ui_startup(clar_ui_windows, 1, 0, 0, 0, 0, clar_ui_every, 2);
     rt_ui_launch(0, 0);
