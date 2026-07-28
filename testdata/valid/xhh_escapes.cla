@@ -1,0 +1,18 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// \xHH escapes: exactly two hex digits, case-insensitive, no C-style
+// maximal munch. See docs/clarus-language-reference.md Chapter 3.
+
+const Lower: char = '\x41'   // 'A' via lowercase-digit hex
+const Upper: char = '\xC9'   // ellipsis glyph via uppercase-digit hex
+
+// Embedded \x00 and \xff bytes, plus adjacent-hex-after-escape: "\x41B"
+// must decode as byte 0x41 followed by the literal character 'B', never
+// read as a three-digit escape.
+const Bytes: string = "\x00mid\xff"
+const NoMunch: string = "\x41B"
+
+func f(): int {
+    return int(Lower) + int(Upper) + Bytes.length + NoMunch.length
+}

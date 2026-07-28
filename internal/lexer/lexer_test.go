@@ -283,6 +283,75 @@ func TestIdentifierLengthCap(t *testing.T) {
 	}
 }
 
+// TestHexEscapes pins \xHH semantics to clarusc's lexDecodeEscape: exactly
+// two hex digits, case-insensitive, no maximal munch.
+func TestHexEscapes(t *testing.T) {
+	l := New(&source.File{Name: "t.cla", Content: []byte(
+		`x = '\x41'` + "\n" + `y = '\xc9'` + "\n" + `z = '\xC9'` + "\n" + `s = "A\x42C"` + "\n")})
+	var toks []token.Token
+	for {
+		tk := l.Next()
+		toks = append(toks, tk)
+		if tk.Kind == token.EOF {
+			break
+		}
+	}
+	if ds := l.Diags(); len(ds) != 0 {
+		t.Fatalf("want no diags, got %v", ds)
+	}
+	// x = '\x41'
+	if toks[2].Kind != token.CHARLIT || toks[2].IntVal != 65 {
+		t.Errorf(`'\x41': got %v %d, want CHARLIT 65`, toks[2].Kind, toks[2].IntVal)
+	}
+	// y = '\xc9' (lowercase hex digits)
+	if toks[6].Kind != token.CHARLIT || toks[6].IntVal != 201 {
+		t.Errorf(`'\xc9': got %v %d, want CHARLIT 201`, toks[6].Kind, toks[6].IntVal)
+	}
+	// z = '\xC9' (uppercase hex digits)
+	if toks[10].Kind != token.CHARLIT || toks[10].IntVal != 201 {
+		t.Errorf(`'\xC9': got %v %d, want CHARLIT 201`, toks[10].Kind, toks[10].IntVal)
+	}
+	// s = "A\x42C" -> "ABC"
+	if toks[14].Kind != token.STRINGLIT || toks[14].Text != "ABC" {
+		t.Errorf(`"A\x42C": got %v %q, want STRINGLIT "ABC"`, toks[14].Kind, toks[14].Text)
+	}
+}
+
+// TestHexEscapeInvalid covers the no-maximal-munch failure paths: a single
+// trailing hex digit or a non-hex digit does NOT get partially decoded --
+// the whole thing falls through to the existing invalid-escape diagnostics.
+func TestHexEscapeInvalid(t *testing.T) {
+	// Char-literal path: same diagnostic as any other bad escape.
+	for _, src := range []string{
+		`x = '\xZ9'` + "\n", // second char not hex at all
+		`x = '\x4'` + "\n",  // single trailing digit, then closing quote
+		`x = '\x'` + "\n",   // nothing after \x
+	} {
+		diags := diagsFor(src)
+		if len(diags) != 1 || diags[0].Msg != "invalid escape sequence" {
+			t.Errorf("%q: got diags %v, want exactly one %q", src, diags, "invalid escape sequence")
+		}
+	}
+
+	// String path: existing bad-escape behavior (unchanged). decodeEscape
+	// consumes only the 'x' and reports false (same as any other
+	// unrecognized escape char), so lexString bails with "unterminated
+	// string literal" -- and since it doesn't resync like the char-literal
+	// path, the unconsumed "ZZC\"" tail re-lexes as a second string
+	// literal that also runs off the end of the line, hence two diags.
+	// This is pre-existing behavior, unaffected by \xHH support -- do not
+	// change it.
+	diags := diagsFor(`s = "A\xZZC"` + "\n")
+	if len(diags) != 2 {
+		t.Fatalf(`"A\xZZC": got diags %v, want exactly two`, diags)
+	}
+	for _, d := range diags {
+		if d.Msg != "unterminated string literal" {
+			t.Errorf(`"A\xZZC": got diag %q, want "unterminated string literal"`, d.Msg)
+		}
+	}
+}
+
 func TestStringLiteralLengthCap(t *testing.T) {
 	long := strings.Repeat("x", 256)
 	l := New(&source.File{Name: "t.cla", Content: []byte(`var s: string = "` + long + `"` + "\n")})

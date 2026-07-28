@@ -255,6 +255,17 @@ func (l *Lexer) decodeEscape(quote byte) (byte, bool) {
 		if quote == '\'' {
 			return '\'', true
 		}
+	case 'x':
+		// \xHH: exactly two hex digits, case-insensitive — byte-for-byte
+		// the semantics of clarusc's lexDecodeEscape (no C-style maximal
+		// munch). Backported 2026-07-28 as a deliberate one-feature
+		// exception to the freeze (see ROADMAP) so the differential
+		// corpus and reference fences cover the full language again.
+		if l.off+1 < len(l.f.Content) && isHex(l.f.Content[l.off]) && isHex(l.f.Content[l.off+1]) {
+			v := byte(hexDigit(l.f.Content[l.off])*16 + hexDigit(l.f.Content[l.off+1]))
+			l.off += 2
+			return v, true
+		}
 	}
 	return 0, false
 }
