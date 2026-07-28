@@ -98,9 +98,26 @@ var fpBody: list of text
 var fpTmpN: int
 var fpIndent: int
 
+// fpStmtTmps names the rt_text* temps fpNewTmp has created since the
+// current fpStmt began (memory-audit Task 6) -- fpStmt save/swaps this
+// module list around each (re-entrant) statement it prints, the same
+// pattern fpCaptureExpr (:404) uses for fpBody, so a nested statement
+// (SIf/SWhile/... body, via fpStmts) tracks and frees its OWN temps without
+// disturbing the enclosing statement's list. fpCaptureExpr itself does NOT
+// swap this list (unlike fpBody): fpAndOr (:428) instead marks fpStmtTmps'
+// count before capturing and frees/untracks anything past that mark itself,
+// from INSIDE the `if` block it generates, before that block closes -- a
+// temp born there is declared inside that same block (fpNewTmp still emits
+// via fpEmit, into whatever fpBody currently is), so it must not be
+// referenced (by a deferred free) after the block's closing brace.
+var fpStmtTmps: list of text
+
 func fpReset(indent: int) {
     while fpBody.count > 0 {
         fpBody.pop()
+    }
+    while fpStmtTmps.count > 0 {
+        fpStmtTmps.pop()
     }
     fpTmpN = 0
     fpIndent = indent
@@ -129,13 +146,66 @@ func fpEmit(line: text) {
 // its name (funcprint.go's newTmp). The counter is monotonic within a
 // function and never reset mid-function -- load-bearing for later bootstrap
 // determinism.
+//
+// A `rt_text *` temp is special-cased (memory-audit Task 6): NULL-initialized
+// (rt_text_free is NULL-safe, rt_core.inc -- load-bearing for a temp born
+// inside an `and`/`or`'s conditionally-executed captured branch, fpAndOr
+// :428, whose construction can be skipped by short-circuiting) and tracked
+// in fpStmtTmps for a later free (fpStmt's end-of-statement flush, or
+// fpAndOr's own in-block flush for a captured-branch temp).
 func fpNewTmp(ctype: string): text {
     var name: text
 
     fpTmpN = fpTmpN + 1
     name = "t" + numToStr(fpTmpN)
-    fpEmit(ctype + " " + name + ";")
+    if ctype == "rt_text *" {
+        fpEmit(ctype + " " + name + " = NULL;")
+        fpStmtTmps.add(name)
+    } else {
+        fpEmit(ctype + " " + name + ";")
+    }
     return name
+}
+
+// fpHandoff marks a tracked text temp as having escaped the current
+// statement -- its ownership moved into a variable, a return value, a
+// list/map element, or a callee that may retain it -- so fpStmt's
+// end-of-statement free must skip it (memory-audit Task 6). A no-op unless
+// cexpr is EXACTLY a name currently in fpStmtTmps: a temp's own bare name is
+// only ever printed as itself (fpTextConcat et al. return the raw temp
+// name), so an exact match can only mean "this IS that temp," never an
+// expression that merely mentions it.
+func fpHandoff(cexpr: text) {
+    var i: int
+
+    i = 0
+    while i < fpStmtTmps.count {
+        if fpStmtTmps[i] == cexpr {
+            fpStmtTmps.remove(i)
+            return
+        }
+        i = i + 1
+    }
+}
+
+// fpFreeStmtTmps emits `rt_text_free(tN);` for every name still in
+// fpStmtTmps and empties the list (memory-audit Task 6). Called at the tail
+// of fpStmt (the common case: temps live for the whole statement) and, by
+// fpWhileStmt, right after the per-iteration condition check (a text temp a
+// while-condition creates is rebuilt fresh every iteration -- see
+// fpWhileStmt's own comment -- so it must be freed there, not hoisted out
+// past the loop).
+func fpFreeStmtTmps() {
+    var i: int
+
+    i = 0
+    while i < fpStmtTmps.count {
+        fpEmit("rt_text_free(" + fpStmtTmps[i] + ");")
+        i = i + 1
+    }
+    while fpStmtTmps.count > 0 {
+        fpStmtTmps.pop()
+    }
 }
 
 // ================================================================
@@ -306,25 +376,57 @@ func fpExpr(e: int): text {
     return toText("")
 }
 
+// fpIsHandleType reports whether t is a reference-semantics (handle-backed)
+// type -- Text, List, or Map (memory-audit Task 6).
+func fpIsHandleType(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    return k == KText or k == KList or k == KMap
+}
+
 // fpCallFn renders a user function call `clar_fn_NAME(args...)` (funcprint.go's
 // callFn). Args were already coerced against the callee's param types at lower
 // time (lowCallArgs); each is printed left-to-right so any temp an arg needs
 // lands in evaluation order.
+//
+// An argument whose param type is a handle type (text/list/map) is handed
+// off (memory-audit Task 6): the callee may retain the handle (store it in a
+// global, a field, ...) past the call's return, and there is no escape
+// analysis here to prove otherwise, so freeing the caller's temp afterward
+// would risk a use-after-free. Conservative: a callee that does NOT retain
+// it leaks that allocation instead -- the safe side of the tradeoff.
 func fpCallFn(e: int): text {
     var args: text
     var a: int
     var first: bool
+    var f: int
+    var p: int
+    var argText: text
 
     args = ""
     first = true
     a = irCallFnArgsHead(e)
+    f = findIRFuncIdxByName(irCallFnName(e))
+    if f != -1 {
+        p = irFuncParamsHead(f)
+    } else {
+        p = -1
+    }
     while a != -1 {
         if not first {
             args = args + ", "
         }
         first = false
-        args = args + fpExpr(a)
+        argText = fpExpr(a)
+        if p != -1 and fpIsHandleType(irLocalType(p)) {
+            fpHandoff(argText)
+        }
+        args = args + argText
         a = irExprNext(a)
+        if p != -1 {
+            p = irLocalNext(p)
+        }
     }
     return "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
 }
@@ -425,6 +527,19 @@ func fpCaptureExpr(e: int): FpCapture {
 // statements, they're moved inside an `if`, guarded by the already-
 // evaluated left operand, so they run only when short-circuiting wouldn't
 // skip them.
+//
+// memory-audit Task 6: a text temp the captured right operand creates is
+// declared (via fpNewTmp, inside cap.stmts) INSIDE the `if` block below, so
+// it must be freed there too, before the block closes -- fpStmt's generic
+// end-of-statement free runs after this whole expression (and the `if`
+// statement it's a condition of) is long done, which would reference an
+// identifier out of scope. markCount notes fpStmtTmps' depth before the
+// capture (excluding x's own temps, already at the enclosing scope and safe
+// to defer); anything past that mark once the capture returns was created
+// during it and is freed here, from innermost/last-created outward, so a
+// nested `and`/`or` (recursing into fpAndOr again during the very same
+// capture) has already flushed its own deeper temps by the time this level
+// checks its own mark.
 func fpAndOr(e: int): text {
     var x: text
     var op: string
@@ -432,9 +547,11 @@ func fpAndOr(e: int): text {
     var t: text
     var cond: text
     var i: int
+    var markCount: int
 
     x = fpExpr(irBinX(e))
     op = poolGet(irBinOp(e))
+    markCount = fpStmtTmps.count
     cap = fpCaptureExpr(irBinY(e))
     if cap.stmts.count == 0 {
         return "(" + x + " " + cOp(op) + " " + cap.value + ")"
@@ -454,6 +571,10 @@ func fpAndOr(e: int): text {
         i = i + 1
     }
     fpEmit(t + " = " + cap.value + ";")
+    while fpStmtTmps.count > markCount {
+        fpEmit("rt_text_free(" + fpStmtTmps[fpStmtTmps.count - 1] + ");")
+        fpStmtTmps.pop()
+    }
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))
     return t
@@ -557,6 +678,12 @@ func fpCopyToTemp(e: int): text {
     var t: text
 
     v = fpExpr(e)
+    // If evaluating e itself produced a tracked text temp (e.g. e is a
+    // concat), `t = v;` below is a pointer copy, not a fresh allocation
+    // (Ch3: text has reference semantics) -- v and t now alias the SAME
+    // object. Untrack v here so only t (below) represents that object going
+    // forward; the caller decides t's fate (memory-audit Task 6).
+    fpHandoff(v)
     t = fpNewTmp(cpCType(irExprType(e)))
     fpEmit(t + " = " + v + ";")
     return t
@@ -818,6 +945,10 @@ func fpIntrCall(x: int): text {
         // own memmove reads it.
         l = fpExpr(a0)
         v = fpCopyToTemp(a1)
+        // v is stored into the list (a text v's handle now lives on, owned
+        // by the list) -- untrack it so it isn't freed at end of statement
+        // (memory-audit Task 6; a no-op if v isn't text).
+        fpHandoff(v)
         fn = "rt_list_push"
         if nm == IListUnshift() {
             fn = "rt_list_unshift"
@@ -836,6 +967,16 @@ func fpIntrCall(x: int): text {
             fn = "rt_list_last"
         }
         fpEmit(fn + "(" + l + ", &" + t + ");")
+        // memory-audit Task 6: this copies the ELEMENT'S bytes (a text
+        // element's bytes ARE its handle -- Ch3 reference semantics) out of
+        // l's backing store into t. first/last don't even remove it from l
+        // -- t and l's own slot alias the SAME object. pop/shift do remove
+        // l's slot, but l is never the only other reference: the element
+        // could have been pushed into ANOTHER container earlier (aliased
+        // there too), which this purely statement-local tracking has no way
+        // to see. Never auto-free t -- untrack it unconditionally, same as
+        // any other "the caller must reason about this" handle.
+        fpHandoff(t)
         return t
     } else if nm == IListRemove() {
         fpEmit("rt_list_remove(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
@@ -856,6 +997,9 @@ func fpIntrCall(x: int): text {
         m = fpExpr(a0)
         k = fpStrAddr(a1)
         v = fpCopyToTemp(a2)
+        // v is stored into the map -- same handoff reasoning as
+        // IListPush/IListUnshift above (memory-audit Task 6).
+        fpHandoff(v)
         fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
         return toText("")
     } else if nm == IMapGet() {
@@ -863,14 +1007,22 @@ func fpIntrCall(x: int): text {
         k = fpStrAddr(a1)
         t = fpNewTmp(cpCType(irExprType(x)))
         fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+        // memory-audit Task 6: aliases m's own stored value (same reasoning
+        // as IListFirst/IListLast above) -- never auto-free.
+        fpHandoff(t)
         return t
     } else if nm == IMapGetDv() {
         m = fpExpr(a0)
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
+        fpHandoff(dv) // dv's own temp (if any) is about to alias into t
         t = fpNewTmp(cpCType(irExprType(x)))
         fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
         fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+        // Whether t ends up holding dv (key absent) or m's own stored value
+        // (key present), both are aliases outside this statement's
+        // ownership -- never auto-free (same as IMapGet above).
+        fpHandoff(t)
         return t
     } else if nm == IMapHas() {
         return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
@@ -1177,10 +1329,28 @@ func fpStoreStr(dst: int, src: int) {
     fpEmit("rt_str_store((uint8_t*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
 }
 
+// fpStmt is the per-statement printing funnel (funcprint.go's stmt) --
+// re-entrant: SIf/SWhile/SForRange/SForList/SForMap recurse into fpStmts for
+// their bodies, which calls back into fpStmt per inner statement.
+//
+// memory-audit Task 6: fpStmtTmps is save/swapped around the whole call,
+// mirroring fpCaptureExpr's fpBody swap (:404) -- a fresh (empty) list
+// tracks only the text temps THIS statement's own printing creates, so a
+// nested statement's own fpStmt frame tracks and frees its own temps
+// independently. Any name still tracked when this statement is done
+// (nothing handed it off to a variable/return/container/callee) is freed at
+// the tail, after the statement's own C code -- see fpFreeStmtTmps.
 func fpStmt(s: int) {
     var e: text
     var d: text
     var v: text
+    var saved: list of text
+    var fresh: list of text
+    var terminal: bool
+
+    saved = fpStmtTmps
+    fpStmtTmps = fresh
+    terminal = false
 
     if irStmtKind(s) == SExprStmt {
         e = fpExpr(irExprStmtX(s))
@@ -1192,6 +1362,11 @@ func fpStmt(s: int) {
     } else if irStmtKind(s) == SAssign {
         d = fpExpr(irAssignDst(s))
         v = fpExpr(irAssignSrc(s))
+        if irtKind(irExprType(irAssignDst(s))) == KText {
+            // A text temp assigned into a variable IS that variable's new
+            // value now -- handed off, not freed here.
+            fpHandoff(v)
+        }
         fpEmit(d + " = " + v + ";")
     } else if irStmtKind(s) == SStoreStr {
         fpStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
@@ -1200,20 +1375,38 @@ func fpStmt(s: int) {
     } else if irStmtKind(s) == SForRange {
         fpForRangeStmt(s)
     } else if irStmtKind(s) == SReturn {
+        terminal = true
         if irReturnX(s) == -1 {
+            fpFreeStmtTmps()
             fpEmit(toText("return;"))
         } else {
-            fpEmit("return " + fpExpr(irReturnX(s)) + ";")
+            e = fpExpr(irReturnX(s))
+            fpHandoff(e) // the returned value escapes to the caller
+            // A sub-expression that FED the returned value (e.g. a concat
+            // consumed by an outer concat) can still be tracked here and
+            // must be freed BEFORE the `return` -- anything emitted after
+            // an unconditional jump is unreachable C, never runs.
+            fpFreeStmtTmps()
+            fpEmit("return " + e + ";")
         }
     } else if irStmtKind(s) == SForList {
         fpForListStmt(s)
     } else if irStmtKind(s) == SForMap {
         fpForMapStmt(s)
     } else if irStmtKind(s) == SBreak {
+        terminal = true
+        fpFreeStmtTmps()
         fpEmit(toText("break;"))
     } else if irStmtKind(s) == SContinue {
+        terminal = true
+        fpFreeStmtTmps()
         fpEmit(toText("continue;"))
     }
+
+    if not terminal {
+        fpFreeStmtTmps()
+    }
+    fpStmtTmps = saved
 }
 
 // fpForListStmt lowers `for x in l { ... }` to an index loop over a count
@@ -1281,6 +1474,15 @@ func fpForMapStmt(s: int) {
 // may itself need statement-level temporaries (e.g. a string concat), which
 // must be recomputed every iteration, not hoisted out and reused stale --
 // funcprint.go's whileStmt.
+//
+// memory-audit Task 6: cond's own construction lands INSIDE this `while (1)`
+// block (not hoisted before it), so a text temp it creates is rebuilt fresh
+// every iteration -- freeing it only once, after the loop (fpStmt's usual
+// end-of-statement tail), would leak every iteration but the last. Nothing
+// hands off a condition value (it's read by a comparison/`!`, never stored),
+// so whatever fpExpr(cond) tracked is exactly the temps to free; flush them
+// here, right after the break check, once per iteration, before the body
+// (which tracks/frees its own temps independently via its own fpStmt calls).
 func fpWhileStmt(s: int) {
     var cond: text
 
@@ -1288,6 +1490,7 @@ func fpWhileStmt(s: int) {
     fpIndent = fpIndent + 1
     cond = fpExpr(irWhileCond(s))
     fpEmit("if (!(" + cond + ")) break;")
+    fpFreeStmtTmps()
     fpStmts(irWhileBody(s))
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))

@@ -93,15 +93,16 @@ static void clar_fn_ui_TextWin_Name_enter(void * cv_window) {
 }
 
 static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
-    rt_text * t1;
+    rt_text * t1 = NULL;
     t1 = rt_text_new();
     rt_ui_widget_get_text(cv_window, 1, t1);
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = t1;
     rt_ui_widget_set_text(cv_window, 1, ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
-    rt_text * t2;
+    rt_text * t2 = NULL;
     t2 = rt_text_new();
     rt_text_store(t2, (const uint8_t*)&(clar_lit_2));
     rt_ui_widget_set_text(cv_window, 1, t2);
+    rt_text_free(t2);
 }
 
 static void clar_fn_ui_NoteWin_opened(void * cv_window) {

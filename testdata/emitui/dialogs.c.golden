@@ -84,7 +84,7 @@ static void clar_fn_handler_App_launch(void) {
     rt_str_store((uint8_t*)&(cv_suggested), 255, (const uint8_t*)&(clar_lit_1));
     cv_ok = rt_ui_ask_save((uint8_t*)&(cv_p), (const uint8_t*)&(cv_suggested));
     if (cv_ok) {
-        rt_text * t2;
+        rt_text * t2 = NULL;
         t2 = rt_text_new();
         rt_ui_widget_get_text(cv_w, 1, t2);
         cv_t = t2;
