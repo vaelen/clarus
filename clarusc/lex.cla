@@ -397,6 +397,11 @@ func lexIdent(line: int, col: int): Token {
 // lexDecodeEscape decodes the escape sequence starting at lexOff (just past
 // the backslash), advancing past it. On success it stores the decoded byte
 // in lexEscByte and returns true.
+//
+// \xHH takes exactly two hex digits, no more, no fewer -- C-style maximal
+// munch is deliberately NOT copied, so \xHH is always self-delimiting inside
+// a literal (e.g. "\x41Z" is byte 0x41 followed by 'Z', never a three-digit
+// read).
 func lexDecodeEscape(quote: char): bool {
     var c: char
 
@@ -425,6 +430,14 @@ func lexDecodeEscape(quote: char): bool {
     case '\'' {
         if quote == '\'' {
             lexEscByte = '\''
+            return true
+        }
+    }
+    case 'x' {
+        if lexOff + 1 < lexSrc.length and isHex(lexSrc[lexOff]) and isHex(lexSrc[lexOff + 1]) {
+            lexEscByte = char(hexDigitVal(lexSrc[lexOff]) * 16 + hexDigitVal(lexSrc[lexOff + 1]))
+            lexAdvance()
+            lexAdvance()
             return true
         }
     }

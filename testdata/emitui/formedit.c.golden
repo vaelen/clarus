@@ -54,7 +54,7 @@ static const rt_ui_table_desc clar_ui_table_Main_Marks = { &cv_bookmarks, &clar_
 
 static const rt_ui_widget_desc clar_ui_widgets_Main[] = {
     { RTUI_TABLE, "Marks", 0, RTUI_AT_AUTO, 0, 0, RTUI_FILL, RTUI_FILL_NONE, 0, (const void *)&clar_ui_table_Main_Marks },
-    { RTUI_BUTTON, "Add", (const unsigned char *)"\pAdd…", RTUI_AT_XY, 10, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
+    { RTUI_BUTTON, "Add", (const unsigned char *)"\pAdd\342\200\246", RTUI_AT_XY, 10, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "Remove", (const unsigned char *)"\pRemove", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "EditCur", (const unsigned char *)"\pEdit Current", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
     { RTUI_BUTTON, "EditMap", (const unsigned char *)"\pEdit ByName", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },

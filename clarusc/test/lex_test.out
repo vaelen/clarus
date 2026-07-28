@@ -11,5 +11,25 @@ IDENT 2:1 y
 ASSIGN 2:3
 INT 2:5 0
 NEWLINE 2:7
-EOF 3:1
+IDENT 4:1 q
+ASSIGN 4:3
+CHARLIT 4:5 65
+NEWLINE 4:11
+IDENT 5:1 r
+ASSIGN 5:3
+CHARLIT 5:5 201
+NEWLINE 5:11
+IDENT 6:1 s
+ASSIGN 6:3
+STRINGLIT 6:5 ABC
+NEWLINE 6:13
+IDENT 7:1 t
+ASSIGN 7:3
+STRINGLIT 7:5 
+IDENT 7:8 ZZ
+STRINGLIT 7:10 
+NEWLINE 7:11
+EOF 7:11
 lex_test.cla:2:5: hex literal has no digits
+lex_test.cla:7:5: unterminated string literal
+lex_test.cla:7:10: unterminated string literal

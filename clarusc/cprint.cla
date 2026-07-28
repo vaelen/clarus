@@ -1836,10 +1836,22 @@ func cpBoolLit(b: bool): string {
     return "0"
 }
 
+// cpOctal3 renders v (0-255) as exactly three octal digits, for C string
+// escapes: \311 is self-delimiting where \xC9 would swallow a following
+// hex digit (C's \x is maximal-munch).
+func cpOctal3(v: int): string {
+    var d: string
+    d = numToStr(v mod 8)
+    d = numToStr((v / 8) mod 8) + d
+    d = numToStr(v / 64) + d
+    return d
+}
+
 // cpEscapeCStr escapes s for embedding inside a C double-quoted string
-// literal (backslash and doublequote only -- every caption/title/label this
-// task's fixtures or the language reference's own examples use is plain
-// ASCII text with neither).
+// literal: backslash and doublequote are backslash-escaped, and any byte
+// outside printable ASCII (e.g. a \xHH escape decoded from a Clarus source
+// literal, such as MacRoman accented text) is emitted as a 3-digit octal
+// escape rather than passed through raw.
 func cpEscapeCStr(s: string): string {
     var out: string
     var i: int
@@ -1853,6 +1865,8 @@ func cpEscapeCStr(s: string): string {
             out = out + "\\\""
         } else if c == '\\' {
             out = out + "\\\\"
+        } else if int(c) < 32 or int(c) > 126 {
+            out = out + "\\" + cpOctal3(int(c))
         } else {
             out = out + c
         }

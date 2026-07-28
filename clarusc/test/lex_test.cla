@@ -43,6 +43,24 @@ on App.startEmpty {
     src.append("y = 0x")
     src.append(char(10))
 
+    // \xHH escapes (ui-visual-fixes Task 1). Go's frozen lexer never sees
+    // these -- they are bytes inside this driver's src text, decoded by the
+    // clarusc lexer under test.
+    src.append(char(10))
+    src.append("q = '\\x41'")          // char literal, decoded byte 65
+    src.append(char(10))
+    src.append("r = '\\xc9'")          // lowercase hex, decoded byte 201
+    src.append(char(10))
+    src.append("s = ")
+    src.append('"')
+    src.append("A\\x42C")              // string literal -> ABC (keeps golden ASCII)
+    src.append('"')
+    src.append(char(10))
+    src.append("t = ")
+    src.append('"')
+    src.append("\\xZZ")                // bad escape -> diagnostic
+    src.append('"')
+
     n = lexAll(src)
 
     i = 0

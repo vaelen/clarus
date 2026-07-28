@@ -11,7 +11,7 @@ typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
 
 static const rt_ui_item_desc clar_ui_items_File[] = {
-    { "Open", (const unsigned char *)"\pOpen…", 'O', 0 },
+    { "Open", (const unsigned char *)"\pOpen\311", 'O', 0 },
 };
 
 static const rt_ui_menu_desc clar_ui_menu_File = {

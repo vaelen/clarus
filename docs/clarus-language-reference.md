@@ -131,8 +131,8 @@ This list is representative, not exhaustive: later chapters introduce further co
 |---|---|---|
 | Integer | `42`, `-7`, `0x1F` | 32-bit signed; hex with `0x` |
 | Fixed | `1.5`, `0.25` | 16.16 fixed-point (no float type) |
-| Character | `'A'`, `'\n'` | single Mac Roman character; same escapes as strings |
-| String | `"hello"` | escapes: `\"` `\\` `\n` `\t`; `\n` emits CR (13), the Mac newline. A string literal may be at most 255 bytes. |
+| Character | `'A'`, `'\n'`, `'\xC9'` | single Mac Roman character; same escapes as strings |
+| String | `"hello"` | escapes: `\"` `\\` `\n` `\t` `\xHH`; `\n` emits CR (13), the Mac newline; `\xHH` (exactly two hex digits, case-insensitive) emits byte HH — the way to put MacRoman bytes (e.g. `\xC9` for `é`) in a literal while keeping source files pure ASCII. A string literal may be at most 255 bytes. |
 | Boolean | `true`, `false` | |
 | Nil | `nil` | window/resource references only |
 | Enum member | bare identifier | resolved against the expected enum type |
