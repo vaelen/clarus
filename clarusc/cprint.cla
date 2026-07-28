@@ -396,6 +396,19 @@ func fpIsHandleType(t: int): bool {
 // analysis here to prove otherwise, so freeing the caller's temp afterward
 // would risk a use-after-free. Conservative: a callee that does NOT retain
 // it leaks that allocation instead -- the safe side of the tradeoff.
+//
+// The RETURN value (this function's own return text) is deliberately NEVER
+// materialized into a tracked temp, even when the call sits in a
+// sub-expression that would otherwise get one (e.g. `f(x) == "y"`,
+// `g(a) + "z"`): a callee's returned text can just as easily be an alias of
+// something still live (`func f(): text { return gKeep }`) as a fresh
+// allocation, and nothing here can tell the two apart without whole-program
+// interprocedural escape analysis. Same conservative call as
+// IListPop/IListFirst/IMapGet above: track-then-immediately-hand-off would
+// produce byte-identical leaked-forever behavior to never tracking it at
+// all, just with a needless extra local in the emitted C -- so this is a
+// deliberate, accepted leak (escaping-until-ARC), not an oversight;
+// confirmed via review (memory-audit Task 6 fix pass).
 func fpCallFn(e: int): text {
     var args: text
     var a: int
@@ -1567,8 +1580,33 @@ func fpStripOuterParens(s: text): text {
 }
 
 // fpIfStmt prints an SIf node (funcprint.go's ifStmt).
+// memory-audit Task 6 (review fix): if the condition itself created a text
+// temp (e.g. a concat feeding a comparison), that temp is tracked at the
+// SIf statement's level (fpStmt's own fpStmtTmps), meant to be freed by
+// fpStmt's generic end-of-statement flush AFTER this whole if/else prints.
+// But a `return`/`break`/`continue` inside either branch jumps out of the
+// generated C before that flush ever runs -- the same trap fpWhileStmt's
+// condition already had to dodge. Fix: when the condition creates a temp,
+// materialize its bool value into a flag (same trick fpAndOr uses for its
+// own short-circuit result) and free right after, BEFORE printing the
+// `if`/branches at all -- the free then always runs exactly once,
+// regardless of which branch is taken or whether it exits early. A
+// condition with no temps (the overwhelming common case) is untouched:
+// still a plain, direct `if (cond) {`.
 func fpIfStmt(s: int) {
-    fpEmit("if (" + fpStripOuterParens(fpExpr(irIfCond(s))) + ") {")
+    var cond: text
+    var flag: text
+    var markCount: int
+
+    markCount = fpStmtTmps.count
+    cond = fpStripOuterParens(fpExpr(irIfCond(s)))
+    if fpStmtTmps.count > markCount {
+        flag = fpNewTmp("int32_t")
+        fpEmit(flag + " = " + cond + ";")
+        fpFreeStmtTmps()
+        cond = flag
+    }
+    fpEmit("if (" + cond + ") {")
     fpIndent = fpIndent + 1
     fpStmts(irIfThen(s))
     fpIndent = fpIndent - 1

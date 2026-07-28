@@ -23426,14 +23426,39 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
 }
 
 static void clar_fn_fpIfStmt(int32_t cv_s) {
-    rt_text * t1 = NULL;
-    t1 = rt_text_new();
-    rt_text_concat_sl(t1, (const uint8_t*)&(clar_lit_725), clar_fn_fpStripOuterParens(clar_fn_fpExpr(clar_fn_irIfCond(cv_s))));
-    rt_text * t2 = NULL;
-    t2 = rt_text_new();
-    rt_text_concat(t2, t1, (const uint8_t*)&(clar_lit_726), NULL);
-    clar_fn_fpEmit(t2);
-    rt_text_free(t1);
+    rt_text * cv_cond;
+    cv_cond = rt_text_new();
+    rt_text * cv_flag;
+    cv_flag = rt_text_new();
+    int32_t cv_markCount;
+    cv_markCount = 0;
+    cv_markCount = rt_list_count(cv_fpStmtTmps);
+    cv_cond = clar_fn_fpStripOuterParens(clar_fn_fpExpr(clar_fn_irIfCond(cv_s)));
+    if (rt_list_count(cv_fpStmtTmps) > cv_markCount) {
+        cv_flag = clar_fn_fpNewTmp(clar_lit_694);
+        rt_text * t1 = NULL;
+        t1 = rt_text_new();
+        rt_text_concat(t1, cv_flag, (const uint8_t*)&(clar_lit_723), NULL);
+        rt_text * t2 = NULL;
+        t2 = rt_text_new();
+        rt_text_concat(t2, t1, NULL, cv_cond);
+        rt_text * t3 = NULL;
+        t3 = rt_text_new();
+        rt_text_concat(t3, t2, (const uint8_t*)&(clar_lit_683), NULL);
+        clar_fn_fpEmit(t3);
+        rt_text_free(t1);
+        rt_text_free(t2);
+        clar_fn_fpFreeStmtTmps();
+        cv_cond = cv_flag;
+    }
+    rt_text * t4 = NULL;
+    t4 = rt_text_new();
+    rt_text_concat_sl(t4, (const uint8_t*)&(clar_lit_725), cv_cond);
+    rt_text * t5 = NULL;
+    t5 = rt_text_new();
+    rt_text_concat(t5, t4, (const uint8_t*)&(clar_lit_726), NULL);
+    clar_fn_fpEmit(t5);
+    rt_text_free(t4);
     cv_fpIndent = (cv_fpIndent + 1);
     clar_fn_fpStmts(clar_fn_irIfThen(cv_s));
     cv_fpIndent = (cv_fpIndent - 1);
