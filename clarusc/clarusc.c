@@ -3130,6 +3130,7 @@ static int32_t clar_fn_lowIntConv(int32_t cv_e, int32_t cv_ty);
 static int32_t clar_fn_lowStoreStmt(int32_t cv_dst, int32_t cv_src, int32_t cv_t);
 static int32_t clar_fn_lowNewStoreTemp(void);
 static int32_t clar_fn_lowStoreIsBirth(int32_t cv_srcAst);
+static int32_t clar_fn_lowStoreIntrOwnsResult(int32_t cv_src);
 static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t);
 static int32_t clar_fn_lowStmt(int32_t cv_s);
 static int32_t clar_fn_lowEditEmit(int32_t cv_winNameIdx, int32_t cv_kind, int32_t cv_opA, int32_t cv_opB);
@@ -17414,6 +17415,17 @@ static int32_t clar_fn_lowStoreIsBirth(int32_t cv_srcAst) {
     return 0;
 }
 
+static int32_t clar_fn_lowStoreIntrOwnsResult(int32_t cv_src) {
+    int32_t cv_nm;
+    cv_nm = 0;
+    if (clar_fn_irExprKind(cv_src) != 9) {
+        return 0;
+    }
+    cv_nm = clar_fn_irIntrName(cv_src);
+    return ((cv_nm == clar_fn_IUiGetTextviewText()) || (cv_nm == clar_fn_IMapGet()));
+    return 0;
+}
+
 static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t) {
     int32_t cv_src;
     cv_src = 0;
@@ -17432,7 +17444,7 @@ static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_
     }
     cv_tmpNameIdx = (-(1));
     cv_src = clar_fn_lowExpr(cv_srcAst);
-    cv_isBirth = clar_fn_lowStoreIsBirth(cv_srcAst);
+    cv_isBirth = (clar_fn_lowStoreIsBirth(cv_srcAst) || clar_fn_lowStoreIntrOwnsResult(cv_src));
     if ((clar_fn_irtKind(cv_t) == 6) && (clar_fn_irtKind(clar_fn_irExprType(cv_src)) == 5)) {
         cv_src = clar_fn_lowCoerceStr(cv_t, cv_src);
         cv_isBirth = 1;

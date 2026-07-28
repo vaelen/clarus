@@ -91,7 +91,6 @@ static void clar_fn_handler_App_launch(void) {
         t2 = rt_text_new();
         rt_ui_widget_get_text(cv_w, 1, t2);
         cv___store1 = t2;
-        rt_text_retain(cv___store1);
         rt_text_release(cv_t);
         cv_t = cv___store1;
         cv___store1 = 0;

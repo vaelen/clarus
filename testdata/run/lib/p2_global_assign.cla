@@ -3,21 +3,29 @@
 
 // Regression fixture for final-review Critical 1 (memory-audit-4e
 // whole-branch review, probe P2): a runtime global-to-global text
-// assignment. Before the fix, the only aliasing guard `cl_free_globals`
-// had covered a global's own INIT expression, never a later store in a
-// handler/function body -- `p2G2 = p2G1` copies `p2G1`'s handle into
-// `p2G2` (Ch3 reference semantics), then `cl_free_globals` froze both:
-// SIGSEGV. Now the whole-program globals escape pre-pass (lower.cla's
-// `lowRunGlobalsEscapePrepass`, Task 8's window-var trick reused for
-// globals) disqualifies `p2G1` (bare-ident RHS of an assignment is always a
-// handoff) and `p2G2` (rule 4: reassigned from a non-fresh RHS) -- neither
-// gets freed. Expected strict-mode leak count: 4 (see
-// ../p2_global_assign.leaks): `p2G1`'s shared "one" handle (2 blocks,
-// never freed since both names referencing it are disqualified) plus
-// `p2G2`'s ORIGINAL "two" handle (2 blocks), orphaned the instant the
-// assignment overwrites `p2G2`'s slot -- an inherent consequence of a
-// plain handle-copy store (no old-value free on overwrite), not something
-// this fix could or should change.
+// assignment. Originally (4e): `cl_free_globals` only ever covered a
+// global's own INIT expression, never a later store in a handler/function
+// body -- `p2G2 = p2G1` copies `p2G1`'s handle into `p2G2` (Ch3 reference
+// semantics), then `cl_free_globals` froze both: SIGSEGV. The whole-program
+// globals escape pre-pass (lower.cla's `lowRunGlobalsEscapePrepass`, Task
+// 8's window-var trick reused for globals) fixed the crash by disqualifying
+// both names from `cl_free_globals` (still true today -- that pass is
+// Task 6's, untouched by ARC Task 4).
+//
+// ARC Task 4 (counted named-slot stores): `p2G2 = p2G1` is a NAMED-SLOT
+// store (a global, same funnel as a local -- `lowCountedStore`) whose
+// source is a bare identifier, non-birth -- retains `p2G1` FIRST, then
+// releases `p2G2`'s OLD "two" handle. That release is real now (was, pre-
+// Task-4, the permanent "orphan-on-overwrite" leak this comment used to
+// describe as unfixable): `p2G2`'s original handle is properly freed the
+// moment the store runs, confirmed against the emitted C (`rt_text_retain
+// (cv_p2G1); rt_text_release(cv_p2G2); cv_p2G2 = cv_p2G1;`). Expected
+// strict-mode leak count: 2 (see ../p2_global_assign.leaks, dropped from 4)
+// -- `p2G1`'s shared "one" handle only (2 blocks): the store's own retain
+// gave it rc==2, but `cl_free_globals` still never runs (both names stay
+// disqualified there, Task 6's still-unmigrated slot class), so nothing
+// ever decrements it back to zero. Not a bug -- a global's cleanup walk is
+// explicitly out of this task's scope, staged for Task 6.
 
 var p2G1: text = "one"
 var p2G2: text = "two"

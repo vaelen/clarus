@@ -117,7 +117,6 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     t1 = rt_text_new();
     rt_ui_widget_get_text(cv_window, 1, t1);
     cv___store1 = t1;
-    rt_text_retain(cv___store1);
     rt_text_release(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = cv___store1;
     cv___store1 = 0;

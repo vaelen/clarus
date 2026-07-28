@@ -3,26 +3,35 @@
 
 // Regression fixture pinning the Task 7 review-fix behavior (memory-
 // audit-4e whole-branch review, probe P4): a LOCAL container's element read
-// escapes to a global. `p4Items` (local `list of text`) is disqualified by
-// the existing ExIndex-read rule (reading `p4Items[0]` can hand back an
-// element handle the container itself still owns) the moment it's read
-// into `p4GSaved`. This probe already passed before the final-review fix
-// wave -- it's landed here to PIN that behavior, not to demonstrate a fix.
-// The one behavior change from the fix wave: `p4GSaved` (a global) is now
-// ALSO tracked by the new whole-program globals escape pass (Critical 1)
-// and gets disqualified too (rule 4: assigned from a non-fresh ExIndex
-// read) -- previously globals had no aliasing analysis at all, so
-// `p4GSaved` was freed unconditionally by `cl_free_globals`, which
-// happened to be safe here only by chance (nothing else still referenced
-// that handle), not because of any actual check. Expected strict-mode leak
-// count: 6 (see ../p4_elem_escape.leaks), three orphaned text objects
-// (struct box + data handle, 2 blocks each): `p4Items`'s own list
-// container (struct box + backing-array handle, disqualified from its
-// local scope-exit free); the one `"a"+"b"` concat handle it holds
-// (neither `p4Items` nor `p4GSaved` ever frees it); and `p4GSaved`'s own
-// original empty-text default handle, orphaned the instant the index-read
-// store overwrites it without freeing the old value first -- same
-// orphan-on-overwrite class as P2's `p2G2`, independent of this fix.
+// escapes to a global. `p4Items[0]` is a list-INDEX read (`EIndexRef` at
+// the IR level -- a raw `rt_list_at` borrow, never itself retained by
+// cprint, unlike a MAP subscript's `IMapGet` intrinsic, which does retain
+// internally -- see `lowStoreIntrOwnsResult`'s own doc comment for that
+// distinction) -- reading it disqualifies `p4Items` from a DEEP scope-exit
+// release (the escape walker's `lowEscapeContainerElemRisky` rule: an
+// element handle the container itself still owns can escape through an
+// index read), same rule/reasoning as before ARC Task 4, untouched by it
+// (container elements are Task 5's still-unmigrated slot class).
+//
+// ARC Task 4 (counted named-slot stores): `p4GSaved = p4Items[0]` is a
+// NAMED-SLOT store (global) whose source is a non-birth element read --
+// `lowCountedStore` retains it FIRST (confirmed against the emitted C:
+// `rt_text_retain(cv___store1)` immediately after the `rt_list_at` borrow),
+// THEN releases `p4GSaved`'s OLD (default-empty) handle -- a real free now,
+// not the permanent orphan-on-overwrite this comment used to describe.
+// `p4Items` itself (the container's OWN handle, disqualified from DEEP
+// release only) still gets a real, unconditional SHALLOW release at scope
+// exit (`rt_list_release(cv_p4Items)`, confirmed against the emitted C --
+// Task 4's own "unconditional local release" applying to `p4Items`'s own
+// box, not its elements) -- so the list's struct box + backing array are no
+// longer leaked either. Expected strict-mode leak count: 2 (see
+// ../p4_elem_escape.leaks, dropped from 6) -- only the shared `"a"+"b"`
+// text handle itself (2 blocks): `p4Items`'s shallow release disposes the
+// container without walking into it (deep release stays gated on the SAME
+// proof 4e always required -- Task 5's still-unmigrated container-element
+// class), and `p4GSaved`, a global, is never itself released
+// (`cl_free_globals` stays empty -- Task 6's still-unmigrated slot class).
+// Not a bug -- both are explicitly out of this task's scope.
 
 var p4GSaved: text
 

@@ -7,24 +7,35 @@ record textassignNote {
     body: text = "hi"
 }
 
-// Expected strict-mode leak count: 6 (see ../textassign.leaks) -- three
-// leaked `text` objects (2 blocks each: struct box + data handle), all
-// documented, pre-existing gaps in clarusc's Task 7 scope-exit-free
-// pre-pass (memory-audit-4e), not bugs introduced here:
-//   - `t2`'s `= "x" + "y"` initializer checked-types as a STRING concat
-//     (both operands strings), only widened to `text` at the assignment --
-//     lower.cla's `lowEscapeFreshInit` rule 2 only recognizes a concat
-//     whose OWN checked type is already Text as "fresh", so this
-//     conservatively fails and `t2` never qualifies for a scope-exit free
-//     at all (verified against the emitted C: no `rt_text_free(cv_t2)`).
-//   - `t = t + " world"` IS a checked-Text concat (fresh, rule 4), so `t`
-//     stays qualified and its FINAL handle is freed at scope exit -- but
-//     that reassignment pointer-swaps `t`'s handle, orphaning the handle
-//     it held right after `var t: text = "hello"`. Rule 4's own comment
-//     calls this out explicitly as an accepted ARC-era leak, not chased.
-//   - `note.body` is a text-typed record FIELD, not a body-top local --
-//     out of scope for Task 7's pre-pass entirely (it only tracks direct
-//     text/list/map locals), so it's simply never freed.
+// Originally (4e, pre-ARC): expected leak count 6 -- three leaked `text`
+// objects (2 blocks each), all pre-existing gaps in clarusc's escape
+// pre-pass: `t2`'s `= "x" + "y"` initializer checked-types as a STRING
+// concat (only widened to `text` at the assignment), which
+// `lowEscapeFreshInit` didn't recognize as fresh, so `t2` never qualified
+// for a scope-exit free at all; `t = t + " world"` pointer-swapped `t`'s
+// handle without freeing the PREVIOUS one (freeing only `t`'s FINAL
+// value); `note.body` (a record field) was never tracked by the
+// locals-only pre-pass regardless.
+//
+// ARC Task 4 (counted named-slot stores + unconditional local release)
+// closed the first two entirely: `t`'s every reassignment (the `t + "
+// world"` concat, the `"goodbye"` literal, both go through
+// `lowCountedStore`) now releases the OLD handle before storing the new
+// one, and `t`/`t2` both get a genuine, unconditional scope-exit release
+// regardless of their own declared-initializer's freshness (the OLD
+// candidacy gate is gone -- see `lowEscapeCollectCandidates`'s own
+// comment). Confirmed against the emitted C: every one of `t`'s
+// reassignments is release-then-store, and the function ends with
+// `rt_text_free(cv_t); rt_text_release(cv_t2);` (deep and shallow release
+// are identical for a plain Text local -- no elements to walk).
+// `note.body` is untouched by this task -- it's still never freed, for
+// TWO independent, still-unmigrated reasons: `note` (a plain record local,
+// not Text/List/Map) is never itself a scope-exit-release candidate at
+// all (records are Task 7's slot class), and even if it were, per-field
+// release walks don't exist yet either (also Task 7). Expected strict-mode
+// leak count: 2 (see ../textassign.leaks, dropped from 6) -- `note.body`'s
+// default `"hi"` handle only (struct box + data handle, 2 blocks). Not a
+// bug -- record field ownership is explicitly out of this task's scope.
 func runTextassign() {
     var t: text = "hello"
     var t2: text = "x" + "y"

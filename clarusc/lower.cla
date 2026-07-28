@@ -1497,6 +1497,54 @@ func lowStoreIsBirth(srcAst: int): bool {
     return false
 }
 
+// lowStoreIntrOwnsResult is lowStoreIsBirth's IR-SHAPE counterpart (Task 4
+// review fix, Critical 1 + Important 2): some intrinsics hand back a value
+// cprint.cla's OWN printer already gave its own +1 -- a fresh
+// `rt_text_new()` construction (IUiGetTextviewText: `w.Widget.text`, ExSelect
+// at the AST level -- lowStoreIsBirth's own ExCall check never sees it) or a
+// retain into a tracked temp (IMapGet: `m[k]`, ExIndex at the AST level --
+// same already-retained contract IMapGetDv/IListFirst/IListLast already get
+// via their OWN ExCall shape, `.get()`/`.first()`/`.last()`). Classifying
+// either as non-birth would add a SECOND, unbalanced retain on top of the
+// one cprint already baked in: a permanent, silent leak (rc off by one
+// forever), not a crash -- caught by inspecting the regenerated
+// dialogs/textwidgets emitui goldens directly (rc going 1->2 with only one
+// release ever firing), not by any runtime probe.
+//
+// An AST-shape check (lowStoreIsBirth) can't see this: it runs on srcAst
+// BEFORE lowExpr ever produces the IR node whose SHAPE -- which specific
+// intrinsic, if any -- actually determines whether cprint already retained.
+// This check runs AFTER `src = lowExpr(srcAst)`, on the lowered IR, for
+// exactly that reason.
+//
+// Audited every intrinsic that hands back an owned/tracked heap-typed
+// result (grepped cprint.cla for every `rt_text_new()`/`fpNewTrackedTmp`
+// call site reachable as an EXPRESSION value, not just cpDefaultInit's own
+// prologue construction, which is a different mechanism entirely and never
+// reaches a store RHS): fpCallFn (ECallFn user calls), IListFirst/
+// IListLast/IListPop/IListShift/IMapGetDv (all `.method()` calls, ExSelect
+// fn but the CALL itself is ExCall) are already covered by
+// lowStoreIsBirth's ExCall branch. ITextConcat/ITextConcatSL (string/text
+// `+`) are already covered by its ExBinary/OpAdd/TyText branch. ITextOfStr
+// is handled separately, by IR TYPE not AST shape, in lowCountedStore's own
+// KStr override (any Str source feeding a Text dst, not just this specific
+// intrinsic). IUiGetFieldText returns a Str (clar_str_255, untracked,
+// non-heap) -- covered by the SAME KStr override when it feeds a Text dst,
+// not by this function. IFileReadText is a fresh runtime allocation too,
+// but reached via plain ExCall (`file.readText(...)`) -- already covered,
+// not listed here. IUiGetTextviewText (ExSelect) and IMapGet (ExIndex) are
+// the only two owned-result intrinsics reachable via a non-ExCall AST
+// shape -- hence this function.
+func lowStoreIntrOwnsResult(src: int): bool {
+    var nm: int
+
+    if irExprKind(src) != EIntr {
+        return false
+    }
+    nm = irIntrName(src)
+    return nm == IUiGetTextviewText() or nm == IMapGet()
+}
+
 // lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
 // NAMED slot (a local, a global, or a window var's per-instance field --
 // every lowAssign/lowBlock-declared-initializer/window-var-default call
@@ -1543,7 +1591,7 @@ func lowCountedStore(dst: int, srcAst: int, t: int): int {
 
     tmpNameIdx = -1
     src = lowExpr(srcAst)
-    isBirth = lowStoreIsBirth(srcAst)
+    isBirth = lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(src)
     if irtKind(t) == KText and irtKind(irExprType(src)) == KStr {
         // A Text destination fed by a Str source: NEVER lowStoreStmt's own
         // inline ITextStore branch here -- that intrinsic copies the

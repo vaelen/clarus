@@ -20,27 +20,48 @@ func widenTextGetStr(): string {
     return "delta"
 }
 
-// Expected strict-mode leak count: 23 (see ../widen_text.leaks; verified
-// against the emitted C -- this function's body emits zero rt_text_free/
-// rt_list_free/rt_map_free calls at all, so every heap object it allocates
-// leaks: 9 `rt_text_new()` calls (2 blocks each = 18) + 1 `rt_list_new()`
-// (2 blocks) + 1 `rt_map_new()` (3 blocks) = 23). Every local here hits one
-// of the two documented clarusc Task 7 pre-pass gaps (memory-audit-4e), by
-// design of what this fixture is exercising:
-//   - `t1`/`t2`/`dv` are all reassigned from a non-fresh source (a
-//     user-call result for t1/t2, a bare alias of another local for dv --
-//     lower.cla's `lowEscapeFreshInit` rule 2/4), so none ever qualifies
-//     for a scope-exit free.
-//   - `lst`/`m` are both read by element (`rt_list_at`/`rt_map_get`/
-//     `rt_map_get_dv`), the documented element-read-disqualified-container
-//     class.
-//   - Every compiler-synthesized string-to-text widening temp (one per
-//     call argument, per list-push value, per map-set value, per
-//     map-get-default value) is the documented escaping-local class: Task
-//     5's temp-freeing machinery deliberately skips temps that hand off
-//     into a call/push/map-set/get-default, since ownership passes to the
-//     callee/container and freeing here would double-free or UAF.
-// Legitimate, not a bug.
+// Originally (4e, pre-ARC): expected leak count 23 -- this function's body
+// emitted zero rt_text_free/rt_list_free/rt_map_free calls at all, so
+// every heap object it allocated leaked: 9 `rt_text_new()` calls (2 blocks
+// each = 18: `t1`/`t2`/`dv`'s own prologue defaults, plus one
+// compiler-synthesized string->text widening temp per assignability
+// position -- a call argument x2, a list-push value, a map-set value, and
+// a map.get default) + 1 `rt_list_new()` (`lst`, 2 blocks) + 1
+// `rt_map_new()` (`m`, 3 blocks) = 23.
+//
+// ARC Task 4 (counted named-slot stores + unconditional local release)
+// closed 11 of those 23 blocks -- everything that was a NAMED-SLOT store
+// or a plain local's own scope-exit release, confirmed against the
+// emitted C:
+//   - `t1`/`t2`/`dv`'s own prologue-default boxes are released the
+//     instant each is first (re)assigned (`t1 = widenTextAcceptText(s)`,
+//     `t2 = widenTextMakeText(...)`, `dv = m.get(...)` are all named-slot
+//     stores now -- release-old-then-store, regardless of the store's own
+//     freshness; the old per-store freshness GATE on candidacy is gone).
+//     3 x 2 blocks = 6.
+//   - `lst`/`m` themselves (their own list/map handle, not their
+//     elements) get a genuine, unconditional SHALLOW scope-exit release
+//     now (`rt_list_release(cv_lst); rt_map_release(cv_m);`, no element
+//     loop -- deep release stays gated on the same still-unmigrated
+//     container-element proof as before, Task 5). 2 + 3 = 5 blocks.
+//
+// The remaining 12 blocks (see ../widen_text.leaks, dropped from 23) are
+// UNCHANGED by this task, and genuinely can't be closed by it: every
+// compiler-synthesized string->text widening temp (one per call argument,
+// per list-push value, per map-set value, per map-get-default value -- 6
+// sites x 2 blocks) is never a NAMED slot at all -- it's an anonymous,
+// untracked scratch value born inside argument/element-store lowering
+// (`lowCoerceStr`, embedded directly in the call/push/index-assign's own
+// argument printing), handed to a consumer this task's migration doesn't
+// cover (a user-function call argument -- the caller-guarantees convention
+// never retains/releases a parameter at all, by design, permanently, not
+// just pending migration -- or a container element store, Task 5's still-
+// unmigrated slot class). Confirmed against the emitted C: e.g.
+// `t4 = rt_text_new(); rt_text_store(t4, "alpha"); t5 = t4;
+// rt_list_push(cv_lst, &t5);` -- neither `t4` nor `t5` is ever released.
+// Legitimate, not a bug -- none of these six are `lowCountedStore`'s
+// concern; each is either the permanent parameter-passing convention or
+// staged for Task 5.
 func runWidenText() {
     var pass: bool
     var s: string

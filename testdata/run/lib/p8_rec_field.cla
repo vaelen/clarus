@@ -3,22 +3,31 @@
 
 // Regression fixture for final-review Critical 1, part (a) (memory-audit-4e
 // whole-branch review, probe P8): a global text aliased into a global
-// record's text field. Before the fix, the select-LHS store rule (Task 8's
-// own window-var protection) disqualified only the FIELD NAME on a
-// non-fresh store, never the record's own base -- `cl_free_globals` still
-// recursed into `p8GRec`'s fields, freeing `body` (== `p8Gt`'s handle,
-// after the store), then separately froze `p8Gt` itself: SIGSEGV. The fix
-// adds `lowEscapeHandoff(selectX(lhs))` alongside the existing field-name
-// disqualification, so a bare `base.field` store's BASE identifier
-// (`p8GRec`) is disqualified too -- `cl_free_globals` skips it entirely,
-// never recursing into its fields at all. Expected strict-mode leak count:
-// 4 (see ../p8_rec_field.leaks) -- `p8Gt`'s "keep" text (struct box + data
-// handle, 2 blocks; disqualified by the existing bare-ident-RHS-of-
-// assignment handoff rule, shared with `p8GRec.body` after the store, so
-// counted once) plus `p8ProbeNote`'s own default `body = "hi"` handle (2
-// blocks), orphaned the instant the store overwrites the field without
-// freeing the old value first -- same orphan-on-overwrite class as P2's
-// `p2G2`, independent of this fix.
+// record's text field. Originally (4e): the select-LHS store rule
+// disqualified only the FIELD NAME on a non-fresh store, never the
+// record's own base -- `cl_free_globals` still recursed into `p8GRec`'s
+// fields, freeing `body` (== `p8Gt`'s handle, after the store), then
+// separately froze `p8Gt` itself: SIGSEGV. The fix disqualifies the BASE
+// identifier (`p8GRec`) too -- still true today, unchanged by ARC Task 4:
+// `cl_free_globals` stays empty, skipping `p8GRec` entirely (records are
+// Task 7's still-unmigrated slot class; globals cleanup is Task 6's).
+//
+// ARC Task 4 (counted named-slot stores): `p8GRec.body = p8Gt` is a
+// SELECT-LHS store -- `lowAssign`'s generic fallthrough doesn't
+// distinguish a record field from a window var, so this ALSO routes
+// through `lowCountedStore` (an early, incidental win Task 7 will
+// formalize, not a bug: retaining a field store can only ever be a leak
+// if unbalanced, never a UAF). Confirmed against the emitted C:
+// `rt_text_retain(cv_p8Gt); rt_text_release((cv_p8GRec).cv_body);
+// (cv_p8GRec).cv_body = cv_p8Gt;` -- `p8ProbeNote`'s original `body = "hi"`
+// default handle is properly freed now (no longer the permanent
+// orphan-on-overwrite this comment used to describe), and `p8Gt` is
+// retained into the field. Expected strict-mode leak count: 2 (see
+// ../p8_rec_field.leaks, dropped from 4) -- `p8Gt`'s "keep" text only
+// (struct box + data handle, 2 blocks; rc==2 after the retain, shared with
+// `p8GRec.body`, counted once) -- never released, since neither global
+// cleanup (Task 6) nor a record field release-walk (Task 7) exist yet. Not
+// a bug -- both are explicitly out of this task's scope.
 
 record p8ProbeNote {
     body: text = "hi"

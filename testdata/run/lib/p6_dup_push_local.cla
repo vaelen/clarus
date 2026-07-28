@@ -4,20 +4,34 @@
 // Regression fixture for final-review Critical 2 (memory-audit-4e
 // whole-branch review, probe P6): the same LOCAL text pushed twice into a
 // LOCAL list of text -- the purely-local shape of the same class C1's
-// fixtures cover for globals. Before the fix, `p6L` (fresh init, only ever
+// fixtures cover for globals. Originally (4e): `p6L` (fresh init, only ever
 // a push receiver) qualified for a scope-exit element-free loop, but that
 // loop would free `p6X`'s handle twice, once per element slot: SIGSEGV at
-// handler scope exit (a Mac composition of this would corrupt the heap
-// MID-RUN, not just at process exit, since this fires on ordinary handler
-// return, not `cl_free_globals`'s atexit path). The fix (one rule in
-// `lowEscapeWalkMethodCall`: a push/add/unshift value that fails
-// `lowEscapeFreshInit` disqualifies the receiver too) disqualifies `p6L`
-// the first time `p6X` -- a bare identifier, never fresh regardless of its
-// own initializer -- is pushed. Expected strict-mode leak count: 4 (see
-// ../p6_dup_push_local.leaks) -- `p6X`'s text (struct box + data handle, 2
-// blocks; already disqualified by the existing push-argument handoff rule)
-// plus `p6L`'s own list (struct box + backing-array handle holding two
-// pointers to that one shared handle, 2 blocks).
+// handler scope exit. The fix (`lowEscapeWalkMethodCall`: a push/add/
+// unshift value that fails `lowEscapeFreshInit` disqualifies the receiver
+// too) disqualifies `p6L`'s DEEP release the first time `p6X` -- a bare
+// identifier, never fresh -- is pushed; still true today (container
+// elements are Task 5's still-unmigrated slot class, untouched by ARC Task
+// 4 -- push never retains, so a deep element-walk here would still
+// double-free the one handle both push sites share).
+//
+// ARC Task 4 (counted named-slot stores + unconditional local release):
+// `p6X` itself is ALSO disqualified, but for a DIFFERENT, still-genuinely-
+// unsafe reason (`lowFreeUnsafe`, not just `lowFreeDisq`): it was handed to
+// a push argument, a consumer this task's migration doesn't cover (see
+// `lowStoreIsBirth`'s own doc comment on `lowEscapeWalkArgsHandoff`) -- so
+// unlike most disqualified locals, `p6X` is SKIPPED entirely at scope exit,
+// not shallow-released (confirmed against the emitted C: no
+// `rt_text_release(cv_p6X)` anywhere). `p6L`'s own list handle, by
+// contrast, IS a real named-slot local now covered by unconditional
+// release -- it gets a genuine shallow release at scope exit (deep stays
+// gated on the same unmigrated-elements proof as before -- confirmed
+// against the emitted C: bare `rt_list_release(cv_p6L)`, no element loop).
+// Expected strict-mode leak count: 2 (see ../p6_dup_push_local.leaks,
+// dropped from 4) -- `p6X`'s text only (struct box + data handle, 2
+// blocks; the one handle both push sites share, still never freed). Not a
+// bug -- container-element ownership is explicitly out of this task's
+// scope, staged for Task 5.
 
 func runP6DupPushLocal() {
     var p6L: list of text
