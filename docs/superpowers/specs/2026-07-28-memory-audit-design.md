@@ -178,17 +178,24 @@ subset rule hold (snapshot regenerated per `TestSnapshotCurrent`).
 
 | Site | Disposition |
 |---|---|
-| `rt_ser.inc` save/load temp text (per-call, both runtimes) | **Fix** — free on all paths |
-| Struct box Handle discarded (`rt_mac_new_struct`, rt_mac.c:493) | **Fix** — `NewPtr` box in unified core |
-| Handler locals + expression temporaries | **Fix** — conservative lowering |
-| Escaping values | **Leak by design until ARC** — ratchet-goldened |
-| Window vars never freed at close (rt_mac.c:479) | **Fix** — generated release fn from teardown |
-| Globals live at exit | **Fix** — `cl_free_globals` via `rt_register_cleanup` |
-| `rt_list_clear`/`rt_map_clear` keep capacity | **Keep** — deliberate amortization |
+| `rt_ser.inc` save/load temp text (per-call, both runtimes) | **Fixed** — freed on all exit paths (Task 2) |
+| Struct box Handle discarded (`rt_mac_new_struct`, rt_mac.c:493) | **Fixed** — box is a `NewPtr` in the unified `rt_core.inc` (Task 3) |
+| Handler locals + expression temporaries | **Fixed** — conservative default-deny lowering: statement-level temps (Task 5), non-escaping scope-exit locals incl. if-condition temps on branch jumps (Tasks 6–7) |
+| Escaping values | **Leak by design until ARC** — ratchet-goldened; 9 of 40 corpus programs nonzero, all traced to documented gaps (user-call-result/bare-alias reassignment orphans, element-read-disqualified containers, record fields out of local-free scope, disqualified window vars, cross-window name collisions) (Task 9) |
+| Window vars never freed at close (rt_mac.c:479) | **Fixed** — generated per-window release function called from `rt_ui_teardown_window` (Task 8) |
+| Globals live at exit | **Fixed** — `cl_free_globals()` via `rt_register_cleanup` (Task 6) |
+| `rt_list_clear`/`rt_map_clear` keep capacity | **Kept** — deliberate amortization |
 | Process-lifetime one-shots (menu bar menus, `gMenuHandles`, AE UPPs, `gEveryDue`, trace arrays, args list, `rt_test_log`) | **Leak by design** — reclaimed at exit; `rt_mem_note`-tagged host-side |
 | `OpenWD` refnum (rt_ui.c:3873) | Not memory — existing comment stands |
 | `NewControlActionUPP` per click (rt_ui.c:2093) | Benign on m68k (plain cast) — documented |
 | `rt_ui_teardown_window` chain (controls/TE/List/LDEF/canvas/12 instance handles) | **Verified paired** — recorded so future audits don't re-litigate |
+
+All rows above are closed as of Tasks 1–9 (commits `d318955`..`29e54bf` on
+`memory-audit-4e`); the two-tier paranoia decision (unconditional resize
+relocation everywhere, full move-on-every-alloc sweep opt-in via
+`CLARUS_MEM_PARANOID=1`, corpus lanes only) is recorded above under
+rt_mem_host.inc and was not revisited. Remaining leaks are deliberate and
+tracked as the ARC follow-on below, not open work items.
 
 ## Risks
 

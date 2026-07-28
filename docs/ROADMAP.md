@@ -123,6 +123,43 @@ Living document — the authoritative sequencing and strategy record. Updated
    as items 7/8 above). Handle-backed records were dropped per the 4d spec —
    records stay value types per the reference; the underlying Handle-hygiene
    concern moved to the 4e memory audit.
+10. **Mac target 4e (memory-management audit): DONE.** One memory model,
+    no forks: `internal/build/rt/rt_mem.h` + the paranoid host shim
+    (`rt_mem_host.inc`) implement the real Toolbox Memory Manager subset
+    (double-indirected handles, `SetHandleSize` relocation, `0xA5` scramble
+    on move/dispose, guard bytes, an allocation-tag ledger); the Mac build
+    just includes `<Memory.h>` — no wrapper. Two-tier paranoia: handle
+    relocation on resize is unconditional everywhere, but the full
+    every-allocation-moves-everything sweep is opt-in via
+    `CLARUS_MEM_PARANOID=1` (corpus test lanes only — bootstrap-scale runs
+    stay linear). `rt_mac.c`'s text/list/map collections and the pure
+    str255 helpers moved into a single shared `internal/build/rt/rt_core.inc`
+    (`rt.c`'s malloc-backed twins deleted); the struct box switched from a
+    forever-locked Handle to a plain `NewPtr`, making it disposable. New
+    dispose API (`rt_text_free`/`rt_list_free`/`rt_map_free`,
+    `rt_register_cleanup`) is shallow and NULL-safe; double-free is caught
+    by the scramble/ledger. clarusc now frees conservatively wherever it can
+    prove sole ownership: statement-level expression temporaries, non-escaping
+    handler locals on every scope-exit path (including if-condition temps on
+    branch jumps), generated `cl_free_globals()` for every global text/list/
+    map (registered via `rt_register_cleanup`), and a generated per-window
+    release function that frees handle-backed window vars at teardown —
+    closing the rt_mac.c:479 leak recorded as a small open item since 4d.
+    A real pre-existing bug found along the way: `rt_ser.inc`'s
+    `rt_file_save`/`rt_file_load` leaked a whole `rt_text` per call on both
+    runtimes — fixed, now enforced forever by the paranoid shim. Enforcement:
+    a strict-mode (`CLARUS_MEM_STRICT=1`) exit hook reports every live
+    un-noted block and fails the process; the full clarusc-emitted golden
+    corpus now runs under strict+paranoid mode with per-program `.leaks`
+    goldens (default 0) as a permanent ratchet — 31 of 40 programs are at
+    zero, the other 9 are blessed goldens tracing to documented
+    leak-by-design classes that remain until ARC (user-call-result/bare-alias
+    reassignment orphans, containers disqualified by element reads, record
+    fields being out of the local-free pre-pass's scope, disqualified window
+    vars, and cross-window name collisions). Go compiler, its emitted output,
+    and the bootstrap chain are unaffected — frees are unobservable in
+    program output. Full spec + per-site dispositions:
+    `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -138,10 +175,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
    bootstrap and the committed C snapshot (strategy below). **DONE** — see
    "Done" item 5.
 2. **Mac target** (4a "hello, Macintosh", then 4b core UI, then 4c text
-   editing, then 4d forms/binding). 4a **DONE** — see "Done" item 6. 4b
-   **DONE** — see "Done" item 7. 4c **DONE** — see "Done" item 8. 4d
-   **DONE** — see "Done" item 9. **4e (memory-management audit) is the
-   next milestone.**
+   editing, then 4d forms/binding, then 4e memory audit). 4a **DONE** — see
+   "Done" item 6. 4b **DONE** — see "Done" item 7. 4c **DONE** — see "Done"
+   item 8. 4d **DONE** — see "Done" item 9. 4e **DONE** — see "Done" item
+   10.
 3. Memory + forms runtime, then networking.
 4. clarusc's 68k build — compiling Clarus on a Macintosh — once the Mac
    target exists.
@@ -187,7 +224,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   cross-compiler; 68k printer build (after Mac target) = compiling on the Mac.
   The Mac-resident version is a GUI app (askOpen/alert), not a CLI.
 
-## Mac target (Plan 4) — 4a, 4b, 4c, and 4d done, 4e next
+## Mac target (Plan 4) — 4a through 4e all done
 
 - **4a "hello, Macintosh": DONE.** Toolbox runtime implementing the same
   intrinsic ABI (Handles, BlockMove, real Str255), Retro68 pipeline
@@ -215,9 +252,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     verbatim plus persistence. Handle-backed records were dropped per the
     4d spec — records stay value types per the reference; the underlying
     Handle-hygiene concern moved to the 4e memory audit.
-  - **4e (post-4d): memory-management audit** — Handle/close leak sweep:
-    lists, text, maps, menus, window instances, the deferred ClosePort item;
-    decide per-site free-vs-leak-by-design and document.
+  - **4e (branch memory-audit-4e): DONE.** Memory Manager shim + unified
+    `rt_core.inc`, dispose API, conservative clarusc frees (temps/locals/
+    globals/window vars), the `rt_ser` save/load leak fix, and a
+    strict+paranoid leak gate over the golden corpus — see "Done" item 10.
+    Full design and per-site dispositions:
+    `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
 - Then: networking (MacTCP + ADSP/NBP; needs Basilisk II or real hardware —
   Mini vMac networking is limited).
 
@@ -257,10 +297,18 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   shipped scenario workarounds in `testdata/ui/hscroll.cla` and
   `testdata/ui/dialogs.cla` were unwound to exercise the fixed shapes
   directly.
-- **Handle-backed window vars are constructed at open but never freed at
-  close** (runtime-wide leak-by-design, rt_mac.c:479-484); per-instance and
-  unbounded across open/close cycles — revisit if real apps cycle document
-  windows heavily.
+- **ARC milestone (follow-on to the 4e memory audit, not yet scheduled):**
+  refcount in the struct box, retain/release lowering, deep frees (into
+  container elements and record fields), and drive all 9 remaining nonzero
+  `.leaks` goldens to zero. Sound and complete — Clarus has no recursive
+  types, so refcounting is cycle-free. Same runtime dispose API; strictly
+  smarter clarusc lowering on top of it.
+- **Parameter-escape-summary precision upgrade (optional, follow-on to 4e,
+  not yet scheduled):** per-function parameter-escape summaries (whole-
+  program compilation, no indirect calls, so a cheap fixpoint) to shrink
+  the "passed to a user function" escape bucket that clarusc's Task 5/7
+  conservative pre-pass currently treats as leak-by-design wholesale. Only
+  worth doing if the `.leaks` goldens prove noisy in practice.
 - Parking lot (deferred features, from the design spec §14 + later
   decisions): HTTP layer, UDP/DDP, auto-generated forms, float/SANE,
   case-insensitive maps, handle-backed map values, printing, color QuickDraw,
