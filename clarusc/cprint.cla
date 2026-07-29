@@ -157,6 +157,23 @@ var fpStmtTmpRel: list of text
 // fpStmtTmpRel itself.
 var fpStmtTmpIsRec: list of bool
 
+// fpDiscardExprIdx (ARC Task 8 review round 2) is the IR arena index of the
+// exact expression node fpStmt's own SExprStmt case is about to print as a
+// bare, DISCARDED statement (`lst.pop();`, result used nowhere) -- or -1
+// when no such statement is in flight. Set immediately before, and cleared
+// immediately after, that ONE `fpExpr` call (fpStmt's SExprStmt branch) --
+// arena indices are monotonic and never reused (same invariant
+// lowRetTempN/lowStoreTempN rely on, lower.cla), so a STALE value could
+// never accidentally match a later node even without the explicit clear;
+// cleared anyway for hygiene. Consulted by exactly one site so far
+// (fpIntrCall's IListPop/IListShift branch): `x == fpDiscardExprIdx`
+// is true ONLY when x is that exact top-level node, never a NESTED one
+// (e.g. `f(lst.pop())`'s inner pop -- a different arena index than the
+// outer ECallFn node fpDiscardExprIdx would hold for that statement), so a
+// call-argument/assign-dst/return position is never mistaken for a
+// discarded one.
+var fpDiscardExprIdx: int
+
 func fpReset(indent: int) {
     while fpBody.count > 0 {
         fpBody.pop()
@@ -172,6 +189,7 @@ func fpReset(indent: int) {
     }
     fpTmpN = 0
     fpIndent = indent
+    fpDiscardExprIdx = -1
 }
 
 // fpEmit appends one indented body line (4 spaces per indent level). `line`
@@ -1362,18 +1380,39 @@ func fpIntrCall(x: int): text {
         return toText("")
     } else if nm == IListPop() or nm == IListShift() {
         l = fpExpr(a0)
-        t = fpNewTmp(cpCType(irExprType(x)))
         fn = "rt_list_pop"
         if nm == IListShift() {
             fn = "rt_list_shift"
         }
+        if x == fpDiscardExprIdx and fpNeedsRelease(irExprType(x)) {
+            // ARC Task 8 review round 2 (Important finding): a bare
+            // `lst.pop();`/`lst.shift();` STATEMENT -- the popped value
+            // used nowhere, not an assign dst/return/call argument -- still
+            // transfers ownership out of the list (same no-retain contract
+            // as below) but nothing else ever claims it, so it leaks unless
+            // released HERE. fpDiscardExprIdx (set by fpStmt's own
+            // SExprStmt case, see its doc comment) identifies exactly this
+            // shape and no other -- a NESTED pop/shift (a call argument,
+            // `f(lst.pop())`) never matches, so that position's behavior is
+            // untouched. fpNewTrackedTmp (not fpNewTmp) so the ordinary
+            // end-of-statement flush (fpFreeStmtTmps) releases it -- also
+            // covers a handle-backed record element, via the SAME
+            // release-walk shape (`clar_release_NAME`) fpNewTrackedTmp
+            // already gives every other tracked record temp (ARC Task 7).
+            t = fpNewTrackedTmp(irExprType(x))
+            fpEmit(fn + "(" + l + ", &" + t + ");")
+            return t
+        }
+        t = fpNewTmp(cpCType(irExprType(x)))
         fpEmit(fn + "(" + l + ", &" + t + ");")
         // memory-audit Task 6 / ARC Task 3: pop/shift TRANSFER ownership --
         // this copies the ELEMENT'S bytes (a text element's bytes ARE its
         // handle -- Ch3 reference semantics) out of l's backing store into
         // t AND removes l's slot, so the count doesn't change: no retain.
         // Never auto-free/release t -- untrack it unconditionally, same as
-        // any other "the caller must reason about this" handle.
+        // any other "the caller must reason about this" handle (assign
+        // dst/return/call-argument -- the ONE other position, a bare
+        // discarded statement, is handled above instead).
         fpHandoff(t)
         return t
     } else if nm == IListFirst() or nm == IListLast() {
@@ -1943,7 +1982,13 @@ func fpStmt(s: int) {
     terminal = false
 
     if irStmtKind(s) == SExprStmt {
+        // ARC Task 8 review round 2: mark this exact node as the
+        // discarded-result position (fpDiscardExprIdx's own doc comment) --
+        // consulted by fpIntrCall's IListPop/IListShift branch, cleared
+        // right after so it can never stick around for a later statement.
+        fpDiscardExprIdx = irExprStmtX(s)
         e = fpExpr(irExprStmtX(s))
+        fpDiscardExprIdx = -1
         if e != "" {
             fpEmit(e + ";")
         }

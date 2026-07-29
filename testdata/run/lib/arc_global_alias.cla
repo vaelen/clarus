@@ -76,6 +76,24 @@
 //     (walks and frees both the inner list's own "nested" element and the
 //     inner list itself, `rt_list_lastref` true) -- exactly the recursive
 //     `cpEmitRelease` shape `cpEmitRelease`'s own doc comment describes.
+//
+// ARC Task 8 review round 2 (Important finding, post-approval): a bare
+// `lst.pop();`/`lst.shift();` STATEMENT is legal Clarus (checker accepts
+// it -- the result is simply an expression statement whose value is
+// unused) and used to leak the popped element permanently: cprint's
+// IListPop/IListShift printer materialized the result into an UNTRACKED
+// temp (`fpNewTmp`) and unconditionally hands it off (never releases it),
+// which is correct for the assign/return/call-argument positions (some
+// OTHER slot claims ownership there) but wrong for a bare, discarded
+// statement, where NOTHING claims it. `popList` below pins the fix:
+// `.pop()` then `.shift()`, both discarded, both now released at the end
+// of their own statement (`fpDiscardExprIdx`, cprint.cla -- see its own
+// doc comment for exactly how the discarded position is detected without
+// touching the assign/return/call-argument shapes at all). No map-flavored
+// analog exists to pin alongside it: map has no ordered pop/shift
+// (`lowMapMethod` only lowers get/has/remove/count -- `.remove(k)` is
+// void, already releases the evicted value internally, never a
+// discardable non-void result in the first place).
 
 var gaT1: text = "hello"
 var gaT2: text = gaT1
@@ -96,6 +114,7 @@ func runArcGlobalAlias() {
     var s: string
     var local2: list of text
     var innerList: list of text
+    var popList: list of text
 
     n = gaT1.toBytes(buf)
     s.fromBytes(buf, n)
@@ -142,5 +161,17 @@ func runArcGlobalAlias() {
         alert("nested-list-ok")
     } else {
         alert("nested-list-bad")
+    }
+
+    // ARC Task 8 review round 2: discarded pop()/shift() results leak.
+    popList.add("x")
+    popList.add("y")
+    popList.add("z")
+    popList.pop()
+    popList.shift()
+    if popList.count == 1 and popList.first() == "y" {
+        alert("discard-pop-ok")
+    } else {
+        alert("discard-pop-bad")
     }
 }
