@@ -126,6 +126,17 @@ enum IRKind {
     // scalar, never parametrized, so it is a singleton like KInt/KBool
     // (irPtrT, seeded in irReset below).
     KPtr
+
+    // KOverlay (Plan 5b Task 2, Ch13: Overlay Records) is a named view over
+    // raw memory: `name` (same slot KRec/KEnum use) carries the overlay
+    // type's own interned name, C type `clar_rec_<Name> *` (cpCTypeName) --
+    // a real pointer, unlike KRec's clar_rec_<Name> (by-value struct).
+    // Deliberately absent from irtNeedsCtor below: an overlay value's
+    // all-zero representation (NULL) is already a valid value (Ch13's
+    // zero-value guarantee, same as KPtr), so it never needs construction
+    // and is never handle-backed -- the ARC machinery (irRecHasHandleField,
+    // lowIsRecBearing, cpEmitRcWalks) never sees this kind at all.
+    KOverlay
 }
 
 enum IRStmtKind {
@@ -159,9 +170,11 @@ enum IRExprKind {
 
 // IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191), plus
 // CvIntToPtr/CvPtrToInt (Task 2, Ch13: Low-Level Memory Access -- `ptr(x)`/
-// `int(p)` -- a clarusc-only addition; the frozen Go reference has no ptr
-// type). CvIntToEnum is CHECKED (panics on no member); the rest, including
-// the two ptr conversions, are unchecked reinterpretations.
+// `int(p)`) and CvPtrToOverlay/CvOverlayToPtr (Plan 5b Task 2, Ch13: Overlay
+// Records -- `OverlayName(p)`/`ptr(o)`) -- clarusc-only additions; the
+// frozen Go reference has no ptr/overlay types. CvIntToEnum is CHECKED
+// (panics on no member); the rest, including all four ptr/overlay
+// conversions, are unchecked reinterpretations.
 enum IRConvOp {
     CvIntToFixed
     CvFixedToInt
@@ -171,6 +184,8 @@ enum IRConvOp {
     CvIntToEnum
     CvIntToPtr
     CvPtrToInt
+    CvPtrToOverlay
+    CvOverlayToPtr
 }
 
 record IRType {
@@ -247,6 +262,12 @@ record IRFieldSlot {
 record IRRecordLayout {
     name: int
     fieldsHead: int
+    // isOverlay (Plan 5b Task 2, Ch13: Overlay Records) tags this layout as
+    // an `overlay record` -- cpEmitRecords still emits the typedef (an
+    // overlay's field list is needed for the same reason a plain record's
+    // is) but skips the clar_new_NAME constructor for it (an overlay is
+    // never constructed, only cast onto existing memory).
+    isOverlay: bool
 }
 
 // IREnumMember mirrors ir.go's EnumLayout's parallel Members/Values/Labels
@@ -914,6 +935,12 @@ func irArrType(elem: int, n: int): int {
 
 func irRecType(name: int): int {
     return newIRType(KRec, 0, -1, name)
+}
+
+// irOverlayType builds a named KOverlay IRType -- mirrors irRecType exactly
+// (name alone carries the identity); see IRKind's KOverlay doc comment.
+func irOverlayType(name: int): int {
+    return newIRType(KOverlay, 0, -1, name)
 }
 
 func irEnumType(name: int): int {
@@ -1609,11 +1636,12 @@ func irFieldSlotNext(i: int): int {
     return irFieldSlots[i].next
 }
 
-func newIRRecordLayout(name: int, fieldsHead: int): int {
+func newIRRecordLayout(name: int, fieldsHead: int, isOverlay: bool): int {
     var n: IRRecordLayout
 
     n.name = name
     n.fieldsHead = fieldsHead
+    n.isOverlay = isOverlay
     irRecords.add(n)
     return irRecords.count - 1
 }
@@ -1624,6 +1652,10 @@ func irRecordLayoutName(i: int): int {
 
 func irRecordLayoutFieldsHead(i: int): int {
     return irRecords[i].fieldsHead
+}
+
+func irRecordLayoutIsOverlay(i: int): bool {
+    return irRecords[i].isOverlay
 }
 
 // ================================================================

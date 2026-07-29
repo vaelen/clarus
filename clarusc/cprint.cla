@@ -557,6 +557,7 @@ func cpCTypeName(t: int): string {
     case KArr { return "clar_arr_" + cpArrKey(t) }
     case KWinRef { return "void *" }
     case KPtr { return "void *" }
+    case KOverlay { return "clar_rec_" + poolGet(irtName(t)) + " *" }
     }
     return "void"
 }
@@ -842,6 +843,12 @@ func fpFieldRef(e: int): text {
     if irtKind(irExprType(irFieldRefX(e))) == KErr {
         return "(" + fpExpr(irFieldRefX(e)) + ")." + poolGet(irFieldRefName(e))
     }
+    if irtKind(irExprType(irFieldRefX(e))) == KOverlay {
+        // An overlay value IS a C pointer (cpCTypeName's KOverlay case), so
+        // its field access is `->`, not `.` -- unlike KRec, which is a
+        // by-value struct.
+        return "(" + fpExpr(irFieldRefX(e)) + ")->cv_" + poolGet(irFieldRefName(e))
+    }
     return "(" + fpExpr(irFieldRefX(e)) + ").cv_" + poolGet(irFieldRefName(e))
 }
 
@@ -1035,6 +1042,10 @@ func fpConv(e: int): text {
         return "(void *)(intptr_t)(" + x + ")"
     } else if op == CvPtrToInt {
         return "((int32_t)(intptr_t)(" + x + "))"
+    } else if op == CvPtrToOverlay {
+        return "((clar_rec_" + poolGet(irtName(irExprType(e))) + " *)(" + x + "))"
+    } else if op == CvOverlayToPtr {
+        return "((void *)(" + x + "))"
     }
     return toText("")
 }
@@ -2518,11 +2529,14 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
         fpEmit(dst + " = " + numToStr(scalarDefault) + ";")
-    } else if k == KWinRef or k == KPtr {
+    } else if k == KWinRef or k == KPtr or k == KOverlay {
         // `var w: SomeWindow` declares a nil window reference (Ch8) -- a
         // plain NULL `void *`, same spelling nil itself lowers to (lower.cla's
         // ExNilLit case). `var p: ptr` gets the same treatment (Ch13's zero
-        // value of ptr is the null address, tested via ptr(0)).
+        // value of ptr is the null address, tested via ptr(0)). `var o:
+        // SomeOverlay` (Ch13: Overlay Records) is the same NULL C pointer --
+        // an overlay's zero value is the null address too (tested via
+        // ptr(o) == ptr(0)).
         fpEmit(dst + " = 0;")
     } else if k == KStr {
         if strDefault < 0 {
@@ -3021,27 +3035,34 @@ func cpEmitRecords() {
         }
         cpRecBuf.add(toText("} " + ctype + ";"))
 
-        fpReset(1)
-        f = irRecordLayoutFieldsHead(i)
-        while f != -1 {
-            cpDefaultInit(toText("r.cv_" + poolGet(irFieldSlotName(f))), irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
-            f = irFieldSlotNext(f)
+        if not irRecordLayoutIsOverlay(i) {
+            // Plan 5b Task 2: an overlay record is never constructed (only
+            // cast onto existing memory via OverlayName(p) -- CvPtrToOverlay)
+            // so it gets no clar_new_NAME at all; the typedef above is the
+            // only thing cpEmitRecords produces for it.
+            fpReset(1)
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                cpDefaultInit(toText("r.cv_" + poolGet(irFieldSlotName(f))), irFieldSlotType(f), irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
+                f = irFieldSlotNext(f)
+            }
+            cpRecBuf.add(toText("static " + ctype + " clar_new_" + name + "(void) {"))
+            cpRecBuf.add(toText("    " + ctype + " r;"))
+            j = 0
+            while j < fpBody.count {
+                cpRecBuf.add(fpBody[j])
+                j = j + 1
+            }
+            cpRecBuf.add(toText("    return r;"))
+            cpRecBuf.add(toText("}"))
+            cpRecBuf.add(toText(""))
+            // See cpEmitFunc's matching comment: harvesting shares fpBody's
+            // text handles into cpRecBuf by reference; clear fpBody so a
+            // program whose LAST harvest happens to be a record ctor (no
+            // functions follow) doesn't leave cv_fpBody aliasing cv_cpRecBuf
+            // at exit.
+            fpReset(1)
         }
-        cpRecBuf.add(toText("static " + ctype + " clar_new_" + name + "(void) {"))
-        cpRecBuf.add(toText("    " + ctype + " r;"))
-        j = 0
-        while j < fpBody.count {
-            cpRecBuf.add(fpBody[j])
-            j = j + 1
-        }
-        cpRecBuf.add(toText("    return r;"))
-        cpRecBuf.add(toText("}"))
-        cpRecBuf.add(toText(""))
-        // See cpEmitFunc's matching comment: harvesting shares fpBody's text
-        // handles into cpRecBuf by reference; clear fpBody so a program
-        // whose LAST harvest happens to be a record ctor (no functions
-        // follow) doesn't leave cv_fpBody aliasing cv_cpRecBuf at exit.
-        fpReset(1)
         i = i + 1
     }
 }

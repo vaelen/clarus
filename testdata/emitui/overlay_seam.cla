@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// overlay_seam.cla: emitui golden fixture for overlay record emission
+// (Plan 5b Task 2). A minimal program: one overlay decl, a ptr->overlay
+// conversion, a field set + get, and an overlay->ptr conversion -- proves
+// the emitted C shape (typedef with no clar_new_ ctor, ->cv_ field access,
+// both conversion casts) compiles under the Retro68 m68k toolchain against
+// rt.h/rt_ui.h, same as every other emitui fixture.
+external func NewPtr(size: int): ptr
+
+overlay record Trip {
+    a: int
+    b: ptr
+}
+
+on App.startCLI(args: list of string) {
+    var p: ptr
+    var t: Trip
+    var v: int
+
+    p = NewPtr(8)
+    t = Trip(p)
+    t.a = 5
+    v = t.a
+    p = ptr(t)
+    quit 0
+}

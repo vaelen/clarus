@@ -232,6 +232,7 @@ func lowType(t: int): int {
     case TyStr { return irStrType(typeN(t)) }
     case TyEnum { return irEnumType(typeNameIdx(t)) }
     case TyRec { return irRecType(typeNameIdx(t)) }
+    case TyOverlay { return irOverlayType(typeNameIdx(t)) }
     case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
     case TyList { return irListType(lowType(typeElem(t))) }
     case TyMap { return irMapType(lowType(typeElem(t))) }
@@ -727,7 +728,7 @@ func lowCall(e: int): int {
         } else if name == "char" {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
         } else if name == "ptr" {
-            return newIRConv(CvIntToPtr, lowExpr(callArgsHead(e)), -1, ty)
+            return lowPtrConv(e, ty)
         } else if name == "askOpen" {
             return newIRIntr(IUiAskOpen(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askSave" {
@@ -738,6 +739,13 @@ func lowCall(e: int): int {
         symIdx = scopeLookup(curScope, identName(fn))
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
             return newIRConv(CvIntToEnum, lowExpr(callArgsHead(e)), identName(fn), ty)
+        }
+        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyOverlay {
+            // `OverlayName(p)` (Ch13: Overlay Records) -- checkConversion
+            // already required p: ptr; ty (lowMustType(e)) is the overlay
+            // type itself, carrying the target name fpConv's CvPtrToOverlay
+            // case reads back off the EConv node's own `ty`.
+            return newIRConv(CvPtrToOverlay, lowExpr(callArgsHead(e)), -1, ty)
         }
         if symIdx != -1 and irIsExtern(identName(fn)) {
             return newIRCallExt(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
@@ -1297,6 +1305,12 @@ func lowSelect(e: int): int {
             lowUnsupported("isNew is only defined on the accepted handler's parameter")
         }
         return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
+    } else if xk == TyOverlay {
+        // Ch13: an overlay field read/write -- no isNew special-case (that's
+        // TyRec-only, Ch10 accepted-handler machinery), just a plain
+        // FieldRef; fpFieldRef (cprint.cla) prints it `->cv_` since the
+        // receiver is a real C pointer, not a by-value struct.
+        return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
     } else if xk == TyErrorType {
         // `lastError.code`/`.message` read the runtime's rt_lasterr_*
         // globals directly (see lowIdent's doc comment). Every OTHER
@@ -1471,6 +1485,20 @@ func lowIntConv(e: int, ty: int): int {
     // kind should never pass checkCall).
     lowUnsupported("int(...) from unsupported source kind")
     return -1
+}
+
+// lowPtrConv lowers `ptr(x)`, whose ConvOp depends on x's source kind (Ch13:
+// Low-Level Memory Access's `ptr(int)`, widened by Ch13's Overlay Records to
+// also accept `ptr(overlay)`) -- mirrors lowIntConv's dispatch shape exactly.
+func lowPtrConv(e: int, ty: int): int {
+    var argK: TypeKind
+
+    argK = typeKind(exprTypeGet(callArgsHead(e)))
+    if argK == TyOverlay {
+        return newIRConv(CvOverlayToPtr, lowExpr(callArgsHead(e)), -1, ty)
+    }
+    // checkConversion only accepts TyInt/TyOverlay as ptr()'s source kind.
+    return newIRConv(CvIntToPtr, lowExpr(callArgsHead(e)), -1, ty)
 }
 
 // ================================================================
@@ -3470,7 +3498,7 @@ func lowRecordDecl(d: int) {
         f = declNext(f)
         fi = fieldInfos[fi].next
     }
-    newIRRecordLayout(recordDeclName(d), fieldsHead)
+    newIRRecordLayout(recordDeclName(d), fieldsHead, recordDeclIsOverlay(d))
 }
 
 // lowEnumDecl builds the enum's IREnumLayout, replicating checkEnumDecl's
