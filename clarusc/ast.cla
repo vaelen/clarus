@@ -95,7 +95,8 @@
 //                vars list) and window-body per-instance vars
 //   DkConst      nameIdx=name; a=type; b=value expr (literal or Ident)
 //   DkRecord     nameIdx=name; a=fields list head (DkField chain, -1 if
-//                empty)
+//                empty); intVal=isOverlay flag (0/1) -- Task 1 (Ch13:
+//                Overlay Records), `overlay record` vs. plain `record`
 //   DkEnum       nameIdx=name; a=members list head (DkEnumMember chain)
 //   DkFunc       nameIdx=name; a=params list head (DkParam chain, -1 if
 //                none); b=return type (-1 if a procedure); c=body StBlock
@@ -1177,6 +1178,17 @@ func recordDeclName(i: int): int {
 
 func recordDeclFieldsHead(i: int): int {
     return decls[i].a
+}
+
+// recordDeclIsOverlay/recordDeclSetOverlay carry the `overlay record` flag
+// (Task 1, Ch13: Overlay Records) in DkRecord's intVal slot; zero-value
+// default is 0/false, so a plain `record` never needs to set it.
+func recordDeclIsOverlay(i: int): bool {
+    return intToBool(decls[i].intVal)
+}
+
+func recordDeclSetOverlay(i: int) {
+    decls[i].intVal = 1
 }
 
 func newEnumMember(nameIdx: int, value: int, hasValue: bool, labelIdx: int, line: int, col: int): int {

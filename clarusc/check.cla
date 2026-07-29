@@ -698,6 +698,9 @@ func typeName(t: int): string {
     case TyRec {
         return poolGet(typeNameIdx(t))
     }
+    case TyOverlay {
+        return poolGet(typeNameIdx(t))
+    }
     case TyWindowRef {
         return poolGet(typeNameIdx(t))
     }
@@ -1343,6 +1346,10 @@ func resolveType(te: int): int {
             emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
             return listT(InvalidT)
         }
+        if et != InvalidT and typeKind(et) == TyOverlay {
+            emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
+            return listT(InvalidT)
+        }
         return listT(et)
     }
     case TxMap {
@@ -1351,12 +1358,20 @@ func resolveType(te: int): int {
             emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
             return mapT(InvalidT)
         }
+        if et != InvalidT and typeKind(et) == TyOverlay {
+            emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
+            return mapT(InvalidT)
+        }
         return mapT(et)
     }
     case TxArray {
         et = resolveType(arrayTypeElem(te))
         if et != InvalidT and typeKind(et) == TyPtr {
             emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return arrT(InvalidT, arrayTypeN(te))
+        }
+        if et != InvalidT and typeKind(et) == TyOverlay {
+            emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
             return arrT(InvalidT, arrayTypeN(te))
         }
         return arrT(et, arrayTypeN(te))
@@ -1384,13 +1399,24 @@ func checkRecordDecl(d: int) {
     var dt: int
     var t: int
     var sym: Symbol
+    var isOverlay: bool
 
     nameIdx = recordDeclName(d)
+    isOverlay = recordDeclIsOverlay(d)
     fiHead = -1
     fiTail = -1
     f = recordDeclFieldsHead(d)
     while f != -1 {
         ft = resolveType(fieldType(f))
+        if isOverlay {
+            if ft != InvalidT and typeKind(ft) != TyInt and typeKind(ft) != TyBool and typeKind(ft) != TyChar and typeKind(ft) != TyFixed and typeKind(ft) != TyPtr {
+                emitDiag(declLine(f), declCol(f), "overlay fields must be int, bool, char, fixed, or ptr")
+                ft = InvalidT
+            }
+        } else if ft != InvalidT and typeKind(ft) == TyOverlay {
+            emitDiag(declLine(f), declCol(f), "overlay records cannot be record fields")
+            ft = InvalidT
+        }
         fi = newFieldInfo(fieldName(f), ft)
         if fiHead == -1 {
             fiHead = fi
@@ -1404,16 +1430,24 @@ func checkRecordDecl(d: int) {
     fi = fiHead
     while f != -1 {
         if fieldDefault(f) != -1 {
-            dt = checkExpr(fieldDefault(f), fieldInfos[fi].typeIdx)
-            if dt != InvalidT and not compatible(dt, fieldInfos[fi].typeIdx) {
-                emitDiag(declLine(f), declCol(f), "cannot assign " + typeName(dt) + " to field " + poolGet(fieldName(f)) + " of type " + typeName(fieldInfos[fi].typeIdx))
+            if isOverlay {
+                emitDiag(declLine(f), declCol(f), "overlay fields cannot have defaults")
+            } else {
+                dt = checkExpr(fieldDefault(f), fieldInfos[fi].typeIdx)
+                if dt != InvalidT and not compatible(dt, fieldInfos[fi].typeIdx) {
+                    emitDiag(declLine(f), declCol(f), "cannot assign " + typeName(dt) + " to field " + poolGet(fieldName(f)) + " of type " + typeName(fieldInfos[fi].typeIdx))
+                }
             }
         }
         f = declNext(f)
         fi = fieldInfos[fi].next
     }
 
-    t = recT(nameIdx)
+    if isOverlay {
+        t = overlayT(nameIdx)
+    } else {
+        t = recT(nameIdx)
+    }
     sym.nameIdx = nameIdx
     sym.typeIdx = t
     sym.isFunc = false
@@ -3608,6 +3642,15 @@ func checkSelect(e: int): int {
             return BoolT
         }
     }
+    case TyOverlay {
+        fh = recordFieldsHead(typeNameIdx(xt))
+        while fh != -1 {
+            if poolGet(fieldInfos[fh].nameIdx) == name {
+                return fieldInfos[fh].typeIdx
+            }
+            fh = fieldInfos[fh].next
+        }
+    }
     case TyErrorType {
         if name == "code" {
             return IntT
@@ -3701,9 +3744,11 @@ func checkConversion(e: int, target: int, name: string): int {
     } else if target == CharT {
         ok = typeKind(at) == TyInt
     } else if target == PtrT {
-        ok = typeKind(at) == TyInt
+        ok = typeKind(at) == TyInt or typeKind(at) == TyOverlay
     } else if typeKind(target) == TyEnum {
         ok = typeKind(at) == TyInt
+    } else if typeKind(target) == TyOverlay {
+        ok = typeKind(at) == TyPtr
     }
     if not ok {
         emitDiag(exprLine(e), exprCol(e), "cannot convert " + typeName(at) + " to " + name)
@@ -3774,7 +3819,7 @@ func checkIdentCall(e: int, fn: int): int {
         return InvalidT
     }
     if symbols[symIdx].isType {
-        if typeKind(symbols[symIdx].typeIdx) == TyEnum {
+        if typeKind(symbols[symIdx].typeIdx) == TyEnum or typeKind(symbols[symIdx].typeIdx) == TyOverlay {
             return checkConversion(e, symbols[symIdx].typeIdx, name)
         }
         emitDiag(exprLine(e), exprCol(e), "cannot convert to " + name)

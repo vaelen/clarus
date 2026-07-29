@@ -1356,6 +1356,41 @@ func ticksSince(start: int): int {
 
 Trap-number and calling-convention annotations for tying a declaration to a specific Toolbox trap are reserved for a future revision; this release's `external func` names the signature only, and how the name resolves to an entry point is a toolchain concern outside this reference.
 
+### Overlay Records
+
+An `overlay record` declares a named view over raw memory: its fields describe a byte layout at some address, the same way `record` describes a value's fields — but an overlay value IS that address, not a copy of the bytes there. `overlay` is contextual, recognized only immediately before `record`; elsewhere it is an ordinary identifier.
+
+```rust
+overlay record RtHdr {
+    rc: int
+    data: ptr
+}
+
+func f(p: ptr) {
+    var h: RtHdr = RtHdr(p)
+    var n: int = h.rc
+    h.rc = 5
+    h.data = p
+    var back: ptr = ptr(h)
+    var same: bool = h == RtHdr(p)
+}
+```
+
+Field types are restricted to `int`, `bool`, `char`, `fixed`, and `ptr` — the same by-value scalars `peek`/`poke` (above) read and write, since an overlay field's offset and width must be exactly one of those. An overlay field may not have a default value: its value lives at whatever address the overlay currently names, so there is nothing for a per-declaration default to initialize.
+
+An overlay value is produced from a `ptr` by calling the overlay type as a conversion, `Name(p)`, and converted back with `ptr(o)`; neither conversion is implicit, matching `ptr`'s own conversions. There is no `new OverlayName` — an overlay is never allocated, only obtained by converting an existing address.
+
+Reading a field (`h.rc`) or writing one (`h.rc = 5`) reads or writes through the address `h` currently holds — the overlay's declared layout is just a name for those offsets. Assignment between overlay-typed values (`h = RtHdr(p)`) copies the address, not the bytes it points to; `==` and `!=` compare the two addresses, the same rules `ptr` follows.
+
+An overlay type may be used as a variable, function parameter, function return type, or comparison operand — anywhere an ordinary by-value type can. It may not be a container element, a field of another `record` or `overlay record`, the subject of `file.save`/`file.load`, a `form for` record, or a `for`-loop subject:
+
+```rust
+// var xs: list of RtHdr       // build-time error: overlay records cannot be container elements
+// record Wrapper { h: RtHdr } // build-time error: overlay records cannot be record fields
+```
+
+Like `ptr`, an overlay value is copied by value and never participates in reference counting — an overlay is a view, not an owner, of whatever it points to.
+
 ## Appendix A: Grammar (EBNF)
 
 ```ebnf

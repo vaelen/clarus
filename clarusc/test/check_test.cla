@@ -756,4 +756,84 @@ on App.startEmpty {
     ln(src, "    pokeb(p, c)")
     ln(src, "}")
     runCase("poke-bad-arg-type", src)
+
+    // ---- Task 1 (native-5b): `overlay record` declarations ----
+
+    // Case 52: a clean program exercising overlay records' whole surface --
+    // declaration, ptr->overlay and overlay->ptr conversions, field get/set,
+    // and an overlay-vs-overlay equality comparison.
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var h: RtHdr")
+    ln(src, "    var n: int")
+    ln(src, "    var same: bool")
+    ln(src, "")
+    ln(src, "    h = RtHdr(p)")
+    ln(src, "    n = h.rc")
+    ln(src, "    h.rc = 5")
+    ln(src, "    h.data = p")
+    ln(src, "    p = ptr(h)")
+    ln(src, "    same = h == RtHdr(p)")
+    ln(src, "}")
+    runCase("overlay-clean", src)
+
+    // Case 53: overlay field types are restricted to int/bool/char/fixed/
+    // ptr -- string is rejected.
+    src = ""
+    ln(src, "overlay record Bad {")
+    ln(src, "    s: string")
+    ln(src, "}")
+    runCase("overlay-bad-field-type", src)
+
+    // Case 54: an overlay field may not have a default value.
+    src = ""
+    ln(src, "overlay record BadD {")
+    ln(src, "    n: int = 3")
+    ln(src, "}")
+    runCase("overlay-field-default", src)
+
+    // Case 55: an overlay record cannot be a container element.
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var xs: list of RtHdr")
+    ln(src, "}")
+    runCase("overlay-container-element", src)
+
+    // Case 56: there is no `new` for an overlay record -- it is only
+    // obtained by converting an existing ptr.
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var h: RtHdr")
+    ln(src, "")
+    ln(src, "    h = new RtHdr")
+    ln(src, "}")
+    runCase("overlay-new", src)
+
+    // Case 57: selecting an undeclared field on an overlay record uses the
+    // same "undefined: X" shape as an ordinary record.
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var h: RtHdr")
+    ln(src, "    var n: int")
+    ln(src, "")
+    ln(src, "    n = h.nope")
+    ln(src, "}")
+    runCase("overlay-undefined-field", src)
 }

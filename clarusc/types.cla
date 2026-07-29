@@ -66,6 +66,16 @@ enum TypeKind {
     // last, after the checker-only pseudo-kinds, since its ordering among
     // the other kinds is not load-bearing.
     TyPtr
+
+    // TyOverlay (Task 1, Ch13: Overlay Records) is a named view over raw
+    // memory -- like TyRec it carries only nameIdx (the named-type
+    // identity, via overlayT below), but a value of this kind IS an
+    // address rather than a copy of the fields' bytes: assignment copies
+    // the address, never the pointee. Also never a container element (see
+    // resolveType's guard) and never a record/overlay field type (see
+    // checkRecordDecl's guard). Appended after TyPtr; ordering among the
+    // other kinds is not load-bearing.
+    TyOverlay
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -73,7 +83,7 @@ enum TypeKind {
 //   TyStr              n=capacity
 //   TyArr               n=length; elem=element type index
 //   TyList, TyMap        elem=element/value type index
-//   TyEnum, TyRec, TyWindowRef
+//   TyEnum, TyRec, TyWindowRef, TyOverlay
 //                       nameIdx=interned declared name -- the type's
 //                       NAMED-TYPE IDENTITY. Two TypeInfo entries of the
 //                       same kind with the same nameIdx are the SAME
@@ -226,6 +236,20 @@ func recT(nameIdx: int): int {
     return typeArena.count - 1
 }
 
+// overlayT constructs a fresh named overlay-record type (Task 1, Ch13:
+// Overlay Records) -- one call per declared `overlay record`, mirroring
+// recT above; nameIdx alone carries the named-type identity.
+func overlayT(nameIdx: int): int {
+    var t: TypeInfo
+
+    t.kind = TyOverlay
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = nameIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
 func windowRefT(nameIdx: int): int {
     var t: TypeInfo
 
@@ -345,6 +369,9 @@ func assignable(src: int, dst: int): bool {
     case TyRec {
         return typeNameIdx(src) == typeNameIdx(dst)
     }
+    case TyOverlay {
+        return typeNameIdx(src) == typeNameIdx(dst)
+    }
     case TyWindowRef {
         return typeNameIdx(src) == typeNameIdx(dst)
     }
@@ -387,6 +414,9 @@ func typesEqual(a: int, b: int): bool {
         return typeNameIdx(a) == typeNameIdx(b)
     }
     case TyRec {
+        return typeNameIdx(a) == typeNameIdx(b)
+    }
+    case TyOverlay {
         return typeNameIdx(a) == typeNameIdx(b)
     }
     case TyWindowRef {

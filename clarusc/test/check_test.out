@@ -101,3 +101,15 @@ check_test.cla:4:15: cannot use int where ptr is expected
 check_test.cla:4:10: wrong number of arguments
 === poke-bad-arg-type ===
 check_test.cla:5:14: cannot use char where int is expected
+=== overlay-clean ===
+clean
+=== overlay-bad-field-type ===
+check_test.cla:2:5: overlay fields must be int, bool, char, fixed, or ptr
+=== overlay-field-default ===
+check_test.cla:2:5: overlay fields cannot have defaults
+=== overlay-container-element ===
+check_test.cla:6:13: overlay records cannot be container elements
+=== overlay-new ===
+check_test.cla:8:9: cannot use new with non-record type RtHdr
+=== overlay-undefined-field ===
+check_test.cla:9:10: undefined: nope

@@ -1053,6 +1053,18 @@ func parseRecordDecl(): int {
     return newRecordDecl(name.nameIdx, fieldsHead, line, col)
 }
 
+// parseRecordDeclOverlay parses `"overlay" "record" IDENT "{" { fieldDecl }
+// "}"` -- the "overlay" token itself is already consumed by parseTopDecl's
+// dispatch (Ch13: overlay records), which leaves the current token at
+// "record"; this just delegates to parseRecordDecl and stamps the result.
+func parseRecordDeclOverlay(): int {
+    var i: int
+
+    i = parseRecordDecl()
+    recordDeclSetOverlay(i)
+    return i
+}
+
 // parseFieldDecl parses `IDENT ":" type [ "=" ( literal | IDENT ) ]`.
 func parseFieldDecl(): int {
     var line: int
@@ -1362,6 +1374,10 @@ func parseTopDecl(): int {
     parseSawNonInclude = true
     if curIsIdentText("external") and peekKind() == TkFunc {
         return parseExternFuncDecl()
+    }
+    if curIsIdentText("overlay") and peekKind() == TkRecord {
+        advance()
+        return parseRecordDeclOverlay()
     }
     if curKind() == TkVar { return parseVarDecl() }
     if curKind() == TkFunc { return parseFuncDecl() }

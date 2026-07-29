@@ -68,24 +68,26 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	64, // Appendix C bookmark manager
-	65, // Appendix C text editor
+	66, // Appendix C bookmark manager
+	67, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
 // syntax the frozen Go compiler cannot parse at all — the `ptr` type,
-// peek/poke builtins, and `external func` declarations from Chapter 13.
-// These are the first reference fences added after the Go front end was
-// frozen (docs/ROADMAP.md); every Go-side fence sweep over ALL fences (e.g.
-// internal/selfhost's TestDifferentialFences) must skip them rather than
-// fail on a syntax the Go compiler predates. They are deliberately absent
-// from CheckClean, which is driver.Check'd through the same frozen Go
-// front end.
+// peek/poke builtins, `external func` declarations, and `overlay record`
+// declarations, all from Chapter 13. These are the first reference fences
+// added after the Go front end was frozen (docs/ROADMAP.md); every Go-side
+// fence sweep over ALL fences (e.g. internal/selfhost's
+// TestDifferentialFences) must skip them rather than fail on a syntax the
+// Go compiler predates. They are deliberately absent from CheckClean, which
+// is driver.Check'd through the same frozen Go front end.
 //
 // 60 (line 1300): Chapter 13 ptr basics — conversion, arithmetic, comparison
 // 61 (line 1310): Chapter 13 ptr container restriction (list of ptr, commented)
 // 62 (line 1330): Chapter 13 peek/poke
 // 63 (line 1346): Chapter 13 external func
+// 64 (line 1363): Chapter 13 overlay records — declaration, conversions, field get/set
+// 65 (line 1387): Chapter 13 overlay records restrictions (container/field, commented)
 var ClaruscOnly = []int{
-	60, 61, 62, 63,
+	60, 61, 62, 63, 64, 65,
 }
