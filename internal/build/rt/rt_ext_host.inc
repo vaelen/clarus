@@ -56,5 +56,15 @@ void rt_ext_MapKeyAt(void *m, int32_t i, void *key255) { rt_map_key_at((rt_map *
 void rt_ext_MapValAt(void *m, int32_t i, void *out) { rt_map_val_at((rt_map *)m, i, out); }
 void rt_ext_MapSet(void *m, void *key255, void *val) { rt_map_set((rt_map *)m, (const uint8_t *)key255, val); }
 void rt_ext_MapClear(void *m) { rt_map_clear((rt_map *)m); }
+/* rt_panic takes a NUL-terminated C string; the Clarus-side msg is a str255
+ * ([len][bytes]), so build a NUL-terminated copy here first -- same
+ * conversion shape as rt_ext_SetLastErr above (Plan 5b Task 7). */
+void rt_ext_Panic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
 
 #endif /* CLARUS_RT_EXT_HOST_INC */

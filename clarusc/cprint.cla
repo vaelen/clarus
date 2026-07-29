@@ -63,6 +63,16 @@ var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err) + UI 
 var cpUiBuf: list of text     // rt_ui_widget_desc/window_desc/item_desc/menu_desc tables (Task 4)
 var cpRestBuf: list of text   // globals init, funcs, main
 
+// cpSerPorted (Plan 5b Task 7) is the ported-module flag the file.save/
+// file.load redirect keys on: main.cla sets it (directly -- no setter
+// function, same convention as check.cla's usesFileSaveLoad global) to
+// exactly usesFileSaveLoad's value right where it decides whether to pull
+// in runtime/clarus/ser.cla, so it's always correct per-program even
+// across the differential/selfhost harness's many-compiles-per-process
+// runs. Tasks 8-11 add one analogous bool per ported family (str/text/
+// list/map) the same way.
+var cpSerPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -1875,6 +1885,28 @@ func fpIntrCall(x: int): text {
             recName = poolGet(irtName(irtElem(dataT)))
             container = "RT_SER_MAP"
             dataExpr = "(void*)(" + fpExpr(a1) + ")"
+        }
+        if cpSerPorted {
+            // Plan 5b Task 7: once runtime/clarus/ser.cla is included,
+            // its rtFileSave/rtFileLoad replace rt_file_save/rt_file_load
+            // -- container becomes rtFileSave's own `container: int`
+            // literal (0/1/2), not the RT_SER_* C macros, and desc is the
+            // flat clar_serdesc_<REC> array (Task 5) rather than the
+            // pointer-bearing clar_layout_<REC> (still used by
+            // rt_ui_table_desc/rt_ui_form_desc, unrelated to file.save/
+            // load). Same dataExpr selection as above either way.
+            fn = "clar_fn_rtFileSave"
+            if nm == IFileLoad() {
+                fn = "clar_fn_rtFileLoad"
+            }
+            if dataKind == KRec {
+                container = "0"
+            } else if dataKind == KList {
+                container = "1"
+            } else {
+                container = "2"
+            }
+            return fn + "(" + fpStrAddr(a0) + ", " + container + ", " + dataExpr + ", (void*)clar_serdesc_" + recName + ")"
         }
         fn = "rt_file_save"
         if nm == IFileLoad() {

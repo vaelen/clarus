@@ -429,7 +429,13 @@ on App.startCLI(args: list of string) {
     if emitMode {
         // The manifest: Task 4 ships exactly this one usage-flag/file pair
         // plus the machinery; Task 7 repoints "ser.cla" at the real
-        // serialization module, and later tasks add unconditional entries.
+        // serialization module (now containing rtFileSave/rtFileLoad,
+        // replacing the placeholder), and later tasks add unconditional
+        // entries. cpSerPorted (cprint.cla) is set directly here, right
+        // alongside the manifest decision it mirrors, so it's always
+        // correct per-program even when this process compiles many
+        // programs in a row (differential/selfhost harnesses).
+        cpSerPorted = usesFileSaveLoad
         if usesFileSaveLoad {
             neededMods.add("ser.cla")
         }

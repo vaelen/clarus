@@ -1,13 +1,508 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// ser.cla: placeholder for the ported serialization runtime module (Plan
-// 5b "Stage B" per docs/superpowers/specs/2026-07-29-runtime-migration-
-// wave1-design.md). Task 4 (implicit runtime-module inclusion machinery)
-// only needs this file to EXIST and be findable at the documented default
-// location (runtime/clarus/, sibling of runtime/mac/) so that any program
-// using file.save/file.load keeps emitting exactly as before -- file.save/
-// load still lower directly to the existing rt_file_save/rt_file_load C
-// runtime (rt.c), untouched by this task. Deliberately empty (no top-level
-// declarations) so including it contributes nothing to a program's emitted
-// C; Task 7 replaces this placeholder with the real ported serializer.
+// ser.cla: the ported record serializer (Plan 5b "Stage B" Task 7, runtime-
+// migration-wave1). Replaces internal/build/rt/rt_ser.inc's rt_file_save/
+// rt_file_load for any program that calls file.save/file.load -- clarusc's
+// cprint.cla redirects IFileSave/IFileLoad to rtFileSave/rtFileLoad here
+// once this module is included (main.cla always includes it when
+// usesFileSaveLoad, and cpSerPorted in cprint.cla is set true alongside
+// that -- see main.cla; Tasks 8-11 add their own analogous flags per
+// family, same mechanism). Ported EXACTLY against rt_ser.inc's 328 lines:
+// same header/field/container byte layout, same save/load error and
+// clear-container discipline, same element-copy-before-append relocation
+// discipline for LIST/MAP saves.
+//
+// Descriptor format (mirrors cprint.cla's cpEmitSerDescs doc comment): each
+// `clar_serdesc_<REC>` is a flat `const int32_t[]`, walked here with peekl
+// alone (this module never sees the record's real C struct type, only a
+// `ptr` to memory shaped like it, and a `ptr` to this descriptor):
+//
+//   [0] = sizeof(rec)   -- record size in bytes
+//   [1] = nFields       -- field count
+//   then nFields field blocks, each "4 + enumCount" int32s, back to back:
+//     [0] ftype      -- RT_FT_INT 0 / FIXED 1 / BOOL 2 / CHAR 3 / STR 4 / ENUM 5
+//     [1] strCap     -- RT_FT_STR only, else 0
+//     [2] offset     -- byte offset of the field within one record
+//     [3] enumCount  -- RT_FT_ENUM only, else 0
+//     [4..] enumCount inline ordinal values -- RT_FT_ENUM only
+//
+// File format, byte-exact with rt_ser.inc: 'C' 'L' 'R' 'S', version byte 1,
+// container byte (0 REC / 1 LIST / 2 MAP), then the payload -- REC: fields
+// in descriptor order (INT/FIXED/ENUM 4 bytes BE; BOOL/CHAR 1 byte, BOOL
+// canonicalized 0/1 even though its in-memory field is a 4-byte int32; STR:
+// 1 length byte + strCap data bytes zero-padded). LIST: 4-byte BE count
+// then that many records. MAP: 4-byte BE count then (1 length byte + key
+// bytes + record) entries.
+
+external func FileWriteData(path: ptr, t: text): int
+external func FileReadTextInto(path: ptr, out: text): int
+external func SetLastErr(code: int, msg: string)
+external func Panic(msg: string)
+external func ListCount(l: ptr): int
+external func ListAt(l: ptr, i: int): ptr
+external func ListClear(l: ptr)
+external func ListPush(l: ptr, elem: ptr)
+external func MapCount(m: ptr): int
+external func MapKeyAt(m: ptr, i: int, key255: ptr)
+external func MapValAt(m: ptr, i: int, out: ptr)
+external func MapSet(m: ptr, key255: ptr, val: ptr)
+external func MapClear(m: ptr)
+external func BlockMoveData(src: ptr, dst: ptr, count: int)
+external func NewPtr(size: int): ptr
+external func DisposePtr(p: ptr)
+
+const RtSerMagic0: char = 'C'
+const RtSerMagic1: char = 'L'
+const RtSerMagic2: char = 'R'
+const RtSerMagic3: char = 'S'
+const RtSerVersion: int = 1
+
+const RtSerRec: int = 0
+const RtSerList: int = 1
+const RtSerMap: int = 2
+
+const RtFtInt: int = 0
+const RtFtFixed: int = 1
+const RtFtBool: int = 2
+const RtFtChar: int = 3
+const RtFtStr: int = 4
+const RtFtEnum: int = 5
+
+// ponytail: bounds the scratch record buffer used while iterating list/map
+// elements, same 2KB ceiling rt_ser.inc documents (RT_SER_MAX_REC) -- raise
+// both together if a future record type needs more.
+const RtSerMaxRec: int = 2048
+
+// rtSerPos/rtSerBad are rtFileLoad's read-cursor state. Module-global
+// rather than threaded through every helper as a value because Clarus has
+// no int-by-reference parameters (Ch6: scalars pass by value); rtFileLoad
+// is never reentrant/recursive (nothing here calls back into it), so a
+// single shared cursor is safe -- reset at the top of every rtFileLoad
+// call, exactly like rt_ser.inc's stack-local `ser_reader r`.
+var rtSerPos: int
+var rtSerBad: bool
+
+// ==================== write ====================
+
+func rtSerPutI32(out: text, v: int) {
+    out.append(char((v >> 24) & 255))
+    out.append(char((v >> 16) & 255))
+    out.append(char((v >> 8) & 255))
+    out.append(char(v & 255))
+}
+
+// rtSerPutField writes one field's disk bytes, reading the in-memory value
+// via peekl/peekb at rec+foffset. BOOL's in-memory field is a 4-byte int32
+// (cprint.cla emits bool as int32_t) -- read the full word and canonicalize
+// to one disk byte, never just the byte at the field's base address (that's
+// endian-dependent).
+func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
+    var p: ptr
+    var v: int
+    var i: int
+    var slen: int
+
+    p = rec + foffset
+    if ftype == RtFtInt or ftype == RtFtFixed or ftype == RtFtEnum {
+        rtSerPutI32(out, peekl(p))
+    } else if ftype == RtFtBool {
+        v = peekl(p)
+        if v != 0 {
+            out.append(char(1))
+        } else {
+            out.append(char(0))
+        }
+    } else if ftype == RtFtChar {
+        out.append(char(peekb(p)))
+    } else {
+        slen = peekb(p)
+        out.append(char(slen))
+        i = 0
+        while i < strCap {
+            if i < slen {
+                out.append(char(peekb(p + 1 + i)))
+            } else {
+                out.append(char(0))
+            }
+            i = i + 1
+        }
+    }
+}
+
+// rtSerPutRec walks desc's field blocks (see the header comment) and writes
+// each field of rec, in descriptor order, into out.
+func rtSerPutRec(out: text, rec: ptr, desc: ptr) {
+    var nFields: int
+    var fp: ptr
+    var i: int
+    var ftype: int
+    var strCap: int
+    var foffset: int
+    var enumCount: int
+
+    nFields = peekl(desc + 4)
+    fp = desc + 8
+    i = 0
+    while i < nFields {
+        ftype = peekl(fp)
+        strCap = peekl(fp + 4)
+        foffset = peekl(fp + 8)
+        enumCount = peekl(fp + 12)
+        rtSerPutField(out, rec, foffset, ftype, strCap)
+        fp = fp + 16 + enumCount * 4
+        i = i + 1
+    }
+}
+
+// rtSerSaveList copies each element to a NewPtr scratch buffer BEFORE
+// appending its bytes to out (the rt_ser.inc:125-137 relocation discipline:
+// out.append can grow out's storage, and on the Handle-backed runtime that
+// growth can relocate ANY other unlocked handle, including l's own data
+// handle -- holding a raw element pointer across those appends would read
+// through a handle that moved out from under it).
+func rtSerSaveList(out: text, l: ptr, desc: ptr, recSize: int) {
+    var count: int
+    var i: int
+    var scratch: ptr
+
+    count = ListCount(l)
+    rtSerPutI32(out, count)
+    scratch = NewPtr(recSize)
+    i = 0
+    while i < count {
+        BlockMoveData(ListAt(l, i), scratch, recSize)
+        rtSerPutRec(out, scratch, desc)
+        i = i + 1
+    }
+    DisposePtr(scratch)
+}
+
+// rtSerSaveMap is rtSerSaveList's map counterpart: MapValAt already copies
+// (unlike ListAt's interior pointer), but the value still goes through the
+// same scratch buffer for a uniform rtSerPutRec call; the key (MapKeyAt's
+// 256-byte Str255-shaped out param) is appended as length byte + raw key
+// bytes only (no zero-padding -- unlike an RT_FT_STR field, a map key has
+// no fixed capacity to pad to).
+func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
+    var count: int
+    var i: int
+    var j: int
+    var scratch: ptr
+    var key: ptr
+    var klen: int
+
+    count = MapCount(m)
+    rtSerPutI32(out, count)
+    scratch = NewPtr(recSize)
+    key = NewPtr(256)
+    i = 0
+    while i < count {
+        MapKeyAt(m, i, key)
+        klen = peekb(key)
+        out.append(char(klen))
+        j = 0
+        while j < klen {
+            out.append(char(peekb(key + 1 + j)))
+            j = j + 1
+        }
+        MapValAt(m, i, scratch)
+        rtSerPutRec(out, scratch, desc)
+        i = i + 1
+    }
+    DisposePtr(scratch)
+    DisposePtr(key)
+}
+
+// rtFileSave is file.save's redirected target (cprint.cla): container is
+// 0=REC/1=LIST/2=MAP (RT_SER_REC/LIST/MAP), path is the address of the
+// caller's emitted Str255, data is the record's address (REC) or the
+// list/map handle (LIST/MAP), desc is the record's clar_serdesc_<REC>.
+func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
+    var out: text
+    var recSize: int
+
+    recSize = peekl(desc)
+    if recSize > RtSerMaxRec {
+        Panic("record too large for serializer")
+    }
+
+    out.append(RtSerMagic0)
+    out.append(RtSerMagic1)
+    out.append(RtSerMagic2)
+    out.append(RtSerMagic3)
+    out.append(char(RtSerVersion))
+    out.append(char(container))
+
+    if container == RtSerRec {
+        rtSerPutRec(out, data, desc)
+    } else if container == RtSerList {
+        rtSerSaveList(out, data, desc, recSize)
+    } else {
+        rtSerSaveMap(out, data, desc, recSize)
+    }
+
+    return FileWriteData(path, out)
+}
+
+// ==================== read ====================
+
+func rtSerGetByte(t: text): char {
+    var c: char
+
+    if rtSerBad or rtSerPos >= t.length {
+        rtSerBad = true
+        return char(0)
+    }
+    c = t[rtSerPos]
+    rtSerPos = rtSerPos + 1
+    return c
+}
+
+func rtSerGetI32(t: text): int {
+    var b0: int
+    var b1: int
+    var b2: int
+    var b3: int
+
+    b0 = int(rtSerGetByte(t))
+    b1 = int(rtSerGetByte(t))
+    b2 = int(rtSerGetByte(t))
+    b3 = int(rtSerGetByte(t))
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+}
+
+// rtSerZeroPtr zero-fills n bytes at p -- rtFileLoad's LIST/MAP scratch is
+// re-used across elements and only the descriptor's known fields get
+// written by rtSerGetField, so this clears any struct padding a raw
+// NewPtr scratch would otherwise leave as garbage (rt_ser.inc's memset
+// call, same reasoning: "no stack garbage in unused struct padding").
+func rtSerZeroPtr(p: ptr, n: int) {
+    var i: int
+
+    i = 0
+    while i < n {
+        pokeb(p + i, 0)
+        i = i + 1
+    }
+}
+
+// rtSerGetField reads one field's disk bytes at descriptor block fp (see
+// the header comment for its shape) into rec+offset. ENUM validates
+// membership against the block's inline ordinal values before writing;
+// BOOL/INT/FIXED always write back a full 4-byte int32 (never a single
+// raw byte at the field's base address -- see rtSerPutField).
+func rtSerGetField(t: text, rec: ptr, fp: ptr) {
+    var ftype: int
+    var strCap: int
+    var foffset: int
+    var enumCount: int
+    var p: ptr
+    var v: int
+    var i: int
+    var slen: int
+    var ok: bool
+    var b: char
+
+    ftype = peekl(fp)
+    strCap = peekl(fp + 4)
+    foffset = peekl(fp + 8)
+    enumCount = peekl(fp + 12)
+    p = rec + foffset
+
+    if ftype == RtFtInt or ftype == RtFtFixed {
+        v = rtSerGetI32(t)
+        if not rtSerBad {
+            pokel(p, v)
+        }
+    } else if ftype == RtFtEnum {
+        v = rtSerGetI32(t)
+        if not rtSerBad {
+            ok = false
+            i = 0
+            while i < enumCount {
+                if peekl(fp + 16 + i * 4) == v {
+                    ok = true
+                }
+                i = i + 1
+            }
+            if not ok {
+                rtSerBad = true
+            } else {
+                pokel(p, v)
+            }
+        }
+    } else if ftype == RtFtBool {
+        b = rtSerGetByte(t)
+        if not rtSerBad {
+            if int(b) != 0 {
+                pokel(p, 1)
+            } else {
+                pokel(p, 0)
+            }
+        }
+    } else if ftype == RtFtChar {
+        b = rtSerGetByte(t)
+        if not rtSerBad {
+            pokeb(p, int(b))
+        }
+    } else {
+        slen = int(rtSerGetByte(t))
+        if not rtSerBad {
+            if slen > strCap {
+                rtSerBad = true
+            } else {
+                i = 0
+                while i < strCap {
+                    b = rtSerGetByte(t)
+                    if not rtSerBad {
+                        pokeb(p + 1 + i, int(b))
+                    }
+                    i = i + 1
+                }
+                if not rtSerBad {
+                    pokeb(p, slen)
+                }
+            }
+        }
+    }
+}
+
+// rtSerGetRec walks desc's field blocks and reads each field of rec, in
+// descriptor order, stopping (per field) the moment rtSerBad is set --
+// fields already read before a failing one stay written, exactly matching
+// rt_ser.inc's ser_get_rec early-return-on-bad.
+func rtSerGetRec(t: text, rec: ptr, desc: ptr) {
+    var nFields: int
+    var fp: ptr
+    var i: int
+    var enumCount: int
+
+    nFields = peekl(desc + 4)
+    fp = desc + 8
+    i = 0
+    while i < nFields and not rtSerBad {
+        rtSerGetField(t, rec, fp)
+        enumCount = peekl(fp + 12)
+        fp = fp + 16 + enumCount * 4
+        i = i + 1
+    }
+}
+
+// rtSerLoadFail is rtFileLoad's shared failure exit: re-clear a LIST/MAP
+// target (a REC target is left exactly as far as it got -- see
+// rtSerGetRec's doc comment), set the "bad file format" lastError, return 0.
+func rtSerLoadFail(container: int, data: ptr): int {
+    if container == RtSerList {
+        ListClear(data)
+    } else if container == RtSerMap {
+        MapClear(data)
+    }
+    SetLastErr(2, "bad file format")
+    return 0
+}
+
+// rtFileLoad is file.load's redirected target -- same parameter shapes as
+// rtFileSave. Clears a LIST/MAP target before attempting anything (so any
+// failure below, including a missing file, leaves it empty); a REC target
+// is untouched until its header validates.
+func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
+    var input: text
+    var recSize: int
+    var b0: char
+    var b1: char
+    var b2: char
+    var b3: char
+    var verByte: char
+    var cbyte: char
+    var count: int
+    var i: int
+    var j: int
+    var scratch: ptr
+    var key: ptr
+    var klen: int
+
+    recSize = peekl(desc)
+    if recSize > RtSerMaxRec {
+        Panic("record too large for serializer")
+    }
+
+    if container == RtSerList {
+        ListClear(data)
+    } else if container == RtSerMap {
+        MapClear(data)
+    }
+
+    rtSerPos = 0
+    rtSerBad = false
+
+    if FileReadTextInto(path, input) != 1 {
+        return 0 // FileReadTextInto already set lastError
+    }
+
+    b0 = rtSerGetByte(input)
+    b1 = rtSerGetByte(input)
+    b2 = rtSerGetByte(input)
+    b3 = rtSerGetByte(input)
+    if rtSerBad or b0 != RtSerMagic0 or b1 != RtSerMagic1 or b2 != RtSerMagic2 or b3 != RtSerMagic3 {
+        return rtSerLoadFail(container, data)
+    }
+    verByte = rtSerGetByte(input)
+    if rtSerBad or int(verByte) != RtSerVersion {
+        return rtSerLoadFail(container, data)
+    }
+    cbyte = rtSerGetByte(input)
+    if rtSerBad or int(cbyte) != container {
+        return rtSerLoadFail(container, data)
+    }
+
+    if container == RtSerRec {
+        rtSerGetRec(input, data, desc)
+    } else if container == RtSerList {
+        count = rtSerGetI32(input)
+        scratch = NewPtr(recSize)
+        i = 0
+        while i < count and not rtSerBad {
+            rtSerZeroPtr(scratch, recSize)
+            rtSerGetRec(input, scratch, desc)
+            if not rtSerBad {
+                ListPush(data, scratch)
+            }
+            i = i + 1
+        }
+        DisposePtr(scratch)
+    } else {
+        count = rtSerGetI32(input)
+        scratch = NewPtr(recSize)
+        key = NewPtr(256)
+        i = 0
+        while i < count and not rtSerBad {
+            klen = int(rtSerGetByte(input))
+            if rtSerBad or klen > 255 {
+                rtSerBad = true
+            } else {
+                pokeb(key, klen)
+                j = 0
+                while j < klen {
+                    pokeb(key + 1 + j, int(rtSerGetByte(input)))
+                    j = j + 1
+                }
+                if not rtSerBad {
+                    rtSerZeroPtr(scratch, recSize)
+                    rtSerGetRec(input, scratch, desc)
+                    if not rtSerBad {
+                        MapSet(data, key, scratch)
+                    }
+                }
+            }
+            i = i + 1
+        }
+        DisposePtr(scratch)
+        DisposePtr(key)
+    }
+
+    if rtSerBad or rtSerPos != input.length {
+        return rtSerLoadFail(container, data)
+    }
+    return 1
+}
