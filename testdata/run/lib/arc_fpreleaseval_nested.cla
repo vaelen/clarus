@@ -1,0 +1,100 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for the ARC fix-wave's last parked finding
+// (fpReleaseVal's KList/KMap arm, clarusc/cprint.cla): unlike its KRec and
+// KArr arms (both already routed through cpEmitRelease's lastref-gated deep
+// walk), the `else` branch emitted a bare `fpHeapFn(k) + "_release(...)"`
+// for KText/KList/KMap alike. KText is correct (nothing to walk), but for
+// KList/KMap that's a shallow release: when a container's own element/value
+// type is ITSELF a container (`map of list of text`, `list of list of
+// text`), fpReleaseVal's every caller -- fpMapReleaseGuard (map upsert/
+// remove's old-value release), IListRemove, and IListSet/IListSetRetain
+// (list index-set's old-value release) -- is an EVICTION site: the old
+// inner container is read out, about to become unreachable, and is the
+// container's own last chance to release what it holds. A bare
+// rt_list_release/rt_map_release call dropped only the evicted container's
+// own handle, leaking its text elements permanently.
+//
+// This is the same bug shape df6003d (ARC fix-wave Critical 1) fixed for
+// fpIntrCall's IRelease printer arm and the tracked-temp flush -- same fix,
+// applied to fpReleaseVal's own KList/KMap arm instead.
+//
+// Four probes below cover all four fpReleaseVal call sites with a nested
+// container (`map of list of text` / `list of list of text`), each inner
+// list carrying two `birth` text elements (so there's something live to
+// leak if the walk is skipped):
+//   1. map-of-list upsert overwrite (fpMapReleaseGuard via IMapSet)
+//   2. map-of-list remove (fpMapReleaseGuard via IMapRemove)
+//   3. list-of-list index-set overwrite (IListSet)
+//   4. list-of-list remove(i) (IListRemove)
+//
+// Expected strict-mode leak count: 0 (no ../arc_fpreleaseval_nested.leaks
+// file -- absent defaults to want-0); run under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1 by TestEmitDifferential. Before the fix, this
+// fixture's clarusc-emitted binary reported live=16 (two leaked rt_text
+// plus their two rt_list backing-array blocks, per evicted inner list, at
+// each of the four probes) -- hand-verified against clarusc directly (this
+// file predates its own fix, so there is no historical commit to point at
+// the way arc_fixwave_containers.cla points at df6003d).
+//
+// Nested containers (`map of list of text`, `list of list of text`) check
+// and run cleanly under the FROZEN Go reference compiler too (hand-probed
+// directly, per CLAUDE.md's differential-testing-reference framing) -- so,
+// unlike arc_fixwave_arrays.cla's text[n]-reassignment UAF case, this
+// fixture needs no clarusc-only carve-out and lives in the normal shared
+// testdata/run corpus like arc_fixwave_containers.cla itself.
+
+func makeInnerList(a: string, b: string): list of text {
+    var l: list of text
+    l.push(a)
+    l.push(b)
+    return l
+}
+
+func runArcFpreleasevalNested() {
+    var mList: map of list of text
+    var lList: list of list of text
+
+    // Probe 1: map-of-list upsert overwrite -- the birth inner list under
+    // "k" is evicted (and must be deep-released) when the key is
+    // overwritten.
+    mList["k"] = makeInnerList("a1", "a2")
+    mList["k"] = makeInnerList("b1", "b2")
+    if mList["k"].count == 2 and mList["k"].first() == "b1" {
+        alert("map-of-list-upsert-ok")
+    } else {
+        alert("map-of-list-upsert-bad")
+    }
+
+    // Probe 2: map-of-list remove -- the birth inner list under "j" is
+    // evicted (and must be deep-released) when the key is removed.
+    mList["j"] = makeInnerList("c1", "c2")
+    mList.remove("j")
+    if not mList.has("j") {
+        alert("map-of-list-remove-ok")
+    } else {
+        alert("map-of-list-remove-bad")
+    }
+
+    // Probe 3: list-of-list index-set overwrite -- the birth inner list at
+    // index 0 is evicted (and must be deep-released) when the slot is
+    // overwritten.
+    lList.push(makeInnerList("d1", "d2"))
+    lList[0] = makeInnerList("e1", "e2")
+    if lList[0].count == 2 and lList[0].first() == "e1" {
+        alert("list-of-list-set-ok")
+    } else {
+        alert("list-of-list-set-bad")
+    }
+
+    // Probe 4: list-of-list remove(i) -- the birth inner list at index 0 is
+    // evicted (and must be deep-released) when it's removed.
+    lList.push(makeInnerList("f1", "f2"))
+    lList.remove(0)
+    if lList.count == 1 {
+        alert("list-of-list-remove-ok")
+    } else {
+        alert("list-of-list-remove-bad")
+    }
+}

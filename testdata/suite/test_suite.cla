@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // test_suite.cla: monolithic pure-Clarus test suite (Task 6). Includes
-// every logic file under testdata/run/lib/ (52 of 54, alphabetical by file
+// every logic file under testdata/run/lib/ (53 of 55, alphabetical by file
 // name -- emit_array/emit_enum excluded, see below) and calls each one's
 // entry func(s) in a single App.launch handler,
 // alerting a "=== <lib file name> ===" delimiter before each. Multi-entry
@@ -45,6 +45,7 @@
 include "../run/lib/appendperf.cla"
 include "../run/lib/arc_fixwave_arrays.cla"
 include "../run/lib/arc_fixwave_containers.cla"
+include "../run/lib/arc_fpreleaseval_nested.cla"
 include "../run/lib/arc_global_alias.cla"
 include "../run/lib/arc_rec_copy.cla"
 include "../run/lib/arith.cla"
@@ -107,6 +108,8 @@ on App.launch {
     runArcFixwaveArrays()
     alert("=== arc_fixwave_containers ===")
     runArcFixwaveContainers()
+    alert("=== arc_fpreleaseval_nested ===")
+    runArcFpreleasevalNested()
     alert("=== arc_global_alias ===")
     runArcGlobalAlias()
     alert("=== arc_rec_copy ===")

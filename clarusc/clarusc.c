@@ -20847,7 +20847,7 @@ static void clar_fn_fpReleaseVal(rt_text * cv_v, int32_t cv_t) {
         rt_text_release(t4);
         rt_text_release(t5);
     } else {
-        if (cv_k == 11) {
+        if (((cv_k == 11) || (cv_k == 7)) || (cv_k == 8)) {
             rt_text_release(cv___store11);
             rt_text * t6 = NULL;
             t6 = rt_text_new();

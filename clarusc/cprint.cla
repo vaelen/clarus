@@ -378,7 +378,18 @@ func fpReleaseVal(v: text, t: int) {
         recName = poolGet(irtName(t))
         irMarkRcWalkNeeded(irtName(t))
         fpEmit("clar_release_" + recName + "(&(" + v + "));")
-    } else if k == KArr {
+    } else if k == KArr or k == KList or k == KMap {
+        // KList/KMap (fix-wave parked finding): a nested container
+        // element/value (`map of list of text`, `list of list of text`, ...)
+        // needs the SAME lastref-gated deep element walk KArr already gets
+        // here -- a bare rt_list_release/rt_map_release only drops the
+        // evicted container's own handle, leaking whatever it holds. Every
+        // fpReleaseVal caller is an eviction site (fpMapReleaseGuard's
+        // map upsert/remove guard, IListRemove, IListSet/IListSetRetain's
+        // old-value release) where the container being released is a VALUE
+        // already read out of its parent, not itself a live IR expression
+        // -- exactly what cpEmitRelease's caller-owned-buffer trick is for.
+        // KText has no elements to walk, so it keeps the bare call below.
         buf = ""
         cpEmitRelease(buf, toStr(v), t)
         fpEmit(buf)
