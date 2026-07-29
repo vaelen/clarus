@@ -151,21 +151,61 @@ Living document — the authoritative sequencing and strategy record. Updated
     a strict-mode (`CLARUS_MEM_STRICT=1`) exit hook reports every live
     un-noted block and fails the process; the full clarusc-emitted golden
     corpus now runs under strict+paranoid mode with per-program `.leaks`
-    goldens (default 0) as a permanent ratchet — 32 of 50 programs are at
-    zero, the other 18 are blessed goldens tracing to documented
-    leak-by-design classes that remain until ARC (user-call-result/bare-alias
-    reassignment orphans, containers disqualified by element reads, record
-    fields being out of the local-free pre-pass's scope, and — added by the
-    final whole-branch review's fix wave — a global disqualified by runtime
-    aliasing the Init-expression guard alone never caught, and a push/
-    map-set container disqualified because its value wasn't provably fresh
-    — the host corpus has no window declarations, so window-var
-    disqualification and cross-window name collisions are a separate Task 8
-    leak-by-design class exercised by the Mac UI test suite, not by any of
-    the 18 goldens). Go compiler, its emitted output, and the bootstrap
-    chain are unaffected — frees are unobservable in program output. Full
-    spec + per-site dispositions:
+    goldens (default 0) as a permanent ratchet — 32 of 50 programs were at
+    zero at merge, the other 18 were blessed goldens tracing to documented
+    leak-by-design classes (call-result/reassignment orphans, element-read
+    containers, record fields out of the local-free pre-pass's scope,
+    disqualified globals and window vars) that remained until ARC — **all
+    resolved, see Done item 11.** Go compiler, its emitted output, and the
+    bootstrap chain are unaffected — frees are unobservable in program
+    output. Full spec + per-site dispositions:
     `docs/superpowers/specs/2026-07-28-memory-audit-design.md`.
+
+11. **ARC (automatic reference counting): DONE.** Refcounted boxes
+    (`int32_t rc` as the first field of `rt_text`/`rt_list`/`rt_map`,
+    `rt.h`/`rt_core.inc`) replace 4e's escape-analysis apparatus outright:
+    retain on every reference copy (assignment, container store, record
+    copy, return), release at scope exit/container removal/global-and-
+    window teardown, all inserted locally by `lower.cla` with no
+    whole-program qualification. Clarus has no recursive types, so the
+    ownership graph is a DAG — refcounting is sound AND complete here,
+    not an approximation (no cycle collector needed). Deep release
+    (list/map-of-handle element loops, record retain/release walk
+    helpers) is compiler-generated per element/field type, mirroring the
+    4e `cpEmitFree` machinery. Migration proceeded class-by-class (temps/
+    call-results → locals → container elements → globals/window vars →
+    records), holding the no-UAF invariant at every intermediate state
+    via a `*_free == *_release` alias during the transition. All 18
+    nonzero `.leaks` goldens (item 10) went to zero; the golden files
+    themselves are now deleted (absent == 0 stays the ratchet's default).
+    The 4e escape-analysis apparatus (`lowEscapeWalk*` and friends, ~1000
+    lines of `lower.cla`) is deleted outright. One real bug found and
+    fixed by the migration's own final review: a discarded `pop()`/
+    `shift()` result (`lst.pop();`, value unused) is an ownership
+    TRANSFER with nowhere to land — leaked under naive translation until
+    `fpDiscardExprIdx` (`clarusc/cprint.cla`) special-cased it. Hard-won
+    lesson: transfer-convention intrinsics (pop/shift) don't get the
+    statement-temp tracker's automatic release-when-discarded coverage
+    that +1-convention intrinsics (first/last/map-get, user calls) get
+    for free — anything added later with transfer semantics needs the
+    same explicit wiring (open item below). Emitted C grew substantially
+    from the retain/release traffic, measured at snapshot regen:
+    `clarusc/clarusc.c` 1,633,052 → 2,332,983 bytes (+43%). Mac gate:
+    full `internal/mactest` suite (`TestSuiteOnMac`, `TestRunErrOnMac`,
+    `TestAbortAppsOnMac`, all 23 UI scenarios) byte-identical, same as
+    every prior Mac milestone — counts are unobservable in program
+    output. 68k timing baseline (the elision-decision measurement the
+    design doc committed to before deciding on elision): Bookmarks and
+    Text Editor, both built from the SAME `examples/*.cla` + `.events`
+    script pre- and post-ARC (pre-ARC clarusc rebuilt from a worktree at
+    `5f136f4`, the commit immediately before Task 1), wall-clocked over 3
+    LaunchAPPL runs each in Mini vMac. Bookmarks: 9.09s pre-ARC → 9.21s
+    post-ARC (+0.12s, ~1.3%). Text Editor: 3.98s pre-ARC → 3.97s
+    post-ARC (no measurable change). Both deltas are within run-to-run
+    noise (observed spread ~0.05-0.2s per binary) and neither is
+    subjectively perceptible on the emulator — **elision is NOT
+    triggered by this measurement.** Full design + counting-rules table:
+    `docs/superpowers/specs/2026-07-29-arc-design.md`.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
@@ -303,12 +343,35 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   shipped scenario workarounds in `testdata/ui/hscroll.cla` and
   `testdata/ui/dialogs.cla` were unwound to exercise the fixed shapes
   directly.
-- **ARC milestone (follow-on to the 4e memory audit, not yet scheduled):**
-  refcount in the struct box, retain/release lowering, deep frees (into
-  container elements and record fields), and drive all 9 remaining nonzero
-  `.leaks` goldens to zero. Sound and complete — Clarus has no recursive
-  types, so refcounting is cycle-free. Same runtime dispose API; strictly
-  smarter clarusc lowering on top of it.
+- **ARC milestone: DONE** — see Done item 11. All `.leaks` goldens at zero
+  (files deleted); the 4e escape-analysis apparatus deleted.
+- **Retain/release elision (conditional follow-on, not triggered):** the
+  ARC design's own non-goal was naive ARC first, elision only if the 68k
+  measurement demanded it. Measured (Done item 11): Bookmarks +0.12s
+  (~1.3%), Text Editor no measurable change, both within run-to-run noise
+  and neither subjectively perceptible on the emulator. Trigger not met —
+  no elision work scheduled. Revisit if a future, more refcount-traffic-
+  heavy acceptance app (or real hardware, not Mini vMac) shows real
+  degradation.
+- **`form for` handle-backed-record checker gap (found during ARC Task 9
+  close-out):** the language reference (`docs/clarus-language-
+  reference.md`: "`form for T` requires every field of `T` to be a
+  by-value type... the same build-time error... as `file.save`/
+  `file.load`") documents a compile-time error that the checker
+  (`internal/check/`) does not actually enforce for `form for` — a record
+  with a `text`/`list`/`map` field compiles today where the reference
+  says it shouldn't. The restriction dates to 4d (`ea50f13`), predates
+  ARC, and is not an ARC regression. Parked for a follow-up ticket.
+- **Discard-tracking generality (found during ARC Tasks 8-9):** only
+  `pop`/`shift` (`clarusc/cprint.cla`'s `fpDiscardExprIdx`) consult the
+  machinery that releases a transfer-convention intrinsic's result when
+  its enclosing statement discards it. Every other container/call result
+  uses the +1-retain convention, which the ordinary statement-temp
+  tracker already releases-when-discarded for free — so pop/shift are
+  the only known transfer-convention intrinsics today, and the residual
+  class is narrow. If a future intrinsic is added with transfer (not +1)
+  semantics, it needs the same explicit wiring; nothing currently audits
+  for that automatically.
 - **Parameter-escape-summary precision upgrade (optional, follow-on to 4e,
   not yet scheduled):** per-function parameter-escape summaries (whole-
   program compilation, no indirect calls, so a cheap fixpoint) to shrink

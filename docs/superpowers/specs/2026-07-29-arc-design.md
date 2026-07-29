@@ -1,6 +1,8 @@
 # Automatic Reference Counting (ARC) — Design
 
-Date: 2026-07-29. Status: approved (brainstorm w/ Andrew).
+Date: 2026-07-29. Status: approved and implemented (brainstorm w/
+Andrew; Task 9 close-out 2026-07-29 — see `docs/ROADMAP.md` Done item
+11).
 Branch: `arc`. Builds on the 4e memory audit
 (`2026-07-28-memory-audit-design.md`), merged 2026-07-29.
 
@@ -22,7 +24,12 @@ Branch: `arc`. Builds on the 4e memory audit
 - **Elision.** Naive ARC first — retain/release at every site — then
   measure real apps (Bookmarks, Text Editor) on the 68k emulator and
   record numbers in the ROADMAP. Balanced-pair elision is a follow-up
-  only if measurement demands it (decided 2026-07-29).
+  only if measurement demands it (decided 2026-07-29). **Disposition
+  (Task 9):** measured — Bookmarks 9.09s pre-ARC → 9.21s post-ARC
+  (+0.12s, ~1.3%), Text Editor 3.98s pre-ARC → 3.97s post-ARC (no
+  measurable change), both deltas within run-to-run noise on Mini vMac
+  and neither subjectively perceptible. Trigger not met; elision stays
+  an unscheduled conditional follow-on (`docs/ROADMAP.md`).
 - **Language changes.** ARC is unobservable: the language has no
   destructors or finalizers, reference semantics (Ch3) are untouched, and
   the language reference does not change.
@@ -177,9 +184,12 @@ intermediate state preserves the no-UAF invariant:
 - **Bootstrap:** clarusc compiling itself runs fully counted — the
   strongest stress test; fixed point must hold; snapshot regen expected
   to be large.
-- **Mac:** full gated suite byte-identical (counts are unobservable);
-  plus a manual timing measurement of Bookmarks + Text Editor on the
-  emulator, recorded in the ROADMAP as the elision-decision baseline.
+- **Mac:** DONE (Task 9) — full gated suite (`TestSuiteOnMac`,
+  `TestRunErrOnMac`, `TestAbortAppsOnMac`, all 23 UI scenarios)
+  byte-identical (counts are unobservable); the Bookmarks + Text Editor
+  timing measurement was taken and recorded in the ROADMAP (Done item
+  11) as the elision-decision baseline — see the Non-goals disposition
+  above.
 
 ## Risks
 
@@ -195,7 +205,12 @@ intermediate state preserves the no-UAF invariant:
 
 ## Follow-ons (recorded, not scheduled)
 
-- Retain/release elision (balanced-pair removal) if the 68k measurement
-  demands it.
+- Retain/release elision (balanced-pair removal): measured (Task 9), not
+  triggered — see the Non-goals disposition above. Stays unscheduled
+  unless a future measurement shows real degradation.
 - Host UI layer: unaffected; ARC lives below the Memory Manager seam's
   consumers.
+- `form for` handle-backed-record checker gap and discard-tracking
+  generality (pop/shift are the only intrinsics that consult the
+  discard-release machinery): found during Task 9 close-out, not ARC
+  regressions — ledgered in `docs/ROADMAP.md`'s Small open items.
