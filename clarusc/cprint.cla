@@ -700,6 +700,9 @@ func fpExpr(e: int): text {
     case ECallFn {
         return fpCallFn(e)
     }
+    case ECallExt {
+        return fpCallExt(e)
+    }
     }
     return toText("")
 }
@@ -788,6 +791,41 @@ func fpCallFn(e: int): text {
     // all-scalar record return (irRecHasHandleField false) has nothing to
     // retain/release either side of the call, so it stays the OLD
     // untracked-call-expression path, unchanged.
+    if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
+        t = fpNewTrackedTmp(irExprType(e))
+        fpEmit(t + " = " + call + ";")
+        return t
+    }
+    return call
+}
+
+// fpCallExt renders a call to an `external func` as `rt_ext_NAME(args...)`
+// (Task 3, Ch13: `external func`) -- mirrors fpCallFn exactly, save for the
+// symbol prefix; the tracked-temp materialization guard is kept for
+// structural parity even though it can never fire here in practice (an
+// external's return type is restricted to int/ptr/bool/char at check time
+// -- check.cla's checkExternFunc -- never a handle-backed Text/List/Map/Rec).
+func fpCallExt(e: int): text {
+    var args: text
+    var a: int
+    var first: bool
+    var argText: text
+    var call: text
+    var t: text
+
+    args = ""
+    first = true
+    a = irCallExtArgsHead(e)
+    while a != -1 {
+        if not first {
+            args = args + ", "
+        }
+        first = false
+        argText = fpExpr(a)
+        args = args + argText
+        a = irExprNext(a)
+    }
+    call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
     if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
         t = fpNewTrackedTmp(irExprType(e))
         fpEmit(t + " = " + call + ";")
@@ -2878,6 +2916,40 @@ func cpEmitFunc(f: int) {
     fpReset(fpIndent)
 }
 
+// cpEmitExternProtos emits one `extern` C prototype per registered
+// `external func` (Task 3, Ch13) into cpTypeBuf -- an external has no
+// clar_fn_NAME definition (cpEmitFuncs only ever iterates irFuncs, which
+// lowFuncDecl -- never lowExternDecl -- populates), only this forward
+// declaration of its host symbol rt_ext_NAME, defined in
+// rt_ext_host.inc/rt.c. Must run before anything that could CALL an
+// extern gets printed -- emitProgram calls it just ahead of cpEmitFuncs.
+func cpEmitExternProtos() {
+    var i: int
+    var j: int
+    var params: string
+    var first: bool
+
+    i = 0
+    while i < irExternCount() {
+        params = ""
+        first = true
+        j = 0
+        while j < irExternParamCount(i) {
+            if not first {
+                params = params + ", "
+            }
+            first = false
+            params = params + cpCType(irExternParam(i, j))
+            j = j + 1
+        }
+        if first {
+            params = "void"
+        }
+        cpTypeBuf.add(toText("extern " + cpCType(irExternRet(i)) + " rt_ext_" + poolGet(irExternName(i)) + "(" + params + ");"))
+        i = i + 1
+    }
+}
+
 // cpEmitFuncs prints every prototype up front, then every definition
 // (cprint.go's emitFuncs).
 func cpEmitFuncs() {
@@ -4544,6 +4616,7 @@ func emitProgram(): text {
     cpEmitUiDescs()
     cpEmitAppInfo()
     cpEmitGlobalsInit()
+    cpEmitExternProtos()
     cpEmitFuncs()
     cpEmitUiWiring()
     cpEmitMain()

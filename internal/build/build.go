@@ -59,6 +59,7 @@ func Build(paths []string, out string) ([]source.Diag, error) {
 	rtMemHPath := filepath.Join(workdir, "rt_mem.h")
 	rtMemHostIncPath := filepath.Join(workdir, "rt_mem_host.inc")
 	rtCoreIncPath := filepath.Join(workdir, "rt_core.inc")
+	rtExtHostIncPath := filepath.Join(workdir, "rt_ext_host.inc")
 	if err := os.WriteFile(mainPath, c, 0o644); err != nil {
 		return nil, err
 	}
@@ -78,6 +79,9 @@ func Build(paths []string, out string) ([]source.Diag, error) {
 		return nil, err
 	}
 	if err := os.WriteFile(rtCoreIncPath, rtCoreInc, 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(rtExtHostIncPath, rtExtHostInc, 0o644); err != nil {
 		return nil, err
 	}
 

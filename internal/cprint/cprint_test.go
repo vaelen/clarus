@@ -86,6 +86,10 @@ func buildExe(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rtExtHostInc, err := os.ReadFile("../build/rt/rt_ext_host.inc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "rt.h"), rtH, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +106,9 @@ func buildExe(t *testing.T, src string) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "rt_core.inc"), rtCoreInc, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rt_ext_host.inc"), rtExtHostInc, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "prog")

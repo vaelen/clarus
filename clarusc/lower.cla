@@ -727,6 +727,9 @@ func lowCall(e: int): int {
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
             return newIRConv(CvIntToEnum, lowExpr(callArgsHead(e)), identName(fn), ty)
         }
+        if symIdx != -1 and irIsExtern(identName(fn)) {
+            return newIRCallExt(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+        }
         if symIdx != -1 and symbols[symIdx].isFunc {
             return newIRCallFn(identName(fn), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
         }
@@ -4504,9 +4507,16 @@ func lowDecl(d: int) {
     k = declKind(d)
     if k == DkHandler {
         lowTopHandler(d)
-    } else if k == DkInclude or k == DkConst {
+    } else if k == DkInclude or k == DkConst or k == DkExternFunc {
         // DkInclude/DkConst intentionally emit no IR (includes are already
-        // expanded; consts inline at use) -- not a stub.
+        // expanded; consts inline at use). DkExternFunc (Task 3, Ch13) was
+        // already fully registered into the extern registry by
+        // lowerProgram's pre-pass, run before this main walk starts, so
+        // every call site sees a complete registry regardless of whether
+        // its callee's `external func` decl appears earlier or later in
+        // source order (Ch13: "may appear anywhere") -- registering it a
+        // second time here, in source-order-dependent position, would be
+        // too late for a call that precedes it. Not a stub either way.
     } else if k == DkRecord {
         lowRecordDecl(d)
     } else if k == DkEnum {
@@ -4528,6 +4538,31 @@ func lowDecl(d: int) {
     } else {
         lowUnsupported("declaration kind " + numToStr(int(k)))
     }
+}
+
+// lowExternDecl records an `external func` decl's signature into the IR
+// extern registry (Task 3, Ch13: `external func`) -- an external has no
+// body to lower; only lowCall's ECallExt routing and cprint's
+// cpEmitExternProtos ever read the registry back. Called from
+// lowerProgram's extern pre-pass, NOT from lowDecl's main dispatch (see
+// that dispatch's DkExternFunc arm) -- every extern must be registered
+// before any call site lowers, regardless of source order.
+func lowExternDecl(d: int) {
+    var paramTys: list of int
+    var p: int
+    var ret: int
+
+    p = funcDeclParamsHead(d)
+    while p != -1 {
+        paramTys.add(lowResolveType(paramType(p)))
+        p = declNext(p)
+    }
+    if funcDeclRetType(d) != -1 {
+        ret = lowResolveType(funcDeclRetType(d))
+    } else {
+        ret = irVoidT
+    }
+    irRegisterExtern(funcDeclName(d), ret, paramTys)
 }
 
 // lowAppDecl records the (at most one, checker-validated) `app` section's
@@ -4691,6 +4726,23 @@ func lowerProgram(declHead: int): int {
     // ARC Task 8 deleted the pass functions themselves along with the rest
     // of the 4e escape-walk apparatus (see lowBuildScopeExitFrees' own
     // section header comment).
+    //
+    // Extern pre-pass (Task 3, Ch13: `external func`): register every
+    // `external func`'s signature into the IR extern registry BEFORE the
+    // main walk below lowers any call site, so a call to an extern
+    // declared LATER in source order (Ch13 permits an externDecl "anywhere
+    // among a program's top-level declarations") still routes to
+    // ECallExt/rt_ext_NAME correctly -- unlike an ordinary function call
+    // (which resolves via check.cla's already-complete curScope, not IR
+    // lowering order), lowCall's irIsExtern test can only answer from
+    // what's been registered so far in ITS OWN single forward pass.
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkExternFunc {
+            lowExternDecl(d)
+        }
+        d = declNext(d)
+    }
     d = declHead
     while d != -1 {
         lowDecl(d)

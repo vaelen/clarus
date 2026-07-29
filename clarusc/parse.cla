@@ -1295,6 +1295,47 @@ func parseFuncDecl(): int {
     return newFuncDecl(name.nameIdx, paramsHead, retType, body, line, col)
 }
 
+// parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
+// [ ":" type ]` (Task 3, Ch13: `external func`) -- parseFuncDecl minus the
+// body block, since an external declaration ends at the signature; a
+// following `{` is left for parseTopDecl to reject as an ordinary
+// top-level parse error (there is no external-func body to parse).
+func parseExternFuncDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var paramsHead: int
+    var paramsTail: int
+    var pIdx: int
+    var retType: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'external'
+    expect(TkFunc)
+    name = expect(TkIdent)
+    expect(TkLParen)
+    paramsHead = -1
+    paramsTail = -1
+    if curKind() != TkRParen {
+        pIdx = parseParam()
+        paramsHead = pIdx
+        paramsTail = declListAppend(paramsTail, pIdx)
+        while curKind() == TkComma and not parseAborted {
+            advance()
+            pIdx = parseParam()
+            paramsTail = declListAppend(paramsTail, pIdx)
+        }
+    }
+    expect(TkRParen)
+    retType = -1
+    if curKind() == TkColon {
+        advance()
+        retType = parseType()
+    }
+    return newExternFuncDecl(name.nameIdx, paramsHead, retType, line, col)
+}
+
 // parseIncludeDecl parses `"include" STRING` (contextual: "include" is an
 // IDENT recognized by text at top-level statement start). Must be the
 // leading top-level declaration in the file; parseTopDecl enforces that.
@@ -1319,6 +1360,9 @@ func parseTopDecl(): int {
         return parseIncludeDecl()
     }
     parseSawNonInclude = true
+    if curIsIdentText("external") and peekKind() == TkFunc {
+        return parseExternFuncDecl()
+    }
     if curKind() == TkVar { return parseVarDecl() }
     if curKind() == TkFunc { return parseFuncDecl() }
     if curKind() == TkRecord { return parseRecordDecl() }

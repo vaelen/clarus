@@ -76,6 +76,12 @@
 //              -1 unless Op is CvIntToEnum/CvEnumToInt)
 //   ECallFn    name=Name (interned); b=Args list head (each arg an IRExpr
 //              chained via its own .next, -1 if none)
+//   ECallExt   (Task 3, Ch13: `external func`) name=Name (interned); b=Args
+//              list head (as ECallFn) -- printed as a call to the host
+//              symbol rt_ext_NAME rather than clar_fn_NAME; the callee's
+//              signature (for cprint's extern prototype) lives in the
+//              extern registry below (irRegisterExtern), keyed by name,
+//              not on this node
 //   EIntr      name=Name (interned intrinsic name); b=Args list head (as
 //              ECallFn)
 //   ENewRec    name=RecName (interned)
@@ -146,6 +152,7 @@ enum IRExprKind {
     EUn
     EConv
     ECallFn
+    ECallExt
     EIntr
     ENewRec
 }
@@ -591,6 +598,86 @@ func irRcWalkNeeded(nameIdx: int): bool {
     return irRcWalkNeededByName.get(poolGet(nameIdx), 0) == 1
 }
 
+// The extern registry (Task 3, Ch13: `external func`) -- one entry per
+// `external func` declaration, in declaration order, storing exactly the
+// signature cprint's cpEmitExternProtos needs to emit that extern's C
+// prototype and lowCall/fpCallExt need to route/print a call to it.
+// Follows the arena idiom exactly: irExternNames/irExternRetTys/
+// irExternParamStart/irExternParamCountArr are four parallel `list of int`
+// arrays (one slot per extern, all indexed by the same "extern index");
+// irExternParamTys is a SEPARATE flat list holding every extern's param
+// types back-to-back (no nested lists, matching lower.cla/ast.cla's own
+// no-recursive-types constraint) -- extern i's params are
+// irExternParamTys[irExternParamStart[i] .. +irExternParamCountArr[i]-1].
+// irIsExtern answers by a linear scan over irExternNames (poolGet-compared,
+// same as irRecHasHandleField's own by-name scan just below) rather than a
+// side map -- a program declares at most a handful of
+// externals, and a plain list is what irReset already knows how to clear
+// (a name->flag map, as irLayoutNeededByName/irRcWalkNeededByName already
+// demonstrate, would need its own reset the differential harness doesn't
+// currently give those two either; a list avoids the question entirely).
+var irExternNames: list of int
+var irExternRetTys: list of int
+var irExternParamStart: list of int
+var irExternParamCountArr: list of int
+var irExternParamTys: list of int
+
+// irRegisterExtern records one `external func`'s signature (lower.cla's
+// lowExternDecl, phase-1-only -- an extern has no body to lower).
+func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int) {
+    var start: int
+    var i: int
+
+    start = irExternParamTys.count
+    i = 0
+    while i < paramTys.count {
+        irExternParamTys.add(paramTys[i])
+        i = i + 1
+    }
+    irExternNames.add(nameIdx)
+    irExternRetTys.add(retTy)
+    irExternParamStart.add(start)
+    irExternParamCountArr.add(paramTys.count)
+}
+
+func irExternCount(): int {
+    return irExternNames.count
+}
+
+func irExternName(i: int): int {
+    return irExternNames[i]
+}
+
+func irExternRet(i: int): int {
+    return irExternRetTys[i]
+}
+
+func irExternParamCount(i: int): int {
+    return irExternParamCountArr[i]
+}
+
+func irExternParam(i: int, j: int): int {
+    return irExternParamTys[irExternParamStart[i] + j]
+}
+
+// irIsExtern reports whether nameIdx names a registered `external func` --
+// lowCall's routing test (ECallExt vs the ordinary ECallFn) between the
+// user-function fallback.
+func irIsExtern(nameIdx: int): bool {
+    var name: string
+    var i: int
+
+    name = poolGet(nameIdx)
+    i = 0
+    while i < irExternNames.count {
+        if poolGet(irExternNames[i]) == name {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // irRecHasHandleField (ARC Task 7) reports whether the record type named
 // nameIdx has at least one field needing construction/disposal
 // (irtNeedsCtor) -- the SINGLE canonical answer to "is this record type
@@ -705,6 +792,21 @@ func irReset() {
     }
     while irStrLits.count > 0 {
         irStrLits.pop()
+    }
+    while irExternNames.count > 0 {
+        irExternNames.pop()
+    }
+    while irExternRetTys.count > 0 {
+        irExternRetTys.pop()
+    }
+    while irExternParamStart.count > 0 {
+        irExternParamStart.pop()
+    }
+    while irExternParamCountArr.count > 0 {
+        irExternParamCountArr.pop()
+    }
+    while irExternParamTys.count > 0 {
+        irExternParamTys.pop()
     }
 
     irHasLaunch = false
@@ -1259,6 +1361,30 @@ func irCallFnName(i: int): int {
 }
 
 func irCallFnArgsHead(i: int): int {
+    return irExprs[i].b
+}
+
+// newIRCallExt/irCallExtName mirror newIRCallFn/irCallFnName exactly (Task
+// 3, Ch13: `external func`) -- a call to an `external func` is otherwise
+// indistinguishable from an ordinary call, differing only in the C symbol
+// cprint's printer targets (rt_ext_NAME vs clar_fn_NAME).
+func newIRCallExt(name: int, argsHead: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = ECallExt
+    n.name = name
+    n.b = argsHead
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irCallExtName(i: int): int {
+    return irExprs[i].name
+}
+
+func irCallExtArgsHead(i: int): int {
     return irExprs[i].b
 }
 

@@ -1696,6 +1696,49 @@ func checkFuncSig(d: int) {
     funcRetByDecl[key] = ret
 }
 
+// checkExternFunc checks a DkExternFunc decl (Task 3, Ch13: `external
+// func`): checkFuncSig works unchanged (same slot layout as DkFunc) and
+// resolves param/return types once, into the FuncSig it stashes on the
+// symbol it declares -- checkExternFunc reads types back from that FuncSig
+// (funcSigParam/funcSigRet) rather than re-resolving each TypeExpr, so an
+// already-undefined type isn't diagnosed a second time here. Every
+// param/return type is then restricted to int, ptr, bool, or char -- the
+// waist types peek/poke and the host runtime can pass across the C ABI
+// (Chapter 13). An absent return type (a procedure) is fine; nothing
+// checks a body, since an external has none (phase 2 filters on DkFunc).
+func checkExternFunc(d: int) {
+    var symIdx: int
+    var sigIdx: int
+    var p: int
+    var i: int
+    var k: TypeKind
+    var ret: int
+
+    checkFuncSig(d)
+    symIdx = scopeLookup(curScope, funcDeclName(d))
+    if symIdx == -1 {
+        return
+    }
+    sigIdx = symbols[symIdx].sigIdx
+    p = funcDeclParamsHead(d)
+    i = 0
+    while p != -1 {
+        k = typeKind(funcSigParam(sigIdx, i))
+        if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
+            emitDiag(declLine(p), declCol(p), "external functions may only use int, ptr, bool, or char")
+        }
+        p = declNext(p)
+        i = i + 1
+    }
+    ret = funcSigRet(sigIdx)
+    if ret != -1 {
+        k = typeKind(ret)
+        if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
+            emitDiag(declLine(d), declCol(d), "external functions may only use int, ptr, bool, or char")
+        }
+    }
+}
+
 // checkFuncBody checks a function's body against the fnScope/ret
 // checkFuncSig stashed for it -- split from checkFuncSig so checkProgram
 // can resolve every top-level signature (phase 1) before checking any
@@ -3921,6 +3964,9 @@ func checkTopDeclPhase1(d: int) {
     }
     case DkApp {
         checkAppDecl(d)
+    }
+    case DkExternFunc {
+        checkExternFunc(d)
     }
     }
 }

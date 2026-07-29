@@ -19,3 +19,6 @@ var rtMemHostInc []byte
 
 //go:embed rt/rt_core.inc
 var rtCoreInc []byte
+
+//go:embed rt/rt_ext_host.inc
+var rtExtHostInc []byte

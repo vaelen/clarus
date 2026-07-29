@@ -45,6 +45,7 @@ void rt_log(const uint8_t *s) {
 }
 
 #include "rt_core.inc"
+#include "rt_ext_host.inc"
 
 /* ==================== CLI args ====================
  * ponytail: this is already the full Task-4 implementation (there's nothing

@@ -678,4 +678,42 @@ on App.startEmpty {
     ln(src, "    p = ptr(\"x\")")
     ln(src, "}")
     runCase("ptr-from-string", src)
+
+    // ---- Task 3 (native-5a): `external func` decls ----
+
+    // Case 44: a clean external func returning ptr, called and assigned to
+    // a ptr local -- proves external decls check (and are callable) like
+    // ordinary functions.
+    src = ""
+    ln(src, "external func NewHandle(size: int): ptr")
+    ln(src, "func f() {")
+    ln(src, "    var h: ptr")
+    ln(src, "")
+    ln(src, "    h = NewHandle(16)")
+    ln(src, "}")
+    runCase("extern-clean", src)
+
+    // Case 45: external func params/return are restricted to int, ptr,
+    // bool, or char -- string is rejected.
+    src = ""
+    ln(src, "external func F(s: string)")
+    runCase("extern-bad-param-type", src)
+
+    // Case 46: an external func has no body -- a stray `{` after the
+    // signature is a top-level parse error, not a body.
+    src = ""
+    ln(src, "external func F(n: int) {")
+    ln(src, "}")
+    runCase("extern-body-not-allowed", src)
+
+    // Case 47: a call to an external func checks arity exactly like a
+    // call to an ordinary function (the generic checkArgsCall path).
+    src = ""
+    ln(src, "external func NewHandle(size: int): ptr")
+    ln(src, "func f() {")
+    ln(src, "    var h: ptr")
+    ln(src, "")
+    ln(src, "    h = NewHandle()")
+    ln(src, "}")
+    runCase("extern-wrong-arg-count", src)
 }

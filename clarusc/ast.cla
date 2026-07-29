@@ -133,6 +133,11 @@
 //                IsSeparator, bit2 IsStandardEdit)
 //   DkApp        nameIdx=label; a=props head (DkProperty chain); b=path
 //                pool idx
+//   DkExternFunc (Task 3, Ch13: `external func`) nameIdx=name; a=params
+//                list head (DkParam chain, -1 if none); b=return type (-1
+//                if no result); c=-1 (unused -- externals have no body).
+//                Same slot layout as DkFunc so funcDeclName/ParamsHead/
+//                RetType/Body and checkFuncSig work unchanged on it.
 //
 // ---- TypeExprKind (typeExprs arena) ----
 //   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
@@ -201,6 +206,7 @@ enum DeclKind {
     DkWidget
     DkMenuEntry
     DkApp
+    DkExternFunc
 }
 
 enum TypeExprKind {
@@ -1301,6 +1307,26 @@ func appDeclPropsHead(i: int): int {
 
 func appDeclPathIdx(i: int): int {
     return decls[i].b
+}
+
+// newExternFuncDecl builds a DkExternFunc node (Task 3, Ch13: `external
+// func`) -- same a/b/c slot layout as DkFunc (params head / return type /
+// unused), so the funcDeclName/ParamsHead/RetType/Body accessors above and
+// checkFuncSig (check.cla) work on it unchanged; only c differs, since an
+// external has no body.
+func newExternFuncDecl(nameIdx: int, paramsHead: int, retType: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkExternFunc
+    n.nameIdx = nameIdx
+    n.a = paramsHead
+    n.b = retType
+    n.c = -1
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
 }
 
 func newWindowDecl(nameIdx: int, itemsHead: int, line: int, col: int): int {

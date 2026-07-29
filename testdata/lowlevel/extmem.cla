@@ -1,0 +1,42 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// extmem.cla: external-func seam smoke test (Plan 5a Task 3). Allocates
+// through the waist, proves sizes and a resize round-trip, and releases --
+// the strict/paranoid leak gate (enforced by internal/lowlevel, not this
+// file) proves DisposeHandle actually reached the instrumented host shim
+// (rt_mem_host.inc's ledger), not just that GetHandleSize agrees. Alerts
+// ok/FAIL per check (the testdata/run corpus's own idiom for asserting a
+// computed value -- Clarus has no built-in int-to-string conversion, so
+// there is no literal "print the number" form to crib from that corpus).
+external func NewHandle(size: int): ptr
+external func DisposeHandle(h: ptr)
+external func GetHandleSize(h: ptr): int
+external func SetHandleSize(h: ptr, size: int): int
+
+on App.startCLI(args: list of string) {
+    var h: ptr
+    var err: int
+
+    h = NewHandle(16)
+    if GetHandleSize(h) == 16 {
+        alert("new-handle-size-ok")
+    } else {
+        alert("new-handle-size-FAIL")
+    }
+
+    err = SetHandleSize(h, 64)
+    if err == 0 {
+        alert("resize-ok")
+    } else {
+        alert("resize-FAIL")
+    }
+
+    if GetHandleSize(h) == 64 {
+        alert("resized-size-ok")
+    } else {
+        alert("resized-size-FAIL")
+    }
+
+    DisposeHandle(h)
+}

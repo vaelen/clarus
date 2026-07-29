@@ -85,3 +85,11 @@ check_test.cla:6:11: invalid operands to +: ptr and fixed
 check_test.cla:2:13: ptr cannot be a container element
 === ptr-from-string ===
 check_test.cla:4:12: cannot convert string to ptr
+=== extern-clean ===
+clean
+=== extern-bad-param-type ===
+check_test.cla:1:17: external functions may only use int, ptr, bool, or char
+=== extern-body-not-allowed ===
+check_test.cla:1:25: expected declaration, found '{'
+=== extern-wrong-arg-count ===
+check_test.cla:5:18: wrong number of arguments
