@@ -241,6 +241,15 @@ func TestEmitUiTablePopupGuards(t *testing.T) {
 		// Task 7: an edit target shape lower.cla's lowEditStmt doesn't
 		// support (a nested field of a list element).
 		{"edit_bad_target.cla", "edit target must be a variable, list element, or map element"},
+		// ARC fix-wave Task 3 (Important 7): check.cla's checkWindowDecl
+		// now enforces "every field of a form's record must be a
+		// by-value type" (docs/clarus-language-reference.md ~line 1008)
+		// itself, at `form for` resolution -- caught by the CHECKER
+		// (stdout, see popup_nonform.cla's note above), before lower.cla's
+		// own pre-existing (shallower, one-level, lowUnsupported-driven)
+		// lowCheckSerializableFields guard ever gets a chance to fire for
+		// this shape.
+		{"form_for_handle_field.cla", "form for NoteRec: field body must be a by-value type"},
 	}
 
 	for _, c := range cases {

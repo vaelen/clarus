@@ -1,0 +1,35 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// form_for_handle_field.cla: emitui error fixture -- ARC fix-wave Task 3
+// (Important 7). `form for T` (Ch10) requires every field of T to be a
+// by-value type (docs/clarus-language-reference.md ~line 1008, same
+// restriction as file.save/file.load): the form buffer an `edit` statement
+// copies into/out of is a flat byte copy, so a handle-backed field (text,
+// here) would alias instead of copy. NoteRec's `label` field is bound by
+// the Label widget (string, by-value, compatible) so the fixture is
+// otherwise checker-clean; `body` (text) is never bound by any widget --
+// it's the RECORD's own by-value requirement being violated, independent
+// of whether anything binds to the offending field. Caught by the CHECKER
+// itself (check.cla's checkWindowDecl, at `form for` resolution), before
+// lowering ever runs -- same "no .c.golden, never successfully emits"
+// convention as popup_nonform.cla/table_rows_local.cla.
+record NoteRec {
+    label: string(63)
+    body:  text
+}
+
+window NoteForm {
+    title: "Note"
+    size: 200, 100
+    form for NoteRec
+
+    field Label { binds: label; label: "Label:" }
+
+    button OK     { default }
+    button Cancel { cancel }
+}
+
+on App.launch {
+    open NoteForm
+}

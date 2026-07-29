@@ -266,6 +266,29 @@ func fpNewTmp(ctype: string): text {
     return name
 }
 
+// fpIsBareTempName reports whether e is EXACTLY a scratch temp's own C name
+// (fpNewTmp's convention above: "t" followed by one or more digits, nothing
+// else) -- used by fpStmt's SExprStmt arm (ARC fix-wave Task 3, Part D) to
+// tell "this discarded statement's C text is a lone temp name" (which cc
+// -Wall flags "expression result unused") apart from "this discarded
+// statement's C text is a call expression" (which cc never warns on, and
+// which must print unchanged to keep every emitui .c.golden byte-identical).
+func fpIsBareTempName(e: text): bool {
+    var i: int
+
+    if e.length < 2 or e[0] != 't' {
+        return false
+    }
+    i = 1
+    while i < e.length {
+        if e[i] < '0' or e[i] > '9' {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 // fpHeapFn names the rt_* stem ("rt_text"/"rt_list"/"rt_map") for a heap IR
 // kind -- ARC Task 3. Compose with "_retain"/"_release" at the call site
 // (mirrors fpIntrCall's own IRetain/IRelease dispatch's KText/KList/KMap
@@ -2043,7 +2066,24 @@ func fpStmt(s: int) {
         e = fpExpr(irExprStmtX(s))
         fpDiscardExprIdx = -1
         if e != "" {
-            fpEmit(e + ";")
+            // ARC fix-wave Task 3, Part D: a discarded expression statement
+            // whose own C text is just a bare temp name (e.g. a
+            // rt_list_pop into a scratch temp, side effects already
+            // emitted separately above by fpExpr) prints as a lone `tN;`
+            // -- valid C, but `cc -Wall` flags it "expression result
+            // unused". Wrap ONLY that shape in a (void) cast (the standard
+            // idiom for a deliberately discarded value): fpIsBareTempName
+            // matches fpNewTmp's own naming convention (`t` + digits)
+            // exactly, so a genuine discarded call statement (which cc
+            // never warns on) keeps printing unwrapped, unchanged from
+            // before -- this is purely a cosmetic warning fix, not a
+            // behavior change, and every existing emitui .c.golden stays
+            // byte-identical.
+            if fpIsBareTempName(e) {
+                fpEmit("(void)(" + e + ");")
+            } else {
+                fpEmit(e + ";")
+            }
         }
     } else if irStmtKind(s) == SIf {
         fpIfStmt(s)

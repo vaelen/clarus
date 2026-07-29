@@ -1,0 +1,115 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for ARC fix-wave Critical 1 (commit df6003d, "mem:
+// deep container release at IRelease printer arm + tracked-temp flush"):
+// fpIntrCall's IRelease/IRetain printer arm and fpNewTrackedTmp/
+// fpEmitTmpRelease's statement-temp flush both used to emit a bare
+// rt_list_release/rt_map_release for KList/KMap, skipping the per-element
+// release walk cpEmitRelease normally routes every other release call-site
+// through -- so a populated container's elements leaked (not crashed) at
+// exactly two shapes: (1) a live local/global reassigned to a fresh
+// container value (the OLD populated value's elements never walked), and
+// (2) a container-returning call's result discarded as a bare statement
+// (the whole container, elements included, never released at all).
+//
+// makeList/makeMap each return a FRESH, non-empty container -- necessary
+// so the OLD value being overwritten below has a live element to leak if
+// the bug were still present (an empty-container reassignment would never
+// have exercised the element walk in the first place).
+//
+// Text-content checks use the toBytes/fromBytes-to-string idiom (see
+// arc_rec_copy.cla's own comment) rather than a direct text == string
+// comparison.
+//
+// Expected strict-mode leak count: 0 (no ../arc_fixwave_containers.leaks
+// file -- absent defaults to want-0); run under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1 by TestEmitDifferential.
+
+record FwItem {
+    label: text
+}
+
+func makeFwItem(s: string): FwItem {
+    var it: FwItem
+    it.label = s
+    return it
+}
+
+func makeList(): list of text {
+    var l: list of text
+    l.push("fresh")
+    return l
+}
+
+func makeMap(): map of text {
+    var m: map of text
+    m["k"] = "fresh"
+    return m
+}
+
+func textEq(t: text, want: string): bool {
+    var buf: char[64]
+    var n: int
+    var s: string
+
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    return s == want
+}
+
+var gContainer: list of text
+
+func runArcFixwaveContainers() {
+    var a: list of text
+    var b: map of text
+    var items: list of FwItem
+
+    // Probe 1: local container reassignment -- the OLD populated value
+    // must release cleanly (elements included), the new value must read
+    // back correctly.
+    a.push("old1")
+    a.push("old2")
+    a = makeList()
+    if a.count == 1 and textEq(a.first(), "fresh") {
+        alert("list-reassign-ok")
+    } else {
+        alert("list-reassign-bad")
+    }
+
+    b["x"] = "old1"
+    b["y"] = "old2"
+    b = makeMap()
+    if b.count == 1 and b.has("k") and textEq(b["k"], "fresh") {
+        alert("map-reassign-ok")
+    } else {
+        alert("map-reassign-bad")
+    }
+
+    // Probe 2: discarded container-returning call as a bare statement --
+    // must not crash and must not leak (verified by the strict/paranoid
+    // corpus gate itself, not by an alert -- reaching the next alert
+    // without aborting is the only functional signal available here).
+    makeList()
+    makeMap()
+    alert("discard-call-ok")
+
+    // Probe 3: global container reassignment -- same shape as probe 1, but
+    // for a top-level var (cl_free_globals' own release path at process
+    // exit, not a function-scope-exit release).
+    gContainer.push("gold1")
+    gContainer.push("gold2")
+    gContainer = makeList()
+    if gContainer.count == 1 and textEq(gContainer.first(), "fresh") {
+        alert("global-reassign-ok")
+    } else {
+        alert("global-reassign-bad")
+    }
+
+    // Probe (optional, Task 8 deferred minor): a bare discarded .pop() on
+    // a handle-bearing (record-with-text-field) list element -- same
+    // "nothing claims this value" shape as probe 2, one level deeper.
+    items.push(makeFwItem("x"))
+    items.pop()
+    alert("discard-pop-item-ok")
+}

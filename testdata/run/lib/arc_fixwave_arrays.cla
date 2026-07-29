@@ -1,0 +1,122 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for ARC fix-wave Critical 2 (commit 7c0e4a9, "mem:
+// counted fixed-array (T[n]) element retain/release"): lowIndexAssign's
+// TyArr arm used to be a plain uncounted byte copy for every element type,
+// so an array-of-record or text[n] element store never retained/released
+// -- reviewer repros crashed (rt_rc over-release SIGABRT, array-of-record)
+// or corrupted (text[n] element left dangling once its source var was
+// reassigned). The text[n]-reassignment shape's own full UAF assertion is
+// NOT exercised here (see runArcFixwaveTextArr's own comment for why); it
+// is hand-verified against clarusc only.
+//
+// Text-content checks use the toBytes/fromBytes-to-string idiom (see
+// arc_rec_copy.cla's own comment) rather than a direct text == string
+// comparison.
+//
+// Expected strict-mode leak count: 0 (no ../arc_fixwave_arrays.leaks file
+// -- absent defaults to want-0); run under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1 by TestEmitDifferential.
+
+record Item {
+    name: text
+}
+
+record Holder {
+    items: Item[3]
+}
+
+func makeArrItem(n: string): Item {
+    var it: Item
+    it.name = n
+    return it
+}
+
+func arrTextEq(t: text, want: string): bool {
+    var buf: char[64]
+    var n: int
+    var s: string
+
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    return s == want
+}
+
+// Probe 4: array-of-record-in-record element store, then use, then
+// OVERWRITE (exercises the release-old path, not just the first-write/
+// birth path). Reviewer repro: array-of-record field element store ->
+// rt_rc over-release SIGABRT at scope exit, pre-fix.
+func runArcFixwaveHolder() {
+    var h: Holder
+
+    h.items[0] = makeArrItem("first")
+    if arrTextEq(h.items[0].name, "first") {
+        alert("holder-store1-ok")
+    } else {
+        alert("holder-store1-bad")
+    }
+
+    h.items[0] = makeArrItem("second")
+    if arrTextEq(h.items[0].name, "second") {
+        alert("holder-store2-ok")
+    } else {
+        alert("holder-store2-bad")
+    }
+}
+
+// Probe 5: standalone array-of-record element store + scope exit (no
+// enclosing record). Reviewer repro: "standalone Inner[2] element store ->
+// abort at scope exit."
+func runArcFixwaveStandaloneArr() {
+    var arr: Item[3]
+
+    arr[0] = makeArrItem("solo")
+    if arrTextEq(arr[0].name, "solo") {
+        alert("standalone-store-ok")
+    } else {
+        alert("standalone-store-bad")
+    }
+}
+
+// Probe 6 (shared-corpus-safe half): text[n] element store + read-back,
+// with `arr` (a heap-scalar array local -- Gap A) released at scope exit
+// (checked by the strict/paranoid leak gate, not an alert -- there is
+// nothing else to assert about a clean scope exit).
+//
+// The FULL reviewer repro -- store, then reassign the SOURCE var, re-read
+// the element and confirm it STILL reads the ORIGINAL value (the exact UAF
+// Critical-2 fixed: if arr[0] didn't retain its own reference when stored,
+// t's reassignment frees the box arr[0] still points at) -- is
+// deliberately NOT exercised here: this file is part of the SHARED
+// testdata/run corpus, which internal/build.TestRunGoldens also runs
+// through the FROZEN Go reference compiler (internal/lower.go --
+// untouched by any ARC/fix-wave task; a fixed-array element store there
+// never retained/released at all, the same pre-ARC state arc_rec_copy.cla's
+// own header comment documents for records). Under that compiler
+// specifically, reassigning the source after the store IS a genuine
+// use-after-free (confirmed: TestRunGoldens caught this exact shape as a
+// stdout mismatch -- "textarr-store-bad" instead of "-ok" -- the first
+// time it was included here; committing it as an assertion would make this
+// shared-corpus fixture permanently fail under the compiler CLAUDE.md
+// requires stay frozen). Verified instead via a dedicated hand-probe
+// against clarusc only (task-3-report.md has the full stdout + live=0
+// evidence) -- same disposition as arc_rec_copy.cla's own excluded shape.
+func runArcFixwaveTextArr() {
+    var arr: text[3]
+    var t: text
+
+    t = "aaaa"
+    arr[0] = t
+    if arrTextEq(arr[0], "aaaa") {
+        alert("textarr-store-ok")
+    } else {
+        alert("textarr-store-bad")
+    }
+}
+
+func runArcFixwaveArrays() {
+    runArcFixwaveHolder()
+    runArcFixwaveStandaloneArr()
+    runArcFixwaveTextArr()
+}

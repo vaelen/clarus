@@ -353,15 +353,28 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   no elision work scheduled. Revisit if a future, more refcount-traffic-
   heavy acceptance app (or real hardware, not Mini vMac) shows real
   degradation.
-- **`form for` handle-backed-record checker gap (found during ARC Task 9
-  close-out):** the language reference (`docs/clarus-language-
-  reference.md`: "`form for T` requires every field of `T` to be a
-  by-value type... the same build-time error... as `file.save`/
-  `file.load`") documents a compile-time error that the checker
-  (`internal/check/`) does not actually enforce for `form for` — a record
-  with a `text`/`list`/`map` field compiles today where the reference
-  says it shouldn't. The restriction dates to 4d (`ea50f13`), predates
-  ARC, and is not an ARC regression. Parked for a follow-up ticket.
+- **`form for` handle-backed-record checker gap: resolved (clarusc
+  enforces).** Found during ARC Task 9 close-out: the language reference
+  (`docs/clarus-language-reference.md`: "`form for T` requires every field
+  of `T` to be a by-value type... the same build-time error... as
+  `file.save`/`file.load`") documents a compile-time error that the
+  checker (`internal/check/`) does not actually enforce for `form for` — a
+  record with a `text`/`list`/`map` field compiled without a checker
+  diagnostic where the reference says it shouldn't. The restriction dates
+  to 4d (`ea50f13`), predates ARC, and is not an ARC regression. Fixed in
+  the ARC fix-wave (Task 3, Important 7) on the `clarusc`-only side:
+  `clarusc/check.cla`'s `checkWindowDecl` now walks a resolved `form for`
+  record's fields (recursing into nested records/arrays) and rejects a
+  handle-backed field with its own diagnostic, at check time, before
+  lowering. `internal/check/` (the frozen Go compiler) is intentionally
+  left as-is — clarusc-only is project-normal for new-since-ARC checker
+  work, per `CLAUDE.md`. (`clarusc/lower.cla` already had a shallower,
+  one-level, `lowUnsupported`-driven fallback for this shape via
+  `lowCheckSerializableFields`, shared with `file.save`/`file.load`/table
+  rows; the new checker diagnostic now fires first, with a proper message
+  and location, for any program that reaches it — the lowering fallback
+  still catches whatever the checker doesn't, e.g. this exact shape when
+  reached from `internal/`.)
 - **Discard-tracking generality (found during ARC Tasks 8-9):** only
   `pop`/`shift` (`clarusc/cprint.cla`'s `fpDiscardExprIdx`) consult the
   machinery that releases a transfer-convention intrinsic's result when

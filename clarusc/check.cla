@@ -1697,6 +1697,37 @@ func checkFuncBody(d: int) {
 // Window/widget/menu declaration checking (ui.go)
 // ================================================================
 
+// formForFieldIsByValue reports whether t is safe as a form-bound record
+// field: Ch10's `form for T` requires every field of T be a by-value type
+// (docs/clarus-language-reference.md ~line 1008, same restriction as
+// file.save/file.load) -- the form buffer an `edit` statement copies
+// into/out of is a flat byte copy, so a handle-backed field (text/list/
+// map, or a nested record/array containing one) would alias instead of
+// copy. Recurses into TyArr (element) and TyRec (fields, via
+// recordFieldsHead) to catch a nested handle anywhere in the type;
+// everything else (int/bool/fixed/char/enum/str) is by-value.
+func formForFieldIsByValue(t: int): bool {
+    var fh: int
+
+    if typeKind(t) == TyText or typeKind(t) == TyList or typeKind(t) == TyMap {
+        return false
+    }
+    if typeKind(t) == TyArr {
+        return formForFieldIsByValue(typeElem(t))
+    }
+    if typeKind(t) == TyRec {
+        fh = recordFieldsHead(typeNameIdx(t))
+        while fh != -1 {
+            if not formForFieldIsByValue(fieldInfos[fh].typeIdx) {
+                return false
+            }
+            fh = fieldInfos[fh].next
+        }
+        return true
+    }
+    return true
+}
+
 // checkWindowDecl builds a window's side-table layout (form-ness, form
 // record, per-instance vars, widgets -- Ch8/Ch10) and declares the window's
 // name as a WindowRef-typed symbol. Runs in phase 1 (source order), so
@@ -1739,6 +1770,13 @@ func checkWindowDecl(d: int) {
             } else {
                 isForm = true
                 formRecType = symbols[symIdx].typeIdx
+                fi = recordFieldsHead(recNameIdx)
+                while fi != -1 {
+                    if not formForFieldIsByValue(fieldInfos[fi].typeIdx) {
+                        emitDiag(declLine(item), declCol(item), "form for " + poolGet(recNameIdx) + ": field " + poolGet(fieldInfos[fi].nameIdx) + " must be a by-value type")
+                    }
+                    fi = fieldInfos[fi].next
+                }
             }
         }
         item = declNext(item)

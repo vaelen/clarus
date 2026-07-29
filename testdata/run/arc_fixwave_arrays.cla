@@ -1,0 +1,8 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "lib/arc_fixwave_arrays.cla"
+
+on App.launch {
+    runArcFixwaveArrays()
+}
