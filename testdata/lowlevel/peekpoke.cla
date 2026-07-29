@@ -16,6 +16,13 @@ external func BlockMoveData(src: ptr, dst: ptr, count: int)
 on App.startCLI(args: list of string) {
     var p: ptr
     var q: ptr
+    var p0: ptr
+
+    if p0 == ptr(0) {
+        alert("ptr-default-ok")
+    } else {
+        alert("ptr-default-FAIL")
+    }
 
     p = NewPtr(8)
     pokeb(p, 65)

@@ -30201,7 +30201,7 @@ static void clar_fn_cpDefaultInit(rt_text * cv_dst, int32_t cv_t, int32_t cv_sca
         rt_text_release(t2);
         rt_text_release(t4);
     } else {
-        if (cv_k == 13) {
+        if ((cv_k == 13) || (cv_k == 15)) {
             rt_text * t5 = NULL;
             t5 = rt_text_new();
             rt_text_concat(t5, cv_dst, (const uint8_t*)&(clar_lit_964), NULL);

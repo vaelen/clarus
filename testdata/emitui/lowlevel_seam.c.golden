@@ -23,6 +23,7 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     void * cv_p;
+    cv_p = 0;
     int32_t cv_v;
     cv_v = 0;
     cv_p = rt_ext_NewPtr(8);

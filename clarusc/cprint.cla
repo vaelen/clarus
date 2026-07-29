@@ -2518,10 +2518,11 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     k = irtKind(t)
     if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
         fpEmit(dst + " = " + numToStr(scalarDefault) + ";")
-    } else if k == KWinRef {
+    } else if k == KWinRef or k == KPtr {
         // `var w: SomeWindow` declares a nil window reference (Ch8) -- a
         // plain NULL `void *`, same spelling nil itself lowers to (lower.cla's
-        // ExNilLit case).
+        // ExNilLit case). `var p: ptr` gets the same treatment (Ch13's zero
+        // value of ptr is the null address, tested via ptr(0)).
         fpEmit(dst + " = 0;")
     } else if k == KStr {
         if strDefault < 0 {
