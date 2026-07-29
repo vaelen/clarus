@@ -46,6 +46,16 @@ static const rt_field_desc clar_fields_Bookmark[] = {
 };
 static const rt_layout_desc clar_layout_Bookmark = { (long)sizeof(clar_rec_Bookmark), 6, clar_fields_Bookmark };
 
+static const int32_t clar_serdesc_Bookmark[] = {
+    (int32_t)sizeof(clar_rec_Bookmark), 6,
+    RT_FT_STR, 63, (int32_t)offsetof(clar_rec_Bookmark, cv_name), 0,
+    RT_FT_INT, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_port), 0,
+    RT_FT_BOOL, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_enabled), 0,
+    RT_FT_CHAR, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_kind), 0,
+    RT_FT_FIXED, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_weight), 0,
+    RT_FT_ENUM, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_protocol), 3, 0, 1, 2,
+};
+
 
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;

@@ -39,6 +39,15 @@ static const rt_field_desc clar_fields_Bookmark[] = {
 };
 static const rt_layout_desc clar_layout_Bookmark = { (long)sizeof(clar_rec_Bookmark), 5, clar_fields_Bookmark };
 
+static const int32_t clar_serdesc_Bookmark[] = {
+    (int32_t)sizeof(clar_rec_Bookmark), 5,
+    RT_FT_STR, 63, (int32_t)offsetof(clar_rec_Bookmark, cv_name), 0,
+    RT_FT_STR, 255, (int32_t)offsetof(clar_rec_Bookmark, cv_url), 0,
+    RT_FT_INT, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_port), 0,
+    RT_FT_ENUM, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_protocol), 3, 0, 1, 2,
+    RT_FT_BOOL, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_favorite), 0,
+};
+
 typedef struct { char clar_ui_unused; } clar_uistate_Main;
 
 typedef struct { char clar_ui_unused; } clar_uistate_EditForm;

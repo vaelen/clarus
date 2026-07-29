@@ -3233,6 +3233,132 @@ func cpEmitLayouts() {
     }
 }
 
+// cpSerEnumValsInline returns ", v0, v1, ..." (one leading ", " per member,
+// empty text if the enum has none) for enum nameIdx's ordinal values --
+// same irEnums walk as cpEnumCount/cpEmitEnumArraysOnce, but the values are
+// returned for splicing inline into clar_serdesc_ (Task 7's Clarus-side
+// serializer has no pointers to walk, so it can't follow a
+// clar_enumvals_NAME reference the way cpFieldDescRow's rt_field_desc row
+// does).
+func cpSerEnumValsInline(nameIdx: int): text {
+    var i: int
+    var m: int
+    var out: text
+
+    out = toText("")
+    i = 0
+    while i < irEnums.count {
+        if irEnumLayoutName(i) == nameIdx {
+            m = irEnumLayoutMembersHead(i)
+            while m != -1 {
+                out.append(", " + numToStr(irEnumMemberValue(m)))
+                m = irEnumMemberNext(m)
+            }
+            return out
+        }
+        i = i + 1
+    }
+    log("cprint: unknown enum " + poolGet(nameIdx))
+    quit 1
+    return out
+}
+
+// cpSerFieldRow renders one clar_serdesc_<REC> field block: ftype, strCap,
+// offset, enumCount, then (RT_FT_ENUM only) enumCount inline ordinal
+// values -- the "4 + enumCount" int32s Task 7's serializer peekl-walks per
+// field. Same field-kind switch as cpFieldDescRow, minus the labels column
+// (peekl has no use for display strings) and with enum values inlined
+// instead of referencing clar_enumvals_<REC>.
+func cpSerFieldRow(recName: string, f: int): text {
+    var t: int
+    var k: IRKind
+    var ftype: string
+    var strCap: int
+    var enumCount: int
+    var row: text
+
+    t = irFieldSlotType(f)
+    k = irtKind(t)
+    strCap = 0
+    enumCount = 0
+    if k == KInt {
+        ftype = "RT_FT_INT"
+    } else if k == KFixed {
+        ftype = "RT_FT_FIXED"
+    } else if k == KBool {
+        ftype = "RT_FT_BOOL"
+    } else if k == KChar {
+        ftype = "RT_FT_CHAR"
+    } else if k == KStr {
+        ftype = "RT_FT_STR"
+        strCap = irtN(t)
+    } else {
+        ftype = "RT_FT_ENUM"
+        enumCount = cpEnumCount(irtName(t))
+    }
+    row = toText("    " + ftype + ", " + numToStr(strCap) + ", (int32_t)offsetof(clar_rec_" + recName + ", cv_" + poolGet(irFieldSlotName(f)) + "), " + numToStr(enumCount))
+    if k == KEnum {
+        row.append(cpSerEnumValsInline(irtName(t)))
+    }
+    row.append(",")
+    return row
+}
+
+// cpEmitSerDescs (Task 5, mac-target-5b) prints, for the same
+// irLayoutNeeded-gated records as cpEmitLayouts just above, a second,
+// pointer-free descriptor per record: a flat `static const int32_t
+// clar_serdesc_<REC>[]` that Task 7's Clarus-side serializer walks with
+// peekl alone (clarusc has no way to dereference the rt_field_desc/
+// rt_layout_desc pointer tables cpEmitLayouts emits). Format, walked at a
+// stride of 4 starting from index 0:
+//
+//   [0] = (int32_t)sizeof(clar_rec_<REC>)  -- record size in bytes
+//   [1] = nFields                          -- field count
+//   then nFields field blocks, each "4 + enumCount" int32s (cpSerFieldRow):
+//     ftype      -- RT_FT_INT 0 / FIXED 1 / BOOL 2 / CHAR 3 / STR 4 / ENUM 5
+//     strCap     -- RT_FT_STR only, else 0
+//     offset     -- (int32_t)offsetof(clar_rec_<REC>, cv_<field>)
+//     enumCount  -- RT_FT_ENUM only, else 0
+//     <enumCount inline ordinal values>      -- RT_FT_ENUM only
+//
+// Same field order as clar_fields_<REC>. nFields must be counted before the
+// fields loop (it's the second array slot, printed before any field row),
+// unlike cpEmitLayouts' rt_layout_desc line which plugs nFields in AFTER
+// building the separate clar_fields_ array -- hence the two passes over
+// the field list below.
+func cpEmitSerDescs() {
+    var i: int
+    var f: int
+    var name: int
+    var recName: string
+    var nFields: int
+
+    i = 0
+    while i < irRecords.count {
+        name = irRecordLayoutName(i)
+        if irLayoutNeeded(name) {
+            recName = poolGet(name)
+            nFields = 0
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                nFields = nFields + 1
+                f = irFieldSlotNext(f)
+            }
+
+            cpRecBuf.add(toText("static const int32_t clar_serdesc_" + recName + "[] = {"))
+            cpRecBuf.add(toText("    (int32_t)sizeof(clar_rec_" + recName + "), " + numToStr(nFields) + ","))
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                cpRecBuf.add(cpSerFieldRow(recName, f))
+                f = irFieldSlotNext(f)
+            }
+            cpRecBuf.add(toText("};"))
+            cpRecBuf.add(toText(""))
+        }
+        i = i + 1
+    }
+}
+
 // cpEmitEnums prints each enum's value table (for the checked int->enum
 // conversion, rt_enum_from_int) plus a matching _count constant, into
 // cpRestBuf -- cprint.go's emitEnums. Marked __attribute__((unused)): a
@@ -4672,6 +4798,7 @@ func emitProgram(): text {
     cpEmitStrLits()
     cpEmitRecords()
     cpEmitLayouts()
+    cpEmitSerDescs()
     cpEmitEnums()
     cpEmitUiDescs()
     cpEmitAppInfo()
