@@ -806,6 +806,11 @@ func fpCallFn(e: int): text {
 // structural parity even though it can never fire here in practice (an
 // external's return type is restricted to int/ptr/bool/char at check time
 // -- check.cla's checkExternFunc -- never a handle-backed Text/List/Map/Rec).
+// A KStr-typed argument marshals through fpStrAddr (Plan 5b Task 3), the
+// same "&(<addrable e>)" cast the builtin-call path already uses, since the
+// matching extern param prints as `const uint8_t *` (cpEmitExternProtos);
+// every other argument -- including KText, which is already a `rt_text *`
+// pointer -- passes through as the plain expression, unchanged from before.
 func fpCallExt(e: int): text {
     var args: text
     var a: int
@@ -822,7 +827,11 @@ func fpCallExt(e: int): text {
             args = args + ", "
         }
         first = false
-        argText = fpExpr(a)
+        if irtKind(irExprType(a)) == KStr {
+            argText = fpStrAddr(a)
+        } else {
+            argText = fpExpr(a)
+        }
         args = args + argText
         a = irExprNext(a)
     }
@@ -2955,11 +2964,18 @@ func cpEmitFunc(f: int) {
 // declaration of its host symbol rt_ext_NAME, defined in
 // rt_ext_host.inc/rt.c. Must run before anything that could CALL an
 // extern gets printed -- emitProgram calls it just ahead of cpEmitFuncs.
+// A KStr param prints as `const uint8_t *` (Plan 5b Task 3), NOT cpCType's
+// ordinary by-value `clar_str_N` -- an extern receives a string's address,
+// same convention as fpStrAddr's builtin-call marshalling -- so this skips
+// cpCType (and the clar_str_N typedef it would otherwise emit unused) for
+// that one case. KText already prints correctly via cpCType/cpCTypeName
+// ("rt_text *"), so it takes the ordinary path.
 func cpEmitExternProtos() {
     var i: int
     var j: int
     var params: string
     var first: bool
+    var pty: int
 
     i = 0
     while i < irExternCount() {
@@ -2971,7 +2987,12 @@ func cpEmitExternProtos() {
                 params = params + ", "
             }
             first = false
-            params = params + cpCType(irExternParam(i, j))
+            pty = irExternParam(i, j)
+            if irtKind(pty) == KStr {
+                params = params + "const uint8_t *"
+            } else {
+                params = params + cpCType(pty)
+            }
             j = j + 1
         }
         if first {

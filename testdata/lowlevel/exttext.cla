@@ -1,0 +1,50 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// exttext.cla: str/text external-param smoke test (Plan 5b Task 3). Builds
+// a `text` with appends, writes it to a file through the FileWriteData
+// extern (a `string` path param + a `text` content param), reads it back
+// into a FRESH `text` through FileReadTextInto, and compares lengths plus a
+// sampled char -- proving both the str->`const uint8_t *` and the
+// text->`rt_text *` marshalling directions actually round-trip real bytes
+// across the C ABI, not just that the call compiles. Same compare-and-alert
+// ok/FAIL idiom as extmem.cla/peekpoke.cla. Runs in a temp dir (the
+// internal/lowlevel harness), so the written file is never cleaned up here.
+external func FileWriteData(path: string, t: text): int
+external func FileReadTextInto(path: string, out: text): int
+
+on App.startCLI(args: list of string) {
+    var src: text
+    var dst: text
+    var wrote: int
+    var read: int
+
+    src.append("hello, ")
+    src.append("waist")
+
+    wrote = FileWriteData("exttest.dat", src)
+    if wrote == 1 {
+        alert("write-ok")
+    } else {
+        alert("write-FAIL")
+    }
+
+    read = FileReadTextInto("exttest.dat", dst)
+    if read == 1 {
+        alert("read-ok")
+    } else {
+        alert("read-FAIL")
+    }
+
+    if dst.length == src.length {
+        alert("length-ok")
+    } else {
+        alert("length-FAIL")
+    }
+
+    if dst[7] == 'w' {
+        alert("char-ok")
+    } else {
+        alert("char-FAIL")
+    }
+}

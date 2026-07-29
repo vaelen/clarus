@@ -24,4 +24,37 @@ void rt_ext_BlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)
 void *rt_ext_NewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
 void rt_ext_DisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* ---- Plan 5b Task 3: waist widening -- str/text params + file/container/
+ * lasterr externals. Every wrapper below just narrows/widens between the C
+ * ABI (int32_t, void pointer, const uint8_t pointer, rt_text pointer --
+ * what cprint's cpEmitExternProtos/fpCallExt now emit for int/ptr/str/text
+ * params) and the rt_core.inc/rt.c primitives already used internally by
+ * rt_ser.inc -- no logic of its own, same convention as the 5a seven
+ * above. rt_file_write_data is `static` and defined further down in rt.c
+ * (after this .inc's include point); rt.c carries a forward declaration
+ * ahead of that include so rt_ext_FileWriteData can call it here.
+ */
+void *rt_ext_HandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t); }
+int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_file_read_text(path, out); }
+/* rt_set_lasterr takes a NUL-terminated C string (rt_core.inc:19's
+ * strlen(msg)); the Clarus-side msg is a str255 ([len][bytes]), so build a
+ * NUL-terminated copy here before delegating. */
+void rt_ext_SetLastErr(int32_t code, const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_set_lasterr(code, buf);
+}
+int32_t rt_ext_ListCount(void *l) { return rt_list_count((rt_list *)l); }
+void *rt_ext_ListAt(void *l, int32_t i) { return rt_list_at((rt_list *)l, i); }
+void rt_ext_ListClear(void *l) { rt_list_clear((rt_list *)l); }
+void rt_ext_ListPush(void *l, void *elem) { rt_list_push((rt_list *)l, elem); }
+int32_t rt_ext_MapCount(void *m) { return rt_map_count((rt_map *)m); }
+void rt_ext_MapKeyAt(void *m, int32_t i, void *key255) { rt_map_key_at((rt_map *)m, i, (uint8_t *)key255); }
+void rt_ext_MapValAt(void *m, int32_t i, void *out) { rt_map_val_at((rt_map *)m, i, out); }
+void rt_ext_MapSet(void *m, void *key255, void *val) { rt_map_set((rt_map *)m, (const uint8_t *)key255, val); }
+void rt_ext_MapClear(void *m) { rt_map_clear((rt_map *)m); }
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

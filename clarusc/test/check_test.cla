@@ -693,10 +693,11 @@ on App.startEmpty {
     ln(src, "}")
     runCase("extern-clean", src)
 
-    // Case 45: external func params/return are restricted to int, ptr,
-    // bool, or char -- string is rejected.
+    // Case 45: external func params are restricted to int, ptr, bool,
+    // char, str, or text (Plan 5b Task 3 widened this from just int/ptr/
+    // bool/char) -- a container type (map of int) is still rejected.
     src = ""
-    ln(src, "external func F(s: string)")
+    ln(src, "external func F(m: map of int)")
     runCase("extern-bad-param-type", src)
 
     // Case 46: an external func has no body -- a stray `{` after the
@@ -836,4 +837,20 @@ on App.startEmpty {
     ln(src, "    n = h.nope")
     ln(src, "}")
     runCase("overlay-undefined-field", src)
+
+    // ---- Task 3 (native-5b): str/text external params ----
+
+    // Case 58: string and text are now legal external param types (waist
+    // widening) -- clean, alongside the pre-existing int/ptr/bool/char set.
+    src = ""
+    ln(src, "external func F(s: string, t: text)")
+    runCase("extern-str-text-param-clean", src)
+
+    // Case 59: an external return type is still restricted to int, ptr,
+    // bool, or char -- text is NOT a legal return type (5a's message,
+    // untouched by this task; params and returns now use different
+    // diagnostics, so this pins the return one didn't drift).
+    src = ""
+    ln(src, "external func G(): text")
+    runCase("extern-text-return-bad", src)
 }

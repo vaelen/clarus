@@ -44,6 +44,12 @@ void rt_log(const uint8_t *s) {
     fputc('\n', stderr);
 }
 
+/* Forward decl: rt_file_write_data is `static` and defined below (Task 1,
+ * mac-target-4d), after this include point -- rt_ext_host.inc's
+ * rt_ext_FileWriteData wrapper (Plan 5b Task 3) needs it in scope here
+ * rather than moving the definition up. */
+static int rt_file_write_data(const uint8_t *path, const rt_text *t);
+
 #include "rt_core.inc"
 #include "rt_ext_host.inc"
 

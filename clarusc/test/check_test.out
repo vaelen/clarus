@@ -88,7 +88,7 @@ check_test.cla:4:12: cannot convert string to ptr
 === extern-clean ===
 clean
 === extern-bad-param-type ===
-check_test.cla:1:17: external functions may only use int, ptr, bool, or char
+check_test.cla:1:17: external parameters may only use int, ptr, bool, char, str, or text
 === extern-body-not-allowed ===
 check_test.cla:1:25: expected declaration, found '{'
 === extern-wrong-arg-count ===
@@ -113,3 +113,7 @@ check_test.cla:6:13: overlay records cannot be container elements
 check_test.cla:8:9: cannot use new with non-record type RtHdr
 === overlay-undefined-field ===
 check_test.cla:9:10: undefined: nope
+=== extern-str-text-param-clean ===
+clean
+=== extern-text-return-bad ===
+check_test.cla:1:1: external functions may only use int, ptr, bool, or char

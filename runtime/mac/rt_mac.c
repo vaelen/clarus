@@ -411,4 +411,6 @@ static int rt_file_write_data(const uint8_t *path, const rt_text *t)
     return 1;
 }
 
+#include "rt_ext_mac.inc"
+
 #include "rt_ser.inc"
