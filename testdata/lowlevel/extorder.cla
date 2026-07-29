@@ -1,0 +1,35 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// extorder.cla: regression fixture for lowerProgram's extern pre-pass
+// (Plan 5a Task 3). useHandle's body calls NewHandle/GetHandleSize/
+// DisposeHandle before any of their `external func` decls appear in this
+// file -- Ch13 permits an externDecl "anywhere among a program's top-level
+// declarations", and lowerProgram registers every extern in a pre-pass
+// before lowering any call site specifically so this source order lowers
+// correctly (ECallExt/rt_ext_NAME) instead of silently misrouting to the
+// ordinary-function path (ECallFn/clar_fn_NAME, which would never be
+// defined -- an undefined-symbol link failure, not a checker error, since
+// the checker's two-phase declare-then-check already accepts this order).
+
+func useHandle(): int {
+    var h: ptr
+    var sz: int
+
+    h = NewHandle(8)
+    sz = GetHandleSize(h)
+    DisposeHandle(h)
+    return sz
+}
+
+on App.startCLI(args: list of string) {
+    if useHandle() == 8 {
+        alert("forward-extern-ok")
+    } else {
+        alert("forward-extern-FAIL")
+    }
+}
+
+external func NewHandle(size: int): ptr
+external func GetHandleSize(h: ptr): int
+external func DisposeHandle(h: ptr)
