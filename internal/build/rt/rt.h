@@ -2,6 +2,7 @@
 #ifndef CLARUS_RT_H
 #define CLARUS_RT_H
 #include <stdint.h>
+#include <string.h>
 
 /* Strings: [len][bytes...] — a strN value is a struct {uint8_t len; uint8_t b[N];}.
    All functions take the raw pointer to the len byte plus the capacity N. */
@@ -182,4 +183,14 @@ void rt_map_clear (rt_map *m);  /* count = 0; capacity kept */
    link); clarusc overrides it with a strong definition when an `app` section
    declares an id (Task 2) -- same weak/strong precedent as rt_ui_app_info. */
 extern const unsigned long rt_app_creator;
+
+/* Plan 5a: peek/poke helpers. memcpy keeps them alignment- and
+   strict-aliasing-safe on host; native byte order by design (see
+   language reference Ch13 endianness rule). Shared with Mac builds. */
+static inline int32_t rt_peekb(void *p) { unsigned char v; memcpy(&v, p, 1); return (int32_t)v; }
+static inline int32_t rt_peekw(void *p) { uint16_t v; memcpy(&v, p, 2); return (int32_t)v; }
+static inline int32_t rt_peekl(void *p) { uint32_t v; memcpy(&v, p, 4); return (int32_t)v; }
+static inline void rt_pokeb(void *p, int32_t x) { unsigned char v = (unsigned char)x; memcpy(p, &v, 1); }
+static inline void rt_pokew(void *p, int32_t x) { uint16_t v = (uint16_t)x; memcpy(p, &v, 2); }
+static inline void rt_pokel(void *p, int32_t x) { uint32_t v = (uint32_t)x; memcpy(p, &v, 4); }
 #endif

@@ -1,0 +1,68 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// peekpoke.cla: peek/poke builtin smoke test (Plan 5a Task 4). Writes three
+// non-overlapping fields (a byte at offset 0, a word at offset 2, a long at
+// offset 4) into an 8-byte NewPtr buffer with pokeb/pokew/pokel, reads each
+// back with peekb/peekw/peekl, round-trips the buffer through BlockMoveData
+// into a second buffer and re-peeks from the copy, and exercises
+// int(ptr(N)) -> N. Same compare-and-alert ok/FAIL idiom as extmem.cla --
+// Clarus has no built-in int-to-string conversion, so there is no literal
+// "print the number" form to crib from that corpus.
+external func NewPtr(size: int): ptr
+external func DisposePtr(p: ptr)
+external func BlockMoveData(src: ptr, dst: ptr, count: int)
+
+on App.startCLI(args: list of string) {
+    var p: ptr
+    var q: ptr
+
+    p = NewPtr(8)
+    pokeb(p, 65)
+    pokew(p + 2, 4660)
+    pokel(p + 4, 305419896)
+
+    if peekb(p) == 65 {
+        alert("peekb-ok")
+    } else {
+        alert("peekb-FAIL")
+    }
+    if peekw(p + 2) == 4660 {
+        alert("peekw-ok")
+    } else {
+        alert("peekw-FAIL")
+    }
+    if peekl(p + 4) == 305419896 {
+        alert("peekl-ok")
+    } else {
+        alert("peekl-FAIL")
+    }
+
+    q = NewPtr(8)
+    BlockMoveData(p, q, 8)
+
+    if peekb(q) == 65 {
+        alert("copy-peekb-ok")
+    } else {
+        alert("copy-peekb-FAIL")
+    }
+    if peekw(q + 2) == 4660 {
+        alert("copy-peekw-ok")
+    } else {
+        alert("copy-peekw-FAIL")
+    }
+    if peekl(q + 4) == 305419896 {
+        alert("copy-peekl-ok")
+    } else {
+        alert("copy-peekl-FAIL")
+    }
+
+    DisposePtr(p)
+    DisposePtr(q)
+
+    if int(ptr(12345)) == 12345 {
+        alert("ptr-roundtrip-ok")
+    } else {
+        alert("ptr-roundtrip-FAIL")
+    }
+}

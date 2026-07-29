@@ -1,0 +1,7 @@
+peekb-ok
+peekw-ok
+peekl-ok
+copy-peekb-ok
+copy-peekw-ok
+copy-peekl-ok
+ptr-roundtrip-ok

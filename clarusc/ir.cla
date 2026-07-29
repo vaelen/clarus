@@ -2584,6 +2584,31 @@ func ILog(): int {
     return intern("log")
 }
 
+// -- peek/poke (Plan 5a Task 4, Ch13) --
+func IPeekB(): int {
+    return intern("peekb")
+}
+
+func IPeekW(): int {
+    return intern("peekw")
+}
+
+func IPeekL(): int {
+    return intern("peekl")
+}
+
+func IPokeB(): int {
+    return intern("pokeb")
+}
+
+func IPokeW(): int {
+    return intern("pokew")
+}
+
+func IPokeL(): int {
+    return intern("pokel")
+}
+
 func ILastErrCode(): int {
     return intern("lasterr_code")
 }

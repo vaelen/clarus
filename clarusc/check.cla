@@ -916,6 +916,13 @@ func registerUniverse(scope: int) {
     declBuiltinFunc1(scope, "askSaveChanges", strT(255), SaveChoiceT)
     declBuiltinFunc1(scope, "log", strT(255), -1)
 
+    declBuiltinFunc1(scope, "peekb", PtrT, IntT)
+    declBuiltinFunc1(scope, "peekw", PtrT, IntT)
+    declBuiltinFunc1(scope, "peekl", PtrT, IntT)
+    declBuiltinFunc2(scope, "pokeb", PtrT, IntT, -1)
+    declBuiltinFunc2(scope, "pokew", PtrT, IntT, -1)
+    declBuiltinFunc2(scope, "pokel", PtrT, IntT, -1)
+
     declBuiltinVar(scope, "lastError", ErrTIndex)
 }
 

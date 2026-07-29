@@ -1265,6 +1265,23 @@ func fpIntrCall(x: int): text {
     } else if nm == ILog() {
         fpEmit("rt_log(" + fpStrAddr(a0) + ");")
         return toText("")
+
+    // ---- peek/poke (Plan 5a Task 4, Ch13) ----
+    } else if nm == IPeekB() {
+        return "rt_peekb(" + fpExpr(a0) + ")"
+    } else if nm == IPeekW() {
+        return "rt_peekw(" + fpExpr(a0) + ")"
+    } else if nm == IPeekL() {
+        return "rt_peekl(" + fpExpr(a0) + ")"
+    } else if nm == IPokeB() {
+        fpEmit("rt_pokeb(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IPokeW() {
+        fpEmit("rt_pokew(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+    } else if nm == IPokeL() {
+        fpEmit("rt_pokel(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
     } else if nm == IQuit() {
         fpEmit("rt_quit((int32_t)(" + fpExpr(a0) + "));")
         return toText("")

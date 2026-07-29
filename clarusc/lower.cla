@@ -708,6 +708,18 @@ func lowCall(e: int): int {
             return newIRIntr(IAlert(), lowArgs(callArgsHead(e)), ty)
         } else if name == "log" {
             return newIRIntr(ILog(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "peekb" {
+            return newIRIntr(IPeekB(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "peekw" {
+            return newIRIntr(IPeekW(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "peekl" {
+            return newIRIntr(IPeekL(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "pokeb" {
+            return newIRIntr(IPokeB(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "pokew" {
+            return newIRIntr(IPokeW(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "pokel" {
+            return newIRIntr(IPokeL(), lowArgs(callArgsHead(e)), ty)
         } else if name == "int" {
             return lowIntConv(e, ty)
         } else if name == "fixed" {

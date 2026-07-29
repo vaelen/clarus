@@ -716,4 +716,44 @@ on App.startEmpty {
     ln(src, "    h = NewHandle()")
     ln(src, "}")
     runCase("extern-wrong-arg-count", src)
+
+    // ---- Task 4 (native-5a): peek/poke builtins ----
+
+    // Case 48: peekb(p) assigned to an int -- clean.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var v: int")
+    ln(src, "")
+    ln(src, "    v = peekb(p)")
+    ln(src, "}")
+    runCase("peek-clean", src)
+
+    // Case 49: peekb requires a ptr argument -- an int literal is rejected.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var v: int")
+    ln(src, "")
+    ln(src, "    v = peekb(5)")
+    ln(src, "}")
+    runCase("peek-bad-arg-type", src)
+
+    // Case 50: pokew requires exactly two arguments.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "")
+    ln(src, "    pokew(p)")
+    ln(src, "}")
+    runCase("poke-wrong-arg-count", src)
+
+    // Case 51: pokeb's second argument must be int -- char is rejected.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var c: char")
+    ln(src, "")
+    ln(src, "    pokeb(p, c)")
+    ln(src, "}")
+    runCase("poke-bad-arg-type", src)
 }

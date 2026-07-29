@@ -93,3 +93,11 @@ check_test.cla:1:17: external functions may only use int, ptr, bool, or char
 check_test.cla:1:25: expected declaration, found '{'
 === extern-wrong-arg-count ===
 check_test.cla:5:18: wrong number of arguments
+=== peek-clean ===
+clean
+=== peek-bad-arg-type ===
+check_test.cla:4:15: cannot use int where ptr is expected
+=== poke-wrong-arg-count ===
+check_test.cla:4:10: wrong number of arguments
+=== poke-bad-arg-type ===
+check_test.cla:5:14: cannot use char where int is expected

@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// lowlevel_seam.cla: emitui golden fixture for peek/poke + external func
+// emission (Plan 5a Task 4). A minimal program: one external decl, ptr
+// arithmetic (p + 4), one poke, and one peek -- proves the emitted C
+// (extern rt_ext_ prototype, rt_pokeb/rt_peekl calls, ptr-arithmetic cast
+// shape) compiles under the Retro68 m68k toolchain against rt.h/rt_ui.h,
+// same as every other emitui fixture.
+external func NewPtr(size: int): ptr
+
+on App.startCLI(args: list of string) {
+    var p: ptr
+    var v: int
+
+    p = NewPtr(8)
+    pokeb(p, 65)
+    v = peekl(p + 4)
+    quit 0
+}
