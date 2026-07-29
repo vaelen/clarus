@@ -114,6 +114,12 @@ enum IRKind {
     // base of a per-instance-var FieldRef (lower.cla's lowWindowInstSelect).
     KWinRef
     KUiState
+
+    // KPtr (Task 2, Ch13: Low-Level Memory Access) is an untyped machine
+    // address, C type `void *` (see cpCTypeName) -- an ordinary by-value
+    // scalar, never parametrized, so it is a singleton like KInt/KBool
+    // (irPtrT, seeded in irReset below).
+    KPtr
 }
 
 enum IRStmtKind {
@@ -144,8 +150,11 @@ enum IRExprKind {
     ENewRec
 }
 
-// IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191).
-// CvIntToEnum is CHECKED (panics on no member).
+// IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191), plus
+// CvIntToPtr/CvPtrToInt (Task 2, Ch13: Low-Level Memory Access -- `ptr(x)`/
+// `int(p)` -- a clarusc-only addition; the frozen Go reference has no ptr
+// type). CvIntToEnum is CHECKED (panics on no member); the rest, including
+// the two ptr conversions, are unchecked reinterpretations.
 enum IRConvOp {
     CvIntToFixed
     CvFixedToInt
@@ -153,6 +162,8 @@ enum IRConvOp {
     CvCharToInt
     CvEnumToInt
     CvIntToEnum
+    CvIntToPtr
+    CvPtrToInt
 }
 
 record IRType {
@@ -629,6 +640,7 @@ var irFixedT: int
 var irCharT: int
 var irTextT: int
 var irErrT: int
+var irPtrT: int
 
 // irReset empties every IR arena and re-seeds the singleton scalar
 // IRTypes. Call between lowering independent programs (mirrors astReset/
@@ -719,6 +731,7 @@ func irReset() {
     irCharT = irSimpleType(KChar)
     irTextT = irSimpleType(KText)
     irErrT = irSimpleType(KErr)
+    irPtrT = irSimpleType(KPtr)
 }
 
 // ================================================================

@@ -59,6 +59,13 @@ enum TypeKind {
     // Task 8 seeds and tests neither.
     TyWidget
     TyMenuItem
+
+    // TyPtr (Task 2, Ch13: Low-Level Memory Access) is an untyped machine
+    // address -- an ordinary by-value scalar (never a container element;
+    // see resolveType's container-element guard in check.cla). Appended
+    // last, after the checker-only pseudo-kinds, since its ordering among
+    // the other kinds is not load-bearing.
+    TyPtr
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -110,6 +117,7 @@ var CharT: int
 var TextT: int
 var VoidT: int
 var AddressT: int
+var PtrT: int
 var ErrTIndex: int
 var SaveChoiceT: int
 
@@ -288,6 +296,7 @@ func typesInit() {
     TextT = pushSimple(TyText)
     VoidT = pushSimple(TyVoid)
     AddressT = pushSimple(TyAddress)
+    PtrT = pushSimple(TyPtr)
     ErrTIndex = pushSimple(TyErrorType)
     SaveChoiceT = seedSaveChoice()
 }

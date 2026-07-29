@@ -677,6 +677,9 @@ func typeName(t: int): string {
     case TyAddress {
         return "address"
     }
+    case TyPtr {
+        return "ptr"
+    }
     case TyErrorType {
         return "error"
     }
@@ -1293,6 +1296,7 @@ func resolveType(te: int): int {
     var nameIdx: int
     var name: string
     var symIdx: int
+    var et: int
 
     switch typeExprKind(te) {
     case TxNamed {
@@ -1313,6 +1317,9 @@ func resolveType(te: int): int {
         if name == "text" {
             return TextT
         }
+        if name == "ptr" {
+            return PtrT
+        }
         symIdx = scopeLookup(curScope, nameIdx)
         if symIdx == -1 or not symbols[symIdx].isType {
             emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + name)
@@ -1324,13 +1331,28 @@ func resolveType(te: int): int {
         return strT(stringTypeN(te))
     }
     case TxList {
-        return listT(resolveType(listTypeElem(te)))
+        et = resolveType(listTypeElem(te))
+        if et != InvalidT and typeKind(et) == TyPtr {
+            emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return listT(InvalidT)
+        }
+        return listT(et)
     }
     case TxMap {
-        return mapT(resolveType(mapTypeVal(te)))
+        et = resolveType(mapTypeVal(te))
+        if et != InvalidT and typeKind(et) == TyPtr {
+            emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return mapT(InvalidT)
+        }
+        return mapT(et)
     }
     case TxArray {
-        return arrT(resolveType(arrayTypeElem(te)), arrayTypeN(te))
+        et = resolveType(arrayTypeElem(te))
+        if et != InvalidT and typeKind(et) == TyPtr {
+            emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return arrT(InvalidT, arrayTypeN(te))
+        }
+        return arrT(et, arrayTypeN(te))
     }
     }
     return InvalidT
@@ -3258,6 +3280,9 @@ func checkArith(e: int): int {
     if typeKind(lt) == TyInt and typeKind(rt) == TyInt {
         return IntT
     }
+    if typeKind(lt) == TyPtr and typeKind(rt) == TyInt and (op == OpAdd or op == OpSub) {
+        return PtrT
+    }
     if typeKind(lt) == TyFixed and typeKind(rt) == TyFixed {
         if op == OpMod {
             emitDiag(exprLine(e), exprCol(e), "operator mod requires int operands")
@@ -3620,10 +3645,12 @@ func checkConversion(e: int, target: int, name: string): int {
     }
     ok = false
     if target == IntT {
-        ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum
+        ok = typeKind(at) == TyFixed or typeKind(at) == TyChar or typeKind(at) == TyEnum or typeKind(at) == TyPtr
     } else if target == FixedT {
         ok = typeKind(at) == TyInt
     } else if target == CharT {
+        ok = typeKind(at) == TyInt
+    } else if target == PtrT {
         ok = typeKind(at) == TyInt
     } else if typeKind(target) == TyEnum {
         ok = typeKind(at) == TyInt
@@ -3686,6 +3713,9 @@ func checkIdentCall(e: int, fn: int): int {
     }
     if name == "char" {
         return checkConversion(e, CharT, "char")
+    }
+    if name == "ptr" {
+        return checkConversion(e, PtrT, "ptr")
     }
 
     symIdx = scopeLookup(curScope, identName(fn))

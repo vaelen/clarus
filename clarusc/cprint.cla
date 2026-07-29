@@ -556,6 +556,7 @@ func cpCTypeName(t: int): string {
     case KErr { return "clar_rec_Err" }
     case KArr { return "clar_arr_" + cpArrKey(t) }
     case KWinRef { return "void *" }
+    case KPtr { return "void *" }
     }
     return "void"
 }
@@ -836,15 +837,21 @@ func cOp(op: string): string {
     return op
 }
 
-// fpBin prints an EBin node: and/or route to fpAndOr (short-circuit); every
-// other operator (arithmetic, bitwise, comparison) prints as a plain
-// `(x op y)` via cOp -- funcprint.go's expr's *ir.Bin case.
+// fpBin prints an EBin node: and/or route to fpAndOr (short-circuit); ptr +
+// int / ptr - int (Task 2, Ch13) casts through `char *` so the C `+`/`-`
+// advances by 1-byte units rather than whatever `void *` arithmetic a
+// compiler extension might otherwise apply; every other operator
+// (arithmetic, bitwise, comparison) prints as a plain `(x op y)` via cOp --
+// funcprint.go's expr's *ir.Bin case.
 func fpBin(e: int): text {
     var op: string
 
     op = poolGet(irBinOp(e))
     if op == "and" or op == "or" {
         return fpAndOr(e)
+    }
+    if irtKind(irExprType(e)) == KPtr and (op == "+" or op == "-") {
+        return "(void *)((char *)(" + fpExpr(irBinX(e)) + ") " + op + " (" + fpExpr(irBinY(e)) + "))"
     }
     return "(" + fpExpr(irBinX(e)) + " " + cOp(op) + " " + fpExpr(irBinY(e)) + ")"
 }
@@ -986,6 +993,10 @@ func fpConv(e: int): text {
     } else if op == CvIntToEnum {
         n = cpEnumCount(irConvEnumName(e))
         return "rt_enum_from_int(clar_enum_" + poolGet(irConvEnumName(e)) + ", " + numToStr(n) + ", (" + x + "))"
+    } else if op == CvIntToPtr {
+        return "(void *)(intptr_t)(" + x + ")"
+    } else if op == CvPtrToInt {
+        return "((int32_t)(intptr_t)(" + x + "))"
     }
     return toText("")
 }

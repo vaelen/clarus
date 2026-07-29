@@ -227,6 +227,7 @@ func lowType(t: int): int {
     case TyChar { return irCharT }
     case TyText { return irTextT }
     case TyVoid { return irVoidT }
+    case TyPtr { return irPtrT }
     case TyErrorType { return irErrT }
     case TyStr { return irStrType(typeN(t)) }
     case TyEnum { return irEnumType(typeNameIdx(t)) }
@@ -273,6 +274,8 @@ func lowResolveType(tx: int): int {
             return irCharT
         } else if nm == "text" {
             return irTextT
+        } else if nm == "ptr" {
+            return irPtrT
         }
         symIdx = scopeLookup(curScope, nameIdx)
         if symIdx != -1 and symbols[symIdx].isType {
@@ -711,6 +714,8 @@ func lowCall(e: int): int {
             return newIRConv(CvIntToFixed, lowExpr(callArgsHead(e)), -1, ty)
         } else if name == "char" {
             return newIRConv(CvIntToChar, lowExpr(callArgsHead(e)), -1, ty)
+        } else if name == "ptr" {
+            return newIRConv(CvIntToPtr, lowExpr(callArgsHead(e)), -1, ty)
         } else if name == "askOpen" {
             return newIRIntr(IUiAskOpen(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askSave" {
@@ -1444,6 +1449,8 @@ func lowIntConv(e: int, ty: int): int {
         return newIRConv(CvCharToInt, lowExpr(callArgsHead(e)), -1, ty)
     } else if argK == TyEnum {
         return newIRConv(CvEnumToInt, lowExpr(callArgsHead(e)), -1, ty)
+    } else if argK == TyPtr {
+        return newIRConv(CvPtrToInt, lowExpr(callArgsHead(e)), -1, ty)
     }
     // Anything else is a checker bug (int() from an unsupported source
     // kind should never pass checkCall).

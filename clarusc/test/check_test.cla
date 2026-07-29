@@ -611,4 +611,71 @@ on App.startEmpty {
             alert("wrong type recorded")
         }
     }
+
+    // ---- Task 2 (native-5a): the `ptr` type ----
+
+    // Case 39: a clean program exercising ptr's whole surface -- var decl,
+    // ptr+int/ptr-int, ptr comparisons (== and <), int(p) and ptr(0)
+    // conversions, and a record with a ptr field (Ch13: record fields of
+    // type ptr are allowed -- only containers reject it).
+    src = ""
+    ln(src, "record Rec {")
+    ln(src, "    p: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var q: ptr")
+    ln(src, "    var a: ptr")
+    ln(src, "    var i: int")
+    ln(src, "    var b: bool")
+    ln(src, "")
+    ln(src, "    p = ptr(4096)")
+    ln(src, "    q = ptr(8192)")
+    ln(src, "    a = p + 4")
+    ln(src, "    a = p - 2")
+    ln(src, "    b = p == q")
+    ln(src, "    b = p < q")
+    ln(src, "    i = int(p)")
+    ln(src, "}")
+    runCase("ptr-clean", src)
+
+    // Case 40: ptr + ptr is not a valid operand pair (only ptr + int is).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var q: ptr")
+    ln(src, "    var r: ptr")
+    ln(src, "")
+    ln(src, "    p = ptr(0)")
+    ln(src, "    q = ptr(0)")
+    ln(src, "    r = p + q")
+    ln(src, "}")
+    runCase("ptr-plus-ptr", src)
+
+    // Case 41: ptr + fixed is likewise invalid (only ptr + int).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "    var r: ptr")
+    ln(src, "")
+    ln(src, "    p = ptr(0)")
+    ln(src, "    r = p + 1.5")
+    ln(src, "}")
+    runCase("ptr-plus-fixed", src)
+
+    // Case 42: ptr cannot be a container element.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var xs: list of ptr")
+    ln(src, "}")
+    runCase("ptr-container-element", src)
+
+    // Case 43: ptr(x) only accepts an int argument.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var p: ptr")
+    ln(src, "")
+    ln(src, "    p = ptr(\"x\")")
+    ln(src, "}")
+    runCase("ptr-from-string", src)
 }

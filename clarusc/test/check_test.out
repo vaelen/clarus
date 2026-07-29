@@ -75,3 +75,13 @@ check_test.cla:2:5: unknown property column for app
 check_test.cla:2:5: app id must not contain quote characters
 === exprtype-pin ===
 a + b : int
+=== ptr-clean ===
+clean
+=== ptr-plus-ptr ===
+check_test.cla:8:11: invalid operands to +: ptr and ptr
+=== ptr-plus-fixed ===
+check_test.cla:6:11: invalid operands to +: ptr and fixed
+=== ptr-container-element ===
+check_test.cla:2:13: ptr cannot be a container element
+=== ptr-from-string ===
+check_test.cla:4:12: cannot convert string to ptr
