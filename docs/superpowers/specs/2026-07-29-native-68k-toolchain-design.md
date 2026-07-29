@@ -170,6 +170,17 @@ native backend passes the full corpus.
   twice — host (C path) and native 68k (run under Mini vMac via the existing
   mactest/uisnaps harness) — outputs byte-compared. The native backend grows
   up against this corpus.
+- **Emulator boots are amortized via suite apps, never per-program.**
+  Booting the emulator dominates test wall-clock, so the native 5d gate is
+  ONE suite app (the existing monolithic `testdata/suite/test_suite.cla`,
+  compiled by codegen68k, checked against the same host-stdout expectation)
+  plus the small irreducible set of abort/runerr programs that must die in
+  their own process (currently 5) — not one boot per corpus program. The
+  same rule holds going forward for non-UI coverage generally: new logic
+  tests join the suite app. New UI coverage extends an existing scenario's
+  event script rather than adding a new scenario app, unless it needs a
+  different launch context (e.g. document-open vs empty launch) or must end
+  the app.
 - **Bootstrap chain untouched:** the snapshot remains `clarusc.c` + the
   (shrinking) C shim, buildable by any cc. The snapshot's C includes the
   emitted C of migrated runtime modules — the same interlingua trick as
