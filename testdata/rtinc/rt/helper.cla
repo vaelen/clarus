@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Second file of the stand-in runtime module (Task 4 review fix): proves
+// expand's recursion into a runtime module's own includes gets fully
+// spliced into the checked/emitted program, not just the module's own head.
+func rtIncHelper(): int {
+    return 99
+}

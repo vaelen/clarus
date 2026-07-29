@@ -25,6 +25,13 @@ func TestRtInc(t *testing.T) {
 	rtDir := filepath.Join(root, "testdata", "rtinc", "rt")
 
 	t.Run("IncludesRuntimeModule", func(t *testing.T) {
+		// rt/ser.cla itself `include`s rt/helper.cla -- this subtest also
+		// covers a multi-file runtime module: expand(rtPath) recurses into
+		// rtPath's own includes before appending rtPath's own head, so a
+		// single expand call can push more than one asmHeads entry. main.cla
+		// must capture the WHOLE range it added, not just the last entry, or
+		// helper.cla's rtIncHelper would be parsed/diagnosed but silently
+		// never spliced into the emitted program.
 		outC := filepath.Join(t.TempDir(), "main.c")
 		cmd := exec.Command(exe, "emit", "-o", outC, "--rtdir", rtDir, prog)
 		var stdout, stderr bytes.Buffer
@@ -38,12 +45,19 @@ func TestRtInc(t *testing.T) {
 			t.Fatal(err)
 		}
 		src := string(c)
-		idx := strings.Index(src, "clar_fn_rtIncProbe")
-		if idx < 0 {
+		idxProbe := strings.Index(src, "clar_fn_rtIncProbe")
+		if idxProbe < 0 {
 			t.Fatalf("emitted C missing clar_fn_rtIncProbe:\n%s", src)
 		}
-		if firstFn := strings.Index(src, "clar_fn_"); firstFn != idx {
-			t.Fatalf("clar_fn_rtIncProbe (at byte %d) is not the first clar_fn_ symbol (first is at %d) -- runtime-module decls must precede user decls:\n%s", idx, firstFn, src)
+		idxHelper := strings.Index(src, "clar_fn_rtIncHelper")
+		if idxHelper < 0 {
+			t.Fatalf("emitted C missing clar_fn_rtIncHelper (ser.cla's own include) -- an included dependency of a runtime module was silently dropped:\n%s", src)
+		}
+		if idxHelper >= idxProbe {
+			t.Fatalf("clar_fn_rtIncHelper (at byte %d) must precede clar_fn_rtIncProbe (at byte %d) -- helper.cla is ser.cla's dependency, so its decls must come first (declare-before-use):\n%s", idxHelper, idxProbe, src)
+		}
+		if firstFn := strings.Index(src, "clar_fn_"); firstFn != idxHelper {
+			t.Fatalf("clar_fn_rtIncHelper (at byte %d) is not the first clar_fn_ symbol (first is at %d) -- runtime-module decls must precede user decls:\n%s", idxHelper, firstFn, src)
 		}
 	})
 

@@ -1,7 +1,12 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Fake runtime module for the inclusion-machinery test (Task 4).
+// Fake runtime module for the inclusion-machinery test (Task 4). Includes
+// helper.cla so the test also covers a multi-file runtime module: expand's
+// recursion into rtPath's own includes must have ALL of its heads spliced
+// into the combined program, not just rtPath's own trailing head.
+include "helper.cla"
+
 func rtIncProbe(): int {
-    return 4242
+    return rtIncHelper() + 4242
 }

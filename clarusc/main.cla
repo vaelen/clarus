@@ -237,6 +237,7 @@ on App.startCLI(args: list of string) {
     var rtTail: int
     var rtPath: string
     var rtProbe: text
+    var j: int
     var rtReadable: bool
     var beforeCount: int
 
@@ -451,14 +452,25 @@ on App.startCLI(args: list of string) {
                     }
                     quit 1
                 }
+                // expand recurses into rtPath's own includes BEFORE
+                // appending rtPath's own head (post-order), so a single call
+                // can push more than one asmHeads entry -- capture the WHOLE
+                // [beforeCount, asmHeads.count) range it added, not just the
+                // last one, or a multi-file runtime module would silently
+                // lose its included dependencies' declarations (parsed and
+                // diagnosed, but never spliced into combined2). A decl-less
+                // file (today's placeholder ser.cla) pushes a -1 head -- same
+                // "empty file" sentinel the original assembly loop above
+                // already skips; skip it here too rather than splice a bogus
+                // head.
                 beforeCount = asmHeads.count
                 expand(rtPath, true)
-                // A runtime module with no top-level decls (today's
-                // placeholder ser.cla) pushes a -1 head -- same "empty file"
-                // sentinel the original assembly loop above already skips;
-                // skip it here too rather than splice a bogus head.
-                if asmHeads.count > beforeCount and asmHeads[asmHeads.count - 1] != -1 {
-                    rtHeads.add(asmHeads[asmHeads.count - 1])
+                j = beforeCount
+                while j < asmHeads.count {
+                    if asmHeads[j] != -1 {
+                        rtHeads.add(asmHeads[j])
+                    }
+                    j = j + 1
                 }
                 i = i + 1
             }

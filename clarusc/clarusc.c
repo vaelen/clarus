@@ -34894,6 +34894,8 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     cv_rtPath = (clar_str_255){0};
     rt_text * cv_rtProbe;
     cv_rtProbe = rt_text_new();
+    int32_t cv_j;
+    cv_j = 0;
     int32_t cv_rtReadable;
     cv_rtReadable = 0;
     int32_t cv_beforeCount;
@@ -35219,10 +35221,15 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
                 }
                 cv_beforeCount = rt_list_count(cv_asmHeads);
                 clar_fn_expand(cv_rtPath, 1);
-                if ((rt_list_count(cv_asmHeads) > cv_beforeCount) && ((*(int32_t*)rt_list_at(cv_asmHeads, (int32_t)((rt_list_count(cv_asmHeads) - 1)))) != (-(1)))) {
-                    int32_t t26;
-                    t26 = (*(int32_t*)rt_list_at(cv_asmHeads, (int32_t)((rt_list_count(cv_asmHeads) - 1))));
-                    rt_list_push(cv_rtHeads, &(t26));
+                cv_j = cv_beforeCount;
+                while (1) {
+                    if (!((cv_j < rt_list_count(cv_asmHeads)))) break;
+                    if ((*(int32_t*)rt_list_at(cv_asmHeads, (int32_t)(cv_j))) != (-(1))) {
+                        int32_t t26;
+                        t26 = (*(int32_t*)rt_list_at(cv_asmHeads, (int32_t)(cv_j)));
+                        rt_list_push(cv_rtHeads, &(t26));
+                    }
+                    cv_j = (cv_j + 1);
                 }
                 cv_i = (cv_i + 1);
             }
