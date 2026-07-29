@@ -365,13 +365,20 @@ func fpNewTrackedTmp(t: int): text {
 }
 
 // fpHandoff marks a tracked temp as having escaped the current statement --
-// its ownership moved into a variable, a return value, a list/map element,
-// or a callee that may retain it -- so fpStmt's end-of-statement release
-// must skip it (memory-audit Task 6; widened to List/Map temps by ARC Task
-// 3). A no-op unless cexpr is EXACTLY a name currently in fpStmtTmps: a
-// temp's own bare name is only ever printed as itself (fpTextConcat et al.
-// return the raw temp name), so an exact match can only mean "this IS that
-// temp," never an expression that merely mentions it.
+// its ownership moved into a variable, a return value, or a list/map
+// element -- so fpStmt's end-of-statement release must skip it
+// (memory-audit Task 6; widened to List/Map temps by ARC Task 3). ARC Task
+// 8 removed the ONE other historical category (a user-function CALL
+// argument, fpCallFn) -- see that function's own doc comment for why: it
+// was the one handoff site that could permanently orphan a birth-classified
+// temp (nothing ever claimed ownership going forward), unlike every
+// remaining call site here, each of which hands the temp to a
+// PROVABLE new owner (a named slot, a return, or a container element that
+// the store itself just retained-unless-birth into). A no-op unless cexpr
+// is EXACTLY a name currently in fpStmtTmps: a temp's own bare name is only
+// ever printed as itself (fpTextConcat et al. return the raw temp name), so
+// an exact match can only mean "this IS that temp," never an expression
+// that merely mentions it.
 func fpHandoff(cexpr: text) {
     var i: int
 
@@ -613,12 +620,36 @@ func fpIsHandleType(t: int): bool {
 // time (lowCallArgs); each is printed left-to-right so any temp an arg needs
 // lands in evaluation order.
 //
-// An argument whose param type is a handle type (text/list/map) is handed
-// off (memory-audit Task 6): the callee may retain the handle (store it in a
-// global, a field, ...) past the call's return, and there is no escape
-// analysis here to prove otherwise, so freeing the caller's temp afterward
-// would risk a use-after-free. Conservative: a callee that does NOT retain
-// it leaks that allocation instead -- the safe side of the tradeoff.
+// ARC Task 8 (printer tracker simplification): a handle-typed (text/list/
+// map) argument is printed via plain fpExpr, same as any other expression --
+// NO fpHandoff here anymore. The old memory-audit Task 6 handoff (untrack a
+// tracked-temp argument so it's never auto-released, "conservative: a callee
+// that does NOT retain it leaks that allocation instead") predates ARC's
+// retain-on-store guarantee and is now simply wrong, not just conservative:
+// it permanently orphaned any BIRTH-classified argument (a Str->Text
+// widening, a nested call/method-call result passed straight through --
+// e.g. `f(g())`) that no NAMED slot anywhere ever owns, since a scalar
+// handle-typed PARAMETER is a pure borrow in the callee (never added to
+// lowFreeNames, never released there either) -- a real, permanent leak
+// (reproduced in isolation by widen_text.cla's two call-argument widening
+// sites, closed by this change). Removing the handoff is sound precisely
+// BECAUSE of the property that makes the rest of this task's deletions
+// sound: if the callee stores the argument into any of its own persistent
+// slots, that store is itself one of ARC's counted-store funnels and
+// retains independently -- so letting fpStmt's ordinary end-of-statement
+// flush (fpFreeStmtTmps) release a tracked-temp argument, same as any other
+// unclaimed tracked temp, can only ever balance an already-existing +1
+// (correct either way: the callee's own store already retained its own
+// copy, or it didn't and this was the only reference). A BARE-VARIABLE
+// argument (`f(myVar)`) was never affected by the old handoff either way --
+// fpExpr for a plain EVarRef returns "cv_myVar" directly, never a name
+// fpStmtTmps tracks, so fpHandoff was always a no-op for it; myVar's true
+// owner keeps releasing it at ITS OWN scope exit regardless, unchanged.
+// (A handle-backed RECORD argument already worked this way before this
+// task -- fpIsHandleType never covered KRec, so a record call-result
+// argument was never handed off here in the first place; this change just
+// makes text/list/map match that already-correct, already-symmetric
+// behavior.)
 //
 // ARC Task 3: the RETURN value is now a +1-transfer (lower.cla's lowReturn
 // retains every heap-typed return before handing it back), so the OLD
@@ -628,16 +659,12 @@ func fpIsHandleType(t: int): bool {
 // fpStmt's end-of-statement flush releases it -- UNLESS this call sits
 // directly as an SAssign dst's RHS or an SReturn's value (those sites' own
 // fpHandoff call untracks it: the +1 becomes the slot's ownership / the
-// return's own transfer) or as another user call's argument (handed off
-// above, into that call's own statement). `pop`/`shift` stay a plain
-// transfer with no retain (see IListPop/IListShift below) -- unaffected by
-// this convention.
+// return's own transfer). `pop`/`shift` stay a plain transfer with no
+// retain (see IListPop/IListShift below) -- unaffected by this convention.
 func fpCallFn(e: int): text {
     var args: text
     var a: int
     var first: bool
-    var f: int
-    var p: int
     var argText: text
     var call: text
     var t: text
@@ -645,26 +672,14 @@ func fpCallFn(e: int): text {
     args = ""
     first = true
     a = irCallFnArgsHead(e)
-    f = findIRFuncIdxByName(irCallFnName(e))
-    if f != -1 {
-        p = irFuncParamsHead(f)
-    } else {
-        p = -1
-    }
     while a != -1 {
         if not first {
             args = args + ", "
         }
         first = false
         argText = fpExpr(a)
-        if p != -1 and fpIsHandleType(irLocalType(p)) {
-            fpHandoff(argText)
-        }
         args = args + argText
         a = irExprNext(a)
-        if p != -1 {
-            p = irLocalNext(p)
-        }
     }
     call = "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
     // ARC Task 7 site 3 (caller side): a handle-backed record return is
@@ -1516,13 +1531,19 @@ func fpIntrCall(x: int): text {
         }
         return t
     } else if nm == IMapGetDv() {
+        // dv is NON-birth here (lowMapMethod's own birth check picked
+        // IMapGetDvBirth instead when it isn't -- see that intrinsic's own
+        // doc comment) -- some other slot already owns dv's reference, so
+        // whether t ends up holding dv (key absent) or m's own stored value
+        // (key present), t needs its OWN +1 either way (a heap-typed result
+        // is retained immediately into a tracked temp, ARC Task 3, same as
+        // IMapGet above) and dv's original box is never released here (it
+        // was never independently owned to begin with -- its true owner
+        // keeps it regardless of whether this call ended up using it).
         m = fpExpr(a0)
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv) // dv's own temp (if any) is about to alias into t
-        // Whether t ends up holding dv (key absent) or m's own stored value
-        // (key present), a heap-typed result is retained immediately into a
-        // tracked temp (ARC Task 3, same as IMapGet above).
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
@@ -1531,6 +1552,42 @@ func fpIntrCall(x: int): text {
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
+            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+        }
+        return t
+    } else if nm == IMapGetDvBirth() {
+        // ARC Task 8 fix (known open leak bug 2): dv is BIRTH here -- a
+        // freshly constructed, independently owned value with no other
+        // owner (lowMapMethod's own birth check). Two cases, distinguished
+        // at RUNTIME by comparing t (post-call) against dv's own C
+        // expression -- rt_map_get_dv only ever writes through &t, never
+        // touches dv's own storage, so re-reading dv after the call still
+        // reads its ORIGINAL value:
+        //   - absent (t == dv): t simply inherited dv's own +1 -- no retain
+        //     needed (unlike IMapGetDv's non-birth case, which always needs
+        //     one: there, some OTHER slot already owns dv's reference, so t
+        //     needs an independent +1 of its own; here, dv had exactly ONE
+        //     owner and t just became it).
+        //   - present (t != dv): t aliases the map's OWN stored value
+        //     (needs its own retain, unconditionally, same as IMapGetDv)
+        //     AND dv's original birth box is now orphaned -- nothing else
+        //     references it -- so it must be released here, or it leaks
+        //     permanently (this was exactly the bug: IMapGetDv's own
+        //     unconditional-retain-never-release shape is wrong for a birth
+        //     default in BOTH directions -- over-retains when absent,
+        //     orphans when present).
+        m = fpExpr(a0)
+        k = fpStrAddr(a1)
+        dv = fpExpr(a2)
+        fpHandoff(dv)
+        if fpIsHandleType(irExprType(x)) {
+            t = fpNewTrackedTmp(irExprType(x))
+            fpEmit(t + " = " + dv + ";")
+            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
+        } else {
+            t = fpNewTmp(cpCType(irExprType(x)))
+            fpEmit(t + " = " + dv + ";")
             fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
         }
         return t
@@ -2028,13 +2085,42 @@ func fpForMapStmt(s: int) {
 // so whatever fpExpr(cond) tracked is exactly the temps to free; flush them
 // here, right after the break check, once per iteration, before the body
 // (which tracks/frees its own temps independently via its own fpStmt calls).
+//
+// ARC Task 8 fix (corpus regression fixture p9_while_cond.cla, documented
+// leak pinned since the memory-audit-4e whole-branch review): the free
+// call above only ever sits on the "loop continues" path -- textually AFTER
+// `if (!(cond)) break;`, so the FINAL (false) evaluation's own temps are
+// never reached; `break` jumps straight out. That leaked exactly one
+// condition-temp per loop EXECUTION (not per iteration). Fix: when cond
+// tracked at least one temp, print the SAME release lines into the break
+// branch too (fpEmitTmpRelease reads fpStmtTmps/fpStmtTmpRel/fpStmtTmpIsRec
+// by position without mutating them, so calling it here and then letting
+// the ordinary fpFreeStmtTmps() call below ALSO iterate+clear is safe --
+// the two printed copies sit on mutually exclusive runtime paths, so
+// exactly one of them ever executes for any given iteration). A condition
+// with no temps at all (the common case -- a plain int/bool comparison)
+// keeps the original one-line `if (!(cond)) break;`, unchanged.
 func fpWhileStmt(s: int) {
     var cond: text
+    var i: int
 
     fpEmit(toText("while (1) {"))
     fpIndent = fpIndent + 1
     cond = fpExpr(irWhileCond(s))
-    fpEmit("if (!(" + cond + ")) break;")
+    if fpStmtTmps.count > 0 {
+        fpEmit("if (!(" + cond + ")) {")
+        fpIndent = fpIndent + 1
+        i = 0
+        while i < fpStmtTmps.count {
+            fpEmitTmpRelease(i)
+            i = i + 1
+        }
+        fpEmit(toText("break;"))
+        fpIndent = fpIndent - 1
+        fpEmit(toText("}"))
+    } else {
+        fpEmit("if (!(" + cond + ")) break;")
+    }
     fpFreeStmtTmps()
     fpStmts(irWhileBody(s))
     fpIndent = fpIndent - 1
@@ -2275,6 +2361,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var et: int
     var f: int
     var ix: string
+    var en: string
     var ri: int
     var recName: string
 
@@ -2307,6 +2394,45 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (rt_list_lastref(" + cexpr + ")) { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) clar_release_" + recName + "((clar_rec_" + recName + " *)rt_list_at(" + cexpr + ", i)); }")
+        } else if irtKind(et) == KList or irtKind(et) == KMap {
+            // ARC Task 8 (carry-forward 3): a NESTED container element
+            // (`list of list of text`, `list of map of text`, ... -- the
+            // type system permits arbitrary nesting: parseType/resolveType
+            // both recurse on the element type with no kind restriction,
+            // confirmed by direct probe, so this is reachable, not merely
+            // hypothetical) needs its own full release walk, not just a
+            // bare handle release -- recurse into cpEmitRelease per
+            // element, inheriting whatever the ELEMENT's own type needs
+            // (another nesting level, or nothing further). Still gated by
+            // the SAME rt_list_lastref guard as every other element-walk
+            // branch here (shared-container double-free protection, Task 6
+            // round 3): decrementing the OUTER container's rc more than
+            // once is exactly the same hazard for a container element as
+            // for a Text/Rec one.
+            //
+            // Copies each element out into a freshly-named LOCAL (`enN`)
+            // before recursing, rather than recursing directly on a
+            // composed `rt_list_at(cexpr, ix)` expression string (the way
+            // KArr's own recursion, just below, safely can for a fixed
+            // array -- there, the index chain is always short: `.e[ixN]`
+            // per level). Every level of THIS recursion is instead
+            // re-embedding a growing `cexpr` -- `cpEmitRelease`'s own
+            // `cexpr` parameter is a capacity-255 `string`, silently
+            // truncated by Ch3's fixed-string semantics past that -- and a
+            // truncated cexpr is corrupt C, not a compile error, found by
+            // probing 3+ levels of nesting directly (`list of list of list
+            // of text`) and reading the truncated output before this fix.
+            // A short, constant-length local name keeps every level's own
+            // line length bounded regardless of nesting depth.
+            cpLoopN = cpLoopN + 1
+            ix = "ix" + numToStr(cpLoopN)
+            en = "en" + numToStr(cpLoopN)
+            cpAppendLine(dst, "    if (rt_list_lastref(" + cexpr + ")) {")
+            cpAppendLine(dst, "    for (int32_t " + ix + " = 0; " + ix + " < rt_list_count(" + cexpr + "); " + ix + "++) {")
+            cpAppendLine(dst, "    " + cpCType(et) + " " + en + " = *(" + cpCType(et) + "*)rt_list_at(" + cexpr + ", " + ix + ");")
+            cpEmitRelease(dst, en, et)
+            cpAppendLine(dst, "    }")
+            cpAppendLine(dst, "    }")
         }
         cpAppendLine(dst, "    rt_list_release(" + cexpr + ");")
     } else if k == KMap {
@@ -2326,6 +2452,23 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); clar_release_" + recName + "(&v); } }")
+        } else if irtKind(et) == KList or irtKind(et) == KMap {
+            // ARC Task 8 (carry-forward 3) -- same nested-container reasoning
+            // as the KList branch just above, adapted for a map value: a map's
+            // own internal storage is opaque bytes (unlike a list's directly
+            // addressable backing array), so each element is copied OUT into a
+            // local `v` first (same shape the KRec-in-map case just above
+            // uses), then released via a recursive cpEmitRelease call.
+            cpLoopN = cpLoopN + 1
+            ix = "ix" + numToStr(cpLoopN)
+            cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) {")
+            cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
+            cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < rt_map_count(" + cexpr + "); " + ix + "++) {")
+            cpAppendLine(dst, "    rt_map_val_at(" + cexpr + ", " + ix + ", &v" + numToStr(cpLoopN) + ");")
+            cpEmitRelease(dst, "v" + numToStr(cpLoopN), et)
+            cpAppendLine(dst, "    }")
+            cpAppendLine(dst, "    }")
+            cpAppendLine(dst, "    }")
         }
         cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
     } else if k == KArr {

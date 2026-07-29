@@ -1,15 +1,17 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Expected strict-mode leak count: 2 (see ../concat_order.leaks). `t: text
-// = ""` default-inits to a fresh empty handle; `t = "x" + t` then replaces
-// it via pointer-swap (the concat result is a new text object assigned
-// straight into `t`, not stored byte-for-byte into the existing handle) --
-// orphaning the original empty handle with nothing left to free it. This
-// is the documented local pointer-swap-init orphan (memory-audit-4e Task
-// 6/7, "left open, appropriately scoped to whoever picks up the ARC
-// milestone"): 1 orphaned text = 2 blocks (struct box + data handle).
-// Legitimate, not a bug.
+// ARC regression proof (live=0): `t: text = ""` default-inits to a fresh
+// empty handle; `t = "x" + t` then replaces it via pointer-swap (the concat
+// result is a new text object assigned straight into `t`, not stored
+// byte-for-byte into the existing handle) -- under 4e, this orphaned the
+// original empty handle with nothing left to free it (a local pointer-swap-
+// init orphan). ARC Task 4's `lowCountedStore` gives every named-slot store
+// release-old-then-store discipline regardless of the store's own
+// freshness, so `t`'s original empty handle is now properly released the
+// moment the concat store overwrites it. `.leaks` absent (0) -- the corpus
+// gate (`go test ./internal/selfhost -run TestEmitDifferential`) enforces
+// this permanently.
 
 func runConcatOrder() {
     var s: string = "bc"

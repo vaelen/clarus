@@ -23,14 +23,14 @@ record textassignNote {
 // `lowCountedStore`) now releases the OLD handle before storing the new
 // one, and `t`/`t2` both get a genuine, unconditional scope-exit release
 // regardless of their own declared-initializer's freshness (the OLD
-// candidacy gate is gone -- see `lowEscapeCollectCandidates`'s own
+// candidacy gate is gone -- see `lowCollectScopeExitCandidates`'s own
 // comment). Confirmed against the emitted C: every one of `t`'s
 // reassignments is release-then-store, and the function ends with
 // `rt_text_free(cv_t); rt_text_release(cv_t2);` (deep and shallow release
 // are identical for a plain Text local -- no elements to walk).
 // ARC Task 7 (record retain/release walks at every copy site, site 5)
 // closes the last gap: `note` (a body-top record local) is now a
-// scope-exit-release candidate too (lowEscapeCollectCandidates' own
+// scope-exit-release candidate too (lowCollectScopeExitCandidates' own
 // lowIsRecBearing branch), released via a plain IRelease that walks into
 // `clar_release_textassignNote`, which releases `body`'s default `"hi"`
 // handle. Confirmed against the emitted C: `clar_release_textassignNote(&(cv_note));`

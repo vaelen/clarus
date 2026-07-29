@@ -20,91 +20,40 @@ func widenTextGetStr(): string {
     return "delta"
 }
 
-// Originally (4e, pre-ARC): expected leak count 23 -- this function's body
-// emitted zero rt_text_free/rt_list_free/rt_map_free calls at all, so
-// every heap object it allocated leaked: 9 `rt_text_new()` calls (2 blocks
-// each = 18: `t1`/`t2`/`dv`'s own prologue defaults, plus one
-// compiler-synthesized string->text widening temp per assignability
-// position -- a call argument x2, a list-push value, a map-set value, and
-// a map.get default) + 1 `rt_list_new()` (`lst`, 2 blocks) + 1
-// `rt_map_new()` (`m`, 3 blocks) = 23.
-//
-// ARC Task 4 (counted named-slot stores + unconditional local release)
-// closed 11 of those 23 blocks -- everything that was a NAMED-SLOT store
-// or a plain local's own scope-exit release, confirmed against the
-// emitted C:
-//   - `t1`/`t2`/`dv`'s own prologue-default boxes are released the
-//     instant each is first (re)assigned (`t1 = widenTextAcceptText(s)`,
-//     `t2 = widenTextMakeText(...)`, `dv = m.get(...)` are all named-slot
-//     stores now -- release-old-then-store, regardless of the store's own
-//     freshness; the old per-store freshness GATE on candidacy is gone).
-//     3 x 2 blocks = 6.
-//   - `lst`/`m` themselves (their own list/map handle, not their
-//     elements) get a genuine, unconditional SHALLOW scope-exit release
-//     now (`rt_list_release(cv_lst); rt_map_release(cv_m);`, no element
-//     loop -- deep release stays gated on the same still-unmigrated
-//     container-element proof as before, Task 5). 2 + 3 = 5 blocks.
-//
-// Of the 12 blocks remaining after ARC Task 4 (see ../widen_text.leaks'
-// pre-Task-5 value), SIX distinct compiler-synthesized string->text
-// widening temps (one per call argument x2, one inside `widenTextMakeText`'s
-// own `return s`, one per list-push value, map-set value, and map-get-
-// default value -- 6 sites x 2 blocks = 12) were never a NAMED slot at
-// all: each is an anonymous, untracked scratch value born inside argument/
-// return/element-store lowering (`lowCoerceStr`, embedded directly in the
-// call/return/push/index-assign's own printing).
-//
-// ARC Task 5 (counted container element slots) closes exactly ONE of the
-// six -- the list-push site (`lst.add("alpha")`) -- because that widening
-// temp is birth (the KStr override `lowElemIsBirth` shares with
-// `lowCountedStore`: a Str->Text coercion is always a fresh construction,
-// so `lowListMethod` picks the plain `IListPush`, no retain needed) AND
-// because Task 5 deleted the "index-read/non-fresh-push disqualifies the
-// container" consults, so `lst` itself now qualifies for a real DEEP
-// scope-exit release, walking and releasing its one "alpha" element
-// (confirmed against the emitted C: `t4 = rt_text_new(); rt_text_store(t4,
-// "alpha"); t5 = t4; rt_list_push(cv_lst, &t5);` at the push site, THEN `{
-// int32_t i; for (...) rt_text_release(*(rt_text **)rt_list_at(cv_lst,
-// i)); } rt_list_release(cv_lst);` at scope exit -- `t4`/`t5` were never
-// separately released, but `lst`'s own walk now reaches and releases the
-// SAME box they named).
-//
-// The other FIVE stay leaked, genuinely out of Task 5's scope:
-//   - Both call-argument widenings (`widenTextAcceptText(s)` and
-//     `widenTextAcceptText(widenTextGetStr())`) and the RETURN-value
-//     widening inside `widenTextMakeText`'s own `return s` are a
-//     user-function parameter-passing / return-value shape, not a
-//     container element at all -- untouched by this task either way (the
-//     RETURN case is a genuine, separately-confirmed pre-existing leak in
-//     `lowReturn`'s own Str->Text handling -- it unconditionally retains a
-//     `return`'s operand without ARC Task 4's own isBirth check, so an
-//     ALREADY-fresh widened value gets retained a second time with nothing
-//     to balance it; reproduced in isolation, with no push/list/map
-//     involved at all -- flagged in the whole-branch report as a
-//     discovered-but-out-of-scope finding, not fixed here).
-//   - The map-set value (`m["k"] = "beta"`) IS a container element store
-//     Task 5 covers (same birth classification as the list-push site,
-//     `IMapSet`, no retain needed) -- but `m` (a LOCAL) itself stays
-//     disqualified from its own DEEP scope-exit release, for a reason Task
-//     5 deliberately leaves standing: `m.get("missing", "gamma")`'s
-//     RECEIVER disqualifies
-//     `m` via `lowEscapeWalkMethodCall`'s get/first/last/pop/shift-as-
-//     alias rule (the "coordinator's ruling is maximally conservative on
-//     purpose" consult -- see that function's own doc comment for why this
-//     is NOT one of the two consults Task 5 was asked to delete) --
-//     confirmed against the emitted C: `rt_map_release(cv_m);` at scope
-//     exit, no element loop, so the "beta" element's own box is never
-//     reached.
-//   - The map-get default (`"gamma"`) is `.get()`'s own default-value
-//     argument, still routed through `lowEscapeWalkArgsHandoff`
-//     (`lowFreeUnsafe`) unchanged -- see `lowFreeUnsafe`'s own doc comment
-//     for why that's a separate, pre-existing conservatism this task
-//     doesn't touch.
-// Expected strict-mode leak count: 10 (see ../widen_text.leaks, dropped
-// from 12) -- the five remaining sites above, 2 blocks each. Not a bug --
-// four of the five are explicitly out of Task 5's own container-element
-// scope; the fifth (the `return s` widening) is a genuine, separately-
-// confirmed pre-existing bug outside this task's brief, flagged not fixed.
+// Originally (4e, pre-ARC): expected leak count 23 (every heap object this
+// function's body allocated, since it emitted zero release calls at all).
+// ARC Tasks 4-5 closed 16 of those 23 (named-slot stores, unconditional
+// local release, and the ONE compiler-synthesized string->text widening
+// temp that happened to land in a counted container element -- the
+// list-push site) -- see git history for the full block-by-block accounting
+// prior to this task. Five sites remained leaked after Task 5, all
+// genuinely out of that task's own container-element scope:
+//   - two call-argument widenings (`widenTextAcceptText(s)` and
+//     `widenTextAcceptText(widenTextGetStr())`) -- ARC Task 8 regression
+//     proof: FIXED. `fpCallFn` (cprint.cla) no longer hands off a
+//     tracked-temp call argument (memory-audit Task 6's original handoff
+//     predates ARC's retain-on-store guarantee and is unsound to keep now
+//     -- see `fpCallFn`'s own doc comment); the ordinary end-of-statement
+//     flush releases these widening temps like any other unclaimed tracked
+//     temp.
+//   - the RETURN-value widening inside `widenTextMakeText`'s own
+//     `return s` -- ARC Task 8 regression proof: FIXED. `lowReturn`
+//     (lower.cla) now gates its return-value retain on the SAME
+//     birth-vs-retain rule every other counted store site uses (an
+//     already-fresh widened value needs no second retain) -- see
+//     `lowReturn`'s own doc comment.
+//   - the map-set value's container (`m`, via `m.get("missing", "gamma")`'s
+//     receiver) -- ARC Task 8 regression proof: FIXED as a direct
+//     consequence of deleting the 4e escape-walk apparatus: `m`'s own
+//     scope-exit release is unconditionally deep now (no more
+//     get/first/last/pop/shift receiver-disqualification rule to gate it),
+//     so it reaches and releases the "beta" element too.
+//   - the map-get default (`"gamma"`, key absent) -- ARC Task 8 regression
+//     proof: FIXED (known open leak bug 2, `IMapGetDvBirth` -- see
+//     `IMapGetDvBirth`'s own ir.cla doc comment).
+// Pinned at 0 leaks (live=0); `.leaks` absent now (was 10) -- the corpus
+// gate (`go test ./internal/selfhost -run TestEmitDifferential`) enforces
+// this permanently.
 func runWidenText() {
     var pass: bool
     var s: string

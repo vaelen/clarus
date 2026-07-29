@@ -1,14 +1,15 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Expected strict-mode leak count: 5 (see ../strcap.leaks). runStrcap's
-// `lst: list of string(8)` is read by element (`lst.first()`) and `m: map
-// of string(8)` is read by element (`m.get(...)`) -- both are the
-// documented element-read-disqualified-container class (memory-audit-4e
-// Task 6/7), so neither is freed at scope exit: `lst` leaks 2 blocks
-// (struct box + data handle), `m` leaks 3 (struct box + keys + vals
-// handles, all zero-length since no entries were ever set). Legitimate,
-// not a bug.
+// ARC regression proof (live=0): runStrcap's `lst: list of string(8)` is
+// read by element (`lst.first()`) and `m: map of string(8)` is read by
+// element (`m.get(...)`) -- both used to be the element-read-disqualified-
+// container class (4e's escape walker), so neither was freed at scope
+// exit. Every scope-exit candidate releases unconditionally now (ARC Task
+// 4/8), so both `lst` and `m` release regardless of having been read by
+// element. `.leaks` absent (0) -- the corpus gate (`go test
+// ./internal/selfhost -run TestEmitDifferential`) enforces this
+// permanently.
 
 func strcapF(s: string): string {
     return s

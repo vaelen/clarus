@@ -106,16 +106,17 @@ func runArcRecCopy() {
     lst.push(d)
     printName("pushed-d", lst[lst.count - 1])
 
-    // Drain lst back to empty: `.pop()`'s OWN receiver is a PRE-EXISTING,
-    // deliberately-kept escape-walk rule (Task 5 review: "these five
-    // methods [get/first/last/pop/shift] can hand back an ALIAS the
-    // container itself still owns, so don't trust the container's own
-    // deep release regardless") -- lst's OWN scope-exit release is
-    // therefore SHALLOW (container handle only, no element walk), same as
-    // it would be for a list of text/list/map. An empty list leaks
-    // nothing either way, so this fixture proves site 4's push/overwrite/
-    // pop retain-walk correctness without also re-litigating that
-    // pre-existing, out-of-this-task's-scope container-level rule.
+    // Drain lst back to empty: the get/first/last/pop/shift receiver-
+    // disqualification rule that used to make `.pop()`'s OWN receiver
+    // shallow-release-only (Task 5 review: "these five methods can hand
+    // back an ALIAS the container itself still owns, so don't trust the
+    // container's own deep release regardless") is deleted along with the
+    // rest of the 4e escape-walk apparatus (ARC Task 8) -- `lst`'s
+    // scope-exit release is a full, unconditional DEEP release now, same
+    // as every other List/Map local. An empty list leaks (and has nothing
+    // to walk) either way, so this fixture proves site 4's push/overwrite/
+    // pop retain-walk correctness without needing to say anything about
+    // container-level release depth.
     while lst.count > 0 {
         popped = lst.pop()
     }

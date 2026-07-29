@@ -1030,16 +1030,33 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int): int {
     var nm: string
     var key: int
     var dv: int
+    var dvAst: int
+    var rawDv: int
     var elemT: int
+    var getName: int
 
     nm = poolGet(selectName(sel))
     if nm == "get" {
         elemT = irtElem(irExprType(recv))
         key = lowExpr(argsHead)
-        dv = lowCoerceStr(elemT, lowExpr(exprNext(argsHead)))
+        dvAst = exprNext(argsHead)
+        rawDv = lowExpr(dvAst)
+        // ARC Task 8 fix (known open leak bug 2): IMapGetDv vs
+        // IMapGetDvBirth, chosen exactly like lowListMethod picks
+        // IListPush vs IListPushRetain above -- lowElemIsBirth is the SAME
+        // birth-vs-retain rule every other counted store site uses,
+        // applied here to the DEFAULT-VALUE argument. See
+        // IMapGetDvBirth's own ir.cla doc comment for why a birth default
+        // needs different (and currently missing) retain/release handling
+        // than a non-birth one.
+        getName = IMapGetDv()
+        if lowEscapeTrackableKind(irtKind(elemT)) and lowElemIsBirth(dvAst, rawDv, elemT) {
+            getName = IMapGetDvBirth()
+        }
+        dv = lowCoerceStr(elemT, rawDv)
         irExprListAppend(recv, key)
         irExprListAppend(key, dv)
-        return newIRIntr(IMapGetDv(), recv, ty)
+        return newIRIntr(getName, recv, ty)
     } else if nm == "has" {
         return newIRIntr(IMapHas(), lowMethodArgs2(recv, argsHead), ty)
     } else if nm == "remove" {
@@ -1482,11 +1499,10 @@ func lowNewStoreTemp(): int {
 //     for a Str->Text coercion store (lowCountedStore special-cases that by
 //     IR TYPE, below, since Str is a by-value type any AST shape can
 //     produce -- not just a literal); kept here for the direct
-//     Text<-literal-of-Text-type case and for symmetry with
-//     lowEscapeFreshInit's own rule 2 (same shape, same reasoning: a
-//     literal is always a fresh construction).
+//     Text<-literal-of-Text-type case (a literal is always a fresh
+//     construction).
 //   - ExBinary(OpAdd) at Text result type: text concatenation -- Ch3's
-//     "always a fresh copy" contract, same as lowEscapeFreshInit's rule.
+//     "always a fresh copy" contract.
 //   - ExSlice: text/string slicing -- likewise always a fresh copy (Ch3).
 //   - ExCall: ANY call (a plain user-function call OR a method call like
 //     .first()/.last()/.get()/.getDefault()/.pop()/.shift()) that types as
@@ -2108,10 +2124,10 @@ func lowWhile(s: int): int {
 // scope exit would decrement a reference nothing here ever incremented (a
 // spurious release, undercounting the container's real element towards
 // zero while iterating it). This exclusion falls out of lowAddLocal here
-// NEVER routing through a `var`-decl AST node (lowEscapeCollectCandidates,
-// this task's own unconditional-release candidate collector, only ever
-// walks blockVarsHead's `var` list) -- no explicit skip needed, just
-// documented here so the omission reads as intentional.
+// NEVER routing through a `var`-decl AST node (lowCollectScopeExitCandidates,
+// the unconditional-release candidate collector, only ever walks
+// blockVarsHead's `var` list) -- no explicit skip needed, just documented
+// here so the omission reads as intentional.
 func lowFor(s: int): int {
     var seq: int
     var toExpr: int
@@ -2158,159 +2174,76 @@ func lowFor(s: int): int {
 }
 
 // ================================================================
-// Task 7: scope-exit frees for provably sole-reference locals
+// ARC Task 8: unconditional scope-exit frees for every counted local
 // ================================================================
 //
-// QUALIFICATION RULE. A function/handler local `x` of type text/list/map
-// qualifies for a scope-exit (or pre-`return`) free iff ALL of:
+// Every function/handler-body-top local of a counted kind (Text/List/Map
+// via lowEscapeTrackableKind, or a handle-backed record/array-of-records
+// via lowIsRecBearing) gets a full, unconditional release at scope exit
+// (or immediately before a `return`, lowReturn below) -- no shallow-vs-deep
+// distinction and no disqualification-by-handoff-site to compute.
 //
-//   1. Declared at body top (every Clarus local is -- Ch4: `var` only at
-//      top of body). NOT a `for`-loop binding: those alias container
-//      elements and are never body-top vars in the first place (lowFor's
-//      locals live in their own pushed scope, never in blockVarsHead).
+// This drops the 4e-era escape-walk apparatus this section used to host
+// (lowEscapeWalk*, lowFreeDisq/lowFreeUnsafe, lowEscapeFreshInit,
+// lowEscapeHandoff(Unsafe), lowEscapeDisqAll -- deleted this task) because
+// its whole reason to exist -- deciding when a scope-exit release might be
+// unsound -- is now answered by construction, everywhere in the compiler:
 //
-//   2. Its initializer is fresh: a string literal, absent (default
-//      constructor), a concat result (`+`, checked type Text), or a
-//      slice-of result (`x[a,b]`). NOT a bare reference to another
-//      variable/global/window var/field/element, and NOT a user-function-
-//      call result -- a callee's return may alias something still live
-//      elsewhere (`func f(): text { return gKeep }`), which this
-//      per-function pre-pass cannot see through. (List/Map have no literal
-//      or concat/slice form at all, so in practice only "absent" ever
-//      qualifies a List/Map local.)
+//   - Every NAMED-SLOT store (local, global, window var, record field,
+//     container element -- lowCountedStore/lowCountedStoreRec/lowElemIsBirth,
+//     Tasks 3-7) retains before it lands unless the source is provably
+//     fresh ("birth"). So whatever a local's own handle gets handed to
+//     (an assignment RHS, a container push, a record field, a global) keeps
+//     its OWN independent reference the instant it lands there -- the
+//     local's own copy stays safe to release regardless.
+//   - A user-function-call argument gets no caller-side retain (fpCallFn's
+//     own doc comment: conservative, "a callee that does NOT retain it
+//     leaks instead") -- but if the callee stores it anywhere persistent,
+//     that store is ALSO one of the funnels above, and independently
+//     retains. A scalar (non-record) parameter is never itself a
+//     scope-exit candidate in the callee (lowFuncBody only adds params to
+//     lowFreeNames for the handle-backed-RECORD case, which gets its own
+//     retain-at-entry, ARC Task 7 site 2) -- so there's no double-release
+//     at the call boundary either.
+//   - Every container's own DEEP release walk (cpEmitRelease, cprint.cla)
+//     is gated on `rt_list_lastref`/`rt_map_lastref` (Task 6 round 3) --
+//     only the release that actually drops a shared container to rc==0
+//     ever walks its elements, so two aliased owners releasing the same
+//     container can no longer double-free what it holds. That was the
+//     ONE remaining reason a local's OWN deep release used to need a
+//     compile-time non-aliasing proof at all.
+//   - `.get(k, dv)`'s key/default-value arguments and a form `edit`
+//     target were the last two handoff sites still marked "genuinely
+//     unsafe to release at all" under the old scheme -- neither actually
+//     depended on the walker for correctness: IMapGetDv/IMapGetDvBirth
+//     (cprint.cla) already retain/release their OWN default-value temp
+//     correctly regardless of what fed it (see IMapGetDvBirth's own doc
+//     comment for ARC Task 8's dv-orphan fix), and an `edit` target's
+//     static type is always a record (checkEditStmt requires
+//     `typeKind(tt) == TyRec`, never Text/List/Map), so the old marking
+//     never actually reached a Text/List/Map release decision in the
+//     first place -- confirmed dead before this deletion, not just after.
 //
-//   3. `x` never appears, anywhere in the body, as: the RHS of any
-//      assignment (`a = x`, `rec.f = x`, `w.v = x`, `arr[i] = x` --
-//      whatever the LHS is); an argument to a user function call; a
-//      `return` operand; the value argument of `.push`/`.add`/`.unshift`
-//      into ANY list, or the default-value argument of a map `.get` (which
-//      can hand that very argument straight back to the caller, unchanged,
-//      when the key is absent -- confirmed alias-capable by Task 6's own
-//      IMapGetDv finding); a form-edit binding's target. Appearing as: a
-//      method RECEIVER (`x.append(...)`, bare `x.length`/`x.count`),
-//      an operand of concat/comparison/slice, an `alert`/`log`/`file.*`
-//      argument, or an index-READ source (`x[i]`, `x` as an index-assign's
-//      BASE) is fine -- none of those hand `x`'s own handle to anything
-//      that outlives this statement.
-//
-//   4. `x` is never reassigned (`x = ...`, LHS a bare `x`) from a
-//      non-fresh source later in the body -- the same freshness test as
-//      rule 2, applied to every subsequent plain reassignment. A
-//      reassignment FROM a fresh source is fine (the free at scope exit
-//      still releases whatever `x`'s FINAL handle is); it just means the
-//      handle `x` held before that reassignment is orphaned -- an
-//      ARC-era leak, not chased here, not a correctness problem.
-//
-// Default-deny throughout: any AST shape this walker doesn't explicitly
-// recognize as one of the "safe" positions above disqualifies every name
-// still tracked for the current function (lowEscapeDisqAll) rather than
-// silently treating it as safe -- a wrongly-freed escaping local is a
-// real Mac use-after-free, not a missed optimization.
-//
-// Runs once per function/handler body (lowRunEscapePrepass, called from
-// lowFuncBody/lowHandlerFunc before lowBlock lowers that same body), purely
-// over the AST (ast.cla) plus the checker's already-recorded expression
-// types (exprTypeGet) -- no lowering/IR state exists yet at this point, and
-// none is created here.
+// Net effect of deleting the walker: it only ever WITHHELD a release
+// (lowFreeUnsafe's skip, lowFreeDisq's shallow-only downgrade) -- it never
+// caused one. Removing it can only turn a withheld release into a real
+// one (closing a leak); it cannot turn a safe release into an unsafe one,
+// since nothing above depended on the walker to BE safe -- the retain-on-
+// store discipline and the lastref-gated container walk do that
+// independently. Verified against the full `.leaks` corpus (see the
+// task-8 report): every remaining nonzero count traced to a distinct
+// emission bug (lowReturn's own return-value retain, IMapGetDv's
+// dv-orphan, nested container elements) and fixed there, not by
+// resurrecting a disqualify list.
 
-// lowFuncGen disambiguates lowFreeDisq's keys across independent
-// lowRunEscapePrepass calls (one per function/handler body, never nested --
-// see lowFuncBody/lowHandlerFunc, both only ever called from top-level
-// per-declaration loops) -- the same never-reset, namespace-by-key idiom
-// uiMenuIdx/winVarDefaultsHead already use for exactly this reason (two
-// different functions can each declare a local named `t`; without
-// disambiguation a disqualification recorded for one would wrongly leak
-// into the other). lowFreeNames/lowFreeTypes need no such prefixing: both
-// are fully rebuilt from scratch (lowFreeNames emptied, every entry
-// overwritten) at the top of every lowRunEscapePrepass call, and only ever
-// consulted for names THIS call just added to lowFreeNames.
-var lowFuncGen: int
-
-// lowFreeNames: the CURRENT function's candidate names (rule 1 + rule 2),
-// in declaration order -- reset at the start of every lowRunEscapePrepass.
+// lowFreeNames: the CURRENT function's scope-exit-release candidate names
+// (body-top locals of a counted kind, plus any handle-backed record
+// PARAMS -- lowRetainRecParams, ARC Task 7 site 2), in declaration order --
+// reset at the start of every lowRunEscapePrepass.
 var lowFreeNames: list of string
 
-// lowFreeTypes: candidate name -> IR type index (KText/KList/KMap only).
+// lowFreeTypes: candidate name -> IR type index.
 var lowFreeTypes: map of int
-
-// lowFreeDisq: "<lowFuncGen>|<name>" -> 1 for any name (candidate or not)
-// found to violate rule 3 or rule 4 anywhere in the CURRENT function's body.
-//
-// ARC Task 4 reinterprets this map's meaning for the PER-FUNCTION-LOCAL
-// pass only (globals/window vars, their OWN separate gens, were untouched at
-// the time -- see lowWinVarQualifies/lowGlobalsVarQualifies; ARC Task 6 made
-// both moot by making cl_free_globals/clar_ui_release_<Win> release
-// unconditionally, so neither gen's disqualification entries are consulted
-// by anything anymore, though lowRunWinVarEscapePrepass/
-// lowRunGlobalsEscapePrepass themselves are still deferred to Task 8 to
-// delete): a name in lowFreeDisq is no longer "unsafe to release
-// at all" -- lowCountedStore's retain-on-store means most of rule 3/4's old
-// handoff reasons are now PROVABLY safe to release (the consuming store
-// retains, so the source keeps its own independent +1) -- it now means
-// "safe to release the LOCAL'S OWN handle (shallow IRelease), but NOT
-// provably safe to DEEP-release (I*FreeVar's element walk), since container
-// elements are still Task 5's unmigrated slot class." See lowFreeUnsafe,
-// below, for the (smaller) set of handoff reasons that remain genuinely
-// unsafe to release AT ALL.
-var lowFreeDisq: map of int
-
-// lowFreeUnsafe: "<lowFuncGen>|<name>" -> 1 for a name handed to a
-// consumer that ARC hasn't migrated to retain-on-store yet, so releasing
-// the LOCAL that fed it (even shallowly) could dispose a handle the
-// consumer still references, uncounted -- a real UAF, not just a
-// leftover-leak class. lowBuildScopeExitFrees SKIPS these names entirely
-// (4e's original, still-correct behavior for this narrower set), never
-// just downgrading to shallow. A SUBSET of lowFreeDisq's names (every
-// lowFreeUnsafe entry is also a lowFreeDisq entry -- see
-// lowEscapeHandoffUnsafe, below), populated only at the specific handoff
-// sites this task's own migration doesn't cover:
-//   - a user-function CALL argument (lowEscapeWalkArgsHandoff, the
-//     lowEscapeWalkCall branch) -- the callee MIGHT stash it into an
-//     unmigrated slot (a record field, a container element) that this
-//     caller's own local release can't see or prove safe against
-//     (fpCallFn's own doc comment: "the callee may retain the handle...
-//     leaks instead" -- the SAME conservative assumption, just now
-//     enforced by skipping the release instead of by leaking forever).
-//   - a map `.get(k, dv)` call's OWN key/default-value arguments
-//     (lowEscapeWalkArgsHandoff, still reached from the
-//     lowEscapeWalkMethodCall "get" branch) -- ARC Task 5 REMOVED
-//     push/add/unshift's value argument from this set (see below): a
-//     push/unshift value now lands in a COUNTED container element slot
-//     (lowListMethod's own retain-unless-birth store, mirroring
-//     lowCountedStore), so the source keeps its own independent +1 the
-//     same way a migrated named-slot store's source does -- shallow
-//     release is provably safe now (lowEscapeWalkArgsSafeHandoff, not
-//     this function). `get`'s OWN arguments are UNTOUCHED by that
-//     reasoning: neither is ever stored into the map at all (the key is a
-//     lookup, the default is a caller-owned fallback returned only on
-//     absence) -- this is a separate, pre-existing conservatism
-//     (IMapGetDv's own printer already retains the default into its own
-//     tracked result independently of this classification) that predates
-//     and is unrelated to Task 5's container-element scope, not audited or
-//     changed here.
-//   - a form `edit` target (StEdit) -- handed to the form UI, which is
-//     never proven to retain it (not one of ARC's migration classes at
-//     all; forms/records overlap, deferred to a later task).
-//   - lowEscapeDisqAll's own default-deny fallback (an AST shape this
-//     walker doesn't recognize at all) -- maximally conservative for the
-//     genuinely-unanalyzed case.
-var lowFreeUnsafe: map of int
-
-// lowEscapeHandoffUnsafe is lowEscapeHandoff PLUS lowFreeUnsafe -- for the
-// handoff reasons enumerated on lowFreeUnsafe's own doc comment, where the
-// consuming site is NOT one of this task's migrated store funnels
-// (lowCountedStore) and so cannot be proven to retain what it's handed.
-func lowEscapeHandoffUnsafe(e: int) {
-    lowEscapeHandoff(e)
-    if e == -1 {
-        return
-    }
-    if exprKind(e) == ExIdent {
-        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + poolGet(identName(e))] = 1
-    } else if exprKind(e) == ExSelect {
-        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + poolGet(selectName(e))] = 1
-    }
-}
 
 // lowRetTempN counts synthesized `return`-value temps program-wide (never
 // reused across functions -- see lowNewReturnTemp's own doc comment.
@@ -2319,10 +2252,9 @@ var lowRetTempN: int
 // lowRetTempIdx caches the CURRENT function's own return-value synthetic
 // local (its interned name-pool index), or -1 if this function hasn't
 // needed one yet. Reset to -1 once per function/handler body by
-// lowRunEscapePrepass (below), the same per-function reset point
-// lowFuncGen/lowFreeNames already use -- lowReturn (below) is only ever
-// called while lowering ONE function's body, so this is never live across
-// two functions at once.
+// lowRunEscapePrepass (below) -- lowReturn (below) is only ever called
+// while lowering ONE function's body, so this is never live across two
+// functions at once.
 var lowRetTempIdx: int
 
 // lowNewReturnTemp returns the CURRENT function's own return-value
@@ -2348,514 +2280,27 @@ func lowNewReturnTemp(): int {
     return lowRetTempIdx
 }
 
-// lowEscapeTrackableKind reports whether t is one of the three types this
-// pass ever tracks (rule 1).
+// lowEscapeTrackableKind reports whether t is one of the three counted
+// (Text/List/Map) kinds this section's release machinery tracks by NAME
+// (as opposed to lowIsRecBearing's record/array walk, which needs no such
+// per-name bookkeeping) -- used throughout lower.cla wherever a birth/
+// retain/release decision needs to know "is this a directly counted
+// handle" (lowCountedStore, lowElemIsBirth, lowReturn, the globals/
+// window-var release-walk gates).
 func lowEscapeTrackableKind(k: IRKind): bool {
     return k == KText or k == KList or k == KMap
 }
 
-// lowEscapeFreshInit implements rule 2 (and, applied again at every plain
-// reassignment, rule 4)'s freshness test. e is -1 for "no initializer".
-func lowEscapeFreshInit(e: int): bool {
-    if e == -1 {
-        return true
-    }
-    if exprKind(e) == ExStringLit {
-        return true
-    }
-    if exprKind(e) == ExBinary and binOp(e) == OpAdd and typeKind(exprTypeGet(e)) == TyText {
-        return true
-    }
-    if exprKind(e) == ExSlice {
-        return true
-    }
-    return false
-}
-
-// lowEscapeHandoff marks name (if e is exactly a bare identifier) as
-// disqualified -- the one shape that hands `x`'s own handle, rather than a
-// derived value, to whatever positional slot e fills (an assignment RHS, a
-// user-call argument, a return operand, a push/unshift/get-default
-// argument, a form-edit target). A no-op for any other expression shape
-// (concat, a call, an index, ...): those produce or read a DIFFERENT value,
-// never `x`'s own handle, so they cannot disqualify `x` merely by
-// containing it -- see lowEscapeWalkExpr for the recursive part that still
-// checks what's INSIDE such a shape.
-//
-// ALSO disqualifies-by-field-name when e is a bare `base.field` select --
-// Task 8's own reuse of this function for window vars needs it: a window
-// var is reachable from OUTSIDE its own window's handlers via
-// check.cla's checkWindowRefSelect (`w.content` off an explicit window-ref
-// value), a shape Task 7's own local-var pass never needed to recognize
-// (a function local is never selected off anything). Name-only, same as
-// everywhere else in this pass: a select whose field happens to share a
-// name with some unrelated local/window var disqualifies that name too --
-// conservative, never a false "safe".
-func lowEscapeHandoff(e: int) {
-    if e == -1 {
-        return
-    }
-    if exprKind(e) == ExIdent {
-        lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(e))] = 1
-    } else if exprKind(e) == ExSelect {
-        lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(selectName(e))] = 1
-    }
-}
-
-// lowEscapeDisqAll disqualifies every name this function currently tracks
-// -- the default-deny fallback for a statement/expression shape this
-// walker doesn't explicitly recognize.
-func lowEscapeDisqAll() {
-    var nm: string
-
-    for nm in lowFreeNames {
-        // ARC Task 4: also lowFreeUnsafe (not just lowFreeDisq) -- an
-        // unrecognized AST shape is the genuinely-unanalyzed case, where
-        // "safe to shallow-release" can't be proven either; skip entirely,
-        // maximally conservative.
-        lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
-        lowFreeUnsafe[numToStr(lowFuncGen) + "|" + nm] = 1
-    }
-}
-
-// lowEscapeWalkArgsSafe walks a call's argument list as pure reads (rule 3:
-// "alert"/"log"/"file.*"/int/fixed/char/askOpen/askSave/askSaveChanges
-// arguments, and every string/text/list/map method argument other than
-// push/add/unshift/get's -- append and indexOf copy bytes out of a text
-// argument rather than retaining it, per Task 6's own audit of
-// ITextAppendText/ITextAppendStr).
-func lowEscapeWalkArgsSafe(argsHead: int) {
-    var a: int
-
-    a = argsHead
-    while a != -1 {
-        lowEscapeWalkExpr(a)
-        a = exprNext(a)
-    }
-}
-
-// lowEscapeWalkArgsHandoff walks a call's argument list as rule-3 handoff
-// positions where the consuming site is NOT one of ARC's migrated store
-// funnels: a user function's arguments (the callee might stash one into an
-// unmigrated slot -- see lowFreeUnsafe's own doc comment); map `get`'s key
-// AND default-value (a separate, pre-existing conservatism unrelated to
-// container elements -- see lowFreeUnsafe's doc comment). ARC Task 5:
-// list/map push/add/unshift's OWN value argument no longer routes through
-// here -- see lowEscapeWalkArgsSafeHandoff, below, and lowEscapeWalkMethodCall's
-// own dispatch.
-func lowEscapeWalkArgsHandoff(argsHead: int) {
-    var a: int
-
-    a = argsHead
-    while a != -1 {
-        // ARC Task 4: lowEscapeHandoffUnsafe, not just lowEscapeHandoff --
-        // every caller of this function hands a value to a consumer
-        // lowCountedStore doesn't cover, so the source can't be proven to
-        // keep its own independent +1 the way a named-slot store now does.
-        lowEscapeHandoffUnsafe(a)
-        lowEscapeWalkExpr(a)
-        a = exprNext(a)
-    }
-}
-
-// lowEscapeWalkArgsSafeHandoff is ARC Task 5's counterpart to
-// lowEscapeWalkArgsHandoff for list/map push/add/unshift's value argument
-// specifically -- the ONLY handoff position this task's own migration newly
-// covers (lowListMethod's retain-unless-birth container-element store,
-// mirroring lowCountedStore's named-slot store). Shallow release only
-// (lowEscapeHandoff, never lowEscapeHandoffUnsafe's full lowFreeUnsafe
-// skip): the consuming store now retains its own independent +1 the same
-// way a migrated named-slot store does, so a bare-identifier source stays
-// safe to release (even though its OWN handle is now also shared with the
-// container) -- exactly Task 4's own established reasoning for
-// lowFreeDisq's post-migration meaning, just extended to this new handoff
-// site.
-func lowEscapeWalkArgsSafeHandoff(argsHead: int) {
-    var a: int
-
-    a = argsHead
-    while a != -1 {
-        lowEscapeHandoff(a)
-        lowEscapeWalkExpr(a)
-        a = exprNext(a)
-    }
-}
-
-// lowEscapeWalkMethodCall handles `recv.name(args)`. Review fix (Critical,
-// same double-free class as ExIndex's above): get/first/last/pop/shift can
-// each hand back an element handle the container itself still owns
-// (IMapGetDv/IListFirst/IListLast/IListPop/IListShift -- Task 6's own audit:
-// "can return an ALIAS, not a fresh value") -- so the RECEIVER is
-// disqualified for exactly those five method names (not just their
-// arguments), REGARDLESS of whether the removal (`pop`/`shift`) makes THIS
-// particular read safe in practice -- the coordinator's ruling is maximally
-// conservative on purpose: don't special-case pop/shift back to safe. This
-// rule predates ARC and is DELIBERATELY left standing by ARC Task 5: it
-// isn't "because elements weren't counted" (element counting doesn't change
-// whether reading via get/first/last/pop/shift hands back a receiver-owned
-// alias -- it does, independent of retention) -- it's a separate, maximally
-// conservative choice about the READ side, out of this task's own named
-// scope ("element-read and non-fresh-push receiver rules" -- this is
-// neither; it's the get/first/last/pop/shift-as-EXPRESSION-RESULT rule).
-// Every other method (append, indexOf, fromBytes, toBytes, has, remove,
-// count, plus every canvas/file method) still treats the receiver as a safe
-// read (rule 3: "method receiver ... is fine" -- none of those hand back an
-// element).
-//
-// ARC Task 5 DELETED the OLD "push/add/unshift additionally disqualify the
-// RECEIVER whenever the value fails lowEscapeFreshInit" rule here (the
-// brief's own "non-fresh-push receiver rule"): a pushed/unshifted value is
-// now ALWAYS retained-unless-birth by the store itself (lowListMethod), so
-// the container's own element-free loop can no longer double-free a
-// non-fresh push's value -- the container holds its OWN, independently
-// retained copy regardless of what else references the same handle. push/
-// add/unshift's OWN value argument now routes through
-// lowEscapeWalkArgsSafeHandoff (shallow-safe, see its own doc comment)
-// instead of lowEscapeWalkArgsHandoff (lowFreeUnsafe/full-skip) -- `get`'s
-// key/default-value arguments are UNCHANGED (still lowEscapeWalkArgsHandoff
-// -- see lowFreeUnsafe's own doc comment for why that's a separate,
-// pre-existing conservatism this task doesn't touch).
-func lowEscapeWalkMethodCall(e: int, fn: int) {
-    var nm: string
-
-    nm = poolGet(selectName(fn))
-    if nm == "get" or nm == "first" or nm == "last" or nm == "pop" or nm == "shift" {
-        lowEscapeHandoff(selectX(fn))
-    }
-    lowEscapeWalkExpr(selectX(fn))
-    if nm == "push" or nm == "add" or nm == "unshift" {
-        lowEscapeWalkArgsSafeHandoff(callArgsHead(e))
-    } else if nm == "get" {
-        lowEscapeWalkArgsHandoff(callArgsHead(e))
-    } else {
-        lowEscapeWalkArgsSafe(callArgsHead(e))
-    }
-}
-
-// lowEscapeWalkCall handles a plain `name(args)` call -- alert/log/int/
-// fixed/char/askOpen/askSave/askSaveChanges and an enum conversion are
-// non-retaining (safe-read args); any other resolvable name is a user
-// function call (rule 3: every argument is a handoff position); an
-// ExSelect target is a method call, handled separately. Mirrors lowCall's
-// own dispatch (lower.cla) closely enough to stay in sync with it, without
-// sharing code: lowCall builds IR, this only classifies AST shape.
-func lowEscapeWalkCall(e: int) {
-    var fn: int
-    var nm: string
-    var symIdx: int
-
-    fn = callFn(e)
-    if exprKind(fn) == ExIdent {
-        nm = poolGet(identName(fn))
-        if nm == "alert" or nm == "log" or nm == "int" or nm == "fixed" or nm == "char" or nm == "askOpen" or nm == "askSave" or nm == "askSaveChanges" {
-            lowEscapeWalkArgsSafe(callArgsHead(e))
-            return
-        }
-        symIdx = scopeLookup(curScope, identName(fn))
-        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {
-            lowEscapeWalkArgsSafe(callArgsHead(e))
-            return
-        }
-        lowEscapeWalkArgsHandoff(callArgsHead(e))
-        return
-    } else if exprKind(fn) == ExSelect {
-        lowEscapeWalkMethodCall(e, fn)
-        return
-    }
-    lowEscapeDisqAll()
-}
-
-// lowEscapeWalkExpr recurses through e classifying every child position by
-// the rules above; it never disqualifies e's OWN top-level identity (that's
-// the caller's job -- see lowEscapeHandoff, called separately at each of
-// the handful of positions rule 3 actually names) -- default-deny for any
-// ExprKind this chain doesn't recognize.
-func lowEscapeWalkExpr(e: int) {
-    var k: ExprKind
-
-    if e == -1 {
-        return
-    }
-    k = exprKind(e)
-    if k == ExIdent or k == ExIntLit or k == ExFixedLit or k == ExCharLit or k == ExStringLit or k == ExBoolLit or k == ExNilLit or k == ExWindowSelf or k == ExNew or k == ExOpen {
-        return
-    } else if k == ExUnary {
-        lowEscapeWalkExpr(unaryX(e))
-    } else if k == ExBinary {
-        lowEscapeWalkExpr(binLeft(e))
-        lowEscapeWalkExpr(binRight(e))
-    } else if k == ExIndex {
-        // ARC Task 5 DELETED the pre-Task-5 "disqualify the container
-        // whenever it's index-READ" rule that used to live here (`l[i]`/
-        // `m[k]` reading back the same element handle the container itself
-        // still owns -- the pre-ARC 4e double-free class this rule existed
-        // to prevent): `l[i]`/`m[k]` feeding a NAMED-SLOT store now always
-        // retains its own independent copy (lowCountedStore's own
-        // retain-unless-birth rule, Task 4; a map subscript is additionally
-        // ALREADY retained at the READ itself, IMapGet's own printer, Task
-        // 3) -- the container's own scope-exit release only ever touches
-        // its OWN reference, never the escaped copy's. Just recurse.
-        lowEscapeWalkExpr(indexX(e))
-        lowEscapeWalkExpr(indexI(e))
-    } else if k == ExSlice {
-        lowEscapeWalkExpr(sliceX(e))
-        lowEscapeWalkExpr(sliceStart(e))
-        lowEscapeWalkExpr(sliceLen(e))
-    } else if k == ExSelect {
-        lowEscapeWalkExpr(selectX(e))
-    } else if k == ExCall {
-        lowEscapeWalkCall(e)
-    } else {
-        lowEscapeDisqAll()
-    }
-}
-
-// lowEscapeWalkAssign implements rule 3 (RHS-is-bare-x, whatever the LHS
-// is) and rule 4 (LHS-is-bare-x reassigned from a non-fresh RHS).
-func lowEscapeWalkAssign(s: int) {
-    var lhs: int
-    var rhs: int
-
-    lhs = assignLHS(s)
-    rhs = assignRHS(s)
-
-    lowEscapeHandoff(rhs)
-    lowEscapeWalkExpr(rhs)
-
-    if exprKind(lhs) == ExIdent {
-        if not lowEscapeFreshInit(rhs) {
-            lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(identName(lhs))] = 1
-        }
-    } else if exprKind(lhs) == ExIndex {
-        // `x[i] = v`: x itself is WRITTEN into, not read -- unlike
-        // lowEscapeWalkExpr's own ExIndex case (used for genuine reads),
-        // do NOT disqualify x merely for being this write's base (inlined
-        // here rather than calling lowEscapeWalkExpr(lhs) directly, so that
-        // case's read-disqualification never fires for the outermost write
-        // target). A NESTED read still disqualifies correctly one level
-        // down: `matrix[i][j] = v`'s own base `matrix[i]` is itself an
-        // index-READ of `matrix` (needed to reach the inner container),
-        // walked normally here and so still caught.
-        //
-        // ARC Task 5 DELETED the pre-Task-5 "`m[k] = v`/`lst[i] = v` with a
-        // non-fresh rhs also disqualifies the container" rule that used to
-        // live here (the "non-fresh-push receiver" rule's index-assign
-        // twin): lowIndexAssign now ALWAYS retains a non-birth element
-        // store before it lands (IListSetRetain/IMapSetRetain), so the
-        // container holds its own independently-owned copy regardless of
-        // what else references the same handle -- its own scope-exit
-        // release is sound unconditionally now. Just recurse.
-        lowEscapeWalkExpr(indexX(lhs))
-        lowEscapeWalkExpr(indexI(lhs))
-    } else {
-        // `rec.f = v` / `w.prop = v`: the LHS's own base is read (a select
-        // base is always safe, rule 3), never disqualifying by itself --
-        // still walked, to catch a nested call in a computed base
-        // (`rec(f(x)).f = v`... any select's own base sub-expression).
-        //
-        // Task 8 fix round 1 (Critical 1): the FIELD ITSELF, when lhs is
-        // exactly a bare `base.field` select (`w.note = gShared`), can be a
-        // window var reached from OUTSIDE its own window
-        // (check.cla's checkWindowRefSelect) -- disqualify it by name
-        // unless rhs is provably fresh, the SAME rule-4 freshness test the
-        // ExIdent branch above already applies to a plain local
-        // reassignment. A computed/nested lhs (anything but a bare
-        // `base.field`) isn't this shape at all, so this only ever fires
-        // for the direct case.
-        //
-        // Final-review fix (Critical 1, part a): a non-fresh store also
-        // disqualifies the BASE's own root name, not just the field
-        // (`gRec.body = gt` must disqualify `gRec` too -- otherwise
-        // cl_free_globals still frees the whole record, recursing into the
-        // aliased field and double-freeing gt's handle; the field-name-only
-        // rule above protects a window var reached via `w.content` from
-        // OUTSIDE its window, but never protected the record's own base).
-        // lowEscapeHandoff(selectX(lhs)) handles both shapes selectX(lhs)
-        // can be: a bare ExIdent base (disqualifies it directly) or a
-        // nested ExSelect base (disqualifies by its own field name, one
-        // level conservative -- deeper nesting isn't a shape any current
-        // caller produces).
-        if exprKind(lhs) == ExSelect and not lowEscapeFreshInit(rhs) {
-            lowFreeDisq[numToStr(lowFuncGen) + "|" + poolGet(selectName(lhs))] = 1
-            lowEscapeHandoff(selectX(lhs))
-        }
-        lowEscapeWalkExpr(lhs)
-    }
-}
-
-// lowEscapeWalkElse handles StIf's else slot: -1 (no else), a StBlock, or
-// another StIf (an else-if chain) -- mirrors lowIf's own dispatch.
-func lowEscapeWalkElse(elseNode: int) {
-    if elseNode == -1 {
-        return
-    } else if stmtKind(elseNode) == StBlock {
-        lowEscapeWalkBlock(elseNode)
-    } else if stmtKind(elseNode) == StIf {
-        lowEscapeWalkStmt(elseNode)
-    } else {
-        lowEscapeDisqAll()
-    }
-}
-
-// lowEscapeWalkCases walks a StSwitch's StCase chain directly (StCase is an
-// auxiliary node, never reached through lowEscapeWalkStmt's own dispatch --
-// see ast.cla's schema comment): each case's labels are literals/consts
-// (walked defensively, as safe reads) and its body is an ordinary StBlock.
-func lowEscapeWalkCases(casesHead: int) {
-    var cs: int
-    var lbl: int
-
-    cs = casesHead
-    while cs != -1 {
-        lbl = caseLabelsHead(cs)
-        while lbl != -1 {
-            lowEscapeWalkExpr(lbl)
-            lbl = exprNext(lbl)
-        }
-        lowEscapeWalkBlock(caseBody(cs))
-        cs = stmtNext(cs)
-    }
-}
-
-// lowEscapeWalkStmt dispatches one statement by StmtKind -- every kind
-// ast.cla declares is listed explicitly (StCase excluded: never reached
-// this way, see lowEscapeWalkCases); an `else` default-denies anything
-// this chain doesn't recognize.
-func lowEscapeWalkStmt(s: int) {
-    switch stmtKind(s) {
-    case StBlock {
-        lowEscapeWalkBlock(s)
-    }
-    case StAssign {
-        lowEscapeWalkAssign(s)
-    }
-    case StExprStmt {
-        lowEscapeWalkExpr(exprStmtX(s))
-    }
-    case StIf {
-        lowEscapeWalkExpr(ifCond(s))
-        lowEscapeWalkBlock(ifThen(s))
-        lowEscapeWalkElse(ifElse(s))
-    }
-    case StWhile {
-        lowEscapeWalkExpr(whileCond(s))
-        lowEscapeWalkBlock(whileBody(s))
-    }
-    case StFor {
-        // Review fix (Critical, same class as ExIndex/get/first/last/pop/
-        // shift above): `for x in items { ... }` binds x to a fresh ALIAS
-        // of each element in turn (fpForListStmt's `cv_x = *(rt_text
-        // **)rt_list_at(...)`, fpForMapStmt likewise) -- iterating a
-        // container exposes every one of its elements as a potential
-        // handoff, so the sequence itself is disqualified unconditionally
-        // (forSeq(s) is an int expr for the range form, never a candidate,
-        // so this is a harmless no-op there).
-        lowEscapeHandoff(forSeq(s))
-        lowEscapeWalkExpr(forSeq(s))
-        lowEscapeWalkExpr(forTo(s))
-        lowEscapeWalkBlock(forBody(s))
-    }
-    case StReturn {
-        lowEscapeHandoff(returnX(s))
-        lowEscapeWalkExpr(returnX(s))
-    }
-    case StQuit {
-        lowEscapeWalkExpr(quitCode(s))
-    }
-    case StCancel, StBreak, StContinue {
-        // no operand
-    }
-    case StSwitch {
-        lowEscapeWalkExpr(switchSubject(s))
-        lowEscapeWalkCases(switchCasesHead(s))
-        if switchElse(s) != -1 {
-            lowEscapeWalkBlock(switchElse(s))
-        }
-    }
-    case StOpen {
-        // `open T` (stmt form) -- only a type name, no expression.
-    }
-    case StClose {
-        lowEscapeWalkExpr(closeX(s))
-    }
-    case StEdit {
-        if not editIsNew(s) {
-            // rule 3: "a form-edit binding" -- the edited value's own
-            // handle is handed to the form UI, which outlives this
-            // statement (Ch10). `new T` (isNew) carries only a type name,
-            // no expression, so nothing to check there. ARC Task 4:
-            // lowEscapeHandoffUnsafe -- the form UI is not one of this
-            // task's migrated store funnels (forms/records overlap,
-            // deferred), so it can't be proven to retain what it's handed;
-            // skip release entirely, don't shallow-release.
-            lowEscapeHandoffUnsafe(editTarget(s))
-            lowEscapeWalkExpr(editTarget(s))
-        }
-    }
-    else {
-        lowEscapeDisqAll()
-    }
-    }
-}
-
-func lowEscapeWalkStmtList(head: int) {
-    var s: int
-
-    s = head
-    while s != -1 {
-        lowEscapeWalkStmt(s)
-        s = stmtNext(s)
-    }
-}
-
-// lowEscapeWalkVarInits checks every var in blk's OWN vars list against
-// rule 3/4 as if each initializer were an assignment's RHS -- so `var b:
-// text = a` disqualifies `a` (rule 3: RHS of an assignment) exactly as `b =
-// a` would, on top of `b` itself already failing rule 2's freshness test
-// (a bare reference is never a fresh initializer). In practice this only
-// ever finds work for blk == the function's own body block: nested blocks
-// declare no vars of their own (Ch4), but is walked uniformly for every
-// block (see lowEscapeWalkBlock) since that costs nothing when empty.
-func lowEscapeWalkVarInits(blk: int) {
-    var v: int
-
-    v = blockVarsHead(blk)
-    while v != -1 {
-        if varDeclInit(v) != -1 {
-            lowEscapeHandoff(varDeclInit(v))
-            lowEscapeWalkExpr(varDeclInit(v))
-        }
-        v = declNext(v)
-    }
-}
-
-func lowEscapeWalkBlock(blk: int) {
-    lowEscapeWalkVarInits(blk)
-    lowEscapeWalkStmtList(blockStmtsHead(blk))
-}
-
-// lowEscapeCollectCandidates (ARC Task 4) implements rule 1 over bodyBlk's
-// OWN vars list (the function/handler body's top-level `var`s -- never a
-// nested block's, which per Ch4 never has any): EVERY body-top local of
-// type text/list/map is now an UNCONDITIONAL scope-exit-release candidate
-// -- retain-on-store (lowCountedStore, this task's own companion change)
-// means the slot provably owns its own handle regardless of what fed it,
-// so rule 2's old freshness GATE on candidacy itself is gone (was:
-// non-fresh-init locals never even became candidates, so they were never
-// released at all -- 4e's documented reassignment-orphan leak class).
-//
-// A non-fresh initializer still disqualifies the name from the DEEP
-// element-release walk, though (same rule lowGlobalsEscCollect/
-// lowWinVarEscCollect already apply to globals/window vars, reused here
-// verbatim): container elements are Task 5's still-unmigrated slot class,
-// so a container whose own initial handle might be shared (`= otherList`,
-// or a call whose OWN internal pushes we can't see) can't yet be PROVEN to
-// solely own whatever it's populated with. lowBuildScopeExitFrees reads
-// this same lowFreeDisq entry to choose shallow (IRelease -- the local's
-// own handle only, always safe) vs. deep (I*FreeVar -- handle + a walk
-// over Text-typed elements, only safe when nothing here disqualifies it)
-// release for that name.
-func lowEscapeCollectCandidates(bodyBlk: int) {
+// lowCollectScopeExitCandidates (ARC Task 4, generalized Task 8) adds
+// every body-top local of a counted kind (lowEscapeTrackableKind) or a
+// handle-backed record/array-of-records (lowIsRecBearing) to
+// lowFreeNames/lowFreeTypes -- bodyBlk's OWN vars list only (a function/
+// handler body's top-level `var`s; a nested block never declares any,
+// Ch4). Every candidate releases unconditionally at scope exit
+// (lowBuildScopeExitFrees) regardless of how it was initialized or what
+// it was later handed to -- see this section's own header comment for why
+// that's sound.
+func lowCollectScopeExitCandidates(bodyBlk: int) {
     var v: int
     var t: int
     var nm: string
@@ -2863,27 +2308,7 @@ func lowEscapeCollectCandidates(bodyBlk: int) {
     v = blockVarsHead(bodyBlk)
     while v != -1 {
         t = lowResolveType(varDeclType(v))
-        if lowEscapeTrackableKind(irtKind(t)) {
-            nm = poolGet(varDeclName(v))
-            lowFreeNames.add(nm)
-            lowFreeTypes[nm] = t
-            if varDeclInit(v) != -1 and not lowEscapeFreshInit(varDeclInit(v)) {
-                lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
-            }
-        } else if lowIsRecBearing(t) {
-            // ARC Task 7 site 5: a handle-backed record local is ALWAYS a
-            // scope-exit release candidate, unconditionally -- unlike
-            // Text/List/Map, there is no shallow-vs-deep distinction to
-            // gate (IRelease over a KRec value already walks every field,
-            // full stop) and no lowFreeUnsafe-style "handed to an
-            // unmigrated consumer" hazard to guard against (a record
-            // argument to a user call is a C struct BY-VALUE copy -- ARC
-            // Task 7 site 2 makes the CALLEE's own copy independently
-            // owned via its own retain-at-entry, so the caller's local
-            // stays safely, unconditionally releasable regardless of what
-            // it was passed to). lowFreeDisq is never marked for a record
-            // name; lowBuildScopeExitFrees picks plain IRelease for any
-            // lowIsRecBearing type unconditionally.
+        if lowEscapeTrackableKind(irtKind(t)) or lowIsRecBearing(t) {
             nm = poolGet(varDeclName(v))
             lowFreeNames.add(nm)
             lowFreeTypes[nm] = t
@@ -2892,22 +2317,21 @@ func lowEscapeCollectCandidates(bodyBlk: int) {
     }
 }
 
-// lowRunEscapePrepass runs the whole Task 7 pre-pass over one function/
-// handler body, BEFORE lowBlock lowers that same AST -- called from
-// lowFuncBody and lowHandlerFunc. Populates lowFreeNames/lowFreeTypes/
-// lowFreeDisq for lowBuildScopeExitFrees (below) and lowReturn to consult
-// while lowering this same body. Also resets lowRetTempIdx (ARC Task 3
+// lowRunEscapePrepass resets this function/handler body's own scope-exit
+// bookkeeping and collects its release candidates -- called from
+// lowFuncBody/lowHandlerFunc BEFORE lowBlock lowers that same body (so
+// lowFreeNames/lowFreeTypes are ready for lowReturn to consult mid-body,
+// and lowRetainRecParams -- ARC Task 7 site 2 -- can append its own
+// record params right after). Also resets lowRetTempIdx (ARC Task 3
 // review fix) -- lowNewReturnTemp's per-function cache -- to -1, so each
 // function/handler body mints (at most) its own one shared return-value
 // synthetic, never a stale one left over from the previous function.
 func lowRunEscapePrepass(bodyBlk: int) {
-    lowFuncGen = lowFuncGen + 1
     lowRetTempIdx = -1
     while lowFreeNames.count > 0 {
         lowFreeNames.pop()
     }
-    lowEscapeCollectCandidates(bodyBlk)
-    lowEscapeWalkBlock(bodyBlk)
+    lowCollectScopeExitCandidates(bodyBlk)
 }
 
 // lowBuildScopeExitFrees builds (and returns the head of) a fresh IR
@@ -2915,20 +2339,13 @@ func lowRunEscapePrepass(bodyBlk: int) {
 // lowFreeNames -- or -1 if lowFreeNames is empty. Declaration order
 // (lowFreeNames' own order).
 //
-// ARC Task 4: UNCONDITIONAL now -- every entry in lowFreeNames releases,
-// full stop (the old `if not disqualified { emit }` skip is gone: a
-// disqualified name used to get NOTHING, forever, one of 4e's own
-// documented leak classes). What lowFreeDisq still decides is WHICH
-// intrinsic: a disqualified name (see lowEscapeCollectCandidates's own
-// comment) gets the shallow IRelease (just this local's own handle -- always
-// safe, since lowCountedStore's retain-on-store makes it uniquely owned
-// regardless of provenance); a name that's NOT disqualified gets the
-// existing deep I*FreeVar (handle + a walk over Text-typed elements --
-// container elements, Task 5's still-unmigrated slot class, so the deep
-// walk stays gated on the SAME proof 4e already required: every push this
-// function made into it was independently fresh). For a Text local (no
-// elements to walk) the two intrinsics print IDENTICAL C -- this only ever
-// changes emitted output for List/Map.
+// ARC Task 8: every candidate releases, unconditionally, with the FULL
+// deep intrinsic (I*FreeVar's handle + element walk for List/Map, plain
+// IRelease for a record/array/Text -- Text has no elements to walk, so
+// IRelease and ITextFreeVar print identical C for it). No shallow-vs-deep
+// distinction and no skip-entirely case survive from the old escape walk
+// -- see this section's header comment for why every one of those old
+// carve-outs is now unconditionally safe.
 func lowBuildScopeExitFrees(): int {
     var head: int
     var tail: int
@@ -2941,40 +2358,7 @@ func lowBuildScopeExitFrees(): int {
     tail = -1
     for nm in lowFreeNames {
         t = lowFreeTypes.get(nm, -1)
-        // ARC Task 7: lowFreeUnsafe/lowFreeDisq are the PRE-EXISTING
-        // per-function escape walk's own bookkeeping, built for Text/List/
-        // Map's aliasing hazards (a call argument, a container push, ... --
-        // see lowFreeUnsafe's own doc comment) -- it marks purely BY NAME
-        // (lowEscapeHandoff/lowEscapeHandoffUnsafe check ExIdent/ExSelect
-        // only, never the name's TYPE), so a record-typed local passed to
-        // `printName(r)` gets marked exactly like a text/list/map one
-        // would, even though the hazard those marks exist to guard against
-        // doesn't apply to it: a record argument is a C struct BY-VALUE
-        // COPY (ARC Task 7 site 2 retains the CALLEE's own copy at entry),
-        // never a shared alias the callee could stash uncounted, so a
-        // record name is checked FIRST and is NEVER skipped/shallowed by
-        // either map, regardless of what the escape walk marked.
         if lowIsRecBearing(t) {
-            // ARC Task 7: a record (or array-of-records) name -- always
-            // plain IRelease, unconditionally (see
-            // lowEscapeCollectCandidates' own comment for why there's no
-            // shallow/deep or disqualification distinction to make here).
-            // Also covers ARC Task 7 site 2's record PARAMS, which
-            // lowFuncBody adds to lowFreeNames/lowFreeTypes the exact same
-            // way as a body-top local.
-            intrName = IRelease()
-        } else if lowFreeUnsafe.has(numToStr(lowFuncGen) + "|" + nm) {
-            // ARC Task 4: lowFreeUnsafe skipped ENTIRELY, same as 4e always
-            // did -- releasing even shallowly could dispose a handle that
-            // consumer still references, uncounted. Everything else
-            // releases unconditionally now: lowFreeDisq (without
-            // lowFreeUnsafe) picks shallow (IRelease -- container
-            // elements, Task 5's still-unmigrated slot class, so no deep
-            // walk) vs. deep (I*FreeVar, the pre-Task-4 behavior,
-            // unchanged) -- see lowFreeDisq's and lowFreeUnsafe's own doc
-            // comments.
-            continue
-        } else if lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
             intrName = IRelease()
         } else {
             intrName = ITextFreeVar()
@@ -3035,21 +2419,20 @@ func lowAppendTrailingFrees(bodyHead: int): int {
 // declared return type (lowCurFuncRet), exactly like a plain `var`
 // initializer's store.
 //
-// Task 7: every qualifying local still in scope gets a scope-exit free at
-// this return point. A bare `return x` for a qualifying x can't happen --
-// rule 3 already disqualifies x for appearing as a return operand at all
-// (lowEscapeWalkStmt's own StReturn case) -- but rule 3 explicitly ALLOWS a
-// qualifying local to appear as a SUB-expression of the return value
-// (`return "prefix" + t + "suffix"`, a concat operand -- "is fine"). If the
-// frees were simply emitted as statements preceding a plain `return
-// <expr>`, the generated C would free `cv_t` and only THEN evaluate an
-// expression that reads `cv_t` to build the actual return value -- a real
-// use-after-free (caught by the self-hosting bootstrap: cprint.cla's own
-// `fpCallFn` returns exactly this shape, `"clar_fn_" + name + "(" + args +
-// ")"` with `args` qualifying). Fix: whenever there's at least one free to
-// insert AND a value being returned, materialize that value into a fresh
-// synthetic local FIRST (its own store, while every qualifying local is
-// still alive), THEN free, THEN return the temp -- mirrors exactly how
+// ARC Task 8: EVERY scope-exit candidate still in scope (lowFreeNames) gets
+// a free at this return point, unconditionally -- including, now, `x`
+// itself when `return x` names a qualifying local directly (the old escape
+// walker used to disqualify x for appearing as a return operand at all,
+// specifically so this case could never arise; that disqualification is
+// gone, so it now can). If the frees were simply emitted as statements
+// preceding a plain `return <expr>`, the generated C would free `cv_t` and
+// only THEN evaluate an expression that reads `cv_t` to build the actual
+// return value -- a real use-after-free (this is exactly what `return x`
+// itself would do now, and what `return "prefix" + t + "suffix"` -- t a
+// concat operand -- always could). Fix: whenever there's at least one free
+// to insert AND a value being returned, materialize that value into a
+// fresh synthetic local FIRST (its own store, while every qualifying local
+// is still alive), THEN free, THEN return the temp -- mirrors exactly how
 // cprint.cla's own SReturn printer (Task 6) already handles its
 // statement-level text temps (compute into a name, free, THEN emit `return
 // name;`), just at the IR/lower.cla level instead of at print time. A bare
@@ -3060,29 +2443,52 @@ func lowAppendTrailingFrees(bodyHead: int): int {
 // user-function return is retained by the callee, so the caller always owns
 // a fresh reference to release. This means the synthetic-local
 // materialization above must now run for EVERY heap-typed return, not only
-// the (rarer) case of a function with qualifying Task-7 locals still to
-// free: the retain has to see the SAME already-evaluated value the `return`
-// statement hands back, exactly the double-evaluation hazard the doc
-// comment above already solved for frees. So the gate widens from
-// `freesHead != -1` to `freesHead != -1 or heapRet` -- once materialized,
-// the retain is appended right before the (possibly frees-preceded)
-// `return`. Records (KRec) aren't ARC'd until a later task -- lowEscapeTrackableKind
-// (Text/List/Map only) is the correct heap-typed test here, same as
-// everywhere else this pass draws that line.
+// the (rarer) case of a function with qualifying locals still to free: the
+// retain has to see the SAME already-evaluated value the `return` statement
+// hands back, exactly the double-evaluation hazard the doc comment above
+// already solved for frees. So the gate widens from `freesHead != -1` to
+// `freesHead != -1 or heapRet` -- once materialized, the retain (ARC Task 8:
+// now GATED on the returned value's own birth-ness, see heapRetBirth below
+// -- an already-fresh value needs no second retain) is appended right
+// before the (possibly frees-preceded) `return`. lowEscapeTrackableKind
+// (Text/List/Map) is the heap-typed test here; a handle-backed record
+// (KRec) return gets the analogous recRet treatment just below.
 func lowReturn(s: int): int {
     var x: int
+    var rawX: int
     var freesHead: int
     var tail: int
     var tmpNameIdx: int
     var storeStmt: int
     var retRef: int
     var heapRet: bool
+    var heapRetBirth: bool
     var recRet: bool
     var head: int
 
     x = -1
+    heapRetBirth = false
     if returnX(s) != -1 {
-        x = lowCoerceStr(lowCurFuncRet, lowExpr(returnX(s)))
+        // ARC Task 8 fix (known open leak bug 1): birth check computed on
+        // rawX (returnX(s) lowered but NOT yet coerced), mirroring
+        // lowCountedStore's own src-before-coercion timing exactly --
+        // lowStoreIsBirth/lowStoreIntrOwnsResult are the SAME two
+        // predicates every other counted store site applies, plus the SAME
+        // Str->Text widening override lowCountedStore's own KStr branch
+        // uses (a Str source feeding a Text-typed return always coerces
+        // through lowCoerceStr's ITextOfStr, which ALWAYS constructs a
+        // fresh box, regardless of returnX(s)'s own shape -- e.g. `func f():
+        // text { return s }` where s: string). Previously this branch
+        // always retained heapRet unconditionally, over-retaining an
+        // already-fresh widened value with nothing to balance it -- a
+        // permanent 2-block leak per call, reproduced in isolation with no
+        // push/list/map involved (widen_text.cla's own `widenTextMakeText`).
+        rawX = lowExpr(returnX(s))
+        heapRetBirth = lowStoreIsBirth(returnX(s)) or lowStoreIntrOwnsResult(rawX)
+        if irtKind(lowCurFuncRet) == KText and irtKind(irExprType(rawX)) == KStr {
+            heapRetBirth = true
+        }
+        x = lowCoerceStr(lowCurFuncRet, rawX)
     }
 
     freesHead = lowBuildScopeExitFrees()
@@ -3139,14 +2545,9 @@ func lowReturn(s: int): int {
     }
 
     // ARC Task 4 review-fix: the return-value retain MUST run BEFORE the
-    // scope-exit frees below, not after (the pre-Task-4 order). Before this
-    // task, a returned local was ALWAYS excluded from freesHead -- rule 3's
-    // StReturn handoff (lowEscapeWalkStmt) disqualified it, and
-    // disqualified meant SKIPPED entirely -- so the retain and the frees
-    // could never touch the SAME object and order was moot. Task 4 makes
-    // every local release unconditionally (freesHead's own disqualification
-    // now only ever picks shallow-vs-deep, never skip), including the one
-    // just returned. `return localVar` stores localVar's pointer into the
+    // scope-exit frees below, not after. Every scope-exit candidate
+    // releases unconditionally now (ARC Task 8), including the one just
+    // returned: `return localVar` stores localVar's pointer into the
     // synthetic just above (aliasing, no rc change yet) -- retaining the
     // synthetic FIRST bumps rc to >=2 before freesHead's release of
     // localVar decrements it back to >=1: the object survives long enough
@@ -3156,22 +2557,21 @@ func lowReturn(s: int): int {
     // still about to be retained and returned: a use-after-free on the
     // exact common case this function exists to protect (`return x` for a
     // local `x`).
-    if heapRet {
+    if heapRet and not heapRetBirth {
+        // ARC Task 8: gated on birth-ness now (see heapRetBirth above) --
+        // an already-fresh returned value (a literal, a concat, a slice, any
+        // call result, or a Str->Text widening) already carries its own
+        // uncontested +1 into the synthetic via the plain byte-copy store
+        // just above; retaining it again here would be an unbalanced leak,
+        // not merely a missed optimization. A non-birth value (a bare
+        // local/global/field/element reference) still needs its own +1,
+        // same as before.
         tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
     } else if recRet and not lowRecStoreIsBirth(returnX(s)) {
-        // ARC Task 7: unlike heapRet's own UNCONDITIONAL retain (a
-        // pre-existing, documented, OUT-OF-SCOPE-for-this-task over-retain
-        // bug for an already-fresh Str->Text return-widening -- Task 5's
-        // "Findings out of scope" #1, deferred to Task 8's drive-to-zero),
-        // a record return DOES gate on lowRecStoreIsBirth: a record-typed
-        // birth source (a plain function-call return or a `.pop()`/
-        // `.shift()` transfer -- see that predicate's own doc comment)
-        // already carries its own uncontested +1 into the synthetic via
-        // the plain byte-copy store just above, so retaining it again here
-        // would be an unbalanced leak, not merely a missed optimization
-        // (this task's own new fixtures must hit exactly 0 leaks, so this
-        // is written deliberately more carefully than the precedent it
-        // extends, not by oversight).
+        // ARC Task 7: the analogous gate for a handle-backed record return
+        // -- see heapRet's own comment just above for the shared reasoning
+        // (lowRecStoreIsBirth is lowStoreIsBirth's record-shaped
+        // counterpart, same birth-vs-retain rule).
         tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
     }
     if freesHead != -1 {
@@ -3770,7 +3170,7 @@ func lowBlock(blk: int): int {
 // CALLER to insert a retain around) -- and registers it into
 // lowFreeNames/lowFreeTypes for the SAME unconditional scope-exit release
 // every return/trailing-exit already applies to a body-top local
-// (lowBuildScopeExitFrees, lowEscapeCollectCandidates' own comment).
+// (lowBuildScopeExitFrees, lowCollectScopeExitCandidates' own comment).
 //
 // Caller contract: call AFTER lowRunEscapePrepass (which resets
 // lowFreeNames to bodyBlk's own top-level locals only -- a param added
@@ -4348,260 +3748,6 @@ func lowWidgetDesc(w: int, winName: string): int {
     }
 
     return newIRWidgetDesc(widgetName(w), widgetKindName(w), captionIdx, atKind, x, yIsBottom, y, widthIsFill, width, fillBoth, isDefault, isCancel, isBuffered, isScrollV, isScrollH, bindsIdx, rowsGlobalIdx, columnsHead)
-}
-
-// ================================================================
-// Task 8: whole-program window-var escape pre-pass (reuses Task 7's walker)
-// ================================================================
-//
-// Handle-backed per-instance window vars (Text/List/Map/Rec, same
-// irtNeedsCtor set cpEmitFree/IUiStateDefaults already use) are constructed
-// at open but never freed at close -- the rt_mac.c:479 leak this task
-// closes via a generated clar_ui_release_<Win>, wired through rt_ui's new
-// releaseVars slot. The same UAF risk Task 7 guards against for locals
-// applies here: a handler can hand a window var's own handle to something
-// that outlives the window (`gKeep = winvar`), and freeing it at teardown
-// would then free live memory out from under whatever it was handed to.
-//
-// Rather than a new walker, this reuses Task 7's lowEscapeWalk* machinery
-// verbatim -- same rule 3 (RHS-is-bare-x/argument/return/push-or-get-value
-// handoff positions), same default-deny fallback -- just with the tracked
-// "candidate" set being every window's own handle-backed var names instead
-// of one function's own locals, and the walk covering EVERY func/handler/
-// every/menu-handler body in the program instead of one function's body
-// (a window var can be read by name from any of its own window's handlers,
-// declared via `extend Win { ... }` anywhere in the file).
-//
-// KEPT DELIBERATELY SIMPLE (ponytail): tracked by NAME only, not per-window
-// -- two different windows whose vars happen to share a name share one
-// fate. This can only make a safe var wrongly stay leaked-by-design, never
-// the reverse (an escaping var wrongly freed), so it's conservative, not
-// unsound. This is also why lowEscapeHandoff (above) now disqualifies a
-// bare `base.field` select by field name, not just a bare identifier: a
-// window var is reachable from OUTSIDE its own window's handlers via
-// check.cla's checkWindowRefSelect (`w.content` off an explicit window-ref
-// value -- opendoc.cla's own App.openDocument handler does exactly this),
-// a shape Task 7's local-var pass never needed since a function local is
-// never selected off anything.
-//
-// lowWinEscGen is this program's own reserved lowFuncGen value (minted
-// exactly like any real per-function gen, so it can never collide with
-// one -- see lowFuncGen's own doc comment on why gens are never reused)
-// for lowFreeDisq's namespacing during this pass. Set once per program by
-// lowRunWinVarEscapePrepass (called from lowerProgram, BEFORE its per-decl
-// loop mints any real function's gen) and read back by cprint.cla's
-// cpEmitWinReleaseFn via lowWinVarQualifies, after lowerProgram returns for
-// this same program and before the next one (if any) overwrites it.
-var lowWinEscGen: int
-
-// lowWinVarEscCollect adds every DkWindow's handle-backed (irtNeedsCtor --
-// not Task 7's narrower Text/List/Map-only lowEscapeTrackableKind: a Rec
-// window var can alias through its own ctor-needing fields exactly like a
-// global one can, Task 5's own widening precedent) per-instance var name in
-// declHead to lowFreeNames/lowFreeTypes -- the tracked-name universe for
-// lowRunWinVarEscapePrepass's walk, below.
-func lowWinVarEscCollect(declHead: int) {
-    var d: int
-    var item: int
-    var t: int
-    var nm: string
-
-    d = declHead
-    while d != -1 {
-        if declKind(d) == DkWindow {
-            item = windowDeclItemsHead(d)
-            while item != -1 {
-                if declKind(item) == DkVar {
-                    t = lowResolveType(varDeclType(item))
-                    if irtNeedsCtor(t) {
-                        nm = poolGet(varDeclName(item))
-                        if not lowFreeTypes.has(nm) {
-                            lowFreeNames.add(nm)
-                        }
-                        lowFreeTypes[nm] = t
-                        // Task 8 fix round 1 (Critical 2): the var's OWN
-                        // declared default (`var note: text = gShared`) can
-                        // alias another handle exactly like a non-fresh
-                        // local initializer would (rule 2/lowEscapeCollect-
-                        // Candidates' own freshness test, reused here) --
-                        // disqualify immediately rather than waiting for a
-                        // handler body to ever mention the name again.
-                        if varDeclInit(item) != -1 and not lowEscapeFreshInit(varDeclInit(item)) {
-                            lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
-                        }
-                    }
-                }
-                item = declNext(item)
-            }
-        }
-        d = declNext(d)
-    }
-}
-
-// lowWinVarEscWalkChildren walks one `extend` block's DkHandler/nested-
-// DkExtend children (lowWindowExtend/lowMenuExtend's own dispatch, mirrored
-// here read-only -- classification only, no IR built) for the escape scan.
-func lowWinVarEscWalkChildren(childrenHead: int) {
-    var c: int
-
-    c = childrenHead
-    while c != -1 {
-        if declKind(c) == DkHandler {
-            lowEscapeWalkBlock(handlerDeclBody(c))
-        } else if declKind(c) == DkExtend {
-            lowWinVarEscWalkChildren(extendDeclChildrenHead(c))
-        }
-        c = declNext(c)
-    }
-}
-
-// lowRunWinVarEscapePrepass runs Task 7's escape walker once, program-wide,
-// with every window's handle-backed per-instance var name as the tracked
-// set (instead of one function's own locals) -- see this section's header
-// comment for the full rationale. Called once from lowerProgram, BEFORE its
-// own per-decl loop (so lowFreeNames/lowFuncGen are still untouched by any
-// real function's own Task 7 pass when this collects/walks).
-func lowRunWinVarEscapePrepass(declHead: int) {
-    var d: int
-
-    while lowFreeNames.count > 0 {
-        lowFreeNames.pop()
-    }
-    lowFuncGen = lowFuncGen + 1
-    lowWinEscGen = lowFuncGen
-    lowWinVarEscCollect(declHead)
-    if lowFreeNames.count == 0 {
-        return
-    }
-    d = declHead
-    while d != -1 {
-        if declKind(d) == DkFunc {
-            lowEscapeWalkBlock(funcDeclBody(d))
-        } else if declKind(d) == DkHandler {
-            lowEscapeWalkBlock(handlerDeclBody(d))
-        } else if declKind(d) == DkExtend {
-            lowWinVarEscWalkChildren(extendDeclChildrenHead(d))
-        } else if declKind(d) == DkEvery {
-            lowEscapeWalkBlock(everyDeclBody(d))
-        }
-        d = declNext(d)
-    }
-}
-
-// lowWinVarQualifies reports whether window-var name `name` (as scanned by
-// lowRunWinVarEscapePrepass) is safe to free at window teardown -- cprint's
-// clar_ui_release_<Win> emitter (cpEmitWinReleaseFn) consults this per
-// irtNeedsCtor field. A name lowRunWinVarEscapePrepass never tracked at all
-// (shouldn't happen for an actual window var, but harmless if it does)
-// reads as qualifying -- lowFreeDisq only ever contains entries for names
-// the walk actually disqualified.
-func lowWinVarQualifies(name: string): bool {
-    return not lowFreeDisq.has(numToStr(lowWinEscGen) + "|" + name)
-}
-
-// ================================================================
-// Final-review fix (Critical 1): whole-program global-var escape pre-pass
-// ================================================================
-//
-// cl_free_globals (cprint.cla's cpEmitGlobalsInit) only ever guarded against
-// a global's own INIT expression aliasing another global -- nothing walked
-// handler/function bodies for a runtime store that aliases two globals
-// (`g2 = g1`), pushes one global into another (`gl.push(gt)`), reads an
-// element of one global into another (`gSaved = gl[0]`), or stores one
-// global into another's record field (`gRec.body = gt`). Any of those
-// leaves two roots holding one handle, and cl_free_globals frees both --
-// same double-free class Task 8 already closed for window vars.
-//
-// Fix: exactly Task 8's own trick (lowRunWinVarEscapePrepass, above) --
-// reuse Task 7's escape walker verbatim, a second whole-program pass with
-// every top-level global's own handle-backed name as the tracked candidate
-// set instead of one window's per-instance vars. Same conservative-only
-// guarantee: this can only make a safe global wrongly stay leaked-by-
-// design, never the reverse.
-//
-// lowGlobalsEscGen is this pass's own reserved lowFuncGen value (minted
-// like lowWinEscGen, so it can never collide with a real function's gen or
-// the window-var pass's own gen) for lowFreeDisq's namespacing. Set once
-// per program by lowRunGlobalsEscapePrepass (called from lowerProgram
-// alongside lowRunWinVarEscapePrepass, before its per-decl loop mints any
-// real function's gen) and read back by cprint.cla's cpEmitGlobalsInit via
-// lowGlobalsVarQualifies.
-var lowGlobalsEscGen: int
-
-// lowGlobalsEscCollect adds every top-level DkVar's handle-backed
-// (irtNeedsCtor -- same widened set lowWinVarEscCollect uses, not Task 7's
-// narrower Text/List/Map-only lowEscapeTrackableKind: a Rec global can
-// alias through its own ctor-needing fields exactly like a window var can)
-// name in declHead to lowFreeNames/lowFreeTypes, and immediately
-// disqualifies one whose own Init expression is a non-fresh bare reference
-// (`var alias: text = g` -- Ch3 assigns alias the SAME handle as g; this
-// replaces cpEmitGlobalsInit's old standalone aliasOfGlobal check with the
-// same rule the walker already applies everywhere else).
-func lowGlobalsEscCollect(declHead: int) {
-    var d: int
-    var t: int
-    var nm: string
-
-    d = declHead
-    while d != -1 {
-        if declKind(d) == DkVar {
-            t = lowResolveType(varDeclType(d))
-            if irtNeedsCtor(t) {
-                nm = poolGet(varDeclName(d))
-                if not lowFreeTypes.has(nm) {
-                    lowFreeNames.add(nm)
-                }
-                lowFreeTypes[nm] = t
-                if varDeclInit(d) != -1 and not lowEscapeFreshInit(varDeclInit(d)) {
-                    lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
-                }
-            }
-        }
-        d = declNext(d)
-    }
-}
-
-// lowRunGlobalsEscapePrepass runs Task 7's escape walker once, program-wide,
-// with every top-level global's handle-backed name as the tracked set --
-// see this section's header comment. Called once from lowerProgram,
-// alongside lowRunWinVarEscapePrepass and BEFORE its own per-decl loop.
-func lowRunGlobalsEscapePrepass(declHead: int) {
-    var d: int
-
-    while lowFreeNames.count > 0 {
-        lowFreeNames.pop()
-    }
-    lowFuncGen = lowFuncGen + 1
-    lowGlobalsEscGen = lowFuncGen
-    lowGlobalsEscCollect(declHead)
-    if lowFreeNames.count == 0 {
-        return
-    }
-    d = declHead
-    while d != -1 {
-        if declKind(d) == DkFunc {
-            lowEscapeWalkBlock(funcDeclBody(d))
-        } else if declKind(d) == DkHandler {
-            lowEscapeWalkBlock(handlerDeclBody(d))
-        } else if declKind(d) == DkExtend {
-            lowWinVarEscWalkChildren(extendDeclChildrenHead(d))
-        } else if declKind(d) == DkEvery {
-            lowEscapeWalkBlock(everyDeclBody(d))
-        }
-        d = declNext(d)
-    }
-}
-
-// lowGlobalsVarQualifies reports whether global name `name` (as scanned by
-// lowRunGlobalsEscapePrepass) is safe for cl_free_globals to free --
-// cprint.cla's cpEmitGlobalsInit consults this exactly like
-// cpEmitWinReleaseFn already consults lowWinVarQualifies. A name
-// lowRunGlobalsEscapePrepass never tracked at all (not irtNeedsCtor: a
-// plain int/bool/fixed/char/string/enum global) reads as qualifying --
-// harmless, since cpEmitGlobalsInit only lets this decide the fate of a
-// ctor-needing global in the first place.
-func lowGlobalsVarQualifies(name: string): bool {
-    return not lowFreeDisq.has(numToStr(lowGlobalsEscGen) + "|" + name)
 }
 
 // lowWindowDecl lowers `window W { ... }` (Ch8) into an IRWindowDesc: the
@@ -5437,14 +4583,11 @@ func lowerProgram(declHead: int): int {
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
     lowBuiltinSaveChoiceLayout()
-    // ARC Task 6: cpEmitWinReleaseFn/cpEmitGlobalsInit no longer consult
-    // lowWinVarQualifies/lowGlobalsVarQualifies (both release unconditionally
-    // now that Tasks 4-5 make every store into a global/window var counted),
-    // so running these two prepasses just to populate lowFreeDisq entries
-    // nobody reads is wasted work -- stop calling them. The pass functions
-    // themselves, and lowWinVarQualifies/lowGlobalsVarQualifies, are left in
-    // place (dead code) for Task 8 to delete alongside the rest of the
-    // escape machinery.
+    // ARC Task 6 stopped calling the window-var/globals escape prepasses
+    // (cpEmitWinReleaseFn/cpEmitGlobalsInit release unconditionally now);
+    // ARC Task 8 deleted the pass functions themselves along with the rest
+    // of the 4e escape-walk apparatus (see lowBuildScopeExitFrees' own
+    // section header comment).
     d = declHead
     while d != -1 {
         lowDecl(d)

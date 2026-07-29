@@ -34,17 +34,48 @@
 // working around round 3's bug without saying so out loud in the code --
 // no longer necessary). gaM1/gaM2 pin the MAP-OF-TEXT variant of the same
 // shape. gaL3/local2 (inside the func body) pin a local aliasing a global
-// container WITH an element present -- confirmed (by reading the emitted
-// C, not just assumed) this shape was NEVER actually vulnerable: Task 4's
-// per-function escape pass (lowFreeUnsafe) already disqualifies an ALIASED
-// local from a DEEP scope-exit release (shallow `rt_list_release` only, no
-// element walk) precisely because its value isn't provably unshared -- so
-// only ONE release site (the global's own, in cl_free_globals) ever walks
-// gaL3's elements, guard or no guard. Kept as a fixture anyway: it pins
-// that disposition permanently, not just as of this commit.
+// container WITH an element present.
+//
+// ARC Task 8 update: this comment previously claimed `local2`'s own
+// scope-exit release stayed SHALLOW (Task 4's per-function escape pass,
+// `lowFreeUnsafe`, used to disqualify an aliased local from a deep
+// release) -- that apparatus is deleted now, so `local2` gets a full,
+// unconditional DEEP release like every other scope-exit candidate (ARC
+// Task 8). This is STILL safe, for a different reason than the one this
+// comment used to give: `local2` and `gaL3` share one list handle at
+// rc==2; `local2` releases first (function scope exit, `rt_list_lastref`
+// reads rc==2 -> false, element walk skipped, rc drops to 1);
+// `cl_free_globals` releases `gaL3` later, at process exit (SAME handle,
+// `rt_list_lastref` reads rc==1 -> true, element walk fires, releases
+// "loc", rc drops to 0) -- exactly one element-walk, on the release that
+// actually destroys the container (Task 6 round 3's own guard, confirmed
+// by reading the emitted C, not just assumed). Kept as a fixture anyway:
+// it pins this disposition permanently, not just as of this commit.
 //
 // Expected strict-mode leak count: 0 (see ../arc_global_alias.leaks --
 // absent, defaults to want-0) for all three pairs plus the local case.
+//
+// ARC Task 8 additions (pinning two carry-forward bugs this task fixed,
+// per the brief's own "fixture it" / "do not leave it unresolved"
+// instructions -- both were only hand-probed during development before
+// this commit):
+//
+//   - `gaM1.get("k", "x" + "y")` below hits `IMapGetDvBirth`'s
+//     PRESENT-key path: the default (`"x" + "y"`, a fresh concat -- birth)
+//     is NOT the value returned (the key already exists, from the
+//     "map-alias-ok" block above), so the default's own box must be
+//     released as an orphan (known open leak bug 2's exact present-key
+//     case widen_text.cla's own `.get("missing", ...)` call, absent-key
+//     only, never exercised).
+//   - `gaLL` (global `list of list of text`) pins the nested-container
+//     deep-release walk (known open leak bug 3): `innerList` (a LOCAL) is
+//     pushed into `gaLL` (retained, non-birth) and also kept alive by its
+//     own local scope-exit release, so the shared inner list's rc==2 at
+//     `innerList`'s own release (skips the walk, `rt_list_lastref` false,
+//     drops to rc==1) and rc==1 at `gaLL`'s OWN release, at process exit
+//     (walks and frees both the inner list's own "nested" element and the
+//     inner list itself, `rt_list_lastref` true) -- exactly the recursive
+//     `cpEmitRelease` shape `cpEmitRelease`'s own doc comment describes.
 
 var gaT1: text = "hello"
 var gaT2: text = gaT1
@@ -57,11 +88,14 @@ var gaM2: map of text = gaM1
 
 var gaL3: list of text
 
+var gaLL: list of list of text
+
 func runArcGlobalAlias() {
     var buf: char[64]
     var n: int
     var s: string
     var local2: list of text
+    var innerList: list of text
 
     n = gaT1.toBytes(buf)
     s.fromBytes(buf, n)
@@ -91,5 +125,22 @@ func runArcGlobalAlias() {
         alert("local-alias-ok")
     } else {
         alert("local-alias-bad")
+    }
+
+    // ARC Task 8, known open leak bug 2: key PRESENT, birth default --
+    // the default must be released as an orphan, not leaked.
+    if gaM1.get("k", "x" + "y") == "v" {
+        alert("get-present-birth-ok")
+    } else {
+        alert("get-present-birth-bad")
+    }
+
+    // ARC Task 8, known open leak bug 3: nested container deep release.
+    innerList.add("nested")
+    gaLL.add(innerList)
+    if gaLL.count == 1 and gaLL[0].count == 1 and gaLL[0][0] == "nested" {
+        alert("nested-list-ok")
+    } else {
+        alert("nested-list-bad")
     }
 }

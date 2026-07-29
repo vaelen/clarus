@@ -2370,6 +2370,23 @@ func IMapGetDv(): int {
     return intern("map_get_dv")
 }
 
+// IMapGetDvBirth -- ARC Task 8 fix (known open leak bug 2): the retaining
+// sibling of IMapGetDv, chosen by lowMapMethod (lower.cla) whenever the
+// default-value argument is BIRTH (lowElemIsBirth, the SAME birth-vs-retain
+// rule every other counted store site uses) -- a freshly constructed,
+// independently owned value with no other owner. IMapGetDv's own printer
+// always retains its result unconditionally and never releases the default
+// argument's own box, which is correct ONLY for a non-birth default (some
+// other slot already owns it, so t needs its own +1 either way and the
+// default's original box is never orphaned); for a BIRTH default it
+// double-retains when the key is absent (leak: dv's own +1 plus an
+// unnecessary extra one) and orphans dv's box entirely when the key is
+// present (leak: nothing ever releases it). See cprint.cla's own
+// IMapGetDvBirth printer for the runtime-conditional fix.
+func IMapGetDvBirth(): int {
+    return intern("map_get_dv_birth")
+}
+
 func IMapHas(): int {
     return intern("map_has")
 }

@@ -1,21 +1,20 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// Regression fixture pinning a documented Minor finding from the
-// memory-audit-4e final whole-branch review (probe P9), not a bug this
-// fix wave changes: `clarusc/cprint.cla`'s `fpWhileStmt` frees a
-// text-producing while-condition's per-iteration temp AFTER the
-// `if (!(cond)) break;` check, so the FINAL (false) evaluation's temp is
-// never reached by any per-iteration free -- it leaks once per loop
-// EXECUTION (not per iteration). Bounded, leak-only, same class as the
-// while-condition-temp gaps the ARC milestone is expected to close (the
-// `fpIfStmt` flag-materialization trick already used elsewhere would fix
-// it). Landed here purely to pin the current behavior as a corpus
-// regression fixture -- the final-review fix wave (Criticals 1/2) doesn't
-// touch `fpWhileStmt`. Expected strict-mode leak count: 2 (see
-// ../p9_while_cond.leaks) -- one text object (struct box + data handle)
-// from the last `t + "b"` comparison's temp, evaluated once more (and
-// found false) after the loop body stops running.
+// Regression fixture pinning a Minor finding from the memory-audit-4e final
+// whole-branch review (probe P9): `clarusc/cprint.cla`'s `fpWhileStmt` used
+// to free a text-producing while-condition's per-iteration temp AFTER the
+// `if (!(cond)) break;` check, so the FINAL (false) evaluation's temp was
+// never reached by any per-iteration free -- one text object leaked once
+// per loop EXECUTION (not per iteration; struct box + data handle).
+//
+// ARC Task 8 regression proof: FIXED. `fpWhileStmt` now prints the SAME
+// per-iteration temp-release lines into the break branch too, whenever the
+// condition tracked at least one temp (mutually exclusive with the
+// loop-continues path's own release, so never a double-free) -- see
+// `fpWhileStmt`'s own doc comment for the exact shape. Pinned at 0 leaks
+// (live=0); `.leaks` absent now (was 2) -- the corpus gate (`go test
+// ./internal/selfhost -run TestEmitDifferential`) enforces this permanently.
 
 func runP9WhileCond() {
     var p9T: text = "a"
