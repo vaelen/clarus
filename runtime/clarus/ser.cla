@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ser.cla: placeholder for the ported serialization runtime module (Plan
+// 5b "Stage B" per docs/superpowers/specs/2026-07-29-runtime-migration-
+// wave1-design.md). Task 4 (implicit runtime-module inclusion machinery)
+// only needs this file to EXIST and be findable at the documented default
+// location (runtime/clarus/, sibling of runtime/mac/) so that any program
+// using file.save/file.load keeps emitting exactly as before -- file.save/
+// load still lower directly to the existing rt_file_save/rt_file_load C
+// runtime (rt.c), untouched by this task. Deliberately empty (no top-level
+// declarations) so including it contributes nothing to a program's emitted
+// C; Task 7 replaces this placeholder with the real ported serializer.

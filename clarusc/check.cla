@@ -359,6 +359,12 @@ var inCloseRequest: bool
 // than re-validating its properties.
 var appDeclSeen: bool
 
+// usesFileSaveLoad is true once the program under check has called
+// file.save/file.load (checkMethodCall's `file` arm sets it) -- main.cla's
+// implicit runtime-module manifest reads this after checkProgram to decide
+// whether the serialization runtime module needs pulling into the emit.
+var usesFileSaveLoad: bool
+
 // progGen is bumped by every checkReset so the per-program menuItems set
 // (below) can namespace its keys and never consult a stale entry from a
 // previous program compiled in the same process (maps have no bulk-clear
@@ -1240,6 +1246,13 @@ func checkMethodCall(sel: int, argsHead: int): int {
 
     x = selectX(sel)
     if exprKind(x) == ExIdent and poolGet(identName(x)) == "file" {
+        name = poolGet(selectName(sel))
+        if name == "save" or name == "load" {
+            // Marks the program as needing the serialization runtime
+            // module (main.cla's implicit-inclusion manifest consults this
+            // at emit time; Task 7 wires the real module in).
+            usesFileSaveLoad = true
+        }
         return checkTableMethod(fileFuncs, sel, argsHead)
     }
     xt = checkExpr(x, -1)
@@ -3960,6 +3973,7 @@ func checkReset() {
     loopDepth = 0
     inCloseRequest = false
     appDeclSeen = false
+    usesFileSaveLoad = false
     progGen = progGen + 1
 
     while paramSpecs.count > 0 {

@@ -96,6 +96,35 @@ func joinPath(dir: string, name: string): string {
     return dir + name
 }
 
+// findRtDir resolves the default --rtdir when the flag is omitted: it walks
+// UP from the current working directory looking for a "runtime/clarus/"
+// directory, probed by trying to read probeFile (the first needed module's
+// file name) out of each candidate. Tries the cwd itself plus up to 9 parent
+// levels (10 total) and returns the first candidate that has probeFile, or
+// "" if none of them do -- absence here is not itself an error; the caller
+// only reports one once a needed module truly can't be found.
+func findRtDir(probeFile: string): string {
+    var prefix: string
+    var i: int
+    var candidate: string
+    var probe: text
+    var ok: bool
+
+    prefix = ""
+    i = 0
+    while i < 10 {
+        candidate = prefix + "runtime/clarus/"
+        probe = ""
+        ok = file.readText(candidate + probeFile, probe)
+        if ok {
+            return candidate
+        }
+        prefix = prefix + "../"
+        i = i + 1
+    }
+    return ""
+}
+
 // lastDecl returns the last node in head's `next` chain (head must be a real
 // index, not -1) -- used to splice one file's decl list onto the running
 // combined list.
@@ -200,6 +229,16 @@ on App.startCLI(args: list of string) {
     var item: int
     var pname: string
     var vh: int
+    var rtDir: string
+    var haveRtDir: bool
+    var neededMods: list of string
+    var rtHeads: list of int
+    var combined2: int
+    var rtTail: int
+    var rtPath: string
+    var rtProbe: text
+    var rtReadable: bool
+    var beforeCount: int
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -239,10 +278,15 @@ on App.startCLI(args: list of string) {
         quit 2
     }
 
-    // Collect input files, diverting emit's "-o PATH" (which may appear
-    // before or after the input files) out of the file list.
+    // Collect input files, diverting emit's "-o PATH" and "--rtdir DIR"
+    // (which may appear before or after the input files) out of the file
+    // list. --rtdir overrides findRtDir's default upward search for the
+    // directory holding the runtime modules the implicit-inclusion manifest
+    // (below, emit-mode only) may need.
     outPath = ""
     haveOutPath = false
+    rtDir = ""
+    haveRtDir = false
     i = startArg
     while i < args.count {
         if emitMode and args[i] == "-o" {
@@ -253,6 +297,17 @@ on App.startCLI(args: list of string) {
             }
             outPath = args[i]
             haveOutPath = true
+        } else if emitMode and args[i] == "--rtdir" {
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit -o OUT.c [--rtdir DIR] FILE...")
+                quit 2
+            }
+            rtDir = args[i]
+            if rtDir.length > 0 and rtDir[rtDir.length - 1] != '/' {
+                rtDir = rtDir + "/"
+            }
+            haveRtDir = true
         } else {
             fileArgs.add(args[i])
         }
@@ -361,13 +416,95 @@ on App.startCLI(args: list of string) {
         quit 0
     }
 
-    // Emit path: lower the checked-clean program to IR, build its C into one
-    // text buffer, and write that buffer to -o's path. One program per
-    // process, so no astReset happens between check and lower --
-    // exprTypeGet (check.cla) resolves against the very AST lowerProgram walks.
+    // Emit path: the gate above already required the user program to check
+    // CLEAN STANDALONE (check-only semantics are untouched by any of this --
+    // no runtime module is ever consulted before it). Only now, for emit,
+    // do we consult the program's usage flags (set by checkProgram just
+    // above) against the hardcoded runtime-module manifest, pull in
+    // whatever they need, and re-check the combined program before
+    // lowering -- a runtime-module diagnostic is a compiler bug, but it
+    // must still surface, attributed to the runtime file via expand's own
+    // setDeclFile loop.
     if emitMode {
+        // The manifest: Task 4 ships exactly this one usage-flag/file pair
+        // plus the machinery; Task 7 repoints "ser.cla" at the real
+        // serialization module, and later tasks add unconditional entries.
+        if usesFileSaveLoad {
+            neededMods.add("ser.cla")
+        }
+
+        combined2 = combined
+        if neededMods.count > 0 {
+            if not haveRtDir {
+                rtDir = findRtDir(neededMods[0])
+            }
+            i = 0
+            while i < neededMods.count {
+                rtPath = joinPath(rtDir, neededMods[i])
+                rtProbe = ""
+                rtReadable = file.readText(rtPath, rtProbe)
+                if not rtReadable {
+                    if haveRtDir {
+                        log("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
+                    } else {
+                        log("runtime module " + neededMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                    }
+                    quit 1
+                }
+                beforeCount = asmHeads.count
+                expand(rtPath, true)
+                // A runtime module with no top-level decls (today's
+                // placeholder ser.cla) pushes a -1 head -- same "empty file"
+                // sentinel the original assembly loop above already skips;
+                // skip it here too rather than splice a bogus head.
+                if asmHeads.count > beforeCount and asmHeads[asmHeads.count - 1] != -1 {
+                    rtHeads.add(asmHeads[asmHeads.count - 1])
+                }
+                i = i + 1
+            }
+
+            // Rebuild the assembled program with the runtime modules' heads
+            // FIRST (declare-before-use), followed by the original
+            // (already fully linked) user-program chain.
+            combined2 = -1
+            rtTail = -1
+            i = 0
+            while i < rtHeads.count {
+                h = rtHeads[i]
+                if combined2 == -1 {
+                    combined2 = h
+                } else {
+                    rtTail = declListAppend(rtTail, h)
+                }
+                rtTail = lastDecl(h)
+                i = i + 1
+            }
+            if combined != -1 {
+                if combined2 == -1 {
+                    combined2 = combined
+                } else {
+                    rtTail = declListAppend(rtTail, combined)
+                }
+            }
+
+            // checkProgram resets and rebuilds all check-global state
+            // itself (the same reset+check sequence as the first pass, and
+            // as check_test's runCase driver uses repeatedly in-process).
+            // diags is empty on entry (the gate above already required
+            // that), so every diagnostic printed here is new.
+            checkProgram(combined2)
+            i = 0
+            while i < diags.count {
+                alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
+                i = i + 1
+            }
+            if diags.count > 0 {
+                quit 1
+            }
+        }
+
         irReset()
-        lowerProgram(combined)
+        lowerProgram(combined2)
         cSrc = emitProgram()
         wrote = file.writeText(outPath, cSrc)
         if not wrote {
