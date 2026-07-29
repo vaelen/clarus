@@ -110,6 +110,23 @@ structures — but any byte layout that leaves the process (the CLRD
 serializer, resource forks) must use explicit byte-at-a-time packing, never
 peekw/peekl.
 
+**5a outcomes (2026-07-29):** builtin names landed as `peekb`/`peekw`/`peekl`
+and `pokeb`/`pokew`/`pokel`. `ptr` is banned as a container element type in
+v1 (`list of ptr`/`map of ... -> ptr` rejected by the checker) — no ownership
+story for a raw address inside a refcounted container, revisit if a ported
+runtime module needs it. Trap clauses in the `external func` declaration
+syntax (the `= trap 0xA122 reg` form sketched above) are deferred to 5d/5e —
+user decision 2026-07-29 — since nothing calls a declared external until a
+runtime module ports; 5a's `external func` supports only the cprint-to-shim
+arm. **Handle-deref lesson:** `peekl(handle)` to fetch a Handle's master
+pointer is a 68k-only idiom — it works because a Handle *is* a pointer to a
+pointer there, but host builds represent pointers as 8-byte host addresses,
+so no peek width recovers a master pointer portably. The shared runtime will
+need an explicit deref primitive at the waist (an external or builtin that
+returns the master pointer given a Handle, implemented natively per backend)
+rather than relying on peek/poke for it — to be designed in 5b when the
+first ported module needs Handle contents.
+
 ### codegen68k
 
 - **Naive first:** stack-oriented codegen — IR temps on the stack, D0/A0
@@ -189,12 +206,22 @@ native backend passes the full corpus.
   clarusc.APPL must be byte-identical (same source, same backend,
   deterministic codegen), verified on an 8MB emulated machine. This is the
   "compiling on a Macintosh really works" proof.
+- **Differential-freeze reversal condition (recorded 2026-07-29):** the Go
+  compiler is frozen at the bootstrap-subset level (Roadmap "Done" item 5),
+  and 5a's new surface (`ptr`, peek/poke, `external func`) lives in clarusc
+  only, fenced out of the differential corpus via the ClaruscOnly mechanism
+  (Chapter 13). If that fence list or the corpus's Go/clarusc split grows
+  painful to maintain as more low-level surface lands in 5b+, backporting
+  5a's surface to the Go compiler — undoing part of the freeze — is a
+  coherent later decision, not a regression to avoid at all costs.
 
 ## Sequencing (each phase gets its own spec + plan, like 4a–4e)
 
 - **5a — Language + waist:** `ptr`, typed peek/poke, declared Toolbox
   externals; checker support; cprint lowering to shim calls; host shim
-  skeleton with ledger instrumentation at the seam.
+  skeleton with ledger instrumentation at the seam. **Landed on branch
+  `native-5a`, 2026-07-29** — see "5a outcomes" notes above and the task
+  plan at `docs/superpowers/plans/2026-07-29-native-5a-lowlevel.md`.
 - **5b — Runtime migration wave 1:** serializer, then core
   strings/lists/maps; differential green throughout.
 - **5c — Compilation cache:** interface/IR serialization, staleness rules,

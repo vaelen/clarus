@@ -307,6 +307,23 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 - Then: networking (MacTCP + ADSP/NBP; needs Basilisk II or real hardware —
   Mini vMac networking is limited).
 
+## Native 68k toolchain (Plan 5)
+
+- **5a (landed on branch `native-5a`, 2026-07-29):** the language + waist
+  additions from the Plan 5 design — `ptr` as a distinct 32-bit-address
+  scalar type (banned as a container element in v1), typed peek/poke
+  builtins (`peekb`/`peekw`/`peekl`, `pokeb`/`pokew`/`pokel`), declared
+  `external func` Toolbox-style routine decls with cprint lowering to a
+  `rt_ext_` host shim seam (ledger-instrumented), a new `internal/lowlevel`
+  differential harness (fixtures `extmem`, `extorder`), and language
+  reference Chapter 13 plus the `ClaruscOnly` fence mechanism that lets this
+  clarusc-only surface skip Go-compiler parity. Trap-clause syntax for
+  `external func` (inlining traps directly in codegen68k) is deferred to
+  5d/5e; the Handle-master-pointer-via-peekl idiom was found to be
+  68k-only and needs a proper deref primitive, designed in 5b. Full design:
+  `docs/superpowers/specs/2026-07-29-native-68k-toolchain-design.md`; task
+  plan: `docs/superpowers/plans/2026-07-29-native-5a-lowlevel.md`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
