@@ -159,10 +159,18 @@ func TestDifferentialFences(t *testing.T) {
 	if len(fences) == 0 {
 		t.Fatal("no reference fences extracted")
 	}
+	claruscOnly := map[int]bool{}
+	for _, i := range reftest.ClaruscOnly {
+		claruscOnly[i] = true
+	}
 	dir := t.TempDir()
 	for _, fe := range fences {
 		fe := fe
 		t.Run(fmt.Sprintf("fence%03d_line%d", fe.Index, fe.Line), func(t *testing.T) {
+			if claruscOnly[fe.Index] {
+				t.Logf("fence %d: clarusc-only, skipped", fe.Index)
+				return
+			}
 			p := filepath.Join(dir, fmt.Sprintf("fence%03d.cla", fe.Index))
 			if err := os.WriteFile(p, []byte(fe.Code), 0o644); err != nil {
 				t.Fatal(err)

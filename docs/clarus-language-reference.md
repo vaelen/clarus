@@ -19,6 +19,7 @@ System 6/7 applications on 68k Macintosh computers.
 10. Forms and Tables
 11. Drawing and Timers
 12. Networking, Files, and Errors
+13. Low-Level Memory Access
 Appendix A. Grammar (EBNF)
 Appendix B. Event Handler Quick Reference
 Appendix C. Worked Examples
@@ -1286,13 +1287,82 @@ Clarus reports failures in four ways, depending on where they occur:
 - **Out of memory** shows a clean alert and quits, rather than continuing on a corrupted heap.
 - **Runtime errors** — dereferencing a `nil` window reference, indexing or slicing a string, text, array, or list out of range, taking from an empty list, accessing a map with a key that doesn't exist (`[]` form, not `get`), a checked enum conversion with no matching member, or a shift count outside 0–31 (Chapter 3, Chapter 4) — show an alert naming the handler in which the error occurred. The app then continues if that's safe, or quits if it isn't.
 
+## Chapter 13: Low-Level Memory Access
+
+Clarus's built-in types and checked operations (Chapters 3–12) cover ordinary application logic. Some platform runtime calls and driver-level protocols need raw memory addresses instead — a `ptr` type, `peek`/`poke` byte-level access, and `external func` declarations exist for exactly that, and nowhere else. Code using them opts out of the safety guarantees the rest of the language provides; use them only at the boundary with the platform.
+
+### The `ptr` Type
+
+A `ptr` is an untyped machine address — 32 bits on the target Macintosh; host builds may use a wider native representation, and a program must never assume a specific size. The zero value of `ptr` is the null address; there is no `nil` literal for `ptr` (`nil`, Chapter 3, is reserved for window references) — test for null by comparing against `ptr(0)`.
+
+A `ptr` is produced by calling an `external func` that returns one (below), or by converting an `int` with `ptr(intExpr)`. Converting back to `int` is equally explicit, with `int(ptrExpr)`. Neither conversion is implicit. `p + n` and `p - n`, where `n` is an `int`, add or subtract `n` bytes from the address `p` and yield a `ptr`; `==`, `!=`, `<`, `<=`, `>`, and `>=` compare two `ptr` values as addresses:
+
+```rust
+var p: ptr = ptr(4096)
+var addr: int = int(p)
+var isNull: bool = p == ptr(0)
+var next: ptr = p + 16
+var inRange: bool = next > p and next <= p + 256
+```
+
+A `ptr` may be used wherever an ordinary by-value type can — as a variable, function parameter, function return type, or record field. It may not be a container element: `list of ptr`, `map of ptr`, and `T[n]` of `ptr` are all build-time errors, since a raw address carries none of the bookkeeping a container's element type needs:
+
+```rust
+var p: ptr = ptr(0)
+// var addrs: list of ptr        // build-time error: ptr not allowed as container element
+```
+
+Like the other inline scalar types (`int`, `bool`, `fixed`, `char`), a `ptr` is copied by value on assignment and return; it never participates in reference counting.
+
+### `peek` and `poke`
+
+`peekb`, `peekw`, and `peekl` read 1, 2, and 4 bytes at address `p` respectively, returning an `int` (the 1- and 2-byte forms zero-extend). `pokeb`, `pokew`, and `pokel` write the low 1, 2, or 4 bytes of `v` to address `p`:
+
+| Function | Signature | Reads/writes |
+|---|---|---|
+| `peekb` | `peekb(p: ptr): int` | 1 byte, zero-extended |
+| `peekw` | `peekw(p: ptr): int` | 2 bytes, zero-extended |
+| `peekl` | `peekl(p: ptr): int` | 4 bytes |
+| `pokeb` | `pokeb(p: ptr, v: int)` | low byte of `v` |
+| `pokew` | `pokew(p: ptr, v: int)` | low 2 bytes of `v` |
+| `pokel` | `pokel(p: ptr, v: int)` | low 4 bytes of `v` |
+
+```rust
+var p: ptr = ptr(4096)
+var lo: int = peekb(p)
+var word: int = peekw(p + 2)
+pokeb(p, 0xFF)
+pokel(p + 4, 0x12345678)
+```
+
+Multi-byte reads and writes use the machine's native byte order — big-endian on the 68k target. `peekw`/`peekl`/`pokew`/`pokel` are for values already resident in memory in native order (a Toolbox struct field, a register image); they are never the right tool for a byte layout that leaves the process (a network packet, a saved file) — build that layout with explicit `peekb`/`pokeb` calls, one byte at a time, the same way `string.fromBytes`/`toBytes` (Chapter 3) do.
+
+Out-of-bounds access through `peek`/`poke` is undefined behavior — there is no bounds check, and none is possible for a raw address. This is the one corner of Clarus that is not memory-safe; every other builtin in the language (Chapters 3–12) is.
+
+### `external func`
+
+An `external func` declares a function implemented by the platform runtime rather than by Clarus source — a Toolbox call, a runtime helper, anything reachable only as a raw entry point:
+
+```rust
+external func GetTicks(): int
+external func HLock(p: ptr)
+
+func ticksSince(start: int): int {
+    return GetTicks() - start
+}
+```
+
+`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Parameter and return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
+
+Trap-number and calling-convention annotations for tying a declaration to a specific Toolbox trap are reserved for a future revision; this release's `external func` names the signature only, and how the name resolves to an entry point is a toolchain concern outside this reference.
+
 ## Appendix A: Grammar (EBNF)
 
 ```ebnf
 program     = { topDecl } ;
 topDecl     = includeDecl | recordDecl | enumDecl | constDecl | varDecl
-            | funcDecl | windowDecl | menuDecl | extendDecl | handlerDecl
-            | everyDecl | appDecl ;
+            | funcDecl | externDecl | windowDecl | menuDecl | extendDecl
+            | handlerDecl | everyDecl | appDecl ;
 
 includeDecl = "include" STRING ;
 
@@ -1304,7 +1374,7 @@ enumMember  = IDENT [ INT | HEXINT ] [ STRING ] ;
 
 constDecl   = "const" IDENT ":" type "=" ( literal | IDENT ) ;
 
-type        = "int" | "bool" | "fixed" | "char" | "text"
+type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
             | "string" [ "(" INT ")" ]
             | "list" "of" type
             | "map" "of" type
@@ -1313,6 +1383,7 @@ type        = "int" | "bool" | "fixed" | "char" | "text"
 
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
+externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" type ] ;
 params      = param { "," param } ;
 param       = IDENT ":" type ;
 
@@ -1371,7 +1442,7 @@ args        = expr { "," expr } ;
 literal     = INT | HEXINT | FIXEDLIT | CHARLIT | STRING | "true" | "false" ;
 ```
 
-Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above. `app` is contextual the same way, recognized only when it starts a top-level declaration and is followed by an IDENT; unlike `include` it may appear anywhere among the top-level declarations, but at most once per program (Chapter 7).
+Newline sensitivity (statement termination, Chapter 2) is handled by the lexer and is not shown in the EBNF above. Newlines likewise separate properties inside declaration blocks; `;` is an optional same-line separator there. `appletalk` in `conn.open(appletalk "...")` is a contextual keyword parsed as a call-argument prefix, not a general-purpose token. After `.`, the hard keywords `open` and `close` are permitted as member names (`conn.open(...)`, `c.close()`) — the same positional carve-out Chapter 2 grants `window`. The two-expression index form (`s[start, len]`) is a slice, valid only in expression position — `lvalue` deliberately keeps the single-expression form. In `quit [expr]`, the expression must start on the same line as `quit` (a newline after `quit` ends the statement). `include` is likewise contextual, recognized only when it starts a top-level declaration and is followed by a STRING; `includeDecl` must precede every other `topDecl` in its file (Chapter 1) — an `include` appearing after any other top-level declaration is an error, not shown in the EBNF above. `app` is contextual the same way, recognized only when it starts a top-level declaration and is followed by an IDENT; unlike `include` it may appear anywhere among the top-level declarations, but at most once per program (Chapter 7). `external` is likewise contextual, recognized as the start of an `externDecl` only when immediately followed by `func`; elsewhere it is an ordinary identifier. Like `app`, an `externDecl` may appear anywhere among a program's top-level declarations (Chapter 13).
 
 ## Appendix B: Event Handler Quick Reference
 

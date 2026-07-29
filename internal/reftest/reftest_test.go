@@ -101,3 +101,29 @@ func TestRequiredProgramsInManifest(t *testing.T) {
 		}
 	}
 }
+
+// TestClaruscOnlyDisjoint guards the clarusc-only fence mechanism: every
+// index in ClaruscOnly must be in range and must not also appear in
+// CheckClean (a fence can't be both "the frozen Go compiler can't parse
+// this" and "the frozen Go compiler checks this clean").
+func TestClaruscOnlyDisjoint(t *testing.T) {
+	fences, err := ExtractFences("../../docs/clarus-language-reference.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ClaruscOnly) == 0 {
+		t.Fatal("expected at least one clarusc-only fence (Chapter 13)")
+	}
+	clean := map[int]bool{}
+	for _, i := range CheckClean {
+		clean[i] = true
+	}
+	for _, i := range ClaruscOnly {
+		if i < 0 || i >= len(fences) {
+			t.Errorf("ClaruscOnly index %d out of range (%d fences)", i, len(fences))
+		}
+		if clean[i] {
+			t.Errorf("fence %d is in both CheckClean and ClaruscOnly", i)
+		}
+	}
+}
