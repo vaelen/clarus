@@ -976,7 +976,16 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         elemT = irtElem(irExprType(recv))
         rawV = lowExpr(argsHead)
         pushName = IListPush()
+        // ARC Task 7 site 4: a record-bearing element type mirrors site 1's
+        // own birth rule (lowRecStoreIsBirth), never lowElemIsBirth's
+        // Text/List/Map rule (which trusts ANY call, including a container
+        // method read like `.first()` -- not yet retain-on-read-safe for
+        // record elements; see lowRecStoreIsBirth's own doc comment).
+        // Mutually exclusive with the Text/List/Map branch (lowIsRecBearing
+        // is only ever true where lowEscapeTrackableKind is false).
         if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
+            pushName = IListPushRetain()
+        } else if lowIsRecBearing(elemT) and not lowRecStoreIsBirth(argsHead) {
             pushName = IListPushRetain()
         }
         v = lowCoerceStr(elemT, rawV)
@@ -987,6 +996,8 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         rawV = lowExpr(argsHead)
         unshiftName = IListUnshift()
         if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
+            unshiftName = IListUnshiftRetain()
+        } else if lowIsRecBearing(elemT) and not lowRecStoreIsBirth(argsHead) {
             unshiftName = IListUnshiftRetain()
         }
         v = lowCoerceStr(elemT, rawV)
@@ -1599,6 +1610,187 @@ func lowElemIsBirth(srcAst: int, rawSrc: int, elemT: int): bool {
     return lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(rawSrc)
 }
 
+// lowIsRecBearing (ARC Task 7) reports whether t is a KRec value with at
+// least one handle-backed field (irRecHasHandleField, ir.cla -- the shared
+// gate-asymmetry-proof test), or a fixed array (KArr, any nesting depth)
+// whose element type is. This is the master gate for every one of Task 7's
+// seven copy sites: false for every OTHER kind (int/bool/fixed/char/enum/
+// Str/Text/List/Map -- Text/List/Map keep using the EXISTING, separately-
+// reviewed lowEscapeTrackableKind machinery, untouched by this task) and
+// false for an all-scalar record/array-of-records, so a caller that only
+// emits IRetain/IRelease when this is true can never reach fpIntrCall's
+// KRec branch for a type cpEmitRcWalks decided not to define a walk pair
+// for (see irRecHasHandleField's own doc comment).
+func lowIsRecBearing(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KArr {
+        return lowIsRecBearing(irtElem(t))
+    }
+    if k == KRec {
+        return irRecHasHandleField(irtName(t))
+    }
+    return false
+}
+
+// lowRecStoreIsBirth (ARC Task 7) is lowStoreIsBirth's RECORD counterpart --
+// deliberately NARROWER than lowStoreIsBirth's own ExCall branch, which
+// trusts ANY call (including a built-in method call like `.first()`/
+// `.get()`) as birth because Task 3 already made every one of those
+// RETAIN its own alias read for Text/List/Map. This task does NOT extend
+// that retain-on-read work to record CONTAINER elements read via
+// `.first()`/`.last()`/`.get()`/a map-index-read (out of the brief's
+// site-4 scope, which names only push/set/remove/pop) -- trusting those as
+// birth here would UNDER-retain a record whose fields still alias the
+// container's own copy, a UAF risk once the receiver's own copy is later
+// released, not merely a leak. Two birth shapes exist for a record source:
+//   - a plain user function call (ExCall, callee ExIdent) -- ARC Task 7
+//     site 3 makes every record-returning function's result a genuine +1
+//     transfer, exactly Task 3's own text/list/map convention.
+//   - `.pop()`/`.shift()` on a list (ExCall, callee ExSelect named "pop"/
+//     "shift") -- TRANSFER semantics (brief's site 4: "no retain -- pop
+//     transfers"): cprint.cla's IListPop/IListShift printer already does a
+//     raw copy-out-and-remove for ANY element type, kind-agnostically, no
+//     printer change needed -- the popped/shifted value already carries
+//     its own uncontested +1 (nothing else in the list references it
+//     anymore), so retaining it again here would be an unbalanced leak.
+// A record literal has no syntax in this language (checked against
+// check.cla's expression forms and the language reference) -- a record
+// value is only ever produced by clar_new_<Rec>()'s own construction
+// (never a store RHS directly) or one of the two call shapes above, so
+// ExCall is the only AST kind this predicate ever needs to inspect.
+func lowRecStoreIsBirth(srcAst: int): bool {
+    var fn: int
+    var mname: string
+
+    if exprKind(srcAst) != ExCall {
+        return false
+    }
+    fn = callFn(srcAst)
+    if exprKind(fn) == ExIdent {
+        return true
+    }
+    if exprKind(fn) == ExSelect {
+        mname = poolGet(selectName(fn))
+        return mname == "pop" or mname == "shift"
+    }
+    return false
+}
+
+// lowNullValueAppend (ARC Task 7) appends the statement(s) that null OUT
+// dst's own reference(s) at IR type t, mirroring cpEmitRelease's own
+// KText/KList/KMap/KRec recursive structure (ir.cla/cprint.cla) but
+// building an ASSIGNMENT-TO-ZERO instead of a release CALL: a plain
+// IntConst 0 is NULL-safe for retain/release per rt.h's own contract (the
+// SAME idiom lowCountedStore's own scalar-handle materialization temp
+// already uses to detach itself after handoff) for a bare handle
+// (KText/KList/KMap); a NESTED record field (KRec) is NOT a pointer --
+// `dst = 0` doesn't compile for a struct -- so it recurses field-by-field
+// instead, exactly like cpEmitRelease's own KRec branch recurses instead
+// of trying to zero the whole struct at once (found via a real build
+// failure: `emit_record.cla`'s nested `Address` field assigned `= 0`,
+// `error: assigning to 'clar_rec_...' from incompatible type 'int'` --
+// fixed by recursing here rather than guessing). KArr fields are left
+// alone (a fixed-array field nulling would need a runtime element loop --
+// no corpus fixture nests a ctor-needing array inside a record reaching
+// this path; flag for a future task if one appears). Every other kind
+// (int/bool/fixed/char/enum/Str, and a non-ctor-needing KArr) emits
+// nothing. tail must already be a valid (non -1) statement-chain tail;
+// returns the new tail.
+//
+// Used ONLY by lowCountedStoreRec's own scratch temp (below): a record
+// scratch temp is a REUSED C local (declared once, at function-prologue
+// scope, by cpDefaultInit -- same as lowCountedStore's own scalar temp),
+// so the SAME "detach after handoff, so the NEXT run's leading release
+// sees a safe no-op instead of double-releasing a reference the
+// destination now owns" discipline applies, per-field instead of to a
+// single pointer.
+func lowNullValueAppend(tail: int, dst: int, t: int): int {
+    var ri: int
+    var f: int
+    var ft: int
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KText or k == KList or k == KMap {
+        tail = irStmtListAppend(tail, newIRAssign(dst, newIRIntConst(0, t)))
+    } else if k == KRec {
+        ri = 0
+        while ri < irRecords.count {
+            if irRecordLayoutName(ri) == irtName(t) {
+                f = irRecordLayoutFieldsHead(ri)
+                while f != -1 {
+                    if irtNeedsCtor(irFieldSlotType(f)) {
+                        ft = irFieldSlotType(f)
+                        tail = lowNullValueAppend(tail, newIRFieldRef(dst, irFieldSlotName(f), ft), ft)
+                    }
+                    f = irFieldSlotNext(f)
+                }
+                ri = irRecords.count
+            } else {
+                ri = ri + 1
+            }
+        }
+    }
+    return tail
+}
+
+// lowCountedStoreRec (ARC Task 7, site 1) is lowCountedStore's KRec branch:
+// a record assignment/declared-initializer/window-var-default store, for a
+// handle-backed record type (lowIsRecBearing already gated this -- an
+// all-scalar record falls straight through to a plain byte-copy, see
+// lowCountedStore's own dispatch). Mandatory temp-copy order (brief's own
+// worked example, picked over the alternative "retain-new-then-release-old
+// on dst directly" ordering scalar handles use): byte-copy src to a
+// scratch temp, retain-walk the TEMP's copy, release-walk dst's OLD value,
+// byte-copy the temp into dst.
+//
+// This order is SAFE for self-assign (`r = r`, src and dst the exact same
+// lvalue) where the scalar-handle ordering is NOT: dst's own fields are
+// retained (via the temp's independent copy) BEFORE dst's original
+// reference is ever released, so a field handle shared between src and dst
+// (in the self-assign case, the SAME physical field) never has its rc drop
+// to 0 mid-sequence. Retaining dst's fields directly, in place, AFTER the
+// byte-copy (the scalar-handle-style ordering) would require proving no
+// field of src and dst can ever alias, which self-assign trivially
+// violates -- costs one extra struct copy, always safe.
+//
+// The scratch temp has the identical "default-init orphan" hazard
+// lowCountedStore's own scalar materialization temp already documents:
+// cpDefaultInit's prologue clar_new_<Rec>() unconditionally constructs it
+// once per function entry, but this statement may lower ONCE yet execute
+// MANY times per call (inside a loop) -- a plain byte-copy INTO the temp
+// (`temp = src`) does NOT release whatever the temp held from its previous
+// run, so: release-walk the temp's stale content BEFORE overwriting it
+// (correct on the very first run -- the genuine prologue construction;
+// nulled to a safe no-op every run after by the last step below), then
+// null the temp's handle fields out again AFTER handing them off to dst
+// (lowNullValueAppend), so the temp holds nothing of its own by the
+// time the NEXT run's leading release fires.
+func lowCountedStoreRec(dst: int, srcAst: int, t: int): int {
+    var src: int
+    var tmpNameIdx: int
+    var tmpRef: int
+    var head: int
+    var tail: int
+
+    src = lowExpr(srcAst)
+    tmpNameIdx = lowNewStoreTemp()
+    lowAddLocal(tmpNameIdx, t)
+    tmpRef = newIRVarRef(tmpNameIdx, false, t)
+
+    head = newIRExprStmt(newIRIntr(IRelease(), tmpRef, irVoidT))
+    tail = irStmtListAppend(head, newIRAssign(tmpRef, src))
+    if not lowRecStoreIsBirth(srcAst) {
+        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), tmpRef, irVoidT)))
+    }
+    tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRelease(), dst, irVoidT)))
+    tail = irStmtListAppend(tail, lowStoreStmt(dst, tmpRef, t))
+    tail = lowNullValueAppend(tail, tmpRef, t)
+    return head
+}
+
 // lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
 // NAMED slot (a local, a global, or a window var's per-instance field --
 // every lowAssign/lowBlock-declared-initializer/window-var-default call
@@ -1638,6 +1830,19 @@ func lowCountedStore(dst: int, srcAst: int, t: int): int {
     var tmpNameIdx: int
     var head: int
     var tail: int
+
+    // ARC Task 7 site 1 (+ window-var defaults, which route through this
+    // SAME funnel -- lowWinVarDefaultsStmts): a record destination gets its
+    // OWN dedicated sequence (lowCountedStoreRec), never the Text/List/Map
+    // logic below (a record is a by-value C struct copy, not a single
+    // pointer swap -- the self-assign safety argument is different, see
+    // that function's own doc comment). lowIsRecBearing already excludes an
+    // all-scalar record (no rc traffic needed at all -- falls through to
+    // the ordinary lowEscapeTrackableKind bypass below, an unconditional
+    // plain byte-copy, unchanged from before this task).
+    if lowIsRecBearing(t) {
+        return lowCountedStoreRec(dst, srcAst, t)
+    }
 
     if not lowEscapeTrackableKind(irtKind(t)) {
         return lowStoreStmt(dst, lowExpr(srcAst), t)
@@ -2665,6 +2870,23 @@ func lowEscapeCollectCandidates(bodyBlk: int) {
             if varDeclInit(v) != -1 and not lowEscapeFreshInit(varDeclInit(v)) {
                 lowFreeDisq[numToStr(lowFuncGen) + "|" + nm] = 1
             }
+        } else if lowIsRecBearing(t) {
+            // ARC Task 7 site 5: a handle-backed record local is ALWAYS a
+            // scope-exit release candidate, unconditionally -- unlike
+            // Text/List/Map, there is no shallow-vs-deep distinction to
+            // gate (IRelease over a KRec value already walks every field,
+            // full stop) and no lowFreeUnsafe-style "handed to an
+            // unmigrated consumer" hazard to guard against (a record
+            // argument to a user call is a C struct BY-VALUE copy -- ARC
+            // Task 7 site 2 makes the CALLEE's own copy independently
+            // owned via its own retain-at-entry, so the caller's local
+            // stays safely, unconditionally releasable regardless of what
+            // it was passed to). lowFreeDisq is never marked for a record
+            // name; lowBuildScopeExitFrees picks plain IRelease for any
+            // lowIsRecBearing type unconditionally.
+            nm = poolGet(varDeclName(v))
+            lowFreeNames.add(nm)
+            lowFreeTypes[nm] = t
         }
         v = declNext(v)
     }
@@ -2718,21 +2940,41 @@ func lowBuildScopeExitFrees(): int {
     head = -1
     tail = -1
     for nm in lowFreeNames {
-        // ARC Task 4: lowFreeUnsafe (a name handed to a consumer this
-        // task's migration doesn't cover -- a call argument, a container
-        // push, a form edit target) is skipped ENTIRELY, same as 4e always
-        // did -- releasing even shallowly could dispose a handle that
-        // consumer still references, uncounted. Everything else releases
-        // unconditionally now: lowFreeDisq (without lowFreeUnsafe) picks
-        // shallow (IRelease -- container elements, Task 5's still-
-        // unmigrated slot class, so no deep walk) vs. deep (I*FreeVar,
-        // the pre-Task-4 behavior, unchanged) -- see lowFreeDisq's and
-        // lowFreeUnsafe's own doc comments.
-        if lowFreeUnsafe.has(numToStr(lowFuncGen) + "|" + nm) {
-            continue
-        }
         t = lowFreeTypes.get(nm, -1)
-        if lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
+        // ARC Task 7: lowFreeUnsafe/lowFreeDisq are the PRE-EXISTING
+        // per-function escape walk's own bookkeeping, built for Text/List/
+        // Map's aliasing hazards (a call argument, a container push, ... --
+        // see lowFreeUnsafe's own doc comment) -- it marks purely BY NAME
+        // (lowEscapeHandoff/lowEscapeHandoffUnsafe check ExIdent/ExSelect
+        // only, never the name's TYPE), so a record-typed local passed to
+        // `printName(r)` gets marked exactly like a text/list/map one
+        // would, even though the hazard those marks exist to guard against
+        // doesn't apply to it: a record argument is a C struct BY-VALUE
+        // COPY (ARC Task 7 site 2 retains the CALLEE's own copy at entry),
+        // never a shared alias the callee could stash uncounted, so a
+        // record name is checked FIRST and is NEVER skipped/shallowed by
+        // either map, regardless of what the escape walk marked.
+        if lowIsRecBearing(t) {
+            // ARC Task 7: a record (or array-of-records) name -- always
+            // plain IRelease, unconditionally (see
+            // lowEscapeCollectCandidates' own comment for why there's no
+            // shallow/deep or disqualification distinction to make here).
+            // Also covers ARC Task 7 site 2's record PARAMS, which
+            // lowFuncBody adds to lowFreeNames/lowFreeTypes the exact same
+            // way as a body-top local.
+            intrName = IRelease()
+        } else if lowFreeUnsafe.has(numToStr(lowFuncGen) + "|" + nm) {
+            // ARC Task 4: lowFreeUnsafe skipped ENTIRELY, same as 4e always
+            // did -- releasing even shallowly could dispose a handle that
+            // consumer still references, uncounted. Everything else
+            // releases unconditionally now: lowFreeDisq (without
+            // lowFreeUnsafe) picks shallow (IRelease -- container
+            // elements, Task 5's still-unmigrated slot class, so no deep
+            // walk) vs. deep (I*FreeVar, the pre-Task-4 behavior,
+            // unchanged) -- see lowFreeDisq's and lowFreeUnsafe's own doc
+            // comments.
+            continue
+        } else if lowFreeDisq.has(numToStr(lowFuncGen) + "|" + nm) {
             intrName = IRelease()
         } else {
             intrName = ITextFreeVar()
@@ -2835,6 +3077,7 @@ func lowReturn(s: int): int {
     var storeStmt: int
     var retRef: int
     var heapRet: bool
+    var recRet: bool
     var head: int
 
     x = -1
@@ -2856,7 +3099,12 @@ func lowReturn(s: int): int {
     }
 
     heapRet = lowEscapeTrackableKind(irtKind(lowCurFuncRet))
-    if freesHead == -1 and not heapRet {
+    // ARC Task 7 site 3: a handle-backed record return type gets the SAME
+    // synthetic-materialization treatment as heapRet (Text/List/Map) --
+    // retain-walk the materialized return value, a genuine +1 transfer,
+    // mirroring Task 3's own convention for the other heap kinds.
+    recRet = lowIsRecBearing(lowCurFuncRet)
+    if freesHead == -1 and not heapRet and not recRet {
         return newIRReturn(x)
     }
 
@@ -2864,7 +3112,7 @@ func lowReturn(s: int): int {
     lowAddLocal(tmpNameIdx, lowCurFuncRet)
     retRef = newIRVarRef(tmpNameIdx, false, lowCurFuncRet)
     head = -1
-    if heapRet {
+    if heapRet or recRet {
         // cpEmitFunc's function-prologue default-init (cpDefaultInit)
         // unconditionally constructs EVERY declared local at function
         // entry, including this synthetic one -- a fresh, unshared,
@@ -2875,7 +3123,8 @@ func lowReturn(s: int): int {
         // this is the same "default-init orphan" class Task 4 later closes
         // generically for every local store, but that mechanism doesn't
         // exist yet and this synthetic local is Task 3's own creation, so
-        // it can't wait.
+        // it can't wait. Correct for recRet too: cpDefaultInit's KRec
+        // branch constructs a fresh clar_new_<Rec>() for the same reason.
         head = newIRExprStmt(newIRIntr(IRelease(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT))
     }
     storeStmt = lowStoreStmt(retRef, x, lowCurFuncRet)
@@ -2908,6 +3157,21 @@ func lowReturn(s: int): int {
     // exact common case this function exists to protect (`return x` for a
     // local `x`).
     if heapRet {
+        tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
+    } else if recRet and not lowRecStoreIsBirth(returnX(s)) {
+        // ARC Task 7: unlike heapRet's own UNCONDITIONAL retain (a
+        // pre-existing, documented, OUT-OF-SCOPE-for-this-task over-retain
+        // bug for an already-fresh Str->Text return-widening -- Task 5's
+        // "Findings out of scope" #1, deferred to Task 8's drive-to-zero),
+        // a record return DOES gate on lowRecStoreIsBirth: a record-typed
+        // birth source (a plain function-call return or a `.pop()`/
+        // `.shift()` transfer -- see that predicate's own doc comment)
+        // already carries its own uncontested +1 into the synthetic via
+        // the plain byte-copy store just above, so retaining it again here
+        // would be an unbalanced leak, not merely a missed optimization
+        // (this task's own new fixtures must hit exactly 0 leaks, so this
+        // is written deliberately more carefully than the precedent it
+        // extends, not by oversight).
         tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(tmpNameIdx, false, lowCurFuncRet), irVoidT)))
     }
     if freesHead != -1 {
@@ -3156,12 +3420,20 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
     } else if xk == TyList {
         elemTy = lowMustType(lhs)
-        if not lowEscapeTrackableKind(irtKind(elemTy)) {
+        if not lowEscapeTrackableKind(irtKind(elemTy)) and not lowIsRecBearing(elemTy) {
             return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
         }
         rawRhs = rhs
         intrName = IListSet()
-        if not lowElemIsBirth(rhsAst, rawRhs, elemTy) {
+        // ARC Task 7 site 4 (overwrite): mirrors the push/unshift birth
+        // split just above -- lowElemIsBirth for Text/List/Map,
+        // lowRecStoreIsBirth for a record-bearing element, mutually
+        // exclusive gates.
+        if lowEscapeTrackableKind(irtKind(elemTy)) {
+            if not lowElemIsBirth(rhsAst, rawRhs, elemTy) {
+                intrName = IListSetRetain()
+            }
+        } else if not lowRecStoreIsBirth(rhsAst) {
             intrName = IListSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rawRhs)
@@ -3180,6 +3452,9 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         elemTy = irtElem(irExprType(x))
         intrName = IMapSet()
         if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
+            intrName = IMapSetRetain()
+        } else if lowIsRecBearing(elemTy) and not lowRecStoreIsBirth(rhsAst) {
+            // ARC Task 7 site 4: map-of-record upsert, same rule as list.
             intrName = IMapSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rhs)
@@ -3484,6 +3759,72 @@ func lowBlock(blk: int): int {
 
 // lowFuncBody lowers params + a body block into an ir.Func, registering the
 // signature scope and returning its irFuncs index (stmt.go's lowerFuncBody).
+// lowRetainRecParams (ARC Task 7 site 2) walks astParamsHead's own
+// declared params (never a synthetic window-instance/menu-dummy param
+// lowHandlerFunc prepends itself -- always a KWinRef, never record-typed,
+// so astParamsHead correctly excludes it already) and, for each
+// handle-backed record param, retain-walks it -- a C struct param is
+// passed BY VALUE (the callee's own copy shares its caller's handle-field
+// pointers with no retain of its own until this runs, since C's calling
+// convention performs the struct copy invisibly, with no hook for the
+// CALLER to insert a retain around) -- and registers it into
+// lowFreeNames/lowFreeTypes for the SAME unconditional scope-exit release
+// every return/trailing-exit already applies to a body-top local
+// (lowBuildScopeExitFrees, lowEscapeCollectCandidates' own comment).
+//
+// Caller contract: call AFTER lowRunEscapePrepass (which resets
+// lowFreeNames to bodyBlk's own top-level locals only -- a param added
+// before that reset would be wiped) and BEFORE lowBlock lowers the body
+// (so a `return` inside it already sees the param registered). Returns
+// the retain statement chain's head, or -1 if no param is record-bearing;
+// the caller splices it onto the FRONT of its own bodyHead.
+func lowRetainRecParams(astParamsHead: int): int {
+    var p: int
+    var pt: int
+    var pname: string
+    var head: int
+    var tail: int
+
+    head = -1
+    tail = -1
+    p = astParamsHead
+    while p != -1 {
+        pt = lowResolveType(paramType(p))
+        if lowIsRecBearing(pt) {
+            pname = poolGet(paramName(p))
+            lowFreeNames.add(pname)
+            lowFreeTypes[pname] = pt
+            tail = irStmtListAppend(tail, newIRExprStmt(newIRIntr(IRetain(), newIRVarRef(paramName(p), false, pt), irVoidT)))
+            if head == -1 {
+                head = tail
+            }
+        }
+        p = declNext(p)
+    }
+    return head
+}
+
+// lowPrependStmts splices extraHead's statement chain onto the FRONT of
+// bodyHead's (ARC Task 7: lowFuncBody/lowHandlerFunc's own shared
+// "retain record params before the rest of the body" wiring). Returns the
+// combined chain's head; either argument may be -1.
+func lowPrependStmts(extraHead: int, bodyHead: int): int {
+    var tail: int
+
+    if extraHead == -1 {
+        return bodyHead
+    }
+    if bodyHead == -1 {
+        return extraHead
+    }
+    tail = extraHead
+    while irStmtNext(tail) != -1 {
+        tail = irStmtNext(tail)
+    }
+    irStmtListAppend(tail, bodyHead)
+    return extraHead
+}
+
 func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int {
     var paramsHead: int
     var paramsTail: int
@@ -3492,6 +3833,7 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     var savedRet: int
     var bodyHead: int
     var fn: int
+    var retainHead: int
 
     lowPushScope()
 
@@ -3513,8 +3855,10 @@ func lowFuncBody(nameIdx: int, astParamsHead: int, ret: int, bodyBlk: int): int 
     savedRet = lowCurFuncRet
     lowCurFuncRet = ret
     lowRunEscapePrepass(bodyBlk)
+    retainHead = lowRetainRecParams(astParamsHead)
     bodyHead = lowBlock(bodyBlk)
     bodyHead = lowAppendTrailingFrees(bodyHead)
+    bodyHead = lowPrependStmts(retainHead, bodyHead)
     lowCurFuncRet = savedRet
 
     fn = newIRFunc(nameIdx, paramsHead, ret, lowLocalsHead, bodyHead)
@@ -4561,6 +4905,7 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     var savedWinType: int
     var savedRet: int
     var bodyHead: int
+    var retainHead: int
 
     nameIdx = intern(cName)
     lowPushScope()
@@ -4600,8 +4945,10 @@ func lowHandlerFunc(cName: string, winType: int, instParamName: int, astParamsHe
     savedRet = lowCurFuncRet
     lowCurFuncRet = irVoidT
     lowRunEscapePrepass(body)
+    retainHead = lowRetainRecParams(astParamsHead)
     bodyHead = lowBlock(body)
     bodyHead = lowAppendTrailingFrees(bodyHead)
+    bodyHead = lowPrependStmts(retainHead, bodyHead)
     lowCurFuncRet = savedRet
 
     lowCurWinType = savedWinType

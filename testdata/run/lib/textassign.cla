@@ -28,14 +28,14 @@ record textassignNote {
 // reassignments is release-then-store, and the function ends with
 // `rt_text_free(cv_t); rt_text_release(cv_t2);` (deep and shallow release
 // are identical for a plain Text local -- no elements to walk).
-// `note.body` is untouched by this task -- it's still never freed, for
-// TWO independent, still-unmigrated reasons: `note` (a plain record local,
-// not Text/List/Map) is never itself a scope-exit-release candidate at
-// all (records are Task 7's slot class), and even if it were, per-field
-// release walks don't exist yet either (also Task 7). Expected strict-mode
-// leak count: 2 (see ../textassign.leaks, dropped from 6) -- `note.body`'s
-// default `"hi"` handle only (struct box + data handle, 2 blocks). Not a
-// bug -- record field ownership is explicitly out of this task's scope.
+// ARC Task 7 (record retain/release walks at every copy site, site 5)
+// closes the last gap: `note` (a body-top record local) is now a
+// scope-exit-release candidate too (lowEscapeCollectCandidates' own
+// lowIsRecBearing branch), released via a plain IRelease that walks into
+// `clar_release_textassignNote`, which releases `body`'s default `"hi"`
+// handle. Confirmed against the emitted C: `clar_release_textassignNote(&(cv_note));`
+// now appears at the function's end, alongside `t`/`t2`'s own releases.
+// Expected strict-mode leak count: 0 (../textassign.leaks deleted, was 2).
 func runTextassign() {
     var t: text = "hello"
     var t2: text = "x" + "y"

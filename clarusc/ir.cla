@@ -580,6 +580,45 @@ func irRcWalkNeeded(nameIdx: int): bool {
     return irRcWalkNeededByName.get(poolGet(nameIdx), 0) == 1
 }
 
+// irRecHasHandleField (ARC Task 7) reports whether the record type named
+// nameIdx has at least one field needing construction/disposal
+// (irtNeedsCtor) -- the SINGLE canonical answer to "is this record type
+// genuinely handle-backed", shared by every place that asks it:
+// cpEmitRcWalks (gates whether clar_retain_NAME/clar_release_NAME get
+// DEFINED at all -- cprint.cla), and every lowering/printing site that
+// decides whether to emit an IRetain/IRelease intrinsic (a CALLER of
+// clar_retain_NAME/clar_release_NAME) over a KRec value (lower.cla's copy
+// sites; cprint.cla's container-element retain/release, tracked-temp
+// release). Task 2's reviewer flagged a gate-ASYMMETRY risk if the
+// "should I define this" and "should I call this" questions were ever
+// answered by two independently-maintained tests that could drift apart
+// (a caller emits a call to a function the definer decided not to define
+// -- an undefined-symbol link failure). This function is the fix: the one
+// shared test, used everywhere the question is asked, so the two
+// questions can never disagree. Same linear-scan-by-name shape
+// cpEmitRelease's/cpEmitRetain's own KRec branch and cpEmitRcWalks
+// already used inline (before this task unified them here).
+func irRecHasHandleField(nameIdx: int): bool {
+    var ri: int
+    var f: int
+
+    ri = 0
+    while ri < irRecords.count {
+        if irRecordLayoutName(ri) == nameIdx {
+            f = irRecordLayoutFieldsHead(ri)
+            while f != -1 {
+                if irtNeedsCtor(irFieldSlotType(f)) {
+                    return true
+                }
+                f = irFieldSlotNext(f)
+            }
+            return false
+        }
+        ri = ri + 1
+    }
+    return false
+}
+
 // Singletons for the kind-only IRTypes -- set by irReset(), matching
 // types.cla's IntT/BoolT/... pattern. KStr/KList/KMap/KRec/KEnum/KArr are
 // parametrized (capacity/elem/name) and so are never singletons.

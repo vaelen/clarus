@@ -43,6 +43,7 @@
 
 include "../run/lib/appendperf.cla"
 include "../run/lib/arc_global_alias.cla"
+include "../run/lib/arc_rec_copy.cla"
 include "../run/lib/arith.cla"
 include "../run/lib/binroundtrip.cla"
 include "../run/lib/breakcont.cla"
@@ -101,6 +102,8 @@ on App.launch {
     runAppendperf()
     alert("=== arc_global_alias ===")
     runArcGlobalAlias()
+    alert("=== arc_rec_copy ===")
+    runArcRecCopy()
     alert("=== arith ===")
     runArith()
     alert("=== binroundtrip ===")

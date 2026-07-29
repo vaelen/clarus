@@ -75,6 +75,33 @@ func toText(s: string): text {
     return t
 }
 
+// toStr (ARC Task 7) narrows a `text` back down to a `string` -- the
+// reverse direction toText bridges, needed because cpEmitRetain/
+// cpEmitRelease's cexpr parameter is (deliberately, matching every one of
+// their OTHER existing callers, which all naturally produce `string`
+// concatenations) `string`-typed, but fpRetainVal/fpReleaseVal's own KArr
+// arm (and fpIntrCall's IRetain/IRelease KArr arm) only ever has a `text`
+// C-expression string on hand (fpAddrable/fpCopyToTemp both return
+// `text`). Str<->Text has no built-in narrowing conversion or assignment
+// (verified: `var s: string; s = someTextVar` is a compile error, same as
+// passing text where a string param is declared) -- the toBytes/fromBytes
+// byte-buffer round trip is this language's only sanctioned Text->Str
+// path (the same idiom used throughout this REPO's own corpus fixtures,
+// e.g. arc_global_alias.cla), applied here to clarusc's own internal
+// C-expression-as-text values rather than to a user program's data. 255
+// bytes covers any C lvalue expression this compiler ever builds (a bare
+// name, a field-select chain, a loop-index array subscript) with room to
+// spare.
+func toStr(t: text): string {
+    var buf: char[255]
+    var n: int
+    var s: string
+
+    n = t.toBytes(buf)
+    s.fromBytes(buf, n)
+    return s
+}
+
 // cpStrCapsEmitted keys the string capacities already emitted into cpTypeBuf
 // (keyed by numToStr(n)); each clar_str_N typedef is emitted once.
 var cpStrCapsEmitted: map of int
@@ -120,6 +147,16 @@ var fpStmtTmps: list of text
 // fpStmtTmps below has a matching push/remove/pop here, kept in lockstep.
 var fpStmtTmpRel: list of text
 
+// fpStmtTmpIsRec is fpStmtTmps' second parallel list (ARC Task 7): true
+// when the entry at the same index is a KRec temp, whose release call
+// needs `&(name)` (fpStmtTmpRel[i] holds "clar_release_NAME" for these,
+// vs. a plain rt_*_release stem for everything else) -- fpFreeStmtTmps/
+// fpAndOr's flush consult this to pick the right call shape. Kept in
+// lockstep with fpStmtTmps/fpStmtTmpRel everywhere those are pushed/
+// removed/popped, same discipline ARC Task 3 established when it added
+// fpStmtTmpRel itself.
+var fpStmtTmpIsRec: list of bool
+
 func fpReset(indent: int) {
     while fpBody.count > 0 {
         fpBody.pop()
@@ -129,6 +166,9 @@ func fpReset(indent: int) {
     }
     while fpStmtTmpRel.count > 0 {
         fpStmtTmpRel.pop()
+    }
+    while fpStmtTmpIsRec.count > 0 {
+        fpStmtTmpIsRec.pop()
     }
     fpTmpN = 0
     fpIndent = indent
@@ -181,6 +221,7 @@ func fpNewTmp(ctype: string): text {
         fpEmit(ctype + " " + name + " = NULL;")
         fpStmtTmps.add(name)
         fpStmtTmpRel.add(toText("rt_text_release"))
+        fpStmtTmpIsRec.add(false)
     } else {
         fpEmit(ctype + " " + name + ";")
     }
@@ -202,23 +243,124 @@ func fpHeapFn(k: IRKind): string {
     return "rt_text"
 }
 
-// fpNewTrackedTmp declares a fresh NULL-initialized temp of IR type t and
-// tracks it in fpStmtTmps/fpStmtTmpRel for release at end of statement
+// fpNeedsRelease (ARC Task 7) reports whether a value of IR type t needs
+// ANY retain/release traffic at all -- fpIsHandleType (Text/List/Map)
+// widened to also cover a handle-backed record (irRecHasHandleField,
+// ir.cla's shared gate-asymmetry-proof test) or a fixed array whose
+// element does (recursing exactly like lowIsRecBearing, lower.cla's own
+// mirror of this same question at lowering time). Used at every
+// container-element site whose PRINT-TIME gate previously only ever
+// needed to ask "is this Text/List/Map" (IListRemove, IMapRemove/
+// fpMapReleaseGuard) -- these have no lower.cla-side birth decision to
+// make (a removal/eviction always releases the OLD value, never retains a
+// new one), so the ONLY thing that changed for Task 7 is that a
+// record-bearing element type must also be recognized here.
+func fpNeedsRelease(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KRec {
+        return irRecHasHandleField(irtName(t))
+    }
+    if k == KArr {
+        return fpNeedsRelease(irtElem(t))
+    }
+    return fpIsHandleType(t)
+}
+
+// fpRetainVal / fpReleaseVal (ARC Task 7) retain/release a single,
+// already-materialized C value expression v at IR type t -- the shared
+// dispatcher every container-element retain/release print site now uses
+// instead of hand-rolling `fpHeapFn(...) + "_retain(" + v + ");"` (which
+// only ever knew about Text/List/Map: KRec's clar_retain_NAME/
+// clar_release_NAME calls need `&(v)`, not a bare `v`, and a bare KRec
+// argument to fpHeapFn silently defaulted to the WRONG "rt_text" stem).
+// Mirrors fpIntrCall's own IRetain/IRelease KRec/KText/KList/KMap dispatch
+// exactly (same marking, same call shape) plus a KArr arm fpIntrCall's own
+// dispatch also needs (ARC Task 7 site 7, added there too) -- reusing
+// cpEmitRetain/cpEmitRelease's own already-correct recursive per-element
+// walk via the same caller-owned-buffer trick cpEmitGlobalsInit's Init-
+// retain-fix (ARC Task 6 round 2) established, rather than duplicating
+// that recursion here.
+func fpRetainVal(v: text, t: int) {
+    var k: IRKind
+    var recName: string
+    var buf: text
+
+    k = irtKind(t)
+    if k == KRec {
+        if not irRecHasHandleField(irtName(t)) {
+            return
+        }
+        recName = poolGet(irtName(t))
+        irMarkRcWalkNeeded(irtName(t))
+        fpEmit("clar_retain_" + recName + "(&(" + v + "));")
+    } else if k == KArr {
+        buf = ""
+        cpEmitRetain(buf, toStr(v), t)
+        fpEmit(buf)
+    } else {
+        fpEmit(fpHeapFn(k) + "_retain(" + v + ");")
+    }
+}
+
+func fpReleaseVal(v: text, t: int) {
+    var k: IRKind
+    var recName: string
+    var buf: text
+
+    k = irtKind(t)
+    if k == KRec {
+        if not irRecHasHandleField(irtName(t)) {
+            return
+        }
+        recName = poolGet(irtName(t))
+        irMarkRcWalkNeeded(irtName(t))
+        fpEmit("clar_release_" + recName + "(&(" + v + "));")
+    } else if k == KArr {
+        buf = ""
+        cpEmitRelease(buf, toStr(v), t)
+        fpEmit(buf)
+    } else {
+        fpEmit(fpHeapFn(k) + "_release(" + v + ");")
+    }
+}
+
+// fpNewTrackedTmp declares a fresh temp of IR type t and tracks it in
+// fpStmtTmps/fpStmtTmpRel(/fpStmtTmpIsRec) for release at end of statement
 // unless handed off -- ARC Task 3's explicit-tracking counterpart to
 // fpNewTmp's ctype-string sniffing, safe to use for List/Map (or Text)
 // results that are genuinely owned (a call result, a first/last/map-get/
 // map-getDefault alias read -- all +1 now, same ownership shape as a text
-// concat temp).
+// concat temp). ARC Task 7 site 3: also safe for a handle-backed KRec
+// result (a user function call's +1-transferred return, fpCallFn below) --
+// a record is a by-value C STRUCT, not a nullable pointer, so it declares
+// with NO initializer (never `= NULL`, which wouldn't compile) instead of
+// the pointer kinds' `= NULL`; fpStmtTmpIsRec records which release shape
+// (`fn(name)` vs `clar_release_NAME(&(name))`) fpFreeStmtTmps/fpAndOr's
+// flush must print for this entry. Every existing caller only ever reads
+// the temp back out AFTER first assigning into it (fpCallFn's very next
+// line), so leaving a record temp's C declaration uninitialized is safe --
+// nothing reads it before that assignment.
 func fpNewTrackedTmp(t: int): text {
     var name: text
     var ctype: string
+    var isRec: bool
 
     ctype = cpCType(t)
     fpTmpN = fpTmpN + 1
     name = "t" + numToStr(fpTmpN)
-    fpEmit(ctype + " " + name + " = NULL;")
+    isRec = irtKind(t) == KRec
+    if isRec {
+        fpEmit(ctype + " " + name + ";")
+        fpStmtTmpRel.add(toText("clar_release_" + poolGet(irtName(t))))
+        irMarkRcWalkNeeded(irtName(t))
+    } else {
+        fpEmit(ctype + " " + name + " = NULL;")
+        fpStmtTmpRel.add(toText(fpHeapFn(irtKind(t)) + "_release"))
+    }
     fpStmtTmps.add(name)
-    fpStmtTmpRel.add(toText(fpHeapFn(irtKind(t)) + "_release"))
+    fpStmtTmpIsRec.add(isRec)
     return name
 }
 
@@ -238,16 +380,33 @@ func fpHandoff(cexpr: text) {
         if fpStmtTmps[i] == cexpr {
             fpStmtTmps.remove(i)
             fpStmtTmpRel.remove(i)
+            fpStmtTmpIsRec.remove(i)
             return
         }
         i = i + 1
     }
 }
 
+// fpEmitTmpRelease (ARC Task 7) prints tracked-temp i's own release call,
+// in whichever of the two shapes fpStmtTmpIsRec[i] selects: a KRec temp's
+// clar_release_NAME needs `&(name)` (it takes a pointer); every other
+// tracked kind prints its bare stem's plain `fn(name)` call, unchanged
+// from before this task. Shared by fpFreeStmtTmps and fpAndOr's own
+// in-block flush (below) -- previously each hand-rolled the same
+// `fpStmtTmpRel[i] + "(" + fpStmtTmps[i] + ");"` line inline.
+func fpEmitTmpRelease(i: int) {
+    if fpStmtTmpIsRec[i] {
+        fpEmit(fpStmtTmpRel[i] + "(&(" + fpStmtTmps[i] + "));")
+    } else {
+        fpEmit(fpStmtTmpRel[i] + "(" + fpStmtTmps[i] + ");")
+    }
+}
+
 // fpFreeStmtTmps emits the release call for every name still in fpStmtTmps
 // (memory-audit Task 6's `rt_text_free`, upgraded by ARC Task 3 to each
 // entry's own tracked release call -- fpStmtTmpRel -- so List/Map temps
-// release correctly too) and empties both lists. Called at the tail of
+// release correctly too; ARC Task 7 widens it again to KRec via
+// fpEmitTmpRelease) and empties all three lists. Called at the tail of
 // fpStmt (the common case: temps live for the whole statement) and, by
 // fpWhileStmt, right after the per-iteration condition check (a text temp a
 // while-condition creates is rebuilt fresh every iteration -- see
@@ -258,7 +417,7 @@ func fpFreeStmtTmps() {
 
     i = 0
     while i < fpStmtTmps.count {
-        fpEmit(fpStmtTmpRel[i] + "(" + fpStmtTmps[i] + ");")
+        fpEmitTmpRelease(i)
         i = i + 1
     }
     while fpStmtTmps.count > 0 {
@@ -266,6 +425,9 @@ func fpFreeStmtTmps() {
     }
     while fpStmtTmpRel.count > 0 {
         fpStmtTmpRel.pop()
+    }
+    while fpStmtTmpIsRec.count > 0 {
+        fpStmtTmpIsRec.pop()
     }
 }
 
@@ -505,7 +667,15 @@ func fpCallFn(e: int): text {
         }
     }
     call = "clar_fn_" + poolGet(irCallFnName(e)) + "(" + args + ")"
-    if fpIsHandleType(irExprType(e)) {
+    // ARC Task 7 site 3 (caller side): a handle-backed record return is
+    // ALSO always materialized into a tracked temp now (lower.cla's
+    // lowReturn already made every one of these a genuine +1 transfer),
+    // released at end of statement unless handed off -- extends the same
+    // Task 3 convention fpIsHandleType's Text/List/Map already get. An
+    // all-scalar record return (irRecHasHandleField false) has nothing to
+    // retain/release either side of the call, so it stays the OLD
+    // untracked-call-expression path, unchanged.
+    if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
         t = fpNewTrackedTmp(irExprType(e))
         fpEmit(t + " = " + call + ";")
         return t
@@ -654,9 +824,10 @@ func fpAndOr(e: int): text {
     }
     fpEmit(t + " = " + cap.value + ";")
     while fpStmtTmps.count > markCount {
-        fpEmit(fpStmtTmpRel[fpStmtTmps.count - 1] + "(" + fpStmtTmps[fpStmtTmps.count - 1] + ");")
+        fpEmitTmpRelease(fpStmtTmps.count - 1)
         fpStmtTmps.pop()
         fpStmtTmpRel.pop()
+        fpStmtTmpIsRec.pop()
     }
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))
@@ -816,7 +987,9 @@ func fpTextConcat(a: int, b: int): text {
 }
 
 // fpMapReleaseGuard emits `if (rt_map_has(m, k)) { <ctype> old; rt_map_get(m,
-// k, &old); <heapFn>_release(old); }` -- the ARC Task 5 guard shared by
+// k, &old); <release old, via fpReleaseVal>; }` -- the ARC Task 5 guard
+// (ARC Task 7: release dispatch widened to fpReleaseVal, covering a
+// handle-backed record value type too) shared by
 // IMapSet(Retain) (an upsert must release whatever value k currently holds
 // before overwriting it) and IMapRemove (same, before removing the entry).
 // rt_map_get PANICS on an absent key (rt.h: "panics absent: map key not
@@ -851,7 +1024,7 @@ func fpMapReleaseGuard(m: text, k: text, elemT: int) {
     fpEmit("if (rt_map_has(" + m + ", " + k + ")) {")
     fpIndent = fpIndent + 1
     fpEmit("rt_map_get(" + m + ", " + k + ", &" + old + ");")
-    fpEmit(fpHeapFn(irtKind(elemT)) + "_release(" + old + ");")
+    fpReleaseVal(old, elemT) // ARC Task 7: elemT may now be a handle-backed record too.
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))
 }
@@ -914,7 +1087,6 @@ func fpIntrCall(x: int): text {
     var ctype: string
     var old: text
     var ref: text
-    var heapFn: string
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -947,22 +1119,45 @@ func fpIntrCall(x: int): text {
         // call; a by-value record (KRec) prints as a call to that record
         // type's generated clar_retain_NAME/clar_release_NAME walk helper
         // (cpEmitRcWalks), marking the record type needed the first time
-        // it's seen here. fpAddrable (not fpExpr) because the KRec branch
-        // takes cexpr's address -- it must be a real addressable lvalue,
-        // never a bare rvalue. lower.cla emits IRetain at every heap-typed
-        // `return` (ARC Task 3); the KRec arm stays dormant until records
-        // are ARC'd (a later task inserts those call sites).
+        // it's seen here (only when the record is actually handle-backed --
+        // irRecHasHandleField; ARC Task 7's gate-asymmetry fix -- lower.cla
+        // never emits IRetain/IRelease over a scalar-only record's value in
+        // the first place, but this branch checks too rather than trusting
+        // that invariant blindly). A KArr argument (ARC Task 7 site 7:
+        // fixed arrays of records) has no generated walk-helper function of
+        // its own -- reuses cpEmitRetain/cpEmitRelease's own already-
+        // correct recursive per-element walk directly, inline, the same
+        // buffer trick fpRetainVal/fpReleaseVal use (this arm predates
+        // those helpers and keeps its own dispatch for the KRec case, which
+        // DOES need the marking side effect fpRetainVal/fpReleaseVal
+        // already do too -- functionally identical, kept inline here to
+        // avoid changing this arm's pre-existing KRec shape). fpAddrable
+        // (not fpExpr) because both the KRec and KArr branches take
+        // cexpr's address -- it must be a real addressable lvalue, never a
+        // bare rvalue. lower.cla emits IRetain/IRelease at every heap-typed
+        // `return` (ARC Task 3) and now at every record copy site (ARC
+        // Task 7).
         s0 = fpAddrable(a0)
         argT = irExprType(a0)
         argK = irtKind(argT)
         if argK == KRec {
-            recName = poolGet(irtName(argT))
-            irMarkRcWalkNeeded(irtName(argT))
-            if nm == IRetain() {
-                fpEmit("clar_retain_" + recName + "(&(" + s0 + "));")
-            } else {
-                fpEmit("clar_release_" + recName + "(&(" + s0 + "));")
+            if irRecHasHandleField(irtName(argT)) {
+                recName = poolGet(irtName(argT))
+                irMarkRcWalkNeeded(irtName(argT))
+                if nm == IRetain() {
+                    fpEmit("clar_retain_" + recName + "(&(" + s0 + "));")
+                } else {
+                    fpEmit("clar_release_" + recName + "(&(" + s0 + "));")
+                }
             }
+        } else if argK == KArr {
+            t = ""
+            if nm == IRetain() {
+                cpEmitRetain(t, toStr(s0), argT)
+            } else {
+                cpEmitRelease(t, toStr(s0), argT)
+            }
+            fpEmit(t)
         } else {
             fn = "rt_text"
             if argK == KList {
@@ -1138,7 +1333,11 @@ func fpIntrCall(x: int): text {
         // re-trigger any side effect, only correctly bump the right box's
         // rc before the list takes its own reference to it.
         if nm == IListPushRetain() or nm == IListUnshiftRetain() {
-            fpEmit(fpHeapFn(irtKind(irExprType(a1))) + "_retain(" + v + ");")
+            // ARC Task 7: fpRetainVal (not a bare fpHeapFn(...) call, which
+            // only ever knew Text/List/Map) -- a0's element type may now be
+            // a handle-backed record too (lower.cla only ever picks the
+            // *Retain name when that's genuinely true).
+            fpRetainVal(v, irExprType(a1))
         }
         fn = "rt_list_push"
         if nm == IListUnshift() or nm == IListUnshiftRetain() {
@@ -1195,12 +1394,14 @@ func fpIntrCall(x: int): text {
         l = fpExpr(a0)
         s0 = fpExpr(a1)
         elemT = irtElem(irExprType(a0))
-        if fpIsHandleType(elemT) {
+        if fpNeedsRelease(elemT) {
+            // ARC Task 7: fpNeedsRelease (not fpIsHandleType alone) --
+            // widened to also cover a handle-backed record/array element.
             ctype = cpCType(elemT)
             old = fpNewTmp(ctype)
             fpHandoff(old) // never auto-freed -- this branch's own release below is the only one
             fpEmit(old + " = (*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")));")
-            fpEmit(fpHeapFn(irtKind(elemT)) + "_release(" + old + ");")
+            fpReleaseVal(old, elemT)
         }
         fpEmit("rt_list_remove(" + l + ", (int32_t)(" + s0 + "));")
         return toText("")
@@ -1229,14 +1430,15 @@ func fpIntrCall(x: int): text {
         ref = "(*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")))"
         v = fpCopyToTemp(a2)
         fpHandoff(v)
-        heapFn = fpHeapFn(irtKind(elemT))
+        // ARC Task 7: fpRetainVal/fpReleaseVal (not fpHeapFn directly) --
+        // elemT may now be a handle-backed record too.
         if nm == IListSetRetain() {
-            fpEmit(heapFn + "_retain(" + v + ");")
+            fpRetainVal(v, elemT)
         }
         old = fpNewTmp(ctype)
         fpHandoff(old)
         fpEmit(old + " = " + ref + ";")
-        fpEmit(heapFn + "_release(" + old + ");")
+        fpReleaseVal(old, elemT)
         fpEmit(ref + " = " + v + ";")
         return toText("")
     } else if nm == IListCount() {
@@ -1275,7 +1477,9 @@ func fpIntrCall(x: int): text {
         // first, guarded by rt_map_has (rt_map_get panics on an absent key,
         // rt.h) -- see fpMapReleaseGuard's own doc comment for the guard's
         // exact shape and why it's a raw, non-retaining get.
-        if fpIsHandleType(irExprType(a2)) {
+        if fpNeedsRelease(irExprType(a2)) {
+            // ARC Task 7: fpNeedsRelease -- widened to also cover a
+            // handle-backed record value type.
             fpMapReleaseGuard(m, k, irExprType(a2))
         }
         v = fpCopyToTemp(a2)
@@ -1292,7 +1496,7 @@ func fpIntrCall(x: int): text {
         // matches the brief's own worked example ordering (guard, then
         // retain, then set) directly.
         if nm == IMapSetRetain() {
-            fpEmit(fpHeapFn(irtKind(irExprType(a2))) + "_retain(" + v + ");")
+            fpRetainVal(v, irExprType(a2))
         }
         fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
         return toText("")
@@ -1339,7 +1543,7 @@ func fpIntrCall(x: int): text {
         // remove regardless of whether the guard fired.
         m = fpExpr(a0)
         k = fpStrAddr(a1)
-        if fpIsHandleType(irtElem(irExprType(a0))) {
+        if fpNeedsRelease(irtElem(irExprType(a0))) {
             fpMapReleaseGuard(m, k, irtElem(irExprType(a0)))
         }
         fpEmit("rt_map_remove(" + m + ", " + k + ");")
@@ -1669,12 +1873,16 @@ func fpStmt(s: int) {
     var fresh: list of text
     var savedRel: list of text
     var freshRel: list of text
+    var savedIsRec: list of bool
+    var freshIsRec: list of bool
     var terminal: bool
 
     saved = fpStmtTmps
     fpStmtTmps = fresh
     savedRel = fpStmtTmpRel
     fpStmtTmpRel = freshRel
+    savedIsRec = fpStmtTmpIsRec
+    fpStmtTmpIsRec = freshIsRec
     terminal = false
 
     if irStmtKind(s) == SExprStmt {
@@ -1687,11 +1895,19 @@ func fpStmt(s: int) {
     } else if irStmtKind(s) == SAssign {
         d = fpExpr(irAssignDst(s))
         v = fpExpr(irAssignSrc(s))
-        if fpIsHandleType(irExprType(irAssignDst(s))) {
+        if fpIsHandleType(irExprType(irAssignDst(s))) or irtKind(irExprType(irAssignDst(s))) == KRec {
             // A tracked temp assigned into a variable IS that variable's
             // new value now -- handed off, not freed here (ARC Task 3:
-            // widened from text-only to List/Map -- the +1 becomes the
-            // var's own ownership).
+            // widened from text-only to List/Map; ARC Task 7 widens again
+            // to KRec -- lowCountedStoreRec's own generated
+            // `tmp = src`/`dst = tmp` byte-copy assigns, and lowReturn's
+            // `retRef = x`, both route a record-returning call's own
+            // fpCallFn-materialized tracked temp through a bare SAssign;
+            // without this, that temp would auto-release at THIS
+            // statement's own end -- immediately, one statement before the
+            // very next statement (an IRetain over the SAME now-aliased
+            // struct copy) needs those fields still valid: a
+            // release-then-use-after-free, not merely a leak).
             fpHandoff(v)
         }
         fpEmit(d + " = " + v + ";")
@@ -1735,6 +1951,7 @@ func fpStmt(s: int) {
     }
     fpStmtTmps = saved
     fpStmtTmpRel = savedRel
+    fpStmtTmpIsRec = savedIsRec
 }
 
 // fpForListStmt lowers `for x in l { ... }` to an index loop over a count
@@ -2043,13 +2260,15 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
 // statement(s) that drop cexpr's (an lvalue C expression) OWN reference at
 // IR type t -- the shallow-plus rule (memory-audit spec, Task 5, unchanged
 // by this rename): KText releases its own buffer; KList/KMap release their
-// own handle, plus -- only when the element/value type is itself KText --
-// a loop releasing each element's text handle first (an element type that
-// is itself KList/KMap is left alone: shallow only, matching Ch3 reference
-// semantics, until a later ARC task); KArr/KRec recurse into exactly the
-// slots cpDefaultInit constructs (mirroring its KArr/KRec branches above,
-// so the release walk precisely mirrors what init built); every other kind
-// emits nothing. A reusable helper -- called here for globals, and again by
+// own handle, plus -- when the element/value type is itself KText OR a
+// handle-backed KRec (ARC Task 7, carry-forward 3 from Task 2's review) --
+// a loop releasing each element's own reference(s) first (an element type
+// that is itself KList/KMap, or an all-scalar KRec, is left alone: shallow
+// only, matching Ch3 reference semantics, until a later ARC task / because
+// there is nothing to release); KArr/KRec recurse into exactly the slots
+// cpDefaultInit constructs (mirroring its KArr/KRec branches above, so the
+// release walk precisely mirrors what init built); every other kind emits
+// nothing. A reusable helper -- called here for globals, and again by
 // later tasks for function-local and record-field disposal.
 func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var k: IRKind
@@ -2057,6 +2276,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var f: int
     var ix: string
     var ri: int
+    var recName: string
 
     k = irtKind(t)
     if k == KText {
@@ -2076,6 +2296,17 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             // element/field recursion via cpEmitRcWalks) funnels through
             // this one branch, so the guard covers all of them at once.
             cpAppendLine(dst, "    if (rt_list_lastref(" + cexpr + ")) { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) rt_text_release(*(rt_text **)rt_list_at(" + cexpr + ", i)); }")
+        } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
+            // ARC Task 7 (carry-forward 3, Task 2 review): a list-of-record
+            // element is stored BY VALUE inline in the backing array
+            // (rt_list_at returns a pointer straight to the struct, unlike
+            // Text's pointer-to-pointer) -- release each element's own
+            // clar_release_NAME walk in place, same rt_list_lastref guard
+            // as the KText case (shared-container double-free protection),
+            // same handle-backed gate as every other Task 7 site.
+            recName = poolGet(irtName(et))
+            irMarkRcWalkNeeded(irtName(et))
+            cpAppendLine(dst, "    if (rt_list_lastref(" + cexpr + ")) { int32_t i; for (i = 0; i < rt_list_count(" + cexpr + "); i++) clar_release_" + recName + "((clar_rec_" + recName + " *)rt_list_at(" + cexpr + ", i)); }")
         }
         cpAppendLine(dst, "    rt_list_release(" + cexpr + ");")
     } else if k == KMap {
@@ -2083,6 +2314,18 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
         if irtKind(et) == KText {
             // Same guard, same reasoning as KList just above.
             cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_release(v); } }")
+        } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
+            // ARC Task 7 (carry-forward 3): a map value is copied OUT by
+            // rt_map_val_at (the map's own internal storage is opaque
+            // bytes, unlike a list's directly-addressable backing array),
+            // so the release walk runs on a LOCAL copy `v` -- which shares
+            // the SAME underlying handle-field pointers the map's own
+            // stored bytes still hold, so releasing it correctly drops
+            // those handles' rc exactly once (mirrors the KText case's own
+            // local `rt_text *v` copy-out-then-release shape).
+            recName = poolGet(irtName(et))
+            irMarkRcWalkNeeded(irtName(et))
+            cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); clar_release_" + recName + "(&v); } }")
         }
         cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
     } else if k == KArr {
@@ -2165,56 +2408,82 @@ func cpEmitRetain(dst: text, cexpr: string, t: int) {
     }
 }
 
-// cpEmitRcWalks (ARC Task 2) emits, for every record type IRetain/
-// IRelease's fpIntrCall case marked via irMarkRcWalkNeeded (nothing does
-// yet -- dormant until a later ARC task's lowering starts emitting those
-// intrinsics over record-typed values), a
+// cpEmitRcWalks (ARC Task 2; gate unified onto irRecHasHandleField by ARC
+// Task 7 -- see that function's doc comment for the gate-asymmetry
+// rationale) emits, for every record type IRetain/IRelease's fpIntrCall
+// case marked via irMarkRcWalkNeeded, a
 // `static void clar_retain_<Rec>(clar_rec_<Rec> *r)` /
 // `static void clar_release_<Rec>(clar_rec_<Rec> *r)` pair into cpRecBuf,
-// right after cpEmitRecords' own clar_new_<Rec> constructors (emitProgram
-// calls this immediately after cpEmitRecords). Mirrors cpEmitWinReleaseFn's
-// any-flag gating just below: a marked record type with zero handle-backed
-// fields (irtNeedsCtor per field, same test cpEmitRelease's own KRec branch
-// already applies) gets no walk pair at all -- retaining/releasing it would
-// be a no-op, so there's nothing to generate.
-func cpEmitRcWalks() {
-    var i: int
+// right after cpEmitRecords' own clar_new_<Rec> constructors. A marked
+// record type with zero handle-backed fields (irRecHasHandleField) gets no
+// walk pair at all -- retaining/releasing it would be a no-op, so there's
+// nothing to generate, and every CALLER of clar_retain_NAME/
+// clar_release_NAME (lower.cla's copy sites, cprint.cla's tracked-temp/
+// container-element helpers) consults this SAME predicate before ever
+// emitting a call, so a marked-but-scalar-only type can't happen.
+//
+// ARC Task 7: emitProgram() now calls this AFTER cpEmitFuncs()/
+// cpEmitGlobalsInit() (moved from right after cpEmitRecords, its original
+// Task 2 position) -- irMarkRcWalkNeeded only ever fires from INSIDE
+// fpIntrCall's IRetain/IRelease dispatch while PRINTING a function/handler
+// body or a global's Init, both of which happen later in emitProgram()'s
+// own call sequence; running this walk-pair emitter before any of that
+// printing had occurred would read an empty irRcWalkNeededByName every
+// time, silently dropping every mark (found by tracing emitProgram()'s
+// call order while diagnosing why marks set during this task's own
+// hand-probes never produced a walk pair -- moving WHEN this populates
+// cpRecBuf doesn't move WHERE cpRecBuf's contents land in the final
+// output: emitProgram()'s bottom assembly step reads cpRecBuf once, after
+// every cpEmit* call has run, regardless of call order).
+// cpEmitOneRcWalk builds and appends ONE record type's clar_retain_NAME/
+// clar_release_NAME pair into cpRecBuf -- split out of cpEmitRcWalks (ARC
+// Task 7) so retainBody/releaseBody are fresh, function-LOCAL text values
+// on every call, never a single outer-scope local reset-and-reused across
+// multiple walk-pair emissions in the same loop -- a pattern that was
+// found, empirically, to corrupt an EARLIER call's already-pushed
+// cpRecBuf entry once a SECOND record's walk pair got built in the same
+// cpEmitRcWalks invocation (reproduced with a minimal two-record fixture;
+// root cause not fully isolated, but eliminated by construction here:
+// each record's own retainBody/releaseBody now live only as long as this
+// one function call, with no reuse across records at all).
+func cpEmitOneRcWalk(i: int, name: int) {
     var f: int
-    var name: int
     var recName: string
     var ctype: string
-    var any: bool
     var retainBody: text
     var releaseBody: text
+
+    recName = poolGet(name)
+    ctype = "clar_rec_" + recName
+    retainBody = ""
+    releaseBody = ""
+    f = irRecordLayoutFieldsHead(i)
+    while f != -1 {
+        if irtNeedsCtor(irFieldSlotType(f)) {
+            cpEmitRetain(retainBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+            cpEmitRelease(releaseBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
+        }
+        f = irFieldSlotNext(f)
+    }
+    cpRecBuf.add(toText("static void clar_retain_" + recName + "(" + ctype + " *r) {"))
+    cpRecBuf.add(retainBody)
+    cpRecBuf.add(toText("}"))
+    cpRecBuf.add(toText(""))
+    cpRecBuf.add(toText("static void clar_release_" + recName + "(" + ctype + " *r) {"))
+    cpRecBuf.add(releaseBody)
+    cpRecBuf.add(toText("}"))
+    cpRecBuf.add(toText(""))
+}
+
+func cpEmitRcWalks() {
+    var i: int
+    var name: int
 
     i = 0
     while i < irRecords.count {
         name = irRecordLayoutName(i)
-        if irRcWalkNeeded(name) {
-            recName = poolGet(name)
-            ctype = "clar_rec_" + recName
-            any = false
-            retainBody = ""
-            releaseBody = ""
-            f = irRecordLayoutFieldsHead(i)
-            while f != -1 {
-                if irtNeedsCtor(irFieldSlotType(f)) {
-                    any = true
-                    cpEmitRetain(retainBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
-                    cpEmitRelease(releaseBody, "r->cv_" + poolGet(irFieldSlotName(f)), irFieldSlotType(f))
-                }
-                f = irFieldSlotNext(f)
-            }
-            if any {
-                cpRecBuf.add(toText("static void clar_retain_" + recName + "(" + ctype + " *r) {"))
-                cpRecBuf.add(retainBody)
-                cpRecBuf.add(toText("}"))
-                cpRecBuf.add(toText(""))
-                cpRecBuf.add(toText("static void clar_release_" + recName + "(" + ctype + " *r) {"))
-                cpRecBuf.add(releaseBody)
-                cpRecBuf.add(toText("}"))
-                cpRecBuf.add(toText(""))
-            }
+        if irRcWalkNeeded(name) and irRecHasHandleField(name) {
+            cpEmitOneRcWalk(i, name)
         }
         i = i + 1
     }
@@ -3966,7 +4235,6 @@ func emitProgram(): text {
 
     cpEmitStrLits()
     cpEmitRecords()
-    cpEmitRcWalks()
     cpEmitLayouts()
     cpEmitEnums()
     cpEmitUiDescs()
@@ -3975,6 +4243,13 @@ func emitProgram(): text {
     cpEmitFuncs()
     cpEmitUiWiring()
     cpEmitMain()
+    // ARC Task 7: cpEmitRcWalks must run AFTER cpEmitFuncs()/
+    // cpEmitGlobalsInit() -- see its own doc comment. It still populates
+    // cpRecBuf, which the assembly below still places right after
+    // cpEmitRecords' own output (position in the FINAL file is controlled
+    // by cpAppendTextList's own call order below, not by when cpRecBuf
+    // gets appended to during this function's execution).
+    cpEmitRcWalks()
 
     cpAppendLine(out, "/* Generated by clarus (internal/cprint). Do not edit. */")
     cpAppendLine(out, "#include \"rt.h\"")

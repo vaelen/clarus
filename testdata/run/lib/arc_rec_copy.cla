@@ -1,0 +1,124 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ARC Task 7 mandatory fixture: record retain/release walks at every copy
+// site. RCItem has one handle-backed field (name: text) -- enough to
+// exercise every site's rc traffic without the ambiguity a scalar-only
+// record's zero-op retain/release walks would leave unverified.
+//
+// Covers (brief's own Step 3 checklist):
+//   - a record-with-text value assigned through a CHAIN of copies (a -> b
+//     -> c), each copy independently owning its own +1 (site 1).
+//   - self-assign `a = a` (site 1's mandatory temp-copy guard) -- must not
+//     crash or corrupt the value.
+//   - a record param passed AND returned (sites 2 + 3).
+//   - a list of records pushed/popped/overwritten (site 4).
+//   - every record local (a, b, c, got, popped, d, lst) dies at function
+//     end still holding live handles -- scope-exit release (site 5) must
+//     drain them all to zero, not leak and not double-free.
+//
+// The ARC Task 5-review carry-forward-2 dangling-copy shape (push a record
+// by value, then mutate the LOCAL's own field -- the container's
+// independently-retained copy must stay unaffected) is DELIBERATELY NOT
+// exercised here: this file is part of the SHARED testdata/run corpus,
+// which internal/build.TestRunGoldens also runs through the FROZEN Go
+// reference compiler (internal/lower.go, internal/cprint.go -- untouched
+// by any ARC task, records never ARC'd there at all). That compiler's own
+// record-field-store still releases the old value unconditionally (same
+// as clarusc's, pre-dating ARC) but NEVER retains a container's pushed
+// copy (no ARC Task 7 equivalent exists in internal/) -- so under the Go
+// reference compiler specifically, this exact shape is a genuine
+// use-after-free (confirmed: TestRunGoldens caught it as a stdout mismatch
+// the first time this shape was included here, reading a reused/reallocated
+// heap block instead of crashing outright). Verified instead via a
+// dedicated hand-probe against clarusc only (task-7-report.md has the full
+// emitted-C evidence + rc arithmetic) -- committing it here would make this
+// shared-corpus fixture permanently fail under the compiler CLAUDE.md
+// requires stay frozen.
+//
+// Expected strict-mode leak count: 0 (no ../arc_rec_copy.leaks file --
+// absent defaults to want-0).
+
+record RCItem {
+    name: text = "init"
+    count: int = 0
+}
+
+func makeItem(n: string): RCItem {
+    var r: RCItem
+    r.name = n
+    r.count = 1
+    return r
+}
+
+func passAndReturn(r: RCItem): RCItem {
+    return r
+}
+
+func printName(label: string, r: RCItem) {
+    var buf: char[64]
+    var nb: int
+    var s: string
+
+    nb = r.name.toBytes(buf)
+    s.fromBytes(buf, nb)
+    alert(label + ": " + s)
+}
+
+func runArcRecCopy() {
+    var a: RCItem
+    var b: RCItem
+    var c: RCItem
+    var got: RCItem
+    var popped: RCItem
+    var d: RCItem
+    var lst: list of RCItem
+
+    // Chain of copies: a -> b -> c, each independently owned.
+    a = makeItem("alpha")
+    b = a
+    c = b
+    printName("chain", c)
+
+    // Self-assign must be safe (mandatory temp-copy guard).
+    a = a
+    printName("selfassign", a)
+
+    // Record param passed AND returned.
+    got = passAndReturn(a)
+    printName("passreturn", got)
+
+    // List of records: push, overwrite, pop.
+    lst.push(makeItem("one"))
+    lst.push(makeItem("two"))
+    lst[0] = makeItem("uno")
+    printName("overwrite", lst[0])
+
+    popped = lst.pop()
+    printName("pop", popped)
+
+    // d: a plain record local exercised for site 5 (scope-exit release of
+    // a live-handle record) -- the carry-forward-2 dangling-copy shape
+    // itself (push d, mutate d's own field, read the container's copy
+    // back) is proven via a hand-probe instead (see this file's header
+    // comment for why).
+    d = makeItem("orig")
+    lst.push(d)
+    printName("pushed-d", lst[lst.count - 1])
+
+    // Drain lst back to empty: `.pop()`'s OWN receiver is a PRE-EXISTING,
+    // deliberately-kept escape-walk rule (Task 5 review: "these five
+    // methods [get/first/last/pop/shift] can hand back an ALIAS the
+    // container itself still owns, so don't trust the container's own
+    // deep release regardless") -- lst's OWN scope-exit release is
+    // therefore SHALLOW (container handle only, no element walk), same as
+    // it would be for a list of text/list/map. An empty list leaks
+    // nothing either way, so this fixture proves site 4's push/overwrite/
+    // pop retain-walk correctness without also re-litigating that
+    // pre-existing, out-of-this-task's-scope container-level rule.
+    while lst.count > 0 {
+        popped = lst.pop()
+    }
+
+    alert("done")
+}
