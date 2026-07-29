@@ -5,8 +5,8 @@
 
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
 typedef struct { uint8_t len; uint8_t b[63]; } clar_str_63;
-extern int32_t rt_ext_FileWriteData(void *, rt_text *);
-extern int32_t rt_ext_FileReadTextInto(void *, rt_text *);
+extern int32_t rt_ext_SerFileWriteData(void *, rt_text *);
+extern int32_t rt_ext_SerFileReadTextInto(void *, rt_text *);
 extern void rt_ext_SetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_Panic(const uint8_t *);
 extern int32_t rt_ext_ListCount(void *);
@@ -278,7 +278,7 @@ static int32_t clar_fn_rtFileSave(void * cv_path, int32_t cv_container, void * c
             clar_fn_rtSerSaveMap(cv_out, cv_data, cv_desc, cv_recSize);
         }
     }
-    cv___ret1 = rt_ext_FileWriteData(cv_path, cv_out);
+    cv___ret1 = rt_ext_SerFileWriteData(cv_path, cv_out);
     rt_text_free(cv_out);
     return cv___ret1;
     return 0;
@@ -495,7 +495,7 @@ static int32_t clar_fn_rtFileLoad(void * cv_path, int32_t cv_container, void * c
     }
     cv_rtSerPos = 0;
     cv_rtSerBad = 0;
-    if (rt_ext_FileReadTextInto(cv_path, cv_input) != 1) {
+    if (rt_ext_SerFileReadTextInto(cv_path, cv_input) != 1) {
         cv___ret2 = 0;
         rt_text_free(cv_input);
         return cv___ret2;

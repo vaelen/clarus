@@ -37,6 +37,16 @@ void rt_ext_DisposePtr(void *p) { DisposePtr((Ptr)p); }
 void *rt_ext_HandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t); }
 int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_file_read_text(path, out); }
+/* rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto: ser.cla's own extern
+ * names (Plan 5b Task 7 fix) for the same two primitives above, taking a
+ * `void *path` (ser.cla's rtFileSave/rtFileLoad already hold path as a raw
+ * ptr, not a str to re-marshal) -- kept distinct from rt_ext_FileWriteData/
+ * rt_ext_FileReadTextInto so a user program's own `external func
+ * FileWriteData(path: string, ...)` (testdata/lowlevel/exttext.cla's
+ * shape) can never collide with ser.cla's `path: ptr` declaration of the
+ * same C symbol in one merged translation unit. */
+int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
+int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
 /* rt_set_lasterr takes a NUL-terminated C string (rt_core.inc:19's
  * strlen(msg)); the Clarus-side msg is a str255 ([len][bytes]), so build a
  * NUL-terminated copy here before delegating. */

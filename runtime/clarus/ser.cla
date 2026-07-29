@@ -35,8 +35,19 @@
 // then that many records. MAP: 4-byte BE count then (1 length byte + key
 // bytes + record) entries.
 
-external func FileWriteData(path: ptr, t: text): int
-external func FileReadTextInto(path: ptr, out: text): int
+// SerFileWriteData/SerFileReadTextInto are ser.cla's OWN extern names,
+// distinct from the public FileWriteData/FileReadTextInto (used e.g. by
+// testdata/lowlevel/exttext.cla with `path: string`). rtFileSave/
+// rtFileLoad's `path` is already a raw ptr (the caller's Str255 address,
+// not a str to re-marshal), so declaring it under the SAME name as the
+// public str-typed pair would risk two conflicting `rt_ext_FileWriteData`
+// prototypes in one merged translation unit if a program ever declared
+// its own `external func FileWriteData(path: string, ...)` (a legal Ch13
+// escape hatch) while also calling file.save/load (which pulls ser.cla
+// in) -- irRegisterExtern does no cross-declaration dedup/conflict check.
+// Distinct names sidestep the hazard outright.
+external func SerFileWriteData(path: ptr, t: text): int
+external func SerFileReadTextInto(path: ptr, out: text): int
 external func SetLastErr(code: int, msg: string)
 external func Panic(msg: string)
 external func ListCount(l: ptr): int
@@ -242,7 +253,7 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
         rtSerSaveMap(out, data, desc, recSize)
     }
 
-    return FileWriteData(path, out)
+    return SerFileWriteData(path, out)
 }
 
 // ==================== read ====================
@@ -436,8 +447,8 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
     rtSerPos = 0
     rtSerBad = false
 
-    if FileReadTextInto(path, input) != 1 {
-        return 0 // FileReadTextInto already set lastError
+    if SerFileReadTextInto(path, input) != 1 {
+        return 0 // SerFileReadTextInto already set lastError
     }
 
     b0 = rtSerGetByte(input)
