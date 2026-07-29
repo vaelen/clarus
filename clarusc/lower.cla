@@ -1650,6 +1650,25 @@ func lowIsRecBearing(t: int): bool {
     return false
 }
 
+// lowArrHeapScalarBearing reports whether t is a KArr (any nesting depth)
+// whose innermost element is a directly counted handle
+// (lowEscapeTrackableKind) -- the KArr-of-Text counterpart to
+// lowIsRecBearing's KArr-of-Rec case, kept as its own predicate rather than
+// folded into lowIsRecBearing (whose contract is documented as
+// record-only elsewhere -- see its own doc comment).
+func lowArrHeapScalarBearing(t: int): bool {
+    var et: int
+
+    if irtKind(t) != KArr {
+        return false
+    }
+    et = irtElem(t)
+    if irtKind(et) == KArr {
+        return lowArrHeapScalarBearing(et)
+    }
+    return lowEscapeTrackableKind(irtKind(et))
+}
+
 // lowRecStoreIsBirth (ARC Task 7) is lowStoreIsBirth's RECORD counterpart --
 // deliberately NARROWER than lowStoreIsBirth's own ExCall branch, which
 // trusts ANY call (including a built-in method call like `.first()`/
@@ -1707,15 +1726,16 @@ func lowRecStoreIsBirth(srcAst: int): bool {
 // of trying to zero the whole struct at once (found via a real build
 // failure: `emit_record.cla`'s nested `Address` field assigned `= 0`,
 // `error: assigning to 'clar_rec_...' from incompatible type 'int'` --
-// fixed by recursing here rather than guessing). KArr fields are left
-// alone (a fixed-array field nulling would need a runtime element loop --
-// no corpus fixture nests a ctor-needing array inside a record reaching
-// this path; flag for a future task if one appears). Every other kind
-// (int/bool/fixed/char/enum/Str, and a non-ctor-needing KArr) emits
-// nothing. tail must already be a valid (non -1) statement-chain tail;
-// returns the new tail.
+// fixed by recursing here rather than guessing). A ctor-needing KArr field
+// (ARC fix-wave Task 2, Gap B) recurses per INDEX instead, unrolled at
+// LOWER time since the array's length is a compile-time constant -- same
+// precedent the KRec arm above already establishes for per-field
+// unrolling; mirrors cpEmitRelease/cpEmitRetain's own KArr loop shape in
+// cprint.cla. Every other kind (int/bool/fixed/char/enum/Str, and a
+// non-ctor-needing KArr) emits nothing. tail must already be a valid
+// (non -1) statement-chain tail; returns the new tail.
 //
-// Used ONLY by lowCountedStoreRec's own scratch temp (below): a record
+// Used ONLY by lowCountedStoreRecVal's own scratch temp (below): a record
 // scratch temp is a REUSED C local (declared once, at function-prologue
 // scope, by cpDefaultInit -- same as lowCountedStore's own scalar temp),
 // so the SAME "detach after handoff, so the NEXT run's leading release
@@ -1726,7 +1746,10 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
     var ri: int
     var f: int
     var ft: int
+    var et: int
     var k: IRKind
+    var n: int
+    var ix: int
 
     k = irtKind(t)
     if k == KText or k == KList or k == KMap {
@@ -1748,19 +1771,37 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
                 ri = ri + 1
             }
         }
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            n = irtN(t)
+            ix = 0
+            while ix < n {
+                tail = lowNullValueAppend(tail, newIRIndexRef(dst, newIRIntConst(ix, irIntT), et), et)
+                ix = ix + 1
+            }
+        }
     }
     return tail
 }
 
-// lowCountedStoreRec (ARC Task 7, site 1) is lowCountedStore's KRec branch:
-// a record assignment/declared-initializer/window-var-default store, for a
-// handle-backed record type (lowIsRecBearing already gated this -- an
-// all-scalar record falls straight through to a plain byte-copy, see
-// lowCountedStore's own dispatch). Mandatory temp-copy order (brief's own
-// worked example, picked over the alternative "retain-new-then-release-old
-// on dst directly" ordering scalar handles use): byte-copy src to a
-// scratch temp, retain-walk the TEMP's copy, release-walk dst's OLD value,
-// byte-copy the temp into dst.
+// lowCountedStoreRecVal (ARC Task 7, site 1; extracted for ARC fix-wave
+// Task 2) is lowCountedStoreRec's body, parameterized on an already-lowered
+// src -- extracted so a caller that has ALREADY lowered its source
+// expression (lowIndexAssign's TyArr arm, which lowers x/i/rhs once up
+// front for every branch) can reuse the temp-copy walk order without
+// lowering srcAst a second time (which would re-execute a side-effecting
+// source, e.g. a call, twice at runtime).
+//
+// This is lowCountedStore's KRec sequence: a record assignment/declared-
+// initializer/window-var-default/array-element store, for a handle-backed
+// record type (lowIsRecBearing already gated this -- an all-scalar record
+// falls straight through to a plain byte-copy, see lowCountedStore's own
+// dispatch). Mandatory temp-copy order (brief's own worked example, picked
+// over the alternative "retain-new-then-release-old on dst directly"
+// ordering scalar handles use): byte-copy src to a scratch temp,
+// retain-walk the TEMP's copy, release-walk dst's OLD value, byte-copy the
+// temp into dst.
 //
 // This order is SAFE for self-assign (`r = r`, src and dst the exact same
 // lvalue) where the scalar-handle ordering is NOT: dst's own fields are
@@ -1784,14 +1825,12 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
 // null the temp's handle fields out again AFTER handing them off to dst
 // (lowNullValueAppend), so the temp holds nothing of its own by the
 // time the NEXT run's leading release fires.
-func lowCountedStoreRec(dst: int, srcAst: int, t: int): int {
-    var src: int
+func lowCountedStoreRecVal(dst: int, srcAst: int, src: int, t: int): int {
     var tmpNameIdx: int
     var tmpRef: int
     var head: int
     var tail: int
 
-    src = lowExpr(srcAst)
     tmpNameIdx = lowNewStoreTemp()
     lowAddLocal(tmpNameIdx, t)
     tmpRef = newIRVarRef(tmpNameIdx, false, t)
@@ -1807,13 +1846,34 @@ func lowCountedStoreRec(dst: int, srcAst: int, t: int): int {
     return head
 }
 
-// lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
-// NAMED slot (a local, a global, or a window var's per-instance field --
-// every lowAssign/lowBlock-declared-initializer/window-var-default call
-// site below): [IRetain(src) unless birth] -> IRelease(dst's OLD value) ->
-// the plain store. Non-heap destinations (int/bool/fixed/char/enum/Rec/Str,
-// and a Str<-Str coercion) fall straight through to lowStoreStmt, untouched
-// -- this wrapper only ever adds statements around a Text/List/Map dst.
+// lowCountedStoreRec (ARC Task 7, site 1) is lowCountedStore's KRec branch:
+// a record assignment/declared-initializer/window-var-default store, for a
+// handle-backed record type. Lowers srcAst, then delegates to
+// lowCountedStoreRecVal for the actual temp-copy walk order -- see that
+// function's own doc comment for the mandatory ordering and why it's safe
+// under self-assign.
+func lowCountedStoreRec(dst: int, srcAst: int, t: int): int {
+    var src: int
+
+    src = lowExpr(srcAst)
+    return lowCountedStoreRecVal(dst, srcAst, src, t)
+}
+
+// lowCountedStoreVal (extracted for ARC fix-wave Task 2) is lowCountedStore's
+// body, parameterized on an already-lowered src -- extracted so a caller
+// that has ALREADY lowered its source expression (lowIndexAssign's TyArr
+// arm, which lowers x/i/rhs once up front for every branch) can reuse the
+// retain/release sequence without lowering srcAst a second time (which
+// would re-execute a side-effecting source, e.g. a call, twice at runtime).
+// Callable only for a heap-scalar (Text/List/Map) t -- lowCountedStore's own
+// lowIsRecBearing/lowEscapeTrackableKind gates (below) stay in that thin
+// wrapper, before src is computed, since a record destination or a plain
+// scalar destination never reaches this sequence at all.
+//
+// This is the ARC Task 4 store sequence for a heap-typed store to a NAMED
+// slot (a local, a global, a window var's per-instance field, or -- as of
+// ARC fix-wave Task 2 -- a fixed-array element): [IRetain(src) unless
+// birth] -> IRelease(dst's OLD value) -> the plain store.
 //
 // Order is load-bearing: retaining the NEW value BEFORE releasing the OLD
 // one is what makes a self-assign (`a = a`) safe -- src and dst can be the
@@ -1833,39 +1893,20 @@ func lowCountedStoreRec(dst: int, srcAst: int, t: int): int {
 // mutates dst's CURRENT box, unsafe whenever dst might be aliased).
 //
 // dst is the CALLER's already-lowered destination ref (reused directly for
-// both the release-old and the store's own LHS -- a bare EVarRef or the
+// both the release-old and the store's own LHS -- a bare EVarRef, the
 // EFieldRef-over-IUiState shape lowBareWindowMemberRef/lowWindowInstSelect
-// build for a window var, both pure, side-effect-free lvalue address
-// computations, safe to re-emit). srcAst is the UN-lowered source
-// expression -- lowStoreIsBirth needs the AST shape, and lowExpr must run
-// exactly once regardless of how many statements the wrapper below emits.
-func lowCountedStore(dst: int, srcAst: int, t: int): int {
-    var src: int
+// build for a window var, or an EIndexRef for an array element, all pure,
+// side-effect-free lvalue address computations, safe to re-emit). srcAst is
+// the UN-lowered source expression -- lowStoreIsBirth needs the AST shape;
+// src is srcAst already lowered exactly once by the caller.
+func lowCountedStoreVal(dst: int, srcAst: int, src: int, t: int): int {
     var isBirth: bool
     var srcUsed: int
     var tmpNameIdx: int
     var head: int
     var tail: int
 
-    // ARC Task 7 site 1 (+ window-var defaults, which route through this
-    // SAME funnel -- lowWinVarDefaultsStmts): a record destination gets its
-    // OWN dedicated sequence (lowCountedStoreRec), never the Text/List/Map
-    // logic below (a record is a by-value C struct copy, not a single
-    // pointer swap -- the self-assign safety argument is different, see
-    // that function's own doc comment). lowIsRecBearing already excludes an
-    // all-scalar record (no rc traffic needed at all -- falls through to
-    // the ordinary lowEscapeTrackableKind bypass below, an unconditional
-    // plain byte-copy, unchanged from before this task).
-    if lowIsRecBearing(t) {
-        return lowCountedStoreRec(dst, srcAst, t)
-    }
-
-    if not lowEscapeTrackableKind(irtKind(t)) {
-        return lowStoreStmt(dst, lowExpr(srcAst), t)
-    }
-
     tmpNameIdx = -1
-    src = lowExpr(srcAst)
     isBirth = lowStoreIsBirth(srcAst) or lowStoreIntrOwnsResult(src)
     if irtKind(t) == KText and irtKind(irExprType(src)) == KStr {
         // A Text destination fed by a Str source: NEVER lowStoreStmt's own
@@ -1977,6 +2018,42 @@ func lowCountedStore(dst: int, srcAst: int, t: int): int {
         irStmtListAppend(tail, newIRAssign(newIRVarRef(tmpNameIdx, false, t), newIRIntConst(0, t)))
     }
     return head
+}
+
+// lowCountedStore is the ARC Task 4 store funnel for a heap-typed store to a
+// NAMED slot (a local, a global, or a window var's per-instance field --
+// every lowAssign/lowBlock-declared-initializer/window-var-default call
+// site below). Lowers srcAst, then delegates to lowCountedStoreVal for the
+// actual retain/release sequence -- see that function's own doc comment for
+// the algorithm. The lowIsRecBearing/lowEscapeTrackableKind gates stay here,
+// BEFORE src is computed: a record destination gets its own dedicated
+// sequence (lowCountedStoreRec, a by-value C struct copy, not a single
+// pointer swap -- the self-assign safety argument is different, see that
+// function's own doc comment); a plain scalar destination (int/bool/fixed/
+// char/enum/Rec-with-no-handle-fields/Str) needs no rc traffic at all and
+// falls straight through to lowStoreStmt, unchanged from before this task.
+func lowCountedStore(dst: int, srcAst: int, t: int): int {
+    var src: int
+
+    // ARC Task 7 site 1 (+ window-var defaults, which route through this
+    // SAME funnel -- lowWinVarDefaultsStmts): a record destination gets its
+    // OWN dedicated sequence (lowCountedStoreRec), never the Text/List/Map
+    // logic below (a record is a by-value C struct copy, not a single
+    // pointer swap -- the self-assign safety argument is different, see
+    // that function's own doc comment). lowIsRecBearing already excludes an
+    // all-scalar record (no rc traffic needed at all -- falls through to
+    // the ordinary lowEscapeTrackableKind bypass below, an unconditional
+    // plain byte-copy, unchanged from before this task).
+    if lowIsRecBearing(t) {
+        return lowCountedStoreRec(dst, srcAst, t)
+    }
+
+    if not lowEscapeTrackableKind(irtKind(t)) {
+        return lowStoreStmt(dst, lowExpr(srcAst), t)
+    }
+
+    src = lowExpr(srcAst)
+    return lowCountedStoreVal(dst, srcAst, src, t)
 }
 
 // lowStmt lowers one statement, returning its irStmts index, or -1 for a
@@ -2292,14 +2369,16 @@ func lowEscapeTrackableKind(k: IRKind): bool {
 }
 
 // lowCollectScopeExitCandidates (ARC Task 4, generalized Task 8) adds
-// every body-top local of a counted kind (lowEscapeTrackableKind) or a
-// handle-backed record/array-of-records (lowIsRecBearing) to
-// lowFreeNames/lowFreeTypes -- bodyBlk's OWN vars list only (a function/
-// handler body's top-level `var`s; a nested block never declares any,
-// Ch4). Every candidate releases unconditionally at scope exit
-// (lowBuildScopeExitFrees) regardless of how it was initialized or what
-// it was later handed to -- see this section's own header comment for why
-// that's sound.
+// every body-top local of a counted kind (lowEscapeTrackableKind), a
+// handle-backed record/array-of-records (lowIsRecBearing), or a
+// heap-scalar array (lowArrHeapScalarBearing -- ARC fix-wave Task 2, Gap A:
+// a `text[n]` local otherwise matched NEITHER predicate and was silently
+// never released) to lowFreeNames/lowFreeTypes -- bodyBlk's OWN vars list
+// only (a function/handler body's top-level `var`s; a nested block never
+// declares any, Ch4). Every candidate releases unconditionally at scope
+// exit (lowBuildScopeExitFrees) regardless of how it was initialized or
+// what it was later handed to -- see this section's own header comment for
+// why that's sound.
 func lowCollectScopeExitCandidates(bodyBlk: int) {
     var v: int
     var t: int
@@ -2308,7 +2387,7 @@ func lowCollectScopeExitCandidates(bodyBlk: int) {
     v = blockVarsHead(bodyBlk)
     while v != -1 {
         t = lowResolveType(varDeclType(v))
-        if lowEscapeTrackableKind(irtKind(t)) or lowIsRecBearing(t) {
+        if lowEscapeTrackableKind(irtKind(t)) or lowIsRecBearing(t) or lowArrHeapScalarBearing(t) {
             nm = poolGet(varDeclName(v))
             lowFreeNames.add(nm)
             lowFreeTypes[nm] = t
@@ -2358,7 +2437,12 @@ func lowBuildScopeExitFrees(): int {
     tail = -1
     for nm in lowFreeNames {
         t = lowFreeTypes.get(nm, -1)
-        if lowIsRecBearing(t) {
+        if lowIsRecBearing(t) or lowArrHeapScalarBearing(t) {
+            // ARC fix-wave Task 2, Gap A: a heap-scalar array (e.g.
+            // text[n]) routes through IRelease -- its printer arm recurses
+            // correctly into any KArr's .e[n] slots -- never through the
+            // Text/List/Map-only I*FreeVar intrinsics below, which don't
+            // know how to address an array at all.
             intrName = IRelease()
         } else {
             intrName = ITextFreeVar()
@@ -2816,7 +2900,19 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
     i = lowExpr(indexI(lhs))
     rhs = lowExpr(rhsAst)
     if xk == TyArr {
+        // ARC fix-wave Task 2, Part 1: a fixed array has no rc of its own,
+        // but each SLOT does when the element type is heap-bearing -- x/i/
+        // rhs are already lowered above (reused here, never re-lowered, so
+        // a side-effecting rhs never runs twice). Mirrors lowCountedStore's
+        // own top-level dispatch (lowIsRecBearing / lowEscapeTrackableKind),
+        // just against the pre-lowered rhs via the *Val extractions instead
+        // of re-lowering rhsAst.
         elemTy = lowMustType(lhs)
+        if lowIsRecBearing(elemTy) {
+            return lowCountedStoreRecVal(newIRIndexRef(x, i, elemTy), rhsAst, rhs, elemTy)
+        } else if lowEscapeTrackableKind(irtKind(elemTy)) {
+            return lowCountedStoreVal(newIRIndexRef(x, i, elemTy), rhsAst, rhs, elemTy)
+        }
         return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
     } else if xk == TyList {
         elemTy = lowMustType(lhs)

@@ -3311,9 +3311,12 @@ static int32_t clar_fn_lowStoreIsBirth(int32_t cv_srcAst);
 static int32_t clar_fn_lowStoreIntrOwnsResult(int32_t cv_src);
 static int32_t clar_fn_lowElemIsBirth(int32_t cv_srcAst, int32_t cv_rawSrc, int32_t cv_elemT);
 static int32_t clar_fn_lowIsRecBearing(int32_t cv_t);
+static int32_t clar_fn_lowArrHeapScalarBearing(int32_t cv_t);
 static int32_t clar_fn_lowRecStoreIsBirth(int32_t cv_srcAst);
 static int32_t clar_fn_lowNullValueAppend(int32_t cv_tail, int32_t cv_dst, int32_t cv_t);
+static int32_t clar_fn_lowCountedStoreRecVal(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_src, int32_t cv_t);
 static int32_t clar_fn_lowCountedStoreRec(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t);
+static int32_t clar_fn_lowCountedStoreVal(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_src, int32_t cv_t);
 static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t);
 static int32_t clar_fn_lowStmt(int32_t cv_s);
 static int32_t clar_fn_lowEditEmit(int32_t cv_winNameIdx, int32_t cv_kind, int32_t cv_opA, int32_t cv_opB);
@@ -17758,6 +17761,20 @@ static int32_t clar_fn_lowIsRecBearing(int32_t cv_t) {
     return 0;
 }
 
+static int32_t clar_fn_lowArrHeapScalarBearing(int32_t cv_t) {
+    int32_t cv_et;
+    cv_et = 0;
+    if (clar_fn_irtKind(cv_t) != 11) {
+        return 0;
+    }
+    cv_et = clar_fn_irtElem(cv_t);
+    if (clar_fn_irtKind(cv_et) == 11) {
+        return clar_fn_lowArrHeapScalarBearing(cv_et);
+    }
+    return clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_et));
+    return 0;
+}
+
 static int32_t clar_fn_lowRecStoreIsBirth(int32_t cv_srcAst) {
     int32_t cv_fn;
     cv_fn = 0;
@@ -17787,8 +17804,14 @@ static int32_t clar_fn_lowNullValueAppend(int32_t cv_tail, int32_t cv_dst, int32
     cv_f = 0;
     int32_t cv_ft;
     cv_ft = 0;
+    int32_t cv_et;
+    cv_et = 0;
     int32_t cv_k;
     cv_k = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_ix;
+    cv_ix = 0;
     cv_k = clar_fn_irtKind(cv_t);
     if (((cv_k == 6) || (cv_k == 7)) || (cv_k == 8)) {
         cv_tail = clar_fn_irStmtListAppend(cv_tail, clar_fn_newIRAssign(cv_dst, clar_fn_newIRIntConst(0, cv_t)));
@@ -17812,15 +17835,26 @@ static int32_t clar_fn_lowNullValueAppend(int32_t cv_tail, int32_t cv_dst, int32
                     cv_ri = (cv_ri + 1);
                 }
             }
+        } else {
+            if (cv_k == 11) {
+                cv_et = clar_fn_irtElem(cv_t);
+                if (clar_fn_irtNeedsCtor(cv_et)) {
+                    cv_n = clar_fn_irtN(cv_t);
+                    cv_ix = 0;
+                    while (1) {
+                        if (!((cv_ix < cv_n))) break;
+                        cv_tail = clar_fn_lowNullValueAppend(cv_tail, clar_fn_newIRIndexRef(cv_dst, clar_fn_newIRIntConst(cv_ix, cv_irIntT), cv_et), cv_et);
+                        cv_ix = (cv_ix + 1);
+                    }
+                }
+            }
         }
     }
     return cv_tail;
     return 0;
 }
 
-static int32_t clar_fn_lowCountedStoreRec(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t) {
-    int32_t cv_src;
-    cv_src = 0;
+static int32_t clar_fn_lowCountedStoreRecVal(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_src, int32_t cv_t) {
     int32_t cv_tmpNameIdx;
     cv_tmpNameIdx = 0;
     int32_t cv_tmpRef;
@@ -17829,7 +17863,6 @@ static int32_t clar_fn_lowCountedStoreRec(int32_t cv_dst, int32_t cv_srcAst, int
     cv_head = 0;
     int32_t cv_tail;
     cv_tail = 0;
-    cv_src = clar_fn_lowExpr(cv_srcAst);
     cv_tmpNameIdx = clar_fn_lowNewStoreTemp();
     clar_fn_lowAddLocal(cv_tmpNameIdx, cv_t);
     cv_tmpRef = clar_fn_newIRVarRef(cv_tmpNameIdx, 0, cv_t);
@@ -17845,9 +17878,15 @@ static int32_t clar_fn_lowCountedStoreRec(int32_t cv_dst, int32_t cv_srcAst, int
     return 0;
 }
 
-static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t) {
+static int32_t clar_fn_lowCountedStoreRec(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t) {
     int32_t cv_src;
     cv_src = 0;
+    cv_src = clar_fn_lowExpr(cv_srcAst);
+    return clar_fn_lowCountedStoreRecVal(cv_dst, cv_srcAst, cv_src, cv_t);
+    return 0;
+}
+
+static int32_t clar_fn_lowCountedStoreVal(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_src, int32_t cv_t) {
     int32_t cv_isBirth;
     cv_isBirth = 0;
     int32_t cv_srcUsed;
@@ -17858,14 +17897,7 @@ static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_
     cv_head = 0;
     int32_t cv_tail;
     cv_tail = 0;
-    if (clar_fn_lowIsRecBearing(cv_t)) {
-        return clar_fn_lowCountedStoreRec(cv_dst, cv_srcAst, cv_t);
-    }
-    if (!(clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_t)))) {
-        return clar_fn_lowStoreStmt(cv_dst, clar_fn_lowExpr(cv_srcAst), cv_t);
-    }
     cv_tmpNameIdx = (-(1));
-    cv_src = clar_fn_lowExpr(cv_srcAst);
     cv_isBirth = (clar_fn_lowStoreIsBirth(cv_srcAst) || clar_fn_lowStoreIntrOwnsResult(cv_src));
     if ((clar_fn_irtKind(cv_t) == 6) && (clar_fn_irtKind(clar_fn_irExprType(cv_src)) == 5)) {
         cv_src = clar_fn_lowCoerceStr(cv_t, cv_src);
@@ -17896,6 +17928,20 @@ static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_
         clar_fn_irStmtListAppend(cv_tail, clar_fn_newIRAssign(clar_fn_newIRVarRef(cv_tmpNameIdx, 0, cv_t), clar_fn_newIRIntConst(0, cv_t)));
     }
     return cv_head;
+    return 0;
+}
+
+static int32_t clar_fn_lowCountedStore(int32_t cv_dst, int32_t cv_srcAst, int32_t cv_t) {
+    int32_t cv_src;
+    cv_src = 0;
+    if (clar_fn_lowIsRecBearing(cv_t)) {
+        return clar_fn_lowCountedStoreRec(cv_dst, cv_srcAst, cv_t);
+    }
+    if (!(clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_t)))) {
+        return clar_fn_lowStoreStmt(cv_dst, clar_fn_lowExpr(cv_srcAst), cv_t);
+    }
+    cv_src = clar_fn_lowExpr(cv_srcAst);
+    return clar_fn_lowCountedStoreVal(cv_dst, cv_srcAst, cv_src, cv_t);
     return 0;
 }
 
@@ -18107,7 +18153,7 @@ static void clar_fn_lowCollectScopeExitCandidates(int32_t cv_bodyBlk) {
     while (1) {
         if (!((cv_v != (-(1))))) break;
         cv_t = clar_fn_lowResolveType(clar_fn_varDeclType(cv_v));
-        if (clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_t)) || clar_fn_lowIsRecBearing(cv_t)) {
+        if ((clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_t)) || clar_fn_lowIsRecBearing(cv_t)) || clar_fn_lowArrHeapScalarBearing(cv_t)) {
             clar_str_255 t1;
             t1 = clar_fn_poolGet(clar_fn_varDeclName(cv_v));
             rt_str_store((uint8_t*)&(cv_nm), 255, (const uint8_t*)&(t1));
@@ -18159,7 +18205,7 @@ static int32_t clar_fn_lowBuildScopeExitFrees(void) {
         t4 = (-(1));
         rt_map_get_dv(cv_lowFreeTypes, (const uint8_t*)&(cv_nm), &t4);
         cv_t = t4;
-        if (clar_fn_lowIsRecBearing(cv_t)) {
+        if (clar_fn_lowIsRecBearing(cv_t) || clar_fn_lowArrHeapScalarBearing(cv_t)) {
             cv_intrName = clar_fn_IRelease();
         } else {
             cv_intrName = clar_fn_ITextFreeVar();
@@ -18529,6 +18575,13 @@ static int32_t clar_fn_lowIndexAssign(int32_t cv_lhs, int32_t cv_rhsAst) {
     cv_rhs = clar_fn_lowExpr(cv_rhsAst);
     if (cv_xk == 9) {
         cv_elemTy = clar_fn_lowMustType(cv_lhs);
+        if (clar_fn_lowIsRecBearing(cv_elemTy)) {
+            return clar_fn_lowCountedStoreRecVal(clar_fn_newIRIndexRef(cv_x, cv_i, cv_elemTy), cv_rhsAst, cv_rhs, cv_elemTy);
+        } else {
+            if (clar_fn_lowEscapeTrackableKind(clar_fn_irtKind(cv_elemTy))) {
+                return clar_fn_lowCountedStoreVal(clar_fn_newIRIndexRef(cv_x, cv_i, cv_elemTy), cv_rhsAst, cv_rhs, cv_elemTy);
+            }
+        }
         return clar_fn_lowStoreStmt(clar_fn_newIRIndexRef(cv_x, cv_i, cv_elemTy), cv_rhs, cv_elemTy);
     } else {
         if (cv_xk == 10) {
