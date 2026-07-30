@@ -1,0 +1,390 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// map.cla: the ported Map family (Plan 5b "Stage B/D" Task 11, runtime-
+// migration-wave1, the LAST family port of the wave). Replaces
+// internal/build/rt/rt_core.inc's rt_map_* functions (struct rt_map
+// ~:582-590, map_lower_bound/map_find ~:608-643, functions through ~:760)
+// for every emitted program -- like str.cla (Task 8), text.cla (Task 9),
+// and list.cla (Task 10), this module is UNCONDITIONAL: main.cla's manifest
+// always includes it, spliced AFTER list.cla (head-splice order:
+// declare-before-use across runtime modules -- map.cla calls str.cla's
+// rtStrCmp directly, str.cla precedes it in the splice), and cpMapPorted
+// (cprint.cla) is set true unconditionally alongside that, same convention
+// cpStrPorted/cpTextPorted/cpListPorted established. Ported EXACTLY against
+// rt_core.inc:582-760, function by function; each function's doc comment
+// below cites its own line range.
+//
+// Map layout (Ch5, rt_core.inc:582-590): `struct rt_map { int32_t rc;
+// Handle keys; Handle vals; int32_t valsize; int32_t count; int32_t cap;
+// int32_t valcap; }` -- a fixed-size box (never relocated: NewPtr in
+// rt_map_new) holding an rc, TWO independent relocatable Handles (keys and
+// vals, grown and moved independently -- see Relocation discipline below),
+// the fixed value size (needed at runtime since a Clarus Map's value type is
+// monomorphic per map but this struct is untyped), the live entry count,
+// and each Handle's own capacity in entries (cap for keys, valcap for
+// vals). RtMap (below) is an `overlay record` view of that exact layout
+// (Ch13: Overlay Records) -- rt_core.inc carries a byte-for-byte layout
+// guard (the rt_map_layout_check typedef, right after struct rt_map's own
+// definition, same placement/reasoning as rt_list_layout_check/
+// rt_text_layout_check) so this overlay and the real C struct can never
+// drift.
+//
+// Sorted parallel arrays (rt_core.inc:591-598 comment): `keys` holds
+// `count` fixed 256-byte (MAP_KEYBLOCK) Str255 key blocks and `vals` holds
+// `count` fixed-`valsize` values, index-aligned with `keys`. Entries stay
+// in ascending key order (rtStrCmp, byte-wise, str.cla Task 8): every
+// lookup is a binary search (mapLowerBound/mapFind below -- EXACT port of
+// map_lower_bound/map_find, rt_core.inc:608-643, off-by-one here would
+// corrupt every map), insertion opens the sorted position in both arrays,
+// removal compacts them. Iteration (rtMapKeyAt/rtMapValAt) walks the arrays
+// directly, delivering the same ascending-key snapshot order the CLRD
+// goldens depend on.
+//
+// RC boundary (READ-NEVER-WRITTEN, no exceptions): this module never writes
+// `.rc`. Birth allocation goes through MapNewRaw, an external delegating to
+// the C rt_map_new -- every rc byte stays entirely C-owned, written only by
+// that one C function (rc=1 at construction) and by rt_map_retain/
+// rt_map_release (cprint.cla's IRetain/IRelease arm, still bare C calls --
+// untouched by this task). cpEmitRelease's map element-release walk
+// (rt_core.inc-side `rt_map_val_at` call it emits) STAYS entirely C
+// wholesale, per the RC rule threading through Map the same way it does
+// List/Text -- the C `rt_map_val_at` remains linked for exactly this,
+// alongside IMapFreeVar and every fpHeapFn-composed retain/release. Inside
+// fpMapReleaseGuard specifically: the guard's own `rt_map_has`/`rt_map_get`
+// calls DO redirect (has/get are ported), but the `_release` call the guard
+// emits for the evicted old value stays bare C -- a subtle split within one
+// guard, documented at its call site in cprint.cla.
+//
+// Relocation discipline: `keys` and `vals` are SEPARATE Handles, grown and
+// potentially moved independently (rtMapGrowKeys/rtMapGrowVals below, each
+// a standalone amortized-doubling grower over its own Handle/cap field,
+// mirroring rt_core_grow specialized per-array exactly as the C reference's
+// two back-to-back rt_core_grow calls in rt_map_set do). Every access to a
+// key or value slot goes through mapKeySlot/mapValSlot, which re-derive the
+// Handle's master pointer via MapHandleDeref on EVERY call (no caching of a
+// dereferenced pointer across any call that can allocate/move memory) --
+// exactly mirroring the C reference's own map_key_slot/map_val_slot, which
+// dereference `*m->keys`/`*m->vals` fresh on every call too. The paranoid
+// allocator (CLARUS_MEM_PARANOID) catches violations of this rule in the
+// leak-gated test runs. Key/value block moves go through MapBlockMoveData
+// (a BlockMoveData/memmove, not memcpy) with source/destination ranges
+// computed from freshly-derived slot pointers -- correct for the
+// same-handle overlapping shift ranges insert/remove both use, exactly
+// matching the C reference's own direct BlockMoveData calls.
+//
+// Behavior contract (brief): matches the C reference exactly. `get` on an
+// absent key panics ("map key not found", rt_core.inc:670-676); `get_dv`
+// returns false (out untouched) on absent, true (out filled) on present;
+// `remove` is silent on an absent key (language reference: "silently
+// succeeds if absent"); `key_at`/`val_at` panic ("map key not found",
+// same message the C reference reuses) on an out-of-range index; `clear`
+// resets count to 0, keeping capacity (rt_core.inc:724, ported for
+// interface parity with the C reference, same as rtListClear -- no
+// `IMapClear` intrinsic exists in cprint.cla's fpIntrCall dispatch today,
+// so this function is currently unreachable from any emitted program).
+//
+// MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/MapNewRaw are
+// map.cla's OWN extern names, distinct from the public HandleDeref/
+// BlockMoveData/Panic/NewRaw names str.cla/text.cla/list.cla/ser.cla and
+// any user program might also declare -- same collision hazard those
+// modules' own header comments document (checkFuncSig -> scopeDeclare keys
+// purely on name, no signature comparison), and the same fix: distinct
+// Map-prefixed names sidestep it. Each is backed by an rt_ext_Map* wrapper
+// in BOTH internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// delegating to the same underlying primitives the generic/List wrappers
+// already call. MapNewRaw delegates the WHOLE construction (box alloc +
+// two NewHandle(0) calls + rc=1 + valsize/count/cap/valcap init) to the C
+// rt_map_new -- same "external delegation" birth-allocation choice Task 9
+// (Text) and Task 10 (List) made, same rationale (rc written exactly once,
+// entirely in C).
+external func MapHandleDeref(h: ptr): ptr
+external func MapSetHandleSize(h: ptr, n: int): int
+external func MapBlockMoveData(src: ptr, dst: ptr, count: int)
+external func MapPanic(msg: string)
+external func MapNewRaw(valsize: int): ptr
+
+// MAP_KEYBLOCK (rt_core.inc:601, `#define MAP_KEYBLOCK 256`): fixed byte
+// width of one key slot -- a full Str255 block (1-byte length + up to 255
+// content bytes), regardless of the actual key's length.
+const MAP_KEYBLOCK: int = 256
+
+// RtMap (Ch13: Overlay Records) mirrors rt_core.inc:582-590's `struct
+// rt_map { int32_t rc; Handle keys; Handle vals; int32_t valsize;
+// int32_t count; int32_t cap; int32_t valcap; }` field-for-field --
+// rt_core.inc's rt_map_layout_check typedef guards this layout stays exact.
+overlay record RtMap {
+    rc: int
+    keys: ptr
+    vals: ptr
+    valsize: int
+    count: int
+    cap: int
+    valcap: int
+}
+
+// mapKeySlot (rt_core.inc:612-615, `map_key_slot`): the address of key
+// entry i -- derives the keys Handle's master pointer fresh on every call
+// (relocation discipline, module header comment above).
+func mapKeySlot(m: ptr, i: int): ptr {
+    return MapHandleDeref(RtMap(m).keys) + i * MAP_KEYBLOCK
+}
+
+// mapValSlot (rt_core.inc:617-620, `map_val_slot`): the address of value
+// entry i -- derives the vals Handle's master pointer fresh on every call,
+// same reasoning as mapKeySlot above.
+func mapValSlot(m: ptr, i: int): ptr {
+    return MapHandleDeref(RtMap(m).vals) + i * RtMap(m).valsize
+}
+
+// mapLowerBound (rt_core.inc:623-637, `map_lower_bound`): binary search for
+// the smallest index whose key is >= `key` (lower bound). EXACT port of the
+// C reference's loop arithmetic (lo=0, hi=count, mid=lo+(hi-lo)/2, < moves
+// lo up, >= moves hi down) -- off-by-one here corrupts every map. The C
+// reference bundles the found-flag into this same function via an out
+// parameter; this port splits that off into mapKeyEq (below), called
+// separately by mapFind/rtMapSet -- an equivalent, not identical,
+// structure: same total work (one binary search, one extra rtStrCmp to
+// settle "found"), same result, no `int *found` out-parameter needed.
+func mapLowerBound(m: ptr, key: ptr): int {
+    var count: int
+    var lo: int
+    var hi: int
+    var mid: int
+
+    count = RtMap(m).count
+    lo = 0
+    hi = count
+    while lo < hi {
+        mid = lo + (hi - lo) / 2
+        if rtStrCmp(mapKeySlot(m, mid), key) < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return lo
+}
+
+// mapKeyEq reports whether entry pos exists and holds exactly `key` --
+// together with mapLowerBound above, exactly reproduces map_lower_bound's
+// own `*found = lo < m->count && rt_str_cmp(map_key_slot(m, lo), key) == 0`
+// (rt_core.inc:636).
+func mapKeyEq(m: ptr, pos: int, key: ptr): bool {
+    return pos < RtMap(m).count and rtStrCmp(mapKeySlot(m, pos), key) == 0
+}
+
+// mapFind (rt_core.inc:639-643, `map_find`): the found index, or -1 if
+// absent -- an exact port, delegating to mapLowerBound + mapKeyEq exactly
+// as the C reference delegates to map_lower_bound + its found out-param.
+func mapFind(m: ptr, key: ptr): int {
+    var pos: int
+
+    pos = mapLowerBound(m, key)
+    if mapKeyEq(m, pos, key) {
+        return pos
+    }
+    return -1
+}
+
+// rtMapGrowKeys (rt_core.inc:243-255's rt_core_grow, specialized to the
+// keys Handle/cap field -- the first of rt_map_set's two back-to-back grow
+// calls, rt_core.inc:676-677): doubles cap (from 4 if currently empty)
+// until it covers `need`, then MapSetHandleSize once (in bytes,
+// newcap*MAP_KEYBLOCK). Callers that hold a master pointer derived before
+// calling this MUST re-derive it afterward -- growth can move the block
+// (relocation discipline, module header comment above; mapKeySlot already
+// does this on every call, so ordinary callers need not think about it).
+func rtMapGrowKeys(m: ptr, need: int) {
+    var rm: RtMap
+    var cap: int
+    var newcap: int
+    var err: int
+
+    rm = RtMap(m)
+    cap = rm.cap
+    if need <= cap {
+        return
+    }
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = MapSetHandleSize(rm.keys, newcap * MAP_KEYBLOCK)
+    if err != 0 {
+        MapPanic("out of memory")
+    }
+    rm.cap = newcap
+}
+
+// rtMapGrowVals: the second of rt_map_set's two back-to-back grow calls
+// (rt_core.inc:677), specialized to the vals Handle/valcap field/per-map
+// valsize -- otherwise identical in structure to rtMapGrowKeys above.
+func rtMapGrowVals(m: ptr, need: int) {
+    var rm: RtMap
+    var cap: int
+    var newcap: int
+    var valsize: int
+    var err: int
+
+    rm = RtMap(m)
+    cap = rm.valcap
+    if need <= cap {
+        return
+    }
+    valsize = rm.valsize
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = MapSetHandleSize(rm.vals, newcap * valsize)
+    if err != 0 {
+        MapPanic("out of memory")
+    }
+    rm.valcap = newcap
+}
+
+// rtMapNew (rt_core.inc:598-611): just the external delegation -- see
+// MapNewRaw's own doc comment above.
+func rtMapNew(valsize: int): ptr {
+    return MapNewRaw(valsize)
+}
+
+// rtMapSet (rt_core.inc:666-689, `rt_map_set`): upsert. On a match,
+// overwrites the existing value in place (no growth, no shift). On a miss,
+// grows both arrays for one more entry, shifts the tail (everything at or
+// after `pos`) up by one slot in both arrays (skipped when pos is already
+// count, matching the C reference's own `if (tail > 0)` guard), writes the
+// new key's length byte + content bytes (peekb/pokeb, str.cla Task 8
+// convention -- MapBlockMoveData copies only `klen` content bytes, NOT the
+// whole MAP_KEYBLOCK slot, exactly matching rt_map_set's own
+// `BlockMoveData(key + 1, kslot + 1, klen)`), writes the value, then
+// increments count.
+func rtMapSet(m: ptr, key: ptr, val: ptr) {
+    var rm: RtMap
+    var pos: int
+    var tail: int
+    var klen: int
+    var kslot: ptr
+
+    rm = RtMap(m)
+    pos = mapLowerBound(m, key)
+    if mapKeyEq(m, pos, key) {
+        MapBlockMoveData(val, mapValSlot(m, pos), rm.valsize)
+        return
+    }
+    rtMapGrowKeys(m, rm.count + 1)
+    rtMapGrowVals(m, rm.count + 1)
+    tail = rm.count - pos
+    if tail > 0 {
+        MapBlockMoveData(mapKeySlot(m, pos), mapKeySlot(m, pos + 1), tail * MAP_KEYBLOCK)
+        MapBlockMoveData(mapValSlot(m, pos), mapValSlot(m, pos + 1), tail * rm.valsize)
+    }
+    klen = peekb(key)
+    kslot = mapKeySlot(m, pos)
+    pokeb(kslot, klen)
+    MapBlockMoveData(key + 1, kslot + 1, klen)
+    MapBlockMoveData(val, mapValSlot(m, pos), rm.valsize)
+    rm.count = rm.count + 1
+}
+
+// rtMapGet (rt_core.inc:691-696, `rt_map_get`): panics ("map key not
+// found") on an absent key -- never a sentinel return, matching the
+// behavior contract exactly.
+func rtMapGet(m: ptr, key: ptr, out: ptr) {
+    var idx: int
+
+    idx = mapFind(m, key)
+    if idx < 0 {
+        MapPanic("map key not found")
+    }
+    MapBlockMoveData(mapValSlot(m, idx), out, RtMap(m).valsize)
+}
+
+// rtMapGetDv (rt_core.inc:698-705, `rt_map_get_dv`): returns false and
+// leaves `out` untouched on an absent key; returns true and fills `out` on
+// present.
+func rtMapGetDv(m: ptr, key: ptr, out: ptr): bool {
+    var idx: int
+
+    idx = mapFind(m, key)
+    if idx < 0 {
+        return false
+    }
+    MapBlockMoveData(mapValSlot(m, idx), out, RtMap(m).valsize)
+    return true
+}
+
+// rtMapHas (rt_core.inc:707-710, `rt_map_has`).
+func rtMapHas(m: ptr, key: ptr): bool {
+    return mapFind(m, key) >= 0
+}
+
+// rtMapRemove (rt_core.inc:712-722, `rt_map_remove`): silent on an absent
+// key (language reference: "silently succeeds if absent"). On a match,
+// compacts the tail (everything after `idx`) down by one slot in both
+// arrays (skipped when idx was the last entry), then decrements count.
+func rtMapRemove(m: ptr, key: ptr) {
+    var rm: RtMap
+    var idx: int
+    var tail: int
+
+    idx = mapFind(m, key)
+    if idx < 0 {
+        return
+    }
+    rm = RtMap(m)
+    tail = rm.count - 1 - idx
+    if tail > 0 {
+        MapBlockMoveData(mapKeySlot(m, idx + 1), mapKeySlot(m, idx), tail * MAP_KEYBLOCK)
+        MapBlockMoveData(mapValSlot(m, idx + 1), mapValSlot(m, idx), tail * rm.valsize)
+    }
+    rm.count = rm.count - 1
+}
+
+// rtMapCount (rt_core.inc:724).
+func rtMapCount(m: ptr): int {
+    return RtMap(m).count
+}
+
+// rtMapClear (rt_core.inc:733, `rt_map_clear`): count = 0, capacity kept --
+// ported for interface parity with the C reference (no `IMapClear`
+// intrinsic exists in cprint.cla's fpIntrCall dispatch today, so this
+// function is currently unreachable from any emitted program, same as
+// rtListClear/rtTextStoreText); kept in case a future Map method routes
+// here rather than silently dropped.
+func rtMapClear(m: ptr) {
+    var rm: RtMap
+
+    rm = RtMap(m)
+    rm.count = 0
+}
+
+// rtMapKeyAt (rt_core.inc:735-739, `rt_map_key_at`): panics ("map key not
+// found", the same message the C reference reuses for this out-of-range
+// case) on an out-of-range index. Copies the FULL MAP_KEYBLOCK-byte slot
+// (a whole Str255 block) into key255 -- fpForMapStmt's own call site
+// passes the address of a `cv_<name>` Str255-typed loop variable.
+func rtMapKeyAt(m: ptr, i: int, key255: ptr) {
+    if i < 0 or i >= RtMap(m).count {
+        MapPanic("map key not found")
+    }
+    MapBlockMoveData(mapKeySlot(m, i), key255, MAP_KEYBLOCK)
+}
+
+// rtMapValAt (rt_core.inc:741-745, `rt_map_val_at`): same out-of-range
+// contract as rtMapKeyAt above.
+func rtMapValAt(m: ptr, i: int, out: ptr) {
+    if i < 0 or i >= RtMap(m).count {
+        MapPanic("map key not found")
+    }
+    MapBlockMoveData(mapValSlot(m, i), out, RtMap(m).valsize)
+}

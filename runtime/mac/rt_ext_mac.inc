@@ -144,4 +144,20 @@ void rt_ext_ListPanic(const uint8_t *msg) {
 }
 void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
+/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
+ * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), mirroring
+ * internal/build/rt/rt_ext_host.inc's Map block exactly -- same reasoning
+ * as the Text/List families above. */
+void *rt_ext_MapHandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_MapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
+void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void rt_ext_MapPanic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
+void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

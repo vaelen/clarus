@@ -610,6 +610,15 @@ struct rt_map {
     int32_t valcap;  /* vals capacity, in entries (grown in lockstep with cap) */
 };
 
+/* Plan 5b Task 11: runtime/clarus/map.cla's `overlay record RtMap { rc:
+ * int; keys: ptr; vals: ptr; valsize: int; count: int; cap: int; valcap:
+ * int }` is a byte-for-byte view of struct rt_map above -- this guard
+ * fails to compile (a negative array size) if that ever drifts. Same
+ * placement/reasoning as rt_list_layout_check/rt_text_layout_check just
+ * above: fires for every consumer of rt_core.inc (host rt.c, Mac 68k
+ * rt_mac.c, and both rt_mem_test.c/rt_rc_test.c memory harnesses). */
+typedef char rt_map_layout_check[(sizeof(rt_map) == sizeof(struct { int32_t a; void *b; void *c; int32_t d; int32_t e; int32_t f; int32_t g; })) ? 1 : -1];
+
 rt_map *rt_map_new(int32_t valsize)
 {
     rt_map *m;

@@ -95,6 +95,13 @@ var cpTextPorted: bool
 // never gated by a usage flag.
 var cpListPorted: bool
 
+// cpMapPorted (Plan 5b Task 11) is map.cla's own analogous flag -- same
+// "unconditional manifest entry, set true directly alongside the decision"
+// convention cpStrPorted/cpTextPorted/cpListPorted established: every
+// emitted program includes map.cla (Ch5's Map type is built in), so this
+// is always true, never gated by a usage flag.
+var cpMapPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -1263,9 +1270,19 @@ func fpMapReleaseGuard(m: text, k: text, elemT: int) {
     ctype = cpCType(elemT)
     old = fpNewTmp(ctype)
     fpHandoff(old) // this guard's own explicit release below is old's only release
-    fpEmit("if (rt_map_has(" + m + ", " + k + ")) {")
-    fpIndent = fpIndent + 1
-    fpEmit("rt_map_get(" + m + ", " + k + ", &" + old + ");")
+    // Plan 5b Task 11: cpMapPorted redirects the has/get calls the guard
+    // itself emits below (has/get are ported) -- fpReleaseVal's own release
+    // call just below stays bare C regardless (RC boundary: this guard
+    // releases the evicted VALUE, not the map).
+    if cpMapPorted {
+        fpEmit("if (clar_fn_rtMapHas((void*)" + m + ", (void*)" + k + ")) {")
+        fpIndent = fpIndent + 1
+        fpEmit("clar_fn_rtMapGet((void*)" + m + ", (void*)" + k + ", (void*)&" + old + ");")
+    } else {
+        fpEmit("if (rt_map_has(" + m + ", " + k + ")) {")
+        fpIndent = fpIndent + 1
+        fpEmit("rt_map_get(" + m + ", " + k + ", &" + old + ");")
+    }
     fpReleaseVal(old, elemT) // ARC Task 7: elemT may now be a handle-backed record too.
     fpIndent = fpIndent - 1
     fpEmit(toText("}"))
@@ -1961,7 +1978,12 @@ func fpIntrCall(x: int): text {
         if nm == IMapSetRetain() {
             fpRetainVal(v, irExprType(a2))
         }
-        fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
+        // Plan 5b Task 11: cpMapPorted redirects the set call itself.
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapSet((void*)" + m + ", (void*)" + k + ", (void*)&(" + v + "));")
+        } else {
+            fpEmit("rt_map_set(" + m + ", " + k + ", &(" + v + "));")
+        }
         return toText("")
     } else if nm == IMapGet() {
         m = fpExpr(a0)
@@ -1969,13 +1991,23 @@ func fpIntrCall(x: int): text {
         // ARC Task 3: aliases m's own stored value (same reasoning as
         // IListFirst/IListLast above) -- a heap-typed result is retained
         // immediately into a tracked temp, same +1-and-tracked convention.
+        // Plan 5b Task 11: cpMapPorted redirects the get call itself; the
+        // `_retain` suffix call stays bare C regardless (RC boundary).
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
-            fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGet((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+            }
             fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
-            fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGet((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
+            }
         }
         return t
     } else if nm == IMapGetDv() {
@@ -1992,15 +2024,25 @@ func fpIntrCall(x: int): text {
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv) // dv's own temp (if any) is about to alias into t
+        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
+        // the `_retain` suffix call stays bare C regardless (RC boundary).
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
-            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            }
             fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
-            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            }
         }
         return t
     } else if nm == IMapGetDvBirth() {
@@ -2028,18 +2070,33 @@ func fpIntrCall(x: int): text {
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv)
+        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
+        // the retain/release compare-and-fix lines stay bare C regardless
+        // (RC boundary).
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";")
-            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            }
             fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
-            fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            if cpMapPorted {
+                fpEmit("clar_fn_rtMapGetDv((void*)" + m + ", (void*)" + k + ", (void*)&" + t + ");")
+            } else {
+                fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
+            }
         }
         return t
     } else if nm == IMapHas() {
+        // Plan 5b Task 11: cpMapPorted redirects this entire intrinsic.
+        if cpMapPorted {
+            return "clar_fn_rtMapHas((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ")"
+        }
         return "rt_map_has(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IMapRemove() {
         // ARC Task 5: `m.remove(k)` "silently succeeds if absent" (language
@@ -2051,9 +2108,18 @@ func fpIntrCall(x: int): text {
         if fpNeedsRelease(irtElem(irExprType(a0))) {
             fpMapReleaseGuard(m, k, irtElem(irExprType(a0)))
         }
-        fpEmit("rt_map_remove(" + m + ", " + k + ");")
+        // Plan 5b Task 11: cpMapPorted redirects the remove call itself.
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapRemove((void*)" + m + ", (void*)" + k + ");")
+        } else {
+            fpEmit("rt_map_remove(" + m + ", " + k + ");")
+        }
         return toText("")
     } else if nm == IMapCount() {
+        // Plan 5b Task 11: cpMapPorted redirects this entire intrinsic.
+        if cpMapPorted {
+            return "clar_fn_rtMapCount((void*)" + fpExpr(a0) + ")"
+        }
         return "rt_map_count(" + fpExpr(a0) + ")"
     } else if nm == IMapFreeVar() {
         // memory-audit Task 7 -- see IListFreeVar's doc comment.
@@ -2572,14 +2638,28 @@ func fpForMapStmt(s: int) {
     mt = fpNewTmp("rt_map *")
     fpEmit(mt + " = " + mv + ";")
     cnt = fpNewTmp("int32_t")
-    fpEmit(cnt + " = rt_map_count(" + mt + ");")
+    // Plan 5b Task 11: cpMapPorted redirects count/key_at/val_at (all
+    // three ported, not RC) -- the loop structure itself is unchanged.
+    if cpMapPorted {
+        fpEmit(cnt + " = clar_fn_rtMapCount((void*)" + mt + ");")
+    } else {
+        fpEmit(cnt + " = rt_map_count(" + mt + ");")
+    }
     ix = fpNewTmp("int32_t")
     fpEmit("for (" + ix + " = 0; " + ix + " < " + cnt + "; " + ix + "++) {")
     fpIndent = fpIndent + 1
-    fpEmit("rt_map_key_at(" + mt + ", " + ix + ", (uint8_t*)&cv_" + poolGet(irForMapK(s)) + ");")
+    if cpMapPorted {
+        fpEmit("clar_fn_rtMapKeyAt((void*)" + mt + ", " + ix + ", (void*)&cv_" + poolGet(irForMapK(s)) + ");")
+    } else {
+        fpEmit("rt_map_key_at(" + mt + ", " + ix + ", (uint8_t*)&cv_" + poolGet(irForMapK(s)) + ");")
+    }
     vNameIdx = irForMapV(s)
     if vNameIdx != -1 {
-        fpEmit("rt_map_val_at(" + mt + ", " + ix + ", &cv_" + poolGet(vNameIdx) + ");")
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapValAt((void*)" + mt + ", " + ix + ", (void*)&cv_" + poolGet(vNameIdx) + ");")
+        } else {
+            fpEmit("rt_map_val_at(" + mt + ", " + ix + ", &cv_" + poolGet(vNameIdx) + ");")
+        }
     }
     fpStmts(irForMapBody(s))
     fpIndent = fpIndent - 1
@@ -2861,7 +2941,14 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
             fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
         }
     } else if k == KMap {
-        fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
+        // Plan 5b Task 11: cpMapPorted redirects the birth call (rtMapNew,
+        // cast back to `rt_map *`) -- same "external delegation" pattern
+        // KText/KList's arms above established for rtTextNew/rtListNew.
+        if cpMapPorted {
+            fpEmit(dst + " = (rt_map *)clar_fn_rtMapNew(sizeof(" + cpCType(irtElem(t)) + "));")
+        } else {
+            fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
+        }
     } else if k == KRec {
         fpEmit(dst + " = clar_new_" + poolGet(irtName(t)) + "();")
     } else if k == KErr {
@@ -3378,8 +3465,9 @@ func cpEmitDefaultInitFnProtos() {
         // now calls clar_fn_rtListNew unconditionally (every List field/
         // global needs its birth handle), the exact call-before-prototype
         // gap this function's maintenance comment above warned Task 10
-        // about.
-        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpListPorted and nm == "rtListNew") {
+        // about. Plan 5b Task 11: "rtMapNew" added for the same reason,
+        // cpDefaultInit's KMap arm.
+        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpListPorted and nm == "rtListNew") or (cpMapPorted and nm == "rtMapNew") {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1

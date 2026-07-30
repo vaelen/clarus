@@ -461,6 +461,15 @@ on App.startCLI(args: list of string) {
         // in neededMods deliberately: same declare-before-use splice order.
         cpListPorted = true
         neededMods.add("list.cla")
+        // Task 11: map.cla is the fourth (and last, for this wave)
+        // UNCONDITIONAL entry -- every program uses Map (Ch5's built-in
+        // sorted-key collection type), so it's always pulled in and
+        // cpMapPorted is always true, same convention as str.cla/text.cla/
+        // list.cla just above. Added AFTER list.cla in neededMods
+        // deliberately: same declare-before-use splice order (map.cla
+        // calls str.cla's rtStrCmp directly for key comparisons).
+        cpMapPorted = true
+        neededMods.add("map.cla")
 
         combined2 = combined
         if neededMods.count > 0 {

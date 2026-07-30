@@ -170,4 +170,27 @@ void rt_ext_ListPanic(const uint8_t *msg) {
 }
 void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
+/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
+ * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), same reasoning
+ * as the List family above -- map.cla is UNCONDITIONALLY included in every
+ * emitted program from this task forward, so its own waist calls must not
+ * share a name with the generic/Str/Text/List/Ser externs a user program or
+ * another runtime module might also declare. Bodies are thin aliases of the
+ * same primitives the generic/List wrappers above already call.
+ * rt_ext_MapNewRaw is the sole exception to "thin alias": it delegates the
+ * WHOLE rt_map_new construction (same "external delegation" birth-
+ * allocation choice as rt_ext_TextNewRaw/rt_ext_ListNewRaw), so rc is
+ * written exactly once, entirely in C. */
+void *rt_ext_MapHandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_MapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
+void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void rt_ext_MapPanic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
+void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
+
 #endif /* CLARUS_RT_EXT_HOST_INC */
