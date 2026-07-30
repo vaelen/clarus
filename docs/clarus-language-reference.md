@@ -1354,7 +1354,7 @@ func ticksSince(start: int): int {
 
 `external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
 
-Trap-number and calling-convention annotations for tying a declaration to a specific Toolbox trap are reserved for a future revision; this release's `external func` names the signature only, and how the name resolves to an entry point is a toolchain concern outside this reference.
+An `external func` may optionally name how its entry point is reached, with a trailing `= trap ...` or `= inline ...` clause — see Trap and Inline Clauses, below.
 
 ### Overlay Records
 
@@ -1390,6 +1390,39 @@ An overlay type may be used as a variable, function parameter, function return t
 ```
 
 Like `ptr`, an overlay value is copied by value, its zero value is a plain null address, and it is never retained or released — an overlay is a view, not an owner, of whatever it points to.
+
+### Trap and Inline Clauses
+
+An `external func` declaration may end with a clause tying it to a specific Toolbox entry point, instead of leaving name resolution to the toolchain:
+
+```
+externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
+             [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
+```
+
+`= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed right to left, result in D0):
+
+```rust
+external func TickCount(): int = trap 0xA975
+```
+
+Appending `reg` selects the register calling convention some traps use instead: at most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
+
+```rust
+external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
+```
+
+`= inline deref` and `= inline nop` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
+
+```rust
+external func HandleToPtr(h: ptr): ptr = inline deref
+```
+
+`inline nop` requires no return type; it compiles to nothing, useful for a platform hook that some builds need to declare but never call:
+
+```rust
+external func DebugBreak() = inline nop
+```
 
 ## Appendix A: Grammar (EBNF)
 

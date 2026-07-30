@@ -643,9 +643,20 @@ var irExternParamStart: list of int
 var irExternParamCountArr: list of int
 var irExternParamTys: list of int
 
+// irExternTrapWords/irExternConvs (Task 2, native-5d) are the sixth/seventh
+// parallel arenas alongside the five above -- one slot per extern, same
+// "extern index" as irExternNames etc. -- carrying the optional trap/inline
+// clause ast.cla's externFuncTrap/externFuncConv read off the DkExternFunc
+// decl (-1/0 when the extern has no clause). Nothing reads these back yet
+// (cprint's fpCallExt/cpEmitExternProtos deliberately ignore them -- Task 2
+// wires parse/check/IR only; m68k codegen consumes them in a later task),
+// but they're registered now so that plumbing has somewhere to land.
+var irExternTrapWords: list of int
+var irExternConvs: list of int
+
 // irRegisterExtern records one `external func`'s signature (lower.cla's
 // lowExternDecl, phase-1-only -- an extern has no body to lower).
-func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int) {
+func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int) {
     var start: int
     var i: int
 
@@ -659,6 +670,8 @@ func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int) {
     irExternRetTys.add(retTy)
     irExternParamStart.add(start)
     irExternParamCountArr.add(paramTys.count)
+    irExternTrapWords.add(trapVal)
+    irExternConvs.add(conv)
 }
 
 func irExternCount(): int {
@@ -679,6 +692,16 @@ func irExternParamCount(i: int): int {
 
 func irExternParam(i: int, j: int): int {
     return irExternParamTys[irExternParamStart[i] + j]
+}
+
+// irExternTrap/irExternConv (Task 2, native-5d) read back extern i's
+// trap/inline clause -- see irExternTrapWords/irExternConvs above.
+func irExternTrap(i: int): int {
+    return irExternTrapWords[i]
+}
+
+func irExternConv(i: int): int {
+    return irExternConvs[i]
 }
 
 // irIsExtern reports whether nameIdx names a registered `external func` --
@@ -828,6 +851,12 @@ func irReset() {
     }
     while irExternParamTys.count > 0 {
         irExternParamTys.pop()
+    }
+    while irExternTrapWords.count > 0 {
+        irExternTrapWords.pop()
+    }
+    while irExternConvs.count > 0 {
+        irExternConvs.pop()
     }
 
     irHasLaunch = false

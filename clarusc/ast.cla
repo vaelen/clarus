@@ -136,9 +136,14 @@
 //                pool idx
 //   DkExternFunc (Task 3, Ch13: `external func`) nameIdx=name; a=params
 //                list head (DkParam chain, -1 if none); b=return type (-1
-//                if no result); c=-1 (unused -- externals have no body).
-//                Same slot layout as DkFunc so funcDeclName/ParamsHead/
-//                RetType/Body and checkFuncSig work unchanged on it.
+//                if no result); c=trap word or inline code, -1 if no
+//                trap/inline clause (Task 2, native-5d); intVal=convention
+//                flag (0=none, 1=pascal trap, 2=reg trap, 3=inline deref,
+//                4=inline nop). Same a/b slot layout as DkFunc so
+//                funcDeclName/ParamsHead/RetType and checkFuncSig work
+//                unchanged on it; c/intVal replace DkFunc's unused body
+//                slot (an external has no body) and are read back by
+//                externFuncTrap/externFuncConv below.
 //
 // ---- TypeExprKind (typeExprs arena) ----
 //   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
@@ -1322,23 +1327,38 @@ func appDeclPathIdx(i: int): int {
 }
 
 // newExternFuncDecl builds a DkExternFunc node (Task 3, Ch13: `external
-// func`) -- same a/b/c slot layout as DkFunc (params head / return type /
-// unused), so the funcDeclName/ParamsHead/RetType/Body accessors above and
-// checkFuncSig (check.cla) work on it unchanged; only c differs, since an
-// external has no body.
-func newExternFuncDecl(nameIdx: int, paramsHead: int, retType: int, line: int, col: int): int {
+// func`) -- same a/b slot layout as DkFunc (params head / return type), so
+// the funcDeclName/ParamsHead/RetType accessors above and checkFuncSig
+// (check.cla) work on it unchanged; c and intVal instead carry the
+// optional trap/inline clause (Task 2, native-5d: trapVal is the trap word
+// for a trap clause, -1 for no clause or an inline clause; convFlag is
+// 0=none, 1=pascal trap, 2=reg trap, 3=inline deref, 4=inline nop).
+func newExternFuncDecl(nameIdx: int, paramsHead: int, retType: int, trapVal: int, convFlag: int, line: int, col: int): int {
     var n: DeclNode
 
     n.kind = DkExternFunc
     n.nameIdx = nameIdx
     n.a = paramsHead
     n.b = retType
-    n.c = -1
+    n.c = trapVal
+    n.intVal = convFlag
     n.next = -1
     n.line = line
     n.col = col
     decls.add(n)
     return decls.count - 1
+}
+
+// externFuncTrap returns a DkExternFunc's trap word (0xA000..0xAFFF once
+// checked), or -1 if it has no trap clause (bare, or an inline clause).
+func externFuncTrap(i: int): int {
+    return decls[i].c
+}
+
+// externFuncConv returns a DkExternFunc's calling-convention flag: 0=none,
+// 1=pascal trap, 2=reg trap, 3=inline deref, 4=inline nop.
+func externFuncConv(i: int): int {
+    return decls[i].intVal
 }
 
 func newWindowDecl(nameIdx: int, itemsHead: int, line: int, col: int): int {

@@ -918,4 +918,34 @@ on App.startEmpty {
     ln(src, "    rc: int")
     ln(src, "}")
     runCase("record-overlay-name-collision", src)
+
+    // ---- Task 2 (native-5d): `external func` trap/inline clauses ----
+
+    // Case 66: one `external func` per clause form (pascal trap, reg trap,
+    // inline deref, inline nop) -- all four clean, proving the grammar
+    // parses and the checker accepts every valid shape.
+    src = ""
+    ln(src, "external func TickCount(): int = trap 0xA975")
+    ln(src, "external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg")
+    ln(src, "external func HandleToPtr(h: ptr): ptr = inline deref")
+    ln(src, "external func DebugBreak() = inline nop")
+    runCase("extern-clause-clean", src)
+
+    // Case 67: a trap word outside 0xA000..0xAFFF is rejected (bare trap,
+    // pascal convention).
+    src = ""
+    ln(src, "external func Bad(): int = trap 0x1234")
+    runCase("extern-trap-bad-word", src)
+
+    // Case 68: a `reg` trap allows at most 2 ptr parameters -- a third is
+    // rejected (the A0/A1 rule).
+    src = ""
+    ln(src, "external func F(a: ptr, b: ptr, c: ptr) = trap 0xA000 reg")
+    runCase("extern-trap-reg-too-many-ptr", src)
+
+    // Case 69: `inline deref` requires exactly one ptr parameter and a ptr
+    // return -- two params is rejected even though both are ptr.
+    src = ""
+    ln(src, "external func Bad(p: ptr, q: ptr): ptr = inline deref")
+    runCase("extern-inline-deref-bad-sig", src)
 }

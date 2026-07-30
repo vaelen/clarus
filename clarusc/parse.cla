@@ -1308,10 +1308,16 @@ func parseFuncDecl(): int {
 }
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
-// [ ":" type ]` (Task 3, Ch13: `external func`) -- parseFuncDecl minus the
-// body block, since an external declaration ends at the signature; a
-// following `{` is left for parseTopDecl to reject as an ordinary
-// top-level parse error (there is no external-func body to parse).
+// [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" ] | "inline" ( "deref" | "nop"
+// ) ) ]` (Task 3, Ch13: `external func`; trap/inline clause added Task 2,
+// native-5d) -- parseFuncDecl minus the body block, since an external
+// declaration ends at the signature; a following `{` is left for
+// parseTopDecl to reject as an ordinary top-level parse error (there is no
+// external-func body to parse). `trap`/`reg`/`inline`/`deref`/`nop` are all
+// contextual identifiers, matched the same curIsIdentText way `external`
+// itself is (no new tokens) -- the trap word is an ordinary TkInt, decimal
+// or hex (the lexer already handles `0xA122`). trapVal/convFlag default to
+// -1/0 (no clause); the checker (checkExternFunc) validates both.
 func parseExternFuncDecl(): int {
     var line: int
     var col: int
@@ -1320,6 +1326,9 @@ func parseExternFuncDecl(): int {
     var paramsTail: int
     var pIdx: int
     var retType: int
+    var trapVal: int
+    var convFlag: int
+    var trapTok: Token
 
     line = curLine()
     col = curCol()
@@ -1345,7 +1354,35 @@ func parseExternFuncDecl(): int {
         advance()
         retType = parseType()
     }
-    return newExternFuncDecl(name.nameIdx, paramsHead, retType, line, col)
+    trapVal = -1
+    convFlag = 0
+    if curKind() == TkAssign {
+        advance()
+        if curIsIdentText("trap") {
+            advance()
+            trapTok = expect(TkInt)
+            trapVal = trapTok.intVal
+            convFlag = 1
+            if curIsIdentText("reg") {
+                advance()
+                convFlag = 2
+            }
+        } else if curIsIdentText("inline") {
+            advance()
+            if curIsIdentText("deref") {
+                advance()
+                convFlag = 3
+            } else if curIsIdentText("nop") {
+                advance()
+                convFlag = 4
+            } else {
+                parseErrorf(curLine(), curCol(), "expected \"deref\" or \"nop\", found " + tokKindQuoted(curKind()))
+            }
+        } else {
+            parseErrorf(curLine(), curCol(), "expected \"trap\" or \"inline\", found " + tokKindQuoted(curKind()))
+        }
+    }
+    return newExternFuncDecl(name.nameIdx, paramsHead, retType, trapVal, convFlag, line, col)
 }
 
 // parseIncludeDecl parses `"include" STRING` (contextual: "include" is an

@@ -4586,7 +4586,11 @@ func lowDecl(d: int) {
 // cpEmitExternProtos ever read the registry back. Called from
 // lowerProgram's extern pre-pass, NOT from lowDecl's main dispatch (see
 // that dispatch's DkExternFunc arm) -- every extern must be registered
-// before any call site lowers, regardless of source order.
+// before any call site lowers, regardless of source order. Task 2
+// (native-5d) passes the decl's already-checked trap/inline clause
+// (ast.cla's externFuncTrap/externFuncConv) straight through to
+// irRegisterExtern -- lowering does no validation of its own, that's all
+// checkExternFunc's job.
 func lowExternDecl(d: int) {
     var paramTys: list of int
     var p: int
@@ -4602,7 +4606,7 @@ func lowExternDecl(d: int) {
     } else {
         ret = irVoidT
     }
-    irRegisterExtern(funcDeclName(d), ret, paramTys)
+    irRegisterExtern(funcDeclName(d), ret, paramTys, externFuncTrap(d), externFuncConv(d))
 }
 
 // lowAppDecl records the (at most one, checker-validated) `app` section's

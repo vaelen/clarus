@@ -129,3 +129,11 @@ check_test.cla:6:17: overlay records cannot be container elements
 check_test.cla:6:5: overlay records cannot be record fields
 === record-overlay-name-collision ===
 check_test.cla:4:9: redeclaration of Dup
+=== extern-clause-clean ===
+clean
+=== extern-trap-bad-word ===
+check_test.cla:1:1: trap word must be in 0xA000..0xAFFF
+=== extern-trap-reg-too-many-ptr ===
+check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
+=== extern-inline-deref-bad-sig ===
+check_test.cla:1:1: inline deref requires signature (ptr): ptr

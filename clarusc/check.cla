@@ -1751,7 +1751,7 @@ func checkFuncSig(d: int) {
 }
 
 // checkExternFunc checks a DkExternFunc decl (Task 3, Ch13: `external
-// func`): checkFuncSig works unchanged (same slot layout as DkFunc) and
+// func`): checkFuncSig works unchanged (same a/b slot layout as DkFunc) and
 // resolves param/return types once, into the FuncSig it stashes on the
 // symbol it declares -- checkExternFunc reads types back from that FuncSig
 // (funcSigParam/funcSigRet) rather than re-resolving each TypeExpr, so an
@@ -1763,6 +1763,19 @@ func checkFuncSig(d: int) {
 // its own diagnostic since the allowed set now differs from the return's.
 // An absent return type (a procedure) is fine; nothing checks a body,
 // since an external has none (phase 2 filters on DkFunc).
+//
+// Task 2 (native-5d) adds the optional trap/inline clause's own checks,
+// gated on externFuncConv(d) (parse.cla's convFlag): a trap word (pascal
+// or reg, conv 1/2) must land in the real Toolbox A-line trap range
+// 0xA000..0xAFFF; a reg trap (conv 2) additionally restricts params to at
+// most two ptr (A0/A1) and at most two int/bool/char (D0/D1) -- reusing
+// the ptrCount/scalarCount/regBad tally the param loop below already
+// builds, so str/text (neither of which has a register slot) trips regBad
+// the same way a 3rd ptr or scalar trips the count. inline deref (conv 3)
+// requires the signature to be exactly one ptr param returning ptr;
+// inline nop (conv 4) requires no return type. Every trap/inline check
+// runs after, and independently of, the ordinary param/return type checks
+// above -- a param already flagged for its type is not re-flagged here.
 func checkExternFunc(d: int) {
     var symIdx: int
     var sigIdx: int
@@ -1770,6 +1783,11 @@ func checkExternFunc(d: int) {
     var i: int
     var k: TypeKind
     var ret: int
+    var conv: int
+    var trapVal: int
+    var ptrCount: int
+    var scalarCount: int
+    var regBad: bool
 
     checkFuncSig(d)
     symIdx = scopeLookup(curScope, funcDeclName(d))
@@ -1779,10 +1797,20 @@ func checkExternFunc(d: int) {
     sigIdx = symbols[symIdx].sigIdx
     p = funcDeclParamsHead(d)
     i = 0
+    ptrCount = 0
+    scalarCount = 0
+    regBad = false
     while p != -1 {
         k = typeKind(funcSigParam(sigIdx, i))
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar and k != TyStr and k != TyText {
             emitDiag(declLine(p), declCol(p), "external parameters may only use int, ptr, bool, char, str, or text")
+        }
+        if k == TyPtr {
+            ptrCount = ptrCount + 1
+        } else if k == TyInt or k == TyBool or k == TyChar {
+            scalarCount = scalarCount + 1
+        } else {
+            regBad = true
         }
         p = declNext(p)
         i = i + 1
@@ -1793,6 +1821,23 @@ func checkExternFunc(d: int) {
         if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
             emitDiag(declLine(d), declCol(d), "external functions may only use int, ptr, bool, or char")
         }
+    }
+
+    conv = externFuncConv(d)
+    trapVal = externFuncTrap(d)
+    if conv == 1 or conv == 2 {
+        if trapVal < 0xA000 or trapVal > 0xAFFF {
+            emitDiag(declLine(d), declCol(d), "trap word must be in 0xA000..0xAFFF")
+        }
+    }
+    if conv == 2 and (regBad or ptrCount > 2 or scalarCount > 2) {
+        emitDiag(declLine(d), declCol(d), "reg traps allow at most 2 ptr and 2 int/bool/char parameters")
+    }
+    if conv == 3 and (i != 1 or ptrCount != 1 or ret == -1 or typeKind(ret) != TyPtr) {
+        emitDiag(declLine(d), declCol(d), "inline deref requires signature (ptr): ptr")
+    }
+    if conv == 4 and ret != -1 {
+        emitDiag(declLine(d), declCol(d), "inline nop requires a void return")
     }
 }
 
