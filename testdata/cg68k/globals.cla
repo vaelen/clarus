@@ -1,0 +1,13 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// globals.cla: native-5d Task 7's cg68k golden fixture -- an int global
+// with an initializer, a str 255 global, and an empty App.launch handler.
+// Pins the A5 globals-offset assignment scheme and the startup zero-loop
+// bound; the handler itself has an empty frame (no params, no locals).
+
+var count: int = 42
+var name: string(255) = "clarus"
+
+on App.launch {
+}

@@ -28,7 +28,9 @@ include "check.cla"
 include "ir.cla"
 include "lower.cla"
 include "shake.cla"
+include "asm68k.cla"
 include "cprint.cla"
+include "cg68k.cla"
 
 // seenPaths keys the include-once set (driver.go's `seen`). Go keys by
 // cleaned absolute path so the same file reached two ways dedups; this port
@@ -213,6 +215,9 @@ on App.startCLI(args: list of string) {
     var tail: int
     var h: int
     var emitMode: bool
+    var emitMode68k: bool
+    var listingFlag: bool
+    var ok68: bool
     var appinfoMode: bool
     var startArg: int
     var outPath: string
@@ -250,7 +255,7 @@ on App.startCLI(args: list of string) {
     astReset()
 
     if args.count == 0 {
-        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
+        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
         quit 2
     }
 
@@ -258,17 +263,29 @@ on App.startCLI(args: list of string) {
     // the default check, then -- only if there are zero diagnostics -- lowers
     // to IR, builds the C translation unit, and writes it to OUT.c via
     // file.writeText (byte-faithful, no per-line length cap -- unlike stdout
-    // via alert, which is capped at a string's 255 bytes per line). Subcommand
-    // `clarusc appinfo FILE...` runs the same check pipeline and, on success,
-    // prints the program's app metadata as key=value lines instead of
-    // emitting (see the appinfoMode block below). emit and appinfo are
-    // mutually exclusive; the default (neither) checks and prints
-    // diagnostics exactly as before.
+    // via alert, which is capped at a string's 255 bytes per line).
+    // `clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...` (native-5d
+    // Task 7) runs the SAME check + runtime-manifest pipeline as emit, then
+    // roots the native-only entry points (cg68AddRoots), shakes, and hands
+    // off to cg68Program (cg68k.cla) instead of emitProgram -- see
+    // cg68Program's own doc comment for what it writes today (a single-
+    // segment listing, with --listing; no .bin container until Task 10).
+    // Subcommand `clarusc appinfo FILE...` runs the same check pipeline and,
+    // on success, prints the program's app metadata as key=value lines
+    // instead of emitting (see the appinfoMode block below). emit/emit68k/
+    // appinfo are mutually exclusive; the default (none of them) checks and
+    // prints diagnostics exactly as before.
     emitMode = false
+    emitMode68k = false
+    listingFlag = false
     appinfoMode = false
     startArg = 0
     if args[0] == "emit" {
         emitMode = true
+        startArg = 1
+    }
+    if args[0] == "emit68k" {
+        emitMode68k = true
         startArg = 1
     }
     if args[0] == "appinfo" {
@@ -276,7 +293,7 @@ on App.startCLI(args: list of string) {
         startArg = 1
     }
     if startArg >= args.count {
-        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
+        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
         quit 2
     }
 
@@ -291,18 +308,26 @@ on App.startCLI(args: list of string) {
     haveRtDir = false
     i = startArg
     while i < args.count {
-        if emitMode and args[i] == "-o" {
+        if (emitMode or emitMode68k) and args[i] == "-o" {
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit -o OUT.c FILE...")
+                if emitMode68k {
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+                } else {
+                    log("usage: clarusc emit -o OUT.c FILE...")
+                }
                 quit 2
             }
             outPath = args[i]
             haveOutPath = true
-        } else if emitMode and args[i] == "--rtdir" {
+        } else if (emitMode or emitMode68k) and args[i] == "--rtdir" {
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit -o OUT.c [--rtdir DIR] FILE...")
+                if emitMode68k {
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+                } else {
+                    log("usage: clarusc emit -o OUT.c [--rtdir DIR] FILE...")
+                }
                 quit 2
             }
             rtDir = args[i]
@@ -310,6 +335,8 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
+        } else if emitMode68k and args[i] == "--listing" {
+            listingFlag = true
         } else {
             fileArgs.add(args[i])
         }
@@ -319,8 +346,12 @@ on App.startCLI(args: list of string) {
         log("usage: clarusc emit -o OUT.c FILE...")
         quit 2
     }
+    if emitMode68k and not haveOutPath {
+        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+        quit 2
+    }
     if fileArgs.count == 0 {
-        log("usage: clarusc [emit -o OUT.c | appinfo] FILE...")
+        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
         quit 2
     }
 
@@ -420,14 +451,16 @@ on App.startCLI(args: list of string) {
 
     // Emit path: the gate above already required the user program to check
     // CLEAN STANDALONE (check-only semantics are untouched by any of this --
-    // no runtime module is ever consulted before it). Only now, for emit,
-    // do we consult the program's usage flags (set by checkProgram just
-    // above) against the hardcoded runtime-module manifest, pull in
-    // whatever they need, and re-check the combined program before
-    // lowering -- a runtime-module diagnostic is a compiler bug, but it
-    // must still surface, attributed to the runtime file via expand's own
-    // setDeclFile loop.
-    if emitMode {
+    // no runtime module is ever consulted before it). Only now, for emit
+    // (or emit68k -- native-5d Task 7 reuses this ENTIRE manifest block
+    // unchanged, "same manifest as emit plus nothing new yet" per the plan;
+    // native.cla joins the manifest in Task 11), do we consult the
+    // program's usage flags (set by checkProgram just above) against the
+    // hardcoded runtime-module manifest, pull in whatever they need, and
+    // re-check the combined program before lowering -- a runtime-module
+    // diagnostic is a compiler bug, but it must still surface, attributed
+    // to the runtime file via expand's own setDeclFile loop.
+    if emitMode or emitMode68k {
         // Plan native-5d Task 3: core.cla is spliced FIRST, ahead of every
         // other manifest entry -- str.cla/text.cla/list.cla/map.cla/
         // ser.cla all call its rtSetLastErr/rtPanic directly now (no more
@@ -598,12 +631,25 @@ on App.startCLI(args: list of string) {
 
         irReset()
         lowerProgram(combined2)
-        shakeProgram()
-        cSrc = emitProgram()
-        wrote = file.writeText(outPath, cSrc)
-        if not wrote {
-            log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
-            quit 1
+        if emitMode {
+            shakeProgram()
+            cSrc = emitProgram()
+            wrote = file.writeText(outPath, cSrc)
+            if not wrote {
+                log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
+                quit 1
+            }
+        } else if emitMode68k {
+            // native-5d Task 7: root the native-only entry points BEFORE
+            // shaking (cg68AddRoots's own doc comment, cg68k.cla), then hand
+            // off to cg68Program instead of emitProgram.
+            cg68AddRoots()
+            shakeProgram()
+            ok68 = cg68Program(outPath, listingFlag)
+            if not ok68 {
+                log("clarusc emit68k: cg68Program failed")
+                quit 1
+            }
         }
     }
     quit 0

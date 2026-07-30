@@ -1,0 +1,740 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cg68k.cla: the `emit68k` skeleton -- native-5d Task 7. Turns the SAME
+// arena IR (ir.cla) the C backend (cprint.cla) already consumes into a
+// single asm68k.cla instruction stream: the native type-layout rules
+// (cgSizeOf/cgAlignOf/cgFieldOffset), per-function JT-slot numbering
+// (cgJtSlot), the caller/callee frame model (params above A6, locals
+// below), a synthesized ROM-startup routine, and a string-literal constant
+// pool. Every reachable function's own BODY is a placeholder comment this
+// task ("TODO body Task 8") -- only the scaffolding around it (prologue,
+// epilogue, frame layout, JT numbering) is real. cprint.cla is NOT included
+// or depended on here: the C and 68k backends are siblings over the same
+// IR, not layered on each other, so this file carries its own tiny
+// toText/type-equality copies (cg68ToText/cg68TypeEqual) rather than reach
+// into cprint.cla's.
+//
+// ONE SEGMENT, NO CONTAINER (Task 10 builds the real .bin). cg68Program's
+// whole output THIS task is a single asm68k.cla stream: with --listing it
+// writes <base>.seg1.s (a68ListingText()) and <base>.seg1.dat (a68Bytes()),
+// where <base> is outPath with its trailing ".ext" stripped ("out.bin" ->
+// "out"). outPath itself is never written to -- the -o flag is parsed and
+// threaded through (main.cla) purely so this function can derive the
+// segment file names; there is no Mac CODE-resource container yet.
+//
+// LAYOUT AUTHORITY. cgSizeOf/cgAlignOf/cgFieldOffset are the ONLY place the
+// native backend decides how big a Clarus type is or where a record field
+// lives -- cprint.cla has no equivalent (C's own struct layout rules did
+// that job there). The three follow one governing idea, spelled out once
+// here: a scalar occupies its own byte size (4 for int/fixed/ptr/enum/
+// text/list/map/winref/uistate/overlay/err; 1 for bool/char) but ANY time
+// that scalar sits inside a record field, an array element, a frame local,
+// or a frame param slot, it is padded up to 2 bytes (cgSlotSizeOf) -- the
+// 68000 has no efficient odd-byte-addressed struct/stack story, so this
+// backend never tries to pack two chars into one word. cgAlignOf follows
+// directly from cgSizeOf (>=2 bytes needs to STA start on an even address;
+// exactly 1 byte needs no alignment at all, though it will never actually
+// appear unpadded once cgSlotSizeOf has run). str N is N+1 bytes (a Pascal
+// length byte plus N content bytes) rounded up to even; arr N of T is N
+// copies of T's own PADDED (slot) size; a record is its fields laid out in
+// declaration order, each starting at its own alignment, rounded up to an
+// even total. An overlay record's TYPE (KOverlay) is a bare 4-byte pointer
+// (ir.cla's own doc comment: "a real pointer, unlike KRec's by-value
+// struct"), but overlay fields themselves DO have real offsets --
+// cgFieldOffset walks irRecords/irFieldSlots uniformly for both, since an
+// overlay layout lives in the exact same two arenas a plain record's does
+// (irRecordLayoutIsOverlay only changes whether a constructor gets
+// generated, never the field chain shape). KWinRef/KUiState never occupy a
+// record field or frame slot in any program this backend can reach yet (UI
+// lowering is 5e territory) -- they get a definite 4-byte answer here
+// anyway (same as every other pointer-shaped kind) so cgSizeOf stays a
+// total function over all 17 IRKinds rather than a partial one no caller
+// can safely invoke.
+//
+// FRAME MODEL, WORKED EXAMPLE. Params are pushed by the CALLER,
+// left-to-right (a, then b, then c) before the JSR. Because the stack
+// grows down, the LAST push ends up at the LOWEST address above the
+// return-address/saved-A6 pair LINK sets up -- i.e. the last-DECLARED
+// param sits at 8(A6), and earlier params sit at increasing offsets above
+// it. For `func f(a: int, b: bool, c: int): int` (no hidden result
+// pointer -- the 4-byte int return fits in D0): c is pushed last, so
+// c@8(A6); cgSlotSizeOf(c=int)=4 advances to b@12(A6);
+// cgSlotSizeOf(b=bool)=2 (padded) advances to a@14(A6). If the return
+// type's cgSizeOf() were > 4, the caller pushes a hidden result pointer
+// LAST of all (after c) -- it lands at 8(A6) and every real param shifts
+// up by cgSlotSizeOf(ptr)=4 (c@12, b@16, a@18). Locals are the mirror
+// image: declaration order, contiguous NEGATIVE offsets below A6, each
+// slot cgSlotSizeOf(type) wide (a local frame is `LINK A6,#-frame` /
+// `UNLK A6` bracketed, frame = the total negative extent). Locals dedup by
+// (name, same type) exactly like cpEmitFunc (cprint.cla) does for its C
+// hoist -- two sibling for-range loops sharing a bound-variable name is
+// legal Clarus and gets ONE frame slot, reused; a genuine same-name/
+// different-type collision is a hard error (log + quit 1), mirroring
+// cpEmitFunc's identical guard.
+//
+// JT SLOTS. Slot 0 is reserved for the synthesized startup routine (the
+// first function emitted into the stream, per the brief) -- every
+// REACHABLE (shakeReachable) irFuncs entry then gets the next slot, in
+// plain declaration (irFuncs arena) order. Unreachable functions get no
+// slot (cgJtSlot returns -1) and are never emitted at all, same skip
+// cpEmitFuncs already applies on the C side.
+//
+// GLOBALS / A5. Every irGlobal gets a negative offset below A5, declaration
+// order, contiguous, each slot cgSlotSizeOf(type) wide -- the exact same
+// shape locals use below A6. The synthesized startup routine's first real
+// work is zeroing this whole below-A5 block in one LEA+DBRA loop (a global
+// with a non-zero initializer is left for Task 8's cg_init_globals body to
+// overwrite; THIS task's cg_init_globals is a TODO-body stub, so a fixture
+// with an int/str global initializer still compiles -- the golden simply
+// doesn't show the initializer's value taking effect yet).
+//
+// CONSTANT POOL. One string-literal entry per irStrLits slot (already
+// populated by lower.cla regardless of which backend consumes it): a bound
+// label, `DC.B <len>`, the raw content bytes, then an even-align. Enum
+// value/label tables and serdesc tables are declared-but-stubbed (a single
+// comment marker each) -- real content is Task 8+.
+
+include "lib.cla"
+include "ir.cla"
+include "shake.cla"
+include "asm68k.cla"
+
+// ================================================================
+// Module state -- rebuilt fresh at the top of every cg68Program() call
+// (mirrors shake.cla's shakeMarks/shakeWorklist "reassign, don't append"
+// convention: a stale entry from a PRIOR compile in the same process would
+// misalign against this compile's different irFuncs/irGlobals/irStrLits
+// arenas).
+// ================================================================
+
+// cgJtSlots[i] is irFuncs index i's JT slot number (1-based; 0 is
+// startup's own reserved slot), or -1 if i is unreachable (no slot, never
+// emitted).
+var cgJtSlots: list of int
+
+// cgFuncLabels[i] is irFuncs index i's a68 label id (reserved up front, so
+// a forward reference -- e.g. startup JSR-ing a handler emitted later in
+// the stream -- can already resolve it), or -1 if i is unreachable.
+var cgFuncLabels: list of int
+
+// cgGlobalOffsets[i] is irGlobals index i's negative A5 offset.
+var cgGlobalOffsets: list of int
+
+// cgGlobalsBelowA5Size is the total (positive) byte extent of the whole
+// below-A5 globals block -- the startup zero-loop's bound.
+var cgGlobalsBelowA5Size: int
+
+// cgStrLitLabels[i] is irStrLits index i's pool-entry label id.
+var cgStrLitLabels: list of int
+
+// cgFreshIntList hands back a genuinely empty list (same trick
+// shakeFreshIntList/shakeFreshBoolList use, shake.cla).
+func cgFreshIntList(): list of int {
+    var l: list of int
+    return l
+}
+
+// ================================================================
+// Shake-root registration (main.cla's emit68k arm calls this BEFORE
+// shakeProgram()).
+// ================================================================
+
+// cg68AddRoots roots every `nat*`-named function (the native console/entry
+// shim, native.cla -- Task 11) and rtEnumCheck: cprint.cla's own walk
+// never calls either directly (shake.cla's file header), so without this
+// call shakeProgram would drop them from a native build even though
+// cg68Program needs them reachable. A no-op today (native.cla doesn't
+// exist until Task 11 -- shakeAddRoot/shakeMarkAndEnqueue silently ignore
+// a name with no matching irFuncs entry), but registering it now means
+// Task 11 needs no change here at all.
+func cg68AddRoots() {
+    var i: int
+    var nm: string
+
+    i = 0
+    while i < irFuncs.count {
+        nm = poolGet(irFuncName(i))
+        if nm.length >= 3 and nm[0] == 'n' and nm[1] == 'a' and nm[2] == 't' {
+            shakeAddRoot(irFuncName(i))
+        }
+        i = i + 1
+    }
+    shakeAddRoot(intern("rtEnumCheck"))
+}
+
+// ================================================================
+// Small local copies of cprint.cla helpers this file also needs -- kept
+// local rather than depending on cprint.cla (see the file header: the two
+// backends are siblings, not layered).
+// ================================================================
+
+func cg68ToText(s: string): text {
+    var t: text = ""
+    t.append(s)
+    return t
+}
+
+// cg68TypeEqual is a structural IRType comparison -- arena indices are
+// NEVER compared directly (ir.cla's own warning); mirrors cprint.cla's
+// cpTypeEqual exactly.
+func cg68TypeEqual(a: int, b: int): bool {
+    if irtKind(a) != irtKind(b) or irtN(a) != irtN(b) or irtName(a) != irtName(b) {
+        return false
+    }
+    if (irtElem(a) == -1) != (irtElem(b) == -1) {
+        return false
+    }
+    if irtElem(a) != -1 {
+        return cg68TypeEqual(irtElem(a), irtElem(b))
+    }
+    return true
+}
+
+// ================================================================
+// Layout model -- THE native type-size/alignment/field-offset authority.
+// See the file header's "LAYOUT AUTHORITY" note for the governing rule.
+// ================================================================
+
+func cgSizeOf(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    switch k {
+    case KVoid {
+        return 0
+    }
+    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KErr, KWinRef, KUiState, KOverlay {
+        return 4
+    }
+    case KBool, KChar {
+        return 1
+    }
+    case KStr {
+        return cgAlignUp(irtN(t) + 1, 2)
+    }
+    case KArr {
+        return irtN(t) * cgSlotSizeOf(irtElem(t))
+    }
+    case KRec {
+        return cgRecordSize(irtName(t))
+    }
+    }
+    return 4
+}
+
+// cgAlignOf follows directly from cgSizeOf: anything that occupies 2+
+// bytes needs to start on an even address; a bare 1-byte scalar (before
+// cgSlotSizeOf's padding) needs none.
+func cgAlignOf(t: int): int {
+    if cgSizeOf(t) >= 2 {
+        return 2
+    }
+    return 1
+}
+
+// cgSlotSizeOf is the padded size a type occupies inside a record field,
+// array element, frame local, or frame param slot -- identical to
+// cgSizeOf except a bare 1-byte bool/char is rounded up to 2 (the file
+// header's "occupying 2 in any aggregate or stack slot" rule). Every
+// other kind's cgSizeOf is already even, so this is a no-op for them.
+func cgSlotSizeOf(t: int): int {
+    var sz: int
+
+    sz = cgSizeOf(t)
+    if sz == 1 {
+        return 2
+    }
+    return sz
+}
+
+// cgAlignUp rounds n up to the next multiple of align (align is always 1
+// or 2 here -- a plain even-check suffices).
+func cgAlignUp(n: int, align: int): int {
+    if align <= 1 {
+        return n
+    }
+    if n mod 2 != 0 {
+        return n + 1
+    }
+    return n
+}
+
+// cgFindRecordByName linear-scans irRecords by interned name (poolGet-
+// compared, same shape irRecHasHandleField/irIsExtern already use in
+// ir.cla) -- serves both plain records and overlay records (isOverlay
+// doesn't change which arena a layout lives in).
+func cgFindRecordByName(nameIdx: int): int {
+    var i: int
+    var nm: string
+
+    nm = poolGet(nameIdx)
+    i = 0
+    while i < irRecords.count {
+        if poolGet(irRecordLayoutName(i)) == nm {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cgFieldOffset walks recName's field chain in declaration order, each
+// field starting at its own cgAlignOf-rounded offset and occupying
+// cgSlotSizeOf bytes, returning fieldName's offset (or -1 if either name
+// is unknown). Works identically for a plain record or an overlay record
+// -- see the file header.
+func cgFieldOffset(recName: int, fieldName: int): int {
+    var ri: int
+    var f: int
+    var cur: int
+    var wantName: string
+
+    ri = cgFindRecordByName(recName)
+    if ri == -1 {
+        return -1
+    }
+    wantName = poolGet(fieldName)
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        cur = cgAlignUp(cur, cgAlignOf(irFieldSlotType(f)))
+        if poolGet(irFieldSlotName(f)) == wantName {
+            return cur
+        }
+        cur = cur + cgSlotSizeOf(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    return -1
+}
+
+// cgRecordSize is cgFieldOffset's own layout walk, run to the end and
+// rounded up to an even total -- cgSizeOf(KRec)'s implementation.
+func cgRecordSize(nameIdx: int): int {
+    var ri: int
+    var f: int
+    var cur: int
+
+    ri = cgFindRecordByName(nameIdx)
+    if ri == -1 {
+        return 0
+    }
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        cur = cgAlignUp(cur, cgAlignOf(irFieldSlotType(f)))
+        cur = cur + cgSlotSizeOf(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    return cgAlignUp(cur, 2)
+}
+
+// cgKindName renders an IRKind as a short lowercase word, for readable
+// frame/globals listing comments only (never consulted by layout math).
+func cgKindName(k: IRKind): string {
+    switch k {
+    case KVoid { return "void" }
+    case KInt { return "int" }
+    case KBool { return "bool" }
+    case KFixed { return "fixed" }
+    case KChar { return "char" }
+    case KStr { return "str" }
+    case KText { return "text" }
+    case KList { return "list" }
+    case KMap { return "map" }
+    case KRec { return "rec" }
+    case KEnum { return "enum" }
+    case KArr { return "arr" }
+    case KErr { return "err" }
+    case KWinRef { return "winref" }
+    case KUiState { return "uistate" }
+    case KPtr { return "ptr" }
+    case KOverlay { return "overlay" }
+    }
+    return "?"
+}
+
+// ================================================================
+// JT slot assignment
+// ================================================================
+
+// cgJtSlot answers f's (irFuncs index) JT slot -- -1 if f was never
+// reachable (cgAssignJtSlots, called once per cg68Program(), must have run
+// first).
+func cgJtSlot(f: int): int {
+    return cgJtSlots[f]
+}
+
+// cgAssignJtSlots walks irFuncs in declaration order, giving every
+// shakeReachable entry the next JT slot (starting at 1 -- slot 0 is
+// startup's) and reserving its a68 label right away, so any earlier-
+// emitted code (startup) can already JSR a later-emitted function by
+// label id.
+func cgAssignJtSlots() {
+    var i: int
+    var slots: list of int
+    var labels: list of int
+    var next: int
+
+    slots = cgFreshIntList()
+    labels = cgFreshIntList()
+    next = 1
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) {
+            slots.add(next)
+            labels.add(a68NewLabel())
+            next = next + 1
+        } else {
+            slots.add(-1)
+            labels.add(-1)
+        }
+        i = i + 1
+    }
+    cgJtSlots = slots
+    cgFuncLabels = labels
+}
+
+// ================================================================
+// Globals / A5
+// ================================================================
+
+func cgAssignGlobalOffsets() {
+    var i: int
+    var offs: list of int
+    var running: int
+
+    offs = cgFreshIntList()
+    running = 0
+    i = 0
+    while i < irGlobals.count {
+        running = running - cgSlotSizeOf(irGlobalType(i))
+        offs.add(running)
+        i = i + 1
+    }
+    cgGlobalOffsets = offs
+    cgGlobalsBelowA5Size = 0 - running
+}
+
+// cgEmitGlobalsComment prints the A5 assignment scheme into the listing
+// (documentation only -- the golden pins it, nothing reads it back).
+func cgEmitGlobalsComment() {
+    var i: int
+    var t: int
+
+    if irGlobals.count == 0 {
+        a68Comment("globals: none")
+        return
+    }
+    a68Comment("globals (below A5, " + numToStr(cgGlobalsBelowA5Size) + " bytes total):")
+    i = 0
+    while i < irGlobals.count {
+        t = irGlobalType(i)
+        a68Comment("  " + poolGet(irGlobalName(i)) + " : " + numToStr(cgGlobalOffsets[i]) + "(A5)  size " + numToStr(cgSizeOf(t)) + "  type " + cgKindName(irtKind(t)))
+        i = i + 1
+    }
+}
+
+// ================================================================
+// Startup
+// ================================================================
+
+// cgEmitStartupCallIfPresent JSRs name's JT-slot label if has is set AND
+// the program actually defines (and reached) a function by that name --
+// otherwise it leaves a comment explaining the gap rather than JSRing to
+// nothing. Mirrors the same "by-name via JT, comment if absent" contract
+// the brief specifies for the natQuit call below.
+func cgEmitStartupCallIfPresent(name: string, has: bool) {
+    var fi: int
+
+    if not has {
+        return
+    }
+    fi = findIRFuncIdxByName(intern(name))
+    if fi == -1 or not shakeReachable(fi) {
+        a68Comment(name + " not found -- startup handler wiring incomplete")
+        return
+    }
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+}
+
+// cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
+// first function in the stream. See the file header for the full shape;
+// briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, call the
+// generated init-globals stub, JSR every declared entry handler (no real
+// event/arg marshaling yet), call the generated free-globals stub, push a
+// 0 result and JSR natQuit by name (or note its absence and just RTS --
+// native.cla doesn't exist until Task 11).
+func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
+    var zloopLbl: int
+    var qi: int
+
+    a68Bind(startupLbl)
+    a68Comment("startup (JT slot 0)")
+    cgEmitGlobalsComment()
+
+    if cgGlobalsBelowA5Size > 0 {
+        a68Emit(OpLea, 0, AmDisp16, 5, 0 - cgGlobalsBelowA5Size, AmAn, 0, 0)
+        a68Emit(OpMove, 2, AmImm, 0, cgGlobalsBelowA5Size / 2 - 1, AmDn, 0, 0)
+        zloopLbl = a68NewLabel()
+        a68Bind(zloopLbl)
+        a68Emit(OpClr, 2, AmNone, 0, 0, AmPostInc, 0, 0)
+        a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, zloopLbl)
+    } else {
+        a68Comment("no globals below A5 -- nothing to zero")
+    }
+
+    a68EmitTrap(0xA063, "_MaxApplZone")
+    a68EmitTrap(0xA036, "_MoreMasters")
+
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, initGlobalsLbl)
+
+    a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
+    cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
+    cgEmitStartupCallIfPresent("handler_App_startEmpty", irHasStartEmpty)
+    cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
+    cgEmitStartupCallIfPresent("handler_App_openDocument", irHasOpenDocument)
+
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, freeGlobalsLbl)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+
+    qi = findIRFuncIdxByName(intern("natQuit"))
+    if qi != -1 and shakeReachable(qi) {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[qi])
+    } else {
+        a68Comment("natQuit not present -- wired in Task 11")
+    }
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// cgEmitInitGlobalsStub/cgEmitFreeGlobalsStub are the two generated
+// subroutines startup JSRs -- both TODO-body placeholders this task (real
+// content is Task 8/9): init-globals would evaluate each irGlobal's own
+// init expression (the zero loop above already blanks the whole block, so
+// an unset global is already correctly zero); free-globals would release
+// every ARC-owned global on quit.
+func cgEmitInitGlobalsStub(lbl: int) {
+    a68Bind(lbl)
+    a68Comment("cg_init_globals: TODO evaluate irGlobal init exprs (Task 8) -- below-A5 zeroing already done by startup")
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+func cgEmitFreeGlobalsStub(lbl: int) {
+    a68Bind(lbl)
+    a68Comment("cg_free_globals: TODO release ARC-owned globals (Task 8/9)")
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// ================================================================
+// Per-function frame + prologue/epilogue
+// ================================================================
+
+// cgEmitFunc lays out and emits one reachable function's frame (params
+// above A6, locals below -- see the file header's worked example) plus a
+// LINK/UNLK+RTS bracket around a single TODO-body placeholder comment.
+func cgEmitFunc(f: int) {
+    var declared: map of int
+    var nm: string
+    var loc: int
+    var runningNeg: int
+    var sz: int
+    var frameSize: int
+    var params: list of int
+    var paramOffsets: list of int
+    var offset: int
+    var retSize: int
+    var needsHidden: bool
+    var i: int
+    var p: int
+
+    a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
+
+    // ---- params: collect in declaration order, then assign offsets in
+    // REVERSE (the last-declared param is pushed last, so it lands at the
+    // lowest offset, 8(A6) or 12(A6) with a hidden result pointer -- see
+    // the file header's worked example) ----
+    params = cgFreshIntList()
+    p = irFuncParamsHead(f)
+    while p != -1 {
+        params.add(p)
+        p = irLocalNext(p)
+    }
+    paramOffsets = cgFreshIntList()
+    i = 0
+    while i < params.count {
+        paramOffsets.add(0)
+        i = i + 1
+    }
+    retSize = cgSizeOf(irFuncRet(f))
+    needsHidden = retSize > 4
+    if needsHidden {
+        offset = 12
+    } else {
+        offset = 8
+    }
+    i = params.count - 1
+    while i >= 0 {
+        sz = cgSlotSizeOf(irLocalType(params[i]))
+        paramOffsets[i] = offset
+        offset = offset + sz
+        i = i - 1
+    }
+    if needsHidden {
+        a68Comment("  hidden result ptr : 8(A6)  size 4")
+    }
+    i = 0
+    while i < params.count {
+        a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
+        i = i + 1
+    }
+
+    // ---- locals: declaration order, contiguous negative offsets,
+    // deduped by (name, same type) exactly like cpEmitFunc's C hoist ----
+    runningNeg = 0
+    loc = irFuncLocalsHead(f)
+    while loc != -1 {
+        nm = poolGet(irLocalName(loc))
+        if declared.has(nm) {
+            if not cg68TypeEqual(declared.get(nm, -1), irLocalType(loc)) {
+                log("cg68k: local " + nm + " redeclared with a different type in func " + poolGet(irFuncName(f)) + " (unsupported: same name, different type, in sibling scopes)")
+                quit 1
+            }
+        } else {
+            declared[nm] = irLocalType(loc)
+            sz = cgSlotSizeOf(irLocalType(loc))
+            runningNeg = runningNeg - sz
+            a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
+        }
+        loc = irLocalNext(loc)
+    }
+    frameSize = 0 - runningNeg
+
+    a68Bind(cgFuncLabels[f])
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    a68Comment("TODO body Task 8")
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// ================================================================
+// Constant pool
+// ================================================================
+
+// cgPoolStrRef returns the a68 label id bound to litIdx's pool entry
+// (cgEmitPools must have already run this cg68Program() call).
+func cgPoolStrRef(litIdx: int): int {
+    return cgStrLitLabels[litIdx]
+}
+
+// cgEmitPools lays out every per-segment constant pool: one label + DC.B
+// len + bytes + align entry per irStrLits slot (populated by lower.cla
+// regardless of which backend consumes it -- see the file header), then
+// stub markers for the enum/serdesc tables Task 8+ will fill in.
+func cgEmitPools() {
+    var i: int
+    var lbl: int
+    var s: string
+    var labels: list of int
+
+    labels = cgFreshIntList()
+    a68Comment("constant pool: string literals")
+    i = 0
+    while i < irStrLits.count {
+        s = poolGet(irStrLitPoolIdx(i))
+        lbl = a68NewLabel()
+        labels.add(lbl)
+        a68Bind(lbl)
+        a68DcB(s.length)
+        a68DcBytes(cg68ToText(s))
+        a68Align()
+        i = i + 1
+    }
+    cgStrLitLabels = labels
+
+    a68Comment("constant pool: enum value/label tables (stub -- Task 8+)")
+    a68Comment("constant pool: serdesc tables (stub -- Task 8+)")
+}
+
+// ================================================================
+// Top level
+// ================================================================
+
+// cgSegBase strips outPath's trailing ".ext" ("out.bin" -> "out") -- the
+// segment file names are <base>.seg1.s / <base>.seg1.dat. Falls back to
+// outPath verbatim if it has no '.' at all.
+func cgSegBase(outPath: string): string {
+    var i: int
+    var last: int
+
+    last = -1
+    i = 0
+    while i < outPath.length {
+        if outPath[i] == '.' {
+            last = i
+        }
+        i = i + 1
+    }
+    if last == -1 {
+        return outPath
+    }
+    return outPath[0, last]
+}
+
+// cg68Program is the top-level emit68k driver: assign JT slots + reserve
+// every reachable function's label, assign A5 globals offsets, emit the
+// startup routine + its two generated helper stubs, emit every reachable
+// function's frame+prologue+placeholder+epilogue, emit the constant
+// pool(s), and finish the stream. Returns false (after log-ing why) on any
+// diagnostic-worthy failure -- an unresolved label (a real codegen bug, not
+// a user error, since Task 7's own scaffolding never leaves one dangling)
+// or a write failure. main.cla calls this AFTER cg68AddRoots()+
+// shakeProgram() -- see cg68AddRoots's own doc comment.
+func cg68Program(outPath: string, listing: bool): bool {
+    var i: int
+    var startupLbl: int
+    var initGlobalsLbl: int
+    var freeGlobalsLbl: int
+    var ok: bool
+    var base: string
+
+    a68Reset()
+    cgAssignJtSlots()
+    cgAssignGlobalOffsets()
+
+    startupLbl = a68NewLabel()
+    initGlobalsLbl = a68NewLabel()
+    freeGlobalsLbl = a68NewLabel()
+
+    cgEmitStartup(startupLbl, initGlobalsLbl, freeGlobalsLbl)
+    cgEmitInitGlobalsStub(initGlobalsLbl)
+    cgEmitFreeGlobalsStub(freeGlobalsLbl)
+
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) {
+            cgEmitFunc(i)
+        }
+        i = i + 1
+    }
+
+    cgEmitPools()
+
+    ok = a68Finish()
+    if not ok {
+        log("cg68Program: unresolved label " + numToStr(a68UnresolvedLabel()))
+        return false
+    }
+
+    if listing {
+        base = cgSegBase(outPath)
+        if not file.writeText(base + ".seg1.s", a68ListingText()) {
+            log("cg68Program: cannot write " + base + ".seg1.s: " + lastError.message)
+            return false
+        }
+        if not file.writeText(base + ".seg1.dat", a68Bytes()) {
+            log("cg68Program: cannot write " + base + ".seg1.dat: " + lastError.message)
+            return false
+        }
+    }
+    return true
+}

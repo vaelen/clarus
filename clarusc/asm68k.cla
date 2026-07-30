@@ -103,17 +103,17 @@ enum A68Op {
     OpMovea
     OpLea
     OpPea
-    OpAdd
+    OpAddInsn
     OpAdda
     OpAddq
-    OpSub
+    OpSubInsn
     OpSubq
     OpCmp
-    OpNeg
-    OpAnd
-    OpOr
+    OpNegInsn
+    OpAndInsn
+    OpOrInsn
     OpEor
-    OpNot
+    OpNotInsn
     OpAsl
     OpAsr
     OpLsl
@@ -564,10 +564,10 @@ func a68InstrExtWords(op: A68Op, size: int, sm: A68Mode, dm: A68Mode): int {
     case OpMovea, OpLea, OpAdda {
         return a68ExtCount(sm, size)
     }
-    case OpPea, OpNeg, OpNot, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
+    case OpPea, OpNegInsn, OpNotInsn, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
         return a68ExtCount(dm, size)
     }
-    case OpAdd, OpSub, OpAnd, OpOr {
+    case OpAddInsn, OpSubInsn, OpAndInsn, OpOrInsn {
         if sm == AmImm {
             return a68IFormExtWords(size, dm)
         }
@@ -712,10 +712,10 @@ func a68WriteExtWords(out: text, idx: int) {
     case OpMovea, OpLea, OpAdda {
         a68WriteEaExt(out, sm, sv, size, idx, true)
     }
-    case OpPea, OpNeg, OpNot, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
+    case OpPea, OpNegInsn, OpNotInsn, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
         a68WriteEaExt(out, dm, dv, size, idx, false)
     }
-    case OpAdd, OpSub, OpAnd, OpOr {
+    case OpAddInsn, OpSubInsn, OpAndInsn, OpOrInsn {
         if sm == AmImm {
             a68WriteImm(out, sv, size)
             a68WriteEaExt(out, dm, dv, size, idx, false)
@@ -816,7 +816,7 @@ func a68ShiftWord(dir: int, kindField: int, size: int, sm: A68Mode, sr: int, sv:
 //     in sm/sr/sv; dest is always a plain An (Movea/Adda, dr = the An
 //     number) or Dn (Muls/Mulu/Divs/Divu, dr = the Dn number) -- dm is
 //     unused/ignored.
-//   - OpAdd/OpSub/OpAnd/OpOr: exactly one of sm/dm must be AmDn (the
+//   - OpAddInsn/OpSubInsn/OpAndInsn/OpOrInsn: exactly one of sm/dm must be AmDn (the
 //     other is the ea) -- both-Dn is legal and always takes the ea->Dn
 //     (dm==AmDn) reading; neither side may be AmAn.
 //   - OpEor: source (sm) is always AmDn or AmImm; dest (dm) is never
@@ -826,7 +826,7 @@ func a68ShiftWord(dir: int, kindField: int, size: int, sm: A68Mode, sr: int, sv:
 //     no ea->ea or Dn->ea form.
 //   - OpAddq/OpSubq: source is always AmImm with sv in 1-8; dest (dm)
 //     is a data- or address-alterable mode, never AmImm/AmPCLabel.
-//   - OpNeg/OpNot/OpTst/OpClr/OpPea/OpJsr/OpJmp: single ea in dm/dr/dv
+//   - OpNegInsn/OpNotInsn/OpTst/OpClr/OpPea/OpJsr/OpJmp: single ea in dm/dr/dv
 //     (sm/sr/sv unused) -- Pea/Jsr/Jmp additionally require a CONTROL
 //     mode (AmInd/AmDisp16/AmPCLabel/AmAbsW; never Dn/An/PostInc/
 //     PreDec/Imm).
@@ -890,16 +890,16 @@ func a68InstrWord(idx: int): int {
     case OpAdda {
         return 0xD000 | (dr << 9) | (a68OpmodeA(size) << 6) | a68EaField(sm, sr)
     }
-    case OpAdd {
+    case OpAddInsn {
         return a68TwoOpWord(0xD000, size, sm, sr, sv, dm, dr)
     }
-    case OpSub {
+    case OpSubInsn {
         return a68TwoOpWord(0x9000, size, sm, sr, sv, dm, dr)
     }
-    case OpAnd {
+    case OpAndInsn {
         return a68TwoOpWord(0xC000, size, sm, sr, sv, dm, dr)
     }
-    case OpOr {
+    case OpOrInsn {
         return a68TwoOpWord(0x8000, size, sm, sr, sv, dm, dr)
     }
     case OpEor {
@@ -920,10 +920,10 @@ func a68InstrWord(idx: int): int {
     case OpSubq {
         return 0x5100 | (a68QuickN(sv) << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
     }
-    case OpNeg {
+    case OpNegInsn {
         return 0x4400 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
     }
-    case OpNot {
+    case OpNotInsn {
         return 0x4600 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
     }
     case OpTst {
@@ -1199,16 +1199,16 @@ func a68ListingLine(idx: int): string {
     case OpAdda {
         return "ADDA." + suf + " " + a68EaText(sm, sr, sv) + ",A" + numToStr(dr)
     }
-    case OpAdd {
+    case OpAddInsn {
         return a68TwoOpListing("ADD", suf, sm, sr, sv, dm, dr, dv)
     }
-    case OpSub {
+    case OpSubInsn {
         return a68TwoOpListing("SUB", suf, sm, sr, sv, dm, dr, dv)
     }
-    case OpAnd {
+    case OpAndInsn {
         return a68TwoOpListing("AND", suf, sm, sr, sv, dm, dr, dv)
     }
-    case OpOr {
+    case OpOrInsn {
         return a68TwoOpListing("OR", suf, sm, sr, sv, dm, dr, dv)
     }
     case OpEor {
@@ -1238,10 +1238,10 @@ func a68ListingLine(idx: int): string {
     case OpSubq {
         return "SUBQ." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
     }
-    case OpNeg {
+    case OpNegInsn {
         return "NEG." + suf + " " + a68EaText(dm, dr, dv)
     }
-    case OpNot {
+    case OpNotInsn {
         return "NOT." + suf + " " + a68EaText(dm, dr, dv)
     }
     case OpTst {
@@ -1466,10 +1466,10 @@ func a68SelfExercise() {
     a68Emit(OpPea, 0, AmNone, 0, 0, AmAbsW, 0, 0x4000)      // PEA $4000
 
     // -- ADD / ADDA / ADDQ --
-    a68Emit(OpAdd, 2, AmDn, 0, 0, AmDn, 1, 0)               // ADD.W D0,D1
-    a68Emit(OpAdd, 4, AmInd, 2, 0, AmDn, 3, 0)              // ADD.L (A2),D3
-    a68Emit(OpAdd, 2, AmDn, 4, 0, AmInd, 5, 0)              // ADD.W D4,(A5)
-    a68Emit(OpAdd, 2, AmImm, 0, 5, AmDn, 6, 0)              // ADD.W #5,D6 (ADDI)
+    a68Emit(OpAddInsn, 2, AmDn, 0, 0, AmDn, 1, 0)               // ADD.W D0,D1
+    a68Emit(OpAddInsn, 4, AmInd, 2, 0, AmDn, 3, 0)              // ADD.L (A2),D3
+    a68Emit(OpAddInsn, 2, AmDn, 4, 0, AmInd, 5, 0)              // ADD.W D4,(A5)
+    a68Emit(OpAddInsn, 2, AmImm, 0, 5, AmDn, 6, 0)              // ADD.W #5,D6 (ADDI)
     a68Emit(OpAdda, 2, AmDn, 0, 0, AmAn, 1, 0)              // ADDA.W D0,A1
     a68Emit(OpAdda, 4, AmInd, 2, 0, AmAn, 3, 0)             // ADDA.L (A2),A3
     a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)             // ADDQ.L #4,A7
@@ -1477,10 +1477,10 @@ func a68SelfExercise() {
     a68Emit(OpAddq, 2, AmImm, 0, 8, AmDn, 1, 0)             // ADDQ.W #8,D1 (n=8 edge)
 
     // -- SUB / SUBQ --
-    a68Emit(OpSub, 2, AmDn, 0, 0, AmDn, 1, 0)               // SUB.W D0,D1
-    a68Emit(OpSub, 4, AmInd, 2, 0, AmDn, 3, 0)              // SUB.L (A2),D3
-    a68Emit(OpSub, 2, AmDn, 4, 0, AmInd, 5, 0)              // SUB.W D4,(A5)
-    a68Emit(OpSub, 2, AmImm, 0, 5, AmDn, 6, 0)              // SUB.W #5,D6 (SUBI)
+    a68Emit(OpSubInsn, 2, AmDn, 0, 0, AmDn, 1, 0)               // SUB.W D0,D1
+    a68Emit(OpSubInsn, 4, AmInd, 2, 0, AmDn, 3, 0)              // SUB.L (A2),D3
+    a68Emit(OpSubInsn, 2, AmDn, 4, 0, AmInd, 5, 0)              // SUB.W D4,(A5)
+    a68Emit(OpSubInsn, 2, AmImm, 0, 5, AmDn, 6, 0)              // SUB.W #5,D6 (SUBI)
     a68Emit(OpSubq, 2, AmImm, 0, 8, AmDn, 0, 0)             // SUBQ.W #8,D0 (n=8 edge)
     a68Emit(OpSubq, 4, AmImm, 0, 2, AmAn, 6, 0)             // SUBQ.L #2,A6
 
@@ -1490,23 +1490,23 @@ func a68SelfExercise() {
     a68Emit(OpCmp, 2, AmImm, 0, 7, AmDn, 4, 0)              // CMP.W #7,D4 (CMPI)
 
     // -- AND / OR / EOR --
-    a68Emit(OpAnd, 2, AmDn, 0, 0, AmDn, 1, 0)               // AND.W D0,D1
-    a68Emit(OpAnd, 4, AmInd, 2, 0, AmDn, 3, 0)              // AND.L (A2),D3
-    a68Emit(OpAnd, 2, AmDn, 4, 0, AmInd, 5, 0)              // AND.W D4,(A5)
-    a68Emit(OpAnd, 2, AmImm, 0, 0xF, AmDn, 6, 0)            // AND.W #15,D6 (ANDI)
-    a68Emit(OpOr, 2, AmDn, 0, 0, AmDn, 1, 0)                // OR.W D0,D1
-    a68Emit(OpOr, 4, AmInd, 2, 0, AmDn, 3, 0)               // OR.L (A2),D3
-    a68Emit(OpOr, 2, AmDn, 4, 0, AmInd, 5, 0)               // OR.W D4,(A5)
-    a68Emit(OpOr, 2, AmImm, 0, 0xF0, AmDn, 6, 0)            // OR.W #240,D6 (ORI)
+    a68Emit(OpAndInsn, 2, AmDn, 0, 0, AmDn, 1, 0)               // AND.W D0,D1
+    a68Emit(OpAndInsn, 4, AmInd, 2, 0, AmDn, 3, 0)              // AND.L (A2),D3
+    a68Emit(OpAndInsn, 2, AmDn, 4, 0, AmInd, 5, 0)              // AND.W D4,(A5)
+    a68Emit(OpAndInsn, 2, AmImm, 0, 0xF, AmDn, 6, 0)            // AND.W #15,D6 (ANDI)
+    a68Emit(OpOrInsn, 2, AmDn, 0, 0, AmDn, 1, 0)                // OR.W D0,D1
+    a68Emit(OpOrInsn, 4, AmInd, 2, 0, AmDn, 3, 0)               // OR.L (A2),D3
+    a68Emit(OpOrInsn, 2, AmDn, 4, 0, AmInd, 5, 0)               // OR.W D4,(A5)
+    a68Emit(OpOrInsn, 2, AmImm, 0, 0xF0, AmDn, 6, 0)            // OR.W #240,D6 (ORI)
     a68Emit(OpEor, 2, AmDn, 0, 0, AmDn, 1, 0)               // EOR.W D0,D1
     a68Emit(OpEor, 4, AmDn, 2, 0, AmInd, 3, 0)              // EOR.L D2,(A3)
     a68Emit(OpEor, 2, AmImm, 0, 0xFF, AmDn, 4, 0)           // EOR.W #255,D4 (EORI)
 
     // -- NEG / NOT / TST / CLR --
-    a68Emit(OpNeg, 2, AmNone, 0, 0, AmDn, 0, 0)             // NEG.W D0
-    a68Emit(OpNeg, 4, AmNone, 0, 0, AmInd, 2, 0)            // NEG.L (A2)
-    a68Emit(OpNot, 2, AmNone, 0, 0, AmDn, 0, 0)             // NOT.W D0
-    a68Emit(OpNot, 4, AmNone, 0, 0, AmInd, 2, 0)            // NOT.L (A2)
+    a68Emit(OpNegInsn, 2, AmNone, 0, 0, AmDn, 0, 0)             // NEG.W D0
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmInd, 2, 0)            // NEG.L (A2)
+    a68Emit(OpNotInsn, 2, AmNone, 0, 0, AmDn, 0, 0)             // NOT.W D0
+    a68Emit(OpNotInsn, 4, AmNone, 0, 0, AmInd, 2, 0)            // NOT.L (A2)
     a68Emit(OpTst, 2, AmNone, 0, 0, AmDn, 0, 0)             // TST.W D0
     a68Emit(OpTst, 1, AmNone, 0, 0, AmInd, 2, 0)            // TST.B (A2)
     a68Emit(OpClr, 2, AmNone, 0, 0, AmDn, 0, 0)             // CLR.W D0

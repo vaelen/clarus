@@ -1,0 +1,18 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arith.cla: native-5d Task 7's cg68k golden fixture -- an App.launch
+// handler with a couple of int locals and a return. The body is still just
+// a TODO-body placeholder in the listing this task (real expression
+// codegen is Task 8); this fixture pins the LOCAL frame layout (two 4-byte
+// int slots) instead.
+
+on App.launch {
+    var a: int
+    var b: int
+
+    a = 1
+    b = 2
+    a = a + b
+    return
+}
