@@ -82,24 +82,27 @@
 // empty) until it covers `need`, specialized here with the list's own
 // per-instance elemsize (unlike text, where elemsize is always 1 byte).
 //
-// ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
-// ListNewPtr/ListDisposePtr/ListNewHandle/ListDisposeHandle/ListRcCheck are
-// list.cla's OWN extern names, distinct from the public HandleDeref/
-// BlockMoveData/Panic/NewPtr names str.cla/text.cla/ser.cla and any user
-// program might also declare -- same collision hazard str.cla's own header
-// comment documents (checkFuncSig -> scopeDeclare keys purely on name, no
-// signature comparison), and the same fix: distinct List-prefixed names
-// sidestep it. Each is backed by an rt_ext_List* wrapper in BOTH
+// ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListNewPtr/
+// ListDisposePtr/ListNewHandle/ListDisposeHandle/ListRcCheck are list.cla's
+// OWN extern names, distinct from the public HandleDeref/BlockMoveData/
+// NewPtr names str.cla/text.cla/ser.cla and any user program might also
+// declare -- same collision hazard str.cla's own header comment documents
+// (checkFuncSig -> scopeDeclare keys purely on name, no signature
+// comparison), and the same fix: distinct List-prefixed names sidestep it.
+// Each is backed by an rt_ext_List* wrapper in BOTH
 // internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/Str/Text
 // wrappers already call. (ListNewRaw, the one-time "whole rt_list_new
 // delegation" birth-allocation wrapper, is gone as of Plan 5c wave2a Task
 // 3 -- birth moved into list.cla itself, built from ListNewPtr/
-// ListNewHandle below.)
+// ListNewHandle below.) ListPanic, list.cla's own former extern for this
+// same reason, is gone as of Plan native-5d Task 3: list.cla calls
+// core.cla's rtPanic directly now (declare-before-use, core.cla is spliced
+// first) -- a plain intra-Clarus call, no extern/name-collision hazard to
+// sidestep at all.
 external func ListHandleDeref(h: ptr): ptr
 external func ListSetHandleSize(h: ptr, n: int): int
 external func ListBlockMoveData(src: ptr, dst: ptr, count: int)
-external func ListPanic(msg: string)
 // ListNewPtr/ListDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtListNew below uses, mirroring TextNewPtr's own oom-panic-at-the-
 // primitive placement exactly (text.cla) -- never returns null, so no
@@ -161,7 +164,7 @@ func rtListGrow(l: ptr, need: int) {
     }
     err = ListSetHandleSize(rl.data, newcap * elemsize)
     if err != 0 {
-        ListPanic("out of memory")
+        rtPanic("out of memory")
     }
     rl.cap = newcap
 }
@@ -270,7 +273,7 @@ func rtListAt(l: ptr, i: int): ptr {
 
     rl = RtList(l)
     if i < 0 or i >= rl.count {
-        ListPanic("list index out of range")
+        rtPanic("list index out of range")
     }
     mp = ListHandleDeref(rl.data)
     off = i * rl.elemsize
@@ -303,7 +306,7 @@ func rtListPop(l: ptr, out: ptr) {
 
     rl = RtList(l)
     if rl.count == 0 {
-        ListPanic("pop on empty list")
+        rtPanic("pop on empty list")
     }
     rl.count = rl.count - 1
     mp = ListHandleDeref(rl.data)
@@ -323,7 +326,7 @@ func rtListShift(l: ptr, out: ptr) {
 
     rl = RtList(l)
     if rl.count == 0 {
-        ListPanic("shift on empty list")
+        rtPanic("shift on empty list")
     }
     mp = ListHandleDeref(rl.data)
     ListBlockMoveData(mp, out, rl.elemsize)
@@ -362,7 +365,7 @@ func rtListFirst(l: ptr, out: ptr) {
 
     rl = RtList(l)
     if rl.count == 0 {
-        ListPanic("first on empty list")
+        rtPanic("first on empty list")
     }
     mp = ListHandleDeref(rl.data)
     ListBlockMoveData(mp, out, rl.elemsize)
@@ -377,7 +380,7 @@ func rtListLast(l: ptr, out: ptr) {
 
     rl = RtList(l)
     if rl.count == 0 {
-        ListPanic("last on empty list")
+        rtPanic("last on empty list")
     }
     mp = ListHandleDeref(rl.data)
     off = (rl.count - 1) * rl.elemsize
@@ -400,7 +403,7 @@ func rtListRemove(l: ptr, i: int) {
 
     rl = RtList(l)
     if i < 0 or i >= rl.count {
-        ListPanic("list index out of range")
+        rtPanic("list index out of range")
     }
     tail = rl.count - 1 - i
     if tail > 0 {

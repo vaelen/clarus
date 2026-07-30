@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Stand-in for the now-UNCONDITIONAL core.cla manifest entry (Plan
+// native-5d Task 3) in this fake runtime-module directory (Task 4's
+// inclusion-machinery test, internal/lowlevel/rtinc_test.go). Deliberately
+// empty, same reason as this directory's str.cla/text.cla/list.cla/map.cla
+// stand-ins: this directory exercises expand's declare-before-use splicing
+// machinery, not core.cla's real content -- the real module lives at
+// runtime/clarus/core.cla. main.cla now always adds "core.cla" to
+// neededMods FIRST, regardless of usage flags, so --rtdir
+// testdata/rtinc/rt needs SOME file by that name (an empty/decl-less file
+// pushes main.cla's own "-1 head" empty-file sentinel, already handled) or
+// TestRtInc's IncludesRuntimeModule/NoInclusionWithoutUsage subtests fail
+// with "runtime module core.cla not found" before ever reaching the
+// assertions they actually care about. Staying empty also preserves
+// IncludesRuntimeModule's "clar_fn_rtIncHelper is the first clar_fn_
+// symbol" assertion -- core.cla is spliced even before str.cla, but an
+// empty stand-in contributes no clar_fn_ symbols of its own.

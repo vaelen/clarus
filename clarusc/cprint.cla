@@ -64,6 +64,19 @@ var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err) + UI 
 var cpUiBuf: list of text     // rt_ui_widget_desc/window_desc/item_desc/menu_desc tables (Task 4)
 var cpRestBuf: list of text   // globals init, funcs, main
 
+// cpCorePorted (Plan native-5d Task 3) is core.cla's own ported-module
+// flag -- UNCONDITIONAL like cpStrPorted/cpTextPorted/cpListPorted/
+// cpMapPorted (main.cla sets it true directly, right alongside the
+// manifest decision, same convention), since core.cla is now spliced
+// FIRST and every other unconditional module (str/text/list/map) calls
+// its rtSetLastErr/rtPanic directly. Gates the lastError-read redirect
+// (ILastErrCode/ILastErrMsg/ILastErr), the array-bounds-check redirect
+// (fpIndexRef's Arr arm), the fixed-point redirect (IFixMul/IFixDiv), and
+// the file-I/O post-call lastError fixup (IFileReadText/IFileWriteText/
+// IFileName) that keeps the still-C file primitives' rt_set_lasterr
+// writes visible to the now-Clarus-global lastError reads.
+var cpCorePorted: bool
+
 // cpSerPorted (Plan 5b Task 7) is the ported-module flag the file.save/
 // file.load redirect keys on: main.cla sets it (directly -- no setter
 // function, same convention as check.cla's usesFileSaveLoad global) to
@@ -1014,6 +1027,13 @@ func fpIndexRef(e: int): text {
 
     xt = irExprType(irIndexRefX(e))
     if irtKind(xt) == KArr {
+        // Plan native-5d Task 3: cpCorePorted redirects the bounds-check
+        // call itself (core.cla's rtArrCheck), same "gate the callee, not
+        // the addressing shape" convention as every other cp*Ported
+        // redirect in this function.
+        if cpCorePorted {
+            return "(" + fpExpr(irIndexRefX(e)) + ").e[clar_fn_rtArrCheck((int32_t)(" + fpExpr(irIndexRefI(e)) + "), " + numToStr(irtN(xt)) + ")]"
+        }
         return "(" + fpExpr(irIndexRefX(e)) + ").e[rt_arr_check((int32_t)(" + fpExpr(irIndexRefI(e)) + "), " + numToStr(irtN(xt)) + ")]"
     } else if irtKind(xt) == KList {
         return "(*(" + cpCType(irExprType(e)) + "*)rt_list_at(" + fpExpr(irIndexRefX(e)) + ", (int32_t)(" + fpExpr(irIndexRefI(e)) + ")))"
@@ -1418,6 +1438,26 @@ func fpArgAt(head: int, n: int): int {
     return cur
 }
 
+// fpEmitCoreLastErrSync (Plan native-5d Task 3, lastError coherence fix):
+// copies the C runtime's rt_lasterr_code/rt_lasterr_msg globals -- still
+// written directly by rt_file_read_text/rt_file_write_text/rt_file_name
+// (Ch12 file I/O stays entirely C, not part of this task's port) -- into
+// core.cla's own Clarus-side lastError globals via rtSetLastErr, so
+// `lastError` (read from those Clarus globals once cpCorePorted redirects
+// ILastErrCode/ILastErrMsg/ILastErr) stays coherent with whatever the
+// just-completed still-C file call set. Callers under cpCorePorted emit
+// this immediately after materializing the file call's own result into a
+// temp (a bare intrinsic-call expression can't be followed by a
+// statement, so the call itself must already be a statement by the time
+// this runs).
+func fpEmitCoreLastErrSync() {
+    var m: text
+
+    m = fpNewTmp("clar_str_255")
+    fpEmit("rt_str_store((uint8_t*)&" + m + ", 255, rt_lasterr_msg);")
+    fpEmit("clar_fn_rtSetLastErr((int32_t)(rt_lasterr_code), " + m + ");")
+}
+
 // fpIntrCall prints one Intr call (intr.go). Every rt_* function whose
 // result comes back through an out-parameter (concat, text concat, ...) is
 // materialized into a fresh statement-level temp here and its name
@@ -1494,8 +1534,16 @@ func fpIntrCall(x: int): text {
         fpEmit("rt_quit((int32_t)(" + fpExpr(a0) + "));")
         return toText("")
     } else if nm == IFixMul() {
+        // Plan native-5d Task 3: cpCorePorted redirects to core.cla's
+        // rtFixMul, a bit-exact port of rt_fix_mul.
+        if cpCorePorted {
+            return "clar_fn_rtFixMul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_fix_mul((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == IFixDiv() {
+        if cpCorePorted {
+            return "clar_fn_rtFixDiv((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_fix_div((int32_t)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "))"
 
     // ---- retain/release (ARC Task 2) ----
@@ -2312,8 +2360,25 @@ func fpIntrCall(x: int): text {
 
     // ---- lastError ----
     } else if nm == ILastErrCode() {
+        // Plan native-5d Task 3: cpCorePorted redirects this whole family
+        // to read core.cla's Clarus-side lastError globals instead of the
+        // raw C ones -- see fpEmitCoreLastErrSync's doc comment for how
+        // the still-C file-I/O writers stay coherent with this.
+        if cpCorePorted {
+            return "clar_fn_rtLastErrCode()"
+        }
         return toText("rt_lasterr_code")
     } else if nm == ILastErrMsg() {
+        if cpCorePorted {
+            // rtLastErrMsg returns a clar_str_255 BY VALUE (a plain `func
+            // ...: str 255`, not an out-param intrinsic) -- materialize
+            // into a temp so callers needing its address (fpStrAddr) have
+            // an addressable lvalue, same as every other str-returning
+            // clar_fn_rtStrXxx call in this function.
+            t = fpNewTmp("clar_str_255")
+            fpEmit(t + " = clar_fn_rtLastErrMsg();")
+            return t
+        }
         // rt_lasterr_msg is a raw uint8_t[256] (rt.h), not a clar_str_255
         // struct -- copy it into a proper temp via rt_str_store rather than
         // exposing the type mismatch to callers.
@@ -2326,19 +2391,40 @@ func fpIntrCall(x: int): text {
         // relies on for a bare `lastError` rvalue, since there is no
         // cv_lastError global to reference directly.
         t = fpNewTmp("clar_rec_Err")
+        if cpCorePorted {
+            fpEmit(t + ".code = clar_fn_rtLastErrCode();")
+            fpEmit(t + ".message = clar_fn_rtLastErrMsg();")
+            return t
+        }
         fpEmit(t + ".code = rt_lasterr_code;")
         fpEmit("rt_str_store((uint8_t*)&" + t + ".message, 255, rt_lasterr_msg);")
         return t
 
     // ---- files ----
     } else if nm == IFileReadText() {
+        if cpCorePorted {
+            t = fpNewTmp("int32_t")
+            fpEmit(t + " = rt_file_read_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ");")
+            fpEmitCoreLastErrSync()
+            return t
+        }
         return "rt_file_read_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
     } else if nm == IFileWriteText() {
+        if cpCorePorted {
+            t = fpNewTmp("int32_t")
+            fpEmit(t + " = rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ");")
+            fpEmitCoreLastErrSync()
+            return t
+        }
         return "rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
     } else if nm == IFileName() {
         s0 = fpStrAddr(a0)
         t = fpNewTmp("clar_str_255")
         fpEmit("rt_file_name((uint8_t*)&" + t + ", " + s0 + ");")
+        // rt_file_name (rt.c:157) never calls rt_set_lasterr -- it is a
+        // pure path-splitting helper with no failure path -- so, unlike
+        // IFileReadText/IFileWriteText just above, there is nothing here
+        // for fpEmitCoreLastErrSync to sync.
         return t
     } else if nm == IFileSave() or nm == IFileLoad() {
         // file.save/file.load (Ch12, Task 2 mac-target-4d). a1 is the

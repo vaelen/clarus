@@ -47,29 +47,18 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
  * same C symbol in one merged translation unit. */
 int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
-/* rt_ext_Ser{SetLastErr,Panic,ListCount,ListAt,ListClear,ListPush,MapCount,
- * MapKeyAt,MapValAt,MapSet,MapClear,BlockMoveData,NewPtr,DisposePtr}: final-
- * review fix -- ser.cla's remaining fourteen externs were still unprefixed
- * and collided with a user program's own `external func NewPtr`/etc. (the
- * documented Ch13 escape hatch) the moment that program also called
- * file.save/file.load, the same irRegisterExtern dedup gap the
- * SerFileWriteData/SerFileReadTextInto pair above was already fixed for.
- * Thin aliases of the exact same primitives the generic rt_ext_* wrappers
- * above call -- no logic of their own. */
-void rt_ext_SerSetLastErr(int32_t code, const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_set_lasterr(code, buf);
-}
-void rt_ext_SerPanic(const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_panic(buf);
-}
+/* rt_ext_Ser{ListCount,ListAt,ListClear,ListPush,MapCount,MapKeyAt,MapValAt,
+ * MapSet,MapClear,BlockMoveData,NewPtr,DisposePtr}: final-review fix --
+ * ser.cla's remaining externs were still unprefixed and collided with a
+ * user program's own `external func NewPtr`/etc. (the documented Ch13
+ * escape hatch) the moment that program also called file.save/file.load,
+ * the same irRegisterExtern dedup gap the SerFileWriteData/
+ * SerFileReadTextInto pair above was already fixed for. Thin aliases of
+ * the exact same primitives the generic rt_ext_* wrappers above call -- no
+ * logic of their own. (rt_ext_SerSetLastErr/rt_ext_SerPanic, ser.cla's own
+ * former SetLastErr/Panic aliases, are gone as of Plan native-5d Task 3:
+ * ser.cla calls core.cla's rtSetLastErr/rtPanic directly now -- a plain
+ * intra-Clarus call, no extern needed at all.) */
 int32_t rt_ext_SerListCount(void *l) { return rt_list_count((rt_list *)l); }
 void *rt_ext_SerListAt(void *l, int32_t i) { return rt_list_at((rt_list *)l, i); }
 void rt_ext_SerListClear(void *l) { rt_list_clear((rt_list *)l); }
@@ -112,61 +101,55 @@ void rt_ext_Panic(const uint8_t *msg) {
     rt_panic(buf);
 }
 
-/* rt_ext_StrSetLastErr/rt_ext_StrPanic/rt_ext_StrBlockMoveData: str.cla's
- * own extern names (Plan 5b Task 8), same reasoning as
- * rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto above -- str.cla is
- * UNCONDITIONALLY included in every emitted program from this task
- * forward, so its own SetLastErr/Panic/BlockMoveData calls must not share
- * a name with the generic waist externs a user program might also declare
- * (testdata/lowlevel/peekpoke.cla already declares its own `external func
- * BlockMoveData` and would otherwise collide the moment str.cla became
- * unconditional -- checkFuncSig's scopeDeclare keys purely on name, no
- * signature comparison). Bodies are thin aliases of the same primitives
- * the generic wrappers above already call. */
-void rt_ext_StrSetLastErr(int32_t code, const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_set_lasterr(code, buf);
-}
-void rt_ext_StrPanic(const uint8_t *msg) {
+/* rt_ext_CorePanic: core.cla's own extern name (Plan native-5d Task 3),
+ * same "own prefixed name, not the generic waist extern" reasoning as
+ * every other family below -- core.cla is UNCONDITIONALLY included (it is
+ * now spliced FIRST, ahead of every other runtime module), so its rtPanic
+ * -> CorePanic call must not share a name with the generic rt_ext_Panic a
+ * user program might also declare via its own `external func Panic`. Same
+ * str255-to-NUL-terminated-C-string conversion shape as rt_ext_Panic
+ * above.
+ */
+void rt_ext_CorePanic(const uint8_t *msg) {
     char buf[256];
     uint8_t n = msg[0];
     memmove(buf, msg + 1, (size_t)n);
     buf[n] = '\0';
     rt_panic(buf);
 }
+
+/* rt_ext_StrBlockMoveData: str.cla's own extern name (Plan 5b Task 8),
+ * same reasoning as rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto
+ * above -- str.cla is UNCONDITIONALLY included in every emitted program,
+ * so its own BlockMoveData calls must not share a name with the generic
+ * waist extern a user program might also declare (testdata/lowlevel/
+ * peekpoke.cla already declares its own `external func BlockMoveData` and
+ * would otherwise collide -- checkFuncSig's scopeDeclare keys purely on
+ * name, no signature comparison). Thin alias of the same primitive the
+ * generic wrapper above already calls. (rt_ext_StrSetLastErr/
+ * rt_ext_StrPanic, str.cla's own former SetLastErr/Panic aliases, are gone
+ * as of Plan native-5d Task 3: str.cla calls core.cla's rtSetLastErr/
+ * rtPanic directly now -- a plain intra-Clarus call, no extern needed at
+ * all.) */
 void rt_ext_StrBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 
-/* rt_ext_TextHandleDeref/TextSetHandleSize/TextBlockMoveData/
- * TextSetLastErr/TextPanic/TextNewPtr/TextDisposePtr: text.cla's own
- * extern names (Plan 5b Task 9), same reasoning as the Str family above --
- * text.cla is UNCONDITIONALLY included in every emitted program from this
- * task forward, so its own waist calls must not share a name with the
- * generic/Str/Ser externs a user program or another runtime module might
- * also declare. Bodies are thin aliases of the same primitives the generic
- * wrappers above already call. (rt_ext_TextNewRaw, the one-time "whole
- * rt_text_new delegation" birth-allocation wrapper, is gone as of Plan 5c
- * wave2a Task 2 -- birth moved into text.cla itself, built from
- * rt_ext_TextNewPtr/TextNewHandle below.) */
+/* rt_ext_TextHandleDeref/TextSetHandleSize/TextBlockMoveData/TextNewPtr/
+ * TextDisposePtr: text.cla's own extern names (Plan 5b Task 9), same
+ * reasoning as the Str family above -- text.cla is UNCONDITIONALLY
+ * included in every emitted program, so its own waist calls must not
+ * share a name with the generic/Str/Ser externs a user program or another
+ * runtime module might also declare. Bodies are thin aliases of the same
+ * primitives the generic wrappers above already call. (rt_ext_TextNewRaw,
+ * the one-time "whole rt_text_new delegation" birth-allocation wrapper, is
+ * gone as of Plan 5c wave2a Task 2 -- birth moved into text.cla itself,
+ * built from rt_ext_TextNewPtr/TextNewHandle below. rt_ext_TextSetLastErr/
+ * rt_ext_TextPanic, text.cla's own former SetLastErr/Panic aliases, are
+ * gone as of Plan native-5d Task 3: text.cla calls core.cla's
+ * rtSetLastErr/rtPanic directly now -- a plain intra-Clarus call, no
+ * extern needed at all.) */
 void *rt_ext_TextHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_TextSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_TextBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
-void rt_ext_TextSetLastErr(int32_t code, const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_set_lasterr(code, buf);
-}
-void rt_ext_TextPanic(const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_panic(buf);
-}
 /* rt_ext_TextNewPtr (review round 1 fix, Critical): text.cla's own
  * scratch-buffer allocator (rtTextConcat/rtTextConcatSl), a NewPtr block
  * mirroring rt_text_concat's own scratch choice (rt_core.inc:307-308)
@@ -207,26 +190,22 @@ void rt_ext_TextRcCheck(void *box, int32_t rc) {
     }
 }
 
-/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic:
- * list.cla's own extern names (Plan 5b Task 10), same reasoning as the Text
- * family above -- list.cla is UNCONDITIONALLY included in every emitted
- * program from this task forward, so its own waist calls must not share a
- * name with the generic/Str/Text/Ser externs a user program or another
- * runtime module might also declare. Bodies are thin aliases of the same
- * primitives the generic wrappers above already call. (rt_ext_ListNewRaw,
- * the one-time "whole rt_list_new delegation" birth-allocation wrapper, is
- * gone as of Plan 5c wave2a Task 3 -- birth moved into list.cla itself,
- * built from rt_ext_ListNewPtr/ListNewHandle below.) */
+/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData: list.cla's
+ * own extern names (Plan 5b Task 10), same reasoning as the Text family
+ * above -- list.cla is UNCONDITIONALLY included in every emitted program,
+ * so its own waist calls must not share a name with the generic/Str/Text/
+ * Ser externs a user program or another runtime module might also
+ * declare. Bodies are thin aliases of the same primitives the generic
+ * wrappers above already call. (rt_ext_ListNewRaw, the one-time "whole
+ * rt_list_new delegation" birth-allocation wrapper, is gone as of Plan 5c
+ * wave2a Task 3 -- birth moved into list.cla itself, built from
+ * rt_ext_ListNewPtr/ListNewHandle below. rt_ext_ListPanic, list.cla's own
+ * former Panic alias, is gone as of Plan native-5d Task 3: list.cla calls
+ * core.cla's rtPanic directly now -- a plain intra-Clarus call, no extern
+ * needed at all.) */
 void *rt_ext_ListHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_ListSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_ListBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
-void rt_ext_ListPanic(const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_panic(buf);
-}
 
 /* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
  * ListDisposePtr (Plan 5c Task 1: ARC waist externs; live as of Task 3,
@@ -258,27 +237,22 @@ void *rt_ext_ListNewPtr(int32_t size) {
 }
 void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
-/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic:
- * map.cla's own extern names (Plan 5b Task 11), same reasoning as the List
- * family above -- map.cla is UNCONDITIONALLY included in every emitted
- * program from this task forward, so its own waist calls must not share a
- * name with the generic/Str/Text/List/Ser externs a user program or
- * another runtime module might also declare. Bodies are thin aliases of
- * the same primitives the generic/List wrappers above already call.
- * (rt_ext_MapNewRaw, the one-time "whole rt_map_new delegation"
- * birth-allocation wrapper, is gone as of Plan 5c wave2a Task 4 -- birth
- * moved into map.cla itself, built from rt_ext_MapNewPtr/MapNewHandle
- * below, mirroring the List family's own Task 3 update.) */
+/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData: map.cla's own
+ * extern names (Plan 5b Task 11), same reasoning as the List family above
+ * -- map.cla is UNCONDITIONALLY included in every emitted program, so its
+ * own waist calls must not share a name with the generic/Str/Text/List/
+ * Ser externs a user program or another runtime module might also
+ * declare. Bodies are thin aliases of the same primitives the generic/
+ * List wrappers above already call. (rt_ext_MapNewRaw, the one-time
+ * "whole rt_map_new delegation" birth-allocation wrapper, is gone as of
+ * Plan 5c wave2a Task 4 -- birth moved into map.cla itself, built from
+ * rt_ext_MapNewPtr/MapNewHandle below, mirroring the List family's own
+ * Task 3 update. rt_ext_MapPanic, map.cla's own former Panic alias, is
+ * gone as of Plan native-5d Task 3: map.cla calls core.cla's rtPanic
+ * directly now -- a plain intra-Clarus call, no extern needed at all.) */
 void *rt_ext_MapHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_MapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
-void rt_ext_MapPanic(const uint8_t *msg) {
-    char buf[256];
-    uint8_t n = msg[0];
-    memmove(buf, msg + 1, (size_t)n);
-    buf[n] = '\0';
-    rt_panic(buf);
-}
 
 /* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
  * (Plan 5c Task 1: ARC waist externs): map.cla's own NewHandle/

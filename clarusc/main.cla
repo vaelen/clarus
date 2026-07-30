@@ -428,6 +428,17 @@ on App.startCLI(args: list of string) {
     // must still surface, attributed to the runtime file via expand's own
     // setDeclFile loop.
     if emitMode {
+        // Plan native-5d Task 3: core.cla is spliced FIRST, ahead of every
+        // other manifest entry -- str.cla/text.cla/list.cla/map.cla/
+        // ser.cla all call its rtSetLastErr/rtPanic directly now (no more
+        // per-module *SetLastErr/*Panic externs), and the flat top-level
+        // scope checkFuncSig shares across this whole splice requires
+        // declare-before-use. UNCONDITIONAL like str/text/list/map below
+        // (every emitted program needs it transitively through those),
+        // same "set the flag true directly, right alongside the manifest
+        // decision" convention every other unconditional module uses.
+        cpCorePorted = true
+        neededMods.add("core.cla")
         // The manifest: Task 4 ships exactly this one usage-flag/file pair
         // plus the machinery; Task 7 repoints "ser.cla" at the real
         // serialization module (now containing rtFileSave/rtFileLoad,

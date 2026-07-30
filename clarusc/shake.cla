@@ -348,6 +348,15 @@ func shakeWalkExpr(x: int) {
     if k == EFieldRef {
         shakeWalkExpr(irFieldRefX(x))
     } else if k == EIndexRef {
+        // Plan native-5d Task 3: fpIndexRef's Arr arm (cprint.cla) now
+        // calls clar_fn_rtArrCheck under cpCorePorted (unconditionally
+        // true) -- no EIntr node exists for a plain a[i] access, so root
+        // it here explicitly, mirroring fpIndexRef's own KArr-only
+        // condition (the KList arm's rt_list_at stays bare C, already
+        // covered by the always-rooted core's rtListAt).
+        if irtKind(irExprType(irIndexRefX(x))) == KArr {
+            shakeMarkAndEnqueue(intern("rtArrCheck"))
+        }
         shakeWalkExpr(irIndexRefX(x))
         shakeWalkExpr(irIndexRefI(x))
     } else if k == EBin {
@@ -373,11 +382,11 @@ func shakeWalkExpr(x: int) {
 // shakeWalkIntr roots the Clarus-ported runtime function(s) cprint.cla's
 // fpIntrCall would call to emit this intrinsic -- one arm per intrinsic
 // that redirects to a clar_fn_rtXxx call (mirrors fpIntrCall's own
-// cpStrPorted/cpTextPorted/cpListPorted/cpMapPorted/cpSerPorted branches,
-// all of which are unconditionally true in the emit path -- see the file
-// header). Every intrinsic NOT listed here (peek/poke/quit/fixMul/fixDiv/
-// alert/log/lastErr*/file read+write+name/every Ui* op) prints as a raw
-// rt_*/rt_ui_* C call with no matching irFuncs entry -- nothing to root.
+// cpStrPorted/cpTextPorted/cpListPorted/cpMapPorted/cpSerPorted/
+// cpCorePorted branches, all of which are unconditionally true in the emit
+// path -- see the file header). Every intrinsic NOT listed here (peek/
+// poke/quit/alert/log/IFileName/every Ui* op) prints as a raw rt_*/rt_ui_*
+// C call with no matching irFuncs entry -- nothing to root.
 func shakeWalkIntr(x: int) {
     var nm: int
 
@@ -517,5 +526,28 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtFileSave"))
     } else if nm == IFileLoad() {
         shakeMarkAndEnqueue(intern("rtFileLoad"))
+    } else if nm == IFileReadText() or nm == IFileWriteText() {
+        // Plan native-5d Task 3: under cpCorePorted (unconditionally true),
+        // fpIntrCall's IFileReadText/IFileWriteText arms emit a post-call
+        // fpEmitCoreLastErrSync fixup that calls clar_fn_rtSetLastErr
+        // directly -- no EIntr node exists for THAT call (same shape as
+        // SStoreStr's rtStrStore/SForList's rtListCount above), so root it
+        // here explicitly. IFileName sets no lastError (rt_file_name has no
+        // failure path -- see cprint.cla's own comment there), so it needs
+        // no root.
+        shakeMarkAndEnqueue(intern("rtSetLastErr"))
+
+    // ---- core: lastError / fixed-point ----
+    } else if nm == IFixMul() {
+        shakeMarkAndEnqueue(intern("rtFixMul"))
+    } else if nm == IFixDiv() {
+        shakeMarkAndEnqueue(intern("rtFixDiv"))
+    } else if nm == ILastErrCode() {
+        shakeMarkAndEnqueue(intern("rtLastErrCode"))
+    } else if nm == ILastErrMsg() {
+        shakeMarkAndEnqueue(intern("rtLastErrMsg"))
+    } else if nm == ILastErr() {
+        shakeMarkAndEnqueue(intern("rtLastErrCode"))
+        shakeMarkAndEnqueue(intern("rtLastErrMsg"))
     }
 }

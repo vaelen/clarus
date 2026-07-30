@@ -19,27 +19,29 @@
 // reference's own BlockMoveData calls one-for-one).
 //
 // Behavior contract (brief): every function EXCEPT rtStrSlice clamps an
-// over-length result and calls StrSetLastErr(1, "string truncated") --
+// over-length result and calls rtSetLastErr(1, "string truncated") --
 // never panics. rtStrSlice alone is strict: out-of-range bounds (including
 // len>255) panic "slice out of range", no clamping, matching
 // rt_core.inc:138-146's own comment ("Strict bounds (Ch3)... there is no
 // clamping here, unlike the byte-copy family above").
 //
-// StrSetLastErr/StrPanic/StrBlockMoveData are str.cla's OWN extern names,
-// distinct from the public SetLastErr/Panic/BlockMoveData that ser.cla (and
-// testdata/lowlevel/peekpoke.cla, a committed Ch13 fixture) also declare.
-// Because str.cla is unconditional -- included in literally every emitted
-// program from this task forward -- redeclaring the generic names would
-// make ANY program that also declares its own `external func BlockMoveData`
-// (peekpoke.cla already does, testdata/lowlevel/peekpoke.cla:14) collide
-// with str.cla's declaration in the same flat top-level scope
-// (clarusc/check.cla's checkFuncSig -> scopeDeclare keys purely on name, no
-// signature comparison, so even an identical signature still redeclares).
-// Distinct Str-prefixed names sidestep the hazard outright -- the exact
-// same fix Task 7 already applied to ser.cla's FileWriteData/
-// FileReadTextInto for the identical reason (see ser.cla's header comment).
-external func StrSetLastErr(code: int, msg: string)
-external func StrPanic(msg: string)
+// StrBlockMoveData is str.cla's OWN extern name, distinct from the public
+// BlockMoveData that ser.cla (and testdata/lowlevel/peekpoke.cla, a
+// committed Ch13 fixture) also declares. Because str.cla is unconditional
+// -- included in literally every emitted program -- redeclaring the
+// generic name would make ANY program that also declares its own
+// `external func BlockMoveData` (peekpoke.cla already does,
+// testdata/lowlevel/peekpoke.cla:14) collide with str.cla's declaration in
+// the same flat top-level scope (clarusc/check.cla's checkFuncSig ->
+// scopeDeclare keys purely on name, no signature comparison, so even an
+// identical signature still redeclares). A distinct Str-prefixed name
+// sidesteps the hazard outright -- the exact same fix Task 7 already
+// applied to ser.cla's FileWriteData/FileReadTextInto for the identical
+// reason (see ser.cla's header comment). StrSetLastErr/StrPanic, str.cla's
+// own former externs for this same reason, are gone as of Plan native-5d
+// Task 3: core.cla is now spliced ahead of str.cla (declare-before-use),
+// so str.cla calls its rtSetLastErr/rtPanic directly -- a plain intra-
+// Clarus call, no extern/name-collision hazard to sidestep at all.
 external func StrBlockMoveData(src: ptr, dst: ptr, count: int)
 
 // rtStrStore (rt_core.inc:31-40): clamped copy of src's bytes into dst's
@@ -57,7 +59,7 @@ func rtStrStore(dst: ptr, dstcap: int, src: ptr) {
     StrBlockMoveData(src + 1, dst + 1, n)
     pokeb(dst, n)
     if n < srclen {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
 }
 
@@ -89,7 +91,7 @@ func rtStrConcat(out: ptr, a: ptr, b: ptr) {
     StrBlockMoveData(b + 1, out + 1 + fromA, fromB)
     pokeb(out, n)
     if n < total {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
 }
 
@@ -119,7 +121,7 @@ func rtStrConcatChar(out: ptr, a: ptr, c: int) {
     }
     pokeb(out, n)
     if n < total {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
 }
 
@@ -141,7 +143,7 @@ func rtStrPrependChar(out: ptr, c: int, a: ptr) {
     StrBlockMoveData(a + 1, out + 2, n - 1)
     pokeb(out, n)
     if n < total {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
 }
 
@@ -195,7 +197,7 @@ func rtStrLen(s: ptr): int {
 // clamp-plus-SetLastErr contract.
 func rtStrIndex(s: ptr, i: int): int {
     if i < 0 or i >= peekb(s) {
-        StrPanic("string index out of range")
+        rtPanic("string index out of range")
     }
     return peekb(s + 1 + i)
 }
@@ -203,7 +205,7 @@ func rtStrIndex(s: ptr, i: int): int {
 // rtStrSetIndex (rt_core.inc:110-114): same panic contract as rtStrIndex.
 func rtStrSetIndex(s: ptr, i: int, c: int) {
     if i < 0 or i >= peekb(s) {
-        StrPanic("string index out of range")
+        rtPanic("string index out of range")
     }
     pokeb(s + 1 + i, c)
 }
@@ -230,7 +232,7 @@ func rtStrFromBytes(dst: ptr, dstcap: int, buf: ptr, bufcap: int, count: int) {
     StrBlockMoveData(buf, dst + 1, n)
     pokeb(dst, n)
     if n < want {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
 }
 
@@ -248,7 +250,7 @@ func rtStrToBytes(s: ptr, buf: ptr, bufcap: int): int {
     }
     StrBlockMoveData(s + 1, buf, n)
     if n < srclen {
-        StrSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
     return n
 }
@@ -261,10 +263,10 @@ func rtStrSlice(out: ptr, s: ptr, start: int, len: int) {
 
     srclen = peekb(s)
     if len < 0 or len > 255 {
-        StrPanic("slice out of range")
+        rtPanic("slice out of range")
     }
     if start < 0 or start > srclen - len {
-        StrPanic("slice out of range")
+        rtPanic("slice out of range")
     }
     StrBlockMoveData(s + 1 + start, out + 1, len)
     pokeb(out, len)

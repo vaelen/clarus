@@ -110,9 +110,9 @@
 // `IMapClear` intrinsic exists in cprint.cla's fpIntrCall dispatch today,
 // so this function is currently unreachable from any emitted program).
 //
-// MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/MapNewPtr/
+// MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapNewPtr/
 // MapDisposePtr/MapNewHandle/MapDisposeHandle/MapRcCheck are map.cla's OWN
-// extern names, distinct from the public HandleDeref/BlockMoveData/Panic/
+// extern names, distinct from the public HandleDeref/BlockMoveData/
 // NewPtr names str.cla/text.cla/list.cla/ser.cla and any user program might
 // also declare -- same collision hazard those modules' own header comments
 // document (checkFuncSig -> scopeDeclare keys purely on name, no signature
@@ -123,11 +123,14 @@
 // already call. (MapNewRaw, the one-time "whole rt_map_new delegation"
 // birth-allocation wrapper, is gone as of Plan 5c wave2a Task 4 -- birth
 // moved into map.cla itself, built from MapNewPtr/MapNewHandle below,
-// mirroring list.cla's own Task 3 update.)
+// mirroring list.cla's own Task 3 update.) MapPanic, map.cla's own former
+// extern for this same reason, is gone as of Plan native-5d Task 3: map.cla
+// calls core.cla's rtPanic directly now (declare-before-use, core.cla is
+// spliced first) -- a plain intra-Clarus call, no extern/name-collision
+// hazard to sidestep at all.
 external func MapHandleDeref(h: ptr): ptr
 external func MapSetHandleSize(h: ptr, n: int): int
 external func MapBlockMoveData(src: ptr, dst: ptr, count: int)
-external func MapPanic(msg: string)
 // MapNewPtr/MapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
 // the-primitive placement exactly (text.cla/list.cla) -- never returns
@@ -259,7 +262,7 @@ func rtMapGrowKeys(m: ptr, need: int) {
     }
     err = MapSetHandleSize(rm.keys, newcap * MAP_KEYBLOCK)
     if err != 0 {
-        MapPanic("out of memory")
+        rtPanic("out of memory")
     }
     rm.cap = newcap
 }
@@ -290,7 +293,7 @@ func rtMapGrowVals(m: ptr, need: int) {
     }
     err = MapSetHandleSize(rm.vals, newcap * valsize)
     if err != 0 {
-        MapPanic("out of memory")
+        rtPanic("out of memory")
     }
     rm.valcap = newcap
 }
@@ -433,7 +436,7 @@ func rtMapGet(m: ptr, key: ptr, out: ptr) {
 
     idx = mapFind(m, key)
     if idx < 0 {
-        MapPanic("map key not found")
+        rtPanic("map key not found")
     }
     MapBlockMoveData(mapValSlot(m, idx), out, RtMap(m).valsize)
 }
@@ -504,7 +507,7 @@ func rtMapClear(m: ptr) {
 // passes the address of a `cv_<name>` Str255-typed loop variable.
 func rtMapKeyAt(m: ptr, i: int, key255: ptr) {
     if i < 0 or i >= RtMap(m).count {
-        MapPanic("map key not found")
+        rtPanic("map key not found")
     }
     MapBlockMoveData(mapKeySlot(m, i), key255, MAP_KEYBLOCK)
 }
@@ -513,7 +516,7 @@ func rtMapKeyAt(m: ptr, i: int, key255: ptr) {
 // contract as rtMapKeyAt above.
 func rtMapValAt(m: ptr, i: int, out: ptr) {
     if i < 0 or i >= RtMap(m).count {
-        MapPanic("map key not found")
+        rtPanic("map key not found")
     }
     MapBlockMoveData(mapValSlot(m, i), out, RtMap(m).valsize)
 }

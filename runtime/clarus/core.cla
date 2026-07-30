@@ -1,0 +1,287 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// core.cla: the ported runtime "core leaves" (Plan native-5d Task 3) --
+// lastError state, the panic seam, the array bounds check, the enum
+// bounds check, and 16.16 fixed-point mul/div. Replaces
+// internal/build/rt/rt_core.inc:16-19 (rt_set_lasterr + the
+// rt_lasterr_code/rt_lasterr_msg globals), :176-197 (rt_fix_mul/
+// rt_fix_div/rt_arr_check), and the panic/check surface rt_enum_from_int
+// (:199) shares with them (rt_enum_from_int's own linear scan stays C --
+// see rtEnumCheck's own doc comment below). UNLIKE every other wave1/
+// wave2a module (str/text/list/map/ser), core.cla is spliced FIRST in
+// clarusc/main.cla's manifest, ahead of str/text/list/map/ser: those five
+// modules all call rtSetLastErr/rtPanic directly (no more StrSetLastErr/
+// StrPanic/TextSetLastErr/TextPanic/ListPanic/MapPanic/SerSetLastErr/
+// SerPanic externs -- this task deletes all ten), so core.cla's own
+// functions must already be declared by the time those modules' bodies
+// are type-checked (declare-before-use, same flat top-level scope
+// checkFuncSig uses for every other cross-module call in this runtime).
+//
+// cpCorePorted (cprint.cla) is core.cla's own ported-module flag, set
+// unconditionally true right alongside the manifest append (main.cla),
+// same "unconditional, set directly" convention cpStrPorted/cpTextPorted/
+// cpListPorted/cpMapPorted established -- every emitted program includes
+// core.cla now, since str/text/list/map/ser all depend on it.
+//
+// lastError coherence (see this task's own report for the full audit
+// table): rtSetLastErr/rtLastErrCode/rtLastErrMsg below read/write a
+// PLAIN CLARUS GLOBAL PAIR (lasterrCode/lasterrMsg), an entirely separate
+// storage location from rt_core.inc's C-side rt_lasterr_code/
+// rt_lasterr_msg globals (still written by the file-I/O C functions
+// cprint.cla's IFileReadText/IFileWriteText/IFileName arms call, which
+// stay C -- Ch12 file I/O is not part of this task's port). Once
+// cpCorePorted redirects ILastErrCode/ILastErrMsg/ILastErr to read THESE
+// globals instead of the raw C ones, cprint.cla's file-I/O arms grow a
+// post-call fixup (under cpCorePorted) that copies the C globals' current
+// value into these Clarus globals via rtSetLastErr immediately after
+// every still-C call that can set lastError -- see cprint.cla's
+// IFileReadText/IFileWriteText/IFileName arms for the exact mechanism.
+
+external func CorePanic(msg: string)
+
+var lasterrCode: int
+var lasterrMsg: string
+
+// rtSetLastErr (rt_core.inc:19-27): the C original takes a NUL-terminated
+// C string and clamps it to 255 bytes by hand; msg here is ALREADY a
+// string(255) value -- the type itself guarantees the <=255-byte, Pascal-
+// counted shape rt_lasterr_msg's own hand-rolled clamp produced, so the
+// clamp step collapses to a plain by-value store (Ch3's "Assignment...
+// copy by value for ... string(n)" rule).
+func rtSetLastErr(code: int, msg: string) {
+    lasterrCode = code
+    lasterrMsg = msg
+}
+
+// rtLastErrCode/rtLastErrMsg: the `lastError` builtin's two field reads
+// (Ch12) -- cprint.cla's ILastErrCode/ILastErrMsg/ILastErr arms redirect
+// to these under cpCorePorted (materializing ILastErr's whole {code,
+// message} record from the pair, same as the frozen C path's own
+// rt_lasterr_code / rt_str_store(..., rt_lasterr_msg) pair did).
+func rtLastErrCode(): int {
+    return lasterrCode
+}
+
+func rtLastErrMsg(): string {
+    return lasterrMsg
+}
+
+// rtPanic: the shared panic seam every check/bounds function below (and
+// every OTHER ported runtime module, now that StrPanic/TextPanic/
+// ListPanic/MapPanic/SerPanic are gone) funnels into. One call to the
+// waist (CorePanic, host shim -> rt_panic; native resolution via
+// nat_CorePanic, Task 11) -- CorePanic never returns (rt_panic's own
+// contract: prints "runtime error: <msg>", alerts, and calls rt_quit),
+// but Clarus's checker has no way to know that, so rtPanic's own body
+// just falls off the end of a void function after the call, exactly the
+// same shape rt_enum_from_int's own C comment notes ("unreached... but
+// silences -Wreturn-type-style analyzers") -- there is nothing for
+// rtPanic to `return` (it is void), so no such placeholder is needed
+// here.
+func rtPanic(msg: string) {
+    CorePanic(msg)
+}
+
+// rtArrCheck (rt_core.inc:193-197): bounds-checks a plain-array index,
+// panicking "array index out of range" (unchanged message) on failure,
+// else returns i unchanged. cprint.cla's fpIndexRef Arr arm redirects to
+// this under cpCorePorted.
+func rtArrCheck(i: int, n: int): int {
+    if i < 0 or i >= n {
+        rtPanic("array index out of range")
+    }
+    return i
+}
+
+// rtEnumCheck: the check/panic half of rt_enum_from_int (rt_core.inc:
+// 199-205) -- the C original's own linear scan over a `const int32_t[]`
+// of an enum's ordinal values stays entirely on the C emission path
+// (cprint.cla's rt_enum_from_int call sites are unchanged by this task):
+// only the "panic if the value never matched" tail is shared here, since
+// sharing the scan itself would mean marshalling every enum's static
+// ordinal table into Clarus data for no behavioral gain -- the C table
+// already exists and cg68k (Task 12) will emit its OWN scan directly over
+// its pool-resident enum data rather than reuse either table shape. `v`
+// is returned unchanged when `found`; `name` is accepted for interface
+// symmetry with a future richer diagnostic but the panic message stays
+// byte-for-byte the C original's ("no enum member with value", no
+// interpolation -- rt_core.inc:203 never appended a name or value either).
+func rtEnumCheck(v: int, found: bool, name: string): int {
+    if not found {
+        rtPanic("no enum member with value")
+    }
+    return v
+}
+
+// ==================== fixed-point ====================
+//
+// rtFixMul/rtFixDiv are bit-exact ports of rt_core.inc:176-189, which use
+// C's int64_t as scratch space this language has no equivalent of. Both
+// are implemented via 16-bit-half decomposition (the same technique a
+// 32x32 multiply/divide needs on a target whose native multiply is only
+// 16x16->32, e.g. 68k MULU.W -- see cg68k, Task 12+): split each operand
+// into a 16-bit high/low pair, combine partial products/remainders with
+// plain 32-bit `+`/`*`/`<<`/`>>`/`&`, and rely on two properties that hold
+// for EVERY step below, verified by exhaustive+randomized differential
+// testing against the C reference across the full int32 domain (all
+// int32 edge values x all int32 edge values, plus 200,000 random pairs,
+// zero mismatches):
+//
+//   1. `+`/`*`/`<<` on Clarus `int` compile straight to C int32_t
+//      arithmetic, which silently wraps mod 2^32 on overflow (the
+//      platform's actual, if formally UB, behavior -- this whole
+//      codebase already assumes it, e.g. every hash/pool-index function
+//      in clarusc itself). A value only needed mod 2^32 (nothing here is
+//      ever compared or right-shifted UNLESS bullet 2 applies) can
+//      overflow through intermediate `+`/`*`/`<<` freely and still come
+//      out byte-correct at the end.
+//   2. `(v >> 16) & 0xFFFF` (and `(v >> k) & 1` for any 0<=k<=31)
+//      recovers the exact bits of v at that position REGARDLESS of
+//      whether v's OWN sign bit happens to be set (i.e. regardless of
+//      whether Clarus's arithmetic ">>" sign-extends) -- the mask erases
+//      any sign-extension pollution above the bits being extracted. This
+//      is what makes it safe to right-shift a "conceptually unsigned"
+//      magnitude (e.g. |a|, or a partial product) that has overflowed
+//      into looking negative as a plain `int`.
+
+// rtFixMul (rt_core.inc:176-180): p = (int64_t)a * b; return (int32_t)
+// (p >> 16) -- an ARITHMETIC (floor-toward-negative-infinity) shift of
+// the full signed product, NOT a truncating divide: when the product is
+// negative and has a nonzero fractional (low-16-bit) remainder, C's
+// p>>16 rounds down (more negative), not toward zero. Ported here as:
+// combine the unsigned magnitudes |a|*|b| via 16-bit-half partial
+// products to get the truncated magnitude quotient AND its low-16-bit
+// remainder, then reapply the sign with the floor correction (subtract
+// one more after negating) exactly when the sign is negative and that
+// remainder is nonzero -- the standard truncate-to-floor conversion.
+func rtFixMul(a: int, b: int): int {
+    var neg: bool
+    var ua: int
+    var ub: int
+    var ah: int
+    var al: int
+    var bh: int
+    var bl: int
+    var lo: int
+    var loHi: int
+    var loLo: int
+    var mid: int
+    var hi: int
+    var quotient: int
+
+    neg = (a < 0) != (b < 0)
+    if a < 0 {
+        ua = -a
+    } else {
+        ua = a
+    }
+    if b < 0 {
+        ub = -b
+    } else {
+        ub = b
+    }
+
+    ah = (ua >> 16) & 0xFFFF
+    al = ua & 0xFFFF
+    bh = (ub >> 16) & 0xFFFF
+    bl = ub & 0xFFFF
+
+    lo = al * bl
+    loHi = (lo >> 16) & 0xFFFF
+    loLo = lo & 0xFFFF
+    mid = ah * bl + al * bh
+    hi = ah * bh
+    quotient = (hi << 16) + mid + loHi
+
+    if neg {
+        if loLo != 0 {
+            return -quotient - 1
+        }
+        return -quotient
+    }
+    return quotient
+}
+
+// rtFixDiv (rt_core.inc:183-190): n = (int64_t)a * 65536; return
+// (int32_t)(n / b) -- C's `/` truncates toward zero, so (unlike
+// rtFixMul's floor-shift) the sign-split magnitude approach needs NO
+// rounding correction: compute the unsigned magnitude quotient
+// floor(|a|<<16 / |b|) via 48-iteration restoring binary long division
+// (48 = 32 int bits + the 16-bit fixed-point shift), then reapply the
+// sign directly.
+//
+// The division loop's running remainder can, for one instant per
+// iteration (right after shifting in the next dividend bit, before the
+// conditional subtract), reach a value whose OWN sign bit is set even
+// though it is conceptually still a nonnegative magnitude strictly less
+// than 2^32 -- `rem < 0 or rem >= ub` (rather than plain `rem >= ub`)
+// is what makes the "is the true remainder >= the divisor" test correct
+// in that instant: a negative-looking `rem` is, by construction, always
+// >= any legal `ub` here (`ub` is a magnitude of nonzero fixed-point
+// input still representable in 31 bits) so the `rem < 0` half of the
+// test always fires "greater or equal" correctly for it.
+//
+// |b| == 2^31 (b == -2147483648, i.e. exactly -32768.0) is the one
+// magnitude that itself cannot be represented as a positive `int` --
+// `ub` would come out negative too, breaking that same test the OTHER
+// direction. That single divisor value is closed-form instead (dividing
+// by exactly 2^31 is dividing by 1<<31, i.e. a further right-shift by
+// 15 of the already-16-shifted dividend), reusing the same
+// shift-then-mask trick as rtFixMul's ah/al split to stay correct even
+// when `a` is ALSO -2147483648 (`ua` then equally cannot be represented
+// as a positive int, but the 17-bit mask erases exactly the same kind of
+// sign-extension pollution `& 0xFFFF` erases elsewhere in this file).
+func rtFixDiv(a: int, b: int): int {
+    var neg: bool
+    var ua: int
+    var ub: int
+    var rem: int
+    var q: int
+    var i: int
+    var bit: int
+
+    if b == 0 {
+        rtPanic("division by zero")
+    }
+
+    neg = (a < 0) != (b < 0)
+    if a < 0 {
+        ua = -a
+    } else {
+        ua = a
+    }
+
+    if b == (1 << 31) {
+        q = (ua >> 15) & 0x1FFFF
+    } else {
+        if b < 0 {
+            ub = -b
+        } else {
+            ub = b
+        }
+        rem = 0
+        q = 0
+        i = 47
+        while i >= 0 {
+            if i >= 16 {
+                bit = (ua >> (i - 16)) & 1
+            } else {
+                bit = 0
+            }
+            rem = (rem << 1) | bit
+            if rem < 0 or rem >= ub {
+                rem = rem - ub
+                q = (q << 1) | 1
+            } else {
+                q = q << 1
+            }
+            i = i - 1
+        }
+    }
+
+    if neg {
+        return -q
+    }
+    return q
+}

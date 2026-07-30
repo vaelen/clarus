@@ -59,7 +59,7 @@
 // Behavior contract (brief): Text has no 255-byte cap -- it grows (via
 // rtTextGrow, porting rt_core_grow's amortized-doubling policy,
 // rt_core.inc:246-255) rather than clamping. rtTextToBytes clamps to the
-// destination buffer's capacity and calls TextSetLastErr(1, "string
+// destination buffer's capacity and calls rtSetLastErr(1, "string
 // truncated") on truncation (matching rt_core.inc:390's rt_set_lasterr
 // call) -- the only text function with that clamp-and-report shape, since
 // every other copy INTO a text (store/storeText/concat/concatSl/fromBytes/
@@ -67,22 +67,24 @@
 // rtTextSetIndex/rtTextSlice are STRICT: out-of-range panics (matching
 // rtStrIndex/rtStrSlice's own str.cla contract), never clamps.
 //
-// TextHandleDeref/TextSetHandleSize/TextBlockMoveData/TextSetLastErr/
-// TextPanic/TextNewPtr/TextDisposePtr/TextNewHandle/TextDisposeHandle/
-// TextRcCheck are text.cla's OWN extern names, distinct from the public
-// HandleDeref/BlockMoveData/SetLastErr/Panic/NewPtr names ser.cla
-// (conditional) and any user program might also declare -- same collision
-// hazard str.cla's own header comment documents (checkFuncSig ->
-// scopeDeclare keys purely on name, no signature comparison), and the same
-// fix: distinct Text-prefixed names sidestep it. Each is backed by an
-// rt_ext_Text* wrapper in BOTH internal/build/rt/rt_ext_host.inc and
-// runtime/mac/rt_ext_mac.inc, delegating to the same underlying primitives
-// the generic/Str/Ser wrappers already call.
+// TextHandleDeref/TextSetHandleSize/TextBlockMoveData/TextNewPtr/
+// TextDisposePtr/TextNewHandle/TextDisposeHandle/TextRcCheck are text.cla's
+// OWN extern names, distinct from the public HandleDeref/BlockMoveData/
+// NewPtr names ser.cla (conditional) and any user program might also
+// declare -- same collision hazard str.cla's own header comment documents
+// (checkFuncSig -> scopeDeclare keys purely on name, no signature
+// comparison), and the same fix: distinct Text-prefixed names sidestep it.
+// Each is backed by an rt_ext_Text* wrapper in BOTH
+// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// delegating to the same underlying primitives the generic/Str/Ser
+// wrappers already call. TextSetLastErr/TextPanic, text.cla's own former
+// externs for this same reason, are gone as of Plan native-5d Task 3: text
+// calls core.cla's rtSetLastErr/rtPanic directly now (declare-before-use,
+// core.cla is spliced first) -- a plain intra-Clarus call, no extern/
+// name-collision hazard to sidestep at all.
 external func TextHandleDeref(h: ptr): ptr
 external func TextSetHandleSize(h: ptr, n: int): int
 external func TextBlockMoveData(src: ptr, dst: ptr, count: int)
-external func TextSetLastErr(code: int, msg: string)
-external func TextPanic(msg: string)
 // TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
 // allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own
 // NewPtr choice exactly (rt_core.inc:307). rt_ext_TextNewPtr panics
@@ -147,7 +149,7 @@ func rtTextGrow(t: ptr, need: int) {
     }
     err = TextSetHandleSize(rt.h, newcap)
     if err != 0 {
-        TextPanic("out of memory")
+        rtPanic("out of memory")
     }
     rt.cap = newcap
 }
@@ -466,7 +468,7 @@ func rtTextIndex(t: ptr, i: int): int {
 
     rt = RtText(t)
     if i < 0 or i >= rt.len {
-        TextPanic("text index out of range")
+        rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
     return peekb(mp + i)
@@ -479,7 +481,7 @@ func rtTextSetIndex(t: ptr, i: int, c: int) {
 
     rt = RtText(t)
     if i < 0 or i >= rt.len {
-        TextPanic("text index out of range")
+        rtPanic("text index out of range")
     }
     mp = TextHandleDeref(rt.h)
     pokeb(mp + i, c)
@@ -512,7 +514,7 @@ func rtTextFromBytes(t: ptr, buf: ptr, bufcap: int, count: int) {
 }
 
 // rtTextToBytes (rt_core.inc:385-392): clamped copy of t's bytes into a
-// bufcap-byte buffer, reporting truncation via TextSetLastErr -- the ONE
+// bufcap-byte buffer, reporting truncation via rtSetLastErr -- the ONE
 // text function with the clamp-and-report shape (everything else targets
 // the growable side and never truncates).
 func rtTextToBytes(t: ptr, buf: ptr, bufcap: int): int {
@@ -529,7 +531,7 @@ func rtTextToBytes(t: ptr, buf: ptr, bufcap: int): int {
     mp = TextHandleDeref(rt.h)
     TextBlockMoveData(mp, buf, n)
     if n < rt.len {
-        TextSetLastErr(1, "string truncated")
+        rtSetLastErr(1, "string truncated")
     }
     return n
 }
@@ -546,10 +548,10 @@ func rtTextSlice(out: ptr, t: ptr, start: int, len: int) {
     rt = RtText(t)
     tlen = rt.len
     if len < 0 or len > 255 {
-        TextPanic("slice out of range")
+        rtPanic("slice out of range")
     }
     if start < 0 or start > tlen - len {
-        TextPanic("slice out of range")
+        rtPanic("slice out of range")
     }
     mp = TextHandleDeref(rt.h)
     TextBlockMoveData(mp + start, out + 1, len)

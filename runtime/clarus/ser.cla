@@ -51,10 +51,17 @@
 // outright, same fix already applied to the file-I/O pair
 // (SerFileWriteData/SerFileReadTextInto) and to every other family
 // (Str*/Text*/List*/Map*, see those modules' own header comments).
+// SerSetLastErr/SerPanic, ser.cla's own former externs for this same
+// reason, are gone as of Plan native-5d Task 3: ser.cla calls core.cla's
+// rtSetLastErr/rtPanic directly now (core.cla is spliced first, ahead of
+// ser.cla) -- a plain intra-Clarus call, no extern/name-collision hazard
+// to sidestep at all. (SerFileReadTextInto/SerFileWriteData's OWN
+// still-C rt_file_read_text/rt_file_write_data primitives can still set
+// the C runtime's OWN rt_lasterr_code/rt_lasterr_msg globals on failure --
+// see this task's report for why that specific residual gap is
+// documented, not fixed, here.)
 external func SerFileWriteData(path: ptr, t: text): int
 external func SerFileReadTextInto(path: ptr, out: text): int
-external func SerSetLastErr(code: int, msg: string)
-external func SerPanic(msg: string)
 external func SerListCount(l: ptr): int
 external func SerListAt(l: ptr, i: int): ptr
 external func SerListClear(l: ptr)
@@ -240,7 +247,7 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
 
     recSize = peekl(desc)
     if recSize > RtSerMaxRec {
-        SerPanic("record too large for serializer")
+        rtPanic("record too large for serializer")
     }
 
     out.append(RtSerMagic0)
@@ -258,6 +265,15 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
         rtSerSaveMap(out, data, desc, recSize)
     }
 
+    // known residual lastError gap (Plan native-5d Task 3 report): on
+    // failure, SerFileWriteData's underlying still-C rt_file_write_data
+    // sets the C runtime's OWN rt_lasterr_code/rt_lasterr_msg globals, not
+    // core.cla's Clarus-side ones -- ILastErrCode/ILastErrMsg/ILastErr now
+    // read the latter, so a program that checks lastError right after a
+    // failed file.save currently sees stale/zero state, not "could not
+    // open file"/"could not write file". No fixture exercises this path;
+    // closing it needs a new C-state getter extern this task's file list
+    // didn't authorize -- left for a follow-up.
     return SerFileWriteData(path, out)
 }
 
@@ -414,7 +430,7 @@ func rtSerLoadFail(container: int, data: ptr): int {
     } else if container == RtSerMap {
         SerMapClear(data)
     }
-    SerSetLastErr(2, "bad file format")
+    rtSetLastErr(2, "bad file format")
     return 0
 }
 
@@ -440,7 +456,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
 
     recSize = peekl(desc)
     if recSize > RtSerMaxRec {
-        SerPanic("record too large for serializer")
+        rtPanic("record too large for serializer")
     }
 
     if container == RtSerList {
@@ -453,7 +469,13 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
     rtSerBad = false
 
     if SerFileReadTextInto(path, input) != 1 {
-        return 0 // SerFileReadTextInto already set lastError
+        // known residual lastError gap (Plan native-5d Task 3 report): see
+        // rtFileSave's own matching comment above -- SerFileReadTextInto's
+        // still-C rt_file_read_text sets the C runtime's rt_lasterr_code/
+        // rt_lasterr_msg on failure, not core.cla's Clarus-side globals
+        // ILastErrCode/ILastErrMsg/ILastErr now read. Untested, undecided,
+        // left for a follow-up.
+        return 0
     }
 
     b0 = rtSerGetByte(input)
