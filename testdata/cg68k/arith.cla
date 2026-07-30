@@ -1,14 +1,16 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// arith.cla: native-5d Task 7's cg68k golden fixture -- an App.launch
-// handler with a couple of int locals and a return, plus a helper
-// function returning a str 255 (cgSizeOf > 4) so its frame needs a hidden
-// result pointer. The body is still just a TODO-body placeholder in the
-// listing this task (real expression codegen is Task 8); this fixture
-// pins the LOCAL frame layout (two 4-byte int slots) and the
-// hidden-result-pointer param layout (param shifted up to 12(A6), hidden
-// ptr at 8(A6)) instead.
+// arith.cla: native-5d Task 7's cg68k golden fixture, extended by Task 8
+// with real arithmetic/comparison/unary/conversion codegen. label()/
+// App.launch still pin the original frame-layout shapes (hidden result
+// pointer, local str slot); arithDemo() is the Task 8 addition -- mixed-
+// sign +,-,*,/,mod, all six comparisons, unary -/not/~, bitwise &,|,^,
+// <<,>>, and every EConv this backend implements except CvIntToEnum
+// (needs an enum pool table, Task 12) and the two overlay conversions
+// (need a declared overlay record type -- out of scope for a pure
+// arithmetic fixture; their codegen is the same identity-passthrough
+// code path CvPtrToInt/CvIntToPtr already exercise here).
 
 func label(n: int): string(255) {
     var s: string(255)
@@ -16,14 +18,63 @@ func label(n: int): string(255) {
     return s
 }
 
+func arithDemo(a: int, b: int): int {
+    var sum: int
+    var diff: int
+    var prod: int
+    var q: int
+    var r: int
+    var negA: int
+    var eqFlag: bool
+    var ltFlag: bool
+    var notFlag: bool
+    var bitAnd: int
+    var bitOr: int
+    var bitXor: int
+    var bitNot: int
+    var shl: int
+    var shr: int
+    var f: fixed
+    var backToInt: int
+    var c: char
+    var backToInt2: int
+    var p: ptr
+    var backToInt3: int
+
+    sum = a + b
+    diff = a - b
+    prod = a * b
+    q = a / b
+    r = a mod b
+    negA = -a
+    eqFlag = a == b
+    ltFlag = a < b
+    notFlag = not eqFlag
+    bitAnd = a & b
+    bitOr = a | b
+    bitXor = a ^ b
+    bitNot = ~a
+    shl = a << 2
+    shr = a >> 2
+    f = fixed(a)
+    backToInt = int(f)
+    c = char(a)
+    backToInt2 = int(c)
+    p = ptr(a)
+    backToInt3 = int(p)
+    return sum + diff + prod + q + r + negA + bitAnd + bitOr + bitXor + bitNot + shl + shr + backToInt + backToInt2 + backToInt3
+}
+
 on App.launch {
     var a: int
     var b: int
     var s: string(255)
+    var ax: int
 
     a = 1
     b = 2
     a = a + b
     s = label(a)
+    ax = arithDemo(7, -3)
     return
 }

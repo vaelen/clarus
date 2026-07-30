@@ -152,6 +152,114 @@ func cgFreshIntList(): list of int {
     return l
 }
 
+func cgFreshStringList(): list of string {
+    var l: list of string
+    return l
+}
+
+// ================================================================
+// Task 8: expression/statement codegen state.
+//
+// EVALUATION DISCIPLINE (documented once, here, per the brief). cgExpr(e)
+// always leaves e's value in D0 (sign/zero-extended over the full 32 bits
+// for a 1-byte bool/char, per cgLoadVar/cgCcFor below). A binary op
+// evaluates its LEFT operand first (result in D0), pushes it
+// (MOVE.L D0,-(A7)), evaluates its RIGHT operand (result in D0), then pops
+// the stashed left value into D1 (MOVE.L (A7)+,D1) -- so at the point the
+// operator itself runs, D1=left, D0=right, and evaluation order is
+// preserved left-to-right even though a later expression's side effects
+// (e.g. a nested call) run after the left operand's temp is already on
+// the stack. For a COMMUTATIVE op (+, &, |, ^) the operator runs
+// dest=D0,src=D1 directly, so the result lands in D0 with no extra move.
+// For a NON-commutative op (-, <<, >>) the 68000 <ea>,Dn instruction
+// forms this module's asm68k.cla exposes only ever WRITE into the
+// register named by the instruction's own "Dn" field -- there is no
+// "ea,Dn but store into ea" form -- so the only way to compute
+// `left - right` (not `right - left`) is to run the op with Dn=D1
+// (dest=D1=left, source=D0=right, giving D1=left-right) and then
+// MOVE.L D1,D0 to satisfy this module's own "result always ends in D0"
+// postcondition. Comparisons (CMP) and the mul/div/mod helper calls
+// reuse this exact D1=left/D0=right register convention -- see cgCompare
+// and cg_mul32/cg_div32/cg_mod32's own doc comments below.
+// ================================================================
+
+// cgCurFrameNames[i]/cgCurFrameOffsets[i] are the CURRENT function's
+// combined param+local (name -> A6 offset) table, rebuilt by cgEmitFunc
+// right after it computes paramOffsets/local offsets (both already
+// walked there for the frame-layout comments) -- cgVarOff below is the
+// sole reader. Reassigned (never appended-to-and-reused), matching this
+// file's existing per-run module state discipline.
+var cgCurFrameNames: list of string
+var cgCurFrameOffsets: list of int
+
+// cgCurEpilogueLabel is bound immediately before the current function's
+// UNLK/RTS; every SReturn branches here rather than emitting its own
+// UNLK/RTS inline -- one shared epilogue per function, naive but uniform.
+var cgCurEpilogueLabel: int
+
+// cgCurHiddenOffset is 8 (the hidden result pointer's fixed param offset
+// -- see the file header's "FRAME MODEL, WORKED EXAMPLE") when the
+// current function's own return type needs one (cgSizeOf > 4), else -1.
+// cgCurRetType is irFuncRet(f) for the SReturn str path's capacity.
+var cgCurHiddenOffset: int
+var cgCurRetType: int
+
+// cgLoopBreakLabels/cgLoopContinueLabels are parallel label-id stacks,
+// one entry pushed per enclosing SWhile/SForRange (popped on exit) --
+// SBreak/SContinue branch to whichever sits on top (innermost loop; both
+// statements are unlabeled per the language reference).
+var cgLoopBreakLabels: list of int
+var cgLoopContinueLabels: list of int
+
+// cgMul32Used/cgDiv32Used/cgMod32Used gate whether cg68Program emits the
+// corresponding hand-written helper routine (cg_mul32/cg_div32/
+// cg_mod32) at all -- and whether its label is even ALLOCATED: an
+// a68NewLabel() that's never a68Bind-ed would trip a68Finish's "every
+// label must be bound" check for a program that happens never to use
+// "*"/"/"/"mod", so the label itself is only created lazily, the first
+// time cgMul32Label/cgDiv32Label/cgMod32Label is actually called.
+var cgMul32Used: bool
+var cgMul32Lbl: int
+var cgDiv32Used: bool
+var cgDiv32Lbl: int
+var cgMod32Used: bool
+var cgMod32Lbl: int
+
+// cgResetCodegenState clears every Task 8 module-global above -- called
+// once per cg68Program() run, mirroring cgAssignJtSlots/
+// cgAssignGlobalOffsets's own fresh-per-run discipline.
+func cgResetCodegenState() {
+    cgMul32Used = false
+    cgDiv32Used = false
+    cgMod32Used = false
+    cgLoopBreakLabels = cgFreshIntList()
+    cgLoopContinueLabels = cgFreshIntList()
+}
+
+func cgMul32Label(): int {
+    if not cgMul32Used {
+        cgMul32Used = true
+        cgMul32Lbl = a68NewLabel()
+    }
+    return cgMul32Lbl
+}
+
+func cgDiv32Label(): int {
+    if not cgDiv32Used {
+        cgDiv32Used = true
+        cgDiv32Lbl = a68NewLabel()
+    }
+    return cgDiv32Lbl
+}
+
+func cgMod32Label(): int {
+    if not cgMod32Used {
+        cgMod32Used = true
+        cgMod32Lbl = a68NewLabel()
+    }
+    return cgMod32Lbl
+}
+
 // ================================================================
 // Shake-root registration (main.cla's emit68k arm calls this BEFORE
 // shakeProgram()).
@@ -563,8 +671,12 @@ func cgEmitFunc(f: int) {
     var needsHidden: bool
     var i: int
     var p: int
+    var frameNames: list of string
+    var frameOffsets: list of int
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
+    frameNames = cgFreshStringList()
+    frameOffsets = cgFreshIntList()
 
     // ---- params: collect in declaration order, then assign offsets in
     // REVERSE (the last-declared param is pushed last, so it lands at the
@@ -602,6 +714,8 @@ func cgEmitFunc(f: int) {
     i = 0
     while i < params.count {
         a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
+        frameNames.add(poolGet(irLocalName(params[i])))
+        frameOffsets.add(paramOffsets[i])
         i = i + 1
     }
 
@@ -621,15 +735,1075 @@ func cgEmitFunc(f: int) {
             sz = cgSlotSizeOf(irLocalType(loc))
             runningNeg = runningNeg - sz
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
+            frameNames.add(nm)
+            frameOffsets.add(runningNeg)
         }
         loc = irLocalNext(loc)
     }
     frameSize = 0 - runningNeg
 
+    // ---- Task 8: real body -- see cgStmt/cgExpr below for the per-node
+    // codegen. cgCurFrameNames/Offsets, cgCurHiddenOffset/RetType, and the
+    // loop label stacks are all per-function state, rebuilt/reset here
+    // before cgStmts walks the body.
+    cgCurFrameNames = frameNames
+    cgCurFrameOffsets = frameOffsets
+    cgCurHiddenOffset = -1
+    if needsHidden {
+        cgCurHiddenOffset = 8
+    }
+    cgCurRetType = irFuncRet(f)
+    cgLoopBreakLabels = cgFreshIntList()
+    cgLoopContinueLabels = cgFreshIntList()
+    cgCurEpilogueLabel = a68NewLabel()
+
     a68Bind(cgFuncLabels[f])
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
-    a68Comment("TODO body Task 8")
+    cgStmts(irFuncBodyHead(f))
+    a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// ================================================================
+// Task 8: variable resolution
+// ================================================================
+
+// cgFindFrameOffset returns nm's A6 offset from the CURRENT function's
+// frame table, or cgUnresolved (a sentinel no real offset ever equals) if
+// nm isn't a param/local of this function.
+const cgUnresolved: int = 0x7FFFFFFF
+
+func cgFindFrameOffset(nm: string): int {
+    var i: int
+
+    i = 0
+    while i < cgCurFrameNames.count {
+        if cgCurFrameNames[i] == nm {
+            return cgCurFrameOffsets[i]
+        }
+        i = i + 1
+    }
+    return cgUnresolved
+}
+
+// cgFindGlobalOffset returns nm's A5 offset (cgAssignGlobalOffsets must
+// have already run this cg68Program() call), or cgUnresolved.
+func cgFindGlobalOffset(nm: string): int {
+    var i: int
+
+    i = 0
+    while i < irGlobals.count {
+        if poolGet(irGlobalName(i)) == nm {
+            return cgGlobalOffsets[i]
+        }
+        i = i + 1
+    }
+    return cgUnresolved
+}
+
+// cgVarReg/cgVarOff resolve an EVarRef to its base register (5=A5 for a
+// global, 6=A6 for a param/local) and displacement -- irVarRefGlobal(e)
+// says definitively which table to search, so there's never any ambiguity
+// between a same-named global and local (Clarus scoping already resolved
+// that at check time; irVarRefGlobal just carries the answer through).
+func cgVarReg(e: int): int {
+    if irVarRefGlobal(e) {
+        return 5
+    }
+    return 6
+}
+
+func cgVarOff(e: int): int {
+    var nm: string
+    var off: int
+
+    nm = poolGet(irVarRefName(e))
+    if irVarRefGlobal(e) {
+        off = cgFindGlobalOffset(nm)
+    } else {
+        off = cgFindFrameOffset(nm)
+    }
+    if off == cgUnresolved {
+        log("cg68k: unresolved variable " + nm)
+        quit 1
+    }
+    return off
+}
+
+// cgIsScalarKind reports whether t is a plain <=4-byte value this
+// backend moves through D0/a MOVE.<B|L> pair -- everything except the
+// three aggregate/deferred kinds (Str's clamped-copy semantics, Rec/Arr's
+// by-value block shape -- Task 12/13).
+func cgIsScalarKind(k: IRKind): bool {
+    if k == KStr or k == KRec or k == KArr or k == KVoid {
+        return false
+    }
+    return true
+}
+
+// ================================================================
+// Task 8: cgExprAddr -- address of e into A0 (str/record/lvalue shapes).
+// ================================================================
+
+func cgExprAddr(e: int) {
+    var k: IRExprKind
+
+    k = irExprKind(e)
+    if k == EVarRef {
+        a68Emit(OpLea, 0, AmDisp16, cgVarReg(e), cgVarOff(e), AmAn, 0, 0)
+    } else if k == EStrConst {
+        a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(irStrConstIdx(e)), AmAn, 0, 0)
+    } else {
+        // EFieldRef/EIndexRef (records/arrays, Task 12/13), a call/intr
+        // result not addressable this task, or any other kind this
+        // backend doesn't yet resolve to an address -- degrade to a
+        // deterministic placeholder (address 0) rather than crash the
+        // whole compile; this only fires on code paths outside this
+        // task's own fixtures (see the Task 8 report's "deferred" list).
+        a68Comment("TODO cgExprAddr <kind " + numToStr(int(k)) + ">: unsupported this task")
+        a68Emit(OpLea, 0, AmAbsW, 0, 0, AmAn, 0, 0)
+    }
+}
+
+// ================================================================
+// Task 8: cgExpr -- evaluate e into D0 (see the evaluation-discipline
+// doc comment at this file's Task 8 module-state block, above).
+// ================================================================
+
+func cgLoadVar(e: int) {
+    var sz: int
+    var reg: int
+    var off: int
+
+    sz = cgSizeOf(irExprType(e))
+    reg = cgVarReg(e)
+    off = cgVarOff(e)
+    if sz == 1 {
+        // bool/char: zero-extend (both are unsigned 0-255/0-1 values,
+        // Ch3) -- CLR.L first so D0's upper 3 bytes can't carry stale
+        // garbage from whatever used D0 last, then MOVE.B the one real
+        // byte into the low byte.
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 1, AmDisp16, reg, off, AmDn, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    }
+}
+
+func cgStoreScalarVar(dst: int) {
+    var sz: int
+    var reg: int
+    var off: int
+
+    sz = cgSizeOf(irExprType(dst))
+    reg = cgVarReg(dst)
+    off = cgVarOff(dst)
+    if sz == 1 {
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, reg, off)
+    } else {
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
+    }
+}
+
+// cgCcFor maps a comparison operator's SPELLING (EBin.name -- mirrors
+// cOp's spelling->C-op table, cprint.cla:1047) to the 68000 Scc/Bcc
+// condition-code nibble (a68CcName's own numbering). Flags are always
+// set as left-right (CMP's dm operand is the LEFT value -- see
+// cgCompare), so these map the same direction a signed comparison reads.
+func cgCcFor(op: string): int {
+    if op == "==" { return 7 }   // EQ
+    if op == "!=" { return 6 }   // NE
+    if op == "<" { return 13 }   // LT
+    if op == "<=" { return 15 }  // LE
+    if op == ">" { return 14 }   // GT
+    return 12                     // ">=" -> GE
+}
+
+func cgIsCompareOp(op: string): bool {
+    return op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+}
+
+// cgCompare: CMP + Scc + AND.L #1,D0 (Scc writes the whole byte
+// $00/$FF; the AND masks that down to a clean 0/1 bool). D1=left,
+// D0=right after the push/pop (see the evaluation-discipline doc
+// comment); CMP's dm operand is always the "compared FROM" register
+// (flags = dm - ea), so dm=D1(left), sm/ea=D0(right) gives flags =
+// left-right, matching cgCcFor's direction.
+func cgCompare(e: int, op: string) {
+    cgExpr(irBinX(e))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(irBinY(e))
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
+    a68Emit(OpCmp, 4, AmDn, 0, 0, AmDn, 1, 0)
+    a68Emit(OpScc, 1, AmNone, 0, 0, AmDn, 0, cgCcFor(op))
+    a68Emit(OpAndInsn, 4, AmImm, 0, 1, AmDn, 0, 0)
+}
+
+// cgAndOr: short-circuit and/or, branch-based (lower.cla does NOT
+// lower this -- mirrors fpAndOr's semantics, cprint.cla:1132, but with
+// branches instead of a captured-statement temp since this backend has
+// no C-style statement-temp machinery). `and`: result is the RIGHT
+// value when the left is true, else false without evaluating right.
+// `or`: result is the right value when left is false, else true without
+// evaluating right.
+func cgAndOr(e: int, isAnd: bool) {
+    var shortLbl: int
+    var doneLbl: int
+
+    shortLbl = a68NewLabel()
+    doneLbl = a68NewLabel()
+    cgExpr(irBinX(e))
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    if isAnd {
+        a68EmitBr(OpBcc, 7, shortLbl)  // BEQ: left false -> short-circuit false
+    } else {
+        a68EmitBr(OpBcc, 6, shortLbl)  // BNE: left true -> short-circuit true
+    }
+    cgExpr(irBinY(e))
+    a68EmitBr(OpBra, 0, doneLbl)
+    a68Bind(shortLbl)
+    if isAnd {
+        a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmImm, 0, 1, AmDn, 0, 0)
+    }
+    a68Bind(doneLbl)
+}
+
+// cgArith: +, -, *, /, mod, &, |, ^, <<, >>. See the evaluation-discipline
+// doc comment (module-state block, above) for the D1=left/D0=right
+// convention and why SUB/shifts need a trailing MOVE.L D1,D0.
+func cgArith(e: int, op: string) {
+    cgExpr(irBinX(e))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(irBinY(e))
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
+    // D1=left, D0=right.
+    if op == "+" {
+        a68Emit(OpAddInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "&" {
+        a68Emit(OpAndInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "|" {
+        a68Emit(OpOrInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "^" {
+        a68Emit(OpEor, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "-" {
+        a68Emit(OpSubInsn, 4, AmDn, 0, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "<<" {
+        a68Emit(OpAsl, 4, AmDn, 0, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == ">>" {
+        // Arithmetic shift (sign-propagating) -- language reference Ch4.
+        a68Emit(OpAsr, 4, AmDn, 0, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == "*" {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+    } else if op == "/" {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgDiv32Label())
+    } else if op == "mod" {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMod32Label())
+    } else {
+        a68Comment("TODO EBin op " + op + ": unsupported this task")
+    }
+}
+
+func cgBin(e: int) {
+    var op: string
+
+    op = poolGet(irBinOp(e))
+    if op == "and" {
+        cgAndOr(e, true)
+    } else if op == "or" {
+        cgAndOr(e, false)
+    } else if cgIsCompareOp(op) {
+        cgCompare(e, op)
+    } else {
+        cgArith(e, op)
+    }
+}
+
+func cgUn(e: int) {
+    var op: string
+
+    op = poolGet(irUnOp(e))
+    cgExpr(irUnX(e))
+    if op == "-" {
+        a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
+    } else if op == "not" {
+        // bool is always exactly 0/1 (cgLoadVar/cgCompare/cgAndOr all
+        // guarantee this) -- XOR with 1 flips it.
+        a68Emit(OpEor, 4, AmImm, 0, 1, AmDn, 0, 0)
+    } else if op == "~" {
+        a68Emit(OpNotInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
+    }
+}
+
+// cgConv: EConv per IRConvOp -- the brief's 9 unchecked conversions
+// (CvIntToEnum is Task 12, deferred below). CvIntToFixed/CvFixedToInt
+// shift by 16, which needs the register-count shift form (asm68k's
+// immediate shift count is capped at 1-8) -- a fixed #16 into D1, then
+// ASL/ASR.L D1,D0. NOTE: CvFixedToInt here is a plain arithmetic shift
+// (floor), NOT cprint's C `/65536` (truncate-toward-zero) -- the brief
+// specifies ">>16 arithmetic" for this backend; the two differ (by one,
+// toward -infinity) for a negative fixed value with a nonzero fractional
+// part. Documented divergence, not a bug: a real C99-truncating divide
+// would need a sign-and-remainder fixup this task doesn't build.
+func cgConv(e: int) {
+    var op: IRConvOp
+
+    op = irConvOp(e)
+    cgExpr(irConvX(e))
+    if op == CvIntToFixed {
+        a68Emit(OpMove, 4, AmImm, 0, 16, AmDn, 1, 0)
+        a68Emit(OpAsl, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == CvFixedToInt {
+        a68Emit(OpMove, 4, AmImm, 0, 16, AmDn, 1, 0)
+        a68Emit(OpAsr, 4, AmDn, 1, 0, AmDn, 0, 0)
+    } else if op == CvIntToChar {
+        a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
+    } else if op == CvIntToEnum {
+        a68Comment("TODO CvIntToEnum Task 12")
+    }
+    // CvCharToInt/CvEnumToInt (already zero-extended/already 4-byte int
+    // rep in D0) and CvIntToPtr/CvPtrToInt/CvPtrToOverlay/CvOverlayToPtr
+    // (identity bit-moves, KPtr/KOverlay both 4-byte pointer-shaped) are
+    // all no-ops on top of the cgExpr(x) above -- D0 already holds the
+    // right bit pattern.
+}
+
+// cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
+// ("ui_*") are 5e (native UI) territory -- hard error, matching
+// cg68AddRoots'/the brief's own "nat*"-prefix convention for name-based
+// dispatch. str_cmp is the one intrinsic this task's fixtures need in
+// VALUE position (str_concat/etc only ever appear as an SStoreStr/
+// SReturn source -- see cgEmitStoreStr/cgEmitReturnStr); every other
+// intrinsic is a TODO placeholder that still leaves D0 in a defined
+// state (Task 13 completes the real dispatch).
+func cgIntr(e: int) {
+    var nm: string
+    var a0e: int
+    var a1e: int
+    var fi: int
+
+    nm = poolGet(irIntrName(e))
+    if nm.length >= 3 and nm[0] == 'u' and nm[1] == 'i' and nm[2] == '_' {
+        log("UI intrinsics are 5e (native): " + nm)
+        quit 1
+    }
+    if nm == "str_cmp" {
+        a0e = irIntrArgsHead(e)
+        a1e = irExprNext(a0e)
+        fi = findIRFuncIdxByName(intern("rtStrCmp"))
+        if fi == -1 or not shakeReachable(fi) {
+            log("cg68k: rtStrCmp not found/reachable")
+            quit 1
+        }
+        cgExprAddr(a0e)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgExprAddr(a1e)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+        cgCleanupStack(8)
+        return
+    }
+    a68Comment("TODO intr " + nm + ": unsupported this task")
+    a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+}
+
+func cgExpr(e: int) {
+    var k: IRExprKind
+
+    k = irExprKind(e)
+    if k == EIntConst {
+        a68Emit(OpMove, 4, AmImm, 0, irIntConstV(e), AmDn, 0, 0)
+    } else if k == EVarRef {
+        if cgIsScalarKind(irtKind(irExprType(e))) {
+            cgLoadVar(e)
+        } else {
+            a68Comment("TODO cgExpr EVarRef non-scalar (str/rec/arr) in value context")
+            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+        }
+    } else if k == EBin {
+        cgBin(e)
+    } else if k == EUn {
+        cgUn(e)
+    } else if k == EConv {
+        cgConv(e)
+    } else if k == ECallFn {
+        cgCallFnScalar(e)
+    } else if k == EIntr {
+        cgIntr(e)
+    } else {
+        // EStrConst (str value in a scalar context), EFieldRef/EIndexRef
+        // (records/arrays, Task 12/13), ECallExt (native trap-call ABI,
+        // Task 11), ENewRec (Task 12) -- none of these are exercised by
+        // this task's fixtures; degrade to a deterministic zero rather
+        // than crash whatever ambient reachable code (e.g. the runtime
+        // library) happens to use one.
+        a68Comment("TODO cgExpr <kind " + numToStr(int(k)) + ">: unsupported this task")
+        a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+    }
+}
+
+// ================================================================
+// Task 8: calls -- cgCallFn convention (see the brief): args pushed
+// LEFT-TO-RIGHT in declaration order (so the LAST-declared arg lands at
+// the lowest stack address, matching the callee's own 8(A6)-upward frame
+// -- cgEmitFunc's own worked example); a hidden result pointer (str/
+// record return, cgSizeOf > 4) is pushed LAST of all; caller cleans up
+// (ADDQ.L <=8, else ADDA.W).
+// ================================================================
+
+func cgCleanupStack(n: int) {
+    if n == 0 {
+        return
+    }
+    if n <= 8 {
+        a68Emit(OpAddq, 4, AmImm, 0, n, AmAn, 7, 0)
+    } else {
+        a68Emit(OpAdda, 2, AmImm, 0, n, AmAn, 7, 0)
+    }
+}
+
+// cgBlockCopy copies size bytes from (A0) to (A1), both advancing --
+// unrolled MOVE.W for a small (<=16 byte) copy, else a MOVE.W/DBRA loop
+// (clobbers D0). size is always even here (cgSizeOf(KStr)/cgSlotSizeOf
+// round every type up to an even size), so a plain word loop suffices --
+// no odd trailing byte to special-case.
+func cgBlockCopy(size: int) {
+    var words: int
+    var i: int
+    var loopLbl: int
+
+    words = size / 2
+    if words <= 8 {
+        i = 0
+        while i < words {
+            a68Emit(OpMove, 2, AmPostInc, 0, 0, AmPostInc, 1, 0)
+            i = i + 1
+        }
+    } else {
+        a68Emit(OpMove, 2, AmImm, 0, words - 1, AmDn, 0, 0)
+        loopLbl = a68NewLabel()
+        a68Bind(loopLbl)
+        a68Emit(OpMove, 2, AmPostInc, 0, 0, AmPostInc, 1, 0)
+        a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, loopLbl)
+    }
+}
+
+// cgPushArgs pushes e's own argument chain (irCallFnArgsHead-shaped),
+// left to right, returning the total bytes pushed. Each arg's OWN type
+// (already coerced to the callee's param type by lower.cla's
+// lowCallArgs -- fpCallFn's own comment) decides push shape: a str
+// argument block-copies cgSizeOf(t) bytes onto a freshly-reserved stack
+// slot (KNOWN LIMITATION -- see the Task 8 report: this assumes the
+// argument expression's own buffer is already exactly that many bytes,
+// true for an EVarRef of the callee's exact param type, as every fixture
+// this task uses does; a differently-capacitied or literal str argument
+// would need a clamped copy instead, not built this task); a bool/char
+// scalar pushes its cgSlotSizeOf-padded 2 bytes (MOVE.W); everything
+// else pushes 4 (MOVE.L).
+func cgPushArgs(argsHead: int): int {
+    var a: int
+    var t: int
+    var sz: int
+    var total: int
+
+    total = 0
+    a = argsHead
+    while a != -1 {
+        t = irExprType(a)
+        sz = cgSlotSizeOf(t)
+        if irtKind(t) == KStr {
+            cgExprAddr(a)
+            a68Emit(OpAdda, 4, AmImm, 0, 0 - sz, AmAn, 7, 0)
+            a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+            cgBlockCopy(sz)
+        } else if sz == 2 {
+            cgExpr(a)
+            a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        } else {
+            cgExpr(a)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        }
+        total = total + sz
+        a = irExprNext(a)
+    }
+    return total
+}
+
+// cgCallFnScalar calls a user Clarus function whose return fits in D0
+// (void or <=4 bytes) -- the common ECallFn shape, used from cgExpr.
+func cgCallFnScalar(e: int) {
+    var fi: int
+    var total: int
+
+    fi = findIRFuncIdxByName(irCallFnName(e))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
+        quit 1
+    }
+    if cgSizeOf(irFuncRet(fi)) > 4 {
+        log("cg68k: cgCallFnScalar used for large-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
+        quit 1
+    }
+    total = cgPushArgs(irCallFnArgsHead(e))
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(total)
+}
+
+// cgCallFnInto calls a user Clarus function whose return needs a hidden
+// result pointer (str/record, cgSizeOf > 4), writing the result directly
+// into dst (an addressable IRExpr -- cgExprAddr resolves it). Args push
+// first, then dst's own address pushes LAST, per the calling convention.
+func cgCallFnInto(e: int, dst: int) {
+    var fi: int
+    var total: int
+
+    fi = findIRFuncIdxByName(irCallFnName(e))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
+        quit 1
+    }
+    total = cgPushArgs(irCallFnArgsHead(e))
+    cgExprAddr(dst)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    total = total + 4
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(total)
+}
+
+// cgCallRuntime calls a runtime IRFunc (str.cla/etc, found by interned
+// name) whose every argument is either a plain int/bool/ptr VALUE
+// (argIsAddr[i]=false, cgExpr'd) or the ADDRESS of an expression
+// (argIsAddr[i]=true, cgExprAddr'd) -- str.cla's whole family takes
+// `ptr` params, so a str/text argument always passes as its address
+// (fpStrAddr's own "&(...)" cast, mirrored here), never a block copy.
+// Left-to-right, matching cgPushArgs' own convention. Returns false (having
+// already logged) if name isn't a reachable IRFunc.
+func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of bool): bool {
+    var fi: int
+    var total: int
+    var i: int
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: runtime function " + fnName + " not found/reachable")
+        return false
+    }
+    total = 0
+    i = 0
+    while i < argExprs.count {
+        if argIsAddr[i] {
+            cgExprAddr(argExprs[i])
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        } else {
+            cgExpr(argExprs[i])
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        }
+        total = total + 4
+        i = i + 1
+    }
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(total)
+    return true
+}
+
+// ================================================================
+// Task 8: SStoreStr / str-returning SReturn.
+//
+// Both write a str VALUE into an already-known destination address --
+// dst's own address for SStoreStr, the hidden result pointer (the LONG
+// value sitting at 8(A6), pushed by value, not LEA'd -- it's already a
+// pointer) for SReturn. The two share the same source-kind dispatch:
+//   - ECallFn: the callee already writes straight into our dst/hidden
+//     pointer via cgCallFnInto -- no intermediate copy (a deliberate
+//     simplification vs. cprint's anonymous-temp-then-copy: safe as long
+//     as the call's own args don't read from dst, true for every fixture
+//     this task uses -- see the Task 8 report).
+//   - EIntr "str_concat": likewise writes directly into dst via
+//     rtStrConcat, skipping cprint's anonymous clar_str_255 temp --
+//     KNOWN LIMITATION, only safe when dst's own capacity is already
+//     >=256 (rtStrConcat always assumes a 256-byte-capable out buffer,
+//     same fixed shape cprint's own clar_str_255 temp has); a smaller
+//     dst degrades to a TODO comment (see the report).
+//   - anything else (EStrConst, EVarRef, ...): a clamped copy via
+//     rtStrStore(dst, dst's own declared capacity, src) -- mirrors
+//     cprint's fpStoreStr exactly.
+// ================================================================
+
+func cgEmitStoreStr(dst: int, src: int) {
+    var sk: IRExprKind
+    var nm: string
+    var fi: int
+    var a0e: int
+    var a1e: int
+    var cap: int
+
+    sk = irExprKind(src)
+    if sk == ECallFn {
+        cgCallFnInto(src, dst)
+        return
+    }
+    if sk == EIntr {
+        nm = poolGet(irIntrName(src))
+        if nm == "str_concat" {
+            if cgSizeOf(irExprType(dst)) < 256 {
+                a68Comment("TODO SStoreStr <- str_concat into capacity<255 dst: unsupported this task")
+                return
+            }
+            fi = findIRFuncIdxByName(intern("rtStrConcat"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtStrConcat not found/reachable")
+                quit 1
+            }
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a0e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a1e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(12)
+            return
+        }
+        a68Comment("TODO SStoreStr <- intrinsic " + nm + ": unsupported this task")
+        return
+    }
+
+    cap = irtN(irExprType(dst))
+    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    cgExprAddr(dst)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+}
+
+// cgEmitReturnStr mirrors cgEmitStoreStr for `return <str expr>` inside a
+// function whose own return needs a hidden pointer -- the destination is
+// the POINTER VALUE already sitting at 8(A6) (pushed by value, not
+// LEA'd). ECallFn (returning a call result directly) isn't exercised by
+// this task's fixtures -- TODO, not built.
+func cgEmitReturnStr(src: int) {
+    var sk: IRExprKind
+    var nm: string
+    var fi: int
+    var a0e: int
+    var a1e: int
+    var cap: int
+
+    sk = irExprKind(src)
+    if sk == EIntr {
+        nm = poolGet(irIntrName(src))
+        if nm == "str_concat" {
+            fi = findIRFuncIdxByName(intern("rtStrConcat"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtStrConcat not found/reachable")
+                quit 1
+            }
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+            cgExprAddr(a0e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a1e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(12)
+            return
+        }
+        a68Comment("TODO return <- intrinsic " + nm + ": unsupported this task")
+        return
+    }
+    if sk == ECallFn {
+        a68Comment("TODO return <- nested call: unsupported this task")
+        return
+    }
+
+    cap = irtN(cgCurRetType)
+    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+}
+
+// ================================================================
+// Task 8: cgStmt / cgStmts -- all 11 IRStmtKinds. SForList/SForMap
+// (containers, Task 13) are a TODO comment + skipped body, per the brief.
+// ================================================================
+
+func cgStmts(head: int) {
+    var s: int
+
+    s = head
+    while s != -1 {
+        cgStmt(s)
+        s = irStmtNext(s)
+    }
+}
+
+func cgIfStmt(s: int) {
+    var elseLbl: int
+    var endLbl: int
+
+    cgExpr(irIfCond(s))
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    if irIfElse(s) == -1 {
+        endLbl = a68NewLabel()
+        a68EmitBr(OpBcc, 7, endLbl)  // BEQ: cond false -> skip then
+        cgStmts(irIfThen(s))
+        a68Bind(endLbl)
+    } else {
+        elseLbl = a68NewLabel()
+        endLbl = a68NewLabel()
+        a68EmitBr(OpBcc, 7, elseLbl)
+        cgStmts(irIfThen(s))
+        a68EmitBr(OpBra, 0, endLbl)
+        a68Bind(elseLbl)
+        cgStmts(irIfElse(s))
+        a68Bind(endLbl)
+    }
+}
+
+func cgWhileStmt(s: int) {
+    var topLbl: int
+    var endLbl: int
+
+    topLbl = a68NewLabel()
+    endLbl = a68NewLabel()
+    a68Bind(topLbl)
+    cgExpr(irWhileCond(s))
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 7, endLbl)  // BEQ: cond false -> exit
+    cgLoopBreakLabels.add(endLbl)
+    cgLoopContinueLabels.add(topLbl)
+    cgStmts(irWhileBody(s))
+    cgLoopBreakLabels.pop()
+    cgLoopContinueLabels.pop()
+    a68EmitBr(OpBra, 0, topLbl)
+    a68Bind(endLbl)
+}
+
+// cgForRangeStmt: ascending, INCLUSIVE [from, to] (fpForRangeStmt,
+// cprint.cla:2998, mirrored exactly -- `for cv = from; cv <= to; cv++`).
+// `to` is evaluated once and stashed on the real machine stack for the
+// loop's duration (MOVE.L D0,-(A7) at entry, peeked via (A7) each
+// iteration, ADDQ.L #4,A7 at exit) rather than a named frame temp -- this
+// backend has no anonymous-temp frame slots yet, and the stack slot is
+// self-cleaning: UNLK on any `return` inside the loop resets A7 to A6
+// regardless of what's still pushed, and `break`'s own target (endLbl)
+// sits BEFORE the ADDQ so it's covered too; only the natural
+// fall-through and break paths need the explicit ADDQ, both landing on
+// the same endLbl.
+func cgForRangeStmt(s: int) {
+    var vName: string
+    var reg: int
+    var off: int
+    var condLbl: int
+    var incrLbl: int
+    var endLbl: int
+
+    vName = poolGet(irForRangeV(s))
+    reg = 6
+    off = cgFindFrameOffset(vName)
+    if off == cgUnresolved {
+        log("cg68k: unresolved for-range variable " + vName)
+        quit 1
+    }
+
+    cgExpr(irForRangeFrom(s))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
+    cgExpr(irForRangeTo(s))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+
+    condLbl = a68NewLabel()
+    incrLbl = a68NewLabel()
+    endLbl = a68NewLabel()
+
+    a68Bind(condLbl)
+    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)
+    a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 14, endLbl)  // BGT: cv>to -> exit
+
+    cgLoopBreakLabels.add(endLbl)
+    cgLoopContinueLabels.add(incrLbl)
+    cgStmts(irForRangeBody(s))
+    cgLoopBreakLabels.pop()
+    cgLoopContinueLabels.pop()
+
+    a68Bind(incrLbl)
+    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    a68Emit(OpAddq, 4, AmImm, 0, 1, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
+    a68EmitBr(OpBra, 0, condLbl)
+
+    a68Bind(endLbl)
+    a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)
+}
+
+func cgReturnStmt(s: int) {
+    var x: int
+
+    x = irReturnX(s)
+    if x == -1 {
+        a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
+        return
+    }
+    if cgCurHiddenOffset != -1 {
+        cgEmitReturnStr(x)
+    } else {
+        cgExpr(x)
+    }
+    a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
+}
+
+func cgBreakStmt() {
+    if cgLoopBreakLabels.count == 0 {
+        log("cg68k: break outside loop")
+        quit 1
+    }
+    a68EmitBr(OpBra, 0, cgLoopBreakLabels[cgLoopBreakLabels.count - 1])
+}
+
+func cgContinueStmt() {
+    if cgLoopContinueLabels.count == 0 {
+        log("cg68k: continue outside loop")
+        quit 1
+    }
+    a68EmitBr(OpBra, 0, cgLoopContinueLabels[cgLoopContinueLabels.count - 1])
+}
+
+func cgStmt(s: int) {
+    var k: IRStmtKind
+    var dst: int
+
+    k = irStmtKind(s)
+    if k == SExprStmt {
+        cgExpr(irExprStmtX(s))
+    } else if k == SAssign {
+        dst = irAssignDst(s)
+        if irExprKind(dst) == EVarRef and cgIsScalarKind(irtKind(irExprType(dst))) {
+            cgExpr(irAssignSrc(s))
+            cgStoreScalarVar(dst)
+        } else {
+            a68Comment("TODO SAssign <dst kind " + numToStr(int(irExprKind(dst))) + ">: unsupported this task")
+        }
+    } else if k == SStoreStr {
+        cgEmitStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
+    } else if k == SIf {
+        cgIfStmt(s)
+    } else if k == SWhile {
+        cgWhileStmt(s)
+    } else if k == SForRange {
+        cgForRangeStmt(s)
+    } else if k == SForList {
+        a68Comment("TODO SForList: containers deferred to Task 13")
+    } else if k == SForMap {
+        a68Comment("TODO SForMap: containers deferred to Task 13")
+    } else if k == SReturn {
+        cgReturnStmt(s)
+    } else if k == SBreak {
+        cgBreakStmt()
+    } else if k == SContinue {
+        cgContinueStmt()
+    }
+}
+
+// ================================================================
+// Task 8: cg_mul32/cg_div32/cg_mod32 -- hand-emitted 32-bit multiply/
+// divide/modulo helper routines, emitted once (each only if used --
+// cgMul32Used/etc, set by cgMul32Label/etc above) into the segment right
+// after the last function. Calling convention: operands in D1(left)/
+// D0(right) (exactly the register state cgArith's own push/pop sequence
+// leaves them in -- no setup needed at the call site beyond the JSR),
+// result in D0, no frame (no LINK/UNLK -- these are leaf helpers, not
+// Clarus functions with a JT slot), callee-saves every register beyond
+// D0/D1 that it clobbers (D2-D7 as needed, via individual MOVE.L
+// Dn,-(A7)/(A7)+,Dn pairs -- asm68k.cla has no MOVEM).
+// ================================================================
+
+// cgEmitMul32: 32x32->32 unsigned partial-product multiply (MULU.W only
+// ever multiplies two 16-bit halves into a 32-bit product -- there's no
+// direct 32x32 MUL on the 68000). Splitting A (D1) and B (D0) into
+// 16-bit halves: A*B mod 2^32 = lowA*lowB + ((highA*lowB + lowA*highB)
+// << 16) mod 2^32 -- the highA*highB term only ever contributes to bits
+// >=32, so it's never computed at all. This is a plain bit-pattern
+// operation (no sign handling needed): 2's-complement multiplication's
+// low 32 bits are identical whether the operands are interpreted as
+// signed or unsigned, so the very same routine serves both.
+func cgEmitMul32(lbl: int) {
+    a68Bind(lbl)
+    a68Comment("cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)")
+    a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
+
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 2, 0)   // D2 = A
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 3, 0)   // D3 = B
+    a68Emit(OpMulu, 2, AmDn, 3, 0, AmNone, 2, 0) // D2 = lowA*lowB
+
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 4, 0)   // D4 = A
+    a68Emit(OpSwap, 0, AmNone, 0, 0, AmDn, 4, 0) // D4.low = highA
+    a68Emit(OpMulu, 2, AmDn, 3, 0, AmNone, 4, 0) // D4 = highA*lowB
+    a68Emit(OpSwap, 0, AmNone, 0, 0, AmDn, 4, 0)
+    a68Emit(OpClr, 2, AmNone, 0, 0, AmDn, 4, 0) // D4 <<= 16 (mod 2^32): clear low word after SWAP
+    a68Emit(OpAddInsn, 4, AmDn, 4, 0, AmDn, 2, 0)
+
+    a68Emit(OpMove, 4, AmDn, 3, 0, AmDn, 4, 0)   // D4 = B
+    a68Emit(OpSwap, 0, AmNone, 0, 0, AmDn, 4, 0) // D4.low = highB
+    a68Emit(OpMulu, 2, AmDn, 1, 0, AmNone, 4, 0) // D4 = highB*lowA
+    a68Emit(OpSwap, 0, AmNone, 0, 0, AmDn, 4, 0)
+    a68Emit(OpClr, 2, AmNone, 0, 0, AmDn, 4, 0) // D4 <<= 16 (mod 2^32): clear low word after SWAP
+    a68Emit(OpAddInsn, 4, AmDn, 4, 0, AmDn, 2, 0)
+
+    a68Emit(OpMove, 4, AmDn, 2, 0, AmDn, 0, 0)
+
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 4, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 3, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 2, 0)
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// cgEmitDivModCore emits the shared unsigned-division core both
+// cg_div32/cg_mod32 use: takes the sign off D1(A)/D0(B) into D4/D5
+// (0=positive,1=negative), leaves |A| in D2 and |B| in D3, then runs a
+// 32-iteration binary long division (shift-compare-subtract, MSB
+// first -- classic restoring division) producing the UNSIGNED quotient
+// in D2 and the UNSIGNED remainder in D6. asm68k.cla has no ADDX/ROXL,
+// so the usual "shift a 64-bit dividend:remainder pair with carry into
+// the remainder" trick isn't available -- instead, each iteration
+// captures the dividend's outgoing top bit via Scc (SMI) BEFORE shifting
+// it out, then ORs that single bit into the remainder after shifting the
+// remainder left, which needs no carry flag at all. D0 doubles as the
+// per-iteration bit scratch (safe: A/B's original values are already
+// copied into D2/D3 by the time the loop runs). Caller (cg_div32/
+// cg_mod32) is responsible for saving/restoring D2-D7 and applying the
+// sign to whichever of D2 (quotient)/D6 (remainder) it wants.
+func cgEmitDivModCore() {
+    var lloop: int
+    var lskip: int
+    var la: int
+    var lb: int
+
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 2, 0)  // D2 = A
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 3, 0)  // D3 = B
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 4, 0) // D4 = signA = 0
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 2, 0)
+    la = a68NewLabel()
+    a68EmitBr(OpBcc, 10, la) // BPL
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 2, 0)
+    a68Emit(OpMove, 4, AmImm, 0, 1, AmDn, 4, 0)
+    a68Bind(la)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 5, 0) // D5 = signB = 0
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 3, 0)
+    lb = a68NewLabel()
+    a68EmitBr(OpBcc, 10, lb) // BPL
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 3, 0)
+    a68Emit(OpMove, 4, AmImm, 0, 1, AmDn, 5, 0)
+    a68Bind(lb)
+
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 6, 0)   // D6 = remainder = 0
+    a68Emit(OpMove, 2, AmImm, 0, 31, AmDn, 7, 0)  // D7 = 32 iterations
+
+    lloop = a68NewLabel()
+    lskip = a68NewLabel()
+    a68Bind(lloop)
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 2, 0)
+    a68Emit(OpScc, 1, AmNone, 0, 0, AmDn, 0, 11) // SMI D0 (MI)
+    a68Emit(OpAsl, 4, AmImm, 0, 1, AmDn, 2, 0)
+    a68Emit(OpAsl, 4, AmImm, 0, 1, AmDn, 6, 0)
+    a68Emit(OpAndInsn, 4, AmImm, 0, 1, AmDn, 0, 0)
+    a68Emit(OpOrInsn, 4, AmDn, 0, 0, AmDn, 6, 0)
+    a68Emit(OpCmp, 4, AmDn, 3, 0, AmDn, 6, 0)
+    a68EmitBr(OpBcc, 5, lskip) // BCS: remainder < divisor -> skip
+    a68Emit(OpSubInsn, 4, AmDn, 3, 0, AmDn, 6, 0)
+    a68Emit(OpAddq, 4, AmImm, 0, 1, AmDn, 2, 0)
+    a68Bind(lskip)
+    a68Emit(OpDbra, 2, AmDn, 7, 0, AmPCLabel, 0, lloop)
+}
+
+// cg_div32: truncate-toward-zero signed division (C99) -- quotient sign
+// is signA XOR signB, magnitude is the unsigned core's D2.
+func cgEmitDiv32(lbl: int) {
+    var lpos: int
+
+    a68Bind(lbl)
+    a68Comment("cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)")
+    a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 5, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 6, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 7, 0, AmPreDec, 7, 0)
+
+    cgEmitDivModCore()
+
+    a68Emit(OpEor, 4, AmDn, 5, 0, AmDn, 4, 0) // D4 = signA XOR signB
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 4, 0)
+    lpos = a68NewLabel()
+    a68EmitBr(OpBcc, 7, lpos) // BEQ
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 2, 0)
+    a68Bind(lpos)
+    a68Emit(OpMove, 4, AmDn, 2, 0, AmDn, 0, 0)
+
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 7, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 6, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 5, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 4, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 3, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 2, 0)
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// cg_mod32: remainder's sign follows the DIVIDEND only (C99 `%`) --
+// unlike the quotient, this never depends on signB, just signA (D4,
+// untouched by the unsigned core, which only ever touches D2/D3/D6/D7).
+func cgEmitMod32(lbl: int) {
+    var lpos: int
+
+    a68Bind(lbl)
+    a68Comment("cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)")
+    a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 5, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 6, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 7, 0, AmPreDec, 7, 0)
+
+    cgEmitDivModCore()
+
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 4, 0)
+    lpos = a68NewLabel()
+    a68EmitBr(OpBcc, 7, lpos) // BEQ
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 6, 0)
+    a68Bind(lpos)
+    a68Emit(OpMove, 4, AmDn, 6, 0, AmDn, 0, 0)
+
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 7, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 6, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 5, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 4, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 3, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 2, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
@@ -638,35 +1812,55 @@ func cgEmitFunc(f: int) {
 // ================================================================
 
 // cgPoolStrRef returns the a68 label id bound to litIdx's pool entry
-// (cgEmitPools must have already run this cg68Program() call).
+// (cgReserveStrLitLabels must have already run this cg68Program() call).
 func cgPoolStrRef(litIdx: int): int {
     return cgStrLitLabels[litIdx]
 }
 
-// cgEmitPools lays out every per-segment constant pool: one label + DC.B
-// len + bytes + align entry per irStrLits slot (populated by lower.cla
-// regardless of which backend consumes it -- see the file header), then
-// stub markers for the enum/serdesc tables Task 8+ will fill in.
-func cgEmitPools() {
+// cgReserveStrLitLabels allocates (but does not yet bind) one a68 label
+// per irStrLits entry -- called up front, before any function body is
+// emitted, mirroring cgAssignJtSlots' own "reserve the label before
+// anything can reference it" discipline. Task 8's cgExprAddr(EStrConst)
+// calls cgPoolStrRef WHILE walking function bodies (a string literal
+// used as an rtStrStore/rtPanic/etc argument), which is well before the
+// constant pool itself is actually laid out (cgEmitPoolsBody, after
+// every function) -- an unbound label used as a PC-relative operand is
+// fine (a68's own two-pass model resolves it at a68Finish time, same as
+// startup JSR-ing a handler emitted later in the stream), but the label
+// ID itself must already exist in cgStrLitLabels by then, or
+// cgPoolStrRef indexes past an empty/undersized list.
+func cgReserveStrLitLabels() {
     var i: int
-    var lbl: int
-    var s: string
     var labels: list of int
 
     labels = cgFreshIntList()
+    i = 0
+    while i < irStrLits.count {
+        labels.add(a68NewLabel())
+        i = i + 1
+    }
+    cgStrLitLabels = labels
+}
+
+// cgEmitPoolsBody lays out every per-segment constant pool AT THE
+// CURRENT STREAM POSITION: one DC.B len + bytes + align entry per
+// irStrLits slot, bound to the label cgReserveStrLitLabels already
+// allocated for it, then stub markers for the enum/serdesc tables Task
+// 8+ will fill in.
+func cgEmitPoolsBody() {
+    var i: int
+    var s: string
+
     a68Comment("constant pool: string literals")
     i = 0
     while i < irStrLits.count {
         s = poolGet(irStrLitPoolIdx(i))
-        lbl = a68NewLabel()
-        labels.add(lbl)
-        a68Bind(lbl)
+        a68Bind(cgStrLitLabels[i])
         a68DcB(s.length)
         a68DcBytes(cg68ToText(s))
         a68Align()
         i = i + 1
     }
-    cgStrLitLabels = labels
 
     a68Comment("constant pool: enum value/label tables (stub -- Task 8+)")
     a68Comment("constant pool: serdesc tables (stub -- Task 8+)")
@@ -715,8 +1909,10 @@ func cg68Program(outPath: string, listing: bool): bool {
     var base: string
 
     a68Reset()
+    cgResetCodegenState()
     cgAssignJtSlots()
     cgAssignGlobalOffsets()
+    cgReserveStrLitLabels()
 
     startupLbl = a68NewLabel()
     initGlobalsLbl = a68NewLabel()
@@ -734,7 +1930,17 @@ func cg68Program(outPath: string, listing: bool): bool {
         i = i + 1
     }
 
-    cgEmitPools()
+    if cgMul32Used {
+        cgEmitMul32(cgMul32Lbl)
+    }
+    if cgDiv32Used {
+        cgEmitDiv32(cgDiv32Lbl)
+    }
+    if cgMod32Used {
+        cgEmitMod32(cgMod32Lbl)
+    }
+
+    cgEmitPoolsBody()
 
     ok = a68Finish()
     if not ok {

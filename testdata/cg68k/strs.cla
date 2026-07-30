@@ -1,0 +1,29 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// strs.cla: native-5d Task 8 cg68k golden fixture -- str locals,
+// SStoreStr (literal store, str-to-str copy), the str_concat intrinsic
+// through cgCallRuntime (rtStrConcat), a str-param function whose own
+// body concatenates, and str comparison (lowered by lower.cla's
+// lowComparison to `str_cmp(...) == 0` -- ordinary int comparison
+// codegen over an EIntr operand, no special-casing needed here).
+
+func makeGreeting(a: string(255), b: string(255)): string(255) {
+    var full: string(255)
+    full = a + b
+    return full
+}
+
+on App.launch {
+    var s1: string(255)
+    var s2: string(255)
+    var combined: string(255)
+    var isEqual: bool
+
+    s1 = "hello"
+    s2 = " world"
+    combined = s1 + s2
+    combined = makeGreeting(s1, s2)
+    isEqual = s1 == s2
+    return
+}

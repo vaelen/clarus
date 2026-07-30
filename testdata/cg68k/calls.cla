@@ -1,0 +1,51 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// calls.cla: native-5d Task 8 cg68k golden fixture -- all four call/
+// result shapes the brief lists: a void call, an int-returning call, a
+// bool/char-param call, and a str-param/str-return call (real body, not
+// Task 7's placeholder). Exercises cgCallFnScalar/cgCallFnInto/
+// cgPushArgs/cgBlockCopy.
+
+func sayHello() {
+    var x: int
+    x = 1
+}
+
+func addOne(x: int): int {
+    return x + 1
+}
+
+func describe(flag: bool, c: char): int {
+    var r: int
+    if flag {
+        r = int(c)
+    } else {
+        r = 0
+    }
+    return r
+}
+
+// greet's own str param is passed BY VALUE (a cgBlockCopy of its full
+// 256-byte slot) -- the caller below passes a `string(255)` local, never
+// a bare literal, so the copied source is always exactly the callee's
+// own param size (see cgPushArgs' doc comment on this known limitation).
+func greet(name: string(255)): string(255) {
+    var msg: string(255)
+    msg = name
+    return msg
+}
+
+on App.launch {
+    var n: int
+    var d: int
+    var g: string(255)
+    var arg: string(255)
+
+    sayHello()
+    n = addOne(41)
+    d = describe(true, 'A')
+    arg = "hi"
+    g = greet(arg)
+    return
+}
