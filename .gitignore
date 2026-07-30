@@ -4,3 +4,4 @@
 /build-mac/
 internal/mactest/probe/build/
 internal/mactest/uiprobe/build/
+/vasm
