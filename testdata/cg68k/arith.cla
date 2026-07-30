@@ -11,6 +11,12 @@
 // (need a declared overlay record type -- out of scope for a pure
 // arithmetic fixture; their codegen is the same identity-passthrough
 // code path CvPtrToInt/CvIntToPtr already exercise here).
+//
+// task-8-review round 1 fix, Critical 2: `fneg`/`backNeg` pin
+// CvFixedToInt on a NEGATIVE FRACTIONAL fixed value (-1.5) -- the case a
+// plain ASR.L floors instead of truncating toward zero (arithDemo's
+// other fixed conversion, `f = fixed(a)` with `a=7`, is always
+// non-negative, so it never exercised this).
 
 func label(n: int): string(255) {
     var s: string(255)
@@ -40,6 +46,8 @@ func arithDemo(a: int, b: int): int {
     var backToInt2: int
     var p: ptr
     var backToInt3: int
+    var fneg: fixed
+    var backNeg: int
 
     sum = a + b
     diff = a - b
@@ -62,7 +70,9 @@ func arithDemo(a: int, b: int): int {
     backToInt2 = int(c)
     p = ptr(a)
     backToInt3 = int(p)
-    return sum + diff + prod + q + r + negA + bitAnd + bitOr + bitXor + bitNot + shl + shr + backToInt + backToInt2 + backToInt3
+    fneg = -1.5
+    backNeg = int(fneg)
+    return sum + diff + prod + q + r + negA + bitAnd + bitOr + bitXor + bitNot + shl + shr + backToInt + backToInt2 + backToInt3 + backNeg
 }
 
 on App.launch {

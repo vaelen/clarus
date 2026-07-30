@@ -7,6 +7,14 @@
 // body concatenates, and str comparison (lowered by lower.cla's
 // lowComparison to `str_cmp(...) == 0` -- ordinary int comparison
 // codegen over an EIntr operand, no special-casing needed here).
+//
+// task-8-review round 1 fix, Critical 1: `s = t + s` and `s = s + t`
+// below pin str_concat's ALIASED-destination cases -- dst aliasing the
+// concat's second (`b`) operand corrupted the result under the original
+// direct-write codegen (rtStrConcat's own contract is "out must not
+// alias b"); dst aliasing the first (`a`) operand was always safe. Both
+// must produce the SAME concat-then-clamped-store shape now that the
+// result is always materialized into an independent temp first.
 
 func makeGreeting(a: string(255), b: string(255)): string(255) {
     var full: string(255)
@@ -25,5 +33,11 @@ on App.launch {
     combined = s1 + s2
     combined = makeGreeting(s1, s2)
     isEqual = s1 == s2
+    s1 = "hello"
+    s2 = "world"
+    s1 = s2 + s1
+    s1 = "hello"
+    s2 = "world"
+    s1 = s1 + s2
     return
 }

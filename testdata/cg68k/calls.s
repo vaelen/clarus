@@ -32,7 +32,8 @@ LBL_0:
         MOVE.L D0,-4(A5)
         LEA -260(A5),A0
         MOVE.L A0,-(A7)
-        MOVE.L #255,-(A7)
+        MOVE.L #255,D0
+        MOVE.L D0,-(A7)
         LEA 8(A6),A0
         MOVE.L A0,-(A7)
         JSR LBL_3(PC)
@@ -781,7 +782,8 @@ LBL_25:
         LINK A6,#-256
         LEA -256(A6),A0
         MOVE.L A0,-(A7)
-        MOVE.L #255,-(A7)
+        MOVE.L #255,D0
+        MOVE.L D0,-(A7)
         LEA 12(A6),A0
         MOVE.L A0,-(A7)
         JSR LBL_3(PC)
@@ -818,7 +820,8 @@ LBL_26:
         MOVE.L D0,-8(A6)
         LEA -520(A6),A0
         MOVE.L A0,-(A7)
-        MOVE.L #255,-(A7)
+        MOVE.L #255,D0
+        MOVE.L D0,-(A7)
         LEA LBL_41(PC),A0
         MOVE.L A0,-(A7)
         JSR LBL_3(PC)

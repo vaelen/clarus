@@ -5,6 +5,26 @@
 // chains, a while loop with break and continue, and nested for-range
 // loops. Exercises cgIfStmt/cgWhileStmt/cgForRangeStmt/cgBreakStmt/
 // cgContinueStmt.
+//
+// task-8-review round 1 fix, Minor: guardedRatio/eitherPositive pin
+// and/or SHORT-CIRCUIT branch structure (cgAndOr) -- guardedRatio's
+// `a > 0 and b / a > 1` is the classic div-by-zero-guarding shape that
+// REQUIRES short-circuit (evaluating `b/a` when `a<=0` would be a
+// div-by-zero, or at minimum a needless/wrong divide); the golden pins
+// that `b/a` is only ever reached on the branch where `a>0` already
+// tested true.
+
+func guardedRatio(a: int, b: int): bool {
+    var ok: bool
+    ok = a > 0 and b / a > 1
+    return ok
+}
+
+func eitherPositive(a: int, b: int): bool {
+    var ok: bool
+    ok = a > 0 or b > 0
+    return ok
+}
 
 func classify(n: int): int {
     var result: int
@@ -56,9 +76,13 @@ on App.launch {
     var a: int
     var b: int
     var c: int
+    var g: bool
+    var e: bool
 
     a = classify(-5)
     b = sumEvens(10)
     c = nestedRange()
+    g = guardedRatio(0, 5)
+    e = eitherPositive(-1, 2)
     return
 }

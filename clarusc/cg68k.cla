@@ -157,6 +157,11 @@ func cgFreshStringList(): list of string {
     return l
 }
 
+func cgFreshBoolList(): list of bool {
+    var l: list of bool
+    return l
+}
+
 // ================================================================
 // Task 8: expression/statement codegen state.
 //
@@ -1041,17 +1046,26 @@ func cgUn(e: int) {
 }
 
 // cgConv: EConv per IRConvOp -- the brief's 9 unchecked conversions
-// (CvIntToEnum is Task 12, deferred below). CvIntToFixed/CvFixedToInt
-// shift by 16, which needs the register-count shift form (asm68k's
-// immediate shift count is capped at 1-8) -- a fixed #16 into D1, then
-// ASL/ASR.L D1,D0. NOTE: CvFixedToInt here is a plain arithmetic shift
-// (floor), NOT cprint's C `/65536` (truncate-toward-zero) -- the brief
-// specifies ">>16 arithmetic" for this backend; the two differ (by one,
-// toward -infinity) for a negative fixed value with a nonzero fractional
-// part. Documented divergence, not a bug: a real C99-truncating divide
-// would need a sign-and-remainder fixup this task doesn't build.
+// (CvIntToEnum is Task 12, deferred below). CvIntToFixed shifts by 16,
+// which needs the register-count shift form (asm68k's immediate shift
+// count is capped at 1-8) -- a fixed #16 into D1, then ASL.L D1,D0.
+//
+// CvFixedToInt (task-8-review round 1 fix, Critical 2): must truncate
+// TOWARD ZERO (language reference Ch3: "int(f) ... truncates toward
+// zero"; cprint.cla:1192-1206's fpConv explicitly avoids a raw shift for
+// this exact reason). A plain ASR.L #16 is a FLOOR (round toward
+// -infinity), which differs from truncation by exactly 1 for any
+// negative value with a nonzero low-16-bit fractional part (e.g.
+// -1.5 -> ASR gives -2, not -1). Fixed via the standard negate-shift-
+// negate trick: shifting a NON-negative magnitude right is already
+// truncation (floor == trunc for x>=0), so for a negative input, negate
+// first (making it non-negative), shift, then negate the result back.
+// Shares the same "INT_MIN can't be negated" edge case cprint's own
+// unguarded C division already has -- not a new regression.
 func cgConv(e: int) {
     var op: IRConvOp
+    var lneg: int
+    var ldone: int
 
     op = irConvOp(e)
     cgExpr(irConvX(e))
@@ -1059,8 +1073,19 @@ func cgConv(e: int) {
         a68Emit(OpMove, 4, AmImm, 0, 16, AmDn, 1, 0)
         a68Emit(OpAsl, 4, AmDn, 1, 0, AmDn, 0, 0)
     } else if op == CvFixedToInt {
+        lneg = a68NewLabel()
+        ldone = a68NewLabel()
+        a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68EmitBr(OpBcc, 11, lneg) // BMI: negative -> negate-shift-negate path
         a68Emit(OpMove, 4, AmImm, 0, 16, AmDn, 1, 0)
         a68Emit(OpAsr, 4, AmDn, 1, 0, AmDn, 0, 0)
+        a68EmitBr(OpBra, 0, ldone)
+        a68Bind(lneg)
+        a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmImm, 0, 16, AmDn, 1, 0)
+        a68Emit(OpAsr, 4, AmDn, 1, 0, AmDn, 0, 0)
+        a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Bind(ldone)
     } else if op == CvIntToChar {
         a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
     } else if op == CvIntToEnum {
@@ -1085,7 +1110,8 @@ func cgIntr(e: int) {
     var nm: string
     var a0e: int
     var a1e: int
-    var fi: int
+    var args: list of int
+    var addrs: list of bool
 
     nm = poolGet(irIntrName(e))
     if nm.length >= 3 and nm[0] == 'u' and nm[1] == 'i' and nm[2] == '_' {
@@ -1095,17 +1121,15 @@ func cgIntr(e: int) {
     if nm == "str_cmp" {
         a0e = irIntrArgsHead(e)
         a1e = irExprNext(a0e)
-        fi = findIRFuncIdxByName(intern("rtStrCmp"))
-        if fi == -1 or not shakeReachable(fi) {
-            log("cg68k: rtStrCmp not found/reachable")
+        args = cgFreshIntList()
+        args.add(a0e)
+        args.add(a1e)
+        addrs = cgFreshBoolList()
+        addrs.add(true)
+        addrs.add(true)
+        if not cgCallRuntime("rtStrCmp", args, addrs) {
             quit 1
         }
-        cgExprAddr(a0e)
-        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgExprAddr(a1e)
-        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
-        cgCleanupStack(8)
         return
     }
     a68Comment("TODO intr " + nm + ": unsupported this task")
@@ -1216,6 +1240,19 @@ func cgPushArgs(argsHead: int): int {
     while a != -1 {
         t = irExprType(a)
         sz = cgSlotSizeOf(t)
+        if irtKind(t) == KRec {
+            // task-8-review round 1 fix, Important 1: a record argument's
+            // TRUE (possibly >4-byte) slot size feeds `total` below, but
+            // nothing here knows how to push more than 4 bytes for one --
+            // silently pushing 4 while accounting sz would desync
+            // cgCleanupStack's own byte count from what's actually on the
+            // stack, corrupting the caller's SP. Hard error instead of a
+            // silent landmine: unreachable today (no fixture, no runtime-
+            // library function takes a record param), but Task 12 must
+            // consciously extend this, not discover it via a stack smash.
+            log("cg68k: record args not supported until Task 12")
+            quit 1
+        }
         if irtKind(t) == KStr {
             cgExprAddr(a)
             a68Emit(OpAdda, 4, AmImm, 0, 0 - sz, AmAn, 7, 0)
@@ -1334,6 +1371,45 @@ func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of boo
 //     cprint's fpStoreStr exactly.
 // ================================================================
 
+// cgConcatIntoTemp (task-8-review round 1 fix, Critical 1) reserves a
+// 256-byte stack temp and computes rtStrConcat(temp, a0e, a1e) into it --
+// ALWAYS, unconditionally, mirroring cprint's fpIntrCall IStrConcat arm
+// (`t = fpNewTmp(...)`, cprint.cla:1644-1653), which is likewise never
+// materialized directly into the final destination. This is not
+// optional: rtStrConcat's own doc comment (runtime/clarus/str.cla:66-67)
+// says "out must not alias b" -- writing straight into `dst` (the
+// original Task 8 shortcut) corrupted `s = t + s` (dst aliases b) to
+// "worldworld" instead of "worldhello" (task-8-review's empirical trace).
+// An independent temp sidesteps the aliasing question outright: neither
+// operand can ever alias `out` when `out` is never `dst`.
+//
+// Leaves the temp UN-freed and A7 pointing at its start (the JSR+cleanup
+// above is self-balanced, so A7 returns to exactly where it was right
+// after the ADDA.L reservation) -- the caller must immediately capture
+// that address (`MOVEA.L A7,A1`, fresh, never carried across a further
+// JSR: this backend has no callee-saved register convention, so nothing
+// survives a call except A7 itself, which the calling convention DOES
+// guarantee), copy out of it into the real destination, and free it
+// (`ADDA.W #256,A7`).
+func cgConcatIntoTemp(a0e: int, a1e: int) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern("rtStrConcat"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrConcat not found/reachable")
+        quit 1
+    }
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+}
+
 func cgEmitStoreStr(dst: int, src: int) {
     var sk: IRExprKind
     var nm: string
@@ -1341,6 +1417,8 @@ func cgEmitStoreStr(dst: int, src: int) {
     var a0e: int
     var a1e: int
     var cap: int
+    var args: list of int
+    var addrs: list of bool
 
     sk = irExprKind(src)
     if sk == ECallFn {
@@ -1350,51 +1428,61 @@ func cgEmitStoreStr(dst: int, src: int) {
     if sk == EIntr {
         nm = poolGet(irIntrName(src))
         if nm == "str_concat" {
-            if cgSizeOf(irExprType(dst)) < 256 {
-                a68Comment("TODO SStoreStr <- str_concat into capacity<255 dst: unsupported this task")
-                return
-            }
-            fi = findIRFuncIdxByName(intern("rtStrConcat"))
-            if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtStrConcat not found/reachable")
-                quit 1
-            }
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
+            cgConcatIntoTemp(a0e, a1e)
+            // A7 is back at the temp's start (cgConcatIntoTemp's own
+            // JSR+cleanup is balanced) -- capture it into A1 BEFORE the
+            // dst-address/cap pushes below move A7 further.
+            a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+            cap = irtN(irExprType(dst))
+            fi = findIRFuncIdxByName(intern("rtStrStore"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtStrStore not found/reachable")
+                quit 1
+            }
             cgExprAddr(dst)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            cgExprAddr(a0e)
-            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            cgExprAddr(a1e)
-            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
             a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
             cgCleanupStack(12)
+            a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
             return
         }
         a68Comment("TODO SStoreStr <- intrinsic " + nm + ": unsupported this task")
         return
     }
 
+    // EStrConst/EVarRef (and any other addressable source): a clamped
+    // copy via rtStrStore(dst, dst's own capacity, src) -- routed through
+    // cgCallRuntime (task-8-review round 1 fix, Important 2: this was the
+    // hand-rolled duplicate cgCallRuntime's own doc comment complained
+    // was never actually used) since every argument here is genuinely
+    // IRExpr-backed, including the capacity (wrapped in a synthetic
+    // EIntConst via newIRIntConst -- ir.cla's own constructor, same one
+    // lower.cla uses for every literal it manufactures).
     cap = irtN(irExprType(dst))
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
+    args = cgFreshIntList()
+    args.add(dst)
+    args.add(newIRIntConst(cap, irIntT))
+    args.add(src)
+    addrs = cgFreshBoolList()
+    addrs.add(true)
+    addrs.add(false)
+    addrs.add(true)
+    if not cgCallRuntime("rtStrStore", args, addrs) {
         quit 1
     }
-    cgExprAddr(dst)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
-    cgExprAddr(src)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
-    cgCleanupStack(12)
 }
 
 // cgEmitReturnStr mirrors cgEmitStoreStr for `return <str expr>` inside a
 // function whose own return needs a hidden pointer -- the destination is
 // the POINTER VALUE already sitting at 8(A6) (pushed by value, not
-// LEA'd). ECallFn (returning a call result directly) isn't exercised by
-// this task's fixtures -- TODO, not built.
+// LEA'd, and NOT an IRExpr -- so neither branch here can route through
+// cgCallRuntime the way cgEmitStoreStr's default path now does).
+// ECallFn (returning a call result directly) isn't exercised by this
+// task's fixtures -- TODO, not built.
 func cgEmitReturnStr(src: int) {
     var sk: IRExprKind
     var nm: string
@@ -1407,20 +1495,22 @@ func cgEmitReturnStr(src: int) {
     if sk == EIntr {
         nm = poolGet(irIntrName(src))
         if nm == "str_concat" {
-            fi = findIRFuncIdxByName(intern("rtStrConcat"))
-            if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtStrConcat not found/reachable")
-                quit 1
-            }
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
+            cgConcatIntoTemp(a0e, a1e)
+            a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+            cap = irtN(cgCurRetType)
+            fi = findIRFuncIdxByName(intern("rtStrStore"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtStrStore not found/reachable")
+                quit 1
+            }
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
-            cgExprAddr(a0e)
-            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            cgExprAddr(a1e)
-            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
             a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
             cgCleanupStack(12)
+            a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
             return
         }
         a68Comment("TODO return <- intrinsic " + nm + ": unsupported this task")
