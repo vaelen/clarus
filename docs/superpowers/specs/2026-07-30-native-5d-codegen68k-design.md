@@ -52,6 +52,13 @@ three consumers:
   forward references (whole program is in memory; trivial).
 - **Listing printer:** the same stream → readable asm text, for debugging
   and committed test goldens (`--listing`-style flag on the build path).
+  **Syntax: Motorola, as in Inside Macintosh / MPW Asm** (`MOVE.L
+  (A7)+,D0`, `LINK A6,#-8`, `_NewHandle` for known trap words) — it
+  matches the reference books and MacsBug's on-screen disassembly, and we
+  only print it, never parse it, so gas/MIT compatibility buys nothing.
+  Goldens are our own listing output; the objdump oracle (Testing ring 2)
+  compares structurally, never textually — objdump emits MIT syntax and
+  its formatting drifts across binutils versions.
 - **Peephole/regalloc (later phase):** rewrites the structured stream
   before encoding. The parent spec says this pass is "likely needed soon
   after" — the table exists now so that pass has material to work on.
