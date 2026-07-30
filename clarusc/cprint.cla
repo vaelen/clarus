@@ -4672,9 +4672,11 @@ func cpWinHandlersHasWidget(whIdx: int): bool {
 // fpIntrCall's IUiStateDefaults() case above (the constructor this is the
 // destructor for), freeing instead of constructing, via the same
 // cpEmitRelease helper Task 5's globals and Task 7's locals already use. No
-// forward-declare/define split like winFn/widgetFn below needs: this body
-// only ever calls cpEmitRelease's own rt_*_release runtime calls, never a
-// clar_fn_ handler name, so it can be defined here directly. Returns the
+// forward-declare/define split like winFn/widgetFn below needs: cpEmitRelease
+// may emit clar_fn_rtTextRelease/rtListRelease/rtMapRelease calls (ARC), but
+// their prototypes come from cpEmitDefaultInitFnProtos into cpTypeBuf, which
+// emitProgram assembles before cpUiBuf where this function's body lands, so
+// it can be defined here directly. Returns the
 // function's own C name, or "0" if winName has no needs-ctor field at all
 // (callers wire a plain 0 into rt_ui_handlers.releaseVars instead of a
 // pointer to an empty function).
