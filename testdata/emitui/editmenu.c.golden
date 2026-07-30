@@ -4,7 +4,13 @@
 #include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */
 
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
+extern void rt_ext_StrSetLastErr(int32_t, const uint8_t *);
+extern void rt_ext_StrPanic(const uint8_t *);
+extern void rt_ext_StrBlockMoveData(void *, void *, int32_t);
 
+static const clar_str_255 clar_lit_0 = {16, {115, 116, 114, 105, 110, 103, 32, 116, 114, 117, 110, 99, 97, 116, 101, 100}};
+static const clar_str_255 clar_lit_1 = {25, {115, 116, 114, 105, 110, 103, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_2 = {18, {115, 108, 105, 99, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -32,6 +38,304 @@ static void cl_free_globals(void) {
 
 }
 
+static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
+static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b);
+static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c);
+static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a);
+static int32_t clar_fn_rtStrCmp(void * cv_a, void * cv_b);
+static int32_t clar_fn_rtStrLen(void * cv_s);
+static int32_t clar_fn_rtStrIndex(void * cv_s, int32_t cv_i);
+static void clar_fn_rtStrSetIndex(void * cv_s, int32_t cv_i, int32_t cv_c);
+static void clar_fn_rtStrFromBytes(void * cv_dst, int32_t cv_dstcap, void * cv_buf, int32_t cv_bufcap, int32_t cv_count);
+static int32_t clar_fn_rtStrToBytes(void * cv_s, void * cv_buf, int32_t cv_bufcap);
+static void clar_fn_rtStrSlice(void * cv_out, void * cv_s, int32_t cv_start, int32_t cv_len);
+static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle);
+static int32_t clar_fn_rtStrIndexOfChar(void * cv_s, int32_t cv_c);
+
+static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src) {
+    int32_t cv_srclen;
+    cv_srclen = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    cv_srclen = rt_peekb(cv_src);
+    if (cv_srclen < cv_dstcap) {
+        cv_n = cv_srclen;
+    } else {
+        cv_n = cv_dstcap;
+    }
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_src) + (1)), (void *)((char *)(cv_dst) + (1)), cv_n);
+    rt_pokeb(cv_dst, cv_n);
+    if (cv_n < cv_srclen) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+}
+
+static void clar_fn_rtStrConcat(void * cv_out, void * cv_a, void * cv_b) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_lb;
+    cv_lb = 0;
+    int32_t cv_total;
+    cv_total = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_fromA;
+    cv_fromA = 0;
+    int32_t cv_fromB;
+    cv_fromB = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_lb = rt_peekb(cv_b);
+    cv_total = (cv_la + cv_lb);
+    if (cv_total > 255) {
+        cv_n = 255;
+    } else {
+        cv_n = cv_total;
+    }
+    if (cv_la < cv_n) {
+        cv_fromA = cv_la;
+    } else {
+        cv_fromA = cv_n;
+    }
+    cv_fromB = (cv_n - cv_fromA);
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (1)), cv_fromA);
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_b) + (1)), (void *)((char *)((void *)((char *)(cv_out) + (1))) + (cv_fromA)), cv_fromB);
+    rt_pokeb(cv_out, cv_n);
+    if (cv_n < cv_total) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+}
+
+static void clar_fn_rtStrConcatChar(void * cv_out, void * cv_a, int32_t cv_c) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_total;
+    cv_total = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_copyLen;
+    cv_copyLen = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_total = (cv_la + 1);
+    if (cv_total > 255) {
+        cv_n = 255;
+    } else {
+        cv_n = cv_total;
+    }
+    if (cv_n < cv_la) {
+        cv_copyLen = cv_n;
+    } else {
+        cv_copyLen = cv_la;
+    }
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (1)), cv_copyLen);
+    if (cv_n > cv_la) {
+        rt_pokeb((void *)((char *)(cv_out) + (cv_n)), cv_c);
+    }
+    rt_pokeb(cv_out, cv_n);
+    if (cv_n < cv_total) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+}
+
+static void clar_fn_rtStrPrependChar(void * cv_out, int32_t cv_c, void * cv_a) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_total;
+    cv_total = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_total = (cv_la + 1);
+    if (cv_total > 255) {
+        cv_n = 255;
+    } else {
+        cv_n = cv_total;
+    }
+    rt_pokeb((void *)((char *)(cv_out) + (1)), cv_c);
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_a) + (1)), (void *)((char *)(cv_out) + (2)), (cv_n - 1));
+    rt_pokeb(cv_out, cv_n);
+    if (cv_n < cv_total) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+}
+
+static int32_t clar_fn_rtStrCmp(void * cv_a, void * cv_b) {
+    int32_t cv_la;
+    cv_la = 0;
+    int32_t cv_lb;
+    cv_lb = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_ca;
+    cv_ca = 0;
+    int32_t cv_cb;
+    cv_cb = 0;
+    cv_la = rt_peekb(cv_a);
+    cv_lb = rt_peekb(cv_b);
+    if (cv_la < cv_lb) {
+        cv_n = cv_la;
+    } else {
+        cv_n = cv_lb;
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_n))) break;
+        cv_ca = rt_peekb((void *)((char *)((void *)((char *)(cv_a) + (1))) + (cv_i)));
+        cv_cb = rt_peekb((void *)((char *)((void *)((char *)(cv_b) + (1))) + (cv_i)));
+        if (cv_ca < cv_cb) {
+            return (-(1));
+        }
+        if (cv_ca > cv_cb) {
+            return 1;
+        }
+        cv_i = (cv_i + 1);
+    }
+    if (cv_la < cv_lb) {
+        return (-(1));
+    }
+    if (cv_la > cv_lb) {
+        return 1;
+    }
+    return 0;
+    return 0;
+}
+
+static int32_t clar_fn_rtStrLen(void * cv_s) {
+    return rt_peekb(cv_s);
+    return 0;
+}
+
+static int32_t clar_fn_rtStrIndex(void * cv_s, int32_t cv_i) {
+    if ((cv_i < 0) || (cv_i >= rt_peekb(cv_s))) {
+        rt_ext_StrPanic((const uint8_t*)&(clar_lit_1));
+    }
+    return rt_peekb((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_i)));
+    return 0;
+}
+
+static void clar_fn_rtStrSetIndex(void * cv_s, int32_t cv_i, int32_t cv_c) {
+    if ((cv_i < 0) || (cv_i >= rt_peekb(cv_s))) {
+        rt_ext_StrPanic((const uint8_t*)&(clar_lit_1));
+    }
+    rt_pokeb((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_i)), cv_c);
+}
+
+static void clar_fn_rtStrFromBytes(void * cv_dst, int32_t cv_dstcap, void * cv_buf, int32_t cv_bufcap, int32_t cv_count) {
+    int32_t cv_want;
+    cv_want = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    if (cv_count < 0) {
+        cv_want = 0;
+    } else {
+        cv_want = cv_count;
+    }
+    cv_n = cv_want;
+    if (cv_n > cv_bufcap) {
+        cv_n = cv_bufcap;
+    }
+    if (cv_n > cv_dstcap) {
+        cv_n = cv_dstcap;
+    }
+    rt_ext_StrBlockMoveData(cv_buf, (void *)((char *)(cv_dst) + (1)), cv_n);
+    rt_pokeb(cv_dst, cv_n);
+    if (cv_n < cv_want) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+}
+
+static int32_t clar_fn_rtStrToBytes(void * cv_s, void * cv_buf, int32_t cv_bufcap) {
+    int32_t cv_srclen;
+    cv_srclen = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    cv_srclen = rt_peekb(cv_s);
+    if (cv_srclen < cv_bufcap) {
+        cv_n = cv_srclen;
+    } else {
+        cv_n = cv_bufcap;
+    }
+    rt_ext_StrBlockMoveData((void *)((char *)(cv_s) + (1)), cv_buf, cv_n);
+    if (cv_n < cv_srclen) {
+        rt_ext_StrSetLastErr(1, (const uint8_t*)&(clar_lit_0));
+    }
+    return cv_n;
+    return 0;
+}
+
+static void clar_fn_rtStrSlice(void * cv_out, void * cv_s, int32_t cv_start, int32_t cv_len) {
+    int32_t cv_srclen;
+    cv_srclen = 0;
+    cv_srclen = rt_peekb(cv_s);
+    if ((cv_len < 0) || (cv_len > 255)) {
+        rt_ext_StrPanic((const uint8_t*)&(clar_lit_2));
+    }
+    if ((cv_start < 0) || (cv_start > (cv_srclen - cv_len))) {
+        rt_ext_StrPanic((const uint8_t*)&(clar_lit_2));
+    }
+    rt_ext_StrBlockMoveData((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_start)), (void *)((char *)(cv_out) + (1)), cv_len);
+    rt_pokeb(cv_out, cv_len);
+}
+
+static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle) {
+    int32_t cv_slen;
+    cv_slen = 0;
+    int32_t cv_nlen;
+    cv_nlen = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_j;
+    cv_j = 0;
+    int32_t cv_match;
+    cv_match = 0;
+    cv_slen = rt_peekb(cv_s);
+    cv_nlen = rt_peekb(cv_needle);
+    if (cv_nlen == 0) {
+        return 0;
+    }
+    if (cv_nlen > cv_slen) {
+        return (-(1));
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i <= (cv_slen - cv_nlen)))) break;
+        cv_match = 1;
+        cv_j = 0;
+        while (1) {
+            if (!((cv_j < cv_nlen))) break;
+            if (rt_peekb((void *)((char *)((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_i))) + (cv_j))) != rt_peekb((void *)((char *)((void *)((char *)(cv_needle) + (1))) + (cv_j)))) {
+                cv_match = 0;
+                break;
+            }
+            cv_j = (cv_j + 1);
+        }
+        if (cv_match) {
+            return cv_i;
+        }
+        cv_i = (cv_i + 1);
+    }
+    return (-(1));
+    return 0;
+}
+
+static int32_t clar_fn_rtStrIndexOfChar(void * cv_s, int32_t cv_c) {
+    int32_t cv_slen;
+    cv_slen = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    cv_slen = rt_peekb(cv_s);
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_slen))) break;
+        if (rt_peekb((void *)((char *)((void *)((char *)(cv_s) + (1))) + (cv_i))) == cv_c) {
+            return cv_i;
+        }
+        cv_i = (cv_i + 1);
+    }
+    return (-(1));
+    return 0;
+}
 
 static const rt_ui_menu_desc *clar_ui_menus[] = {
     &clar_ui_menu_File,
