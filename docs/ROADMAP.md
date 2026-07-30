@@ -323,6 +323,59 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   68k-only and needs a proper deref primitive, designed in 5b. Full design:
   `docs/superpowers/specs/2026-07-29-native-68k-toolchain-design.md`; task
   plan: `docs/superpowers/plans/2026-07-29-native-5a-lowlevel.md`.
+- **5b (runtime migration wave 1, landed on branch `native-5b`, 2026-07-30):
+  DONE.** `rt_ser` and the `rt_str_*`/`rt_text_*`/`rt_list_*`/`rt_map_*`
+  families ported from C to Clarus (`runtime/clarus/{ser,str,text,list,
+  map}.cla`, 2,127 lines) over the 5a waist, clarusc-fed implicitly per
+  program (gated on IR usage marks — no user `include`). cprint's intrinsic
+  arms redirect per family (`cpSerPorted`/`cpStrPorted`/`cpTextPorted`/
+  `cpListPorted`/`cpMapPorted`) to the ported Clarus functions once a
+  module is included; the C originals stay in `rt.c`/`rt_mac.c` forever as
+  the frozen Go compiler's only backend and as the port's differential
+  oracle. Also landed: `overlay` record types (Chapter 13; scalar-field-only
+  pointer-backed structs giving portable Toolbox-record-shaped field access
+  without recursive-type or ARC concerns), external `str`/`text` param
+  marshalling, a Handle-deref waist primitive, and flat pointer-free
+  `clar_serdesc_<REC>[]` int32 descriptor tables so the serializer can walk
+  record layout portably with `peekl` alone. Birth allocation
+  (`TextNewRaw`/`ListNewRaw`/`MapNewRaw`) delegates whole-box construction
+  to the existing C `rt_*_new` (refcount stays C-owned, written exactly
+  once) rather than having ported Clarus code poke a raw `rc` field — the
+  design's anticipated lazier option. RC/lastref/free and every other
+  memory-management primitive stay untouched in C, reached through
+  `rt_ext_*` waist externals — this wave moves container *logic*, not RC
+  *policy*. **Plan defect found and adjudicated (Task 6):** the plan's
+  original oracle for the serializer stage — a Go-compiler-vs-clarusc
+  double build with byte-compared CLRD output — is unbuildable, because the
+  frozen Go host compiler permanently rejects `file.save`/`file.load`
+  programs (a restriction predating this wave). Adjudicated to a
+  golden-based oracle instead: frozen C-serializer CLRD bytes + stdout
+  committed under `testdata/sertest/clrd_goldens/`, clarusc builds
+  byte-compared against them (`internal/sertest/clrdcompare_test.go`) — the
+  same guarantee held through every later family's port, goldens
+  untouched. Verification: an 18-probe adversarial container matrix
+  (reassign/discard/alias × value/str/text/list/map slot classes) over the
+  fully-ported runtime found zero live leaks and zero bugs. Full outcomes
+  record (redirect-exclusion list as-built, extern-naming convention,
+  ported-flag mechanism, `cpEmitDefaultInitFnProtos` forward-declaration
+  fix): `docs/superpowers/specs/2026-07-29-runtime-migration-wave1-design.md`
+  ("Outcomes" section); task plan:
+  `docs/superpowers/plans/2026-07-29-runtime-migration-wave1.md`. Retro68
+  stays in the Mac app path unchanged — ported modules still compile to C
+  via cprint and link into the Mac build through Retro68's gcc -O2 exactly
+  as before; Retro68 only retires from the app-build path at 5f. The C
+  runtime (`internal/build/rt/`, `runtime/mac/rt_mac.c`) is retained
+  permanently as the frozen Go compiler's backend, not deleted. **68k
+  timing:** as expected, ≈no change — the full gated `internal/mactest`
+  suite (31 tests: `TestSuiteOnMac`, `TestRunErrOnMac`, `TestAbortAppsOnMac`,
+  all 23 UI scenarios, plus 5 non-boot build/unit tests) ran green in
+  157.0s wall-clock; the Bookmarks scenario (heaviest single UI boot, now
+  running the fully-ported serializer/str/text/list/map runtime end to end)
+  landed at 9.83s build+boot here, in the same ballpark as the ARC-era
+  baseline's pure-launch 9.09-9.21s over 3 runs (Done item 11) — consistent
+  with §7 of the design spec ("explicitly not at risk"): ported modules
+  still compile to C and link under Retro68 gcc -O2, so there is no naive-
+  codegen cost to pay until 5d.
 
 ## Small open items (not yet scheduled)
 

@@ -222,8 +222,11 @@ native backend passes the full corpus.
   skeleton with ledger instrumentation at the seam. **Landed on branch
   `native-5a`, 2026-07-29** — see "5a outcomes" notes above and the task
   plan at `docs/superpowers/plans/2026-07-29-native-5a-lowlevel.md`.
-- **5b — Runtime migration wave 1:** serializer, then core
-  strings/lists/maps; differential green throughout.
+- **5b — Runtime migration wave 1: DONE (landed on branch `native-5b`,
+  2026-07-30).** Serializer, then core strings/lists/maps, ported to Clarus
+  over the 5a waist; differential green throughout. Full outcomes:
+  `2026-07-29-runtime-migration-wave1-design.md`'s "Outcomes" section;
+  ROADMAP entry under "Native 68k toolchain (Plan 5)".
 - **5c — Compilation cache:** interface/IR serialization, staleness rules,
   tree-shake pass at the IR level (also shrinks emitted C).
 - **5d — 68k codegen v1:** naive codegen, segmentation + jump table,
