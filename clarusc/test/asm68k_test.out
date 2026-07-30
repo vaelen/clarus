@@ -27,7 +27,7 @@ LBL_1:
         ADD.W D0,D1
         ADD.L (A2),D3
         ADD.W D4,(A5)
-        ADD.W #5,D6
+        ADDI.W #5,D6
         ADDA.W D0,A1
         ADDA.L (A2),A3
         ADDQ.L #4,A7
@@ -36,23 +36,23 @@ LBL_1:
         SUB.W D0,D1
         SUB.L (A2),D3
         SUB.W D4,(A5)
-        SUB.W #5,D6
+        SUBI.W #5,D6
         SUBQ.W #8,D0
         SUBQ.L #2,A6
         CMP.L D1,D0
         CMP.W (A2),D3
-        CMP.W #7,D4
+        CMPI.W #7,D4
         AND.W D0,D1
         AND.L (A2),D3
         AND.W D4,(A5)
-        AND.W #15,D6
+        ANDI.W #15,D6
         OR.W D0,D1
         OR.L (A2),D3
         OR.W D4,(A5)
-        OR.W #240,D6
+        ORI.W #240,D6
         EOR.W D0,D1
         EOR.L D2,(A3)
-        EOR.W #255,D4
+        EORI.W #255,D4
         NEG.W D0
         NEG.L (A2)
         NOT.W D0
@@ -117,3 +117,4 @@ C6 D2 8B C4 8C D2 48 80 48 C0 48 40 4E AD 00 2A
 5F C3 53 42 51 C9 FF FC 60 00 FF F8 61 00 00 04
 32 00 30 3C 00 63 4E 75 4E 56 FF 9C 4E 5E A1 22
 12 12 34 12 34 56 78 00 41 42 58 59 5A 00
+PASS unresolved-label case: a68Finish()=false, a68UnresolvedLabel()=0

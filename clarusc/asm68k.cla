@@ -801,6 +801,55 @@ func a68ShiftWord(dir: int, kindField: int, size: int, sm: A68Mode, sr: int, sv:
     return 0xE000 | (countField << 9) | (dir << 8) | (a68SizeCodeStd(size) << 6) | (irFlag << 5) | (kindField << 3) | dr
 }
 
+// LEGAL OPERAND SHAPES, per op family. This module trusts its callers
+// (a68Emit/a68EmitBr are an internal encoder API, not a user-facing
+// checked surface -- Clarus's Go-compiler-buildable subset has no
+// user-invocable "raise a runtime error" primitive to enforce this with
+// short of an out-of-range-index hack, which would report a misleading
+// message rather than the real problem) -- so this is discipline
+// documented once, here, rather than validated. A caller that violates
+// one of these either mis-encodes silently (wrong opcode bits) or
+// corrupts an unrelated field (see OpScc below):
+//   - OpMove: dest is never AmAn (use OpMovea) or AmImm/AmPCLabel
+//     (neither is a legal MOVE destination).
+//   - OpMovea/OpLea/OpAdda/OpMuls/OpMulu/OpDivs/OpDivu: single source ea
+//     in sm/sr/sv; dest is always a plain An (Movea/Adda, dr = the An
+//     number) or Dn (Muls/Mulu/Divs/Divu, dr = the Dn number) -- dm is
+//     unused/ignored.
+//   - OpAdd/OpSub/OpAnd/OpOr: exactly one of sm/dm must be AmDn (the
+//     other is the ea) -- both-Dn is legal and always takes the ea->Dn
+//     (dm==AmDn) reading; neither side may be AmAn.
+//   - OpEor: source (sm) is always AmDn or AmImm; dest (dm) is never
+//     AmAn (EOR has no ea->Dn form at all, unlike ADD/SUB/AND/OR).
+//   - OpCmp: dest (dm) is always AmDn (dr = the Dn number); dm itself is
+//     never consulted for anything but that register number -- CMP has
+//     no ea->ea or Dn->ea form.
+//   - OpAddq/OpSubq: source is always AmImm with sv in 1-8; dest (dm)
+//     is a data- or address-alterable mode, never AmImm/AmPCLabel.
+//   - OpNeg/OpNot/OpTst/OpClr/OpPea/OpJsr/OpJmp: single ea in dm/dr/dv
+//     (sm/sr/sv unused) -- Pea/Jsr/Jmp additionally require a CONTROL
+//     mode (AmInd/AmDisp16/AmPCLabel/AmAbsW; never Dn/An/PostInc/
+//     PreDec/Imm).
+//   - OpAsl/OpAsr/OpLsl/OpLsr: dr is always the shifted Dn; the count is
+//     AmImm (sv 1-8) or AmDn (sr, register count) -- no other sm is
+//     legal, and dm is unused/ignored.
+//   - OpExt/OpSwap/OpLink/OpUnlk: dr is always a plain Dn (Ext/Swap) or
+//     An (Link/Unlk) register number; sm/dm carry no addressing mode at
+//     all (both AmNone by convention).
+//   - OpScc: dest ea in dm/dr; dv is REPURPOSED to carry the condition
+//     code (a68Emit's fixed 8-parameter signature has no separate cc
+//     slot -- see the module header comment's "reused field slots"
+//     note), so the dest ea is restricted to modes needing no operand
+//     value of their own (Dn/An/Ind/PostInc/PreDec). Disp16/Imm/AbsW/
+//     PCLabel dest modes would silently collide dv's cc value with that
+//     mode's own displacement/immediate/address/label id -- never used
+//     for OpScc by any caller in this module.
+//   - OpDbra: sm/sr is always AmDn (the counter register); dm/dv is
+//     always AmPCLabel (the loop-top label id).
+//   - OpBra/OpBcc/OpBsr: never called via a68Emit directly (only
+//     a68EmitBr, which fixes sm=AmNone/dm=AmPCLabel itself).
+//   - OpRts: no operands at all; every field is ignored.
+//
 // a68InstrWord is the per-op opcode-word table: every 16-bit base opcode
 // constant in this module appears exactly once, here.
 func a68InstrWord(idx: int): int {
@@ -1088,10 +1137,16 @@ func a68ShiftOperand(sm: A68Mode, sr: int, sv: int): string {
 }
 
 // a68TwoOpListing renders the ADD/SUB/AND/OR family, matching
-// a68TwoOpWord's own direction test (dm==AmDn) exactly.
+// a68TwoOpWord's own direction test (dm==AmDn) exactly. An AmImm source
+// must print the distinct *I mnemonic (ADDI/SUBI/ANDI/ORI), not bare
+// ADD/SUB/AND/OR: the general opcode's own ea field ALSO legally accepts
+// an immediate (a second, different-bit-pattern encoding of the same
+// operation), so vasm-mot assembling bare "ADD #n,ea" picks the general
+// opcode, not ADDI -- printing the *I mnemonic is what makes the listing
+// round-trip to the exact bytes a68InstrWord/a68TwoOpWord produced.
 func a68TwoOpListing(name: string, suf: string, sm: A68Mode, sr: int, sv: int, dm: A68Mode, dr: int, dv: int): string {
     if sm == AmImm {
-        return name + "." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+        return name + "I." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
     }
     if dm == AmDn {
         return name + "." + suf + " " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
@@ -1151,12 +1206,24 @@ func a68ListingLine(idx: int): string {
         return a68TwoOpListing("OR", suf, sm, sr, sv, dm, dr, dv)
     }
     case OpEor {
+        // AmImm source -> EORI: the general EOR opcode's source is
+        // always Dn (see the "legal operand shapes" table above
+        // a68InstrWord) -- it has no immediate-source encoding at all,
+        // so "EOR #n,ea" isn't just ambiguous, it names no valid
+        // general-EOR bit pattern; EORI is the only correct mnemonic.
         if sm == AmImm {
-            return "EOR." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+            return "EORI." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
         }
         return "EOR." + suf + " D" + numToStr(sr) + "," + a68EaText(dm, dr, dv)
     }
     case OpCmp {
+        // AmImm source -> CMPI: CMP's own ea field also legally accepts
+        // an immediate (same competing-encoding issue a68TwoOpListing's
+        // doc comment describes for ADD/SUB/AND/OR), so bare "CMP #n,Dn"
+        // would vasm-assemble to the general CMP opcode, not CMPI.
+        if sm == AmImm {
+            return "CMPI." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+        }
         return "CMP." + suf + " " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
     }
     case OpAddq {

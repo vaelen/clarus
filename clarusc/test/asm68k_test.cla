@@ -64,6 +64,7 @@ func printHexDump(t: text) {
 
 on App.startEmpty {
     var ok: bool
+    var badLabel: int
 
     a68SelfExercise()
     ok = a68Finish()
@@ -73,4 +74,22 @@ on App.startEmpty {
         printListing(a68ListingText())
         printHexDump(a68Bytes())
     }
+
+    // Negative case: a68Finish must fail (false) when a referenced label
+    // is never bound, and a68UnresolvedLabel() must report its id --
+    // the brief's "caller panics with the label id" contract depends on
+    // both halves working.
+    a68Reset()
+    badLabel = a68NewLabel()
+    a68EmitBr(OpBra, 0, badLabel)
+    ok = a68Finish()
+    if ok {
+        alert("FAIL unresolved-label case: a68Finish returned true")
+    } else if a68UnresolvedLabel() != badLabel {
+        alert("FAIL unresolved-label case: got id " + numToStr(a68UnresolvedLabel()) + " want " + numToStr(badLabel))
+    } else {
+        alert("PASS unresolved-label case: a68Finish()=false, a68UnresolvedLabel()=" + numToStr(badLabel))
+    }
+
+    a68Reset()
 }
