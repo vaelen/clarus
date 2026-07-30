@@ -239,6 +239,12 @@ native backend passes the full corpus.
 Ordering note: 5c may slide after 5d — the cache is a usability feature for
 on-Mac builds, not a correctness dependency.
 
+**Resequenced 2026-07-30 (see `2026-07-30-native-5d-codegen68k-design.md`):**
+5c′ = runtime wave 2a (mem/ARC port, prerequisite of 5d — the native backend
+links only Clarus-generated code, so the non-UI runtime must be fully ported
+before 5d's gate can run); tree-shake moves into 5d; the compilation cache
+(rest of old 5c) slides to after 5d.
+
 ## Risks (recorded honestly)
 
 - **Perf regression on Mac:** runtime hot paths lose gcc -O2; naive codegen

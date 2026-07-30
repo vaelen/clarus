@@ -376,6 +376,18 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   with §7 of the design spec ("explicitly not at risk"): ported modules
   still compile to C and link under Retro68 gcc -O2, so there is no naive-
   codegen cost to pay until 5d.
+- **Resequenced 2026-07-30 (5d design brainstorm):** next is **5c′ —
+  runtime migration wave 2a (mem/ARC in Clarus)**, a hard prerequisite of
+  5d because the native backend links only Clarus-generated code; ported
+  and verified on the existing cprint → Retro68 path, own spec/plan/branch.
+  Then **5d — codegen68k**: direct binary emission via an instruction-table
+  layer (encoder + listing printer + future peephole share one table; no
+  asm-text assembler, ever), C-style calling convention (caller-cleans, D0
+  result — the 68000 has no RTD, Pascal results ping through memory, and
+  caller-cleans lets peephole batch stack pops), IR tree-shake pulled into
+  5d from old 5c, trap clauses land in 5d. The compilation cache (rest of
+  old 5c) slides to after 5d. Design:
+  `docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`.
 
 ## Small open items (not yet scheduled)
 
