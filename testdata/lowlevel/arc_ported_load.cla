@@ -1,0 +1,78 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc_ported_load.cla: file.load-over-populated-container (Plan 5b Task
+// 12) -- exercises the PORTED clear (runtime/clarus/list.cla/map.cla) and
+// the PORTED serializer (runtime/clarus/ser.cla) TOGETHER: file.load into
+// a list/map that already holds DIFFERENT data must release every old
+// element before the loaded data lands, not merely overwrite the count.
+//
+// Record-elements only, deliberately: Chapter 12 requires file.save/load's
+// payload be a `record`, `list of` record, or `map of` record whose fields
+// are ALL by-value (a `text`/`list`/`map` field is a build-time error) --
+// so there is no "text elements" variant of this scenario to write; the
+// language itself rules it out, not an oversight. Reassign/discard/alias/
+// pop-shift/overwrite-key (which DO have text-element variants) live in
+// arc_ported_list.cla/arc_ported_map.cla.
+
+record SaveItem {
+    name:  string(31)
+    score: int
+}
+
+func itemEq(a: SaveItem, b: SaveItem): bool {
+    return a.name == b.name and a.score == b.score
+}
+
+on App.startCLI(args: list of string) {
+    var src: list of SaveItem
+    var dst: list of SaveItem
+    var msrc: map of SaveItem
+    var mdst: map of SaveItem
+    var stale: SaveItem
+    var fresh: SaveItem
+    var got: SaveItem
+    var ok: bool
+
+    fresh.name = "alpha"
+    fresh.score = 1
+
+    stale.name = "stale"
+    stale.score = 99
+
+    // ---- list of SaveItem: load over a populated (2-element) list ----
+    src.push(fresh)
+    ok = file.save("listload.dat", src)
+    if not ok {
+        alert("list-load-save-FAIL")
+    }
+
+    dst.push(stale)
+    dst.push(stale)
+
+    ok = file.load("listload.dat", dst)
+    got = dst.first()
+    if ok and dst.count == 1 and itemEq(got, fresh) {
+        alert("list-load-over-populated-ok")
+    } else {
+        alert("list-load-over-populated-FAIL")
+    }
+
+    // ---- map of SaveItem: load over a populated (2-entry) map ----
+    msrc["a"] = fresh
+    ok = file.save("maploaded.dat", msrc)
+    if not ok {
+        alert("map-load-save-FAIL")
+    }
+
+    mdst["stale1"] = stale
+    mdst["stale2"] = stale
+
+    ok = file.load("maploaded.dat", mdst)
+    got = mdst["a"]
+    if ok and mdst.count == 1 and mdst.has("a") and itemEq(got, fresh) {
+        alert("map-load-over-populated-ok")
+    } else {
+        alert("map-load-over-populated-FAIL")
+    }
+}

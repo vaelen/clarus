@@ -1,0 +1,132 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc_ported_map.cla: adversarial `map of` matrix (Plan 5b Task 12) --
+// map-of-text and map-of-record variants of the ARC-era blind spots
+// (ROADMAP Done item 11, arc_fixwave_containers.cla/arc_global_alias.cla),
+// re-run over the PORTED runtime (runtime/clarus/map.cla + friends) via
+// the internal/lowlevel harness. List's analogous scenarios live in
+// arc_ported_list.cla; file.load-over-populated lives in
+// arc_ported_load.cla. See arc_ported_list.cla's header for the harness/
+// verification-idiom notes shared by all three files.
+//
+// Map has no ordered pop/shift (see arc_global_alias.cla's own comment:
+// `.remove(k)` is void, already releases the evicted value internally --
+// never a discardable non-void result). This file's fifth scenario is
+// therefore map's OWN analogous blind spot instead: overwriting an
+// existing key must release the OLD value before the new one lands, not
+// leak it -- the map-shaped sibling of list's pop/shift-discard case.
+
+record Item {
+    label: text
+    tag:   int
+}
+
+func itemOk(it: Item, wantTag: int, wantLabel: string): bool {
+    return it.tag == wantTag and it.label == wantLabel
+}
+
+func makeMapText(): map of text {
+    var m: map of text
+    m["k"] = "fresh"
+    return m
+}
+
+func makeMapItem(): map of Item {
+    var m: map of Item
+    var it: Item
+    it.tag = 9
+    it.label = "fresh"
+    m["k"] = it
+    return m
+}
+
+on App.startCLI(args: list of string) {
+    var mt: map of text
+    var mr: map of Item
+    var mat1: map of text
+    var mat2: map of text
+    var matEmpty: map of text
+    var mar1: map of Item
+    var mar2: map of Item
+    var marEmpty: map of Item
+    var ot: map of text
+    var orec: map of Item
+    var tmp: Item
+    var got: Item
+
+    // whole-container reassign
+    mt["x"] = "old1"
+    mt["y"] = "old2"
+    mt = makeMapText()
+    if mt.count == 1 and mt.has("k") and mt["k"] == "fresh" {
+        alert("map-reassign-text-ok")
+    } else {
+        alert("map-reassign-text-FAIL")
+    }
+
+    tmp.tag = 1
+    tmp.label = "old1"
+    mr["x"] = tmp
+    tmp.tag = 2
+    tmp.label = "old2"
+    mr["y"] = tmp
+    mr = makeMapItem()
+    got = mr["k"]
+    if mr.count == 1 and mr.has("k") and itemOk(got, 9, "fresh") {
+        alert("map-reassign-rec-ok")
+    } else {
+        alert("map-reassign-rec-FAIL")
+    }
+
+    // discarded call-result container
+    makeMapText()
+    alert("map-discard-text-ok")
+    makeMapItem()
+    alert("map-discard-rec-ok")
+
+    // aliased container, one cleared
+    mat1["k"] = "shared"
+    mat2 = mat1
+    mat2 = matEmpty
+    if mat1.count == 1 and mat1["k"] == "shared" and mat2.count == 0 {
+        alert("map-alias-text-ok")
+    } else {
+        alert("map-alias-text-FAIL")
+    }
+
+    tmp.tag = 5
+    tmp.label = "shared"
+    mar1["k"] = tmp
+    mar2 = mar1
+    mar2 = marEmpty
+    got = mar1["k"]
+    if mar1.count == 1 and itemOk(got, 5, "shared") and mar2.count == 0 {
+        alert("map-alias-rec-ok")
+    } else {
+        alert("map-alias-rec-FAIL")
+    }
+
+    // overwrite-same-key: the OLD value at "k" must release when the NEW
+    // value lands, not leak.
+    ot["k"] = "before"
+    ot["k"] = "after"
+    if ot.count == 1 and ot["k"] == "after" {
+        alert("map-overwrite-samekey-text-ok")
+    } else {
+        alert("map-overwrite-samekey-text-FAIL")
+    }
+
+    tmp.tag = 1
+    tmp.label = "before"
+    orec["k"] = tmp
+    tmp.tag = 2
+    tmp.label = "after"
+    orec["k"] = tmp
+    got = orec["k"]
+    if orec.count == 1 and itemOk(got, 2, "after") {
+        alert("map-overwrite-samekey-rec-ok")
+    } else {
+        alert("map-overwrite-samekey-rec-FAIL")
+    }
+}

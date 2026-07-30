@@ -1,0 +1,150 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc_ported_list.cla: adversarial `list of` matrix (Plan 5b Task 12) --
+// list-of-text and list-of-record variants of the ARC-era blind spots
+// recorded in ROADMAP Done item 11 and pinned by arc_fixwave_containers.cla/
+// arc_global_alias.cla (testdata/run/lib), re-run here over the PORTED
+// runtime (runtime/clarus/list.cla + friends, Tasks 1-11) via the
+// internal/lowlevel harness -- clarusc-emitted C, host cc against rt.c, run
+// under CLARUS_MEM_STRICT=1 CLARUS_MEM_PARANOID=1. Map's analogous
+// scenarios live in arc_ported_map.cla; file.load-over-populated (which
+// needs a by-value-only record for file.save/load, Chapter 12) lives in
+// arc_ported_load.cla -- split three ways to stay under the ~150-line
+// fixture budget. Each probe's alert names container+scenario+element-type
+// so coverage is auditable from stdout (this file's .out) alone; live=0 is
+// the leak-gate half of "alert-verified AND leak-gate-verified", checked by
+// the harness itself, not visible in this file.
+// No map-flavored "pop/shift discard" analog exists (map has no ordered
+// pop/shift -- see arc_global_alias.cla's own comment); this file's fifth
+// scenario is list-only, matching arc_ported_map.cla's map-only
+// "overwrite-same-key" fifth scenario.
+
+record Item {
+    label: text
+    tag:   int
+}
+
+func itemOk(it: Item, wantTag: int, wantLabel: string): bool {
+    return it.tag == wantTag and it.label == wantLabel
+}
+
+func makeListText(): list of text {
+    var l: list of text
+    l.push("fresh")
+    return l
+}
+
+func makeListItem(): list of Item {
+    var l: list of Item
+    var it: Item
+    it.tag = 9
+    it.label = "fresh"
+    l.push(it)
+    return l
+}
+
+on App.startCLI(args: list of string) {
+    var rt: list of text
+    var rr: list of Item
+    var at1: list of text
+    var at2: list of text
+    var atEmpty: list of text
+    var ar1: list of Item
+    var ar2: list of Item
+    var arEmpty: list of Item
+    var pt: list of text
+    var pr: list of Item
+    var tmp: Item
+    var got: Item
+
+    // whole-container reassign: the OLD populated value must release
+    // cleanly (elements included), the new value must read back correctly.
+    rt.push("old1")
+    rt.push("old2")
+    rt = makeListText()
+    if rt.count == 1 and rt.first() == "fresh" {
+        alert("list-reassign-text-ok")
+    } else {
+        alert("list-reassign-text-FAIL")
+    }
+
+    tmp.tag = 1
+    tmp.label = "old1"
+    rr.push(tmp)
+    tmp.tag = 2
+    tmp.label = "old2"
+    rr.push(tmp)
+    rr = makeListItem()
+    got = rr.first()
+    if rr.count == 1 and itemOk(got, 9, "fresh") {
+        alert("list-reassign-rec-ok")
+    } else {
+        alert("list-reassign-rec-FAIL")
+    }
+
+    // discarded call-result container: a fresh, non-empty list returned
+    // and immediately discarded as a bare statement -- must not crash and
+    // must not leak (the leak gate is the only verifier here).
+    makeListText()
+    alert("list-discard-text-ok")
+    makeListItem()
+    alert("list-discard-rec-ok")
+
+    // aliased container, one cleared: two vars share one populated list
+    // (rc==2); clearing ONE (reassigning it to a fresh empty list) must
+    // drop the shared box to rc==1 without freeing it -- the other alias
+    // must still read back the original data.
+    at1.push("shared")
+    at2 = at1
+    at2 = atEmpty
+    if at1.count == 1 and at1.first() == "shared" and at2.count == 0 {
+        alert("list-alias-text-ok")
+    } else {
+        alert("list-alias-text-FAIL")
+    }
+
+    tmp.tag = 5
+    tmp.label = "shared"
+    ar1.push(tmp)
+    ar2 = ar1
+    ar2 = arEmpty
+    got = ar1.first()
+    if ar1.count == 1 and itemOk(got, 5, "shared") and ar2.count == 0 {
+        alert("list-alias-rec-ok")
+    } else {
+        alert("list-alias-rec-FAIL")
+    }
+
+    // element pop/shift discard: a transfer-convention result (pop/shift),
+    // taken as a bare statement, must be released -- nothing else claims
+    // it (ARC Task 8 review round 2's own bug class).
+    pt.push("x")
+    pt.push("y")
+    pt.push("z")
+    pt.pop()
+    pt.shift()
+    if pt.count == 1 and pt.first() == "y" {
+        alert("list-pop-discard-text-ok")
+    } else {
+        alert("list-pop-discard-text-FAIL")
+    }
+
+    tmp.tag = 1
+    tmp.label = "x"
+    pr.push(tmp)
+    tmp.tag = 2
+    tmp.label = "y"
+    pr.push(tmp)
+    tmp.tag = 3
+    tmp.label = "z"
+    pr.push(tmp)
+    pr.pop()
+    pr.shift()
+    got = pr.first()
+    if pr.count == 1 and itemOk(got, 2, "y") {
+        alert("list-pop-discard-rec-ok")
+    } else {
+        alert("list-pop-discard-rec-FAIL")
+    }
+}
