@@ -38,25 +38,18 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
  * `external func FileWriteData(path: string, ...)` in one merged TU. */
 int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
-/* rt_ext_Ser{ListCount,ListAt,ListClear,ListPush,MapCount,MapKeyAt,MapValAt,
- * MapSet,MapClear,BlockMoveData,NewPtr,DisposePtr}: final-review fix,
- * mirroring internal/build/rt/rt_ext_host.inc's block exactly -- ser.cla's
- * remaining externs were still unprefixed and collided with a user
- * program's own `external func NewPtr`/etc. (the documented Ch13 escape
- * hatch) the moment that program also called file.save/file.load. Thin
- * aliases of the same primitives the generic rt_ext_* wrappers above call.
+/* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix, mirroring
+ * internal/build/rt/rt_ext_host.inc's block exactly -- ser.cla's remaining
+ * externs were still unprefixed and collided with a user program's own
+ * `external func NewPtr`/etc. (the documented Ch13 escape hatch) the
+ * moment that program also called file.save/file.load. Thin aliases of the
+ * same primitives the generic rt_ext_* wrappers above call.
  * (rt_ext_SerSetLastErr/rt_ext_SerPanic, ser.cla's own former SetLastErr/
  * Panic aliases, are gone as of Plan native-5d Task 3 -- see the host
- * .inc's own header comment.) */
-int32_t rt_ext_SerListCount(void *l) { return rt_list_count((rt_list *)l); }
-void *rt_ext_SerListAt(void *l, int32_t i) { return rt_list_at((rt_list *)l, i); }
-void rt_ext_SerListClear(void *l) { rt_list_clear((rt_list *)l); }
-void rt_ext_SerListPush(void *l, void *elem) { rt_list_push((rt_list *)l, elem); }
-int32_t rt_ext_SerMapCount(void *m) { return rt_map_count((rt_map *)m); }
-void rt_ext_SerMapKeyAt(void *m, int32_t i, void *key255) { rt_map_key_at((rt_map *)m, i, (uint8_t *)key255); }
-void rt_ext_SerMapValAt(void *m, int32_t i, void *out) { rt_map_val_at((rt_map *)m, i, out); }
-void rt_ext_SerMapSet(void *m, void *key255, void *val) { rt_map_set((rt_map *)m, (const uint8_t *)key255, val); }
-void rt_ext_SerMapClear(void *m) { rt_map_clear((rt_map *)m); }
+ * .inc's own header comment. rt_ext_Ser{ListCount,ListAt,ListClear,
+ * ListPush,MapCount,MapKeyAt,MapValAt,MapSet,MapClear}, ser.cla's own
+ * former List/Map container aliases, are gone as of Plan native-5d
+ * Task 4 -- see the host .inc's own header comment.) */
 void rt_ext_SerBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 void *rt_ext_SerNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
 void rt_ext_SerDisposePtr(void *p) { DisposePtr((Ptr)p); }

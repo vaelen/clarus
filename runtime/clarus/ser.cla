@@ -45,32 +45,29 @@
 // file.load; irRegisterExtern does no cross-declaration dedup/conflict
 // check, so an unprefixed name here would risk two conflicting
 // `rt_ext_NAME` prototypes in one merged translation unit the moment a
-// program declared its own external of the same name (this was a real,
-// reproduced defect for all fourteen names below prior to this fix, not
-// just the file-I/O pair). Distinct Ser-prefixed names sidestep the hazard
-// outright, same fix already applied to the file-I/O pair
-// (SerFileWriteData/SerFileReadTextInto) and to every other family
-// (Str*/Text*/List*/Map*, see those modules' own header comments).
+// program declared its own external of the same name. Distinct Ser-prefixed
+// names sidestep the hazard outright for the five waist primitives that
+// remain below (byte copy + raw alloc/free + the two still-C file I/O
+// primitives), same fix applied to every other family (Str*/Text*/List*/
+// Map*, see those modules' own header comments).
 // SerSetLastErr/SerPanic, ser.cla's own former externs for this same
 // reason, are gone as of Plan native-5d Task 3: ser.cla calls core.cla's
 // rtSetLastErr/rtPanic directly now (core.cla is spliced first, ahead of
 // ser.cla) -- a plain intra-Clarus call, no extern/name-collision hazard
-// to sidestep at all. (SerFileReadTextInto/SerFileWriteData's OWN
-// still-C rt_file_read_text/rt_file_write_data primitives can still set
-// the C runtime's OWN rt_lasterr_code/rt_lasterr_msg globals on failure --
-// see this task's report for why that specific residual gap is
-// documented, not fixed, here.)
+// to sidestep at all. As of Plan native-5d Task 4, the nine SerList*/
+// SerMap* container externs are ALSO gone: list.cla/map.cla are now
+// spliced ahead of ser.cla in main.cla's manifest (ser.cla calls their
+// functions), so ser.cla calls rtListCount/rtListAt/rtListClear/
+// rtListPush/rtMapCount/rtMapKeyAt/rtMapValAt/rtMapSet/rtMapClear
+// directly -- again a plain intra-Clarus call, not an extern. Only the two
+// still-C file I/O primitives (SerFileWriteData/SerFileReadTextInto) and
+// the three raw waist primitives (SerBlockMoveData/SerNewPtr/
+// SerDisposePtr) remain externs here; see rtFileSave/rtFileLoad below for
+// how their C-side lastError writes are now synced into Clarus's
+// lasterrCode/lasterrMsg (Task 4 closes the gap Task 3's report left
+// open).
 external func SerFileWriteData(path: ptr, t: text): int
 external func SerFileReadTextInto(path: ptr, out: text): int
-external func SerListCount(l: ptr): int
-external func SerListAt(l: ptr, i: int): ptr
-external func SerListClear(l: ptr)
-external func SerListPush(l: ptr, elem: ptr)
-external func SerMapCount(m: ptr): int
-external func SerMapKeyAt(m: ptr, i: int, key255: ptr)
-external func SerMapValAt(m: ptr, i: int, out: ptr)
-external func SerMapSet(m: ptr, key255: ptr, val: ptr)
-external func SerMapClear(m: ptr)
 external func SerBlockMoveData(src: ptr, dst: ptr, count: int)
 external func SerNewPtr(size: int): ptr
 external func SerDisposePtr(p: ptr)
@@ -189,12 +186,12 @@ func rtSerSaveList(out: text, l: ptr, desc: ptr, recSize: int) {
     var i: int
     var scratch: ptr
 
-    count = SerListCount(l)
+    count = rtListCount(l)
     rtSerPutI32(out, count)
     scratch = SerNewPtr(recSize)
     i = 0
     while i < count {
-        SerBlockMoveData(SerListAt(l, i), scratch, recSize)
+        SerBlockMoveData(rtListAt(l, i), scratch, recSize)
         rtSerPutRec(out, scratch, desc)
         i = i + 1
     }
@@ -215,13 +212,13 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
     var key: ptr
     var klen: int
 
-    count = SerMapCount(m)
+    count = rtMapCount(m)
     rtSerPutI32(out, count)
     scratch = SerNewPtr(recSize)
     key = SerNewPtr(256)
     i = 0
     while i < count {
-        SerMapKeyAt(m, i, key)
+        rtMapKeyAt(m, i, key)
         klen = peekb(key)
         out.append(char(klen))
         j = 0
@@ -229,7 +226,7 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
             out.append(char(peekb(key + 1 + j)))
             j = j + 1
         }
-        SerMapValAt(m, i, scratch)
+        rtMapValAt(m, i, scratch)
         rtSerPutRec(out, scratch, desc)
         i = i + 1
     }
@@ -244,6 +241,7 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
 func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
     var out: text
     var recSize: int
+    var ok: int
 
     recSize = peekl(desc)
     if recSize > RtSerMaxRec {
@@ -265,16 +263,25 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
         rtSerSaveMap(out, data, desc, recSize)
     }
 
-    // known residual lastError gap (Plan native-5d Task 3 report): on
-    // failure, SerFileWriteData's underlying still-C rt_file_write_data
-    // sets the C runtime's OWN rt_lasterr_code/rt_lasterr_msg globals, not
-    // core.cla's Clarus-side ones -- ILastErrCode/ILastErrMsg/ILastErr now
-    // read the latter, so a program that checks lastError right after a
-    // failed file.save currently sees stale/zero state, not "could not
-    // open file"/"could not write file". No fixture exercises this path;
-    // closing it needs a new C-state getter extern this task's file list
-    // didn't authorize -- left for a follow-up.
-    return SerFileWriteData(path, out)
+    // lastError sync (Plan native-5d Task 4, closing the gap Task 3's
+    // report left open): SerFileWriteData's underlying still-C
+    // rt_file_write_data sets the C runtime's OWN rt_lasterr_code/
+    // rt_lasterr_msg globals on failure (rt.c/rt_mac.c: code 2, "could not
+    // open file" on fopen failure or "could not write file" on a short
+    // write/close failure) -- ILastErrCode/ILastErrMsg/ILastErr now read
+    // core.cla's Clarus-side globals instead, which SerFileWriteData's
+    // return value alone can't distinguish between those two C messages
+    // (both collapse to a single 0). Setting the Clarus-side lastError to
+    // the same code with a single representative message on any failure
+    // closes the "stale/zero state" bug (the actual user-visible defect)
+    // at the cost of exact message-text parity with the C side's rarer
+    // open-vs-write distinction; the C-side write becomes a harmless
+    // shadow no longer read by anything.
+    ok = SerFileWriteData(path, out)
+    if ok != 1 {
+        rtSetLastErr(2, "could not write file")
+    }
+    return ok
 }
 
 // ==================== read ====================
@@ -426,9 +433,9 @@ func rtSerGetRec(t: text, rec: ptr, desc: ptr) {
 // rtSerGetRec's doc comment), set the "bad file format" lastError, return 0.
 func rtSerLoadFail(container: int, data: ptr): int {
     if container == RtSerList {
-        SerListClear(data)
+        rtListClear(data)
     } else if container == RtSerMap {
-        SerMapClear(data)
+        rtMapClear(data)
     }
     rtSetLastErr(2, "bad file format")
     return 0
@@ -460,21 +467,23 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
     }
 
     if container == RtSerList {
-        SerListClear(data)
+        rtListClear(data)
     } else if container == RtSerMap {
-        SerMapClear(data)
+        rtMapClear(data)
     }
 
     rtSerPos = 0
     rtSerBad = false
 
     if SerFileReadTextInto(path, input) != 1 {
-        // known residual lastError gap (Plan native-5d Task 3 report): see
-        // rtFileSave's own matching comment above -- SerFileReadTextInto's
-        // still-C rt_file_read_text sets the C runtime's rt_lasterr_code/
-        // rt_lasterr_msg on failure, not core.cla's Clarus-side globals
-        // ILastErrCode/ILastErrMsg/ILastErr now read. Untested, undecided,
-        // left for a follow-up.
+        // lastError sync (Plan native-5d Task 4): see rtFileSave's own
+        // matching comment above -- SerFileReadTextInto's still-C
+        // rt_file_read_text sets code 2 with "could not open file" or
+        // "could not read file" depending on which read step failed, a
+        // distinction its single boolean return can't carry back here.
+        // One representative message closes the stale-state bug at the
+        // same message-text-parity cost noted above.
+        rtSetLastErr(2, "could not read file")
         return 0
     }
 
@@ -504,7 +513,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
             rtSerZeroPtr(scratch, recSize)
             rtSerGetRec(input, scratch, desc)
             if not rtSerBad {
-                SerListPush(data, scratch)
+                rtListPush(data, scratch)
             }
             i = i + 1
         }
@@ -529,7 +538,7 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
                     rtSerZeroPtr(scratch, recSize)
                     rtSerGetRec(input, scratch, desc)
                     if not rtSerBad {
-                        SerMapSet(data, key, scratch)
+                        rtMapSet(data, key, scratch)
                     }
                 }
             }
