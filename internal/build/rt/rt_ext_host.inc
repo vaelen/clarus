@@ -47,6 +47,41 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
  * same C symbol in one merged translation unit. */
 int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
+/* rt_ext_Ser{SetLastErr,Panic,ListCount,ListAt,ListClear,ListPush,MapCount,
+ * MapKeyAt,MapValAt,MapSet,MapClear,BlockMoveData,NewPtr,DisposePtr}: final-
+ * review fix -- ser.cla's remaining fourteen externs were still unprefixed
+ * and collided with a user program's own `external func NewPtr`/etc. (the
+ * documented Ch13 escape hatch) the moment that program also called
+ * file.save/file.load, the same irRegisterExtern dedup gap the
+ * SerFileWriteData/SerFileReadTextInto pair above was already fixed for.
+ * Thin aliases of the exact same primitives the generic rt_ext_* wrappers
+ * above call -- no logic of their own. */
+void rt_ext_SerSetLastErr(int32_t code, const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_set_lasterr(code, buf);
+}
+void rt_ext_SerPanic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
+int32_t rt_ext_SerListCount(void *l) { return rt_list_count((rt_list *)l); }
+void *rt_ext_SerListAt(void *l, int32_t i) { return rt_list_at((rt_list *)l, i); }
+void rt_ext_SerListClear(void *l) { rt_list_clear((rt_list *)l); }
+void rt_ext_SerListPush(void *l, void *elem) { rt_list_push((rt_list *)l, elem); }
+int32_t rt_ext_SerMapCount(void *m) { return rt_map_count((rt_map *)m); }
+void rt_ext_SerMapKeyAt(void *m, int32_t i, void *key255) { rt_map_key_at((rt_map *)m, i, (uint8_t *)key255); }
+void rt_ext_SerMapValAt(void *m, int32_t i, void *out) { rt_map_val_at((rt_map *)m, i, out); }
+void rt_ext_SerMapSet(void *m, void *key255, void *val) { rt_map_set((rt_map *)m, (const uint8_t *)key255, val); }
+void rt_ext_SerMapClear(void *m) { rt_map_clear((rt_map *)m); }
+void rt_ext_SerBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void *rt_ext_SerNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
+void rt_ext_SerDisposePtr(void *p) { DisposePtr((Ptr)p); }
 /* rt_set_lasterr takes a NUL-terminated C string (rt_core.inc:19's
  * strlen(msg)); the Clarus-side msg is a str255 ([len][bytes]), so build a
  * NUL-terminated copy here before delegating. */

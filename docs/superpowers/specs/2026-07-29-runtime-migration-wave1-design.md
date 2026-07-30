@@ -264,7 +264,7 @@ call site (`runtime/clarus/{text,list,map}.cla`): `rc` is written exactly
 once, entirely in C, with no Clarus-side field poking of a struct whose
 layout portability is exactly what overlays exist to avoid duplicating.
 
-### Extern-naming convention (evolved Tasks 7-8)
+### Extern-naming convention (evolved Tasks 7-8; completed final review)
 
 Every runtime module uses privately-prefixed extern names — `SerFileWriteData`,
 `StrPanic`, `TextHandleDeref`, `ListNewRaw`, `MapBlockMoveData`, etc. — each
@@ -275,7 +275,14 @@ families); it was forced by a real gap found mid-wave: `irRegisterExtern`
 does no cross-declaration dedup, so if two modules (or a user program)
 declared an `external func` with the same name, the merged translation
 unit got conflicting C prototypes. Per-family prefixes make every extern
-name globally unique by construction.
+name globally unique by construction — Task 7 initially applied this only
+to `ser.cla`'s two file-I/O externs (`SerFileWriteData`/`SerFileReadTextInto`),
+leaving fourteen more (`NewPtr`, `DisposePtr`, `BlockMoveData`, `Panic`,
+`SetLastErr`, `List*`, `Map*`) unprefixed and colliding with the documented
+Ch13 user-external-func API; the final whole-branch review caught and fixed
+the gap, renaming all fourteen to the `Ser*` prefix (verified by grepping
+every `external func` across `runtime/clarus/*.cla`: no name collides across
+files).
 
 ### Ported-flag mechanism (Task 7, reused Tasks 8-11)
 

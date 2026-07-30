@@ -35,33 +35,38 @@
 // then that many records. MAP: 4-byte BE count then (1 length byte + key
 // bytes + record) entries.
 
-// SerFileWriteData/SerFileReadTextInto are ser.cla's OWN extern names,
-// distinct from the public FileWriteData/FileReadTextInto (used e.g. by
-// testdata/lowlevel/exttext.cla with `path: string`). rtFileSave/
-// rtFileLoad's `path` is already a raw ptr (the caller's Str255 address,
-// not a str to re-marshal), so declaring it under the SAME name as the
-// public str-typed pair would risk two conflicting `rt_ext_FileWriteData`
-// prototypes in one merged translation unit if a program ever declared
-// its own `external func FileWriteData(path: string, ...)` (a legal Ch13
-// escape hatch) while also calling file.save/load (which pulls ser.cla
-// in) -- irRegisterExtern does no cross-declaration dedup/conflict check.
-// Distinct names sidestep the hazard outright.
+// Every extern below is ser.cla's OWN, Ser-prefixed name, distinct from the
+// public unprefixed externals a user program may declare for itself (Ch13's
+// documented escape hatch, e.g. `external func NewPtr(size: int): ptr`,
+// exercised by testdata/lowlevel/peekpoke.cla and
+// testdata/lowlevel/extfilesave.cla) or that another runtime module
+// declares under its own family prefix (Str*/Text*/List*/Map*). ser.cla is
+// pulled into a program unconditionally the moment it calls file.save or
+// file.load; irRegisterExtern does no cross-declaration dedup/conflict
+// check, so an unprefixed name here would risk two conflicting
+// `rt_ext_NAME` prototypes in one merged translation unit the moment a
+// program declared its own external of the same name (this was a real,
+// reproduced defect for all fourteen names below prior to this fix, not
+// just the file-I/O pair). Distinct Ser-prefixed names sidestep the hazard
+// outright, same fix already applied to the file-I/O pair
+// (SerFileWriteData/SerFileReadTextInto) and to every other family
+// (Str*/Text*/List*/Map*, see those modules' own header comments).
 external func SerFileWriteData(path: ptr, t: text): int
 external func SerFileReadTextInto(path: ptr, out: text): int
-external func SetLastErr(code: int, msg: string)
-external func Panic(msg: string)
-external func ListCount(l: ptr): int
-external func ListAt(l: ptr, i: int): ptr
-external func ListClear(l: ptr)
-external func ListPush(l: ptr, elem: ptr)
-external func MapCount(m: ptr): int
-external func MapKeyAt(m: ptr, i: int, key255: ptr)
-external func MapValAt(m: ptr, i: int, out: ptr)
-external func MapSet(m: ptr, key255: ptr, val: ptr)
-external func MapClear(m: ptr)
-external func BlockMoveData(src: ptr, dst: ptr, count: int)
-external func NewPtr(size: int): ptr
-external func DisposePtr(p: ptr)
+external func SerSetLastErr(code: int, msg: string)
+external func SerPanic(msg: string)
+external func SerListCount(l: ptr): int
+external func SerListAt(l: ptr, i: int): ptr
+external func SerListClear(l: ptr)
+external func SerListPush(l: ptr, elem: ptr)
+external func SerMapCount(m: ptr): int
+external func SerMapKeyAt(m: ptr, i: int, key255: ptr)
+external func SerMapValAt(m: ptr, i: int, out: ptr)
+external func SerMapSet(m: ptr, key255: ptr, val: ptr)
+external func SerMapClear(m: ptr)
+external func SerBlockMoveData(src: ptr, dst: ptr, count: int)
+external func SerNewPtr(size: int): ptr
+external func SerDisposePtr(p: ptr)
 
 const RtSerMagic0: char = 'C'
 const RtSerMagic1: char = 'L'
@@ -177,16 +182,16 @@ func rtSerSaveList(out: text, l: ptr, desc: ptr, recSize: int) {
     var i: int
     var scratch: ptr
 
-    count = ListCount(l)
+    count = SerListCount(l)
     rtSerPutI32(out, count)
-    scratch = NewPtr(recSize)
+    scratch = SerNewPtr(recSize)
     i = 0
     while i < count {
-        BlockMoveData(ListAt(l, i), scratch, recSize)
+        SerBlockMoveData(SerListAt(l, i), scratch, recSize)
         rtSerPutRec(out, scratch, desc)
         i = i + 1
     }
-    DisposePtr(scratch)
+    SerDisposePtr(scratch)
 }
 
 // rtSerSaveMap is rtSerSaveList's map counterpart: MapValAt already copies
@@ -203,13 +208,13 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
     var key: ptr
     var klen: int
 
-    count = MapCount(m)
+    count = SerMapCount(m)
     rtSerPutI32(out, count)
-    scratch = NewPtr(recSize)
-    key = NewPtr(256)
+    scratch = SerNewPtr(recSize)
+    key = SerNewPtr(256)
     i = 0
     while i < count {
-        MapKeyAt(m, i, key)
+        SerMapKeyAt(m, i, key)
         klen = peekb(key)
         out.append(char(klen))
         j = 0
@@ -217,12 +222,12 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
             out.append(char(peekb(key + 1 + j)))
             j = j + 1
         }
-        MapValAt(m, i, scratch)
+        SerMapValAt(m, i, scratch)
         rtSerPutRec(out, scratch, desc)
         i = i + 1
     }
-    DisposePtr(scratch)
-    DisposePtr(key)
+    SerDisposePtr(scratch)
+    SerDisposePtr(key)
 }
 
 // rtFileSave is file.save's redirected target (cprint.cla): container is
@@ -235,7 +240,7 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
 
     recSize = peekl(desc)
     if recSize > RtSerMaxRec {
-        Panic("record too large for serializer")
+        SerPanic("record too large for serializer")
     }
 
     out.append(RtSerMagic0)
@@ -405,11 +410,11 @@ func rtSerGetRec(t: text, rec: ptr, desc: ptr) {
 // rtSerGetRec's doc comment), set the "bad file format" lastError, return 0.
 func rtSerLoadFail(container: int, data: ptr): int {
     if container == RtSerList {
-        ListClear(data)
+        SerListClear(data)
     } else if container == RtSerMap {
-        MapClear(data)
+        SerMapClear(data)
     }
-    SetLastErr(2, "bad file format")
+    SerSetLastErr(2, "bad file format")
     return 0
 }
 
@@ -435,13 +440,13 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
 
     recSize = peekl(desc)
     if recSize > RtSerMaxRec {
-        Panic("record too large for serializer")
+        SerPanic("record too large for serializer")
     }
 
     if container == RtSerList {
-        ListClear(data)
+        SerListClear(data)
     } else if container == RtSerMap {
-        MapClear(data)
+        SerMapClear(data)
     }
 
     rtSerPos = 0
@@ -471,21 +476,21 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
         rtSerGetRec(input, data, desc)
     } else if container == RtSerList {
         count = rtSerGetI32(input)
-        scratch = NewPtr(recSize)
+        scratch = SerNewPtr(recSize)
         i = 0
         while i < count and not rtSerBad {
             rtSerZeroPtr(scratch, recSize)
             rtSerGetRec(input, scratch, desc)
             if not rtSerBad {
-                ListPush(data, scratch)
+                SerListPush(data, scratch)
             }
             i = i + 1
         }
-        DisposePtr(scratch)
+        SerDisposePtr(scratch)
     } else {
         count = rtSerGetI32(input)
-        scratch = NewPtr(recSize)
-        key = NewPtr(256)
+        scratch = SerNewPtr(recSize)
+        key = SerNewPtr(256)
         i = 0
         while i < count and not rtSerBad {
             klen = int(rtSerGetByte(input))
@@ -502,14 +507,14 @@ func rtFileLoad(path: ptr, container: int, data: ptr, desc: ptr): int {
                     rtSerZeroPtr(scratch, recSize)
                     rtSerGetRec(input, scratch, desc)
                     if not rtSerBad {
-                        MapSet(data, key, scratch)
+                        SerMapSet(data, key, scratch)
                     }
                 }
             }
             i = i + 1
         }
-        DisposePtr(scratch)
-        DisposePtr(key)
+        SerDisposePtr(scratch)
+        SerDisposePtr(key)
     }
 
     if rtSerBad or rtSerPos != input.length {

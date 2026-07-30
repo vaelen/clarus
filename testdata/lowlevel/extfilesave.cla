@@ -1,0 +1,65 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// extfilesave.cla: Ser-prefix collision regression test (final whole-branch
+// review fix, Plan 5b runtime-migration-wave1 Task 7). Declares its OWN
+// unprefixed `external func NewPtr`/`DisposePtr` -- the documented Ch13
+// escape hatch, same pattern as testdata/lowlevel/peekpoke.cla -- in the
+// SAME program that also calls file.save/file.load, which unconditionally
+// pulls in runtime/clarus/ser.cla. Before the fix, ser.cla declared its OWN
+// unprefixed `external func NewPtr`/`DisposePtr` (plus twelve more:
+// BlockMoveData, Panic, SetLastErr, List*, Map*), and irRegisterExtern does
+// no cross-declaration dedup/conflict check -- this program's NewPtr and
+// ser.cla's NewPtr collided as "redeclaration of NewPtr", reported at THIS
+// file's declaration line, the moment both were pulled into one merged
+// translation unit. Renaming ser.cla's whole block to Ser-prefixed names
+// (SerNewPtr, etc., see ser.cla's header comment) fixed it; this program
+// pins the fix forever: it must compile, its own NewPtr/DisposePtr externs
+// must actually work end to end (round-tripped through a scratch buffer),
+// and an ordinary file.save/file.load record roundtrip alongside them must
+// still work too.
+external func NewPtr(size: int): ptr
+external func DisposePtr(p: ptr)
+
+record SaveRec {
+    name:  string(31)
+    score: int
+}
+
+on App.startCLI(args: list of string) {
+    var p: ptr
+    var src: SaveRec
+    var dst: SaveRec
+    var ok: bool
+
+    // The user's own NewPtr/DisposePtr externs -- proves they still
+    // declare and link fine alongside ser.cla's now-distinct
+    // SerNewPtr/SerDisposePtr.
+    p = NewPtr(4)
+    pokel(p, 42)
+    if peekl(p) == 42 {
+        alert("newptr-ok")
+    } else {
+        alert("newptr-FAIL")
+    }
+    DisposePtr(p)
+
+    // file.save/file.load pulls in ser.cla -- this is the collision this
+    // program exists to pin.
+    src.name = "roundtrip"
+    src.score = 7
+
+    ok = file.save("extfilesave.dat", src)
+    if ok {
+        alert("save-ok")
+    } else {
+        alert("save-FAIL")
+    }
+
+    ok = file.load("extfilesave.dat", dst)
+    if ok and dst.name == src.name and dst.score == src.score {
+        alert("load-ok")
+    } else {
+        alert("load-FAIL")
+    }
+}
