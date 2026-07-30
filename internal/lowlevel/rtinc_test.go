@@ -45,16 +45,16 @@ func TestRtInc(t *testing.T) {
 			t.Fatal(err)
 		}
 		src := string(c)
-		idxProbe := strings.Index(src, "clar_fn_rtIncProbe")
+		idxProbe := strings.Index(src, "clar_fn_rtFileSave")
 		if idxProbe < 0 {
-			t.Fatalf("emitted C missing clar_fn_rtIncProbe:\n%s", src)
+			t.Fatalf("emitted C missing clar_fn_rtFileSave:\n%s", src)
 		}
 		idxHelper := strings.Index(src, "clar_fn_rtIncHelper")
 		if idxHelper < 0 {
 			t.Fatalf("emitted C missing clar_fn_rtIncHelper (ser.cla's own include) -- an included dependency of a runtime module was silently dropped:\n%s", src)
 		}
 		if idxHelper >= idxProbe {
-			t.Fatalf("clar_fn_rtIncHelper (at byte %d) must precede clar_fn_rtIncProbe (at byte %d) -- helper.cla is ser.cla's dependency, so its decls must come first (declare-before-use):\n%s", idxHelper, idxProbe, src)
+			t.Fatalf("clar_fn_rtIncHelper (at byte %d) must precede clar_fn_rtFileSave (at byte %d) -- helper.cla is ser.cla's dependency, so its decls must come first (declare-before-use):\n%s", idxHelper, idxProbe, src)
 		}
 		if firstFn := strings.Index(src, "clar_fn_"); firstFn != idxHelper {
 			t.Fatalf("clar_fn_rtIncHelper (at byte %d) is not the first clar_fn_ symbol (first is at %d) -- runtime-module decls must precede user decls:\n%s", idxHelper, firstFn, src)
@@ -91,8 +91,8 @@ func TestRtInc(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(c), "rtIncProbe") {
-			t.Fatalf("emitted C unexpectedly contains rtIncProbe with no file.save usage and no --rtdir:\n%s", string(c))
+		if strings.Contains(string(c), "rtFileSave") {
+			t.Fatalf("emitted C unexpectedly contains rtFileSave with no file.save usage and no --rtdir:\n%s", string(c))
 		}
 	})
 }

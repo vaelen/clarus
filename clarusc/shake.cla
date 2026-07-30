@@ -1,0 +1,521 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// shake.cla: whole-program reachability over the arena IR (ir.cla) -- Plan
+// native-5d Task 1. shakeProgram() runs once, after lowerProgram and before
+// any backend consults irFuncs (main.cla), and fills shakeMarks (parallel to
+// the irFuncs arena) with which functions are actually reachable from the
+// program's real entry points. Both backends consult it before emitting a
+// function: cprint.cla's cpEmitFuncs (Task 1's own consumer, this task) and
+// cg68k.cla (later tasks) skip the proto+body of anything shakeReachable(i)
+// says is dead.
+//
+// Roots (worklist seeds): the App entry-point handler(s) selected by
+// irHasLaunch/irHasStartEmpty/irHasStartCLI/irHasOpenDocument; every window
+// event handler (irWinHandlers) and widget handler (irWidgetHandlerEntries);
+// every menu handler (irMenuHandlersHead chain) and every-timer handler
+// (irEveryHead chain); every ECallFn found while walking irGlobals' own init
+// expressions; and shakeAddRoot's extra names (registered by a caller BEFORE
+// shakeProgram runs -- unused on the C path today, but emit68k (Tasks 7/11)
+// roots functions cprint never calls directly, e.g. the `nat*` console shim
+// and rtEnumCheck).
+//
+// Walking a marked function's body finds more work two ways: an ECallFn
+// node marks+enqueues its own callee by name (ordinary user/runtime calls,
+// including a runtime module's OWN internal calls -- str.cla/text.cla/
+// list.cla/map.cla/ser.cla are themselves ordinary Clarus source, so once
+// one of their entry points is marked, the worklist walks ITS body and
+// discovers whatever helpers IT calls automatically, no extra bookkeeping
+// needed); an EIntr node consults shakeWalkIntr's table below, mirroring
+// cprint.cla's fpIntrCall: every intrinsic that fpIntrCall (or fpStoreStr,
+// for the plain-string-assignment SStoreStr statement kind, which calls
+// clar_fn_rtStrStore with no EIntr node at all) redirects to a Clarus-ported
+// clar_fn_rtXxx function roots that function's name. Over-approximation is
+// always safe here (a few extra functions emitted); under-approximation is
+// a C link error, caught immediately by the differential gauntlet.
+//
+// The str.cla/text.cla/list.cla/map.cla "core" (construction, retain,
+// release, and their own walk-internal accessors) is rooted unconditionally
+// below, rather than traced precisely -- these four runtime modules are
+// UNCONDITIONAL entries in main.cla's runtime manifest (cpStrPorted/
+// cpTextPorted/cpTextArcPorted/cpListPorted/cpListArcPorted/cpMapPorted/
+// cpMapArcPorted are all hardcoded `true` in the emit path, never
+// conditional), and cprint.cla's cpDefaultInit/cpEmitGlobalsInit/
+// cpEmitRetain/cpEmitRelease call straight into this exact closed set of 17
+// names directly from generated C -- driven by a global's or record field's
+// TYPE, not by any ECallFn/EIntr call site the walk below could ever find.
+// cpEmitDefaultInitFnProtos (cprint.cla) already hardcodes this identical
+// 17-name set for its own forward-declare gate; keep the two in sync if
+// that set ever changes. Given these four modules are always in the
+// program regardless, rooting their small always-needed core costs nothing
+// real (they'd be reachable in any nontrivial program anyway) and removes
+// an entire class of "found a call cprint makes that isn't an IR node"
+// bugs; the data-operation entry points below (rtStrConcat, rtListPush,
+// rtMapSet, ...) stay individually gated on their own intrinsic, so a
+// program that never touches Map still drops rtMapSet/rtMapGet/.../rtStrCmp
+// and the rest of map.cla's own transitive closure.
+
+include "lib.cla"
+include "ir.cla"
+
+// shakeMarks is parallel to the irFuncs arena, rebuilt fresh by every
+// shakeProgram call (irFuncs itself is rebuilt fresh per compile by
+// irReset/lowerProgram -- a stale shakeMarks from a PRIOR compile would
+// misalign against this compile's different index->function mapping, so
+// this list, unlike irRcWalkNeededByName/irLayoutNeededByName below, cannot
+// just accumulate across compiles).
+var shakeMarks: list of bool
+
+// shakeFuncIdxByName maps poolGet(irFuncName(i)) -> i, the same
+// map-of-int-keyed-by-poolGet(name) idiom irRcWalkNeededByName/
+// irLayoutNeededByName already use (ir.cla) -- O(log n) per lookup instead
+// of findIRFuncIdxByName's linear scan, since the walk below calls this at
+// every ECallFn/EIntr/handler-name site across the whole program. Rebuilt
+// (overwritten, not cleared -- matches irRcWalkNeededByName's own
+// never-cleared convention) at the top of every shakeProgram call: every
+// name from the CURRENT program is re-pointed at its current index, so a
+// stale entry from a prior compile can only survive for a name this
+// program never looks up.
+var shakeFuncIdxByName: map of int
+
+// shakeWorklist holds irFuncs indices already marked but not yet walked for
+// their own callees -- a growing list of int, walked by a plain index loop
+// in shakeProgram (appends during the loop are picked up as the bound
+// grows, the standard array-backed BFS worklist shape).
+var shakeWorklist: list of int
+
+// shakePendingRootNames -- extra roots registered via shakeAddRoot BEFORE
+// shakeProgram runs; consumed and cleared at the top of the next
+// shakeProgram call. Unused by the C path (this task); emit68k (Tasks 7/11)
+// calls shakeAddRoot for functions the C backend never calls directly.
+var shakePendingRootNames: list of int
+
+// shakeAddRoot registers an extra root by interned name, consulted the next
+// time shakeProgram runs.
+func shakeAddRoot(nameIdx: int) {
+    shakePendingRootNames.add(nameIdx)
+}
+
+// shakeReachable reports whether irFuncs index f was proven reachable by
+// the most recent shakeProgram call.
+func shakeReachable(f: int): bool {
+    return shakeMarks[f]
+}
+
+// shakeMarkAndEnqueue marks the function named nameIdx reachable (if it
+// names a real irFuncs entry -- a call to an `external func`/builtin has no
+// matching entry, silently ignored here) and enqueues it for its own body
+// to be walked, unless already marked.
+func shakeMarkAndEnqueue(nameIdx: int) {
+    var idx: int
+
+    idx = shakeFuncIdxByName.get(poolGet(nameIdx), -1)
+    if idx == -1 {
+        return
+    }
+    if shakeMarks[idx] {
+        return
+    }
+    shakeMarks[idx] = true
+    shakeWorklist.add(idx)
+}
+
+// shakeMarkAndEnqueueIfSet is shakeMarkAndEnqueue guarded for the many
+// optional handler-slot fields below whose "unset" sentinel is -1.
+func shakeMarkAndEnqueueIfSet(nameIdx: int) {
+    if nameIdx != -1 {
+        shakeMarkAndEnqueue(nameIdx)
+    }
+}
+
+// shakeProgram computes reachability over the whole program's irFuncs arena
+// (see the file header for the full root/walk description) and leaves the
+// result in shakeMarks for shakeReachable to answer.
+func shakeProgram() {
+    var i: int
+    var wi: int
+    var fIdx: int
+
+    shakeMarks = shakeFreshBoolList()
+    shakeWorklist = shakeFreshIntList()
+
+    i = 0
+    while i < irFuncs.count {
+        shakeMarks.add(false)
+        shakeFuncIdxByName[poolGet(irFuncName(i))] = i
+        i = i + 1
+    }
+
+    // ---- App entry point(s) ----
+    if irHasLaunch {
+        shakeMarkAndEnqueue(intern("handler_App_launch"))
+    }
+    if irHasStartEmpty {
+        shakeMarkAndEnqueue(intern("handler_App_startEmpty"))
+    }
+    if irHasStartCLI {
+        shakeMarkAndEnqueue(intern("handler_App_startCLI"))
+    }
+    if irHasOpenDocument {
+        shakeMarkAndEnqueue(intern("handler_App_openDocument"))
+    }
+
+    // ---- window + widget handlers ----
+    i = 0
+    while i < irWinHandlers.count {
+        shakeMarkAndEnqueueIfSet(irWinHandlersOpenedFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersCloseRequestFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersClosedFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersResizedFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersKeyFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersAcceptedFn(i))
+        shakeMarkAndEnqueueIfSet(irWinHandlersCancelledFn(i))
+        wi = irWinHandlersWidgetHead(i)
+        while wi != -1 {
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntryClickFn(wi))
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntryChangeFn(wi))
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntryDragFn(wi))
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntryEnterFn(wi))
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntrySelectFn(wi))
+            shakeMarkAndEnqueueIfSet(irWidgetHandlerEntryDoubleClickFn(wi))
+            wi = irWidgetHandlerEntryNext(wi)
+        }
+        i = i + 1
+    }
+
+    // ---- menu handlers ----
+    i = irMenuHandlersHead
+    while i != -1 {
+        shakeMarkAndEnqueueIfSet(irMenuHandlerEntryFuncName(i))
+        i = irMenuHandlerEntryNext(i)
+    }
+
+    // ---- every-timers ----
+    i = irEveryHead
+    while i != -1 {
+        shakeMarkAndEnqueueIfSet(irEveryEntryFuncName(i))
+        i = irEveryEntryNext(i)
+    }
+
+    // ---- globals' own init expressions (may embed ECallFn/EIntr) ----
+    i = 0
+    while i < irGlobals.count {
+        shakeWalkExpr(irGlobalInit(i))
+        i = i + 1
+    }
+
+    // ---- extra roots registered before this call (shakeAddRoot) ----
+    i = 0
+    while i < shakePendingRootNames.count {
+        shakeMarkAndEnqueue(shakePendingRootNames[i])
+        i = i + 1
+    }
+    shakePendingRootNames = shakeFreshIntList()
+
+    // ---- str/text/list/map always-needed core (see file header) ----
+    shakeMarkAndEnqueue(intern("rtStrStore"))
+    shakeMarkAndEnqueue(intern("rtTextNew"))
+    shakeMarkAndEnqueue(intern("rtTextStore"))
+    shakeMarkAndEnqueue(intern("rtTextRetain"))
+    shakeMarkAndEnqueue(intern("rtTextRelease"))
+    shakeMarkAndEnqueue(intern("rtListNew"))
+    shakeMarkAndEnqueue(intern("rtListAt"))
+    shakeMarkAndEnqueue(intern("rtListCount"))
+    shakeMarkAndEnqueue(intern("rtListRetain"))
+    shakeMarkAndEnqueue(intern("rtListRelease"))
+    shakeMarkAndEnqueue(intern("rtListLastref"))
+    shakeMarkAndEnqueue(intern("rtMapNew"))
+    shakeMarkAndEnqueue(intern("rtMapValAt"))
+    shakeMarkAndEnqueue(intern("rtMapCount"))
+    shakeMarkAndEnqueue(intern("rtMapRetain"))
+    shakeMarkAndEnqueue(intern("rtMapRelease"))
+    shakeMarkAndEnqueue(intern("rtMapLastref"))
+
+    // ---- worklist: walk every marked function's body, discovering more ----
+    wi = 0
+    while wi < shakeWorklist.count {
+        fIdx = shakeWorklist[wi]
+        shakeWalkStmts(irFuncBodyHead(fIdx))
+        wi = wi + 1
+    }
+}
+
+// shakeFreshBoolList/shakeFreshIntList hand back a genuinely empty list --
+// shakeMarks/shakeWorklist are reassigned (not pop-cleared like irReset's
+// arenas) at the top of every shakeProgram call because their PREVIOUS
+// contents are meaningless once irFuncs itself has been torn down and
+// rebuilt by the compile in between (a stale shakeMarks entry would answer
+// shakeReachable for the WRONG function this time).
+func shakeFreshBoolList(): list of bool {
+    var l: list of bool
+    return l
+}
+
+func shakeFreshIntList(): list of int {
+    var l: list of int
+    return l
+}
+
+// shakeWalkStmts walks a stmt-list chain (its own .next links), recursing
+// into every nested block.
+func shakeWalkStmts(head: int) {
+    var s: int
+
+    s = head
+    while s != -1 {
+        shakeWalkStmt(s)
+        s = irStmtNext(s)
+    }
+}
+
+func shakeWalkStmt(s: int) {
+    var k: IRStmtKind
+
+    k = irStmtKind(s)
+    if k == SAssign {
+        shakeWalkExpr(irAssignDst(s))
+        shakeWalkExpr(irAssignSrc(s))
+    } else if k == SStoreStr {
+        // fpStoreStr (cprint.cla) always calls clar_fn_rtStrStore directly
+        // for this statement kind -- no EIntr node exists to discover it
+        // through, so root it here explicitly (also covered by the
+        // always-rooted core above; kept for self-documentation).
+        shakeMarkAndEnqueue(intern("rtStrStore"))
+        shakeWalkExpr(irStoreStrDst(s))
+        shakeWalkExpr(irStoreStrSrc(s))
+    } else if k == SExprStmt {
+        shakeWalkExpr(irExprStmtX(s))
+    } else if k == SIf {
+        shakeWalkExpr(irIfCond(s))
+        shakeWalkStmts(irIfThen(s))
+        shakeWalkStmts(irIfElse(s))
+    } else if k == SWhile {
+        shakeWalkExpr(irWhileCond(s))
+        shakeWalkStmts(irWhileBody(s))
+    } else if k == SForRange {
+        shakeWalkExpr(irForRangeFrom(s))
+        shakeWalkExpr(irForRangeTo(s))
+        shakeWalkStmts(irForRangeBody(s))
+    } else if k == SForList {
+        // fpForListStmt (cprint.cla) always calls clar_fn_rtListCount to
+        // snapshot the loop bound -- no EIntr node exists to discover it
+        // through (also covered by the always-rooted core in shakeProgram;
+        // kept for self-documentation).
+        shakeMarkAndEnqueue(intern("rtListCount"))
+        shakeWalkExpr(irForListListV(s))
+        shakeWalkStmts(irForListBody(s))
+    } else if k == SForMap {
+        // fpForMapStmt (cprint.cla) always calls clar_fn_rtMapCount (loop
+        // bound) and clar_fn_rtMapKeyAt (key fetch), plus clar_fn_rtMapValAt
+        // when a value variable was declared -- none of these are EIntr
+        // nodes. rtMapCount/rtMapValAt are already in the always-rooted
+        // core (shakeProgram); rtMapKeyAt is not (it's never needed by
+        // cpDefaultInit/cpEmitGlobalsInit/cpEmitRetain/cpEmitRelease, only
+        // by this loop), so it's rooted here explicitly.
+        shakeMarkAndEnqueue(intern("rtMapKeyAt"))
+        shakeMarkAndEnqueue(intern("rtMapValAt"))
+        shakeWalkExpr(irForMapMapV(s))
+        shakeWalkStmts(irForMapBody(s))
+    } else if k == SReturn {
+        shakeWalkExpr(irReturnX(s))
+    }
+    // SBreak/SContinue: no fields to walk.
+}
+
+// shakeWalkExprList walks an expr-list chain (an ECallFn/EIntr argument
+// list, threaded through each argument's own .next).
+func shakeWalkExprList(head: int) {
+    var e: int
+
+    e = head
+    while e != -1 {
+        shakeWalkExpr(e)
+        e = irExprNext(e)
+    }
+}
+
+// shakeWalkExpr recurses into every sub-expression slot an IRExpr kind can
+// carry, marking an ECallFn's own callee and consulting shakeWalkIntr for
+// an EIntr's runtime redirect target(s). EIntConst/EStrConst/EVarRef/
+// ENewRec carry no child expressions.
+func shakeWalkExpr(x: int) {
+    var k: IRExprKind
+
+    if x == -1 {
+        return
+    }
+    k = irExprKind(x)
+    if k == EFieldRef {
+        shakeWalkExpr(irFieldRefX(x))
+    } else if k == EIndexRef {
+        shakeWalkExpr(irIndexRefX(x))
+        shakeWalkExpr(irIndexRefI(x))
+    } else if k == EBin {
+        shakeWalkExpr(irBinX(x))
+        shakeWalkExpr(irBinY(x))
+    } else if k == EUn {
+        shakeWalkExpr(irUnX(x))
+    } else if k == EConv {
+        shakeWalkExpr(irConvX(x))
+    } else if k == ECallFn {
+        shakeMarkAndEnqueue(irCallFnName(x))
+        shakeWalkExprList(irCallFnArgsHead(x))
+    } else if k == ECallExt {
+        // `external func` -- resolves straight to rt_ext_NAME, never an
+        // irFuncs entry; only its arguments can hide further calls.
+        shakeWalkExprList(irCallExtArgsHead(x))
+    } else if k == EIntr {
+        shakeWalkIntr(x)
+        shakeWalkExprList(irIntrArgsHead(x))
+    }
+}
+
+// shakeWalkIntr roots the Clarus-ported runtime function(s) cprint.cla's
+// fpIntrCall would call to emit this intrinsic -- one arm per intrinsic
+// that redirects to a clar_fn_rtXxx call (mirrors fpIntrCall's own
+// cpStrPorted/cpTextPorted/cpListPorted/cpMapPorted/cpSerPorted branches,
+// all of which are unconditionally true in the emit path -- see the file
+// header). Every intrinsic NOT listed here (peek/poke/quit/fixMul/fixDiv/
+// alert/log/lastErr*/file read+write+name/every Ui* op) prints as a raw
+// rt_*/rt_ui_* C call with no matching irFuncs entry -- nothing to root.
+func shakeWalkIntr(x: int) {
+    var nm: int
+
+    nm = irIntrName(x)
+
+    // ---- strings ----
+    if nm == IStrConcat() {
+        shakeMarkAndEnqueue(intern("rtStrConcat"))
+    } else if nm == IStrConcatChar() {
+        shakeMarkAndEnqueue(intern("rtStrConcatChar"))
+    } else if nm == IStrPrependChar() {
+        shakeMarkAndEnqueue(intern("rtStrPrependChar"))
+    } else if nm == IStrCmp() {
+        shakeMarkAndEnqueue(intern("rtStrCmp"))
+    } else if nm == IStrLen() {
+        shakeMarkAndEnqueue(intern("rtStrLen"))
+    } else if nm == IStrIndex() {
+        shakeMarkAndEnqueue(intern("rtStrIndex"))
+    } else if nm == IStrSetIndex() {
+        shakeMarkAndEnqueue(intern("rtStrSetIndex"))
+    } else if nm == IStrFromBytes() {
+        shakeMarkAndEnqueue(intern("rtStrFromBytes"))
+    } else if nm == IStrToBytes() {
+        shakeMarkAndEnqueue(intern("rtStrToBytes"))
+    } else if nm == IStrCoerce() {
+        shakeMarkAndEnqueue(intern("rtStrStore"))
+    } else if nm == IStrSlice() {
+        shakeMarkAndEnqueue(intern("rtStrSlice"))
+    } else if nm == IStrIndexOfStr() {
+        shakeMarkAndEnqueue(intern("rtStrIndexOfStr"))
+    } else if nm == IStrIndexOfChar() {
+        shakeMarkAndEnqueue(intern("rtStrIndexOfChar"))
+
+    // ---- text ----
+    } else if nm == ITextStore() {
+        shakeMarkAndEnqueue(intern("rtTextStore"))
+    } else if nm == ITextConcat() {
+        shakeMarkAndEnqueue(intern("rtTextNew"))
+        shakeMarkAndEnqueue(intern("rtTextConcat"))
+    } else if nm == ITextConcatSL() {
+        shakeMarkAndEnqueue(intern("rtTextNew"))
+        shakeMarkAndEnqueue(intern("rtTextConcatSl"))
+    } else if nm == ITextCmp() {
+        // fpTextCmp (cprint.cla) picks rtTextCmp (Text/Text) or rtTextCmpStr
+        // (Text/Str, either operand order) at print time -- root both.
+        shakeMarkAndEnqueue(intern("rtTextCmp"))
+        shakeMarkAndEnqueue(intern("rtTextCmpStr"))
+    } else if nm == ITextLen() {
+        shakeMarkAndEnqueue(intern("rtTextLen"))
+    } else if nm == ITextIndex() {
+        shakeMarkAndEnqueue(intern("rtTextIndex"))
+    } else if nm == ITextSetIndex() {
+        shakeMarkAndEnqueue(intern("rtTextSetIndex"))
+    } else if nm == ITextFromBytes() {
+        shakeMarkAndEnqueue(intern("rtTextFromBytes"))
+    } else if nm == ITextToBytes() {
+        shakeMarkAndEnqueue(intern("rtTextToBytes"))
+    } else if nm == ITextSlice() {
+        shakeMarkAndEnqueue(intern("rtTextSlice"))
+    } else if nm == ITextIndexOfStr() {
+        shakeMarkAndEnqueue(intern("rtTextIndexOfStr"))
+    } else if nm == ITextIndexOfChar() {
+        shakeMarkAndEnqueue(intern("rtTextIndexOfChar"))
+    } else if nm == ITextAppendStr() {
+        shakeMarkAndEnqueue(intern("rtTextAppendStr"))
+    } else if nm == ITextAppendChar() {
+        shakeMarkAndEnqueue(intern("rtTextAppendChar"))
+    } else if nm == ITextAppendText() {
+        shakeMarkAndEnqueue(intern("rtTextAppendText"))
+    } else if nm == ITextOfStr() {
+        shakeMarkAndEnqueue(intern("rtTextNew"))
+        shakeMarkAndEnqueue(intern("rtTextStore"))
+    } else if nm == ITextFreeVar() {
+        shakeMarkAndEnqueue(intern("rtTextRelease"))
+
+    // ---- list ----
+    } else if nm == IListPush() or nm == IListPushRetain() {
+        shakeMarkAndEnqueue(intern("rtListPush"))
+    } else if nm == IListUnshift() or nm == IListUnshiftRetain() {
+        shakeMarkAndEnqueue(intern("rtListUnshift"))
+    } else if nm == IListPop() {
+        shakeMarkAndEnqueue(intern("rtListPop"))
+    } else if nm == IListShift() {
+        shakeMarkAndEnqueue(intern("rtListShift"))
+    } else if nm == IListFirst() {
+        shakeMarkAndEnqueue(intern("rtListFirst"))
+    } else if nm == IListLast() {
+        shakeMarkAndEnqueue(intern("rtListLast"))
+    } else if nm == IListRemove() {
+        shakeMarkAndEnqueue(intern("rtListRemove"))
+    } else if nm == IListCount() {
+        shakeMarkAndEnqueue(intern("rtListCount"))
+    } else if nm == IListFreeVar() {
+        shakeMarkAndEnqueue(intern("rtListRelease"))
+    // IListSet/IListSetRetain: no clar_fn_ call of their own (a raw
+    // rt_list_at write plus fpRetainVal/fpReleaseVal on the old/new
+    // element) -- fully covered by the always-rooted core above.
+
+    // ---- map ----
+    } else if nm == IMapSet() or nm == IMapSetRetain() {
+        shakeMarkAndEnqueue(intern("rtMapSet"))
+        // fpMapReleaseGuard (cprint.cla) additionally calls rtMapHas/
+        // rtMapGet here, conditionally on the value type needing release --
+        // over-approximate unconditionally rather than re-deriving that
+        // condition here.
+        shakeMarkAndEnqueue(intern("rtMapHas"))
+        shakeMarkAndEnqueue(intern("rtMapGet"))
+    } else if nm == IMapGet() {
+        shakeMarkAndEnqueue(intern("rtMapGet"))
+    } else if nm == IMapGetDv() or nm == IMapGetDvBirth() {
+        shakeMarkAndEnqueue(intern("rtMapGetDv"))
+    } else if nm == IMapHas() {
+        shakeMarkAndEnqueue(intern("rtMapHas"))
+    } else if nm == IMapRemove() {
+        shakeMarkAndEnqueue(intern("rtMapRemove"))
+        // fpMapReleaseGuard again -- see IMapSet's own comment above.
+        shakeMarkAndEnqueue(intern("rtMapHas"))
+        shakeMarkAndEnqueue(intern("rtMapGet"))
+    } else if nm == IMapCount() {
+        shakeMarkAndEnqueue(intern("rtMapCount"))
+    } else if nm == IMapFreeVar() {
+        shakeMarkAndEnqueue(intern("rtMapRelease"))
+
+    // ---- retain/release ----
+    } else if nm == IRetain() {
+        // Dispatches on the OPERAND's own type kind at print time (KText:
+        // bare rtTextRetain; KList/KMap: cpEmitRetain's recursive walk;
+        // KRec: clar_retain_NAME, generated separately and gated by its own
+        // irRcWalkNeeded flag, untouched by shake) -- all of Text/List/Map's
+        // own retain entry points are already in the always-rooted core
+        // above, so no further table entry is needed here.
+    } else if nm == IRelease() {
+        // Mirrors IRetain just above (cpEmitRelease); same reasoning.
+
+    // ---- file / serialization ----
+    } else if nm == IFileSave() {
+        shakeMarkAndEnqueue(intern("rtFileSave"))
+    } else if nm == IFileLoad() {
+        shakeMarkAndEnqueue(intern("rtFileLoad"))
+    }
+}

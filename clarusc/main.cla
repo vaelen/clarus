@@ -27,6 +27,7 @@ include "types.cla"
 include "check.cla"
 include "ir.cla"
 include "lower.cla"
+include "shake.cla"
 include "cprint.cla"
 
 // seenPaths keys the include-once set (driver.go's `seen`). Go keys by
@@ -579,6 +580,7 @@ on App.startCLI(args: list of string) {
 
         irReset()
         lowerProgram(combined2)
+        shakeProgram()
         cSrc = emitProgram()
         wrote = file.writeText(outPath, cSrc)
         if not wrote {

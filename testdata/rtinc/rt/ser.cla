@@ -5,8 +5,20 @@
 // helper.cla so the test also covers a multi-file runtime module: expand's
 // recursion into rtPath's own includes must have ALL of its heads spliced
 // into the combined program, not just rtPath's own trailing head.
+//
+// Plan native-5d Task 1 (IR tree-shake): named rtFileSave, not an arbitrary
+// probe name -- cprint.cla's IFileSave intrinsic arm always emits a call to
+// the literal C symbol clar_fn_rtFileSave, regardless of which module
+// actually supplies it, and shake.cla's own IFileSave arm roots that exact
+// name. prog.cla's file.save call is what makes this function (and, via its
+// own call below, rtIncHelper) survive shake's now-live dead-code
+// elimination -- the previous "rtIncProbe" name was never actually the
+// target of any call the emitted C makes (real or fake ser.cla), so it was
+// always unreachable; shake now correctly drops unreachable functions,
+// which broke the OLD assertions. Renaming to the real target name is the
+// same fix a real (reachable) ser.cla module gets for free.
 include "helper.cla"
 
-func rtIncProbe(): int {
+func rtFileSave(): int {
     return rtIncHelper() + 4242
 }

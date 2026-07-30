@@ -51,6 +51,7 @@
 
 include "lib.cla"
 include "ir.cla"
+include "shake.cla"
 
 // ================================================================
 // Whole-program buffers (cprint.go's printer struct), assembled in a fixed
@@ -3679,19 +3680,26 @@ func cpEmitExternProtos() {
 }
 
 // cpEmitFuncs prints every prototype up front, then every definition
-// (cprint.go's emitFuncs).
+// (cprint.go's emitFuncs). Plan native-5d Task 1: skips the proto+body of
+// any function shake.cla's shakeProgram proved unreachable from the
+// program's real entry points -- shakeReachable(i) is always available
+// here since main.cla calls shakeProgram() before emitProgram ever runs.
 func cpEmitFuncs() {
     var i: int
 
     i = 0
     while i < irFuncs.count {
-        cpRestBuf.add(cpFuncProto(i) + ";")
+        if shakeReachable(i) {
+            cpRestBuf.add(cpFuncProto(i) + ";")
+        }
         i = i + 1
     }
     cpRestBuf.add(toText(""))
     i = 0
     while i < irFuncs.count {
-        cpEmitFunc(i)
+        if shakeReachable(i) {
+            cpEmitFunc(i)
+        }
         i = i + 1
     }
 }
@@ -3792,7 +3800,14 @@ func cpEmitDefaultInitFnProtos() {
         // the same pre-cpEmitFuncs positions, now that this task routes
         // that walk's calls through cpMapPorted (map.cla's own module
         // header comment documents the split).
-        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref")) {
+        // Plan native-5d Task 1: also require shakeReachable(i) -- always
+        // true for this exact closed name set in practice (shake.cla always
+        // roots it unconditionally, the same "these flags are all
+        // unconditionally true in the emit path" invariant this function's
+        // own condition below already relies on), kept here anyway so the
+        // two lists can never silently drift apart into a forward-declared-
+        // but-body-skipped mismatch.
+        if shakeReachable(i) and ((cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref"))) {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1
