@@ -177,10 +177,13 @@ void *rt_ext_TextNewHandle(int32_t n) {
 void rt_ext_TextDisposeHandle(void *h) { DisposeHandle((Handle)h); }
 void rt_ext_TextRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
 
-/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
- * ListNewRaw: list.cla's own extern names (Plan 5b Task 10), mirroring
+/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic:
+ * list.cla's own extern names (Plan 5b Task 10), mirroring
  * internal/build/rt/rt_ext_host.inc's List block exactly -- same reasoning
- * as the Text family above. */
+ * as the Text family above. (rt_ext_ListNewRaw, the one-time "whole
+ * rt_list_new delegation" birth-allocation wrapper, is gone as of Plan 5c
+ * wave2a Task 3 -- birth moved into list.cla itself, built from
+ * rt_ext_ListNewPtr/ListNewHandle below.) */
 void *rt_ext_ListHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_ListSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_ListBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
@@ -191,13 +194,14 @@ void rt_ext_ListPanic(const uint8_t *msg) {
     buf[n] = '\0';
     rt_panic(buf);
 }
-void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
 /* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
- * ListDisposePtr (Plan 5c Task 1: ARC waist externs): mirrors
- * internal/build/rt/rt_ext_host.inc's block exactly, except
- * rt_ext_ListRcCheck's body is a no-op, same reasoning as the Text family
- * above. */
+ * ListDisposePtr (Plan 5c Task 1: ARC waist externs; live as of Task 3,
+ * which ports rtListNew/rtListRetain/rtListRelease into list.cla against
+ * exactly these five): mirrors internal/build/rt/rt_ext_host.inc's block
+ * exactly, except rt_ext_ListRcCheck's body is a no-op -- no ledger on
+ * Mac, and the real Memory Manager has no equivalent lookup (same "Mac:
+ * no-op" rule rt_rc_check itself uses, rt_core.inc:765-766). */
 void *rt_ext_ListNewHandle(int32_t n) {
     void *h = (void *)NewHandle((Size)n);
     if (!h) rt_core_oom();

@@ -1,0 +1,66 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc2_list.cla: Plan 5c wave2a Task 3's own regression fixture for the
+// PORTED list ARC (rtListRetain/rtListRelease/rtListLastref,
+// runtime/clarus/list.cla), run via the internal/lowlevel harness
+// (clarusc-emitted C, host cc against rt.c, under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1). Builds a list of text (2 elements), then aliases
+// it TWICE (`scoped = survivor`, `alias = scoped` -- rc 1 -> 2 -> 3),
+// overwrites one element in place (IListSet, through the shared box) and
+// pops-and-discards another (IListPop's bare-statement transfer-and-release
+// path, ARC Task 8 review round 2's own bug class), then discards `scoped`
+// (one of the three owners) MID-SCOPE by reassigning it to a fresh,
+// independent list -- this is the CRITICAL rt_list_lastref scenario
+// Task 6/Task 2's own review rounds found bugs in for Text: the release of
+// `scoped`'s OLD value (dropping the shared box from rc 3 -> 2) must NOT
+// see itself as the last reference and must NOT walk/re-release the
+// remaining text element, while `survivor`/`alias` (still rc==2, sharing
+// the same box) must read back the mutated content correctly afterward.
+// `scoped` (now its own independent, unshared, one-element list),
+// `survivor`, and `alias` all then run off the end of App.startCLI's own
+// scope: `scoped`'s own release is an ordinary rc 1 -> 0 dispose (its own
+// text element released, then its own box); `survivor`/`alias`'s two
+// releases exercise the SAME guard once more for the shared box's actual
+// last two owners (rc 2 -> 1 -> 0, the second of which legitimately owns
+// the box's last reference and must free the remaining text element then
+// the box itself). live==0 (checked by the harness itself, not visible in
+// this file's .out) is the leak-gate half of this fixture's verification;
+// the alert()s below are the content half -- proving the survivors still
+// read back correctly after every alias/mutate/discard/scope-exit step,
+// not just that nothing crashed or leaked.
+
+func makeListText(s: string): list of text {
+    var l: list of text
+    l.push(s)
+    return l
+}
+
+on App.startCLI(args: list of string) {
+    var survivor: list of text
+    var alias: list of text
+    var scoped: list of text
+
+    survivor = makeListText("keep")
+    survivor.push("also")
+
+    scoped = survivor // alias -- rc 1 -> 2
+    alias = scoped // second alias -- rc 2 -> 3
+    scoped[0] = "changed" // IListSet overwrite, visible through every alias (shared box)
+    scoped.pop() // bare-statement pop-discard: transfers + must release "also"
+    // discard `scoped`'s share of the box MID-SCOPE (not at function end) by
+    // reassigning it to a fresh, independent list -- rc 3 -> 2, must NOT
+    // free the remaining "changed" element (survivor/alias still share it).
+    scoped = makeListText("gone")
+
+    if alias.count == 1 and alias[0] == "changed" {
+        alert("list-survivor-ok")
+    } else {
+        alert("list-survivor-FAIL")
+    }
+    if survivor.count == 1 and survivor[0] == "changed" {
+        alert("list-alias-ok")
+    } else {
+        alert("list-alias-FAIL")
+    }
+}

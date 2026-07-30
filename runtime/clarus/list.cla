@@ -26,24 +26,34 @@
 // definition, same placement/reasoning as rt_text_layout_check) so this
 // overlay and the real C struct can never drift.
 //
-// RC boundary (READ-NEVER-WRITTEN, no exceptions): this module never writes
-// `.rc`. Birth allocation goes through ListNewRaw, an external delegating
-// to the C rt_list_new -- every rc byte stays entirely C-owned, written
-// only by that one C function (rc=1 at construction) and by
-// rt_list_retain/rt_list_release (cprint.cla's IRetain/IRelease arm, still
-// bare C calls -- untouched by this task). The RC boundary threads THROUGH
-// individual intrinsic arms for List specifically (unlike Text, where whole
-// intrinsics either redirect or don't): fpIndexRef's `rt_list_at`,
-// fpForListStmt's per-iteration `rt_list_at` deref (only its `rt_list_count`
-// call redirects), IListRemove's old-value-read `rt_list_at` (only its
-// REMOVAL call redirects), IListSet's `rt_list_at` ref (an interior-pointer
-// primitive, not redirected at all), every cpEmitRelease/cpEmitRetain site,
-// fpHeapFn-composed retain/release, IListFreeVar, fpUiEditStmt's list arm,
-// the `fpRetainVal` prefix before push/unshift, and the `_retain` suffix
-// calls in first/last all stay bare C calls -- deliberate exclusions, not
-// oversights (cprint.cla's own redirect diff documents each one at its
-// site). `rt_list_note` (the host-only debug ledger) is never called from
-// any redirected site and has no Clarus port -- it's a host-C-only
+// RC boundary (Plan 5c wave2a Task 3 update -- rc is now Clarus-owned for
+// list, same shape as text.cla's own Task 2 update): birth (rtListNew,
+// below) constructs the WHOLE box itself, via ListNewPtr + overlay pokes,
+// instead of delegating to C; rtListRetain/rtListRelease do the rc
+// arithmetic and the rc==0 dispose sequence here too, calling ListRcCheck
+// (a Task 1 waist extern) only on the cold over-release path (`rc <= 0`),
+// never unconditionally the way the C reference's rt_rc_check call does;
+// rtListLastref (`l != NULL and l.rc == 1`) is the null-safe "am I the
+// only owner" predicate cpEmitRelease's element-release walk gates on.
+// cprint.cla's cpListArcPorted flag (unconditional true) redirects every
+// List ARC emission site to clar_fn_rtListRetain/clar_fn_rtListRelease/
+// clar_fn_rtListLastref: the IRetain/IRelease/IListFreeVar intrinsics (via
+// cpEmitRetain/cpEmitRelease), fpRetainVal/fpHeapFn-composed retain/release,
+// the container-accessor `_retain` suffix calls (IListFirst/IListLast/
+// IMapGet/IMapGetDv/IMapGetDvBirth, KList element case only), and the three
+// `rt_list_lastref`-gated element-release walks inside cpEmitRelease. This
+// task ALSO adds rtListAt below (rt_core.inc's `list_slot` + bounds check,
+// the C `rt_list_at` function) -- but ONLY for the walk-INTERNAL element
+// accessor calls inside cpEmitRelease/cpEmitRetain's own List ARC element
+// loops, gated by the EXISTING cpListPorted flag (a plain interior-pointer
+// accessor, not an ARC operation itself). The four pure ADDRESSING sites
+// elsewhere in cprint.cla -- fpIndexRef's own `rt_list_at` (user-level
+// indexing), fpForListStmt's per-iteration deref, IListRemove's
+// old-value-read, and IListSet's ref -- all keep emitting a BARE
+// `rt_list_at` call regardless of either flag (5d codegen68k input, per
+// fpIndexRef's own doc comment in cprint.cla) -- deliberate exclusions, not
+// oversights. `rt_list_note` (the host-only debug ledger) is never called
+// from any redirected site and has no Clarus port -- it's a host-C-only
 // diagnostic, not part of the List family's public behavior.
 //
 // Relocation discipline: `data` is a Handle -- ListSetHandleSize (the
@@ -72,25 +82,42 @@
 // empty) until it covers `need`, specialized here with the list's own
 // per-instance elemsize (unlike text, where elemsize is always 1 byte).
 //
-// ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/ListNewRaw
-// are list.cla's OWN extern names, distinct from the public HandleDeref/
-// BlockMoveData/Panic/NewRaw names str.cla/text.cla/ser.cla and any user
+// ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
+// ListNewPtr/ListDisposePtr/ListNewHandle/ListDisposeHandle/ListRcCheck are
+// list.cla's OWN extern names, distinct from the public HandleDeref/
+// BlockMoveData/Panic/NewPtr names str.cla/text.cla/ser.cla and any user
 // program might also declare -- same collision hazard str.cla's own header
 // comment documents (checkFuncSig -> scopeDeclare keys purely on name, no
 // signature comparison), and the same fix: distinct List-prefixed names
 // sidestep it. Each is backed by an rt_ext_List* wrapper in BOTH
 // internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/Str/Text
-// wrappers already call. ListNewRaw delegates the WHOLE construction (box
-// alloc + NewHandle(0) + rc=1 + elemsize/count/cap init) to the C
-// rt_list_new -- same "external delegation" birth-allocation choice Task 9
-// made for TextNewRaw, same rationale (rc written exactly once, entirely in
-// C).
+// wrappers already call. (ListNewRaw, the one-time "whole rt_list_new
+// delegation" birth-allocation wrapper, is gone as of Plan 5c wave2a Task
+// 3 -- birth moved into list.cla itself, built from ListNewPtr/
+// ListNewHandle below.)
 external func ListHandleDeref(h: ptr): ptr
 external func ListSetHandleSize(h: ptr, n: int): int
 external func ListBlockMoveData(src: ptr, dst: ptr, count: int)
 external func ListPanic(msg: string)
-external func ListNewRaw(elemsize: int): ptr
+// ListNewPtr/ListDisposePtr (Task 1, Plan 5c wave2a): the box allocator
+// rtListNew below uses, mirroring TextNewPtr's own oom-panic-at-the-
+// primitive placement exactly (text.cla) -- never returns null, so no
+// separate check is needed at rtListNew's own call site.
+external func ListNewPtr(size: int): ptr
+external func ListDisposePtr(p: ptr)
+// ListNewHandle/ListDisposeHandle/ListRcCheck (Task 1, Plan 5c wave2a): the
+// ARC waist externs rtListNew/rtListRetain/rtListRelease below use, same
+// shape as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck.
+// ListNewHandle oom-panics on NULL itself, never returns null.
+// ListRcCheck is the cold-path over-release guard: rtListRelease only
+// calls it once it has already determined `rc <= 0` itself (the host body
+// then prints "rt_rc: over-release at %s" and aborts; the Mac body is a
+// no-op) -- never called unconditionally the way the C reference's
+// rt_rc_check is.
+external func ListNewHandle(n: int): ptr
+external func ListDisposeHandle(h: ptr)
+external func ListRcCheck(box: ptr, rc: int)
 
 // RtList (Ch13: Overlay Records) mirrors rt_core.inc:483-489's `struct
 // rt_list { int32_t rc; Handle data; int32_t elemsize; int32_t count;
@@ -139,10 +166,115 @@ func rtListGrow(l: ptr, need: int) {
     rl.cap = newcap
 }
 
-// rtListNew (rt_core.inc:503-513): just the external delegation -- see
-// ListNewRaw's own doc comment above.
+// rtListBoxSize is ListNewPtr's argument for rtListNew's box below --
+// mirrors text.cla's own rtTextBoxSize reasoning exactly: this language has
+// no sizeof operator, so it's a hand-derived constant rather than an exact
+// `sizeof(struct rt_list)`. rt_core.inc's own rt_list_layout_check pins
+// struct rt_list to exactly `{ int32_t rc; Handle data; int32_t elemsize;
+// int32_t count; int32_t cap; }` (five fields), but a Handle is a native
+// pointer, whose width (and the padding a natural-alignment C struct layout
+// inserts around it) differs by target -- 32 bytes measured on this repo's
+// x86_64/arm64 differential-test host (rc@0, 4 bytes padding, data@8,
+// elemsize@16, count@20, cap@24, padded to a 32-byte multiple-of-8 total),
+// 20 bytes on the real 4-byte-pointer 68k target (no padding needed
+// there). 40 (five fields, each conservatively budgeted a full 8-byte
+// pointer-width slot) safely covers both: ListNewPtr only guarantees "at
+// least this many bytes," so a little slack here is harmless, unlike an
+// UNDER-sized box, which would corrupt whatever heap memory follows it.
+const rtListBoxSize: int = 40
+
+// rtListNew (rt_core.inc:512-523, rt_list_new) -- Plan 5c wave2a Task 3:
+// birth allocation is now entirely Clarus-owned, mirroring the C reference
+// exactly (rc=1, elemsize/count/cap poked, data allocated last).
+// ListNewHandle(0) never returns null (it oom-panics itself, see its own
+// extern doc comment above), so there is no separate NULL check here,
+// matching ListNewPtr's own "check at the primitive" placement.
 func rtListNew(elemsize: int): ptr {
-    return ListNewRaw(elemsize)
+    var l: ptr
+    var rl: RtList
+
+    l = ListNewPtr(rtListBoxSize)
+    rl = RtList(l)
+    rl.rc = 1
+    rl.elemsize = elemsize
+    rl.count = 0
+    rl.cap = 0
+    rl.data = ListNewHandle(0)
+    return l
+}
+
+// rtListRetain (rt_core.inc:819-823, rt_list_retain) -- Plan 5c wave2a Task
+// 3: null-safe increment, no over-release guard (same design decision as
+// text.cla's rtTextRetain -- the guard is a release-only cold path, see
+// ListRcCheck's own doc comment above and rtListRelease below).
+func rtListRetain(l: ptr) {
+    var rl: RtList
+
+    if l == ptr(0) {
+        return
+    }
+    rl = RtList(l)
+    rl.rc = rl.rc + 1
+}
+
+// rtListRelease (rt_core.inc:826-835, rt_list_release; the rt_list_free
+// alias, rt_core.inc:836, is exactly this function -- cprint.cla's
+// IListFreeVar reaches this through cpEmitRelease, no separate rtListFree
+// exists) -- Plan 5c wave2a Task 3: null-safe; the guard runs ONLY on the
+// cold `rc <= 0` path (ListRcCheck's own doc comment above) rather than
+// unconditionally the way the C reference's rt_rc_check call does;
+// decrements regardless; disposes the data Handle then the box itself once
+// rc reaches 0.
+func rtListRelease(l: ptr) {
+    var rl: RtList
+
+    if l == ptr(0) {
+        return
+    }
+    rl = RtList(l)
+    if rl.rc <= 0 {
+        ListRcCheck(l, rl.rc)
+    }
+    rl.rc = rl.rc - 1
+    if rl.rc == 0 {
+        ListDisposeHandle(rl.data)
+        ListDisposePtr(l)
+    }
+}
+
+// rtListLastref (rt_core.inc:794, rt_list_lastref) -- Plan 5c wave2a Task
+// 3: null-safe "is this the box's only live reference" predicate, same
+// contract as text.cla's rtTextLastref would be (Text has no element walk
+// to gate, so it never needed one) -- cpEmitRelease's element-release walk
+// gates on this, reading rc BEFORE cpEmitRelease's own rtListRelease call
+// runs, so two release call sites sharing one rc>=2 list never both walk
+// and re-release the same elements.
+func rtListLastref(l: ptr): bool {
+    return l != ptr(0) and RtList(l).rc == 1
+}
+
+// rtListAt (rt_core.inc's `list_slot` helper + the bounds-checked
+// `rt_list_at` C function) -- Plan 5c wave2a Task 3: ported ONLY for the
+// walk-INTERNAL element-accessor calls inside cpEmitRelease/cpEmitRetain's
+// own List ARC element loops (cpListPorted gate, list.cla's module header
+// comment above) -- the four pure ADDRESSING sites elsewhere in cprint.cla
+// (fpIndexRef, fpForListStmt, IListSet, IListRemove) still emit a bare
+// `rt_list_at` call (5d codegen68k input, per fpIndexRef's own doc
+// comment) and are UNCHANGED by this task. Bounds-checked, panics the same
+// message as the C reference; mp is derived fresh (no allocation happens
+// on this read-only path, so a single derivation is safe).
+func rtListAt(l: ptr, i: int): ptr {
+    var rl: RtList
+    var mp: ptr
+    var off: int
+
+    rl = RtList(l)
+    if i < 0 or i >= rl.count {
+        ListPanic("list index out of range")
+    }
+    mp = ListHandleDeref(rl.data)
+    off = i * rl.elemsize
+    return mp + off
 }
 
 // rtListPush (rt_core.inc:521-526): grow-then-append. mp is derived AFTER

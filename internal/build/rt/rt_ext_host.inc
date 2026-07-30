@@ -207,17 +207,16 @@ void rt_ext_TextRcCheck(void *box, int32_t rc) {
     }
 }
 
-/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
- * ListNewRaw: list.cla's own extern names (Plan 5b Task 10), same reasoning
- * as the Text family above -- list.cla is UNCONDITIONALLY included in every
- * emitted program from this task forward, so its own waist calls must not
- * share a name with the generic/Str/Text/Ser externs a user program or
- * another runtime module might also declare. Bodies are thin aliases of the
- * same primitives the generic wrappers above already call.
- * rt_ext_ListNewRaw is the sole exception to "thin alias": it delegates the
- * WHOLE rt_list_new construction (the Task 9 "external delegation" birth-
- * allocation choice, same pattern as rt_ext_TextNewRaw), so rc is written
- * exactly once, entirely in C. */
+/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic:
+ * list.cla's own extern names (Plan 5b Task 10), same reasoning as the Text
+ * family above -- list.cla is UNCONDITIONALLY included in every emitted
+ * program from this task forward, so its own waist calls must not share a
+ * name with the generic/Str/Text/Ser externs a user program or another
+ * runtime module might also declare. Bodies are thin aliases of the same
+ * primitives the generic wrappers above already call. (rt_ext_ListNewRaw,
+ * the one-time "whole rt_list_new delegation" birth-allocation wrapper, is
+ * gone as of Plan 5c wave2a Task 3 -- birth moved into list.cla itself,
+ * built from rt_ext_ListNewPtr/ListNewHandle below.) */
 void *rt_ext_ListHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_ListSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_ListBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
@@ -228,16 +227,18 @@ void rt_ext_ListPanic(const uint8_t *msg) {
     buf[n] = '\0';
     rt_panic(buf);
 }
-void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
 /* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
- * ListDisposePtr (Plan 5c Task 1: ARC waist externs): list.cla's own
- * NewHandle/DisposeHandle/NewPtr/DisposePtr wrappers and its rc
- * over-release guard, same reasoning as the Text family above.
- * rt_ext_ListNewPtr mirrors rt_ext_TextNewPtr's oom-panic placement
- * exactly (Text already carries NewPtr/DisposePtr from Task 9, so List's
- * own pair lands here instead); rt_ext_ListRcCheck's host body mirrors
- * rt_rc_check's host branch (rt_core.inc:768-774) exactly. */
+ * ListDisposePtr (Plan 5c Task 1: ARC waist externs; live as of Task 3,
+ * which ports rtListNew/rtListRetain/rtListRelease into list.cla against
+ * exactly these five): list.cla's own NewHandle/DisposeHandle/NewPtr/
+ * DisposePtr wrappers and its rc over-release guard, same reasoning as the
+ * Text family above. rt_ext_ListNewPtr mirrors rt_ext_TextNewPtr's
+ * oom-panic placement exactly (Text already carries NewPtr/DisposePtr from
+ * Task 9, so List's own pair lands here instead); rt_ext_ListRcCheck's
+ * host body mirrors rt_rc_check's host branch (rt_core.inc:768-774)
+ * exactly -- list.cla calls it only on the cold `rc <= 0` path
+ * (rtListRelease's own doc comment), never unconditionally. */
 void *rt_ext_ListNewHandle(int32_t n) {
     void *h = (void *)NewHandle((Size)n);
     if (!h) rt_core_oom();

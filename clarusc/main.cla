@@ -468,6 +468,14 @@ on App.startCLI(args: list of string) {
         // in neededMods deliberately: same declare-before-use splice order.
         cpListPorted = true
         neededMods.add("list.cla")
+        // Plan 5c wave2a Task 3: cpListArcPorted is a SEPARATE flag from
+        // cpListPorted just above (that one gates List's data operations,
+        // wave1 Task 10; this one gates List's retain/release/free/lastref
+        // traffic, now that list.cla grows rtListRetain/rtListRelease/
+        // rtListLastref too) -- same "unconditional, set true directly
+        // alongside the decision" convention as cpTextArcPorted, since
+        // list.cla is always in the manifest regardless.
+        cpListArcPorted = true
         // Task 11: map.cla is the fourth (and last, for this wave)
         // UNCONDITIONAL entry -- every program uses Map (Ch5's built-in
         // sorted-key collection type), so it's always pulled in and
