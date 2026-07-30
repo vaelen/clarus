@@ -34,13 +34,16 @@
 // Relocation discipline: `h` is a Handle -- SetHandleSize (the growth
 // primitive) can move the block it points to, and on a real Memory Manager
 // a call to SetHandleSize can even move OTHER relocatable blocks via heap
-// compaction (this codebase's own scratch buffers, built via TextNewHandle
-// below, are relocatable too). Every function here re-derives ANY master
+// compaction. Every function here re-derives ANY Handle-backed master
 // pointer it holds (via TextHandleDeref) AFTER a call that can
 // allocate/move memory (rtTextGrow itself, or a call to it) -- never
 // caches a dereferenced pointer across such a call. The paranoid allocator
 // (CLARUS_MEM_PARANOID) catches violations of this rule in the leak-gated
-// test runs.
+// test runs. rtTextConcat/rtTextConcatSl's own scratch buffers are
+// TextNewPtr blocks (non-relocatable, matching the C reference's own
+// NewPtr choice for the identical scratch role -- review round 1's fix, an
+// earlier draft used a relocatable TextNewHandle scratch here and needed
+// its own re-derive-after-grow step; TextNewPtr needs none).
 //
 // Behavior contract (brief): Text has no 255-byte cap -- it grows (via
 // rtTextGrow, porting rt_core_grow's amortized-doubling policy,
@@ -53,21 +56,19 @@
 // rtTextSetIndex/rtTextSlice are STRICT: out-of-range panics (matching
 // rtStrIndex/rtStrSlice's own str.cla contract), never clamps.
 //
-// TextHandleDeref/TextNewHandle/TextSetHandleSize/TextDisposeHandle/
-// TextBlockMoveData/TextSetLastErr/TextPanic/TextNewRaw are text.cla's OWN
-// extern names, distinct from the public HandleDeref/BlockMoveData/
-// SetLastErr/Panic/NewPtr names ser.cla (conditional) and any user program
-// might also declare -- same collision hazard str.cla's own header comment
-// documents (checkFuncSig -> scopeDeclare keys purely on name, no signature
+// TextHandleDeref/TextSetHandleSize/TextBlockMoveData/TextSetLastErr/
+// TextPanic/TextNewRaw/TextNewPtr/TextDisposePtr are text.cla's OWN extern
+// names, distinct from the public HandleDeref/BlockMoveData/SetLastErr/
+// Panic/NewPtr names ser.cla (conditional) and any user program might also
+// declare -- same collision hazard str.cla's own header comment documents
+// (checkFuncSig -> scopeDeclare keys purely on name, no signature
 // comparison), and the same fix: distinct Text-prefixed names sidestep it.
 // Each is backed by an rt_ext_Text* wrapper in BOTH
 // internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/Str/Ser wrappers
 // already call.
 external func TextHandleDeref(h: ptr): ptr
-external func TextNewHandle(size: int): ptr
 external func TextSetHandleSize(h: ptr, n: int): int
-external func TextDisposeHandle(h: ptr)
 external func TextBlockMoveData(src: ptr, dst: ptr, count: int)
 external func TextSetLastErr(code: int, msg: string)
 external func TextPanic(msg: string)
@@ -77,6 +78,20 @@ external func TextPanic(msg: string)
 // once, entirely inside C, never by this module. rtTextNew (below) is just
 // this external call.
 external func TextNewRaw(): ptr
+// TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
+// allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own
+// NewPtr choice exactly (rt_core.inc:307). rt_ext_TextNewPtr panics
+// ("out of memory") ITSELF on a NULL result -- the C reference's
+// rt_core_new_struct does the identical check right at the primitive
+// (`if (!p) rt_core_oom();`), so this mirrors that placement rather than
+// pushing a ptr(0) check out to every Clarus call site (the earlier
+// TextSetHandleSize/rtTextGrow pair instead returns an error code the
+// CALLER checks, because SetHandleSize's own OSErr already flows back
+// through the wrapper's int32_t return -- NewPtr has no such return-code
+// channel, only a NULL/non-NULL pointer, so checking inside the wrapper is
+// both the closer-to-the-primitive AND the smaller-diff option here).
+external func TextNewPtr(size: int): ptr
+external func TextDisposePtr(p: ptr)
 
 // RtText (Ch13: Overlay Records) mirrors rt_core.inc:259's `struct rt_text
 // { int32_t rc; Handle h; int32_t len; int32_t cap; }` field-for-field --
@@ -166,12 +181,16 @@ func rtTextStoreText(dst: ptr, src: ptr) {
 
 // rtTextConcat (rt_core.inc:296-319): bstr/btext are mutually exclusive
 // (ptr(0) stands in for C's NULL, matching the brief's call-shape note);
-// dst may alias a (and, defensively, btext) -- built into a scratch Handle
+// dst may alias a (and, defensively, btext) -- built into a scratch buffer
 // first (decoupled from dst's own handle), then copied into dst after
 // growing it, same two-phase approach rt_text_concat's C comment describes.
-// The scratch Handle's own master pointer is ALSO re-derived after
-// rtTextGrow: growing dst's handle can move any other relocatable block via
-// heap compaction on a real Memory Manager, not just dst's own.
+// Review fix (round 1): scratch is a TextNewPtr block (non-relocatable),
+// mirroring the C reference's own NewPtr choice exactly -- unlike a Handle,
+// SetHandleSize can never move it, so (unlike an earlier Handle-based
+// draft) there is no re-derive-after-grow step for scratch at all, and one
+// less relocation-discipline site to get wrong. TextNewPtr itself panics
+// ("out of memory") on failure -- see its own doc comment -- so there is no
+// separate NULL check here, matching rt_core_new_struct's C behavior.
 func rtTextConcat(dst: ptr, a: ptr, bstr: ptr, btext: ptr) {
     var ra: RtText
     var rb: RtText
@@ -181,7 +200,6 @@ func rtTextConcat(dst: ptr, a: ptr, bstr: ptr, btext: ptr) {
     var total: int
     var scratchSz: int
     var scratch: ptr
-    var scratchMp: ptr
     var amp: ptr
     var bmp: ptr
     var dstmp: ptr
@@ -200,28 +218,27 @@ func rtTextConcat(dst: ptr, a: ptr, bstr: ptr, btext: ptr) {
     } else {
         scratchSz = 1
     }
-    scratch = TextNewHandle(scratchSz)
-    scratchMp = TextHandleDeref(scratch)
+    scratch = TextNewPtr(scratchSz)
     amp = TextHandleDeref(ra.h)
-    TextBlockMoveData(amp, scratchMp, alen)
+    TextBlockMoveData(amp, scratch, alen)
     if bstr != ptr(0) {
-        TextBlockMoveData(bstr + 1, scratchMp + alen, blen)
+        TextBlockMoveData(bstr + 1, scratch + alen, blen)
     } else {
         bmp = TextHandleDeref(rb.h)
-        TextBlockMoveData(bmp, scratchMp + alen, blen)
+        TextBlockMoveData(bmp, scratch + alen, blen)
     }
     rtTextGrow(dst, total)
-    scratchMp = TextHandleDeref(scratch)
     rd = RtText(dst)
     dstmp = TextHandleDeref(rd.h)
-    TextBlockMoveData(scratchMp, dstmp, total)
+    TextBlockMoveData(scratch, dstmp, total)
     rd.len = total
-    TextDisposeHandle(scratch)
+    TextDisposePtr(scratch)
 }
 
 // rtTextConcatSl (rt_core.inc:321-340): string on the left (a), text on the
 // right (b) -- same scratch-then-copy approach as rtTextConcat (dst may
-// alias b), no truncation (text is unbounded).
+// alias b, scratch is a non-relocatable TextNewPtr block), no truncation
+// (text is unbounded).
 func rtTextConcatSl(dst: ptr, a: ptr, b: ptr) {
     var rb: RtText
     var rd: RtText
@@ -230,7 +247,6 @@ func rtTextConcatSl(dst: ptr, a: ptr, b: ptr) {
     var total: int
     var scratchSz: int
     var scratch: ptr
-    var scratchMp: ptr
     var bmp: ptr
     var dstmp: ptr
 
@@ -243,18 +259,16 @@ func rtTextConcatSl(dst: ptr, a: ptr, b: ptr) {
     } else {
         scratchSz = 1
     }
-    scratch = TextNewHandle(scratchSz)
-    scratchMp = TextHandleDeref(scratch)
-    TextBlockMoveData(a + 1, scratchMp, slen)
+    scratch = TextNewPtr(scratchSz)
+    TextBlockMoveData(a + 1, scratch, slen)
     bmp = TextHandleDeref(rb.h)
-    TextBlockMoveData(bmp, scratchMp + slen, blen)
+    TextBlockMoveData(bmp, scratch + slen, blen)
     rtTextGrow(dst, total)
-    scratchMp = TextHandleDeref(scratch)
     rd = RtText(dst)
     dstmp = TextHandleDeref(rd.h)
-    TextBlockMoveData(scratchMp, dstmp, total)
+    TextBlockMoveData(scratch, dstmp, total)
     rd.len = total
-    TextDisposeHandle(scratch)
+    TextDisposePtr(scratch)
 }
 
 // rtTextCmp (rt_core.inc:466-479): byte-wise unsigned comparison,

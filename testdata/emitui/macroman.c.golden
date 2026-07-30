@@ -11,13 +11,13 @@ extern void rt_ext_StrSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_StrPanic(const uint8_t *);
 extern void rt_ext_StrBlockMoveData(void *, void *, int32_t);
 extern void * rt_ext_TextHandleDeref(void *);
-extern void * rt_ext_TextNewHandle(int32_t);
 extern int32_t rt_ext_TextSetHandleSize(void *, int32_t);
-extern void rt_ext_TextDisposeHandle(void *);
 extern void rt_ext_TextBlockMoveData(void *, void *, int32_t);
 extern void rt_ext_TextSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_TextPanic(const uint8_t *);
 extern void * rt_ext_TextNewRaw(void);
+extern void * rt_ext_TextNewPtr(int32_t);
+extern void rt_ext_TextDisposePtr(void *);
 
 static const clar_str_255 clar_lit_0 = {16, {115, 116, 114, 105, 110, 103, 32, 116, 114, 117, 110, 99, 97, 116, 101, 100}};
 static const clar_str_255 clar_lit_1 = {25, {115, 116, 114, 105, 110, 103, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
@@ -462,8 +462,6 @@ static void clar_fn_rtTextConcat(void * cv_dst, void * cv_a, void * cv_bstr, voi
     cv_scratchSz = 0;
     void * cv_scratch;
     cv_scratch = 0;
-    void * cv_scratchMp;
-    cv_scratchMp = 0;
     void * cv_amp;
     cv_amp = 0;
     void * cv_bmp;
@@ -484,23 +482,21 @@ static void clar_fn_rtTextConcat(void * cv_dst, void * cv_a, void * cv_bstr, voi
     } else {
         cv_scratchSz = 1;
     }
-    cv_scratch = rt_ext_TextNewHandle(cv_scratchSz);
-    cv_scratchMp = rt_ext_TextHandleDeref(cv_scratch);
+    cv_scratch = rt_ext_TextNewPtr(cv_scratchSz);
     cv_amp = rt_ext_TextHandleDeref((cv_ra)->cv_h);
-    rt_ext_TextBlockMoveData(cv_amp, cv_scratchMp, cv_alen);
+    rt_ext_TextBlockMoveData(cv_amp, cv_scratch, cv_alen);
     if (cv_bstr != (void *)(intptr_t)(0)) {
-        rt_ext_TextBlockMoveData((void *)((char *)(cv_bstr) + (1)), (void *)((char *)(cv_scratchMp) + (cv_alen)), cv_blen);
+        rt_ext_TextBlockMoveData((void *)((char *)(cv_bstr) + (1)), (void *)((char *)(cv_scratch) + (cv_alen)), cv_blen);
     } else {
         cv_bmp = rt_ext_TextHandleDeref((cv_rb)->cv_h);
-        rt_ext_TextBlockMoveData(cv_bmp, (void *)((char *)(cv_scratchMp) + (cv_alen)), cv_blen);
+        rt_ext_TextBlockMoveData(cv_bmp, (void *)((char *)(cv_scratch) + (cv_alen)), cv_blen);
     }
     clar_fn_rtTextGrow(cv_dst, cv_total);
-    cv_scratchMp = rt_ext_TextHandleDeref(cv_scratch);
     cv_rd = ((clar_rec_RtText *)(cv_dst));
     cv_dstmp = rt_ext_TextHandleDeref((cv_rd)->cv_h);
-    rt_ext_TextBlockMoveData(cv_scratchMp, cv_dstmp, cv_total);
+    rt_ext_TextBlockMoveData(cv_scratch, cv_dstmp, cv_total);
     (cv_rd)->cv_len = cv_total;
-    rt_ext_TextDisposeHandle(cv_scratch);
+    rt_ext_TextDisposePtr(cv_scratch);
 }
 
 static void clar_fn_rtTextConcatSl(void * cv_dst, void * cv_a, void * cv_b) {
@@ -518,8 +514,6 @@ static void clar_fn_rtTextConcatSl(void * cv_dst, void * cv_a, void * cv_b) {
     cv_scratchSz = 0;
     void * cv_scratch;
     cv_scratch = 0;
-    void * cv_scratchMp;
-    cv_scratchMp = 0;
     void * cv_bmp;
     cv_bmp = 0;
     void * cv_dstmp;
@@ -533,18 +527,16 @@ static void clar_fn_rtTextConcatSl(void * cv_dst, void * cv_a, void * cv_b) {
     } else {
         cv_scratchSz = 1;
     }
-    cv_scratch = rt_ext_TextNewHandle(cv_scratchSz);
-    cv_scratchMp = rt_ext_TextHandleDeref(cv_scratch);
-    rt_ext_TextBlockMoveData((void *)((char *)(cv_a) + (1)), cv_scratchMp, cv_slen);
+    cv_scratch = rt_ext_TextNewPtr(cv_scratchSz);
+    rt_ext_TextBlockMoveData((void *)((char *)(cv_a) + (1)), cv_scratch, cv_slen);
     cv_bmp = rt_ext_TextHandleDeref((cv_rb)->cv_h);
-    rt_ext_TextBlockMoveData(cv_bmp, (void *)((char *)(cv_scratchMp) + (cv_slen)), cv_blen);
+    rt_ext_TextBlockMoveData(cv_bmp, (void *)((char *)(cv_scratch) + (cv_slen)), cv_blen);
     clar_fn_rtTextGrow(cv_dst, cv_total);
-    cv_scratchMp = rt_ext_TextHandleDeref(cv_scratch);
     cv_rd = ((clar_rec_RtText *)(cv_dst));
     cv_dstmp = rt_ext_TextHandleDeref((cv_rd)->cv_h);
-    rt_ext_TextBlockMoveData(cv_scratchMp, cv_dstmp, cv_total);
+    rt_ext_TextBlockMoveData(cv_scratch, cv_dstmp, cv_total);
     (cv_rd)->cv_len = cv_total;
-    rt_ext_TextDisposeHandle(cv_scratch);
+    rt_ext_TextDisposePtr(cv_scratch);
 }
 
 static int32_t clar_fn_rtTextCmp(void * cv_a, void * cv_b) {

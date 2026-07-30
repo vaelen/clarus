@@ -104,21 +104,19 @@ void rt_ext_StrPanic(const uint8_t *msg) {
 }
 void rt_ext_StrBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 
-/* rt_ext_TextHandleDeref/TextNewHandle/TextSetHandleSize/TextDisposeHandle/
- * TextBlockMoveData/TextSetLastErr/TextPanic/TextNewRaw: text.cla's own
- * extern names (Plan 5b Task 9), same reasoning as the Str family above --
- * text.cla is UNCONDITIONALLY included in every emitted program from this
- * task forward, so its own waist calls must not share a name with the
- * generic/Str/Ser externs a user program or another runtime module might
- * also declare. Bodies are thin aliases of the same primitives the generic
- * wrappers above already call. rt_ext_TextNewRaw is the sole exception to
- * "thin alias": it delegates the WHOLE rt_text_new construction (the Task 9
- * "external delegation" birth-allocation choice), so rc is written exactly
- * once, entirely in C. */
+/* rt_ext_TextHandleDeref/TextSetHandleSize/TextBlockMoveData/
+ * TextSetLastErr/TextPanic/TextNewRaw/TextNewPtr/TextDisposePtr: text.cla's
+ * own extern names (Plan 5b Task 9), same reasoning as the Str family
+ * above -- text.cla is UNCONDITIONALLY included in every emitted program
+ * from this task forward, so its own waist calls must not share a name
+ * with the generic/Str/Ser externs a user program or another runtime
+ * module might also declare. Bodies are thin aliases of the same
+ * primitives the generic wrappers above already call. rt_ext_TextNewRaw is
+ * the sole exception to "thin alias": it delegates the WHOLE rt_text_new
+ * construction (the Task 9 "external delegation" birth-allocation choice),
+ * so rc is written exactly once, entirely in C. */
 void *rt_ext_TextHandleDeref(void *h) { return *(void **)h; }
-void *rt_ext_TextNewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
 int32_t rt_ext_TextSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
-void rt_ext_TextDisposeHandle(void *h) { DisposeHandle((Handle)h); }
 void rt_ext_TextBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 void rt_ext_TextSetLastErr(int32_t code, const uint8_t *msg) {
     char buf[256];
@@ -135,5 +133,18 @@ void rt_ext_TextPanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 void *rt_ext_TextNewRaw(void) { return (void *)rt_text_new(); }
+/* rt_ext_TextNewPtr (review round 1 fix, Critical): text.cla's own
+ * scratch-buffer allocator (rtTextConcat/rtTextConcatSl), a NewPtr block
+ * mirroring rt_text_concat's own scratch choice (rt_core.inc:307-308)
+ * exactly. Checks for NULL and panics right here -- the same
+ * "if (!p) rt_core_oom()" placement rt_core_new_struct uses for every
+ * OTHER NewPtr in this runtime -- rather than pushing a ptr(0) check out
+ * to text.cla's own call sites. */
+void *rt_ext_TextNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 #endif /* CLARUS_RT_EXT_HOST_INC */

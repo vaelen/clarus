@@ -3275,6 +3275,20 @@ func cpEmitFuncs() {
 // early) to already be a complete type -- only safe because str.cla/
 // text.cla's own functions never take a record-typed parameter (their
 // whole signature surface is int/ptr/bool/text, by construction).
+//
+// *** MAINTENANCE, READ BEFORE TOUCHING cpDefaultInit AGAIN ***: this name
+// set is a hardcoded, NOT self-extending, closed list -- Tasks 10/11 (list/
+// map redirects) WILL hit this exact ordering gap the moment cpDefaultInit's
+// KList/KMap arms start calling clar_fn_rtListNew/clar_fn_rtMapNew instead
+// of the raw C rt_list_new/rt_map_new (same "record ctor / clar_init_globals
+// call a ported clar_fn_ before its own prototype exists" failure mode this
+// function was built to fix for KText). Adding a KList/KMap redirect to
+// cpDefaultInit WITHOUT adding "rtListNew"/"rtMapNew" (or whatever their
+// final names are) to the `if` below will compile clean on any corpus that
+// happens not to default-construct a List/Map record field or global --
+// then fail with -Wimplicit-function-declaration on the first one that
+// does, exactly like this task's own bootstrap gate caught KText's version
+// of the bug. Add the new name here in the SAME commit as the redirect.
 func cpEmitDefaultInitFnProtos() {
     var i: int
     var nm: string
