@@ -6,6 +6,8 @@
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void * clar_fn_rtTextNew(void);
+static void clar_fn_rtTextRetain(void * cv_t);
+static void clar_fn_rtTextRelease(void * cv_t);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
 static void * clar_fn_rtMapNew(int32_t cv_valsize);
@@ -17,9 +19,11 @@ extern int32_t rt_ext_TextSetHandleSize(void *, int32_t);
 extern void rt_ext_TextBlockMoveData(void *, void *, int32_t);
 extern void rt_ext_TextSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_TextPanic(const uint8_t *);
-extern void * rt_ext_TextNewRaw(void);
 extern void * rt_ext_TextNewPtr(int32_t);
 extern void rt_ext_TextDisposePtr(void *);
+extern void * rt_ext_TextNewHandle(int32_t);
+extern void rt_ext_TextDisposeHandle(void *);
+extern void rt_ext_TextRcCheck(void *, int32_t);
 extern void * rt_ext_ListHandleDeref(void *);
 extern int32_t rt_ext_ListSetHandleSize(void *, int32_t);
 extern void rt_ext_ListBlockMoveData(void *, void *, int32_t);
@@ -97,9 +101,9 @@ static void clar_ui_winevent_TextWin(void *inst, short event, long a, long b);
 static void clar_ui_widget_TextWin(void *inst, short widgetIndex, short event, long a, long b);
 static void clar_ui_release_TextWin(void *inst)
 {
-    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_bodyText);
-    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
-    rt_text_release((*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_bodyText);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_log);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_TextWin *)rt_ui_state(inst)).cv_note);
 
 }
 
@@ -116,10 +120,10 @@ static const rt_ui_window_desc clar_ui_window_TextWin = {
 static void clar_ui_winevent_NoteWin(void *inst, short event, long a, long b);
 static void clar_ui_release_NoteWin(void *inst)
 {
-    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_scratch);
-    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_greeting);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_scratch);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_greeting);
     for (int32_t ix1 = 0; ix1 < 2; ix1++) {
-    rt_text_release((*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_buf.e[ix1]);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_NoteWin *)rt_ui_state(inst)).cv_buf.e[ix1]);
     }
 
 }
@@ -160,6 +164,8 @@ static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle);
 static int32_t clar_fn_rtStrIndexOfChar(void * cv_s, int32_t cv_c);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
+static void clar_fn_rtTextRetain(void * cv_t);
+static void clar_fn_rtTextRelease(void * cv_t);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void clar_fn_rtTextStoreText(void * cv_dst, void * cv_src);
 static void clar_fn_rtTextConcat(void * cv_dst, void * cv_a, void * cv_bstr, void * cv_btext);
@@ -528,8 +534,45 @@ static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
 }
 
 static void * clar_fn_rtTextNew(void) {
-    return rt_ext_TextNewRaw();
+    void * cv_t;
+    cv_t = 0;
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    cv_t = rt_ext_TextNewPtr(32);
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    (cv_rt)->cv_rc = 1;
+    (cv_rt)->cv_len = 0;
+    (cv_rt)->cv_cap = 0;
+    (cv_rt)->cv_h = rt_ext_TextNewHandle(0);
+    return cv_t;
     return 0;
+}
+
+static void clar_fn_rtTextRetain(void * cv_t) {
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    if (cv_t == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    (cv_rt)->cv_rc = ((cv_rt)->cv_rc + 1);
+}
+
+static void clar_fn_rtTextRelease(void * cv_t) {
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    if (cv_t == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    if ((cv_rt)->cv_rc <= 0) {
+        rt_ext_TextRcCheck(cv_t, (cv_rt)->cv_rc);
+    }
+    (cv_rt)->cv_rc = ((cv_rt)->cv_rc - 1);
+    if ((cv_rt)->cv_rc == 0) {
+        rt_ext_TextDisposeHandle((cv_rt)->cv_h);
+        rt_ext_TextDisposePtr(cv_t);
+    }
 }
 
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s) {
@@ -1406,12 +1449,12 @@ static void clar_fn_ui_TextWin_Name_enter(void * cv_window) {
 static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     rt_text * cv___store1;
     cv___store1 = (rt_text *)clar_fn_rtTextNew();
-    rt_text_release(cv___store1);
+    clar_fn_rtTextRelease((void*)cv___store1);
     rt_text * t1 = NULL;
     t1 = rt_text_new();
     rt_ui_widget_get_text(cv_window, 1, t1);
     cv___store1 = t1;
-    rt_text_release(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
+    clar_fn_rtTextRelease((void*)((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = cv___store1;
     cv___store1 = 0;
     rt_ui_widget_set_text(cv_window, 1, ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText);
@@ -1419,7 +1462,7 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     t2 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t2, (void*)(const uint8_t*)&(clar_lit_13));
     rt_ui_widget_set_text(cv_window, 1, t2);
-    rt_text_release(t2);
+    clar_fn_rtTextRelease(t2);
 }
 
 static void clar_fn_ui_NoteWin_opened(void * cv_window) {
@@ -1430,12 +1473,12 @@ static void clar_fn_ui_NoteWin_opened(void * cv_window) {
     for (int32_t ix2 = 0; ix2 < 2; ix2++) {
         ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_buf.e[ix2] = (rt_text *)clar_fn_rtTextNew();
     }
-    rt_text_release(cv___store2);
+    clar_fn_rtTextRelease((void*)cv___store2);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_15));
     cv___store2 = t1;
-    rt_text_release(((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting);
+    clar_fn_rtTextRelease((void*)((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting);
     ((*(clar_uistate_NoteWin *)rt_ui_state(cv_window))).cv_greeting = cv___store2;
     cv___store2 = 0;
     rt_ui_set_title(cv_window, (const uint8_t*)&(clar_lit_14));
@@ -1447,12 +1490,12 @@ static void clar_fn_ui_TextWin_opened(void * cv_window) {
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_bodyText = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_log = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note = (rt_text *)clar_fn_rtTextNew();
-    rt_text_release(cv___store3);
+    clar_fn_rtTextRelease((void*)cv___store3);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_16));
     cv___store3 = t1;
-    rt_text_release(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note);
+    clar_fn_rtTextRelease((void*)((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note);
     ((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_note = cv___store3;
     cv___store3 = 0;
 }

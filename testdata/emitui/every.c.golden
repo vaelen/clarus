@@ -6,6 +6,8 @@
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void * clar_fn_rtTextNew(void);
+static void clar_fn_rtTextRetain(void * cv_t);
+static void clar_fn_rtTextRelease(void * cv_t);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
 static void * clar_fn_rtMapNew(int32_t cv_valsize);
@@ -17,9 +19,11 @@ extern int32_t rt_ext_TextSetHandleSize(void *, int32_t);
 extern void rt_ext_TextBlockMoveData(void *, void *, int32_t);
 extern void rt_ext_TextSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_TextPanic(const uint8_t *);
-extern void * rt_ext_TextNewRaw(void);
 extern void * rt_ext_TextNewPtr(int32_t);
 extern void rt_ext_TextDisposePtr(void *);
+extern void * rt_ext_TextNewHandle(int32_t);
+extern void rt_ext_TextDisposeHandle(void *);
+extern void rt_ext_TextRcCheck(void *, int32_t);
 extern void * rt_ext_ListHandleDeref(void *);
 extern int32_t rt_ext_ListSetHandleSize(void *, int32_t);
 extern void rt_ext_ListBlockMoveData(void *, void *, int32_t);
@@ -117,6 +121,8 @@ static int32_t clar_fn_rtStrIndexOfStr(void * cv_s, void * cv_needle);
 static int32_t clar_fn_rtStrIndexOfChar(void * cv_s, int32_t cv_c);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
+static void clar_fn_rtTextRetain(void * cv_t);
+static void clar_fn_rtTextRelease(void * cv_t);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void clar_fn_rtTextStoreText(void * cv_dst, void * cv_src);
 static void clar_fn_rtTextConcat(void * cv_dst, void * cv_a, void * cv_bstr, void * cv_btext);
@@ -482,8 +488,45 @@ static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
 }
 
 static void * clar_fn_rtTextNew(void) {
-    return rt_ext_TextNewRaw();
+    void * cv_t;
+    cv_t = 0;
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    cv_t = rt_ext_TextNewPtr(32);
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    (cv_rt)->cv_rc = 1;
+    (cv_rt)->cv_len = 0;
+    (cv_rt)->cv_cap = 0;
+    (cv_rt)->cv_h = rt_ext_TextNewHandle(0);
+    return cv_t;
     return 0;
+}
+
+static void clar_fn_rtTextRetain(void * cv_t) {
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    if (cv_t == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    (cv_rt)->cv_rc = ((cv_rt)->cv_rc + 1);
+}
+
+static void clar_fn_rtTextRelease(void * cv_t) {
+    clar_rec_RtText * cv_rt;
+    cv_rt = 0;
+    if (cv_t == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rt = ((clar_rec_RtText *)(cv_t));
+    if ((cv_rt)->cv_rc <= 0) {
+        rt_ext_TextRcCheck(cv_t, (cv_rt)->cv_rc);
+    }
+    (cv_rt)->cv_rc = ((cv_rt)->cv_rc - 1);
+    if ((cv_rt)->cv_rc == 0) {
+        rt_ext_TextDisposeHandle((cv_rt)->cv_h);
+        rt_ext_TextDisposePtr(cv_t);
+    }
 }
 
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s) {
