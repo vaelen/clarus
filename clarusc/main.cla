@@ -454,6 +454,13 @@ on App.startCLI(args: list of string) {
         // functions are free to call str.cla's (peekb/pokeb-based) helpers.
         cpTextPorted = true
         neededMods.add("text.cla")
+        // Plan 5c wave2a Task 2: cpTextArcPorted is a SEPARATE flag from
+        // cpTextPorted just above (that one gates Text's data operations,
+        // wave1 Task 9; this one gates Text's retain/release/free traffic,
+        // now that text.cla grows rtTextRetain/rtTextRelease too) -- same
+        // "unconditional, set true directly alongside the decision"
+        // convention, since text.cla is always in the manifest regardless.
+        cpTextArcPorted = true
         // Task 10: list.cla is the third UNCONDITIONAL entry -- every
         // program uses List (Ch5's built-in growable collection type), so
         // it's always pulled in and cpListPorted is always true, same

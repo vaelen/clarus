@@ -124,13 +124,14 @@ void rt_ext_StrPanic(const uint8_t *msg) {
 void rt_ext_StrBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
 
 /* rt_ext_TextHandleDeref/TextSetHandleSize/TextBlockMoveData/
- * TextSetLastErr/TextPanic/TextNewRaw/TextNewPtr/TextDisposePtr: text.cla's
- * own extern names (Plan 5b Task 9), same reasoning as the host .inc --
+ * TextSetLastErr/TextPanic/TextNewPtr/TextDisposePtr: text.cla's own
+ * extern names (Plan 5b Task 9), same reasoning as the host .inc --
  * text.cla is unconditional from this task forward, so it can't share a
  * name with the generic/Str/Ser waist externs a user program or another
- * runtime module might also declare. rt_ext_TextNewRaw delegates the WHOLE
- * rt_text_new construction (Task 9's "external delegation" birth-allocation
- * choice), so rc is written exactly once, entirely in C. */
+ * runtime module might also declare. (rt_ext_TextNewRaw, the one-time
+ * "whole rt_text_new delegation" birth-allocation wrapper, is gone as of
+ * Plan 5c wave2a Task 2 -- birth moved into text.cla itself, built from
+ * rt_ext_TextNewPtr/TextNewHandle below.) */
 void *rt_ext_TextHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_TextSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_TextBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
@@ -148,7 +149,6 @@ void rt_ext_TextPanic(const uint8_t *msg) {
     buf[n] = '\0';
     rt_panic(buf);
 }
-void *rt_ext_TextNewRaw(void) { return (void *)rt_text_new(); }
 /* rt_ext_TextNewPtr (review round 1 fix, Critical): text.cla's own
  * scratch-buffer allocator, a NewPtr block mirroring rt_text_concat's own
  * scratch choice (rt_core.inc:307-308) exactly. Checks for NULL and panics
@@ -163,10 +163,12 @@ void *rt_ext_TextNewPtr(int32_t size) {
 void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 /* rt_ext_TextNewHandle/TextDisposeHandle/TextRcCheck (Plan 5c Task 1: ARC
- * waist externs): mirrors internal/build/rt/rt_ext_host.inc's block
- * exactly, except rt_ext_TextRcCheck's body is a no-op -- no ledger on Mac,
- * and the real Memory Manager has no equivalent lookup (same "Mac: no-op"
- * rule rt_rc_check itself uses, rt_core.inc:765-766). */
+ * waist externs; live as of Task 2, which ports rtTextNew/rtTextRetain/
+ * rtTextRelease into text.cla against exactly these three): mirrors
+ * internal/build/rt/rt_ext_host.inc's block exactly, except
+ * rt_ext_TextRcCheck's body is a no-op -- no ledger on Mac, and the real
+ * Memory Manager has no equivalent lookup (same "Mac: no-op" rule
+ * rt_rc_check itself uses, rt_core.inc:765-766). */
 void *rt_ext_TextNewHandle(int32_t n) {
     void *h = (void *)NewHandle((Size)n);
     if (!h) rt_core_oom();

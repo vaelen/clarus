@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc2_text.cla: Plan 5c wave2a Task 2's own regression fixture for the
+// PORTED text ARC (rtTextRetain/rtTextRelease, runtime/clarus/text.cla),
+// run via the internal/lowlevel harness (clarusc-emitted C, host cc against
+// rt.c, under CLARUS_MEM_STRICT=1 CLARUS_MEM_PARANOID=1). Binds one text to
+// two variables (`b = a`, an alias -- rc 1 -> 2, exercising rtTextRetain),
+// then reassigns one of the aliases to a second, independent text (`b =
+// c`): this releases the shared box back down (rc 2 -> 1, exercising
+// rtTextRelease's decrement-WITHOUT-dispose path -- `a` still owns it) and
+// retains c's box (rc 1 -> 2, now shared by b and c instead). Letting
+// `a`/`b`/`c` all run off the end of App.startCLI's own scope exercises
+// rtTextRelease's rc==0 dispose path twice more: once for `a`'s
+// now-solely-owned box, and once (split across b's and c's own separate
+// scope-exit release calls, same "release the same still-shared box from
+// two different call sites" shape ARC's rt_list_lastref/rt_map_lastref
+// guard exists for containers -- Text has no elements to walk, so no
+// double-free hazard here, just two ordinary decrements landing on zero
+// once) for the reassigned pair's box. live==0 (checked by the harness
+// itself, not visible in this file's .out) is the leak-gate half of this
+// fixture's verification; the alert()s below (same ok/FAIL idiom as
+// exttext.cla) are the content half -- proving the survivor still reads
+// back correctly, not just that nothing crashed or leaked.
+
+func makeText(s: string): text {
+    var t: text = ""
+    t.append(s)
+    return t
+}
+
+on App.startCLI(args: list of string) {
+    var a: text
+    var b: text
+    var c: text
+
+    a = makeText("shared")
+    b = a
+    c = makeText("other")
+
+    b = c
+
+    if a.length == 6 and a[0] == 's' and a[5] == 'd' {
+        alert("text-survivor-ok")
+    } else {
+        alert("text-survivor-FAIL")
+    }
+    if b.length == 5 and b[0] == 'o' and c.length == 5 and c[0] == 'o' {
+        alert("text-reassign-ok")
+    } else {
+        alert("text-reassign-FAIL")
+    }
+}

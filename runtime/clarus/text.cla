@@ -20,16 +20,27 @@
 // rt_text_layout_check typedef in rt_core.inc, right after struct rt_text's
 // own definition) so this overlay and the real C struct can never drift.
 //
-// RC boundary (READ-NEVER-WRITTEN, no exceptions): this module never writes
-// `.rc`. Birth allocation goes through TextNewRaw, an external delegating
-// to the C rt_text_new -- every rc byte stays entirely C-owned, written
-// only by that one C function (rc=1 at construction) and by
-// rt_text_retain/rt_text_release (cprint.cla's IRetain/IRelease arm, still
-// bare C calls -- untouched by this task). rt_text_free/rt_text_release,
-// fpNewTmp's temp-cleanup string, and the two UI call sites
-// (IUiGetTextviewText's rt_text_new, fpUiEditStmt) all stay C for the same
-// reason (or, for the UI sites, because they're a deliberate Ch10/mac-
-// target-4c exclusion, unrelated to RC).
+// RC boundary (Plan 5c wave2a Task 2 update -- rc is now Clarus-owned for
+// text): birth (rtTextNew, below) constructs the WHOLE box itself, via
+// TextNewPtr + overlay pokes, instead of delegating to C; rtTextRetain/
+// rtTextRelease do the rc arithmetic and the rc==0 dispose sequence here
+// too, calling TextRcCheck (a Task 1 waist extern) only on the cold
+// over-release path (`rc <= 0`), never unconditionally the way the C
+// reference's rt_rc_check call does -- Plan 5c's own design decision
+// ("rc guard as cold-path extern," see the wave2a plan doc). cprint.cla's
+// cpTextArcPorted flag (unconditional true) redirects every text ARC
+// emission site to clar_fn_rtTextRetain/clar_fn_rtTextRelease: the
+// IRetain/IRelease/ITextFreeVar intrinsics, cpEmitRetain/cpEmitRelease's
+// own KText arms (including the KText-element case inside the list/map
+// release walks), fpRetainVal/fpReleaseVal's KText dispatch, and
+// fpNewTmp's own tracked-temp release composition. The C originals
+// (rt_text_new/rt_text_retain/rt_text_release, rt_core.inc) remain,
+// forever, as the frozen Go compiler's own backend and the differential-
+// testing oracle -- never called by cprint's emitted C once
+// cpTextArcPorted is set. The two UI call sites (IUiGetTextviewText's bare
+// rt_text_new(), fpUiEditStmt) stay C for an unrelated reason -- a
+// deliberate Ch10/mac-target-4c exclusion, not an RC one -- untouched by
+// this task.
 //
 // Relocation discipline: `h` is a Handle -- SetHandleSize (the growth
 // primitive) can move the block it points to, and on a real Memory Manager
@@ -57,27 +68,21 @@
 // rtStrIndex/rtStrSlice's own str.cla contract), never clamps.
 //
 // TextHandleDeref/TextSetHandleSize/TextBlockMoveData/TextSetLastErr/
-// TextPanic/TextNewRaw/TextNewPtr/TextDisposePtr are text.cla's OWN extern
-// names, distinct from the public HandleDeref/BlockMoveData/SetLastErr/
-// Panic/NewPtr names ser.cla (conditional) and any user program might also
-// declare -- same collision hazard str.cla's own header comment documents
-// (checkFuncSig -> scopeDeclare keys purely on name, no signature
-// comparison), and the same fix: distinct Text-prefixed names sidestep it.
-// Each is backed by an rt_ext_Text* wrapper in BOTH
-// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
-// delegating to the same underlying primitives the generic/Str/Ser wrappers
-// already call.
+// TextPanic/TextNewPtr/TextDisposePtr/TextNewHandle/TextDisposeHandle/
+// TextRcCheck are text.cla's OWN extern names, distinct from the public
+// HandleDeref/BlockMoveData/SetLastErr/Panic/NewPtr names ser.cla
+// (conditional) and any user program might also declare -- same collision
+// hazard str.cla's own header comment documents (checkFuncSig ->
+// scopeDeclare keys purely on name, no signature comparison), and the same
+// fix: distinct Text-prefixed names sidestep it. Each is backed by an
+// rt_ext_Text* wrapper in BOTH internal/build/rt/rt_ext_host.inc and
+// runtime/mac/rt_ext_mac.inc, delegating to the same underlying primitives
+// the generic/Str/Ser wrappers already call.
 external func TextHandleDeref(h: ptr): ptr
 external func TextSetHandleSize(h: ptr, n: int): int
 external func TextBlockMoveData(src: ptr, dst: ptr, count: int)
 external func TextSetLastErr(code: int, msg: string)
 external func TextPanic(msg: string)
-// TextNewRaw (rt_core.inc:266-276, rt_text_new): the CHOSEN birth-allocation
-// option (Task 9 brief) -- delegates the WHOLE construction (NewPtr box +
-// NewHandle(0) bytes + rc=1 + len=0 + cap=0) to C, so rc is written exactly
-// once, entirely inside C, never by this module. rtTextNew (below) is just
-// this external call.
-external func TextNewRaw(): ptr
 // TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
 // allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own
 // NewPtr choice exactly (rt_core.inc:307). rt_ext_TextNewPtr panics
@@ -92,6 +97,18 @@ external func TextNewRaw(): ptr
 // both the closer-to-the-primitive AND the smaller-diff option here).
 external func TextNewPtr(size: int): ptr
 external func TextDisposePtr(p: ptr)
+// TextNewHandle/TextDisposeHandle/TextRcCheck (Task 1, Plan 5c wave2a): the
+// ARC waist externs rtTextNew/rtTextRetain/rtTextRelease below use.
+// TextNewHandle oom-panics on NULL itself (same "check at the primitive"
+// placement as TextNewPtr just above) -- it never returns null, so no
+// separate check is needed at rtTextNew's own call site. TextRcCheck is the
+// cold-path over-release guard: rtTextRelease only calls it once it has
+// already determined `rc <= 0` itself (the host body then prints "rt_rc:
+// over-release at %s" and aborts; the Mac body is a no-op) -- never called
+// unconditionally the way the C reference's rt_rc_check is.
+external func TextNewHandle(n: int): ptr
+external func TextDisposeHandle(h: ptr)
+external func TextRcCheck(box: ptr, rc: int)
 
 // RtText (Ch13: Overlay Records) mirrors rt_core.inc:259's `struct rt_text
 // { int32_t rc; Handle h; int32_t len; int32_t cap; }` field-for-field --
@@ -135,10 +152,80 @@ func rtTextGrow(t: ptr, need: int) {
     rt.cap = newcap
 }
 
-// rtTextNew (rt_core.inc:266-276): just the external delegation -- see
-// TextNewRaw's own doc comment above.
+// rtTextBoxSize is TextNewPtr's argument for rtTextNew's box below -- this
+// language has no sizeof operator, so it's a hand-derived constant rather
+// than an exact `sizeof(struct rt_text)`: rt_core.inc's own
+// rt_text_layout_check pins struct rt_text to exactly `{ int32_t rc; Handle
+// h; int32_t len; int32_t cap; }` (four fields), but a Handle is a native
+// pointer, whose width (and the padding a natural-alignment C struct layout
+// inserts around it) differs by target -- 24 bytes measured on this repo's
+// x86_64/arm64 differential-test host (rc@0, 4 bytes padding, h@8, len@16,
+// cap@20), 16 bytes on the real 4-byte-pointer 68k target (no padding
+// needed there). 32 (four fields, each conservatively budgeted a full
+// 8-byte pointer-width slot) safely covers both: TextNewPtr only guarantees
+// "at least this many bytes," so a little slack here is harmless, unlike an
+// UNDER-sized box, which would corrupt whatever heap memory follows it.
+const rtTextBoxSize: int = 32
+
+// rtTextNew (rt_core.inc:278-288, rt_text_new) -- Plan 5c wave2a Task 2:
+// birth allocation is now entirely Clarus-owned. Mirrors the C reference
+// exactly except for ordering rc/len/cap before h (matches the Task 2
+// brief's own worked order; the C reference pokes h before len/cap, which
+// makes no observable difference -- t is not yet reachable from anywhere
+// else, so no ordering here is racy or otherwise significant).
+// TextNewHandle(0) never returns null (it oom-panics itself, see its own
+// extern doc comment above), so there is no separate NULL check here,
+// matching TextNewPtr's own "check at the primitive" placement.
 func rtTextNew(): ptr {
-    return TextNewRaw()
+    var t: ptr
+    var rt: RtText
+
+    t = TextNewPtr(rtTextBoxSize)
+    rt = RtText(t)
+    rt.rc = 1
+    rt.len = 0
+    rt.cap = 0
+    rt.h = TextNewHandle(0)
+    return t
+}
+
+// rtTextRetain (rt_core.inc:800-805, rt_text_retain) -- Plan 5c wave2a Task
+// 2: null-safe increment, no over-release guard (Task 1's design decision:
+// the guard is a release-only cold path -- see TextRcCheck's own doc
+// comment above and rtTextRelease below).
+func rtTextRetain(t: ptr) {
+    var rt: RtText
+
+    if t == ptr(0) {
+        return
+    }
+    rt = RtText(t)
+    rt.rc = rt.rc + 1
+}
+
+// rtTextRelease (rt_core.inc:807-816, rt_text_release; the rt_text_free
+// alias, rt_core.inc:817, is exactly this function -- cprint.cla's
+// ITextFreeVar redirects straight to clar_fn_rtTextRelease, no separate
+// rtTextFree exists) -- Plan 5c wave2a Task 2: null-safe; the guard runs
+// ONLY on the cold `rc <= 0` path (TextRcCheck's own doc comment above)
+// rather than unconditionally the way the C reference's rt_rc_check call
+// does; decrements regardless; disposes the Handle then the box itself
+// once rc reaches 0.
+func rtTextRelease(t: ptr) {
+    var rt: RtText
+
+    if t == ptr(0) {
+        return
+    }
+    rt = RtText(t)
+    if rt.rc <= 0 {
+        TextRcCheck(t, rt.rc)
+    }
+    rt.rc = rt.rc - 1
+    if rt.rc == 0 {
+        TextDisposeHandle(rt.h)
+        TextDisposePtr(t)
+    }
 }
 
 // rtTextStore (rt_core.inc:278-285): clamped-to-nothing copy -- Text grows
