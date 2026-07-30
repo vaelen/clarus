@@ -182,6 +182,29 @@ void *rt_ext_TextNewPtr(int32_t size) {
 }
 void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_TextNewHandle/TextDisposeHandle/TextRcCheck (Plan 5c Task 1: ARC
+ * waist externs): text.cla's own NewHandle/DisposeHandle wrappers and its rc
+ * over-release guard, same "own extern name" reasoning as the rest of this
+ * family -- text.cla is unconditional, so it can't share a name with the
+ * generic waist externs. rt_ext_TextNewHandle panics via rt_core_oom() on
+ * NULL, the same placement rt_core_new_struct uses for every NewPtr/
+ * NewHandle in this runtime. rt_ext_TextRcCheck's host body mirrors
+ * rt_rc_check's host branch (rt_core.inc:768-774) exactly, so an
+ * over-release reached via this extern produces the same diagnostic as one
+ * caught internally. */
+void *rt_ext_TextNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_TextDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_TextRcCheck(void *box, int32_t rc) {
+    if (rc <= 0) {
+        fprintf(stderr, "rt_rc: over-release at %s\n", rt_mem_tag_of(box));
+        abort();
+    }
+}
+
 /* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
  * ListNewRaw: list.cla's own extern names (Plan 5b Task 10), same reasoning
  * as the Text family above -- list.cla is UNCONDITIONALLY included in every
@@ -205,6 +228,33 @@ void rt_ext_ListPanic(const uint8_t *msg) {
 }
 void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
+/* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
+ * ListDisposePtr (Plan 5c Task 1: ARC waist externs): list.cla's own
+ * NewHandle/DisposeHandle/NewPtr/DisposePtr wrappers and its rc
+ * over-release guard, same reasoning as the Text family above.
+ * rt_ext_ListNewPtr mirrors rt_ext_TextNewPtr's oom-panic placement
+ * exactly (Text already carries NewPtr/DisposePtr from Task 9, so List's
+ * own pair lands here instead); rt_ext_ListRcCheck's host body mirrors
+ * rt_rc_check's host branch (rt_core.inc:768-774) exactly. */
+void *rt_ext_ListNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_ListDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_ListRcCheck(void *box, int32_t rc) {
+    if (rc <= 0) {
+        fprintf(stderr, "rt_rc: over-release at %s\n", rt_mem_tag_of(box));
+        abort();
+    }
+}
+void *rt_ext_ListNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
+
 /* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
  * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), same reasoning
  * as the List family above -- map.cla is UNCONDITIONALLY included in every
@@ -227,5 +277,28 @@ void rt_ext_MapPanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
+
+/* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
+ * (Plan 5c Task 1: ARC waist externs): map.cla's own NewHandle/
+ * DisposeHandle/NewPtr/DisposePtr wrappers and its rc over-release guard,
+ * same reasoning as the List family above. */
+void *rt_ext_MapNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_MapDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_MapRcCheck(void *box, int32_t rc) {
+    if (rc <= 0) {
+        fprintf(stderr, "rt_rc: over-release at %s\n", rt_mem_tag_of(box));
+        abort();
+    }
+}
+void *rt_ext_MapNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 #endif /* CLARUS_RT_EXT_HOST_INC */

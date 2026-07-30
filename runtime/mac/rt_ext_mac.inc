@@ -162,6 +162,19 @@ void *rt_ext_TextNewPtr(int32_t size) {
 }
 void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_TextNewHandle/TextDisposeHandle/TextRcCheck (Plan 5c Task 1: ARC
+ * waist externs): mirrors internal/build/rt/rt_ext_host.inc's block
+ * exactly, except rt_ext_TextRcCheck's body is a no-op -- no ledger on Mac,
+ * and the real Memory Manager has no equivalent lookup (same "Mac: no-op"
+ * rule rt_rc_check itself uses, rt_core.inc:765-766). */
+void *rt_ext_TextNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_TextDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_TextRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
+
 /* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
  * ListNewRaw: list.cla's own extern names (Plan 5b Task 10), mirroring
  * internal/build/rt/rt_ext_host.inc's List block exactly -- same reasoning
@@ -178,6 +191,25 @@ void rt_ext_ListPanic(const uint8_t *msg) {
 }
 void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
 
+/* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
+ * ListDisposePtr (Plan 5c Task 1: ARC waist externs): mirrors
+ * internal/build/rt/rt_ext_host.inc's block exactly, except
+ * rt_ext_ListRcCheck's body is a no-op, same reasoning as the Text family
+ * above. */
+void *rt_ext_ListNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_ListDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_ListRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
+void *rt_ext_ListNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
+
 /* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
  * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), mirroring
  * internal/build/rt/rt_ext_host.inc's Map block exactly -- same reasoning
@@ -193,5 +225,24 @@ void rt_ext_MapPanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
+
+/* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
+ * (Plan 5c Task 1: ARC waist externs): mirrors
+ * internal/build/rt/rt_ext_host.inc's block exactly, except
+ * rt_ext_MapRcCheck's body is a no-op, same reasoning as the List family
+ * above. */
+void *rt_ext_MapNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_MapDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_MapRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
+void *rt_ext_MapNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 #endif /* CLARUS_RT_EXT_MAC_INC */
