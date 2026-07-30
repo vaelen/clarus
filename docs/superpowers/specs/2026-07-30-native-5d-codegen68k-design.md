@@ -146,9 +146,8 @@ Three rings:
 
 1. **Encoder unit tests** against committed listing + byte goldens.
 2. **vasm round-trip oracle (host):** the listing printer's output is
-   assembled by `vasm/vasmm68k_mot -m68000 -no-opt -Ftest` (vasm 1.8g,
-   installed in-repo at `vasm/`; this build has only the `test` output
-   module, whose `data(n):` lines carry the encoded bytes) and
+   assembled by `vasm/vasmm68k_mot -m68000 -no-opt -Fbin` (vasm 1.8g,
+   installed in-repo at `vasm/`) and the resulting flat binary is
    **byte-compared** against our encoder's output for the same
    instruction stream. `-no-opt` is required — vasm otherwise rewrites
    branch sizes and addressing modes, assembling something other than
