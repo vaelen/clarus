@@ -22,6 +22,16 @@ func makeGreeting(a: string(255), b: string(255)): string(255) {
     return full
 }
 
+// concatDirect (deferred minor from Task 8's report: "no golden exercises
+// `return a + b` directly") -- unlike makeGreeting above (SStoreStr from
+// str_concat, then a plain-var SReturn), this is an SReturn whose SOURCE
+// expression is itself the str_concat intrinsic: cgEmitReturnStr's own
+// str_concat arm (the hidden-result-pointer sibling of
+// cgEmitStoreStr's), not yet directly exercised by any fixture.
+func concatDirect(a: string(255), b: string(255)): string(255) {
+    return a + b
+}
+
 on App.launch {
     var s1: string(255)
     var s2: string(255)
@@ -32,6 +42,7 @@ on App.launch {
     s2 = " world"
     combined = s1 + s2
     combined = makeGreeting(s1, s2)
+    combined = concatDirect(s1, s2)
     isEqual = s1 == s2
     s1 = "hello"
     s2 = "world"

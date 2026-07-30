@@ -1098,14 +1098,69 @@ func cgConv(e: int) {
     // right bit pattern.
 }
 
+// cgIntrPeekPokeSize maps a peek*/poke* intrinsic name to its access width
+// in bytes (Ch13, rt.h's rt_peekb/w/l -- str.cla's own doc comment: every
+// byte this runtime touches through the waist goes through peekb/pokeb or
+// StrBlockMoveData).
+func cgIntrPeekPokeSize(nm: string): int {
+    if nm == "peekb" or nm == "pokeb" {
+        return 1
+    } else if nm == "peekw" or nm == "pokew" {
+        return 2
+    }
+    return 4
+}
+
+// cgIntrPeek inlines peekb/peekw/peekl as MOVEA.L addr,A0; MOVE.<sz>
+// (A0),D0 -- zero-extending first for B/W widths (mirrors rt.h's
+// rt_peekb/rt_peekw, which both `return (int32_t)` an unsigned/uint16_t
+// value: peekb/peekw are UNSIGNED reads, never sign-extended; peekl is
+// already a full 32-bit value, no extension needed).
+func cgIntrPeek(e: int, nm: string) {
+    var a0e: int
+    var sz: int
+
+    a0e = irIntrArgsHead(e)
+    sz = cgIntrPeekPokeSize(nm)
+    cgExpr(a0e)
+    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    if sz < 4 {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+    }
+    a68Emit(OpMove, sz, AmInd, 0, 0, AmDn, 0, 0)
+}
+
+// cgIntrPoke inlines pokeb/pokew/pokel as MOVEA.L addr,A0; <evaluate
+// value>; MOVE.<sz> D0,(A0) -- rt.h's rt_pokeb/w/l mirror (truncating
+// stores, no extension needed on the write side). KNOWN LIMITATION: the
+// value expr is evaluated AFTER addr is stashed in A0 (the brief's own
+// locked sequence), so a value expr containing a nested call that itself
+// uses A0 as scratch would clobber addr -- no fixture here exercises that
+// shape (every poke call is a literal/simple expr), same class of
+// unexercised edge cgCallExtPascal's own doc comment flags.
+func cgIntrPoke(e: int, nm: string) {
+    var a0e: int
+    var a1e: int
+    var sz: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    sz = cgIntrPeekPokeSize(nm)
+    cgExpr(a0e)
+    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    cgExpr(a1e)
+    a68Emit(OpMove, sz, AmDn, 0, 0, AmInd, 0, 0)
+}
+
 // cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
 // ("ui_*") are 5e (native UI) territory -- hard error, matching
 // cg68AddRoots'/the brief's own "nat*"-prefix convention for name-based
-// dispatch. str_cmp is the one intrinsic this task's fixtures need in
-// VALUE position (str_concat/etc only ever appear as an SStoreStr/
-// SReturn source -- see cgEmitStoreStr/cgEmitReturnStr); every other
-// intrinsic is a TODO placeholder that still leaves D0 in a defined
-// state (Task 13 completes the real dispatch).
+// dispatch. str_cmp and peek*/poke* (Task 9) are the intrinsics this
+// task's fixtures need in VALUE/statement position (str_concat/etc only
+// ever appear as an SStoreStr/SReturn source -- see cgEmitStoreStr/
+// cgEmitReturnStr); every other intrinsic is a TODO placeholder that
+// still leaves D0 in a defined state (Task 13 completes the real
+// dispatch).
 func cgIntr(e: int) {
     var nm: string
     var a0e: int
@@ -1130,6 +1185,14 @@ func cgIntr(e: int) {
         if not cgCallRuntime("rtStrCmp", args, addrs) {
             quit 1
         }
+        return
+    }
+    if nm == "peekb" or nm == "peekw" or nm == "peekl" {
+        cgIntrPeek(e, nm)
+        return
+    }
+    if nm == "pokeb" or nm == "pokew" or nm == "pokel" {
+        cgIntrPoke(e, nm)
         return
     }
     a68Comment("TODO intr " + nm + ": unsupported this task")
@@ -1159,13 +1222,14 @@ func cgExpr(e: int) {
         cgCallFnScalar(e)
     } else if k == EIntr {
         cgIntr(e)
+    } else if k == ECallExt {
+        cgCallExt(e)
     } else {
         // EStrConst (str value in a scalar context), EFieldRef/EIndexRef
-        // (records/arrays, Task 12/13), ECallExt (native trap-call ABI,
-        // Task 11), ENewRec (Task 12) -- none of these are exercised by
-        // this task's fixtures; degrade to a deterministic zero rather
-        // than crash whatever ambient reachable code (e.g. the runtime
-        // library) happens to use one.
+        // (records/arrays, Task 12/13), ENewRec (Task 12) -- none of these
+        // are exercised by this task's fixtures; degrade to a
+        // deterministic zero rather than crash whatever ambient reachable
+        // code (e.g. the runtime library) happens to use one.
         a68Comment("TODO cgExpr <kind " + numToStr(int(k)) + ">: unsupported this task")
         a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
     }
@@ -1346,6 +1410,252 @@ func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of boo
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
     cgCleanupStack(total)
     return true
+}
+
+// ================================================================
+// Task 9: ECallExt -- native trap-call ABI. Dispatches on the extern's
+// OWN registered clause (irExternConv, Task 2's registry: 1=pascal trap,
+// 2=reg trap, 3=inline deref, 4=inline nop, 0=no clause) rather than on
+// anything about the call site -- mirrors cgIntr's own by-NAME dispatch
+// shape, one level removed (by clause instead of by intrinsic name).
+// ================================================================
+
+// cgExternIdxByName is irExternCount()'s own linear scan (ir.cla's
+// irIsExtern runs the identical scan for its bool-only answer, but this
+// file needs the INDEX too, to read back irExternConv/irExternTrap/
+// irExternParam/irExternRet -- the Task 9 brief's file list only names
+// cg68k.cla as a code file to touch, so the scan is re-run locally here
+// rather than widening ir.cla's public surface for one caller).
+func cgExternIdxByName(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irExternCount() {
+        if irExternName(i) == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cgCallExtReg implements the locked REG rule (plan doc, 2026-07-30,
+// "Design decisions locked during planning"): ptr args -> A0,A1 in
+// declaration order; int/bool/char args -> D0,D1 in declaration order; a
+// ptr result reads back from A0, any other (non-void) result from D0.
+// checkExternFunc guarantees at most 2 ptr + 2 int/bool/char args and no
+// str/text for a `reg` clause, so there is never a 3rd slot to assign.
+//
+// Every arg is evaluated to the STACK first (a plain 4-byte push, left to
+// right -- ptr is already 4 bytes and cgExpr's own int/bool/char values
+// are always left fully zero-extended in D0, so a uniform .L push is
+// correct for every reg-trap arg type), THEN popped into its target
+// register in REVERSE (top-of-stack-first) order. This is the "naive but
+// clobber-safe" discipline the brief calls for: cgExpr itself freely uses
+// D0/D1/A0/A1 as scratch (Task 8's own evaluation-discipline doc), so
+// loading arg 1 into its final register and THEN evaluating arg 2 would
+// risk arg 2's own cgExpr clobbering arg 1's register before the trap
+// ever runs; stack-mediated push-then-pop sidesteps that regardless of
+// how many scratch registers any one arg's subexpression needs.
+func cgCallExtReg(e: int, xi: int) {
+    var a: int
+    var kinds: list of int
+    var regs: list of int
+    var ptrSlot: int
+    var scalarSlot: int
+    var n: int
+    var i: int
+    var retTy: int
+
+    kinds = cgFreshIntList()
+    regs = cgFreshIntList()
+    ptrSlot = 0
+    scalarSlot = 0
+    n = 0
+    a = irCallExtArgsHead(e)
+    while a != -1 {
+        cgExpr(a)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        if irtKind(irExprType(a)) == KPtr {
+            kinds.add(1)
+            regs.add(ptrSlot)
+            ptrSlot = ptrSlot + 1
+        } else {
+            kinds.add(0)
+            regs.add(scalarSlot)
+            scalarSlot = scalarSlot + 1
+        }
+        n = n + 1
+        a = irExprNext(a)
+    }
+    i = n - 1
+    while i >= 0 {
+        if kinds[i] == 1 {
+            a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, regs[i], 0)
+        } else {
+            a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, regs[i], 0)
+        }
+        i = i - 1
+    }
+    a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
+    retTy = irExternRet(xi)
+    if irtKind(retTy) == KPtr {
+        // MOVEA/MOVE.L A0,D0 -- bring the ptr result across to satisfy
+        // cgExpr's own "value always ends in D0" postcondition.
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+    }
+    // else: KVoid (nothing to bring back) or int/bool/char -- already in
+    // D0, the REG rule's own "other results from D0" clause.
+}
+
+// cgCallExtPascal implements the locked PASCAL rule: reserve a result
+// slot first when the extern returns a value (CLR.L for int/ptr, CLR.W
+// for bool/char -- Toolbox convention: a byte-sized Pascal parameter or
+// result still occupies a full stack WORD, with the value in the
+// LOW-order byte and the high byte undefined padding -- verified against
+// the classic 68k Mac runtime calling-convention docs (Apple's "Classic
+// 68K Stack Structure and Calling Conventions" / "Pascal Calling
+// Conventions" reference; see the Task 9 report), NOT the high-byte
+// placement an earlier draft of this brief speculated), push args
+// left-to-right (str/text by ADDRESS via cgExprAddr, matching
+// fpCallExt's own C-seam marshaling of a KStr argument through
+// fpStrAddr; int/ptr as .L, bool/char as .W -- the already-zero-extended
+// D0 value's low byte lands in the pushed word's low byte automatically,
+// no shift needed), the trap word, then pop the result.
+//
+// The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
+// executing a Pascal-convention trap (Apple's Trap Manager docs: "the
+// calling routine's parameters are also popped off the stack" by the
+// callee) -- this code never emits a post-trap ADDA/ADDQ for the arg
+// bytes, only the final MOVE(.W/.L) (A7)+,D0 that retrieves the result
+// slot the trap dispatcher left behind.
+func cgCallExtPascal(e: int, xi: int) {
+    var a: int
+    var t: int
+    var retTy: int
+    var retIsWord: bool
+
+    retTy = irExternRet(xi)
+    retIsWord = irtKind(retTy) == KBool or irtKind(retTy) == KChar
+    if irtKind(retTy) != KVoid {
+        if retIsWord {
+            a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
+        } else {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+        }
+    }
+    a = irCallExtArgsHead(e)
+    while a != -1 {
+        t = irExprType(a)
+        if irtKind(t) == KStr or irtKind(t) == KText {
+            cgExprAddr(a)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        } else if irtKind(t) == KBool or irtKind(t) == KChar {
+            cgExpr(a)
+            a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        } else {
+            cgExpr(a)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        }
+        a = irExprNext(a)
+    }
+    a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
+    if irtKind(retTy) != KVoid {
+        if retIsWord {
+            // Zero-extend: CLR.L D0 first (MOVE.W leaves D0's upper 16
+            // bits untouched, cgLoadVar's own bool/char pattern), then
+            // mask off any stray high-byte padding within the popped
+            // word itself (AND.L #255) -- belt-and-suspenders for a
+            // "high byte undefined" result slot, matching the zero/
+            // sign-extend-per-type instruction in the locked rule.
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+            a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
+            a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
+        } else {
+            a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+        }
+    }
+}
+
+// cgCallExtDeref implements `= inline deref`: MOVEA.L arg,A0; MOVE.L
+// (A0),D0. checkExternFunc guarantees the signature is exactly (ptr):
+// ptr, so there is exactly one arg and no result-shape branching needed.
+func cgCallExtDeref(e: int) {
+    var a0e: int
+
+    a0e = irCallExtArgsHead(e)
+    cgExpr(a0e)
+    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmInd, 0, 0, AmDn, 0, 0)
+}
+
+// cgCallExtNop implements `= inline nop`: evaluate every arg left to
+// right, for side effects only, and emit nothing else -- checkExternFunc
+// guarantees a void return, so there is no result to produce. Each arg is
+// simply cgExpr'd and its D0 result discarded (never pushed) -- nothing
+// downstream needs the value, so there is no stack bookkeeping to keep
+// balanced.
+func cgCallExtNop(e: int) {
+    var a: int
+
+    a = irCallExtArgsHead(e)
+    while a != -1 {
+        cgExpr(a)
+        a = irExprNext(a)
+    }
+}
+
+// cgCallExtNatFallback resolves a clause-less extern (irExternConv(xi) ==
+// 0) to a Clarus function named nat_<ExternName> (the plan's own
+// "extern-to-native fallback" design decision) -- structurally
+// cgCallFnScalar with a different name mangling and error message. A
+// str/text arg marshals BY VALUE through the ordinary cgPushArgs
+// block-copy path (unlike fpCallExt's C-seam, which marshals str BY
+// ADDRESS to match rt_ext_*'s `const uint8_t *` parameter) -- this is
+// deliberate, not a mismatch: nat_<Name> is an ORDINARY Clarus function,
+// declared with the SAME str-by-value param type the extern itself
+// declares (the plan's own native.cla inventory: `func
+// nat_CorePanic(msg: str 255)`, str BY VALUE, never a ptr-taking bridge
+// function) -- so the existing ECallFn-shaped call convention already
+// does the right thing with no special-casing.
+func cgCallExtNatFallback(e: int) {
+    var natName: int
+    var fi: int
+    var total: int
+
+    natName = intern("nat_" + poolGet(irCallExtName(e)))
+    fi = findIRFuncIdxByName(natName)
+    if fi == -1 {
+        log("extern " + poolGet(irCallExtName(e)) + " has no trap clause and no nat_ fallback")
+        quit 1
+    }
+    total = cgPushArgs(irCallExtArgsHead(e))
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(total)
+}
+
+// cgCallExt dispatches an ECallExt node by its extern's registered clause.
+func cgCallExt(e: int) {
+    var xi: int
+    var conv: int
+
+    xi = cgExternIdxByName(irCallExtName(e))
+    if xi == -1 {
+        log("cg68k: call to unregistered extern " + poolGet(irCallExtName(e)))
+        quit 1
+    }
+    conv = irExternConv(xi)
+    if conv == 2 {
+        cgCallExtReg(e, xi)
+    } else if conv == 1 {
+        cgCallExtPascal(e, xi)
+    } else if conv == 3 {
+        cgCallExtDeref(e)
+    } else if conv == 4 {
+        cgCallExtNop(e)
+    } else {
+        cgCallExtNatFallback(e)
+    }
 }
 
 // ================================================================

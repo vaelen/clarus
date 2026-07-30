@@ -1,0 +1,66 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// traps.cla: native-5d Task 9 cg68k golden fixture -- ECallExt codegen.
+// One extern per clause form (Task 2's registry), plus a clause-less
+// extern resolved through its own nat_ fallback (defined right here, so
+// the fallback path is self-contained and doesn't depend on any other
+// module's nat_ functions):
+//
+//   TNewHandle       = trap 0xA122 reg    (real _NewHandle -- see the
+//                                          Task 9 report's trap-word
+//                                          verification table)
+//   NewPtr/DisposePtr = trap 0xA11E/0xA01F reg (real _NewPtr/_DisposePtr,
+//                                          for the peekb/pokeb exercise
+//                                          below)
+//   FixtureMixedTrap = trap 0xA9C8        (SYNTHETIC signature riding the
+//                                          real _SysBeep trap word, purely
+//                                          to exercise every PASCAL push
+//                                          shape -- ptr/int/bool/char/str
+//                                          -- in one call; NOT a faithful
+//                                          _SysBeep reproduction, see the
+//                                          report)
+//   THandleDeref     = inline deref
+//   TRcCheck         = inline nop
+//   TCustomOp        = no clause -> nat_TCustomOp (defined below)
+
+external func TNewHandle(n: int): ptr = trap 0xA122 reg
+external func NewPtr(size: int): ptr = trap 0xA11E reg
+external func DisposePtr(p: ptr) = trap 0xA01F reg
+external func FixtureMixedTrap(p: ptr, n: int, f: bool, c: char, s: string): int = trap 0xA9C8
+external func THandleDeref(h: ptr): ptr = inline deref
+external func TRcCheck(box: ptr, rc: int) = inline nop
+external func TCustomOp(x: int): int
+
+func nat_TCustomOp(x: int): int {
+    return x + 1
+}
+
+on App.launch {
+    var h: ptr
+    var d: ptr
+    var buf: ptr
+    var r: int
+    var s: string(255)
+    var custom: int
+
+    h = TNewHandle(64)
+    d = THandleDeref(h)
+    TRcCheck(h, 1)
+
+    s = "hi"
+    r = FixtureMixedTrap(d, 5, true, 'A', s)
+
+    custom = TCustomOp(10)
+
+    buf = NewPtr(8)
+    pokeb(buf, 65)
+    pokew(buf + 2, 4660)
+    pokel(buf + 4, 305419896)
+    r = peekb(buf)
+    r = peekw(buf + 2)
+    r = peekl(buf + 4)
+    DisposePtr(buf)
+
+    return
+}

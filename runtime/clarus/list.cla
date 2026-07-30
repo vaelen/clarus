@@ -100,15 +100,19 @@
 // core.cla's rtPanic directly now (declare-before-use, core.cla is spliced
 // first) -- a plain intra-Clarus call, no extern/name-collision hazard to
 // sidestep at all.
-external func ListHandleDeref(h: ptr): ptr
-external func ListSetHandleSize(h: ptr, n: int): int
-external func ListBlockMoveData(src: ptr, dst: ptr, count: int)
+// Task 9 (native-5d): trap/inline clauses -- see text.cla's own header
+// comment for the trap-word verification table and the NewPtr/NewHandle
+// OOM-check concern (identical here: rt_ext_ListNewPtr/ListNewHandle also
+// panic on NULL inside the C wrapper; the `reg` clause has no such check).
+external func ListHandleDeref(h: ptr): ptr = inline deref
+external func ListSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
+external func ListBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // ListNewPtr/ListDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtListNew below uses, mirroring TextNewPtr's own oom-panic-at-the-
 // primitive placement exactly (text.cla) -- never returns null, so no
 // separate check is needed at rtListNew's own call site.
-external func ListNewPtr(size: int): ptr
-external func ListDisposePtr(p: ptr)
+external func ListNewPtr(size: int): ptr = trap 0xA11E reg
+external func ListDisposePtr(p: ptr) = trap 0xA01F reg
 // ListNewHandle/ListDisposeHandle/ListRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtListNew/rtListRetain/rtListRelease below use, same
 // shape as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck.
@@ -118,9 +122,9 @@ external func ListDisposePtr(p: ptr)
 // then prints "rt_rc: over-release at %s" and aborts; the Mac body is a
 // no-op) -- never called unconditionally the way the C reference's
 // rt_rc_check is.
-external func ListNewHandle(n: int): ptr
-external func ListDisposeHandle(h: ptr)
-external func ListRcCheck(box: ptr, rc: int)
+external func ListNewHandle(n: int): ptr = trap 0xA122 reg
+external func ListDisposeHandle(h: ptr) = trap 0xA023 reg
+external func ListRcCheck(box: ptr, rc: int) = inline nop
 
 // RtList (Ch13: Overlay Records) mirrors rt_core.inc:483-489's `struct
 // rt_list { int32_t rc; Handle data; int32_t elemsize; int32_t count;

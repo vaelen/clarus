@@ -128,15 +128,19 @@
 // calls core.cla's rtPanic directly now (declare-before-use, core.cla is
 // spliced first) -- a plain intra-Clarus call, no extern/name-collision
 // hazard to sidestep at all.
-external func MapHandleDeref(h: ptr): ptr
-external func MapSetHandleSize(h: ptr, n: int): int
-external func MapBlockMoveData(src: ptr, dst: ptr, count: int)
+// Task 9 (native-5d): trap/inline clauses -- see text.cla's own header
+// comment for the trap-word verification table and the NewPtr/NewHandle
+// OOM-check concern (identical here: rt_ext_MapNewPtr/MapNewHandle also
+// panic on NULL inside the C wrapper; the `reg` clause has no such check).
+external func MapHandleDeref(h: ptr): ptr = inline deref
+external func MapSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
+external func MapBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // MapNewPtr/MapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
 // the-primitive placement exactly (text.cla/list.cla) -- never returns
 // null, so no separate check is needed at rtMapNew's own call site.
-external func MapNewPtr(size: int): ptr
-external func MapDisposePtr(p: ptr)
+external func MapNewPtr(size: int): ptr = trap 0xA11E reg
+external func MapDisposePtr(p: ptr) = trap 0xA01F reg
 // MapNewHandle/MapDisposeHandle/MapRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtMapNew/rtMapRetain/rtMapRelease below use, same shape
 // as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck and list.cla's
@@ -146,9 +150,9 @@ external func MapDisposePtr(p: ptr)
 // 0` itself (the host body then prints "rt_rc: over-release at %s" and
 // aborts; the Mac body is a no-op) -- never called unconditionally the way
 // the C reference's rt_rc_check is.
-external func MapNewHandle(n: int): ptr
-external func MapDisposeHandle(h: ptr)
-external func MapRcCheck(box: ptr, rc: int)
+external func MapNewHandle(n: int): ptr = trap 0xA122 reg
+external func MapDisposeHandle(h: ptr) = trap 0xA023 reg
+external func MapRcCheck(box: ptr, rc: int) = inline nop
 
 // MAP_KEYBLOCK (rt_core.inc:601, `#define MAP_KEYBLOCK 256`): fixed byte
 // width of one key slot -- a full Str255 block (1-byte length + up to 255

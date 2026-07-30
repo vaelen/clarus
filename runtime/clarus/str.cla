@@ -42,7 +42,10 @@
 // Task 3: core.cla is now spliced ahead of str.cla (declare-before-use),
 // so str.cla calls its rtSetLastErr/rtPanic directly -- a plain intra-
 // Clarus call, no extern/name-collision hazard to sidestep at all.
-external func StrBlockMoveData(src: ptr, dst: ptr, count: int)
+// Task 9 (native-5d): trap clause -- see text.cla's own header comment for
+// the trap-word verification table (BlockMoveData = 0xA22E, register-based
+// Memory Manager convention).
+external func StrBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 
 // rtStrStore (rt_core.inc:31-40): clamped copy of src's bytes into dst's
 // dstcap-byte buffer.

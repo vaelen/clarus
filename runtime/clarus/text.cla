@@ -82,9 +82,29 @@
 // calls core.cla's rtSetLastErr/rtPanic directly now (declare-before-use,
 // core.cla is spliced first) -- a plain intra-Clarus call, no extern/
 // name-collision hazard to sidestep at all.
-external func TextHandleDeref(h: ptr): ptr
-external func TextSetHandleSize(h: ptr, n: int): int
-external func TextBlockMoveData(src: ptr, dst: ptr, count: int)
+// Task 9 (native-5d): trap/inline clauses on every waist extern below --
+// cprint ignores clauses entirely (Task 2's own proof), so this is a
+// codegen68k-only addition, byte-identical host emission. Trap words
+// verified against Retro68's Traps.h (Memory Manager section): NewPtr
+// 0xA11E, DisposePtr 0xA01F, NewHandle 0xA122, DisposeHandle 0xA023,
+// SetHandleSize 0xA024, BlockMoveData 0xA22E (NOT 0xA02E -- that word is
+// plain BlockMove, a distinct trap; see the Task 9 report). All six are
+// register-based Memory Manager calls (Inside Macintosh's documented A0/
+// A1/D0 fast-call convention), hence `reg`, never `pascal`.
+//
+// KNOWN CONCERN (Task 9 report): rt_ext_TextNewPtr/rt_ext_TextNewHandle
+// (internal/build/rt/rt_ext_host.inc) OOM-panic on a NULL result INSIDE
+// the C wrapper, before ever returning to this Clarus caller -- a raw
+// `reg` trap clause has no such check, so a native build's TextNewPtr/
+// TextNewHandle calls silently propagate NULL on allocation failure
+// instead of panicking. Clause added anyway, per this task's own scope
+// (every Memory-Manager waist extern gets a trap clause); the semantic
+// gap is real and unresolved -- see the Task 9 report's "OOM-check delta"
+// section for the full accounting. Do not treat this clause as proof the
+// native OOM path is safe.
+external func TextHandleDeref(h: ptr): ptr = inline deref
+external func TextSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
+external func TextBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
 // allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own
 // NewPtr choice exactly (rt_core.inc:307). rt_ext_TextNewPtr panics
@@ -97,8 +117,8 @@ external func TextBlockMoveData(src: ptr, dst: ptr, count: int)
 // through the wrapper's int32_t return -- NewPtr has no such return-code
 // channel, only a NULL/non-NULL pointer, so checking inside the wrapper is
 // both the closer-to-the-primitive AND the smaller-diff option here).
-external func TextNewPtr(size: int): ptr
-external func TextDisposePtr(p: ptr)
+external func TextNewPtr(size: int): ptr = trap 0xA11E reg
+external func TextDisposePtr(p: ptr) = trap 0xA01F reg
 // TextNewHandle/TextDisposeHandle/TextRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtTextNew/rtTextRetain/rtTextRelease below use.
 // TextNewHandle oom-panics on NULL itself (same "check at the primitive"
@@ -108,9 +128,9 @@ external func TextDisposePtr(p: ptr)
 // already determined `rc <= 0` itself (the host body then prints "rt_rc:
 // over-release at %s" and aborts; the Mac body is a no-op) -- never called
 // unconditionally the way the C reference's rt_rc_check is.
-external func TextNewHandle(n: int): ptr
-external func TextDisposeHandle(h: ptr)
-external func TextRcCheck(box: ptr, rc: int)
+external func TextNewHandle(n: int): ptr = trap 0xA122 reg
+external func TextDisposeHandle(h: ptr) = trap 0xA023 reg
+external func TextRcCheck(box: ptr, rc: int) = inline nop
 
 // RtText (Ch13: Overlay Records) mirrors rt_core.inc:259's `struct rt_text
 // { int32_t rc; Handle h; int32_t len; int32_t cap; }` field-for-field --

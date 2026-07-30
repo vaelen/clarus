@@ -66,11 +66,18 @@
 // how their C-side lastError writes are now synced into Clarus's
 // lasterrCode/lasterrMsg (Task 4 closes the gap Task 3's report left
 // open).
+// Task 9 (native-5d): trap clauses on the three raw waist primitives below
+// (see text.cla's own header comment for the trap-word verification
+// table) -- unlike Text/List/Map's NewPtr, rt_ext_SerNewPtr
+// (internal/build/rt/rt_ext_host.inc) has NO OOM check of its own to lose,
+// so no concern to flag here. SerFileWriteData/SerFileReadTextInto get NO
+// clause -- still-C file I/O, native fallback (nat_ prefix) is a later
+// task.
 external func SerFileWriteData(path: ptr, t: text): int
 external func SerFileReadTextInto(path: ptr, out: text): int
-external func SerBlockMoveData(src: ptr, dst: ptr, count: int)
-external func SerNewPtr(size: int): ptr
-external func SerDisposePtr(p: ptr)
+external func SerBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
+external func SerNewPtr(size: int): ptr = trap 0xA11E reg
+external func SerDisposePtr(p: ptr) = trap 0xA01F reg
 
 const RtSerMagic0: char = 'C'
 const RtSerMagic1: char = 'L'

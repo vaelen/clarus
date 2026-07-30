@@ -40,6 +40,30 @@
 
 external func CorePanic(msg: string)
 
+// nat_CorePanic (Task 9 STOPGAP, native-5d) -- CorePanic deliberately
+// carries NO trap/inline clause this task; its real native resolution is
+// native.cla's console-capture protocol (Task 11/14 -- the plan's own
+// Task 11 inventory: `func nat_CorePanic(msg: str 255)`, printing
+// "runtime error: " + msg + LF through that protocol). This body is NOT
+// that. It is the smallest possible placeholder, added because CorePanic
+// turns out to be UNCONDITIONALLY reachable for every native build,
+// regardless of a program's own source, the moment ECallExt codegen is
+// real: shake.cla unconditionally roots rtTextStore (the str/text/list/
+// map "always-needed core"), rtTextStore calls rtTextGrow, and
+// rtTextGrow's TextSetHandleSize-failure branch calls
+// rtPanic("out of memory") -> CorePanic. That ECallExt call site is
+// COMPILED (not merely reachable at runtime) for every program -- verified
+// directly: even `on App.launch { return }` fails emit68k with "extern
+// CorePanic has no trap clause and no nat_ fallback" without this. Without
+// SOME resolution here, no cg68k program can build, including every
+// pre-existing testdata/cg68k fixture -- see the Task 9 report's
+// "CorePanic reachability" section for the full trace, the verification
+// steps, and the case for landing this now rather than waiting for Task
+// 11. Task 11 replaces this BODY ONLY (name/signature/reachability wiring
+// stay exactly as-is) with the real console-protocol implementation.
+func nat_CorePanic(msg: string) {
+}
+
 var lasterrCode: int
 var lasterrMsg: string
 
