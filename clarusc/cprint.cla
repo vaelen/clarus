@@ -1903,7 +1903,19 @@ func fpIntrCall(x: int): text {
             } else {
                 fpEmit(fn + "(" + l + ", &" + t + ");")
             }
-            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            // Plan 5c wave2a Task 2 (review fix): the element's own retain
+            // still redirects for KText once cpTextArcPorted -- the list
+            // ACCESS call above is a separate, already-ported concern
+            // (cpListPorted); a text element read out of a `list of text`
+            // must retain through the same Clarus-ported rtTextRetain every
+            // other text retain site uses. KList/KMap elements (a `list of
+            // list of text`'s outer retain, say) keep the bare stem --
+            // list/map's OWN ARC porting is a later task in this wave.
+            if irtKind(irExprType(x)) == KText and cpTextArcPorted {
+                fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
+            } else {
+                fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            }
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             if cpListPorted {
@@ -2052,7 +2064,11 @@ func fpIntrCall(x: int): text {
         // IListFirst/IListLast above) -- a heap-typed result is retained
         // immediately into a tracked temp, same +1-and-tracked convention.
         // Plan 5b Task 11: cpMapPorted redirects the get call itself; the
-        // `_retain` suffix call stays bare C regardless (RC boundary).
+        // `_retain` suffix call stays bare C regardless for KList/KMap (RC
+        // boundary -- list/map ARC porting is a later task in this wave).
+        // Plan 5c wave2a Task 2 (review fix): KText redirects to the
+        // Clarus-ported rtTextRetain, same reasoning as IListFirst/
+        // IListLast above.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             if cpMapPorted {
@@ -2060,7 +2076,11 @@ func fpIntrCall(x: int): text {
             } else {
                 fpEmit("rt_map_get(" + m + ", " + k + ", &" + t + ");")
             }
-            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            if irtKind(irExprType(x)) == KText and cpTextArcPorted {
+                fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
+            } else {
+                fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            }
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             if cpMapPorted {
@@ -2085,7 +2105,10 @@ func fpIntrCall(x: int): text {
         dv = fpExpr(a2)
         fpHandoff(dv) // dv's own temp (if any) is about to alias into t
         // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
-        // the `_retain` suffix call stays bare C regardless (RC boundary).
+        // the `_retain` suffix call stays bare C regardless for KList/KMap
+        // (RC boundary -- list/map ARC porting is a later task in this
+        // wave). Plan 5c wave2a Task 2 (review fix): KText redirects to
+        // the Clarus-ported rtTextRetain, same reasoning as IMapGet above.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
@@ -2094,7 +2117,11 @@ func fpIntrCall(x: int): text {
             } else {
                 fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
             }
-            fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            if irtKind(irExprType(x)) == KText and cpTextArcPorted {
+                fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
+            } else {
+                fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
+            }
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
@@ -2132,7 +2159,10 @@ func fpIntrCall(x: int): text {
         fpHandoff(dv)
         // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
         // the retain/release compare-and-fix lines stay bare C regardless
-        // (RC boundary).
+        // for KList/KMap (RC boundary -- list/map ARC porting is a later
+        // task in this wave). Plan 5c wave2a Task 2 (review fix): KText
+        // redirects both halves to the Clarus-ported rtTextRetain/
+        // rtTextRelease, same reasoning as IMapGet/IMapGetDv above.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";")
@@ -2141,7 +2171,11 @@ func fpIntrCall(x: int): text {
             } else {
                 fpEmit("rt_map_get_dv(" + m + ", " + k + ", &" + t + ");")
             }
-            fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
+            if irtKind(irExprType(x)) == KText and cpTextArcPorted {
+                fpEmit("if (" + t + " != " + dv + ") { clar_fn_rtTextRetain((void*)" + t + "); clar_fn_rtTextRelease((void*)" + dv + "); }")
+            } else {
+                fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
+            }
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
             fpEmit(t + " = " + dv + ";")
