@@ -56,9 +56,9 @@ three consumers:
   (A7)+,D0`, `LINK A6,#-8`, `_NewHandle` for known trap words) — it
   matches the reference books and MacsBug's on-screen disassembly, and we
   only print it, never parse it, so gas/MIT compatibility buys nothing.
-  Goldens are our own listing output; the objdump oracle (Testing ring 2)
-  compares structurally, never textually — objdump emits MIT syntax and
-  its formatting drifts across binutils versions.
+  Goldens are our own listing output. A second payoff (Testing ring 2):
+  Motorola syntax is exactly what the in-repo vasm assembles, enabling a
+  listing → vasm → bytes round-trip oracle.
 - **Peephole/regalloc (later phase):** rewrites the structured stream
   before encoding. The parent spec says this pass is "likely needed soon
   after" — the table exists now so that pass has material to work on.
@@ -145,9 +145,20 @@ identically on every platform, but the **container** differs:
 Three rings:
 
 1. **Encoder unit tests** against committed listing + byte goldens.
-2. **Disassembler oracle (host):** emitted CODE run through Retro68's
-   m68k objdump and sanity-compared; gated on toolchain presence like
-   mactest. Retro68 as oracle, never as production path.
+2. **vasm round-trip oracle (host):** the listing printer's output is
+   assembled by `vasm/vasmm68k_mot -m68000 -no-opt -Ftest` (vasm 1.8g,
+   installed in-repo at `vasm/`; this build has only the `test` output
+   module, whose `data(n):` lines carry the encoded bytes) and
+   **byte-compared** against our encoder's output for the same
+   instruction stream. `-no-opt` is required — vasm otherwise rewrites
+   branch sizes and addressing modes, assembling something other than
+   what the listing literally says. Gated on `vasm/` presence, like
+   mactest's toolchain gate. Constraint this imposes: the listing must
+   stay vasm-assemblable — trap words print as `DC.W $Axxx` with the
+   trap name as a trailing comment (`; _NewHandle`), labels/directives
+   in vasm's Motorola syntax. This is strictly stronger than the earlier
+   objdump idea (byte equality, not structural comparison) and replaces
+   it.
 3. **End-gate (per parent spec):** the monolithic suite app
    (`testdata/suite/test_suite.cla`) compiled by codegen68k, run under
    Mini vMac, stdout byte-compared against the host build — plus the ~5
