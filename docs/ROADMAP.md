@@ -388,6 +388,68 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   5d from old 5c, trap clauses land in 5d. The compilation cache (rest of
   old 5c) slides to after 5d. Design:
   `docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`.
+- **5c′ (runtime migration wave 2a, landed on branch `native-5c`,
+  2026-07-30): DONE.** The mem/ARC waist for Text/List/Map moved from C to
+  Clarus: rc arithmetic (retain/release), the `lastref` "am I the only
+  owner" predicate, and birth allocation are now entirely Clarus-owned for
+  all three container families — `rtTextNew`/`rtListNew`/`rtMapNew` build
+  the box, acquire the Handle(s), and set `rc = 1` themselves (via
+  `TextNewPtr`/`ListNewPtr`/`MapNewPtr` + `*NewHandle` + overlay pokes),
+  rather than delegating whole-box construction to C the way 5b's
+  `TextNewRaw`/`ListNewRaw`/`MapNewRaw` did — those three externs are
+  deleted from both `rt_ext_*.inc` shims. `rtListAt` was ported fresh for
+  this wave (it did NOT pre-exist from 5b, correcting the task plan's
+  assumption); `rtMapValAt`/`rtMapCount` did pre-exist and needed no work.
+  Sequence: Task 1 (`fd76df6`) added 13 new `rt_ext_*` waist externs per
+  `.inc` shim (26 total) — `*NewHandle`/`*DisposeHandle`/`*RcCheck` for all
+  three families plus `*NewPtr`/`*DisposePtr` for List/Map (Text already
+  had them from 5b); the host `*RcCheck` body matches `rt_rc_check`'s exact
+  `"rt_rc: over-release at %s\n"` diagnostic, the Mac body is a no-op. Task
+  2 (text: `736690d`/`2e256aa`/`a938313`/`3afa5fd`), Task 3 (list:
+  `c6d10e0`/`bbc1b2d`), and Task 4 (map: `5e4f6fd`/`5c284ff`) ported each
+  family's birth/retain/release/lastref in turn, redirecting
+  `cpTextArcPorted`/`cpListArcPorted`/`cpMapArcPorted` (cprint.cla) to the
+  new Clarus functions at every emission site (`IRetain`/`IRelease`/
+  `I*FreeVar` intrinsics, `cpEmitRetain`/`cpEmitRelease`'s per-kind arms
+  including inside the other families' element-release walks,
+  `fpRetainVal`/`fpReleaseVal`/`fpNewTmp`-composed retain/release, and the
+  container-accessor `_retain` suffix sites). A deliberate parity gap,
+  wave-wide: the C reference calls `rt_rc_check` unconditionally on every
+  release; the port calls `*RcCheck` only on the cold `rc <= 0` path, never
+  on retain. Task 5 (`322e0c9`) swept `cprint.cla` for every literal and
+  composed `rt_text_*`/`rt_list_*`/`rt_map_*` ARC-suffix emission site (4
+  families × 4 suffixes) and found none missed, then added two adversarial
+  fixtures (list-of-map, globals) to the ARC matrix, both clean at
+  `live == 0`. **What stayed C, and why:** the `rt_mem_host.inc` leak
+  ledger (host-only debug infra the leak gates read), `rt_register_
+  cleanup`/`rt_run_cleanup` (a C function-pointer slot), the `rt_rc_check`
+  host body itself (still reached via the per-family `*RcCheck` externs on
+  the cold path only), the four pure ADDRESSING sites in `cprint.cla`
+  (`fpIndexRef`'s own `rt_list_at`, `fpForListStmt`'s per-iteration element
+  deref, `IListSet`'s ref, `IListRemove`'s old-value read — documented at
+  `fpIndexRef`'s own doc comment), `fpUiEditStmt`'s `kind==2`/`kind==3` arms
+  (`rt_list_at`/`rt_map_get_dv`, a Ch10/mac-target-4c UI exclusion
+  predating this wave, not an RC one), and the C originals in
+  `rt_core.inc` forever, as the frozen Go compiler's backend and this
+  wave's differential oracle. **Verification:** zero `.leaks` and zero CLRD
+  golden churn held through every task (the differential corpus doubled as
+  the rc oracle) — the snapshot and `emitui` `.c.golden` files DID churn
+  mechanically each time a family's redirect flipped (the emitted C text
+  itself changes; `2e256aa`/`bbc1b2d`/`5c284ff`), but no behavior output
+  ever did. Gauntlet (`go test ./...`, `internal/selfhost` ~250-590s per
+  run) green on every task; full gated `internal/mactest` suite also
+  green. Full task-by-task detail:
+  `.superpowers/sdd/2026-07-30-native-5c-runtime-wave2a/task-{1..6}-report.md`;
+  plan: `docs/superpowers/plans/2026-07-30-native-5c-runtime-wave2a.md`.
+  **5d-input inventory** (runtime logic still in C, feeding the 5d
+  codegen68k design's Resequencing section): the four C ADDRESSING sites
+  above, `fpUiEditStmt`'s two arms above, `lasterr` reads (`rt_str_store`
+  over a C global), `rt_arr_check`, `rt_enum_from_int`, file I/O
+  emissions, `rt_register_cleanup` — plus runtime logic not yet inventoried
+  for native: `rt_print`/console, `rt_panic`, `rt_args`. Full list also
+  recorded in
+  `docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`'s
+  Resequencing section.
 
 ## Small open items (not yet scheduled)
 

@@ -23,6 +23,28 @@ without re-arguing.
   segment packing; also shrinks emitted C).
 - **The compilation cache (rest of old 5c) slides to after 5d.** It is an
   on-Mac usability feature; nothing needs it before 5f.
+- **5c′ landed 2026-07-30, branch `native-5c`:** rc arithmetic (retain/
+  release), `lastref`, and birth allocation (`rtTextNew`/`rtListNew`/
+  `rtMapNew` building the box + Handle(s) + `rc = 1` entirely in Clarus)
+  are now Clarus-owned for Text/List/Map, ported and verified entirely
+  over the existing cprint → Retro68 path exactly as scoped above (full
+  differential + mactest green, zero `.leaks`/CLRD golden churn). Full
+  outcome record: `docs/ROADMAP.md`'s 5c′ entry;
+  `.superpowers/sdd/2026-07-30-native-5c-runtime-wave2a/task-{1..6}-report.md`.
+  **5d-input inventory** — runtime logic this design's codegen must still
+  reach through C, or otherwise account for, since it did not move in 5c′:
+  - The four C ADDRESSING sites (`fpIndexRef`'s own `rt_list_at` user-level
+    indexing, `fpForListStmt`'s per-iteration element deref, `IListSet`'s
+    ref, `IListRemove`'s old-value read) — doc comment at `fpIndexRef`.
+  - `fpUiEditStmt`'s arms: `rt_list_at` (kind==2), `rt_map_get_dv`
+    (kind==3).
+  - `lasterr` reads (`rt_str_store` over a C global).
+  - `rt_arr_check`.
+  - `rt_enum_from_int`.
+  - File I/O emissions.
+  - `rt_register_cleanup`.
+  - Runtime logic not yet inventoried for native: `rt_print`/console,
+    `rt_panic`, `rt_args`.
 
 ## Decision: direct binary emission, no assembler
 
