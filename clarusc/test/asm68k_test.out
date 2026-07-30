@@ -7,8 +7,8 @@
         MOVE.L #100000,D7
         MOVE.W 4(A5),D0
         MOVE.W D1,8(A4)
-        MOVE.W $1000,D2
-        MOVE.W D3,$2000
+        MOVE.W $1000.W,D2
+        MOVE.W D3,$2000.W
 LBL_0:
         MOVE.W LBL_0(PC),D4
         MOVEA.L D0,A1
@@ -19,11 +19,11 @@ LBL_0:
 LBL_1:
         LEA 8(A6),A0
         LEA (A2),A3
-        LEA $3000,A4
+        LEA $3000.W,A4
         LEA LBL_0(PC),A5
         PEA (A2)
         PEA 4(A3)
-        PEA $4000
+        PEA $4000.W
         ADD.W D0,D1
         ADD.L (A2),D3
         ADD.W D4,(A5)
@@ -76,7 +76,7 @@ LBL_1:
         JSR 42(A5)
         JSR (A2)
         JMP (A3)
-        JMP $5000
+        JMP $5000.W
         JMP LBL_0(PC)
         SEQ D0
         SNE (A2)

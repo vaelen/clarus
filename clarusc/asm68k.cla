@@ -1124,7 +1124,13 @@ func a68EaText(mode: A68Mode, reg: int, val: int): string {
         return "#" + numToStr(val)
     }
     if mode == AmAbsW {
-        return "$" + a68HexN(val, 4)
+        // .W forces absolute-SHORT addressing (2-byte extension, matching
+        // the encoder's a68ExtCount for AmAbsW): unsuffixed, vasm's mot
+        // syntax defaults an absolute operand to LONG (4-byte extension)
+        // unless -O optimizes it down, and -no-opt (Task 6's oracle run)
+        // disables that optimization -- discovered via the vasm round-trip
+        // byte-compare (native-5d Task 6).
+        return "$" + a68HexN(val, 4) + ".W"
     }
     return "?"
 }

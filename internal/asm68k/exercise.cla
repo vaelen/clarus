@@ -1,0 +1,28 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// exercise.cla: the vasm round-trip oracle's input program (native-5d Task
+// 6). Built with the frozen GO compiler (build.Build), not clarusc --
+// asm68k.cla is written in the Go-subset the host compiler accepts, so this
+// runs as a native binary. It just replays asm68k.cla's own
+// a68SelfExercise() stream and dumps both faces of it to disk: the listing
+// text vasm assembles, and the encoder's own bytes vasm's output is
+// compared against. See vasm_test.go for the comparison.
+
+include "../../clarusc/asm68k.cla"
+
+on App.startEmpty {
+    a68SelfExercise()
+    if not a68Finish() {
+        log("exercise: a68Finish failed (unresolved label)")
+        quit 1
+    }
+    if not file.writeText("exer.s", a68ListingText()) {
+        log("exercise: cannot write exer.s: " + lastError.message)
+        quit 1
+    }
+    if not file.writeText("exer.dat", a68Bytes()) {
+        log("exercise: cannot write exer.dat: " + lastError.message)
+        quit 1
+    }
+}
