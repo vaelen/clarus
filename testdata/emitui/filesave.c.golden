@@ -10,6 +10,11 @@ static void clar_fn_rtTextRetain(void * cv_t);
 static void clar_fn_rtTextRelease(void * cv_t);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
+static void clar_fn_rtListRetain(void * cv_l);
+static void clar_fn_rtListRelease(void * cv_l);
+static int32_t clar_fn_rtListLastref(void * cv_l);
+static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i);
+static int32_t clar_fn_rtListCount(void * cv_l);
 static void * clar_fn_rtMapNew(int32_t cv_valsize);
 typedef struct { uint8_t len; uint8_t b[63]; } clar_str_63;
 extern int32_t rt_ext_SerFileWriteData(void *, rt_text *);
@@ -45,7 +50,11 @@ extern void * rt_ext_ListHandleDeref(void *);
 extern int32_t rt_ext_ListSetHandleSize(void *, int32_t);
 extern void rt_ext_ListBlockMoveData(void *, void *, int32_t);
 extern void rt_ext_ListPanic(const uint8_t *);
-extern void * rt_ext_ListNewRaw(int32_t);
+extern void * rt_ext_ListNewPtr(int32_t);
+extern void rt_ext_ListDisposePtr(void *);
+extern void * rt_ext_ListNewHandle(int32_t);
+extern void rt_ext_ListDisposeHandle(void *);
+extern void rt_ext_ListRcCheck(void *, int32_t);
 extern void * rt_ext_MapHandleDeref(void *);
 extern int32_t rt_ext_MapSetHandleSize(void *, int32_t);
 extern void rt_ext_MapBlockMoveData(void *, void *, int32_t);
@@ -59,11 +68,11 @@ static const clar_str_255 clar_lit_3 = {25, {115, 116, 114, 105, 110, 103, 32, 1
 static const clar_str_255 clar_lit_4 = {18, {115, 108, 105, 99, 101, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_5 = {13, {111, 117, 116, 32, 111, 102, 32, 109, 101, 109, 111, 114, 121}};
 static const clar_str_255 clar_lit_6 = {23, {116, 101, 120, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_7 = {17, {112, 111, 112, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_8 = {19, {115, 104, 105, 102, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_9 = {19, {102, 105, 114, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_10 = {18, {108, 97, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
-static const clar_str_255 clar_lit_11 = {23, {108, 105, 115, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_7 = {23, {108, 105, 115, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
+static const clar_str_255 clar_lit_8 = {17, {112, 111, 112, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_9 = {19, {115, 104, 105, 102, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_10 = {19, {102, 105, 114, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
+static const clar_str_255 clar_lit_11 = {18, {108, 97, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
 static const clar_str_255 clar_lit_12 = {17, {109, 97, 112, 32, 107, 101, 121, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
 static const clar_str_255 clar_lit_13 = {7, {69, 120, 97, 109, 112, 108, 101}};
 static const clar_str_255 clar_lit_14 = {12, {98, 111, 111, 107, 109, 97, 114, 107, 46, 100, 97, 116}};
@@ -160,7 +169,7 @@ static void clar_init_globals(void) {
 }
 
 static void cl_free_globals(void) {
-    rt_list_release(cv_many);
+    clar_fn_rtListRelease((void*)cv_many);
     rt_map_release(cv_byName);
 
 }
@@ -214,6 +223,10 @@ static void clar_fn_rtTextAppendChar(void * cv_t, int32_t cv_c);
 static void clar_fn_rtTextAppendText(void * cv_t, void * cv_src);
 static void clar_fn_rtListGrow(void * cv_l, int32_t cv_need);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
+static void clar_fn_rtListRetain(void * cv_l);
+static void clar_fn_rtListRelease(void * cv_l);
+static int32_t clar_fn_rtListLastref(void * cv_l);
+static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i);
 static void clar_fn_rtListPush(void * cv_l, void * cv_elem);
 static void clar_fn_rtListPop(void * cv_l, void * cv_out);
 static void clar_fn_rtListShift(void * cv_l, void * cv_out);
@@ -1561,7 +1574,67 @@ static void clar_fn_rtListGrow(void * cv_l, int32_t cv_need) {
 }
 
 static void * clar_fn_rtListNew(int32_t cv_elemsize) {
-    return rt_ext_ListNewRaw(cv_elemsize);
+    void * cv_l;
+    cv_l = 0;
+    clar_rec_RtList * cv_rl;
+    cv_rl = 0;
+    cv_l = rt_ext_ListNewPtr(40);
+    cv_rl = ((clar_rec_RtList *)(cv_l));
+    (cv_rl)->cv_rc = 1;
+    (cv_rl)->cv_elemsize = cv_elemsize;
+    (cv_rl)->cv_count = 0;
+    (cv_rl)->cv_cap = 0;
+    (cv_rl)->cv_data = rt_ext_ListNewHandle(0);
+    return cv_l;
+    return 0;
+}
+
+static void clar_fn_rtListRetain(void * cv_l) {
+    clar_rec_RtList * cv_rl;
+    cv_rl = 0;
+    if (cv_l == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rl = ((clar_rec_RtList *)(cv_l));
+    (cv_rl)->cv_rc = ((cv_rl)->cv_rc + 1);
+}
+
+static void clar_fn_rtListRelease(void * cv_l) {
+    clar_rec_RtList * cv_rl;
+    cv_rl = 0;
+    if (cv_l == (void *)(intptr_t)(0)) {
+        return;
+    }
+    cv_rl = ((clar_rec_RtList *)(cv_l));
+    if ((cv_rl)->cv_rc <= 0) {
+        rt_ext_ListRcCheck(cv_l, (cv_rl)->cv_rc);
+    }
+    (cv_rl)->cv_rc = ((cv_rl)->cv_rc - 1);
+    if ((cv_rl)->cv_rc == 0) {
+        rt_ext_ListDisposeHandle((cv_rl)->cv_data);
+        rt_ext_ListDisposePtr(cv_l);
+    }
+}
+
+static int32_t clar_fn_rtListLastref(void * cv_l) {
+    return ((cv_l != (void *)(intptr_t)(0)) && ((((clar_rec_RtList *)(cv_l)))->cv_rc == 1));
+    return 0;
+}
+
+static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i) {
+    clar_rec_RtList * cv_rl;
+    cv_rl = 0;
+    void * cv_mp;
+    cv_mp = 0;
+    int32_t cv_off;
+    cv_off = 0;
+    cv_rl = ((clar_rec_RtList *)(cv_l));
+    if ((cv_i < 0) || (cv_i >= (cv_rl)->cv_count)) {
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_7));
+    }
+    cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
+    cv_off = (cv_i * (cv_rl)->cv_elemsize);
+    return (void *)((char *)(cv_mp) + (cv_off));
     return 0;
 }
 
@@ -1590,7 +1663,7 @@ static void clar_fn_rtListPop(void * cv_l, void * cv_out) {
     cv_off = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_rl)->cv_count == 0) {
-        rt_ext_ListPanic((const uint8_t*)&(clar_lit_7));
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_8));
     }
     (cv_rl)->cv_count = ((cv_rl)->cv_count - 1);
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
@@ -1607,7 +1680,7 @@ static void clar_fn_rtListShift(void * cv_l, void * cv_out) {
     cv_tailBytes = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_rl)->cv_count == 0) {
-        rt_ext_ListPanic((const uint8_t*)&(clar_lit_8));
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_9));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
     rt_ext_ListBlockMoveData(cv_mp, cv_out, (cv_rl)->cv_elemsize);
@@ -1640,7 +1713,7 @@ static void clar_fn_rtListFirst(void * cv_l, void * cv_out) {
     cv_mp = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_rl)->cv_count == 0) {
-        rt_ext_ListPanic((const uint8_t*)&(clar_lit_9));
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_10));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
     rt_ext_ListBlockMoveData(cv_mp, cv_out, (cv_rl)->cv_elemsize);
@@ -1655,7 +1728,7 @@ static void clar_fn_rtListLast(void * cv_l, void * cv_out) {
     cv_off = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_rl)->cv_count == 0) {
-        rt_ext_ListPanic((const uint8_t*)&(clar_lit_10));
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_11));
     }
     cv_mp = rt_ext_ListHandleDeref((cv_rl)->cv_data);
     cv_off = (((cv_rl)->cv_count - 1) * (cv_rl)->cv_elemsize);
@@ -1671,7 +1744,7 @@ static void clar_fn_rtListRemove(void * cv_l, int32_t cv_i) {
     cv_tail = 0;
     cv_rl = ((clar_rec_RtList *)(cv_l));
     if ((cv_i < 0) || (cv_i >= (cv_rl)->cv_count)) {
-        rt_ext_ListPanic((const uint8_t*)&(clar_lit_11));
+        rt_ext_ListPanic((const uint8_t*)&(clar_lit_7));
     }
     cv_tail = (((cv_rl)->cv_count - 1) - cv_i);
     if (cv_tail > 0) {
