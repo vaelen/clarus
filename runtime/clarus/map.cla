@@ -41,26 +41,46 @@
 // directly, delivering the same ascending-key snapshot order the CLRD
 // goldens depend on.
 //
-// RC boundary (READ-NEVER-WRITTEN, no exceptions): this module never writes
-// `.rc`. Birth allocation goes through MapNewRaw, an external delegating to
-// the C rt_map_new -- every rc byte stays entirely C-owned, written only by
-// that one C function (rc=1 at construction) and by rt_map_retain/
-// rt_map_release (cprint.cla's IRetain/IRelease arm, still bare C calls --
-// untouched by this task). cpEmitRelease's map element-release walk
-// (rt_core.inc-side `rt_map_val_at` call it emits) STAYS entirely C
-// wholesale, per the RC rule threading through Map the same way it does
-// List/Text -- the C `rt_map_val_at` remains linked for exactly this,
-// alongside IMapFreeVar and every fpHeapFn-composed retain/release. Inside
-// fpMapReleaseGuard specifically: the guard's own `rt_map_has`/`rt_map_get`
-// calls DO redirect (has/get are ported), but the `_release` call the guard
-// emits for the evicted old value stays bare C -- a subtle split within one
-// guard, documented at its call site in cprint.cla. fpUiEditStmt's own MAP
-// arm (`edit F, mapVar`, kind==3/RT_UI_WB_MAP, cprint.cla) also stays bare
-// C -- its `rt_map_get_dv` call is UNGATED by cpMapPorted, same as its
-// LIST arm's bare `rt_list_at` call (list.cla's own header, above) and
-// text.cla's own IUiGetTextviewText exclusion: the whole `edit` statement
-// family was excluded from Plan 5b's redirect scope, not just this one
-// site.
+// RC boundary (Plan 5c wave2a Task 4 update -- rc is now Clarus-owned for
+// map, same shape as list.cla's own Task 3 update): birth (rtMapNew, below)
+// constructs the WHOLE box itself, via MapNewPtr + overlay pokes + TWO
+// MapNewHandle(0) calls (keys, then vals), instead of delegating to C;
+// rtMapRetain/rtMapRelease do the rc arithmetic and the rc==0 dispose
+// sequence here too, calling MapRcCheck (a Task 1 waist extern) only on the
+// cold over-release path (`rc <= 0`), never unconditionally the way the C
+// reference's rt_rc_check call does -- disposing the keys Handle, then the
+// vals Handle, then the box itself, in that exact order (rt_core.inc:854-
+// 864, rt_map_release); rtMapLastref (`m != NULL and m.rc == 1`,
+// rt_core.inc:795) is the null-safe "am I the only owner" predicate
+// cpEmitRelease's element-release walk gates on, same role as
+// rtListLastref/rtTextLastref. cprint.cla's cpMapArcPorted flag
+// (unconditional true) redirects every Map ARC emission site to
+// clar_fn_rtMapRetain/clar_fn_rtMapRelease/clar_fn_rtMapLastref: the
+// IRetain/IRelease/IMapFreeVar intrinsics (via cpEmitRetain/cpEmitRelease),
+// fpRetainVal/fpReleaseVal/fpNewTrackedTmp-composed retain/release, the
+// container-accessor `_retain` suffix calls (IMapGet/IMapGetDv/
+// IMapGetDvBirth's KMap element case, and IListFirst/IListLast's own KMap
+// element case), and the `rt_map_lastref`-gated element-release walk inside
+// cpEmitRelease. That walk's own `rt_map_val_at`/`rt_map_count` calls route
+// through the EXISTING cpMapPorted flag instead (wave1, already
+// unconditionally true -- plain accessors, not ARC operations themselves,
+// same split list.cla's own rtListAt/rtListCount gating documents):
+// rtMapValAt/rtMapCount already existed from wave1 (fpForMapStmt's own
+// `for k, v in m` loop already used them), so this task did NOT need to
+// port fresh accessors the way Task 3 did for List's rtListAt.
+// fpMapReleaseGuard's own `rt_map_has`/`rt_map_get` calls were ALREADY
+// redirected (wave1, cpMapPorted); its `_release` call -- routed through
+// fpReleaseVal, which for a KMap-typed value delegates straight into
+// cpEmitRelease -- now ALSO redirects transitively, once cpEmitRelease's
+// own KMap branch does (no separate edit needed inside fpMapReleaseGuard
+// itself; documented at its call site in cprint.cla). fpUiEditStmt's own
+// MAP arm (`edit F, mapVar`, kind==3/RT_UI_WB_MAP, cprint.cla) STAYS bare
+// C -- its `rt_map_get_dv` call is UNGATED by cpMapPorted OR
+// cpMapArcPorted, same as its LIST arm's bare `rt_list_at` call (list.cla's
+// own header, above) and text.cla's own IUiGetTextviewText exclusion: the
+// whole `edit` statement family was excluded from Plan 5b's redirect
+// scope, not just this one site -- a documented STAYS-C site, not an
+// oversight.
 //
 // Relocation discipline: `keys` and `vals` are SEPARATE Handles, grown and
 // potentially moved independently (rtMapGrowKeys/rtMapGrowVals below, each
@@ -90,25 +110,42 @@
 // `IMapClear` intrinsic exists in cprint.cla's fpIntrCall dispatch today,
 // so this function is currently unreachable from any emitted program).
 //
-// MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/MapNewRaw are
-// map.cla's OWN extern names, distinct from the public HandleDeref/
-// BlockMoveData/Panic/NewRaw names str.cla/text.cla/list.cla/ser.cla and
-// any user program might also declare -- same collision hazard those
-// modules' own header comments document (checkFuncSig -> scopeDeclare keys
-// purely on name, no signature comparison), and the same fix: distinct
-// Map-prefixed names sidestep it. Each is backed by an rt_ext_Map* wrapper
-// in BOTH internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/MapNewPtr/
+// MapDisposePtr/MapNewHandle/MapDisposeHandle/MapRcCheck are map.cla's OWN
+// extern names, distinct from the public HandleDeref/BlockMoveData/Panic/
+// NewPtr names str.cla/text.cla/list.cla/ser.cla and any user program might
+// also declare -- same collision hazard those modules' own header comments
+// document (checkFuncSig -> scopeDeclare keys purely on name, no signature
+// comparison), and the same fix: distinct Map-prefixed names sidestep it.
+// Each is backed by an rt_ext_Map* wrapper in BOTH
+// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/List wrappers
-// already call. MapNewRaw delegates the WHOLE construction (box alloc +
-// two NewHandle(0) calls + rc=1 + valsize/count/cap/valcap init) to the C
-// rt_map_new -- same "external delegation" birth-allocation choice Task 9
-// (Text) and Task 10 (List) made, same rationale (rc written exactly once,
-// entirely in C).
+// already call. (MapNewRaw, the one-time "whole rt_map_new delegation"
+// birth-allocation wrapper, is gone as of Plan 5c wave2a Task 4 -- birth
+// moved into map.cla itself, built from MapNewPtr/MapNewHandle below,
+// mirroring list.cla's own Task 3 update.)
 external func MapHandleDeref(h: ptr): ptr
 external func MapSetHandleSize(h: ptr, n: int): int
 external func MapBlockMoveData(src: ptr, dst: ptr, count: int)
 external func MapPanic(msg: string)
-external func MapNewRaw(valsize: int): ptr
+// MapNewPtr/MapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
+// rtMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
+// the-primitive placement exactly (text.cla/list.cla) -- never returns
+// null, so no separate check is needed at rtMapNew's own call site.
+external func MapNewPtr(size: int): ptr
+external func MapDisposePtr(p: ptr)
+// MapNewHandle/MapDisposeHandle/MapRcCheck (Task 1, Plan 5c wave2a): the
+// ARC waist externs rtMapNew/rtMapRetain/rtMapRelease below use, same shape
+// as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck and list.cla's
+// ListNewHandle/ListDisposeHandle/ListRcCheck. MapNewHandle oom-panics on
+// NULL itself, never returns null. MapRcCheck is the cold-path over-release
+// guard: rtMapRelease only calls it once it has already determined `rc <=
+// 0` itself (the host body then prints "rt_rc: over-release at %s" and
+// aborts; the Mac body is a no-op) -- never called unconditionally the way
+// the C reference's rt_rc_check is.
+external func MapNewHandle(n: int): ptr
+external func MapDisposeHandle(h: ptr)
+external func MapRcCheck(box: ptr, rc: int)
 
 // MAP_KEYBLOCK (rt_core.inc:601, `#define MAP_KEYBLOCK 256`): fixed byte
 // width of one key slot -- a full Str255 block (1-byte length + up to 255
@@ -258,10 +295,96 @@ func rtMapGrowVals(m: ptr, need: int) {
     rm.valcap = newcap
 }
 
-// rtMapNew (rt_core.inc:598-611): just the external delegation -- see
-// MapNewRaw's own doc comment above.
+// rtMapBoxSize is MapNewPtr's argument for rtMapNew's box below -- mirrors
+// text.cla's/list.cla's own rtTextBoxSize/rtListBoxSize reasoning exactly:
+// this language has no sizeof operator, so it's a hand-derived constant
+// rather than an exact `sizeof(struct rt_map)`. rt_core.inc's own
+// rt_map_layout_check pins struct rt_map to exactly `{ int32_t rc; Handle
+// keys; Handle vals; int32_t valsize; int32_t count; int32_t cap;
+// int32_t valcap; }` (seven fields), but a Handle is a native pointer,
+// whose width (and the padding a natural-alignment C struct layout inserts
+// around it) differs by target. 56 (seven fields, each conservatively
+// budgeted a full 8-byte pointer-width slot) safely covers both the
+// x86_64/arm64 differential-test host and the real 4-byte-pointer 68k
+// target: MapNewPtr only guarantees "at least this many bytes," so a
+// little slack here is harmless, unlike an UNDER-sized box, which would
+// corrupt whatever heap memory follows it.
+const rtMapBoxSize: int = 56
+
+// rtMapNew (rt_core.inc:622-636, `rt_map_new`) -- Plan 5c wave2a Task 4:
+// birth allocation is now entirely Clarus-owned, mirroring the C reference
+// field by field (rc=1, keys/vals each a fresh empty Handle, valsize/count/
+// cap/valcap poked). MapNewHandle(0) never returns null (it oom-panics
+// itself, see its own extern doc comment above), so there is no separate
+// NULL check here, matching MapNewPtr's own "check at the primitive"
+// placement.
 func rtMapNew(valsize: int): ptr {
-    return MapNewRaw(valsize)
+    var m: ptr
+    var rm: RtMap
+
+    m = MapNewPtr(rtMapBoxSize)
+    rm = RtMap(m)
+    rm.rc = 1
+    rm.keys = MapNewHandle(0)
+    rm.vals = MapNewHandle(0)
+    rm.valsize = valsize
+    rm.count = 0
+    rm.cap = 0
+    rm.valcap = 0
+    return m
+}
+
+// rtMapRetain (rt_core.inc:847-852, `rt_map_retain`) -- Plan 5c wave2a Task
+// 4: null-safe increment, no over-release guard (same design decision as
+// text.cla's rtTextRetain/list.cla's rtListRetain -- the guard is a
+// release-only cold path, see MapRcCheck's own doc comment above and
+// rtMapRelease below).
+func rtMapRetain(m: ptr) {
+    var rm: RtMap
+
+    if m == ptr(0) {
+        return
+    }
+    rm = RtMap(m)
+    rm.rc = rm.rc + 1
+}
+
+// rtMapRelease (rt_core.inc:854-864, `rt_map_release`; the rt_map_free
+// alias, rt_core.inc:865, is exactly this function -- cprint.cla's
+// IMapFreeVar reaches this through cpEmitRelease, no separate rtMapFree
+// exists) -- Plan 5c wave2a Task 4: null-safe; the guard runs ONLY on the
+// cold `rc <= 0` path (MapRcCheck's own doc comment above) rather than
+// unconditionally the way the C reference's rt_rc_check call does;
+// decrements regardless; disposes the keys Handle, then the vals Handle,
+// then the box itself once rc reaches 0 -- that exact order, matching the
+// C reference's own DisposeHandle(m->keys); DisposeHandle(m->vals);
+// DisposePtr((Ptr)m); sequence.
+func rtMapRelease(m: ptr) {
+    var rm: RtMap
+
+    if m == ptr(0) {
+        return
+    }
+    rm = RtMap(m)
+    if rm.rc <= 0 {
+        MapRcCheck(m, rm.rc)
+    }
+    rm.rc = rm.rc - 1
+    if rm.rc == 0 {
+        MapDisposeHandle(rm.keys)
+        MapDisposeHandle(rm.vals)
+        MapDisposePtr(m)
+    }
+}
+
+// rtMapLastref (rt_core.inc:795, `rt_map_lastref`) -- Plan 5c wave2a Task
+// 4: null-safe "is this the box's only live reference" predicate, same
+// contract as rtListLastref/rtTextLastref -- cpEmitRelease's element-
+// release walk gates on this, reading rc BEFORE cpEmitRelease's own
+// rtMapRelease call runs, so two release call sites sharing one rc>=2 map
+// never both walk and re-release the same values.
+func rtMapLastref(m: ptr): bool {
+    return m != ptr(0) and RtMap(m).rc == 1
 }
 
 // rtMapSet (rt_core.inc:666-689, `rt_map_set`): upsert. On a match,

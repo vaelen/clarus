@@ -258,17 +258,17 @@ void *rt_ext_ListNewPtr(int32_t size) {
 }
 void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
-/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
- * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), same reasoning
- * as the List family above -- map.cla is UNCONDITIONALLY included in every
- * emitted program from this task forward, so its own waist calls must not
- * share a name with the generic/Str/Text/List/Ser externs a user program or
- * another runtime module might also declare. Bodies are thin aliases of the
- * same primitives the generic/List wrappers above already call.
- * rt_ext_MapNewRaw is the sole exception to "thin alias": it delegates the
- * WHOLE rt_map_new construction (same "external delegation" birth-
- * allocation choice as rt_ext_TextNewRaw/rt_ext_ListNewRaw), so rc is
- * written exactly once, entirely in C. */
+/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic:
+ * map.cla's own extern names (Plan 5b Task 11), same reasoning as the List
+ * family above -- map.cla is UNCONDITIONALLY included in every emitted
+ * program from this task forward, so its own waist calls must not share a
+ * name with the generic/Str/Text/List/Ser externs a user program or
+ * another runtime module might also declare. Bodies are thin aliases of
+ * the same primitives the generic/List wrappers above already call.
+ * (rt_ext_MapNewRaw, the one-time "whole rt_map_new delegation"
+ * birth-allocation wrapper, is gone as of Plan 5c wave2a Task 4 -- birth
+ * moved into map.cla itself, built from rt_ext_MapNewPtr/MapNewHandle
+ * below, mirroring the List family's own Task 3 update.) */
 void *rt_ext_MapHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_MapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
@@ -279,7 +279,6 @@ void rt_ext_MapPanic(const uint8_t *msg) {
     buf[n] = '\0';
     rt_panic(buf);
 }
-void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
 
 /* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
  * (Plan 5c Task 1: ARC waist externs): map.cla's own NewHandle/

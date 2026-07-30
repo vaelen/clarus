@@ -485,6 +485,16 @@ on App.startCLI(args: list of string) {
         // calls str.cla's rtStrCmp directly for key comparisons).
         cpMapPorted = true
         neededMods.add("map.cla")
+        // Plan 5c wave2a Task 4: cpMapArcPorted is a SEPARATE flag from
+        // cpMapPorted just above (that one gates Map's data operations,
+        // wave1 Task 11; this one gates Map's retain/release/free/lastref
+        // traffic, now that map.cla grows rtMapRetain/rtMapRelease/
+        // rtMapLastref too) -- same "unconditional, set true directly
+        // alongside the decision" convention as cpTextArcPorted/
+        // cpListArcPorted, since map.cla is always in the manifest
+        // regardless. This is the LAST *ArcPorted flag for this wave --
+        // every heap-backed family's ARC traffic is now Clarus-owned.
+        cpMapArcPorted = true
 
         combined2 = combined
         if neededMods.count > 0 {

@@ -1,0 +1,94 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc2_map.cla: Plan 5c wave2a Task 4's own regression fixture for the
+// PORTED map ARC (rtMapRetain/rtMapRelease/rtMapLastref,
+// runtime/clarus/map.cla), run via the internal/lowlevel harness
+// (clarusc-emitted C, host cc against rt.c, under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1). Same shape as arc2_list.cla's own fixture,
+// adapted for Map's key/value model:
+//
+//   - map-of-text: builds a map (1 entry), aliases it TWICE (`scoped =
+//     survivor`, `alias = scoped` -- rc 1 -> 2 -> 3), upserts OVER an
+//     EXISTING key through the shared box (fpMapReleaseGuard's eviction
+//     path -- the old value at that key must release before the new one
+//     lands, not leak), removes a second key (IMapRemove's own
+//     fpMapReleaseGuard call), then discards `scoped`'s share of the box
+//     MID-SCOPE by reassigning it to a fresh, independent map -- the same
+//     CRITICAL rt_map_lastref scenario arc2_list.cla's own header documents
+//     for List: the release of `scoped`'s OLD value (dropping the shared
+//     box from rc 3 -> 2) must NOT see itself as the last reference and
+//     must NOT walk/re-release the remaining entry, while `survivor`/
+//     `alias` (still rc==2, sharing the same box) must read back the
+//     mutated content correctly afterward.
+//   - map-of-list-of-text: a NESTED container value (ARC Task 8's own
+//     "list of map"/"map of list" nesting case, cpEmitRelease's KMap arm
+//     recursing into its own KList arm) -- upserts OVER an existing key
+//     with a fresh List value (fpMapReleaseGuard's eviction path releasing
+//     a List-typed old value THIS time, via fpReleaseVal's KList/KMap
+//     branch into cpEmitRelease), then removes the entry (same nested walk,
+//     from IMapRemove's own guard).
+//
+// live==0 (checked by the harness itself, not visible in this file's .out)
+// is the leak-gate half of this fixture's verification; the alert()s below
+// are the content half -- proving the survivors/results still read back
+// correctly after every alias/upsert/remove/discard/scope-exit step, not
+// just that nothing crashed or leaked.
+
+func makeMapText(s: string): map of text {
+    var m: map of text
+    m["k"] = s
+    return m
+}
+
+func makeListText(s: string): list of text {
+    var l: list of text
+    l.push(s)
+    return l
+}
+
+on App.startCLI(args: list of string) {
+    var survivor: map of text
+    var alias: map of text
+    var scoped: map of text
+    var mlt: map of list of text
+    var got: list of text
+
+    survivor = makeMapText("keep")
+    survivor["k2"] = "also"
+
+    scoped = survivor // alias -- rc 1 -> 2
+    alias = scoped // second alias -- rc 2 -> 3
+    scoped["k"] = "changed" // upsert OVER an existing key, visible through every alias (shared box) -- fpMapReleaseGuard must release "keep" first
+    scoped.remove("k2") // remove -- fpMapReleaseGuard must release "also"
+    // discard `scoped`'s share of the box MID-SCOPE (not at function end) by
+    // reassigning it to a fresh, independent map -- rc 3 -> 2, must NOT
+    // free the remaining "changed" entry (survivor/alias still share it).
+    scoped = makeMapText("gone")
+
+    if alias.count == 1 and alias["k"] == "changed" {
+        alert("map-survivor-ok")
+    } else {
+        alert("map-survivor-FAIL")
+    }
+    if survivor.count == 1 and survivor["k"] == "changed" {
+        alert("map-alias-ok")
+    } else {
+        alert("map-alias-FAIL")
+    }
+
+    mlt["k"] = makeListText("one")
+    mlt["k"] = makeListText("two") // upsert OVER an existing key with a fresh List value -- fpMapReleaseGuard must release the OLD list ("one")
+    got = mlt["k"]
+    if mlt.count == 1 and got.count == 1 and got[0] == "two" {
+        alert("map-of-list-upsert-ok")
+    } else {
+        alert("map-of-list-upsert-FAIL")
+    }
+    mlt.remove("k") // remove -- fpMapReleaseGuard must release the List value ("two")
+    if mlt.count == 0 {
+        alert("map-of-list-remove-ok")
+    } else {
+        alert("map-of-list-remove-FAIL")
+    }
+}

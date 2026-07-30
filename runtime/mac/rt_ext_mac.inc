@@ -216,10 +216,11 @@ void *rt_ext_ListNewPtr(int32_t size) {
 }
 void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
-/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic/
- * MapNewRaw: map.cla's own extern names (Plan 5b Task 11), mirroring
+/* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData/MapPanic:
+ * map.cla's own extern names (Plan 5b Task 11), mirroring
  * internal/build/rt/rt_ext_host.inc's Map block exactly -- same reasoning
- * as the Text/List families above. */
+ * as the Text/List families above. (rt_ext_MapNewRaw is gone as of Plan 5c
+ * wave2a Task 4 -- see that .inc file's own header comment.) */
 void *rt_ext_MapHandleDeref(void *h) { return *(void **)h; }
 int32_t rt_ext_MapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
 void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
@@ -230,7 +231,6 @@ void rt_ext_MapPanic(const uint8_t *msg) {
     buf[n] = '\0';
     rt_panic(buf);
 }
-void *rt_ext_MapNewRaw(int32_t valsize) { return (void *)rt_map_new(valsize); }
 
 /* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
  * (Plan 5c Task 1: ARC waist externs): mirrors

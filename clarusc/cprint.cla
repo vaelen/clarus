@@ -133,6 +133,24 @@ var cpTextArcPorted: bool
 // analogous flag (cpMapArcPorted) in this wave's next task.
 var cpListArcPorted: bool
 
+// cpMapArcPorted (Plan 5c wave2a Task 4) redirects Map's own retain/
+// release/free/lastref traffic to the Clarus-ported rtMapRetain/
+// rtMapRelease/rtMapLastref (map.cla), a SEPARATE flag from cpMapPorted
+// above: cpMapPorted (wave1, Task 11) redirected Map's DATA operations
+// (set/get/has/remove/count/...); cpMapArcPorted redirects ARC (retain/
+// release/dispose/lastref) once map.cla grows those functions too
+// (wave2a). Same "unconditional, set true directly alongside the decision"
+// convention as cpTextArcPorted/cpListArcPorted -- map.cla is always in the
+// manifest, so this is always true, never gated by a usage flag. Unlike
+// List's own Task 3 (which needed a fresh rtListAt for its walk-internal
+// element accessor), Map's walk-internal `rt_map_val_at`/`rt_map_count`
+// calls (inside cpEmitRelease's own element-release loop) already existed
+// from wave1 (fpForMapStmt's own `for k, v in m` loop already used them) --
+// this task routes those two through the EXISTING cpMapPorted flag
+// instead, leaving cpMapArcPorted scoped purely to retain/release/lastref
+// (map.cla's own module header documents the full split).
+var cpMapArcPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -443,16 +461,16 @@ func fpRetainVal(v: text, t: int) {
         fpEmit(buf)
     } else if k == KText and cpTextArcPorted {
         // Plan 5c wave2a Task 2: redirect the KText case of the plain-bump
-        // fallback below (still reached, un-redirected, for KList/KMap --
-        // list/map ARC porting is a later task in this wave) to the
-        // Clarus-ported rtTextRetain, same (void*) cast convention as every
-        // other cpTextArcPorted call site.
+        // fallback below to the Clarus-ported rtTextRetain, same (void*)
+        // cast convention as every other cpTextArcPorted call site. KList/
+        // KMap get their own analogous branches just below (Tasks 3/4).
         fpEmit("clar_fn_rtTextRetain((void*)" + v + ");")
     } else if k == KList and cpListArcPorted {
-        // Plan 5c wave2a Task 3: same redirect, for KList -- KMap still
-        // falls through to the bare fallback below (map ARC porting is
-        // this wave's next task).
+        // Plan 5c wave2a Task 3: same redirect, for KList.
         fpEmit("clar_fn_rtListRetain((void*)" + v + ");")
+    } else if k == KMap and cpMapArcPorted {
+        // Plan 5c wave2a Task 4: same redirect, for KMap.
+        fpEmit("clar_fn_rtMapRetain((void*)" + v + ");")
     } else {
         fpEmit(fpHeapFn(k) + "_retain(" + v + ");")
     }
@@ -528,13 +546,15 @@ func fpNewTrackedTmp(t: int): text {
         irMarkRcWalkNeeded(irtName(t))
     } else {
         fpEmit(ctype + " " + name + " = NULL;")
-        // Plan 5c wave2a Task 2/3: same stem-storage gate as fpNewTmp above
-        // -- KText/KList redirect to the Clarus-ported release; KMap keeps
-        // the bare stem (map ARC porting is this wave's next task).
+        // Plan 5c wave2a Task 2/3/4: same stem-storage gate as fpNewTmp
+        // above -- KText/KList/KMap all redirect to their own Clarus-ported
+        // release now that map.cla grows rtMapRelease too.
         if irtKind(t) == KText and cpTextArcPorted {
             fpStmtTmpRel.add(toText("clar_fn_rtTextRelease"))
         } else if irtKind(t) == KList and cpListArcPorted {
             fpStmtTmpRel.add(toText("clar_fn_rtListRelease"))
+        } else if irtKind(t) == KMap and cpMapArcPorted {
+            fpStmtTmpRel.add(toText("clar_fn_rtMapRelease"))
         } else {
             fpStmtTmpRel.add(toText(fpHeapFn(irtKind(t)) + "_release"))
         }
@@ -1355,9 +1375,15 @@ func fpMapReleaseGuard(m: text, k: text, elemT: int) {
     old = fpNewTmp(ctype)
     fpHandoff(old) // this guard's own explicit release below is old's only release
     // Plan 5b Task 11: cpMapPorted redirects the has/get calls the guard
-    // itself emits below (has/get are ported) -- fpReleaseVal's own release
-    // call just below stays bare C regardless (RC boundary: this guard
-    // releases the evicted VALUE, not the map).
+    // itself emits below (has/get are ported). fpReleaseVal's own release
+    // call just below dispatches on elemT's OWN kind (Plan 5c wave2a Tasks
+    // 2-4: KText/KList/KMap each redirect to their own Clarus-ported
+    // release once cpTextArcPorted/cpListArcPorted/cpMapArcPorted; a
+    // KMap-typed value in particular now routes through fpReleaseVal's
+    // KArr/KList/KMap branch into cpEmitRelease's own KMap arm, which THIS
+    // task ports -- no separate edit needed in this guard itself for that
+    // case) -- this guard releases the evicted VALUE, not the map, so which
+    // path fires depends entirely on the map's OWN value type, elemT.
     if cpMapPorted {
         fpEmit("if (clar_fn_rtMapHas((void*)" + m + ", (void*)" + k + ")) {")
         fpIndent = fpIndent + 1
@@ -1951,12 +1977,15 @@ func fpIntrCall(x: int): text {
             // must retain through the same Clarus-ported rtTextRetain every
             // other text retain site uses. Plan 5c wave2a Task 3: KList
             // redirects the same way (a `list of list of text`'s outer
-            // retain) once cpListArcPorted; KMap elements keep the bare
-            // stem -- map's OWN ARC porting is this wave's next task.
+            // retain) once cpListArcPorted. Plan 5c wave2a Task 4: KMap
+            // redirects the same way (a `list of map of text`'s outer
+            // retain) once cpMapArcPorted.
             if irtKind(irExprType(x)) == KText and cpTextArcPorted {
                 fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
             } else if irtKind(irExprType(x)) == KList and cpListArcPorted {
                 fpEmit("clar_fn_rtListRetain((void*)" + t + ");")
+            } else if irtKind(irExprType(x)) == KMap and cpMapArcPorted {
+                fpEmit("clar_fn_rtMapRetain((void*)" + t + ");")
             } else {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
@@ -2107,13 +2136,12 @@ func fpIntrCall(x: int): text {
         // ARC Task 3: aliases m's own stored value (same reasoning as
         // IListFirst/IListLast above) -- a heap-typed result is retained
         // immediately into a tracked temp, same +1-and-tracked convention.
-        // Plan 5b Task 11: cpMapPorted redirects the get call itself; the
-        // `_retain` suffix call stays bare C regardless for KMap (RC
-        // boundary -- map's OWN ARC porting is this wave's next task).
+        // Plan 5b Task 11: cpMapPorted redirects the get call itself.
         // Plan 5c wave2a Task 2 (review fix): KText redirects to the
         // Clarus-ported rtTextRetain, same reasoning as IListFirst/
         // IListLast above. Plan 5c wave2a Task 3: KList redirects the same
-        // way once cpListArcPorted.
+        // way once cpListArcPorted. Plan 5c wave2a Task 4: KMap redirects
+        // the same way once cpMapArcPorted.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             if cpMapPorted {
@@ -2125,6 +2153,8 @@ func fpIntrCall(x: int): text {
                 fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
             } else if irtKind(irExprType(x)) == KList and cpListArcPorted {
                 fpEmit("clar_fn_rtListRetain((void*)" + t + ");")
+            } else if irtKind(irExprType(x)) == KMap and cpMapArcPorted {
+                fpEmit("clar_fn_rtMapRetain((void*)" + t + ");")
             } else {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
@@ -2151,13 +2181,12 @@ func fpIntrCall(x: int): text {
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv) // dv's own temp (if any) is about to alias into t
-        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
-        // the `_retain` suffix call stays bare C regardless for KMap (RC
-        // boundary -- map's OWN ARC porting is this wave's next task).
+        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself.
         // Plan 5c wave2a Task 2 (review fix): KText redirects to
         // the Clarus-ported rtTextRetain, same reasoning as IMapGet above.
         // Plan 5c wave2a Task 3: KList redirects the same way once
-        // cpListArcPorted.
+        // cpListArcPorted. Plan 5c wave2a Task 4: KMap redirects the same
+        // way once cpMapArcPorted.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";") // pre-fill with the default; get_dv leaves it untouched if absent
@@ -2170,6 +2199,8 @@ func fpIntrCall(x: int): text {
                 fpEmit("clar_fn_rtTextRetain((void*)" + t + ");")
             } else if irtKind(irExprType(x)) == KList and cpListArcPorted {
                 fpEmit("clar_fn_rtListRetain((void*)" + t + ");")
+            } else if irtKind(irExprType(x)) == KMap and cpMapArcPorted {
+                fpEmit("clar_fn_rtMapRetain((void*)" + t + ");")
             } else {
                 fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
             }
@@ -2208,14 +2239,13 @@ func fpIntrCall(x: int): text {
         k = fpStrAddr(a1)
         dv = fpExpr(a2)
         fpHandoff(dv)
-        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself;
-        // the retain/release compare-and-fix lines stay bare C regardless
-        // for KMap (RC boundary -- map's OWN ARC porting is this wave's
-        // next task). Plan 5c wave2a Task 2 (review fix): KText
+        // Plan 5b Task 11: cpMapPorted redirects the get_dv call itself.
+        // Plan 5c wave2a Task 2 (review fix): KText
         // redirects both halves to the Clarus-ported rtTextRetain/
         // rtTextRelease, same reasoning as IMapGet/IMapGetDv above. Plan 5c
         // wave2a Task 3: KList redirects both halves the same way once
-        // cpListArcPorted.
+        // cpListArcPorted. Plan 5c wave2a Task 4: KMap redirects both
+        // halves the same way once cpMapArcPorted.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
             fpEmit(t + " = " + dv + ";")
@@ -2228,6 +2258,8 @@ func fpIntrCall(x: int): text {
                 fpEmit("if (" + t + " != " + dv + ") { clar_fn_rtTextRetain((void*)" + t + "); clar_fn_rtTextRelease((void*)" + dv + "); }")
             } else if irtKind(irExprType(x)) == KList and cpListArcPorted {
                 fpEmit("if (" + t + " != " + dv + ") { clar_fn_rtListRetain((void*)" + t + "); clar_fn_rtListRelease((void*)" + dv + "); }")
+            } else if irtKind(irExprType(x)) == KMap and cpMapArcPorted {
+                fpEmit("if (" + t + " != " + dv + ") { clar_fn_rtMapRetain((void*)" + t + "); clar_fn_rtMapRelease((void*)" + dv + "); }")
             } else {
                 fpEmit("if (" + t + " != " + dv + ") { " + fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + "); " + fpHeapFn(irtKind(irExprType(x))) + "_release(" + dv + "); }")
             }
@@ -3143,6 +3175,9 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
     var lastrefCall: string
     var atPrefix: string
     var countCall: string
+    var valAtFn: string
+    var mArg: string
+    var outCast: string
 
     k = irtKind(t)
     if k == KText {
@@ -3257,16 +3292,44 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
         }
     } else if k == KMap {
         et = irtElem(t)
+        // Plan 5c wave2a Task 4: the walk-internal `rt_map_lastref`/
+        // `rt_map_val_at`/`rt_map_count` calls every branch below composes
+        // redirect independently -- `rt_map_lastref` via THIS task's own
+        // cpMapArcPorted (an ARC operation, same flag as the container's
+        // own retain/release/dispose below); `rt_map_val_at`/`rt_map_count`
+        // via the EXISTING cpMapPorted flag (wave1, already unconditionally
+        // true -- these are plain accessors, not ARC operations themselves;
+        // map.cla's own module header comment documents why they're gated
+        // this way, same split as List's own rtListAt/rtListCount). Unlike
+        // List's atPrefix (an address-returning call), Map's val_at is an
+        // out-param call (`rt_map_val_at(m, i, &out)`/
+        // `clar_fn_rtMapValAt((void*)m, i, (void*)&out)`) -- valAtFn/mArg/
+        // outCast let each branch below compose its own call with its own
+        // index/output-variable names.
+        if cpMapArcPorted {
+            lastrefCall = "clar_fn_rtMapLastref((void*)" + cexpr + ")"
+        } else {
+            lastrefCall = "rt_map_lastref(" + cexpr + ")"
+        }
+        if cpMapPorted {
+            countCall = "clar_fn_rtMapCount((void*)" + cexpr + ")"
+            valAtFn = "clar_fn_rtMapValAt"
+            mArg = "(void*)" + cexpr
+            outCast = "(void*)"
+        } else {
+            countCall = "rt_map_count(" + cexpr + ")"
+            valAtFn = "rt_map_val_at"
+            mArg = cexpr
+            outCast = ""
+        }
         if irtKind(et) == KText {
             // Same guard, same reasoning as KList just above. Plan 5c
             // wave2a Task 2: cpTextArcPorted redirects the element's own
-            // release; the rt_map_lastref/rt_map_count/rt_map_val_at
-            // walk-internal calls stay C regardless (map ARC porting is a
-            // later task in this wave).
+            // release.
             if cpTextArcPorted {
-                cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); clar_fn_rtTextRelease((void*)v); } }")
+                cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_fn_rtTextRelease((void*)v); } }")
             } else {
-                cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; rt_text *v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); rt_text_release(v); } }")
+                cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); rt_text_release(v); } }")
             }
         } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
             // ARC Task 7 (carry-forward 3): a map value is copied OUT by
@@ -3279,7 +3342,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             // local `rt_text *v` copy-out-then-release shape).
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
-            cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < rt_map_count(" + cexpr + "); i++) { rt_map_val_at(" + cexpr + ", i, &v); clar_release_" + recName + "(&v); } }")
+            cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
         } else if irtKind(et) == KList or irtKind(et) == KMap {
             // ARC Task 8 (carry-forward 3) -- same nested-container reasoning
             // as the KList branch just above, adapted for a map value: a map's
@@ -3289,16 +3352,22 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             // uses), then released via a recursive cpEmitRelease call.
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
-            cpAppendLine(dst, "    if (rt_map_lastref(" + cexpr + ")) {")
+            cpAppendLine(dst, "    if (" + lastrefCall + ") {")
             cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
-            cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < rt_map_count(" + cexpr + "); " + ix + "++) {")
-            cpAppendLine(dst, "    rt_map_val_at(" + cexpr + ", " + ix + ", &v" + numToStr(cpLoopN) + ");")
+            cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < " + countCall + "; " + ix + "++) {")
+            cpAppendLine(dst, "    " + valAtFn + "(" + mArg + ", " + ix + ", " + outCast + "&v" + numToStr(cpLoopN) + ");")
             cpEmitRelease(dst, "v" + numToStr(cpLoopN), et)
             cpAppendLine(dst, "    }")
             cpAppendLine(dst, "    }")
             cpAppendLine(dst, "    }")
         }
-        cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
+        // Plan 5c wave2a Task 4: cpMapArcPorted redirects to the
+        // Clarus-ported rtMapRelease.
+        if cpMapArcPorted {
+            cpAppendLine(dst, "    clar_fn_rtMapRelease((void*)" + cexpr + ");")
+        } else {
+            cpAppendLine(dst, "    rt_map_release(" + cexpr + ");")
+        }
     } else if k == KArr {
         et = irtElem(t)
         if irtNeedsCtor(et) {
@@ -3362,7 +3431,13 @@ func cpEmitRetain(dst: text, cexpr: string, t: int) {
             cpAppendLine(dst, "    rt_list_retain(" + cexpr + ");")
         }
     } else if k == KMap {
-        cpAppendLine(dst, "    rt_map_retain(" + cexpr + ");")
+        // Plan 5c wave2a Task 4: cpMapArcPorted redirects to the
+        // Clarus-ported rtMapRetain.
+        if cpMapArcPorted {
+            cpAppendLine(dst, "    clar_fn_rtMapRetain((void*)" + cexpr + ");")
+        } else {
+            cpAppendLine(dst, "    rt_map_retain(" + cexpr + ");")
+        }
     } else if k == KArr {
         et = irtElem(t)
         if irtNeedsCtor(et) {
@@ -3708,8 +3783,16 @@ func cpEmitDefaultInitFnProtos() {
         // cl_free_globals (cpRestBuf, appended before cpEmitFuncs's own
         // prototype loop too) -- found by this task's own bootstrap gate
         // (clarusc's self-hosted source has List-of-record globals whose
-        // cl_free_globals walk hit exactly this gap).
-        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and nm == "rtMapNew") {
+        // cl_free_globals walk hit exactly this gap). Plan 5c wave2a Task
+        // 4: "rtMapRetain"/"rtMapRelease"/"rtMapLastref" added for the
+        // exact same reason as List's Task 3 trio, the moment a record has
+        // a handle-backed Map field -- and "rtMapValAt"/"rtMapCount" added
+        // alongside them too: cpEmitRelease's own KMap element-release walk
+        // now ALSO calls these two (already-existing, wave1 functions) from
+        // the same pre-cpEmitFuncs positions, now that this task routes
+        // that walk's calls through cpMapPorted (map.cla's own module
+        // header comment documents the split).
+        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref")) {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1
