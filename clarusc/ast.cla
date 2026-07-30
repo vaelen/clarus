@@ -136,12 +136,15 @@
 //                pool idx
 //   DkExternFunc (Task 3, Ch13: `external func`) nameIdx=name; a=params
 //                list head (DkParam chain, -1 if none); b=return type (-1
-//                if no result); c=trap word or inline code, -1 if no
-//                trap/inline clause (Task 2, native-5d); intVal=convention
+//                if no result); c=trap word for a trap clause, -1
+//                otherwise -- no clause, or an inline clause, which has no
+//                trap word to store (Task 2, native-5d); intVal=convention
 //                flag (0=none, 1=pascal trap, 2=reg trap, 3=inline deref,
-//                4=inline nop). Same a/b slot layout as DkFunc so
-//                funcDeclName/ParamsHead/RetType and checkFuncSig work
-//                unchanged on it; c/intVal replace DkFunc's unused body
+//                4=inline nop) -- intVal is what distinguishes the two
+//                inline forms, since c is -1 for both. Same a/b slot
+//                layout as DkFunc so funcDeclName/ParamsHead/RetType and
+//                checkFuncSig work unchanged on it; c/intVal replace
+//                DkFunc's unused body
 //                slot (an external has no body) and are read back by
 //                externFuncTrap/externFuncConv below.
 //

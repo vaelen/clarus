@@ -137,3 +137,9 @@ check_test.cla:1:1: trap word must be in 0xA000..0xAFFF
 check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
 === extern-inline-deref-bad-sig ===
 check_test.cla:1:1: inline deref requires signature (ptr): ptr
+=== extern-trap-reg-str-param ===
+check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
+=== extern-trap-reg-too-many-scalar ===
+check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
+=== extern-inline-nop-bad-return ===
+check_test.cla:1:1: inline nop requires a void return

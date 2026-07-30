@@ -948,4 +948,27 @@ on App.startEmpty {
     src = ""
     ln(src, "external func Bad(p: ptr, q: ptr): ptr = inline deref")
     runCase("extern-inline-deref-bad-sig", src)
+
+    // Case 70: a `reg` trap rejects a str/text param outright -- neither
+    // has a register slot, so it falls into checkExternFunc's regBad path
+    // (the same diagnostic a 3rd ptr/scalar param gets) rather than the
+    // ordinary param-type diagnostic (string IS an otherwise-legal extern
+    // param type -- Case 58 -- so this pins that `reg` narrows the set
+    // further).
+    src = ""
+    ln(src, "external func F(s: string) = trap 0xA000 reg")
+    runCase("extern-trap-reg-str-param", src)
+
+    // Case 71: a `reg` trap allows at most 2 int/bool/char parameters -- a
+    // 3rd is rejected (the D0/D1 rule, the scalarCount sibling of Case
+    // 68's ptrCount check).
+    src = ""
+    ln(src, "external func F(a: int, b: int, c: int) = trap 0xA000 reg")
+    runCase("extern-trap-reg-too-many-scalar", src)
+
+    // Case 72: `inline nop` requires no return type -- a non-void return
+    // is rejected.
+    src = ""
+    ln(src, "external func Bad(): int = inline nop")
+    runCase("extern-inline-nop-bad-return", src)
 }
