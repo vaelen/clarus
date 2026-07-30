@@ -1,0 +1,119 @@
+        MOVE.L D1,-(A7)
+        MOVE.L (A7)+,D0
+        MOVE.W D2,D3
+        MOVE.B (A2),D4
+        MOVE.W D5,(A3)
+        MOVE.W #10,D6
+        MOVE.L #100000,D7
+        MOVE.W 4(A5),D0
+        MOVE.W D1,8(A4)
+        MOVE.W $1000,D2
+        MOVE.W D3,$2000
+LBL_0:
+        MOVE.W LBL_0(PC),D4
+        MOVEA.L D0,A1
+        MOVEA.L (A2),A3
+        MOVEA.W #4,A4
+        BNE.W LBL_1
+        CLR.W D1
+LBL_1:
+        LEA 8(A6),A0
+        LEA (A2),A3
+        LEA $3000,A4
+        LEA LBL_0(PC),A5
+        PEA (A2)
+        PEA 4(A3)
+        PEA $4000
+        ADD.W D0,D1
+        ADD.L (A2),D3
+        ADD.W D4,(A5)
+        ADD.W #5,D6
+        ADDA.W D0,A1
+        ADDA.L (A2),A3
+        ADDQ.L #4,A7
+        ADDQ.B #1,D0
+        ADDQ.W #8,D1
+        SUB.W D0,D1
+        SUB.L (A2),D3
+        SUB.W D4,(A5)
+        SUB.W #5,D6
+        SUBQ.W #8,D0
+        SUBQ.L #2,A6
+        CMP.L D1,D0
+        CMP.W (A2),D3
+        CMP.W #7,D4
+        AND.W D0,D1
+        AND.L (A2),D3
+        AND.W D4,(A5)
+        AND.W #15,D6
+        OR.W D0,D1
+        OR.L (A2),D3
+        OR.W D4,(A5)
+        OR.W #240,D6
+        EOR.W D0,D1
+        EOR.L D2,(A3)
+        EOR.W #255,D4
+        NEG.W D0
+        NEG.L (A2)
+        NOT.W D0
+        NOT.L (A2)
+        TST.W D0
+        TST.B (A2)
+        CLR.W D0
+        CLR.L (A2)
+        ASL.W #1,D0
+        ASL.W D1,D2
+        ASR.L #4,D3
+        LSL.W #2,D4
+        LSR.L D5,D6
+        MULS.W D1,D0
+        MULU.W (A2),D3
+        DIVS.W D4,D5
+        DIVU.W (A2),D6
+        EXT.W D0
+        EXT.L D0
+        SWAP D0
+        JSR 42(A5)
+        JSR (A2)
+        JMP (A3)
+        JMP $5000
+        JMP LBL_0(PC)
+        SEQ D0
+        SNE (A2)
+        SLE D3
+LBL_2:
+        SUBQ.W #1,D2
+        DBRA D1,LBL_2
+        BRA.W LBL_2
+        BSR.W LBL_3
+        MOVE.W D0,D1
+LBL_3:
+        MOVE.W #99,D0
+        RTS
+        LINK A6,#-100
+        UNLK A6
+        DC.W $A122  ; _NewHandle
+        DC.B $12
+        DC.W $1234
+        DC.L $12345678
+        DC.B $00
+        DC.B $41,$42
+        DC.B $58,$59,$5A
+        DC.B $00
+        ; end of exerciser
+2F 01 20 1F 36 02 18 12 36 85 3C 3C 00 0A 2E 3C
+00 01 86 A0 30 2D 00 04 39 41 00 08 34 38 10 00
+31 C3 20 00 38 3A FF FE 22 40 26 52 38 7C 00 04
+66 00 00 04 42 41 41 EE 00 08 47 D2 49 F8 30 00
+4B FA FF E2 48 52 48 6B 00 04 48 78 40 00 D2 40
+D6 92 D9 55 06 46 00 05 D2 C0 D7 D2 58 8F 52 00
+50 41 92 40 96 92 99 55 04 46 00 05 51 40 55 8E
+B0 81 B6 52 0C 44 00 07 C2 40 C6 92 C9 55 02 46
+00 0F 82 40 86 92 89 55 00 46 00 F0 B1 41 B5 93
+0A 44 00 FF 44 40 44 92 46 40 46 92 4A 40 4A 12
+42 40 42 92 E3 40 E3 62 E8 83 E5 4C EA AE C1 C1
+C6 D2 8B C4 8C D2 48 80 48 C0 48 40 4E AD 00 2A
+4E 92 4E D3 4E F8 50 00 4E FA FF 5A 57 C0 56 D2
+5F C3 53 42 51 C9 FF FC 60 00 FF F8 61 00 00 04
+32 00 30 3C 00 63 4E 75 4E 56 FF 9C 4E 5E A1 22
+12 12 34 12 34 56 78 00 41 42 58 59 5A 00

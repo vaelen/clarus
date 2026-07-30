@@ -1,0 +1,76 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+include "../lib.cla"
+include "../asm68k.cla"
+
+// printListing splits a68ListingText()'s LF-terminated lines (a68* never
+// uses CR) and alerts each one -- mirrors how the module itself builds
+// lines (a68AppendLine), just walked back apart here for the golden.
+func printListing(t: text) {
+    var i: int
+    var n: int
+    var line: string
+    var c: char
+
+    n = t.length
+    line = ""
+    i = 0
+    while i < n {
+        c = t[i]
+        if c == char(10) {
+            alert(line)
+            line = ""
+        } else {
+            line = line + c
+        }
+        i = i + 1
+    }
+    if line.length > 0 {
+        alert(line)
+    }
+}
+
+// printHexDump alerts a68Bytes() as uppercase hex, space-separated, 16
+// bytes per line -- reuses the module's own a68HexN so the byte-dump and
+// the module's listing hex formatting can never drift apart.
+func printHexDump(t: text) {
+    var i: int
+    var n: int
+    var line: string
+    var col: int
+
+    n = t.length
+    line = ""
+    col = 0
+    i = 0
+    while i < n {
+        if col > 0 {
+            line = line + " "
+        }
+        line = line + a68HexN(int(t[i]), 2)
+        col = col + 1
+        if col == 16 {
+            alert(line)
+            line = ""
+            col = 0
+        }
+        i = i + 1
+    }
+    if line.length > 0 {
+        alert(line)
+    }
+}
+
+on App.startEmpty {
+    var ok: bool
+
+    a68SelfExercise()
+    ok = a68Finish()
+    if not ok {
+        alert("UNRESOLVED LABEL " + numToStr(a68UnresolvedLabel()))
+    } else {
+        printListing(a68ListingText())
+        printHexDump(a68Bytes())
+    }
+}

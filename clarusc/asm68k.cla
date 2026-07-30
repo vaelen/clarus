@@ -1,0 +1,1506 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// asm68k.cla: the 68000 instruction table, binary encoder (with label
+// backpatching), and Motorola-syntax listing printer -- the foundation of
+// the native m68k backend (native-5d Task 5). Follows ir.cla's arena
+// idiom: one flat arena (a68Items), record-shaped entries, accessor-free
+// (callers reach the arena only through the constructors below), and a
+// single a68Reset() that clears every module-global list/var between
+// independently-built instruction streams.
+//
+// ONE TABLE, TWO CONSUMERS. Every op's encoding recipe -- which addressing
+// modes it reads its operands from, how many extension words each mode
+// contributes, and the opcode-word bit pattern -- lives in exactly three
+// functions (a68InstrExtWords, a68WriteExtWords/a68InstrWord). The listing
+// printer (a68ListingLine and friends) is driven off the SAME per-item
+// fields (op/size/sm/sr/sv/dm/dr/dv), but does not share code with the
+// encoder beyond reading those fields -- Motorola syntax and 68000 bit
+// layout are different enough shapes that forcing them through one
+// function would obscure both. What "nothing outside the table writes raw
+// code words" buys here: every 16-bit opcode constant in this file (0x41C0
+// for LEA, 0x4E75 for RTS, ...) appears exactly once, inside
+// a68InstrWord's per-op switch -- no other function ever builds or
+// compares against a hex opcode literal.
+//
+// ARENA SHAPE. A68Item is a single flat record type covering five
+// "kinds" (KindInstr/KindBind/KindData/KindTrap/KindComment, the brief's
+// own vocabulary) -- unlike ir.cla's per-node-kind arenas, one shape
+// suffices here because an instruction stream is a strict SEQUENCE (no
+// branching/threading structure to represent): items are appended in
+// program order and encoded in that same order. No `next` field, no
+// linked lists -- just `a68Items: list of A68Item`, walked 0..count-1.
+//
+// TWO-PASS ENCODING, MERGED. The brief describes "pass 1 lays out (all
+// sizes are context-free because branches are always .W), pass 2 emits
+// bytes and patches labels." Because every item's BYTE LENGTH is a pure
+// function of its own op/size/mode fields (never of what comes later),
+// layout has no forward dependency and so happens inline, at emit time:
+// every a68Emit*/a68Dc*/a68Align call computes its own length immediately
+// and advances the running a68Pc counter right then. a68Bind resolves a
+// label's address the moment it's called (address = a68Pc at that point),
+// so by the time a68Finish runs, every bound label's address is already
+// known -- Finish's only remaining jobs are (a) confirm every label
+// created via a68NewLabel was eventually bound, and (b) walk the arena
+// once more, this time actually emitting bytes and patching every
+// PC-relative extension word against the now-fully-known label table.
+//
+// BRANCHES ARE JUST ANOTHER PCLabel OPERAND. Bcc/BRA/BSR (a68EmitBr) and
+// DBRA (a68Emit with op=OpDbra) both resolve to a single-ea instruction
+// whose sole EA is AmPCLabel in the DEST slot (dm=AmPCLabel, dv=target
+// label id) -- exactly the same shape LEA/PEA/JSR/JMP already use for a
+// `label(PC)` operand. This means there is only ONE displacement-patching
+// code path (a68PatchDisp) in the whole module, shared by every
+// PC-relative reference regardless of which instruction it's attached to.
+// a68EmitBr's only real job is picking the hardware condition-code nibble
+// (BRA -> T=0, BSR -> the reserved F=1 slot, Bcc -> the caller's cc) and
+// stashing it in the otherwise-unused SOURCE value slot (sv) -- see the
+// condition-code numbering table in a68CcName, which matches the 68000's
+// own cc field bit-for-bit (T=0 .. LE=15), so a68EmitBr never remaps it.
+//
+// REUSED FIELD SLOTS. a68Emit's fixed 8-parameter signature (op, size,
+// sm, sr, sv, dm, dr, dv) has no room for a per-instruction condition
+// code, so OpScc repurposes its otherwise-unused DEST VALUE slot (dv) to
+// carry the condition code instead of an EA displacement/immediate/label
+// id. Consequence, documented once here rather than validated at runtime
+// (this is an internal encoder, not a user-facing checked API): an
+// OpScc's destination ea is restricted to modes that need no operand
+// value of their own (Dn/An/Ind/PostInc/PreDec) -- Disp16/Imm/AbsW/PCLabel
+// dest modes would collide with the cc value and are simply never used
+// for OpScc by any caller (including a68SelfExercise below).
+//
+// LISTING NUMBER FORMATTING (vasm-mot compatible, chosen once, applied
+// uniformly): immediates (`#imm`, AmImm operands, ADDQ/SUBQ's embedded
+// quick value, LINK's #disp) and AmDisp16 displacements print in DECIMAL
+// (with a leading `-` for negatives, via lib.cla's numToStr) -- these are
+// small, sign-meaningful numbers a human reads as counts/offsets.
+// Anything address-shaped -- AmAbsW operands, DC.B/DC.W/DC.L data values,
+// and trap words -- prints as `$` + uppercase hex, zero-padded to the
+// natural width (2/4/8 digits for byte/word/long). Branch/DBRA/PCLabel
+// targets print as the symbolic `LBL_<id>` (optionally `(PC)` for a
+// plain PC-relative EA operand, never for a branch's own target) -- vasm
+// resolves those independently, which is the whole point of the listing
+// (Task 6's round-trip oracle).
+//
+// ALIGN, MADE UNAMBIGUOUS FOR THE ORACLE. a68Align's padding decision
+// (skip, or emit one zero byte) is made once, at EMIT time, from the
+// then-current a68Pc parity, and the SAME decision drives both the byte
+// encoder and the listing printer: when no padding is needed the item
+// contributes nothing to either (not even a blank listing line); when
+// padding is needed, the listing prints a literal `DC.B $00` (not a vasm
+// ALIGN/CNOP directive) so Task 6's vasm-assembled byte count can never
+// drift from ours by relying on vasm's own alignment semantics.
+
+include "lib.cla"
+
+// ================================================================
+// Public enums (the brief's fixed contract -- Task 6/7 depend on these
+// exact names; grown on demand, never a full ISA catalog).
+// ================================================================
+
+enum A68Op {
+    OpMove
+    OpMovea
+    OpLea
+    OpPea
+    OpAdd
+    OpAdda
+    OpAddq
+    OpSub
+    OpSubq
+    OpCmp
+    OpNeg
+    OpAnd
+    OpOr
+    OpEor
+    OpNot
+    OpAsl
+    OpAsr
+    OpLsl
+    OpLsr
+    OpMuls
+    OpMulu
+    OpDivs
+    OpDivu
+    OpTst
+    OpExt
+    OpSwap
+    OpBra
+    OpBcc
+    OpBsr
+    OpJsr
+    OpJmp
+    OpLink
+    OpUnlk
+    OpRts
+    OpScc
+    OpClr
+    OpDbra
+}
+
+enum A68Mode {
+    AmNone
+    AmDn
+    AmAn
+    AmInd
+    AmPostInc
+    AmPreDec
+    AmDisp16
+    AmPCLabel
+    AmImm
+    AmAbsW
+}
+
+// ================================================================
+// Internal item-kind / data-directive-kind tags.
+// ================================================================
+
+const KindInstr: int = 0
+const KindBind: int = 1
+const KindData: int = 2
+const KindTrap: int = 3
+const KindComment: int = 4
+
+const DKindB: int = 0
+const DKindW: int = 1
+const DKindL: int = 2
+const DKindBytes: int = 3
+const DKindAlign: int = 4
+
+// A68Item is the single arena record shape covering all five kinds; each
+// kind reads only the fields relevant to it (see the kind-by-kind field
+// map in the header comment above).
+record A68Item {
+    kind: int
+    op: A68Op
+    size: int
+    sm: A68Mode
+    sr: int
+    sv: int
+    dm: A68Mode
+    dr: int
+    dv: int
+    label: int
+    trapWord: int
+    trapName: string(63)
+    dataKind: int
+    dataVal: int
+    dataText: text
+    commentText: string(255)
+    addr: int
+    len: int
+}
+
+var a68Items: list of A68Item
+
+// a68LabelAddr/a68LabelDefined are parallel arrays indexed by label id
+// (a68NewLabel's return value): the address a68Bind recorded, and whether
+// a68Bind has been called for that id yet.
+var a68LabelAddr: list of int
+var a68LabelDefined: list of bool
+
+// a68Pc is the running byte-address counter, advanced by every emit call;
+// a68BytesOut is a68Finish's assembled byte buffer; a68UnresolvedId is the
+// label id a68Finish found undefined (-1 once Finish succeeds, or before
+// any failure has been observed).
+var a68Pc: int
+var a68BytesOut: text
+var a68UnresolvedId: int
+
+// ================================================================
+// Reset / labels
+// ================================================================
+
+func a68Reset() {
+    while a68Items.count > 0 {
+        a68Items.pop()
+    }
+    while a68LabelAddr.count > 0 {
+        a68LabelAddr.pop()
+    }
+    while a68LabelDefined.count > 0 {
+        a68LabelDefined.pop()
+    }
+    a68Pc = 0
+    a68BytesOut = ""
+    a68UnresolvedId = -1
+}
+
+func a68NewLabel(): int {
+    a68LabelAddr.add(0)
+    a68LabelDefined.add(false)
+    return a68LabelAddr.count - 1
+}
+
+// a68Bind resolves label l's address to the CURRENT position (a68Pc) --
+// immediately, not deferred to a68Finish, since nothing later in the
+// stream can change where "here" is (see the header comment's "two-pass,
+// merged" note) -- and records a zero-length KindBind item so the listing
+// printer can show `LBL_l:`.
+func a68Bind(l: int) {
+    var it: A68Item
+
+    a68LabelAddr[l] = a68Pc
+    a68LabelDefined[l] = true
+
+    it.kind = KindBind
+    it.label = l
+    it.addr = a68Pc
+    it.len = 0
+    a68Items.add(it)
+}
+
+// ================================================================
+// Emit: instructions, trap words, data directives, comments
+// ================================================================
+
+// a68PushInstr is the shared constructor behind both public entry points
+// that build a KindInstr item (a68Emit and a68EmitBr) -- it computes the
+// item's byte length from the SAME per-op table a68WriteExtWords/
+// a68InstrWord consult later, in a68Finish.
+func a68PushInstr(op: A68Op, size: int, sm: A68Mode, sr: int, sv: int, dm: A68Mode, dr: int, dv: int) {
+    var it: A68Item
+    var extWords: int
+
+    extWords = a68InstrExtWords(op, size, sm, dm)
+
+    it.kind = KindInstr
+    it.op = op
+    it.size = size
+    it.sm = sm
+    it.sr = sr
+    it.sv = sv
+    it.dm = dm
+    it.dr = dr
+    it.dv = dv
+    it.addr = a68Pc
+    it.len = 2 + extWords * 2
+    a68Items.add(it)
+    a68Pc = a68Pc + it.len
+}
+
+func a68Emit(op: A68Op, size: int, sm: A68Mode, sr: int, sv: int, dm: A68Mode, dr: int, dv: int) {
+    a68PushInstr(op, size, sm, sr, sv, dm, dr, dv)
+}
+
+// a68EmitBr builds a Bcc/BRA/BSR as a plain KindInstr item whose only EA is
+// AmPCLabel in the dest slot (dv=target) -- see the header comment. The
+// condition-code nibble goes in the source VALUE slot (sv), which is
+// otherwise unused (sm is always AmNone for a branch): BRA forces T (0),
+// BSR forces the reserved F (1) slot (BRA/BSR occupy the two condition
+// codes Bcc itself can never use), Bcc passes the caller's cc through
+// unchanged (a68CcName's numbering already matches the hardware nibble).
+func a68EmitBr(op: A68Op, cc: int, target: int) {
+    var ccField: int
+
+    if op == OpBra {
+        ccField = 0
+    } else if op == OpBsr {
+        ccField = 1
+    } else {
+        ccField = cc
+    }
+    a68PushInstr(op, 2, AmNone, 0, ccField, AmPCLabel, 0, target)
+}
+
+// a68EmitTrap encodes word verbatim (the caller already knows the trap
+// number) -- the listing shows it as `DC.W $xxxx  ; name` so vasm
+// assembles the word itself and the trap name is comment-only.
+func a68EmitTrap(word: int, name: string(63)) {
+    var it: A68Item
+
+    it.kind = KindTrap
+    it.trapWord = word
+    it.trapName = name
+    it.addr = a68Pc
+    it.len = 2
+    a68Items.add(it)
+    a68Pc = a68Pc + 2
+}
+
+func a68DcB(v: int) {
+    var it: A68Item
+
+    it.kind = KindData
+    it.dataKind = DKindB
+    it.dataVal = v
+    it.addr = a68Pc
+    it.len = 1
+    a68Items.add(it)
+    a68Pc = a68Pc + 1
+}
+
+func a68DcW(v: int) {
+    var it: A68Item
+
+    it.kind = KindData
+    it.dataKind = DKindW
+    it.dataVal = v
+    it.addr = a68Pc
+    it.len = 2
+    a68Items.add(it)
+    a68Pc = a68Pc + 2
+}
+
+func a68DcL(v: int) {
+    var it: A68Item
+
+    it.kind = KindData
+    it.dataKind = DKindL
+    it.dataVal = v
+    it.addr = a68Pc
+    it.len = 4
+    a68Items.add(it)
+    a68Pc = a68Pc + 4
+}
+
+func a68DcBytes(t: text) {
+    var it: A68Item
+
+    it.kind = KindData
+    it.dataKind = DKindBytes
+    it.dataText = t
+    it.addr = a68Pc
+    it.len = t.length
+    a68Items.add(it)
+    a68Pc = a68Pc + t.length
+}
+
+// a68Align pads to an even address with a single zero byte, deciding NOW
+// (from the current a68Pc parity) whether padding is needed -- see the
+// header comment's "align, made unambiguous" note. A no-padding-needed
+// Align contributes a zero-length item that neither the encoder nor the
+// listing printer emits anything for.
+func a68Align() {
+    var it: A68Item
+
+    it.kind = KindData
+    it.dataKind = DKindAlign
+    it.addr = a68Pc
+    if a68Pc mod 2 != 0 {
+        it.len = 1
+    } else {
+        it.len = 0
+    }
+    a68Items.add(it)
+    a68Pc = a68Pc + it.len
+}
+
+func a68Comment(s: string(255)) {
+    var it: A68Item
+
+    it.kind = KindComment
+    it.commentText = s
+    it.addr = a68Pc
+    it.len = 0
+    a68Items.add(it)
+}
+
+// ================================================================
+// Finish / results
+// ================================================================
+
+// a68Finish confirms every label created via a68NewLabel was eventually
+// bound (false, with a68UnresolvedId set, on the first one that wasn't --
+// the caller is expected to panic with that id), then walks the arena
+// once more to actually assemble a68BytesOut. Every label's address is
+// ALREADY known at this point (a68Bind resolved it immediately when
+// called), so this second pass needs no further layout work -- only
+// encoding.
+func a68Finish(): bool {
+    var i: int
+    var out: text
+
+    a68UnresolvedId = -1
+    i = 0
+    while i < a68LabelDefined.count {
+        if not a68LabelDefined[i] {
+            a68UnresolvedId = i
+            return false
+        }
+        i = i + 1
+    }
+
+    out = ""
+    i = 0
+    while i < a68Items.count {
+        a68EncodeItem(out, i)
+        i = i + 1
+    }
+    a68BytesOut = out
+    return true
+}
+
+func a68Bytes(): text {
+    return a68BytesOut
+}
+
+func a68Size(): int {
+    return a68Pc
+}
+
+func a68SizeSoFar(): int {
+    return a68Pc
+}
+
+// a68UnresolvedLabel returns the label id a68Finish found unbound (valid
+// only after a68Finish returned false) -- not in the brief's literal
+// function list, but needed to fulfil its own "caller panics with the
+// label id" contract for a68Finish, since a bool return alone can't carry
+// which id failed.
+func a68UnresolvedLabel(): int {
+    return a68UnresolvedId
+}
+
+// ================================================================
+// Encoding table: addressing-mode field placement, extension-word
+// counts, and per-op opcode-word construction. Consulted by BOTH the
+// layout/length computation above (a68InstrExtWords, via a68PushInstr)
+// and the byte encoder below (a68WriteExtWords/a68InstrWord).
+// ================================================================
+
+// a68ModeCode returns the 3-bit EA mode field for mode (68000 EA modes
+// 0-7; AmPCLabel/AmImm/AmAbsW all share mode 7, distinguished only by
+// their register-field sub-code -- see a68RegField).
+func a68ModeCode(mode: A68Mode): int {
+    if mode == AmDn { return 0 }
+    if mode == AmAn { return 1 }
+    if mode == AmInd { return 2 }
+    if mode == AmPostInc { return 3 }
+    if mode == AmPreDec { return 4 }
+    if mode == AmDisp16 { return 5 }
+    return 7
+}
+
+// a68RegField returns the 3-bit EA register field: the literal register
+// number for every mode except the mode-7 sub-forms, which use a fixed
+// sub-code instead (PCLabel=2, Imm=4, AbsW=0) regardless of reg.
+func a68RegField(mode: A68Mode, reg: int): int {
+    if mode == AmPCLabel { return 2 }
+    if mode == AmImm { return 4 }
+    if mode == AmAbsW { return 0 }
+    return reg
+}
+
+// a68EaField returns the full 6-bit ea field (mode<<3 | reg) used at the
+// low end of most opcode words. MOVE's destination is the one exception
+// (reg and mode land in different bit positions -- see a68InstrWord's
+// OpMove case), which is why a68ModeCode/a68RegField are exposed
+// separately rather than folded only into this function.
+func a68EaField(mode: A68Mode, reg: int): int {
+    return (a68ModeCode(mode) << 3) | a68RegField(mode, reg)
+}
+
+// a68ExtCount returns how many 16-bit extension words an EA in mode
+// contributes, for a value of the given byte size (1/2/4) -- size only
+// matters for AmImm (1 word for .B/.W, 2 for .L).
+func a68ExtCount(mode: A68Mode, size: int): int {
+    if mode == AmDisp16 { return 1 }
+    if mode == AmPCLabel { return 1 }
+    if mode == AmAbsW { return 1 }
+    if mode == AmImm {
+        if size == 4 { return 2 }
+        return 1
+    }
+    return 0
+}
+
+// a68SizeCodeMove maps a byte-size (1/2/4) to MOVE's own 2-bit size field
+// (byte=01, word=11, long=10 -- NOT the same encoding every other
+// two-operand instruction uses; see a68SizeCodeStd).
+func a68SizeCodeMove(size: int): int {
+    if size == 1 { return 1 }
+    if size == 4 { return 2 }
+    return 3
+}
+
+// a68SizeCodeStd maps a byte-size to the standard 2-bit size field used by
+// everything except MOVE/MOVEA (byte=00, word=01, long=10).
+func a68SizeCodeStd(size: int): int {
+    if size == 1 { return 0 }
+    if size == 4 { return 2 }
+    return 1
+}
+
+// a68OpmodeA returns ADDA's 3-bit opmode (word=011, long=111 -- ADDA has
+// no byte form).
+func a68OpmodeA(size: int): int {
+    if size == 4 { return 7 }
+    return 3
+}
+
+// a68QuickN normalizes an ADDQ/SUBQ immediate (1-8) to its 3-bit encoded
+// field (8 encodes as 0).
+func a68QuickN(n: int): int {
+    return n mod 8
+}
+
+// a68IFormExtWords is the extension-word count for the *I (ADDI/SUBI/
+// ANDI/ORI/EORI/CMPI) immediate-source forms: the immediate's own word(s)
+// plus whatever the destination ea itself needs.
+func a68IFormExtWords(size: int, dm: A68Mode): int {
+    var n: int
+
+    n = 1
+    if size == 4 {
+        n = 2
+    }
+    return n + a68ExtCount(dm, size)
+}
+
+// a68InstrExtWords is the per-op extension-word-count table: how many
+// 16-bit words follow the opcode word, given op/size and the two operand
+// modes. Ops not listed here (shift register forms, EXT, SWAP, UNLK, RTS)
+// always contribute 0 and fall through to the trailing return.
+//
+// ADD/SUB/AND/OR dispatch an AmImm source to the shared *I-form rule
+// (a68IFormExtWords) automatically -- matching a68InstrWord/
+// a68WriteExtWords's identical dispatch, so the three stay in lock-step.
+func a68InstrExtWords(op: A68Op, size: int, sm: A68Mode, dm: A68Mode): int {
+    switch op {
+    case OpMove {
+        return a68ExtCount(sm, size) + a68ExtCount(dm, size)
+    }
+    case OpMovea, OpLea, OpAdda {
+        return a68ExtCount(sm, size)
+    }
+    case OpPea, OpNeg, OpNot, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
+        return a68ExtCount(dm, size)
+    }
+    case OpAdd, OpSub, OpAnd, OpOr {
+        if sm == AmImm {
+            return a68IFormExtWords(size, dm)
+        }
+        if dm == AmDn {
+            return a68ExtCount(sm, size)
+        }
+        return a68ExtCount(dm, size)
+    }
+    case OpEor {
+        if sm == AmImm {
+            return a68IFormExtWords(size, dm)
+        }
+        return a68ExtCount(dm, size)
+    }
+    case OpCmp {
+        if sm == AmImm {
+            return a68IFormExtWords(size, dm)
+        }
+        return a68ExtCount(sm, size)
+    }
+    case OpMuls, OpMulu, OpDivs, OpDivu {
+        return a68ExtCount(sm, 2)
+    }
+    case OpLink {
+        return 1
+    }
+    }
+    return 0
+}
+
+// ================================================================
+// Byte encoder
+// ================================================================
+
+func a68PutByte(out: text, b: int) {
+    out.append(char(b))
+}
+
+// a68PutWord appends w's low 16 bits, big-endian. Relies on `>>` being an
+// arithmetic (sign-propagating) shift and char() keeping only the low
+// byte (Ch3/Ch4): for any w, `char(w >> 8)` and `char(w)` are exactly w's
+// high and low bytes as a 16-bit two's-complement quantity, negative or
+// not.
+func a68PutWord(out: text, w: int) {
+    out.append(char(w >> 8))
+    out.append(char(w))
+}
+
+func a68PutLong(out: text, v: int) {
+    a68PutWord(out, v >> 16)
+    a68PutWord(out, v)
+}
+
+// a68WriteImm appends an AmImm operand's extension word(s): byte size
+// gets one word with the value in the low 8 bits and the high byte
+// forced to zero (never sign-extended -- matching the brief's "byte in
+// low 8 bits" rule); word size is the value as-is; long size is two
+// words, high then low.
+func a68WriteImm(out: text, val: int, size: int) {
+    if size == 4 {
+        a68PutLong(out, val)
+    } else if size == 1 {
+        a68PutByte(out, 0)
+        a68PutByte(out, val)
+    } else {
+        a68PutWord(out, val)
+    }
+}
+
+// a68PrecedingSourceExtBytes returns how many bytes of SOURCE extension
+// word(s) precede idx's destination extension word -- nonzero only for
+// OpMove (the one op with two full, independently-extended EA operands);
+// every other op whose dest can be AmPCLabel (Pea/Jsr/Jmp/Dbra/branches)
+// has no source extension at all, so their dest ext word always starts
+// right after the opcode word.
+func a68PrecedingSourceExtBytes(idx: int): int {
+    if a68Items[idx].op == OpMove {
+        return a68ExtCount(a68Items[idx].sm, a68Items[idx].size) * 2
+    }
+    return 0
+}
+
+// a68PatchDisp computes a PC-relative extension word's value: the bound
+// label's address minus the address of the extension word itself (the
+// 68000's own PC-relative convention -- PC at the moment of that word).
+// Every PCLabel/branch/DBRA reference in the module funnels through this
+// one function.
+func a68PatchDisp(idx: int, isSource: bool): int {
+    var extAddr: int
+    var label: int
+
+    if isSource {
+        extAddr = a68Items[idx].addr + 2
+        label = a68Items[idx].sv
+    } else {
+        extAddr = a68Items[idx].addr + 2 + a68PrecedingSourceExtBytes(idx)
+        label = a68Items[idx].dv
+    }
+    return a68LabelAddr[label] - extAddr
+}
+
+// a68WriteEaExt appends the extension word(s) (if any) for one EA operand
+// -- everything except AmDisp16/AmAbsW/AmImm/AmPCLabel contributes
+// nothing (Dn/An/Ind/PostInc/PreDec/None are fully encoded in the opcode
+// word itself).
+func a68WriteEaExt(out: text, mode: A68Mode, val: int, size: int, idx: int, isSource: bool) {
+    if mode == AmDisp16 {
+        a68PutWord(out, val)
+    } else if mode == AmAbsW {
+        a68PutWord(out, val)
+    } else if mode == AmImm {
+        a68WriteImm(out, val, size)
+    } else if mode == AmPCLabel {
+        a68PutWord(out, a68PatchDisp(idx, isSource))
+    }
+}
+
+// a68WriteExtWords appends item idx's extension word(s), mirroring
+// a68InstrExtWords' dispatch exactly (same case grouping, same *I-form
+// redirect) so the two can never disagree about how many/which words a
+// given item needs.
+func a68WriteExtWords(out: text, idx: int) {
+    var op: A68Op
+    var size: int
+    var sm: A68Mode
+    var sv: int
+    var dm: A68Mode
+    var dv: int
+
+    op = a68Items[idx].op
+    size = a68Items[idx].size
+    sm = a68Items[idx].sm
+    sv = a68Items[idx].sv
+    dm = a68Items[idx].dm
+    dv = a68Items[idx].dv
+
+    switch op {
+    case OpMove {
+        a68WriteEaExt(out, sm, sv, size, idx, true)
+        a68WriteEaExt(out, dm, dv, size, idx, false)
+    }
+    case OpMovea, OpLea, OpAdda {
+        a68WriteEaExt(out, sm, sv, size, idx, true)
+    }
+    case OpPea, OpNeg, OpNot, OpTst, OpClr, OpScc, OpJsr, OpJmp, OpAddq, OpSubq, OpDbra, OpBra, OpBcc, OpBsr {
+        a68WriteEaExt(out, dm, dv, size, idx, false)
+    }
+    case OpAdd, OpSub, OpAnd, OpOr {
+        if sm == AmImm {
+            a68WriteImm(out, sv, size)
+            a68WriteEaExt(out, dm, dv, size, idx, false)
+        } else if dm == AmDn {
+            a68WriteEaExt(out, sm, sv, size, idx, true)
+        } else {
+            a68WriteEaExt(out, dm, dv, size, idx, false)
+        }
+    }
+    case OpEor {
+        if sm == AmImm {
+            a68WriteImm(out, sv, size)
+            a68WriteEaExt(out, dm, dv, size, idx, false)
+        } else {
+            a68WriteEaExt(out, dm, dv, size, idx, false)
+        }
+    }
+    case OpCmp {
+        if sm == AmImm {
+            a68WriteImm(out, sv, size)
+            a68WriteEaExt(out, dm, dv, size, idx, false)
+        } else {
+            a68WriteEaExt(out, sm, sv, size, idx, true)
+        }
+    }
+    case OpMuls, OpMulu, OpDivs, OpDivu {
+        a68WriteEaExt(out, sm, sv, 2, idx, true)
+    }
+    case OpLink {
+        a68PutWord(out, dv)
+    }
+    }
+}
+
+// a68TwoOpWord builds the opcode word for the ADD/SUB/AND/OR family: an
+// AmImm source redirects to the matching *I-form base word (base
+// identifies which of the four families this is); otherwise the
+// direction (ea->Dn vs Dn->ea) is read off dm, matching
+// a68InstrExtWords/a68WriteExtWords' own dm==AmDn test exactly.
+func a68TwoOpWord(base: int, size: int, sm: A68Mode, sr: int, sv: int, dm: A68Mode, dr: int): int {
+    if sm == AmImm {
+        return a68IFormWord(base, size, dm, dr)
+    }
+    if dm == AmDn {
+        return base | (dr << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(sm, sr)
+    }
+    return base | (sr << 9) | ((a68SizeCodeStd(size) + 4) << 6) | a68EaField(dm, dr)
+}
+
+// a68IFormWord maps an ADD/SUB/AND/OR family base word to its *I-form
+// base (ADDI/SUBI/ANDI/ORI) and fills in size + destination ea.
+func a68IFormWord(base: int, size: int, dm: A68Mode, dr: int): int {
+    var ibase: int
+
+    ibase = 0
+    if base == 0xD000 {
+        ibase = 0x0600
+    } else if base == 0x9000 {
+        ibase = 0x0400
+    } else if base == 0xC000 {
+        ibase = 0x0200
+    } else if base == 0x8000 {
+        ibase = 0x0000
+    }
+    return ibase | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+}
+
+// a68ShiftWord builds an ASL/ASR/LSL/LSR register-form word: dir is
+// 1=left/0=right, kindField is 0=arithmetic/1=logical; the shift count is
+// either an embedded 1-8 immediate (sm==AmImm, encoded mod 8) or another
+// Dn's value (register form, i/r bit set).
+func a68ShiftWord(dir: int, kindField: int, size: int, sm: A68Mode, sr: int, sv: int, dr: int): int {
+    var countField: int
+    var irFlag: int
+
+    if sm == AmImm {
+        irFlag = 0
+        countField = sv mod 8
+    } else {
+        irFlag = 1
+        countField = sr
+    }
+    return 0xE000 | (countField << 9) | (dir << 8) | (a68SizeCodeStd(size) << 6) | (irFlag << 5) | (kindField << 3) | dr
+}
+
+// a68InstrWord is the per-op opcode-word table: every 16-bit base opcode
+// constant in this module appears exactly once, here.
+func a68InstrWord(idx: int): int {
+    var op: A68Op
+    var size: int
+    var sm: A68Mode
+    var sr: int
+    var sv: int
+    var dm: A68Mode
+    var dr: int
+    var dv: int
+
+    op = a68Items[idx].op
+    size = a68Items[idx].size
+    sm = a68Items[idx].sm
+    sr = a68Items[idx].sr
+    sv = a68Items[idx].sv
+    dm = a68Items[idx].dm
+    dr = a68Items[idx].dr
+    dv = a68Items[idx].dv
+
+    switch op {
+    case OpMove {
+        // Dest reg/mode are SWAPPED relative to every other two-operand
+        // op: reg at bits11-9, mode at bits8-6 (a68RegField/a68ModeCode
+        // applied to dm), source ea at bits5-0 as usual.
+        return (a68SizeCodeMove(size) << 12) | (a68RegField(dm, dr) << 9) | (a68ModeCode(dm) << 6) | a68EaField(sm, sr)
+    }
+    case OpMovea {
+        return (a68SizeCodeMove(size) << 12) | (dr << 9) | (1 << 6) | a68EaField(sm, sr)
+    }
+    case OpLea {
+        return 0x41C0 | (dr << 9) | a68EaField(sm, sr)
+    }
+    case OpPea {
+        return 0x4840 | a68EaField(dm, dr)
+    }
+    case OpAdda {
+        return 0xD000 | (dr << 9) | (a68OpmodeA(size) << 6) | a68EaField(sm, sr)
+    }
+    case OpAdd {
+        return a68TwoOpWord(0xD000, size, sm, sr, sv, dm, dr)
+    }
+    case OpSub {
+        return a68TwoOpWord(0x9000, size, sm, sr, sv, dm, dr)
+    }
+    case OpAnd {
+        return a68TwoOpWord(0xC000, size, sm, sr, sv, dm, dr)
+    }
+    case OpOr {
+        return a68TwoOpWord(0x8000, size, sm, sr, sv, dm, dr)
+    }
+    case OpEor {
+        if sm == AmImm {
+            return 0x0A00 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+        }
+        return 0xB000 | (sr << 9) | ((a68SizeCodeStd(size) + 4) << 6) | a68EaField(dm, dr)
+    }
+    case OpCmp {
+        if sm == AmImm {
+            return 0x0C00 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+        }
+        return 0xB000 | (dr << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(sm, sr)
+    }
+    case OpAddq {
+        return 0x5000 | (a68QuickN(sv) << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpSubq {
+        return 0x5100 | (a68QuickN(sv) << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpNeg {
+        return 0x4400 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpNot {
+        return 0x4600 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpTst {
+        return 0x4A00 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpClr {
+        return 0x4200 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
+    }
+    case OpAsl {
+        return a68ShiftWord(1, 0, size, sm, sr, sv, dr)
+    }
+    case OpAsr {
+        return a68ShiftWord(0, 0, size, sm, sr, sv, dr)
+    }
+    case OpLsl {
+        return a68ShiftWord(1, 1, size, sm, sr, sv, dr)
+    }
+    case OpLsr {
+        return a68ShiftWord(0, 1, size, sm, sr, sv, dr)
+    }
+    case OpMuls {
+        return 0xC1C0 | (dr << 9) | a68EaField(sm, sr)
+    }
+    case OpMulu {
+        return 0xC0C0 | (dr << 9) | a68EaField(sm, sr)
+    }
+    case OpDivs {
+        return 0x81C0 | (dr << 9) | a68EaField(sm, sr)
+    }
+    case OpDivu {
+        return 0x80C0 | (dr << 9) | a68EaField(sm, sr)
+    }
+    case OpExt {
+        if size == 4 {
+            return 0x48C0 | dr
+        }
+        return 0x4880 | dr
+    }
+    case OpSwap {
+        return 0x4840 | dr
+    }
+    case OpBra {
+        return 0x6000 | (sv << 8)
+    }
+    case OpBsr {
+        return 0x6000 | (sv << 8)
+    }
+    case OpBcc {
+        return 0x6000 | (sv << 8)
+    }
+    case OpJsr {
+        return 0x4E80 | a68EaField(dm, dr)
+    }
+    case OpJmp {
+        return 0x4EC0 | a68EaField(dm, dr)
+    }
+    case OpLink {
+        return 0x4E50 | dr
+    }
+    case OpUnlk {
+        return 0x4E58 | dr
+    }
+    case OpRts {
+        return 0x4E75
+    }
+    case OpScc {
+        return 0x50C0 | (dv << 8) | a68EaField(dm, dr)
+    }
+    case OpDbra {
+        return 0x51C8 | sr
+    }
+    }
+    return 0
+}
+
+func a68EncodeData(out: text, idx: int) {
+    var dk: int
+
+    dk = a68Items[idx].dataKind
+    if dk == DKindB {
+        a68PutByte(out, a68Items[idx].dataVal)
+    } else if dk == DKindW {
+        a68PutWord(out, a68Items[idx].dataVal)
+    } else if dk == DKindL {
+        a68PutLong(out, a68Items[idx].dataVal)
+    } else if dk == DKindBytes {
+        out.append(a68Items[idx].dataText)
+    } else if dk == DKindAlign {
+        if a68Items[idx].len == 1 {
+            a68PutByte(out, 0)
+        }
+    }
+}
+
+func a68EncodeItem(out: text, idx: int) {
+    var kind: int
+
+    kind = a68Items[idx].kind
+    if kind == KindInstr {
+        a68PutWord(out, a68InstrWord(idx))
+        a68WriteExtWords(out, idx)
+    } else if kind == KindTrap {
+        a68PutWord(out, a68Items[idx].trapWord)
+    } else if kind == KindData {
+        a68EncodeData(out, idx)
+    }
+    // KindBind, KindComment: zero bytes.
+}
+
+// ================================================================
+// Listing printer (Motorola syntax, vasm-mot-assemblable; printed only,
+// never parsed back by this module). Every line is derived from the same
+// per-item fields the encoder reads -- see the header comment's number-
+// formatting rules.
+// ================================================================
+
+func a68SizeSuffix(size: int): string {
+    if size == 1 { return "B" }
+    if size == 4 { return "L" }
+    return "W"
+}
+
+// a68CcName matches the 68000's own condition-code nibble numbering
+// exactly (T=0 .. LE=15) -- the same numbering a68EmitBr/callers of OpScc
+// pass straight through with no remapping.
+func a68CcName(cc: int): string {
+    switch cc {
+    case 0 { return "T" }
+    case 1 { return "F" }
+    case 2 { return "HI" }
+    case 3 { return "LS" }
+    case 4 { return "CC" }
+    case 5 { return "CS" }
+    case 6 { return "NE" }
+    case 7 { return "EQ" }
+    case 8 { return "VC" }
+    case 9 { return "VS" }
+    case 10 { return "PL" }
+    case 11 { return "MI" }
+    case 12 { return "GE" }
+    case 13 { return "LT" }
+    case 14 { return "GT" }
+    case 15 { return "LE" }
+    }
+    return "?"
+}
+
+func a68HexChar(n: int): char {
+    if n < 10 { return char(48 + n) }
+    return char(55 + n)
+}
+
+// a68HexN renders v's low (digits*4) bits as uppercase hex, zero-padded
+// to digits width -- the "$" prefix is added by callers.
+func a68HexN(v: int, digits: int): string {
+    var s: string
+    var i: int
+    var nib: int
+    var shift: int
+
+    s = ""
+    i = 0
+    while i < digits {
+        shift = (digits - 1 - i) * 4
+        nib = (v >> shift) & 0xF
+        s = s + a68HexChar(nib)
+        i = i + 1
+    }
+    return s
+}
+
+// a68EaText renders one operand in Motorola syntax -- val is meaningful
+// only for AmDisp16 (decimal displacement)/AmPCLabel (label id)/AmImm
+// (decimal immediate)/AmAbsW (hex address); ignored by every other mode.
+func a68EaText(mode: A68Mode, reg: int, val: int): string {
+    if mode == AmDn {
+        return "D" + numToStr(reg)
+    }
+    if mode == AmAn {
+        return "A" + numToStr(reg)
+    }
+    if mode == AmInd {
+        return "(A" + numToStr(reg) + ")"
+    }
+    if mode == AmPostInc {
+        return "(A" + numToStr(reg) + ")+"
+    }
+    if mode == AmPreDec {
+        return "-(A" + numToStr(reg) + ")"
+    }
+    if mode == AmDisp16 {
+        return numToStr(val) + "(A" + numToStr(reg) + ")"
+    }
+    if mode == AmPCLabel {
+        return "LBL_" + numToStr(val) + "(PC)"
+    }
+    if mode == AmImm {
+        return "#" + numToStr(val)
+    }
+    if mode == AmAbsW {
+        return "$" + a68HexN(val, 4)
+    }
+    return "?"
+}
+
+func a68ShiftOperand(sm: A68Mode, sr: int, sv: int): string {
+    if sm == AmImm {
+        return "#" + numToStr(sv)
+    }
+    return "D" + numToStr(sr)
+}
+
+// a68TwoOpListing renders the ADD/SUB/AND/OR family, matching
+// a68TwoOpWord's own direction test (dm==AmDn) exactly.
+func a68TwoOpListing(name: string, suf: string, sm: A68Mode, sr: int, sv: int, dm: A68Mode, dr: int, dv: int): string {
+    if sm == AmImm {
+        return name + "." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+    }
+    if dm == AmDn {
+        return name + "." + suf + " " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    return name + "." + suf + " D" + numToStr(sr) + "," + a68EaText(dm, dr, dv)
+}
+
+// a68ListingLine renders one KindInstr item's whole "MNEM operands" text
+// (no leading indentation -- callers add that).
+func a68ListingLine(idx: int): string {
+    var op: A68Op
+    var size: int
+    var sm: A68Mode
+    var sr: int
+    var sv: int
+    var dm: A68Mode
+    var dr: int
+    var dv: int
+    var suf: string
+
+    op = a68Items[idx].op
+    size = a68Items[idx].size
+    sm = a68Items[idx].sm
+    sr = a68Items[idx].sr
+    sv = a68Items[idx].sv
+    dm = a68Items[idx].dm
+    dr = a68Items[idx].dr
+    dv = a68Items[idx].dv
+    suf = a68SizeSuffix(size)
+
+    switch op {
+    case OpMove {
+        return "MOVE." + suf + " " + a68EaText(sm, sr, sv) + "," + a68EaText(dm, dr, dv)
+    }
+    case OpMovea {
+        return "MOVEA." + suf + " " + a68EaText(sm, sr, sv) + ",A" + numToStr(dr)
+    }
+    case OpLea {
+        return "LEA " + a68EaText(sm, sr, sv) + ",A" + numToStr(dr)
+    }
+    case OpPea {
+        return "PEA " + a68EaText(dm, dr, dv)
+    }
+    case OpAdda {
+        return "ADDA." + suf + " " + a68EaText(sm, sr, sv) + ",A" + numToStr(dr)
+    }
+    case OpAdd {
+        return a68TwoOpListing("ADD", suf, sm, sr, sv, dm, dr, dv)
+    }
+    case OpSub {
+        return a68TwoOpListing("SUB", suf, sm, sr, sv, dm, dr, dv)
+    }
+    case OpAnd {
+        return a68TwoOpListing("AND", suf, sm, sr, sv, dm, dr, dv)
+    }
+    case OpOr {
+        return a68TwoOpListing("OR", suf, sm, sr, sv, dm, dr, dv)
+    }
+    case OpEor {
+        if sm == AmImm {
+            return "EOR." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+        }
+        return "EOR." + suf + " D" + numToStr(sr) + "," + a68EaText(dm, dr, dv)
+    }
+    case OpCmp {
+        return "CMP." + suf + " " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpAddq {
+        return "ADDQ." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+    }
+    case OpSubq {
+        return "SUBQ." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+    }
+    case OpNeg {
+        return "NEG." + suf + " " + a68EaText(dm, dr, dv)
+    }
+    case OpNot {
+        return "NOT." + suf + " " + a68EaText(dm, dr, dv)
+    }
+    case OpTst {
+        return "TST." + suf + " " + a68EaText(dm, dr, dv)
+    }
+    case OpClr {
+        return "CLR." + suf + " " + a68EaText(dm, dr, dv)
+    }
+    case OpAsl {
+        return "ASL." + suf + " " + a68ShiftOperand(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpAsr {
+        return "ASR." + suf + " " + a68ShiftOperand(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpLsl {
+        return "LSL." + suf + " " + a68ShiftOperand(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpLsr {
+        return "LSR." + suf + " " + a68ShiftOperand(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpMuls {
+        return "MULS.W " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpMulu {
+        return "MULU.W " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpDivs {
+        return "DIVS.W " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpDivu {
+        return "DIVU.W " + a68EaText(sm, sr, sv) + ",D" + numToStr(dr)
+    }
+    case OpExt {
+        return "EXT." + suf + " D" + numToStr(dr)
+    }
+    case OpSwap {
+        return "SWAP D" + numToStr(dr)
+    }
+    case OpBra {
+        return "BRA.W LBL_" + numToStr(dv)
+    }
+    case OpBsr {
+        return "BSR.W LBL_" + numToStr(dv)
+    }
+    case OpBcc {
+        return "B" + a68CcName(sv) + ".W LBL_" + numToStr(dv)
+    }
+    case OpJsr {
+        return "JSR " + a68EaText(dm, dr, dv)
+    }
+    case OpJmp {
+        return "JMP " + a68EaText(dm, dr, dv)
+    }
+    case OpLink {
+        return "LINK A" + numToStr(dr) + ",#" + numToStr(dv)
+    }
+    case OpUnlk {
+        return "UNLK A" + numToStr(dr)
+    }
+    case OpRts {
+        return "RTS"
+    }
+    case OpScc {
+        return "S" + a68CcName(dv) + " " + a68EaText(dm, dr, 0)
+    }
+    case OpDbra {
+        return "DBRA D" + numToStr(sr) + ",LBL_" + numToStr(dv)
+    }
+    }
+    return "???"
+}
+
+// a68DataListingLine renders DC.B/DC.W/DC.L, and the padding-byte case of
+// Align (only ever called when a68Items[idx].len == 1 -- see
+// a68ListingText). DKindBytes is handled separately (a68BytesListingLine)
+// since it can exceed a `string`'s 255-byte capacity.
+func a68DataListingLine(idx: int): string {
+    var dk: int
+
+    dk = a68Items[idx].dataKind
+    if dk == DKindB {
+        return "        DC.B $" + a68HexN(a68Items[idx].dataVal, 2)
+    }
+    if dk == DKindW {
+        return "        DC.W $" + a68HexN(a68Items[idx].dataVal, 4)
+    }
+    if dk == DKindL {
+        return "        DC.L $" + a68HexN(a68Items[idx].dataVal, 8)
+    }
+    return "        DC.B $00"
+}
+
+// a68BytesListingLine renders a DKindBytes run as one `DC.B $xx,$xx,...`
+// line, as `text` (not `string`) so an arbitrarily long byte run never
+// truncates. Empty input yields an empty (zero-length) text -- the caller
+// skips printing a line for it.
+func a68BytesListingLine(t: text): text {
+    var s: text
+    var i: int
+    var n: int
+
+    s = ""
+    n = t.length
+    if n == 0 {
+        return s
+    }
+    s.append("        DC.B $")
+    s.append(a68HexN(int(t[0]), 2))
+    i = 1
+    while i < n {
+        s.append(",$")
+        s.append(a68HexN(int(t[i]), 2))
+        i = i + 1
+    }
+    return s
+}
+
+func a68AppendLine(out: text, line: string) {
+    out.append(line)
+    out.append(char(10))
+}
+
+func a68AppendTextLine(out: text, line: text) {
+    out.append(line)
+    out.append(char(10))
+}
+
+// a68ListingText renders the whole arena as Motorola-syntax source text,
+// one LF-terminated line per item (labels/comments/data with nothing to
+// show contribute no line at all): instructions indented 8 spaces,
+// `LBL_<id>:` labels at column 0, per the brief.
+func a68ListingText(): text {
+    var out: text
+    var i: int
+    var kind: int
+    var bytesLine: text
+
+    out = ""
+    i = 0
+    while i < a68Items.count {
+        kind = a68Items[i].kind
+        if kind == KindBind {
+            a68AppendLine(out, "LBL_" + numToStr(a68Items[i].label) + ":")
+        } else if kind == KindComment {
+            a68AppendLine(out, "        ; " + a68Items[i].commentText)
+        } else if kind == KindTrap {
+            a68AppendLine(out, "        DC.W $" + a68HexN(a68Items[i].trapWord, 4) + "  ; " + a68Items[i].trapName)
+        } else if kind == KindData {
+            if a68Items[i].dataKind == DKindBytes {
+                bytesLine = a68BytesListingLine(a68Items[i].dataText)
+                if bytesLine.length > 0 {
+                    a68AppendTextLine(out, bytesLine)
+                }
+            } else if (a68Items[i].dataKind != DKindAlign) or (a68Items[i].len == 1) {
+                a68AppendLine(out, a68DataListingLine(i))
+            }
+        } else if kind == KindInstr {
+            a68AppendLine(out, "        " + a68ListingLine(i))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// ================================================================
+// Self-exerciser (Task 6's vasm-oracle input too): every op at least
+// once, across every legal mode class it supports, including a forward
+// AND a backward branch target, all five data directives, a trap word,
+// and both an even- and an odd-length DcBytes run (align coverage).
+// Resets the module itself, so it is a self-contained single-call build.
+// ================================================================
+
+func a68SelfExercise() {
+    var lblAnchor: int
+    var l1: int
+    var l3: int
+    var l4: int
+
+    a68Reset()
+
+    // -- MOVE: every mode class, both source and dest position --
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)          // MOVE.L D1,-(A7)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)         // MOVE.L (A7)+,D0
+    a68Emit(OpMove, 2, AmDn, 2, 0, AmDn, 3, 0)              // MOVE.W D2,D3
+    a68Emit(OpMove, 1, AmInd, 2, 0, AmDn, 4, 0)             // MOVE.B (A2),D4
+    a68Emit(OpMove, 2, AmDn, 5, 0, AmInd, 3, 0)             // MOVE.W D5,(A3)
+    a68Emit(OpMove, 2, AmImm, 0, 10, AmDn, 6, 0)            // MOVE.W #10,D6
+    a68Emit(OpMove, 4, AmImm, 0, 100000, AmDn, 7, 0)        // MOVE.L #100000,D7
+    a68Emit(OpMove, 2, AmDisp16, 5, 4, AmDn, 0, 0)          // MOVE.W 4(A5),D0
+    a68Emit(OpMove, 2, AmDn, 1, 0, AmDisp16, 4, 8)          // MOVE.W D1,8(A4)
+    a68Emit(OpMove, 2, AmAbsW, 0, 0x1000, AmDn, 2, 0)       // MOVE.W $1000,D2
+    a68Emit(OpMove, 2, AmDn, 3, 0, AmAbsW, 0, 0x2000)       // MOVE.W D3,$2000
+
+    lblAnchor = a68NewLabel()
+    a68Bind(lblAnchor)
+    a68Emit(OpMove, 2, AmPCLabel, 0, lblAnchor, AmDn, 4, 0) // MOVE.W LBL_x(PC),D4
+
+    // -- MOVEA --
+    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 1, 0)             // MOVEA.L D0,A1
+    a68Emit(OpMovea, 4, AmInd, 2, 0, AmAn, 3, 0)            // MOVEA.L (A2),A3
+    a68Emit(OpMovea, 2, AmImm, 0, 4, AmAn, 4, 0)            // MOVEA.W #4,A4
+
+    // -- BNE.W forward branch to L1: a single 2-byte filler instruction
+    // (CLR.W D1) sits between the end of BNE's own 4 bytes and L1, so the
+    // patched displacement (measured from the address of BNE's own
+    // extension word, per the 68000's own convention) comes out to
+    // exactly 4 -- the brief's hand-verify sample.
+    l1 = a68NewLabel()
+    a68EmitBr(OpBcc, 6, l1)                                 // BNE.W LBL_l1
+    a68Emit(OpClr, 2, AmNone, 0, 0, AmDn, 1, 0)             // CLR.W D1 (2-byte filler)
+    a68Bind(l1)
+
+    // -- LEA: every legal mode class --
+    a68Emit(OpLea, 0, AmDisp16, 6, 8, AmAn, 0, 0)           // LEA 8(A6),A0
+    a68Emit(OpLea, 0, AmInd, 2, 0, AmAn, 3, 0)              // LEA (A2),A3
+    a68Emit(OpLea, 0, AmAbsW, 0, 0x3000, AmAn, 4, 0)        // LEA $3000,A4
+    a68Emit(OpLea, 0, AmPCLabel, 0, lblAnchor, AmAn, 5, 0)  // LEA LBL_x(PC),A5
+
+    // -- PEA --
+    a68Emit(OpPea, 0, AmNone, 0, 0, AmInd, 2, 0)            // PEA (A2)
+    a68Emit(OpPea, 0, AmNone, 0, 0, AmDisp16, 3, 4)         // PEA 4(A3)
+    a68Emit(OpPea, 0, AmNone, 0, 0, AmAbsW, 0, 0x4000)      // PEA $4000
+
+    // -- ADD / ADDA / ADDQ --
+    a68Emit(OpAdd, 2, AmDn, 0, 0, AmDn, 1, 0)               // ADD.W D0,D1
+    a68Emit(OpAdd, 4, AmInd, 2, 0, AmDn, 3, 0)              // ADD.L (A2),D3
+    a68Emit(OpAdd, 2, AmDn, 4, 0, AmInd, 5, 0)              // ADD.W D4,(A5)
+    a68Emit(OpAdd, 2, AmImm, 0, 5, AmDn, 6, 0)              // ADD.W #5,D6 (ADDI)
+    a68Emit(OpAdda, 2, AmDn, 0, 0, AmAn, 1, 0)              // ADDA.W D0,A1
+    a68Emit(OpAdda, 4, AmInd, 2, 0, AmAn, 3, 0)             // ADDA.L (A2),A3
+    a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)             // ADDQ.L #4,A7
+    a68Emit(OpAddq, 1, AmImm, 0, 1, AmDn, 0, 0)             // ADDQ.B #1,D0
+    a68Emit(OpAddq, 2, AmImm, 0, 8, AmDn, 1, 0)             // ADDQ.W #8,D1 (n=8 edge)
+
+    // -- SUB / SUBQ --
+    a68Emit(OpSub, 2, AmDn, 0, 0, AmDn, 1, 0)               // SUB.W D0,D1
+    a68Emit(OpSub, 4, AmInd, 2, 0, AmDn, 3, 0)              // SUB.L (A2),D3
+    a68Emit(OpSub, 2, AmDn, 4, 0, AmInd, 5, 0)              // SUB.W D4,(A5)
+    a68Emit(OpSub, 2, AmImm, 0, 5, AmDn, 6, 0)              // SUB.W #5,D6 (SUBI)
+    a68Emit(OpSubq, 2, AmImm, 0, 8, AmDn, 0, 0)             // SUBQ.W #8,D0 (n=8 edge)
+    a68Emit(OpSubq, 4, AmImm, 0, 2, AmAn, 6, 0)             // SUBQ.L #2,A6
+
+    // -- CMP --
+    a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)               // CMP.L D1,D0
+    a68Emit(OpCmp, 2, AmInd, 2, 0, AmDn, 3, 0)              // CMP.W (A2),D3
+    a68Emit(OpCmp, 2, AmImm, 0, 7, AmDn, 4, 0)              // CMP.W #7,D4 (CMPI)
+
+    // -- AND / OR / EOR --
+    a68Emit(OpAnd, 2, AmDn, 0, 0, AmDn, 1, 0)               // AND.W D0,D1
+    a68Emit(OpAnd, 4, AmInd, 2, 0, AmDn, 3, 0)              // AND.L (A2),D3
+    a68Emit(OpAnd, 2, AmDn, 4, 0, AmInd, 5, 0)              // AND.W D4,(A5)
+    a68Emit(OpAnd, 2, AmImm, 0, 0xF, AmDn, 6, 0)            // AND.W #15,D6 (ANDI)
+    a68Emit(OpOr, 2, AmDn, 0, 0, AmDn, 1, 0)                // OR.W D0,D1
+    a68Emit(OpOr, 4, AmInd, 2, 0, AmDn, 3, 0)               // OR.L (A2),D3
+    a68Emit(OpOr, 2, AmDn, 4, 0, AmInd, 5, 0)               // OR.W D4,(A5)
+    a68Emit(OpOr, 2, AmImm, 0, 0xF0, AmDn, 6, 0)            // OR.W #240,D6 (ORI)
+    a68Emit(OpEor, 2, AmDn, 0, 0, AmDn, 1, 0)               // EOR.W D0,D1
+    a68Emit(OpEor, 4, AmDn, 2, 0, AmInd, 3, 0)              // EOR.L D2,(A3)
+    a68Emit(OpEor, 2, AmImm, 0, 0xFF, AmDn, 4, 0)           // EOR.W #255,D4 (EORI)
+
+    // -- NEG / NOT / TST / CLR --
+    a68Emit(OpNeg, 2, AmNone, 0, 0, AmDn, 0, 0)             // NEG.W D0
+    a68Emit(OpNeg, 4, AmNone, 0, 0, AmInd, 2, 0)            // NEG.L (A2)
+    a68Emit(OpNot, 2, AmNone, 0, 0, AmDn, 0, 0)             // NOT.W D0
+    a68Emit(OpNot, 4, AmNone, 0, 0, AmInd, 2, 0)            // NOT.L (A2)
+    a68Emit(OpTst, 2, AmNone, 0, 0, AmDn, 0, 0)             // TST.W D0
+    a68Emit(OpTst, 1, AmNone, 0, 0, AmInd, 2, 0)            // TST.B (A2)
+    a68Emit(OpClr, 2, AmNone, 0, 0, AmDn, 0, 0)             // CLR.W D0
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmInd, 2, 0)            // CLR.L (A2)
+
+    // -- Shifts: immediate count and register count --
+    a68Emit(OpAsl, 2, AmImm, 0, 1, AmDn, 0, 0)              // ASL.W #1,D0
+    a68Emit(OpAsl, 2, AmDn, 1, 0, AmDn, 2, 0)               // ASL.W D1,D2
+    a68Emit(OpAsr, 4, AmImm, 0, 4, AmDn, 3, 0)              // ASR.L #4,D3
+    a68Emit(OpLsl, 2, AmImm, 0, 2, AmDn, 4, 0)              // LSL.W #2,D4
+    a68Emit(OpLsr, 4, AmDn, 5, 0, AmDn, 6, 0)               // LSR.L D5,D6
+
+    // -- MULS / MULU / DIVS / DIVU --
+    a68Emit(OpMuls, 2, AmDn, 1, 0, AmDn, 0, 0)              // MULS.W D1,D0
+    a68Emit(OpMulu, 2, AmInd, 2, 0, AmDn, 3, 0)             // MULU.W (A2),D3
+    a68Emit(OpDivs, 2, AmDn, 4, 0, AmDn, 5, 0)              // DIVS.W D4,D5
+    a68Emit(OpDivu, 2, AmInd, 2, 0, AmDn, 6, 0)             // DIVU.W (A2),D6
+
+    // -- EXT / SWAP --
+    a68Emit(OpExt, 2, AmNone, 0, 0, AmDn, 0, 0)             // EXT.W D0
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)             // EXT.L D0
+    a68Emit(OpSwap, 0, AmNone, 0, 0, AmDn, 0, 0)            // SWAP D0
+
+    // -- JSR / JMP: every legal control mode --
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmDisp16, 5, 42)        // JSR 42(A5)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmInd, 2, 0)            // JSR (A2)
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 3, 0)            // JMP (A3)
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmAbsW, 0, 0x5000)      // JMP $5000
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmPCLabel, 0, lblAnchor) // JMP LBL_x(PC)
+
+    // -- Scc: a few condition codes, register and memory dest --
+    a68Emit(OpScc, 1, AmNone, 0, 0, AmDn, 0, 7)             // SEQ D0 (EQ=7)
+    a68Emit(OpScc, 1, AmNone, 0, 0, AmInd, 2, 6)            // SNE (A2) (NE=6)
+    a68Emit(OpScc, 1, AmNone, 0, 0, AmDn, 3, 15)            // SLE D3 (LE=15)
+
+    // -- Backward branch targets: DBRA loop + BRA back to the loop top --
+    l3 = a68NewLabel()
+    a68Bind(l3)
+    a68Emit(OpSubq, 2, AmImm, 0, 1, AmDn, 2, 0)             // SUBQ.W #1,D2
+    a68Emit(OpDbra, 2, AmDn, 1, 0, AmPCLabel, 0, l3)        // DBRA D1,LBL_l3
+    a68EmitBr(OpBra, 0, l3)                                 // BRA.W LBL_l3 (backward)
+
+    // -- BSR forward to a "subroutine" ending in RTS --
+    l4 = a68NewLabel()
+    a68EmitBr(OpBsr, 0, l4)                                 // BSR.W LBL_l4 (forward)
+    a68Emit(OpMove, 2, AmDn, 0, 0, AmDn, 1, 0)              // MOVE.W D0,D1 (after the call)
+    a68Bind(l4)
+    a68Emit(OpMove, 2, AmImm, 0, 99, AmDn, 0, 0)            // MOVE.W #99,D0
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)           // RTS
+
+    // -- LINK / UNLK --
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, -100)         // LINK A6,#-100
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)            // UNLK A6
+
+    // -- Trap word --
+    a68EmitTrap(0xA122, "_NewHandle")                       // DC.W $A122 ; _NewHandle
+
+    // -- Data directives + align coverage (even then odd DcBytes) --
+    a68DcB(0x12)
+    a68DcW(0x1234)
+    a68DcL(0x12345678)
+
+    a68Align()          // force an even baseline
+    a68DcBytes("AB")    // even length (2) -- pc stays even
+    a68Align()           // no-op: already even
+    a68DcBytes("XYZ")   // odd length (3) -- pc becomes odd
+    a68Align()           // pads one zero byte
+
+    a68Comment("end of exerciser")
+}
