@@ -445,6 +445,15 @@ on App.startCLI(args: list of string) {
         // flag the way cpSerPorted/usesFileSaveLoad is.
         cpStrPorted = true
         neededMods.add("str.cla")
+        // Task 9: text.cla is the second UNCONDITIONAL entry -- every
+        // program uses Text (Ch3's built-in growable string type), so it's
+        // always pulled in and cpTextPorted is always true, same convention
+        // as str.cla just above. Added AFTER str.cla in neededMods
+        // deliberately: the manifest splice order (below) is
+        // declare-before-use across runtime modules, and text.cla's own
+        // functions are free to call str.cla's (peekb/pokeb-based) helpers.
+        cpTextPorted = true
+        neededMods.add("text.cla")
 
         combined2 = combined
         if neededMods.count > 0 {

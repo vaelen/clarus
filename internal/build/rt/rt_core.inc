@@ -258,6 +258,18 @@ static void rt_core_grow(Handle h, int32_t *cap, int32_t need, int32_t elemsize)
 
 struct rt_text { int32_t rc; Handle h; int32_t len; int32_t cap; };
 
+/* Plan 5b Task 9: runtime/clarus/text.cla's `overlay record RtText { rc:
+ * int; h: ptr; len: int; cap: int }` is a byte-for-byte view of struct
+ * rt_text above -- this guard fails to compile (a negative array size) if
+ * that ever drifts. Placed here (not just rt.c, where the brief first
+ * suggested it) so it fires for every consumer of rt_core.inc: the host
+ * build (rt.c), the Mac 68k build (runtime/mac/rt_mac.c), and both memory
+ * test harnesses (rt_mem_test.c pulls it in transitively; rt_rc_test.c
+ * includes it directly) -- one line, checked everywhere the layout matters,
+ * rather than trusting only the host target to catch a drift the Mac
+ * cross-build could hit first. */
+typedef char rt_text_layout_check[(sizeof(rt_text) == sizeof(struct { int32_t a; void *b; int32_t c; int32_t d; })) ? 1 : -1];
+
 static void rt_text_grow(rt_text *t, int32_t need)
 {
     rt_core_grow(t->h, &t->cap, need, 1);

@@ -81,6 +81,13 @@ var cpSerPorted: bool
 // harness's many-compiles-per-process runs.
 var cpStrPorted: bool
 
+// cpTextPorted (Plan 5b Task 9) is text.cla's own analogous flag -- same
+// "unconditional manifest entry, set true directly alongside the decision"
+// convention cpStrPorted established: every emitted program includes
+// text.cla (Ch3's Text type is built in), so this is always true, never
+// gated by a usage flag.
+var cpTextPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -1151,7 +1158,12 @@ func fpStrAddr(e: int): text {
 // fpTextCmp handles text/text, text/string, and string/text comparisons
 // (intr.go's textCmp). rt_text_cmp_str only knows (text, string); a string
 // on the left needs the call flipped and its sign negated to preserve
-// `a < b` orientation.
+// `a < b` orientation. Plan 5b Task 9: once text.cla is included
+// (unconditionally, cpTextPorted mirrors that decision exactly, same
+// convention as cpStrPorted), redirects to clar_fn_rtTextCmp/
+// clar_fn_rtTextCmpStr -- both take `ptr` params, so every KText/KStr
+// argument gets an explicit `(void*)` wrap (same discipline Task 8's
+// str.cla redirects established, verified zero-warning at bootstrap).
 func fpTextCmp(a: int, b: int): text {
     var atk: IRKind
     var btk: IRKind
@@ -1159,29 +1171,52 @@ func fpTextCmp(a: int, b: int): text {
     atk = irtKind(irExprType(a))
     btk = irtKind(irExprType(b))
     if atk == KText and btk == KText {
+        if cpTextPorted {
+            return "clar_fn_rtTextCmp((void*)" + fpExpr(a) + ", (void*)" + fpExpr(b) + ")"
+        }
         return "rt_text_cmp(" + fpExpr(a) + ", " + fpExpr(b) + ")"
     } else if atk == KText and btk == KStr {
+        if cpTextPorted {
+            return "clar_fn_rtTextCmpStr((void*)" + fpExpr(a) + ", (void*)" + fpStrAddr(b) + ")"
+        }
         return "rt_text_cmp_str(" + fpExpr(a) + ", " + fpStrAddr(b) + ")"
     }
     // atk == KStr and btk == KText: lowComparison only ever calls ITextCmp
     // when at least one side is Text, so this is the only remaining combo.
+    if cpTextPorted {
+        return "(-clar_fn_rtTextCmpStr((void*)" + fpExpr(b) + ", (void*)" + fpStrAddr(a) + "))"
+    }
     return "(-rt_text_cmp_str(" + fpExpr(b) + ", " + fpStrAddr(a) + "))"
 }
 
 // fpTextConcat allocates a fresh rt_text handle for the `text + (text|
 // string)` result (text has reference semantics, but `+` always produces a
 // new value), then concatenates a and b into it (intr.go's textConcat).
+// Plan 5b Task 9: cpTextPorted redirects both the birth call (rtTextNew,
+// cast back to `rt_text *` since the ported function returns a bare `ptr`)
+// and the concat call (rtTextConcat's bstr/btext params are ptr -- NULL
+// becomes the explicit `(void*)0`, matching the brief's "NULL as ptr(0)"
+// signature note).
 func fpTextConcat(a: int, b: int): text {
     var ae: text
     var t: text
 
     ae = fpExpr(a)
     t = fpNewTmp("rt_text *")
-    fpEmit(t + " = rt_text_new();")
-    if irtKind(irExprType(b)) == KStr {
-        fpEmit("rt_text_concat(" + t + ", " + ae + ", " + fpStrAddr(b) + ", NULL);")
+    if cpTextPorted {
+        fpEmit(t + " = (rt_text *)clar_fn_rtTextNew();")
+        if irtKind(irExprType(b)) == KStr {
+            fpEmit("clar_fn_rtTextConcat((void*)" + t + ", (void*)" + ae + ", (void*)" + fpStrAddr(b) + ", (void*)0);")
+        } else {
+            fpEmit("clar_fn_rtTextConcat((void*)" + t + ", (void*)" + ae + ", (void*)0, (void*)" + fpExpr(b) + ");")
+        }
     } else {
-        fpEmit("rt_text_concat(" + t + ", " + ae + ", NULL, " + fpExpr(b) + ");")
+        fpEmit(t + " = rt_text_new();")
+        if irtKind(irExprType(b)) == KStr {
+            fpEmit("rt_text_concat(" + t + ", " + ae + ", " + fpStrAddr(b) + ", NULL);")
+        } else {
+            fpEmit("rt_text_concat(" + t + ", " + ae + ", NULL, " + fpExpr(b) + ");")
+        }
     }
     return t
 }
@@ -1527,53 +1562,104 @@ func fpIntrCall(x: int): text {
     } else if nm == ITextConcat() {
         return fpTextConcat(a0, a1)
     } else if nm == ITextConcatSL() {
+        // string-on-the-left concat (rtTextConcatSl's `a`/`b` params are
+        // ptr; ported body ported.cla-side against rt_core.inc's
+        // rt_text_concat_sl).
         s0 = fpStrAddr(a0)
         s1 = fpExpr(a1)
         t = fpNewTmp("rt_text *")
-        fpEmit(t + " = rt_text_new();")
-        fpEmit("rt_text_concat_sl(" + t + ", " + s0 + ", " + s1 + ");")
+        if cpTextPorted {
+            fpEmit(t + " = (rt_text *)clar_fn_rtTextNew();")
+            fpEmit("clar_fn_rtTextConcatSl((void*)" + t + ", (void*)" + s0 + ", (void*)" + s1 + ");")
+        } else {
+            fpEmit(t + " = rt_text_new();")
+            fpEmit("rt_text_concat_sl(" + t + ", " + s0 + ", " + s1 + ");")
+        }
         return t
     } else if nm == ITextStore() {
-        fpEmit("rt_text_store(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextStore((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ");")
+        } else {
+            fpEmit("rt_text_store(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        }
         return toText("")
     } else if nm == ITextLen() {
+        if cpTextPorted {
+            return "clar_fn_rtTextLen((void*)" + fpExpr(a0) + ")"
+        }
         return "rt_text_len(" + fpExpr(a0) + ")"
     } else if nm == ITextIndex() {
+        if cpTextPorted {
+            return "clar_fn_rtTextIndex((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_text_index(" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextSetIndex() {
         s0 = fpExpr(a0)
         s1 = fpExpr(a1)
-        fpEmit("rt_text_set_index(" + s0 + ", (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextSetIndex((void*)" + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_text_set_index(" + s0 + ", (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == ITextFromBytes() {
         s0 = fpExpr(a0)
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
-        fpEmit("rt_text_from_bytes(" + s0 + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextFromBytes((void*)" + s0 + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_text_from_bytes(" + s0 + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == ITextToBytes() {
         s0 = fpExpr(a0)
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
+        if cpTextPorted {
+            return "clar_fn_rtTextToBytes((void*)" + s0 + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ")"
+        }
         return "rt_text_to_bytes(" + s0 + ", (uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ")"
     } else if nm == ITextSlice() {
         s0 = fpExpr(a0)
         s1 = fpExpr(a1)
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_text_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextSlice((void*)&" + t + ", (void*)" + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_text_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        }
         return t
     } else if nm == ITextIndexOfStr() {
+        if cpTextPorted {
+            return "clar_fn_rtTextIndexOfStr((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ")"
+        }
         return "rt_text_index_of_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == ITextIndexOfChar() {
+        if cpTextPorted {
+            return "clar_fn_rtTextIndexOfChar((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_text_index_of_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
     } else if nm == ITextAppendStr() {
-        fpEmit("rt_text_append_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextAppendStr((void*)" + fpExpr(a0) + ", (void*)" + fpStrAddr(a1) + ");")
+        } else {
+            fpEmit("rt_text_append_str(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        }
         return toText("")
     } else if nm == ITextAppendChar() {
-        fpEmit("rt_text_append_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "));")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextAppendChar((void*)" + fpExpr(a0) + ", (int32_t)(" + fpExpr(a1) + "));")
+        } else {
+            fpEmit("rt_text_append_char(" + fpExpr(a0) + ", (uint8_t)(" + fpExpr(a1) + "));")
+        }
         return toText("")
     } else if nm == ITextAppendText() {
-        fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        if cpTextPorted {
+            fpEmit("clar_fn_rtTextAppendText((void*)" + fpExpr(a0) + ", (void*)" + fpExpr(a1) + ");")
+        } else {
+            fpEmit("rt_text_append_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        }
         return toText("")
     } else if nm == ITextOfStr() {
         // Materializes a0 (a Str value) into a fresh rt_text handle --
@@ -1583,9 +1669,14 @@ func fpIntrCall(x: int): text {
         // the original string, since rt_text_store copies the string's
         // bytes into the new handle's own buffer.
         t = fpNewTmp("rt_text *")
-        fpEmit(t + " = rt_text_new();")
         s0 = fpStrAddr(a0)
-        fpEmit("rt_text_store(" + t + ", " + s0 + ");")
+        if cpTextPorted {
+            fpEmit(t + " = (rt_text *)clar_fn_rtTextNew();")
+            fpEmit("clar_fn_rtTextStore((void*)" + t + ", (void*)" + s0 + ");")
+        } else {
+            fpEmit(t + " = rt_text_new();")
+            fpEmit("rt_text_store(" + t + ", " + s0 + ");")
+        }
         return t
     } else if nm == ITextFreeVar() {
         // memory-audit Task 7: a0 is always a bare EVarRef (the escape
@@ -2673,9 +2764,21 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
             fpEmit("rt_str_store((uint8_t*)&(" + dst + "), " + numToStr(irtN(t)) + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
         }
     } else if k == KText {
-        fpEmit(dst + " = rt_text_new();")
-        if strDefault >= 0 {
-            fpEmit("rt_text_store(" + dst + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
+        // Plan 5b Task 9: cpTextPorted redirects both the birth call
+        // (rtTextNew, cast back to `rt_text *`) and the optional string
+        // default's store (rtTextStore's params are ptr, so the literal's
+        // address needs the `(void*)` wrap -- same discipline as every
+        // other cpTextPorted arm in fpIntrCall above).
+        if cpTextPorted {
+            fpEmit(dst + " = (rt_text *)clar_fn_rtTextNew();")
+            if strDefault >= 0 {
+                fpEmit("clar_fn_rtTextStore((void*)" + dst + ", (void*)&clar_lit_" + numToStr(strDefault) + ");")
+            }
+        } else {
+            fpEmit(dst + " = rt_text_new();")
+            if strDefault >= 0 {
+                fpEmit("rt_text_store(" + dst + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
+            }
         }
     } else if k == KList {
         fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
@@ -3136,6 +3239,52 @@ func cpEmitFuncs() {
     i = 0
     while i < irFuncs.count {
         cpEmitFunc(i)
+        i = i + 1
+    }
+}
+
+// cpEmitDefaultInitFnProtos (Plan 5b Task 9 fix) forward-declares, into
+// cpTypeBuf (the FIRST section of the final output -- emitProgram's
+// cpAppendTextList call order), the small closed set of ported clar_fn_
+// functions cpDefaultInit can call: rtStrStore (KStr's literal-default
+// arm) and rtTextNew/rtTextStore (KText's unconditional birth + optional
+// string-default arms). Every OTHER clar_fn_rtXxx call happens inside a
+// real function/handler BODY (fpIntrCall), always printed by cpEmitFunc
+// AFTER cpEmitFuncs's own up-front prototype loop -- safe already, no
+// forward decl needed there.
+//
+// Why this exists: cpDefaultInit's callers are cpEmitRecords' clar_new_NAME
+// constructors (cpRecBuf) and cpEmitGlobalsInit's clar_init_globals
+// (cpRestBuf, appended before cpEmitFuncs's own prototype+definition
+// block) -- BOTH land, in the final assembled file, before cpEmitFuncs ever
+// runs its prototype loop. Text's cpDefaultInit arm calls clar_fn_rtTextNew
+// UNCONDITIONALLY (every Text field/global needs its birth handle,
+// regardless of whether it has a literal default) -- Task 8's str.cla
+// redirect never hit this ordering gap because a KStr default with no
+// literal override takes the plain `(clar_str_N){0}` struct-literal path,
+// no function call at all, and no record/global in clarusc's own corpus
+// happens to declare a KStr field WITH a literal default; Task 9's
+// text.cla redirect exposed it immediately (any Text-typed record field or
+// global calls clar_fn_rtTextNew from a pre-prototype position). Reuses
+// cpFuncProto for the exact signature text -- no duplicated signature
+// knowledge to drift out of sync with the real definitions.
+//
+// Deliberately NOT a blanket "forward-declare every clar_fn_ prototype
+// early" fix: a user function taking a record parameter needs that
+// record's clar_rec_NAME typedef (cpRecBuf, also not yet visible this
+// early) to already be a complete type -- only safe because str.cla/
+// text.cla's own functions never take a record-typed parameter (their
+// whole signature surface is int/ptr/bool/text, by construction).
+func cpEmitDefaultInitFnProtos() {
+    var i: int
+    var nm: string
+
+    i = 0
+    while i < irFuncs.count {
+        nm = poolGet(irFuncName(i))
+        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) {
+            cpTypeBuf.add(cpFuncProto(i) + ";")
+        }
         i = i + 1
     }
 }
@@ -4627,8 +4776,14 @@ func cpEmitGlobalsInit() {
                 // plain-assign between, so this goes through rt_text_store
                 // like a local var's matching ExprStmt/ITextStore case does
                 // (lower.cla's lowStoreStmt) -- globals just never route
-                // through that helper.
-                fpEmit("rt_text_store(cv_" + nm + ", " + fpStrAddr(initE) + ");")
+                // through that helper. Plan 5b Task 9: cpTextPorted
+                // redirects to clar_fn_rtTextStore, same (void*) discipline
+                // as every other ported text call site.
+                if cpTextPorted {
+                    fpEmit("clar_fn_rtTextStore((void*)cv_" + nm + ", (void*)" + fpStrAddr(initE) + ");")
+                } else {
+                    fpEmit("rt_text_store(cv_" + nm + ", " + fpStrAddr(initE) + ");")
+                }
             } else {
                 fpEmit("cv_" + nm + " = " + fpExpr(initE) + ";")
                 if irtNeedsCtor(gt) and not irGlobalInitBirth(i) {
@@ -4915,6 +5070,7 @@ func emitProgram(): text {
     cpRecBuf.add(toText(""))
 
     cpEmitStrLits()
+    cpEmitDefaultInitFnProtos()
     cpEmitRecords()
     cpEmitLayouts()
     cpEmitSerDescs()
