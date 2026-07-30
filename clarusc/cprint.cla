@@ -1402,17 +1402,23 @@ func fpIntrCall(x: int): text {
     // address (formerly "(uint8_t*)&...") becomes "(void*)&..." (rtStrXxx's
     // own params are all `ptr`); a char/int argument (formerly
     // "(uint8_t)(...)", since the C functions take uint8_t) becomes
-    // "(int32_t)(...)" (the Clarus int param carries the same 0-255 value);
-    // fpStrAddr's own "(const uint8_t*)&(...)" cast is passed through
-    // unchanged either way -- ser.cla's IFileSave/IFileLoad redirect
-    // already establishes that a fpStrAddr result needs no further
-    // wrapping to reach a `ptr` C parameter.
+    // "(int32_t)(...)" (the Clarus int param carries the same 0-255 value).
+    // fpStrAddr's own "(const uint8_t*)&(...)" cast, unlike the C-runtime
+    // path (whose params are themselves `const uint8_t *`, an exact type
+    // match), does need an explicit outer "(void*)" wrap here -- a
+    // `clar_fn_rtStrXxx` parameter is `void *`, and handing it a
+    // `const uint8_t *` unwrapped compiles (implicit pointer conversion)
+    // but warns ("discards qualifiers") at every one of the ~1500 call
+    // sites this redirect fires at self-compile time. Every cpStrPorted
+    // branch below wraps each `fpStrAddr(...)` result in `(void*)` for
+    // this reason -- verified zero new warnings vs. the pre-Task-8
+    // bootstrap one-liner after this fix.
     } else if nm == IStrConcat() {
         s0 = fpStrAddr(a0)
         s1 = fpStrAddr(a1)
         t = fpNewTmp("clar_str_255")
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrConcat((void*)&" + t + ", " + s0 + ", " + s1 + ");")
+            fpEmit("clar_fn_rtStrConcat((void*)&" + t + ", (void*)" + s0 + ", (void*)" + s1 + ");")
         } else {
             fpEmit("rt_str_concat((uint8_t*)&" + t + ", " + s0 + ", " + s1 + ");")
         }
@@ -1422,7 +1428,7 @@ func fpIntrCall(x: int): text {
         s1 = fpExpr(a1)
         t = fpNewTmp("clar_str_255")
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrConcatChar((void*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "));")
+            fpEmit("clar_fn_rtStrConcatChar((void*)&" + t + ", (void*)" + s0 + ", (int32_t)(" + s1 + "));")
         } else {
             fpEmit("rt_str_concat_char((uint8_t*)&" + t + ", " + s0 + ", (uint8_t)(" + s1 + "));")
         }
@@ -1432,24 +1438,24 @@ func fpIntrCall(x: int): text {
         s1 = fpStrAddr(a1)
         t = fpNewTmp("clar_str_255")
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrPrependChar((void*)&" + t + ", (int32_t)(" + s0 + "), " + s1 + ");")
+            fpEmit("clar_fn_rtStrPrependChar((void*)&" + t + ", (int32_t)(" + s0 + "), (void*)" + s1 + ");")
         } else {
             fpEmit("rt_str_prepend_char((uint8_t*)&" + t + ", (uint8_t)(" + s0 + "), " + s1 + ");")
         }
         return t
     } else if nm == IStrCmp() {
         if cpStrPorted {
-            return "clar_fn_rtStrCmp(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+            return "clar_fn_rtStrCmp((void*)" + fpStrAddr(a0) + ", (void*)" + fpStrAddr(a1) + ")"
         }
         return "rt_str_cmp(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IStrLen() {
         if cpStrPorted {
-            return "clar_fn_rtStrLen(" + fpStrAddr(a0) + ")"
+            return "clar_fn_rtStrLen((void*)" + fpStrAddr(a0) + ")"
         }
         return "rt_str_len(" + fpStrAddr(a0) + ")"
     } else if nm == IStrIndex() {
         if cpStrPorted {
-            return "clar_fn_rtStrIndex(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+            return "clar_fn_rtStrIndex((void*)" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
         }
         return "rt_str_index(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == IStrSetIndex() {
@@ -1477,7 +1483,7 @@ func fpIntrCall(x: int): text {
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
         if cpStrPorted {
-            return "clar_fn_rtStrToBytes(" + s0 + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ")"
+            return "clar_fn_rtStrToBytes((void*)" + s0 + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ")"
         }
         return "rt_str_to_bytes(" + s0 + ", (uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ")"
     } else if nm == IStrCoerce() {
@@ -1489,7 +1495,7 @@ func fpIntrCall(x: int): text {
         s0 = fpStrAddr(a0)
         t = fpNewTmp(cpCType(irExprType(x)))
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrStore((void*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
+            fpEmit("clar_fn_rtStrStore((void*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", (void*)" + s0 + ");")
         } else {
             fpEmit("rt_str_store((uint8_t*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
         }
@@ -1499,19 +1505,19 @@ func fpIntrCall(x: int): text {
         s1 = fpExpr(a1)
         t = fpNewTmp("clar_str_255")
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrSlice((void*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+            fpEmit("clar_fn_rtStrSlice((void*)&" + t + ", (void*)" + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
         } else {
             fpEmit("rt_str_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
         }
         return t
     } else if nm == IStrIndexOfStr() {
         if cpStrPorted {
-            return "clar_fn_rtStrIndexOfStr(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+            return "clar_fn_rtStrIndexOfStr((void*)" + fpStrAddr(a0) + ", (void*)" + fpStrAddr(a1) + ")"
         }
         return "rt_str_index_of_str(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IStrIndexOfChar() {
         if cpStrPorted {
-            return "clar_fn_rtStrIndexOfChar(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+            return "clar_fn_rtStrIndexOfChar((void*)" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
         }
         return "rt_str_index_of_char(" + fpStrAddr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
 
@@ -2205,7 +2211,7 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         mapText = fpExpr(opA)
         keyT = fpNewTmp("clar_str_255")
         if cpStrPorted {
-            fpEmit("clar_fn_rtStrStore((void*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
+            fpEmit("clar_fn_rtStrStore((void*)&" + keyT + ", 255, (void*)" + fpStrAddr(opB) + ");")
         } else {
             fpEmit("rt_str_store((uint8_t*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
         }
@@ -2224,7 +2230,7 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
 // too -- no separate cpStrPorted branch needed there.
 func fpStoreStr(dst: int, src: int) {
     if cpStrPorted {
-        fpEmit("clar_fn_rtStrStore((void*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
+        fpEmit("clar_fn_rtStrStore((void*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", (void*)" + fpStrAddr(src) + ");")
     } else {
         fpEmit("rt_str_store((uint8_t*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
     }

@@ -405,7 +405,7 @@ static void clar_fn_handler_App_launch(void) {
 static void clar_fn_ui_TextWin_Name_change(void * cv_window) {
     clar_str_255 t1;
     rt_ui_widget_get_str(cv_window, 0, RTUI_PROP_TEXT, (uint8_t*)&t1);
-    clar_fn_rtStrStore((void*)&(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_nameStr), 255, (const uint8_t*)&(t1));
+    clar_fn_rtStrStore((void*)&(((*(clar_uistate_TextWin *)rt_ui_state(cv_window))).cv_nameStr), 255, (void*)(const uint8_t*)&(t1));
 }
 
 static void clar_fn_ui_TextWin_Name_enter(void * cv_window) {

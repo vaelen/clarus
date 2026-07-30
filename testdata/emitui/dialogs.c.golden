@@ -381,13 +381,13 @@ static void clar_fn_handler_App_launch(void) {
     cv_w = rt_ui_open(&clar_ui_window_DocWin);
     clar_str_255 t1;
     rt_ui_get_title(cv_w, (uint8_t*)&t1);
-    clar_fn_rtStrStore((void*)&(cv_wt), 255, (const uint8_t*)&(t1));
+    clar_fn_rtStrStore((void*)&(cv_wt), 255, (void*)(const uint8_t*)&(t1));
     cv_ok = rt_ui_ask_open((uint8_t*)&(cv_p));
     if (cv_ok) {
         rt_file_read_text((const uint8_t*)&(cv_p), cv_t);
         rt_ui_widget_set_text(cv_w, 1, cv_t);
     }
-    clar_fn_rtStrStore((void*)&(cv_suggested), 255, (const uint8_t*)&(clar_lit_4));
+    clar_fn_rtStrStore((void*)&(cv_suggested), 255, (void*)(const uint8_t*)&(clar_lit_4));
     cv_ok = rt_ui_ask_save((uint8_t*)&(cv_p), (const uint8_t*)&(cv_suggested));
     if (cv_ok) {
         rt_text_release(cv___store1);

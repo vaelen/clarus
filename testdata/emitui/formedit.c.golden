@@ -471,7 +471,7 @@ static void clar_fn_ui_Main_EditCur_click(void * cv_window) {
 
 static void clar_fn_ui_Main_EditMap_click(void * cv_window) {
     clar_str_255 t1;
-    clar_fn_rtStrStore((void*)&t1, 255, (const uint8_t*)&(clar_lit_3));
+    clar_fn_rtStrStore((void*)&t1, 255, (void*)(const uint8_t*)&(clar_lit_3));
     clar_rec_Bookmark t2;
     t2 = clar_new_Bookmark();
     rt_map_get_dv(cv_byName, (const uint8_t*)&t1, &t2);

@@ -888,7 +888,7 @@ static int32_t clar_fn_rtStrIndexOfChar(void * cv_s, int32_t cv_c) {
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     int32_t cv_ok;
     cv_ok = 0;
-    clar_fn_rtStrStore((void*)&((cv_one).cv_name), 63, (const uint8_t*)&(clar_lit_5));
+    clar_fn_rtStrStore((void*)&((cv_one).cv_name), 63, (void*)(const uint8_t*)&(clar_lit_5));
     (cv_one).cv_port = 70;
     (cv_one).cv_enabled = 1;
     (cv_one).cv_kind = 66;
