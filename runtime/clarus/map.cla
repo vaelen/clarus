@@ -54,7 +54,13 @@
 // fpMapReleaseGuard specifically: the guard's own `rt_map_has`/`rt_map_get`
 // calls DO redirect (has/get are ported), but the `_release` call the guard
 // emits for the evicted old value stays bare C -- a subtle split within one
-// guard, documented at its call site in cprint.cla.
+// guard, documented at its call site in cprint.cla. fpUiEditStmt's own MAP
+// arm (`edit F, mapVar`, kind==3/RT_UI_WB_MAP, cprint.cla) also stays bare
+// C -- its `rt_map_get_dv` call is UNGATED by cpMapPorted, same as its
+// LIST arm's bare `rt_list_at` call (list.cla's own header, above) and
+// text.cla's own IUiGetTextviewText exclusion: the whole `edit` statement
+// family was excluded from Plan 5b's redirect scope, not just this one
+// site.
 //
 // Relocation discipline: `keys` and `vals` are SEPARATE Handles, grown and
 // potentially moved independently (rtMapGrowKeys/rtMapGrowVals below, each
