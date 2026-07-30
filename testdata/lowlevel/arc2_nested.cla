@@ -1,0 +1,102 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc2_nested.cla: Plan 5c wave2a Task 5's own regression fixture for a
+// `list of map of text` (the OTHER nesting direction from arc2_map.cla's
+// `map of list of text`), run via the internal/lowlevel harness
+// (clarusc-emitted C, host cc against rt.c, under CLARUS_MEM_STRICT=1
+// CLARUS_MEM_PARANOID=1). arc_fpreleaseval_nested.cla (testdata/run/lib)
+// already pins the EVICTION-only half of this nesting shape (upsert/remove
+// releasing an orphaned inner container); this fixture's own target is the
+// half that one doesn't cover -- a LIVE `list of map of text` actually
+// aliased at both levels and released via ordinary scope exit, exercising
+// cpEmitRelease's full recursive KMap-in-KList walk (not just a single
+// eviction) and its `rt_list_lastref`/`rt_map_lastref` double-release
+// guards at BOTH nesting levels simultaneously.
+//
+// `survivor` (2 elements, each map's own text unaliased) is aliased TWICE
+// at the OUTER (list) level (`scoped`, `alias` -- rc 1 -> 2 -> 3) AND its
+// element-0 map is separately aliased at the INNER (map) level
+// (`innerAlias = scoped[0]` -- that one map box's own rc 1 -> 2) --
+// "aliased at every level". Element 0's map is then upserted OVER its
+// existing key through the shared box (visible via `innerAlias` too --
+// fpMapReleaseGuard's eviction path), and element 1 is evicted WHOLESALE
+// via `IListSet` (a fresh map replaces it -- cpEmitRelease's KMap-element-
+// of-KList deep walk must release the old, unaliased map's own text before
+// dropping the map handle itself, the same bug shape
+// arc_fpreleaseval_nested.cla pins for `list of list of text`, but never
+// exercised there for a KMap element). `scoped`'s own share of the OUTER
+// box is then discarded MID-SCOPE by reassigning it to a fresh, independent
+// one-element list -- the same critical `rt_list_lastref` scenario
+// arc2_list.cla/arc2_map.cla's own headers document, now one level deeper.
+//
+// Deep-release ordering at scope exit (verified by the harness's live==0
+// check, not directly observable via alert()): `scoped`'s new box disposes
+// first (its own one map, rc 1 -> 0, frees its own text); `survivor`/
+// `alias` still share the ORIGINAL outer box (rc 2) -- whichever of the two
+// releases second drops it to 0 and walks both elements: element 0's map is
+// STILL shared with `innerAlias` (rc 2 -> 1, no text released -- the
+// `rt_map_lastref` guard must see this and skip the value walk), element
+// 1's map is unaliased (rc 1 -> 0, its own "fresh" text released, then the
+// map box itself); `innerAlias`'s own final release then drops element 0's
+// map to rc 0, releasing its "changed" text and the box.
+func makeMapText(s: string): map of text {
+    var m: map of text
+    m["k"] = s
+    return m
+}
+
+func makeOuterOne(s: string): list of map of text {
+    var l: list of map of text
+    l.push(makeMapText(s))
+    return l
+}
+
+on App.startCLI(args: list of string) {
+    var survivor: list of map of text
+    var alias: list of map of text
+    var scoped: list of map of text
+    var innerAlias: map of text
+
+    survivor.push(makeMapText("one"))
+    survivor.push(makeMapText("two"))
+
+    scoped = survivor // outer list alias -- rc 1 -> 2
+    alias = scoped // second outer alias -- rc 2 -> 3
+    innerAlias = scoped[0] // inner-level alias of element 0's own map -- rc 1 -> 2
+
+    innerAlias["k"] = "changed" // upsert OVER an existing key through the box shared with scoped[0]/survivor[0]/alias[0] -- fpMapReleaseGuard releases "one" first
+    if scoped[0]["k"] == "changed" {
+        alert("nested-inner-alias-ok")
+    } else {
+        alert("nested-inner-alias-FAIL")
+    }
+
+    scoped[1] = makeMapText("fresh") // IListSet whole-element eviction: old element-1 map ("two", rc==1, unaliased) must be fully deep-released
+    if scoped[1]["k"] == "fresh" and scoped.count == 2 {
+        alert("nested-listset-evict-ok")
+    } else {
+        alert("nested-listset-evict-FAIL")
+    }
+
+    // discard `scoped`'s share of the OUTER box MID-SCOPE -- rc 3 -> 2,
+    // must NOT walk/release either of the outer's own two inner maps
+    // (`alias`/`survivor` still share the box; `innerAlias` still shares
+    // element 0's own inner map).
+    scoped = makeOuterOne("gone")
+
+    if alias.count == 2 and alias[0]["k"] == "changed" and alias[1]["k"] == "fresh" {
+        alert("nested-outer-alias-ok")
+    } else {
+        alert("nested-outer-alias-FAIL")
+    }
+    if survivor.count == 2 and survivor[0]["k"] == "changed" and survivor[1]["k"] == "fresh" {
+        alert("nested-outer-survivor-ok")
+    } else {
+        alert("nested-outer-survivor-FAIL")
+    }
+
+    // `innerAlias`, `alias`, `survivor`, and `scoped` all then run off the
+    // end of App.startCLI's own scope -- see the header comment above for
+    // the exact deep-release ordering this exercises.
+}

@@ -1,0 +1,85 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc2_globals.cla: Plan 5c wave2a Task 5's own regression fixture for
+// `cl_free_globals` (clarusc/cprint.cla's cpEmitGlobalsInit) against the
+// NOW-PORTED Text/List/Map ARC (rtTextRetain/Release, rtListRetain/
+// Release/Lastref, rtMapRetain/Release/Lastref -- Tasks 2-4), run via the
+// internal/lowlevel harness (clarusc-emitted C, host cc against rt.c, under
+// CLARUS_MEM_STRICT=1 CLARUS_MEM_PARANOID=1). testdata/run/lib/
+// arc_global_alias.cla (internal/selfhost's differential suite) already
+// covers a wide set of global-ARC bug shapes found across Tasks 6-8 of the
+// original memory-audit wave; this fixture is a narrower, purpose-built
+// probe for the specific scenario the brief calls out: a global of each
+// heap-backed family (text/list/map) is ASSIGNED an initial value, then
+// REASSIGNED to a second, independently-owned (birth) value at RUNTIME
+// (inside `App.startCLI`, not at Init), before the program exits normally.
+//
+// Each reassignment (`gText = makeText(...)`, `gList = makeListText(...)`,
+// `gMap = makeMapText(...)`) must release the OLD value (rc==1, no other
+// owner) before the new one lands -- the general runtime-store rule
+// cpEmitGlobalsInit's own header comment describes ("every RUNTIME store
+// into a global ... counted"), same as any local variable reassignment
+// (arc2_list.cla/arc2_map.cla's own `scoped = make...()` step). If the old
+// value instead leaked here, the harness's live count would read > 0; if
+// it were double-released instead, the process would crash (`rt_rc:
+// over-release`) before `App.startCLI` even reaches its own alert()s.
+//
+// `cl_free_globals` itself (called once, at process exit, via
+// `rt_register_cleanup`) then disposes each global's CURRENT (reassigned)
+// value exactly once -- live==0 (checked by the harness itself, not
+// visible in this file's own .out) is the leak/double-free-gate half of
+// this fixture's verification; the alert()s below are the content half,
+// proving the reassigned values read back correctly first.
+func makeText(s: string): text {
+    var t: text
+    t = s
+    return t
+}
+
+func makeListText(s: string): list of text {
+    var l: list of text
+    l.push(s)
+    return l
+}
+
+func makeMapText(s: string): map of text {
+    var m: map of text
+    m["k"] = s
+    return m
+}
+
+var gText: text
+var gList: list of text
+var gMap: map of text
+
+on App.startCLI(args: list of string) {
+    gText = makeText("first")
+    gList = makeListText("one")
+    gMap = makeMapText("un")
+
+    // Reassign every global to a fresh, independently-owned value -- see
+    // the header comment above for why the OLD value at each slot must be
+    // released here, not leaked or double-released.
+    gText = makeText("second")
+    gList = makeListText("two")
+    gMap = makeMapText("deux")
+
+    if gText == "second" {
+        alert("global-text-ok")
+    } else {
+        alert("global-text-FAIL")
+    }
+    if gList.count == 1 and gList[0] == "two" {
+        alert("global-list-ok")
+    } else {
+        alert("global-list-FAIL")
+    }
+    if gMap.count == 1 and gMap["k"] == "deux" {
+        alert("global-map-ok")
+    } else {
+        alert("global-map-FAIL")
+    }
+    // Program exits normally right after this -- cl_free_globals disposes
+    // gText/gList/gMap's CURRENT (reassigned) values exactly once each.
+}
