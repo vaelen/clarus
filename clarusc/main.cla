@@ -454,6 +454,13 @@ on App.startCLI(args: list of string) {
         // functions are free to call str.cla's (peekb/pokeb-based) helpers.
         cpTextPorted = true
         neededMods.add("text.cla")
+        // Task 10: list.cla is the third UNCONDITIONAL entry -- every
+        // program uses List (Ch5's built-in growable collection type), so
+        // it's always pulled in and cpListPorted is always true, same
+        // convention as str.cla/text.cla just above. Added AFTER text.cla
+        // in neededMods deliberately: same declare-before-use splice order.
+        cpListPorted = true
+        neededMods.add("list.cla")
 
         combined2 = combined
         if neededMods.count > 0 {

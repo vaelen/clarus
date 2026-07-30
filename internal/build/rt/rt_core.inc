@@ -500,6 +500,15 @@ struct rt_list {
     int32_t cap;
 };
 
+/* Plan 5b Task 10: runtime/clarus/list.cla's `overlay record RtList { rc:
+ * int; data: ptr; elemsize: int; count: int; cap: int }` is a byte-for-byte
+ * view of struct rt_list above -- this guard fails to compile (a negative
+ * array size) if that ever drifts. Same placement/reasoning as
+ * rt_text_layout_check just above: fires for every consumer of
+ * rt_core.inc (host rt.c, Mac 68k rt_mac.c, and both rt_mem_test.c/
+ * rt_rc_test.c memory harnesses). */
+typedef char rt_list_layout_check[(sizeof(rt_list) == sizeof(struct { int32_t a; void *b; int32_t c; int32_t d; int32_t e; })) ? 1 : -1];
+
 rt_list *rt_list_new(int32_t elemsize)
 {
     rt_list *l;

@@ -147,4 +147,27 @@ void *rt_ext_TextNewPtr(int32_t size) {
 }
 void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData/ListPanic/
+ * ListNewRaw: list.cla's own extern names (Plan 5b Task 10), same reasoning
+ * as the Text family above -- list.cla is UNCONDITIONALLY included in every
+ * emitted program from this task forward, so its own waist calls must not
+ * share a name with the generic/Str/Text/Ser externs a user program or
+ * another runtime module might also declare. Bodies are thin aliases of the
+ * same primitives the generic wrappers above already call.
+ * rt_ext_ListNewRaw is the sole exception to "thin alias": it delegates the
+ * WHOLE rt_list_new construction (the Task 9 "external delegation" birth-
+ * allocation choice, same pattern as rt_ext_TextNewRaw), so rc is written
+ * exactly once, entirely in C. */
+void *rt_ext_ListHandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_ListSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
+void rt_ext_ListBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void rt_ext_ListPanic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
+void *rt_ext_ListNewRaw(int32_t elemsize) { return (void *)rt_list_new(elemsize); }
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

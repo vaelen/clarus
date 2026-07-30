@@ -88,6 +88,13 @@ var cpStrPorted: bool
 // gated by a usage flag.
 var cpTextPorted: bool
 
+// cpListPorted (Plan 5b Task 10) is list.cla's own analogous flag -- same
+// "unconditional manifest entry, set true directly alongside the decision"
+// convention cpStrPorted/cpTextPorted established: every emitted program
+// includes list.cla (Ch5's List type is built in), so this is always true,
+// never gated by a usage flag.
+var cpListPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -1716,17 +1723,38 @@ func fpIntrCall(x: int): text {
             // *Retain name when that's genuinely true).
             fpRetainVal(v, irExprType(a1))
         }
-        fn = "rt_list_push"
-        if nm == IListUnshift() or nm == IListUnshiftRetain() {
-            fn = "rt_list_unshift"
+        // Plan 5b Task 10: cpListPorted redirects the push/unshift call
+        // itself to clar_fn_rtListPush/rtListUnshift -- the fpRetainVal
+        // prefix just above stays a bare C call regardless (RC boundary).
+        if cpListPorted {
+            fn = "clar_fn_rtListPush"
+            if nm == IListUnshift() or nm == IListUnshiftRetain() {
+                fn = "clar_fn_rtListUnshift"
+            }
+            fpEmit(fn + "((void*)" + l + ", (void*)&(" + v + "));")
+        } else {
+            fn = "rt_list_push"
+            if nm == IListUnshift() or nm == IListUnshiftRetain() {
+                fn = "rt_list_unshift"
+            }
+            fpEmit(fn + "(" + l + ", &(" + v + "));")
         }
-        fpEmit(fn + "(" + l + ", &(" + v + "));")
         return toText("")
     } else if nm == IListPop() or nm == IListShift() {
         l = fpExpr(a0)
-        fn = "rt_list_pop"
-        if nm == IListShift() {
-            fn = "rt_list_shift"
+        // Plan 5b Task 10: cpListPorted redirects both emission points below
+        // (the discard-statement release branch and the ordinary
+        // materialize-into-a-temp path) to clar_fn_rtListPop/rtListShift.
+        if cpListPorted {
+            fn = "clar_fn_rtListPop"
+            if nm == IListShift() {
+                fn = "clar_fn_rtListShift"
+            }
+        } else {
+            fn = "rt_list_pop"
+            if nm == IListShift() {
+                fn = "rt_list_shift"
+            }
         }
         if x == fpDiscardExprIdx and fpNeedsRelease(irExprType(x)) {
             // ARC Task 8 review round 2 (Important finding): a bare
@@ -1744,11 +1772,19 @@ func fpIntrCall(x: int): text {
             // release-walk shape (`clar_release_NAME`) fpNewTrackedTmp
             // already gives every other tracked record temp (ARC Task 7).
             t = fpNewTrackedTmp(irExprType(x))
-            fpEmit(fn + "(" + l + ", &" + t + ");")
+            if cpListPorted {
+                fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
+            } else {
+                fpEmit(fn + "(" + l + ", &" + t + ");")
+            }
             return t
         }
         t = fpNewTmp(cpCType(irExprType(x)))
-        fpEmit(fn + "(" + l + ", &" + t + ");")
+        if cpListPorted {
+            fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
+        } else {
+            fpEmit(fn + "(" + l + ", &" + t + ");")
+        }
         // memory-audit Task 6 / ARC Task 3: pop/shift TRANSFER ownership --
         // this copies the ELEMENT'S bytes (a text element's bytes ARE its
         // handle -- Ch3 reference semantics) out of l's backing store into
@@ -1761,9 +1797,19 @@ func fpIntrCall(x: int): text {
         return t
     } else if nm == IListFirst() or nm == IListLast() {
         l = fpExpr(a0)
-        fn = "rt_list_first"
-        if nm == IListLast() {
-            fn = "rt_list_last"
+        // Plan 5b Task 10: cpListPorted redirects the list-access call
+        // itself to clar_fn_rtListFirst/rtListLast; the `_retain` suffix
+        // call below stays a bare C call regardless (RC boundary).
+        if cpListPorted {
+            fn = "clar_fn_rtListFirst"
+            if nm == IListLast() {
+                fn = "clar_fn_rtListLast"
+            }
+        } else {
+            fn = "rt_list_first"
+            if nm == IListLast() {
+                fn = "rt_list_last"
+            }
         }
         // ARC Task 3: unlike pop/shift, first/last do NOT remove the
         // element from l -- t and l's own slot alias the SAME object after
@@ -1775,11 +1821,19 @@ func fpIntrCall(x: int): text {
         // escape-qualified path until Task 7.
         if fpIsHandleType(irExprType(x)) {
             t = fpNewTrackedTmp(irExprType(x))
-            fpEmit(fn + "(" + l + ", &" + t + ");")
+            if cpListPorted {
+                fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
+            } else {
+                fpEmit(fn + "(" + l + ", &" + t + ");")
+            }
             fpEmit(fpHeapFn(irtKind(irExprType(x))) + "_retain(" + t + ");")
         } else {
             t = fpNewTmp(cpCType(irExprType(x)))
-            fpEmit(fn + "(" + l + ", &" + t + ");")
+            if cpListPorted {
+                fpEmit(fn + "((void*)" + l + ", (void*)&" + t + ");")
+            } else {
+                fpEmit(fn + "(" + l + ", &" + t + ");")
+            }
         }
         return t
     } else if nm == IListRemove() {
@@ -1801,7 +1855,15 @@ func fpIntrCall(x: int): text {
             fpEmit(old + " = (*(" + ctype + "*)rt_list_at(" + l + ", (int32_t)(" + s0 + ")));")
             fpReleaseVal(old, elemT)
         }
-        fpEmit("rt_list_remove(" + l + ", (int32_t)(" + s0 + "));")
+        // Plan 5b Task 10: only the REMOVAL call redirects -- the old-value
+        // read just above uses rt_list_at, which STAYS C (RC boundary: an
+        // interior-pointer primitive, same reasoning as IListSet's ref
+        // below).
+        if cpListPorted {
+            fpEmit("clar_fn_rtListRemove((void*)" + l + ", (int32_t)(" + s0 + "));")
+        } else {
+            fpEmit("rt_list_remove(" + l + ", (int32_t)(" + s0 + "));")
+        }
         return toText("")
     } else if nm == IListSet() or nm == IListSetRetain() {
         // ARC Task 5: `lst[i] = v` for a heap-typed element (lowIndexAssign,
@@ -1840,6 +1902,9 @@ func fpIntrCall(x: int): text {
         fpEmit(ref + " = " + v + ";")
         return toText("")
     } else if nm == IListCount() {
+        if cpListPorted {
+            return "clar_fn_rtListCount((void*)" + fpExpr(a0) + ")"
+        }
         return "rt_list_count(" + fpExpr(a0) + ")"
     } else if nm == IListFreeVar() {
         // memory-audit Task 7: reuse Task 5's cpEmitRelease (element-release
@@ -2471,7 +2536,13 @@ func fpForListStmt(s: int) {
     lt = fpNewTmp("rt_list *")
     fpEmit(lt + " = " + lv + ";")
     cnt = fpNewTmp("int32_t")
-    fpEmit(cnt + " = rt_list_count(" + lt + ");")
+    // Plan 5b Task 10: only the count snapshot redirects -- the per-
+    // iteration rt_list_at deref just below STAYS C (RC boundary).
+    if cpListPorted {
+        fpEmit(cnt + " = clar_fn_rtListCount((void*)" + lt + ");")
+    } else {
+        fpEmit(cnt + " = rt_list_count(" + lt + ");")
+    }
     ix = fpNewTmp("int32_t")
     elemC = cpCType(irtElem(irExprType(irForListListV(s))))
     vName = poolGet(irForListV(s))
@@ -2781,7 +2852,14 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
             }
         }
     } else if k == KList {
-        fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
+        // Plan 5b Task 10: cpListPorted redirects the birth call (rtListNew,
+        // cast back to `rt_list *`) -- same "external delegation" pattern
+        // KText's arm above established for rtTextNew.
+        if cpListPorted {
+            fpEmit(dst + " = (rt_list *)clar_fn_rtListNew(sizeof(" + cpCType(irtElem(t)) + "));")
+        } else {
+            fpEmit(dst + " = rt_list_new(sizeof(" + cpCType(irtElem(t)) + "));")
+        }
     } else if k == KMap {
         fpEmit(dst + " = rt_map_new(sizeof(" + cpCType(irtElem(t)) + "));")
     } else if k == KRec {
@@ -3296,7 +3374,12 @@ func cpEmitDefaultInitFnProtos() {
     i = 0
     while i < irFuncs.count {
         nm = poolGet(irFuncName(i))
-        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) {
+        // Plan 5b Task 10: "rtListNew" added -- cpDefaultInit's KList arm
+        // now calls clar_fn_rtListNew unconditionally (every List field/
+        // global needs its birth handle), the exact call-before-prototype
+        // gap this function's maintenance comment above warned Task 10
+        // about.
+        if (cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpListPorted and nm == "rtListNew") {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1
