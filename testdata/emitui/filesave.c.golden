@@ -8,6 +8,7 @@ static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextStore(void * cv_t, void * cv_s);
 static void * clar_fn_rtListNew(int32_t cv_elemsize);
+static void * clar_fn_rtMapNew(int32_t cv_valsize);
 typedef struct { uint8_t len; uint8_t b[63]; } clar_str_63;
 extern int32_t rt_ext_SerFileWriteData(void *, rt_text *);
 extern int32_t rt_ext_SerFileReadTextInto(void *, rt_text *);
@@ -41,6 +42,11 @@ extern int32_t rt_ext_ListSetHandleSize(void *, int32_t);
 extern void rt_ext_ListBlockMoveData(void *, void *, int32_t);
 extern void rt_ext_ListPanic(const uint8_t *);
 extern void * rt_ext_ListNewRaw(int32_t);
+extern void * rt_ext_MapHandleDeref(void *);
+extern int32_t rt_ext_MapSetHandleSize(void *, int32_t);
+extern void rt_ext_MapBlockMoveData(void *, void *, int32_t);
+extern void rt_ext_MapPanic(const uint8_t *);
+extern void * rt_ext_MapNewRaw(int32_t);
 
 static const clar_str_255 clar_lit_0 = {31, {114, 101, 99, 111, 114, 100, 32, 116, 111, 111, 32, 108, 97, 114, 103, 101, 32, 102, 111, 114, 32, 115, 101, 114, 105, 97, 108, 105, 122, 101, 114}};
 static const clar_str_255 clar_lit_1 = {15, {98, 97, 100, 32, 102, 105, 108, 101, 32, 102, 111, 114, 109, 97, 116}};
@@ -54,12 +60,13 @@ static const clar_str_255 clar_lit_8 = {19, {115, 104, 105, 102, 116, 32, 111, 1
 static const clar_str_255 clar_lit_9 = {19, {102, 105, 114, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
 static const clar_str_255 clar_lit_10 = {18, {108, 97, 115, 116, 32, 111, 110, 32, 101, 109, 112, 116, 121, 32, 108, 105, 115, 116}};
 static const clar_str_255 clar_lit_11 = {23, {108, 105, 115, 116, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
-static const clar_str_255 clar_lit_12 = {7, {69, 120, 97, 109, 112, 108, 101}};
-static const clar_str_255 clar_lit_13 = {12, {98, 111, 111, 107, 109, 97, 114, 107, 46, 100, 97, 116}};
-static const clar_str_255 clar_lit_14 = {13, {98, 111, 111, 107, 109, 97, 114, 107, 115, 46, 100, 97, 116}};
-static const clar_str_255 clar_lit_15 = {7, {101, 120, 97, 109, 112, 108, 101}};
-static const clar_str_255 clar_lit_16 = {10, {98, 121, 110, 97, 109, 101, 46, 100, 97, 116}};
-static const clar_str_255 clar_lit_17 = {22, {102, 105, 108, 101, 46, 115, 97, 118, 101, 47, 102, 105, 108, 101, 46, 108, 111, 97, 100, 32, 111, 107}};
+static const clar_str_255 clar_lit_12 = {17, {109, 97, 112, 32, 107, 101, 121, 32, 110, 111, 116, 32, 102, 111, 117, 110, 100}};
+static const clar_str_255 clar_lit_13 = {7, {69, 120, 97, 109, 112, 108, 101}};
+static const clar_str_255 clar_lit_14 = {12, {98, 111, 111, 107, 109, 97, 114, 107, 46, 100, 97, 116}};
+static const clar_str_255 clar_lit_15 = {13, {98, 111, 111, 107, 109, 97, 114, 107, 115, 46, 100, 97, 116}};
+static const clar_str_255 clar_lit_16 = {7, {101, 120, 97, 109, 112, 108, 101}};
+static const clar_str_255 clar_lit_17 = {10, {98, 121, 110, 97, 109, 101, 46, 100, 97, 116}};
+static const clar_str_255 clar_lit_18 = {22, {102, 105, 108, 101, 46, 115, 97, 118, 101, 47, 102, 105, 108, 101, 46, 108, 111, 97, 100, 32, 111, 107}};
 
 typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;
 
@@ -76,6 +83,15 @@ typedef struct {
     int32_t cv_count;
     int32_t cv_cap;
 } clar_rec_RtList;
+typedef struct {
+    int32_t cv_rc;
+    void * cv_keys;
+    void * cv_vals;
+    int32_t cv_valsize;
+    int32_t cv_count;
+    int32_t cv_cap;
+    int32_t cv_valcap;
+} clar_rec_RtMap;
 typedef struct {
     clar_str_63 cv_name;
     int32_t cv_port;
@@ -136,7 +152,7 @@ static void clar_init_globals(void) {
     cv_rtSerBad = 0;
     cv_one = clar_new_Bookmark();
     cv_many = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Bookmark));
-    cv_byName = rt_map_new(sizeof(clar_rec_Bookmark));
+    cv_byName = (rt_map *)clar_fn_rtMapNew(sizeof(clar_rec_Bookmark));
 }
 
 static void cl_free_globals(void) {
@@ -201,6 +217,23 @@ static void clar_fn_rtListLast(void * cv_l, void * cv_out);
 static void clar_fn_rtListRemove(void * cv_l, int32_t cv_i);
 static int32_t clar_fn_rtListCount(void * cv_l);
 static void clar_fn_rtListClear(void * cv_l);
+static void * clar_fn_mapKeySlot(void * cv_m, int32_t cv_i);
+static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i);
+static int32_t clar_fn_mapLowerBound(void * cv_m, void * cv_key);
+static int32_t clar_fn_mapKeyEq(void * cv_m, int32_t cv_pos, void * cv_key);
+static int32_t clar_fn_mapFind(void * cv_m, void * cv_key);
+static void clar_fn_rtMapGrowKeys(void * cv_m, int32_t cv_need);
+static void clar_fn_rtMapGrowVals(void * cv_m, int32_t cv_need);
+static void * clar_fn_rtMapNew(int32_t cv_valsize);
+static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val);
+static void clar_fn_rtMapGet(void * cv_m, void * cv_key, void * cv_out);
+static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out);
+static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key);
+static void clar_fn_rtMapRemove(void * cv_m, void * cv_key);
+static int32_t clar_fn_rtMapCount(void * cv_m);
+static void clar_fn_rtMapClear(void * cv_m);
+static void clar_fn_rtMapKeyAt(void * cv_m, int32_t cv_i, void * cv_key255);
+static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
 static void clar_fn_rtSerPutI32(rt_text * cv_out, int32_t cv_v) {
@@ -1617,29 +1650,253 @@ static void clar_fn_rtListClear(void * cv_l) {
     (cv_rl)->cv_count = 0;
 }
 
+static void * clar_fn_mapKeySlot(void * cv_m, int32_t cv_i) {
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keys)) + ((cv_i * 256)));
+    return 0;
+}
+
+static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i) {
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_vals)) + ((cv_i * (((clar_rec_RtMap *)(cv_m)))->cv_valsize)));
+    return 0;
+}
+
+static int32_t clar_fn_mapLowerBound(void * cv_m, void * cv_key) {
+    int32_t cv_count;
+    cv_count = 0;
+    int32_t cv_lo;
+    cv_lo = 0;
+    int32_t cv_hi;
+    cv_hi = 0;
+    int32_t cv_mid;
+    cv_mid = 0;
+    cv_count = (((clar_rec_RtMap *)(cv_m)))->cv_count;
+    cv_lo = 0;
+    cv_hi = cv_count;
+    while (1) {
+        if (!((cv_lo < cv_hi))) break;
+        cv_mid = (cv_lo + ((cv_hi - cv_lo) / 2));
+        if (clar_fn_rtStrCmp(clar_fn_mapKeySlot(cv_m, cv_mid), cv_key) < 0) {
+            cv_lo = (cv_mid + 1);
+        } else {
+            cv_hi = cv_mid;
+        }
+    }
+    return cv_lo;
+    return 0;
+}
+
+static int32_t clar_fn_mapKeyEq(void * cv_m, int32_t cv_pos, void * cv_key) {
+    return ((cv_pos < (((clar_rec_RtMap *)(cv_m)))->cv_count) && (clar_fn_rtStrCmp(clar_fn_mapKeySlot(cv_m, cv_pos), cv_key) == 0));
+    return 0;
+}
+
+static int32_t clar_fn_mapFind(void * cv_m, void * cv_key) {
+    int32_t cv_pos;
+    cv_pos = 0;
+    cv_pos = clar_fn_mapLowerBound(cv_m, cv_key);
+    if (clar_fn_mapKeyEq(cv_m, cv_pos, cv_key)) {
+        return cv_pos;
+    }
+    return (-(1));
+    return 0;
+}
+
+static void clar_fn_rtMapGrowKeys(void * cv_m, int32_t cv_need) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_cap;
+    cv_cap = 0;
+    int32_t cv_newcap;
+    cv_newcap = 0;
+    int32_t cv_err;
+    cv_err = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_cap = (cv_rm)->cv_cap;
+    if (cv_need <= cv_cap) {
+        return;
+    }
+    if (cv_cap > 0) {
+        cv_newcap = cv_cap;
+    } else {
+        cv_newcap = 4;
+    }
+    while (1) {
+        if (!((cv_newcap < cv_need))) break;
+        cv_newcap = (cv_newcap * 2);
+    }
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keys, (cv_newcap * 256));
+    if (cv_err != 0) {
+        rt_ext_MapPanic((const uint8_t*)&(clar_lit_5));
+    }
+    (cv_rm)->cv_cap = cv_newcap;
+}
+
+static void clar_fn_rtMapGrowVals(void * cv_m, int32_t cv_need) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_cap;
+    cv_cap = 0;
+    int32_t cv_newcap;
+    cv_newcap = 0;
+    int32_t cv_valsize;
+    cv_valsize = 0;
+    int32_t cv_err;
+    cv_err = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_cap = (cv_rm)->cv_valcap;
+    if (cv_need <= cv_cap) {
+        return;
+    }
+    cv_valsize = (cv_rm)->cv_valsize;
+    if (cv_cap > 0) {
+        cv_newcap = cv_cap;
+    } else {
+        cv_newcap = 4;
+    }
+    while (1) {
+        if (!((cv_newcap < cv_need))) break;
+        cv_newcap = (cv_newcap * 2);
+    }
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_vals, (cv_newcap * cv_valsize));
+    if (cv_err != 0) {
+        rt_ext_MapPanic((const uint8_t*)&(clar_lit_5));
+    }
+    (cv_rm)->cv_valcap = cv_newcap;
+}
+
+static void * clar_fn_rtMapNew(int32_t cv_valsize) {
+    return rt_ext_MapNewRaw(cv_valsize);
+    return 0;
+}
+
+static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_pos;
+    cv_pos = 0;
+    int32_t cv_tail;
+    cv_tail = 0;
+    int32_t cv_klen;
+    cv_klen = 0;
+    void * cv_kslot;
+    cv_kslot = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_pos = clar_fn_mapLowerBound(cv_m, cv_key);
+    if (clar_fn_mapKeyEq(cv_m, cv_pos, cv_key)) {
+        rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_pos), (cv_rm)->cv_valsize);
+        return;
+    }
+    clar_fn_rtMapGrowKeys(cv_m, ((cv_rm)->cv_count + 1));
+    clar_fn_rtMapGrowVals(cv_m, ((cv_rm)->cv_count + 1));
+    cv_tail = ((cv_rm)->cv_count - cv_pos);
+    if (cv_tail > 0) {
+        rt_ext_MapBlockMoveData(clar_fn_mapKeySlot(cv_m, cv_pos), clar_fn_mapKeySlot(cv_m, (cv_pos + 1)), (cv_tail * 256));
+        rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_pos), clar_fn_mapValSlot(cv_m, (cv_pos + 1)), (cv_tail * (cv_rm)->cv_valsize));
+    }
+    cv_klen = rt_peekb(cv_key);
+    cv_kslot = clar_fn_mapKeySlot(cv_m, cv_pos);
+    rt_pokeb(cv_kslot, cv_klen);
+    rt_ext_MapBlockMoveData((void *)((char *)(cv_key) + (1)), (void *)((char *)(cv_kslot) + (1)), cv_klen);
+    rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_pos), (cv_rm)->cv_valsize);
+    (cv_rm)->cv_count = ((cv_rm)->cv_count + 1);
+}
+
+static void clar_fn_rtMapGet(void * cv_m, void * cv_key, void * cv_out) {
+    int32_t cv_idx;
+    cv_idx = 0;
+    cv_idx = clar_fn_mapFind(cv_m, cv_key);
+    if (cv_idx < 0) {
+        rt_ext_MapPanic((const uint8_t*)&(clar_lit_12));
+    }
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_idx), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+}
+
+static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out) {
+    int32_t cv_idx;
+    cv_idx = 0;
+    cv_idx = clar_fn_mapFind(cv_m, cv_key);
+    if (cv_idx < 0) {
+        return 0;
+    }
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_idx), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+    return 1;
+    return 0;
+}
+
+static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key) {
+    return (clar_fn_mapFind(cv_m, cv_key) >= 0);
+    return 0;
+}
+
+static void clar_fn_rtMapRemove(void * cv_m, void * cv_key) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_idx;
+    cv_idx = 0;
+    int32_t cv_tail;
+    cv_tail = 0;
+    cv_idx = clar_fn_mapFind(cv_m, cv_key);
+    if (cv_idx < 0) {
+        return;
+    }
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_tail = (((cv_rm)->cv_count - 1) - cv_idx);
+    if (cv_tail > 0) {
+        rt_ext_MapBlockMoveData(clar_fn_mapKeySlot(cv_m, (cv_idx + 1)), clar_fn_mapKeySlot(cv_m, cv_idx), (cv_tail * 256));
+        rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, (cv_idx + 1)), clar_fn_mapValSlot(cv_m, cv_idx), (cv_tail * (cv_rm)->cv_valsize));
+    }
+    (cv_rm)->cv_count = ((cv_rm)->cv_count - 1);
+}
+
+static int32_t clar_fn_rtMapCount(void * cv_m) {
+    return (((clar_rec_RtMap *)(cv_m)))->cv_count;
+    return 0;
+}
+
+static void clar_fn_rtMapClear(void * cv_m) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    (cv_rm)->cv_count = 0;
+}
+
+static void clar_fn_rtMapKeyAt(void * cv_m, int32_t cv_i, void * cv_key255) {
+    if ((cv_i < 0) || (cv_i >= (((clar_rec_RtMap *)(cv_m)))->cv_count)) {
+        rt_ext_MapPanic((const uint8_t*)&(clar_lit_12));
+    }
+    rt_ext_MapBlockMoveData(clar_fn_mapKeySlot(cv_m, cv_i), cv_key255, 256);
+}
+
+static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
+    if ((cv_i < 0) || (cv_i >= (((clar_rec_RtMap *)(cv_m)))->cv_count)) {
+        rt_ext_MapPanic((const uint8_t*)&(clar_lit_12));
+    }
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+}
+
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     int32_t cv_ok;
     cv_ok = 0;
-    clar_fn_rtStrStore((void*)&((cv_one).cv_name), 63, (void*)(const uint8_t*)&(clar_lit_12));
+    clar_fn_rtStrStore((void*)&((cv_one).cv_name), 63, (void*)(const uint8_t*)&(clar_lit_13));
     (cv_one).cv_port = 70;
     (cv_one).cv_enabled = 1;
     (cv_one).cv_kind = 66;
     (cv_one).cv_weight = 98304;
     (cv_one).cv_protocol = 1;
-    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_13), 0, (void*)&(cv_one), (void*)clar_serdesc_Bookmark);
-    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_13), 0, (void*)&(cv_one), (void*)clar_serdesc_Bookmark);
+    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_14), 0, (void*)&(cv_one), (void*)clar_serdesc_Bookmark);
+    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_14), 0, (void*)&(cv_one), (void*)clar_serdesc_Bookmark);
     clar_rec_Bookmark t1;
     t1 = cv_one;
     clar_fn_rtListPush((void*)cv_many, (void*)&(t1));
-    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_14), 1, (void*)(cv_many), (void*)clar_serdesc_Bookmark);
-    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_14), 1, (void*)(cv_many), (void*)clar_serdesc_Bookmark);
+    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_15), 1, (void*)(cv_many), (void*)clar_serdesc_Bookmark);
+    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_15), 1, (void*)(cv_many), (void*)clar_serdesc_Bookmark);
     clar_rec_Bookmark t2;
     t2 = cv_one;
-    rt_map_set(cv_byName, (const uint8_t*)&(clar_lit_15), &(t2));
-    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_16), 2, (void*)(cv_byName), (void*)clar_serdesc_Bookmark);
-    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_16), 2, (void*)(cv_byName), (void*)clar_serdesc_Bookmark);
+    clar_fn_rtMapSet((void*)cv_byName, (void*)(const uint8_t*)&(clar_lit_16), (void*)&(t2));
+    cv_ok = clar_fn_rtFileSave((const uint8_t*)&(clar_lit_17), 2, (void*)(cv_byName), (void*)clar_serdesc_Bookmark);
+    cv_ok = clar_fn_rtFileLoad((const uint8_t*)&(clar_lit_17), 2, (void*)(cv_byName), (void*)clar_serdesc_Bookmark);
     if (cv_ok) {
-        rt_alert((const uint8_t*)&(clar_lit_17));
+        rt_alert((const uint8_t*)&(clar_lit_18));
     }
     rt_quit((int32_t)(0));
 }
