@@ -117,3 +117,15 @@ check_test.cla:9:10: undefined: nope
 clean
 === extern-text-return-bad ===
 check_test.cla:1:1: external functions may only use int, ptr, bool, or char
+=== ptr-container-element-map ===
+check_test.cla:2:12: ptr cannot be a container element
+=== ptr-container-element-array ===
+check_test.cla:2:15: ptr cannot be a container element
+=== overlay-container-element-map ===
+check_test.cla:6:12: overlay records cannot be container elements
+=== overlay-container-element-array ===
+check_test.cla:6:17: overlay records cannot be container elements
+=== overlay-record-field ===
+check_test.cla:6:5: overlay records cannot be record fields
+=== record-overlay-name-collision ===
+check_test.cla:4:9: redeclaration of Dup

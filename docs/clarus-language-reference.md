@@ -1293,7 +1293,7 @@ Clarus's built-in types and checked operations (Chapters 3–12) cover ordinary 
 
 ### The `ptr` Type
 
-A `ptr` is an untyped machine address — 32 bits on the target Macintosh; host builds may use a wider native representation, and a program must never assume a specific size. The zero value of `ptr` is the null address; there is no `nil` literal for `ptr` (`nil`, Chapter 3, is reserved for window references) — test for null by comparing against `ptr(0)`.
+A `ptr` is an untyped machine address — 32 bits on the target Macintosh; host builds may use a wider native representation, and a program must never assume a specific size. The zero value of `ptr` is the null address; there is no `nil` literal for `ptr` (`nil`, Chapter 3, is reserved for window/resource references) — test for null by comparing against `ptr(0)`.
 
 A `ptr` is produced by calling an `external func` that returns one (below), or by converting an `int` with `ptr(intExpr)`. Converting back to `int` is equally explicit, with `int(ptrExpr)`. Neither conversion is implicit. `p + n` and `p - n`, where `n` is an `int`, add or subtract `n` bytes from the address `p` and yield a `ptr`; `==`, `!=`, `<`, `<=`, `>`, and `>=` compare two `ptr` values as addresses:
 
@@ -1312,7 +1312,7 @@ var p: ptr = ptr(0)
 // var addrs: list of ptr        // build-time error: ptr not allowed as container element
 ```
 
-Like the other inline scalar types (`int`, `bool`, `fixed`, `char`), a `ptr` is copied by value on assignment and return; it never participates in reference counting.
+Like the other inline scalar types (`int`, `bool`, `fixed`, `char`), a `ptr` is copied by value on assignment and return; its zero value is a plain null address, and it is never retained or released the way a `text`, `list`, `map`, or window reference is.
 
 ### `peek` and `poke`
 
@@ -1389,7 +1389,7 @@ An overlay type may be used as a variable, function parameter, function return t
 // record Wrapper { h: RtHdr } // build-time error: overlay records cannot be record fields
 ```
 
-Like `ptr`, an overlay value is copied by value and never participates in reference counting — an overlay is a view, not an owner, of whatever it points to.
+Like `ptr`, an overlay value is copied by value, its zero value is a plain null address, and it is never retained or released — an overlay is a view, not an owner, of whatever it points to.
 
 ## Appendix A: Grammar (EBNF)
 

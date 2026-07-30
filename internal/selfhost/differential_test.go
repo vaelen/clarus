@@ -198,3 +198,63 @@ func TestClaruscChecksItself(t *testing.T) {
 		t.Fatalf("clarusc check %s not clean: exit %d, out %q", self, ccCode, ccOut)
 	}
 }
+
+// claruscOnlyExclude documents, per reftest.ClaruscOnly index, why that
+// fence is not run through clarusc's own CHECK mode below. The other four
+// ClaruscOnly fences (ptr basics, the commented container-restriction
+// fence, external func, and the fully-commented overlay restrictions
+// fence) are exactly var/func/external-func top-level declarations (or
+// all-comment) and check clean as extracted, with no wrapping needed.
+var claruscOnlyExclude = map[int]string{
+	// Bare pokeb/pokel call statements after the var decls -- not a valid
+	// top-level form (same bare-statement-fragment class as CheckClean's
+	// excluded indices 4/5/8/16/19/21).
+	62: "bare pokeb/pokel call statements after the var decls -- not a valid top-level form",
+	// func f's body interleaves var decls with statements (var n; h.rc = 5;
+	// h.data = p; var back; var same) for expository clarity -- it
+	// genuinely violates "local variables ... are declared at the top of
+	// the body before any statement" (see the reference's variable-scoping
+	// prose), a real check-time error, not a missing-context fragment.
+	// Reordering the example to check clean is a content change out of
+	// this task's prose-only Ch13 scope.
+	64: "func f's body interleaves var decls with statements -- violates declare-at-top-of-body, not fixable without changing example content",
+}
+
+// TestClaruscOnlyFencesCheck completes TestDifferentialFences' coverage: it
+// runs clarusc's own CHECK mode (no subcommand -- see clarusc/main.cla) over
+// every reftest.ClaruscOnly fence that the Go front end cannot parse at all,
+// so Chapter 13's ptr/peek-poke/external-func/overlay-record examples stay
+// self-hosted-compiler-clean too. Fences that are fragments rather than
+// complete top-level declarations are excluded per claruscOnlyExclude above,
+// mirroring how CheckClean documents its own exclusions.
+func TestClaruscOnlyFencesCheck(t *testing.T) {
+	exe, err := buildClarusc()
+	if err != nil {
+		t.Fatalf("build clarusc: %v", err)
+	}
+	fences, err := reftest.ExtractFences("../../docs/clarus-language-reference.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for _, idx := range reftest.ClaruscOnly {
+		idx := idx
+		t.Run(fmt.Sprintf("fence%03d", idx), func(t *testing.T) {
+			if reason, excluded := claruscOnlyExclude[idx]; excluded {
+				t.Logf("fence %d excluded: %s", idx, reason)
+				return
+			}
+			if idx >= len(fences) {
+				t.Fatalf("manifest index %d out of range (%d fences)", idx, len(fences))
+			}
+			p := filepath.Join(dir, fmt.Sprintf("clarusconly%03d.cla", idx))
+			if err := os.WriteFile(p, []byte(fences[idx].Code), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, code := runClarusc(t, exe, p)
+			if out != "" || code != 0 {
+				t.Errorf("fence %d (md line %d) not clean under clarusc: exit %d, out %q", idx, fences[idx].Line, code, out)
+			}
+		})
+	}
+}

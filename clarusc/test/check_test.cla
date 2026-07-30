@@ -853,4 +853,69 @@ on App.startEmpty {
     src = ""
     ln(src, "external func G(): text")
     runCase("extern-text-return-bad", src)
+
+    // ---- Task 13 (native-5b): 5a leftovers -- container-elem coverage ----
+
+    // Case 60: ptr cannot be a container element, map form (Case 42 already
+    // covers the list form).
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var m: map of ptr")
+    ln(src, "}")
+    runCase("ptr-container-element-map", src)
+
+    // Case 61: ptr cannot be a container element, array form.
+    src = ""
+    ln(src, "func f() {")
+    ln(src, "    var a: ptr[4]")
+    ln(src, "}")
+    runCase("ptr-container-element-array", src)
+
+    // Case 62: overlay records cannot be container elements, map form
+    // (Case 55 already covers the list form).
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var m: map of RtHdr")
+    ln(src, "}")
+    runCase("overlay-container-element-map", src)
+
+    // Case 63: overlay records cannot be container elements, array form.
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "func f() {")
+    ln(src, "    var a: RtHdr[4]")
+    ln(src, "}")
+    runCase("overlay-container-element-array", src)
+
+    // Case 64: an overlay record cannot be a field of an ordinary record
+    // (deferred minor from Task 1's review -- checkRecordDecl's
+    // "overlay records cannot be record fields" path had no direct case).
+    src = ""
+    ln(src, "overlay record RtHdr {")
+    ln(src, "    rc: int")
+    ln(src, "    data: ptr")
+    ln(src, "}")
+    ln(src, "record Wrapper {")
+    ln(src, "    h: RtHdr")
+    ln(src, "}")
+    runCase("overlay-record-field", src)
+
+    // Case 65: a record and an overlay record sharing a name collide via
+    // the ordinary top-level redeclaration check -- no overlay-specific
+    // handling needed (deferred minor from Task 1's review).
+    src = ""
+    ln(src, "record Dup {")
+    ln(src, "    n: int")
+    ln(src, "}")
+    ln(src, "overlay record Dup {")
+    ln(src, "    rc: int")
+    ln(src, "}")
+    runCase("record-overlay-name-collision", src)
 }
