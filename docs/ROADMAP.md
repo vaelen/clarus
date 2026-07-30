@@ -414,11 +414,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   including inside the other families' element-release walks,
   `fpRetainVal`/`fpReleaseVal`/`fpNewTmp`-composed retain/release, and the
   container-accessor `_retain` suffix sites). A deliberate parity gap,
-  wave-wide: the C reference calls `rt_rc_check` unconditionally on every
-  release; the port calls `*RcCheck` only on the cold `rc <= 0` path, never
-  on retain. Task 5 (`322e0c9`) swept `cprint.cla` for every literal and
-  composed `rt_text_*`/`rt_list_*`/`rt_map_*` ARC-suffix emission site (4
-  families × 4 suffixes) and found none missed, then added two adversarial
+  wave-wide: the C reference calls `rt_rc_check` unconditionally on both
+  retain and release (`rt_core.inc:800-864` — retain calls it before
+  incrementing too); the port only guards the cold `rc <= 0` release path
+  and never checks on retain at all. Task 5 (`322e0c9`) swept `cprint.cla`
+  for every literal and composed `rt_text_*`/`rt_list_*`/`rt_map_*`
+  ARC-suffix emission site (3 stems × 4 suffixes) and found none missed,
+  then added two adversarial
   fixtures (list-of-map, globals) to the ARC matrix, both clean at
   `live == 0`. **What stayed C, and why:** the `rt_mem_host.inc` leak
   ledger (host-only debug infra the leak gates read), `rt_register_
@@ -437,8 +439,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   mechanically each time a family's redirect flipped (the emitted C text
   itself changes; `2e256aa`/`bbc1b2d`/`5c284ff`), but no behavior output
   ever did. Gauntlet (`go test ./...`, `internal/selfhost` ~250-590s per
-  run) green on every task; full gated `internal/mactest` suite also
-  green. Full task-by-task detail:
+  run) green on every task. **68k timing:** as expected, ≈no change — the
+  final full gated `internal/mactest` suite (31 tests) ran green in
+  172.666s wall-clock (5b baseline: 157.0s); the Bookmarks scenario
+  (heaviest single UI boot) landed at 10.27s build+boot (5b baseline:
+  9.83s) — same ballpark, since ported ARC still compiles through Retro68
+  gcc -O2, no naive-codegen cost until 5d. Full task-by-task detail:
   `.superpowers/sdd/2026-07-30-native-5c-runtime-wave2a/task-{1..6}-report.md`;
   plan: `docs/superpowers/plans/2026-07-30-native-5c-runtime-wave2a.md`.
   **5d-input inventory** (runtime logic still in C, feeding the 5d
