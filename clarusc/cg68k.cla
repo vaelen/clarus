@@ -52,6 +52,23 @@
 // total function over all 17 IRKinds rather than a partial one no caller
 // can safely invoke.
 //
+// THIS LAYOUT DIVERGES FROM cprint.cla's C STRUCT LAYOUT ON PURPOSE, AND
+// THE TWO MUST NEVER BE CROSS-USED. C lays a `char[N]` field out UNPADDED
+// (str/arr elements sit at their raw byte size, no slot-rounding) and a C
+// struct's own alignment/padding rules are the C COMPILER's, not this
+// file's -- cprint.cla emits `typedef struct { ... } clar_rec_Name` and
+// lets the m68k C compiler decide field offsets. cg68k.cla's layout is a
+// DIFFERENT, self-contained scheme (every bool/char slot padded to 2,
+// every field/element aligned by cgAlignOf) that this backend alone
+// defines and controls -- there is no requirement, and no attempt, to
+// keep native offsets numerically identical to cprint's C offsets for the
+// same record. Practical consequence for later tasks: when Task 8+ builds
+// the native serdesc tables (file save/load field-offset descriptors for
+// the m68k path), those offsets MUST come from cgFieldOffset -- reusing
+// cprint.cla's C struct offsets (or assuming they match) would silently
+// corrupt any record containing a bool/char field, since C packs it at 1
+// byte where cg68k.cla's own frame/record layout reserves 2.
+//
 // FRAME MODEL, WORKED EXAMPLE. Params are pushed by the CALLER,
 // left-to-right (a, then b, then c) before the JSR. Because the stack
 // grows down, the LAST push ends up at the LOWEST address above the

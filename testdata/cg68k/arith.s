@@ -1,26 +1,26 @@
-LBL_23:
+LBL_24:
         ; startup (JT slot 0)
         ; globals (below A5, 260 bytes total):
         ;   lasterrCode : -4(A5)  size 4  type int
         ;   lasterrMsg : -260(A5)  size 256  type str
         LEA -260(A5),A0
         MOVE.W #129,D0
-LBL_26:
+LBL_27:
         CLR.W (A0)+
-        DBRA D0,LBL_26
+        DBRA D0,LBL_27
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters
-        JSR LBL_24(PC)
-        ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR LBL_22(PC)
         JSR LBL_25(PC)
+        ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
+        JSR LBL_23(PC)
+        JSR LBL_26(PC)
         CLR.L -(A7)
         ; natQuit not present -- wired in Task 11
         RTS
-LBL_24:
+LBL_25:
         ; cg_init_globals: TODO evaluate irGlobal init exprs (Task 8) -- below-A5 zeroing already done by startup
         RTS
-LBL_25:
+LBL_26:
         ; cg_free_globals: TODO release ARC-owned globals (Task 8/9)
         RTS
         ; func rtSetLastErr  (JT slot 1)
@@ -211,61 +211,74 @@ LBL_21:
         ; TODO body Task 8
         UNLK A6
         RTS
-        ; func handler_App_launch  (JT slot 23)
+        ; func label  (JT slot 23)
+        ;   hidden result ptr : 8(A6)  size 4
+        ;   param n : 12(A6)  size 4
+        ;   local s : -256(A6)  size 256
+LBL_22:
+        LINK A6,#-256
+        ; TODO body Task 8
+        UNLK A6
+        RTS
+        ; func handler_App_launch  (JT slot 24)
         ;   local a : -4(A6)  size 4
         ;   local b : -8(A6)  size 4
-LBL_22:
-        LINK A6,#-8
+        ;   local s : -264(A6)  size 256
+LBL_23:
+        LINK A6,#-264
         ; TODO body Task 8
         UNLK A6
         RTS
         ; constant pool: string literals
-LBL_27:
+LBL_28:
         DC.B $18
         DC.B $61,$72,$72,$61,$79,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         DC.B $00
-LBL_28:
+LBL_29:
         DC.B $19
         DC.B $6E,$6F,$20,$65,$6E,$75,$6D,$20,$6D,$65,$6D,$62,$65,$72,$20,$77,$69,$74,$68,$20,$76,$61,$6C,$75,$65
-LBL_29:
+LBL_30:
         DC.B $10
         DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
         DC.B $00
-LBL_30:
+LBL_31:
         DC.B $10
         DC.B $73,$74,$72,$69,$6E,$67,$20,$74,$72,$75,$6E,$63,$61,$74,$65,$64
         DC.B $00
-LBL_31:
+LBL_32:
         DC.B $19
         DC.B $73,$74,$72,$69,$6E,$67,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_32:
+LBL_33:
         DC.B $12
         DC.B $73,$6C,$69,$63,$65,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         DC.B $00
-LBL_33:
+LBL_34:
         DC.B $0D
         DC.B $6F,$75,$74,$20,$6F,$66,$20,$6D,$65,$6D,$6F,$72,$79
-LBL_34:
-        DC.B $17
-        DC.B $74,$65,$78,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
 LBL_35:
         DC.B $17
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
+        DC.B $74,$65,$78,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
 LBL_36:
+        DC.B $17
+        DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
+LBL_37:
         DC.B $11
         DC.B $70,$6F,$70,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
-LBL_37:
-        DC.B $13
-        DC.B $73,$68,$69,$66,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
 LBL_38:
         DC.B $13
-        DC.B $66,$69,$72,$73,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
+        DC.B $73,$68,$69,$66,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
 LBL_39:
+        DC.B $13
+        DC.B $66,$69,$72,$73,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
+LBL_40:
         DC.B $12
         DC.B $6C,$61,$73,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
         DC.B $00
-LBL_40:
+LBL_41:
         DC.B $11
         DC.B $6D,$61,$70,$20,$6B,$65,$79,$20,$6E,$6F,$74,$20,$66,$6F,$75,$6E,$64
+LBL_42:
+        DC.B $01
+        DC.B $78
         ; constant pool: enum value/label tables (stub -- Task 8+)
         ; constant pool: serdesc tables (stub -- Task 8+)

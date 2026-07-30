@@ -2,17 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 // arith.cla: native-5d Task 7's cg68k golden fixture -- an App.launch
-// handler with a couple of int locals and a return. The body is still just
-// a TODO-body placeholder in the listing this task (real expression
-// codegen is Task 8); this fixture pins the LOCAL frame layout (two 4-byte
-// int slots) instead.
+// handler with a couple of int locals and a return, plus a helper
+// function returning a str 255 (cgSizeOf > 4) so its frame needs a hidden
+// result pointer. The body is still just a TODO-body placeholder in the
+// listing this task (real expression codegen is Task 8); this fixture
+// pins the LOCAL frame layout (two 4-byte int slots) and the
+// hidden-result-pointer param layout (param shifted up to 12(A6), hidden
+// ptr at 8(A6)) instead.
+
+func label(n: int): string(255) {
+    var s: string(255)
+    s = "x"
+    return s
+}
 
 on App.launch {
     var a: int
     var b: int
+    var s: string(255)
 
     a = 1
     b = 2
     a = a + b
+    s = label(a)
     return
 }
