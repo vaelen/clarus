@@ -68,4 +68,25 @@ void rt_ext_Panic(const uint8_t *msg) {
     rt_panic(buf);
 }
 
+/* rt_ext_StrSetLastErr/rt_ext_StrPanic/rt_ext_StrBlockMoveData: str.cla's
+ * own extern names (Plan 5b Task 8), same reasoning as the host .inc --
+ * str.cla is unconditional from this task forward, so it can't share a
+ * name with the generic waist externs a user program might also declare
+ * (testdata/lowlevel/peekpoke.cla's own `external func BlockMoveData`). */
+void rt_ext_StrSetLastErr(int32_t code, const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_set_lasterr(code, buf);
+}
+void rt_ext_StrPanic(const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_panic(buf);
+}
+void rt_ext_StrBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

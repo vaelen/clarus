@@ -439,6 +439,12 @@ on App.startCLI(args: list of string) {
         if usesFileSaveLoad {
             neededMods.add("ser.cla")
         }
+        // Task 8: str.cla is the first UNCONDITIONAL entry -- every program
+        // uses strings (Ch3's built-in Str255 family), so it's always
+        // pulled in and cpStrPorted is always true, not gated by a usage
+        // flag the way cpSerPorted/usesFileSaveLoad is.
+        cpStrPorted = true
+        neededMods.add("str.cla")
 
         combined2 = combined
         if neededMods.count > 0 {

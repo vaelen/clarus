@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Stand-in for the now-UNCONDITIONAL str.cla manifest entry (Plan 5b Task
+// 8) in this fake runtime-module directory (Task 4's inclusion-machinery
+// test, internal/lowlevel/rtinc_test.go). Deliberately empty: this
+// directory exercises expand's declare-before-use splicing machinery, not
+// str.cla's real content -- the real module lives at runtime/clarus/
+// str.cla. main.cla now always adds "str.cla" to neededMods regardless of
+// usage flags, so --rtdir testdata/rtinc/rt needs SOME file by that name
+// (an empty/decl-less file pushes main.cla's own "-1 head" empty-file
+// sentinel, already handled) or TestRtInc's IncludesRuntimeModule/
+// NoInclusionWithoutUsage subtests fail with "runtime module str.cla not
+// found" before ever reaching the assertions they actually care about.

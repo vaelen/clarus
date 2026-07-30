@@ -1,0 +1,323 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// str.cla: the ported Str255 family (Plan 5b "Stage B" Task 8, runtime-
+// migration-wave1). Replaces internal/build/rt/rt_core.inc's rt_str_*
+// functions (lines 31-171) for every emitted program -- unlike ser.cla
+// (Task 7), this module is UNCONDITIONAL: clarusc/main.cla's manifest
+// always includes it (every program uses strings), and cpStrPorted
+// (cprint.cla) is set true unconditionally alongside that, same "set
+// directly, no setter function" convention cpSerPorted established.
+// Ported EXACTLY against rt_core.inc:31-171, function by function; each
+// function's doc comment below cites its own line range.
+//
+// Str255 layout (Ch3): a `ptr` to one length byte followed by up to 255
+// data bytes -- [0]=length, [1..length]=bytes, exactly the C uint8_t[256]
+// this module never sees as a real type, only as a `ptr` shaped like it.
+// Every function here touches that memory through peekb/pokeb (single
+// bytes) or StrBlockMoveData (bulk byte ranges, mirroring the C
+// reference's own BlockMoveData calls one-for-one).
+//
+// Behavior contract (brief): every function EXCEPT rtStrSlice clamps an
+// over-length result and calls StrSetLastErr(1, "string truncated") --
+// never panics. rtStrSlice alone is strict: out-of-range bounds (including
+// len>255) panic "slice out of range", no clamping, matching
+// rt_core.inc:138-146's own comment ("Strict bounds (Ch3)... there is no
+// clamping here, unlike the byte-copy family above").
+//
+// StrSetLastErr/StrPanic/StrBlockMoveData are str.cla's OWN extern names,
+// distinct from the public SetLastErr/Panic/BlockMoveData that ser.cla (and
+// testdata/lowlevel/peekpoke.cla, a committed Ch13 fixture) also declare.
+// Because str.cla is unconditional -- included in literally every emitted
+// program from this task forward -- redeclaring the generic names would
+// make ANY program that also declares its own `external func BlockMoveData`
+// (peekpoke.cla already does, testdata/lowlevel/peekpoke.cla:14) collide
+// with str.cla's declaration in the same flat top-level scope
+// (clarusc/check.cla's checkFuncSig -> scopeDeclare keys purely on name, no
+// signature comparison, so even an identical signature still redeclares).
+// Distinct Str-prefixed names sidestep the hazard outright -- the exact
+// same fix Task 7 already applied to ser.cla's FileWriteData/
+// FileReadTextInto for the identical reason (see ser.cla's header comment).
+external func StrSetLastErr(code: int, msg: string)
+external func StrPanic(msg: string)
+external func StrBlockMoveData(src: ptr, dst: ptr, count: int)
+
+// rtStrStore (rt_core.inc:31-40): clamped copy of src's bytes into dst's
+// dstcap-byte buffer.
+func rtStrStore(dst: ptr, dstcap: int, src: ptr) {
+    var srclen: int
+    var n: int
+
+    srclen = peekb(src)
+    if srclen < dstcap {
+        n = srclen
+    } else {
+        n = dstcap
+    }
+    StrBlockMoveData(src + 1, dst + 1, n)
+    pokeb(dst, n)
+    if n < srclen {
+        StrSetLastErr(1, "string truncated")
+    }
+}
+
+// rtStrConcat (rt_core.inc:43-60): out must not alias b (a-aliasing is
+// safe) -- the printer always passes a fresh temp as out.
+func rtStrConcat(out: ptr, a: ptr, b: ptr) {
+    var la: int
+    var lb: int
+    var total: int
+    var n: int
+    var fromA: int
+    var fromB: int
+
+    la = peekb(a)
+    lb = peekb(b)
+    total = la + lb
+    if total > 255 {
+        n = 255
+    } else {
+        n = total
+    }
+    if la < n {
+        fromA = la
+    } else {
+        fromA = n
+    }
+    fromB = n - fromA
+    StrBlockMoveData(a + 1, out + 1, fromA)
+    StrBlockMoveData(b + 1, out + 1 + fromA, fromB)
+    pokeb(out, n)
+    if n < total {
+        StrSetLastErr(1, "string truncated")
+    }
+}
+
+// rtStrConcatChar (rt_core.inc:63-73): out must not alias a -- the printer
+// always passes a fresh temp as out.
+func rtStrConcatChar(out: ptr, a: ptr, c: int) {
+    var la: int
+    var total: int
+    var n: int
+    var copyLen: int
+
+    la = peekb(a)
+    total = la + 1
+    if total > 255 {
+        n = 255
+    } else {
+        n = total
+    }
+    if n < la {
+        copyLen = n
+    } else {
+        copyLen = la
+    }
+    StrBlockMoveData(a + 1, out + 1, copyLen)
+    if n > la {
+        pokeb(out + n, c)
+    }
+    pokeb(out, n)
+    if n < total {
+        StrSetLastErr(1, "string truncated")
+    }
+}
+
+// rtStrPrependChar (rt_core.inc:76-86): out must not alias a -- the printer
+// always passes a fresh temp as out.
+func rtStrPrependChar(out: ptr, c: int, a: ptr) {
+    var la: int
+    var total: int
+    var n: int
+
+    la = peekb(a)
+    total = la + 1
+    if total > 255 {
+        n = 255
+    } else {
+        n = total
+    }
+    pokeb(out + 1, c) // n >= 1, so the char always fits
+    StrBlockMoveData(a + 1, out + 2, n - 1)
+    pokeb(out, n)
+    if n < total {
+        StrSetLastErr(1, "string truncated")
+    }
+}
+
+// rtStrCmp (rt_core.inc:88-100): byte-wise unsigned comparison,
+// shorter-is-less on a matching prefix. peekb already returns an unsigned
+// 0-255 value, so plain int comparison on ca/cb is unsigned-correct --
+// no separate "unsigned" step needed the way C's memcmp requires one.
+func rtStrCmp(a: ptr, b: ptr): int {
+    var la: int
+    var lb: int
+    var n: int
+    var i: int
+    var ca: int
+    var cb: int
+
+    la = peekb(a)
+    lb = peekb(b)
+    if la < lb {
+        n = la
+    } else {
+        n = lb
+    }
+    i = 0
+    while i < n {
+        ca = peekb(a + 1 + i)
+        cb = peekb(b + 1 + i)
+        if ca < cb {
+            return -1
+        }
+        if ca > cb {
+            return 1
+        }
+        i = i + 1
+    }
+    if la < lb {
+        return -1
+    }
+    if la > lb {
+        return 1
+    }
+    return 0
+}
+
+// rtStrLen (rt_core.inc:102).
+func rtStrLen(s: ptr): int {
+    return peekb(s)
+}
+
+// rtStrIndex (rt_core.inc:104-108): panics (never clamps) on an
+// out-of-range index -- indexing, not a byte-copy, isn't part of the
+// clamp-plus-SetLastErr contract.
+func rtStrIndex(s: ptr, i: int): int {
+    if i < 0 or i >= peekb(s) {
+        StrPanic("string index out of range")
+    }
+    return peekb(s + 1 + i)
+}
+
+// rtStrSetIndex (rt_core.inc:110-114): same panic contract as rtStrIndex.
+func rtStrSetIndex(s: ptr, i: int, c: int) {
+    if i < 0 or i >= peekb(s) {
+        StrPanic("string index out of range")
+    }
+    pokeb(s + 1 + i, c)
+}
+
+// rtStrFromBytes (rt_core.inc:116-126): clamped copy of count bytes
+// (negative count treated as 0) from a bufcap-byte buffer into a
+// dstcap-byte Str255.
+func rtStrFromBytes(dst: ptr, dstcap: int, buf: ptr, bufcap: int, count: int) {
+    var want: int
+    var n: int
+
+    if count < 0 {
+        want = 0
+    } else {
+        want = count
+    }
+    n = want
+    if n > bufcap {
+        n = bufcap
+    }
+    if n > dstcap {
+        n = dstcap
+    }
+    StrBlockMoveData(buf, dst + 1, n)
+    pokeb(dst, n)
+    if n < want {
+        StrSetLastErr(1, "string truncated")
+    }
+}
+
+// rtStrToBytes (rt_core.inc:128-136): clamped copy of s's bytes into a
+// bufcap-byte buffer; returns the number of bytes actually copied.
+func rtStrToBytes(s: ptr, buf: ptr, bufcap: int): int {
+    var srclen: int
+    var n: int
+
+    srclen = peekb(s)
+    if srclen < bufcap {
+        n = srclen
+    } else {
+        n = bufcap
+    }
+    StrBlockMoveData(s + 1, buf, n)
+    if n < srclen {
+        StrSetLastErr(1, "string truncated")
+    }
+    return n
+}
+
+// rtStrSlice (rt_core.inc:138-149): STRICT bounds (Ch3) -- start<0, len<0,
+// len>255, or start+len>srclen all panic "slice out of range". No
+// clamping here, unlike every byte-copy function above.
+func rtStrSlice(out: ptr, s: ptr, start: int, len: int) {
+    var srclen: int
+
+    srclen = peekb(s)
+    if len < 0 or len > 255 {
+        StrPanic("slice out of range")
+    }
+    if start < 0 or start > srclen - len {
+        StrPanic("slice out of range")
+    }
+    StrBlockMoveData(s + 1 + start, out + 1, len)
+    pokeb(out, len)
+}
+
+// rtStrIndexOfStr (rt_core.inc:151-162): empty needle convention (Ch3) --
+// an empty needle is found at index 0.
+func rtStrIndexOfStr(s: ptr, needle: ptr): int {
+    var slen: int
+    var nlen: int
+    var i: int
+    var j: int
+    var match: bool
+
+    slen = peekb(s)
+    nlen = peekb(needle)
+    if nlen == 0 {
+        return 0
+    }
+    if nlen > slen {
+        return -1
+    }
+    i = 0
+    while i <= slen - nlen {
+        match = true
+        j = 0
+        while j < nlen {
+            if peekb(s + 1 + i + j) != peekb(needle + 1 + j) {
+                match = false
+                break
+            }
+            j = j + 1
+        }
+        if match {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// rtStrIndexOfChar (rt_core.inc:164-172).
+func rtStrIndexOfChar(s: ptr, c: int): int {
+    var slen: int
+    var i: int
+
+    slen = peekb(s)
+    i = 0
+    while i < slen {
+        if peekb(s + 1 + i) == c {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}

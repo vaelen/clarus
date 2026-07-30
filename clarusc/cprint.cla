@@ -73,6 +73,14 @@ var cpRestBuf: list of text   // globals init, funcs, main
 // list/map) the same way.
 var cpSerPorted: bool
 
+// cpStrPorted (Plan 5b Task 8) is str.cla's own analogous flag -- UNLIKE
+// cpSerPorted, main.cla sets this unconditionally true (str.cla is an
+// unconditional manifest entry: every emitted program includes it, since
+// every program uses strings), still set directly per-program the same
+// way, so a stale value can never leak across the differential/selfhost
+// harness's many-compiles-per-process runs.
+var cpStrPorted: bool
+
 // toText copies a `string` into a fresh `text` value. Used to bridge a bare
 // `string` (a fixed C-boilerplate line, or a pure-`string` fragment/return)
 // across a call-argument / return / list-push boundary, where the Go compiler
@@ -1386,65 +1394,125 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- strings ----
+    // Plan 5b Task 8: once runtime/clarus/str.cla is included (always, per
+    // main.cla's unconditional manifest entry -- cpStrPorted mirrors that
+    // decision exactly, same convention as cpSerPorted/IFileSave), every
+    // arm below calls clar_fn_rtStrXxx instead of the C rt_str_* runtime.
+    // Casts are otherwise identical to the C-runtime path: a temp/lvalue
+    // address (formerly "(uint8_t*)&...") becomes "(void*)&..." (rtStrXxx's
+    // own params are all `ptr`); a char/int argument (formerly
+    // "(uint8_t)(...)", since the C functions take uint8_t) becomes
+    // "(int32_t)(...)" (the Clarus int param carries the same 0-255 value);
+    // fpStrAddr's own "(const uint8_t*)&(...)" cast is passed through
+    // unchanged either way -- ser.cla's IFileSave/IFileLoad redirect
+    // already establishes that a fpStrAddr result needs no further
+    // wrapping to reach a `ptr` C parameter.
     } else if nm == IStrConcat() {
         s0 = fpStrAddr(a0)
         s1 = fpStrAddr(a1)
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_str_concat((uint8_t*)&" + t + ", " + s0 + ", " + s1 + ");")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrConcat((void*)&" + t + ", " + s0 + ", " + s1 + ");")
+        } else {
+            fpEmit("rt_str_concat((uint8_t*)&" + t + ", " + s0 + ", " + s1 + ");")
+        }
         return t
     } else if nm == IStrConcatChar() {
         s0 = fpStrAddr(a0)
         s1 = fpExpr(a1)
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_str_concat_char((uint8_t*)&" + t + ", " + s0 + ", (uint8_t)(" + s1 + "));")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrConcatChar((void*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "));")
+        } else {
+            fpEmit("rt_str_concat_char((uint8_t*)&" + t + ", " + s0 + ", (uint8_t)(" + s1 + "));")
+        }
         return t
     } else if nm == IStrPrependChar() {
         s0 = fpExpr(a0)
         s1 = fpStrAddr(a1)
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_str_prepend_char((uint8_t*)&" + t + ", (uint8_t)(" + s0 + "), " + s1 + ");")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrPrependChar((void*)&" + t + ", (int32_t)(" + s0 + "), " + s1 + ");")
+        } else {
+            fpEmit("rt_str_prepend_char((uint8_t*)&" + t + ", (uint8_t)(" + s0 + "), " + s1 + ");")
+        }
         return t
     } else if nm == IStrCmp() {
+        if cpStrPorted {
+            return "clar_fn_rtStrCmp(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+        }
         return "rt_str_cmp(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IStrLen() {
+        if cpStrPorted {
+            return "clar_fn_rtStrLen(" + fpStrAddr(a0) + ")"
+        }
         return "rt_str_len(" + fpStrAddr(a0) + ")"
     } else if nm == IStrIndex() {
+        if cpStrPorted {
+            return "clar_fn_rtStrIndex(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_str_index(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
     } else if nm == IStrSetIndex() {
         s0 = fpAddrable(a0)
         s1 = fpExpr(a1)
-        fpEmit("rt_str_set_index((uint8_t*)&(" + s0 + "), (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrSetIndex((void*)&(" + s0 + "), (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_str_set_index((uint8_t*)&(" + s0 + "), (int32_t)(" + s1 + "), (uint8_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IStrFromBytes() {
         s0 = fpAddrable(a0)
         cap0 = irtN(irExprType(a0))
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
-        fpEmit("rt_str_from_bytes((uint8_t*)&(" + s0 + "), " + numToStr(cap0) + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrFromBytes((void*)&(" + s0 + "), " + numToStr(cap0) + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_str_from_bytes((uint8_t*)&(" + s0 + "), " + numToStr(cap0) + ", (const uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IStrToBytes() {
         s0 = fpStrAddr(a0)
         s1 = fpAddrable(a1)
         cap1 = irtN(irExprType(a1))
+        if cpStrPorted {
+            return "clar_fn_rtStrToBytes(" + s0 + ", (void*)(" + s1 + ").e, " + numToStr(cap1) + ")"
+        }
         return "rt_str_to_bytes(" + s0 + ", (uint8_t*)(" + s1 + ").e, " + numToStr(cap1) + ")"
     } else if nm == IStrCoerce() {
         // Materializes a0 (any Str capacity) into a fresh temp at x.Ty's
-        // (different) capacity via the same clamped rt_str_store fpStoreStr
-        // uses for a plain lvalue -- see lowCoerceStr's doc comment
-        // (lower.cla) for why this can't just be a plain `=`.
+        // (different) capacity via the same clamped rt_str_store/
+        // clar_fn_rtStrStore fpStoreStr uses for a plain lvalue -- see
+        // lowCoerceStr's doc comment (lower.cla) for why this can't just
+        // be a plain `=`.
         s0 = fpStrAddr(a0)
         t = fpNewTmp(cpCType(irExprType(x)))
-        fpEmit("rt_str_store((uint8_t*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrStore((void*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
+        } else {
+            fpEmit("rt_str_store((uint8_t*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", " + s0 + ");")
+        }
         return t
     } else if nm == IStrSlice() {
         s0 = fpStrAddr(a0)
         s1 = fpExpr(a1)
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_str_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrSlice((void*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_str_slice((uint8_t*)&" + t + ", " + s0 + ", (int32_t)(" + s1 + "), (int32_t)(" + fpExpr(a2) + "));")
+        }
         return t
     } else if nm == IStrIndexOfStr() {
+        if cpStrPorted {
+            return "clar_fn_rtStrIndexOfStr(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
+        }
         return "rt_str_index_of_str(" + fpStrAddr(a0) + ", " + fpStrAddr(a1) + ")"
     } else if nm == IStrIndexOfChar() {
+        if cpStrPorted {
+            return "clar_fn_rtStrIndexOfChar(" + fpStrAddr(a0) + ", (int32_t)(" + fpExpr(a1) + "))"
+        }
         return "rt_str_index_of_char(" + fpStrAddr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
 
     // ---- text ----
@@ -2136,7 +2204,11 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         // and the RT_UI_WB_MAP key255 argument.
         mapText = fpExpr(opA)
         keyT = fpNewTmp("clar_str_255")
-        fpEmit("rt_str_store((uint8_t*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrStore((void*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
+        } else {
+            fpEmit("rt_str_store((uint8_t*)&" + keyT + ", 255, " + fpStrAddr(opB) + ");")
+        }
         recName = poolGet(cpFindWindowFormRecName(winName))
         t = fpNewTmp("clar_rec_" + recName)
         fpEmit(t + " = clar_new_" + recName + "();")
@@ -2146,9 +2218,16 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
 }
 
 // fpStoreStr prints a clamped string store: `rt_str_store(&dst, CAP, &src);`
-// -- funcprint.go's storeStr.
+// (or, once str.cla is ported, `clar_fn_rtStrStore(&dst, CAP, &src);`) --
+// funcprint.go's storeStr. cpEmitGlobalsInit's KStr global-init path routes
+// through this same helper, so redirecting it here covers that call site
+// too -- no separate cpStrPorted branch needed there.
 func fpStoreStr(dst: int, src: int) {
-    fpEmit("rt_str_store((uint8_t*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
+    if cpStrPorted {
+        fpEmit("clar_fn_rtStrStore((void*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
+    } else {
+        fpEmit("rt_str_store((uint8_t*)&(" + fpAddrable(dst) + "), " + numToStr(irtN(irExprType(dst))) + ", " + fpStrAddr(src) + ");")
+    }
 }
 
 // fpStmt is the per-statement printing funnel (funcprint.go's stmt) --
@@ -2582,6 +2661,8 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
     } else if k == KStr {
         if strDefault < 0 {
             fpEmit(dst + " = (" + cpCType(t) + "){0};")
+        } else if cpStrPorted {
+            fpEmit("clar_fn_rtStrStore((void*)&(" + dst + "), " + numToStr(irtN(t)) + ", (void*)&clar_lit_" + numToStr(strDefault) + ");")
         } else {
             fpEmit("rt_str_store((uint8_t*)&(" + dst + "), " + numToStr(irtN(t)) + ", (const uint8_t*)&clar_lit_" + numToStr(strDefault) + ");")
         }
