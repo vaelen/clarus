@@ -23,6 +23,7 @@ static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 typedef struct { uint8_t len; uint8_t b[63]; } clar_str_63;
 extern void rt_ext_CorePanic(const uint8_t *);
+extern void rt_ext_CoreSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_StrBlockMoveData(void *, void *, int32_t);
 extern void * rt_ext_TextHandleDeref(void *);
 extern int32_t rt_ext_TextSetHandleSize(void *, int32_t);
@@ -196,14 +197,10 @@ static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 static const int32_t clar_enum_Protocol[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_Protocol_count __attribute__((unused)) = 3;
 
-static int32_t cv_lasterrCode;
-static clar_str_255 cv_lasterrMsg;
 static rt_list * cv_bookmarks;
 static clar_rec_Bookmark cv_current;
 static rt_map * cv_byName;
 static void clar_init_globals(void) {
-    cv_lasterrCode = 0;
-    cv_lasterrMsg = (clar_str_255){0};
     cv_bookmarks = (rt_list *)clar_fn_rtListNew(sizeof(clar_rec_Bookmark));
     cv_current = clar_new_Bookmark();
     cv_byName = (rt_map *)clar_fn_rtMapNew(sizeof(clar_rec_Bookmark));
@@ -259,8 +256,7 @@ static void clar_fn_ui_EditForm_accepted(void * cv_window, clar_rec_Bookmark cv_
 static void clar_fn_ui_EditForm_cancelled(void * cv_window);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg) {
-    cv_lasterrCode = cv_code;
-    clar_fn_rtStrStore((void*)&(cv_lasterrMsg), 255, (void*)(const uint8_t*)&(cv_msg));
+    rt_ext_CoreSetLastErr(cv_code, (const uint8_t*)&(cv_msg));
 }
 
 static void clar_fn_rtPanic(clar_str_255 cv_msg) {

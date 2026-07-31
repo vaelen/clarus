@@ -22,6 +22,7 @@ static int32_t clar_fn_rtMapLastref(void * cv_m);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 extern void rt_ext_CorePanic(const uint8_t *);
+extern void rt_ext_CoreSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_StrBlockMoveData(void *, void *, int32_t);
 extern void * rt_ext_TextHandleDeref(void *);
 extern int32_t rt_ext_TextSetHandleSize(void *, int32_t);
@@ -117,11 +118,7 @@ static const rt_ui_window_desc clar_ui_window_DocWin = {
 static const int32_t clar_enum_saveChoice[] __attribute__((unused)) = {0, 1, 2};
 static const int clar_enum_saveChoice_count __attribute__((unused)) = 3;
 
-static int32_t cv_lasterrCode;
-static clar_str_255 cv_lasterrMsg;
 static void clar_init_globals(void) {
-    cv_lasterrCode = 0;
-    cv_lasterrMsg = (clar_str_255){0};
 }
 
 static void cl_free_globals(void) {
@@ -153,8 +150,7 @@ static void clar_fn_ui_DocWin_SaveBtn_click(void * cv_window);
 static void clar_fn_handler_App_launch(void);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg) {
-    cv_lasterrCode = cv_code;
-    clar_fn_rtStrStore((void*)&(cv_lasterrMsg), 255, (void*)(const uint8_t*)&(cv_msg));
+    rt_ext_CoreSetLastErr(cv_code, (const uint8_t*)&(cv_msg));
 }
 
 static void clar_fn_rtPanic(clar_str_255 cv_msg) {
@@ -457,40 +453,25 @@ static void clar_fn_handler_App_launch(void) {
     clar_fn_rtStrStore((void*)&(cv_wt), 255, (void*)(const uint8_t*)&(t1));
     cv_ok = rt_ui_ask_open((uint8_t*)&(cv_p));
     if (cv_ok) {
-        int32_t t2;
-        t2 = rt_file_read_text((const uint8_t*)&(cv_p), cv_t);
-        clar_str_255 t3;
-        rt_str_store((uint8_t*)&t3, 255, rt_lasterr_msg);
-        clar_fn_rtSetLastErr((int32_t)(rt_lasterr_code), t3);
-        (void)(t2);
+        rt_file_read_text((const uint8_t*)&(cv_p), cv_t);
         rt_ui_widget_set_text(cv_w, 1, cv_t);
     }
     clar_fn_rtStrStore((void*)&(cv_suggested), 255, (void*)(const uint8_t*)&(clar_lit_15));
     cv_ok = rt_ui_ask_save((uint8_t*)&(cv_p), (const uint8_t*)&(cv_suggested));
     if (cv_ok) {
         clar_fn_rtTextRelease((void*)cv___store1);
-        rt_text * t4 = NULL;
-        t4 = rt_text_new();
-        rt_ui_widget_get_text(cv_w, 1, t4);
-        cv___store1 = t4;
+        rt_text * t2 = NULL;
+        t2 = rt_text_new();
+        rt_ui_widget_get_text(cv_w, 1, t2);
+        cv___store1 = t2;
         clar_fn_rtTextRelease((void*)cv_t);
         cv_t = cv___store1;
         cv___store1 = 0;
-        int32_t t5;
-        t5 = rt_file_write_text((const uint8_t*)&(cv_p), cv_t);
-        clar_str_255 t6;
-        rt_str_store((uint8_t*)&t6, 255, rt_lasterr_msg);
-        clar_fn_rtSetLastErr((int32_t)(rt_lasterr_code), t6);
-        (void)(t5);
+        rt_file_write_text((const uint8_t*)&(cv_p), cv_t);
     }
     cv_choice = rt_ui_ask_save_changes((const uint8_t*)&(clar_lit_16));
     if (cv_choice == 0) {
-        int32_t t7;
-        t7 = rt_file_write_text((const uint8_t*)&(cv_p), cv_t);
-        clar_str_255 t8;
-        rt_str_store((uint8_t*)&t8, 255, rt_lasterr_msg);
-        clar_fn_rtSetLastErr((int32_t)(rt_lasterr_code), t8);
-        (void)(t7);
+        rt_file_write_text((const uint8_t*)&(cv_p), cv_t);
     } else {
         if (cv_choice == 1) {
             rt_alert((const uint8_t*)&(clar_lit_17));
