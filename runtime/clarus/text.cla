@@ -92,40 +92,35 @@
 // register-based Memory Manager calls (Inside Macintosh's documented A0/
 // A1/D0 fast-call convention), hence `reg`, never `pascal`.
 //
-// KNOWN CONCERN (Task 9 report): rt_ext_TextNewPtr/rt_ext_TextNewHandle
+// RESOLVED (Task 9 review fix): rt_ext_TextNewPtr/rt_ext_TextNewHandle
 // (internal/build/rt/rt_ext_host.inc) OOM-panic on a NULL result INSIDE
 // the C wrapper, before ever returning to this Clarus caller -- a raw
 // `reg` trap clause has no such check, so a native build's TextNewPtr/
-// TextNewHandle calls silently propagate NULL on allocation failure
-// instead of panicking. Clause added anyway, per this task's own scope
-// (every Memory-Manager waist extern gets a trap clause); the semantic
-// gap is real and unresolved -- see the Task 9 report's "OOM-check delta"
-// section for the full accounting. Do not treat this clause as proof the
-// native OOM path is safe.
+// TextNewHandle calls could otherwise silently propagate NULL on
+// allocation failure instead of panicking. Every Clarus call site of
+// these two (and their List/Map siblings) now guards the result itself
+// (`if x == ptr(0) { rtPanic("out of memory") }`, matching the C shim's
+// own message) -- dead code on host (the C shim panics first), live on
+// native. See rtTextNew/rtTextConcat/rtTextConcatSl below.
 external func TextHandleDeref(h: ptr): ptr = inline deref
 external func TextSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
 external func TextBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
 // allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own
 // NewPtr choice exactly (rt_core.inc:307). rt_ext_TextNewPtr panics
-// ("out of memory") ITSELF on a NULL result -- the C reference's
-// rt_core_new_struct does the identical check right at the primitive
-// (`if (!p) rt_core_oom();`), so this mirrors that placement rather than
-// pushing a ptr(0) check out to every Clarus call site (the earlier
-// TextSetHandleSize/rtTextGrow pair instead returns an error code the
-// CALLER checks, because SetHandleSize's own OSErr already flows back
-// through the wrapper's int32_t return -- NewPtr has no such return-code
-// channel, only a NULL/non-NULL pointer, so checking inside the wrapper is
-// both the closer-to-the-primitive AND the smaller-diff option here).
+// ("out of memory") ITSELF on a NULL result on host; Task 9's own review
+// fix adds the same check at each Clarus call site too, since the native
+// `reg` trap clause above has no such check of its own (see the KNOWN
+// CONCERN block above, now RESOLVED).
 external func TextNewPtr(size: int): ptr = trap 0xA11E reg
 external func TextDisposePtr(p: ptr) = trap 0xA01F reg
 // TextNewHandle/TextDisposeHandle/TextRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtTextNew/rtTextRetain/rtTextRelease below use.
-// TextNewHandle oom-panics on NULL itself (same "check at the primitive"
-// placement as TextNewPtr just above) -- it never returns null, so no
-// separate check is needed at rtTextNew's own call site. TextRcCheck is the
-// cold-path over-release guard: rtTextRelease only calls it once it has
-// already determined `rc <= 0` itself (the host body then prints "rt_rc:
+// TextNewHandle oom-panics on NULL itself on host (same "check at the
+// primitive" placement as TextNewPtr just above); rtTextNew below now
+// guards the native path too (see the KNOWN CONCERN block above).
+// TextRcCheck is the cold-path over-release guard: rtTextRelease only
+// calls it once it has already determined `rc <= 0` itself (the host body then prints "rt_rc:
 // over-release at %s" and aborts; the Mac body is a no-op) -- never called
 // unconditionally the way the C reference's rt_rc_check is.
 external func TextNewHandle(n: int): ptr = trap 0xA122 reg
@@ -195,19 +190,27 @@ const rtTextBoxSize: int = 32
 // brief's own worked order; the C reference pokes h before len/cap, which
 // makes no observable difference -- t is not yet reachable from anywhere
 // else, so no ordering here is racy or otherwise significant).
-// TextNewHandle(0) never returns null (it oom-panics itself, see its own
-// extern doc comment above), so there is no separate NULL check here,
-// matching TextNewPtr's own "check at the primitive" placement.
+// TextNewPtr/TextNewHandle's own C shim panics on NULL (host only -- Task 9
+// (native-5d) gave both a bare `reg` trap clause, which has no such check),
+// so these guards are dead on host, live on native -- same message the C
+// shim uses ("out of memory"), same `x == ptr(0)` idiom rtTextRetain/etc.
+// already use.
 func rtTextNew(): ptr {
     var t: ptr
     var rt: RtText
 
     t = TextNewPtr(rtTextBoxSize)
+    if t == ptr(0) {
+        rtPanic("out of memory")
+    }
     rt = RtText(t)
     rt.rc = 1
     rt.len = 0
     rt.cap = 0
     rt.h = TextNewHandle(0)
+    if rt.h == ptr(0) {
+        rtPanic("out of memory")
+    }
     return t
 }
 
@@ -297,9 +300,11 @@ func rtTextStoreText(dst: ptr, src: ptr) {
 // mirroring the C reference's own NewPtr choice exactly -- unlike a Handle,
 // SetHandleSize can never move it, so (unlike an earlier Handle-based
 // draft) there is no re-derive-after-grow step for scratch at all, and one
-// less relocation-discipline site to get wrong. TextNewPtr itself panics
-// ("out of memory") on failure -- see its own doc comment -- so there is no
-// separate NULL check here, matching rt_core_new_struct's C behavior.
+// less relocation-discipline site to get wrong. TextNewPtr's own C shim
+// panics ("out of memory") on failure -- host only, Task 9 (native-5d)
+// gave TextNewPtr a bare `reg` trap clause with no such check, so this
+// function guards the NULL result itself now (dead on host, live on
+// native).
 func rtTextConcat(dst: ptr, a: ptr, bstr: ptr, btext: ptr) {
     var ra: RtText
     var rb: RtText
@@ -328,6 +333,9 @@ func rtTextConcat(dst: ptr, a: ptr, bstr: ptr, btext: ptr) {
         scratchSz = 1
     }
     scratch = TextNewPtr(scratchSz)
+    if scratch == ptr(0) {
+        rtPanic("out of memory")
+    }
     amp = TextHandleDeref(ra.h)
     TextBlockMoveData(amp, scratch, alen)
     if bstr != ptr(0) {
@@ -369,6 +377,9 @@ func rtTextConcatSl(dst: ptr, a: ptr, b: ptr) {
         scratchSz = 1
     }
     scratch = TextNewPtr(scratchSz)
+    if scratch == ptr(0) {
+        rtPanic("out of memory")
+    }
     TextBlockMoveData(a + 1, scratch, slen)
     bmp = TextHandleDeref(rb.h)
     TextBlockMoveData(bmp, scratch + slen, blen)

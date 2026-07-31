@@ -129,23 +129,25 @@
 // spliced first) -- a plain intra-Clarus call, no extern/name-collision
 // hazard to sidestep at all.
 // Task 9 (native-5d): trap/inline clauses -- see text.cla's own header
-// comment for the trap-word verification table and the NewPtr/NewHandle
-// OOM-check concern (identical here: rt_ext_MapNewPtr/MapNewHandle also
-// panic on NULL inside the C wrapper; the `reg` clause has no such check).
+// comment for the trap-word verification table. rt_ext_MapNewPtr/
+// MapNewHandle panic on NULL inside the C wrapper (host only); the `reg`
+// clause has no such check, so rtMapNew below guards the native path
+// itself too (Task 9 review fix, RESOLVED).
 external func MapHandleDeref(h: ptr): ptr = inline deref
 external func MapSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
 external func MapBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // MapNewPtr/MapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
-// the-primitive placement exactly (text.cla/list.cla) -- never returns
-// null, so no separate check is needed at rtMapNew's own call site.
+// the-primitive placement exactly (text.cla/list.cla) on host; rtMapNew
+// below now guards the native path too.
 external func MapNewPtr(size: int): ptr = trap 0xA11E reg
 external func MapDisposePtr(p: ptr) = trap 0xA01F reg
 // MapNewHandle/MapDisposeHandle/MapRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtMapNew/rtMapRetain/rtMapRelease below use, same shape
 // as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck and list.cla's
 // ListNewHandle/ListDisposeHandle/ListRcCheck. MapNewHandle oom-panics on
-// NULL itself, never returns null. MapRcCheck is the cold-path over-release
+// NULL itself on host; rtMapNew below guards the native path too.
+// MapRcCheck is the cold-path over-release
 // guard: rtMapRelease only calls it once it has already determined `rc <=
 // 0` itself (the host body then prints "rt_rc: over-release at %s" and
 // aborts; the Mac body is a no-op) -- never called unconditionally the way
@@ -321,19 +323,29 @@ const rtMapBoxSize: int = 56
 // rtMapNew (rt_core.inc:622-636, `rt_map_new`) -- Plan 5c wave2a Task 4:
 // birth allocation is now entirely Clarus-owned, mirroring the C reference
 // field by field (rc=1, keys/vals each a fresh empty Handle, valsize/count/
-// cap/valcap poked). MapNewHandle(0) never returns null (it oom-panics
-// itself, see its own extern doc comment above), so there is no separate
-// NULL check here, matching MapNewPtr's own "check at the primitive"
-// placement.
+// cap/valcap poked). MapNewPtr/MapNewHandle's own C shim panics on NULL
+// (host only -- Task 9 (native-5d) gave both a bare `reg` trap clause,
+// which has no such check), so these guards are dead on host, live on
+// native -- same message the C shim uses ("out of memory"), same
+// `x == ptr(0)` idiom rtMapRetain/etc. already use.
 func rtMapNew(valsize: int): ptr {
     var m: ptr
     var rm: RtMap
 
     m = MapNewPtr(rtMapBoxSize)
+    if m == ptr(0) {
+        rtPanic("out of memory")
+    }
     rm = RtMap(m)
     rm.rc = 1
     rm.keys = MapNewHandle(0)
+    if rm.keys == ptr(0) {
+        rtPanic("out of memory")
+    }
     rm.vals = MapNewHandle(0)
+    if rm.vals == ptr(0) {
+        rtPanic("out of memory")
+    }
     rm.valsize = valsize
     rm.count = 0
     rm.cap = 0

@@ -268,11 +268,50 @@ LBL_6:
         MOVE.L A0,D0
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_69
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_70:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_70
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_69:
+        MOVE.L -4(A6),D0
         MOVE.L D0,-8(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
+        ; TODO cgExpr <kind 3>: unsupported this task
+        MOVE.L #0,D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_71
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_72:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_72
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_71:
         MOVE.L -4(A6),D0
         BRA.W LBL_68
 LBL_68:
@@ -291,13 +330,13 @@ LBL_7:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_70
-        BRA.W LBL_69
-LBL_70:
+        BEQ.W LBL_74
+        BRA.W LBL_73
+LBL_74:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
-LBL_69:
+LBL_73:
         UNLK A6
         RTS
         ; func rtTextRelease  (JT slot 9)
@@ -313,9 +352,9 @@ LBL_8:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_72
-        BRA.W LBL_71
-LBL_72:
+        BEQ.W LBL_76
+        BRA.W LBL_75
+LBL_76:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO cgExpr <kind 3>: unsupported this task
@@ -327,11 +366,11 @@ LBL_72:
         SLE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_73
+        BEQ.W LBL_77
         MOVE.L 8(A6),D0
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
-LBL_73:
+LBL_77:
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
@@ -342,7 +381,7 @@ LBL_73:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_74
+        BEQ.W LBL_78
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,-(A7)
@@ -352,8 +391,8 @@ LBL_73:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A01F  ; TextDisposePtr
-LBL_74:
-LBL_71:
+LBL_78:
+LBL_75:
         UNLK A6
         RTS
         ; func rtTextStore  (JT slot 10)
@@ -397,7 +436,7 @@ LBL_9:
         MOVEA.L (A7)+,A0
         DC.W $A22E  ; TextBlockMoveData
         ; TODO SAssign <dst kind 3>: unsupported this task
-LBL_75:
+LBL_79:
         UNLK A6
         RTS
         ; func rtListNew  (JT slot 11)
@@ -413,15 +452,54 @@ LBL_10:
         MOVE.L A0,D0
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_81
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_82:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_82
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_81:
+        MOVE.L -4(A6),D0
         MOVE.L D0,-8(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
+        ; TODO cgExpr <kind 3>: unsupported this task
+        MOVE.L #0,D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_83
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_84:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_84
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_83:
         MOVE.L -4(A6),D0
-        BRA.W LBL_76
-LBL_76:
+        BRA.W LBL_80
+LBL_80:
         UNLK A6
         RTS
         ; func rtListRetain  (JT slot 12)
@@ -437,13 +515,13 @@ LBL_11:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_78
-        BRA.W LBL_77
-LBL_78:
+        BEQ.W LBL_86
+        BRA.W LBL_85
+LBL_86:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
-LBL_77:
+LBL_85:
         UNLK A6
         RTS
         ; func rtListRelease  (JT slot 13)
@@ -459,9 +537,9 @@ LBL_12:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_80
-        BRA.W LBL_79
-LBL_80:
+        BEQ.W LBL_88
+        BRA.W LBL_87
+LBL_88:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO cgExpr <kind 3>: unsupported this task
@@ -473,11 +551,11 @@ LBL_80:
         SLE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_81
+        BEQ.W LBL_89
         MOVE.L 8(A6),D0
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
-LBL_81:
+LBL_89:
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
@@ -488,7 +566,7 @@ LBL_81:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_82
+        BEQ.W LBL_90
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,-(A7)
@@ -498,8 +576,8 @@ LBL_81:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A01F  ; ListDisposePtr
-LBL_82:
-LBL_79:
+LBL_90:
+LBL_87:
         UNLK A6
         RTS
         ; func rtListLastref  (JT slot 14)
@@ -514,7 +592,7 @@ LBL_13:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_84
+        BEQ.W LBL_92
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,-(A7)
@@ -523,12 +601,12 @@ LBL_13:
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
-        BRA.W LBL_85
-LBL_84:
+        BRA.W LBL_93
+LBL_92:
         MOVE.L #0,D0
-LBL_85:
-        BRA.W LBL_83
-LBL_83:
+LBL_93:
+        BRA.W LBL_91
+LBL_91:
         UNLK A6
         RTS
         ; func rtListAt  (JT slot 15)
@@ -549,7 +627,7 @@ LBL_14:
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BNE.W LBL_87
+        BNE.W LBL_95
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         ; TODO cgExpr <kind 3>: unsupported this task
@@ -558,22 +636,22 @@ LBL_14:
         CMP.L D0,D1
         SGE D0
         ANDI.L #1,D0
-        BRA.W LBL_88
-LBL_87:
+        BRA.W LBL_96
+LBL_95:
         MOVE.L #1,D0
-LBL_88:
+LBL_96:
         TST.L D0
-        BEQ.W LBL_89
+        BEQ.W LBL_97
         LEA LBL_37(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_90:
+LBL_98:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_90
+        DBRA D0,LBL_98
         JSR LBL_2(PC)
         ADDA.W #256,A7
-LBL_89:
+LBL_97:
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVEA.L D0,A0
@@ -591,8 +669,8 @@ LBL_89:
         MOVE.L -12(A6),D0
         MOVE.L (A7)+,D1
         ADD.L D1,D0
-        BRA.W LBL_86
-LBL_86:
+        BRA.W LBL_94
+LBL_94:
         UNLK A6
         RTS
         ; func rtListCount  (JT slot 16)
@@ -601,8 +679,8 @@ LBL_15:
         LINK A6,#0
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
-        BRA.W LBL_91
-LBL_91:
+        BRA.W LBL_99
+LBL_99:
         UNLK A6
         RTS
         ; func mapValSlot  (JT slot 17)
@@ -623,8 +701,8 @@ LBL_16:
         JSR LBL_65(PC)
         MOVE.L (A7)+,D1
         ADD.L D1,D0
-        BRA.W LBL_92
-LBL_92:
+        BRA.W LBL_100
+LBL_100:
         UNLK A6
         RTS
         ; func rtMapNew  (JT slot 18)
@@ -640,17 +718,76 @@ LBL_17:
         MOVE.L A0,D0
         MOVE.L D0,-4(A6)
         MOVE.L -4(A6),D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_102
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_103:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_103
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_102:
+        MOVE.L -4(A6),D0
         MOVE.L D0,-8(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
+        ; TODO cgExpr <kind 3>: unsupported this task
+        MOVE.L #0,D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_104
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_105:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_105
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_104:
         ; TODO SAssign <dst kind 3>: unsupported this task
+        ; TODO cgExpr <kind 3>: unsupported this task
+        MOVE.L #0,D0
+        MOVE.L D0,-(A7)
+        MOVE.L #0,D0
+        MOVE.L (A7)+,D1
+        CMP.L D0,D1
+        SEQ D0
+        ANDI.L #1,D0
+        TST.L D0
+        BEQ.W LBL_106
+        LEA LBL_35(PC),A0
+        ADDA.L #-256,A7
+        MOVEA.L A7,A1
+        MOVE.W #127,D0
+LBL_107:
+        MOVE.W (A0)+,(A1)+
+        DBRA D0,LBL_107
+        JSR LBL_2(PC)
+        ADDA.W #256,A7
+LBL_106:
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO SAssign <dst kind 3>: unsupported this task
         MOVE.L -4(A6),D0
-        BRA.W LBL_93
-LBL_93:
+        BRA.W LBL_101
+LBL_101:
         UNLK A6
         RTS
         ; func rtMapRetain  (JT slot 19)
@@ -666,13 +803,13 @@ LBL_18:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_95
-        BRA.W LBL_94
-LBL_95:
+        BEQ.W LBL_109
+        BRA.W LBL_108
+LBL_109:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO SAssign <dst kind 3>: unsupported this task
-LBL_94:
+LBL_108:
         UNLK A6
         RTS
         ; func rtMapRelease  (JT slot 20)
@@ -688,9 +825,9 @@ LBL_19:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_97
-        BRA.W LBL_96
-LBL_97:
+        BEQ.W LBL_111
+        BRA.W LBL_110
+LBL_111:
         MOVE.L 8(A6),D0
         MOVE.L D0,-4(A6)
         ; TODO cgExpr <kind 3>: unsupported this task
@@ -702,11 +839,11 @@ LBL_97:
         SLE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_98
+        BEQ.W LBL_112
         MOVE.L 8(A6),D0
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
-LBL_98:
+LBL_112:
         ; TODO SAssign <dst kind 3>: unsupported this task
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
@@ -717,7 +854,7 @@ LBL_98:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_99
+        BEQ.W LBL_113
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,-(A7)
@@ -732,8 +869,8 @@ LBL_98:
         MOVE.L D0,-(A7)
         MOVEA.L (A7)+,A0
         DC.W $A01F  ; MapDisposePtr
-LBL_99:
-LBL_96:
+LBL_113:
+LBL_110:
         UNLK A6
         RTS
         ; func rtMapLastref  (JT slot 21)
@@ -748,7 +885,7 @@ LBL_20:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_101
+        BEQ.W LBL_115
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,-(A7)
@@ -757,12 +894,12 @@ LBL_20:
         CMP.L D0,D1
         SEQ D0
         ANDI.L #1,D0
-        BRA.W LBL_102
-LBL_101:
+        BRA.W LBL_116
+LBL_115:
         MOVE.L #0,D0
-LBL_102:
-        BRA.W LBL_100
-LBL_100:
+LBL_116:
+        BRA.W LBL_114
+LBL_114:
         UNLK A6
         RTS
         ; func rtMapCount  (JT slot 22)
@@ -771,8 +908,8 @@ LBL_21:
         LINK A6,#0
         ; TODO cgExpr <kind 3>: unsupported this task
         MOVE.L #0,D0
-        BRA.W LBL_103
-LBL_103:
+        BRA.W LBL_117
+LBL_117:
         UNLK A6
         RTS
         ; func rtMapValAt  (JT slot 23)
@@ -789,7 +926,7 @@ LBL_22:
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BNE.W LBL_105
+        BNE.W LBL_119
         MOVE.L 12(A6),D0
         MOVE.L D0,-(A7)
         ; TODO cgExpr <kind 3>: unsupported this task
@@ -798,22 +935,22 @@ LBL_22:
         CMP.L D0,D1
         SGE D0
         ANDI.L #1,D0
-        BRA.W LBL_106
-LBL_105:
+        BRA.W LBL_120
+LBL_119:
         MOVE.L #1,D0
-LBL_106:
+LBL_120:
         TST.L D0
-        BEQ.W LBL_107
+        BEQ.W LBL_121
         LEA LBL_42(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_108:
+LBL_122:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_108
+        DBRA D0,LBL_122
         JSR LBL_2(PC)
         ADDA.W #256,A7
-LBL_107:
+LBL_121:
         MOVE.L 16(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L 12(A6),D0
@@ -830,7 +967,7 @@ LBL_107:
         MOVEA.L (A7)+,A1
         MOVEA.L (A7)+,A0
         DC.W $A22E  ; MapBlockMoveData
-LBL_104:
+LBL_118:
         UNLK A6
         RTS
         ; func guardedRatio  (JT slot 24)
@@ -847,27 +984,27 @@ LBL_23:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_110
+        BEQ.W LBL_124
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L 12(A6),D0
         MOVE.L (A7)+,D1
-        JSR LBL_112(PC)
+        JSR LBL_126(PC)
         MOVE.L D0,-(A7)
         MOVE.L #1,D0
         MOVE.L (A7)+,D1
         CMP.L D0,D1
         SGT D0
         ANDI.L #1,D0
-        BRA.W LBL_111
-LBL_110:
+        BRA.W LBL_125
+LBL_124:
         MOVE.L #0,D0
-LBL_111:
+LBL_125:
         MOVE.B D0,-2(A6)
         CLR.L D0
         MOVE.B -2(A6),D0
-        BRA.W LBL_109
-LBL_109:
+        BRA.W LBL_123
+LBL_123:
         UNLK A6
         RTS
         ; func eitherPositive  (JT slot 25)
@@ -884,7 +1021,7 @@ LBL_24:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BNE.W LBL_114
+        BNE.W LBL_128
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #0,D0
@@ -892,15 +1029,15 @@ LBL_24:
         CMP.L D0,D1
         SGT D0
         ANDI.L #1,D0
-        BRA.W LBL_115
-LBL_114:
+        BRA.W LBL_129
+LBL_128:
         MOVE.L #1,D0
-LBL_115:
+LBL_129:
         MOVE.B D0,-2(A6)
         CLR.L D0
         MOVE.B -2(A6),D0
-        BRA.W LBL_113
-LBL_113:
+        BRA.W LBL_127
+LBL_127:
         UNLK A6
         RTS
         ; func classify  (JT slot 26)
@@ -916,12 +1053,12 @@ LBL_25:
         SLT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_117
+        BEQ.W LBL_131
         MOVE.L #1,D0
         NEG.L D0
         MOVE.L D0,-4(A6)
-        BRA.W LBL_118
-LBL_117:
+        BRA.W LBL_132
+LBL_131:
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #0,D0
@@ -930,18 +1067,18 @@ LBL_117:
         SEQ D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_119
+        BEQ.W LBL_133
         MOVE.L #0,D0
         MOVE.L D0,-4(A6)
-        BRA.W LBL_120
-LBL_119:
+        BRA.W LBL_134
+LBL_133:
         MOVE.L #1,D0
         MOVE.L D0,-4(A6)
-LBL_120:
-LBL_118:
+LBL_134:
+LBL_132:
         MOVE.L -4(A6),D0
-        BRA.W LBL_116
-LBL_116:
+        BRA.W LBL_130
+LBL_130:
         UNLK A6
         RTS
         ; func sumEvens  (JT slot 27)
@@ -954,7 +1091,7 @@ LBL_26:
         MOVE.L D0,-8(A6)
         MOVE.L #0,D0
         MOVE.L D0,-4(A6)
-LBL_122:
+LBL_136:
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
@@ -963,12 +1100,12 @@ LBL_122:
         SLE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_123
+        BEQ.W LBL_137
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #2,D0
         MOVE.L (A7)+,D1
-        JSR LBL_124(PC)
+        JSR LBL_138(PC)
         MOVE.L D0,-(A7)
         MOVE.L #0,D0
         MOVE.L (A7)+,D1
@@ -976,15 +1113,15 @@ LBL_122:
         SNE D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_125
+        BEQ.W LBL_139
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #1,D0
         MOVE.L (A7)+,D1
         ADD.L D1,D0
         MOVE.L D0,-4(A6)
-        BRA.W LBL_122
-LBL_125:
+        BRA.W LBL_136
+LBL_139:
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #100,D0
@@ -993,9 +1130,9 @@ LBL_125:
         SGT D0
         ANDI.L #1,D0
         TST.L D0
-        BEQ.W LBL_126
-        BRA.W LBL_123
-LBL_126:
+        BEQ.W LBL_140
+        BRA.W LBL_137
+LBL_140:
         MOVE.L -8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -4(A6),D0
@@ -1008,11 +1145,11 @@ LBL_126:
         MOVE.L (A7)+,D1
         ADD.L D1,D0
         MOVE.L D0,-4(A6)
-        BRA.W LBL_122
-LBL_123:
+        BRA.W LBL_136
+LBL_137:
         MOVE.L -8(A6),D0
-        BRA.W LBL_121
-LBL_121:
+        BRA.W LBL_135
+LBL_135:
         UNLK A6
         RTS
         ; func nestedRange  (JT slot 28)
@@ -1027,20 +1164,20 @@ LBL_27:
         MOVE.L D0,-4(A6)
         MOVE.L #3,D0
         MOVE.L D0,-(A7)
-LBL_128:
+LBL_142:
         MOVE.L -4(A6),D0
         MOVE.L (A7),D1
         CMP.L D1,D0
-        BGT.W LBL_130
+        BGT.W LBL_144
         MOVE.L #1,D0
         MOVE.L D0,-8(A6)
         MOVE.L #2,D0
         MOVE.L D0,-(A7)
-LBL_131:
+LBL_145:
         MOVE.L -8(A6),D0
         MOVE.L (A7),D1
         CMP.L D1,D0
-        BGT.W LBL_133
+        BGT.W LBL_147
         MOVE.L -12(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -4(A6),D0
@@ -1051,23 +1188,23 @@ LBL_131:
         MOVE.L (A7)+,D1
         ADD.L D1,D0
         MOVE.L D0,-12(A6)
-LBL_132:
+LBL_146:
         MOVE.L -8(A6),D0
         ADDQ.L #1,D0
         MOVE.L D0,-8(A6)
-        BRA.W LBL_131
-LBL_133:
+        BRA.W LBL_145
+LBL_147:
         ADDQ.L #4,A7
-LBL_129:
+LBL_143:
         MOVE.L -4(A6),D0
         ADDQ.L #1,D0
         MOVE.L D0,-4(A6)
-        BRA.W LBL_128
-LBL_130:
+        BRA.W LBL_142
+LBL_144:
         ADDQ.L #4,A7
         MOVE.L -12(A6),D0
-        BRA.W LBL_127
-LBL_127:
+        BRA.W LBL_141
+LBL_141:
         UNLK A6
         RTS
         ; func handler_App_launch  (JT slot 29)
@@ -1106,8 +1243,8 @@ LBL_28:
         JSR LBL_24(PC)
         ADDQ.L #8,A7
         MOVE.B D0,-16(A6)
-        BRA.W LBL_134
-LBL_134:
+        BRA.W LBL_148
+LBL_148:
         UNLK A6
         RTS
 LBL_65:
@@ -1135,7 +1272,7 @@ LBL_65:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_112:
+LBL_126:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -1147,19 +1284,19 @@ LBL_112:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_135
+        BPL.W LBL_149
         NEG.L D2
         MOVE.L #1,D4
-LBL_135:
+LBL_149:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_136
+        BPL.W LBL_150
         NEG.L D3
         MOVE.L #1,D5
-LBL_136:
+LBL_150:
         CLR.L D6
         MOVE.W #31,D7
-LBL_137:
+LBL_151:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -1167,16 +1304,16 @@ LBL_137:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_138
+        BCS.W LBL_152
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_138:
-        DBRA D7,LBL_137
+LBL_152:
+        DBRA D7,LBL_151
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_139
+        BEQ.W LBL_153
         NEG.L D2
-LBL_139:
+LBL_153:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -1185,7 +1322,7 @@ LBL_139:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_124:
+LBL_138:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -1197,19 +1334,19 @@ LBL_124:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_140
+        BPL.W LBL_154
         NEG.L D2
         MOVE.L #1,D4
-LBL_140:
+LBL_154:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_141
+        BPL.W LBL_155
         NEG.L D3
         MOVE.L #1,D5
-LBL_141:
+LBL_155:
         CLR.L D6
         MOVE.W #31,D7
-LBL_142:
+LBL_156:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -1217,15 +1354,15 @@ LBL_142:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_143
+        BCS.W LBL_157
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_143:
-        DBRA D7,LBL_142
+LBL_157:
+        DBRA D7,LBL_156
         TST.L D4
-        BEQ.W LBL_144
+        BEQ.W LBL_158
         NEG.L D6
-LBL_144:
+LBL_158:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6

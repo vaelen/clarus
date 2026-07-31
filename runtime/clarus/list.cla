@@ -101,22 +101,24 @@
 // first) -- a plain intra-Clarus call, no extern/name-collision hazard to
 // sidestep at all.
 // Task 9 (native-5d): trap/inline clauses -- see text.cla's own header
-// comment for the trap-word verification table and the NewPtr/NewHandle
-// OOM-check concern (identical here: rt_ext_ListNewPtr/ListNewHandle also
-// panic on NULL inside the C wrapper; the `reg` clause has no such check).
+// comment for the trap-word verification table. rt_ext_ListNewPtr/
+// ListNewHandle panic on NULL inside the C wrapper (host only); the `reg`
+// clause has no such check, so rtListNew below guards the native path
+// itself too (Task 9 review fix, RESOLVED).
 external func ListHandleDeref(h: ptr): ptr = inline deref
 external func ListSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
 external func ListBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // ListNewPtr/ListDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtListNew below uses, mirroring TextNewPtr's own oom-panic-at-the-
-// primitive placement exactly (text.cla) -- never returns null, so no
-// separate check is needed at rtListNew's own call site.
+// primitive placement exactly (text.cla) on host; rtListNew below now
+// guards the native path too.
 external func ListNewPtr(size: int): ptr = trap 0xA11E reg
 external func ListDisposePtr(p: ptr) = trap 0xA01F reg
 // ListNewHandle/ListDisposeHandle/ListRcCheck (Task 1, Plan 5c wave2a): the
 // ARC waist externs rtListNew/rtListRetain/rtListRelease below use, same
 // shape as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck.
-// ListNewHandle oom-panics on NULL itself, never returns null.
+// ListNewHandle oom-panics on NULL itself on host; rtListNew below guards
+// the native path too.
 // ListRcCheck is the cold-path over-release guard: rtListRelease only
 // calls it once it has already determined `rc <= 0` itself (the host body
 // then prints "rt_rc: over-release at %s" and aborts; the Mac body is a
@@ -193,20 +195,28 @@ const rtListBoxSize: int = 40
 // rtListNew (rt_core.inc:512-523, rt_list_new) -- Plan 5c wave2a Task 3:
 // birth allocation is now entirely Clarus-owned, mirroring the C reference
 // exactly (rc=1, elemsize/count/cap poked, data allocated last).
-// ListNewHandle(0) never returns null (it oom-panics itself, see its own
-// extern doc comment above), so there is no separate NULL check here,
-// matching ListNewPtr's own "check at the primitive" placement.
+// ListNewPtr/ListNewHandle's own C shim panics on NULL (host only -- Task 9
+// (native-5d) gave both a bare `reg` trap clause, which has no such check),
+// so these guards are dead on host, live on native -- same message the C
+// shim uses ("out of memory"), same `x == ptr(0)` idiom rtListRetain/etc.
+// already use.
 func rtListNew(elemsize: int): ptr {
     var l: ptr
     var rl: RtList
 
     l = ListNewPtr(rtListBoxSize)
+    if l == ptr(0) {
+        rtPanic("out of memory")
+    }
     rl = RtList(l)
     rl.rc = 1
     rl.elemsize = elemsize
     rl.count = 0
     rl.cap = 0
     rl.data = ListNewHandle(0)
+    if rl.data == ptr(0) {
+        rtPanic("out of memory")
+    }
     return l
 }
 

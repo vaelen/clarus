@@ -1400,7 +1400,7 @@ externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
              [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
 ```
 
-`= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed right to left, result in D0):
+`= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result in D0):
 
 ```rust
 external func TickCount(): int = trap 0xA975
