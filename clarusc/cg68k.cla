@@ -270,6 +270,104 @@ var cgRecReleaseLbls: list of int
 // function body, well before the pool itself is laid out.
 var cgEnumTableLabels: list of int
 
+// ================================================================
+// Task 13: containers + the ARC statement-temp layer.
+//
+// NATIVE HAS NO C-STYLE STATEMENT-TEMP MACHINERY (cgAndOr's own doc
+// comment, Task 8) -- cprint's fpNewTmp/fpNewTrackedTmp declare a fresh
+// NAMED C variable per intermediate value; this backend instead reserves a
+// FIXED POOL of anonymous A6-relative frame slots per function (below the
+// function's own named locals, cgEmitFunc), addressed the SAME way a named
+// local is (reg=6, off) -- cgNewTrackedTmp/cgAllocTmpOff hand out the next
+// free slot, cgStmt resets the pool's high-water mark to 0 at the START of
+// every statement (mirroring fpStmt's own fresh-list swap: a slot only
+// needs to stay live for ONE statement, same as a C temp's declared-once-
+// per-statement lifetime), so a function never runs out of slots as long
+// as no SINGLE statement needs more than cgTmpSlots concurrently live
+// temps (cgNewTrackedTmp hard-errors, loud, if it does -- bump the const).
+// A6-relative (not A7-relative/stack-scratch) specifically because it stays
+// valid across every nested call's own argument push/cleanup sequence
+// (cgForRangeStmt's `to`-on-the-stack precedent works ONLY because nothing
+// between its one push and its one read can itself push -- not true here,
+// where a tracked temp's value can flow through an arbitrary nested call).
+//
+// cgStmtTmpOffs[i]/cgStmtTmpType[i] mirror fpStmtTmps/fpStmtTmpType (no
+// fpStmtTmpRel/fpStmtTmpIsRec sibling: cgFreeStmtTmps re-derives the right
+// release call from the type directly via cgReleaseAt, and KRec temps
+// aren't built by this task -- cgNewTrackedTmp hard-errors on any
+// cgSizeOf(t)>4 result, same "not exercised by this task's fixtures"
+// scope note the rest of this file already uses for KRec/KStr/KArr
+// container elements).
+const cgTmpSlots: int = 8
+
+var cgTmpBaseOffs: list of int
+var cgStmtTmpOffs: list of int
+var cgStmtTmpType: list of int
+var cgStmtTmpNext: int
+
+// cgLastTrackedOff mirrors cprint's own string-identity handoff check
+// (fpHandoff(v): "v IS exactly that temp's own C name") in register-machine
+// terms: -1, or the frame offset cgExpr's OWN top-level EIntr arm JUST
+// tracked for its return value (set as the LAST action before returning,
+// by exactly the handful of cgIntr arms that produce one -- pop/shift's
+// discard-tracked path, first/last/get/getDv/getDvBirth -- every other arm,
+// and cgExpr's own non-EIntr branches, leaves it at -1). Consulted
+// immediately after a cgExpr(src) call in a handle-typed SAssign/SReturn
+// context (cgStmt/cgReturnStmt) to hand the freshly tracked temp off to its
+// new durable owner -- correct even though a NESTED cgExpr call (e.g. an
+// intrinsic's own m/k argument evaluation) can transiently stomp this
+// module var mid-flight: every producing arm re-sets it as its OWN last
+// step, after any such nested recursion, so by the time cgExpr(e) returns
+// to ITS caller the value always reflects e's own top-level verdict, never
+// a stale nested one (Text/List/Map values, per the language, are only
+// ever produced by EVarRef/EFieldRef/ECallFn/EIntr directly -- never
+// wrapped in an EBin/EUn/EConv -- so no other node kind can smuggle a stale
+// value past a caller that only ever checks this right after evaluating a
+// KNOWN handle-typed expression).
+var cgLastTrackedOff: int
+
+// cgDiscardExprIdx mirrors fpDiscardExprIdx exactly (cprint.cla): the exact
+// IR expr index of the CURRENT bare, discarded SExprStmt's own top-level
+// expression, or -1 -- set immediately before, cleared immediately after,
+// cgStmt's own SExprStmt cgExpr call. Consulted by cgIntr's IListPop/
+// IListShift arm: pop/shift transfer ownership WITHOUT retaining (a plain
+// materialize-and-untrack, like cprint's fpNewTmp+fpHandoff), so a bare
+// `lst.pop();` statement -- the popped value used nowhere -- would
+// otherwise leak; this ONE shape routes through cgNewTrackedTmp instead so
+// the ordinary end-of-statement flush (cgFreeStmtTmps) releases it.
+var cgDiscardExprIdx: int
+
+// cgDeepLevels bounds container release-walk nesting (a List/Map element
+// that is itself a List/Map recurses -- cpEmitRelease's own ARC Task 8
+// nested-container arm, cprint.cla:3281-3320/3381-3398). Each level gets
+// its OWN {ptr,count,index} scratch triple (cgDeepPtrOffs[level]/
+// cgDeepCountOffs[level]/cgDeepIndexOffs[level], all A6-relative, reserved
+// alongside the statement-temp pool -- cgReserveDeepScratch) so a
+// recursive call never collides with its own caller's live scratch; 3
+// levels covers any nesting this task's fixtures reach (the brief's own
+// "nested list-of-map" miniature is 2) with headroom to spare --
+// cgDeepReleaseContainer hard-errors, loud, past that (not silently wraps
+// and corrupts a shallower level's scratch).
+const cgDeepLevels: int = 3
+
+var cgDeepPtrOffs: list of int
+var cgDeepCountOffs: list of int
+var cgDeepIndexOffs: list of int
+var cgDeepValueOffs: list of int
+
+// cgListOobMsgIdx is the irStrLits index of "list index out of range" --
+// registered once, up front (cg68Program, before cgReserveStrLitLabels
+// runs so the label exists before any addressing site can reference it),
+// for cgEmitPanic's own List bounds-check panic call (the brief's four
+// ADDRESSING sites: fpIndexRef's List arm, SForList's per-iteration deref,
+// IListSet/IListSetRetain's element ref, IListRemove's old-value read --
+// same message rtListAt itself panics with, list.cla:290, kept in exact
+// parity even though these four sites inline their OWN bounds check rather
+// than JSR-ing rtListAt, mirroring cprint's own "stay bare, don't redirect
+// through the ARC-walk-internal ported wrapper" convention for these same
+// four sites, list.cla's own module header comment).
+var cgListOobMsgIdx: int
+
 // cgResetCodegenState clears every Task 8 module-global above -- called
 // once per cg68Program() run, mirroring cgAssignJtSlots/
 // cgAssignGlobalOffsets's own fresh-per-run discipline.
@@ -279,6 +377,18 @@ func cgResetCodegenState() {
     cgMod32Used = false
     cgLoopBreakLabels = cgFreshIntList()
     cgLoopContinueLabels = cgFreshIntList()
+    cgLastTrackedOff = -1
+    cgDiscardExprIdx = -1
+}
+
+// cgReservePanicMsgs mints every panic-message string literal this
+// backend's own inline addressing/ARC codegen needs (cgListOobMsgIdx,
+// above) -- called once per cg68Program() run, BEFORE cgReserveStrLitLabels
+// (same "the arena entry must exist before its label is reserved"
+// ordering cgReserveStrLitLabels' own doc comment already establishes for
+// every other irStrLits producer).
+func cgReservePanicMsgs() {
+    cgListOobMsgIdx = irAddStrLit(intern("list index out of range"))
 }
 
 func cgMul32Label(): int {
@@ -963,13 +1073,72 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
         cgRecordCtorAt(reg, off, irtName(t))
     } else if k == KArr {
         cgArrDefaultAt(reg, off, t)
+    } else if k == KText {
+        cgDefaultInitTextAt(reg, off, strDefaultIdx)
+    } else if k == KList {
+        cgEmitContainerBirthCall("rtListNew", cgSizeOf(irtElem(t)), reg, off)
+    } else if k == KMap {
+        cgEmitContainerBirthCall("rtMapNew", cgSizeOf(irtElem(t)), reg, off)
     } else {
-        // KText/KList/KMap/KErr/KUiState -- TODO, deferred (see doc
-        // comment above): a safe NULL/zero placeholder, matching every
-        // other "not built this task" degrade in this file.
+        // KErr/KUiState -- TODO, deferred: a safe NULL/zero placeholder,
+        // matching every other "not built this task" degrade in this file.
         a68Comment("TODO cgDefaultInitAt <kind " + numToStr(int(k)) + ">: unsupported this task")
         cgStoreImmAt(reg, off, irIntT, 0)
     }
+}
+
+// cgDefaultInitTextAt mirrors cpDefaultInit's KText arm: dst = rtTextNew(),
+// then (only when strDefaultIdx is a real pool entry -- a Text field/local
+// CAN carry an explicit string default, ir.cla's own IRFieldSlot.
+// DefaultStr) an rtTextStore clamped copy from the literal, same shape
+// cgDefaultInitStrAt's own explicit-default arm already uses for KStr.
+func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
+    var newFi: int
+    var storeFi: int
+
+    newFi = findIRFuncIdxByName(intern("rtTextNew"))
+    if newFi == -1 or not shakeReachable(newFi) {
+        log("cg68k: rtTextNew not found/reachable")
+        quit 1
+    }
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[newFi])
+    cgStoreD0At(reg, off, irPtrT)
+    if strDefaultIdx == -1 {
+        return
+    }
+    storeFi = findIRFuncIdxByName(intern("rtTextStore"))
+    if storeFi == -1 or not shakeReachable(storeFi) {
+        log("cg68k: rtTextStore not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(strDefaultIdx), AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[storeFi])
+    cgCleanupStack(8)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+}
+
+// cgEmitContainerBirthCall mirrors cpDefaultInit's KList/KMap arms:
+// dst = fnName(sizeArg) -- rtListNew/rtMapNew, one plain int argument
+// (the element/value size THIS backend's own layout authority decided,
+// cgSizeOf(irtElem(t)) -- see the file header's own element-size-
+// consistency note: birth and addressing MUST agree, and both derive from
+// cgSizeOf, never cgSlotSizeOf, for a container element).
+func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: " + fnName + " not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmImm, 0, sizeArg, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(4)
+    cgStoreD0At(reg, off, irPtrT)
 }
 
 // cgEmitPtrRcCall loads the 4-byte pointer value at off(reg) into D0,
@@ -1087,9 +1256,14 @@ func cgReleaseAt(reg: int, off: int, t: int) {
     if k == KText {
         cgEmitPtrRcCall("rtTextRelease", reg, off)
     } else if k == KList {
-        cgEmitPtrRcCall("rtListRelease", reg, off)
+        // Task 13: the deep, lastref-gated element-release walk
+        // (cgDeepReleaseContainer) -- Task 12 left this a bare handle
+        // release only (see this function's OWN doc comment, unchanged
+        // above); container element ARC is Task 13 territory, and this is
+        // it.
+        cgDeepReleaseContainer(reg, off, t, 0, false)
     } else if k == KMap {
-        cgEmitPtrRcCall("rtMapRelease", reg, off)
+        cgDeepReleaseContainer(reg, off, t, 0, true)
     } else if k == KRec {
         cgEmitRecWalkCall(false, reg, off, irtName(t))
     } else if k == KArr {
@@ -1162,22 +1336,34 @@ func cgAssignRcWalkLabels() {
 }
 
 // cgEmitOneRcWalk binds and emits recIdx's cg_retain_<Rec>/cg_release_
-// <Rec> pair -- a leaf routine (no LINK/UNLK/JT slot, same "hand-emitted
-// helper" shape cg_mul32/cg_div32/cg_mod32 already establish): the ONE
+// <Rec> pair -- mirrors cpEmitOneRcWalk's r->cv_<field> walk (cprint.cla),
+// just addressed by offset instead of by C field name.
+//
+// Task 13 upgrade: these now LINK a small frame (cgReserveDeepScratch's own
+// {ptr,count,index,value} scratch, cgDeepLevels quadruples) instead of
+// staying bare leaf routines -- a record field of List/Map type whose
+// element/value itself needs ARC (`list of map of text` as a field, say)
+// recurses through cgReleaseAt's own KList/KMap arm (Task 13), which now
+// needs A6-relative deep-walk scratch to exist; a bare (no-LINK) routine's
+// A6 is simply whatever the CALLER's A6 happens to be, so any A6-relative
+// access here would silently corrupt the caller's own frame. The one
 // pushed arg (the record's own address, cgEmitRecWalkCall's own push)
-// sits at 4(A7) on entry (0(A7) is the JSR return address), loaded into
-// A0 once, then cgRetainAt/cgReleaseAt walks every handle-bearing field at
-// its own cgFieldOffset-matching displacement off A0 -- mirrors
-// cpEmitOneRcWalk's r->cv_<field> walk (cprint.cla), just addressed by
-// offset instead of by C field name.
+// shifts from 4(A7) (pre-LINK) to 8(A6) (post-LINK, the standard "one more
+// param slot" shift LINK's own saved-A6 push causes) -- cg_retain_ needs no
+// scratch at all (retain is shallow, cpEmitRetain's own "deliberately NOT
+// symmetric" note) but LINKs the SAME small frame anyway, for symmetry and
+// because the cost is a few bytes of stack, not worth a special case.
 func cgEmitOneRcWalk(ri: int) {
     var f: int
     var cur: int
     var ft: int
+    var frameSize: int
 
     a68Bind(cgRecRetainLbls[ri])
-    a68Comment("cg_retain_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 4(A7))")
-    a68Emit(OpMovea, 4, AmDisp16, 7, 4, AmAn, 0, 0)
+    a68Comment("cg_retain_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    frameSize = 0 - cgReserveDeepScratch(0)
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
     cgWalkStashBase(0)
     cur = 0
     f = irRecordLayoutFieldsHead(ri)
@@ -1191,11 +1377,14 @@ func cgEmitOneRcWalk(ri: int) {
         cur = cur + cgSlotSizeOf(ft)
         f = irFieldSlotNext(f)
     }
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 
     a68Bind(cgRecReleaseLbls[ri])
-    a68Comment("cg_release_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 4(A7))")
-    a68Emit(OpMovea, 4, AmDisp16, 7, 4, AmAn, 0, 0)
+    a68Comment("cg_release_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    frameSize = 0 - cgReserveDeepScratch(0)
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
     cgWalkStashBase(0)
     cur = 0
     f = irRecordLayoutFieldsHead(ri)
@@ -1209,6 +1398,7 @@ func cgEmitOneRcWalk(ri: int) {
         cur = cur + cgSlotSizeOf(ft)
         f = irFieldSlotNext(f)
     }
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
@@ -1229,8 +1419,378 @@ func cgEmitRcWalks() {
     }
 }
 
-// cgFindEnumByName linear-scans irEnums by interned name -- cgFindRecordByName's
-// own sibling, one arena over.
+// ================================================================
+// Task 13: container/ARC shared machinery -- the statement-temp pool, the
+// deep container-release walk, and the inline List addressing bounds-check
+// panic. Built on top of Task 12's cgRetainAt/cgReleaseAt/cgEmitPtrRcCall/
+// cgEmitRecWalkCall/cgWalkStashBase, same layering cprint's own
+// fpRetainVal/fpReleaseVal build on cpEmitRetain/cpEmitRelease.
+// ================================================================
+
+// cgReserveDeepScratch lays out cgDeepLevels {ptr,count,index,value}
+// quadruples (16 bytes each -- `value` is a Map value out-param buffer,
+// cgDeepReleaseContainer's own Map-branch scratch, unused by a List walk)
+// as contiguous negative offsets starting from startNeg, populating
+// cgDeepPtrOffs/cgDeepCountOffs/cgDeepIndexOffs/cgDeepValueOffs, and
+// returns the new running negative extent -- shared by cgEmitFunc (appended
+// below the function's own named locals + statement-temp pool) and
+// cgEmitOneRcWalk (Task 13 upgrade: these leaf routines now LINK a small
+// frame too, so a record field of List/Map type can deep-release through
+// the exact same mechanism a normal function body uses -- see
+// cgEmitOneRcWalk's own updated doc comment).
+func cgReserveDeepScratch(startNeg: int): int {
+    var running: int
+    var ptrs: list of int
+    var counts: list of int
+    var idxs: list of int
+    var vals: list of int
+    var i: int
+
+    running = startNeg
+    ptrs = cgFreshIntList()
+    counts = cgFreshIntList()
+    idxs = cgFreshIntList()
+    vals = cgFreshIntList()
+    i = 0
+    while i < cgDeepLevels {
+        running = running - 4
+        ptrs.add(running)
+        running = running - 4
+        counts.add(running)
+        running = running - 4
+        idxs.add(running)
+        running = running - 4
+        vals.add(running)
+        i = i + 1
+    }
+    cgDeepPtrOffs = ptrs
+    cgDeepCountOffs = counts
+    cgDeepIndexOffs = idxs
+    cgDeepValueOffs = vals
+    return running
+}
+
+// cgEmitPanic calls rtPanic(msg) with msgLitIdx's own pool literal,
+// coerced into a fresh str(255) the same way cgPushArgs' own KStr
+// addressable-arg path materializes ANY str argument for a real Clarus
+// call (reserve the callee's own by-value param slot, block-copy into it)
+// -- rtPanic's `msg: string` param is str(255), not `ptr`, so this can't
+// reuse cgEmitPtrRcCall's simpler "push one 4-byte value" shape. Two
+// scratch str(255) slots: #1 receives the literal via rtStrStore (clamped
+// copy, same call shape as cgDefaultInitStrAt's own explicit-default arm),
+// #2 is rtPanic's OWN reserved param slot, block-copied from #1 (mirrors
+// cgPushArgs' generic KStr-addressable-arg shape exactly). rtPanic never
+// returns (core.cla's CorePanic aborts) -- no cleanup after the JSR, same
+// trust cgDefaultInitStrAt's own callees) already place in every OTHER
+// no-return runtime call this file emits.
+func cgEmitPanic(msgLitIdx: int) {
+    var storeFi: int
+    var panicFi: int
+
+    storeFi = findIRFuncIdxByName(intern("rtStrStore"))
+    panicFi = findIRFuncIdxByName(intern("rtPanic"))
+    if storeFi == -1 or not shakeReachable(storeFi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    if panicFi == -1 or not shakeReachable(panicFi) {
+        log("cg68k: rtPanic not found/reachable")
+        quit 1
+    }
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, 255, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(msgLitIdx), AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[storeFi])
+    cgCleanupStack(12)
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 0, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+    cgBlockCopy(256)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[panicFi])
+}
+
+// cgAllocTmpOff reserves the next free statement-temp slot (this
+// STATEMENT's own high-water mark, cgStmtTmpNext -- cgStmt resets it to 0
+// at every statement's start) WITHOUT tracking it for release -- the raw
+// bump allocator every out-param-needing container intrinsic arm uses for
+// its own scratch (pop/shift/first/last/get/getDv/getDvBirth all need
+// SOME address to hand the runtime call as its out-param, tracked or not).
+// Hard-errors (loud, matching this file's own established convention) if
+// t's value can't fit a 4-byte slot (KRec/KStr/KArr container
+// elements/results -- not exercised by this task's fixtures, same
+// documented scope boundary as cgRetainAt/cgReleaseAt's own KRec-element
+// container gap) or the pool is exhausted.
+func cgAllocTmpOff(t: int): int {
+    var off: int
+
+    if cgSizeOf(t) > 4 {
+        log("cg68k: container element/result >4 bytes not supported this task (Task 13 scope)")
+        quit 1
+    }
+    if cgStmtTmpNext >= cgTmpSlots {
+        log("cg68k: too many tracked temps in one statement (Task 13 pool exhausted -- bump cgTmpSlots)")
+        quit 1
+    }
+    off = cgTmpBaseOffs[cgStmtTmpNext]
+    cgStmtTmpNext = cgStmtTmpNext + 1
+    return off
+}
+
+// cgNewTrackedTmp allocates a slot (cgAllocTmpOff) AND tracks it for
+// release at end-of-statement (cgFreeStmtTmps) unless handed off
+// (cgHandoff) first -- mirrors fpNewTrackedTmp's own two-in-one contract.
+func cgNewTrackedTmp(t: int): int {
+    var off: int
+
+    off = cgAllocTmpOff(t)
+    cgStmtTmpOffs.add(off)
+    cgStmtTmpType.add(t)
+    return off
+}
+
+// cgHandoff mirrors fpHandoff: removes off from the tracked list if
+// present (a no-op otherwise) -- called when the value that slot holds has
+// escaped to a durable owner (a named-slot store, a `return`).
+func cgHandoff(off: int) {
+    var i: int
+
+    i = 0
+    while i < cgStmtTmpOffs.count {
+        if cgStmtTmpOffs[i] == off {
+            cgStmtTmpOffs.remove(i)
+            cgStmtTmpType.remove(i)
+            return
+        }
+        i = i + 1
+    }
+}
+
+// cgFreeStmtTmps mirrors fpFreeStmtTmps: releases every still-tracked slot
+// (cgReleaseAt on its own (A6, off) home) and empties the tracking lists.
+// Does NOT reset cgStmtTmpNext (the pool's own bump allocator) -- that only
+// resets at the NEXT statement's start (cgStmt), matching fpStmtTmps' own
+// per-statement (not per-flush) lifetime.
+func cgFreeStmtTmps() {
+    var i: int
+
+    i = 0
+    while i < cgStmtTmpOffs.count {
+        cgReleaseAt(6, cgStmtTmpOffs[i], cgStmtTmpType[i])
+        i = i + 1
+    }
+    while cgStmtTmpOffs.count > 0 {
+        cgStmtTmpOffs.pop()
+    }
+    while cgStmtTmpType.count > 0 {
+        cgStmtTmpType.pop()
+    }
+}
+
+// cgContainerElemNeedsWalk mirrors cpEmitRelease's own List/Map
+// element-walk gate EXACTLY (cprint.cla:3251/3270/3281 for List,
+// :3360/3369/3381 for Map): KText, a handle-bearing KRec, or a nested
+// KList/KMap -- deliberately NOT KArr (cpEmitRelease has no KArr branch in
+// its own List/Map element dispatch either; a documented parity gap in the
+// C reference, mirrored here rather than "fixed").
+func cgContainerElemNeedsWalk(et: int): bool {
+    var k: IRKind
+
+    k = irtKind(et)
+    if k == KText or k == KList or k == KMap {
+        return true
+    }
+    if k == KRec {
+        return irRecHasHandleField(irtName(et))
+    }
+    return false
+}
+
+// cgNeedsRelease mirrors fpNeedsRelease (cprint.cla:434-445) EXACTLY: does
+// a value of IR type t need ANY retain/release traffic at all --
+// Text/List/Map, OR a handle-bearing record, OR (recursively) a fixed
+// array whose element does. Broader than cgContainerElemNeedsWalk (which
+// answers a DIFFERENT, List/Map-element-walk-specific question and
+// deliberately excludes KArr) -- this is the general predicate
+// cgIntr's own IListPop/IListShift discard-detection and IListRemove/
+// IMapSet(Retain)/IMapRemove's own old-value-release guards consult,
+// mirroring fpNeedsRelease's identical role at those same cprint call
+// sites.
+func cgNeedsRelease(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KRec {
+        return irRecHasHandleField(irtName(t))
+    }
+    if k == KArr {
+        return cgNeedsRelease(irtElem(t))
+    }
+    return k == KText or k == KList or k == KMap
+}
+
+// cgEmitAtCall JSRs fnName(ptr, idx) -- rtListAt/rtMapValAt's own shape,
+// ptr/idx read from their own A6-relative scratch slots (this deep walk's
+// OWN, depth-indexed pair -- never re-derived from the ORIGINAL (reg, off)
+// container slot, which may be reg=0/A0 and long since clobbered by the
+// walk itself) -- leaving the result (an element address for List, or
+// writing through an out-param for Map -- see cgContainerElemRelease's own
+// two call shapes below) in D0. A1 stash/restore around the JSR, same
+// unconditional SECOND-ORDER BUG invariant cgEmitPtrRcCall/
+// cgEmitRecWalkCall already follow.
+func cgEmitAtCall(fnName: string, ptrOff: int, idxOff: int) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: " + fnName + " not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, ptrOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(8)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+}
+
+// cgContainerElemRelease releases ONE element/value whose address is
+// ALREADY in A0 (a List slot's own directly-addressable backing-array
+// address, or a Map value out-param buffer's address -- the caller derives
+// either shape; this function only ever reads through A0) -- et is the
+// element/value's own IR type, depth is the NEXT recursion level a nested
+// List/Map element's own walk should use (never the caller's own level:
+// cgDeepReleaseContainer already validates depth<cgDeepLevels itself).
+func cgContainerElemRelease(et: int, depth: int) {
+    var k: IRKind
+
+    k = irtKind(et)
+    if k == KText {
+        cgEmitPtrRcCall("rtTextRelease", 0, 0)
+    } else if k == KRec {
+        cgEmitRecWalkCall(false, 0, 0, irtName(et))
+    } else if k == KList {
+        cgDeepReleaseContainer(0, 0, et, depth, false)
+    } else if k == KMap {
+        cgDeepReleaseContainer(0, 0, et, depth, true)
+    }
+}
+
+// cgEmitMapValAtCall JSRs rtMapValAt(m, i, out) -- out is THIS depth's own
+// value scratch slot's ADDRESS (LEA'd, not loaded -- rtMapValAt writes
+// THROUGH it), m/i read from ptrOff/idxOff exactly like cgEmitAtCall's own
+// List shape. Leaves nothing meaningful in D0 (rtMapValAt is void); the
+// caller reads the result back out of valOff itself.
+func cgEmitMapValAtCall(ptrOff: int, idxOff: int, valOff: int) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern("rtMapValAt"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtMapValAt not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, ptrOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, valOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+}
+
+// cgDeepReleaseContainer is cpEmitRelease's KList/KMap native counterpart
+// (cprint.cla:3226-3406): lastref-gated element walk (only the reference
+// that drops the container to zero may free what it owns -- ARC Task 6
+// round 3's shared-container double-free guard, mirrored exactly) then the
+// container's own release. (reg, off) addresses the SLOT holding the
+// container's pointer VALUE (cgEmitPtrRcCall's own convention) -- read
+// into this depth's OWN scratch ONCE, up front, and never re-derived from
+// (reg, off) again (reg may be 0/A0, clobbered by the walk itself -- see
+// the module header comment). depth selects this call's {ptr,count,index}
+// triple; a NESTED List/Map element recurses at depth+1 via
+// cgContainerElemRelease, so sibling/ancestor levels never collide.
+func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int, isMap: bool) {
+    var et: int
+    var ptrOff: int
+    var countOff: int
+    var idxOff: int
+    var lastrefFn: string
+    var countFn: string
+    var atFn: string
+    var relFn: string
+    var afterLbl: int
+    var loopLbl: int
+
+    if depth >= cgDeepLevels {
+        log("cg68k: container nesting too deep (Task 13 scope, max " + numToStr(cgDeepLevels) + " levels)")
+        quit 1
+    }
+    et = irtElem(t)
+    ptrOff = cgDeepPtrOffs[depth]
+    countOff = cgDeepCountOffs[depth]
+    idxOff = cgDeepIndexOffs[depth]
+    if isMap {
+        lastrefFn = "rtMapLastref"
+        countFn = "rtMapCount"
+        atFn = "rtMapValAt"
+        relFn = "rtMapRelease"
+    } else {
+        lastrefFn = "rtListLastref"
+        countFn = "rtListCount"
+        atFn = "rtListAt"
+        relFn = "rtListRelease"
+    }
+
+    // t is always KList/KMap here (a 4-byte pointer-shaped kind) -- stash
+    // the container's own pointer VALUE into this depth's scratch, never
+    // re-derived from (reg, off) again (see this function's own doc
+    // comment: reg may be 0/A0, clobbered by the walk below).
+    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, ptrOff)
+
+    afterLbl = a68NewLabel()
+    if cgContainerElemNeedsWalk(et) {
+        cgEmitPtrRcCall(lastrefFn, 6, ptrOff)
+        a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68EmitBr(OpBcc, 7, afterLbl) // BEQ: not lastref -> skip the walk
+
+        cgEmitPtrRcCall(countFn, 6, ptrOff)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, countOff)
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDisp16, 6, idxOff)
+
+        loopLbl = a68NewLabel()
+        a68Bind(loopLbl)
+        a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDisp16, 6, countOff, AmDn, 1, 0)
+        a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+        a68EmitBr(OpBcc, 12, afterLbl) // BGE: index>=count -> done
+
+        if isMap {
+            // rtMapValAt(m, i, out) -- out is THIS depth's own `value`
+            // scratch slot (Map storage is opaque, unlike List's directly
+            // addressable backing array -- cpEmitRelease's own "copied OUT
+            // into a local" Map shape, mirrored exactly).
+            cgEmitMapValAtCall(ptrOff, idxOff, cgDeepValueOffs[depth])
+            a68Emit(OpLea, 0, AmDisp16, 6, cgDeepValueOffs[depth], AmAn, 0, 0)
+        } else {
+            cgEmitAtCall(atFn, ptrOff, idxOff)
+            a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+        }
+        cgContainerElemRelease(et, depth + 1)
+
+        a68Emit(OpAddq, 4, AmImm, 0, 1, AmDisp16, 6, idxOff)
+        a68EmitBr(OpBra, 0, loopLbl)
+    }
+    a68Bind(afterLbl)
+    cgEmitPtrRcCall(relFn, 6, ptrOff)
+}
 func cgFindEnumByName(nameIdx: int): int {
     var i: int
     var nm: string
@@ -1404,14 +1964,25 @@ func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
     }
 }
 
+// cg_init_globals/cg_free_globals now LINK a small frame (Task 13
+// upgrade, same reason and same shape as cgEmitOneRcWalk's own upgrade,
+// above): a KList/KMap global's default-birth (cgDefaultInitAt) or release
+// (cgReleaseAt, cg_free_globals) can now reach the deep container-walk
+// scratch (cgReserveDeepScratch), which is A6-relative -- without a LINK
+// here, A6 is whatever the CALLER's frame happens to be, and the walk
+// would silently read/write the caller's own locals instead. Neither
+// routine takes any argument, so nothing above 4(A6)/8(A6) needs to shift.
 func cgEmitInitGlobalsStub(lbl: int) {
     var i: int
     var gt: int
     var initE: int
     var fullReplace: bool
+    var frameSize: int
 
     a68Bind(lbl)
     a68Comment("cg_init_globals")
+    frameSize = 0 - cgReserveDeepScratch(0)
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
     while i < irGlobals.count {
         gt = irGlobalType(i)
@@ -1425,19 +1996,24 @@ func cgEmitInitGlobalsStub(lbl: int) {
         }
         i = i + 1
     }
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
 func cgEmitFreeGlobalsStub(lbl: int) {
     var i: int
+    var frameSize: int
 
     a68Bind(lbl)
     a68Comment("cg_free_globals")
+    frameSize = 0 - cgReserveDeepScratch(0)
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
     while i < irGlobals.count {
         cgReleaseAt(5, cgGlobalOffsets[i], irGlobalType(i))
         i = i + 1
     }
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
@@ -1466,6 +2042,7 @@ func cgEmitFunc(f: int) {
     var frameOffsets: list of int
     var recLocalOffsets: list of int
     var recLocalTypes: list of int
+    var tmpOffs: list of int
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
@@ -1532,27 +2109,57 @@ func cgEmitFunc(f: int) {
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
-            if irtKind(irLocalType(loc)) == KRec {
+            if irtKind(irLocalType(loc)) == KRec or irtKind(irLocalType(loc)) == KText or irtKind(irLocalType(loc)) == KList or irtKind(irLocalType(loc)) == KMap {
                 // Task 12: a record local needs its OWN field defaults
                 // constructed once per function entry -- mirrors
                 // cpEmitFunc's unconditional per-local cpDefaultInit call
-                // (cprint.cla), scoped here to KRec only (a plain scalar/
-                // str local stays exactly as Task 8-11 left it: no
-                // implicit default-init, unchanged goldens). This is not
-                // just parity polish: lowCountedStoreRecVal's own ARC
+                // (cprint.cla), scoped in Task 12 to KRec only. This is
+                // not just parity polish: lowCountedStoreRecVal's own ARC
                 // scratch temp (a KRec local, ARC Task 7's
                 // "__store<N>"-named materialization var) is release-walked
                 // on its VERY FIRST use (its leading `release(tmp)`,
                 // ir.cla's IRelease) -- without a valid constructed value
                 // here, that release walk would read uninitialized stack
                 // garbage as a handle pointer.
+                //
+                // Task 13 widens the same gate to KText/KList/KMap for the
+                // identical reason, now that those kinds have real birth
+                // arms (cgDefaultInitAt): a `var l: list of text` local is
+                // release-walked by its own lowCountedStoreVal store
+                // sequence and free-var'd at scope exit -- an unbirthed
+                // (stack-garbage) handle there crashes the runtime the
+                // first time either fires (reproduced empirically: the
+                // pre-fix smoke.cla container section hung the emulator on
+                // its very first l.push, reading garbage as a box
+                // pointer). A plain scalar/str local stays exactly as
+                // Task 8-11 left it: no implicit default-init.
                 recLocalOffsets.add(runningNeg)
                 recLocalTypes.add(irLocalType(loc))
             }
         }
         loc = irLocalNext(loc)
     }
+
+    // ---- Task 13: the statement-temp pool (cgTmpSlots anonymous 4-byte
+    // slots) + the container deep-release-walk scratch (cgDeepLevels
+    // {ptr,count,index,value} quadruples) -- reserved below every named
+    // local, same contiguous-negative-offset discipline, unconditionally
+    // (cheap; ignored cost if this function never uses container ARC at
+    // all). See this file's own Task 13 module-state doc comment for why
+    // these live on the A6 frame rather than the real machine stack.
+    tmpOffs = cgFreshIntList()
+    i = 0
+    while i < cgTmpSlots {
+        runningNeg = runningNeg - 4
+        tmpOffs.add(runningNeg)
+        i = i + 1
+    }
+    cgTmpBaseOffs = tmpOffs
+    runningNeg = cgReserveDeepScratch(runningNeg)
     frameSize = 0 - runningNeg
+    cgStmtTmpOffs = cgFreshIntList()
+    cgStmtTmpType = cgFreshIntList()
+    cgStmtTmpNext = 0
 
     // ---- Task 8: real body -- see cgStmt/cgExpr below for the per-node
     // codegen. cgCurFrameNames/Offsets, cgCurHiddenOffset/RetType, and the
@@ -1673,9 +2280,11 @@ func cgExprAddr(e: int) {
         a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(irStrConstIdx(e)), AmAn, 0, 0)
     } else if k == EFieldRef {
         cgFieldRefAddr(e)
+    } else if k == EIndexRef {
+        cgIndexRefAddr(e)
     } else {
-        // EIndexRef (arrays, Task 13), a call/intr result, or any other
-        // kind this backend doesn't resolve to a real address -- task-12-
+        // A call/intr result, or any other kind this backend doesn't
+        // resolve to a real address -- task-12-
         // review's Important finding: this USED TO degrade to a
         // deterministic placeholder (LEA $0000.W,A0, address 0) rather
         // than crash the compile, which silently produced GARBAGE (not a
@@ -1723,6 +2332,131 @@ func cgFieldRefAddr(e: int) {
         quit 1
     }
     a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
+}
+
+// cgIndexRefAddr implements fpIndexRef's own addressing contract (the
+// brief's four ADDRESSING sites: this is site 1) for both an Arr (a
+// compile-time-bounded, bounds-checked plain block index) and a List (a
+// runtime-bounded, bounds-checked backing-store index) -- ir.cla's own
+// IndexRef node serves both, disambiguated by X's own IR type. Leaves the
+// element's address in A0.
+func cgIndexRefAddr(e: int) {
+    var xt: int
+
+    xt = irExprType(irIndexRefX(e))
+    if irtKind(xt) == KArr {
+        cgArrElemAddr(e, xt)
+    } else if irtKind(xt) == KList {
+        cgListElemAddr(e)
+    } else {
+        log("cg68k: cgIndexRefAddr: EIndexRef on non-Arr/List type")
+        quit 1
+    }
+}
+
+// cgArrElemAddr: X's own address (cgExprAddr, recurses for a nested
+// EFieldRef/EIndexRef base), bounds-checked via a real JSR to core.cla's
+// rtArrCheck (mirrors fpIndexRef's own cpCorePorted redirect -- Arr, UNLIKE
+// List, already calls the ported wrapper even at this addressing site;
+// list.cla's own module header comment is explicit that only List's four
+// sites stay bare), then scaled by cgSlotSizeOf(elem) -- an Arr element
+// lives at the SAME slot-padded spacing cgArrDefaultAt/cgSizeOf(KArr)
+// already establish (the file header's own "LAYOUT AUTHORITY" rule, NOT
+// List's own cgSizeOf-only convention -- see cgListElemAddr's own doc
+// comment for why List differs).
+func cgArrElemAddr(e: int, xt: int) {
+    var elemT: int
+    var args: list of int
+    var addrs: list of bool
+
+    cgExprAddr(irIndexRefX(e))
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    elemT = irtElem(xt)
+    args = cgFreshIntList()
+    args.add(irIndexRefI(e))
+    args.add(newIRIntConst(irtN(xt), irIntT))
+    addrs = cgFreshBoolList()
+    addrs.add(false)
+    addrs.add(false)
+    if not cgCallRuntime("rtArrCheck", args, addrs) {
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cgSlotSizeOf(elemT), AmDn, 0, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+    a68Emit(OpAdda, 4, AmDn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmAn, 1, 0, AmAn, 0, 0)
+}
+
+// cgListElemAddr is rtListAt's own body (list.cla:283-295), inlined --
+// list.cla's own module header comment: this is one of the four addressing
+// sites that stay bare rather than redirect through the ARC-walk-internal
+// ported wrapper, mirrored here as genuinely inline 68k rather than a JSR
+// to rtListAt itself (the brief's own explicit "bounds check inline (CMP
+// count, BCC/BHI to a panic call), then scaled index" instruction).
+//
+// x's value (the list's own box pointer, NOT its address -- List is
+// cgIsScalarKind, so a bare cgExpr already resolves an EVarRef/EFieldRef
+// list operand correctly) is stashed across the index evaluation via the
+// real machine stack (cgCompare's own D1=left/D0=right push/pop
+// precedent), then the RtList overlay's own field offsets drive the rest
+// (list.cla's own overlay record: rc@0, data@4, elemsize@8, count@12,
+// cap@16):
+//   - bounds check: a SINGLE unsigned compare against count@12(box) --
+//     CMP.L 12(A0),D0 (flags = i - count) then BCC/HS (unsigned
+//     "higher-or-same"), which catches BOTH i<0 (a negative i's bit
+//     pattern is a huge UNSIGNED value, always >= count) and i>=count in
+//     one shot -- rtArrCheck's own two-sided `i<0 or i>=n` becomes this
+//     one unsigned trick, matching the brief's own "BCC" wording exactly.
+//   - element size: elemsize@8(box) -- read from the BOX itself, not
+//     recomputed from cgSizeOf(elem) independently, so addressing can
+//     NEVER drift from whatever birth (cgEmitContainerBirthCall) actually
+//     stored there -- the file header's own element-size-consistency rule,
+//     satisfied by construction rather than by trusting two independent
+//     computations to agree.
+//   - master pointer: data@4(box) is a Handle -- ONE level of indirection
+//     (MOVEA (Ax),Ay), matching ListHandleDeref's own `inline deref`
+//     extern clause (cgCallExtDeref's identical shape) and Mac OS's own
+//     Handle semantics.
+// cgListAddrFromRegs is cgListElemAddr's own shared tail, factored out so
+// the container-intrinsic arms below (list_remove's old-value read,
+// list_set(_retain)'s element ref -- the brief's other two List addressing
+// sites) can reuse the SAME inline bounds-check/deref/scale sequence
+// against l/i values THEY already evaluated once and stashed themselves
+// (never re-evaluating a side-effecting index/list expression a second
+// time -- mirrors fpIndexRef's own l/s0 "computed once, reused" discipline
+// at those two call sites). Precondition: D1 = list ptr, D0 = index.
+// Leaves the element's address in A0.
+func cgListAddrFromRegs() {
+    var oobLbl: int
+    var okLbl: int
+
+    a68Emit(OpMovea, 4, AmDn, 1, 0, AmAn, 0, 0)
+    oobLbl = a68NewLabel()
+    okLbl = a68NewLabel()
+    a68Emit(OpCmp, 4, AmDisp16, 0, 12, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 4, oobLbl) // CC/HS: unsigned i>=count -> oob
+    a68EmitBr(OpBra, 0, okLbl)
+    a68Bind(oobLbl)
+    cgEmitPanic(cgListOobMsgIdx)
+    a68Bind(okLbl)
+
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
+    a68Emit(OpMove, 4, AmDisp16, 0, 8, AmDn, 0, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 2, 0)
+    a68Emit(OpMovea, 4, AmDisp16, 0, 4, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmInd, 1, 0, AmAn, 0, 0)
+    a68Emit(OpAdda, 4, AmDn, 2, 0, AmAn, 0, 0)
+}
+
+func cgListElemAddr(e: int) {
+    cgExpr(irIndexRefX(e))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(irIndexRefI(e))
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
+    cgListAddrFromRegs()
 }
 
 // ================================================================
@@ -2123,6 +2857,774 @@ func cgIntrPoke(e: int, nm: string) {
     a68Emit(OpMove, sz, AmDn, 0, 0, AmInd, 0, 0)
 }
 
+// ================================================================
+// Task 13: EIntr dispatch helpers -- the arm table cgIntr (below) drives.
+// cgIntr1/2/3 are the mechanical "call a runtime IRFunc with 1-3 plain
+// value-or-address arguments, leave its result in D0" shape (a Clarus-side
+// generalization of fpIntrCall's own one-line `return "clar_fn_...(...)"`/
+// `fpEmit("clar_fn_...(...)")` arms) -- every str/text arm below that
+// doesn't need its OWN tracked temp or ARC traffic routes through one of
+// these three.
+// ================================================================
+
+func cgIntr1(e: int, fnName: string, addr0: bool) {
+    var a0e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    addrs = cgFreshBoolList()
+    addrs.add(addr0)
+    if not cgCallRuntime(fnName, args, addrs) {
+        quit 1
+    }
+}
+
+func cgIntr2(e: int, fnName: string, addr0: bool, addr1: bool) {
+    var a0e: int
+    var a1e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    addrs = cgFreshBoolList()
+    addrs.add(addr0)
+    addrs.add(addr1)
+    if not cgCallRuntime(fnName, args, addrs) {
+        quit 1
+    }
+}
+
+func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    args.add(a2e)
+    addrs = cgFreshBoolList()
+    addrs.add(addr0)
+    addrs.add(addr1)
+    addrs.add(addr2)
+    if not cgCallRuntime(fnName, args, addrs) {
+        quit 1
+    }
+}
+
+// cgIntrStrFromBytes/cgIntrStrToBytes/cgIntrTextFromBytes/cgIntrTextToBytes
+// mirror fpIntrCall's own IStrFromBytes/IStrToBytes/ITextFromBytes/
+// ITextToBytes arms: the arr-typed argument's own compile-time capacity
+// (irtN(irExprType(...))) becomes a synthetic int-const argument (the SAME
+// newIRIntConst-wrapping trick cgEmitStoreStr's own generic str-store tail
+// already uses) -- native arrays have no cprint-style `.e` field indirection
+// (a KArr VALUE already IS its raw N elements, file header's own "LAYOUT
+// AUTHORITY" note), so cgExprAddr(arrExpr) already gives the buffer's own
+// address directly.
+func cgIntrStrFromBytes(e: int) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(newIRIntConst(irtN(irExprType(a0e)), irIntT))
+    args.add(a1e)
+    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
+    args.add(a2e)
+    addrs = cgFreshBoolList()
+    addrs.add(true)
+    addrs.add(false)
+    addrs.add(true)
+    addrs.add(false)
+    addrs.add(false)
+    if not cgCallRuntime("rtStrFromBytes", args, addrs) {
+        quit 1
+    }
+}
+
+func cgIntrStrToBytes(e: int) {
+    var a0e: int
+    var a1e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
+    addrs = cgFreshBoolList()
+    addrs.add(true)
+    addrs.add(true)
+    addrs.add(false)
+    if not cgCallRuntime("rtStrToBytes", args, addrs) {
+        quit 1
+    }
+}
+
+func cgIntrTextFromBytes(e: int) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
+    args.add(a2e)
+    addrs = cgFreshBoolList()
+    addrs.add(false)
+    addrs.add(true)
+    addrs.add(false)
+    addrs.add(false)
+    if not cgCallRuntime("rtTextFromBytes", args, addrs) {
+        quit 1
+    }
+}
+
+func cgIntrTextToBytes(e: int) {
+    var a0e: int
+    var a1e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
+    addrs = cgFreshBoolList()
+    addrs.add(false)
+    addrs.add(true)
+    addrs.add(false)
+    if not cgCallRuntime("rtTextToBytes", args, addrs) {
+        quit 1
+    }
+}
+
+// cgIntrTextCmp mirrors fpTextCmp's own 3-way dispatch (cprint.cla:
+// 1308-1331) EXACTLY: Text/Text and Text/Str both call rtTextCmp(Str)
+// directly; the remaining Str/Text combo (the ONLY other one
+// lowComparison ever produces, per fpTextCmp's own doc comment) negates
+// rtTextCmpStr(b, a) instead of porting a THIRD comparator.
+func cgIntrTextCmp(e: int) {
+    var a0e: int
+    var a1e: int
+    var aKind: IRKind
+    var bKind: IRKind
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    aKind = irtKind(irExprType(a0e))
+    bKind = irtKind(irExprType(a1e))
+    if aKind == KText and bKind == KText {
+        args = cgFreshIntList()
+        args.add(a0e)
+        args.add(a1e)
+        addrs = cgFreshBoolList()
+        addrs.add(false)
+        addrs.add(false)
+        if not cgCallRuntime("rtTextCmp", args, addrs) {
+            quit 1
+        }
+        return
+    }
+    if aKind == KText and bKind == KStr {
+        args = cgFreshIntList()
+        args.add(a0e)
+        args.add(a1e)
+        addrs = cgFreshBoolList()
+        addrs.add(false)
+        addrs.add(true)
+        if not cgCallRuntime("rtTextCmpStr", args, addrs) {
+            quit 1
+        }
+        return
+    }
+    args = cgFreshIntList()
+    args.add(a1e)
+    args.add(a0e)
+    addrs = cgFreshBoolList()
+    addrs.add(false)
+    addrs.add(true)
+    if not cgCallRuntime("rtTextCmpStr", args, addrs) {
+        quit 1
+    }
+    a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
+}
+
+// cgIntrTextConcat/cgIntrTextConcatSl/cgIntrTextOfStr all mirror
+// fpTextConcat/ITextConcatSL/ITextOfStr's own "birth a fresh rt_text
+// handle, then fill it" shape (cprint.cla:1341-1363, :1739-1753,
+// :1839-1855): a NEW tracked temp (Text is always the freshly-owned
+// result of one of these three) -- cgLastTrackedOff is set as the LAST
+// step, so a caller evaluating this as an SAssign/SReturn source can hand
+// it off. `dst` is pushed BY VALUE (the already-allocated handle
+// POINTER, not its address) at every one of these three call sites --
+// rtTextConcat/rtTextConcatSl/rtTextStore all take their own destination
+// as a plain `ptr` param, matching how any OTHER text-mutating function
+// (rtTextAppendStr et al.) receives its own handle argument.
+func cgIntrTextConcat(e: int) {
+    var a0e: int
+    var a1e: int
+    var off: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    off = cgNewTrackedTmp(irTextT)
+    cgJsrByName("rtTextNew")
+    cgStoreD0At(6, off, irTextT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    if irtKind(irExprType(a1e)) == KStr {
+        cgExprAddr(a1e)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+    } else {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1e)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    }
+    cgJsrByName("rtTextConcat")
+    cgCleanupStack(16)
+    cgLastTrackedOff = off
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+}
+
+func cgIntrTextConcatSl(e: int) {
+    var a0e: int
+    var a1e: int
+    var off: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    off = cgNewTrackedTmp(irTextT)
+    cgJsrByName("rtTextNew")
+    cgStoreD0At(6, off, irTextT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a1e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtTextConcatSl")
+    cgCleanupStack(12)
+    cgLastTrackedOff = off
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+}
+
+func cgIntrTextOfStr(e: int) {
+    var a0e: int
+    var off: int
+
+    a0e = irIntrArgsHead(e)
+    off = cgNewTrackedTmp(irTextT)
+    cgJsrByName("rtTextNew")
+    cgStoreD0At(6, off, irTextT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtTextStore")
+    cgCleanupStack(8)
+    cgLastTrackedOff = off
+    a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+}
+
+// cgIntrLoadScratch loads off(A6)'s value into D0, zero-extending a 1-byte
+// bool/char slot exactly like cgLoadVar -- the common tail every List/Map
+// value-returning arm below ends with (cgExpr's own "leaves the value in
+// D0" postcondition).
+func cgIntrLoadScratch(off: int, t: int) {
+    if cgSizeOf(t) == 1 {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 1, AmDisp16, 6, off, AmDn, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+    }
+}
+
+// cgCopyScratch copies t's own bytes from one A6-relative slot to another
+// (IMapGetDvBirth's own "pre-fill with the default" step, mirroring
+// fpIntrCall's `fpEmit(t + " = " + dv + ";")`).
+func cgCopyScratch(srcOff: int, dstOff: int, t: int) {
+    if cgSizeOf(t) == 1 {
+        a68Emit(OpMove, 1, AmDisp16, 6, srcOff, AmDn, 0, 0)
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, 6, dstOff)
+    } else {
+        a68Emit(OpMove, 4, AmDisp16, 6, srcOff, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, dstOff)
+    }
+}
+
+// cgIntrListPushLike mirrors fpIntrCall's IListPush(Retain)/
+// IListUnshift(Retain) arm (cprint.cla:1872-1917): the pushed value is
+// materialized into its OWN scratch slot BEFORE the call (fpCopyToTemp's
+// own realloc-safety reasoning -- push/unshift can grow l's backing
+// store, so the source must never be a raw interior pointer INTO that
+// same store), retained first when non-birth (the *Retain name), THEN
+// pushed. l is evaluated first and stashed across v's own evaluation
+// (real-stack push, same ordering fpIntrCall's own `l = fpExpr(a0); v =
+// fpCopyToTemp(a1)` establishes) -- SAFE to leave on the stack as the
+// call's own first argument: nothing else needs to push/pop in between.
+func cgIntrListPushLike(e: int, nm: string) {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var scratchOff: int
+    var fnName: string
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irtElem(irExprType(a0e))
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    scratchOff = cgAllocTmpOff(elemT)
+    cgExpr(a1e)
+    cgStoreD0At(6, scratchOff, elemT)
+    if cgLastTrackedOff != -1 {
+        cgHandoff(cgLastTrackedOff)
+    }
+    if nm == "list_push_retain" or nm == "list_unshift_retain" {
+        cgRetainAt(6, scratchOff, elemT)
+    }
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    fnName = "rtListPush"
+    if nm == "list_unshift" or nm == "list_unshift_retain" {
+        fnName = "rtListUnshift"
+    }
+    cgJsrByName(fnName)
+    cgCleanupStack(8)
+}
+
+// cgIntrListPopLike mirrors fpIntrCall's IListPop/IListShift arm
+// (cprint.cla:1918-1972): pop/shift TRANSFER ownership -- no retain, and
+// the result is normally left UNTRACKED (the caller, if any, decides what
+// to do with it -- SAssign's own cgLastTrackedOff check never fires for
+// pop/shift, matching fpHandoff's unconditional untrack there) EXCEPT the
+// one ARC Task 8 review shape: a bare discarded `lst.pop();` statement,
+// detected via cgDiscardExprIdx (cgStmt's own SExprStmt case), whose
+// result would otherwise leak with nothing left to release it -- that ONE
+// case routes through cgNewTrackedTmp instead, so the ordinary
+// end-of-statement flush (cgFreeStmtTmps) catches it.
+func cgIntrListPopLike(e: int, nm: string) {
+    var a0e: int
+    var elemT: int
+    var off: int
+    var fnName: string
+
+    a0e = irIntrArgsHead(e)
+    elemT = irExprType(e)
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    if e == cgDiscardExprIdx and cgNeedsRelease(elemT) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    fnName = "rtListPop"
+    if nm == "list_shift" {
+        fnName = "rtListShift"
+    }
+    cgJsrByName(fnName)
+    cgCleanupStack(8)
+    cgIntrLoadScratch(off, elemT)
+}
+
+// cgIntrListFirstLast mirrors fpIntrCall's IListFirst/IListLast arm
+// (cprint.cla:1973-2031): unlike pop/shift, first/last do NOT remove the
+// element -- t and l's own slot alias the SAME object, so a handle-typed
+// result is retained IMMEDIATELY (always tracked, regardless of discard
+// context -- the ONE difference from pop/shift's own untracked default).
+func cgIntrListFirstLast(e: int, nm: string) {
+    var a0e: int
+    var elemT: int
+    var off: int
+    var fnName: string
+    var k: IRKind
+
+    a0e = irIntrArgsHead(e)
+    elemT = irExprType(e)
+    k = irtKind(elemT)
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    if cgIsHandleKind(k) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    fnName = "rtListFirst"
+    if nm == "list_last" {
+        fnName = "rtListLast"
+    }
+    cgJsrByName(fnName)
+    cgCleanupStack(8)
+    if cgIsHandleKind(k) {
+        cgRetainAt(6, off, elemT)
+        cgLastTrackedOff = off
+    }
+    cgIntrLoadScratch(off, elemT)
+}
+
+// cgIntrListRemove mirrors fpIntrCall's IListRemove arm (cprint.cla:
+// 2032-2060): the removed element's own reference is released BEFORE the
+// removal call (the brief's own third ADDRESSING site -- the old-value
+// read) -- l/i each evaluated exactly ONCE (stashed in scratch, reused for
+// both the read and the removal call), same side-effect-safety reasoning
+// as fpIntrCall's own `l`/`s0` text variables.
+func cgIntrListRemove(e: int) {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var lOff: int
+    var iOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irtElem(irExprType(a0e))
+    lOff = cgAllocTmpOff(irPtrT)
+    iOff = cgAllocTmpOff(irIntT)
+    cgExpr(a0e)
+    cgStoreD0At(6, lOff, irPtrT)
+    cgExpr(a1e)
+    cgStoreD0At(6, iOff, irIntT)
+
+    if cgNeedsRelease(elemT) {
+        a68Emit(OpMove, 4, AmDisp16, 6, lOff, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDisp16, 6, iOff, AmDn, 0, 0)
+        cgListAddrFromRegs()
+        cgReleaseAt(0, 0, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, lOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, iOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtListRemove")
+    cgCleanupStack(8)
+}
+
+// cgIntrListSet mirrors fpIntrCall's IListSet/IListSetRetain arm
+// (cprint.cla:2061-2096) -- the brief's fourth ADDRESSING site (the
+// element ref itself): l/i evaluated once each; the new value materialized
+// (fpCopyToTemp) and, for the *Retain form, retained BEFORE the old value
+// is released (self-overwrite safety -- `lst[i] = lst[i]`: if new and old
+// happen to be the SAME handle, retaining first guarantees the release
+// that follows can never drop it to zero). The element address is
+// re-derived (cgListAddrFromRegs, a second time) after releasing the old
+// value: cgReleaseAt's own JSRs (rtTextRelease et al.) clobber A0 same as
+// any other call under this backend's "no callee-saved registers"
+// convention, so the address computed BEFORE that release can't be reused
+// for the write afterward.
+func cgIntrListSet(e: int, retainVariant: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var elemT: int
+    var lOff: int
+    var iOff: int
+    var vOff: int
+    var oldOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    elemT = irExprType(a2e)
+    lOff = cgAllocTmpOff(irPtrT)
+    iOff = cgAllocTmpOff(irIntT)
+    vOff = cgAllocTmpOff(elemT)
+    cgExpr(a0e)
+    cgStoreD0At(6, lOff, irPtrT)
+    cgExpr(a1e)
+    cgStoreD0At(6, iOff, irIntT)
+    cgExpr(a2e)
+    cgStoreD0At(6, vOff, elemT)
+    if cgLastTrackedOff != -1 {
+        cgHandoff(cgLastTrackedOff)
+    }
+
+    if retainVariant {
+        cgRetainAt(6, vOff, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, lOff, AmDn, 1, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, iOff, AmDn, 0, 0)
+    cgListAddrFromRegs()
+    if cgNeedsRelease(elemT) {
+        oldOff = cgAllocTmpOff(elemT)
+        cgCopyElemInto(6, oldOff, elemT)
+        cgReleaseAt(6, oldOff, elemT)
+        a68Emit(OpMove, 4, AmDisp16, 6, lOff, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDisp16, 6, iOff, AmDn, 0, 0)
+        cgListAddrFromRegs()
+    }
+    cgCopyElemFrom(6, vOff, elemT)
+}
+
+// cgIntrMapSet mirrors fpIntrCall's IMapSet/IMapSetRetain arm
+// (cprint.cla:2120-2163): the upsert guard (cgMapReleaseGuard) releases
+// whatever k currently holds BEFORE the new value is written; the new
+// value is retained (the *Retain form only) BEFORE the set call.
+func cgIntrMapSet(e: int, retainVariant: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var elemT: int
+    var mOff: int
+    var vOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    elemT = irExprType(a2e)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    if cgNeedsRelease(elemT) {
+        cgMapReleaseGuard(mOff, a1e, elemT)
+    }
+
+    vOff = cgAllocTmpOff(elemT)
+    cgExpr(a2e)
+    cgStoreD0At(6, vOff, elemT)
+    if cgLastTrackedOff != -1 {
+        cgHandoff(cgLastTrackedOff)
+    }
+    if retainVariant {
+        cgRetainAt(6, vOff, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapSet")
+    cgCleanupStack(12)
+}
+
+// cgIntrMapGet mirrors fpIntrCall's IMapGet arm (cprint.cla:2164-2200):
+// aliases m's own stored value -- a handle-typed result is retained
+// immediately into a tracked temp, same +1-and-tracked convention as
+// IListFirst/IListLast.
+func cgIntrMapGet(e: int) {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var mOff: int
+    var off: int
+    var k: IRKind
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irExprType(e)
+    k = irtKind(elemT)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    if cgIsHandleKind(k) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapGet")
+    cgCleanupStack(12)
+
+    if cgIsHandleKind(k) {
+        cgRetainAt(6, off, elemT)
+        cgLastTrackedOff = off
+    }
+    cgIntrLoadScratch(off, elemT)
+}
+
+// cgIntrMapGetDv mirrors fpIntrCall's IMapGetDv/IMapGetDvBirth arms
+// (cprint.cla:2201-2306): dv pre-fills the result slot; rtMapGetDv leaves
+// it untouched on a miss (its own bool return is ignored here, same as
+// the C reference -- absence/presence is read back by COMPARING the
+// result slot against dv's own stashed value, not from the call's return).
+// Non-birth (isBirth=false, IMapGetDv): dv is NOT independently owned (some
+// OTHER slot already owns it), so the result ALWAYS gets its own +1,
+// unconditionally, and dv itself is never released. Birth (isBirth=true,
+// IMapGetDvBirth): dv IS independently owned (a fresh construction with no
+// other owner) -- absent (result slot still equals dv) means dv's own +1
+// simply became the result's, no extra retain; present means the result
+// aliases the map's OWN value (needs its own +1) AND dv's original box is
+// now orphaned (must be released here, or it leaks) -- ARC Task 8's fix
+// for both directions of that exact bug, mirrored exactly.
+func cgIntrMapGetDv(e: int, isBirth: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var elemT: int
+    var mOff: int
+    var dvOff: int
+    var off: int
+    var k: IRKind
+    var skipLbl: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    elemT = irExprType(e)
+    k = irtKind(elemT)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    dvOff = cgAllocTmpOff(elemT)
+    cgExpr(a2e)
+    cgStoreD0At(6, dvOff, elemT)
+    if cgLastTrackedOff != -1 {
+        // fpHandoff(dv): dv's own temp (if any) is about to alias into
+        // the result -- untrack it, this arm's own retain/release logic
+        // below is the only ownership bookkeeping dv gets from here on.
+        cgHandoff(cgLastTrackedOff)
+    }
+
+    if cgIsHandleKind(k) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+    cgCopyScratch(dvOff, off, elemT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapGetDv")
+    cgCleanupStack(12)
+
+    if cgIsHandleKind(k) {
+        if isBirth {
+            a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+            a68Emit(OpMove, 4, AmDisp16, 6, dvOff, AmDn, 1, 0)
+            a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+            skipLbl = a68NewLabel()
+            a68EmitBr(OpBcc, 7, skipLbl) // BEQ: off==dvOff -> unchanged, skip
+            cgRetainAt(6, off, elemT)
+            cgReleaseAt(6, dvOff, elemT)
+            a68Bind(skipLbl)
+        } else {
+            cgRetainAt(6, off, elemT)
+        }
+        cgLastTrackedOff = off
+    }
+    cgIntrLoadScratch(off, elemT)
+}
+
+// cgIntrMapRemove mirrors fpIntrCall's IMapRemove arm (cprint.cla:
+// 2313-2329): releases whatever k currently holds (the SAME
+// cgMapReleaseGuard IMapSet(Retain) uses) before removing, regardless of
+// whether the guard fired (`m.remove(k)` "silently succeeds if absent").
+func cgIntrMapRemove(e: int) {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var mOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irtElem(irExprType(a0e))
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    if cgNeedsRelease(elemT) {
+        cgMapReleaseGuard(mOff, a1e, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a1e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapRemove")
+    cgCleanupStack(8)
+}
+
+// cgIntrNatFileOp is the brief's own "by-name, nat*-resolved, Task 14
+// territory" degrade for IFileReadText/IFileWriteText/IFileName: none of
+// natFileReadText/natFileWriteText/natFileName exist yet (Task 14), so
+// this arm hard-errors with a message naming that fact explicitly, for
+// every fixture this task's own scope note says to expect ("fixtures this
+// task avoid file ops") -- the best-effort call-emission body below only
+// ever runs once Task 14 actually defines these functions.
+func cgIntrNatFileOp(e: int, fnName: string, argCount: int) {
+    var fi: int
+    var a0e: int
+    var a1e: int
+    var args: list of int
+    var addrs: list of bool
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: " + fnName + " not found/reachable -- native file I/O lands in Task 14")
+        quit 1
+    }
+    a0e = irIntrArgsHead(e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    addrs = cgFreshBoolList()
+    addrs.add(true)
+    if argCount == 2 {
+        a1e = irExprNext(a0e)
+        args.add(a1e)
+        addrs.add(irtKind(irExprType(a1e)) == KStr or irtKind(irExprType(a1e)) == KText)
+    }
+    if not cgCallRuntime(fnName, args, addrs) {
+        quit 1
+    }
+}
+
 // cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
 // ("ui_*") are 5e (native UI) territory -- hard error, matching
 // cg68AddRoots'/the brief's own "nat*"-prefix convention for name-based
@@ -2247,6 +3749,193 @@ func cgIntr(e: int) {
         }
         return
     }
+
+    // ---- Task 13: str family (value-returning arms only -- str_concat/
+    // str_concat_char/str_prepend_char/str_slice/str_coerce all
+    // MATERIALIZE a fresh Str value, same "not scalar-kind, needs its own
+    // address" shape as any other KStr result; those stay wired at
+    // cgEmitStoreStr/cgEmitReturnStr (already true before this task) and
+    // are UNREACHABLE from this value-context dispatch, matching every
+    // other KStr-result gap this file already documents). ----
+    if nm == "str_len" {
+        cgIntr1(e, "rtStrLen", true)
+        return
+    }
+    if nm == "str_index" {
+        cgIntr2(e, "rtStrIndex", true, false)
+        return
+    }
+    if nm == "str_set_index" {
+        cgIntr3(e, "rtStrSetIndex", true, false, false)
+        return
+    }
+    if nm == "str_index_of_str" {
+        cgIntr2(e, "rtStrIndexOfStr", true, true)
+        return
+    }
+    if nm == "str_index_of_char" {
+        cgIntr2(e, "rtStrIndexOfChar", true, false)
+        return
+    }
+    if nm == "str_from_bytes" {
+        cgIntrStrFromBytes(e)
+        return
+    }
+    if nm == "str_to_bytes" {
+        cgIntrStrToBytes(e)
+        return
+    }
+
+    // ---- Task 13: text family ----
+    if nm == "text_store" {
+        cgIntr2(e, "rtTextStore", false, true)
+        return
+    }
+    if nm == "text_len" {
+        cgIntr1(e, "rtTextLen", false)
+        return
+    }
+    if nm == "text_index" {
+        cgIntr2(e, "rtTextIndex", false, false)
+        return
+    }
+    if nm == "text_set_index" {
+        cgIntr3(e, "rtTextSetIndex", false, false, false)
+        return
+    }
+    if nm == "text_index_of_str" {
+        cgIntr2(e, "rtTextIndexOfStr", false, true)
+        return
+    }
+    if nm == "text_index_of_char" {
+        cgIntr2(e, "rtTextIndexOfChar", false, false)
+        return
+    }
+    if nm == "text_append_str" {
+        cgIntr2(e, "rtTextAppendStr", false, true)
+        return
+    }
+    if nm == "text_append_char" {
+        cgIntr2(e, "rtTextAppendChar", false, false)
+        return
+    }
+    if nm == "text_append_text" {
+        cgIntr2(e, "rtTextAppendText", false, false)
+        return
+    }
+    if nm == "text_from_bytes" {
+        cgIntrTextFromBytes(e)
+        return
+    }
+    if nm == "text_to_bytes" {
+        cgIntrTextToBytes(e)
+        return
+    }
+    if nm == "text_cmp" {
+        cgIntrTextCmp(e)
+        return
+    }
+    if nm == "text_concat" {
+        cgIntrTextConcat(e)
+        return
+    }
+    if nm == "text_concat_sl" {
+        cgIntrTextConcatSl(e)
+        return
+    }
+    if nm == "text_of_str" {
+        cgIntrTextOfStr(e)
+        return
+    }
+    if nm == "text_free_var" {
+        cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
+
+    // ---- Task 13: list family ----
+    if nm == "list_push" or nm == "list_unshift" or nm == "list_push_retain" or nm == "list_unshift_retain" {
+        cgIntrListPushLike(e, nm)
+        return
+    }
+    if nm == "list_pop" or nm == "list_shift" {
+        cgIntrListPopLike(e, nm)
+        return
+    }
+    if nm == "list_first" or nm == "list_last" {
+        cgIntrListFirstLast(e, nm)
+        return
+    }
+    if nm == "list_remove" {
+        cgIntrListRemove(e)
+        return
+    }
+    if nm == "list_set" or nm == "list_set_retain" {
+        cgIntrListSet(e, nm == "list_set_retain")
+        return
+    }
+    if nm == "list_count" {
+        cgIntr1(e, "rtListCount", false)
+        return
+    }
+    if nm == "list_free_var" {
+        cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
+
+    // ---- Task 13: map family ----
+    if nm == "map_set" or nm == "map_set_retain" {
+        cgIntrMapSet(e, nm == "map_set_retain")
+        return
+    }
+    if nm == "map_get" {
+        cgIntrMapGet(e)
+        return
+    }
+    if nm == "map_get_dv" {
+        cgIntrMapGetDv(e, false)
+        return
+    }
+    if nm == "map_get_dv_birth" {
+        cgIntrMapGetDv(e, true)
+        return
+    }
+    if nm == "map_has" {
+        cgIntr2(e, "rtMapHas", false, true)
+        return
+    }
+    if nm == "map_remove" {
+        cgIntrMapRemove(e)
+        return
+    }
+    if nm == "map_count" {
+        cgIntr1(e, "rtMapCount", false)
+        return
+    }
+    if nm == "map_free_var" {
+        cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
+
+    // ---- Task 13: files (IFileReadText/IFileWriteText/IFileName ->
+    // nat*-named functions -- Task 14 territory; emit by name ONLY if
+    // reachable, else the brief's own explicit "native file I/O lands in
+    // Task 14" hard error, matching cg68AddRoots'/cgEmitStartupCallIfPresent's
+    // own established "by-name via JT, degrade loud/quiet as appropriate"
+    // convention). Not exercised by this task's own fixtures (the brief's
+    // own scope note: "fixtures this task avoid file ops"). ----
+    if nm == "file_read_text" {
+        cgIntrNatFileOp(e, "natFileReadText", 2)
+        return
+    }
+    if nm == "file_write_text" {
+        cgIntrNatFileOp(e, "natFileWriteText", 2)
+        return
+    }
+    if nm == "file_name" {
+        cgIntrNatFileOp(e, "natFileName", 1)
+        return
+    }
+
     a68Comment("TODO intr " + nm + ": unsupported this task")
     a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
 }
@@ -2271,6 +3960,22 @@ func cgExpr(e: int) {
             a68Comment("TODO cgExpr EFieldRef non-scalar (str/rec/arr) in value context")
             a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
         }
+    } else if k == EIndexRef {
+        // Task 13: a bare `arr[i]`/`list[i]` READ is a non-owning BORROW
+        // (fpIndexRef's own C output is a raw dereference, never routed
+        // through a retaining accessor like first()/last()/get()) -- a
+        // heap-typed element read this way needs no retain HERE; if it
+        // flows into a named-slot store, lower.cla's own lowCountedStoreVal
+        // funnel already injects the IRetain this file's existing "retain"
+        // cgIntr arm handles (Task 12), same as any other non-birth
+        // aliasing source. cgLoadFieldScalar is generic (any cgExprAddr-
+        // resolvable lvalue, not EFieldRef-specific despite its name).
+        if cgIsScalarKind(irtKind(irExprType(e))) {
+            cgLoadFieldScalar(e)
+        } else {
+            a68Comment("TODO cgExpr EIndexRef non-scalar (str/rec) element in value context")
+            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+        }
     } else if k == EBin {
         cgBin(e)
     } else if k == EUn {
@@ -2284,13 +3989,12 @@ func cgExpr(e: int) {
     } else if k == ECallExt {
         cgCallExt(e)
     } else {
-        // EStrConst (str value in a scalar context), EIndexRef (arrays,
-        // Task 13), ENewRec (constructed directly into its destination by
-        // cgEmitStoreRec/cgEmitReturnRec, never reached in bare value
-        // context) -- none of these are exercised by this task's fixtures;
-        // degrade to a deterministic zero rather than crash whatever
-        // ambient reachable code (e.g. the runtime library) happens to use
-        // one.
+        // EStrConst (str value in a scalar context), ENewRec (constructed
+        // directly into its destination by cgEmitStoreRec/cgEmitReturnRec,
+        // never reached in bare value context) -- neither is exercised by
+        // this task's fixtures; degrade to a deterministic zero rather than
+        // crash whatever ambient reachable code (e.g. the runtime library)
+        // happens to use one.
         a68Comment("TODO cgExpr <kind " + numToStr(int(k)) + ">: unsupported this task")
         a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
     }
@@ -3120,6 +4824,17 @@ func cgIfStmt(s: int) {
     }
 }
 
+// cgWhileStmt: Task 13 adds the per-iteration condition-temp flush
+// (mirrors fpWhileStmt + its ARC Task 8 break-path fix, cprint.cla:
+// 2885-2913, in ONE sequence instead of two textual copies): a tracked
+// temp the CONDITION creates (a text concat compared against something,
+// say) is rebuilt fresh every iteration, so it must be released every
+// iteration -- and on the exit path too. Emitted only when the condition
+// actually tracked something (the common all-scalar condition compiles
+// byte-identically to before): D0 (the condition's own value) is spilled
+// to the stack across the release calls, then reloaded before the branch
+// -- ONE flush covering both the continue and exit paths, where cprint
+// needs two printed copies on its mutually exclusive C paths.
 func cgWhileStmt(s: int) {
     var topLbl: int
     var endLbl: int
@@ -3128,6 +4843,11 @@ func cgWhileStmt(s: int) {
     endLbl = a68NewLabel()
     a68Bind(topLbl)
     cgExpr(irWhileCond(s))
+    if cgStmtTmpOffs.count > 0 {
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgFreeStmtTmps()
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+    }
     a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
     a68EmitBr(OpBcc, 7, endLbl)  // BEQ: cond false -> exit
     cgLoopBreakLabels.add(endLbl)
@@ -3197,11 +4917,281 @@ func cgForRangeStmt(s: int) {
     a68Emit(OpAddq, 4, AmImm, 0, 4, AmAn, 7, 0)
 }
 
+// cgJsrByName JSRs a reachable runtime IRFunc by name with NO argument
+// marshaling of its own -- the caller has already arranged D0/D1/the stack
+// exactly as the callee expects (cgForListStmt/cgForMapStmt's own
+// hand-sequenced arg pushes below, where the SAME source values are read
+// into registers multiple times across several calls, making cgCallRuntime's
+// generic one-shot push-then-JSR shape a worse fit than composing the
+// pushes inline).
+func cgJsrByName(fnName: string) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: " + fnName + " not found/reachable")
+        quit 1
+    }
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+}
+
+// cgMapReleaseGuard mirrors fpMapReleaseGuard (cprint.cla:1393-1422)
+// exactly: `if (rtMapHas(m, k)) { old = rtMapGet(m, k); release(old) }` --
+// the upsert/remove guard IMapSet(Retain)/IMapRemove share, releasing
+// whatever a key CURRENTLY holds before it's overwritten/evicted. mOff is
+// the map's OWN pointer value, already stashed by the caller (evaluated
+// exactly once, same "computed once, reused" discipline as fpMapReleaseGuard's
+// own m/k text parameters); kExpr is re-evaluated via cgExprAddr each time
+// it's needed here (safe: an ADDRESS computation over an addressable
+// lvalue has no side effects, unlike a VALUE computation, so this does NOT
+// re-run whatever produced the key -- only a bare EVarRef/EFieldRef/
+// EStrConst ever reaches a map-key position, per the checker's own
+// addressable-key constraint, str.cla's fpStrAddr precedent).
+func cgMapReleaseGuard(mOff: int, kExpr: int, elemT: int) {
+    var afterLbl: int
+    var oldOff: int
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(kExpr)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapHas")
+    cgCleanupStack(8)
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    afterLbl = a68NewLabel()
+    a68EmitBr(OpBcc, 7, afterLbl) // BEQ: has==false -> skip
+
+    oldOff = cgAllocTmpOff(elemT)
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(kExpr)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, oldOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapGet")
+    cgCleanupStack(12)
+    cgReleaseAt(6, oldOff, elemT)
+
+    a68Bind(afterLbl)
+}
+
+// cgCopyElemInto copies ONE list element's bytes from (A0) (rtListAt's own
+// returned address) into dstOff(dstReg) -- a plain byte copy, no retain
+// (the language's own borrow semantics: a for-list loop variable is a
+// re-assigned-each-iteration ALIAS, never an owned reference -- mirrors
+// fpForListStmt's own bare `cv_vName = *(elemC*)rt_list_at(...)`, no
+// retain call, cprint.cla:2833). cgBlockCopy's own "size always even"
+// precondition holds for every kind except a 1-byte bool/char element
+// (cgSizeOf==1, the ONE kind whose runtime elemsize -- cgSizeOf-derived,
+// this file's own element-size-consistency rule -- is genuinely odd);
+// that one case gets a single MOVE.B instead.
+func cgCopyElemInto(dstReg: int, dstOff: int, elemT: int) {
+    var sz: int
+
+    sz = cgSizeOf(elemT)
+    if sz == 1 {
+        a68Emit(OpMove, 1, AmInd, 0, 0, AmDisp16, dstReg, dstOff)
+    } else {
+        a68Emit(OpLea, 0, AmDisp16, dstReg, dstOff, AmAn, 1, 0)
+        cgBlockCopy(sz)
+    }
+}
+
+// cgCopyElemFrom is cgCopyElemInto's mirror image: copies elemT's own
+// bytes FROM srcOff(srcReg) INTO (A0) (a list slot's own address, already
+// resolved by the caller -- IListSet(Retain)'s own "write new value in"
+// step, cgIntr's own dispatch below).
+func cgCopyElemFrom(srcReg: int, srcOff: int, elemT: int) {
+    var sz: int
+
+    sz = cgSizeOf(elemT)
+    if sz == 1 {
+        a68Emit(OpMove, 1, AmDisp16, srcReg, srcOff, AmInd, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpLea, 0, AmDisp16, srcReg, srcOff, AmAn, 0, 0)
+        a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+        cgBlockCopy(sz)
+    }
+}
+
+// cgForListStmt mirrors fpForListStmt (cprint.cla:2809-2837): the list
+// handle and its count are each snapshotted ONCE, at loop entry -- a
+// mutation mid-iteration is undefined per Ch5, a fixed count is the
+// simplest defensible choice, matching the C reference exactly -- but
+// EVERY iteration re-derives the element's address via a fresh rtListAt
+// call (never caches one across iterations), since the backing store CAN
+// relocate (list.cla's own relocation discipline) even though the loop
+// itself never grows/shrinks the list.
+//
+// The three loop-scope values (list ptr, count, index) live on the REAL
+// machine stack (three `-(A7)` pushes at entry, addressed by FIXED
+// small offsets from the CURRENT A7 for the loop's whole duration -- same
+// precedent cgForRangeStmt's own single `to` value already establishes,
+// widened to three slots), NOT this file's own statement-temp pool: that
+// pool's bump allocator resets to 0 at the START OF EVERY STATEMENT
+// (cgStmt's own save/fresh/restore wrapper), including each of THIS loop's
+// own body statements -- reusing it here would let the body's first nested
+// statement's own temp allocation silently alias the SAME physical slot
+// this loop is using for its own persistent index/count, corrupting the
+// loop the moment its body needs even one temp of its own. The real stack
+// has no such per-statement reset: every value pushed here survives the
+// body's own arbitrarily many balanced push/JSR/cleanup sequences (the
+// SAME invariant cgForRangeStmt's own doc comment already established),
+// exactly as long as this loop's own 12 bytes stay reserved.
+func cgForListStmt(s: int) {
+    var elemT: int
+    var vOff: int
+    var condLbl: int
+    var incrLbl: int
+    var endLbl: int
+
+    vOff = cgFindFrameOffset(poolGet(irForListV(s)))
+    if vOff == cgUnresolved {
+        log("cg68k: unresolved for-list variable " + poolGet(irForListV(s)))
+        quit 1
+    }
+    elemT = irtElem(irExprType(irForListListV(s)))
+
+    cgExpr(irForListListV(s))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push list
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)    // D0 = list (peek)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push list (rtListCount's own arg)
+    cgJsrByName("rtListCount")
+    cgCleanupStack(4)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push count -> list@4(A7), count@0(A7)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0) // push index=0 -> index@0, count@4, list@8
+
+    condLbl = a68NewLabel()
+    incrLbl = a68NewLabel()
+    endLbl = a68NewLabel()
+
+    a68Bind(condLbl)
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDisp16, 7, 4, AmDn, 1, 0)
+    a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 12, endLbl) // GE: index>=count -> end
+
+    a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0) // D0 = list
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)    // D1 = index
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtListAt")
+    cgCleanupStack(8)
+    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    cgCopyElemInto(6, vOff, elemT)
+
+    cgLoopBreakLabels.add(endLbl)
+    cgLoopContinueLabels.add(incrLbl)
+    cgStmts(irForListBody(s))
+    cgLoopBreakLabels.pop()
+    cgLoopContinueLabels.pop()
+
+    a68Bind(incrLbl)
+    a68Emit(OpAddq, 4, AmImm, 0, 1, AmInd, 7, 0)
+    a68EmitBr(OpBra, 0, condLbl)
+
+    a68Bind(endLbl)
+    cgCleanupStack(12)
+}
+
+// cgForMapStmt mirrors fpForMapStmt (cprint.cla:2846-2882): ascending key
+// order (rt.c's own CONTRACT comment on rt_map), an index loop over
+// rtMapCount/rtMapKeyAt/rtMapValAt -- same three-value real-stack scratch
+// shape as cgForListStmt above, same reasoning. Map's own key/val
+// accessors are OUT-PARAM style (unlike List's address-returning
+// rtListAt), so the loop variable's address is simply LEA'd and passed
+// directly -- no separate copy step. The value fetch only runs when the
+// loop declared one (irForMapV(s) != -1, parseForStmt's own "no second
+// IDENT" signal for `for k in m` without a value variable).
+func cgForMapStmt(s: int) {
+    var kOff: int
+    var vOff: int
+    var condLbl: int
+    var incrLbl: int
+    var endLbl: int
+
+    kOff = cgFindFrameOffset(poolGet(irForMapK(s)))
+    if kOff == cgUnresolved {
+        log("cg68k: unresolved for-map key variable " + poolGet(irForMapK(s)))
+        quit 1
+    }
+    vOff = cgUnresolved
+    if irForMapV(s) != -1 {
+        vOff = cgFindFrameOffset(poolGet(irForMapV(s)))
+        if vOff == cgUnresolved {
+            log("cg68k: unresolved for-map value variable " + poolGet(irForMapV(s)))
+            quit 1
+        }
+    }
+
+    cgExpr(irForMapMapV(s))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapCount")
+    cgCleanupStack(4)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // count@0, map@4
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0) // index@0, count@4, map@8
+
+    condLbl = a68NewLabel()
+    incrLbl = a68NewLabel()
+    endLbl = a68NewLabel()
+
+    a68Bind(condLbl)
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDisp16, 7, 4, AmDn, 1, 0)
+    a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 12, endLbl)
+
+    a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0) // D0 = map
+    a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)    // D1 = index
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, kOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtMapKeyAt")
+    cgCleanupStack(12)
+
+    if vOff != cgUnresolved {
+        a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+        a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtMapValAt")
+        cgCleanupStack(12)
+    }
+
+    cgLoopBreakLabels.add(endLbl)
+    cgLoopContinueLabels.add(incrLbl)
+    cgStmts(irForMapBody(s))
+    cgLoopBreakLabels.pop()
+    cgLoopContinueLabels.pop()
+
+    a68Bind(incrLbl)
+    a68Emit(OpAddq, 4, AmImm, 0, 1, AmInd, 7, 0)
+    a68EmitBr(OpBra, 0, condLbl)
+
+    a68Bind(endLbl)
+    cgCleanupStack(12)
+}
+
+// cgReturnStmt mirrors fpStmt's own SReturn arm (cprint.cla:2767-2781): the
+// tracked-temp flush happens BEFORE the branch to the epilogue (unreachable
+// code after an unconditional jump is pointless here same as it is in C),
+// and a handle-typed (Text/List/Map) return value that IS a freshly
+// tracked temp (cgLastTrackedOff, set by cgIntr's own first/last/get/
+// getDv/getDvBirth arms) is handed off first -- it escapes to the caller,
+// same as fpHandoff(e) for `return e;`.
 func cgReturnStmt(s: int) {
     var x: int
+    var rk: IRKind
 
     x = irReturnX(s)
     if x == -1 {
+        cgFreeStmtTmps()
         a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
         return
     }
@@ -3213,7 +5203,12 @@ func cgReturnStmt(s: int) {
         }
     } else {
         cgExpr(x)
+        rk = irtKind(irExprType(x))
+        if (rk == KText or rk == KList or rk == KMap) and cgLastTrackedOff != -1 {
+            cgHandoff(cgLastTrackedOff)
+        }
     }
+    cgFreeStmtTmps()
     a68EmitBr(OpBra, 0, cgCurEpilogueLabel)
 }
 
@@ -3222,6 +5217,7 @@ func cgBreakStmt() {
         log("cg68k: break outside loop")
         quit 1
     }
+    cgFreeStmtTmps()
     a68EmitBr(OpBra, 0, cgLoopBreakLabels[cgLoopBreakLabels.count - 1])
 }
 
@@ -3230,24 +5226,71 @@ func cgContinueStmt() {
         log("cg68k: continue outside loop")
         quit 1
     }
+    cgFreeStmtTmps()
     a68EmitBr(OpBra, 0, cgLoopContinueLabels[cgLoopContinueLabels.count - 1])
 }
 
+// cgIsHandleKind reports whether k is a heap-owning, ARC-tracked kind
+// (Text/List/Map) -- cgStmt's own SAssign arm consults this to decide
+// whether a freshly evaluated src needs the cgLastTrackedOff handoff
+// check.
+func cgIsHandleKind(k: IRKind): bool {
+    return k == KText or k == KList or k == KMap
+}
+
+// cgStmt mirrors fpStmt's own per-statement shape (cprint.cla:2688-2803):
+// saves/resets/restores the tracked-temp pool around EVERY statement (a
+// nested statement -- an if/while/for body -- gets its OWN independent
+// temp-tracking scope, same reentrant swap fpStmt's own saved/fresh lists
+// already establish) and, for a bare SExprStmt, marks cgDiscardExprIdx
+// (cgIntr's own IListPop/IListShift discard-detection, mirroring
+// fpDiscardExprIdx exactly) for the one cgExpr call this statement makes.
+// SReturn/SBreak/SContinue already call cgFreeStmtTmps() themselves (their
+// own tracked temps must release BEFORE the branch out, not after --
+// unreachable code after an unconditional jump is pointless); every other
+// statement kind gets the flush here, at the tail.
 func cgStmt(s: int) {
     var k: IRStmtKind
     var dst: int
+    var dstK: IRExprKind
+    var dstKind: IRKind
+    var savedOffs: list of int
+    var savedType: list of int
+    var savedNext: int
+
+    savedOffs = cgStmtTmpOffs
+    savedType = cgStmtTmpType
+    savedNext = cgStmtTmpNext
+    cgStmtTmpOffs = cgFreshIntList()
+    cgStmtTmpType = cgFreshIntList()
+    cgStmtTmpNext = 0
+    // cgLastTrackedOff resets fresh per statement -- see its own doc
+    // comment (module-state block): every consuming check reads it
+    // IMMEDIATELY after the one cgExpr call it cares about, so a plain
+    // per-statement reset (no save/restore needed -- no compound
+    // statement kind below ever reads it itself) prevents a stale value
+    // from a PRIOR statement being misread as "this statement's src just
+    // produced a tracked temp."
+    cgLastTrackedOff = -1
 
     k = irStmtKind(s)
     if k == SExprStmt {
+        cgDiscardExprIdx = irExprStmtX(s)
         cgExpr(irExprStmtX(s))
+        cgDiscardExprIdx = -1
     } else if k == SAssign {
         dst = irAssignDst(s)
-        if (irExprKind(dst) == EVarRef or irExprKind(dst) == EFieldRef) and cgIsScalarKind(irtKind(irExprType(dst))) {
+        dstK = irExprKind(dst)
+        dstKind = irtKind(irExprType(dst))
+        if (dstK == EVarRef or dstK == EFieldRef or dstK == EIndexRef) and cgIsScalarKind(dstKind) {
             cgEmitStoreScalarAny(dst, irAssignSrc(s))
-        } else if (irExprKind(dst) == EVarRef or irExprKind(dst) == EFieldRef) and irtKind(irExprType(dst)) == KRec {
+            if cgIsHandleKind(dstKind) and cgLastTrackedOff != -1 {
+                cgHandoff(cgLastTrackedOff)
+            }
+        } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KRec {
             cgEmitStoreRec(dst, irAssignSrc(s))
         } else {
-            a68Comment("TODO SAssign <dst kind " + numToStr(int(irExprKind(dst))) + ">: unsupported this task")
+            a68Comment("TODO SAssign <dst kind " + numToStr(int(dstK)) + ">: unsupported this task")
         }
     } else if k == SStoreStr {
         cgEmitStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
@@ -3258,9 +5301,9 @@ func cgStmt(s: int) {
     } else if k == SForRange {
         cgForRangeStmt(s)
     } else if k == SForList {
-        a68Comment("TODO SForList: containers deferred to Task 13")
+        cgForListStmt(s)
     } else if k == SForMap {
-        a68Comment("TODO SForMap: containers deferred to Task 13")
+        cgForMapStmt(s)
     } else if k == SReturn {
         cgReturnStmt(s)
     } else if k == SBreak {
@@ -3268,6 +5311,13 @@ func cgStmt(s: int) {
     } else if k == SContinue {
         cgContinueStmt()
     }
+
+    if k != SReturn and k != SBreak and k != SContinue {
+        cgFreeStmtTmps()
+    }
+    cgStmtTmpOffs = savedOffs
+    cgStmtTmpType = savedType
+    cgStmtTmpNext = savedNext
 }
 
 // ================================================================
@@ -3618,6 +5668,7 @@ func cg68Program(outPath: string, listing: bool): bool {
     cgResetCodegenState()
     cgAssignJtSlots()
     cgAssignGlobalOffsets()
+    cgReservePanicMsgs()
     cgReserveStrLitLabels()
     cgAssignRcWalkLabels()
     cgReserveEnumTableLabels()

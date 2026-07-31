@@ -14,6 +14,18 @@
 // text/list/map) so the host-vs-native byte-compare never depends on the
 // still-runtime-unverified ARC record-copy path (recs.cla covers that
 // compile-only; see the Task 12 report).
+//
+// Task 13 addition: a container section (list of int/text, map of int/
+// text, text append/concat/slice-free ops, a nested `list of map of
+// text` miniature, and the 5c' adversarial matrix's core shapes --
+// reassign/discard/alias per slot class) -- still Go-compiler-compatible
+// (containers need no Ch13 surface either), so this SAME fixture keeps
+// serving as TestNativeSmoke's host-vs-native ARC oracle. Leaks are
+// invisible natively (no leak-count harness on 68k) -- this section
+// verifies OBSERVABLE behavior only (values read back correctly, aliasing
+// is reference-shaped, a discarded pop doesn't corrupt anything else);
+// the retain/release call SHAPE itself is separately pinned by arc.cla's
+// own listing golden.
 
 enum smokeColor {
     Red   5 "Red"
@@ -51,6 +63,214 @@ func smokeMakePoint(zip: int): smokePoint {
 
 func smokeTakePoint(p: smokePoint): int {
     return p.x + p.y + p.addr.zip
+}
+
+// smokeListInt: push/pop/shift/unshift/first/last/count/index-get/
+// index-set/remove/for-list over `list of int` -- scalar elements, no
+// ARC traffic, the baseline shape every other container test builds on.
+func smokeListInt() {
+    var l: list of int
+    var sum: int
+    var v: int
+
+    l.push(10)
+    l.push(20)
+    l.push(30)
+    smokeCheck(l.count == 3, "list int count after push")
+    smokeCheck(l.first() == 10, "list int first")
+    smokeCheck(l.last() == 30, "list int last")
+    smokeCheck(l[1] == 20, "list int index read")
+
+    l[1] = 25
+    smokeCheck(l[1] == 25, "list int index set")
+
+    l.unshift(5)
+    smokeCheck(l[0] == 5, "list int unshift")
+    smokeCheck(l.count == 4, "list int count after unshift")
+
+    v = l.shift()
+    smokeCheck(v == 5, "list int shift return")
+    smokeCheck(l.count == 3, "list int count after shift")
+
+    v = l.pop()
+    smokeCheck(v == 30, "list int pop return")
+    smokeCheck(l.count == 2, "list int count after pop")
+
+    l.remove(0)
+    smokeCheck(l.count == 1, "list int count after remove")
+    smokeCheck(l[0] == 25, "list int value after remove")
+
+    l.push(100)
+    l.push(200)
+    sum = 0
+    for x in l {
+        sum = sum + x
+    }
+    smokeCheck(sum == 25 + 100 + 200, "list int for-list sum")
+
+    // discarded pop -- a bare statement, result used nowhere.
+    l.pop()
+    smokeCheck(l.count == 2, "list int discarded pop count")
+}
+
+// smokeListText: the SAME shapes over `list of text`, so every push/pop/
+// first/last/set/remove path also exercises the retain/release traffic a
+// handle-typed element needs.
+func smokeListText() {
+    var l: list of text
+    var t: text
+
+    l.push("alpha")
+    l.push("beta")
+    l.push("gamma")
+    smokeCheck(l.count == 3, "list text count after push")
+    smokeCheck(l.first() == "alpha", "list text first")
+    smokeCheck(l.last() == "gamma", "list text last")
+    smokeCheck(l[1] == "beta", "list text index read")
+
+    l[1] = "BETA"
+    smokeCheck(l[1] == "BETA", "list text index set")
+
+    t = l.shift()
+    smokeCheck(t == "alpha", "list text shift return")
+    smokeCheck(l.count == 2, "list text count after shift")
+
+    t = l.pop()
+    smokeCheck(t == "gamma", "list text pop return")
+    smokeCheck(l.count == 1, "list text count after pop")
+
+    l.remove(0)
+    smokeCheck(l.count == 0, "list text count after remove")
+
+    l.push("solo")
+    l.push("duo")
+    // discarded pop of a handle-typed element -- must release, not leak.
+    l.pop()
+    smokeCheck(l.count == 1, "list text discarded pop count")
+    smokeCheck(l[0] == "solo", "list text value after discarded pop")
+}
+
+// smokeMapInt: set/get/has/remove/count/for-map over `map of int`.
+func smokeMapInt() {
+    var m: map of int
+    var sum: int
+    var k: string
+    var v: int
+
+    m["one"] = 1
+    m["two"] = 2
+    m["three"] = 3
+    smokeCheck(m.count == 3, "map int count after set")
+    smokeCheck(m["two"] == 2, "map int subscript get")
+    smokeCheck(m.has("three"), "map int has present")
+    smokeCheck(not m.has("four"), "map int has absent")
+    smokeCheck(m.get("four", 99) == 99, "map int get-default absent")
+    smokeCheck(m.get("one", 99) == 1, "map int get-default present")
+
+    m["two"] = 22
+    smokeCheck(m["two"] == 22, "map int overwrite")
+
+    m.remove("one")
+    smokeCheck(m.count == 2, "map int count after remove")
+    smokeCheck(not m.has("one"), "map int has after remove")
+    m.remove("nonexistent")
+    smokeCheck(m.count == 2, "map int remove-absent no-op")
+
+    sum = 0
+    for k, v in m {
+        sum = sum + v
+    }
+    smokeCheck(sum == 22 + 3, "map int for-map sum")
+}
+
+// smokeMapText: the SAME shapes over `map of text`.
+func smokeMapText() {
+    var m: map of text
+    var k: string
+    var v: text
+    var found: text
+
+    m["a"] = "apple"
+    m["b"] = "banana"
+    smokeCheck(m.count == 2, "map text count after set")
+    smokeCheck(m["a"] == "apple", "map text subscript get")
+    smokeCheck(m.get("z", "none") == "none", "map text get-default absent")
+    smokeCheck(m.get("a", "none") == "apple", "map text get-default present")
+
+    m["a"] = "avocado"
+    smokeCheck(m["a"] == "avocado", "map text overwrite")
+
+    m.remove("b")
+    smokeCheck(m.count == 1, "map text count after remove")
+
+    for k, v in m {
+        found = v
+    }
+    smokeCheck(found == "avocado", "map text for-map value")
+}
+
+// smokeTextOps: append/+/len/cmp -- the non-container text intrinsics
+// this task's own arm table also wires.
+func smokeTextOps() {
+    var t: text = "hello"
+    var u: text
+
+    t.append(", world")
+    smokeCheck(t == "hello, world", "text append str")
+    t.append('!')
+    smokeCheck(t == "hello, world!", "text append char")
+
+    u = t + " (again)"
+    smokeCheck(u == "hello, world! (again)", "text concat")
+    smokeCheck(t == "hello, world!", "text concat leaves source unchanged")
+
+    smokeCheck(t.length == 13, "text length")
+    smokeCheck(t == "hello, world!", "text cmp equal")
+    smokeCheck(t != "nope", "text cmp not-equal")
+}
+
+// smokeNested: the brief's own "nested list-of-map" shape, in miniature --
+// a `list of map of text`, pushed/read/mutated through both levels.
+func smokeNested() {
+    var lm: list of map of text
+    var m: map of text
+    var got: map of text
+
+    m["k"] = "v1"
+    lm.push(m)
+    smokeCheck(lm.count == 1, "nested list-of-map count")
+
+    got = lm[0]
+    smokeCheck(got["k"] == "v1", "nested list-of-map read")
+
+    got["k"] = "v2"
+    smokeCheck(lm[0]["k"] == "v2", "nested list-of-map aliasing (same map)")
+}
+
+// smokeAliasing: the 5c' adversarial matrix's core shapes, in miniature --
+// reassign/discard/alias for a List slot (reference semantics: two names
+// for the SAME handle see each other's mutations; overwriting a name
+// drops that name's own reference without disturbing the other).
+func smokeAliasing() {
+    var a: list of int
+    var b: list of int
+
+    a.push(1)
+    a.push(2)
+    b = a
+    b.push(3)
+    smokeCheck(a.count == 3, "alias: mutate via b visible through a")
+    smokeCheck(a[2] == 3, "alias: value visible through a")
+
+    b = other()
+    smokeCheck(b.count == 1, "alias: reassign b to a fresh list")
+    smokeCheck(a.count == 3, "alias: reassigning b leaves a untouched")
+}
+
+func other(): list of int {
+    var l: list of int
+    l.push(42)
+    return l
 }
 
 on App.launch {
@@ -102,6 +322,14 @@ on App.launch {
     e = smokeColor(6)
     smokeCheck(e == Green, "enum int->enum valid")
     smokeCheck(int(e) == 6, "enum enum->int roundtrip")
+
+    smokeListInt()
+    smokeListText()
+    smokeMapInt()
+    smokeMapText()
+    smokeTextOps()
+    smokeNested()
+    smokeAliasing()
 
     alert("smoke done")
     quit 0

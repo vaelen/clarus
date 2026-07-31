@@ -1,0 +1,54 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc.cla: native-5d Task 13's cg68k golden fixture -- the container ARC
+// layer's own core shapes, compile-only (like recs.cla, never booted):
+//
+//   - birth: a bare `var l: list of text`/`var m: map of int`/
+//     `var t: text` local default-inits via cgDefaultInitAt's new KText/
+//     KList/KMap arms (rtTextNew/rtListNew/rtMapNew).
+//   - alias retain: `b = a` for a handle-typed local -- lower.cla's own
+//     lowCountedStoreVal funnel injects the IRetain(a)/IRelease(b) pair
+//     around the plain store, pinning cgIntr's existing "retain"/
+//     "release" arms (Task 12) now firing for List/Map too (Task 13's
+//     cgReleaseAt upgrade).
+//   - statement-temp release: a discarded `l.pop();` (tracked via
+//     cgDiscardExprIdx) and `x = m.get(k, 0)` (get_dv's own tracked
+//     temp, handed off into x).
+//   - freevar on scope exit: a local list/map/text that's never returned
+//     -- lower.cla's own escape pre-pass injects list_free_var/
+//     map_free_var/text_free_var at the function's tail, pinning
+//     cgIntr's "*_free_var" arms (-> cgReleaseExpr -> the SAME upgraded
+//     cgReleaseAt deep walk).
+func arcBirth() {
+    var l: list of text
+    var m: map of int
+    var t: text
+}
+
+func arcAliasRetain() {
+    var a: list of text
+    var b: list of text
+
+    a.push("x")
+    b = a
+}
+
+func arcStmtTempRelease() {
+    var l: list of text
+    var m: map of int
+    var x: int
+
+    l.push("a")
+    l.push("b")
+    l.pop()
+
+    m["k"] = 5
+    x = m.get("k", 0)
+}
+
+on App.launch {
+    arcBirth()
+    arcAliasRetain()
+    arcStmtTempRelease()
+}
