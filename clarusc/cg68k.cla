@@ -487,6 +487,19 @@ var cgLastTrackedOff: int
 // the ordinary end-of-statement flush (cgFreeStmtTmps) releases it.
 var cgDiscardExprIdx: int
 
+// cgMaterializeDepth: final-review I1 guard. cgMaterializeCallResult
+// stashes its hidden-result pointer in A1 (cgPushArgMaterialized) BEFORE
+// pushing its own callee's argument chain (cgPushArgs) -- if evaluating
+// one of THOSE args itself needs materialization (e.g. `f(g(makeStr()))`
+// with g str-returning and an unaddressable inner arg), the nested call
+// overwrites A1 before the outer frame reads it back, a silent
+// miscompile (the outer hidden pointer becomes garbage). Depth-counted
+// here rather than guarded some other way because the clobber is a
+// property of REENTRANCY, not of any single call site. 0 outside any
+// materialization, 1 while inside the outermost one; a second nested
+// entry (depth would become 2) fails closed instead of corrupting A1.
+var cgMaterializeDepth: int
+
 // cgDeepLevels bounds container release-walk nesting (a List/Map element
 // that is itself a List/Map recurses -- cpEmitRelease's own ARC Task 8
 // nested-container arm, cprint.cla:3281-3320/3381-3398). Each level gets
@@ -529,6 +542,7 @@ func cgResetCodegenState() {
     cgLoopContinueLabels = cgFreshIntList()
     cgLastTrackedOff = -1
     cgDiscardExprIdx = -1
+    cgMaterializeDepth = 0
 }
 
 // cgReservePanicMsgs mints every panic-message string literal this
@@ -4913,10 +4927,18 @@ func cgMaterializeCallResult(a: int) {
         log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " is not str/rec-returning -- materialization not built for this shape")
         quit 1
     }
+    // Final-review I1: fail closed on nested materialization rather than
+    // silently clobber A1 -- see cgMaterializeDepth's own doc comment.
+    cgMaterializeDepth = cgMaterializeDepth + 1
+    if cgMaterializeDepth > 1 {
+        log("cg68k: cgMaterializeCallResult: nested str/rec-returning call-result materialization (" + poolGet(irCallFnName(a)) + ") not supported -- would clobber the outer hidden-result pointer stashed in A1; bind the inner call to a temp first")
+        quit 1
+    }
     total = cgPushArgs(irCallFnArgsHead(a))
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     cgCallFunc(fi)
     cgCleanupStack(total + 4)
+    cgMaterializeDepth = cgMaterializeDepth - 1
 }
 
 // cgMaterializeStrCoerce clamp-copies a's own wrapped source expr into the
@@ -6259,7 +6281,22 @@ func cgStmt(s: int) {
         } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KErr {
             cgEmitStoreErr(dst, irAssignSrc(s))
         } else {
-            a68Comment("TODO SAssign <dst kind " + numToStr(int(dstK)) + ">: unsupported this task")
+            // Final-review C1: this arm is reached by whole-fixed-array
+            // assignment (`b = a` / `r.field = arr` for `arr N of T`) --
+            // Ch3 documents fixed arrays as copy-by-value and the host
+            // backend does the copy correctly, but this backend has no
+            // KArr block-copy codegen yet. The old behavior here was a
+            // silent a68Comment no-op that dropped the store entirely
+            // (host/native miscompile). Task 14.7's own lesson -- "a
+            // catch-all default that produces a plausible-looking wrong
+            // value is strictly worse than one that stops the build" --
+            // applies exactly here, so fail closed like every other
+            // non-scalar catch-all in this file (EVarRef/EFieldRef/
+            // EIndexRef above). Real fix (cgExprAddr + cgBlockCopy) is a
+            // 5e item; a loud compile error is strictly better than a
+            // silent no-op until then.
+            log("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " (whole fixed-array assignment) unsupported natively -- bind/store element-wise instead")
+            quit 1
         }
     } else if k == SStoreStr {
         cgEmitStoreStr(irStoreStrDst(s), irStoreStrSrc(s))
