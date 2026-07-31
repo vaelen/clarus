@@ -598,12 +598,13 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     return true
 }
 
-// natFileReadText reads the whole file in one PB call, into a NON-
+// natFileReadText reads the WHOLE file (any size -- no cap on the result,
+// matching rt.c/rt_mac.c and the language reference's byte-for-byte
+// promise), in a LOOP of natFileReadCap-sized PB reads into a NON-
 // RELOCATABLE NEWPTR BOUNCE BUFFER (never directly into `out`'s Handle-
-// backed storage), then grows `out` and copies the bounce buffer in via
-// TextBlockMoveData -- false + lastError(2, "could not open file"/
-// "could not read file") on any failure (including file-not-found,
-// which fails the initial Open).
+// backed storage), growing+appending `out` after each chunk -- false +
+// lastError(2, "could not open file"/"could not read file") on any
+// failure (including file-not-found, which fails the initial Open).
 //
 // Boot-hang root cause (empirically bisected on real hardware, task-14 --
 // full writeup in the task-14 report): every cut of this function that
@@ -618,18 +619,22 @@ func natFileWriteText(path: ptr, t: ptr): bool {
 // all, otherwise identical, did not). Root cause not fully explained
 // (isolated fixtures with no prior heap traffic never reproduce it --
 // something about PBGetEOFSync's own execution and a heap this busy),
-// but the WORKAROUND is unconditional and simple: never call it. Read
-// into a bounce buffer sized to natFileReadCap (a fixed, generous
-// ceiling well beyond anything this runtime's own text-file use needs)
-// instead, and use FSRead's own ioActCount/eofErr contract (Inside
+// but the WORKAROUND is unconditional and simple: never call it anywhere
+// in this path -- FSRead's own ioActCount/eofErr contract (Inside
 // Macintosh: reading past logical EOF returns eofErr in ioResult but
-// still sets ioActCount to the REAL byte count) to learn the actual
-// size -- no GetEOF call anywhere in this path.
-// ponytail: a file >= natFileReadCap bytes silently truncates (ioResult
-// comes back 0, not eofErr, indistinguishable here from "the file is
-// EXACTLY natFileReadCap bytes") -- raise natFileReadCap (or revisit
-// PBGetEOFSync once its real failure mode here is understood) if a
-// program needs to read larger files.
+// still sets ioActCount to the REAL byte count of THIS chunk) is enough
+// to drive the loop below without ever knowing the size up front.
+//
+// Loop termination (task-14-review's own worked cases, all covered):
+// each iteration requests a full natFileReadCap-sized chunk; `code==0`
+// (noErr) with a full chunk means "more may follow", so the loop
+// continues; `code==natEofErr` means this chunk (0 or more bytes, per
+// ioActCount) was the last one, so the loop stops after appending it.
+// A file whose size is an exact multiple of natFileReadCap reads one
+// extra all-zero-byte chunk (code==0, full chunk) then a FINAL chunk
+// with got==0/code==eofErr -- appends nothing, terminates cleanly, not
+// an error. A 0-byte file hits eofErr/got==0 on the very first
+// iteration -- terminates immediately, `out` stays empty, still true.
 const natFileReadCap: int = 32768
 const natEofErr: int = 65497 // -39 (Files.h eofErr), as peekw's UNSIGNED 16-bit read sees it (peekw never sign-extends)
 
@@ -640,6 +645,8 @@ func natFileReadText(path: ptr, out: ptr): bool {
     var got: int
     var code: int
     var bounce: ptr
+    var total: int
+    var done: bool
 
     natFileEnsurePb()
     pokel(natFilePb + natIoNamePtr, int(path))
@@ -657,32 +664,48 @@ func natFileReadText(path: ptr, out: ptr): bool {
         rtPanic("out of memory")
     }
 
-    pokew(natFilePb + natIoRefNum, ref)
-    pokel(natFilePb + natIoBuffer, int(bounce))
-    pokel(natFilePb + natIoReqCount, natFileReadCap)
-    pokew(natFilePb + natIoPosMode, natFsAtMark)
-    NatRead(natFilePb)
-    got = peekl(natFilePb + natIoActCount)
-    code = peekw(natFilePb + natIoResult)
+    total = 0
+    done = false
+    while not done {
+        pokew(natFilePb + natIoRefNum, ref)
+        pokel(natFilePb + natIoBuffer, int(bounce))
+        pokel(natFilePb + natIoReqCount, natFileReadCap)
+        pokew(natFilePb + natIoPosMode, natFsAtMark)
+        NatRead(natFilePb)
+        got = peekl(natFilePb + natIoActCount)
+        code = peekw(natFilePb + natIoResult)
+
+        if code != 0 and code != natEofErr {
+            pokew(natFilePb + natIoRefNum, ref)
+            NatClose(natFilePb)
+            TextDisposePtr(bounce)
+            rtSetLastErr(2, "could not read file")
+            return false
+        }
+
+        if got > 0 {
+            // rtTextGrow first (can relocate out's Handle), THEN
+            // re-derive mp -- text.cla's own relocation discipline,
+            // never violated here; `bounce` itself is a plain NewPtr,
+            // immune, so no re-derive needed on that side.
+            rtTextGrow(out, total + got)
+            rt = RtText(out)
+            mp = TextHandleDeref(rt.h)
+            TextBlockMoveData(bounce, mp + total, got)
+            total = total + got
+        }
+
+        if code == natEofErr or got < natFileReadCap {
+            done = true
+        }
+    }
 
     pokew(natFilePb + natIoRefNum, ref)
     NatClose(natFilePb)
-
-    if code != 0 and code != natEofErr {
-        TextDisposePtr(bounce)
-        rtSetLastErr(2, "could not read file")
-        return false
-    }
-
-    if got > 0 {
-        rtTextGrow(out, got)
-        rt = RtText(out)
-        mp = TextHandleDeref(rt.h)
-        TextBlockMoveData(bounce, mp, got)
-    }
     TextDisposePtr(bounce)
+
     rt = RtText(out)
-    rt.len = got
+    rt.len = total
     return true
 }
 

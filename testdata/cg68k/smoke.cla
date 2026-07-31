@@ -365,6 +365,44 @@ func smokeFiles() {
     smokeCheck(errMsg == "could not open file", "file readText missing lastError message")
 }
 
+// smokeFilesBig: a >32768-byte (natFileReadCap) round trip -- pins
+// natFileReadText's chunked-read loop (task-14-review fix: the single
+// capped read it replaced silently truncated past the cap). 40000 bytes,
+// built with a plain append loop (Go-compatible, no Ch13 surface), spans
+// the cap boundary mid-file; spot-checked at the first/last bytes and
+// both sides of the 32768 boundary rather than a full 40000-byte compare
+// (the host-vs-native byte compare over the WHOLE captured "out" stream
+// is the real oracle for exact content).
+func smokeFilesBig() {
+    var t: text
+    var t2: text
+    var ok: bool
+    var pass: bool
+    var i: int
+    var n: int
+
+    n = 40000
+    t = ""
+    i = 0
+    while i < n {
+        t.append(char(i mod 256))
+        i = i + 1
+    }
+    ok = file.writeText("smokebig.dat", t)
+    smokeCheck(ok, "file writeText >cap ok")
+
+    ok = file.readText("smokebig.dat", t2)
+    smokeCheck(ok, "file readText >cap ok")
+
+    pass = true
+    if t2.length != n { pass = false }
+    if t2[0] != char(0) { pass = false }
+    if t2[n - 1] != char((n - 1) mod 256) { pass = false }
+    if t2[32767] != char(32767 mod 256) { pass = false }
+    if t2[32768] != char(32768 mod 256) { pass = false }
+    smokeCheck(pass, "file readText >cap content matches")
+}
+
 on App.launch {
     var p: smokePoint = new smokePoint
     var q: smokePoint
@@ -423,6 +461,7 @@ on App.launch {
     smokeNested()
     smokeAliasing()
     smokeFiles()
+    smokeFilesBig()
 
     alert("smoke done")
     quit 0
