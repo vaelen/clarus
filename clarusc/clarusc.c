@@ -42522,6 +42522,7 @@ static void clar_fn_cgDefaultInitStrAt(int32_t cv_reg, int32_t cv_off, int32_t c
         rt_log((const uint8_t*)&(clar_lit_1515));
         rt_quit((int32_t)(1));
     }
+    clar_fn_a68Emit(0, 4, 2, 1, 0, 5, 7, 0);
     clar_fn_a68Emit(2, 0, 6, cv_reg, cv_off, 2, 0, 0);
     clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(0, 4, 8, 0, clar_fn_irtN(cv_t), 5, 7, 0);
@@ -42529,6 +42530,7 @@ static void clar_fn_cgDefaultInitStrAt(int32_t cv_reg, int32_t cv_off, int32_t c
     clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(29, 0, 0, 0, 0, 7, 0, (*(int32_t*)rt_list_at(cv_cgFuncLabels, (int32_t)(cv_fi))));
     clar_fn_cgCleanupStack(12);
+    clar_fn_a68Emit(1, 4, 4, 7, 0, 2, 1, 0);
 }
 
 static void clar_fn_cgWalkStashBase(int32_t cv_reg) {
@@ -42643,10 +42645,12 @@ static void clar_fn_cgEmitPtrRcCall(clar_str_255 cv_fnName, int32_t cv_reg, int3
         rt_log((const uint8_t*)&(t2));
         rt_quit((int32_t)(1));
     }
+    clar_fn_a68Emit(0, 4, 2, 1, 0, 5, 7, 0);
     clar_fn_a68Emit(0, 4, 6, cv_reg, cv_off, 1, 0, 0);
     clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(29, 0, 0, 0, 0, 7, 0, (*(int32_t*)rt_list_at(cv_cgFuncLabels, (int32_t)(cv_fi))));
     clar_fn_cgCleanupStack(4);
+    clar_fn_a68Emit(1, 4, 4, 7, 0, 2, 1, 0);
 }
 
 static void clar_fn_cgEmitRecWalkCall(int32_t cv_isRetain, int32_t cv_reg, int32_t cv_off, int32_t cv_recNameIdx) {
@@ -42671,10 +42675,12 @@ static void clar_fn_cgEmitRecWalkCall(int32_t cv_isRetain, int32_t cv_reg, int32
     } else {
         cv_lbl = (*(int32_t*)rt_list_at(cv_cgRecReleaseLbls, (int32_t)(cv_ri)));
     }
+    clar_fn_a68Emit(0, 4, 2, 1, 0, 5, 7, 0);
     clar_fn_a68Emit(2, 0, 6, cv_reg, cv_off, 2, 0, 0);
     clar_fn_a68Emit(0, 4, 2, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(29, 0, 0, 0, 0, 7, 0, cv_lbl);
     clar_fn_cgCleanupStack(4);
+    clar_fn_a68Emit(1, 4, 4, 7, 0, 2, 1, 0);
 }
 
 static void clar_fn_cgRetainAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t) {
