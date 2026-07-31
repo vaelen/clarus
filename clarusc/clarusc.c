@@ -49591,41 +49591,37 @@ static int32_t clar_fn_cg68Program(clar_str_255 cv_outPath, int32_t cv_listing, 
         rt_text * t13 = NULL;
         t13 = clar_fn_a68Bytes();
         rt_text * t14 = NULL;
-        t14 = (rt_text *)clar_fn_rtTextNew();
-        clar_fn_rtTextConcat((void*)t14, (void*)t13, (void*)(const uint8_t*)&(clar_lit_17), (void*)0);
-        rt_text * t15 = NULL;
-        t15 = t14;
-        clar_fn_rtListPush((void*)cv_segBytes, (void*)&(t15));
-        clar_fn_rtTextRelease(t13);
+        t14 = t13;
+        clar_fn_rtListPush((void*)cv_segBytes, (void*)&(t14));
         if (cv_listing) {
+            clar_str_255 t15;
+            t15 = clar_fn_numToStr(cv_s);
+            clar_fn_rtStrStore((void*)&(cv_segNumStr), 255, (void*)(const uint8_t*)&(t15));
             clar_str_255 t16;
-            t16 = clar_fn_numToStr(cv_s);
-            clar_fn_rtStrStore((void*)&(cv_segNumStr), 255, (void*)(const uint8_t*)&(t16));
+            clar_fn_rtStrConcat((void*)&t16, (void*)(const uint8_t*)&(cv_base), (void*)(const uint8_t*)&(clar_lit_1610));
             clar_str_255 t17;
-            clar_fn_rtStrConcat((void*)&t17, (void*)(const uint8_t*)&(cv_base), (void*)(const uint8_t*)&(clar_lit_1610));
+            clar_fn_rtStrConcat((void*)&t17, (void*)(const uint8_t*)&(t16), (void*)(const uint8_t*)&(cv_segNumStr));
             clar_str_255 t18;
-            clar_fn_rtStrConcat((void*)&t18, (void*)(const uint8_t*)&(t17), (void*)(const uint8_t*)&(cv_segNumStr));
-            clar_str_255 t19;
-            clar_fn_rtStrConcat((void*)&t19, (void*)(const uint8_t*)&(t18), (void*)(const uint8_t*)&(clar_lit_1611));
-            rt_text * t20 = NULL;
-            t20 = clar_fn_a68ListingText();
-            int32_t t21;
-            t21 = !(rt_file_write_text((const uint8_t*)&(t19), t20));
-            clar_fn_rtTextRelease(t20);
-            if (t21) {
+            clar_fn_rtStrConcat((void*)&t18, (void*)(const uint8_t*)&(t17), (void*)(const uint8_t*)&(clar_lit_1611));
+            rt_text * t19 = NULL;
+            t19 = clar_fn_a68ListingText();
+            int32_t t20;
+            t20 = !(rt_file_write_text((const uint8_t*)&(t18), t19));
+            clar_fn_rtTextRelease(t19);
+            if (t20) {
+                clar_str_255 t21;
+                clar_fn_rtStrConcat((void*)&t21, (void*)(const uint8_t*)&(clar_lit_1605), (void*)(const uint8_t*)&(cv_base));
                 clar_str_255 t22;
-                clar_fn_rtStrConcat((void*)&t22, (void*)(const uint8_t*)&(clar_lit_1605), (void*)(const uint8_t*)&(cv_base));
+                clar_fn_rtStrConcat((void*)&t22, (void*)(const uint8_t*)&(t21), (void*)(const uint8_t*)&(clar_lit_1610));
                 clar_str_255 t23;
-                clar_fn_rtStrConcat((void*)&t23, (void*)(const uint8_t*)&(t22), (void*)(const uint8_t*)&(clar_lit_1610));
+                clar_fn_rtStrConcat((void*)&t23, (void*)(const uint8_t*)&(t22), (void*)(const uint8_t*)&(cv_segNumStr));
                 clar_str_255 t24;
-                clar_fn_rtStrConcat((void*)&t24, (void*)(const uint8_t*)&(t23), (void*)(const uint8_t*)&(cv_segNumStr));
+                clar_fn_rtStrConcat((void*)&t24, (void*)(const uint8_t*)&(t23), (void*)(const uint8_t*)&(clar_lit_1612));
                 clar_str_255 t25;
-                clar_fn_rtStrConcat((void*)&t25, (void*)(const uint8_t*)&(t24), (void*)(const uint8_t*)&(clar_lit_1612));
+                rt_str_store((uint8_t*)&t25, 255, rt_lasterr_msg);
                 clar_str_255 t26;
-                rt_str_store((uint8_t*)&t26, 255, rt_lasterr_msg);
-                clar_str_255 t27;
-                clar_fn_rtStrConcat((void*)&t27, (void*)(const uint8_t*)&(t25), (void*)(const uint8_t*)&(t26));
-                rt_log((const uint8_t*)&(t27));
+                clar_fn_rtStrConcat((void*)&t26, (void*)(const uint8_t*)&(t24), (void*)(const uint8_t*)&(t25));
+                rt_log((const uint8_t*)&(t26));
                 cv___ret54 = 0;
                     clar_fn_rtListRelease((void*)cv_jtEntries);
 
@@ -49636,31 +49632,31 @@ static int32_t clar_fn_cg68Program(clar_str_255 cv_outPath, int32_t cv_listing, 
 
                 return cv___ret54;
             }
+            clar_str_255 t27;
+            clar_fn_rtStrConcat((void*)&t27, (void*)(const uint8_t*)&(cv_base), (void*)(const uint8_t*)&(clar_lit_1610));
             clar_str_255 t28;
-            clar_fn_rtStrConcat((void*)&t28, (void*)(const uint8_t*)&(cv_base), (void*)(const uint8_t*)&(clar_lit_1610));
+            clar_fn_rtStrConcat((void*)&t28, (void*)(const uint8_t*)&(t27), (void*)(const uint8_t*)&(cv_segNumStr));
             clar_str_255 t29;
-            clar_fn_rtStrConcat((void*)&t29, (void*)(const uint8_t*)&(t28), (void*)(const uint8_t*)&(cv_segNumStr));
-            clar_str_255 t30;
-            clar_fn_rtStrConcat((void*)&t30, (void*)(const uint8_t*)&(t29), (void*)(const uint8_t*)&(clar_lit_1613));
-            rt_text * t31 = NULL;
-            t31 = clar_fn_a68Bytes();
-            int32_t t32;
-            t32 = !(rt_file_write_text((const uint8_t*)&(t30), t31));
-            clar_fn_rtTextRelease(t31);
-            if (t32) {
+            clar_fn_rtStrConcat((void*)&t29, (void*)(const uint8_t*)&(t28), (void*)(const uint8_t*)&(clar_lit_1613));
+            rt_text * t30 = NULL;
+            t30 = clar_fn_a68Bytes();
+            int32_t t31;
+            t31 = !(rt_file_write_text((const uint8_t*)&(t29), t30));
+            clar_fn_rtTextRelease(t30);
+            if (t31) {
+                clar_str_255 t32;
+                clar_fn_rtStrConcat((void*)&t32, (void*)(const uint8_t*)&(clar_lit_1605), (void*)(const uint8_t*)&(cv_base));
                 clar_str_255 t33;
-                clar_fn_rtStrConcat((void*)&t33, (void*)(const uint8_t*)&(clar_lit_1605), (void*)(const uint8_t*)&(cv_base));
+                clar_fn_rtStrConcat((void*)&t33, (void*)(const uint8_t*)&(t32), (void*)(const uint8_t*)&(clar_lit_1610));
                 clar_str_255 t34;
-                clar_fn_rtStrConcat((void*)&t34, (void*)(const uint8_t*)&(t33), (void*)(const uint8_t*)&(clar_lit_1610));
+                clar_fn_rtStrConcat((void*)&t34, (void*)(const uint8_t*)&(t33), (void*)(const uint8_t*)&(cv_segNumStr));
                 clar_str_255 t35;
-                clar_fn_rtStrConcat((void*)&t35, (void*)(const uint8_t*)&(t34), (void*)(const uint8_t*)&(cv_segNumStr));
+                clar_fn_rtStrConcat((void*)&t35, (void*)(const uint8_t*)&(t34), (void*)(const uint8_t*)&(clar_lit_1614));
                 clar_str_255 t36;
-                clar_fn_rtStrConcat((void*)&t36, (void*)(const uint8_t*)&(t35), (void*)(const uint8_t*)&(clar_lit_1614));
+                rt_str_store((uint8_t*)&t36, 255, rt_lasterr_msg);
                 clar_str_255 t37;
-                rt_str_store((uint8_t*)&t37, 255, rt_lasterr_msg);
-                clar_str_255 t38;
-                clar_fn_rtStrConcat((void*)&t38, (void*)(const uint8_t*)&(t36), (void*)(const uint8_t*)&(t37));
-                rt_log((const uint8_t*)&(t38));
+                clar_fn_rtStrConcat((void*)&t37, (void*)(const uint8_t*)&(t35), (void*)(const uint8_t*)&(t36));
+                rt_log((const uint8_t*)&(t37));
                 cv___ret54 = 0;
                     clar_fn_rtListRelease((void*)cv_jtEntries);
 
