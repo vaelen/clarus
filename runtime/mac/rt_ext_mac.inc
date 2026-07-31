@@ -96,6 +96,23 @@ void rt_ext_CorePanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 
+/* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
+ * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
+ * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic
+ * just above (mirrors internal/build/rt/rt_ext_host.inc exactly); core.cla's
+ * rtSetLastErr forwards here so lastError storage is platform-owned again
+ * (rt_lasterr_code/rt_lasterr_msg, rt_core.inc), not a separate Clarus-side
+ * global pair -- this is what makes runtime/mac/rt_ui.c's TextEdit >32k
+ * clamp (which calls rt_set_lasterr directly from inside the event loop)
+ * visible to a subsequent `lastError` read again. */
+void rt_ext_CoreSetLastErr(int32_t code, const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_set_lasterr(code, buf);
+}
+
 /* rt_ext_StrBlockMoveData: str.cla's own extern name (Plan 5b Task 8),
  * same reasoning as the host .inc -- str.cla is unconditional, so it
  * can't share a name with the generic waist extern a user program might

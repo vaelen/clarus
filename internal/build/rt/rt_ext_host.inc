@@ -112,6 +112,20 @@ void rt_ext_CorePanic(const uint8_t *msg) {
     rt_panic(buf);
 }
 
+/* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
+ * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
+ * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic
+ * just above; core.cla's rtSetLastErr forwards here so lastError storage
+ * is platform-owned again (rt_lasterr_code/rt_lasterr_msg, rt_core.inc),
+ * not a separate Clarus-side global pair. */
+void rt_ext_CoreSetLastErr(int32_t code, const uint8_t *msg) {
+    char buf[256];
+    uint8_t n = msg[0];
+    memmove(buf, msg + 1, (size_t)n);
+    buf[n] = '\0';
+    rt_set_lasterr(code, buf);
+}
+
 /* rt_ext_StrBlockMoveData: str.cla's own extern name (Plan 5b Task 8),
  * same reasoning as rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto
  * above -- str.cla is UNCONDITIONALLY included in every emitted program,

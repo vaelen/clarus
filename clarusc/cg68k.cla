@@ -2119,6 +2119,26 @@ func cgIntr(e: int) {
         cgIntrPoke(e, nm)
         return
     }
+    // Task 12.5 (lastError storage-inversion fix): "lasterr_code" is the
+    // only lastError-family intrinsic that returns a scalar (int) and so
+    // is reachable from THIS (value-context) dispatch -- a zero-arg
+    // cgCallRuntime call, same shape as str_cmp's own call just above
+    // minus the arg pushes. "lasterr_msg" (str-returning) is wired at
+    // cgEmitStoreStr/cgEmitReturnStr instead, mirroring "str_concat"'s own
+    // split; "lasterr_value" (the whole Err record) has no record-value
+    // intrinsic dispatch point in this backend yet (cgEmitStoreRec/
+    // cgEmitReturnRec have no EIntr arm at all) -- it degrades through
+    // cgExprAddr's existing generic "TODO cgExprAddr <kind>" placeholder,
+    // same as every other not-yet-wired record-valued source; not
+    // exercised by any fixture this task adds.
+    if nm == "lasterr_code" {
+        args = cgFreshIntList()
+        addrs = cgFreshBoolList()
+        if not cgCallRuntime("natLastErrCode", args, addrs) {
+            quit 1
+        }
+        return
+    }
     a68Comment("TODO intr " + nm + ": unsupported this task")
     a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
 }
@@ -2701,6 +2721,22 @@ func cgEmitStoreStr(dst: int, src: int) {
             a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
             return
         }
+        if nm == "lasterr_msg" {
+            // Task 12.5: natLastErrMsg() -> dst, a zero-arg hidden-result-
+            // pointer call -- the same shape cgCallFnInto uses for a
+            // zero-arg user function, hand-emitted here since src is an
+            // EIntr node, not the ECallFn shape cgCallFnInto expects.
+            fi = findIRFuncIdxByName(intern("natLastErrMsg"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: natLastErrMsg not found/reachable")
+                quit 1
+            }
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(4)
+            return
+        }
         a68Comment("TODO SStoreStr <- intrinsic " + nm + ": unsupported this task")
         return
     }
@@ -2762,6 +2798,21 @@ func cgEmitReturnStr(src: int) {
             a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
             cgCleanupStack(12)
             a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
+            return
+        }
+        if nm == "lasterr_msg" {
+            // Task 12.5: mirrors cgEmitStoreStr's own "lasterr_msg" arm --
+            // the destination is the hidden pointer's VALUE at 8(A6),
+            // pushed directly (not LEA'd), same convention this
+            // function's own generic tail below already uses.
+            fi = findIRFuncIdxByName(intern("natLastErrMsg"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: natLastErrMsg not found/reachable")
+                quit 1
+            }
+            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(4)
             return
         }
         a68Comment("TODO return <- intrinsic " + nm + ": unsupported this task")

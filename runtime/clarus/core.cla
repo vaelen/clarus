@@ -24,19 +24,23 @@
 // cpListPorted/cpMapPorted established -- every emitted program includes
 // core.cla now, since str/text/list/map/ser all depend on it.
 //
-// lastError coherence (see this task's own report for the full audit
-// table): rtSetLastErr/rtLastErrCode/rtLastErrMsg below read/write a
-// PLAIN CLARUS GLOBAL PAIR (lasterrCode/lasterrMsg), an entirely separate
-// storage location from rt_core.inc's C-side rt_lasterr_code/
-// rt_lasterr_msg globals (still written by the file-I/O C functions
-// cprint.cla's IFileReadText/IFileWriteText/IFileName arms call, which
-// stay C -- Ch12 file I/O is not part of this task's port). Once
-// cpCorePorted redirects ILastErrCode/ILastErrMsg/ILastErr to read THESE
-// globals instead of the raw C ones, cprint.cla's file-I/O arms grow a
-// post-call fixup (under cpCorePorted) that copies the C globals' current
-// value into these Clarus globals via rtSetLastErr immediately after
-// every still-C call that can set lastError -- see cprint.cla's
-// IFileReadText/IFileWriteText/IFileName arms for the exact mechanism.
+// lastError coherence (Plan native-5d Task 12.5, storage-inversion fix):
+// an earlier version of this file (Task 3) held lastError in a plain
+// Clarus global pair here, with cprint.cla redirecting ILastErrCode/
+// ILastErrMsg/ILastErr to read them and a post-call fixup syncing the
+// still-C file-I/O writers' rt_lasterr_code/rt_lasterr_msg into them.
+// That broke: runtime/mac/rt_ui.c's TextEdit >32k clamp calls
+// rt_set_lasterr from INSIDE the native event loop, with no emitted call
+// site for any fixup to run at, so a program reading lastError after a
+// UI-triggered truncation saw stale Clarus state
+// (TestTextwidgetsUIScenario's "trunc32001" snap). lastError storage is
+// platform-owned again: rtSetLastErr below is a thin wrapper over the
+// waist (CoreSetLastErr, host shim -> rt_set_lasterr; native resolution
+// via nat_CoreSetLastErr), and rtLastErrCode/rtLastErrMsg are GONE --
+// cprint.cla's ILastErrCode/ILastErrMsg/ILastErr arms read rt_lasterr_code/
+// rt_lasterr_msg directly again, the single source of truth every writer
+// (Clarus-side rtSetLastErr AND the still-C file-I/O primitives) now
+// shares unconditionally, no sync step needed.
 
 external func CorePanic(msg: string)
 
@@ -52,31 +56,18 @@ external func CorePanic(msg: string)
 // it purely by name at codegen time (cgCallExtNatFallback), not by
 // declare-before-use.
 
-var lasterrCode: int
-var lasterrMsg: string
+// CoreSetLastErr: the waist call rtSetLastErr forwards to -- host shim
+// rt_ext_CoreSetLastErr (rt_ext_host.inc/rt_ext_mac.inc) marshals msg
+// (Str255) into a NUL-terminated C string and calls rt_set_lasterr
+// directly, same shape as the pre-Task-3 rt_ext_StrSetLastErr shim; native
+// resolution is nat_CoreSetLastErr (native.cla), the clause-less extern's
+// nat_ fallback (cgCallExtNatFallback).
+external func CoreSetLastErr(code: int, msg: string)
 
-// rtSetLastErr (rt_core.inc:19-27): the C original takes a NUL-terminated
-// C string and clamps it to 255 bytes by hand; msg here is ALREADY a
-// string(255) value -- the type itself guarantees the <=255-byte, Pascal-
-// counted shape rt_lasterr_msg's own hand-rolled clamp produced, so the
-// clamp step collapses to a plain by-value store (Ch3's "Assignment...
-// copy by value for ... string(n)" rule).
+// rtSetLastErr (rt_core.inc:19-27): thin wrapper over the waist -- no
+// Clarus-side storage of its own (see this file's header for why).
 func rtSetLastErr(code: int, msg: string) {
-    lasterrCode = code
-    lasterrMsg = msg
-}
-
-// rtLastErrCode/rtLastErrMsg: the `lastError` builtin's two field reads
-// (Ch12) -- cprint.cla's ILastErrCode/ILastErrMsg/ILastErr arms redirect
-// to these under cpCorePorted (materializing ILastErr's whole {code,
-// message} record from the pair, same as the frozen C path's own
-// rt_lasterr_code / rt_str_store(..., rt_lasterr_msg) pair did).
-func rtLastErrCode(): int {
-    return lasterrCode
-}
-
-func rtLastErrMsg(): string {
-    return lasterrMsg
+    CoreSetLastErr(code, msg)
 }
 
 // rtPanic: the shared panic seam every check/bounds function below (and

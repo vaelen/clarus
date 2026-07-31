@@ -18,6 +18,11 @@
 //   - nat_CorePanic is core.cla's CorePanic extern's nat_ fallback
 //     (cgCallExtNatFallback, Task 9) -- its signature is FIXED by that
 //     existing codegen path (msg: string, BY VALUE) and must not change.
+//   - nat_CoreSetLastErr (Task 12.5) is core.cla's CoreSetLastErr extern's
+//     own nat_ fallback, same str-BY-VALUE shape as nat_CorePanic.
+//     natLastErrCode/natLastErrMsg are the read side -- JSR'd directly
+//     from cg68k.cla's ILastErrCode/ILastErrMsg intrinsic arms
+//     (cgCallRuntime), same convention as natInit/natAlert/natLog/natQuit.
 //
 // That freedom is what lets natInit/natAlert/natLog take a raw `ptr`
 // argument (byte-level, str.cla-style) instead of a `string`: cg68k.cla's
@@ -398,6 +403,38 @@ func nat_CorePanic(msg: string) {
     full = "runtime error: " + msg
     log(full)
     natQuit(3)
+}
+
+// natErrCode/natErrMsg: native lastError storage (Plan native-5d Task
+// 12.5, storage-inversion fix) -- the platform-owned counterpart of the
+// host build's rt_lasterr_code/rt_lasterr_msg (rt_core.inc), since a
+// native build has no C runtime under it to own that state instead.
+var natErrCode: int
+var natErrMsg: string
+
+// nat_CoreSetLastErr is core.cla's `external func CoreSetLastErr(code:
+// int, msg: string)`'s nat_ fallback (cgCallExtNatFallback) -- signature
+// fixed by that existing codegen path, same str-BY-VALUE shape
+// nat_CorePanic already uses just above (cgCallExtNatFallback's own doc
+// comment: a clause-less extern's nat_ fallback is an ORDINARY Clarus
+// function, str args block-copied by the same cgPushArgs path any other
+// Clarus call uses -- NOT the ptr-by-address convention natAlert/natLog
+// use, which is specific to their own cgCallRuntime call sites). A plain
+// by-value store, mirroring core.cla's own former rtSetLastErr body.
+func nat_CoreSetLastErr(code: int, msg: string) {
+    natErrCode = code
+    natErrMsg = msg
+}
+
+// natLastErrCode/natLastErrMsg: the native reads of lastError -- cg68k.cla's
+// ILastErrCode/ILastErrMsg intrinsic arms call these directly (cgCallRuntime),
+// same "own prefixed name" convention as every other nat* entry point.
+func natLastErrCode(): int {
+    return natErrCode
+}
+
+func natLastErrMsg(): string {
+    return natErrMsg
 }
 
 // natArgsList mirrors rt_mac.c's rt_args_list (rt_mac.c:269-274): no

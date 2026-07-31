@@ -526,28 +526,22 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtFileSave"))
     } else if nm == IFileLoad() {
         shakeMarkAndEnqueue(intern("rtFileLoad"))
-    } else if nm == IFileReadText() or nm == IFileWriteText() {
-        // Plan native-5d Task 3: under cpCorePorted (unconditionally true),
-        // fpIntrCall's IFileReadText/IFileWriteText arms emit a post-call
-        // fpEmitCoreLastErrSync fixup that calls clar_fn_rtSetLastErr
-        // directly -- no EIntr node exists for THAT call (same shape as
-        // SStoreStr's rtStrStore/SForList's rtListCount above), so root it
-        // here explicitly. IFileName sets no lastError (rt_file_name has no
-        // failure path -- see cprint.cla's own comment there), so it needs
-        // no root.
-        shakeMarkAndEnqueue(intern("rtSetLastErr"))
+    // IFileReadText/IFileWriteText/IFileName: no root needed. Plan
+    // native-5d Task 3 briefly routed lastError through a Clarus-side
+    // global pair (rtLastErrCode/rtLastErrMsg) with a post-call
+    // fpEmitCoreLastErrSync fixup rooting rtSetLastErr here explicitly;
+    // Task 12.5 reverted lastError storage to platform-owned (see
+    // core.cla's file header) -- rtLastErrCode/rtLastErrMsg no longer
+    // exist, the fixup is gone, and ILastErrCode/ILastErrMsg/ILastErr read
+    // rt_lasterr_code/rt_lasterr_msg directly (no EIntr-shaped call, so no
+    // shake root of any kind is needed for that read path either).
+    // rtSetLastErr itself stays reachable via the ordinary call graph
+    // (str.cla/text.cla/ser.cla all call it directly).
 
-    // ---- core: lastError / fixed-point ----
+    // ---- core: fixed-point ----
     } else if nm == IFixMul() {
         shakeMarkAndEnqueue(intern("rtFixMul"))
     } else if nm == IFixDiv() {
         shakeMarkAndEnqueue(intern("rtFixDiv"))
-    } else if nm == ILastErrCode() {
-        shakeMarkAndEnqueue(intern("rtLastErrCode"))
-    } else if nm == ILastErrMsg() {
-        shakeMarkAndEnqueue(intern("rtLastErrMsg"))
-    } else if nm == ILastErr() {
-        shakeMarkAndEnqueue(intern("rtLastErrCode"))
-        shakeMarkAndEnqueue(intern("rtLastErrMsg"))
     }
 }
