@@ -111,11 +111,19 @@ const natLogCap: int = 4096
 //   PBCloseSync    Devices.h  0xA001
 //   PBFlushVolSync Files.h    0xA013
 //   PBReadSync     Devices.h  0xA002
-//   PBGetEOFSync   Files.h    0xA011
-// matching the plan brief's own trap-word table exactly (PBReadSync/
-// PBGetEOFSync verified the same way as the Task 11 six, by `strings`-ing
-// Retro68's Devices.h/Files.h directly: both carry the identical
-// `#pragma parameter __D0 PBxxxSync(__A0)` reg convention).
+//   HLock          MacMemory.h 0xA029
+//   HUnlock        MacMemory.h 0xA02A
+// matching the plan brief's own trap-word table exactly (PBReadSync
+// verified the same way as the Task 11 six, by `strings`-ing Retro68's
+// Devices.h directly: it carries the identical `#pragma parameter __D0
+// PBxxxSync(__A0)` reg convention; HLock/HUnlock take a single Handle
+// arg in A0 and return nothing, `#pragma parameter HLock(__A0)`/
+// `HUnlock(__A0)` -- no `__D0`, so plain `reg` with a void Clarus
+// return, same shape as TextBlockMoveData's own void `reg` extern).
+// PBGetEOFSync (Files.h 0xA011) was ALSO tried (its own trap word
+// verified the same way) but is NOT used here -- see natFileReadText's
+// own doc comment for why (a boot-hang root-caused to that specific
+// trap call, on real hardware, downstream of this same module).
 // NewPtrCLEAR (0xA31E -- MacMemory.h's `NewPtrClear ONEWORDINLINE(0xA31E)`,
 // Traps.h `_NewPtrClear = 0xA31E`, same `#pragma parameter __A0 (__D0)`
 // convention as plain _NewPtr), NOT plain _NewPtr (0xA11E): the PB this
@@ -138,7 +146,8 @@ external func NatSetEOF(pb: ptr): int = trap 0xA012 reg
 external func NatClose(pb: ptr): int = trap 0xA001 reg
 external func NatFlushVol(pb: ptr): int = trap 0xA013 reg
 external func NatRead(pb: ptr): int = trap 0xA002 reg
-external func NatGetEOF(pb: ptr): int = trap 0xA011 reg
+external func NatHLock(h: ptr) = trap 0xA029 reg
+external func NatHUnlock(h: ptr) = trap 0xA02A reg
 
 // _ExitToShell (Traps.h: 0xA9F4) takes no parameters and never returns --
 // Pascal convention is the natural (and, with zero args/result, the only
@@ -552,9 +561,19 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     wrote = 0
     failed = false
     if n > 0 {
-        // mp is derived AFTER rt.len/rt.h are read (no grow happens on
-        // the write side, but re-deriving right before the trap call
-        // matches text.cla's own relocation discipline exactly).
+        // HLock/HUnlock bracket the trap call (task-14 boot-hang fix,
+        // empirically root-caused: _Write can itself allocate -- a disk
+        // driver/cache buffer -- which can trigger Memory Manager
+        // compaction mid-call; an UNLOCKED rt.h is fair game to relocate
+        // during that compaction, stranding `mp` (captured before the
+        // call) as a dangling pointer the trap keeps writing FROM. Silent
+        // with nothing else live on the heap (isolated fixtures never hit
+        // it); real heap traffic (smoke.cla's own record/container
+        // section immediately before this) reproduced it as a full boot
+        // hang -- see the task-14 report). mp is (re)derived AFTER the
+        // lock, matching text.cla's re-derive-after-any-relocating-call
+        // discipline.
+        NatHLock(rt.h)
         mp = TextHandleDeref(rt.h)
         pokew(natFilePb + natIoRefNum, ref)
         pokel(natFilePb + natIoBuffer, int(mp))
@@ -562,6 +581,7 @@ func natFileWriteText(path: ptr, t: ptr): bool {
         pokew(natFilePb + natIoPosMode, natFsAtMark)
         NatWrite(natFilePb)
         wrote = peekl(natFilePb + natIoActCount)
+        NatHUnlock(rt.h)
         if peekw(natFilePb + natIoResult) != 0 {
             failed = true
         }
@@ -578,21 +598,48 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     return true
 }
 
-// natFileReadText (rt_mac.c:302-330, rt_file_read_text): open, GetEOF,
-// grow `out` to the file's size, read the whole file in one PB call
-// (skipped entirely for an empty file, matching rt_mac.c's own `eof > 0`
-// guard), close -- false + lastError(2, "could not open file"/"could not
-// read file") on any failure (including file-not-found, which fails the
-// initial Open). mp is re-derived via TextHandleDeref AFTER rtTextGrow
-// (which can move the Handle's block via SetHandleSize) rather than
-// cached from before the grow -- text.cla's own relocation discipline
-// (this file's header doc, and text.cla's), never violated here.
+// natFileReadText reads the whole file in one PB call, into a NON-
+// RELOCATABLE NEWPTR BOUNCE BUFFER (never directly into `out`'s Handle-
+// backed storage), then grows `out` and copies the bounce buffer in via
+// TextBlockMoveData -- false + lastError(2, "could not open file"/
+// "could not read file") on any failure (including file-not-found,
+// which fails the initial Open).
+//
+// Boot-hang root cause (empirically bisected on real hardware, task-14 --
+// full writeup in the task-14 report): every cut of this function that
+// called PBGetEOFSync (trap 0xA011, `NatGetEOF`) to size the read --
+// rt_mac.c's own GetEOF+FSRead approach, and this module's own first two
+// attempts (grow-and-read-in-place, then a NewPtr bounce buffer, both
+// still GetEOF-sized) -- hung the boot SOLID after smoke.cla's record/
+// container section (a heap already busy with many live List/Map/Text
+// blocks), 100% reproducibly, even with NOTHING else in the function
+// body (bisected down to a bare Open+GetEOF+Close with the read/grow/
+// copy code deleted entirely -- STILL hung; Open+Close with NO GetEOF at
+// all, otherwise identical, did not). Root cause not fully explained
+// (isolated fixtures with no prior heap traffic never reproduce it --
+// something about PBGetEOFSync's own execution and a heap this busy),
+// but the WORKAROUND is unconditional and simple: never call it. Read
+// into a bounce buffer sized to natFileReadCap (a fixed, generous
+// ceiling well beyond anything this runtime's own text-file use needs)
+// instead, and use FSRead's own ioActCount/eofErr contract (Inside
+// Macintosh: reading past logical EOF returns eofErr in ioResult but
+// still sets ioActCount to the REAL byte count) to learn the actual
+// size -- no GetEOF call anywhere in this path.
+// ponytail: a file >= natFileReadCap bytes silently truncates (ioResult
+// comes back 0, not eofErr, indistinguishable here from "the file is
+// EXACTLY natFileReadCap bytes") -- raise natFileReadCap (or revisit
+// PBGetEOFSync once its real failure mode here is understood) if a
+// program needs to read larger files.
+const natFileReadCap: int = 32768
+const natEofErr: int = 65497 // -39 (Files.h eofErr), as peekw's UNSIGNED 16-bit read sees it (peekw never sign-extends)
+
 func natFileReadText(path: ptr, out: ptr): bool {
     var rt: RtText
     var mp: ptr
     var ref: int
-    var eof: int
     var got: int
+    var code: int
+    var bounce: ptr
 
     natFileEnsurePb()
     pokel(natFilePb + natIoNamePtr, int(path))
@@ -605,45 +652,37 @@ func natFileReadText(path: ptr, out: ptr): bool {
     }
     ref = peekw(natFilePb + natIoRefNum)
 
-    pokew(natFilePb + natIoRefNum, ref)
-    NatGetEOF(natFilePb)
-    if peekw(natFilePb + natIoResult) != 0 {
-        pokew(natFilePb + natIoRefNum, ref)
-        NatClose(natFilePb)
-        rtSetLastErr(2, "could not read file")
-        return false
+    bounce = NatNewPtr(natFileReadCap)
+    if bounce == ptr(0) {
+        rtPanic("out of memory")
     }
-    eof = peekl(natFilePb + natIoMisc)
 
-    rtTextGrow(out, eof)
-    got = eof
-    if eof > 0 {
-        rt = RtText(out)
-        mp = TextHandleDeref(rt.h)
-        pokew(natFilePb + natIoRefNum, ref)
-        pokel(natFilePb + natIoBuffer, int(mp))
-        pokel(natFilePb + natIoReqCount, eof)
-        pokew(natFilePb + natIoPosMode, natFsAtMark)
-        NatRead(natFilePb)
-        got = peekl(natFilePb + natIoActCount)
-        if peekw(natFilePb + natIoResult) != 0 {
-            pokew(natFilePb + natIoRefNum, ref)
-            NatClose(natFilePb)
-            rtSetLastErr(2, "could not read file")
-            return false
-        }
-    }
+    pokew(natFilePb + natIoRefNum, ref)
+    pokel(natFilePb + natIoBuffer, int(bounce))
+    pokel(natFilePb + natIoReqCount, natFileReadCap)
+    pokew(natFilePb + natIoPosMode, natFsAtMark)
+    NatRead(natFilePb)
+    got = peekl(natFilePb + natIoActCount)
+    code = peekw(natFilePb + natIoResult)
 
     pokew(natFilePb + natIoRefNum, ref)
     NatClose(natFilePb)
 
-    if got != eof {
+    if code != 0 and code != natEofErr {
+        TextDisposePtr(bounce)
         rtSetLastErr(2, "could not read file")
         return false
     }
 
+    if got > 0 {
+        rtTextGrow(out, got)
+        rt = RtText(out)
+        mp = TextHandleDeref(rt.h)
+        TextBlockMoveData(bounce, mp, got)
+    }
+    TextDisposePtr(bounce)
     rt = RtText(out)
-    rt.len = eof
+    rt.len = got
     return true
 }
 
