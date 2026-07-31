@@ -15,14 +15,17 @@
 // toText/type-equality copies (cg68ToText/cg68TypeEqual) rather than reach
 // into cprint.cla's.
 //
-// ONE SEGMENT, REAL CONTAINER (Task 10). cg68Program's own output is a
-// single asm68k.cla stream; app68k.cla (included above) wraps it into a
-// real single-segment MacBinary application image, written to outPath by
-// cg68WriteImage -- unconditionally, whether or not --listing was passed.
-// --listing ADDITIONALLY writes <base>.seg1.s (a68ListingText()) and
-// <base>.seg1.dat (a68Bytes()), where <base> is outPath with its trailing
-// ".ext" stripped ("out.bin" -> "out") -- unchanged from Task 7, a debug
-// dump alongside the real image, not instead of it.
+// REAL MULTI-SEGMENT CONTAINER (Task 10 single-segment, Task 15
+// generalizes to N). cg68Program's own output is one asm68k.cla stream
+// PER SEGMENT (measure -> pack -> emit -- see the Task 15 section below
+// for the full design); app68k.cla (included above) wraps all of them
+// into a real MacBinary application image with one CODE resource per
+// segment, written to outPath by cg68WriteImage -- unconditionally,
+// whether or not --listing was passed. --listing ADDITIONALLY writes
+// <base>.segN.s (a68ListingText()) and <base>.segN.dat (a68Bytes()) for
+// EVERY segment N=1..cgSegCount, where <base> is outPath with its
+// trailing ".ext" stripped ("out.bin" -> "out") -- a debug dump alongside
+// the real image, not instead of it.
 //
 // LAYOUT AUTHORITY. cgSizeOf/cgAlignOf/cgFieldOffset are the ONLY place the
 // native backend decides how big a Clarus type is or where a record field
@@ -166,6 +169,11 @@ func cgFreshBoolList(): list of bool {
     return l
 }
 
+func cgFreshTextList(): list of text {
+    var l: list of text
+    return l
+}
+
 // ================================================================
 // Task 8: expression/statement codegen state.
 //
@@ -240,8 +248,133 @@ var cgMod32Lbl: int
 // sequence already emits) can JSR it too: the brief's IQuit arm is
 // "JSR cg_free_globals; push code; JSR natQuit", same cleanup-before-exit
 // order the startup sequence uses. Set once, before cgEmitFunc's own
-// function-emission loop runs (cg68Program), read here.
+// function-emission loop runs (cg68Program), read here. Task 15: this is
+// now a PER-SEGMENT label (cg_free_globals is duplicated into every
+// segment -- see the Task 15 header comment below), reassigned fresh at
+// the top of each segment's own real-emission pass.
 var cgFreeGlobalsLbl: int
+
+// ================================================================
+// Task 15: segmentation -- measure -> pack -> emit.
+//
+// THE FIXED-SIZE INVARIANT (why a two-pass measure/emit split is even
+// possible here). Every call-site instruction this backend ever emits
+// (BSR.W, JSR d16(A5), and the pre-Task-15 JSR d16(PC) form) is a
+// SINGLE-EA instruction whose one operand is a MODE-7 PC-relative-or-
+// A5-relative-displacement form -- a68InstrExtWords' own table
+// (asm68k.cla) charges every one of AmPCLabel/AmDisp16 exactly ONE
+// extension word, REGARDLESS of the actual displacement value (this
+// backend never emits a .B short branch -- "branches are .W everywhere,
+// shrinking is peephole's job later", the design spec's own words). So
+// BSR.W, JSR d16(A5), and JSR d16(PC) are ALL exactly 4 bytes (2-byte
+// opcode word + 1 extension word), unconditionally. This is what makes
+// measuring a function's SIZE possible before its final segment (and
+// therefore its final call-instruction FORM) is known: the measure pass
+// can pick ANY form at any call site -- this file always just reuses the
+// real cgCallFunc/a68EmitBr(OpBsr,...) call machinery unmodified -- and
+// the byte count it produces is IDENTICAL to whatever form the real emit
+// pass eventually chooses. The other half of the same invariant: a68's
+// own two-pass model (asm68k.cla's file header, "TWO-PASS ENCODING,
+// MERGED") only ever DEREFERENCES a label's bound address inside
+// a68Finish's encoding walk -- a68PushInstr (which every a68Emit/
+// a68EmitBr call goes through) never touches a68LabelAddr, it only
+// computes a length from op/size/mode. The measure pass below NEVER
+// calls a68Finish() (it only reads a68SizeSoFar() deltas, then discards
+// the whole stream via a68Reset()), so referencing an unbound, stale, or
+// even a different-generation label id at a measure-time call site is
+// completely safe -- there is nothing to dereference yet.
+//
+// GLUE IS DUPLICATED, NOT JT-CROSS-CALLED. cg_mul32/cg_div32/cg_mod32,
+// every record's cg_retain_<Rec>/cg_release_<Rec> walk pair, and
+// cg_free_globals are all backend-SYNTHESIZED (not irFuncs entries) --
+// rather than giving them their own jump-table slots and routing calls
+// to them through the Segment Loader (the mechanism reachable irFuncs
+// entries use, below), this backend just re-emits an identical copy of
+// all of them into EVERY segment that might need one, so a call from
+// ANY segment's own code to "the" mul32 helper (or free_globals, or a
+// given record's walk pair) is always an intra-segment BSR.W to THAT
+// segment's own local copy. This is a deliberate simplification (this
+// file's own report elaborates): these routines are small, fixed-size,
+// self-contained (mul32/div32/mod32 never call anything else at all;
+// the RC walkers and free_globals only ever call OTHER duplicated glue
+// or ordinary irFuncs runtime functions, cgCallFunc's normal case),
+// so their total footprint never grows with program size the way user
+// functions do -- duplicating a few hundred bytes of glue into each of
+// N segments is a bounded, one-time cost, and it means this file never
+// needs a second (glue-flavored) jump-table/cross-segment mechanism at
+// all. startup and cg_init_globals are the two exceptions: both run
+// EXACTLY once, always from within segment 1 itself, so they stay
+// segment-1-only, undupped, matching the plan's own "Startup function
+// stays JT slot 0 in CODE 1" requirement.
+//
+// POOL DUPLICATION POLICY. Rather than tracking, per function, exactly
+// which string-literal/enum-table pool entries it references (and
+// which segment already carries a given entry), this backend just
+// re-emits the WHOLE constant pool (cgEmitPoolsBody, unchanged) into
+// EVERY segment. Simpler and still correct (a segment's own LEA
+// d16(PC) pool reference always resolves within its own stream), at
+// the cost of some duplicated bytes when a program's pool is large
+// AND it needs several segments -- an exact per-function subset would
+// shrink that; not implemented here (see this task's own report for
+// the tradeoff spelled out in full).
+//
+// JT SLOTS ARE ASSIGNED **AFTER** PACKING, NOT BEFORE. Segment loader
+// CODE-N headers ({first JT entry offset, count}) require every segment's
+// OWN jump-table entries to be a CONTIGUOUS range -- declaration order
+// alone (the pre-Task-15 cgAssignJtSlots scheme) can't guarantee that
+// once first-fit packing is free to scatter functions across segments in
+// any order. So slot numbers are only finalized by cgAssignFinalJtSlots,
+// AFTER cgPackProgram has decided cgFuncSegment -- slot 0 is always
+// startup, then segment 1's own packed functions (declaration order),
+// then segment 2's, and so on, so every segment's own slots are exactly
+// one contiguous run.
+// ================================================================
+
+const cgSegHeaderSize: int = 4
+
+// cgSegLimit is the per-segment payload budget in bytes (CODE-N header +
+// code + that segment's own duplicated pool/glue, all counted) -- set by
+// cg68Program from its segLimit parameter (<=0 selects the real classic-
+// Mac budget, 32760, leaving 8 bytes of a 32768-byte resource under the
+// hard 32KB CODE-resource ceiling as this backend's own safety margin).
+// A test-only override (main.cla's undocumented `--seglimit N` flag)
+// lets a test FORCE a small program into several segments deterministically,
+// to prove cross-segment calls + LoadSeg actually work on real hardware
+// without needing a suite-sized fixture for every such test.
+var cgSegLimit: int
+
+// cgFuncSize[i] is irFuncs index i's own measured standalone code size in
+// bytes (cgMeasureFunc), valid only when shakeReachable(i).
+var cgFuncSize: list of int
+
+// cgFuncSegment[i] is irFuncs index i's 1-based assigned segment number
+// (cgPackProgram's own output), valid only when shakeReachable(i).
+var cgFuncSegment: list of int
+
+// cgCurFuncSegment is the segment number of whatever code unit is
+// CURRENTLY being emitted (a packed function, or 1 while emitting
+// startup/cg_init_globals/any duplicated-glue routine) -- cgCallFunc's
+// own same-segment/cross-segment decision.
+var cgCurFuncSegment: int
+
+// cgSegCount is the total number of segments cgPackProgram produced.
+var cgSegCount: int
+
+// cgSeg1ExtraSize/cgGlueBundleSize/cgPoolSize are the three fixed,
+// non-function byte costs cgPackProgram charges against segment budgets:
+// startup+cg_init_globals (segment 1 only), the duplicated-glue bundle
+// (every segment), and the full constant pool (every segment) -- all
+// three measured once by cg68Measure, by literally emitting them into a
+// throwaway stream and reading the byte delta (same technique as
+// cgFuncSize, same fixed-size invariant, never re-derived by a parallel
+// formula that could drift out of sync with the real emitter).
+var cgSeg1ExtraSize: int
+var cgGlueBundleSize: int
+var cgPoolSize: int
+
+// cgTotalJtSlots is the final jump-table entry count (cgAssignFinalJtSlots'
+// own output, 1 [startup] + one per reachable irFuncs entry).
+var cgTotalJtSlots: int
 
 // ================================================================
 // Task 12: records/enums per-cg68Program()-run module state.
@@ -678,40 +811,149 @@ func cgKindName(k: IRKind): string {
 // ================================================================
 
 // cgJtSlot answers f's (irFuncs index) JT slot -- -1 if f was never
-// reachable (cgAssignJtSlots, called once per cg68Program(), must have run
-// first).
+// reachable. Only meaningful AFTER cgAssignFinalJtSlots has run (post-
+// packing); cgEmitFunc's own frame-comment call during the MEASURE pass
+// reads whatever placeholder cg68Measure seeded cgJtSlots with (see that
+// function's own doc comment -- the printed number is discarded along
+// with the rest of the measure-pass stream, never written to a listing).
 func cgJtSlot(f: int): int {
     return cgJtSlots[f]
 }
 
-// cgAssignJtSlots walks irFuncs in declaration order, giving every
-// shakeReachable entry the next JT slot (starting at 1 -- slot 0 is
-// startup's) and reserving its a68 label right away, so any earlier-
-// emitted code (startup) can already JSR a later-emitted function by
-// label id.
-func cgAssignJtSlots() {
+// cgAssignMeasureFuncLabels gives every shakeReachable irFuncs entry a
+// FRESH a68 label -- used only by cg68Measure's own throwaway stream
+// (cgFuncLabels is rebuilt again, per real segment, by
+// cgAssignSegFuncLabels below). Declaration order, matching every other
+// "reserve before any body can reference it" pass in this file.
+func cgAssignMeasureFuncLabels() {
     var i: int
-    var slots: list of int
     var labels: list of int
-    var next: int
 
-    slots = cgFreshIntList()
     labels = cgFreshIntList()
-    next = 1
     i = 0
     while i < irFuncs.count {
         if shakeReachable(i) {
-            slots.add(next)
             labels.add(a68NewLabel())
-            next = next + 1
         } else {
-            slots.add(-1)
             labels.add(-1)
         }
         i = i + 1
     }
-    cgJtSlots = slots
     cgFuncLabels = labels
+}
+
+// cgAssignSegFuncLabels rebuilds cgFuncLabels for segment s's own real
+// emission pass: a fresh label for every reachable irFuncs entry ASSIGNED
+// to segment s (cgFuncSegment, cgPackProgram's output), -1 for every
+// other reachable entry (never dereferenced -- a call to a function in a
+// DIFFERENT segment goes through cgJtSlots/the jump table, never through
+// cgFuncLabels, so a -1 placeholder for an out-of-segment function is
+// never read).
+func cgAssignSegFuncLabels(s: int) {
+    var i: int
+    var labels: list of int
+
+    labels = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) and cgFuncSegment[i] == s {
+            labels.add(a68NewLabel())
+        } else {
+            labels.add(-1)
+        }
+        i = i + 1
+    }
+    cgFuncLabels = labels
+}
+
+// cgAssignFinalJtSlots numbers every reachable irFuncs entry's JT slot
+// AFTER packing (cgFuncSegment must already be set) -- slot 0 is
+// startup's; then segment 1's own packed functions (declaration order),
+// then segment 2's, and so on, so each segment's own slot range is
+// CONTIGUOUS (the CODE-N {firstEntryOffset, count} header's own
+// requirement -- see this section's header comment). cgSegJtFirst[s-1]/
+// cgSegJtCount[s-1] record each segment's own contiguous range for that
+// header; cgTotalJtSlots is the grand total (1 + every reachable
+// function).
+var cgSegJtFirst: list of int
+var cgSegJtCount: list of int
+
+func cgAssignFinalJtSlots() {
+    var slots: list of int
+    var next: int
+    var s: int
+    var i: int
+    var firstThis: int
+    var countThis: int
+    var segFirst: list of int
+    var segCount: list of int
+
+    slots = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        slots.add(-1)
+        i = i + 1
+    }
+
+    segFirst = cgFreshIntList()
+    segCount = cgFreshIntList()
+    next = 0
+    s = 1
+    while s <= cgSegCount {
+        firstThis = next
+        countThis = 0
+        if s == 1 {
+            next = next + 1
+            countThis = countThis + 1
+        }
+        i = 0
+        while i < irFuncs.count {
+            if shakeReachable(i) and cgFuncSegment[i] == s {
+                slots[i] = next
+                next = next + 1
+                countThis = countThis + 1
+            }
+            i = i + 1
+        }
+        segFirst.add(firstThis)
+        segCount.add(countThis)
+        s = s + 1
+    }
+
+    cgJtSlots = slots
+    cgSegJtFirst = segFirst
+    cgSegJtCount = segCount
+    cgTotalJtSlots = next
+}
+
+// cgJtDisp is the byte displacement from A5 of jump-table slot's own
+// entry (the JT itself starts 32 bytes above A5, per app68k.cla's own
+// CODE 0 layout; each entry is 8 bytes) -- a cross-segment call target.
+func cgJtDisp(slot: int): int {
+    return 32 + slot * 8
+}
+
+// cgCallFunc emits a call to reachable irFuncs index fi: a direct BSR.W
+// (4 bytes, PC-relative -- valid because caller and callee code live in
+// the SAME CODE resource, so their relative distance never changes no
+// matter where the Segment Loader ends up placing that resource in
+// memory) when fi's own assigned segment (cgFuncSegment, cgPackProgram's
+// output) is the SAME as the segment currently being emitted
+// (cgCurFuncSegment); a JSR through the jump table (JSR d16(A5) to fi's
+// own JT slot, cgJtSlots/cgAssignFinalJtSlots) otherwise -- two
+// independently `_LoadSeg`-loaded segments have no fixed relative
+// offset to each other, so only the A5-relative jump table (fixed for
+// the whole app's lifetime) can resolve a cross-segment call. See this
+// section's own "FIXED-SIZE INVARIANT" header comment for why the
+// MEASURE pass can call this exact function, unmodified, and get a
+// correctly-sized (if not yet semantically final) result even though
+// cgFuncSegment/cgCurFuncSegment haven't been assigned real values yet.
+func cgCallFunc(fi: int) {
+    if cgFuncSegment[fi] == cgCurFuncSegment {
+        a68EmitBr(OpBsr, 0, cgFuncLabels[fi])
+    } else {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmDisp16, 5, cgJtDisp(cgJtSlots[fi]))
+    }
 }
 
 // ================================================================
@@ -774,7 +1016,7 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
         a68Comment(name + " not found -- startup handler wiring incomplete")
         return
     }
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
 }
 
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
@@ -827,7 +1069,7 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // Task 12: cg_init_globals runs BEFORE natInit -- see this function's
     // own doc comment above for why the Task 11 order (natInit first) is
     // no longer safe now that cg_init_globals has a real body.
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, initGlobalsLbl)
+    a68EmitBr(OpBsr, 0, initGlobalsLbl)
 
     // natInit opens the `out` capture file -- same "by-name via JT,
     // comment if absent" contract as natQuit's own tail call below, so a
@@ -836,7 +1078,7 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // all) degrades to a comment instead of an unresolved JSR.
     qi = findIRFuncIdxByName(intern("natInit"))
     if qi != -1 and shakeReachable(qi) {
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[qi])
+        cgCallFunc(qi)
     } else {
         a68Comment("natInit not present -- wired in Task 11")
     }
@@ -847,12 +1089,12 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
     cgEmitStartupCallIfPresent("handler_App_openDocument", irHasOpenDocument)
 
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, freeGlobalsLbl)
+    a68EmitBr(OpBsr, 0, freeGlobalsLbl)
     a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
 
     qi = findIRFuncIdxByName(intern("natQuit"))
     if qi != -1 and shakeReachable(qi) {
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[qi])
+        cgCallFunc(qi)
     } else {
         a68Comment("natQuit not present -- wired in Task 11")
     }
@@ -953,7 +1195,7 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
     a68Emit(OpMove, 4, AmImm, 0, irtN(t), AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(strDefaultIdx), AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1153,7 +1395,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
         log("cg68k: rtTextNew not found/reachable")
         quit 1
     }
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[newFi])
+    cgCallFunc(newFi)
     cgStoreD0At(reg, off, irPtrT)
     if strDefaultIdx == -1 {
         return
@@ -1168,7 +1410,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(strDefaultIdx), AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[storeFi])
+    cgCallFunc(storeFi)
     cgCleanupStack(8)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1188,7 +1430,7 @@ func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) 
         quit 1
     }
     a68Emit(OpMove, 4, AmImm, 0, sizeArg, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(4)
     cgStoreD0At(reg, off, irPtrT)
 }
@@ -1215,7 +1457,7 @@ func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(4)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1252,7 +1494,7 @@ func cgEmitRecWalkCall(isRetain: bool, reg: int, off: int, recNameIdx: int) {
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, lbl)
+    a68EmitBr(OpBsr, 0, lbl)
     cgCleanupStack(4)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1555,13 +1797,13 @@ func cgEmitPanic(msgLitIdx: int) {
     a68Emit(OpMove, 4, AmImm, 0, 255, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(msgLitIdx), AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[storeFi])
+    cgCallFunc(storeFi)
     cgCleanupStack(12)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 0, 0)
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
     cgBlockCopy(256)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[panicFi])
+    cgCallFunc(panicFi)
 }
 
 // cgAllocTmpOff reserves the next free statement-temp slot (this
@@ -1725,7 +1967,7 @@ func cgEmitAtCall(fnName: string, ptrOff: int, idxOff: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(8)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1772,7 +2014,7 @@ func cgEmitMapValAtCall(ptrOff: int, idxOff: int, valOff: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, valOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
@@ -1955,7 +2197,7 @@ func cgEmitEnumCheckCall() {
     a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(4 + 2 + 256)
 }
 
@@ -2577,7 +2819,7 @@ func cgArrElemAddr(e: int, xt: int) {
     }
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
     a68Emit(OpMove, 4, AmImm, 0, cgSlotSizeOf(elemT), AmDn, 0, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+    a68EmitBr(OpBsr, 0, cgMul32Label())
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
     a68Emit(OpAdda, 4, AmDn, 0, 0, AmAn, 1, 0)
     a68Emit(OpMovea, 4, AmAn, 1, 0, AmAn, 0, 0)
@@ -2638,7 +2880,7 @@ func cgListAddrFromRegs() {
 
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
     a68Emit(OpMove, 4, AmDisp16, 0, 8, AmDn, 0, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+    a68EmitBr(OpBsr, 0, cgMul32Label())
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 2, 0)
     a68Emit(OpMovea, 4, AmDisp16, 0, 4, AmAn, 1, 0)
     a68Emit(OpMovea, 4, AmInd, 1, 0, AmAn, 0, 0)
@@ -2837,11 +3079,11 @@ func cgEmitStoreErr(dst: int, src: int) {
         }
         cgExprAddr(dst)
         a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[codeFi])
+        cgCallFunc(codeFi)
         cgStoreD0At(1, 0, irIntT)
         a68Emit(OpLea, 0, AmDisp16, 1, cgErrMsgOff(), AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[msgFi])
+        cgCallFunc(msgFi)
         cgCleanupStack(4)
         return
     }
@@ -2977,11 +3219,11 @@ func cgArith(e: int, op: string) {
         a68Emit(OpAsr, 4, AmDn, 0, 0, AmDn, 1, 0)
         a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
     } else if op == "*" {
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMul32Label())
+        a68EmitBr(OpBsr, 0, cgMul32Label())
     } else if op == "/" {
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgDiv32Label())
+        a68EmitBr(OpBsr, 0, cgDiv32Label())
     } else if op == "mod" {
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgMod32Label())
+        a68EmitBr(OpBsr, 0, cgMod32Label())
     } else {
         a68Comment("TODO EBin op " + op + ": unsupported this task")
     }
@@ -4018,7 +4260,7 @@ func cgIntr(e: int) {
     }
     if nm == "quit" {
         a0e = irIntrArgsHead(e)
-        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFreeGlobalsLbl)
+        a68EmitBr(OpBsr, 0, cgFreeGlobalsLbl)
         args = cgFreshIntList()
         args.add(a0e)
         addrs = cgFreshBoolList()
@@ -4559,7 +4801,7 @@ func cgMaterializeCallResult(a: int) {
     }
     total = cgPushArgs(irCallFnArgsHead(a))
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(total + 4)
 }
 
@@ -4582,7 +4824,7 @@ func cgMaterializeStrCoerce(a: int, t: int) {
     a68Emit(OpMove, 4, AmImm, 0, irtN(t), AmPreDec, 7, 0)
     cgExprAddr(innerX)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
 }
 
@@ -4604,7 +4846,7 @@ func cgCallFnScalar(e: int) {
         quit 1
     }
     total = cgPushArgs(irCallFnArgsHead(e))
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(total)
 }
 
@@ -4625,7 +4867,7 @@ func cgCallFnInto(e: int, dst: int) {
     cgExprAddr(dst)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     total = total + 4
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(total)
 }
 
@@ -4660,7 +4902,7 @@ func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of boo
         total = total + 4
         i = i + 1
     }
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(total)
     return true
 }
@@ -4883,7 +5125,7 @@ func cgCallExtNatFallback(e: int) {
         quit 1
     }
     total = cgPushArgs(irCallExtArgsHead(e))
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(total)
 }
 
@@ -4982,7 +5224,7 @@ func cgStrBuilderIntoTemp(fnName: string, argExprs: list of int, argIsAddr: list
         }
         i = i + 1
     }
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(4 + argExprs.count * 4)
 }
 
@@ -5013,7 +5255,7 @@ func cgFlushA1TempToDst(dst: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
     a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
 }
@@ -5036,7 +5278,7 @@ func cgFlushA1TempToRetPtr() {
     a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
     a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
 }
@@ -5142,7 +5384,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             }
             cgExprAddr(dst)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCallFunc(fi)
             cgCleanupStack(4)
             return
         }
@@ -5167,7 +5409,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             cgExprAddr(a0e)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCallFunc(fi)
             cgCleanupStack(8)
             return
         }
@@ -5328,7 +5570,7 @@ func cgEmitReturnStr(src: int) {
                 quit 1
             }
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCallFunc(fi)
             cgCleanupStack(4)
             return
         }
@@ -5348,7 +5590,7 @@ func cgEmitReturnStr(src: int) {
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
             cgExprAddr(a0e)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCallFunc(fi)
             cgCleanupStack(8)
             return
         }
@@ -5379,7 +5621,7 @@ func cgEmitReturnStr(src: int) {
     a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
     cgExprAddr(src)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
     cgCleanupStack(12)
 }
 
@@ -5529,7 +5771,7 @@ func cgJsrByName(fnName: string) {
         log("cg68k: " + fnName + " not found/reachable")
         quit 1
     }
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCallFunc(fi)
 }
 
 // cgMapReleaseGuard mirrors fpMapReleaseGuard (cprint.cla:1393-1422)
@@ -6165,8 +6407,28 @@ func cgEmitPoolsBody() {
 // Top level
 // ================================================================
 
+// cgParseDecimal parses a plain non-negative decimal literal (main.cla's
+// `--seglimit N` test-only flag is this function's only caller -- no
+// sign, no whitespace, no error reporting beyond silently ignoring any
+// non-digit byte, which is fine for a value only ever supplied by a
+// test harness in full control of its own argv).
+func cgParseDecimal(s: string): int {
+    var n: int
+    var i: int
+
+    n = 0
+    i = 0
+    while i < s.length {
+        if s[i] >= '0' and s[i] <= '9' {
+            n = n * 10 + (int(s[i]) - int('0'))
+        }
+        i = i + 1
+    }
+    return n
+}
+
 // cgSegBase strips outPath's trailing ".ext" ("out.bin" -> "out") -- the
-// segment file names are <base>.seg1.s / <base>.seg1.dat. Falls back to
+// segment file names are <base>.segN.s / <base>.segN.dat. Falls back to
 // outPath verbatim if it has no '.' at all.
 func cgSegBase(outPath: string): string {
     var i: int
@@ -6216,33 +6478,19 @@ func cgAppName(outPath: string): string(31) {
 }
 
 // cg68WriteImage builds the real MacBinary application image (app68k.cla)
-// from the just-finished a68 stream and writes it to outPath -- called
-// unconditionally by cg68Program regardless of --listing (which only
-// controls the EXTRA .seg1.s/.seg1.dat debug dump). jtEntries[0] is the
-// synthesized startup routine (JT slot 0, cgEmitStartup's own doc
-// comment); jtEntries[1..] follow every reachable irFuncs entry in
-// cgAssignJtSlots's own slot order, so cgFuncLabels[i]'s a68 label
-// address lines up with cgJtSlots[i] one-for-one. "????" (the unregistered-
-// developer creator code) matches this repo's own existing default
-// (scripts/build-mac.sh's `${APPID:-????}`) -- there is no --creator flag
-// yet, so every native-5d image gets the same one.
-func cg68WriteImage(outPath: string, startupLbl: int): bool {
-    var jtEntries: list of int
-    var segBytes: list of text
+// from every segment's already-finished stream and writes it to outPath.
+// jtEntries/jtSegNums are indexed by FINAL JT slot number
+// (cgAssignFinalJtSlots), already fully populated by cg68Program's own
+// per-segment loop; segBytes[s-1] is segment s's raw code bytes
+// (cgSegJtFirst[s-1]/cgSegJtCount[s-1] give that segment's own JT range
+// for its CODE-N header). "????" (the unregistered-developer creator
+// code) matches this repo's own existing default (scripts/build-mac.sh's
+// `${APPID:-????}`) -- there is no --creator flag yet, so every native-5d
+// image gets the same one.
+func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of int, segBytes: list of text): bool {
     var img: text
-    var i: int
 
-    jtEntries.add(a68LabelAddr[startupLbl])
-    i = 0
-    while i < irFuncs.count {
-        if shakeReachable(i) {
-            jtEntries.add(a68LabelAddr[cgFuncLabels[i]])
-        }
-        i = i + 1
-    }
-    segBytes.add(a68Bytes())
-
-    img = app68Build(cgAppName(outPath), "????", segBytes, jtEntries, cgGlobalsBelowA5Size)
+    img = app68Build(cgAppName(outPath), "????", segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size)
     if not file.writeText(outPath, img) {
         log("cg68Program: cannot write " + outPath + ": " + lastError.message)
         return false
@@ -6250,49 +6498,80 @@ func cg68WriteImage(outPath: string, startupLbl: int): bool {
     return true
 }
 
-// cg68Program is the top-level emit68k driver: assign JT slots + reserve
-// every reachable function's label, assign A5 globals offsets, emit the
-// startup routine + its two generated helper stubs, emit every reachable
-// function's frame+prologue+placeholder+epilogue, emit the constant
-// pool(s), and finish the stream. Returns false (after log-ing why) on any
-// diagnostic-worthy failure -- an unresolved label (a real codegen bug, not
-// a user error, since Task 7's own scaffolding never leaves one dangling)
-// or a write failure. main.cla calls this AFTER cg68AddRoots()+
-// shakeProgram() -- see cg68AddRoots's own doc comment.
-func cg68Program(outPath: string, listing: bool): bool {
+// cg68Measure runs the WHOLE program (startup + cg_init_globals, every
+// reachable function, the duplicated-glue bundle, the constant pool)
+// through the real emitter EXACTLY ONCE, into one throwaway a68 stream,
+// recording each function's own standalone byte size (cgFuncSize) plus
+// the three fixed byte costs cgPackProgram needs (cgSeg1ExtraSize/
+// cgGlueBundleSize/cgPoolSize) -- see this file's Task 15 header comment
+// for why re-running the real emitter (rather than a parallel size
+// formula) is both correct and cheap here. Also freezes cgMul32Used/
+// cgDiv32Used/cgMod32Used: every function's own body runs here, so by
+// the time this returns, whether the program uses `*`/`/`/`mod` ANYWHERE
+// is fully and finally known -- cg68Program's own per-segment pass never
+// touches those three flags again.
+func cg68Measure(): bool {
     var i: int
+    var before: int
     var startupLbl: int
     var initGlobalsLbl: int
     var freeGlobalsLbl: int
-    var ok: bool
-    var base: string
+    var segPlaceholder: list of int
 
     a68Reset()
     cgResetCodegenState()
-    cgAssignJtSlots()
     cgAssignGlobalOffsets()
     cgReservePanicMsgs()
     cgReserveStrLitLabels()
     cgAssignRcWalkLabels()
     cgReserveEnumTableLabels()
+    cgAssignMeasureFuncLabels()
+
+    // Placeholders only -- cgCallFunc's same-segment/cross-segment
+    // compare always reads "equal" here (every entry 0, cgCurFuncSegment
+    // 0), which always picks the BSR.W arm; per this section's own
+    // FIXED-SIZE INVARIANT that's exactly as correctly-sized as the real
+    // cross-segment JSR form would be, and a68Finish() never runs against
+    // this throwaway stream so nothing ever dereferences these labels.
+    segPlaceholder = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        segPlaceholder.add(0)
+        i = i + 1
+    }
+    cgFuncSegment = segPlaceholder
+    cgCurFuncSegment = 0
+    cgJtSlots = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgJtSlots.add(0)
+        i = i + 1
+    }
 
     startupLbl = a68NewLabel()
     initGlobalsLbl = a68NewLabel()
     freeGlobalsLbl = a68NewLabel()
     cgFreeGlobalsLbl = freeGlobalsLbl
 
+    before = a68SizeSoFar()
     cgEmitStartup(startupLbl, initGlobalsLbl, freeGlobalsLbl)
     cgEmitInitGlobalsStub(initGlobalsLbl)
-    cgEmitFreeGlobalsStub(freeGlobalsLbl)
+    cgSeg1ExtraSize = a68SizeSoFar() - before
 
+    cgFuncSize = cgFreshIntList()
     i = 0
     while i < irFuncs.count {
         if shakeReachable(i) {
+            before = a68SizeSoFar()
             cgEmitFunc(i)
+            cgFuncSize.add(a68SizeSoFar() - before)
+        } else {
+            cgFuncSize.add(0)
         }
         i = i + 1
     }
 
+    before = a68SizeSoFar()
     if cgMul32Used {
         cgEmitMul32(cgMul32Lbl)
     }
@@ -6302,30 +6581,234 @@ func cg68Program(outPath: string, listing: bool): bool {
     if cgMod32Used {
         cgEmitMod32(cgMod32Lbl)
     }
-
+    cgEmitFreeGlobalsStub(freeGlobalsLbl)
     cgEmitRcWalks()
+    cgGlueBundleSize = a68SizeSoFar() - before
 
+    before = a68SizeSoFar()
     cgEmitPoolsBody()
+    cgPoolSize = a68SizeSoFar() - before
 
-    ok = a68Finish()
-    if not ok {
-        log("cg68Program: unresolved label " + numToStr(a68UnresolvedLabel()))
+    return true
+}
+
+// cgPackProgram runs first-fit bin packing, in declaration order, over
+// every reachable irFuncs entry's own measured size (cgFuncSize) --
+// segment 1 is opened up front (startup/cg_init_globals must live
+// somewhere even if the program packs zero functions into it) with a
+// budget reduced by its own extra fixed cost; every later segment opens
+// on demand with the plain fixed cost (duplicated-glue bundle + pool,
+// no startup/cg_init_globals). A function that can't fit even a BRAND
+// NEW, otherwise-empty non-segment-1 segment (the most generous possible
+// budget) can never be packed at all -- a named compile error, not a
+// crash, per the plan's own spec requirement.
+func cgPackProgram(): bool {
+    var i: int
+    var sz: int
+    var s: int
+    var placed: bool
+    var segUsed: list of int
+    var segAvail: list of int
+    var freshAvail: int
+    var fixedBase: int
+
+    fixedBase = cgSegHeaderSize + cgPoolSize + cgGlueBundleSize
+    freshAvail = cgSegLimit - fixedBase
+
+    cgFuncSegment = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgFuncSegment.add(-1)
+        i = i + 1
+    }
+
+    segUsed = cgFreshIntList()
+    segAvail = cgFreshIntList()
+    segUsed.add(0)
+    segAvail.add(cgSegLimit - fixedBase - cgSeg1ExtraSize)
+
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) {
+            sz = cgFuncSize[i]
+            placed = false
+            s = 0
+            while s < segUsed.count {
+                if segUsed[s] + sz <= segAvail[s] {
+                    segUsed[s] = segUsed[s] + sz
+                    cgFuncSegment[i] = s + 1
+                    placed = true
+                    break
+                }
+                s = s + 1
+            }
+            if not placed {
+                if sz > freshAvail {
+                    log("function " + poolGet(irFuncName(i)) + " exceeds the 32KB segment limit")
+                    return false
+                }
+                segUsed.add(sz)
+                segAvail.add(freshAvail)
+                cgFuncSegment[i] = segUsed.count
+            }
+        }
+        i = i + 1
+    }
+
+    cgSegCount = segUsed.count
+    return true
+}
+
+// cg68Program is the top-level emit68k driver: measure the whole program
+// standalone (cg68Measure), pack every reachable function into segments
+// (cgPackProgram), assign final JT slots from that packing
+// (cgAssignFinalJtSlots), then really emit each segment in turn --
+// startup + cg_init_globals in segment 1 only, that segment's own packed
+// functions, the duplicated-glue bundle, and the full constant pool,
+// every segment -- finishing and collecting each segment's own jump-
+// table entries before moving to the next. Returns false (after logging
+// why) on any diagnostic-worthy failure: an oversized function
+// (cgPackProgram), an unresolved label (a real codegen bug -- this
+// backend's own scaffolding never leaves one dangling), or a write
+// failure. main.cla calls this AFTER cg68AddRoots()+shakeProgram() --
+// see cg68AddRoots's own doc comment. segLimit<=0 selects the real
+// classic-Mac budget (32760); a positive value is a TEST-ONLY override
+// (main.cla's undocumented `--seglimit` flag) to force a small program
+// into several segments deterministically.
+func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
+    var i: int
+    var s: int
+    var ok: bool
+    var base: string
+    var startupLbl: int
+    var initGlobalsLbl: int
+    var freeGlobalsLblLocal: int
+    var jtEntries: list of int
+    var jtSegNums: list of int
+    var segBytes: list of text
+    var segNumStr: string
+
+    if segLimit > 0 {
+        cgSegLimit = segLimit
+    } else {
+        cgSegLimit = 32760
+    }
+
+    if not cg68Measure() {
         return false
     }
+    if not cgPackProgram() {
+        return false
+    }
+    cgAssignFinalJtSlots()
 
-    if listing {
-        base = cgSegBase(outPath)
-        if not file.writeText(base + ".seg1.s", a68ListingText()) {
-            log("cg68Program: cannot write " + base + ".seg1.s: " + lastError.message)
+    jtEntries = cgFreshIntList()
+    jtSegNums = cgFreshIntList()
+    i = 0
+    while i < cgTotalJtSlots {
+        jtEntries.add(0)
+        jtSegNums.add(0)
+        i = i + 1
+    }
+    segBytes = cgFreshTextList()
+    base = cgSegBase(outPath)
+
+    s = 1
+    while s <= cgSegCount {
+        a68Reset()
+        cgAssignSegFuncLabels(s)
+        cgReserveStrLitLabels()
+        cgReserveEnumTableLabels()
+        cgAssignRcWalkLabels()
+        if cgMul32Used {
+            cgMul32Lbl = a68NewLabel()
+        }
+        if cgDiv32Used {
+            cgDiv32Lbl = a68NewLabel()
+        }
+        if cgMod32Used {
+            cgMod32Lbl = a68NewLabel()
+        }
+        freeGlobalsLblLocal = a68NewLabel()
+        cgFreeGlobalsLbl = freeGlobalsLblLocal
+        cgCurFuncSegment = s
+
+        if s == 1 {
+            startupLbl = a68NewLabel()
+            initGlobalsLbl = a68NewLabel()
+            cgEmitStartup(startupLbl, initGlobalsLbl, freeGlobalsLblLocal)
+            cgEmitInitGlobalsStub(initGlobalsLbl)
+        }
+
+        i = 0
+        while i < irFuncs.count {
+            if shakeReachable(i) and cgFuncSegment[i] == s {
+                cgEmitFunc(i)
+            }
+            i = i + 1
+        }
+
+        if cgMul32Used {
+            cgEmitMul32(cgMul32Lbl)
+        }
+        if cgDiv32Used {
+            cgEmitDiv32(cgDiv32Lbl)
+        }
+        if cgMod32Used {
+            cgEmitMod32(cgMod32Lbl)
+        }
+        cgEmitFreeGlobalsStub(freeGlobalsLblLocal)
+        cgEmitRcWalks()
+
+        cgEmitPoolsBody()
+
+        ok = a68Finish()
+        if not ok {
+            log("cg68Program: unresolved label " + numToStr(a68UnresolvedLabel()) + " (segment " + numToStr(s) + ")")
             return false
         }
-        if not file.writeText(base + ".seg1.dat", a68Bytes()) {
-            log("cg68Program: cannot write " + base + ".seg1.dat: " + lastError.message)
-            return false
+
+        if s == 1 {
+            jtEntries[0] = a68LabelAddr[startupLbl]
+            jtSegNums[0] = 1
         }
+        i = 0
+        while i < irFuncs.count {
+            if shakeReachable(i) and cgFuncSegment[i] == s {
+                jtEntries[cgJtSlots[i]] = a68LabelAddr[cgFuncLabels[i]]
+                jtSegNums[cgJtSlots[i]] = s
+            }
+            i = i + 1
+        }
+
+        // The "+ """ forces a genuinely independent text object (the
+        // language reference's own "a string + string result is a
+        // temporary" guarantee) rather than storing a68Bytes()'s raw
+        // handle: a68BytesOut gets reassigned by the NEXT segment's own
+        // a68Reset() a few lines below, and empirically (see this task's
+        // own report) a bare `segBytes.add(a68Bytes())` here left EVERY
+        // earlier segment's own list entry silently emptied out by the
+        // time the loop finished -- a handle-lifetime interaction this
+        // file works around rather than chases into the frozen host
+        // runtime.
+        segBytes.add(a68Bytes() + "")
+
+        if listing {
+            segNumStr = numToStr(s)
+            if not file.writeText(base + ".seg" + segNumStr + ".s", a68ListingText()) {
+                log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".s: " + lastError.message)
+                return false
+            }
+            if not file.writeText(base + ".seg" + segNumStr + ".dat", a68Bytes()) {
+                log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".dat: " + lastError.message)
+                return false
+            }
+        }
+
+        s = s + 1
     }
 
-    if not cg68WriteImage(outPath, startupLbl) {
+    if not cg68WriteImage(outPath, jtEntries, jtSegNums, segBytes) {
         return false
     }
     return true

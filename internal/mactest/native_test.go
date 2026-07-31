@@ -17,9 +17,11 @@
 package mactest
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -135,6 +137,21 @@ func TestNativeFixedOps(t *testing.T) {
 	runNativeHostCompare(t, "fixedops.cla")
 }
 
+// TestNativeSmokeForcedMultiSegment is native-5d Task 15's forced-
+// multi-segment boot proof: the SAME known-good smoke.cla TestNativeSmoke
+// already boots successfully with the default (real, 32760-byte)
+// per-segment budget -- but under that budget smoke.cla still fits in a
+// single CODE segment, so a normal boot alone never exercises a
+// cross-segment BSR/JSR-through-the-jump-table call on real hardware.
+// `--seglimit` (main.cla's undocumented test-only flag, wired straight
+// to cg68Program's own segLimit parameter) forces a small budget instead,
+// splitting smoke.cla into several real segments -- this proves cross-
+// segment calls + the Segment Loader's _LoadSeg path work on real 68k
+// hardware BEFORE Task 16 stakes the whole suite app on it.
+func TestNativeSmokeForcedMultiSegment(t *testing.T) {
+	runNativeHostCompareSeglimit(t, "smoke.cla", 6000)
+}
+
 // runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
 // host expectation via build.Build (the Go compiler, same as
 // suite_host_test.go's BuildSuiteHost/RunSuiteHost -- these fixtures are
@@ -143,6 +160,17 @@ func TestNativeFixedOps(t *testing.T) {
 // emit68k` -- then requires the emulator's captured `out` to be
 // byte-identical to the host's stdout, and both exit codes to be 0.
 func runNativeHostCompare(t *testing.T, fixtureName string) {
+	runNativeHostCompareSeglimit(t, fixtureName, 0)
+}
+
+// runNativeHostCompareSeglimit is runNativeHostCompare generalized with an
+// optional forced per-segment budget (segLimit <= 0 uses the real,
+// undecorated `clarusc emit68k` invocation -- cg68Program's own default
+// 32760-byte budget; segLimit > 0 additionally passes `--seglimit N`).
+// Logs how many CODE segments the build actually produced either way, so
+// a forced-multi-segment run's own log line is visible evidence in test
+// output that packing really did split the app.
+func runNativeHostCompareSeglimit(t *testing.T, fixtureName string, segLimit int) {
 	requireMac(t)
 	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", fixtureName)
 
@@ -171,10 +199,29 @@ func runNativeHostCompare(t *testing.T, fixtureName string) {
 	exe := buildNativeClarusc(t)
 	runDir := t.TempDir()
 	bin := filepath.Join(runDir, "native.bin")
-	cmd := exec.Command(exe, "emit68k", "-o", bin, fixture)
+	args := []string{"emit68k", "-o", bin, "--listing"}
+	if segLimit > 0 {
+		args = append(args, "--seglimit", strconv.Itoa(segLimit))
+	}
+	args = append(args, fixture)
+	cmd := exec.Command(exe, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", bin, fixture, err, out)
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+
+	base := strings.TrimSuffix(bin, ".bin")
+	segCount := 0
+	for {
+		next := segCount + 1
+		if _, statErr := os.Stat(fmt.Sprintf("%s.seg%d.s", base, next)); statErr != nil {
+			break
+		}
+		segCount = next
+	}
+	t.Logf("%s packed into %d CODE segment(s) (seglimit=%d)", fixtureName, segCount, segLimit)
+	if segLimit > 0 && segCount <= 1 {
+		t.Fatalf("--seglimit %d did not force %s into more than one CODE segment (got %d) -- the forced-multi-segment boot proof needs a REAL split", segLimit, fixtureName, segCount)
 	}
 
 	got, _, exitCode := RunMac(t, bin, 5*time.Minute)

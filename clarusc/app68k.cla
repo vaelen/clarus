@@ -1,17 +1,18 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// app68k.cla: the single-segment application image writer -- native-5d
-// Task 10. Turns cg68k.cla's finished 68k instruction stream (one
-// CODE-resource-worth of bytes, plus the JT slot->offset table Task 7's
-// cgAssignJtSlots already built) into a classic Mac application file:
-// CODE 0 (the A5-world header + jump table), CODE 1 (the code, wrapped in
-// its own tiny per-segment header), SIZE -1 (MultiFinder size info),
-// assembled into a resource fork, wrapped in a 128-byte MacBinary II
-// header. The whole thing is written with file.writeText -- binary-safe
-// (NUL/CR/255 round-trip through it untouched; pinned by
-// testdata/run/lib/binroundtrip.cla), so this file never needs to dodge a
-// text-mode byte.
+// app68k.cla: the application image writer -- native-5d Task 10
+// (single-segment), generalized to N segments by Task 15. Turns
+// cg68k.cla's finished per-segment 68k instruction streams (one
+// CODE-resource-worth of bytes each) plus the final JT slot->(offset,
+// segment) table (cg68k.cla's cgAssignFinalJtSlots) into a classic Mac
+// application file: CODE 0 (the A5-world header + jump table), CODE
+// 1..N (one per segment, each wrapped in its own tiny per-segment
+// header), SIZE -1 (MultiFinder size info), assembled into a resource
+// fork, wrapped in a 128-byte MacBinary II header. The whole thing is
+// written with file.writeText -- binary-safe (NUL/CR/255 round-trip
+// through it untouched; pinned by testdata/run/lib/binroundtrip.cla), so
+// this file never needs to dodge a text-mode byte.
 //
 // GROUND TRUTH. Every byte offset and field below was cross-checked
 // against REAL, WORKING code already in this machine's checkout, not
@@ -56,15 +57,28 @@
 // would show this as Jan 1 1904, which is harmless for a compiled test
 // binary and not a behavior anything in this codebase depends on.
 //
-// SINGLE SEGMENT ONLY. app68Build takes segBytes as a `list of text` for
-// future-proofing (Task 15 packs multiple CODE resources), but this task
-// only ever builds one: index 0 becomes CODE 1, and every JT entry (the
-// synthesized startup routine plus every reachable function -- Task 7's
-// cgAssignJtSlots numbering) is folded into that single segment's own JT
-// range. The resource map itself is HARDCODED to exactly two types
-// (CODE, SIZE) and three resources (CODE 0, CODE 1, SIZE -1) -- Task 10
-// never produces any other shape; generalize app68BuildResourceFork only
-// when a later task needs more CODE ids or another resource type.
+// N SEGMENTS (Task 15). app68Build takes segBytes as a `list of text`:
+// segBytes[i] becomes CODE (i+1). The resource map's TYPE list is still
+// exactly two types (CODE, SIZE) -- only the CODE type's own resource
+// COUNT grows with segBytes.count; app68BuildResourceFork computes every
+// map offset (ref-list offsets, name-list offset) from segBytes.count
+// rather than the Task-10 hardcoded 2-resource constants.
+
+// app68FreshIntList/app68FreshTextList hand back genuinely empty lists
+// (the same trick cg68k.cla's cgFreshIntList/cgFreshTextList use) -- this
+// file's own tiny copies, matching the "no cross-depending on a sibling
+// module for small shared helpers" policy already established for
+// app68PutByte/Word/Long below (Task 15: app68BuildResourceFork/app68Build
+// need a fresh scratch list per call, same reasoning).
+func app68FreshIntList(): list of int {
+    var l: list of int
+    return l
+}
+
+func app68FreshTextList(): list of text {
+    var l: list of text
+    return l
+}
 
 // app68PutByte/Word/Long append a raw big-endian value to a binary text
 // buffer -- the same technique asm68k.cla's a68PutByte/Word/Long use
@@ -177,21 +191,22 @@ func app68BuildHeader(appName: string(31), creator: string(7), rsrcLen: int): te
 
 // app68BuildCode0 builds the CODE 0 resource: the A5-world header (above-
 // A5 size, below-A5 size, JT length, JT offset from A5 -- always 32) plus
-// one 8-byte "unloaded" jump-table entry per jtEntries element. Every
-// entry lives in segment 1 (Task 10 is single-segment only), and its
-// offset field is the routine's raw a68 label address -- an offset from
-// the first byte of the segment's CODE, i.e. AFTER CODE 1's own 4-byte
-// per-segment header, which _LoadSeg skips itself. Do NOT add 4 here:
-// Elf2Mac writes its own classic entry-point entry as literally
-// `0000 3F3C 0001 A9F0` (Object.cc:265) for a routine at code offset 0,
-// and adding 4 lands the entry one instruction into the routine -- which
-// is exactly what blocked native-5d Task 11's first boot (the app entered
-// startup PAST its `LEA -292(A5),A0`, so the below-A5 zero loop ran with
-// a garbage A0: globals never zeroed AND 292 bytes of wild writes).
-// Elf2Mac's own `offset += 4` (Object.cc:284) applies to its 32-BIT jump
-// table entries (`id.W, $A9F0, offset.L`), a different entry format
-// resolved by Retro68's runtime rather than the ROM's _LoadSeg.
-func app68BuildCode0(jtEntries: list of int, belowA5: int): text {
+// one 8-byte "unloaded" jump-table entry per jtEntries element. jtEntries[i]
+// is that JT slot's routine offset FROM THE START OF ITS OWN SEGMENT's
+// code (i.e. AFTER that segment's own 4-byte per-segment header, which
+// _LoadSeg skips itself -- do NOT add 4 here: Elf2Mac writes its own
+// classic entry-point entry as literally `0000 3F3C 0001 A9F0`
+// (Object.cc:265) for a routine at code offset 0, and adding 4 lands the
+// entry one instruction into the routine -- which is exactly what
+// blocked native-5d Task 11's first boot (the app entered startup PAST
+// its `LEA -292(A5),A0`, so the below-A5 zero loop ran with a garbage
+// A0: globals never zeroed AND 292 bytes of wild writes). Elf2Mac's own
+// `offset += 4` (Object.cc:284) applies to its 32-BIT jump table entries
+// (`id.W, $A9F0, offset.L`), a different entry format resolved by
+// Retro68's runtime rather than the ROM's _LoadSeg); jtSegNums[i] is that
+// same slot's OWNING segment number (Task 15: real, per-entry -- Task
+// 10 hardcoded this to 1, single-segment only).
+func app68BuildCode0(jtEntries: list of int, jtSegNums: list of int, belowA5: int): text {
     var out: text
     var jtLen: int
     var i: int
@@ -206,22 +221,23 @@ func app68BuildCode0(jtEntries: list of int, belowA5: int): text {
     while i < jtEntries.count {
         app68PutWord(out, jtEntries[i])
         app68PutWord(out, 0x3F3C)
-        app68PutWord(out, 1)        // segment number (always 1, single segment)
+        app68PutWord(out, jtSegNums[i]) // owning segment number (Task 15: real)
         app68PutWord(out, 0xA9F0)
         i = i + 1
     }
     return out
 }
 
-// app68BuildCode1 builds the CODE 1 resource: the 4-byte standard-format
-// per-segment header (first JT entry offset in bytes -- always 0, since
-// every JT entry belongs to this one segment -- then the entry count)
-// followed by the segment's own raw code bytes.
-func app68BuildCode1(seg: text, jtCount: int): text {
+// app68BuildCodeN builds one CODE-n resource (n=1..segment count): the
+// 4-byte standard-format per-segment header (first JT entry offset in
+// bytes -- jtFirstSlot*8, this segment's own CONTIGUOUS slot range start,
+// cg68k.cla's cgAssignFinalJtSlots -- then the entry count) followed by
+// the segment's own raw code bytes.
+func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
     var out: text
 
     out = ""
-    app68PutWord(out, 0)
+    app68PutWord(out, jtFirstSlot * 8)
     app68PutWord(out, jtCount)
     out.append(seg)
     return out
@@ -242,30 +258,45 @@ func app68BuildSize(): text {
 }
 
 // app68BuildResourceFork assembles the full resource fork: 256-byte
-// header (16 real bytes + 240 reserved), the three resources' data
-// (length-prefixed), then the resource map (type list: CODE, SIZE; ref
-// lists; no name list -- every resource here is unnamed). Layout mirrors
-// Retro68's ResourceFork.cc::writeFork exactly (see file header comment)
-// but is hardcoded to this task's fixed 2-type/3-resource shape rather
-// than reimplementing a general N-type resource writer.
-func app68BuildResourceFork(code0: text, code1: text, sizeRes: text): text {
+// header (16 real bytes + 240 reserved), every resource's data
+// (length-prefixed: CODE 0, then CODE 1..codeRes.count, then SIZE -1),
+// then the resource map (type list: CODE, SIZE -- always exactly two
+// TYPES no matter how many CODE ids there are; ref lists; no name list
+// -- every resource here is unnamed). Layout mirrors Retro68's
+// ResourceFork.cc::writeFork exactly (see file header comment).
+// codeRes[0] is CODE 0 (the A5/JT header); codeRes[1..] are CODE
+// 1..codeRes.count-1 (Task 15: one per segment, generalized from Task
+// 10's fixed 2-resource/single-segment shape).
+func app68BuildResourceFork(codeRes: list of text, sizeRes: text): text {
     var data: text
     var map: text
     var out: text
-    var offCode0: int
-    var offCode1: int
+    var codeOffs: list of int
     var offSize: int
+    var i: int
+    var numCode: int
+    var codeRefListLen: int
+    var sizeRefListOff: int
+    var nameListOff: int
+
+    numCode = codeRes.count
 
     data = ""
-    offCode0 = data.length
-    app68PutLong(data, code0.length)
-    data.append(code0)
-    offCode1 = data.length
-    app68PutLong(data, code1.length)
-    data.append(code1)
+    codeOffs = app68FreshIntList()
+    i = 0
+    while i < numCode {
+        codeOffs.add(data.length)
+        app68PutLong(data, codeRes[i].length)
+        data.append(codeRes[i])
+        i = i + 1
+    }
     offSize = data.length
     app68PutLong(data, sizeRes.length)
     data.append(sizeRes)
+
+    codeRefListLen = numCode * 12
+    sizeRefListOff = 18 + codeRefListLen
+    nameListOff = 58 + codeRefListLen // = 28(typelist start) + 18(typelist len) + codeRefListLen + 12(size reflist len)
 
     map = ""
     while map.length < 24 {          // 16-byte header-copy placeholder (zeros,
@@ -274,23 +305,23 @@ func app68BuildResourceFork(code0: text, code1: text, sizeRes: text): text {
                                       // handle + 2-byte file ref + 2-byte attrs
     app68PutWord(map, 28)            // type list offset from map start (fixed:
                                       // 2 header words follow immediately)
-    app68PutWord(map, 82)            // name list offset from map start (fixed:
-                                      // no names, ends right after the ref lists)
+    app68PutWord(map, nameListOff)   // name list offset from map start (no
+                                      // names, ends right after the ref lists)
     app68PutWord(map, 1)             // type count - 1 (CODE, SIZE)
     map.append("CODE")
-    app68PutWord(map, 1)             // CODE resource count - 1 (id 0, id 1)
+    app68PutWord(map, numCode - 1)   // CODE resource count - 1
     app68PutWord(map, 18)            // CODE ref list offset from type-list start
     map.append("SIZE")
     app68PutWord(map, 0)             // SIZE resource count - 1 (id -1)
-    app68PutWord(map, 42)            // SIZE ref list offset from type-list start
-    app68PutWord(map, 0)             // CODE id 0
-    app68PutWord(map, 0xFFFF)        // no name
-    app68PutLong(map, offCode0)      // attr byte (0) + 3-byte data offset
-    app68PutLong(map, 0)             // handle placeholder
-    app68PutWord(map, 1)             // CODE id 1
-    app68PutWord(map, 0xFFFF)
-    app68PutLong(map, offCode1)
-    app68PutLong(map, 0)
+    app68PutWord(map, sizeRefListOff) // SIZE ref list offset from type-list start
+    i = 0
+    while i < numCode {
+        app68PutWord(map, i)             // CODE id (0, 1, 2, ...)
+        app68PutWord(map, 0xFFFF)        // no name
+        app68PutLong(map, codeOffs[i])   // attr byte (0) + 3-byte data offset
+        app68PutLong(map, 0)             // handle placeholder
+        i = i + 1
+    }
     app68PutWord(map, -1)            // SIZE id -1
     app68PutWord(map, 0xFFFF)
     app68PutLong(map, offSize)
@@ -309,24 +340,32 @@ func app68BuildResourceFork(code0: text, code1: text, sizeRes: text): text {
     return out
 }
 
-// app68Build is the top-level entry point: builds CODE 0/CODE 1/SIZE(-1),
-// assembles the resource fork, wraps it in a 128-byte MacBinary II
-// header, and pads the whole thing to a multiple of 128 bytes. segBytes
-// must have exactly one element (this task's single-segment scope --
-// packing multiple segments is Task 15); jtEntries[0] is the synthesized
-// startup routine's raw offset (JT slot 0), jtEntries[1..] are every
-// other reachable function's, in cgAssignJtSlots's own slot order.
-func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, belowA5: int): text {
+// app68Build is the top-level entry point: builds CODE 0, CODE 1..N (one
+// per segment), and SIZE(-1), assembles the resource fork, wraps it in a
+// 128-byte MacBinary II header, and pads the whole thing to a multiple
+// of 128 bytes. segBytes[s] is segment (s+1)'s raw code bytes;
+// jtEntries[i]/jtSegNums[i] is JT slot i's routine offset (within its
+// own segment) and owning segment number; segJtFirst[s]/segJtCount[s]
+// is segment (s+1)'s own contiguous JT slot range (cg68k.cla's
+// cgAssignFinalJtSlots), used for that segment's CODE-(s+1) header.
+func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int): text {
     var code0: text
-    var code1: text
+    var codeRes: list of text
     var sizeRes: text
     var rsrc: text
     var out: text
+    var i: int
 
-    code0 = app68BuildCode0(jtEntries, belowA5)
-    code1 = app68BuildCode1(segBytes[0], jtEntries.count)
+    code0 = app68BuildCode0(jtEntries, jtSegNums, belowA5)
+    codeRes = app68FreshTextList()
+    codeRes.add(code0)
+    i = 0
+    while i < segBytes.count {
+        codeRes.add(app68BuildCodeN(segBytes[i], segJtFirst[i], segJtCount[i]))
+        i = i + 1
+    }
     sizeRes = app68BuildSize()
-    rsrc = app68BuildResourceFork(code0, code1, sizeRes)
+    rsrc = app68BuildResourceFork(codeRes, sizeRes)
 
     out = app68BuildHeader(appName, creator, rsrc.length)
     out.append(rsrc)

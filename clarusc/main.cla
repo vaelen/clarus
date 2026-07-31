@@ -218,6 +218,7 @@ on App.startCLI(args: list of string) {
     var emitMode: bool
     var emitMode68k: bool
     var listingFlag: bool
+    var segLimitFlag: int
     var ok68: bool
     var appinfoMode: bool
     var startArg: int
@@ -279,6 +280,7 @@ on App.startCLI(args: list of string) {
     emitMode = false
     emitMode68k = false
     listingFlag = false
+    segLimitFlag = 0
     appinfoMode = false
     startArg = 0
     if args[0] == "emit" {
@@ -338,6 +340,20 @@ on App.startCLI(args: list of string) {
             haveRtDir = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
+        } else if emitMode68k and args[i] == "--seglimit" {
+            // Test-only override of cg68Program's per-segment payload
+            // budget (default 32760) -- deliberately UNDOCUMENTED in the
+            // usage strings above: it exists so a test can force a small
+            // program into several real segments (proving cross-segment
+            // calls + LoadSeg work on real hardware) without needing a
+            // suite-sized fixture. See clarusc/cg68k.cla's cg68Program doc
+            // comment.
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] [--seglimit N] FILE...")
+                quit 2
+            }
+            segLimitFlag = cgParseDecimal(args[i])
         } else {
             fileArgs.add(args[i])
         }
@@ -661,7 +677,7 @@ on App.startCLI(args: list of string) {
             // off to cg68Program instead of emitProgram.
             cg68AddRoots()
             shakeProgram()
-            ok68 = cg68Program(outPath, listingFlag)
+            ok68 = cg68Program(outPath, listingFlag, segLimitFlag)
             if not ok68 {
                 log("clarusc emit68k: cg68Program failed")
                 quit 1
