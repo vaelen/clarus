@@ -300,10 +300,27 @@ var cgEnumTableLabels: list of int
 // container elements).
 const cgTmpSlots: int = 8
 
+// cgBigTmpSlots/cgBigTmpSize (Task 14.7 gap-closure): a SEPARATE, smaller
+// pool sized for a KStr/KRec temp (cgTmpBaseOffs' own slots are a fixed 4
+// bytes, too small for anything past a str(3)/tiny record) -- same
+// per-statement bump-allocated lifetime as the small pool
+// (cgStmtBigTmpNext mirrors cgStmtTmpNext exactly), just reserved and
+// indexed separately since the two never share a slot. 256 = the
+// established max KStr size this file already hard-codes elsewhere
+// (cgStrBuilderIntoTemp's own 256-byte scratch); 2 slots is enough for
+// the deepest nesting this task's corpus needs (e.g. str_cmp(f(), g()) --
+// two independently-materialized results concurrently live within one
+// statement).
+const cgBigTmpSlots: int = 2
+const cgBigTmpSize: int = 256
+
 var cgTmpBaseOffs: list of int
+var cgBigTmpBaseOffs: list of int
 var cgStmtTmpOffs: list of int
 var cgStmtTmpType: list of int
 var cgStmtTmpNext: int
+var cgStmtBigTmpNext: int
+var cgSyntheticVarSeq: int
 
 // cgLastTrackedOff mirrors cprint's own string-identity handoff check
 // (fpHandoff(v): "v IS exactly that temp's own C name") in register-machine
@@ -484,7 +501,7 @@ func cgSizeOf(t: int): int {
     case KVoid {
         return 0
     }
-    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KErr, KWinRef, KUiState, KOverlay {
+    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KWinRef, KUiState, KOverlay {
         return 4
     }
     case KBool, KChar {
@@ -499,7 +516,29 @@ func cgSizeOf(t: int): int {
     case KRec {
         return cgRecordSize(irtName(t))
     }
+    case KErr {
+        // Task 14.7: `error` is a builtin fixed-layout struct, NOT a
+        // 4-byte scalar/handle -- cprint.cla's own C typedef
+        // (`typedef struct { int32_t code; clar_str_255 message; }
+        // clar_rec_Err;`, cprint.cla:5630) is the layout authority: code
+        // (int32, 4 bytes) at offset 0, message (str255, 256 bytes) at
+        // offset 4, no padding between them (4 is already even). Lumping
+        // KErr into the plain-4-bytes case above (pre-Task-14.7) silently
+        // under-reserved every `var e: error` local/field to 4 bytes,
+        // corrupting whatever sat past it the moment `.message` was
+        // written -- see cgErrMsgOff's own doc comment for the matching
+        // cgFieldRefAddr fix.
+        return cgErrMsgOff() + cgAlignUp(255 + 1, 2)
     }
+    }
+    return 4
+}
+
+// cgErrMsgOff is the `error` (KErr) struct's `message` field offset (its
+// only non-zero one -- `code` sits at offset 0) -- a single authority
+// cgSizeOf(KErr)/cgFieldRefAddr/cgDefaultInitAt's KErr arm all read,
+// instead of repeating the literal `4` three times.
+func cgErrMsgOff(): int {
     return 4
 }
 
@@ -1079,8 +1118,21 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
         cgEmitContainerBirthCall("rtListNew", cgSizeOf(irtElem(t)), reg, off)
     } else if k == KMap {
         cgEmitContainerBirthCall("rtMapNew", cgSizeOf(irtElem(t)), reg, off)
+    } else if k == KErr {
+        // Task 14.7: mirrors cpDefaultInit's own KErr arm (cprint.cla:
+        // 3170-3172, `dst.code = 0; dst.message = (clar_str_255){0};`) --
+        // code (int, offset 0) zeroed via cgStoreImmAt, message
+        // (str(255), offset cgErrMsgOff()) zero-blocked via
+        // cgDefaultInitStrAt's own no-default arm (strDefaultIdx=-1;
+        // `error` has no explicit-field-default grammar, so -1 is the
+        // only value this arm is ever called with). Pre-fix, KErr fell
+        // into the final `else` below, which only zeroed 4 bytes --
+        // leaving `message` (offset 4..259) as uninitialized stack
+        // garbage.
+        cgStoreImmAt(reg, off, irIntT, 0)
+        cgDefaultInitStrAt(reg, off + cgErrMsgOff(), irStrType(255), -1)
     } else {
-        // KErr/KUiState -- TODO, deferred: a safe NULL/zero placeholder,
+        // KUiState -- TODO, deferred: a safe NULL/zero placeholder,
         // matching every other "not built this task" degrade in this file.
         a68Comment("TODO cgDefaultInitAt <kind " + numToStr(int(k)) + ">: unsupported this task")
         cgStoreImmAt(reg, off, irIntT, 0)
@@ -1518,17 +1570,15 @@ func cgEmitPanic(msgLitIdx: int) {
 // bump allocator every out-param-needing container intrinsic arm uses for
 // its own scratch (pop/shift/first/last/get/getDv/getDvBirth all need
 // SOME address to hand the runtime call as its out-param, tracked or not).
-// Hard-errors (loud, matching this file's own established convention) if
-// t's value can't fit a 4-byte slot (KRec/KStr/KArr container
-// elements/results -- not exercised by this task's fixtures, same
-// documented scope boundary as cgRetainAt/cgReleaseAt's own KRec-element
-// container gap) or the pool is exhausted.
+// A t that can't fit a 4-byte slot (KRec/KStr container elements/results,
+// e.g. `list of string`) routes to cgAllocBigTmpOff instead (Task 14.7 --
+// was a hard error here through Task 13, "not exercised by this task's
+// fixtures"; the 5d corpus sweep exercises it directly).
 func cgAllocTmpOff(t: int): int {
     var off: int
 
     if cgSizeOf(t) > 4 {
-        log("cg68k: container element/result >4 bytes not supported this task (Task 13 scope)")
-        quit 1
+        return cgAllocBigTmpOff(t)
     }
     if cgStmtTmpNext >= cgTmpSlots {
         log("cg68k: too many tracked temps in one statement (Task 13 pool exhausted -- bump cgTmpSlots)")
@@ -1536,6 +1586,28 @@ func cgAllocTmpOff(t: int): int {
     }
     off = cgTmpBaseOffs[cgStmtTmpNext]
     cgStmtTmpNext = cgStmtTmpNext + 1
+    return off
+}
+
+// cgAllocBigTmpOff is cgAllocTmpOff's >4-byte sibling (Task 14.7): every
+// existing cgAllocTmpOff call site (list/map push/pop/first/last/remove/
+// set/get/getDv/getDvBirth's own element scratch) already routes through
+// cgAllocTmpOff, so a `list of string`/`map of string`/small-record
+// element now Just Works via this one extra branch, no call-site changes
+// needed -- the size split is the ONLY thing that changed.
+func cgAllocBigTmpOff(t: int): int {
+    var off: int
+
+    if cgSizeOf(t) > cgBigTmpSize {
+        log("cg68k: str/rec temp >" + numToStr(cgBigTmpSize) + " bytes not supported by this backend's scratch pool")
+        quit 1
+    }
+    if cgStmtBigTmpNext >= cgBigTmpSlots {
+        log("cg68k: too many str/rec temps needed in one statement -- bump cgBigTmpSlots")
+        quit 1
+    }
+    off = cgBigTmpBaseOffs[cgStmtBigTmpNext]
+    cgStmtBigTmpNext = cgStmtBigTmpNext + 1
     return off
 }
 
@@ -2043,6 +2115,7 @@ func cgEmitFunc(f: int) {
     var recLocalOffsets: list of int
     var recLocalTypes: list of int
     var tmpOffs: list of int
+    var bigTmpOffs: list of int
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
@@ -2109,7 +2182,7 @@ func cgEmitFunc(f: int) {
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
-            if irtKind(irLocalType(loc)) == KRec or irtKind(irLocalType(loc)) == KText or irtKind(irLocalType(loc)) == KList or irtKind(irLocalType(loc)) == KMap {
+            if irtKind(irLocalType(loc)) == KRec or irtKind(irLocalType(loc)) == KText or irtKind(irLocalType(loc)) == KList or irtKind(irLocalType(loc)) == KMap or irtKind(irLocalType(loc)) == KErr {
                 // Task 12: a record local needs its OWN field defaults
                 // constructed once per function entry -- mirrors
                 // cpEmitFunc's unconditional per-local cpDefaultInit call
@@ -2133,6 +2206,13 @@ func cgEmitFunc(f: int) {
                 // its very first l.push, reading garbage as a box
                 // pointer). A plain scalar/str local stays exactly as
                 // Task 8-11 left it: no implicit default-init.
+                //
+                // Task 14.7 widens the gate once more to KErr: `var e:
+                // error`'s `.code`/`.message` fields must read 0/"" before
+                // any assignment (emit_record.cla/errvar.cla both read
+                // `e.code` immediately after declaration) -- reproduced
+                // pre-fix as reading stack garbage, not the crash class
+                // above (KErr has no handle field to release-walk).
                 recLocalOffsets.add(runningNeg)
                 recLocalTypes.add(irLocalType(loc))
             }
@@ -2155,6 +2235,22 @@ func cgEmitFunc(f: int) {
         i = i + 1
     }
     cgTmpBaseOffs = tmpOffs
+
+    // Task 14.7: the big (str/rec) scratch pool, same contiguous-negative-
+    // offset discipline, reserved unconditionally right after the small
+    // pool (cheap; ignored cost if this function never materializes a
+    // str/rec temp at all -- same "cheap if unused" philosophy this file's
+    // own Task 13 doc comment already uses for cgTmpSlots).
+    bigTmpOffs = cgFreshIntList()
+    i = 0
+    while i < cgBigTmpSlots {
+        runningNeg = runningNeg - cgBigTmpSize
+        bigTmpOffs.add(runningNeg)
+        i = i + 1
+    }
+    cgBigTmpBaseOffs = bigTmpOffs
+    cgStmtBigTmpNext = 0
+
     runningNeg = cgReserveDeepScratch(runningNeg)
     frameSize = 0 - runningNeg
     cgStmtTmpOffs = cgFreshIntList()
@@ -2260,10 +2356,66 @@ func cgVarOff(e: int): int {
 // three aggregate/deferred kinds (Str's clamped-copy semantics, Rec/Arr's
 // by-value block shape -- Task 12/13).
 func cgIsScalarKind(k: IRKind): bool {
-    if k == KStr or k == KRec or k == KArr or k == KVoid {
+    // Task 14.7: KErr joins the non-scalar set -- a 260-byte struct
+    // (cgSizeOf's own KErr arm), not a 4-byte value a plain MOVE(.B|.L)
+    // through D0 can carry (cgIsScalarKind's whole contract). Pre-fix,
+    // KErr fell through to `true` here, so `e = lastError`'s SAssign
+    // routed into cgEmitStoreScalarAny (a 4-byte move) instead of the
+    // dedicated KErr copy cgStmt's SAssign arm now dispatches to.
+    if k == KStr or k == KRec or k == KArr or k == KVoid or k == KErr {
         return false
     }
     return true
+}
+
+// cgVarRefAt (Task 14.7) wraps a raw A6-relative scratch slot (off(A6) --
+// every call site is a per-function temp, never a global, so reg=6 is
+// implicit) in a throwaway, uniquely-named synthetic EVarRef: dynamically
+// appends (name, off) to the CURRENT function's own frame tables
+// (cgCurFrameNames/Offsets -- safe to grow mid-codegen, cgFindFrameOffset
+// only ever scans them at a LATER lookup) so cgVarOff/cgVarReg resolve the
+// synthetic name exactly like any real local. Lets any dst-taking store
+// helper (cgEmitStoreStr/cgEmitStoreRec/cgEmitStoreScalarAny) target a
+// scratch slot exactly like a real variable, with no separate reg/off-
+// parameterized copy of their dispatch logic needed.
+func cgVarRefAt(off: int, t: int): int {
+    var nm: string
+
+    nm = "__cg68scratch" + numToStr(cgSyntheticVarSeq)
+    cgSyntheticVarSeq = cgSyntheticVarSeq + 1
+    cgCurFrameNames.add(nm)
+    cgCurFrameOffsets.add(off)
+    return newIRVarRef(intern(nm), false, t)
+}
+
+// cgMaterializeToTemp (Task 14.7) materializes e's value into a fresh
+// scratch temp (cgAllocTmpOff -- the small pool for a scalar-kind result,
+// the big pool for KStr/KRec) and returns an addressable EVarRef bound to
+// it. This is cgExprAddr's own fallback for any expr kind with no OTHER
+// address (ECallFn/EIntr/EBin/etc): every value-producing shape this
+// backend can construct at all can construct into SOME destination
+// (cgEmitStoreRec/cgEmitStoreStr/cgEmitStoreScalarAny between them cover
+// every src kind those three already dispatch on -- ENewRec, ECallFn,
+// str_concat/str_coerce/lasterr_msg/file_name/list-map-read-family, and
+// any plain scalar expr), so cgExprAddr never needs to fail for a real
+// value -- it just recurses once more into the (trivially addressable)
+// EVarRef this returns.
+func cgMaterializeToTemp(e: int): int {
+    var t: int
+    var off: int
+    var dst: int
+
+    t = irExprType(e)
+    off = cgAllocTmpOff(t)
+    dst = cgVarRefAt(off, t)
+    if irtKind(t) == KRec {
+        cgEmitStoreRec(dst, e)
+    } else if irtKind(t) == KStr {
+        cgEmitStoreStr(dst, e)
+    } else {
+        cgEmitStoreScalarAny(dst, e)
+    }
+    return dst
 }
 
 // ================================================================
@@ -2283,23 +2435,24 @@ func cgExprAddr(e: int) {
     } else if k == EIndexRef {
         cgIndexRefAddr(e)
     } else {
-        // A call/intr result, or any other kind this backend doesn't
-        // resolve to a real address -- task-12-
-        // review's Important finding: this USED TO degrade to a
-        // deterministic placeholder (LEA $0000.W,A0, address 0) rather
-        // than crash the compile, which silently produced GARBAGE (not a
-        // diagnostic) for any caller that then read/copied through it --
-        // reproduced by `recsSum(recsMake(555))` in recs.cla, where the
-        // inner call was dropped entirely and the outer call received 76
-        // bytes read from absolute address 0. Every caller that can
-        // itself materialize a value into a destination instead of asking
-        // for its address (cgPushArgs' KStr/KRec argument dispatch, via
-        // cgPushArgMaterialized) now does so BEFORE ever reaching this
-        // fallback; anything that still lands here has no such
-        // alternative and genuinely cannot be compiled -- fail loud
-        // (log + quit) instead of silently miscompiling.
-        log("cg68k: cgExprAddr: expr kind " + numToStr(int(k)) + " has no address (not an lvalue) -- bind it to a variable first")
-        quit 1
+        // A call/intr/other value-producing result -- task-12-review's
+        // Important finding: this USED TO degrade to a deterministic
+        // placeholder (LEA $0000.W,A0, address 0) rather than crash the
+        // compile, which silently produced GARBAGE (not a diagnostic) for
+        // any caller that then read/copied through it -- reproduced by
+        // `recsSum(recsMake(555))` in recs.cla, where the inner call was
+        // dropped entirely and the outer call received 76 bytes read from
+        // absolute address 0. Task 14.7 (gap-closure): rather than
+        // requiring every caller to special-case materialization before
+        // ever reaching here (cgPushArgs' own KStr/KRec dispatch still
+        // does, for its own reserved-arg-slot reasons), cgExprAddr now
+        // materializes ANY such expr into a fresh scratch temp itself
+        // (cgMaterializeToTemp) and recurses -- covers str_cmp/alert/log
+        // arguments, non-addressable map keys, and any other spot this
+        // file calls cgExprAddr on a value-producing (not already-stored)
+        // expr, in one place, generically.
+        cgExprAddr(cgMaterializeToTemp(e))
+        return
     }
 }
 
@@ -2317,6 +2470,7 @@ func cgFieldRefAddr(e: int) {
     var baseT: int
     var recNameIdx: int
     var off: int
+    var fieldName: string
 
     baseT = irExprType(irFieldRefX(e))
     if irtKind(baseT) == KOverlay {
@@ -2324,6 +2478,28 @@ func cgFieldRefAddr(e: int) {
         a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
     } else {
         cgExprAddr(irFieldRefX(e))
+    }
+    if irtKind(baseT) == KErr {
+        // Task 14.7: `error` (KErr) is a builtin fixed-layout struct, not
+        // a user-declared record -- irtName(baseT) is -1 (irSimpleType's
+        // own "no name" convention), so cgFieldOffset's cgFindRecordByName
+        // scan would call poolGet(-1) and crash (`runtime error: list
+        // index out of range`, reproduced by `var e: error; e.code == 0`
+        // on this branch pre-fix). Hardcode the same two offsets
+        // cgSizeOf(KErr)/cgErrMsgOff already establish (code=0,
+        // message=cgErrMsgOff()) instead of consulting the record
+        // registry at all.
+        fieldName = poolGet(irFieldRefName(e))
+        if fieldName == "code" {
+            off = 0
+        } else if fieldName == "message" {
+            off = cgErrMsgOff()
+        } else {
+            log("cg68k: unknown field " + fieldName + " on error")
+            quit 1
+        }
+        a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
+        return
     }
     recNameIdx = irtName(baseT)
     off = cgFieldOffset(recNameIdx, irFieldRefName(e))
@@ -2558,6 +2734,7 @@ func cgEmitStoreScalarAny(dst: int, src: int) {
 // cgEmitStoreScalarAny's doc comment explains) then dst's (A1).
 func cgEmitStoreRec(dst: int, src: int) {
     var sk: IRExprKind
+    var nm: string
     var sz: int
 
     sk = irExprKind(src)
@@ -2568,6 +2745,86 @@ func cgEmitStoreRec(dst: int, src: int) {
     }
     if sk == ECallFn {
         cgCallFnInto(src, dst)
+        return
+    }
+    if sk == EIntr {
+        // Task 14.7: a KRec list/map element read (`popped = lst.pop()`,
+        // `r = m.get(k, dv)`, etc, `lst of RCItem`) -- mirrors
+        // cgEmitStoreStr's own list/map read-family arms exactly, just
+        // targeting a KRec-sized block copy instead of a clamped str
+        // copy. Without this arm, an EIntr src here fell through to the
+        // generic block-copy tail below, which cgExprAddr's (with no
+        // OTHER address) own fallback would materialize via
+        // cgMaterializeToTemp -> cgEmitStoreRec AGAIN with the SAME src
+        // -- infinite re-materialization, observed as the big-temp pool
+        // exhausting (arc_rec_copy.cla's `popped = lst.pop()`).
+        nm = poolGet(irIntrName(src))
+        if nm == "list_pop" or nm == "list_shift" {
+            cgCopyScratchToDst(cgIntrListPopLike(src, nm), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "list_first" or nm == "list_last" {
+            cgCopyScratchToDst(cgIntrListFirstLast(src, nm), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "map_get" {
+            cgCopyScratchToDst(cgIntrMapGet(src), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "map_get_dv" or nm == "map_get_dv_birth" {
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        log("cg68k: cgEmitStoreRec: intrinsic " + nm + " unsupported in store context")
+        quit 1
+    }
+    sz = cgSizeOf(irExprType(dst))
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(dst)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
+}
+
+// cgEmitStoreErr (Task 14.7) mirrors cgEmitStoreRec's own shape for a KErr
+// dst: the only src this backend's fixtures ever produce is EIntr
+// "lasterr_value" (`e = lastError`, ir.cla's ILastErr -- lower.cla's own
+// "no VarRef for the bare global lastError" doc comment) -- materialized
+// field-by-field via the SAME natLastErrCode/natLastErrMsg calls
+// cgIntr's "lasterr_code" arm and cgEmitStoreStr's "lasterr_msg" arm
+// already use, rather than one combined runtime call (native.cla has no
+// single "give me the whole Err struct" entry point). Any OTHER src
+// (error-to-error copy, e.g. `e2 = e1`) falls through to a plain
+// cgSizeOf(KErr)-byte block copy, same generic tail cgEmitStoreRec's own
+// KRec default uses -- not exercised by any fixture, but layout-safe
+// since KErr's byte layout is fixed and copy-compatible.
+func cgEmitStoreErr(dst: int, src: int) {
+    var sk: IRExprKind
+    var codeFi: int
+    var msgFi: int
+    var sz: int
+
+    sk = irExprKind(src)
+    if sk == EIntr and poolGet(irIntrName(src)) == "lasterr_value" {
+        codeFi = findIRFuncIdxByName(intern("natLastErrCode"))
+        if codeFi == -1 or not shakeReachable(codeFi) {
+            log("cg68k: natLastErrCode not found/reachable")
+            quit 1
+        }
+        msgFi = findIRFuncIdxByName(intern("natLastErrMsg"))
+        if msgFi == -1 or not shakeReachable(msgFi) {
+            log("cg68k: natLastErrMsg not found/reachable")
+            quit 1
+        }
+        cgExprAddr(dst)
+        a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[codeFi])
+        cgStoreD0At(1, 0, irIntT)
+        a68Emit(OpLea, 0, AmDisp16, 1, cgErrMsgOff(), AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[msgFi])
+        cgCleanupStack(4)
         return
     }
     sz = cgSizeOf(irExprType(dst))
@@ -2585,11 +2842,12 @@ func cgEmitStoreRec(dst: int, src: int) {
 // already sitting at 8(A6) (pushed by value, not LEA'd). ENewRec
 // constructs directly into it (MOVEA 8(A6),A0 loads the pointer VALUE,
 // giving cgRecordCtorAt the same (reg=0,off=0) address shape as
-// cgEmitStoreRec's own ENewRec arm); anything else addressable
+// cgEmitStoreRec's own ENewRec arm); anything else (EVarRef/EFieldRef/
+// EIndexRef, or ECallFn/EIntr -- Task 14.7: cgExprAddr's own general
+// fallback now materializes either into a fresh temp via cgEmitStoreRec,
+// itself EIntr/ECallFn-aware, then this arm block-copies from that temp)
 // block-copies, src's address stashed across the 8(A6) read exactly like
-// cgEmitStoreRec's own generic arm. ECallFn (returning a nested call's
-// result directly) isn't exercised by this task's fixtures -- TODO, same
-// limitation cgEmitReturnStr already documents for its own ECallFn arm.
+// cgEmitStoreRec's own generic arm.
 func cgEmitReturnRec(src: int) {
     var sk: IRExprKind
     var sz: int
@@ -2598,10 +2856,6 @@ func cgEmitReturnRec(src: int) {
     if sk == ENewRec {
         a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
         cgRecordCtorAt(0, 0, irNewRecName(src))
-        return
-    }
-    if sk == ECallFn {
-        a68Comment("TODO return <- nested call: unsupported this task")
         return
     }
     sz = cgSizeOf(cgCurRetType)
@@ -3180,13 +3434,66 @@ func cgIntrLoadScratch(off: int, t: int) {
 // (IMapGetDvBirth's own "pre-fill with the default" step, mirroring
 // fpIntrCall's `fpEmit(t + " = " + dv + ";")`).
 func cgCopyScratch(srcOff: int, dstOff: int, t: int) {
-    if cgSizeOf(t) == 1 {
+    var sz: int
+
+    sz = cgSizeOf(t)
+    if sz == 1 {
         a68Emit(OpMove, 1, AmDisp16, 6, srcOff, AmDn, 0, 0)
         a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, 6, dstOff)
-    } else {
+    } else if sz <= 4 {
         a68Emit(OpMove, 4, AmDisp16, 6, srcOff, AmDn, 0, 0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, dstOff)
+    } else {
+        // Task 14.7: a KStr/KRec scratch (IMapGetDvBirth's pre-fill,
+        // dvOff -> off) needs a real block copy -- the two 4-byte MOVEs
+        // above only moved a pointer-sized value. cgBlockCopy's own
+        // convention: A0 = source, A1 = dest (cgEmitStoreRec's generic
+        // tail establishes it the same way).
+        a68Emit(OpLea, 0, AmDisp16, 6, srcOff, AmAn, 0, 0)
+        a68Emit(OpLea, 0, AmDisp16, 6, dstOff, AmAn, 1, 0)
+        cgBlockCopy(sz)
     }
+}
+
+// cgStoreElemAt (Task 14.7) stores e's value into a list/map element
+// scratch slot (off(A6)) -- the shared tail every container push/set/
+// get-default arm below uses for its VALUE argument. A scalar-kind
+// element (everything this file supported through Task 13) evaluates via
+// cgExpr+cgStoreD0At exactly as before (unchanged behavior); a KStr/KRec
+// element (`list of string`/`map of string`/small record, Task 14.7)
+// can't pass through D0 at all, so it routes through cgVarRefAt +
+// cgEmitStoreStr/cgEmitStoreRec instead -- the same materialization
+// cgMaterializeToTemp uses, just targeting an ALREADY-allocated slot
+// (the caller needs scratchOff itself, separately, for the runtime call's
+// own out/in-param LEA) rather than allocating its own.
+func cgStoreElemAt(off: int, t: int, e: int) {
+    var dst: int
+
+    if irtKind(t) == KRec {
+        dst = cgVarRefAt(off, t)
+        cgEmitStoreRec(dst, e)
+    } else if irtKind(t) == KStr {
+        dst = cgVarRefAt(off, t)
+        cgEmitStoreStr(dst, e)
+    } else {
+        cgExpr(e)
+        cgStoreD0At(6, off, t)
+    }
+}
+
+// cgCopyScratchToDst (Task 14.7) block-copies a scratch slot's bytes
+// (off(A6), already filled by a runtime out-param call -- cgIntrListPopLike
+// et al.) into dst's own address -- the shared tail cgEmitStoreStr's
+// list/map read-family arms use, mirroring cgEmitStoreRec's own generic
+// addressable-source block-copy tail (src's address stashed across dst's
+// own address computation, same clobber-avoidance discipline).
+func cgCopyScratchToDst(off: int, dst: int, sz: int) {
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(dst)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
 }
 
 // cgIntrListPushLike mirrors fpIntrCall's IListPush(Retain)/
@@ -3212,8 +3519,7 @@ func cgIntrListPushLike(e: int, nm: string) {
     cgExpr(a0e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     scratchOff = cgAllocTmpOff(elemT)
-    cgExpr(a1e)
-    cgStoreD0At(6, scratchOff, elemT)
+    cgStoreElemAt(scratchOff, elemT, a1e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
     }
@@ -3240,7 +3546,15 @@ func cgIntrListPushLike(e: int, nm: string) {
 // result would otherwise leak with nothing left to release it -- that ONE
 // case routes through cgNewTrackedTmp instead, so the ordinary
 // end-of-statement flush (cgFreeStmtTmps) catches it.
-func cgIntrListPopLike(e: int, nm: string) {
+// Returns the scratch offset the result was written to (Task 14.7): a
+// scalar-kind elemT also gets the ordinary D0 load (cgIntrLoadScratch,
+// this func's own historical void contract, every existing value-context
+// call site relies on that D0 side effect and simply discards the return
+// -- legal, Ch3's own "a function call... may appear on its own as a
+// statement; any return value is discarded"); a KStr/KRec elemT (can't
+// fit D0) skips the load -- cgEmitStoreStr's own "list_pop"/"list_shift"
+// arm is the only caller that needs the offset for that case.
+func cgIntrListPopLike(e: int, nm: string): int {
     var a0e: int
     var elemT: int
     var off: int
@@ -3263,7 +3577,10 @@ func cgIntrListPopLike(e: int, nm: string) {
     }
     cgJsrByName(fnName)
     cgCleanupStack(8)
-    cgIntrLoadScratch(off, elemT)
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
 }
 
 // cgIntrListFirstLast mirrors fpIntrCall's IListFirst/IListLast arm
@@ -3271,7 +3588,7 @@ func cgIntrListPopLike(e: int, nm: string) {
 // element -- t and l's own slot alias the SAME object, so a handle-typed
 // result is retained IMMEDIATELY (always tracked, regardless of discard
 // context -- the ONE difference from pop/shift's own untracked default).
-func cgIntrListFirstLast(e: int, nm: string) {
+func cgIntrListFirstLast(e: int, nm: string): int {
     var a0e: int
     var elemT: int
     var off: int
@@ -3300,7 +3617,10 @@ func cgIntrListFirstLast(e: int, nm: string) {
         cgRetainAt(6, off, elemT)
         cgLastTrackedOff = off
     }
-    cgIntrLoadScratch(off, elemT)
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
 }
 
 // cgIntrListRemove mirrors fpIntrCall's IListRemove arm (cprint.cla:
@@ -3374,8 +3694,7 @@ func cgIntrListSet(e: int, retainVariant: bool) {
     cgStoreD0At(6, lOff, irPtrT)
     cgExpr(a1e)
     cgStoreD0At(6, iOff, irIntT)
-    cgExpr(a2e)
-    cgStoreD0At(6, vOff, elemT)
+    cgStoreElemAt(vOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
     }
@@ -3423,8 +3742,7 @@ func cgIntrMapSet(e: int, retainVariant: bool) {
     }
 
     vOff = cgAllocTmpOff(elemT)
-    cgExpr(a2e)
-    cgStoreD0At(6, vOff, elemT)
+    cgStoreElemAt(vOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         cgHandoff(cgLastTrackedOff)
     }
@@ -3446,7 +3764,7 @@ func cgIntrMapSet(e: int, retainVariant: bool) {
 // aliases m's own stored value -- a handle-typed result is retained
 // immediately into a tracked temp, same +1-and-tracked convention as
 // IListFirst/IListLast.
-func cgIntrMapGet(e: int) {
+func cgIntrMapGet(e: int): int {
     var a0e: int
     var a1e: int
     var elemT: int
@@ -3481,7 +3799,10 @@ func cgIntrMapGet(e: int) {
         cgRetainAt(6, off, elemT)
         cgLastTrackedOff = off
     }
-    cgIntrLoadScratch(off, elemT)
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
 }
 
 // cgIntrMapGetDv mirrors fpIntrCall's IMapGetDv/IMapGetDvBirth arms
@@ -3498,7 +3819,7 @@ func cgIntrMapGet(e: int) {
 // aliases the map's OWN value (needs its own +1) AND dv's original box is
 // now orphaned (must be released here, or it leaks) -- ARC Task 8's fix
 // for both directions of that exact bug, mirrored exactly.
-func cgIntrMapGetDv(e: int, isBirth: bool) {
+func cgIntrMapGetDv(e: int, isBirth: bool): int {
     var a0e: int
     var a1e: int
     var a2e: int
@@ -3519,8 +3840,7 @@ func cgIntrMapGetDv(e: int, isBirth: bool) {
     cgStoreD0At(6, mOff, irPtrT)
 
     dvOff = cgAllocTmpOff(elemT)
-    cgExpr(a2e)
-    cgStoreD0At(6, dvOff, elemT)
+    cgStoreElemAt(dvOff, elemT, a2e)
     if cgLastTrackedOff != -1 {
         // fpHandoff(dv): dv's own temp (if any) is about to alias into
         // the result -- untrack it, this arm's own retain/release logic
@@ -3559,7 +3879,10 @@ func cgIntrMapGetDv(e: int, isBirth: bool) {
         }
         cgLastTrackedOff = off
     }
-    cgIntrLoadScratch(off, elemT)
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
 }
 
 // cgIntrMapRemove mirrors fpIntrCall's IMapRemove arm (cprint.cla:
@@ -4106,7 +4429,7 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
     var ak: IRExprKind
 
     ak = irExprKind(a)
-    if ak == EVarRef or ak == EFieldRef {
+    if ak == EVarRef or ak == EFieldRef or ak == EIndexRef {
         return true
     }
     return ak == EStrConst and tk == KStr
@@ -4564,17 +4887,21 @@ func cgCallExt(e: int) {
 //     cprint's fpStoreStr exactly.
 // ================================================================
 
-// cgConcatIntoTemp (task-8-review round 1 fix, Critical 1) reserves a
-// 256-byte stack temp and computes rtStrConcat(temp, a0e, a1e) into it --
-// ALWAYS, unconditionally, mirroring cprint's fpIntrCall IStrConcat arm
-// (`t = fpNewTmp(...)`, cprint.cla:1644-1653), which is likewise never
-// materialized directly into the final destination. This is not
-// optional: rtStrConcat's own doc comment (runtime/clarus/str.cla:66-67)
-// says "out must not alias b" -- writing straight into `dst` (the
-// original Task 8 shortcut) corrupted `s = t + s` (dst aliases b) to
-// "worldworld" instead of "worldhello" (task-8-review's empirical trace).
-// An independent temp sidesteps the aliasing question outright: neither
-// operand can ever alias `out` when `out` is never `dst`.
+// cgStrBuilderIntoTemp (task-8-review round 1 fix, Critical 1; generalized
+// Task 14.7) reserves a 256-byte stack temp and calls fnName(temp,
+// argExprs...) into it -- ALWAYS, unconditionally, mirroring cprint's
+// fpIntrCall IStrConcat/IStrConcatChar/IStrPrependChar/IStrSlice/
+// ITextSlice arms (every one of them: `t = fpNewTmp("clar_str_255")`,
+// never materialized directly into the final destination). This is not
+// optional: str.cla's own doc comments on this whole family say "out must
+// not alias" any input -- writing straight into `dst` (the original Task
+// 8 shortcut, str_concat only) corrupted `s = t + s` (dst aliases the 2nd
+// operand) to "worldworld" instead of "worldhello" (task-8-review's
+// empirical trace). An independent temp sidesteps the aliasing question
+// outright: no operand can ever alias `out` when `out` is never `dst`.
+// argIsAddr[i] mirrors cgCallRuntime's own convention (true = cgExprAddr'd,
+// false = cgExpr'd by value -- a KText/int/char arg passes by value, same
+// as any other `ptr`-typed runtime param taking a handle directly).
 //
 // Leaves the temp UN-freed and A7 pointing at its start (the JSR+cleanup
 // above is self-balanced, so A7 returns to exactly where it was right
@@ -4583,24 +4910,88 @@ func cgCallExt(e: int) {
 // JSR: this backend has no callee-saved register convention, so nothing
 // survives a call except A7 itself, which the calling convention DOES
 // guarantee), copy out of it into the real destination, and free it
-// (`ADDA.W #256,A7`).
-func cgConcatIntoTemp(a0e: int, a1e: int) {
+// (cgFlushA1TempToDst/cgFlushA1TempToRetPtr do both, `ADDA.W #256,A7`
+// included).
+func cgStrBuilderIntoTemp(fnName: string, argExprs: list of int, argIsAddr: list of bool) {
     var fi: int
+    var i: int
 
-    fi = findIRFuncIdxByName(intern("rtStrConcat"))
+    fi = findIRFuncIdxByName(intern(fnName))
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrConcat not found/reachable")
+        log("cg68k: " + fnName + " not found/reachable")
         quit 1
     }
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
     a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    cgExprAddr(a0e)
+    i = 0
+    while i < argExprs.count {
+        if argIsAddr[i] {
+            cgExprAddr(argExprs[i])
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        } else {
+            cgExpr(argExprs[i])
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        }
+        i = i + 1
+    }
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(4 + argExprs.count * 4)
+}
+
+// cgFlushA1TempToDst clamp-copies cgStrBuilderIntoTemp's 256-byte scratch
+// into dst (rtStrStore(dst, dst's own capacity, scratch)) and frees the
+// scratch -- the shared tail cgEmitStoreStr's str_concat/str_concat_char/
+// str_prepend_char/str_slice/text_slice arms all use. The scratch address
+// is recaptured FRESH from A7 here (never carried in A1 across the
+// builder's own JSR -- this backend has no callee-saved registers;
+// TestNativeStrContainers caught exactly this on real hardware when the
+// recapture was briefly dropped in refactoring), and recaptured AFTER
+// cgExprAddr(dst) (whose own EIndexRef arm JSRs rtListAt, clobbering A1
+// the same way). A7 sits exactly at the temp's start both times -- the
+// builder's own balanced-JSR contract, and cgExprAddr's own balanced
+// push/cleanup sequences preserve it.
+func cgFlushA1TempToDst(dst: int) {
+    var cap: int
+    var fi: int
+
+    cap = irtN(irExprType(dst))
+    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    cgExprAddr(dst)
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgExprAddr(a1e)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
     cgCleanupStack(12)
+    a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
+}
+
+// cgFlushA1TempToRetPtr mirrors cgFlushA1TempToDst for `return <str
+// expr>` -- the destination is the hidden pointer's VALUE at 8(A6),
+// pushed directly (not LEA'd), same convention cgEmitReturnStr's own
+// generic tail already uses. Same fresh-A7 recapture as its sibling.
+func cgFlushA1TempToRetPtr() {
+    var cap: int
+    var fi: int
+
+    cap = irtN(cgCurRetType)
+    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+    a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
 }
 
 func cgEmitStoreStr(dst: int, src: int) {
@@ -4609,6 +5000,7 @@ func cgEmitStoreStr(dst: int, src: int) {
     var fi: int
     var a0e: int
     var a1e: int
+    var a2e: int
     var cap: int
     var args: list of int
     var addrs: list of bool
@@ -4623,24 +5015,72 @@ func cgEmitStoreStr(dst: int, src: int) {
         if nm == "str_concat" {
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
-            cgConcatIntoTemp(a0e, a1e)
-            // A7 is back at the temp's start (cgConcatIntoTemp's own
-            // JSR+cleanup is balanced) -- capture it into A1 BEFORE the
-            // dst-address/cap pushes below move A7 further.
-            a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
-            cap = irtN(irExprType(dst))
-            fi = findIRFuncIdxByName(intern("rtStrStore"))
-            if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtStrStore not found/reachable")
-                quit 1
-            }
-            cgExprAddr(dst)
-            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-            a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
-            a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
-            cgCleanupStack(12)
-            a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(true)
+            cgStrBuilderIntoTemp("rtStrConcat", args, addrs)
+            cgFlushA1TempToDst(dst)
+            return
+        }
+        if nm == "str_concat_char" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtStrConcatChar", args, addrs)
+            cgFlushA1TempToDst(dst)
+            return
+        }
+        if nm == "str_prepend_char" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(false)
+            addrs.add(true)
+            cgStrBuilderIntoTemp("rtStrPrependChar", args, addrs)
+            cgFlushA1TempToDst(dst)
+            return
+        }
+        if nm == "str_slice" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            a2e = irExprNext(a1e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            args.add(a2e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(false)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtStrSlice", args, addrs)
+            cgFlushA1TempToDst(dst)
+            return
+        }
+        if nm == "text_slice" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            a2e = irExprNext(a1e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            args.add(a2e)
+            addrs = cgFreshBoolList()
+            addrs.add(false)
+            addrs.add(false)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtTextSlice", args, addrs)
+            cgFlushA1TempToDst(dst)
             return
         }
         if nm == "lasterr_msg" {
@@ -4684,8 +5124,36 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgCleanupStack(8)
             return
         }
-        a68Comment("TODO SStoreStr <- intrinsic " + nm + ": unsupported this task")
-        return
+        if nm == "list_pop" or nm == "list_shift" {
+            cgCopyScratchToDst(cgIntrListPopLike(src, nm), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "list_first" or nm == "list_last" {
+            cgCopyScratchToDst(cgIntrListFirstLast(src, nm), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "map_get" {
+            cgCopyScratchToDst(cgIntrMapGet(src), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "map_get_dv" or nm == "map_get_dv_birth" {
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "str_coerce" {
+            // Task 14.7 (was a silent no-op TODO): a Str value binding
+            // into a differently-capacitied Str slot (lowCoerceStr,
+            // lower.cla) -- unwrap to the inner expr and fall through to
+            // this function's own generic clamped-copy tail below, which
+            // already computes cap from DST's own capacity (== target,
+            // by lowCoerceStr's own construction) and cgExprAddr's the
+            // inner expr (now itself materializes via cgExprAddr's own
+            // Task 14.7 fallback if the inner expr isn't addressable).
+            src = irIntrArgsHead(src)
+        } else {
+            log("cg68k: cgEmitStoreStr: intrinsic " + nm + " unsupported in store context")
+            quit 1
+        }
     }
 
     // EStrConst/EVarRef (and any other addressable source): a clamped
@@ -4723,7 +5191,10 @@ func cgEmitReturnStr(src: int) {
     var fi: int
     var a0e: int
     var a1e: int
+    var a2e: int
     var cap: int
+    var args: list of int
+    var addrs: list of bool
 
     sk = irExprKind(src)
     if sk == EIntr {
@@ -4731,20 +5202,72 @@ func cgEmitReturnStr(src: int) {
         if nm == "str_concat" {
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
-            cgConcatIntoTemp(a0e, a1e)
-            a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
-            cap = irtN(cgCurRetType)
-            fi = findIRFuncIdxByName(intern("rtStrStore"))
-            if fi == -1 or not shakeReachable(fi) {
-                log("cg68k: rtStrStore not found/reachable")
-                quit 1
-            }
-            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
-            a68Emit(OpMove, 4, AmImm, 0, cap, AmPreDec, 7, 0)
-            a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
-            cgCleanupStack(12)
-            a68Emit(OpAdda, 4, AmImm, 0, 256, AmAn, 7, 0)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(true)
+            cgStrBuilderIntoTemp("rtStrConcat", args, addrs)
+            cgFlushA1TempToRetPtr()
+            return
+        }
+        if nm == "str_concat_char" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtStrConcatChar", args, addrs)
+            cgFlushA1TempToRetPtr()
+            return
+        }
+        if nm == "str_prepend_char" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            addrs = cgFreshBoolList()
+            addrs.add(false)
+            addrs.add(true)
+            cgStrBuilderIntoTemp("rtStrPrependChar", args, addrs)
+            cgFlushA1TempToRetPtr()
+            return
+        }
+        if nm == "str_slice" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            a2e = irExprNext(a1e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            args.add(a2e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(false)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtStrSlice", args, addrs)
+            cgFlushA1TempToRetPtr()
+            return
+        }
+        if nm == "text_slice" {
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            a2e = irExprNext(a1e)
+            args = cgFreshIntList()
+            args.add(a0e)
+            args.add(a1e)
+            args.add(a2e)
+            addrs = cgFreshBoolList()
+            addrs.add(false)
+            addrs.add(false)
+            addrs.add(false)
+            cgStrBuilderIntoTemp("rtTextSlice", args, addrs)
+            cgFlushA1TempToRetPtr()
             return
         }
         if nm == "lasterr_msg" {
@@ -4782,12 +5305,21 @@ func cgEmitReturnStr(src: int) {
             cgCleanupStack(8)
             return
         }
-        a68Comment("TODO return <- intrinsic " + nm + ": unsupported this task")
-        return
-    }
-    if sk == ECallFn {
-        a68Comment("TODO return <- nested call: unsupported this task")
-        return
+        if nm == "str_coerce" {
+            // Task 14.7 (was a silent no-op TODO -- e.g. emit_func.cla's
+            // `func f(s: string): string(3) { return s }`, a real corpus
+            // shape): mirrors cgEmitStoreStr's own str_coerce arm --
+            // unwrap and fall through to the generic clamped-copy tail
+            // below, which already computes cap from cgCurRetType (==
+            // target, by lowCoerceStr's own construction).
+            src = irIntrArgsHead(src)
+        } else {
+            log("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
+            quit 1
+        }
+    } else if sk == ECallFn {
+        log("cg68k: cgEmitReturnStr: return <- nested call not supported (bind it to a variable first)")
+        quit 1
     }
 
     cap = irtN(cgCurRetType)
@@ -5275,13 +5807,16 @@ func cgStmt(s: int) {
     var savedOffs: list of int
     var savedType: list of int
     var savedNext: int
+    var savedBigNext: int
 
     savedOffs = cgStmtTmpOffs
     savedType = cgStmtTmpType
     savedNext = cgStmtTmpNext
+    savedBigNext = cgStmtBigTmpNext
     cgStmtTmpOffs = cgFreshIntList()
     cgStmtTmpType = cgFreshIntList()
     cgStmtTmpNext = 0
+    cgStmtBigTmpNext = 0
     // cgLastTrackedOff resets fresh per statement -- see its own doc
     // comment (module-state block): every consuming check reads it
     // IMMEDIATELY after the one cgExpr call it cares about, so a plain
@@ -5307,6 +5842,8 @@ func cgStmt(s: int) {
             }
         } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KRec {
             cgEmitStoreRec(dst, irAssignSrc(s))
+        } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KErr {
+            cgEmitStoreErr(dst, irAssignSrc(s))
         } else {
             a68Comment("TODO SAssign <dst kind " + numToStr(int(dstK)) + ">: unsupported this task")
         }
@@ -5336,6 +5873,7 @@ func cgStmt(s: int) {
     cgStmtTmpOffs = savedOffs
     cgStmtTmpType = savedType
     cgStmtTmpNext = savedNext
+    cgStmtBigTmpNext = savedBigNext
 }
 
 // ================================================================

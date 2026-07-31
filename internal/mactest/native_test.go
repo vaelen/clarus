@@ -111,13 +111,34 @@ func TestHelloOn68k(t *testing.T) {
 // emit68k` -- then requires the emulator's captured `out` to be
 // byte-identical to the host's stdout, and both exit codes to be 0.
 func TestNativeSmoke(t *testing.T) {
-	requireMac(t)
-	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", "smoke.cla")
+	runNativeHostCompare(t, "smoke.cla")
+}
 
-	hostExe := t.TempDir() + "/smoke_host"
+// TestNativeStrContainers is native-5d Task 14.7's boot test for the
+// gap-closure codegen classes (str-element containers, expression-position
+// slice, materialized map key) -- testdata/cg68k/strcontainers.cla, its
+// own file rather than a smoke.cla section because smoke.cla is at its
+// single-segment PC-relative displacement ceiling (see the fixture's own
+// header comment; Task 15's segmentation is the real fix).
+func TestNativeStrContainers(t *testing.T) {
+	runNativeHostCompare(t, "strcontainers.cla")
+}
+
+// runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
+// host expectation via build.Build (the Go compiler, same as
+// suite_host_test.go's BuildSuiteHost/RunSuiteHost -- these fixtures are
+// deliberately Go-compiler-compatible Clarus, no Ch13 surface, precisely
+// so this comparison is possible), and the native image via `clarusc
+// emit68k` -- then requires the emulator's captured `out` to be
+// byte-identical to the host's stdout, and both exit codes to be 0.
+func runNativeHostCompare(t *testing.T, fixtureName string) {
+	requireMac(t)
+	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", fixtureName)
+
+	hostExe := filepath.Join(t.TempDir(), "host")
 	diags, err := build.Build([]string{fixture}, hostExe)
 	if err != nil {
-		t.Fatalf("build host smoke: %v", err)
+		t.Fatalf("build host %s: %v", fixtureName, err)
 	}
 	if len(diags) > 0 {
 		var b strings.Builder
@@ -132,13 +153,13 @@ func TestNativeSmoke(t *testing.T) {
 	hostCmd.Dir = t.TempDir()
 	hostOut, err := hostCmd.Output()
 	if err != nil {
-		t.Fatalf("run host smoke: %v", err)
+		t.Fatalf("run host %s: %v", fixtureName, err)
 	}
 	want := string(hostOut)
 
 	exe := buildNativeClarusc(t)
 	runDir := t.TempDir()
-	bin := filepath.Join(runDir, "smoke.bin")
+	bin := filepath.Join(runDir, "native.bin")
 	cmd := exec.Command(exe, "emit68k", "-o", bin, fixture)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -147,9 +168,9 @@ func TestNativeSmoke(t *testing.T) {
 
 	got, _, exitCode := RunMac(t, bin, 5*time.Minute)
 	if exitCode != 0 {
-		t.Fatalf("smoke.cla exit code %d, want 0", exitCode)
+		t.Fatalf("%s exit code %d, want 0", fixtureName, exitCode)
 	}
 	if got != want {
-		t.Fatalf("smoke.cla output mismatch (native vs host):%s", firstDiff(want, got))
+		t.Fatalf("%s output mismatch (native vs host):%s", fixtureName, firstDiff(want, got))
 	}
 }

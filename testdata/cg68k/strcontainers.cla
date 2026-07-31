@@ -1,0 +1,78 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// strcontainers.cla: Task 14.7 gap-closure pinning fixture -- the three
+// >4-byte-element/materialization codegen classes the corpus sweep found
+// missing from cg68k.cla: (1) `list of string(N)` push/index-read/
+// index-write/for-list, the container-element codegen path once an
+// element's own byte size exceeds 4 (cgAllocTmpOff's small pool ->
+// cgAllocBigTmpOff, cgCopyElemInto/From's block-copy arm); (2) a string
+// slice used directly in expression position (never bound to a local
+// first), exercising cgExprAddr's own str-materialization fallback
+// (cgMaterializeToTemp) for str_cmp's operand; (3) a map key built from a
+// non-addressable expression (str concat), the same fallback for
+// cgIntrMapSet/Get's key argument.
+//
+// Deliberately its OWN small file rather than folded into smoke.cla:
+// smoke.cla is already at its 16-bit PC-relative displacement ceiling
+// under the new (Task 14.7) frame layout -- ANY addition, however small,
+// overflows vasm's LEA/JSR range (error 2030) once the whole file's
+// generated code + literal pool crosses ~32KB. That's a real "one
+// program, one segment" ceiling Task 15 (segmentation) is the intended
+// fix for, not something to work around here by trimming smoke.cla's
+// EXISTING coverage. This file stays small on purpose so it keeps
+// round-tripping through vasm without needing segmentation.
+func strcontainersRun() {
+    var sl: list of string(8)
+    var joined: string
+    var sm: map of int
+    var ka: string
+    var kb: string
+
+    sl.push("alpha")
+    sl.push("beta")
+    if sl.count == 2 and sl[0] == "alpha" {
+        alert("str-list push/count/index-read ok")
+    } else {
+        alert("str-list push/count/index-read FAIL")
+    }
+
+    sl[0] = "GAMMA"
+    if sl[0] == "GAMMA" {
+        alert("str-list index-write ok")
+    } else {
+        alert("str-list index-write FAIL")
+    }
+
+    joined = ""
+    for x in sl {
+        joined = joined + x
+    }
+    if joined == "GAMMAbeta" {
+        alert("str-list for-list iterate ok")
+    } else {
+        alert("str-list for-list iterate FAIL")
+    }
+
+    // expression-position slice: never bound to a local first.
+    if "hello world"[6, 5] == "world" {
+        alert("string slice in expr position ok")
+    } else {
+        alert("string slice in expr position FAIL")
+    }
+
+    // map key materialized from a non-addressable expression (str concat).
+    ka = "fo"
+    kb = "o"
+    sm[ka + kb] = 42
+    if sm.get(ka + kb, -1) == 42 {
+        alert("map key from concat expr (materialized) ok")
+    } else {
+        alert("map key from concat expr (materialized) FAIL")
+    }
+}
+
+on App.launch {
+    strcontainersRun()
+    quit 0
+}
