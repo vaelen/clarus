@@ -184,12 +184,40 @@ byte-comparing against what Rez produces today for the same inputs.
    ships a byte-arg pascal trap (see glue section) — stage 0 only adds
    the asm68k listing-level encodings needed to write it.
 
+## Plan-time adjudications (2026-08-01, recorded during plan authoring)
+
+Four refinements found necessary once the code was inventoried in depth
+(`docs/superpowers/plans/2026-08-01-native-5e-ui-runtime.md` is the
+consumer; the ratified decisions above are unchanged in intent):
+
+1. **The cprint redirect flips per-scenario, not per-family.** Unlike
+   str/text/list/map, the UI runtime is one interconnected event loop —
+   half-ported/half-C cannot share `winst`/`gModal` state across a C/Clarus
+   boundary. A temporary `clarusc emit --uiport` flag selects the ported
+   runtime per build; scenarios move to the ported Retro68 lane as their
+   widget surface lands (goldens strict throughout), and the flag flips to
+   the only path — legacy emission deleted — once all 23 are green ported.
+   The two-lane property (Retro68-proven before native) is preserved
+   exactly.
+2. **A `word` extern type is required.** 5d's pascal marshaling pushes
+   `int` as `.L` and has no 16-bit form; the Toolbox UI surface is
+   INTEGER-heavy. `word` (contextual, extern decls only, int-compatible,
+   `.W` at the trap boundary, results sign-extended) is stage-0 apparatus.
+3. **Glue entry addresses are jump-table entry addresses** (`LEA
+   32+8*slot+2(A5)` — segment-safe, valid from any segment, the classic
+   Mac idiom), not raw code labels; cg68k has no data-relocation
+   mechanism and needs none for this.
+4. **Native event-script injection is `emit68k --events FILE`** embedding
+   the script bytes in the constant pool behind a `UiTestScript()` extern —
+   the Retro68 lane's weak-symbol `events.c` override has no native
+   analogue.
+
 ## Staging and verification
 
 Per-stage discipline (every stage, no exceptions):
 
-1. Port the family to `ui*.cla`; redirect cprint's emission arms for that
-   family (the `cp*Ported` pattern).
+1. Port the family to `ui*.cla`; move the family's scenarios to the
+   ported Retro68 lane under `--uiport` (adjudication 1 above).
 2. `go test ./... -timeout 30m` green (differential + snapshot + selfhost).
 3. Full Retro68 UI gate: **all 23 scenario goldens byte-identical** —
    trace and PBM, zero re-bless, zero churn tolerated.
