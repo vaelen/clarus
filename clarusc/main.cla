@@ -29,6 +29,7 @@ include "ir.cla"
 include "lower.cla"
 include "shake.cla"
 include "asm68k.cla"
+include "app68k.cla"
 include "cprint.cla"
 include "cg68k.cla"
 

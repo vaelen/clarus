@@ -15,13 +15,14 @@
 // toText/type-equality copies (cg68ToText/cg68TypeEqual) rather than reach
 // into cprint.cla's.
 //
-// ONE SEGMENT, NO CONTAINER (Task 10 builds the real .bin). cg68Program's
-// whole output THIS task is a single asm68k.cla stream: with --listing it
-// writes <base>.seg1.s (a68ListingText()) and <base>.seg1.dat (a68Bytes()),
-// where <base> is outPath with its trailing ".ext" stripped ("out.bin" ->
-// "out"). outPath itself is never written to -- the -o flag is parsed and
-// threaded through (main.cla) purely so this function can derive the
-// segment file names; there is no Mac CODE-resource container yet.
+// ONE SEGMENT, REAL CONTAINER (Task 10). cg68Program's own output is a
+// single asm68k.cla stream; app68k.cla (included above) wraps it into a
+// real single-segment MacBinary application image, written to outPath by
+// cg68WriteImage -- unconditionally, whether or not --listing was passed.
+// --listing ADDITIONALLY writes <base>.seg1.s (a68ListingText()) and
+// <base>.seg1.dat (a68Bytes()), where <base> is outPath with its trailing
+// ".ext" stripped ("out.bin" -> "out") -- unchanged from Task 7, a debug
+// dump alongside the real image, not instead of it.
 //
 // LAYOUT AUTHORITY. cgSizeOf/cgAlignOf/cgFieldOffset are the ONLY place the
 // native backend decides how big a Clarus type is or where a record field
@@ -116,6 +117,7 @@ include "lib.cla"
 include "ir.cla"
 include "shake.cla"
 include "asm68k.cla"
+include "app68k.cla"
 
 // ================================================================
 // Module state -- rebuilt fresh at the top of every cg68Program() call
@@ -2291,6 +2293,70 @@ func cgSegBase(outPath: string): string {
     return outPath[0, last]
 }
 
+// cgAppName derives the MacBinary application name from outPath: strip
+// the directory (everything up to and including the last '/') the same
+// way cgSegBase strips the extension, then clamp to the app68Build
+// appName param's own string(31) capacity (the store below does this
+// automatically -- string(n) assignment clamps rather than overruns, per
+// the language reference -- spelled out here because it's easy to miss).
+func cgAppName(outPath: string): string(31) {
+    var base: string
+    var lastSlash: int
+    var i: int
+    var name: string(31)
+
+    base = cgSegBase(outPath)
+    lastSlash = -1
+    i = 0
+    while i < base.length {
+        if base[i] == '/' {
+            lastSlash = i
+        }
+        i = i + 1
+    }
+    if lastSlash == -1 {
+        name = base
+    } else {
+        name = base[lastSlash + 1, base.length - lastSlash - 1]
+    }
+    return name
+}
+
+// cg68WriteImage builds the real MacBinary application image (app68k.cla)
+// from the just-finished a68 stream and writes it to outPath -- called
+// unconditionally by cg68Program regardless of --listing (which only
+// controls the EXTRA .seg1.s/.seg1.dat debug dump). jtEntries[0] is the
+// synthesized startup routine (JT slot 0, cgEmitStartup's own doc
+// comment); jtEntries[1..] follow every reachable irFuncs entry in
+// cgAssignJtSlots's own slot order, so cgFuncLabels[i]'s a68 label
+// address lines up with cgJtSlots[i] one-for-one. "????" (the unregistered-
+// developer creator code) matches this repo's own existing default
+// (scripts/build-mac.sh's `${APPID:-????}`) -- there is no --creator flag
+// yet, so every native-5d image gets the same one.
+func cg68WriteImage(outPath: string, startupLbl: int): bool {
+    var jtEntries: list of int
+    var segBytes: list of text
+    var img: text
+    var i: int
+
+    jtEntries.add(a68LabelAddr[startupLbl])
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) {
+            jtEntries.add(a68LabelAddr[cgFuncLabels[i]])
+        }
+        i = i + 1
+    }
+    segBytes.add(a68Bytes())
+
+    img = app68Build(cgAppName(outPath), "????", segBytes, jtEntries, cgGlobalsBelowA5Size)
+    if not file.writeText(outPath, img) {
+        log("cg68Program: cannot write " + outPath + ": " + lastError.message)
+        return false
+    }
+    return true
+}
+
 // cg68Program is the top-level emit68k driver: assign JT slots + reserve
 // every reachable function's label, assign A5 globals offsets, emit the
 // startup routine + its two generated helper stubs, emit every reachable
@@ -2358,6 +2424,10 @@ func cg68Program(outPath: string, listing: bool): bool {
             log("cg68Program: cannot write " + base + ".seg1.dat: " + lastError.message)
             return false
         }
+    }
+
+    if not cg68WriteImage(outPath, startupLbl) {
+        return false
     }
     return true
 }
