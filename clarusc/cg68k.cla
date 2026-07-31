@@ -232,6 +232,15 @@ var cgDiv32Lbl: int
 var cgMod32Used: bool
 var cgMod32Lbl: int
 
+// cgFreeGlobalsLbl is cg68Program's own freeGlobalsLbl, stashed here so
+// cgIntr's "quit" arm (Task 11 -- a `quit expr` statement anywhere in a
+// handler body, not just the implicit one cgEmitStartup's own terminal
+// sequence already emits) can JSR it too: the brief's IQuit arm is
+// "JSR cg_free_globals; push code; JSR natQuit", same cleanup-before-exit
+// order the startup sequence uses. Set once, before cgEmitFunc's own
+// function-emission loop runs (cg68Program), read here.
+var cgFreeGlobalsLbl: int
+
 // cgResetCodegenState clears every Task 8 module-global above -- called
 // once per cg68Program() run, mirroring cgAssignJtSlots/
 // cgAssignGlobalOffsets's own fresh-per-run discipline.
@@ -592,11 +601,13 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
 
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
 // first function in the stream. See the file header for the full shape;
-// briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, call the
+// briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, JSR natInit
+// (Task 11 -- opens the capture file before anything else runs), call the
 // generated init-globals stub, JSR every declared entry handler (no real
 // event/arg marshaling yet), call the generated free-globals stub, push a
 // 0 result and JSR natQuit by name (or note its absence and just RTS --
-// native.cla doesn't exist until Task 11).
+// true only for a build that never links native.cla, which cg68Program
+// never is).
 func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     var zloopLbl: int
     var qi: int
@@ -618,6 +629,19 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
 
     a68EmitTrap(0xA063, "_MaxApplZone")
     a68EmitTrap(0xA036, "_MoreMasters")
+
+    // Task 11: natInit opens the `out` capture file before anything else
+    // runs (including cg_init_globals) -- same "by-name via JT, comment
+    // if absent" contract as natQuit's own tail call below, so a program
+    // built without native.cla linked (never true for emit68k, always
+    // true for the C target, which never reaches cg68Program at all)
+    // degrades to a comment instead of an unresolved JSR.
+    qi = findIRFuncIdxByName(intern("natInit"))
+    if qi != -1 and shakeReachable(qi) {
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[qi])
+    } else {
+        a68Comment("natInit not present -- wired in Task 11")
+    }
 
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, initGlobalsLbl)
 
@@ -1185,6 +1209,50 @@ func cgIntr(e: int) {
         addrs.add(true)
         addrs.add(true)
         if not cgCallRuntime("rtStrCmp", args, addrs) {
+            quit 1
+        }
+        return
+    }
+    // Task 11: alert/log/quit -- native.cla's natAlert/natLog take their
+    // message argument BY ADDRESS (native.cla's own file header explains
+    // why: a `ptr` param, str.cla-style, sidesteps native.cla ever
+    // needing a source-level address-of a `string`), exactly like
+    // str_cmp's own rtStrCmp call just above -- cgCallRuntime with
+    // addrs=true. quit additionally JSRs cg_free_globals first (the
+    // brief's own "IQuit -> JSR cg_free_globals; push code; JSR natQuit"
+    // -- matches cgEmitStartup's own terminal sequence, for a `quit expr`
+    // reached anywhere else in a handler body) -- natQuit's own code
+    // argument is a plain int, passed BY VALUE (addrs=false).
+    if nm == "alert" {
+        a0e = irIntrArgsHead(e)
+        args = cgFreshIntList()
+        args.add(a0e)
+        addrs = cgFreshBoolList()
+        addrs.add(true)
+        if not cgCallRuntime("natAlert", args, addrs) {
+            quit 1
+        }
+        return
+    }
+    if nm == "log" {
+        a0e = irIntrArgsHead(e)
+        args = cgFreshIntList()
+        args.add(a0e)
+        addrs = cgFreshBoolList()
+        addrs.add(true)
+        if not cgCallRuntime("natLog", args, addrs) {
+            quit 1
+        }
+        return
+    }
+    if nm == "quit" {
+        a0e = irIntrArgsHead(e)
+        a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFreeGlobalsLbl)
+        args = cgFreshIntList()
+        args.add(a0e)
+        addrs = cgFreshBoolList()
+        addrs.add(false)
+        if not cgCallRuntime("natQuit", args, addrs) {
             quit 1
         }
         return
@@ -2383,6 +2451,7 @@ func cg68Program(outPath: string, listing: bool): bool {
     startupLbl = a68NewLabel()
     initGlobalsLbl = a68NewLabel()
     freeGlobalsLbl = a68NewLabel()
+    cgFreeGlobalsLbl = freeGlobalsLbl
 
     cgEmitStartup(startupLbl, initGlobalsLbl, freeGlobalsLbl)
     cgEmitInitGlobalsStub(initGlobalsLbl)
