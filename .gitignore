@@ -2,6 +2,7 @@
 /toolchain
 /macplus
 /build-mac/
+/build-68k/
 internal/mactest/probe/build/
 internal/mactest/uiprobe/build/
 /vasm

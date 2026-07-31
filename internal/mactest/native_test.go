@@ -232,3 +232,116 @@ func runNativeHostCompareSeglimit(t *testing.T, fixtureName string, segLimit int
 		t.Fatalf("%s output mismatch (native vs host):%s", fixtureName, firstDiff(want, got))
 	}
 }
+
+// buildNative68k invokes `clarusc emit68k -o <dir>/<binName>.bin fixture`
+// via the memoized buildNativeClarusc(), the same in-test emit pattern
+// every other native_test.go boot test already uses (buildNativeClarusc
+// builds clarusc through the host Go toolchain via build.Build, then this
+// runs the resulting exe directly -- no subprocess snapshot-bootstrap, no
+// script indirection). scripts/build-68k.sh exists and works standalone
+// (mirrors build-mac.sh's step-1 snapshot-bootstrap caching, then `emit68k
+// --rtdir runtime/clarus/ -o ... FILES`) for manual/CI use outside this
+// harness, but Task 16's gate tests below use this helper instead, for the
+// same reason TestHelloOn68k/TestNativeSmoke/etc already do: the memoized
+// buildNativeClarusc() amortizes clarusc's own build cost across all boots
+// in one `go test` run, which script-per-boot subprocess bootstrapping
+// would not.
+func buildNative68k(t *testing.T, fixture, binName string) string {
+	t.Helper()
+	exe := buildNativeClarusc(t)
+	bin := filepath.Join(t.TempDir(), binName+".bin")
+	cmd := exec.Command(exe, "emit68k", "-o", bin, fixture)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", bin, fixture, err, out)
+	}
+	return bin
+}
+
+// TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
+// TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
+// via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the
+// same emulator harness. Host expectation comes from the existing
+// RunSuiteHost/BuildSuiteHost (suite_host_test.go, the Go-compiler-built
+// host binary) -- identical expectation to TestSuiteOnMac's, since
+// test_suite.cla is deliberately Go-compiler-compatible. This is the
+// biggest native boot to date: 4 CODE segments (Task 15), every runtime
+// family, file I/O (host-side only -- native file.save/load has no
+// emulator coverage in 5d, a recorded gate limit; test_suite.cla doesn't
+// exercise them), and panics.
+func TestSuiteOn68k(t *testing.T) {
+	requireMac(t)
+	expected := RunSuiteHost(t, BuildSuiteHost(t))
+	fixture := filepath.Join(repoRoot(t), "testdata", "suite", "test_suite.cla")
+	bin := buildNative68k(t, fixture, "suite")
+	got, _, exitCode := RunMac(t, bin, 15*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("suite exit code %d, want 0", exitCode)
+	}
+	if got != expected {
+		t.Fatalf("native/host divergence:%s", firstDiff(expected, got))
+	}
+}
+
+// TestRunErrOn68k mirrors TestRunErrOnMac (mac_test.go): each of the 6
+// testdata/runerr/*.cla fixtures deliberately raises a runtime error
+// (rt_panic, exit 3); the captured log must contain the matching .err
+// golden's message.
+func TestRunErrOn68k(t *testing.T) {
+	requireMac(t)
+	files, err := filepath.Glob(filepath.Join(repoRoot(t), "testdata", "runerr", "*.cla"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no runerr corpus: %v", err)
+	}
+	for _, f := range files {
+		f := f
+		base := strings.TrimSuffix(filepath.Base(f), ".cla")
+		t.Run(base, func(t *testing.T) {
+			want, err := os.ReadFile(strings.TrimSuffix(f, ".cla") + ".err")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bin := buildNative68k(t, f, "err"+base)
+			_, log, exitCode := RunMac(t, bin, 3*time.Minute)
+			if exitCode != 3 {
+				t.Errorf("exit: got %d want 3", exitCode)
+			}
+			if !strings.Contains(log, strings.TrimSpace(string(want))) {
+				t.Errorf("log %q missing %q", log, strings.TrimSpace(string(want)))
+			}
+		})
+	}
+}
+
+// TestAbortOn68k mirrors TestAbortAppsOnMac (mac_test.go): the two suite-
+// excluded, abort-by-design run goldens (emit_array, emit_enum), each
+// checked standalone against its pre-abort .out/.exit goldens.
+func TestAbortOn68k(t *testing.T) {
+	requireMac(t)
+	for _, name := range []string{"emit_array", "emit_enum"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			wrapper := filepath.Join(repoRoot(t), "testdata", "run", name+".cla")
+			wantOut, err := os.ReadFile(filepath.Join(repoRoot(t), "testdata", "run", name+".out"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantExitBytes, err := os.ReadFile(filepath.Join(repoRoot(t), "testdata", "run", name+".exit"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantExit, err := strconv.Atoi(strings.TrimSpace(string(wantExitBytes)))
+			if err != nil {
+				t.Fatalf("malformed golden exit code %q: %v", wantExitBytes, err)
+			}
+			bin := buildNative68k(t, wrapper, "abort"+name)
+			out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+			if exitCode != wantExit {
+				t.Errorf("exit: got %d want %d", exitCode, wantExit)
+			}
+			if out != string(wantOut) {
+				t.Errorf("out mismatch:%s", firstDiff(string(wantOut), out))
+			}
+		})
+	}
+}

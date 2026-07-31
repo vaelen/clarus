@@ -2272,6 +2272,27 @@ func cgEmitEnumConv(enumNameIdx: int) {
 // release every global's slot, unconditionally (cgReleaseAt no-ops for a
 // plain scalar) -- cpEmitGlobalsInit's own "provably unnecessary to gate"
 // rationale, ARC Task 6.
+// cgEmitGlobalTextFromStr fills a global Text slot (already birthed empty
+// by cgEmitInitGlobalsStub's own cgDefaultInitAt call, since a Text<-Str
+// init is deliberately excluded from `fullReplace` there) from a Str-typed
+// init expression -- mirrors cgIntrTextOfStr's own rtTextStore call shape
+// exactly (push the handle, push the source string's address, call
+// rtTextStore), but sourced from the ALREADY-birthed handle at off(A5)
+// instead of a fresh cgNewTrackedTmp, since the birth already happened.
+// Found by Task 16's end gate: a `text` global initialized from a string
+// literal (emit_record.cla's `emitRecordGGreeting`) silently stayed empty
+// forever -- this arm was a "TODO ... unsupported this task" stub left
+// over from Task 12, never exercised by any fixture booted before the
+// suite app.
+func cgEmitGlobalTextFromStr(off: int, initE: int) {
+    a68Emit(OpMove, 4, AmDisp16, 5, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(initE)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtTextStore")
+    cgCleanupStack(8)
+}
+
 func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
     var off: int
     var dstRef: int
@@ -2283,7 +2304,7 @@ func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
         return
     }
     if irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr {
-        a68Comment("TODO global Text<-Str coercion init: unsupported this task")
+        cgEmitGlobalTextFromStr(off, initE)
         return
     }
     if irtKind(gt) == KRec {
@@ -2446,40 +2467,37 @@ func cgEmitFunc(f: int) {
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
-            if irtKind(irLocalType(loc)) == KRec or irtKind(irLocalType(loc)) == KText or irtKind(irLocalType(loc)) == KList or irtKind(irLocalType(loc)) == KMap or irtKind(irLocalType(loc)) == KErr {
-                // Task 12: a record local needs its OWN field defaults
-                // constructed once per function entry -- mirrors
-                // cpEmitFunc's unconditional per-local cpDefaultInit call
-                // (cprint.cla), scoped in Task 12 to KRec only. This is
-                // not just parity polish: lowCountedStoreRecVal's own ARC
-                // scratch temp (a KRec local, ARC Task 7's
-                // "__store<N>"-named materialization var) is release-walked
-                // on its VERY FIRST use (its leading `release(tmp)`,
-                // ir.cla's IRelease) -- without a valid constructed value
-                // here, that release walk would read uninitialized stack
-                // garbage as a handle pointer.
-                //
-                // Task 13 widens the same gate to KText/KList/KMap for the
-                // identical reason, now that those kinds have real birth
-                // arms (cgDefaultInitAt): a `var l: list of text` local is
-                // release-walked by its own lowCountedStoreVal store
-                // sequence and free-var'd at scope exit -- an unbirthed
-                // (stack-garbage) handle there crashes the runtime the
-                // first time either fires (reproduced empirically: the
-                // pre-fix smoke.cla container section hung the emulator on
-                // its very first l.push, reading garbage as a box
-                // pointer). A plain scalar/str local stays exactly as
-                // Task 8-11 left it: no implicit default-init.
-                //
-                // Task 14.7 widens the gate once more to KErr: `var e:
-                // error`'s `.code`/`.message` fields must read 0/"" before
-                // any assignment (emit_record.cla/errvar.cla both read
-                // `e.code` immediately after declaration) -- reproduced
-                // pre-fix as reading stack garbage, not the crash class
-                // above (KErr has no handle field to release-walk).
-                recLocalOffsets.add(runningNeg)
-                recLocalTypes.add(irLocalType(loc))
-            }
+            // Task 16 fix: EVERY local gets its own default-init at
+            // function entry, unconditionally -- mirrors cpEmitFunc's own
+            // unconditional per-local cpDefaultInit call (cprint.cla:3636)
+            // exactly, for every IRKind, not just the five container-ish
+            // kinds this gate used to cover. History: Task 12 scoped this
+            // to KRec only (a record local's field defaults, needed
+            // because lowCountedStoreRecVal's ARC scratch temp is
+            // release-walked on its very first use -- an unconstructed
+            // value there reads stack garbage as a handle pointer); Task 13
+            // widened it to KText/KList/KMap for the identical
+            // release-walk hazard (reproduced empirically: pre-fix,
+            // smoke.cla's container section hung the emulator on its very
+            // first l.push, reading garbage as a box pointer); Task 14.7
+            // widened it to KErr (`var e: error`'s `.code`/`.message` must
+            // read 0/"" before assignment). Every widening was reactive,
+            // chasing one more kind that turned out to matter -- language
+            // semantics guarantee EVERY local its zero value (Ch3), not
+            // just handle-bearing ones, and cgDefaultInitAt already
+            // handles every IRKind correctly (KInt/KBool/KFixed/KChar/
+            // KEnum/KPtr/KWinRef/KOverlay/KStr/KArr, not just the five
+            // above) -- it was simply never called for the rest. Found by
+            // Task 16's end gate: emit_array.cla's own "int array
+            // zero-init"/"char array zero-init" checks read stack garbage
+            // and failed, and a same-shape bare-scalar probe (`var i:
+            // int`, unwritten) confirmed scalars were equally unzeroed --
+            // almost certainly the root cause of TestSuiteOn68k's 15-minute
+            // hang too (same class of bug the Task 13 comment above already
+            // reproduced once: stack garbage feeding a container/loop
+            // operation hangs the emulator rather than crashing cleanly).
+            recLocalOffsets.add(runningNeg)
+            recLocalTypes.add(irLocalType(loc))
         }
         loc = irLocalNext(loc)
     }
@@ -3457,6 +3475,77 @@ func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
     }
 }
 
+// cgFillTightScratchFromPaddedArr/cgDrainTightScratchToPaddedArr (Task 16
+// fix) adapt between a `char[N]` local's own cg68k layout -- each element
+// padded to 2 bytes (cgSlotSizeOf, file header's LAYOUT AUTHORITY note) --
+// and the TIGHT (1-byte-per-element) buffer contract runtime/clarus/
+// str.cla's rtStrToBytes/rtStrFromBytes/rtTextToBytes/rtTextFromBytes
+// share with cprint's C backend, where `char[N]` really IS tight. Calling
+// those functions directly against a native char[] local's own PADDED
+// address used to silently touch only every OTHER element (found by Task
+// 16's end gate: strings.cla's `buf[3] = 'z'` after `packed.toBytes(buf)`
+// produced "ABCDEFzH" instead of "ABCzEFGH" -- toBytes had written
+// "A_C_E_G_" into buf's padded slots, verified with an isolated repro).
+// cgIntrStrToBytes/cgIntrTextToBytes now call the runtime function against
+// a fresh TIGHT scratch buffer instead, then drain it into the real
+// (padded) destination array via cgDrainTightScratchToPaddedArr;
+// cgIntrStrFromBytes/cgIntrTextFromBytes fill a tight scratch buffer FROM
+// the padded source array via cgFillTightScratchFromPaddedArr first, then
+// call the runtime function against that. Symmetric fix, both directions
+// -- a toBytes/fromBytes round trip through the SAME buffer, with no
+// direct `buf[i]` access in between, happened to already "work" pre-fix
+// (both ends agreed on the SAME wrong tight-on-padded-memory assumption,
+// so it round-tripped correctly by accident) -- fixing only one direction
+// would have broken that existing case instead of just fixing the real bug.
+
+// cgFillTightScratchFromPaddedArr unrolls a compile-time-bounded copy (N
+// is always a compile-time constant, same cgArrDefaultAt precedent) of
+// arrExpr's own N padded char elements into a tight scratchOff(A6) byte
+// buffer, one element per iteration -- ahead of a FromBytes runtime call.
+func cgFillTightScratchFromPaddedArr(arrExpr: int, scratchOff: int, n: int) {
+    var i: int
+
+    cgExprAddr(arrExpr)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    i = 0
+    while i < n {
+        a68Emit(OpMove, 1, AmInd, 1, 0, AmPostInc, 0, 0)
+        a68Emit(OpAdda, 4, AmImm, 0, 2, AmAn, 1, 0)
+        i = i + 1
+    }
+}
+
+// cgDrainTightScratchToPaddedArr copies the first D0 (n, the actual byte
+// count a ToBytes runtime call just returned) bytes of a tight
+// scratchOff(A6) buffer into arrExpr's own padded char elements -- the
+// mirror of cgFillTightScratchFromPaddedArr, for the opposite direction.
+// D0 is PRESERVED throughout (this intrinsic's own return value, cgExpr's
+// "leaves the value in D0" postcondition) -- D1 is the runtime loop
+// counter instead (n itself isn't known at compile time here, unlike the
+// Fill direction above, so this one is a real DBRA loop, guarded against
+// n==0). Elements [n, N) of arrExpr are left untouched, matching str.cla's
+// own "only [0,n) written" contract exactly.
+func cgDrainTightScratchToPaddedArr(arrExpr: int, scratchOff: int) {
+    var skipLbl: int
+    var loopLbl: int
+
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
+    skipLbl = a68NewLabel()
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 1, 0)
+    a68EmitBr(OpBcc, 7, skipLbl)
+    cgExprAddr(arrExpr)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpSubq, 4, AmImm, 0, 1, AmDn, 1, 0)
+    loopLbl = a68NewLabel()
+    a68Bind(loopLbl)
+    a68Emit(OpMove, 1, AmPostInc, 0, 0, AmInd, 1, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 2, AmAn, 1, 0)
+    a68Emit(OpDbra, 2, AmDn, 1, 0, AmPCLabel, 0, loopLbl)
+    a68Bind(skipLbl)
+}
+
 // cgIntrStrFromBytes/cgIntrStrToBytes/cgIntrTextFromBytes/cgIntrTextToBytes
 // mirror fpIntrCall's own IStrFromBytes/IStrToBytes/ITextFromBytes/
 // ITextToBytes arms: the arr-typed argument's own compile-time capacity
@@ -3470,94 +3559,100 @@ func cgIntrStrFromBytes(e: int) {
     var a0e: int
     var a1e: int
     var a2e: int
-    var args: list of int
-    var addrs: list of bool
+    var n: int
+    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
-    args = cgFreshIntList()
-    args.add(a0e)
-    args.add(newIRIntConst(irtN(irExprType(a0e)), irIntT))
-    args.add(a1e)
-    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
-    args.add(a2e)
-    addrs = cgFreshBoolList()
-    addrs.add(true)
-    addrs.add(false)
-    addrs.add(true)
-    addrs.add(false)
-    addrs.add(false)
-    if not cgCallRuntime("rtStrFromBytes", args, addrs) {
-        quit 1
-    }
+    n = irtN(irExprType(a1e))
+    scratchOff = cgAllocBigTmpOff(irStrType(n))
+    cgFillTightScratchFromPaddedArr(a1e, scratchOff, n)
+
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, irtN(irExprType(a0e)), AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a2e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtStrFromBytes")
+    cgCleanupStack(20)
 }
 
 func cgIntrStrToBytes(e: int) {
     var a0e: int
     var a1e: int
-    var args: list of int
-    var addrs: list of bool
+    var n: int
+    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
-    args = cgFreshIntList()
-    args.add(a0e)
-    args.add(a1e)
-    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
-    addrs = cgFreshBoolList()
-    addrs.add(true)
-    addrs.add(true)
-    addrs.add(false)
-    if not cgCallRuntime("rtStrToBytes", args, addrs) {
-        quit 1
-    }
+    n = irtN(irExprType(a1e))
+    scratchOff = cgAllocBigTmpOff(irStrType(n))
+
+    cgExprAddr(a0e)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtStrToBytes")
+    cgCleanupStack(12)
+
+    cgDrainTightScratchToPaddedArr(a1e, scratchOff)
 }
 
 func cgIntrTextFromBytes(e: int) {
     var a0e: int
     var a1e: int
     var a2e: int
-    var args: list of int
-    var addrs: list of bool
+    var n: int
+    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     a2e = irExprNext(a1e)
-    args = cgFreshIntList()
-    args.add(a0e)
-    args.add(a1e)
-    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
-    args.add(a2e)
-    addrs = cgFreshBoolList()
-    addrs.add(false)
-    addrs.add(true)
-    addrs.add(false)
-    addrs.add(false)
-    if not cgCallRuntime("rtTextFromBytes", args, addrs) {
-        quit 1
-    }
+    n = irtN(irExprType(a1e))
+    scratchOff = cgAllocBigTmpOff(irStrType(n))
+    cgFillTightScratchFromPaddedArr(a1e, scratchOff, n)
+
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a2e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtTextFromBytes")
+    cgCleanupStack(16)
 }
 
 func cgIntrTextToBytes(e: int) {
     var a0e: int
     var a1e: int
-    var args: list of int
-    var addrs: list of bool
+    var n: int
+    var scratchOff: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
-    args = cgFreshIntList()
-    args.add(a0e)
-    args.add(a1e)
-    args.add(newIRIntConst(irtN(irExprType(a1e)), irIntT))
-    addrs = cgFreshBoolList()
-    addrs.add(false)
-    addrs.add(true)
-    addrs.add(false)
-    if not cgCallRuntime("rtTextToBytes", args, addrs) {
-        quit 1
-    }
+    n = irtN(irExprType(a1e))
+    scratchOff = cgAllocBigTmpOff(irStrType(n))
+
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtTextToBytes")
+    cgCleanupStack(12)
+
+    cgDrainTightScratchToPaddedArr(a1e, scratchOff)
 }
 
 // cgIntrTextCmp mirrors fpTextCmp's own 3-way dispatch (cprint.cla:
@@ -6148,7 +6243,18 @@ func cgStmt(s: int) {
             if cgIsHandleKind(dstKind) and cgLastTrackedOff != -1 {
                 cgHandoff(cgLastTrackedOff)
             }
-        } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KRec {
+        } else if (dstK == EVarRef or dstK == EFieldRef or dstK == EIndexRef) and dstKind == KRec {
+            // Task 16 fix: EIndexRef (a fixed-array element, e.g.
+            // `h.items[0] = makeArrItem(...)`) added to this gate --
+            // cgEmitStoreRec is already dst-kind-agnostic internally (every
+            // arm routes through cgExprAddr(dst), which already handles
+            // EIndexRef via cgIndexRefAddr), the restriction to
+            // EVarRef/EFieldRef was never a real requirement, just the
+            // scope Task 12 built it for. Found by Task 16's end gate:
+            // arc_fixwave_arrays.cla's holder-store/standalone-store
+            // checks (an Item[3]/Holder.items[3] array element store) fell
+            // through to the silent "TODO SAssign" no-op below, leaving
+            // the element at its default-init zero value.
             cgEmitStoreRec(dst, irAssignSrc(s))
         } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KErr {
             cgEmitStoreErr(dst, irAssignSrc(s))
