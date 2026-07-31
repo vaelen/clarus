@@ -4468,6 +4468,7 @@ static int32_t clar_fn_cgFindGlobalOffset(clar_str_255 cv_nm);
 static int32_t clar_fn_cgVarReg(int32_t cv_e);
 static int32_t clar_fn_cgVarOff(int32_t cv_e);
 static int32_t clar_fn_cgIsScalarKind(int32_t cv_k);
+static int32_t clar_fn_cgRetNeedsHidden(int32_t cv_retTy);
 static int32_t clar_fn_cgVarRefAt(int32_t cv_off, int32_t cv_t);
 static int32_t clar_fn_cgMaterializeToTemp(int32_t cv_e);
 static void clar_fn_cgExprAddr(int32_t cv_e);
@@ -43883,7 +43884,7 @@ static void clar_fn_cgEmitFunc(int32_t cv_f) {
         clar_fn_rtListPush((void*)cv_paramOffsets, (void*)&(t14));
         cv_i = (cv_i + 1);
     }
-    cv_needsHidden = ((clar_fn_irtKind(clar_fn_irFuncRet(cv_f)) == 5) || (clar_fn_irtKind(clar_fn_irFuncRet(cv_f)) == 9));
+    cv_needsHidden = clar_fn_cgRetNeedsHidden(clar_fn_irFuncRet(cv_f));
     if (cv_needsHidden) {
         cv_offset = 12;
     } else {
@@ -44211,6 +44212,11 @@ static int32_t clar_fn_cgIsScalarKind(int32_t cv_k) {
         return 0;
     }
     return 1;
+    return 0;
+}
+
+static int32_t clar_fn_cgRetNeedsHidden(int32_t cv_retTy) {
+    return ((clar_fn_irtKind(cv_retTy) == 5) || (clar_fn_irtKind(cv_retTy) == 9));
     return 0;
 }
 
@@ -46823,7 +46829,7 @@ static void clar_fn_cgMaterializeCallResult(int32_t cv_a) {
         rt_log((const uint8_t*)&(t2));
         rt_quit((int32_t)(1));
     }
-    if ((clar_fn_irtKind(clar_fn_irFuncRet(cv_fi)) != 5) && (clar_fn_irtKind(clar_fn_irFuncRet(cv_fi)) != 9)) {
+    if (!(clar_fn_cgRetNeedsHidden(clar_fn_irFuncRet(cv_fi)))) {
         clar_str_255 t3;
         t3 = clar_fn_poolGet(clar_fn_irCallFnName(cv_a));
         clar_str_255 t4;
@@ -46872,7 +46878,7 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
         rt_log((const uint8_t*)&(t2));
         rt_quit((int32_t)(1));
     }
-    if ((clar_fn_irtKind(clar_fn_irFuncRet(cv_fi)) == 5) || (clar_fn_irtKind(clar_fn_irFuncRet(cv_fi)) == 9)) {
+    if (clar_fn_cgRetNeedsHidden(clar_fn_irFuncRet(cv_fi))) {
         clar_str_255 t3;
         t3 = clar_fn_poolGet(clar_fn_irCallFnName(cv_e));
         clar_str_255 t4;
