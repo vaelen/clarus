@@ -26,6 +26,19 @@
 // is reference-shaped, a discarded pop doesn't corrupt anything else);
 // the retain/release call SHAPE itself is separately pinned by arc.cla's
 // own listing golden.
+//
+// Task 14 addition: a file section (file.writeText/file.readText/
+// file.name) -- still Go-compiler-compatible (file.* is a general
+// builtin, not Ch13 surface; internal/check/builtins.go and
+// internal/lower/expr.go already support it on the frozen host
+// compiler). writeText/readText plain-text and binary-bytes (NUL/CR/255,
+// testdata/run/lib/binroundtrip.cla's own shape) round trips, file.name
+// basename cases, and a read-missing-file -> false + lastError(2, "could
+// not open file") check -- the same lastError codes/messages
+// runtime/clarus/native.cla's natFileReadText/natFileWriteText produce
+// via rtSetLastErr, mirroring rt.c/rt_mac.c exactly (the host-vs-native
+// byte compare is the oracle for content; lastError.code/message are
+// asserted directly since they're not part of that byte compare).
 
 enum smokeColor {
     Red   5 "Red"
@@ -273,6 +286,85 @@ func other(): list of int {
     return l
 }
 
+// smokeFileNameOf exercises file.name through a `return` context
+// (cgEmitReturnStr's own "file_name" arm) -- smokeFiles below covers the
+// assignment context (cgEmitStoreStr's arm) directly; this closes the
+// other half.
+func smokeFileNameOf(p: string): string {
+    return file.name(p)
+}
+
+// smokeFiles: writeText/readText round trip (plain text, then the
+// binroundtrip.cla binary-bytes shape), file.name basename cases, and a
+// read-missing-file failure check.
+func smokeFiles() {
+    var t: text
+    var t2: text
+    var ok: bool
+    var pass: bool
+    var n: string
+    var errMsg: string
+
+    t = "hello file"
+    ok = file.writeText("smokefile.txt", t)
+    smokeCheck(ok, "file writeText ok")
+
+    ok = file.readText("smokefile.txt", t2)
+    smokeCheck(ok, "file readText ok")
+    smokeCheck(t2 == "hello file", "file readText content matches")
+
+    // binary-bytes round trip -- NUL/CR/255 (binroundtrip.cla's own
+    // shape): pins binary faithfulness through writeText/readText.
+    t = ""
+    t.append('A')
+    t.append(char(0))
+    t.append(char(13))
+    t.append(char(255))
+    t.append('B')
+    ok = file.writeText("smokebin.dat", t)
+    smokeCheck(ok, "file writeText binary ok")
+
+    ok = file.readText("smokebin.dat", t2)
+    smokeCheck(ok, "file readText binary ok")
+    pass = true
+    if t2.length != 5 { pass = false }
+    if t2[0] != 'A' { pass = false }
+    if t2[1] != char(0) { pass = false }
+    if t2[2] != char(13) { pass = false }
+    if t2[3] != char(255) { pass = false }
+    if t2[4] != 'B' { pass = false }
+    smokeCheck(pass, "file binary roundtrip bytes")
+
+    // file.name: pure basename scan on the last '/' -- no I/O, so these
+    // never touch the filesystem at all.
+    n = file.name("a/b/c.txt")
+    smokeCheck(n == "c.txt", "file name basename")
+    n = file.name("solo.txt")
+    smokeCheck(n == "solo.txt", "file name no-slash")
+    n = file.name("dir/")
+    smokeCheck(n == "", "file name trailing slash")
+    n = smokeFileNameOf("x/y/z.txt")
+    smokeCheck(n == "z.txt", "file name via return")
+
+    // read-missing-file -> false + lastError. lastError.message is
+    // stored into a local var before comparison rather than compared
+    // directly (`lastError.message == "..."`) -- a pre-existing cg68k
+    // gap this task's own testing surfaced, NOT something Task 14 caused
+    // or is scoped to fix: `x == strLiteral` lowers to the "str_cmp"
+    // intrinsic (cgIntr's own arm), which unconditionally cgExprAddr's
+    // BOTH operands, but lastError.message itself lowers to the
+    // ILastErrMsg intrinsic (a VALUE-PRODUCING EIntr node, same as
+    // "str_concat"), which has no address to take -- cgExprAddr's own
+    // "not an lvalue" hard-error fires. Storing through the ALREADY-
+    // correct "lasterr_msg" SStoreStr arm first, then comparing the
+    // resulting (addressable) local var, sidesteps it entirely.
+    ok = file.readText("smoke-does-not-exist.txt", t2)
+    smokeCheck(not ok, "file readText missing returns false")
+    smokeCheck(lastError.code == 2, "file readText missing lastError code")
+    errMsg = lastError.message
+    smokeCheck(errMsg == "could not open file", "file readText missing lastError message")
+}
+
 on App.launch {
     var p: smokePoint = new smokePoint
     var q: smokePoint
@@ -330,6 +422,7 @@ on App.launch {
     smokeTextOps()
     smokeNested()
     smokeAliasing()
+    smokeFiles()
 
     alert("smoke done")
     quit 0

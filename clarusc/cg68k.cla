@@ -3591,40 +3591,6 @@ func cgIntrMapRemove(e: int) {
     cgCleanupStack(8)
 }
 
-// cgIntrNatFileOp is the brief's own "by-name, nat*-resolved, Task 14
-// territory" degrade for IFileReadText/IFileWriteText/IFileName: none of
-// natFileReadText/natFileWriteText/natFileName exist yet (Task 14), so
-// this arm hard-errors with a message naming that fact explicitly, for
-// every fixture this task's own scope note says to expect ("fixtures this
-// task avoid file ops") -- the best-effort call-emission body below only
-// ever runs once Task 14 actually defines these functions.
-func cgIntrNatFileOp(e: int, fnName: string, argCount: int) {
-    var fi: int
-    var a0e: int
-    var a1e: int
-    var args: list of int
-    var addrs: list of bool
-
-    fi = findIRFuncIdxByName(intern(fnName))
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable -- native file I/O lands in Task 14")
-        quit 1
-    }
-    a0e = irIntrArgsHead(e)
-    args = cgFreshIntList()
-    args.add(a0e)
-    addrs = cgFreshBoolList()
-    addrs.add(true)
-    if argCount == 2 {
-        a1e = irExprNext(a0e)
-        args.add(a1e)
-        addrs.add(irtKind(irExprType(a1e)) == KStr or irtKind(irExprType(a1e)) == KText)
-    }
-    if not cgCallRuntime(fnName, args, addrs) {
-        quit 1
-    }
-}
-
 // cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
 // ("ui_*") are 5e (native UI) territory -- hard error, matching
 // cg68AddRoots'/the brief's own "nat*"-prefix convention for name-based
@@ -3916,23 +3882,30 @@ func cgIntr(e: int) {
         return
     }
 
-    // ---- Task 13: files (IFileReadText/IFileWriteText/IFileName ->
-    // nat*-named functions -- Task 14 territory; emit by name ONLY if
-    // reachable, else the brief's own explicit "native file I/O lands in
-    // Task 14" hard error, matching cg68AddRoots'/cgEmitStartupCallIfPresent's
-    // own established "by-name via JT, degrade loud/quiet as appropriate"
-    // convention). Not exercised by this task's own fixtures (the brief's
-    // own scope note: "fixtures this task avoid file ops"). ----
+    // ---- Task 14: files. IFileReadText/IFileWriteText are bool-
+    // returning (fit D0), reachable through this ordinary scalar cgExpr/
+    // cgIntr path -- cgIntr2 with addr0=true (path, a Str255-shaped ptr,
+    // same convention str.cla's own `ptr` params use), addr1=false (the
+    // text arg's own VALUE already IS the rtText box pointer -- same
+    // by-value convention "text_store"'s dst arg above uses, NOT an
+    // address-of-the-variable). IFileName is str-returning (str255
+    // doesn't fit D0) and is NEVER legally reached from this scalar
+    // dispatch -- cgEmitStoreStr/cgEmitReturnStr's own "file_name" arms
+    // (the only call sites lower.cla's newIRIntr(IFileName(), ...) can
+    // ever reach, since every use is either a store target or a return)
+    // handle it instead; degrade loud-but-survivable here in case some
+    // future call shape reaches it anyway. ----
     if nm == "file_read_text" {
-        cgIntrNatFileOp(e, "natFileReadText", 2)
+        cgIntr2(e, "natFileReadText", true, false)
         return
     }
     if nm == "file_write_text" {
-        cgIntrNatFileOp(e, "natFileWriteText", 2)
+        cgIntr2(e, "natFileWriteText", true, false)
         return
     }
     if nm == "file_name" {
-        cgIntrNatFileOp(e, "natFileName", 1)
+        a68Comment("TODO intr file_name in scalar/value context: str-returning, only valid as a store/return target (see cgEmitStoreStr/cgEmitReturnStr)")
+        a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
         return
     }
 
@@ -4686,6 +4659,31 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgCleanupStack(4)
             return
         }
+        if nm == "file_name" {
+            // Task 14: natFileName(dst: ptr, path: ptr) fills dst
+            // in-place (Str255 bytes) -- a void, fill-in-place shape, NOT
+            // the hidden-result-pointer str-return shape "lasterr_msg"
+            // above uses (natLastErrMsg takes no real args; natFileName
+            // takes one, and native.cla has no address-of operator to
+            // build a fresh str-typed local to `return` -- see its own
+            // file header). Pushed in DECLARATION order (dst, then path)
+            // -- cgEmitFunc's own reverse-offset rule then lands path
+            // (pushed last) at 8(A6) and dst at 12(A6), matching
+            // `func natFileName(dst: ptr, path: ptr)` exactly.
+            a0e = irIntrArgsHead(src)
+            fi = findIRFuncIdxByName(intern("natFileName"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: natFileName not found/reachable")
+                quit 1
+            }
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a0e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(8)
+            return
+        }
         a68Comment("TODO SStoreStr <- intrinsic " + nm + ": unsupported this task")
         return
     }
@@ -4762,6 +4760,26 @@ func cgEmitReturnStr(src: int) {
             a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
             a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
             cgCleanupStack(4)
+            return
+        }
+        if nm == "file_name" {
+            // Mirrors cgEmitStoreStr's own "file_name" arm -- the
+            // destination is the hidden pointer's VALUE at 8(A6) (pushed
+            // directly, not LEA'd, same convention this function's own
+            // "lasterr_msg" arm and generic tail already use), pushed
+            // FIRST (dst), then path's address SECOND -- same declaration
+            // order (dst, path) as cgEmitStoreStr's arm.
+            a0e = irIntrArgsHead(src)
+            fi = findIRFuncIdxByName(intern("natFileName"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: natFileName not found/reachable")
+                quit 1
+            }
+            a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+            cgExprAddr(a0e)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+            cgCleanupStack(8)
             return
         }
         a68Comment("TODO return <- intrinsic " + nm + ": unsupported this task")

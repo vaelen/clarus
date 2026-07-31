@@ -65,6 +65,11 @@ const natIoPermssn: int = 27
 const natIoMisc: int = 28
 const natIoBuffer: int = 32
 const natIoReqCount: int = 36
+// natIoActCount (Task 14): _Read/_Write's own "actual byte count
+// completed" out field -- read back after both traps to detect a short
+// transfer (mirrors rt.c/rt_mac.c's own in/out `count`/`got` locals),
+// never written by this module.
+const natIoActCount: int = 40
 const natIoPosMode: int = 44
 
 // natPbSize is the one NewPtr'd PB block's total size: >=50 bytes for
@@ -105,7 +110,12 @@ const natLogCap: int = 4096
 //   PBSetEOFSync   Files.h    0xA012
 //   PBCloseSync    Devices.h  0xA001
 //   PBFlushVolSync Files.h    0xA013
-// matching the plan brief's own trap-word table exactly.
+//   PBReadSync     Devices.h  0xA002
+//   PBGetEOFSync   Files.h    0xA011
+// matching the plan brief's own trap-word table exactly (PBReadSync/
+// PBGetEOFSync verified the same way as the Task 11 six, by `strings`-ing
+// Retro68's Devices.h/Files.h directly: both carry the identical
+// `#pragma parameter __D0 PBxxxSync(__A0)` reg convention).
 // NewPtrCLEAR (0xA31E -- MacMemory.h's `NewPtrClear ONEWORDINLINE(0xA31E)`,
 // Traps.h `_NewPtrClear = 0xA31E`, same `#pragma parameter __A0 (__D0)`
 // convention as plain _NewPtr), NOT plain _NewPtr (0xA11E): the PB this
@@ -127,6 +137,8 @@ external func NatWrite(pb: ptr): int = trap 0xA003 reg
 external func NatSetEOF(pb: ptr): int = trap 0xA012 reg
 external func NatClose(pb: ptr): int = trap 0xA001 reg
 external func NatFlushVol(pb: ptr): int = trap 0xA013 reg
+external func NatRead(pb: ptr): int = trap 0xA002 reg
+external func NatGetEOF(pb: ptr): int = trap 0xA011 reg
 
 // _ExitToShell (Traps.h: 0xA9F4) takes no parameters and never returns --
 // Pascal convention is the natural (and, with zero args/result, the only
@@ -446,4 +458,263 @@ func natLastErrMsg(): string {
 // a Handle the way Clarus's global zeroing does).
 func natArgsList(): list of string(255) {
     return natArgs
+}
+
+// ---- files (Plan native-5d Task 14) ----
+//
+// natFileReadText/natFileWriteText/natFileName port rt_mac.c:302-373's
+// file trio (rt_file_read_text/rt_file_write_text/rt_file_name) --
+// File Manager PB calls for the first two, a pure byte scan for the
+// third -- same lastError codes/messages as rt.c/rt_mac.c (via
+// rtSetLastErr, core.cla's ordinary Clarus-call waist, NOT
+// nat_CoreSetLastErr directly: every other runtime module reaches
+// lastError through rtSetLastErr, and native.cla is no exception even
+// though it happens to sit downstream of that call at codegen time).
+//
+// PB SHARING: natFilePb is a SECOND, dedicated PB block, distinct from
+// natInit's own natPb (the "out" capture-file protocol) -- reusing natPb
+// here would stomp its ioNamePtr/ioRefNum between calls (natAlert/natLog
+// depend on natPb staying pointed at "out" with natRef's refnum live the
+// whole program), and would also entangle this module's own error
+// paths with natInit's. A second NewPtrCLEAR'd block costs 64 bytes and
+// sidesteps the question entirely -- lazily allocated on first file call,
+// same one-time-init idiom natInit itself uses (natFileReady guard).
+// natFileWriteText/natFileReadText/nat_SerFileWriteData/
+// nat_SerFileReadTextInto share it (never reentrant: this runtime is
+// single-threaded and every call's own open/use/close completes before
+// any other file call can start).
+var natFilePb: ptr
+var natFileReady: bool
+
+func natFileEnsurePb() {
+    if natFileReady {
+        return
+    }
+    natFileReady = true
+    natFilePb = NatNewPtr(natPbSize)
+}
+
+// natFileFlush flushes the default volume after a write -- matches
+// rt_mac.c's own unconditional post-write FlushVol(NULL, 0) (both the
+// success and the FSWrite-failure path call it). Unlike natFlush (natPb's
+// own flush helper), there is no ioNamePtr to restore afterward: every
+// natFile* call re-points natFilePb's ioNamePtr at its own `path` arg
+// before doing anything else, so nothing here needs to survive past this
+// call.
+func natFileFlush() {
+    pokel(natFilePb + natIoNamePtr, 0)
+    pokew(natFilePb + natIoVRefNum, 0)
+    NatFlushVol(natFilePb)
+}
+
+// natFileWriteText (rt_mac.c:332-360, rt_file_write_text): create (dup-
+// name error ignored, same discipline as natInit's own Create call),
+// open, truncate to empty (SetEOF 0), write the text's bytes in one PB
+// call, close, flush -- false + lastError(2, "could not open file"/
+// "could not write file") on any failure, matching rt.c's exact codes/
+// messages. ioPermssn is left at 0 (fsCurPerm, from natFileEnsurePb's
+// NewPtrCLEAR) rather than explicitly set -- rt_mac.c's own FSOpen calls
+// for BOTH read and write pass no explicit permission either (the Pascal
+// FSOpen glue's own default), so this mirrors that exactly rather than
+// natInit's natFsRdWrPerm (natInit needs guaranteed write access for its
+// own live per-call append; a fresh Create+Open here needs no such
+// guarantee).
+func natFileWriteText(path: ptr, t: ptr): bool {
+    var rt: RtText
+    var mp: ptr
+    var n: int
+    var ref: int
+    var wrote: int
+    var failed: bool
+
+    natFileEnsurePb()
+    pokel(natFilePb + natIoNamePtr, int(path))
+    pokew(natFilePb + natIoVRefNum, 0)
+
+    // dupFNErr (file already exists) ignored either way -- Open just
+    // below is the real success/failure gate (rt_mac.c's own comment on
+    // its identical Create call).
+    NatCreate(natFilePb)
+
+    NatOpen(natFilePb)
+    if peekw(natFilePb + natIoResult) != 0 {
+        rtSetLastErr(2, "could not open file")
+        return false
+    }
+    ref = peekw(natFilePb + natIoRefNum)
+
+    pokew(natFilePb + natIoRefNum, ref)
+    pokel(natFilePb + natIoMisc, 0)
+    NatSetEOF(natFilePb)
+
+    rt = RtText(t)
+    n = rt.len
+    wrote = 0
+    failed = false
+    if n > 0 {
+        // mp is derived AFTER rt.len/rt.h are read (no grow happens on
+        // the write side, but re-deriving right before the trap call
+        // matches text.cla's own relocation discipline exactly).
+        mp = TextHandleDeref(rt.h)
+        pokew(natFilePb + natIoRefNum, ref)
+        pokel(natFilePb + natIoBuffer, int(mp))
+        pokel(natFilePb + natIoReqCount, n)
+        pokew(natFilePb + natIoPosMode, natFsAtMark)
+        NatWrite(natFilePb)
+        wrote = peekl(natFilePb + natIoActCount)
+        if peekw(natFilePb + natIoResult) != 0 {
+            failed = true
+        }
+    }
+
+    pokew(natFilePb + natIoRefNum, ref)
+    NatClose(natFilePb)
+    natFileFlush()
+
+    if failed or wrote != n {
+        rtSetLastErr(2, "could not write file")
+        return false
+    }
+    return true
+}
+
+// natFileReadText (rt_mac.c:302-330, rt_file_read_text): open, GetEOF,
+// grow `out` to the file's size, read the whole file in one PB call
+// (skipped entirely for an empty file, matching rt_mac.c's own `eof > 0`
+// guard), close -- false + lastError(2, "could not open file"/"could not
+// read file") on any failure (including file-not-found, which fails the
+// initial Open). mp is re-derived via TextHandleDeref AFTER rtTextGrow
+// (which can move the Handle's block via SetHandleSize) rather than
+// cached from before the grow -- text.cla's own relocation discipline
+// (this file's header doc, and text.cla's), never violated here.
+func natFileReadText(path: ptr, out: ptr): bool {
+    var rt: RtText
+    var mp: ptr
+    var ref: int
+    var eof: int
+    var got: int
+
+    natFileEnsurePb()
+    pokel(natFilePb + natIoNamePtr, int(path))
+    pokew(natFilePb + natIoVRefNum, 0)
+
+    NatOpen(natFilePb)
+    if peekw(natFilePb + natIoResult) != 0 {
+        rtSetLastErr(2, "could not open file")
+        return false
+    }
+    ref = peekw(natFilePb + natIoRefNum)
+
+    pokew(natFilePb + natIoRefNum, ref)
+    NatGetEOF(natFilePb)
+    if peekw(natFilePb + natIoResult) != 0 {
+        pokew(natFilePb + natIoRefNum, ref)
+        NatClose(natFilePb)
+        rtSetLastErr(2, "could not read file")
+        return false
+    }
+    eof = peekl(natFilePb + natIoMisc)
+
+    rtTextGrow(out, eof)
+    got = eof
+    if eof > 0 {
+        rt = RtText(out)
+        mp = TextHandleDeref(rt.h)
+        pokew(natFilePb + natIoRefNum, ref)
+        pokel(natFilePb + natIoBuffer, int(mp))
+        pokel(natFilePb + natIoReqCount, eof)
+        pokew(natFilePb + natIoPosMode, natFsAtMark)
+        NatRead(natFilePb)
+        got = peekl(natFilePb + natIoActCount)
+        if peekw(natFilePb + natIoResult) != 0 {
+            pokew(natFilePb + natIoRefNum, ref)
+            NatClose(natFilePb)
+            rtSetLastErr(2, "could not read file")
+            return false
+        }
+    }
+
+    pokew(natFilePb + natIoRefNum, ref)
+    NatClose(natFilePb)
+
+    if got != eof {
+        rtSetLastErr(2, "could not read file")
+        return false
+    }
+
+    rt = RtText(out)
+    rt.len = eof
+    return true
+}
+
+// natFileName (rt_mac.c:362-373, rt_file_name): pure byte scan for the
+// LAST '/' (not Mac's ':' -- rt_mac.c's own comment: this is a pure
+// string algorithm ported as-is, not adapted to the Mac path convention),
+// filling dst (Str255-shaped: [0]=length, [1..length]=bytes) in place --
+// a void, fill-in-place shape (like natCrLf/natItoa above) rather than an
+// ordinary str-returning Clarus function, since building a fresh `str
+// 255` return value from raw peekb/pokeb bytes would need this module's
+// own local variable's address, which -- per the file header -- Clarus
+// source has no operator for. cgEmitStoreStr/cgEmitReturnStr's own
+// "file_name" arms are the only call sites (see cg68k.cla): they already
+// hold dst's address (the assignment/return target), so this signature
+// costs them nothing extra.
+func natFileName(dst: ptr, path: ptr) {
+    var n: int
+    var start: int
+    var i: int
+    var c: int
+    var len: int
+
+    n = peekb(path)
+    start = 0
+    i = 0
+    while i < n {
+        c = peekb(path + 1 + i)
+        if c == int('/') {
+            start = i + 1
+        }
+        i = i + 1
+    }
+    len = n - start
+
+    pokeb(dst, len)
+    i = 0
+    while i < len {
+        pokeb(dst + 1 + i, peekb(path + 1 + start + i))
+        i = i + 1
+    }
+}
+
+// nat_SerFileWriteData/nat_SerFileReadTextInto: ser.cla's own
+// `external func SerFileWriteData(path: ptr, t: text): int` /
+// `external func SerFileReadTextInto(path: ptr, out: text): int` are
+// clause-less externs (Plan native-5d Task 3's design: file.save/
+// file.load stay C-only in the codegen sense, resolved through the SAME
+// cgCallExtNatFallback name convention every other clause-less extern
+// uses) -- their nat_ fallbacks reuse natFileWriteText/natFileReadText's
+// PB machinery verbatim (rt_mac.c's own rt_file_write_data is byte-
+// identical to rt_file_write_text except for Create's type/creator,
+// which PBCreateSync has no field for anyway -- see natFileWriteText's
+// own doc comment; no native fixture in this task's own scope exercises
+// file.save/file.load, only that a program calling them still compiles
+// and links, per the brief). `t`/`out` are declared `ptr` here rather
+// than `text` -- purely cosmetic: cgCallExtNatFallback's cgPushArgs
+// marshals a `text` argument as its own 4-byte handle VALUE (the generic
+// non-KStr/KRec branch), bit-identical to a `ptr` argument of the same
+// size, so either declared type reads the same stack slot; `ptr` matches
+// every other text-handling function in this runtime (rtTextStore et al.
+// all take `t: ptr`, never `t: text`).
+func nat_SerFileWriteData(path: ptr, t: ptr): int {
+    if natFileWriteText(path, t) {
+        return 1
+    }
+    return 0
+}
+
+func nat_SerFileReadTextInto(path: ptr, out: ptr): int {
+    if natFileReadText(path, out) {
+        return 1
+    }
+    return 0
 }
