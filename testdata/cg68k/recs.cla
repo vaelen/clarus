@@ -1,0 +1,73 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// recs.cla: native-5d Task 12's cg68k golden fixture -- records. Pins:
+// ENewRec/field-default construction (a nested record, a non-zero scalar
+// default, an enum-typed field defaulting to its enum's first member, a
+// str field with no explicit default), field get/set (top-level and
+// nested), record-to-record assign-copy, record params, record returns
+// (the hidden-result-pointer convention), and a handle-bearing record
+// (a `text` field) so cg_retain_recsBox/cg_release_recsBox actually get
+// generated and exercised via a real copy site -- compile-only coverage
+// (this file is never booted; smoke.cla stays handle-free so the boot
+// test's host-vs-native byte-compare never depends on ARC's runtime
+// correctness, see the Task 12 report).
+
+enum recsStatus {
+    Active 5 "Active"
+    Done   6 "Done"
+}
+
+record recsAddr {
+    city: string(31)
+    zip:  int
+}
+
+record recsPerson {
+    name:   string(31)
+    age:    int = 18
+    status: recsStatus
+    home:   recsAddr
+}
+
+record recsBox {
+    label: string(31)
+    note:  text
+}
+
+func recsMake(zip: int): recsPerson {
+    var p: recsPerson = new recsPerson
+    p.home.zip = zip
+    return p
+}
+
+func recsSum(p: recsPerson): int {
+    return p.age + p.home.zip
+}
+
+func recsMakeBox(label: string(31)): recsBox {
+    var b: recsBox = new recsBox
+    b.label = label
+    return b
+}
+
+on App.launch {
+    var p: recsPerson = new recsPerson
+    var q: recsPerson
+    var b1: recsBox
+    var b2: recsBox
+    var total: int
+
+    p.name = "Original"
+    p.home.city = "Springfield"
+    p.home.zip = 90210
+
+    q = p
+    q.age = 99
+    q.home.zip = 11111
+
+    total = recsSum(recsMake(555))
+
+    b1 = recsMakeBox("first")
+    b2 = b1
+}

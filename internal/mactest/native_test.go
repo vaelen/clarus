@@ -101,3 +101,55 @@ func TestHelloOn68k(t *testing.T) {
 		t.Fatalf("hello.cla output mismatch:%s", firstDiff(want, got))
 	}
 }
+
+// TestNativeSmoke is native-5d Task 12's first native boot test to cover
+// records/enums: builds testdata/cg68k/smoke.cla BOTH ways -- the host
+// expectation via build.Build (the Go compiler, same as
+// suite_host_test.go's BuildSuiteHost/RunSuiteHost -- smoke.cla is
+// deliberately Go-compiler-compatible Clarus, no Ch13 surface, precisely
+// so this comparison is possible), and the native image via `clarusc
+// emit68k` -- then requires the emulator's captured `out` to be
+// byte-identical to the host's stdout, and both exit codes to be 0.
+func TestNativeSmoke(t *testing.T) {
+	requireMac(t)
+	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", "smoke.cla")
+
+	hostExe := t.TempDir() + "/smoke_host"
+	diags, err := build.Build([]string{fixture}, hostExe)
+	if err != nil {
+		t.Fatalf("build host smoke: %v", err)
+	}
+	if len(diags) > 0 {
+		var b strings.Builder
+		b.WriteString("host build produced diagnostics:")
+		for _, d := range diags {
+			b.WriteString("\n  ")
+			b.WriteString(d.String())
+		}
+		t.Fatal(b.String())
+	}
+	hostCmd := exec.Command(hostExe)
+	hostCmd.Dir = t.TempDir()
+	hostOut, err := hostCmd.Output()
+	if err != nil {
+		t.Fatalf("run host smoke: %v", err)
+	}
+	want := string(hostOut)
+
+	exe := buildNativeClarusc(t)
+	runDir := t.TempDir()
+	bin := filepath.Join(runDir, "smoke.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", bin, fixture)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", bin, fixture, err, out)
+	}
+
+	got, _, exitCode := RunMac(t, bin, 5*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("smoke.cla exit code %d, want 0", exitCode)
+	}
+	if got != want {
+		t.Fatalf("smoke.cla output mismatch (native vs host):%s", firstDiff(want, got))
+	}
+}

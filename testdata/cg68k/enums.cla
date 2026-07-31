@@ -1,0 +1,31 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// enums.cla: native-5d Task 12's cg68k golden fixture -- enums. Pins the
+// per-enum constant-pool value table (cgEmitEnumTables) and the checked
+// int->enum inline scan (cgEmitEnumConv/CvIntToEnum), including a
+// multi-member enum (exercises the DBRA loop, not just the count==1 edge)
+// and the unchecked enum->int direction (a no-op bit-move). Only VALID
+// conversions -- CvIntToEnum's panic-on-miss path kills the process, so
+// it's compile-only-covered here (this file is never booted) and
+// runtime-covered by a later task's dedicated abort-app fixture (see the
+// Task 12 report's "CvIntToEnum invalid-value" note).
+
+enum enumsProtocol {
+    Gopher 0x01 "Gopher"
+    HTTP   0x50 "Web (HTTP)"
+    Telnet 0x17 "Telnet"
+}
+
+on App.launch {
+    var g: enumsProtocol = Gopher
+    var back: enumsProtocol = enumsProtocol(0x50)
+    var n: int = int(back)
+
+    if back == HTTP {
+        alert("round trip ok")
+    }
+    if g == Gopher {
+        alert("still gopher")
+    }
+}

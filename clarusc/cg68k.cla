@@ -101,17 +101,19 @@
 // GLOBALS / A5. Every irGlobal gets a negative offset below A5, declaration
 // order, contiguous, each slot cgSlotSizeOf(type) wide -- the exact same
 // shape locals use below A6. The synthesized startup routine's first real
-// work is zeroing this whole below-A5 block in one LEA+DBRA loop (a global
-// with a non-zero initializer is left for Task 8's cg_init_globals body to
-// overwrite; THIS task's cg_init_globals is a TODO-body stub, so a fixture
-// with an int/str global initializer still compiles -- the golden simply
-// doesn't show the initializer's value taking effect yet).
+// work is zeroing this whole below-A5 block in one LEA+DBRA loop; a global
+// with its own default (a record field default, or an explicit Init
+// expression) is then overwritten by cg_init_globals (Task 12: real body,
+// mirroring cpEmitGlobalsInit/cpDefaultInit -- see that function's own doc
+// comment), called right after the zero loop.
 //
 // CONSTANT POOL. One string-literal entry per irStrLits slot (already
 // populated by lower.cla regardless of which backend consumes it): a bound
-// label, `DC.B <len>`, the raw content bytes, then an even-align. Enum
-// value/label tables and serdesc tables are declared-but-stubbed (a single
-// comment marker each) -- real content is Task 8+.
+// label, `DC.B <len>`, the raw content bytes, then an even-align. One
+// value table per irEnums entry (Task 12: a plain DC.L list of that enum's
+// member values, declaration order -- cgEmitEnumTables/cgEmitEnumConv).
+// serdesc tables are declared-but-stubbed (a single comment marker) --
+// real content is a later task (file.save/load field-offset descriptors).
 
 include "lib.cla"
 include "ir.cla"
@@ -240,6 +242,33 @@ var cgMod32Lbl: int
 // order the startup sequence uses. Set once, before cgEmitFunc's own
 // function-emission loop runs (cg68Program), read here.
 var cgFreeGlobalsLbl: int
+
+// ================================================================
+// Task 12: records/enums per-cg68Program()-run module state.
+//
+// cgRecRetainLbls[i]/cgRecReleaseLbls[i] are irRecords index i's
+// cg_retain_<Rec>/cg_release_<Rec> a68 label ids, or -1 when
+// irRecHasHandleField(irRecordLayoutName(i)) is false -- exactly THE gate
+// the brief names (ir.cla:720, "must be the same test on define and call
+// side"): a scalar-only record gets no walk pair at all (nothing to
+// retain/release), so its two label slots stay -1 and are never bound
+// (a68Finish would flag an allocated-but-unbound label as unresolved, so
+// this file never allocates one it isn't going to bind). Reserved by
+// cgAssignRcWalkLabels, up front (same "reserve before any body can
+// reference it" discipline cgAssignJtSlots/cgReserveStrLitLabels already
+// follow), read by cgRetainAt/cgReleaseAt's own KRec branch and bound by
+// cgEmitRcWalks.
+var cgRecRetainLbls: list of int
+var cgRecReleaseLbls: list of int
+
+// cgEnumTableLabels[i] is irEnums index i's constant-pool value-table
+// label id (a plain DC.L list of that enum's member values, declaration
+// order -- cgEmitEnumTables's own body). Reserved by
+// cgReserveEnumTableLabels, same up-front-reservation discipline as
+// cgStrLitLabels: a CvIntToEnum conversion site (cgEmitEnumConv) can
+// reference the label as a forward PC-relative operand while walking a
+// function body, well before the pool itself is laid out.
+var cgEnumTableLabels: list of int
 
 // cgResetCodegenState clears every Task 8 module-global above -- called
 // once per cg68Program() run, mirroring cgAssignJtSlots/
@@ -601,13 +630,29 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
 
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
 // first function in the stream. See the file header for the full shape;
-// briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, JSR natInit
-// (Task 11 -- opens the capture file before anything else runs), call the
-// generated init-globals stub, JSR every declared entry handler (no real
-// event/arg marshaling yet), call the generated free-globals stub, push a
-// 0 result and JSR natQuit by name (or note its absence and just RTS --
-// true only for a build that never links native.cla, which cg68Program
-// never is).
+// briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, call the
+// generated init-globals stub, JSR natInit, JSR every declared entry
+// handler (no real event/arg marshaling yet), call the generated
+// free-globals stub, push a 0 result and JSR natQuit by name (or note its
+// absence and just RTS -- true only for a build that never links
+// native.cla, which cg68Program never is).
+//
+// cg_init_globals BEFORE natInit (Task 12 fix -- Task 11 originally ran
+// natInit first, "before anything else runs (including cg_init_globals)",
+// back when cg_init_globals was a no-op stub). Now that cg_init_globals
+// has a real body (Task 12), that order is UNSAFE: cg_init_globals
+// default-inits EVERY irGlobal unconditionally, including native.cla's
+// own bootstrap globals (natPb/natBuf/natDigits/natLogBuf/...) -- if
+// natInit ran first and populated them with real allocated pointers,
+// cg_init_globals's own zero-sweep would immediately stomp them back to
+// NULL, corrupting the capture-file Param Block before the very first
+// natAlert/natLog/natQuit call ever touches it (reproduced empirically:
+// hello.cla booted to a silent, zero-byte capture with the old order).
+// Swapping is safe: cg_init_globals's own body (default-init + Init-expr
+// evaluation) never depends on the capture file being open, and
+// natAlert/natLog both call natInit() themselves anyway (idempotent,
+// natOpened-guarded) before writing anything, so nothing upstream of the
+// first real write can be lost either way.
 func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     var zloopLbl: int
     var qi: int
@@ -630,20 +675,22 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     a68EmitTrap(0xA063, "_MaxApplZone")
     a68EmitTrap(0xA036, "_MoreMasters")
 
-    // Task 11: natInit opens the `out` capture file before anything else
-    // runs (including cg_init_globals) -- same "by-name via JT, comment
-    // if absent" contract as natQuit's own tail call below, so a program
-    // built without native.cla linked (never true for emit68k, always
-    // true for the C target, which never reaches cg68Program at all)
-    // degrades to a comment instead of an unresolved JSR.
+    // Task 12: cg_init_globals runs BEFORE natInit -- see this function's
+    // own doc comment above for why the Task 11 order (natInit first) is
+    // no longer safe now that cg_init_globals has a real body.
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, initGlobalsLbl)
+
+    // natInit opens the `out` capture file -- same "by-name via JT,
+    // comment if absent" contract as natQuit's own tail call below, so a
+    // program built without native.cla linked (never true for emit68k,
+    // always true for the C target, which never reaches cg68Program at
+    // all) degrades to a comment instead of an unresolved JSR.
     qi = findIRFuncIdxByName(intern("natInit"))
     if qi != -1 and shakeReachable(qi) {
         a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[qi])
     } else {
         a68Comment("natInit not present -- wired in Task 11")
     }
-
-    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, initGlobalsLbl)
 
     a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
     cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
@@ -663,21 +710,635 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
-// cgEmitInitGlobalsStub/cgEmitFreeGlobalsStub are the two generated
-// subroutines startup JSRs -- both TODO-body placeholders this task (real
-// content is Task 8/9): init-globals would evaluate each irGlobal's own
-// init expression (the zero loop above already blanks the whole block, so
-// an unset global is already correctly zero); free-globals would release
-// every ARC-owned global on quit.
+// ================================================================
+// Task 12: records/enums -- shared address-parametrized primitives.
+//
+// The three primitives below (cgDefaultInitAt/cgRetainAt/cgReleaseAt) all
+// take the SAME (reg, off, t) address shape every other addressing helper
+// in this file already uses (cgVarReg/cgVarOff's own reg=5/A5 or reg=6/A6
+// convention, extended here to reg=0/A0 for a runtime-computed base --
+// cgExprAddr's own postcondition already leaves an address in A0, so
+// "reg=0, off=<field offset>" is simply "the address cgExprAddr just
+// computed, plus a compile-time-constant displacement", no new addressing
+// mode needed). This lets ONE recursive KRec/KArr walk implementation
+// serve THREE callers that would otherwise each hand-roll the identical
+// field-by-field traversal cgFieldOffset/cgRecordSize already establish:
+// a record's own constructor (ENewRec, a KRec local's prologue default,
+// a KRec global's default), its retain walk, and its release walk --
+// mirroring cpDefaultInit/cpEmitRetain/cpEmitRelease's own three-mirrored-
+// walks shape (cprint.cla), just parametrized on a machine address instead
+// of a C lvalue expression string.
+// ================================================================
+
+// cgStoreImmAt writes the constant val into t's slot at off(reg) --
+// MOVE.L/MOVE.B #val,off(reg) (byte for a 1-byte bool/char slot padded to
+// a 2-byte cgSlotSizeOf home, same size rule cgStoreScalarVar/cgLoadVar
+// already use). Used only for a DEFAULT value (always a compile-time
+// constant -- IRFieldSlot.default, or 0 for every other default-init
+// site); cgStoreD0At (below) is the sibling for a value already computed
+// into D0.
+func cgStoreImmAt(reg: int, off: int, t: int, val: int) {
+    a68Emit(OpMove, 4, AmImm, 0, val, AmDn, 0, 0)
+    cgStoreD0At(reg, off, t)
+}
+
+// cgStoreD0At writes D0 (already holding the value -- cgExpr's own
+// postcondition) into t's slot at off(reg), byte or long per cgSizeOf(t)
+// (mirrors cgStoreScalarVar's own size dispatch, generalized to an
+// arbitrary reg/off rather than only cgVarReg(dst)/cgVarOff(dst)).
+func cgStoreD0At(reg: int, off: int, t: int) {
+    if cgSizeOf(t) == 1 {
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, reg, off)
+    } else {
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
+    }
+}
+
+// cgZeroBlockAtA0 clears size bytes starting at (A0), advancing -- the
+// CLR.W-instead-of-copy sibling of cgBlockCopy (same unrolled-vs-DBRA-loop
+// shape, same "size is always even" precondition cgBlockCopy's own doc
+// comment establishes for every native size this backend produces).
+func cgZeroBlockAtA0(size: int) {
+    var words: int
+    var i: int
+    var loopLbl: int
+
+    words = size / 2
+    if words <= 8 {
+        i = 0
+        while i < words {
+            a68Emit(OpClr, 2, AmNone, 0, 0, AmPostInc, 0, 0)
+            i = i + 1
+        }
+    } else {
+        a68Emit(OpMove, 2, AmImm, 0, words - 1, AmDn, 0, 0)
+        loopLbl = a68NewLabel()
+        a68Bind(loopLbl)
+        a68Emit(OpClr, 2, AmNone, 0, 0, AmPostInc, 0, 0)
+        a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, loopLbl)
+    }
+}
+
+// cgDefaultInitStrAt writes a str field/local/global's default at off(reg):
+// a whole-slot zero (LEA off(reg),A0; zero cgSizeOf(t) bytes) when
+// strDefaultIdx is -1 (mirrors cpDefaultInit's `(cpCType(t)){0}` -- every
+// byte, not just the Pascal length byte, so a stale stack/heap byte can
+// never leak into an unused tail), else a clamped rtStrStore copy from the
+// literal pool entry (mirrors cpDefaultInit's KStr `rt_str_store` arm).
+func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
+    var fi: int
+
+    if strDefaultIdx == -1 {
+        a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+        cgZeroBlockAtA0(cgSizeOf(t))
+        return
+    }
+    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtStrStore not found/reachable")
+        quit 1
+    }
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmImm, 0, irtN(t), AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(strDefaultIdx), AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(12)
+}
+
+// cgArrDefaultAt default-inits a KArr slot at off(reg): N copies of the
+// element type, each at its own cgSlotSizeOf-spaced offset -- UNROLLED at
+// compile time (N is always a compile-time constant, ir.cla's own KArr.n)
+// rather than a runtime loop, so every recursive call below stays within
+// this same simple (reg, constant-offset) addressing shape (mirrors
+// lowNullValueAppend's own "unrolled at LOWER time" precedent for the
+// identical per-index recursion, ARC fix-wave Task 2). An array element
+// never carries its own named default (cpDefaultInit's KArr arm always
+// recurses with scalarDefault=0/strDefault=-1) -- neither does this.
+func cgArrDefaultAt(reg: int, off: int, t: int) {
+    var et: int
+    var n: int
+    var esz: int
+    var i: int
+
+    et = irtElem(t)
+    n = irtN(t)
+    esz = cgSlotSizeOf(et)
+    i = 0
+    while i < n {
+        cgDefaultInitAt(reg, off + i * esz, et, 0, -1)
+        i = i + 1
+    }
+}
+
+// cgRecordCtorAt default-inits every field of the record named recNameIdx
+// into off(reg), walking irRecordLayoutFieldsHead in declaration order
+// exactly like cgFieldOffset/cgRecordSize's own layout walk (a third,
+// deliberately independent re-walk -- same precedent those two already
+// set for each other) -- each field's OWN default (IRFieldSlot.default/
+// DefaultStr, already carrying the enum-first-member/explicit-`=`-default
+// value lowRecordDecl computed) drives cgDefaultInitAt, mirroring
+// cpDefaultInit's KRec arm (`clar_new_<Name>()`, whose C body is this same
+// per-field default walk).
+func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
+    var ri: int
+    var f: int
+    var cur: int
+    var ft: int
+
+    ri = cgFindRecordByName(recNameIdx)
+    if ri == -1 {
+        log("cg68k: unknown record type " + poolGet(recNameIdx))
+        quit 1
+    }
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        ft = irFieldSlotType(f)
+        cur = cgAlignUp(cur, cgAlignOf(ft))
+        cgDefaultInitAt(reg, off + cur, ft, irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
+        cur = cur + cgSlotSizeOf(ft)
+        f = irFieldSlotNext(f)
+    }
+}
+
+// cgDefaultInitAt is cpDefaultInit's native counterpart: writes t's
+// default value into off(reg) -- scalarDefault/strDefaultIdx are -1/0 (no
+// override) for every local/global default-init call site, or a record
+// field's OWN IRFieldSlot.default/DefaultStr when called from
+// cgRecordCtorAt. KText/KList/KMap (container birth -- rtTextNew/etc) and
+// KErr (the lastError-shaped builtin) are Task 13/Ch12 territory, same
+// "leave a safe zero placeholder + comment" degrade this file already uses
+// for every other not-yet-built shape (cgExpr's own EFieldRef/ENewRec
+// fallback, cgIntr's default arm) -- NOT reached by this task's own
+// fixtures (recs.cla/enums.cla/smoke.cla all stay scalar/str/record/enum
+// only, per the report's documented scope decision).
+func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultIdx: int) {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KInt or k == KBool or k == KFixed or k == KChar or k == KEnum {
+        cgStoreImmAt(reg, off, t, scalarDefault)
+    } else if k == KPtr or k == KWinRef or k == KOverlay {
+        cgStoreImmAt(reg, off, t, 0)
+    } else if k == KStr {
+        cgDefaultInitStrAt(reg, off, t, strDefaultIdx)
+    } else if k == KRec {
+        cgRecordCtorAt(reg, off, irtName(t))
+    } else if k == KArr {
+        cgArrDefaultAt(reg, off, t)
+    } else {
+        // KText/KList/KMap/KErr/KUiState -- TODO, deferred (see doc
+        // comment above): a safe NULL/zero placeholder, matching every
+        // other "not built this task" degrade in this file.
+        a68Comment("TODO cgDefaultInitAt <kind " + numToStr(int(k)) + ">: unsupported this task")
+        cgStoreImmAt(reg, off, irIntT, 0)
+    }
+}
+
+// cgEmitPtrRcCall loads the 4-byte pointer value at off(reg) into D0,
+// pushes it, and calls fnName (a real reachable IRFunc taking one `ptr`
+// arg, e.g. rtTextRetain/rtTextRelease/rtListRetain/... -- str.cla-family
+// signatures already established) -- the KText/KList/KMap leaf of
+// cgRetainAt/cgReleaseAt below.
+func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern(fnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: " + fnName + " not found/reachable")
+        quit 1
+    }
+    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(4)
+}
+
+// cgEmitRecWalkCall LEAs off(reg) (the record's OWN address, not a loaded
+// pointer -- a record field/local/global is a by-value struct, never a
+// pointer, file header's own "LAYOUT AUTHORITY" note), pushes it, and JSRs
+// recNameIdx's cg_retain_/cg_release_ label -- a no-op when
+// irRecHasHandleField(recNameIdx) is false (THE gate, ir.cla:720; no walk
+// pair exists for a scalar-only record, so there is nothing to call).
+func cgEmitRecWalkCall(isRetain: bool, reg: int, off: int, recNameIdx: int) {
+    var ri: int
+    var lbl: int
+
+    if not irRecHasHandleField(recNameIdx) {
+        return
+    }
+    ri = cgFindRecordByName(recNameIdx)
+    if ri == -1 {
+        log("cg68k: unknown record type " + poolGet(recNameIdx))
+        quit 1
+    }
+    if isRetain {
+        lbl = cgRecRetainLbls[ri]
+    } else {
+        lbl = cgRecReleaseLbls[ri]
+    }
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, lbl)
+    cgCleanupStack(4)
+}
+
+// cgRetainAt/cgReleaseAt are cpEmitRetain/cpEmitRelease's native
+// counterparts: bump/drop the reference(s) t's value at off(reg) owns.
+// KText/KList/KMap call the ordinary Clarus-ported family function
+// (cgEmitPtrRcCall); KRec calls the generated cg_retain_/cg_release_ walk
+// (cgEmitRecWalkCall, itself a no-op for a scalar-only record); KArr
+// recurses per element ONLY when the element type needs it
+// (irtNeedsCtor); every other kind is a no-op (a plain scalar owns no
+// reference) -- exactly cpEmitRetain/cpEmitRelease's own dispatch shape,
+// minus the KList/KMap deep-element-release walk (container element
+// ARC is Task 13 territory; the bare container handle's own retain/
+// release still works today, matching this task's documented scope).
+func cgRetainAt(reg: int, off: int, t: int) {
+    var k: IRKind
+    var et: int
+    var n: int
+    var i: int
+
+    k = irtKind(t)
+    if k == KText {
+        cgEmitPtrRcCall("rtTextRetain", reg, off)
+    } else if k == KList {
+        cgEmitPtrRcCall("rtListRetain", reg, off)
+    } else if k == KMap {
+        cgEmitPtrRcCall("rtMapRetain", reg, off)
+    } else if k == KRec {
+        cgEmitRecWalkCall(true, reg, off, irtName(t))
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            n = irtN(t)
+            i = 0
+            while i < n {
+                cgRetainAt(reg, off + i * cgSlotSizeOf(et), et)
+                i = i + 1
+            }
+        }
+    }
+}
+
+func cgReleaseAt(reg: int, off: int, t: int) {
+    var k: IRKind
+    var et: int
+    var n: int
+    var i: int
+
+    k = irtKind(t)
+    if k == KText {
+        cgEmitPtrRcCall("rtTextRelease", reg, off)
+    } else if k == KList {
+        cgEmitPtrRcCall("rtListRelease", reg, off)
+    } else if k == KMap {
+        cgEmitPtrRcCall("rtMapRelease", reg, off)
+    } else if k == KRec {
+        cgEmitRecWalkCall(false, reg, off, irtName(t))
+    } else if k == KArr {
+        et = irtElem(t)
+        if irtNeedsCtor(et) {
+            n = irtN(t)
+            i = 0
+            while i < n {
+                cgReleaseAt(reg, off + i * cgSlotSizeOf(et), et)
+                i = i + 1
+            }
+        }
+    }
+}
+
+// cgRetainExpr/cgReleaseExpr wrap cgRetainAt/cgReleaseAt for a general
+// addressable IRExpr (EVarRef or EFieldRef -- lowCountedStoreRecVal's own
+// IRetain/IRelease intrinsic targets, cgIntr's "retain"/"release" dispatch
+// below) rather than a statically-known (reg, off): cgExprAddr(e) always
+// leaves e's address in A0 (this file's own established postcondition), so
+// "reg=0 (A0), off=0" is simply that just-computed address, letting the
+// SAME reg/off-parametrized walk serve a runtime-computed field address
+// too.
+func cgRetainExpr(e: int) {
+    cgExprAddr(e)
+    cgRetainAt(0, 0, irExprType(e))
+}
+
+func cgReleaseExpr(e: int) {
+    cgExprAddr(e)
+    cgReleaseAt(0, 0, irExprType(e))
+}
+
+// cgAssignRcWalkLabels reserves cg_retain_<Rec>/cg_release_<Rec>'s a68
+// label pair for every irRecords entry with a handle-bearing field
+// (irRecHasHandleField -- THE gate, ir.cla:720), -1/-1 for a scalar-only
+// record (cgEmitRecWalkCall's own no-op guard means these two label slots
+// are read only when irRecHasHandleField is already true, so the -1
+// sentinel is never actually dereferenced by a68Bind/a68Emit -- it exists
+// only so cgRecRetainLbls[ri]/cgRecReleaseLbls[ri] stays a total,
+// index-safe array over every irRecords index). Called once per
+// cg68Program() run, before ANY function body/globals-init/globals-free
+// body is emitted (cgAssignJtSlots' own "reserve up front" discipline) --
+// a copy-site's own IRetain/IRelease intrinsic (Task 12's ARC store
+// sequence, lowCountedStoreRecVal) can reference a walk pair while a
+// FUNCTION body is being compiled, and a global's non-birth Init or
+// cg_free_globals's own release loop can reference one before that.
+func cgAssignRcWalkLabels() {
+    var i: int
+    var retains: list of int
+    var releases: list of int
+
+    retains = cgFreshIntList()
+    releases = cgFreshIntList()
+    i = 0
+    while i < irRecords.count {
+        if irRecHasHandleField(irRecordLayoutName(i)) {
+            retains.add(a68NewLabel())
+            releases.add(a68NewLabel())
+        } else {
+            retains.add(-1)
+            releases.add(-1)
+        }
+        i = i + 1
+    }
+    cgRecRetainLbls = retains
+    cgRecReleaseLbls = releases
+}
+
+// cgEmitOneRcWalk binds and emits recIdx's cg_retain_<Rec>/cg_release_
+// <Rec> pair -- a leaf routine (no LINK/UNLK/JT slot, same "hand-emitted
+// helper" shape cg_mul32/cg_div32/cg_mod32 already establish): the ONE
+// pushed arg (the record's own address, cgEmitRecWalkCall's own push)
+// sits at 4(A7) on entry (0(A7) is the JSR return address), loaded into
+// A0 once, then cgRetainAt/cgReleaseAt walks every handle-bearing field at
+// its own cgFieldOffset-matching displacement off A0 -- mirrors
+// cpEmitOneRcWalk's r->cv_<field> walk (cprint.cla), just addressed by
+// offset instead of by C field name.
+func cgEmitOneRcWalk(ri: int) {
+    var f: int
+    var cur: int
+    var ft: int
+
+    a68Bind(cgRecRetainLbls[ri])
+    a68Comment("cg_retain_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 4(A7))")
+    a68Emit(OpMovea, 4, AmDisp16, 7, 4, AmAn, 0, 0)
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        ft = irFieldSlotType(f)
+        cur = cgAlignUp(cur, cgAlignOf(ft))
+        if irtNeedsCtor(ft) {
+            cgRetainAt(0, cur, ft)
+        }
+        cur = cur + cgSlotSizeOf(ft)
+        f = irFieldSlotNext(f)
+    }
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+
+    a68Bind(cgRecReleaseLbls[ri])
+    a68Comment("cg_release_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 4(A7))")
+    a68Emit(OpMovea, 4, AmDisp16, 7, 4, AmAn, 0, 0)
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        ft = irFieldSlotType(f)
+        cur = cgAlignUp(cur, cgAlignOf(ft))
+        if irtNeedsCtor(ft) {
+            cgReleaseAt(0, cur, ft)
+        }
+        cur = cur + cgSlotSizeOf(ft)
+        f = irFieldSlotNext(f)
+    }
+    a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// cgEmitRcWalks emits every handle-bearing record's walk pair, declaration
+// order -- called once per cg68Program() run, after every reachable
+// function AND cg_mul32/cg_div32/cg_mod32 (helper-routine landing spot,
+// same relative position those three occupy) but before the constant
+// pool.
+func cgEmitRcWalks() {
+    var i: int
+
+    i = 0
+    while i < irRecords.count {
+        if irRecHasHandleField(irRecordLayoutName(i)) {
+            cgEmitOneRcWalk(i)
+        }
+        i = i + 1
+    }
+}
+
+// cgFindEnumByName linear-scans irEnums by interned name -- cgFindRecordByName's
+// own sibling, one arena over.
+func cgFindEnumByName(nameIdx: int): int {
+    var i: int
+    var nm: string
+
+    nm = poolGet(nameIdx)
+    i = 0
+    while i < irEnums.count {
+        if poolGet(irEnumLayoutName(i)) == nm {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+func cgEnumMemberCount(ei: int): int {
+    var m: int
+    var n: int
+
+    n = 0
+    m = irEnumLayoutMembersHead(ei)
+    while m != -1 {
+        n = n + 1
+        m = irEnumMemberNext(m)
+    }
+    return n
+}
+
+// cgReserveEnumTableLabels allocates (but does not yet bind) one a68 label
+// per irEnums entry -- same up-front-reservation discipline as
+// cgReserveStrLitLabels, for the identical reason (a CvIntToEnum
+// conversion site can reference the table label while walking a function
+// body, well before cgEmitEnumTables lays the pool out).
+func cgReserveEnumTableLabels() {
+    var i: int
+    var labels: list of int
+
+    labels = cgFreshIntList()
+    i = 0
+    while i < irEnums.count {
+        labels.add(a68NewLabel())
+        i = i + 1
+    }
+    cgEnumTableLabels = labels
+}
+
+// cgEmitEnumTables lays out every enum's value table at the current stream
+// position: one DC.L per member, declaration order, bound to
+// cgReserveEnumTableLabels' own label -- the pool data cgEmitEnumConv's
+// inline scan walks at runtime. Enums are 4-byte native ints (irtKind
+// KEnum, cgSizeOf's own KEnum case), so DC.L (not DC.W) matches the scan's
+// own CMP.L stride.
+func cgEmitEnumTables() {
+    var i: int
+    var m: int
+
+    a68Comment("constant pool: enum value tables")
+    i = 0
+    while i < irEnums.count {
+        a68Bind(cgEnumTableLabels[i])
+        m = irEnumLayoutMembersHead(i)
+        while m != -1 {
+            a68DcL(irEnumMemberValue(m))
+            m = irEnumMemberNext(m)
+        }
+        i = i + 1
+    }
+}
+
+// cgEmitEnumCheckCall calls rtEnumCheck(v, found=false, name) -- the panic
+// path cgEmitEnumConv's scan falls into when v matches no member (core.cla's
+// rtEnumCheck, cg68AddRoots' own shake root). v is expected in D1 (the
+// scan's own working register, cgEmitEnumConv below). rtEnumCheck's `name`
+// param is accepted only "for interface symmetry with a future richer
+// diagnostic" (core.cla's own doc comment) and never actually read by its
+// body -- the pushed str(255) slot's CONTENT is therefore never
+// initialized here (only its 256 bytes of stack space, so the call's own
+// arg layout/cleanup stays correctly sized); rtEnumCheck's own body reads
+// only `found`, always false on this path, so it always panics via
+// rtPanic and never returns.
+func cgEmitEnumCheckCall() {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern("rtEnumCheck"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtEnumCheck not found/reachable")
+        quit 1
+    }
+    a68Comment("enum conversion miss -> rtEnumCheck(v, false, <name arg unused>) panics")
+    a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+    a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
+    a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
+    cgCleanupStack(4 + 2 + 256)
+}
+
+// cgEmitEnumConv is CvIntToEnum's inline scan (Task 3's shape, per the
+// brief): D0 holds v (cgExpr(x)'s own postcondition, already run by
+// cgConv before calling this); copy it to D1 (the compare register --
+// leaving D0 itself untouched for the whole scan, so D0 already holds the
+// right result the instant a match is found, no re-load needed), then
+// CMP.L each table entry (A0, post-incrementing) against D1, DBRA looping
+// count-1 times; BEQ on a match jumps straight to doneLbl (D0 still = v);
+// falling out of the loop with no match calls cgEmitEnumCheckCall (which
+// never returns) before falling into doneLbl regardless, so the stream
+// stays well-formed even though that fall-through is unreachable at
+// runtime.
+func cgEmitEnumConv(enumNameIdx: int) {
+    var ei: int
+    var count: int
+    var loopLbl: int
+    var doneLbl: int
+
+    ei = cgFindEnumByName(enumNameIdx)
+    if ei == -1 {
+        log("cg68k: unknown enum type " + poolGet(enumNameIdx))
+        quit 1
+    }
+    count = cgEnumMemberCount(ei)
+    doneLbl = a68NewLabel()
+
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
+    a68Emit(OpLea, 0, AmPCLabel, 0, cgEnumTableLabels[ei], AmAn, 0, 0)
+    if count > 0 {
+        loopLbl = a68NewLabel()
+        a68Emit(OpMove, 2, AmImm, 0, count - 1, AmDn, 2, 0)
+        a68Bind(loopLbl)
+        a68Emit(OpCmp, 4, AmPostInc, 0, 0, AmDn, 1, 0)
+        a68EmitBr(OpBcc, 7, doneLbl) // BEQ: match -> done, D0 still = v
+        a68Emit(OpDbra, 2, AmDn, 2, 0, AmPCLabel, 0, loopLbl)
+    }
+    cgEmitEnumCheckCall()
+    a68Bind(doneLbl)
+}
+
+// ================================================================
+// cgEmitInitGlobalsStub/cgEmitFreeGlobalsStub build cg_init_globals/
+// cg_free_globals -- cpEmitGlobalsInit's native counterpart (clar_init_
+// globals/cl_free_globals). init: for every irGlobal, default-init its
+// slot (cgDefaultInitAt, skipped only when Init will unconditionally
+// replace a ctor-needing global outright -- fullReplace, mirroring
+// cpEmitGlobalsInit's identical optimization/orphan-avoidance comment)
+// then, if present, evaluate+store its Init expression -- retaining the
+// stored value when it's a non-birth (aliasing) store of a needs-ctor
+// type (irGlobalInitBirth, ARC Task 6's fix, mirrored exactly). free:
+// release every global's slot, unconditionally (cgReleaseAt no-ops for a
+// plain scalar) -- cpEmitGlobalsInit's own "provably unnecessary to gate"
+// rationale, ARC Task 6.
+func cgEmitGlobalInitExpr(i: int, gt: int, initE: int) {
+    var off: int
+    var dstRef: int
+
+    off = cgGlobalOffsets[i]
+    dstRef = newIRVarRef(irGlobalName(i), true, gt)
+    if irtKind(gt) == KStr {
+        cgEmitStoreStr(dstRef, initE)
+        return
+    }
+    if irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr {
+        a68Comment("TODO global Text<-Str coercion init: unsupported this task")
+        return
+    }
+    if irtKind(gt) == KRec {
+        cgEmitStoreRec(dstRef, initE)
+    } else {
+        cgExpr(initE)
+        cgStoreD0At(5, off, gt)
+    }
+    if irtNeedsCtor(gt) and not irGlobalInitBirth(i) {
+        cgRetainAt(5, off, gt)
+    }
+}
+
 func cgEmitInitGlobalsStub(lbl: int) {
+    var i: int
+    var gt: int
+    var initE: int
+    var fullReplace: bool
+
     a68Bind(lbl)
-    a68Comment("cg_init_globals: TODO evaluate irGlobal init exprs (Task 8) -- below-A5 zeroing already done by startup")
+    a68Comment("cg_init_globals")
+    i = 0
+    while i < irGlobals.count {
+        gt = irGlobalType(i)
+        initE = irGlobalInit(i)
+        fullReplace = initE != -1 and irtNeedsCtor(gt) and not (irtKind(gt) == KText and irtKind(irExprType(initE)) == KStr)
+        if not fullReplace {
+            cgDefaultInitAt(5, cgGlobalOffsets[i], gt, 0, -1)
+        }
+        if initE != -1 {
+            cgEmitGlobalInitExpr(i, gt, initE)
+        }
+        i = i + 1
+    }
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
 func cgEmitFreeGlobalsStub(lbl: int) {
+    var i: int
+
     a68Bind(lbl)
-    a68Comment("cg_free_globals: TODO release ARC-owned globals (Task 8/9)")
+    a68Comment("cg_free_globals")
+    i = 0
+    while i < irGlobals.count {
+        cgReleaseAt(5, cgGlobalOffsets[i], irGlobalType(i))
+        i = i + 1
+    }
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
@@ -704,10 +1365,14 @@ func cgEmitFunc(f: int) {
     var p: int
     var frameNames: list of string
     var frameOffsets: list of int
+    var recLocalOffsets: list of int
+    var recLocalTypes: list of int
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
     frameOffsets = cgFreshIntList()
+    recLocalOffsets = cgFreshIntList()
+    recLocalTypes = cgFreshIntList()
 
     // ---- params: collect in declaration order, then assign offsets in
     // REVERSE (the last-declared param is pushed last, so it lands at the
@@ -768,6 +1433,23 @@ func cgEmitFunc(f: int) {
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
+            if irtKind(irLocalType(loc)) == KRec {
+                // Task 12: a record local needs its OWN field defaults
+                // constructed once per function entry -- mirrors
+                // cpEmitFunc's unconditional per-local cpDefaultInit call
+                // (cprint.cla), scoped here to KRec only (a plain scalar/
+                // str local stays exactly as Task 8-11 left it: no
+                // implicit default-init, unchanged goldens). This is not
+                // just parity polish: lowCountedStoreRecVal's own ARC
+                // scratch temp (a KRec local, ARC Task 7's
+                // "__store<N>"-named materialization var) is release-walked
+                // on its VERY FIRST use (its leading `release(tmp)`,
+                // ir.cla's IRelease) -- without a valid constructed value
+                // here, that release walk would read uninitialized stack
+                // garbage as a handle pointer.
+                recLocalOffsets.add(runningNeg)
+                recLocalTypes.add(irLocalType(loc))
+            }
         }
         loc = irLocalNext(loc)
     }
@@ -790,6 +1472,11 @@ func cgEmitFunc(f: int) {
 
     a68Bind(cgFuncLabels[f])
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
+    i = 0
+    while i < recLocalOffsets.count {
+        cgDefaultInitAt(6, recLocalOffsets[i], recLocalTypes[i], 0, -1)
+        i = i + 1
+    }
     cgStmts(irFuncBodyHead(f))
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
@@ -885,16 +1572,49 @@ func cgExprAddr(e: int) {
         a68Emit(OpLea, 0, AmDisp16, cgVarReg(e), cgVarOff(e), AmAn, 0, 0)
     } else if k == EStrConst {
         a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(irStrConstIdx(e)), AmAn, 0, 0)
+    } else if k == EFieldRef {
+        cgFieldRefAddr(e)
     } else {
-        // EFieldRef/EIndexRef (records/arrays, Task 12/13), a call/intr
-        // result not addressable this task, or any other kind this
-        // backend doesn't yet resolve to an address -- degrade to a
-        // deterministic placeholder (address 0) rather than crash the
-        // whole compile; this only fires on code paths outside this
-        // task's own fixtures (see the Task 8 report's "deferred" list).
+        // EIndexRef (arrays, Task 13), a call/intr result not addressable
+        // this task, or any other kind this backend doesn't yet resolve to
+        // an address -- degrade to a deterministic placeholder (address 0)
+        // rather than crash the whole compile; this only fires on code
+        // paths outside this task's own fixtures (see the Task 8 report's
+        // "deferred" list).
         a68Comment("TODO cgExprAddr <kind " + numToStr(int(k)) + ">: unsupported this task")
         a68Emit(OpLea, 0, AmAbsW, 0, 0, AmAn, 0, 0)
     }
+}
+
+// cgFieldRefAddr resolves an EFieldRef's address into A0: X.Kind decides
+// whether X's OWN value already IS the base address (KOverlay -- a real
+// pointer, file header's own "unlike KRec's by-value struct" note) or
+// needs address-OF (KRec -- a by-value struct, the plain/common case,
+// including a record field whose OWN type is KRec, i.e. nested field
+// access, which just recurses: cgExprAddr(irFieldRefX(e)) calls back into
+// THIS function again when X is itself an EFieldRef). Either way,
+// cgFieldOffset(recNameIdx, fieldName) -- the SAME layout-authority walk
+// cgSizeOf(KRec)/cgRecordSize/every ctor-walk above already uses -- gives
+// the field's displacement, added via a plain LEA off(A0),A0.
+func cgFieldRefAddr(e: int) {
+    var baseT: int
+    var recNameIdx: int
+    var off: int
+
+    baseT = irExprType(irFieldRefX(e))
+    if irtKind(baseT) == KOverlay {
+        cgExpr(irFieldRefX(e))
+        a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    } else {
+        cgExprAddr(irFieldRefX(e))
+    }
+    recNameIdx = irtName(baseT)
+    off = cgFieldOffset(recNameIdx, irFieldRefName(e))
+    if off == -1 {
+        log("cg68k: unknown field " + poolGet(irFieldRefName(e)) + " on " + poolGet(recNameIdx))
+        quit 1
+    }
+    a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
 }
 
 // ================================================================
@@ -935,6 +1655,119 @@ func cgStoreScalarVar(dst: int) {
     } else {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, reg, off)
     }
+}
+
+// cgLoadFieldScalar loads a scalar-kind EFieldRef's VALUE into D0:
+// cgExprAddr(e) resolves the field's address into A0 (cgFieldRefAddr,
+// above -- handles arbitrarily nested EFieldRef.X too), then a plain
+// MOVE(.B zero-extended via CLR.L first, or .L) reads through it, mirroring
+// cgLoadVar's own size dispatch.
+func cgLoadFieldScalar(e: int) {
+    var sz: int
+
+    sz = cgSizeOf(irExprType(e))
+    cgExprAddr(e)
+    if sz == 1 {
+        a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpMove, 1, AmInd, 0, 0, AmDn, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmInd, 0, 0, AmDn, 0, 0)
+    }
+}
+
+// cgEmitStoreScalarAny stores src's value into ANY scalar-kind dst
+// (EVarRef or EFieldRef): evaluates src into D0 first, THEN resolves dst's
+// address -- never the other way around, since cgExprAddr's own A0/D0/D1
+// scratch use (cgFieldRefAddr's base-expr recursion in particular) would
+// otherwise clobber an already-computed src sitting in D0. The EVarRef arm
+// reuses cgStoreScalarVar UNCHANGED (byte-identical to every existing
+// SAssign golden) rather than routing it through the generic
+// push/cgExprAddr/pop/store sequence the EFieldRef arm needs.
+func cgEmitStoreScalarAny(dst: int, src: int) {
+    var sz: int
+
+    cgExpr(src)
+    if irExprKind(dst) == EVarRef {
+        cgStoreScalarVar(dst)
+        return
+    }
+    sz = cgSizeOf(irExprType(dst))
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(dst)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+    if sz == 1 {
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmInd, 0, 0)
+    } else {
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmInd, 0, 0)
+    }
+}
+
+// cgEmitStoreRec stores a KRec-typed src into dst (EVarRef or EFieldRef,
+// the by-value record copy sites this task builds: assign, param-default,
+// global-init, field-of-record -- record RETURN is cgEmitReturnRec,
+// below): an ENewRec src constructs DIRECTLY into dst's own address (no
+// intermediate temp+copy -- cgExprAddr(dst) leaves dst's address in A0,
+// exactly the (reg=0, off=0) shape cgRecordCtorAt needs); an ECallFn src
+// already writes straight into dst via the existing, kind-agnostic
+// cgCallFnInto (hidden-result-pointer convention, Task 8); anything else
+// addressable (EVarRef/EFieldRef of Rec type) block-copies cgSizeOf(t)
+// bytes, src's address first (A0, stashed on the stack across dst's own
+// address computation -- same clobber-avoidance discipline
+// cgEmitStoreScalarAny's doc comment explains) then dst's (A1).
+func cgEmitStoreRec(dst: int, src: int) {
+    var sk: IRExprKind
+    var sz: int
+
+    sk = irExprKind(src)
+    if sk == ENewRec {
+        cgExprAddr(dst)
+        cgRecordCtorAt(0, 0, irNewRecName(src))
+        return
+    }
+    if sk == ECallFn {
+        cgCallFnInto(src, dst)
+        return
+    }
+    sz = cgSizeOf(irExprType(dst))
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(dst)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
+}
+
+// cgEmitReturnRec mirrors cgEmitStoreStr/cgEmitReturnRec's own str sibling
+// (cgEmitReturnStr) for a `return <rec expr>` inside a function whose
+// return needs a hidden pointer: the destination is the POINTER VALUE
+// already sitting at 8(A6) (pushed by value, not LEA'd). ENewRec
+// constructs directly into it (MOVEA 8(A6),A0 loads the pointer VALUE,
+// giving cgRecordCtorAt the same (reg=0,off=0) address shape as
+// cgEmitStoreRec's own ENewRec arm); anything else addressable
+// block-copies, src's address stashed across the 8(A6) read exactly like
+// cgEmitStoreRec's own generic arm. ECallFn (returning a nested call's
+// result directly) isn't exercised by this task's fixtures -- TODO, same
+// limitation cgEmitReturnStr already documents for its own ECallFn arm.
+func cgEmitReturnRec(src: int) {
+    var sk: IRExprKind
+    var sz: int
+
+    sk = irExprKind(src)
+    if sk == ENewRec {
+        a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
+        cgRecordCtorAt(0, 0, irNewRecName(src))
+        return
+    }
+    if sk == ECallFn {
+        a68Comment("TODO return <- nested call: unsupported this task")
+        return
+    }
+    sz = cgSizeOf(cgCurRetType)
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
 }
 
 // cgCcFor maps a comparison operator's SPELLING (EBin.name -- mirrors
@@ -1115,7 +1948,7 @@ func cgConv(e: int) {
     } else if op == CvIntToChar {
         a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
     } else if op == CvIntToEnum {
-        a68Comment("TODO CvIntToEnum Task 12")
+        cgEmitEnumConv(irConvEnumName(e))
     }
     // CvCharToInt/CvEnumToInt (already zero-extended/already 4-byte int
     // rep in D0) and CvIntToPtr/CvPtrToInt/CvPtrToOverlay/CvOverlayToPtr
@@ -1217,6 +2050,23 @@ func cgIntr(e: int) {
         }
         return
     }
+    // Task 12: retain/release -- lowCountedStoreRecVal's own ARC store
+    // sequence (a handle-bearing record copy site) and lowNullValueAppend's
+    // sibling null-out both funnel through these two intrinsics (ir.cla's
+    // IRetain()/IRelease(), interned as "retain"/"release"), each carrying
+    // exactly one addressable arg (EVarRef or EFieldRef) -- cgRetainExpr/
+    // cgReleaseExpr dispatch on the arg's OWN type (KText/KList/KMap ->
+    // the ordinary ported family function; KRec -> the generated
+    // cg_retain_/cg_release_ walk, a no-op when the record has no handle
+    // field at all).
+    if nm == "retain" {
+        cgRetainExpr(irIntrArgsHead(e))
+        return
+    }
+    if nm == "release" {
+        cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
     // Task 11: alert/log/quit -- native.cla's natAlert/natLog take their
     // message argument BY ADDRESS (native.cla's own file header explains
     // why: a `ptr` param, str.cla-style, sidesteps native.cla ever
@@ -1286,6 +2136,13 @@ func cgExpr(e: int) {
             a68Comment("TODO cgExpr EVarRef non-scalar (str/rec/arr) in value context")
             a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
         }
+    } else if k == EFieldRef {
+        if cgIsScalarKind(irtKind(irExprType(e))) {
+            cgLoadFieldScalar(e)
+        } else {
+            a68Comment("TODO cgExpr EFieldRef non-scalar (str/rec/arr) in value context")
+            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+        }
     } else if k == EBin {
         cgBin(e)
     } else if k == EUn {
@@ -1299,11 +2156,13 @@ func cgExpr(e: int) {
     } else if k == ECallExt {
         cgCallExt(e)
     } else {
-        // EStrConst (str value in a scalar context), EFieldRef/EIndexRef
-        // (records/arrays, Task 12/13), ENewRec (Task 12) -- none of these
-        // are exercised by this task's fixtures; degrade to a
-        // deterministic zero rather than crash whatever ambient reachable
-        // code (e.g. the runtime library) happens to use one.
+        // EStrConst (str value in a scalar context), EIndexRef (arrays,
+        // Task 13), ENewRec (constructed directly into its destination by
+        // cgEmitStoreRec/cgEmitReturnRec, never reached in bare value
+        // context) -- none of these are exercised by this task's fixtures;
+        // degrade to a deterministic zero rather than crash whatever
+        // ambient reachable code (e.g. the runtime library) happens to use
+        // one.
         a68Comment("TODO cgExpr <kind " + numToStr(int(k)) + ">: unsupported this task")
         a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
     }
@@ -1358,15 +2217,36 @@ func cgBlockCopy(size: int) {
 // cgPushArgs pushes e's own argument chain (irCallFnArgsHead-shaped),
 // left to right, returning the total bytes pushed. Each arg's OWN type
 // (already coerced to the callee's param type by lower.cla's
-// lowCallArgs -- fpCallFn's own comment) decides push shape: a str
-// argument block-copies cgSizeOf(t) bytes onto a freshly-reserved stack
-// slot (KNOWN LIMITATION -- see the Task 8 report: this assumes the
-// argument expression's own buffer is already exactly that many bytes,
-// true for an EVarRef of the callee's exact param type, as every fixture
-// this task uses does; a differently-capacitied or literal str argument
-// would need a clamped copy instead, not built this task); a bool/char
-// scalar pushes its cgSlotSizeOf-padded 2 bytes (MOVE.W); everything
-// else pushes 4 (MOVE.L).
+// lowCallArgs -- fpCallFn's own comment) decides push shape: a str OR
+// record argument (task-8-review round 1's Important 1 flagged this exact
+// gap; Task 12 closes it -- SAME mechanics for both, address-of then
+// block-copy, since cgSizeOf(KRec) is already this record type's TRUE,
+// possibly >4-byte, size, so `total` below stays correctly synced to what
+// cgCleanupStack must pop) block-copies cgSizeOf(t) bytes onto a
+// freshly-reserved stack slot (KNOWN LIMITATION -- see the Task 8 report:
+// this assumes the argument expression's own buffer is already exactly
+// that many bytes, true for an EVarRef/EFieldRef of the callee's exact
+// param type, as every fixture this task uses does; ENewRec as a direct
+// call argument is NOT supported -- cgExprAddr has no "construct into an
+// anonymous temp" arm, see the Task 12 report -- bind it to a var first,
+// same constraint a differently-capacitied or literal str argument
+// already had); a bool/char scalar pushes its cgSlotSizeOf-padded 2-byte
+// slot via MOVE.B, NOT MOVE.W (Task 12 fix -- reproduced via smoke.cla's
+// `smokeCheck(cond: bool, ...)`, the first fixture to ever both PASS and
+// READ BACK a bool/char param on real 68k hardware: MOVE.W D0,-(A7)
+// writes the value's LOW byte to the HIGHER of the slot's two addresses
+// (big-endian, MSB-at-lower-address), but cgLoadVar/cgStoreScalarVar's own
+// byte access for a size-1 type always reads/writes the slot's BASE
+// (lower) address -- for a LOCAL/GLOBAL that's harmless self-consistency
+// (same function reads what it itself wrote, at whichever byte), but for
+// a PARAM the WRITER is the CALLER's cgPushArgs and the READER is the
+// CALLEE's cgLoadVar: reading the base address was silently reading the
+// always-zero high byte instead of the real value. MOVE.B Dn,-(A7) still
+// decrements A7 by 2 (the 68k's own stack-pointer-stays-word-aligned rule
+// for a byte operand), but writes the single addressed byte at exactly
+// that new (base) address -- landing precisely where cgLoadVar/
+// cgStoreScalarVar already read/write, with no reader-side change needed
+// at all); everything else pushes 4 (MOVE.L).
 func cgPushArgs(argsHead: int): int {
     var a: int
     var t: int
@@ -1378,27 +2258,14 @@ func cgPushArgs(argsHead: int): int {
     while a != -1 {
         t = irExprType(a)
         sz = cgSlotSizeOf(t)
-        if irtKind(t) == KRec {
-            // task-8-review round 1 fix, Important 1: a record argument's
-            // TRUE (possibly >4-byte) slot size feeds `total` below, but
-            // nothing here knows how to push more than 4 bytes for one --
-            // silently pushing 4 while accounting sz would desync
-            // cgCleanupStack's own byte count from what's actually on the
-            // stack, corrupting the caller's SP. Hard error instead of a
-            // silent landmine: unreachable today (no fixture, no runtime-
-            // library function takes a record param), but Task 12 must
-            // consciously extend this, not discover it via a stack smash.
-            log("cg68k: record args not supported until Task 12")
-            quit 1
-        }
-        if irtKind(t) == KStr {
+        if irtKind(t) == KStr or irtKind(t) == KRec {
             cgExprAddr(a)
             a68Emit(OpAdda, 4, AmImm, 0, 0 - sz, AmAn, 7, 0)
             a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
             cgBlockCopy(sz)
         } else if sz == 2 {
             cgExpr(a)
-            a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
         } else {
             cgExpr(a)
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
@@ -2043,7 +2910,11 @@ func cgReturnStmt(s: int) {
         return
     }
     if cgCurHiddenOffset != -1 {
-        cgEmitReturnStr(x)
+        if irtKind(cgCurRetType) == KRec {
+            cgEmitReturnRec(x)
+        } else {
+            cgEmitReturnStr(x)
+        }
     } else {
         cgExpr(x)
     }
@@ -2075,9 +2946,10 @@ func cgStmt(s: int) {
         cgExpr(irExprStmtX(s))
     } else if k == SAssign {
         dst = irAssignDst(s)
-        if irExprKind(dst) == EVarRef and cgIsScalarKind(irtKind(irExprType(dst))) {
-            cgExpr(irAssignSrc(s))
-            cgStoreScalarVar(dst)
+        if (irExprKind(dst) == EVarRef or irExprKind(dst) == EFieldRef) and cgIsScalarKind(irtKind(irExprType(dst))) {
+            cgEmitStoreScalarAny(dst, irAssignSrc(s))
+        } else if (irExprKind(dst) == EVarRef or irExprKind(dst) == EFieldRef) and irtKind(irExprType(dst)) == KRec {
+            cgEmitStoreRec(dst, irAssignSrc(s))
         } else {
             a68Comment("TODO SAssign <dst kind " + numToStr(int(irExprKind(dst))) + ">: unsupported this task")
         }
@@ -2336,7 +3208,7 @@ func cgEmitPoolsBody() {
         i = i + 1
     }
 
-    a68Comment("constant pool: enum value/label tables (stub -- Task 8+)")
+    cgEmitEnumTables()
     a68Comment("constant pool: serdesc tables (stub -- Task 8+)")
 }
 
@@ -2451,6 +3323,8 @@ func cg68Program(outPath: string, listing: bool): bool {
     cgAssignJtSlots()
     cgAssignGlobalOffsets()
     cgReserveStrLitLabels()
+    cgAssignRcWalkLabels()
+    cgReserveEnumTableLabels()
 
     startupLbl = a68NewLabel()
     initGlobalsLbl = a68NewLabel()
@@ -2478,6 +3352,8 @@ func cg68Program(outPath: string, listing: bool): bool {
     if cgMod32Used {
         cgEmitMod32(cgMod32Lbl)
     }
+
+    cgEmitRcWalks()
 
     cgEmitPoolsBody()
 

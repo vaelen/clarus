@@ -1,0 +1,108 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// smoke.cla: native-5d Task 12's boot smoke test -- records and enums
+// exercised end-to-end (ctor/field-default construction, field get/set
+// including a nested field, record-to-record assign-copy independence,
+// record param, record return via the hidden-result-pointer convention,
+// enum default/int<->enum round trip), reported via alert PASS/FAIL
+// lines. Deliberately GO-COMPILER-COMPATIBLE Clarus (no Ch13 surface: no
+// ptr/extern/overlay/peek/poke) so the host expectation can be built with
+// build.Build (the Go compiler) and run, exactly like
+// internal/mactest/suite_host_test.go's RunSuiteHost -- and deliberately
+// handle-free (every record here is all-scalar/str fields only, never
+// text/list/map) so the host-vs-native byte-compare never depends on the
+// still-runtime-unverified ARC record-copy path (recs.cla covers that
+// compile-only; see the Task 12 report).
+
+enum smokeColor {
+    Red   5 "Red"
+    Green 6 "Green"
+    Blue  7 "Blue"
+}
+
+record smokeAddr {
+    zip:  int
+    city: string(31)
+}
+
+record smokePoint {
+    x:     int = 3
+    y:     int = 4
+    color: smokeColor
+    addr:  smokeAddr
+}
+
+func smokeCheck(cond: bool, label: string) {
+    var msg: string
+    if cond {
+        msg = "PASS " + label
+    } else {
+        msg = "FAIL " + label
+    }
+    alert(msg)
+}
+
+func smokeMakePoint(zip: int): smokePoint {
+    var p: smokePoint = new smokePoint
+    p.addr.zip = zip
+    return p
+}
+
+func smokeTakePoint(p: smokePoint): int {
+    return p.x + p.y + p.addr.zip
+}
+
+on App.launch {
+    var p: smokePoint = new smokePoint
+    var q: smokePoint
+    var e: smokeColor
+    var n: int
+
+    // ctor defaults: explicit field default (x=3, y=4), enum field
+    // defaulting to its enum's first member (color=Red=5), nested record's
+    // own zero default (addr.zip=0) -- both `new smokePoint` (p) and a
+    // bare `var q: smokePoint` (below) construct identically.
+    smokeCheck(p.x == 3, "ctor default x")
+    smokeCheck(p.y == 4, "ctor default y")
+    smokeCheck(int(p.color) == 5, "ctor default enum")
+    smokeCheck(p.addr.zip == 0, "ctor default nested zip")
+    smokeCheck(q.x == 3, "bare-decl ctor default x")
+    smokeCheck(int(q.color) == 5, "bare-decl ctor default enum")
+
+    // field set/get, including a nested field and a nested str field.
+    p.x = 10
+    p.addr.city = "Springfield"
+    p.addr.zip = 90210
+    smokeCheck(p.x == 10, "field set x")
+    smokeCheck(p.addr.zip == 90210, "field set nested zip")
+    smokeCheck(p.addr.city == "Springfield", "field set nested str")
+
+    // assign-copy: q gets an independent snapshot of p (including the
+    // nested record) -- mutating q must not touch p.
+    q = p
+    q.x = 99
+    q.addr.zip = 11111
+    smokeCheck(p.x == 10, "copy independence p.x")
+    smokeCheck(q.x == 99, "copy independence q.x")
+    smokeCheck(p.addr.zip == 90210, "copy independence p.addr.zip")
+    smokeCheck(q.addr.zip == 11111, "copy independence q.addr.zip")
+
+    // record return (hidden-result-pointer convention) + record param
+    // (by-value block-copy push).
+    p = smokeMakePoint(555)
+    smokeCheck(p.x == 3, "record return default x")
+    smokeCheck(p.addr.zip == 555, "record return field")
+    n = smokeTakePoint(p)
+    smokeCheck(n == 3 + 4 + 555, "record param by value")
+
+    // enum: int->enum checked conversion (valid values only -- the
+    // panic-on-miss path is not smoke-testable in-process, see the Task
+    // 12 report), and the unchecked enum->int direction.
+    e = smokeColor(6)
+    smokeCheck(e == Green, "enum int->enum valid")
+    smokeCheck(int(e) == 6, "enum enum->int roundtrip")
+
+    alert("smoke done")
+    quit 0
+}
