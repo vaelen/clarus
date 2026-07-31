@@ -798,6 +798,7 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
     }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, irtN(t), AmPreDec, 7, 0)
@@ -805,6 +806,7 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
     cgCleanupStack(12)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
 // cgWalkStashBase/cgWalkRestoreBase protect a multi-field/multi-element
@@ -838,6 +840,32 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
 // record (cgDefaultInitAt's KRec branch, cgRetainAt/cgReleaseAt's KRec
 // branch) simply re-stashes its own A1 from the just-restored A0 at its
 // own entry, so nesting composes correctly with no shared/global state.
+//
+// SECOND-ORDER BUG, FOUND VERIFYING THE FIRST FIX (re-review round 2):
+// A1 itself is JUST a register -- it has no callee-saved protection
+// either. Every JSR this backend ever emits while a reg=0 walk is live
+// (cgDefaultInitStrAt's rtStrStore call for a str field's explicit
+// default; cgEmitPtrRcCall's rtTextRetain/rtListRetain/rtMapRetain/etc.;
+// cgEmitRecWalkCall's cg_retain_<Rec>/cg_release_<Rec> for a nested
+// handle-bearing record field) can clobber A1 just as freely as A0 --
+// proven empirically for cgEmitRecWalkCall specifically: a nested
+// record's own cg_retain_/cg_release_ function runs ITS OWN
+// cgWalkStashBase unconditionally, overwriting the CALLER's A1 with the
+// callee's own base before ever returning. A record with a handle-bearing
+// nested-record field that ISN'T its own last field (or a KArr of
+// handle-bearing records, n>1 -- cgRetainAt/cgReleaseAt's own KArr loop)
+// would then restore A0 from garbage for every field/element after that
+// call. INVARIANT, now enforced at all three JSR sites above: A1's OWN
+// value (this walk's base -- or garbage, if no reg=0 walk is live, which
+// is harmless since nothing then reads it) is saved to the STACK
+// (MOVE.L A1,-(A7)) immediately before ANY of those three JSRs and
+// restored (MOVEA.L (A7)+,A1) immediately after -- unconditionally, not
+// gated on reg==0, since the save/restore is a no-op-cost-aside 8 bytes
+// regardless and doesn't need to know whether a walk is currently live.
+// A0/D0/D1 are still fully at every callee's disposal, same as always --
+// only A1 (THIS backend's one dedicated cross-call stash register) gets
+// the stack-save treatment, and only at the exact 3 sites that can be
+// reached from inside a reg=0 walk with more work still to do afterward.
 func cgWalkStashBase(reg: int) {
     if reg == 0 {
         a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
@@ -948,7 +976,13 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
 // pushes it, and calls fnName (a real reachable IRFunc taking one `ptr`
 // arg, e.g. rtTextRetain/rtTextRelease/rtListRetain/... -- str.cla-family
 // signatures already established) -- the KText/KList/KMap leaf of
-// cgRetainAt/cgReleaseAt below.
+// cgRetainAt/cgReleaseAt below. Saves/restores A1 around the JSR
+// unconditionally (cgWalkStashBase/cgWalkRestoreBase's own doc comment,
+// "SECOND-ORDER BUG" -- this is one of the three JSR-crossing sites that
+// invariant requires): fnName is an ordinary Clarus function with no
+// callee-saved registers, so it's as free to clobber A1 as any other
+// scratch register, and A1 may currently hold a reg=0 walk's own base
+// that a LATER field/element in the same walk still needs.
 func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
     var fi: int
 
@@ -957,10 +991,12 @@ func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
         log("cg68k: " + fnName + " not found/reachable")
         quit 1
     }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, cgFuncLabels[fi])
     cgCleanupStack(4)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
 // cgEmitRecWalkCall LEAs off(reg) (the record's OWN address, not a loaded
@@ -969,6 +1005,12 @@ func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
 // recNameIdx's cg_retain_/cg_release_ label -- a no-op when
 // irRecHasHandleField(recNameIdx) is false (THE gate, ir.cla:720; no walk
 // pair exists for a scalar-only record, so there is nothing to call).
+// Saves/restores A1 around the JSR unconditionally, same reason and same
+// invariant as cgEmitPtrRcCall above -- THE site the re-review's proven
+// sequence traced: the called cg_retain_<Rec>/cg_release_<Rec> runs ITS
+// OWN cgWalkStashBase (unconditional, no way for it to know a caller's
+// walk is still in flight), overwriting the caller's A1 with the callee's
+// own base before this JSR ever returns.
 func cgEmitRecWalkCall(isRetain: bool, reg: int, off: int, recNameIdx: int) {
     var ri: int
     var lbl: int
@@ -986,10 +1028,12 @@ func cgEmitRecWalkCall(isRetain: bool, reg: int, off: int, recNameIdx: int) {
     } else {
         lbl = cgRecReleaseLbls[ri]
     }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpJsr, 0, AmNone, 0, 0, AmPCLabel, 0, lbl)
     cgCleanupStack(4)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
 // cgRetainAt/cgReleaseAt are cpEmitRetain/cpEmitRelease's native

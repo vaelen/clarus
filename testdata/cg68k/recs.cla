@@ -28,6 +28,19 @@
 // ENewRec-as-a-bare-call-argument -- previously documented as an
 // unsupported limitation (Task 12 report Concern #4), now handled by the
 // same reserved-slot-construction mechanism.
+//
+// Fix round 2's re-review finding (fixed, cgEmitPtrRcCall/
+// cgEmitRecWalkCall/cgDefaultInitStrAt): a SECOND A0/A1-drift bug, in the
+// cg_retain_/cg_release_ walk itself rather than the ctor -- a
+// handle-bearing NESTED-RECORD field that is NOT a record's own last
+// field clobbers A1 (the reg=0 walk's base stash) via the nested record's
+// own JSR'd cg_retain_/cg_release_ call, corrupting every field
+// processed afterward. `recsInner`/`recsOuter` below are the SMALLEST
+// shape that proves it: `recsOuter.a` (handle-bearing, via
+// `recsInner.note: text`) sits between `pad` and `b`, so `cg_retain_
+// recsOuter`/`cg_release_recsOuter`'s own field walk must correctly
+// restore its base before touching `b` -- see `o2 = o1` below and the
+// Task 12 report's fix-round-2 section for the hand-verified listing.
 
 enum recsStatus {
     Active 5 "Active"
@@ -49,6 +62,22 @@ record recsPerson {
 record recsBox {
     label: string(31)
     note:  text
+}
+
+// recsInner/recsOuter: fix round 2's proven shape -- a handle-bearing
+// nested-record field (`a`) that is NOT `recsOuter`'s own last field,
+// with a plain scalar field before it (`pad`) and another handle-bearing
+// field after it (`b`), so `cg_retain_recsOuter`/`cg_release_recsOuter`'s
+// own walk must correctly restore its base between `a` and `b`.
+record recsInner {
+    tag:  int
+    note: text
+}
+
+record recsOuter {
+    pad: int
+    a:   recsInner
+    b:   text
 }
 
 func recsMake(zip: int): recsPerson {
@@ -73,6 +102,8 @@ on App.launch {
     var b1: recsBox
     var b2: recsBox
     var total: int
+    var o1: recsOuter
+    var o2: recsOuter
 
     p.name = "Original"
     p.home.city = "Springfield"
@@ -87,4 +118,6 @@ on App.launch {
 
     b1 = recsMakeBox("first")
     b2 = b1
+
+    o2 = o1
 }

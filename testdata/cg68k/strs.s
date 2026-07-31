@@ -58,10 +58,12 @@ LBL_63:
         RTS
 LBL_61:
         ; cg_free_globals
+        MOVE.L A1,-(A7)
         MOVE.L -32(A5),D0
         MOVE.L D0,-(A7)
         JSR LBL_13(PC)
         ADDQ.L #4,A7
+        MOVEA.L (A7)+,A1
         RTS
         ; func rtSetLastErr  (JT slot 1)
         ;   param code : 264(A6)  size 4
@@ -2614,17 +2616,21 @@ LBL_190:
 LBL_36:
         LINK A6,#-4
         LEA -4(A6),A0
+        MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
         MOVE.L D0,-(A7)
         JSR LBL_13(PC)
         ADDQ.L #4,A7
+        MOVEA.L (A7)+,A1
         MOVE.L -32(A5),D0
         MOVE.L D0,-4(A6)
         LEA -4(A6),A0
+        MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
         MOVE.L D0,-(A7)
         JSR LBL_12(PC)
         ADDQ.L #4,A7
+        MOVEA.L (A7)+,A1
         MOVE.L -4(A6),D0
         BRA.W LBL_191
 LBL_191:
