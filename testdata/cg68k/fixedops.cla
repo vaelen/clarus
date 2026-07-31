@@ -1,0 +1,44 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// fixedops.cla: Task 14.7 review round 2 pinning fixture -- fix_mul/
+// fix_div hardware coverage. These two intrinsics were simply
+// UNIMPLEMENTED in cg68k.cla until the review round found them (silently
+// returning 0 for every native fixed-point multiply/divide, masked by a
+// silent-zero placeholder the review's own hardening removed) -- had
+// zero hardware boot coverage even after the fix landed.
+//
+// Its own file rather than a smoke.cla section: rtFixMul/rtFixDiv
+// (runtime/clarus/core.cla) are large, 16-bit-half-decomposition
+// functions (a 48-iteration division loop for rtFixDiv) -- pulling
+// EITHER into smoke.cla's already-at-ceiling single segment (see
+// strcontainers.cla's own header comment on the same vasm 16-bit
+// PC-relative displacement limit, error 2030) overflows it immediately,
+// confirmed empirically; a `string(3)`-return ABI check (the review's
+// OTHER coverage ask) is small enough to fit in smoke.cla directly and
+// lives there instead.
+func fixedopsRun() {
+    var a: fixed = 1.5
+    var b: fixed = 2.0
+    var c: fixed = a * b
+    var neg: fixed = 0.0 - a - b
+    var d: fixed = neg / b
+
+    // rtFixDiv truncates toward zero (C `/` semantics, its own doc
+    // comment) -- neg = -3.5, so -3.5 / 2.0 = -1.75 -> -1.
+    if int(c) == 3 {
+        alert("fixed mul 1.5*2.0 == 3 ok")
+    } else {
+        alert("fixed mul 1.5*2.0 == 3 FAIL")
+    }
+    if int(d) == -1 {
+        alert("fixed div -3.5/2.0 == -1 (trunc toward zero) ok")
+    } else {
+        alert("fixed div -3.5/2.0 == -1 (trunc toward zero) FAIL")
+    }
+}
+
+on App.launch {
+    fixedopsRun()
+    quit 0
+}

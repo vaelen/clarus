@@ -124,6 +124,17 @@ func TestNativeStrContainers(t *testing.T) {
 	runNativeHostCompare(t, "strcontainers.cla")
 }
 
+// TestNativeFixedOps is native-5d Task 14.7 review round 2's boot test
+// for fix_mul/fix_div (unimplemented pre-review, silently returning 0) --
+// testdata/cg68k/fixedops.cla, its own file rather than a smoke.cla
+// section because rtFixMul/rtFixDiv (large, 16-bit-half-decomposition
+// functions) overflow smoke.cla's own single-segment displacement
+// ceiling the moment they become reachable (see the fixture's own header
+// comment).
+func TestNativeFixedOps(t *testing.T) {
+	runNativeHostCompare(t, "fixedops.cla")
+}
+
 // runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
 // host expectation via build.Build (the Go compiler, same as
 // suite_host_test.go's BuildSuiteHost/RunSuiteHost -- these fixtures are

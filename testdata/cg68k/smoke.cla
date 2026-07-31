@@ -290,6 +290,15 @@ func other(): list of int {
 // (cgEmitReturnStr's own "file_name" arm) -- smokeFiles below covers the
 // assignment context (cgEmitStoreStr's arm) directly; this closes the
 // other half.
+// smokeClamp3 is the emitFuncClamp3 shape (emit_func.cla) -- a
+// string(3)-or-narrower return, exactly 4 bytes, same size as a scalar
+// int but KStr-kinded: the Task 14.7 review round 2's needsHidden ABI
+// fix (cgRetNeedsHidden) had zero hardware boot coverage for the
+// <=4-byte-return path specifically.
+func smokeClamp3(s: string): string(3) {
+    return s
+}
+
 func smokeFileNameOf(p: string): string {
     return file.name(p)
 }
@@ -472,6 +481,7 @@ on App.launch {
     smokeTextOps()
     smokeNested()
     smokeAliasing()
+    smokeCheck(smokeClamp3("abcdef") == "abc", "string(3)-return ABI path ok")
     smokeFiles()
     smokeFilesBig()
 

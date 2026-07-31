@@ -2138,25 +2138,12 @@ func cgEmitFunc(f: int) {
         paramOffsets.add(0)
         i = i + 1
     }
-    // Task 14.7 fix: this MUST be a KIND test (KStr/KRec), not a SIZE test
-    // (the old `cgSizeOf(irFuncRet(f)) > 4`) -- a str/rec value is never a
-    // plain scalar D0 value
-    // REGARDLESS of how many bytes it happens to occupy (a `string(3)`
-    // return is exactly 4 bytes, same as a scalar int, but its bytes are
-    // a length-prefixed buffer, not "the return value" the way an int's
-    // bits are). Every CALLER of a str/rec-returning function already
-    // assumes the hidden-pointer convention unconditionally regardless of
-    // size (cgEmitStoreStr/cgEmitStoreRec's ECallFn arm always calls
-    // cgCallFnInto; cgMaterializeToTemp always dispatches KStr/KRec
-    // results through cgEmitStoreStr/cgEmitStoreRec) -- the old
-    // size-based gate here disagreed with every caller for any KStr/KRec
-    // return <=4 bytes, an ABI mismatch masked pre-14.7 by cgExpr's own
-    // silent-zero degrade (a `string(3)` return silently came back as
-    // empty instead of corrupting the stack, since the callee just left
-    // D0 alone and the caller's cgCallFnInto-pushed hidden-pointer arg
-    // was simply never written through). cgCallFnScalar's and
-    // cgMaterializeCallResult's own matching guards fixed the same way.
-    needsHidden = irtKind(irFuncRet(f)) == KStr or irtKind(irFuncRet(f)) == KRec
+    // Task 14.7 fix (review round 2: factored into the single
+    // cgRetNeedsHidden authority, below -- was inline here, and again in
+    // cgCallFnScalar/cgMaterializeCallResult's own matching guards; see
+    // cgRetNeedsHidden's own doc comment for the ABI-mismatch bug this
+    // guards against).
+    needsHidden = cgRetNeedsHidden(irFuncRet(f))
     if needsHidden {
         offset = 12
     } else {
@@ -2382,6 +2369,21 @@ func cgIsScalarKind(k: IRKind): bool {
         return false
     }
     return true
+}
+
+// cgRetNeedsHidden (Task 14.7 review fix) is the SINGLE authority for
+// "does a function returning retTy use the hidden-result-pointer calling
+// convention" -- a KIND test (KStr/KRec), never a SIZE test. Was three
+// independent inline copies (cgEmitFunc's own needsHidden, plus matching
+// guards in cgCallFnScalar and cgMaterializeCallResult); collapsed here
+// so a future one-sided edit can't silently reintroduce the caller/
+// callee ABI mismatch the kind-vs-size bug was (see cgEmitFunc's own
+// needsHidden doc comment for the full account: a `string(3)` return is
+// exactly 4 bytes, same size as a scalar int, but every CALLER already
+// assumes the hidden-pointer convention for ANY KStr/KRec result
+// unconditionally, regardless of size).
+func cgRetNeedsHidden(retTy: int): bool {
+    return irtKind(retTy) == KStr or irtKind(retTy) == KRec
 }
 
 // cgVarRefAt (Task 14.7) wraps a raw A6-relative scratch slot (off(A6) --
@@ -4549,11 +4551,9 @@ func cgMaterializeCallResult(a: int) {
         log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(a)))
         quit 1
     }
-    if irtKind(irFuncRet(fi)) != KStr and irtKind(irFuncRet(fi)) != KRec {
-        // Task 14.7 fix: kind-based, matching cgEmitFunc's own
-        // needsHidden gate (see its own doc comment) -- the old size
-        // check rejected a <=4-byte KStr return (e.g. string(3)) even
-        // though it DOES use the hidden-pointer convention.
+    if not cgRetNeedsHidden(irFuncRet(fi)) {
+        // Task 14.7 fix (review round 2: cgRetNeedsHidden, the single
+        // shared authority -- see its own doc comment).
         log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " is not str/rec-returning -- materialization not built for this shape")
         quit 1
     }
@@ -4597,13 +4597,9 @@ func cgCallFnScalar(e: int) {
         log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
         quit 1
     }
-    if irtKind(irFuncRet(fi)) == KStr or irtKind(irFuncRet(fi)) == KRec {
-        // Task 14.7 fix: kind-based, matching cgEmitFunc's own
-        // needsHidden gate -- a size check here let a <=4-byte KStr
-        // return (e.g. string(3)) reach this scalar-D0 call path, which
-        // this file's callers never intended (every KStr/KRec-result
-        // store site always uses cgCallFnInto's hidden-pointer
-        // convention, unconditionally by kind, not by size).
+    if cgRetNeedsHidden(irFuncRet(fi)) {
+        // Task 14.7 fix (review round 2: cgRetNeedsHidden, the single
+        // shared authority -- see its own doc comment).
         log("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
         quit 1
     }
