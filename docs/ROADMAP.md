@@ -456,6 +456,261 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   recorded in
   `docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`'s
   Resequencing section.
+- **5d (codegen68k, landed on branch `native-5d`, 2026-08-01): DONE.**
+  clarusc gained a second backend: direct 68000 binary emission through a
+  shared instruction-table layer (`clarusc/asm68k.cla`, an encoder +
+  Motorola-syntax listing printer that never gets parsed back — the listing
+  is checked by a **vasm round-trip oracle**, `vasm/vasmm68k_mot -m68000
+  -no-opt -Fbin` byte-compared against the encoder's own bytes,
+  `internal/asm68k`, 254/254 instruction forms). `clarusc/cg68k.cla`
+  (`cg68Program`) compiles the shaken IR straight to 68000 machine code —
+  no object files, no linker, no assembler-as-text step ever — with a
+  C-style calling convention (caller cleans, D0 result, LINK/UNLK A6;
+  D0/D1/A0/A1 scratch, D2-D7/A2-A4 preserved even though naive codegen
+  never needs the extra callee-saves yet), naive stack-oriented temp
+  allocation, and `.W`-branch/backpatch control flow. `clarusc/app68k.cla`
+  writes the MacBinary/resource-fork container (CODE 0 jump table + N CODE
+  segments, SIZE(-1), type/creator) — same bytes on Mac and host, different
+  wrapper (real resource fork vs MacBinary for `LaunchAPPL`). Tree-shake
+  (IR reachability from entry + event handlers) moved into this phase from
+  old 5c, as does trap-clause codegen for `external func` (register-convention
+  reg traps evaluated into A0/A1/D0/D1 by a fixed rule, pascal-stack traps,
+  inline clauses, a `nat_` fallback convention for anything without a
+  hand-written trap). The remaining C runtime leaves that would have blocked
+  a Clarus-only-linked native app were ported first: `core.cla`
+  (lasterr/panic/array+enum bounds checks/fixed mul-div) and `ser.cla`'s
+  last ten `rt_list_*`/`rt_map_*` externs redirected to the already-Clarus
+  list/map (Tasks 3-4).
+
+  **The end gate (Task 16):** the same `testdata/suite/test_suite.cla`
+  `TestSuiteOnMac` already runs — every runtime family, file I/O (host-side
+  only, see gate limits), and panics — built via `clarusc emit68k` (no C, no
+  cmake, no Retro68 at all) and booted on Mini vMac, byte-identical to the
+  host build's stdout, exit 0. Plus the 6 `testdata/runerr/*.cla` panic
+  fixtures (exit 3, log message matches) and the 2 suite-excluded
+  abort-by-design programs (`emit_array`/`emit_enum`, exit-code + stdout
+  goldens) — 9 boots total, mirroring the Retro68 gate's own structure
+  exactly (`TestSuiteOn68k`/`TestRunErrOn68k`/`TestAbortOn68k`,
+  `internal/mactest/native_test.go`). New `scripts/build-68k.sh` (usage:
+  `build-68k.sh NAME file.cla...`) bootstraps clarusc from the committed
+  snapshot exactly like `build-mac.sh`'s own step 1 (cached on
+  `clarusc.c`'s mtime), then `emit68k --rtdir runtime/clarus/ -o
+  build-68k/$NAME/$NAME.bin FILES` directly — no C, no cmake, no Retro68;
+  it works standalone (verified: all 9 gate fixtures build clean through
+  it) but the gate tests themselves use the same in-test emit pattern every
+  other `native_test.go` boot already uses (`buildNativeClarusc` +
+  `clarusc emit68k` invoked directly), for the same reason: one memoized
+  clarusc build amortized across all 9 boots in a `go test` run, vs.
+  bootstrapping-by-subprocess per boot.
+
+  Gate results: 9/9 boots green (`CLARUS_MAC_TESTS=1 go test
+  ./internal/mactest -run 'On68k' -timeout 60m`, 32.634s total): 1×
+  `TestHelloOn68k` (5.71s, pre-existing), `TestSuiteOn68k` (4.48s),
+  `TestRunErrOn68k`'s 6 subtests (16.58s total, 2.7-2.8s each),
+  `TestAbortOn68k`'s 2 subtests (5.54s total, 2.75-2.79s each).
+
+  **Timing** (no pass/fail threshold in 5d — this number seeds the
+  peephole/regalloc phase's buy-back target). Two framings, both measured
+  same machine/same session: **(1) total wall-clock** (build+boot+run,
+  what the gate tests themselves report) — `TestSuiteOn68k` alone (own
+  process, pays its own one-time clarusc build): 7.26s; `TestSuiteOnMac`
+  alone (Retro68/gcc -O2, same conditions): 8.52s — native is FASTER
+  overall (≈0.85×), because `clarusc emit68k`'s direct-binary-emission
+  build step (no C compile, no cmake, no linker) is much cheaper than
+  Retro68's gcc -O2 + cmake + link pipeline, and that build-time saving
+  outweighs naive codegen's execution cost for this workload. **(2)
+  boot-to-exit only** (LaunchAPPL wall-clock in isolation, both paths'
+  own already-built `.bin`, build time excluded — the real codegen-quality
+  signal): native 3.844s vs Retro68/gcc -O2 3.659s — a **≈1.05× native-
+  vs-gcc-O2 ratio**, i.e. naive codegen with zero peephole/regalloc runs
+  this suite only ~5% slower than -O2. Honest reading: `test_suite.cla` is
+  dominated by Toolbox trap round-trips (`_NewHandle`, the modal alert
+  loop, etc.) identical on both backends, not hot numeric/ARC loops where
+  naive codegen would be expected to pay the most — the parent spec's own
+  expectation ("naive codegen of hot ARC paths will need buy-back") is
+  neither confirmed nor refuted by this workload; it just isn't the right
+  stress test for that question. (ROADMAP baseline for context: 5c′'s full
+  31-test gated suite was 172.7s wall-clock; that number is the whole
+  `internal/mactest` gate, not `TestSuiteOnMac` alone, so it isn't
+  directly comparable to the ratios above — recorded here for continuity,
+  not as the baseline itself.)
+
+  **Three recorded gate limits (honest, from the plan, unchanged by
+  Task 16):** (1) native rc-leak parity is structural, not measured — the
+  host leak ledger can't run on the Mac; the mirror-of-cprint discipline
+  plus the host-side leak gates on identical IR is the guarantee. (2)
+  `file.save`/`file.load` never joins the native gate in 5d — the host
+  suite expectation is built by the frozen Go compiler, which rejects
+  those programs outright; `ser.cla`'s native fallbacks
+  (`nat_SerFileWriteData`/`nat_SerFileReadTextInto`, Task 14) compile and
+  run but have no emulator test until 5f's self-host exercises file I/O
+  heavily. (3) Division by zero natively raises the 68k divide exception
+  (system error) unguarded, matching host UB — no fixture divides by zero.
+
+  **The 15.5 FROZEN-GO-COMPILER FIX — PENDING ANDREW'S RATIFICATION.**
+  Task 15's multi-segment hardware boot investigation traced a real bug
+  (list-of-text losing earlier entries across `a68Reset()` cycles) to
+  `internal/lower/stmt.go:137`: `text = <string>` was lowered as an
+  in-place `ITextStore` overwrite, contradicting the language reference's
+  own rebind semantics (Ch3:191,345 — `text=<string>` assignment REBINDS
+  the variable to a new handle, it does not mutate the existing one
+  in-place). This silently truncated shared handles and miscompiled
+  `clarusc` itself via every Go-lane harness build — not a new bug, a
+  pre-existing one the multi-segment boot happened to expose. Fixed via
+  `coerceStr`/`ITextOfStr` (commit `b57ef5b`, snapshot re-bless
+  `8103f5b`); pinned by `testdata/run/arc_text_realias.cla` (both lanes,
+  `live=0`); the Task 15 workaround (forced string-concat copy) was
+  removed once the real fix landed. This is a change to `internal/`, the
+  FROZEN Go-compiler reference — CLAUDE.md is explicit that only clarusc
+  gets new behavior. Precedent: the `go-xhh-escape` named exception. It is
+  landed on this branch (revert path: revert `b57ef5b`'s `internal/` hunk
+  + restore the Task 15 workaround) but **not yet ratified by Andrew** —
+  flagged loudly here per the branch's own convention for FREEZE
+  exceptions. Known side effects: the Go lane leaks text handles on this
+  path (always did, unmeasured before); `t = "x"` on a `str`/`text`
+  parameter no longer mutates the caller's binding on the Go lane (this
+  now MATCHES clarusc/the reference spec, which is the point).
+
+  **The lasterr storage inversion (12.5) — recorded plan-defect
+  adjudication.** The 5c′-derived assumption that `lasterr` storage could
+  stay entirely platform-owned (C globals) turned out wrong for native:
+  Task 3's original fix-up (Clarus-side sync writes) was a workaround for
+  a problem the plan mis-scoped. Adjudicated mid-flight (5b precedent):
+  `lasterr` STORAGE stays behind the waist, platform-owned; Clarus WRITES
+  via a `CoreSetLastErr` extern; Clarus READS via a per-backend intrinsic
+  arm (cprint: the pre-existing C globals; cg68k: `nat*` functions over
+  `native.cla`'s own state). This deleted the Task 3 file-I/O sync
+  fixups outright rather than patching them further. Also restored
+  `TestTextwidgetsUIScenario` (attributed to a Task 3 regression in
+  `rt_ui.c`'s event-loop TE-clamp write path, not a pre-existing failure —
+  see below).
+
+  **Hard-won lessons:**
+  - **JT entry +2, not +0 (Task 15 crash root cause).** A classic 8-byte
+    jump-table entry's first word is DATA (segment number or an offset) in
+    BOTH its unloaded and loaded forms; its CODE starts at +2
+    (`MOVE.W #segnum,-(SP)` / `JMP xxx.L`). Cross-segment `JSR d16(A5)`
+    must target the entry's own code point at +2. Targeting +0 produces an
+    "illegal instruction"/"coprocessor not installed" crash on the very
+    first `_LoadSeg`-triggered cross-segment call, with no explanation from
+    caller framing or callee complexity — found via a 4-way isolated repro
+    table and Inside Macintosh's own Segment Manager chapter, fixed as a
+    one-term change plus a structural regression guard (`ab63cb2`).
+  - **The Segment Loader / LoadSeg contract** de-risked by forced-
+    multi-segment boots below the real 32,760-byte budget
+    (`TestNativeSmokeForcedMultiSegment`, `--seglimit`, undocumented
+    test-only flag): proving cross-segment `JSR`-through-the-JT and
+    `_LoadSeg` work on real hardware with a small, fast, known-good
+    fixture BEFORE staking the whole suite app on it (15-segment forced
+    split, green) was what let Task 16 proceed with confidence once the
+    JT+2 fix landed.
+  - **Silent-zero hardening found real bugs.** Task 14.7 hardened
+    `cgExpr`'s non-scalar arms and `cgIntr`'s catch-all from silently
+    emitting `move.l #0` placeholders to log+quit — this immediately
+    surfaced two previously-invisible bugs: `fix_mul`/`fix_div` were never
+    implemented (silently returned 0), and `needsHidden` was computed from
+    result SIZE instead of result KIND, so a `string`-typed return ≤4 bytes
+    silently skipped the hidden-pointer convention every caller assumed
+    and came back empty. Both fixed; the lesson generalizes — a
+    catch-all default that produces a plausible-looking wrong value is
+    strictly worse than one that stops the build.
+  - **The A0/A1 walk-protection saga (Task 11 → Task 12 fix rounds).**
+    `cgIntrPoke`'s `poke(dst, peek(src))` clobbered A0 mid-sequence (Task
+    11's boot-blocking bug, alongside the app68k JT-entry+4 offset error —
+    both fixed together to get the very first hardware boot green). Task
+    12's record-walk codegen had the same class of bug twice more: an
+    "A0-drift" issue in nested-call KRec/KStr arguments (fix round 1), then
+    a NEW bug in that fix's own mechanism — an A1 stash clobbered across a
+    `JSR` into nested `cg_retain_`/`cg_release_` calls (fix round 2,
+    proven empirically, 3 call sites bracketed). Recurring theme: any
+    codegen path that stashes a scratch register across a call to
+    emitted-not-inlined runtime code must treat that call as a full
+    scratch-register clobber, not just a data clobber.
+
+  - **Task 16 itself found four real native-only correctness bugs, all
+    invisible to every fixture booted before the suite app** (the suite is
+    the first program to exercise: a read-before-write local scalar, a
+    global text initialized from a string literal, an array-of-record
+    element store, and a `char[]` buffer round-tripped through
+    `toBytes`/`fromBytes` alongside direct indexing):
+    1. **Local default-init only ever covered five container-ish
+       kinds.** `cgEmitFunc`'s per-local default-init gate (built up
+       reactively across Tasks 12/13/14.7, each widening it by exactly one
+       more kind as a crash was found) stayed scoped to
+       `KRec/KText/KList/KMap/KErr` — every OTHER kind (every scalar, and
+       critically every fixed ARRAY) got NO default-init at all, contrary
+       to `cprint.cla`'s own `cpEmitFunc`, which calls `cpDefaultInit`
+       UNCONDITIONALLY for every local, all kinds. `cgDefaultInitAt`
+       already handled every kind correctly (including `KArr` via the
+       already-written `cgArrDefaultAt`) — it just was never called. Fixed
+       by dropping the kind restriction entirely (every local, no gate).
+       Found via `emit_array.cla`'s own "int/char array zero-init" checks
+       reading stack garbage; a same-shape bare-scalar probe confirmed
+       this was general, not array-specific — almost certainly the actual
+       root cause of a since-resolved 15-minute `TestSuiteOn68k` hang too
+       (garbage feeding a loop bound/index is exactly the class Task 13's
+       own container-ARC section had already reproduced once as an
+       emulator hang, not a clean crash).
+    2. **A `text` global initialized from a string literal was a literal
+       `TODO ... unsupported this task` stub** (`cgEmitGlobalInitExpr`,
+       left over from Task 12) — the global stayed permanently empty.
+       Fixed by filling the already-birthed handle via `rtTextStore`
+       (mirrors `cgIntrTextOfStr`'s own shape). Found via
+       `emit_record.cla`'s "text global from string literal" check and
+       `arc_global_alias.cla`'s `gaT1`/`textassignGt` globals.
+    3. **Assigning into a fixed-array element of record type was
+       silently a no-op.** `cgStmt`'s `SAssign` dispatcher routed
+       `KRec`-typed destinations to `cgEmitStoreRec` only for
+       `EVarRef`/`EFieldRef`, never `EIndexRef` — `h.items[0] =
+       makeArrItem(...)` fell through to the generic "TODO SAssign"
+       stub and never executed. `cgEmitStoreRec` was already fully
+       dst-kind-agnostic (every arm routes through the already-general
+       `cgExprAddr`) — the restriction was never a real requirement, just
+       the scope Task 12 originally built it for. Found via
+       `arc_fixwave_arrays.cla`'s `holder-store`/`standalone-store`
+       checks (an `Item[3]` array-of-record element store).
+    4. **`toBytes`/`fromBytes` assume a tight `char[N]` buffer; cg68k's
+       own arrays are 2-byte-padded per element (deliberate, documented
+       LAYOUT AUTHORITY design).** Calling `rtStrToBytes`/`rtTextToBytes`/
+       etc directly against a native `char[]` local's own padded address
+       silently touched only every OTHER element (`"ABCDEFGH"` written as
+       `"A_C_E_G_"`). A `toBytes`-then-`fromBytes` round trip through the
+       SAME buffer, with no direct `buf[i]` indexing in between, happened
+       to keep working anyway (both ends agreed on the same wrong tight
+       assumption) — only `strings.cla`'s `buf[3] = 'z'` (mixing an
+       indexed write in between) exposed it. Fixed by adapting through a
+       fresh tight scratch buffer at the four `cgIntrStr/TextToBytes/
+       FromBytes` call sites (`cgFillTightScratchFromPaddedArr`/
+       `cgDrainTightScratchToPaddedArr`) rather than changing the array
+       layout itself — a narrower, lower-risk seam than reopening the
+       padding decision.
+
+  **5e-input inventory** (deferred UI-runtime work, feeding 5e's design):
+  UI intrinsics (window/menu/dialog Toolbox traps — no reg-trap coverage
+  yet, 5d's trap-clause work only covered non-UI traps), `fpUiEditStmt`'s
+  two arms still routing through cprint-only C (`kind==2`→`rt_list_at`,
+  `kind==3`→`rt_map_get_dv`, carried unresolved from 5c′), uisnaps-from-
+  native (the 23 UI scenario goldens are all Retro68/gcc-O2-built today;
+  native has no UI runtime at all yet), and pascal-trap byte-order
+  verification for bool/char stack arguments (Task 9's own note: the
+  LOW-byte placement claim rests on secondary sources, unexercised by any
+  5d trap — 5e's first real pascal trap with byte args must verify against
+  uisnaps).
+
+  **Full gated `internal/mactest` suite** (`CLARUS_MAC_TESTS=1 go test
+  ./internal/mactest -timeout 60m` — every Retro68 test AND every native
+  test in one run): 40 top-level tests (56 counting subtests), 0
+  failures, 226.933s wall-clock — the Retro68 gate (suite/runerr/abort +
+  23 UI scenarios, `TestTextwidgetsUIScenario` included and green, the
+  12.5 regression fix confirmed still holding) plus this task's 9 native
+  boots, all in one green run.
+
+  Full task-by-task detail:
+  `.superpowers/sdd/2026-07-30-native-5d-codegen68k/task-{1..16}-report.md`
+  (progress ledger: same directory's `progress.md`); design:
+  `docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`
+  ("Outcomes" section); plan:
+  `docs/superpowers/plans/2026-07-30-native-5d-codegen68k.md`.
 
 ## Small open items (not yet scheduled)
 

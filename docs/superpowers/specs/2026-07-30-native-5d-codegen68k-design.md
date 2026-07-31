@@ -192,3 +192,106 @@ Three rings:
   honest that naive codegen of hot ARC paths will need buy-back).
 - Compilation cache (old 5c, now post-5d).
 - UI runtime port and uisnaps-from-native (5e), Mac-resident clarusc (5f).
+
+## Outcomes (2026-08-01, Tasks 1-16 landed)
+
+The design landed close to as-written; every deviation below is either an
+as-designed confirmation or a small addition the exploration surfaced, not
+a redesign.
+
+- **Direct binary emission via the instruction table: as designed.**
+  `clarusc/asm68k.cla`'s single table drives the encoder and the listing
+  printer exactly as planned; no parser was ever written. The vasm
+  round-trip oracle (`internal/asm68k`) reached 254/254 instruction forms
+  byte-identical, confirming the "goldens are our own listing output, vasm
+  is only a second independent assembler for byte comparison" design.
+- **C-style calling convention: as designed.** Caller-cleans, D0 result,
+  LINK/UNLK A6, D0/D1/A0/A1 scratch. Trap-site Pascal/register conventions
+  stayed fenced to the `external func` trap clause exactly as scoped —
+  never leaked into the internal convention.
+- **Rule-based reg traps, as designed.** The `external func` trap clause
+  (Task 2) carries a convention flag (0=none, 1=pascal trap, 2=reg trap,
+  3=inline deref, 4=inline nop); reg traps are checker-enforced to ≤2 ptr
+  + ≤2 int/bool/char params (the fixed A0/A1+D0/D1 rule) at compile time,
+  not runtime.
+- **Inline clauses, as designed.** `HandleToPtr`-shaped deref and no-op
+  clauses compile to zero-call inline code (Task 9), no `rt_ext_` shim
+  round-trip.
+- **`nat_` fallback convention (addition confirmed useful beyond plan
+  scope).** Any `external func` with no trap/inline clause AND no
+  hand-written `nat_<Name>` Clarus function is a HARD compile error
+  ("extern X has no trap clause and no nat_ fallback") rather than a
+  silent no-op or a runtime crash — this is what let Tasks 11-14 land
+  `native.cla`'s console/quit/panic/args/file-I/O surface incrementally,
+  one missing extern at a time, with the compiler naming exactly which
+  one was still missing.
+- **Per-segment constant pools: as designed.** String literals, enum
+  tables, and serdesc tables are `LEA d16(PC)`-referenced per-CODE-segment
+  pools, duplicated across segments when a constant is referenced from
+  more than one (rare, harmless, deterministic) — no DATA resource, no
+  startup copy step, exactly the design's tradeoff.
+- **Capture-protocol-always-on (as-built convention, not explicitly
+  named in the original design).** `native.cla`'s console/log/exit-code
+  capture protocol (`##CLARUS-EXIT##`/`##CLARUS-LOG##` trailer, ported
+  from `runtime/mac/rt_mac.c:83-253`) runs unconditionally in every
+  native build, not gated behind a test-only flag the way Retro68's
+  `RT_MAC_TEST` define is — every native `.bin`, including ones a user
+  might eventually run standalone, always emits the same trailer. This
+  made the harness side trivial (byte-identical `parseCapture` for both
+  backends) at the cost of the trailer always being present in real
+  output; acceptable since 5d has no non-test native consumer yet.
+- **The Task 14.7 gap-closure insertion (real deviation from the plan's
+  task sequence, not the design).** The design's own corpus assumption —
+  that Tasks 7-13's codegen would already compile `test_suite.cla` — was
+  wrong: Task 13's controller probe found `test_suite.cla` didn't compile
+  under `emit68k` at all (first error: `cgExprAddr EIntr` no-address,
+  a slice/intrinsic-in-expression-position class the design's addressing
+  section hadn't enumerated). Task 14.7 was inserted between Tasks 14 and
+  15 specifically to close that gap before segmentation (Task 15) could
+  inherit unknown codegen holes — 5 error classes fixed at shared choke
+  points (`cgExprAddr` materialize-fallback, a big-temp scratch pool for
+  >4-byte container elements, str-builder intrinsics that previously
+  silently no-op'd, `KErr`'s fixed layout, `EIndexRef` added to
+  addressable call-arg shapes), landing a 62/62 compile-clean corpus.
+- **Segmentation and the JT: as designed, with one real bug found on
+  real hardware the design's own static verification didn't catch.**
+  First-fit packing into ≤32,760-byte segments, intra-segment `BSR.W`,
+  cross-segment `JSR d16(A5)` through the CODE 0 jump table — all as
+  designed. What the design didn't anticipate: a classic 8-byte JT
+  entry's first word is DATA in both its unloaded and loaded forms, and
+  code starts at +2 — cross-segment `JSR` must target +2, not +0. This
+  was invisible to static verification (the JT/offset arithmetic itself
+  was provably correct) and only surfaced as a real-hardware crash on the
+  first cross-segment `_LoadSeg` call (Task 15; see ROADMAP for the full
+  writeup and Task 16's `TestSuiteOn68k`/forced-multi-segment gate that
+  exercises the fix under load).
+- **Resource fork + MacBinary host container: as designed.** Same
+  resource-fork bytes on both platforms; MacBinary wrapper only on the
+  host build path, exactly per the design's split.
+- **End gate: as designed, per the parent spec's own testing-ring-3
+  description.** `TestSuiteOn68k`/`TestRunErrOn68k`/`TestAbortOn68k` (9
+  boots total) mirror the Retro68 gate's own three-test structure
+  exactly; the same `RunSuiteHost`/`BuildSuiteHost` expectation now
+  backs both `TestSuiteOnMac` and `TestSuiteOn68k`.
+- **The LAYOUT AUTHORITY padding decision (parent spec + this design's
+  own cg68k.cla header comment) is confirmed as-designed, but its
+  interaction with the SHARED runtime modules (`str.cla`/`text.cla`,
+  ported once for both backends in 5b/5c′) was an unexamined seam.**
+  Padding every `bool`/`char` array element to 2 bytes was a deliberate,
+  documented choice (no odd-byte-addressed struct/stack story on the
+  68000) — but `rtStrToBytes`/`rtStrFromBytes`/`rtTextToBytes`/
+  `rtTextFromBytes` assume a TIGHT byte buffer (correct for cprint's own
+  C `char[N]`, which really is tight), and nothing in either the parent
+  spec or this design flagged that the padding decision would silently
+  break that shared contract for any `char[]` buffer touched by both
+  direct indexing AND a `toBytes`/`fromBytes` call. Found and fixed by
+  Task 16 (see ROADMAP's "hard-won lessons" list) via a scratch-buffer
+  adapter at the four call sites, not a change to the padding rule
+  itself or to the shared runtime.
+
+Nothing in the design was reverted or found fundamentally wrong; the
+deviations above are additions (nat_ fallback, capture-protocol-always-on,
+Task 14.7's insertion), hardware-only findings (JT+2), or a cross-module
+seam the design didn't examine (str/text buffer tightness vs. array
+padding) — none of them required reopening a decision the design actually
+made.
