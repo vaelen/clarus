@@ -42729,7 +42729,7 @@ static void clar_fn_cgAssignFinalJtSlots(void) {
 }
 
 static int32_t clar_fn_cgJtDisp(int32_t cv_slot) {
-    return (32 + (cv_slot * 8));
+    return ((32 + (cv_slot * 8)) + 2);
     return 0;
 }
 

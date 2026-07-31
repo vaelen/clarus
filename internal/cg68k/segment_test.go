@@ -24,6 +24,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -153,6 +155,43 @@ func TestSegmentationMultiSegment(t *testing.T) {
 		if !segsSeen[int16(s)] {
 			t.Errorf("segment %d owns no jump-table entry at all", s)
 		}
+	}
+
+	// -- every cross-segment call aims at a JT entry's ENTRY POINT (+2) --
+	//
+	// Both forms of a classic 8-byte JT entry keep their first word as
+	// DATA (routine offset when unloaded, segment number once _LoadSeg has
+	// patched it) and their code at entry+2. So a cross-segment
+	// `JSR d16(A5)` must satisfy (d16 - 32) % 8 == 2; aiming at the entry
+	// start executes that data word as an opcode, which bombs with
+	// illegal-instruction / F-line / A-line depending on the word's
+	// numeric value. That is exactly the bug that blocked Task 15's first
+	// attempt, and this is the cheap structural check that catches it
+	// without booting an emulator.
+	jsrA5 := regexp.MustCompile(`JSR\s+(-?\d+)\(A5\)`)
+	crossSegCalls := 0
+	for n := 1; n <= segCount; n++ {
+		segS := fmt.Sprintf("%s.seg%d.s", base, n)
+		src, err := os.ReadFile(segS)
+		if err != nil {
+			t.Fatalf("read %s: %v", segS, err)
+		}
+		for _, m := range jsrA5.FindAllStringSubmatch(string(src), -1) {
+			d, err := strconv.Atoi(m[1])
+			if err != nil {
+				t.Fatalf("%s: unparsable displacement %q", segS, m[1])
+			}
+			crossSegCalls++
+			if d < 32 || (d-32)%8 != 2 {
+				t.Errorf("segment %d: cross-segment call %q targets JT byte %d, which is not a slot entry point (want d >= 32 and (d-32)%%8 == 2)", n, m[0], d)
+			}
+			if slot := (d - 34) / 8; slot >= nEntries {
+				t.Errorf("segment %d: cross-segment call %q targets JT slot %d, past the last slot %d", n, m[0], slot, nEntries-1)
+			}
+		}
+	}
+	if crossSegCalls == 0 {
+		t.Error("no cross-segment JSR d16(A5) call sites found in a multi-segment build -- the entry-point assertion above is vacuous")
 	}
 
 	// -- per-segment vasm round-trip on every .segN.s/.segN.dat pair --

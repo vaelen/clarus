@@ -927,10 +927,29 @@ func cgAssignFinalJtSlots() {
 }
 
 // cgJtDisp is the byte displacement from A5 of jump-table slot's own
-// entry (the JT itself starts 32 bytes above A5, per app68k.cla's own
-// CODE 0 layout; each entry is 8 bytes) -- a cross-segment call target.
+// ENTRY POINT (the JT itself starts 32 bytes above A5, per app68k.cla's
+// own CODE 0 layout; each entry is 8 bytes) -- a cross-segment call
+// target.
+//
+// The +2 is load-bearing, and getting it wrong is what blocked Task 15's
+// first attempt. BOTH forms of a classic 8-byte JT entry keep their FIRST
+// WORD as data and their CODE at entry+2:
+//
+//   unloaded: offset.W | $3F3C ($3F3C = MOVE.W #segnum,-(SP)) | segnum.W | $A9F0 (_LoadSeg)
+//   loaded:   segnum.W | $4EF9 ($4EF9 = JMP xxx.L)            | routine address.L
+//
+// _LoadSeg rewrites the entry in place from the first form to the second,
+// and both are entered at +2 -- that is exactly why the segment number
+// and the routine offset can share slot +0 across the two forms. So a
+// cross-segment `JSR d16(A5)` must aim at 32 + 8*slot + 2; aiming at the
+// entry start executes the offset/segnum WORD as an opcode. That is not a
+// silent wrong answer, it is a bomb whose flavour depends on the numeric
+// value of that word: an offset of $Fxxx raises F-line ("coprocessor not
+// installed"), $Axxx raises A-line, most others "illegal instruction" --
+// which is precisely the family of crashes Task 15's first attempt saw,
+// and why they looked maddeningly unrelated to what the callee did.
 func cgJtDisp(slot: int): int {
-    return 32 + slot * 8
+    return 32 + slot * 8 + 2
 }
 
 // cgCallFunc emits a call to reachable irFuncs index fi: a direct BSR.W

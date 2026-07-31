@@ -24,7 +24,7 @@ LBL_256:
         BSR.W LBL_255
         BSR.W LBL_55
         ; entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)
-        JSR 728(A5)
+        JSR 730(A5)
         BSR.W LBL_253
         CLR.L -(A7)
         BSR.W LBL_58
