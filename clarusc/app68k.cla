@@ -179,9 +179,18 @@ func app68BuildHeader(appName: string(31), creator: string(7), rsrcLen: int): te
 // A5 size, below-A5 size, JT length, JT offset from A5 -- always 32) plus
 // one 8-byte "unloaded" jump-table entry per jtEntries element. Every
 // entry lives in segment 1 (Task 10 is single-segment only), and its
-// offset field is the routine's raw a68 label address PLUS 4, skipping
-// CODE 1's own 4-byte per-segment header (Elf2Mac ground truth, see file
-// header comment).
+// offset field is the routine's raw a68 label address -- an offset from
+// the first byte of the segment's CODE, i.e. AFTER CODE 1's own 4-byte
+// per-segment header, which _LoadSeg skips itself. Do NOT add 4 here:
+// Elf2Mac writes its own classic entry-point entry as literally
+// `0000 3F3C 0001 A9F0` (Object.cc:265) for a routine at code offset 0,
+// and adding 4 lands the entry one instruction into the routine -- which
+// is exactly what blocked native-5d Task 11's first boot (the app entered
+// startup PAST its `LEA -292(A5),A0`, so the below-A5 zero loop ran with
+// a garbage A0: globals never zeroed AND 292 bytes of wild writes).
+// Elf2Mac's own `offset += 4` (Object.cc:284) applies to its 32-BIT jump
+// table entries (`id.W, $A9F0, offset.L`), a different entry format
+// resolved by Retro68's runtime rather than the ROM's _LoadSeg.
 func app68BuildCode0(jtEntries: list of int, belowA5: int): text {
     var out: text
     var jtLen: int
@@ -195,7 +204,7 @@ func app68BuildCode0(jtEntries: list of int, belowA5: int): text {
     app68PutLong(out, 32)           // JT offset from A5 (standard, fixed)
     i = 0
     while i < jtEntries.count {
-        app68PutWord(out, jtEntries[i] + 4)
+        app68PutWord(out, jtEntries[i])
         app68PutWord(out, 0x3F3C)
         app68PutWord(out, 1)        // segment number (always 1, single segment)
         app68PutWord(out, 0xA9F0)

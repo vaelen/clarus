@@ -1156,14 +1156,17 @@ func cgIntrPeek(e: int, nm: string) {
     a68Emit(OpMove, sz, AmInd, 0, 0, AmDn, 0, 0)
 }
 
-// cgIntrPoke inlines pokeb/pokew/pokel as MOVEA.L addr,A0; <evaluate
-// value>; MOVE.<sz> D0,(A0) -- rt.h's rt_pokeb/w/l mirror (truncating
-// stores, no extension needed on the write side). KNOWN LIMITATION: the
-// value expr is evaluated AFTER addr is stashed in A0 (the brief's own
-// locked sequence), so a value expr containing a nested call that itself
-// uses A0 as scratch would clobber addr -- no fixture here exercises that
-// shape (every poke call is a literal/simple expr), same class of
-// unexercised edge cgCallExtPascal's own doc comment flags.
+// cgIntrPoke inlines pokeb/pokew/pokel as <evaluate addr>; MOVE.L D0,-(A7);
+// <evaluate value>; MOVEA.L (A7)+,A0; MOVE.<sz> D0,(A0) -- rt.h's
+// rt_pokeb/w/l mirror (truncating stores, no extension needed on the write
+// side). The address is SPILLED TO THE STACK across the value expression
+// rather than parked in A0: A0 is cgExpr's universal address scratch (every
+// peek*, every EVarRef address-of, every nested call's arg marshaling
+// rewrites it), so `pokeb(dst + n, peekb(src + i))` -- native.cla's natItoa
+// digit copy, and the very first fixture to exercise the shape -- otherwise
+// stores THROUGH THE SOURCE ADDRESS instead of the destination. Every
+// cgExpr path is stack-balanced, so (A7)+ recovers the address whatever the
+// value expression does.
 func cgIntrPoke(e: int, nm: string) {
     var a0e: int
     var a1e: int
@@ -1173,8 +1176,9 @@ func cgIntrPoke(e: int, nm: string) {
     a1e = irExprNext(a0e)
     sz = cgIntrPeekPokeSize(nm)
     cgExpr(a0e)
-    a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExpr(a1e)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
     a68Emit(OpMove, sz, AmDn, 0, 0, AmInd, 0, 0)
 }
 

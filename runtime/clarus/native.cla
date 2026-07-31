@@ -52,6 +52,7 @@
 // ioBuffer ptr(4)@32, ioReqCount long(4)@36, ioActCount long(4)@40,
 // ioPosMode short(2)@44, ioPosOffset long(4)@46 -- struct size 50,
 // matching the plan brief's own offset table exactly) ----
+const natIoResult: int = 16
 const natIoNamePtr: int = 18
 const natIoVRefNum: int = 22
 const natIoRefNum: int = 24
@@ -100,7 +101,21 @@ const natLogCap: int = 4096
 //   PBCloseSync    Devices.h  0xA001
 //   PBFlushVolSync Files.h    0xA013
 // matching the plan brief's own trap-word table exactly.
-external func NatNewPtr(size: int): ptr = trap 0xA11E reg
+// NewPtrCLEAR (0xA31E -- MacMemory.h's `NewPtrClear ONEWORDINLINE(0xA31E)`,
+// Traps.h `_NewPtrClear = 0xA31E`, same `#pragma parameter __A0 (__D0)`
+// convention as plain _NewPtr), NOT plain _NewPtr (0xA11E): the PB this
+// allocates is a File Manager parameter block, and PBOpen reads FIELDS
+// THIS MODULE NEVER WRITES -- ioMisc(28) is Open's "optional ptr to
+// access path buffer" and ioVersNum(26) its version number (Files.h:433;
+// Retro68's own FSOpen glue, multiversal/custom/glue.c:172, explicitly
+// sets BOTH to 0 before PBOpenSync for exactly this reason). Plain
+// _NewPtr hands back UNINITIALIZED heap, so those fields arrive as
+// garbage and the File Manager scribbles a 522-byte access path through
+// a wild pointer -- the (heap-layout-dependent, hence code-size-
+// sensitive) crash and the silent open failure that blocked Task 11's
+// first boot. Clearing costs nothing here and covers natBuf/natDigits/
+// natLogBuf too.
+external func NatNewPtr(size: int): ptr = trap 0xA31E reg
 external func NatCreate(pb: ptr): int = trap 0xA008 reg
 external func NatOpen(pb: ptr): int = trap 0xA000 reg
 external func NatWrite(pb: ptr): int = trap 0xA003 reg
@@ -256,8 +271,16 @@ func natInit() {
     // rt_mac.c's own comment on this exact call.
     NatCreate(natPb)
 
+    // The success gate is ioResult (the PB's own 16-bit result field,
+    // which every SYNCHRONOUS File Manager call sets), NOT the trap's D0
+    // return: these are OS traps returning OSErr in D0's LOW WORD only
+    // (Files.h/Devices.h declare every PBxxxSync `#pragma parameter __D0`
+    // on a `short` result), so D0's high word is whatever the ROM last
+    // left there -- reading it as a full 32-bit `int` can read a nonzero
+    // "error" out of a successful call.
     pokeb(natPb + natIoPermssn, natFsRdWrPerm)
-    if NatOpen(natPb) != 0 {
+    NatOpen(natPb)
+    if peekw(natPb + natIoResult) != 0 {
         natRef = -1
         return
     }
@@ -301,76 +324,64 @@ func natLog(s: ptr) {
 // ##CLARUS-LOG##\n" followed by the buffered log bytes -- then closes
 // and flushes and calls ExitToShell. Byte-identical to rt_mac.c's
 // rt_test_atexit, guarded (natDone) against running twice the same way.
-//
-// ponytail/KNOWN ISSUE (Task 11 boot debugging, unresolved -- see
-// task-11-report.md's boot story): the natural `if natDone { return }`
-// early-return shape (the SAME shape natInit's own `if natOpened {
-// return }` guard already uses successfully elsewhere in this file)
-// deterministically crashes the emulator ("illegal instruction") the
-// moment it's the first statement of natQuit specifically -- verified by
-// exhaustive bisection (byte-identical vasm cross-check, manual
-// instruction-by-instruction trace, both clean) with NO static
-// explanation found. Wrapping the SAME body in a positive `if not
-// natDone { ... }` conditional instead (this function's actual shape)
-// avoids the crash. Root cause NOT understood -- flagged for the
-// controller/next task, not fixed at the source.
 func natQuit(code: int) {
     var n: int
 
-    if not natDone {
-        natDone = true
-        natInit()
-
-        // "##CLARUS-EXIT## " (16 bytes)
-        pokeb(natBuf, int('#'))
-        pokeb(natBuf + 1, int('#'))
-        pokeb(natBuf + 2, int('C'))
-        pokeb(natBuf + 3, int('L'))
-        pokeb(natBuf + 4, int('A'))
-        pokeb(natBuf + 5, int('R'))
-        pokeb(natBuf + 6, int('U'))
-        pokeb(natBuf + 7, int('S'))
-        pokeb(natBuf + 8, int('-'))
-        pokeb(natBuf + 9, int('E'))
-        pokeb(natBuf + 10, int('X'))
-        pokeb(natBuf + 11, int('I'))
-        pokeb(natBuf + 12, int('T'))
-        pokeb(natBuf + 13, int('#'))
-        pokeb(natBuf + 14, int('#'))
-        pokeb(natBuf + 15, int(' '))
-        natWriteBytes(natBuf, 16)
-
-        n = natItoa(code, natBuf)
-        natWriteBytes(natBuf, n)
-
-        // "\n##CLARUS-LOG##\n" (16 bytes)
-        pokeb(natBuf, 10)
-        pokeb(natBuf + 1, int('#'))
-        pokeb(natBuf + 2, int('#'))
-        pokeb(natBuf + 3, int('C'))
-        pokeb(natBuf + 4, int('L'))
-        pokeb(natBuf + 5, int('A'))
-        pokeb(natBuf + 6, int('R'))
-        pokeb(natBuf + 7, int('U'))
-        pokeb(natBuf + 8, int('S'))
-        pokeb(natBuf + 9, int('-'))
-        pokeb(natBuf + 10, int('L'))
-        pokeb(natBuf + 11, int('O'))
-        pokeb(natBuf + 12, int('G'))
-        pokeb(natBuf + 13, int('#'))
-        pokeb(natBuf + 14, int('#'))
-        pokeb(natBuf + 15, 10)
-        natWriteBytes(natBuf, 16)
-
-        natWriteBytes(natLogBuf, natLogLen)
-
-        if natRef >= 0 {
-            pokew(natPb + natIoRefNum, natRef)
-            NatClose(natPb)
-        }
-        natFlush()
-        NatExitToShell()
+    if natDone {
+        return
     }
+    natDone = true
+    natInit()
+
+    // "##CLARUS-EXIT## " (16 bytes)
+    pokeb(natBuf, int('#'))
+    pokeb(natBuf + 1, int('#'))
+    pokeb(natBuf + 2, int('C'))
+    pokeb(natBuf + 3, int('L'))
+    pokeb(natBuf + 4, int('A'))
+    pokeb(natBuf + 5, int('R'))
+    pokeb(natBuf + 6, int('U'))
+    pokeb(natBuf + 7, int('S'))
+    pokeb(natBuf + 8, int('-'))
+    pokeb(natBuf + 9, int('E'))
+    pokeb(natBuf + 10, int('X'))
+    pokeb(natBuf + 11, int('I'))
+    pokeb(natBuf + 12, int('T'))
+    pokeb(natBuf + 13, int('#'))
+    pokeb(natBuf + 14, int('#'))
+    pokeb(natBuf + 15, int(' '))
+    natWriteBytes(natBuf, 16)
+
+    n = natItoa(code, natBuf)
+    natWriteBytes(natBuf, n)
+
+    // "\n##CLARUS-LOG##\n" (16 bytes)
+    pokeb(natBuf, 10)
+    pokeb(natBuf + 1, int('#'))
+    pokeb(natBuf + 2, int('#'))
+    pokeb(natBuf + 3, int('C'))
+    pokeb(natBuf + 4, int('L'))
+    pokeb(natBuf + 5, int('A'))
+    pokeb(natBuf + 6, int('R'))
+    pokeb(natBuf + 7, int('U'))
+    pokeb(natBuf + 8, int('S'))
+    pokeb(natBuf + 9, int('-'))
+    pokeb(natBuf + 10, int('L'))
+    pokeb(natBuf + 11, int('O'))
+    pokeb(natBuf + 12, int('G'))
+    pokeb(natBuf + 13, int('#'))
+    pokeb(natBuf + 14, int('#'))
+    pokeb(natBuf + 15, 10)
+    natWriteBytes(natBuf, 16)
+
+    natWriteBytes(natLogBuf, natLogLen)
+
+    if natRef >= 0 {
+        pokew(natPb + natIoRefNum, natRef)
+        NatClose(natPb)
+    }
+    natFlush()
+    NatExitToShell()
 }
 
 // nat_CorePanic is core.cla's `external func CorePanic(msg: string)`'s

@@ -60,6 +60,12 @@ on App.launch {
     r = peekb(buf)
     r = peekw(buf + 2)
     r = peekl(buf + 4)
+    // A poke whose VALUE operand is itself a peek: both need A0, so the
+    // destination address must survive across the value expression (it is
+    // spilled to the stack, see cgIntrPoke). Parking it in A0 instead
+    // stores through the SOURCE address -- native.cla's natItoa digit copy
+    // hit exactly this, and it is the only shape that catches it.
+    pokeb(buf + 1, peekb(buf))
     DisposePtr(buf)
 
     return

@@ -317,19 +317,25 @@ func TestImageStructure(t *testing.T) {
 		if trailer != 0xA9F0 {
 			t.Errorf("JT entry %d: trailer word = %#04x, want 0xA9F0", i, trailer)
 		}
-		// The entry's own offset field is the routine's raw offset + 4
-		// (skipping CODE 1's own header); it must land inside CODE 1's
-		// actual code bytes.
-		if int(off) < 4 || int(off) > 4+code1RawLen {
-			t.Errorf("JT entry %d: offset %d out of CODE 1's code range [4, %d]", i, off, 4+code1RawLen)
+		// The entry's own offset field is the routine's offset from the
+		// first byte of CODE 1's *code* -- _LoadSeg skips the segment's own
+		// 4-byte header itself, so nothing may be added here. It must land
+		// inside CODE 1's actual code bytes.
+		if int(off) > code1RawLen {
+			t.Errorf("JT entry %d: offset %d out of CODE 1's code range [0, %d]", i, off, code1RawLen)
 		}
 	}
 	// JT entry 0 is the synthesized startup routine, and it's always the
 	// very first thing emitted into the stream (cgEmitStartup runs before
-	// any reachable function's own body) -- so its raw offset (off-4)
-	// must be exactly 0.
-	if off0 := binary.BigEndian.Uint16(jt[0:2]); off0 != 4 {
-		t.Errorf("JT entry 0 (startup, JT slot 0) offset = %d, want 4 (raw offset 0 + 4-byte CODE 1 header)", off0)
+	// any reachable function's own body) -- so its offset must be exactly
+	// 0. This is the entry point the Segment Loader jumps to: a stray +4
+	// here enters startup one instruction late, past its
+	// `LEA -belowA5(A5),A0`, so the below-A5 zero loop runs with a garbage
+	// A0 (globals never zeroed, 292 bytes of wild writes). That was the
+	// native-5d Task 11 first-boot blocker; Elf2Mac writes this same entry
+	// as literally `0000 3F3C 0001 A9F0` (Object.cc:265).
+	if off0 := binary.BigEndian.Uint16(jt[0:2]); off0 != 0 {
+		t.Errorf("JT entry 0 (startup, JT slot 0) offset = %d, want 0", off0)
 	}
 }
 
