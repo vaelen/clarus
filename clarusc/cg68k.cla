@@ -2106,7 +2106,6 @@ func cgEmitFunc(f: int) {
     var params: list of int
     var paramOffsets: list of int
     var offset: int
-    var retSize: int
     var needsHidden: bool
     var i: int
     var p: int
@@ -2139,8 +2138,25 @@ func cgEmitFunc(f: int) {
         paramOffsets.add(0)
         i = i + 1
     }
-    retSize = cgSizeOf(irFuncRet(f))
-    needsHidden = retSize > 4
+    // Task 14.7 fix: this MUST be a KIND test (KStr/KRec), not a SIZE test
+    // (the old `cgSizeOf(irFuncRet(f)) > 4`) -- a str/rec value is never a
+    // plain scalar D0 value
+    // REGARDLESS of how many bytes it happens to occupy (a `string(3)`
+    // return is exactly 4 bytes, same as a scalar int, but its bytes are
+    // a length-prefixed buffer, not "the return value" the way an int's
+    // bits are). Every CALLER of a str/rec-returning function already
+    // assumes the hidden-pointer convention unconditionally regardless of
+    // size (cgEmitStoreStr/cgEmitStoreRec's ECallFn arm always calls
+    // cgCallFnInto; cgMaterializeToTemp always dispatches KStr/KRec
+    // results through cgEmitStoreStr/cgEmitStoreRec) -- the old
+    // size-based gate here disagreed with every caller for any KStr/KRec
+    // return <=4 bytes, an ABI mismatch masked pre-14.7 by cgExpr's own
+    // silent-zero degrade (a `string(3)` return silently came back as
+    // empty instead of corrupting the stack, since the callee just left
+    // D0 alone and the caller's cgCallFnInto-pushed hidden-pointer arg
+    // was simply never written through). cgCallFnScalar's and
+    // cgMaterializeCallResult's own matching guards fixed the same way.
+    needsHidden = irtKind(irFuncRet(f)) == KStr or irtKind(irFuncRet(f)) == KRec
     if needsHidden {
         offset = 12
     } else {
@@ -4039,6 +4055,24 @@ func cgIntr(e: int) {
         return
     }
 
+    // Task 14.7 (found by hardening cgIntr's catch-all from a silent
+    // move.l #0 into a hard error -- fixedmath.cla/emit_arith.cla tripped
+    // it immediately): lowBinary lowers `*`/`/` on `fixed` operands to
+    // IFixMul()/IFixDiv() (lower.cla:472-474), NEVER a plain EBin -- this
+    // arm was simply MISSING, so every native fixed-point multiply/divide
+    // silently returned 0 instead of hard-erroring or working. Both
+    // operands and the result are plain 4-byte ints (rtFixMul/rtFixDiv,
+    // runtime/clarus/core.cla), by VALUE like any other cgIntr2(...,
+    // false, false) scalar arm.
+    if nm == "fix_mul" {
+        cgIntr2(e, "rtFixMul", false, false)
+        return
+    }
+    if nm == "fix_div" {
+        cgIntr2(e, "rtFixDiv", false, false)
+        return
+    }
+
     // ---- Task 13: str family (value-returning arms only -- str_concat/
     // str_concat_char/str_prepend_char/str_slice/str_coerce all
     // MATERIALIZE a fresh Str value, same "not scalar-kind, needs its own
@@ -4216,8 +4250,9 @@ func cgIntr(e: int) {
     // dispatch -- cgEmitStoreStr/cgEmitReturnStr's own "file_name" arms
     // (the only call sites lower.cla's newIRIntr(IFileName(), ...) can
     // ever reach, since every use is either a store target or a return)
-    // handle it instead; degrade loud-but-survivable here in case some
-    // future call shape reaches it anyway. ----
+    // handle it instead; a genuine reach here (Task 14.7: silent-zero is
+    // forbidden -- was a TODO-comment + move.l #0 placeholder) is now a
+    // hard error naming the construct, not a silently wrong D0 value. ----
     if nm == "file_read_text" {
         cgIntr2(e, "natFileReadText", true, false)
         return
@@ -4227,13 +4262,12 @@ func cgIntr(e: int) {
         return
     }
     if nm == "file_name" {
-        a68Comment("TODO intr file_name in scalar/value context: str-returning, only valid as a store/return target (see cgEmitStoreStr/cgEmitReturnStr)")
-        a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
-        return
+        log("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
+        quit 1
     }
 
-    a68Comment("TODO intr " + nm + ": unsupported this task")
-    a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+    log("cg68k: cgIntr: intrinsic " + nm + " unsupported in value context")
+    quit 1
 }
 
 func cgExpr(e: int) {
@@ -4246,15 +4280,23 @@ func cgExpr(e: int) {
         if cgIsScalarKind(irtKind(irExprType(e))) {
             cgLoadVar(e)
         } else {
-            a68Comment("TODO cgExpr EVarRef non-scalar (str/rec/arr) in value context")
-            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+            // Task 14.7: silent-zero is forbidden -- a non-scalar (str/
+            // rec/arr) EVarRef reaching bare D0-value context is a real
+            // compiler gap (this backend has no way to fit a >4-byte
+            // value in D0), not a safe degrade. Every legal source of a
+            // str/rec/arr VALUE routes through cgExprAddr or the
+            // SStoreStr/SAssign/SReturn dispatchers instead; reaching
+            // here means some caller fed a non-scalar expr to cgExpr
+            // directly -- fail loud so it's found and fixed there.
+            log("cg68k: cgExpr: EVarRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
+            quit 1
         }
     } else if k == EFieldRef {
         if cgIsScalarKind(irtKind(irExprType(e))) {
             cgLoadFieldScalar(e)
         } else {
-            a68Comment("TODO cgExpr EFieldRef non-scalar (str/rec/arr) in value context")
-            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+            log("cg68k: cgExpr: EFieldRef non-scalar (str/rec/arr) reached in value context -- bind/store it instead of reading its value directly")
+            quit 1
         }
     } else if k == EIndexRef {
         // Task 13: a bare `arr[i]`/`list[i]` READ is a non-owning BORROW
@@ -4269,8 +4311,8 @@ func cgExpr(e: int) {
         if cgIsScalarKind(irtKind(irExprType(e))) {
             cgLoadFieldScalar(e)
         } else {
-            a68Comment("TODO cgExpr EIndexRef non-scalar (str/rec) element in value context")
-            a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+            log("cg68k: cgExpr: EIndexRef non-scalar (str/rec) element reached in value context -- bind/store it instead of reading its value directly")
+            quit 1
         }
     } else if k == EBin {
         cgBin(e)
@@ -4287,12 +4329,11 @@ func cgExpr(e: int) {
     } else {
         // EStrConst (str value in a scalar context), ENewRec (constructed
         // directly into its destination by cgEmitStoreRec/cgEmitReturnRec,
-        // never reached in bare value context) -- neither is exercised by
-        // this task's fixtures; degrade to a deterministic zero rather than
-        // crash whatever ambient reachable code (e.g. the runtime library)
-        // happens to use one.
-        a68Comment("TODO cgExpr <kind " + numToStr(int(k)) + ">: unsupported this task")
-        a68Emit(OpMove, 4, AmImm, 0, 0, AmDn, 0, 0)
+        // never legally reached in bare value context). Task 14.7: no
+        // silent-zero degrade -- fail loud naming the kind, matching every
+        // other "should never happen" arm in this file.
+        log("cg68k: cgExpr: expr kind " + numToStr(int(k)) + " has no value-context representation (str/rec construct -- bind/store it instead)")
+        quit 1
     }
 }
 
@@ -4508,8 +4549,12 @@ func cgMaterializeCallResult(a: int) {
         log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(a)))
         quit 1
     }
-    if cgSizeOf(irFuncRet(fi)) <= 4 {
-        log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " returns <=4 bytes (scalar convention, no hidden pointer) -- materialization not built for this shape")
+    if irtKind(irFuncRet(fi)) != KStr and irtKind(irFuncRet(fi)) != KRec {
+        // Task 14.7 fix: kind-based, matching cgEmitFunc's own
+        // needsHidden gate (see its own doc comment) -- the old size
+        // check rejected a <=4-byte KStr return (e.g. string(3)) even
+        // though it DOES use the hidden-pointer convention.
+        log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " is not str/rec-returning -- materialization not built for this shape")
         quit 1
     }
     total = cgPushArgs(irCallFnArgsHead(a))
@@ -4552,8 +4597,14 @@ func cgCallFnScalar(e: int) {
         log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
         quit 1
     }
-    if cgSizeOf(irFuncRet(fi)) > 4 {
-        log("cg68k: cgCallFnScalar used for large-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
+    if irtKind(irFuncRet(fi)) == KStr or irtKind(irFuncRet(fi)) == KRec {
+        // Task 14.7 fix: kind-based, matching cgEmitFunc's own
+        // needsHidden gate -- a size check here let a <=4-byte KStr
+        // return (e.g. string(3)) reach this scalar-D0 call path, which
+        // this file's callers never intended (every KStr/KRec-result
+        // store site always uses cgCallFnInto's hidden-pointer
+        // convention, unconditionally by kind, not by size).
+        log("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
         quit 1
     }
     total = cgPushArgs(irCallFnArgsHead(e))

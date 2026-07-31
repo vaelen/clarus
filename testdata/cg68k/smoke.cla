@@ -304,6 +304,7 @@ func smokeFiles() {
     var pass: bool
     var n: string
     var errMsg: string
+    var e: error
 
     t = "hello file"
     ok = file.writeText("smokefile.txt", t)
@@ -363,6 +364,17 @@ func smokeFiles() {
     smokeCheck(lastError.code == 2, "file readText missing lastError code")
     errMsg = lastError.message
     smokeCheck(errMsg == "could not open file", "file readText missing lastError message")
+
+    // Task 14.7: `var e: error; e = lastError` -- the local-copy path
+    // (cgEmitStoreErr, ir.cla's ILastErr) had zero hardware coverage;
+    // e's own layout (cgSizeOf(KErr)=260, code@0/message@4) is a fixed
+    // builtin struct, not a user record, and .message reuses the SAME
+    // "could not open file" literal as the check just above (the pool
+    // dedupes identical text, so this adds one small label, not a new
+    // 19-byte string).
+    e = lastError
+    smokeCheck(e.code == 2, "error local copy (e = lastError) code")
+    smokeCheck(e.message == "could not open file", "error local copy (e = lastError) message")
 }
 
 // smokeFilesBig: a >32768-byte (natFileReadCap) round trip -- pins

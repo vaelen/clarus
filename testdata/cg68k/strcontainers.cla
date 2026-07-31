@@ -4,9 +4,13 @@
 // strcontainers.cla: Task 14.7 gap-closure pinning fixture -- the three
 // >4-byte-element/materialization codegen classes the corpus sweep found
 // missing from cg68k.cla: (1) `list of string(N)` push/index-read/
-// index-write/for-list, the container-element codegen path once an
-// element's own byte size exceeds 4 (cgAllocTmpOff's small pool ->
-// cgAllocBigTmpOff, cgCopyElemInto/From's block-copy arm); (2) a string
+// index-write/for-list/remove, the container-element codegen path once
+// an element's own byte size exceeds 4 (cgAllocTmpOff's small pool ->
+// cgAllocBigTmpOff, cgCopyElemInto/From's block-copy arm -- remove()'s
+// own old-value release read (cgIntrListRemove) is asserted safe by
+// reading only for a non-handle KStr element, since cgNeedsRelease(KStr)
+// is false; the removal call itself is the same size-agnostic
+// cgListAddrFromRegs addressing every other list op uses); (2) a string
 // slice used directly in expression position (never bound to a local
 // first), exercising cgExprAddr's own str-materialization fallback
 // (cgMaterializeToTemp) for str_cmp's operand; (3) a map key built from a
@@ -52,6 +56,15 @@ func strcontainersRun() {
         alert("str-list for-list iterate ok")
     } else {
         alert("str-list for-list iterate FAIL")
+    }
+
+    // remove() on a >4-byte element (sl is ["GAMMA", "beta"]).
+    sl.push("delta")
+    sl.remove(0)
+    if sl.count == 2 and sl[0] == "beta" and sl[1] == "delta" {
+        alert("str-list remove ok")
+    } else {
+        alert("str-list remove FAIL")
     }
 
     // expression-position slice: never bound to a local first.
