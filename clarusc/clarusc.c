@@ -4635,11 +4635,17 @@ static void * clar_fn_rtTextNew(void) {
     clar_rec_RtText * cv_rt;
     cv_rt = 0;
     cv_t = rt_ext_TextNewPtr(32);
+    if (cv_t == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     cv_rt = ((clar_rec_RtText *)(cv_t));
     (cv_rt)->cv_rc = 1;
     (cv_rt)->cv_len = 0;
     (cv_rt)->cv_cap = 0;
     (cv_rt)->cv_h = rt_ext_TextNewHandle(0);
+    if ((cv_rt)->cv_h == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     return cv_t;
     return 0;
 }
@@ -4724,6 +4730,9 @@ static void clar_fn_rtTextConcat(void * cv_dst, void * cv_a, void * cv_bstr, voi
         cv_scratchSz = 1;
     }
     cv_scratch = rt_ext_TextNewPtr(cv_scratchSz);
+    if (cv_scratch == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     cv_amp = rt_ext_TextHandleDeref((cv_ra)->cv_h);
     rt_ext_TextBlockMoveData(cv_amp, cv_scratch, cv_alen);
     if (cv_bstr != (void *)(intptr_t)(0)) {
@@ -4769,6 +4778,9 @@ static void clar_fn_rtTextConcatSl(void * cv_dst, void * cv_a, void * cv_b) {
         cv_scratchSz = 1;
     }
     cv_scratch = rt_ext_TextNewPtr(cv_scratchSz);
+    if (cv_scratch == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     rt_ext_TextBlockMoveData((void *)((char *)(cv_a) + (1)), cv_scratch, cv_slen);
     cv_bmp = rt_ext_TextHandleDeref((cv_rb)->cv_h);
     rt_ext_TextBlockMoveData(cv_bmp, (void *)((char *)(cv_scratch) + (cv_slen)), cv_blen);
@@ -5045,12 +5057,18 @@ static void * clar_fn_rtListNew(int32_t cv_elemsize) {
     clar_rec_RtList * cv_rl;
     cv_rl = 0;
     cv_l = rt_ext_ListNewPtr(40);
+    if (cv_l == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     cv_rl = ((clar_rec_RtList *)(cv_l));
     (cv_rl)->cv_rc = 1;
     (cv_rl)->cv_elemsize = cv_elemsize;
     (cv_rl)->cv_count = 0;
     (cv_rl)->cv_cap = 0;
     (cv_rl)->cv_data = rt_ext_ListNewHandle(0);
+    if ((cv_rl)->cv_data == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     return cv_l;
     return 0;
 }
@@ -5281,10 +5299,19 @@ static void * clar_fn_rtMapNew(int32_t cv_valsize) {
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
     cv_m = rt_ext_MapNewPtr(56);
+    if (cv_m == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     cv_rm = ((clar_rec_RtMap *)(cv_m));
     (cv_rm)->cv_rc = 1;
     (cv_rm)->cv_keys = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_keys == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     (cv_rm)->cv_vals = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_vals == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
     (cv_rm)->cv_valsize = cv_valsize;
     (cv_rm)->cv_count = 0;
     (cv_rm)->cv_cap = 0;
