@@ -1400,7 +1400,7 @@ externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
              [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
 ```
 
-`= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result in D0):
+`= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result returned in the caller-reserved stack slot the call pops after the trap — the same slot a real Pascal trap always writes its result to; D0 is not the calling convention's result location, it is only where the compiled code lands the value after popping that slot):
 
 ```rust
 external func TickCount(): int = trap 0xA975
@@ -1451,7 +1451,8 @@ type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
 
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
-externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" type ] ;
+externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
+            [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
 params      = param { "," param } ;
 param       = IDENT ":" type ;
 

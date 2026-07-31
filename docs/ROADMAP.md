@@ -691,11 +691,27 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   two arms still routing through cprint-only C (`kind==2`→`rt_list_at`,
   `kind==3`→`rt_map_get_dv`, carried unresolved from 5c′), uisnaps-from-
   native (the 23 UI scenario goldens are all Retro68/gcc-O2-built today;
-  native has no UI runtime at all yet), and pascal-trap byte-order
+  native has no UI runtime at all yet), pascal-trap byte-order
   verification for bool/char stack arguments (Task 9's own note: the
   LOW-byte placement claim rests on secondary sources, unexercised by any
   5d trap — 5e's first real pascal trap with byte args must verify against
-  uisnaps).
+  uisnaps), and the **discarded handle-returning call statement leak**
+  (final-review ledger T13: a bare `makeStr();`-shaped `ECallFn` result
+  discarded as a statement is never released natively — the bare
+  `lst.pop();` discard IS handled via the existing tracked-temp machinery,
+  only the discarded-call-result shape leaks; leak-not-corruption, harmless
+  in 5d's run-once apps, becomes real in 5e's event loops against a 384KB
+  heap — fix by routing it through the same `cgNewTrackedTmp` path the
+  pop/shift discard shape already uses, before any long-running native
+  app ships).
+
+  **Known gap (final-review C1, fixed fail-closed, not fixed for real):**
+  whole-fixed-array assignment (`b = a` / `r.field = arrVar` for `arr N of
+  T`) has no native codegen — `cgStmt`'s `SAssign` catch-all now log+quits
+  with a named error instead of silently no-op'ing the store (the prior
+  behavior was a silent host/native miscompile of Ch3's copy-by-value
+  semantics). Real fix is a `cgExprAddr`+block-copy codegen arm, a 5e item;
+  no corpus file exercises the shape today.
 
   **Full gated `internal/mactest` suite** (`CLARUS_MAC_TESTS=1 go test
   ./internal/mactest -timeout 60m` — every Retro68 test AND every native

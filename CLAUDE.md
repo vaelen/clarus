@@ -20,8 +20,12 @@ spec; where any other doc disagrees, the reference wins.
 
 ```sh
 go build -o clarus ./cmd/clarus   # host toolchain: check / build / run
-go test ./...                     # full suite, incl. bootstrap + snapshot tests
+go test ./... -timeout 30m        # full suite, incl. bootstrap + snapshot tests
 ```
+
+- `internal/selfhost` has outgrown `go test`'s default 10-minute
+  per-package timeout — always pass `-timeout 30m` on a full `go test ./...`
+  run, or that package can spuriously fail on an otherwise-green tree.
 
 - The Go compiler (`cmd/clarus`, `internal/`) is FROZEN — it is the
   differential-testing reference only. New language features land in the
