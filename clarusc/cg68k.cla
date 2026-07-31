@@ -6800,17 +6800,16 @@ func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
             i = i + 1
         }
 
-        // The "+ """ forces a genuinely independent text object (the
-        // language reference's own "a string + string result is a
-        // temporary" guarantee) rather than storing a68Bytes()'s raw
-        // handle: a68BytesOut gets reassigned by the NEXT segment's own
-        // a68Reset() a few lines below, and empirically (see this task's
-        // own report) a bare `segBytes.add(a68Bytes())` here left EVERY
-        // earlier segment's own list entry silently emptied out by the
-        // time the loop finished -- a handle-lifetime interaction this
-        // file works around rather than chases into the frozen host
-        // runtime.
-        segBytes.add(a68Bytes() + "")
+        // Storing a68Bytes()'s handle directly is correct: the next
+        // segment's a68Reset() rebinds a68BytesOut to a FRESH text (Ch3:
+        // a String assigned into a Text "always creates a fresh text"), so
+        // this list's own reference keeps pointing at this segment's bytes.
+        // Task 15 carried a `+ ""` copy here to work around the reference
+        // Go compiler lowering `a68BytesOut = ""` to an in-place
+        // rt_text_store that emptied every already-pushed entry; that was a
+        // frozen-compiler bug (internal/lower/stmt.go storeStmt), fixed in
+        // Task 15.5 and pinned by testdata/run/arc_text_realias.cla.
+        segBytes.add(a68Bytes())
 
         if listing {
             segNumStr = numToStr(s)

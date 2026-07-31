@@ -48,6 +48,7 @@ include "../run/lib/arc_fixwave_containers.cla"
 include "../run/lib/arc_fpreleaseval_nested.cla"
 include "../run/lib/arc_global_alias.cla"
 include "../run/lib/arc_rec_copy.cla"
+include "../run/lib/arc_text_realias.cla"
 include "../run/lib/arith.cla"
 include "../run/lib/binroundtrip.cla"
 include "../run/lib/breakcont.cla"
@@ -114,6 +115,8 @@ on App.launch {
     runArcGlobalAlias()
     alert("=== arc_rec_copy ===")
     runArcRecCopy()
+    alert("=== arc_text_realias ===")
+    runArcTextRealias()
     alert("=== arith ===")
     runArith()
     alert("=== binroundtrip ===")

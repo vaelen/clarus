@@ -1,0 +1,98 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for native-5d Task 15.5: reassigning a `text` from a
+// `string` must REBIND it to a fresh handle, never overwrite the buffer the
+// old handle still shares with its aliases.
+//
+// Two reference rules pin this. Ch3 "Value and Reference Semantics":
+// assignment copies the handle for `text`, and "all references to the same
+// handle point to the same underlying data". Ch3 "Text": a `string` used
+// where a `text` is expected -- "assignment" named explicitly -- "always
+// creates a fresh text holding a copy of the string's bytes".
+//
+// The reference Go compiler used to lower `t = "..."` to the ITextStore
+// intrinsic (`rt_text_store(t, "...")`), an IN-PLACE overwrite, while
+// clarusc always rebound to a fresh handle: the two compilers silently
+// disagreed on every aliasing program, and nothing in this corpus caught it
+// because no fixture aliased a text and then reassigned the alias source.
+// It miscompiled clarusc's own `cg68Program` segment loop -- `segBytes` kept
+// one handle per segment, and the next segment's `a68Reset()` (`a68BytesOut
+// = ""`) emptied every entry already in the list, leaving only the last
+// segment's bytes non-empty. Fixed in internal/lower/stmt.go's storeStmt
+// (see its doc comment); pinned here so both compilers stay in agreement.
+//
+// atrOut/atrBytes/atrReset/atrFinish mirror asm68k.cla's own
+// a68BytesOut/a68Bytes()/a68Reset()/a68Finish() shape exactly: a global text
+// buffer, a getter that returns it by handle, a rebuild that fills it, and a
+// reset that clears it from a string literal -- accumulated across cycles
+// into a `list of text` the same way cg68Program accumulates `segBytes`.
+
+var atrOut: text
+
+func atrReset() {
+    atrOut = ""
+}
+
+func atrFinish(n: int) {
+    var buf: text
+    var i: int
+    buf = ""
+    i = 0
+    while i < n {
+        buf.append('x')
+        i = i + 1
+    }
+    atrOut = buf
+}
+
+func atrBytes(): text {
+    return atrOut
+}
+
+func runArcTextRealias() {
+    var segs: list of text
+    var s: int
+    var a: text
+    var b: text
+    var elems: list of text
+    var kept: text
+
+    // --- the cg68Program shape: getter result accumulated across resets ---
+    s = 0
+    while s < 4 {
+        atrReset()
+        atrFinish(s + 1)
+        segs.add(atrBytes())
+        s = s + 1
+    }
+    s = 0
+    while s < segs.count {
+        if segs[s].length == s + 1 {
+            alert("seg-kept")
+        } else {
+            alert("seg-lost")
+        }
+        s = s + 1
+    }
+
+    // --- plain local alias: reassigning a must not touch b ---
+    a = "hello"
+    b = a
+    a = "zz"
+    if b == "hello" and a == "zz" {
+        alert("local-realias-ok")
+    } else {
+        alert("local-realias-bad")
+    }
+
+    // --- element slot realias: l[0] = "..." must not touch the alias ---
+    elems.add("first")
+    kept = elems[0]
+    elems[0] = "second"
+    if kept == "first" and elems[0] == "second" {
+        alert("elem-realias-ok")
+    } else {
+        alert("elem-realias-bad")
+    }
+}

@@ -123,21 +123,33 @@ func (l *lowerer) lowerBlock(b *ast.Block, f *ir.Func) []ir.Stmt {
 }
 
 // storeStmt builds the store form the task brief's Assign rule requires: a
-// Str-typed destination clamps through StoreStr; a Text destination fed by a
-// Str source (the checker's String -> Text assignability, Ch3) goes through
-// the text_store intrinsic since a Text handle and a Str value have no
-// common C representation to plain-assign between; everything else
-// (Text=Text reference copy, records/arrays copy by value) is a plain
-// Assign.
+// Str-typed destination clamps through StoreStr; everything else (including
+// a Text destination fed by a Str source) is a plain Assign of the coerced
+// source.
+//
+// Task 15.5 (cross-cutting ARC/aliasing bug): a Text destination fed by a Str
+// source used to lower to the ITextStore intrinsic, i.e. `rt_text_store(dst,
+// "...")` — an IN-PLACE overwrite of whatever buffer dst's handle already
+// pointed at. That contradicts the language reference twice over: Ch3's
+// "Value and Reference Semantics" says every reference to a text handle sees
+// the same underlying data (so an in-place store silently rewrites every
+// alias), and Ch3's "Text" says a String used where a Text is expected
+// "always creates a fresh text holding a copy of the string's bytes" —
+// assignment is named explicitly in that list. clarusc (the self-hosted
+// compiler, which is the normative implementation now) has always done the
+// fresh-handle rebind; only this reference lowering diverged, so the two
+// compilers disagreed on any program that aliases a text and then reassigns
+// the alias source from a string. Concretely it miscompiled clarusc's own
+// `cg68Program` loop (`segBytes.add(a68Bytes())` then `a68Reset()`'s
+// `a68BytesOut = ""`), silently emptying every already-pushed segment's
+// bytes. coerceStr's ITextOfStr gives the fresh handle the reference
+// promises; the old handle is orphaned, which is a leak, not a corruption —
+// and this lowering never freed text handles in the first place.
 func (l *lowerer) storeStmt(dst, src ir.Expr, ty ir.Type) ir.Stmt {
-	switch {
-	case ty.K == ir.Str:
+	if ty.K == ir.Str {
 		return &ir.StoreStr{Dst: dst, Src: src}
-	case ty.K == ir.Text && src.Type().K == ir.Str:
-		return &ir.ExprStmt{X: &ir.Intr{Name: ir.ITextStore, Args: []ir.Expr{dst, src}, Ty: ir.Type{K: ir.Void}}}
-	default:
-		return &ir.Assign{Dst: dst, Src: src}
 	}
+	return &ir.Assign{Dst: dst, Src: l.coerceStr(ty, src)}
 }
 
 // lowerStmt lowers one statement. It returns a slice (rather than a single
