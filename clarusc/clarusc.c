@@ -25323,7 +25323,7 @@ static rt_text * clar_fn_app68BuildCode0(rt_list * cv_jtEntries, int32_t cv_belo
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_jtEntries)))) break;
-        clar_fn_app68PutWord(cv_out, ((*(int32_t*)rt_list_at(cv_jtEntries, (int32_t)(cv_i))) + 4));
+        clar_fn_app68PutWord(cv_out, (*(int32_t*)rt_list_at(cv_jtEntries, (int32_t)(cv_i))));
         clar_fn_app68PutWord(cv_out, 16188);
         clar_fn_app68PutWord(cv_out, 1);
         clar_fn_app68PutWord(cv_out, 43504);
@@ -43271,8 +43271,9 @@ static void clar_fn_cgIntrPoke(int32_t cv_e, clar_str_255 cv_nm) {
     cv_a1e = clar_fn_irExprNext(cv_a0e);
     cv_sz = clar_fn_cgIntrPeekPokeSize(cv_nm);
     clar_fn_cgExpr(cv_a0e);
-    clar_fn_a68Emit(1, 4, 1, 0, 0, 2, 0, 0);
+    clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
     clar_fn_cgExpr(cv_a1e);
+    clar_fn_a68Emit(1, 4, 4, 7, 0, 2, 0, 0);
     clar_fn_a68Emit(0, cv_sz, 1, 0, 0, 3, 0, 0);
 }
 
