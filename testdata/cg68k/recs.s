@@ -2554,20 +2554,28 @@ LBL_194:
         JSR LBL_59(PC)
         ADDQ.L #4,A7
         LEA -152(A6),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         LEA 0(A0),A0
         MOVE.W #15,D0
 LBL_195:
         CLR.W (A0)+
         DBRA D0,LBL_195
+        MOVEA.L A1,A0
         MOVE.L #18,D0
         MOVE.L D0,32(A0)
+        MOVEA.L A1,A0
         MOVE.L #5,D0
         MOVE.L D0,36(A0)
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         LEA 40(A0),A0
         MOVE.W #15,D0
 LBL_196:
         CLR.W (A0)+
         DBRA D0,LBL_196
+        MOVEA.L A1,A0
         MOVE.L #0,D0
         MOVE.L D0,72(A0)
         LEA -152(A6),A0
@@ -2701,11 +2709,14 @@ LBL_204:
         JSR LBL_61(PC)
         ADDQ.L #4,A7
         LEA -72(A6),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         LEA 0(A0),A0
         MOVE.W #15,D0
 LBL_205:
         CLR.W (A0)+
         DBRA D0,LBL_205
+        MOVEA.L A1,A0
         ; TODO cgDefaultInitAt <kind 6>: unsupported this task
         MOVE.L #0,D0
         MOVE.L D0,32(A0)
@@ -2893,20 +2904,28 @@ LBL_221:
         JSR LBL_59(PC)
         ADDQ.L #4,A7
         LEA -152(A6),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         LEA 0(A0),A0
         MOVE.W #15,D0
 LBL_222:
         CLR.W (A0)+
         DBRA D0,LBL_222
+        MOVEA.L A1,A0
         MOVE.L #18,D0
         MOVE.L D0,32(A0)
+        MOVEA.L A1,A0
         MOVE.L #5,D0
         MOVE.L D0,36(A0)
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         LEA 40(A0),A0
         MOVE.W #15,D0
 LBL_223:
         CLR.W (A0)+
         DBRA D0,LBL_223
+        MOVEA.L A1,A0
         MOVE.L #0,D0
         MOVE.L D0,72(A0)
         LEA -152(A6),A0
@@ -3000,14 +3019,43 @@ LBL_226:
         LEA 32(A0),A0
         MOVE.L (A7)+,D0
         MOVE.L D0,(A0)
-        ; TODO cgExprAddr <kind 8>: unsupported this task
-        LEA $0000.W,A0
         ADDA.L #-76,A7
         MOVEA.L A7,A1
-        MOVE.W #37,D0
+        MOVE.L #555,D0
+        MOVE.L D0,-(A7)
+        MOVE.L A1,-(A7)
+        JSR LBL_36(PC)
+        ADDQ.L #8,A7
+        JSR LBL_37(PC)
+        ADDA.W #76,A7
+        MOVE.L D0,-304(A6)
+        ADDA.L #-76,A7
+        MOVEA.L A7,A1
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
+        LEA 0(A0),A0
+        MOVE.W #15,D0
 LBL_227:
-        MOVE.W (A0)+,(A1)+
+        CLR.W (A0)+
         DBRA D0,LBL_227
+        MOVEA.L A1,A0
+        MOVE.L #18,D0
+        MOVE.L D0,32(A0)
+        MOVEA.L A1,A0
+        MOVE.L #5,D0
+        MOVE.L D0,36(A0)
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
+        LEA 40(A0),A0
+        MOVE.W #15,D0
+LBL_228:
+        CLR.W (A0)+
+        DBRA D0,LBL_228
+        MOVEA.L A1,A0
+        MOVE.L #0,D0
+        MOVE.L D0,72(A0)
         JSR LBL_37(PC)
         ADDA.W #76,A7
         MOVE.L D0,-304(A6)
@@ -3016,14 +3064,14 @@ LBL_227:
         MOVE.L A0,-(A7)
         JSR LBL_61(PC)
         ADDQ.L #4,A7
-        ; TODO cgExprAddr <kind 10>: unsupported this task
-        LEA $0000.W,A0
         ADDA.L #-32,A7
         MOVEA.L A7,A1
-        MOVE.W #15,D0
-LBL_228:
-        MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_228
+        MOVE.L A1,-(A7)
+        MOVE.L #31,-(A7)
+        LEA LBL_57(PC),A0
+        MOVE.L A0,-(A7)
+        JSR LBL_3(PC)
+        ADDA.W #12,A7
         LEA -416(A6),A0
         MOVE.L A0,-(A7)
         JSR LBL_38(PC)
@@ -3237,14 +3285,20 @@ LBL_241:
 LBL_58:
         ; cg_retain_recsPerson(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         RTS
 LBL_59:
         ; cg_release_recsPerson(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         RTS
 LBL_60:
         ; cg_retain_recsBox(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L 32(A0),D0
         MOVE.L D0,-(A7)
         JSR LBL_7(PC)
@@ -3253,6 +3307,8 @@ LBL_60:
 LBL_61:
         ; cg_release_recsBox(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L 32(A0),D0
         MOVE.L D0,-(A7)
         JSR LBL_8(PC)

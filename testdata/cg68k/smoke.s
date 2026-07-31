@@ -2737,14 +2737,22 @@ LBL_221:
         JSR LBL_79(PC)
         ADDQ.L #4,A7
         LEA -96(A6),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L #3,D0
         MOVE.L D0,0(A0)
+        MOVEA.L A1,A0
         MOVE.L #4,D0
         MOVE.L D0,4(A0)
+        MOVEA.L A1,A0
         MOVE.L #5,D0
         MOVE.L D0,8(A0)
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L #0,D0
         MOVE.L D0,12(A0)
+        MOVEA.L A1,A0
         LEA 16(A0),A0
         MOVE.W #15,D0
 LBL_222:
@@ -2930,14 +2938,22 @@ LBL_232:
         JSR LBL_79(PC)
         ADDQ.L #4,A7
         LEA -96(A6),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L #3,D0
         MOVE.L D0,0(A0)
+        MOVEA.L A1,A0
         MOVE.L #4,D0
         MOVE.L D0,4(A0)
+        MOVEA.L A1,A0
         MOVE.L #5,D0
         MOVE.L D0,8(A0)
+        MOVEA.L A1,A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         MOVE.L #0,D0
         MOVE.L D0,12(A0)
+        MOVEA.L A1,A0
         LEA 16(A0),A0
         MOVE.W #15,D0
 LBL_233:
@@ -3595,10 +3611,14 @@ LBL_268:
 LBL_78:
         ; cg_retain_smokePoint(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         RTS
 LBL_79:
         ; cg_release_smokePoint(rec ptr at 4(A7))
         MOVEA.L 4(A7),A0
+        MOVEA.L A0,A1
+        MOVEA.L A1,A0
         RTS
         ; constant pool: string literals
 LBL_41:

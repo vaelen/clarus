@@ -12,6 +12,22 @@
 // (this file is never booted; smoke.cla stays handle-free so the boot
 // test's host-vs-native byte-compare never depends on ARC's runtime
 // correctness, see the Task 12 report).
+//
+// task-12-review's Important finding (fixed, cgPushArgs/cgExprAddr):
+// `recsSum(recsMake(555))` -- a KRec argument that is itself a nested
+// ECallFn result -- used to silently miscompile (the inner call dropped
+// entirely, the outer call reading garbage from address 0). `total = ...`
+// below pins the fixed sequence: the inner call now constructs directly
+// into the argument's own reserved stack slot via the hidden-pointer
+// convention, no separate temp+copy. `recsMakeBox("first")` pins the
+// SAME class of bug for a capacity-coerced str literal argument
+// (`IStrCoerce`, lower.cla's `lowCoerceStr` -- "first" is str(255),
+// `label` is str(31)), found while fixing the ECallFn case (cgExprAddr's
+// hard-error would otherwise break this line's own compile).
+// `recsSum(new recsPerson)` pins the fix's third materializable shape,
+// ENewRec-as-a-bare-call-argument -- previously documented as an
+// unsupported limitation (Task 12 report Concern #4), now handled by the
+// same reserved-slot-construction mechanism.
 
 enum recsStatus {
     Active 5 "Active"
@@ -67,6 +83,7 @@ on App.launch {
     q.home.zip = 11111
 
     total = recsSum(recsMake(555))
+    total = recsSum(new recsPerson)
 
     b1 = recsMakeBox("first")
     b2 = b1
