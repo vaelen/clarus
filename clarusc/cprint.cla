@@ -4654,6 +4654,35 @@ func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool, isScr
 // no window state field was Arr-typed before item 1 widened construction
 // into arrays, so this ordering bug was latent until now) -- every
 // referenced type must already exist before the struct opens.
+// cpUiStateFieldCType is cpCType for a UI state struct field specifically:
+// identical to cpCType for every kind EXCEPT KBool, where it returns a
+// 2-byte type ("int16_t") instead of cpCType's ordinary "int32_t" -- Task 7
+// Step 7 review fix. uibStateSize (uiblob.cla), the blob's own stateSize
+// field this struct's allocated Handle is sized from (ui.cla's rtUiOpen,
+// via uidWinStateSize), computes byte sizes per cg68k.cla's native "LAYOUT
+// AUTHORITY" (cg68k.cla:641-644): KBool/KChar are 1-byte, slot-padded to 2
+// (cgSlotSizeOf), every other kind is a plain 4 bytes -- but cpCType's
+// ordinary KBool arm returns "int32_t" (4 bytes), matching every OTHER
+// (self-consistent, sizeof-driven) C struct this compiler emits, just not
+// this one, whose allocation size comes from the blob instead of from its
+// own sizeof. A `bool` UI state field therefore overflowed its 2-byte
+// allocated slot by 2 bytes, corrupting whatever followed it in the Handle
+// (smoke_menudemo's `var tock: bool` was this task's own first real hit --
+// the new clar_ui_szassert_<Win> compile-time check below caught it before
+// it could corrupt anything at runtime). KChar already matches (cpCType
+// already returns the 1-byte "uint8_t"); every other kind is already 4
+// bytes both sides. m68k GCC's own default struct alignment is 2 bytes
+// (Inside-Macintosh Pascal-record convention, not descriptor-simulator this
+// codebase's usual C target), so a bare 2-byte-sized field needs no extra
+// alignment work to make multi-field offsets match cg68k's own
+// cgAlignUp(_, 2) rule too.
+func cpUiStateFieldCType(t: int): string {
+    if irtKind(t) == KBool {
+        return "int16_t"
+    }
+    return cpCType(t)
+}
+
 func cpEmitUiStateStruct(name: string, fieldsHead: int) {
     var f: int
 
@@ -4665,7 +4694,7 @@ func cpEmitUiStateStruct(name: string, fieldsHead: int) {
     cpRecBuf.add(toText("typedef struct {"))
     f = fieldsHead
     while f != -1 {
-        cpRecBuf.add(toText("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
+        cpRecBuf.add(toText("    " + cpUiStateFieldCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
         f = irFieldSlotNext(f)
     }
     cpRecBuf.add(toText("} clar_uistate_" + name + ";"))
