@@ -1352,7 +1352,7 @@ func ticksSince(start: int): int {
 }
 ```
 
-`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
+`external func` is a top-level declaration and may appear anywhere among a program's top-level declarations, like `record`, `func`, or `const`. It has no body — the form above, ending at the parameter list and optional return type, is complete. Return types are restricted to `int`, `ptr`, `bool`, and `char`; the return type may be omitted for a function with no result. Parameter types additionally allow `str` and `text`: a `str` parameter is marshalled as the address of the caller's Str255, borrowed for the call; a `text` parameter is passed as the underlying box pointer, likewise borrowed — the callee must not store either beyond the call. `word` (below, alongside the trap/inline clauses it exists for) is also accepted in either position — an `int`-compatible 16-bit-at-the-boundary type, not a fifth independent scalar. A call to an `external func` is an ordinary call expression or call statement, indistinguishable at the call site from a call to a Clarus-defined function — `GetTicks()` above is called exactly like any other zero-argument function returning `int`.
 
 An `external func` may optionally name how its entry point is reached, with a trailing `= trap ...` or `= inline ...` clause — see Trap and Inline Clauses, below.
 
@@ -1423,6 +1423,32 @@ external func HandleToPtr(h: ptr): ptr = inline deref
 ```rust
 external func DebugBreak() = inline nop
 ```
+
+### The `word` Extern Type
+
+The Toolbox's Pascal calling convention is built on 16-bit `INTEGER` arguments and results, not the 32-bit values every other Clarus `int` marshals as. `word` names that 16-bit width at the extern boundary — it is accepted ONLY as an `external func` parameter or return type:
+
+```
+externParam = IDENT ":" ( type | "word" ) ;
+externRet   = type | "word" ;
+```
+
+`word` is contextual, the same way `overlay` and `external` are: recognized only in an `external func`'s own parameter list or return type position; everywhere else (a `var` declaration, a `record` field, a non-extern function's parameter) it is an ordinary identifier, and a program may freely use `word` as a variable or field name.
+
+Within Clarus code, a `word`-typed parameter or return behaves exactly like `int` — callers pass ordinary `int` expressions, and a call returning `word` reads back as `int`, usable anywhere an `int` is:
+
+```rust
+external func UiMoveTo(h: word, v: word) = trap 0xA893
+external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
+
+func openAt(pt: int, wpOut: ptr): int {
+    var kind: int = UiFindWindow(pt, wpOut)
+    UiMoveTo(10, 20)
+    return kind
+}
+```
+
+The distinction matters only at the trap boundary itself. A `word` argument pushes as a single 16-bit stack word rather than `int`'s 32-bit long — the Pascal calling convention's own `bool`/`char` push shape, one stack word per argument regardless of width. A `word` result is popped back off its reserved stack slot and SIGN-extended to fill the full 32-bit value the rest of Clarus code sees — Toolbox `INTEGER` is signed (a coordinate, a row number, an index that can carry a negative sentinel), unlike the zero-extended `bool`/`char` result. Under the `reg` calling convention, `word` has no separate marshaling of its own: a `word` parameter or result occupies a full D-register slot exactly like `int`, since `reg` never narrows to a stack word in the first place.
 
 ## Appendix A: Grammar (EBNF)
 

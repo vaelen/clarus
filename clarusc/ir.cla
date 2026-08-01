@@ -137,6 +137,21 @@ enum IRKind {
     // and is never handle-backed -- the ARC machinery (irRecHasHandleField,
     // lowIsRecBearing, cpEmitRcWalks) never sees this kind at all.
     KOverlay
+
+    // KWord (Task 4, native-5e, Ch13: the `word` extern type) marks a
+    // 16-bit-at-the-trap-boundary int -- it appears ONLY inside the extern
+    // registry's own param/return types (irExternParamTys/irExternRetTys,
+    // populated by lower.cla's lowResolveType reading a TxWord TypeExpr
+    // straight off the AST), never as a real variable/field/local's type:
+    // every OTHER lowering path goes through lowType(checked-type), and
+    // the checker's own resolveType resolves TxWord to plain IntT (see
+    // check.cla's resolveType), so a word-declared param/return's checked
+    // type -- and therefore every ordinary expression built from it -- is
+    // indistinguishable from int. Only cg68k.cla's cgCallExtPascal (the
+    // Pascal-convention marshaling that actually cares about the 16-bit
+    // wire width) and cprint.cla's extern-shim C emission (short) ever
+    // read a KWord back out of the extern registry.
+    KWord
 }
 
 enum IRStmtKind {
@@ -772,6 +787,7 @@ var irCharT: int
 var irTextT: int
 var irErrT: int
 var irPtrT: int
+var irWordT: int
 
 // irReset empties every IR arena and re-seeds the singleton scalar
 // IRTypes. Call between lowering independent programs (mirrors astReset/
@@ -884,6 +900,7 @@ func irReset() {
     irTextT = irSimpleType(KText)
     irErrT = irSimpleType(KErr)
     irPtrT = irSimpleType(KPtr)
+    irWordT = irSimpleType(KWord)
 }
 
 // ================================================================

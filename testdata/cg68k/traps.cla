@@ -23,6 +23,12 @@
 //   THandleDeref     = inline deref
 //   TRcCheck         = inline nop
 //   TCustomOp        = no clause -> nat_TCustomOp (defined below)
+//   TMoveTo          = trap 0xA893        (real _MoveTo -- Task 4, native-5e:
+//                                          `word` PASCAL arg push, both
+//                                          params, no return)
+//   TFindWindow      = trap 0xA92C        (real _FindWindow -- Task 4:
+//                                          `word` PASCAL RESULT, sign-
+//                                          extended via EXT.L)
 
 external func TNewHandle(n: int): ptr = trap 0xA122 reg
 external func NewPtr(size: int): ptr = trap 0xA11E reg
@@ -31,6 +37,8 @@ external func FixtureMixedTrap(p: ptr, n: int, f: bool, c: char, s: string): int
 external func THandleDeref(h: ptr): ptr = inline deref
 external func TRcCheck(box: ptr, rc: int) = inline nop
 external func TCustomOp(x: int): int
+external func TMoveTo(h: word, v: word) = trap 0xA893
+external func TFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
 
 func nat_TCustomOp(x: int): int {
     return x + 1
@@ -52,6 +60,9 @@ on App.launch {
     r = FixtureMixedTrap(d, 5, true, 'A', s)
 
     custom = TCustomOp(10)
+
+    TMoveTo(10, 20)
+    r = TFindWindow(0, d)
 
     buf = NewPtr(8)
     pokeb(buf, 65)

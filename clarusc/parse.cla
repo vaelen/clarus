@@ -1307,6 +1307,44 @@ func parseFuncDecl(): int {
     return newFuncDecl(name.nameIdx, paramsHead, retType, body, line, col)
 }
 
+// parseExternType parses a type in `external func` param/return position,
+// where `word` (Task 4, native-5e, Ch13: the `word` extern type) is
+// contextually recognized -- the curIsIdentText pattern every other
+// contextual keyword in this file uses (trap/reg/inline/deref/nop above,
+// overlay/external elsewhere): outside this one call site, `word` is never
+// special -- ordinary parseType() (used by var decls, record fields,
+// non-extern func params) treats it as a plain TxNamed identifier, which
+// resolveType then rejects as "undefined: word" like any other unknown
+// type name, exactly the "word means nothing outside externs" rule.
+func parseExternType(): int {
+    var tok: Token
+
+    if curIsIdentText("word") {
+        tok = curTok()
+        advance()
+        return newWordType(tok.line, tok.col)
+    }
+    return parseType()
+}
+
+// parseExternParam parses one `external func` parameter -- identical to
+// parseParam except its type goes through parseExternType, so `word` only
+// ever resolves inside an extern signature, never an ordinary parseParam
+// call (a non-extern func's parameter list).
+func parseExternParam(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+
+    line = curLine()
+    col = curCol()
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseExternType()
+    return newParam(name.nameIdx, typ, line, col)
+}
+
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
 // [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" ] | "inline" ( "deref" | "nop"
 // ) ) ]` (Task 3, Ch13: `external func`; trap/inline clause added Task 2,
@@ -1339,12 +1377,12 @@ func parseExternFuncDecl(): int {
     paramsHead = -1
     paramsTail = -1
     if curKind() != TkRParen {
-        pIdx = parseParam()
+        pIdx = parseExternParam()
         paramsHead = pIdx
         paramsTail = declListAppend(paramsTail, pIdx)
         while curKind() == TkComma and not parseAborted {
             advance()
-            pIdx = parseParam()
+            pIdx = parseExternParam()
             paramsTail = declListAppend(paramsTail, pIdx)
         }
     }
@@ -1352,7 +1390,7 @@ func parseExternFuncDecl(): int {
     retType = -1
     if curKind() == TkColon {
         advance()
-        retType = parseType()
+        retType = parseExternType()
     }
     trapVal = -1
     convFlag = 0

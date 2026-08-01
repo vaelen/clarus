@@ -143,3 +143,11 @@ check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
 check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
 === extern-inline-nop-bad-return ===
 check_test.cla:1:1: inline nop requires a void return
+=== extern-word-clean ===
+clean
+=== word-not-a-type-outside-extern ===
+check_test.cla:1:8: undefined: word
+=== word-param-non-extern ===
+check_test.cla:1:11: undefined: word
+=== word-as-ordinary-identifier ===
+clean

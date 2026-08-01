@@ -48,6 +48,7 @@ extern void * rt_ext_MapNewHandle(int32_t);
 extern void rt_ext_MapDisposeHandle(void *);
 extern void rt_ext_MapRcCheck(void *, int32_t);
 extern void * rt_ext_NewPtr(int32_t);
+extern short rt_ext_WordEcho(short);
 
 static const clar_str_255 clar_lit_0 = {24, {97, 114, 114, 97, 121, 32, 105, 110, 100, 101, 120, 32, 111, 117, 116, 32, 111, 102, 32, 114, 97, 110, 103, 101}};
 static const clar_str_255 clar_lit_1 = {25, {110, 111, 32, 101, 110, 117, 109, 32, 109, 101, 109, 98, 101, 114, 32, 119, 105, 116, 104, 32, 118, 97, 108, 117, 101}};
@@ -399,9 +400,12 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
     cv_p = 0;
     int32_t cv_v;
     cv_v = 0;
+    int32_t cv_w;
+    cv_w = 0;
     cv_p = rt_ext_NewPtr(8);
     rt_pokeb(cv_p, 65);
     cv_v = rt_peekl((void *)((char *)(cv_p) + (4)));
+    cv_w = rt_ext_WordEcho(5);
     rt_quit((int32_t)(0));
 }
 

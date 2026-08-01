@@ -657,6 +657,14 @@ func cgSizeOf(t: int): int {
     case KBool, KChar {
         return 1
     }
+    case KWord {
+        // Task 4 (native-5e): KWord never appears as a real variable/
+        // field/array-element type (see IRKind's own doc comment) -- this
+        // case exists only so cgSizeOf stays exhaustive/fail-closed
+        // rather than falling through to the generic `return 4` default
+        // below if some future caller ever does hand it a KWord.
+        return 2
+    }
     case KStr {
         return cgAlignUp(irtN(t) + 1, 2)
     }
@@ -819,6 +827,7 @@ func cgKindName(k: IRKind): string {
     case KUiState { return "uistate" }
     case KPtr { return "ptr" }
     case KOverlay { return "overlay" }
+    case KWord { return "word" }
     }
     return "?"
 }
@@ -5189,18 +5198,17 @@ func cgCallExtReg(e: int, xi: int) {
 
 // cgCallExtPascal implements the locked PASCAL rule: reserve a result
 // slot first when the extern returns a value (CLR.L for int/ptr, CLR.W
-// for bool/char -- Toolbox convention: a byte-sized Pascal parameter or
-// result still occupies a full stack WORD, with the value in the
-// LOW-order byte and the high byte undefined padding -- verified against
-// the classic 68k Mac runtime calling-convention docs (Apple's "Classic
-// 68K Stack Structure and Calling Conventions" / "Pascal Calling
-// Conventions" reference; see the Task 9 report), NOT the high-byte
-// placement an earlier draft of this brief speculated), push args
-// left-to-right (str/text by ADDRESS via cgExprAddr, matching
+// for bool/char/word -- Toolbox convention: a byte- or word-sized Pascal
+// parameter or result still occupies a full stack WORD -- verified
+// against the classic 68k Mac runtime calling-convention docs (Apple's
+// "Classic 68K Stack Structure and Calling Conventions" / "Pascal
+// Calling Conventions" reference; see the Task 9 report), NOT the
+// high-byte placement an earlier draft of that brief speculated), push
+// args left-to-right (str/text by ADDRESS via cgExprAddr, matching
 // fpCallExt's own C-seam marshaling of a KStr argument through
-// fpStrAddr; int/ptr as .L, bool/char as .W -- the already-zero-extended
-// D0 value's low byte lands in the pushed word's low byte automatically,
-// no shift needed), the trap word, then pop the result.
+// fpStrAddr; int/ptr as .L, bool/char/word as .W -- the already-zero/
+// sign-extended D0 value's low word lands in the pushed word
+// automatically, no shift needed), the trap word, then pop the result.
 //
 // The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
 // executing a Pascal-convention trap (Apple's Trap Manager docs: "the
@@ -5208,14 +5216,31 @@ func cgCallExtReg(e: int, xi: int) {
 // callee) -- this code never emits a post-trap ADDA/ADDQ for the arg
 // bytes, only the final MOVE(.W/.L) (A7)+,D0 that retrieves the result
 // slot the trap dispatcher left behind.
+//
+// `word` (Task 4, native-5e, Ch13) is the one shape here that depends on
+// the EXTERN'S OWN DECLARED type, not the argument/result's own checked
+// type: the checker resolves a word param/return to plain int (check.cla's
+// resolveType), so an argument expression's own irExprType is always
+// int/bool/char/etc, never KWord -- only irExternParam(xi, j)/irExternRet
+// (the registry lower.cla's lowResolveType populated straight off the
+// AST) still knows a given slot was written `word`. That is why the arg
+// loop below tracks its own param index j and branches on
+// irExternParam(xi, j) instead of irExprType(a): the marshaling choice is
+// the CALLEE's, not the caller expression's own type. A word RESULT is
+// SIGN-extended (EXT.L, not the bool/char AND-mask zero-extend) --
+// Toolbox INTEGER is a signed 16-bit quantity (e.g. LAddRow's row
+// number), unlike a byte-sized Pascal boolean/char result.
 func cgCallExtPascal(e: int, xi: int) {
     var a: int
     var t: int
     var retTy: int
     var retIsWord: bool
+    var retIsWordType: bool
+    var j: int
 
     retTy = irExternRet(xi)
-    retIsWord = irtKind(retTy) == KBool or irtKind(retTy) == KChar
+    retIsWordType = irtKind(retTy) == KWord
+    retIsWord = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsWordType
     if irtKind(retTy) != KVoid {
         if retIsWord {
             a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
@@ -5224,12 +5249,13 @@ func cgCallExtPascal(e: int, xi: int) {
         }
     }
     a = irCallExtArgsHead(e)
+    j = 0
     while a != -1 {
         t = irExprType(a)
         if irtKind(t) == KStr or irtKind(t) == KText {
             cgExprAddr(a)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        } else if irtKind(t) == KBool or irtKind(t) == KChar {
+        } else if irtKind(t) == KBool or irtKind(t) == KChar or irtKind(irExternParam(xi, j)) == KWord {
             cgExpr(a)
             a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
         } else {
@@ -5237,10 +5263,17 @@ func cgCallExtPascal(e: int, xi: int) {
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         }
         a = irExprNext(a)
+        j = j + 1
     }
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
     if irtKind(retTy) != KVoid {
-        if retIsWord {
+        if retIsWordType {
+            // Sign-extend: MOVE.W (A7)+,D0 loads the popped result word
+            // into D0's low 16 bits, then EXT.L D0 propagates its sign
+            // bit across the full register -- Toolbox INTEGER is signed.
+            a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
+            a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+        } else if retIsWord {
             // Zero-extend: CLR.L D0 first (MOVE.W leaves D0's upper 16
             // bits untouched, cgLoadVar's own bool/char pattern), then
             // mask off any stray high-byte padding within the popped

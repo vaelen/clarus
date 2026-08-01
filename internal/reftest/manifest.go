@@ -63,9 +63,10 @@ package reftest
 // 55 (line 1046): undefined: Main (window extend block)
 //
 // Indices 66-69 (Task 2, native-5d: trap/inline clause examples) shifted
-// the two Appendix C programs from 66/67 to 70/71 -- see ClaruscOnly below,
-// whose four new fences are inserted right after the existing Chapter 13
-// ones, ahead of Appendix C in document order.
+// the two Appendix C programs from 66/67 to 70/71; index 70 (Task 4,
+// native-5e: the `word` extern type example) then shifted them again, to
+// 71/72 -- see ClaruscOnly below, whose fences are inserted right after
+// the existing Chapter 13 ones, ahead of Appendix C in document order.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -73,20 +74,20 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	70, // Appendix C bookmark manager
-	71, // Appendix C text editor
+	71, // Appendix C bookmark manager
+	72, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
 // syntax the frozen Go compiler cannot parse at all — the `ptr` type,
 // peek/poke builtins, `external func` declarations, `overlay record`
-// declarations, and `external func` trap/inline clauses, all from
-// Chapter 13. These are reference fences added after the Go front end was
-// frozen (docs/ROADMAP.md); every Go-side fence sweep over ALL fences
-// (e.g. internal/selfhost's TestDifferentialFences) must skip them rather
-// than fail on a syntax the Go compiler predates. They are deliberately
-// absent from CheckClean, which is driver.Check'd through the same frozen
-// Go front end.
+// declarations, `external func` trap/inline clauses, and the `word` extern
+// type, all from Chapter 13. These are reference fences added after the Go
+// front end was frozen (docs/ROADMAP.md); every Go-side fence sweep over
+// ALL fences (e.g. internal/selfhost's TestDifferentialFences) must skip
+// them rather than fail on a syntax the Go compiler predates. They are
+// deliberately absent from CheckClean, which is driver.Check'd through the
+// same frozen Go front end.
 //
 // 60 (line 1300): Chapter 13 ptr basics — conversion, arithmetic, comparison
 // 61 (line 1310): Chapter 13 ptr container restriction (list of ptr, commented)
@@ -98,6 +99,7 @@ var CheckClean = []int{
 // 67 (line 1411): Chapter 13 trap/inline clauses — trap reg (BlockMove)
 // 68 (line 1417): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
 // 69 (line 1423): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
+// 70 (line 1440): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
 }

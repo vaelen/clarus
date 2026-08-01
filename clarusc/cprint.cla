@@ -702,6 +702,7 @@ func cpCTypeName(t: int): string {
     case KWinRef { return "void *" }
     case KPtr { return "void *" }
     case KOverlay { return "clar_rec_" + poolGet(irtName(t)) + " *" }
+    case KWord { return "short" }
     }
     return "void"
 }

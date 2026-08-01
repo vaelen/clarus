@@ -971,4 +971,45 @@ on App.startEmpty {
     src = ""
     ln(src, "external func Bad(): int = inline nop")
     runCase("extern-inline-nop-bad-return", src)
+
+    // ---- Task 4 (native-5e): `word` extern param/return type ----
+
+    // Case 73: a clean external func using `word` in both a param
+    // position (UiMoveTo, both params) and a return position
+    // (UiFindWindow) -- proves the grammar parses and the checker accepts
+    // it exactly like int (real Toolbox trap words: MoveTo 0xA893,
+    // FindWindow 0xA92C).
+    src = ""
+    ln(src, "external func UiMoveTo(h: word, v: word) = trap 0xA893")
+    ln(src, "external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C")
+    runCase("extern-word-clean", src)
+
+    // Case 74: `word` means nothing outside an extern signature -- a plain
+    // var decl naming it as a type resolves through the ordinary TxNamed/
+    // resolveType path and fails "undefined", the same diagnostic any
+    // other unknown type name gets.
+    src = ""
+    ln(src, "var x: word")
+    runCase("word-not-a-type-outside-extern", src)
+
+    // Case 75: `word` as a non-extern func's parameter type is likewise
+    // just an unknown type name -- parseParam/parseType (not
+    // parseExternParam/parseExternType) handle it, so it never becomes a
+    // TxWord node here.
+    src = ""
+    ln(src, "func F(w: word): int {")
+    ln(src, "    return 1")
+    ln(src, "}")
+    runCase("word-param-non-extern", src)
+
+    // Case 76: `word` remains a perfectly ordinary identifier everywhere
+    // else -- a variable literally named `word` (int-typed) is clean, the
+    // non-regression the brief calls out by name.
+    src = ""
+    ln(src, "func F(): int {")
+    ln(src, "    var word: int")
+    ln(src, "    word = 5")
+    ln(src, "    return word")
+    ln(src, "}")
+    runCase("word-as-ordinary-identifier", src)
 }

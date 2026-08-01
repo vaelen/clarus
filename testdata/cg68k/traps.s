@@ -3514,6 +3514,20 @@ LBL_231:
         BSR.W LBL_43
         ADDQ.L #4,A7
         MOVE.L D0,-276(A6)
+        MOVE.L #10,D0
+        MOVE.W D0,-(A7)
+        MOVE.L #20,D0
+        MOVE.W D0,-(A7)
+        DC.W $A893  ; TMoveTo
+        CLR.W -(A7)
+        MOVE.L #0,D0
+        MOVE.L D0,-(A7)
+        MOVE.L -8(A6),D0
+        MOVE.L D0,-(A7)
+        DC.W $A92C  ; TFindWindow
+        MOVE.W (A7)+,D0
+        EXT.L D0
+        MOVE.L D0,-16(A6)
         MOVE.L #8,D0
         MOVE.L D0,-(A7)
         MOVE.L (A7)+,D0

@@ -6,15 +6,21 @@
 // arithmetic (p + 4), one poke, and one peek -- proves the emitted C
 // (extern rt_ext_ prototype, rt_pokeb/rt_peekl calls, ptr-arithmetic cast
 // shape) compiles under the Retro68 m68k toolchain against rt.h/rt_ui.h,
-// same as every other emitui fixture.
+// same as every other emitui fixture. A second external decl (Task 4,
+// native-5e) exercises the `word` extern param/return type's C shim shape:
+// both prototype as `short`, proving cprint.cla's cpCTypeName(KWord) emits
+// a compilable C signature.
 external func NewPtr(size: int): ptr
+external func WordEcho(w: word): word
 
 on App.startCLI(args: list of string) {
     var p: ptr
     var v: int
+    var w: int
 
     p = NewPtr(8)
     pokeb(p, 65)
     v = peekl(p + 4)
+    w = WordEcho(5)
     quit 0
 }

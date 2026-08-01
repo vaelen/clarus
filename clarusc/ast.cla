@@ -224,6 +224,16 @@ enum TypeExprKind {
     TxList
     TxMap
     TxArray
+
+    // TxWord (Task 4, native-5e, Ch13: the `word` extern type) is built ONLY
+    // by parseExternType, inside an `external func` param/return type
+    // position -- nowhere else constructs it, so `word` used as an ordinary
+    // type name (a var decl, a non-extern param) still goes through
+    // TxNamed like any other identifier and fails resolveType's ordinary
+    // "undefined: word" path (word is not a registered type). No extra
+    // fields: like TxNamed's builtin scalar names, a TxWord node carries no
+    // payload beyond its own kind.
+    TxWord
 }
 
 record ExprNode {
@@ -1649,6 +1659,20 @@ func newNamedType(nameIdx: int, line: int, col: int): int {
 
 func namedTypeName(i: int): int {
     return typeExprs[i].nameIdx
+}
+
+// newWordType builds a TxWord node (Task 4, native-5e: the `word` extern
+// type) -- see TypeExprKind's own doc comment for why this exists as its
+// own kind instead of reusing TxNamed.
+func newWordType(line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxWord
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
 }
 
 func newStringType(n: int, line: int, col: int): int {

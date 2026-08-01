@@ -1350,6 +1350,17 @@ func resolveType(te: int): int {
         }
         return symbols[symIdx].typeIdx
     }
+    case TxWord {
+        // Task 4 (native-5e, Ch13): the checked type system treats `word`
+        // exactly as `int` -- callers pass ordinary int exprs, a word
+        // return reads as int, and checkExternFunc's int/ptr/bool/char
+        // param and return-type checks pass unchanged. The distinct
+        // 16-bit-at-the-trap-boundary marshaling lives entirely in
+        // lowResolveType (lower.cla) -- which reads this same TxWord
+        // TypeExpr node straight off the AST, independent of this checked
+        // type -- and cg68k.cla's cgCallExtPascal.
+        return IntT
+    }
     case TxString {
         return strT(stringTypeN(te))
     }

@@ -286,6 +286,14 @@ func lowResolveType(tx: int): int {
         // here on a checker-clean program would be a lowerer bug.
         return irIntT
     }
+    case TxWord {
+        // Task 4 (native-5e, Ch13): the ONLY place a TxWord TypeExpr ever
+        // lowers to the distinct KWord IR type -- lowExternDecl calls
+        // lowResolveType directly on each param/return TypeExpr (never
+        // through lowType(checked-type), which would collapse it back to
+        // plain int, per resolveType's own TxWord case in check.cla).
+        return irWordT
+    }
     case TxString {
         return irStrType(stringTypeN(tx))
     }
