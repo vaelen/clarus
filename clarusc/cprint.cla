@@ -716,6 +716,111 @@ func cpCTypeName(t: int): string {
     return "void"
 }
 
+// ---------------------------------------------------------------
+// C-ABI record layout (the cprint lane's own LAYOUT AUTHORITY)
+// ---------------------------------------------------------------
+//
+// cpCSizeOfField/cpCAlignOfField/cpCFieldOffset/cpCRecordSize compute the
+// byte layout m68k GCC gives an EMITTED `clar_rec_<T>` struct, field for
+// field. They exist because the UI descriptor blob (uiblob.cla's Layout
+// section) has to describe the record layout the generated C actually
+// uses -- unlike a window's `clar_uistate_<Win>` struct, whose C field
+// types cprint is free to bend to match cg68k (cpUiStateFieldCType's
+// int16_t bool), a user record's C layout is FROZEN by rt.h's descriptor
+// ABI: rt_ui.c/rt.c's RT_FT_BOOL arms dereference `*(int32_t *)(rec +
+// off)` (rt_ui.c:1100 "BOOL is a full int32_t"), and cpEmitLayouts/
+// cpEmitSerDescs hand those runtimes offsetof/sizeof of this very struct.
+// cg68k's native rules (cgSlotSizeOf: bool/char occupy 2) therefore do
+// NOT describe it -- a `bool` field is 4 bytes here, a `char` field 1 --
+// which is exactly the mismatch that made a modal form's accept path
+// poke 4 bytes into the last 2 bytes of a recSize-sized scratch Handle
+// and corrupt the Mac heap (see the Task 10 report's root cause).
+//
+// Only the six kinds uibFieldTypeNum accepts can reach here (it fails
+// closed on anything else), so the rules are short: int/fixed/bool/enum
+// are `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
+// BIGGEST_ALIGNMENT is 16 bits, the same convention cpUiStateFieldCType's
+// own comment cites); `char` is `uint8_t` (1 byte); `string(n)` is
+// `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }` (n+1 bytes,
+// 1-byte aligned). A struct's own alignment is its widest member's, so
+// the total is rounded up to 2 iff any 4-byte field is present.
+func cpCSizeOfField(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KChar {
+        return 1
+    }
+    if k == KStr {
+        return irtN(t) + 1
+    }
+    return 4
+}
+
+func cpCAlignOfField(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KChar or k == KStr {
+        return 1
+    }
+    return 2
+}
+
+// cpCFieldOffset returns fieldName's byte offset inside clar_rec_recName
+// (-1 if either is unknown) -- the value `offsetof(clar_rec_R, cv_f)`
+// evaluates to.
+func cpCFieldOffset(recName: int, fieldName: int): int {
+    var ri: int
+    var f: int
+    var cur: int
+    var wantName: string
+
+    ri = cgFindRecordByName(recName)
+    if ri == -1 {
+        return -1
+    }
+    wantName = poolGet(fieldName)
+    cur = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        cur = cgAlignUp(cur, cpCAlignOfField(irFieldSlotType(f)))
+        if poolGet(irFieldSlotName(f)) == wantName {
+            return cur
+        }
+        cur = cur + cpCSizeOfField(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    return -1
+}
+
+// cpCRecordSize is cpCFieldOffset's walk run to the end and rounded up to
+// the struct's own alignment -- the value `sizeof(clar_rec_R)` evaluates
+// to.
+func cpCRecordSize(nameIdx: int): int {
+    var ri: int
+    var f: int
+    var cur: int
+    var maxAlign: int
+
+    ri = cgFindRecordByName(nameIdx)
+    if ri == -1 {
+        return 0
+    }
+    cur = 0
+    maxAlign = 1
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        if cpCAlignOfField(irFieldSlotType(f)) > maxAlign {
+            maxAlign = cpCAlignOfField(irFieldSlotType(f))
+        }
+        cur = cgAlignUp(cur, cpCAlignOfField(irFieldSlotType(f)))
+        cur = cur + cpCSizeOfField(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    return cgAlignUp(cur, maxAlign)
+}
+
 // cpArrKey names one Arr type's wrapper typedef, distinct per (element
 // shape, length) pair -- a pure function of t, no side effects (types.go's
 // arrKey).
@@ -4454,6 +4559,52 @@ func cpEmitSerDescs() {
     }
 }
 
+// cpEmitUiLayoutAsserts (native-5e Task 10 root-cause fix) prints, for
+// every record the UI blob carries a Layout entry for (uibIsLayoutRec),
+// one compile-time check tying that Layout's recSize/field offsets to the
+// REAL emitted `clar_rec_<T>` struct:
+//
+//   typedef char clar_ui_layoutassert_<R>[(sizeof(clar_rec_<R>) == <N>
+//       && offsetof(clar_rec_<R>, cv_<f>) == <o> && ...) ? 1 : -1];
+//
+// The blob's Layout section is written from cpCRecordSize/cpCFieldOffset,
+// so this is what turns any drift between those hand-computed C-ABI rules
+// and the C compiler's actual struct layout into a BUILD error. Without
+// it, the ported rtUiFormFill/rtUiFormAccept silently peek and poke at
+// wrong offsets and overrun the recSize-sized scratch Handle -- the exact
+// heap corruption that hung DisposeWindow in the formedit/bookmarks
+// scenarios. Same spirit (and same cpRecBuf placement, after every
+// clar_rec_ typedef) as clar_ui_szassert_<Win> for state structs; one
+// assert per RECORD, so a record two windows/tables share is pinned once.
+// The whole line is `text`, not `string`: a wide record's condition list
+// runs well past a 255-byte `string` buffer, which would truncate
+// silently (cpEmitEnums' own `vals` comment below).
+func cpEmitUiLayoutAsserts() {
+    var i: int
+    var f: int
+    var name: int
+    var recName: string
+    var line: text
+
+    i = 0
+    while i < irRecords.count {
+        name = irRecordLayoutName(i)
+        if uibIsLayoutRec(name) {
+            recName = poolGet(name)
+            line = toText("typedef char clar_ui_layoutassert_" + recName + "[(sizeof(clar_rec_" + recName + ") == " + numToStr(cpCRecordSize(name)))
+            f = irRecordLayoutFieldsHead(i)
+            while f != -1 {
+                line.append(" && offsetof(clar_rec_" + recName + ", cv_" + poolGet(irFieldSlotName(f)) + ") == " + numToStr(cpCFieldOffset(name, irFieldSlotName(f))))
+                f = irFieldSlotNext(f)
+            }
+            line.append(") ? 1 : -1];")
+            cpRecBuf.add(line)
+            cpRecBuf.add(toText(""))
+        }
+        i = i + 1
+    }
+}
+
 // cpEmitEnums prints each enum's value table (for the checked int->enum
 // conversion, rt_enum_from_int) plus a matching _count constant, into
 // cpRestBuf -- cprint.go's emitEnums. Marked __attribute__((unused)): a
@@ -6071,6 +6222,9 @@ func emitProgram(): text {
     cpEmitRecords()
     cpEmitLayouts()
     cpEmitSerDescs()
+    if cpUiPortFlag {
+        cpEmitUiLayoutAsserts()
+    }
     cpEmitEnums()
     cpEmitUiDescs()
     cpEmitAppInfo()

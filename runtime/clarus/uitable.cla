@@ -62,6 +62,7 @@ external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7
 external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7
 external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7
 external func UiLSize(listWidth: word, listHeight: word, lHandle: ptr) = trap 0xA9E7
+external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7
 external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7
 external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7
 external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9E7

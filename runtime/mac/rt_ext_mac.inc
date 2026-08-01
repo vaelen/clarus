@@ -455,6 +455,7 @@ void rt_ext_UiLDelRow(short count, short rowNum, void *lHandle) { LDelRow(count,
 int32_t rt_ext_UiLGetSelect(int32_t next, void *theCell, void *lHandle) { return (int32_t)LGetSelect((Boolean)next, (Cell *)theCell, (ListHandle)lHandle); }
 void rt_ext_UiLSetSelect(int32_t setIt, int32_t theCell, void *lHandle) { LSetSelect((Boolean)setIt, rt_ext_ui_pt(theCell), (ListHandle)lHandle); }
 void rt_ext_UiLSize(short listWidth, short listHeight, void *lHandle) { LSize(listWidth, listHeight, (ListHandle)lHandle); }
+void rt_ext_UiLActivate(int32_t act, void *lHandle) { LActivate((Boolean)act, (ListHandle)lHandle); }
 void rt_ext_UiLSetDrawingMode(int32_t drawIt, void *lHandle) { LSetDrawingMode((Boolean)drawIt, (ListHandle)lHandle); }
 void rt_ext_UiLUpdate(void *theRgn, void *lHandle) { LUpdate((RgnHandle)theRgn, (ListHandle)lHandle); }
 int32_t rt_ext_UiLClick(int32_t pt, short modifiers, void *lHandle) { return (int32_t)LClick(rt_ext_ui_pt(pt), (EventModifiers)modifiers, (ListHandle)lHandle); }

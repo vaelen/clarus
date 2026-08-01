@@ -1564,6 +1564,7 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
     var i: int
     var ctrl: ptr
     var hb: ptr
+    var lh: ptr
     var te: ptr
     var enable: bool
 
@@ -1595,6 +1596,16 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
             } else {
                 UiHiliteControl(hb, 255)
             }
+        }
+        // rt_ui.c:2956 -- a table's List Manager list (de)activates with
+        // its window, so the list's own scroll bar hides its arrows and a
+        // selection un-hilites while the window isn't frontmost. Missed by
+        // Task 9's slice-C port (this loop predates it, and no scenario
+        // deactivated a table-bearing window until formedit/bookmarks
+        // opened a modal form over one).
+        lh = rtUiListAt(w, i)
+        if lh != ptr(0) {
+            UiLActivate(activating, lh)
         }
         i = i + 1
     }

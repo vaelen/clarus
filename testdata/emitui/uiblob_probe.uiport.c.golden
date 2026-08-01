@@ -190,6 +190,7 @@ extern void rt_ext_UiLDelRow(short, short, void *);
 extern int32_t rt_ext_UiLGetSelect(int32_t, void *, void *);
 extern void rt_ext_UiLSetSelect(int32_t, int32_t, void *);
 extern void rt_ext_UiLSize(short, short, void *);
+extern void rt_ext_UiLActivate(int32_t, void *);
 extern void rt_ext_UiLSetDrawingMode(int32_t, void *);
 extern void rt_ext_UiLUpdate(void *, void *);
 extern int32_t rt_ext_UiLClick(int32_t, short, void *);
@@ -454,6 +455,10 @@ static const int32_t clar_serdesc_FormRec[] = {
     RT_FT_BOOL, 0, (int32_t)offsetof(clar_rec_FormRec, cv_flag), 0,
 };
 
+typedef char clar_ui_layoutassert_Row[(sizeof(clar_rec_Row) == 68 && offsetof(clar_rec_Row, cv_name) == 0 && offsetof(clar_rec_Row, cv_count) == 64) ? 1 : -1];
+
+typedef char clar_ui_layoutassert_FormRec[(sizeof(clar_rec_FormRec) == 76 && offsetof(clar_rec_FormRec, cv_label) == 0 && offsetof(clar_rec_FormRec, cv_qty) == 64 && offsetof(clar_rec_FormRec, cv_status) == 68 && offsetof(clar_rec_FormRec, cv_flag) == 72) ? 1 : -1];
+
 typedef struct {
     int32_t cv_state;
     rt_text * cv_note;
@@ -591,7 +596,7 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 0, 1, 0, 0, 0, 68, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0,
     0, 0, 0, 63, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0,
     0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
-    0, 0, 0, 74, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63,
+    0, 0, 0, 76, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63,
     0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 64,
     0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 5,
     0, 0, 0, 68, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 4, 140, 0, 0, 4, 152,
@@ -3415,6 +3420,8 @@ static void clar_fn_rtUiHandleActivate(void * cv_wp, int32_t cv_activating) {
     cv_ctrl = 0;
     void * cv_hb;
     cv_hb = 0;
+    void * cv_lh;
+    cv_lh = 0;
     void * cv_te;
     cv_te = 0;
     int32_t cv_enable;
@@ -3445,6 +3452,10 @@ static void clar_fn_rtUiHandleActivate(void * cv_wp, int32_t cv_activating) {
             } else {
                 rt_ext_UiHiliteControl(cv_hb, 255);
             }
+        }
+        cv_lh = clar_fn_rtUiListAt(cv_w, cv_i);
+        if (cv_lh != (void *)(intptr_t)(0)) {
+            rt_ext_UiLActivate(cv_activating, cv_lh);
         }
         cv_i = (cv_i + 1);
     }
