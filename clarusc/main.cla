@@ -348,9 +348,16 @@ on App.startCLI(args: list of string) {
             // sizeof asserts -- see cprint.cla's cpEmitUiBlob/cpUiPortFlag.
             // Default off: every existing testdata/emitui/*.c.golden is
             // emitted with this flag ABSENT and must stay byte-identical.
-            // The pre-existing rt_ui_window_desc/rt_ui_widget_desc/...
-            // tables are printed unconditionally either way (Task 11 is
-            // the flip that retires them) -- this flag only ADDS the blob.
+            // Task 6 adds: lower.cla synthesizes the reverse-waist
+            // dispatcher IRFuncs (ordinary functions, printed by the normal
+            // cpEmitFuncs pass) and cprint suppresses the now-redundant OLD
+            // per-window winevent/widget dispatcher bodies + rt_ui_app_info
+            // for a real UI program (the blob's own App section already
+            // carries it) -- the window/menu descriptor tables themselves,
+            // the menu-handler array, and the every array stay printed
+            // unconditionally either way: rt_ui_startup (cpEmitUiMain)
+            // still needs them until Task 7's ui.cla port replaces its
+            // caller side. Task 11 is the flip that retires all of it.
             uiportFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
@@ -676,6 +683,11 @@ on App.startCLI(args: list of string) {
         }
 
         irReset()
+        // native-5e Task 6: lower.cla's own copy of --uiport must be set
+        // BEFORE lowerProgram runs (unlike cpUiPortFlag below, which
+        // emitProgram doesn't need until after) -- lowerProgram's own tail
+        // synthesizes the reverse-waist dispatcher IRFuncs when it's set.
+        lowUiPortFlag = uiportFlag
         lowerProgram(combined2)
         if emitMode {
             shakeProgram()

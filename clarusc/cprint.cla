@@ -972,6 +972,7 @@ func fpCallExt(e: int): text {
     var argText: text
     var call: text
     var t: text
+    var synthName: int
 
     args = ""
     first = true
@@ -989,7 +990,32 @@ func fpCallExt(e: int): text {
         args = args + argText
         a = irExprNext(a)
     }
-    call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
+    // native-5e Task 6: under --uiport, ui.cla's reverse-waist externs
+    // (Task 7+) resolve to lower.cla's synthesized clar_ui_fire_* IRFuncs
+    // (called directly, no rt_ext_ shim exists for them) rather than the
+    // ordinary host-symbol path below -- lowUiSynthExternName is the ONE
+    // place (per the plan's reverse-waist section) that owns the name
+    // mapping. The synthesized IRFuncs are ORDINARY functions (the whole
+    // point -- no per-backend dispatcher emission), so the call still goes
+    // through the SAME "clar_fn_" symbol convention every other function
+    // call does (the `nat_<Name>` extern-fallback precedent, cg68k.cla's
+    // cgCallExtNatFallback, resolves the exact same way: an ordinary
+    // function, called by its ordinary name). UiProgDesc is a special case
+    // (not a synthesized FUNCTION at all -- see ir.cla's own doc comment on
+    // why): it resolves straight to the blob's own address, never a call.
+    if cpUiPortFlag and poolGet(irCallExtName(e)) == "UiProgDesc" {
+        call = "(&clar_ui_blob[0])"
+    } else {
+        synthName = -1
+        if cpUiPortFlag {
+            synthName = lowUiSynthExternName(irCallExtName(e))
+        }
+        if synthName != -1 {
+            call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
+        } else {
+            call = "rt_ext_" + poolGet(irCallExtName(e)) + "(" + args + ")"
+        }
+    }
     if fpIsHandleType(irExprType(e)) or (irtKind(irExprType(e)) == KRec and irRecHasHandleField(irtName(irExprType(e)))) {
         t = fpNewTrackedTmp(irExprType(e))
         fpEmit(t + " = " + call + ";")
@@ -2598,6 +2624,19 @@ func fpIntrCall(x: int): text {
         return toText("")
     } else if nm == IUiFormIsNew() {
         return "(rt_ui_form_is_new())"
+
+    // ---- native-5e Task 6: reverse-waist dispatcher synthesis intrinsics
+    // (ir.cla's own doc comment on all three) ----
+    } else if nm == IUiSetCancelFlag() {
+        fpEmit("clar_ui_cur_cancel = (long *)" + fpExpr(a0) + ";")
+        return toText("")
+    } else if nm == IUiValueAtPtr() {
+        if irtKind(irExprType(x)) == KStr {
+            return "(*(const clar_str_" + numToStr(irtN(irExprType(x))) + " *)(" + fpExpr(a0) + "))"
+        }
+        return "(*(clar_rec_" + poolGet(irtName(irExprType(x))) + " *)(" + fpExpr(a0) + "))"
+    } else if nm == IUiAddrOfGlobal() {
+        return "((void*)&(" + fpExpr(a0) + "))"
     }
     return toText("")
 }
@@ -3708,29 +3747,39 @@ func cpEmitExternProtos() {
     var params: string
     var first: bool
     var pty: int
+    var skip: bool
 
     i = 0
     while i < irExternCount() {
-        params = ""
-        first = true
-        j = 0
-        while j < irExternParamCount(i) {
-            if not first {
-                params = params + ", "
+        // native-5e Task 6: under --uiport, ui.cla's reverse-waist externs
+        // (Task 7+) never link against a rt_ext_ shim at all -- either they
+        // resolve straight to a synthesized clar_ui_fire_* function
+        // (lowUiSynthExternName) or, for UiProgDesc, straight to the blob's
+        // own address (fpCallExt's own special case) -- so declaring this
+        // prototype would be dead and, worse, a NAME nothing ever defines.
+        skip = cpUiPortFlag and (lowUiSynthExternName(irExternName(i)) != -1 or poolGet(irExternName(i)) == "UiProgDesc")
+        if not skip {
+            params = ""
+            first = true
+            j = 0
+            while j < irExternParamCount(i) {
+                if not first {
+                    params = params + ", "
+                }
+                first = false
+                pty = irExternParam(i, j)
+                if irtKind(pty) == KStr {
+                    params = params + "const uint8_t *"
+                } else {
+                    params = params + cpCType(pty)
+                }
+                j = j + 1
             }
-            first = false
-            pty = irExternParam(i, j)
-            if irtKind(pty) == KStr {
-                params = params + "const uint8_t *"
-            } else {
-                params = params + cpCType(pty)
+            if first {
+                params = "void"
             }
-            j = j + 1
+            cpTypeBuf.add(toText("extern " + cpCType(irExternRet(i)) + " rt_ext_" + poolGet(irExternName(i)) + "(" + params + ");"))
         }
-        if first {
-            params = "void"
-        }
-        cpTypeBuf.add(toText("extern " + cpCType(irExternRet(i)) + " rt_ext_" + poolGet(irExternName(i)) + "(" + params + ");"))
         i = i + 1
     }
 }
@@ -4802,12 +4851,18 @@ func cpEmitWinHandlersFwd(winName: string): string {
         return "0"
     }
     winFn = "0"
-    if cpWinHandlersHasWinEvent(whIdx) {
+    if cpWinHandlersHasWinEvent(whIdx) and not cpUiPortFlag {
+        // native-5e Task 6: under --uiport, clar_ui_fire_winevent (lower.cla's
+        // synthesized dispatcher) replaces this per-window function entirely
+        // -- suppressed here (not just left undefined) so this struct never
+        // forward-declares a name cpEmitUiDispatchers no longer defines.
+        // rt_ui_startup itself is untouched this task (Task 7's job), so the
+        // struct -- and this NULL slot -- still has to exist.
         winFn = "clar_ui_winevent_" + winName
         cpUiBuf.add(toText("static void " + winFn + "(void *inst, short event, long a, long b);"))
     }
     widgetFn = "0"
-    if cpWinHandlersHasWidget(whIdx) {
+    if cpWinHandlersHasWidget(whIdx) and not cpUiPortFlag {
         widgetFn = "clar_ui_widget_" + winName
         cpUiBuf.add(toText("static void " + widgetFn + "(void *inst, short widgetIndex, short event, long a, long b);"))
     }
@@ -5008,6 +5063,17 @@ func cpEmitAppInfo() {
     var line: text
 
     if not irHasApp { return }
+    if cpUiPortFlag and irIsUiProgram() {
+        // native-5e Task 6: for a real UI program, the blob's own App
+        // section (cpEmitUiBlob, Task 5) already carries these same four
+        // fields -- rt_ui_app_info would be pure duplication. NOT gated on
+        // cpUiPortFlag alone: an app-only, non-UI program's cpUiBuf (where
+        // the blob would otherwise land) never gets appended to the output
+        // at all (emitProgram's own irIsUiProgram() gate), so THAT
+        // program's app metadata would vanish outright if this stayed
+        // gated on the flag alone.
+        return
+    }
     // Built as `text` field-by-field, not one `string` concatenation: the
     // four cpUiTitleStr() results plus separators can together exceed 255
     // bytes (an about string alone can run to 255), and `string + string`
@@ -5326,7 +5392,23 @@ func cpEmitUiWiring() {
     if not irIsUiProgram() {
         return
     }
-    cpEmitUiDispatchers()
+    if not cpUiPortFlag {
+        // native-5e Task 6: clar_ui_winevent_<Win>/clar_ui_widget_<Win> --
+        // the OLD per-window dispatcher bodies (cpEmitOneWinEventDispatcher/
+        // cpEmitOneWidgetDispatcher) -- are suppressed under --uiport;
+        // lower.cla's synthesized clar_ui_fire_winevent/_widget (ordinary
+        // IRFuncs, printed by cpEmitFuncs above like any other function)
+        // replace them. cpEmitWinHandlersFwd (cpEmitWindowDescs, called
+        // earlier) already nulled the two forward-declared function-pointer
+        // slots that used to name them, so nothing is left dangling.
+        //
+        // clar_ui_menu_handlers[]/clar_ui_every[] (cpEmitMenuHandlerArray/
+        // cpEmitEveryArray) are NOT suppressed: cpEmitUiMain -- untouched
+        // this task, Task 7's job -- still passes their addresses to
+        // rt_ui_startup by name; suppressing them here would leave that
+        // still-live call site referencing an undefined symbol.
+        cpEmitUiDispatchers()
+    }
     cpEmitMenuHandlerArray()
     cpEmitEveryArray()
 }

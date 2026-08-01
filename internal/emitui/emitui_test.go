@@ -313,10 +313,10 @@ func extractUiBlob(src string) ([]byte, error) {
 // menu handlers/every/app, re-deriving every string-pool reference)
 // rather than trusting the raw byte-compare alone, so a future change
 // that reorders fields but happens to preserve the total byte count
-// doesn't slip through undetected. Also compile-checks a --uiport emit of
-// the same fixture under the m68k toolchain (mirrors TestEmitUiGoldens'
-// own compile-check, minus a full .c.golden byte-compare -- that lands in
-// Task 6, once cg68k/ui.cla actually consume the blob).
+// doesn't slip through undetected. Also byte-compares the WHOLE --uiport
+// emit against testdata/emitui/uiblob_probe.uiport.c.golden (Task 6: pins
+// the synthesized clar_ui_fire_* dispatcher shapes + the legacy-emission
+// suppression) and compile-checks it under the m68k toolchain.
 //
 // To regenerate the golden after an intentional uiblob.cla format change:
 // run `clarusc emit --uiport -o /tmp/out.c testdata/emitui/uiblob_probe.cla`,
@@ -339,6 +339,27 @@ func TestUiBlobGolden(t *testing.T) {
 	src, err := os.ReadFile(outC)
 	if err != nil {
 		t.Fatalf("read emitted %s: %v", outC, err)
+	}
+
+	// native-5e Task 6: pin the WHOLE --uiport emit byte-for-byte, not just
+	// the blob -- this is where the synthesized clar_ui_fire_winevent/
+	// _widget/_menu/_every/_releasevars/_statedefaults/_staterows/
+	// _launchdoc/_startempty/_applaunch shapes (lower.cla's
+	// lowSynthUiDispatchers) and the legacy-emission suppression
+	// (cpEmitWinHandlersFwd's nulled winFn/widgetFn slots,
+	// cpEmitUiWiring's skipped cpEmitUiDispatchers, cpEmitAppInfo's
+	// skipped rt_ui_app_info) get pinned. To regenerate after an
+	// intentional lower.cla/cprint.cla --uiport change: `clarusc emit
+	// --uiport -o testdata/emitui/uiblob_probe.uiport.c.golden
+	// testdata/emitui/uiblob_probe.cla`, then re-diff by hand that the
+	// churn is the one you intended.
+	uiportGoldenPath := filepath.Join(root, "testdata", "emitui", "uiblob_probe.uiport.c.golden")
+	uiportWant, err := os.ReadFile(uiportGoldenPath)
+	if err != nil {
+		t.Fatalf("read golden %s: %v", uiportGoldenPath, err)
+	}
+	if !bytes.Equal(src, uiportWant) {
+		t.Errorf("%s: --uiport emit does not match %s\n--- got ---\n%s\n--- want ---\n%s", fixture, uiportGoldenPath, src, uiportWant)
 	}
 
 	got, err := extractUiBlob(string(src))

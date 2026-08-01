@@ -112,6 +112,14 @@ var lowCurWinType: int
 var lowCurHandlerEvent: int
 var lowCurAcceptedParam: int
 
+// lowUiPortFlag (native-5e Task 6) mirrors main.cla's `--uiport` flag,
+// set BEFORE lowerProgram runs (cpUiPortFlag, cprint.cla's own copy, isn't
+// set until after -- lowering needs its own gate to decide whether to
+// synthesize the reverse-waist dispatcher IRFuncs at all; see
+// lowSynthUiDispatchers). Default false: every existing lowering path
+// (flag absent) is completely unaffected.
+var lowUiPortFlag: bool
+
 // uiWinHandlersIdx (Task 5) maps a window type name to its irWinHandlers
 // arena index, lazily created on that window's FIRST registered handler
 // (lowGetOrCreateWinHandlers) -- a window with no `extend` block at all
@@ -4760,6 +4768,657 @@ func lowSynthesizeMissingOpenedHandlers() {
     }
 }
 
+// ================================================================
+// native-5e Task 6: --uiport reverse-waist dispatcher synthesis
+// ================================================================
+//
+// lowSynthUiDispatchers builds the 10 program-emitted reverse-waist
+// IRFuncs the plan's "reverse waist" section names (docs/superpowers/
+// plans/2026-08-01-native-5e-ui-runtime.md), directly at the IR level --
+// ordinary IRFuncs assembled by hand from already-lowered IR data
+// (irWindowDescs/irWinHandlers/irMenuHandlersHead/irEveryHead/irGlobals),
+// bypassing the AST/checker pipeline entirely (there is no Clarus SOURCE
+// for any of these bodies, unlike every other lowXxx entry point in this
+// file). Both cprint (this task) and cg68k (Task 12) can then compile them
+// as ordinary functions, with zero backend-specific dispatcher code of
+// their own -- the only backend-specific pieces are the LEAF intrinsics
+// they call (IUiState, IUiSetCancelFlag, IUiValueAtPtr, IUiAddrOfGlobal,
+// ...), exactly like every other UI construct already works.
+//
+// Called once, from lowerProgram's tail, only when --uiport (lowUiPortFlag)
+// is set and the program actually declares a window/menu/every -- mirrors
+// irIsUiProgram()'s own gate, duplicated here rather than called across
+// the cprint.cla layering boundary (lower.cla is included BEFORE cprint.cla
+// in main.cla's manifest, and is meant to stay backend-agnostic).
+//
+// Every synthesized function is registered as a shakeProgram() root
+// (shakeAddRoot): nothing calls any of them yet -- ui.cla, their only
+// caller, lands in Task 7 -- so shaking would otherwise discard every one
+// of them as unreachable.
+//
+// Fail-closed (the plan's own rule): an out-of-range INDEX (winIdx,
+// widgetIdx, handlerIdx, every-idx, rowsIdx -- every number that is a
+// structural position into a blob-described array, so a value outside its
+// declared count can only mean a corrupted blob or a caller bug) hits
+// lowSynthPanic (log the offending dispatcher's own name + what was out of
+// range, then rt_quit(1) via IQuit) instead of silently falling through.
+// An EVENT value (RTUI_EV_*/RTUI_WEV_*) with no registered handler on an
+// otherwise-valid window/widget is NOT an out-of-range index -- most
+// windows/widgets legitimately handle only some events -- so that case
+// stays a plain no-op, exactly like the OLD per-window dispatchers' own
+// `default: break`.
+//
+// Clarus's IR has no native switch/else-if-chain statement, only nested
+// SIf -- lowSynthFoldIfChain's else-arms nest a nARROWing `} else { if
+// (...) {` rather than printing a flat `} else if (...) {`; both are
+// valid, semantically identical C. Deepest nesting in practice is one
+// level per case (7 window events, 6 widget-kind events, or a handful of
+// windows/widgets/menu handlers/every blocks) -- readable, if not as flat
+// as the old hand-written switches.
+
+// lowSynthPanic builds the fail-closed "index out of range" tail every
+// index-dispatching synthesized function's else-chain ends in: log a
+// fixed, named message, then rt_quit(1) (IQuit) -- never reached once
+// ui.cla passes only in-range indices, but the plan requires it never
+// silently fall through. trailingRet (-1 for none) is appended AFTER the
+// quit -- dead code, but every non-void synthesized function (only
+// clar_ui_fire_staterows) still needs a real `return` for C's sake.
+func lowSynthPanic(dispatcherName: string, what: string, trailingRet: int): int {
+    var s1: int
+    var s2: int
+
+    s1 = newIRExprStmt(newIRIntr(ILog(), newIRStrConst(lowInternStr(dispatcherName + ": " + what + " out of range"), irStrType(255)), irVoidT))
+    s2 = newIRExprStmt(newIRIntr(IQuit(), newIRIntConst(1, irIntT), irVoidT))
+    irStmtListAppend(s1, s2)
+    if trailingRet != -1 {
+        irStmtListAppend(s2, trailingRet)
+    }
+    return s1
+}
+
+// lowSynthFoldIfChain folds parallel conds/bodies (same length; index i's
+// cond guards bodies[i], which may be -1 for an empty arm -- a window/
+// widget/etc. with no registered handler is still a real, valid index) into
+// a right-nested if/else chain terminating in tailElse (-1 for "nothing
+// matched, do nothing" -- the ev-level chains; a lowSynthPanic chain for
+// every index-level chain).
+func lowSynthFoldIfChain(conds: list of int, bodies: list of int, tailElse: int): int {
+    var i: int
+    var chain: int
+
+    chain = tailElse
+    i = conds.count - 1
+    while i >= 0 {
+        chain = newIRIf(conds[i], bodies[i], chain)
+        i = i - 1
+    }
+    return chain
+}
+
+// lowSynthIntRef/lowSynthPtrRef mint a FRESH int/ptr-typed EVarRef to one
+// of a synthesized function's own params, by name -- matching this file's
+// existing convention of building a fresh VarRef at every use site (e.g.
+// lowWinInstRef) rather than sharing one node across multiple parents.
+func lowSynthIntRef(nm: string): int {
+    return newIRVarRef(intern(nm), false, irIntT)
+}
+
+func lowSynthPtrRef(nm: string): int {
+    return newIRVarRef(intern(nm), false, irPtrT)
+}
+
+// lowSynthEqInt builds `<paramName> == v` (both int) -- every index-level
+// and event-level comparison these dispatchers make.
+func lowSynthEqInt(paramName: string, v: int): int {
+    // newIRBin's op is an INTERNED STRING ("==", not ast.cla's numeric
+    // OpEq -- see fpBin's own `poolGet(irBinOp(e))`, and every existing
+    // lower.cla call site, e.g. lower.cla:3173's `newIRBin(intern("=="), ...)`).
+    return newIRBin(intern("=="), lowSynthIntRef(paramName), newIRIntConst(v, irIntT), irBoolT)
+}
+
+// lowFindWidgetHandlerEntryRO is lowFindWidgetHandlerEntry's read-only half
+// (no append-if-missing side effect -- ordinary lowering has already
+// finished by the time Task 6's synthesis runs; appending a fresh, empty
+// entry here would be a silent, pointless irWinHandlers mutation).
+func lowFindWidgetHandlerEntryRO(whIdx: int, widgetIndex: int): int {
+    var w: int
+
+    w = irWinHandlersWidgetHead(whIdx)
+    while w != -1 {
+        if irWidgetHandlerEntryWidgetIndex(w) == widgetIndex {
+            return w
+        }
+        w = irWidgetHandlerEntryNext(w)
+    }
+    return -1
+}
+
+// lowSynthWinEventBody builds ONE window's ev-dispatch chain (no trailing
+// else -- see this section's header comment on why an unregistered event
+// is a no-op, not a fail-closed index). Mirrors cpEmitOneWinEventDispatcher's
+// arg shapes exactly (cprint.cla:5154-5188); RTUI_EV_* numbers are
+// rt_ui.h:98-112's own (0=OPENED..6=CANCELLED), hardcoded here exactly like
+// uiblob.cla's own handlerMask walk (uibWinHandlerMask) already does --
+// there is no shared Clarus-side constant table for them.
+func lowSynthWinEventBody(whIdx: int): int {
+    var conds: list of int
+    var bodies: list of int
+    var crHead: int
+    var callArgs: int
+
+    if irWinHandlersOpenedFn(whIdx) != -1 {
+        conds.add(lowSynthEqInt("ev", 0))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersOpenedFn(whIdx), lowSynthPtrRef("inst"), irVoidT)))
+    }
+    if irWinHandlersCloseRequestFn(whIdx) != -1 {
+        // `a` is the cancel-flag's own address (cprint.cla:5164's own
+        // comment) -- set the scratch global BEFORE calling in, exactly
+        // like the OLD dispatcher did.
+        crHead = newIRExprStmt(newIRIntr(IUiSetCancelFlag(), newIRConv(CvIntToPtr, lowSynthIntRef("a"), -1, irPtrT), irVoidT))
+        irStmtListAppend(crHead, newIRExprStmt(newIRCallFn(irWinHandlersCloseRequestFn(whIdx), lowSynthPtrRef("inst"), irVoidT)))
+        conds.add(lowSynthEqInt("ev", 1))
+        bodies.add(crHead)
+    }
+    if irWinHandlersClosedFn(whIdx) != -1 {
+        conds.add(lowSynthEqInt("ev", 2))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersClosedFn(whIdx), lowSynthPtrRef("inst"), irVoidT)))
+    }
+    if irWinHandlersResizedFn(whIdx) != -1 {
+        conds.add(lowSynthEqInt("ev", 3))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersResizedFn(whIdx), lowSynthPtrRef("inst"), irVoidT)))
+    }
+    if irWinHandlersKeyFn(whIdx) != -1 {
+        callArgs = lowSynthPtrRef("inst")
+        irExprListAppend(callArgs, newIRConv(CvIntToChar, lowSynthIntRef("a"), -1, irCharT))
+        conds.add(lowSynthEqInt("ev", 4))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersKeyFn(whIdx), callArgs, irVoidT)))
+    }
+    if irWinHandlersAcceptedFn(whIdx) != -1 {
+        // `a` is the walker's own validated record's address; the handler's
+        // own declared param is BY VALUE (cprint.cla:5179's own comment).
+        callArgs = lowSynthPtrRef("inst")
+        irExprListAppend(callArgs, newIRIntr(IUiValueAtPtr(), newIRConv(CvIntToPtr, lowSynthIntRef("a"), -1, irPtrT), irRecType(irWinHandlersFormRecName(whIdx))))
+        conds.add(lowSynthEqInt("ev", 5))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersAcceptedFn(whIdx), callArgs, irVoidT)))
+    }
+    if irWinHandlersCancelledFn(whIdx) != -1 {
+        conds.add(lowSynthEqInt("ev", 6))
+        bodies.add(newIRExprStmt(newIRCallFn(irWinHandlersCancelledFn(whIdx), lowSynthPtrRef("inst"), irVoidT)))
+    }
+
+    return lowSynthFoldIfChain(conds, bodies, -1)
+}
+
+// lowSynthFireWinEvent builds clar_ui_fire_winevent(winIdx, inst, ev, a, b)
+// -- lowSynthWinEventBody per window, folded behind one outer switch(winIdx)
+// (fail-closed: an unknown winIdx panics). EVERY window gets an arm, even
+// one with no `extend` block at all (whIdx == -1, body left empty) -- a
+// real, valid winIdx with nothing registered is not an out-of-range index.
+func lowSynthFireWinEvent() {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var whIdx: int
+    var winName: string
+    var body: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("winIdx"), irIntT)
+    paramsTail = paramsHead
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("inst"), irPtrT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("ev"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("a"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("b"), irIntT))
+
+    i = 0
+    while i < irWindowDescs.count {
+        winName = poolGet(irWindowDescName(i))
+        whIdx = uiWinHandlersIdx.get(numToStr(progGen) + "|" + winName, -1)
+        body = -1
+        if whIdx != -1 {
+            body = lowSynthWinEventBody(whIdx)
+        }
+        conds.add(lowSynthEqInt("winIdx", i))
+        bodies.add(body)
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_winevent", "winIdx", -1))
+    fnameIdx = intern("clar_ui_fire_winevent")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthWidgetEventBody builds one widget's ev-dispatch chain, arg shape
+// per kind -- mirrors cpEmitOneWidgetDispatcher exactly (cprint.cla:
+// 5196-5249): canvas gets (x, y) from (a, b); table gets (row) from a;
+// everything else is zero-arg beyond inst. RTUI_WEV_* numbers are
+// rt_ui.h:115-122's own (0=CLICK,1=CHANGE,2=DRAG,3=ENTER,4=SELECT,
+// 5=DBLCLICK), hardcoded here exactly like uibWidgetEventMask already does.
+func lowSynthWidgetEventBody(kind: string, entry: int): int {
+    var conds: list of int
+    var bodies: list of int
+    var callArgs: int
+    var tail: int
+
+    if kind == "canvas" {
+        if irWidgetHandlerEntryClickFn(entry) != -1 {
+            callArgs = lowSynthPtrRef("inst")
+            tail = irExprListAppend(callArgs, lowSynthIntRef("a"))
+            irExprListAppend(tail, lowSynthIntRef("b"))
+            conds.add(lowSynthEqInt("ev", 0))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryClickFn(entry), callArgs, irVoidT)))
+        }
+        if irWidgetHandlerEntryDragFn(entry) != -1 {
+            callArgs = lowSynthPtrRef("inst")
+            tail = irExprListAppend(callArgs, lowSynthIntRef("a"))
+            irExprListAppend(tail, lowSynthIntRef("b"))
+            conds.add(lowSynthEqInt("ev", 2))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryDragFn(entry), callArgs, irVoidT)))
+        }
+    } else if kind == "table" {
+        if irWidgetHandlerEntrySelectFn(entry) != -1 {
+            callArgs = lowSynthPtrRef("inst")
+            irExprListAppend(callArgs, lowSynthIntRef("a"))
+            conds.add(lowSynthEqInt("ev", 4))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntrySelectFn(entry), callArgs, irVoidT)))
+        }
+        if irWidgetHandlerEntryDoubleClickFn(entry) != -1 {
+            callArgs = lowSynthPtrRef("inst")
+            irExprListAppend(callArgs, lowSynthIntRef("a"))
+            conds.add(lowSynthEqInt("ev", 5))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryDoubleClickFn(entry), callArgs, irVoidT)))
+        }
+    } else {
+        if irWidgetHandlerEntryClickFn(entry) != -1 {
+            conds.add(lowSynthEqInt("ev", 0))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryClickFn(entry), lowSynthPtrRef("inst"), irVoidT)))
+        }
+        if irWidgetHandlerEntryChangeFn(entry) != -1 {
+            conds.add(lowSynthEqInt("ev", 1))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryChangeFn(entry), lowSynthPtrRef("inst"), irVoidT)))
+        }
+        if irWidgetHandlerEntryEnterFn(entry) != -1 {
+            conds.add(lowSynthEqInt("ev", 3))
+            bodies.add(newIRExprStmt(newIRCallFn(irWidgetHandlerEntryEnterFn(entry), lowSynthPtrRef("inst"), irVoidT)))
+        }
+    }
+
+    return lowSynthFoldIfChain(conds, bodies, -1)
+}
+
+// lowSynthWidgetWinBody builds one window's widgetIdx-dispatch chain --
+// EVERY widget of the window gets an arm (even one with zero registered
+// events: a real, valid widgetIdx with nothing to do is not an
+// out-of-range index), so only a widgetIdx past the window's own widget
+// count is fail-closed.
+func lowSynthWidgetWinBody(winDescIdx: int, whIdx: int): int {
+    var conds: list of int
+    var bodies: list of int
+    var w: int
+    var j: int
+    var kind: string
+    var entry: int
+    var body: int
+
+    w = irWindowDescWidgetsHead(winDescIdx)
+    j = 0
+    while w != -1 {
+        kind = poolGet(irWidgetDescKind(w))
+        entry = lowFindWidgetHandlerEntryRO(whIdx, j)
+        body = -1
+        if entry != -1 {
+            body = lowSynthWidgetEventBody(kind, entry)
+        }
+        conds.add(lowSynthEqInt("widgetIdx", j))
+        bodies.add(body)
+        w = irWidgetDescNext(w)
+        j = j + 1
+    }
+    return lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_widget", "widgetIdx", -1))
+}
+
+// lowSynthFireWidget builds clar_ui_fire_widget(winIdx, inst, widgetIdx,
+// ev, a, b) -- lowSynthWidgetWinBody per window (even one with no `extend`
+// block: same "valid index, nothing registered" reasoning as
+// lowSynthFireWinEvent), folded behind one outer switch(winIdx).
+func lowSynthFireWidget() {
+    var paramsHead: int
+    var paramsTail: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var whIdx: int
+    var winName: string
+    var body: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("winIdx"), irIntT)
+    paramsTail = paramsHead
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("inst"), irPtrT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("widgetIdx"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("ev"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("a"), irIntT))
+    paramsTail = irLocalListAppend(paramsTail, newIRLocal(intern("b"), irIntT))
+
+    i = 0
+    while i < irWindowDescs.count {
+        winName = poolGet(irWindowDescName(i))
+        whIdx = uiWinHandlersIdx.get(numToStr(progGen) + "|" + winName, -1)
+        body = -1
+        if whIdx != -1 {
+            body = lowSynthWidgetWinBody(i, whIdx)
+        }
+        conds.add(lowSynthEqInt("winIdx", i))
+        bodies.add(body)
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_widget", "winIdx", -1))
+    fnameIdx = intern("clar_ui_fire_widget")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthFireMenu builds clar_ui_fire_menu(handlerIdx, frontInstOrNil) --
+// one arm per irMenuHandlersHead entry, in the SAME section-position order
+// uiblob.cla's blob build already uses for handlerIdx (Task 5's convention).
+// frontInstOrNil is passed straight through to the handler func regardless
+// of window-scoped vs. app-scope (both print as C `void *`, see ir.cla's
+// KWinRef doc comment) -- the CALLER (Task 7's ui.cla) resolves which
+// instance that is; this function only dispatches on handlerIdx.
+func lowSynthFireMenu() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var e: int
+    var idx: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("handlerIdx"), irIntT)
+    irLocalListAppend(paramsHead, newIRLocal(intern("frontInstOrNil"), irPtrT))
+
+    idx = 0
+    e = irMenuHandlersHead
+    while e != -1 {
+        conds.add(lowSynthEqInt("handlerIdx", idx))
+        bodies.add(newIRExprStmt(newIRCallFn(irMenuHandlerEntryFuncName(e), lowSynthPtrRef("frontInstOrNil"), irVoidT)))
+        e = irMenuHandlerEntryNext(e)
+        idx = idx + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_menu", "handlerIdx", -1))
+    fnameIdx = intern("clar_ui_fire_menu")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthFireEvery builds clar_ui_fire_every(idx) -- one arm per
+// irEveryHead entry, in declaration order (the SAME order the `T FIRE
+// every.<n>` trace index and rt_ui_every_desc[]'s own array position both
+// use). Every-block funcs are zero-arg (lowEveryDecl's own instParamName
+// -1), so the call passes no args at all.
+func lowSynthFireEvery() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var e: int
+    var idx: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("idx"), irIntT)
+
+    idx = 0
+    e = irEveryHead
+    while e != -1 {
+        conds.add(lowSynthEqInt("idx", idx))
+        bodies.add(newIRExprStmt(newIRCallFn(irEveryEntryFuncName(e), -1, irVoidT)))
+        e = irEveryEntryNext(e)
+        idx = idx + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_every", "idx", -1))
+    fnameIdx = intern("clar_ui_fire_every")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthReleaseVarsBody releases every needs-ctor state field of one
+// window. The deep-release selection rule (IRelease for a Rec/Arr,
+// I*FreeVar for List/Map/Text -- see IUiSetCancelFlag et al.'s section
+// header) is lowBuildScopeExitFrees' own rule (above), copied here
+// verbatim: that function releases LOCAL vars at scope exit; this releases
+// per-instance STATE vars at window-close time -- the exact same "the sole
+// owning reference is going away" reasoning applies to both.
+func lowSynthReleaseVarsBody(winNameIdx: int, stateFieldsHead: int): int {
+    var head: int
+    var tail: int
+    var fld: int
+    var ft: int
+    var fieldRef: int
+    var intrName: int
+    var st: int
+
+    head = -1
+    tail = -1
+    fld = stateFieldsHead
+    while fld != -1 {
+        ft = irFieldSlotType(fld)
+        if irtNeedsCtor(ft) {
+            fieldRef = newIRFieldRef(newIRIntr(IUiState(), lowSynthPtrRef("inst"), irUiStateType(winNameIdx)), irFieldSlotName(fld), ft)
+            if lowIsRecBearing(ft) or lowArrHeapScalarBearing(ft) {
+                intrName = IRelease()
+            } else {
+                intrName = ITextFreeVar()
+                if irtKind(ft) == KList {
+                    intrName = IListFreeVar()
+                } else if irtKind(ft) == KMap {
+                    intrName = IMapFreeVar()
+                }
+            }
+            st = newIRExprStmt(newIRIntr(intrName, fieldRef, irVoidT))
+            if head == -1 {
+                head = st
+            }
+            tail = irStmtListAppend(tail, st)
+        }
+        fld = irFieldSlotNext(fld)
+    }
+    return head
+}
+
+// lowSynthReleaseVars builds clar_ui_fire_releasevars(winIdx, inst) --
+// lowSynthReleaseVarsBody per window (an empty body -- a no-op -- for a
+// window with no needs-ctor state field at all), folded behind one outer
+// switch(winIdx). Mirrors cpEmitWinReleaseFn's own walk (cprint.cla:
+// 4754-4780) at the IR level, so both backends share it.
+func lowSynthReleaseVars() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("winIdx"), irIntT)
+    irLocalListAppend(paramsHead, newIRLocal(intern("inst"), irPtrT))
+
+    i = 0
+    while i < irWindowDescs.count {
+        conds.add(lowSynthEqInt("winIdx", i))
+        bodies.add(lowSynthReleaseVarsBody(irWindowDescName(i), irWindowDescStateFieldsHead(i)))
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_releasevars", "winIdx", -1))
+    fnameIdx = intern("clar_ui_fire_releasevars")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthStateDefaults builds clar_ui_fire_statedefaults(winIdx, inst) --
+// one IUiStateDefaults() call per window, unconditionally (its OWN cprint
+// impl, fpIntrCall's IUiStateDefaults case, already walks the window's
+// state fields and no-ops if none need construction -- see that case's own
+// comment -- so there is nothing to gate here), folded behind one outer
+// switch(winIdx).
+func lowSynthStateDefaults() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var winNameIdx: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("winIdx"), irIntT)
+    irLocalListAppend(paramsHead, newIRLocal(intern("inst"), irPtrT))
+
+    i = 0
+    while i < irWindowDescs.count {
+        winNameIdx = irWindowDescName(i)
+        conds.add(lowSynthEqInt("winIdx", i))
+        bodies.add(newIRExprStmt(newIRIntr(IUiStateDefaults(), lowSynthPtrRef("inst"), irUiStateType(winNameIdx))))
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_statedefaults", "winIdx", -1))
+    fnameIdx = intern("clar_ui_fire_statedefaults")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthTableRows builds clar_ui_fire_staterows(rowsIdx): ptr -- one arm
+// per irGlobals entry, returning that global's own address (IUiAddrOfGlobal),
+// at EXACTLY the position uiblob.cla's uibGlobalIndex already uses for a
+// table's Table.rowsIdx field (the plan's ratified "rowsIdx = the bound
+// global's irGlobals declaration-order position" convention, Task 5) --
+// every global gets an arm (not just ones some table happens to bind),
+// since that position is a pure structural fact about the program, cheap
+// to cover exhaustively and exactly as fail-closed-safe either way.
+func lowSynthTableRows() {
+    var paramsHead: int
+    var conds: list of int
+    var bodies: list of int
+    var i: int
+    var chain: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("rowsIdx"), irIntT)
+
+    i = 0
+    while i < irGlobals.count {
+        conds.add(lowSynthEqInt("rowsIdx", i))
+        bodies.add(newIRReturn(newIRIntr(IUiAddrOfGlobal(), newIRVarRef(irGlobalName(i), true, irGlobalType(i)), irPtrT)))
+        i = i + 1
+    }
+
+    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_staterows", "rowsIdx", newIRReturn(newIRIntConst(0, irPtrT))))
+    fnameIdx = intern("clar_ui_fire_staterows")
+    newIRFunc(fnameIdx, paramsHead, irPtrT, -1, chain)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthLaunchDoc/StartEmpty/AppLaunch build the three toggle-style
+// reverse-waist functions -- not index-dispatched at all (no fail-closed
+// panic: there is nothing to be "out of range"), just "does the program
+// declare this App handler at all" (irHasOpenDocument/irHasStartEmpty/
+// irHasLaunch), matching the plan's own "empty-body synthesis when a
+// program has no handler of a class" rule. Handler func names are
+// lowTopHandler's own (lower.cla:3437-3455): "handler_App_openDocument"/
+// "handler_App_startEmpty"/"handler_App_launch".
+
+func lowSynthLaunchDoc() {
+    var paramsHead: int
+    var body: int
+    var fnameIdx: int
+
+    paramsHead = newIRLocal(intern("path"), irPtrT)
+    body = -1
+    if irHasOpenDocument {
+        body = newIRExprStmt(newIRCallFn(intern("handler_App_openDocument"), newIRIntr(IUiValueAtPtr(), lowSynthPtrRef("path"), irStrType(255)), irVoidT))
+    }
+    fnameIdx = intern("clar_ui_fire_launchdoc")
+    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+}
+
+func lowSynthStartEmpty() {
+    var body: int
+    var fnameIdx: int
+
+    body = -1
+    if irHasStartEmpty {
+        body = newIRExprStmt(newIRCallFn(intern("handler_App_startEmpty"), -1, irVoidT))
+    }
+    fnameIdx = intern("clar_ui_fire_startempty")
+    newIRFunc(fnameIdx, -1, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+}
+
+func lowSynthAppLaunch() {
+    var body: int
+    var fnameIdx: int
+
+    body = -1
+    if irHasLaunch {
+        body = newIRExprStmt(newIRCallFn(intern("handler_App_launch"), -1, irVoidT))
+    }
+    fnameIdx = intern("clar_ui_fire_applaunch")
+    newIRFunc(fnameIdx, -1, irVoidT, -1, body)
+    shakeAddRoot(fnameIdx)
+}
+
+// lowSynthUiDispatchers is the whole section's one entry point (called
+// from lowerProgram's tail).
+func lowSynthUiDispatchers() {
+    lowSynthFireWinEvent()
+    lowSynthFireWidget()
+    lowSynthFireMenu()
+    lowSynthFireEvery()
+    lowSynthReleaseVars()
+    lowSynthStateDefaults()
+    lowSynthTableRows()
+    lowSynthLaunchDoc()
+    lowSynthStartEmpty()
+    lowSynthAppLaunch()
+}
+
+// lowUiSynthExternName maps a reverse-waist extern's OWN declared Clarus
+// name (as ui.cla, Task 7+, will spell it) to the interned C name of the
+// IRFunc lowSynthUiDispatchers built for it above -- the ONE place (per
+// the plan's reverse-waist section) both cprint's fpCallExt (skip the
+// rt_ext_ prefix, call the synthesized function directly) and its
+// extern-prototype pass (skip declaring a rt_ext_ shim nobody defines)
+// consult. Returns -1 for any other extern name, including UiProgDesc
+// (resolved separately -- see ir.cla's own doc comment on why it isn't one
+// of these 10 synthesized functions) and every per-backend glue extern in
+// the reverse-waist section's second half (UiLdefEntry/UiAeEntry/
+// UiActionEntry/UiCurrentA5/UiTestEmit/UiTestScript), none of which this
+// task touches.
+func lowUiSynthExternName(externNameIdx: int): int {
+    var nm: string
+
+    nm = poolGet(externNameIdx)
+    if nm == "UiFireWinEvent" { return intern("clar_ui_fire_winevent") }
+    if nm == "UiFireWidget" { return intern("clar_ui_fire_widget") }
+    if nm == "UiFireMenu" { return intern("clar_ui_fire_menu") }
+    if nm == "UiFireEvery" { return intern("clar_ui_fire_every") }
+    if nm == "UiReleaseVars" { return intern("clar_ui_fire_releasevars") }
+    if nm == "UiFireLaunchDoc" { return intern("clar_ui_fire_launchdoc") }
+    if nm == "UiFireStartEmpty" { return intern("clar_ui_fire_startempty") }
+    if nm == "UiFireAppLaunch" { return intern("clar_ui_fire_applaunch") }
+    if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
+    if nm == "UiStateDefaults" { return intern("clar_ui_fire_statedefaults") }
+    return -1
+}
+
 // lowerProgram walks the assembled top-level decl chain (declHead, linked via
 // declNext), populating the ir.cla arenas + Program flags. Returns 0 (ir.cla
 // has no wrapping Program value: the arenas ARE the program). irReset() must
@@ -4801,5 +5460,12 @@ func lowerProgram(declHead: int): int {
         d = declNext(d)
     }
     lowSynthesizeMissingOpenedHandlers()
+    // native-5e Task 6: --uiport's reverse-waist dispatcher synthesis --
+    // duplicates irIsUiProgram()'s own gate (cprint.cla) rather than
+    // calling across the layering boundary; see lowSynthUiDispatchers'
+    // own header comment.
+    if lowUiPortFlag and (irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0) {
+        lowSynthUiDispatchers()
+    }
     return 0
 }

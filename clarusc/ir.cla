@@ -2951,3 +2951,43 @@ func IUiEdit(): int {
 func IUiFormIsNew(): int {
     return intern("ui_form_is_new")
 }
+
+// ---- native-5e Task 6: reverse-waist dispatcher synthesis intrinsics ----
+// The three below back lower.cla's lowSynthUiDispatchers -- unlike every
+// other IUi* intrinsic above (each already backing a real Ch7-11 language
+// construct a checked Clarus program can write), these three exist ONLY
+// inside hand-built IR bodies lower.cla constructs directly (bypassing the
+// AST/checker pipeline entirely -- there is no Clarus source spelling for
+// any of them), so cprint's fpIntrCall is their only consumer for now; a
+// future cg68k UI port (Task 12) adds its own arm the same way every other
+// IUi* intrinsic already has one per backend.
+
+// IUiSetCancelFlag sets the closeRequest scratch global (cprint:
+// clar_ui_cur_cancel) from a ptr-typed address argument -- the synthesized
+// clar_ui_fire_winevent's RTUI_EV_CLOSEREQUEST arm, mirroring the OLD
+// cpEmitOneWinEventDispatcher's own `clar_ui_cur_cancel = (long *)a;`
+// (cprint.cla:5164) at the IR level. Void; one ptr arg.
+func IUiSetCancelFlag(): int {
+    return intern("ui_set_cancel_flag")
+}
+
+// IUiValueAtPtr reads the by-value KRec or KStr value living at a ptr-typed
+// address argument -- the synthesized clar_ui_fire_winevent's
+// RTUI_EV_ACCEPTED arm (`*(clar_rec_T *)a`, cprint.cla:5179) and
+// clar_ui_fire_launchdoc's `path: ptr` -> `string` marshaling (mirroring
+// the OLD clar_ui_opendoc_wrap wrapper, cprint.cla:5580-5585): both are
+// "reinterpret this address as my own by-value wire type and copy it out"
+// -- the intrinsic's own return type (irExprType of the EIntr node) names
+// which (KStr or KRec). One ptr arg.
+func IUiValueAtPtr(): int {
+    return intern("ui_value_at_ptr")
+}
+
+// IUiAddrOfGlobal returns a global's own storage address (cprint: `(void
+// *)&cv_<name>`; cg68k, Task 12: `LEA d16(A5),A0`) -- clar_ui_fire_staterows's
+// only operation (the plan's "Table.rowsIdx = the bound global's irGlobals
+// declaration-order position" convention, uiblob.cla's uibGlobalIndex).
+// One EVarRef(global) arg; return type ptr.
+func IUiAddrOfGlobal(): int {
+    return intern("ui_addr_of_global")
+}
