@@ -469,79 +469,6 @@ typedef char clar_ui_szassert_Main[(sizeof(clar_uistate_Main) == 8) ? 1 : -1];
 typedef struct { char clar_ui_unused; } clar_uistate_EditForm;
 
 
-static rt_list *cv_rows;
-static const rt_ui_col_desc clar_ui_cols_Main_Rows[] = {
-    { (const unsigned char *)"\pName", 140, 0, 0 },
-    { (const unsigned char *)"\pCount", 0, 1, 1 },
-};
-static const rt_ui_table_desc clar_ui_table_Main_Rows = { &cv_rows, &clar_layout_Row, 2, clar_ui_cols_Main_Rows };
-
-static const rt_ui_widget_desc clar_ui_widgets_Main[] = {
-    { RTUI_BUTTON, "Go", (const unsigned char *)"\pGo", RTUI_AT_XY, 10, 10, 0, RTUI_FILL_NONE, RTUI_DEFAULT },
-    { RTUI_CHECK, "Flag", (const unsigned char *)"\pFlag", RTUI_AT_RIGHT, 0, 10, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_CANVAS, "Board", 0, RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, RTUI_BUFFERED },
-    { RTUI_LABEL, "Lbl", (const unsigned char *)"\pStatus", RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_FIELD, "Name", (const unsigned char *)"\pName:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_TEXTVIEW, "Body", 0, RTUI_AT_NEXT, 0, RTUI_BOTTOM, 0, RTUI_FILL_BOTH, RTUI_SCROLL_V },
-    { RTUI_TABLE, "Rows", 0, RTUI_AT_NEXT, 0, RTUI_BOTTOM, RTUI_FILL, RTUI_FILL_NONE, 0, (const void *)&clar_ui_table_Main_Rows },
-};
-
-static void clar_ui_release_Main(void *inst)
-{
-    clar_fn_rtTextRelease((void*)(*(clar_uistate_Main *)clar_fn_rtUiState(inst)).cv_note);
-
-}
-
-static const rt_ui_handlers clar_ui_handlers_Main = { 0, 0, clar_ui_release_Main };
-
-static const rt_ui_window_desc clar_ui_window_Main = {
-    "Main", (const unsigned char *)"\pMain",
-    400, 300, 1, 400, 300,
-    7, clar_ui_widgets_Main,
-    (short)sizeof(clar_uistate_Main),
-    &clar_ui_handlers_Main
-};
-
-static const rt_ui_widget_desc clar_ui_widgets_EditForm[] = {
-    { RTUI_FIELD, "FLabel", (const unsigned char *)"\pLabel:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_POPUP, "FStatus", (const unsigned char *)"\pStatus:", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_CHECK, "FFlag", (const unsigned char *)"\pFlag", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, 0 },
-    { RTUI_BUTTON, "OK", (const unsigned char *)"\pOK", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, RTUI_DEFAULT },
-    { RTUI_BUTTON, "Cancel", (const unsigned char *)"\pCancel", RTUI_AT_AUTO, 0, 0, 0, RTUI_FILL_NONE, RTUI_CANCEL },
-};
-
-static const rt_ui_handlers clar_ui_handlers_EditForm = { 0, 0, 0 };
-
-static const rt_ui_bind_desc clar_ui_binds_EditForm[] = {
-    { 0, 0 },
-    { 1, 2 },
-    { 2, 3 },
-};
-static const rt_ui_form_desc clar_ui_form_EditForm = { &clar_layout_FormRec, 3, clar_ui_binds_EditForm };
-
-static const rt_ui_window_desc clar_ui_window_EditForm = {
-    "EditForm", (const unsigned char *)"\pEdit",
-    300, 200, 0, 0, 0,
-    5, clar_ui_widgets_EditForm,
-    (short)sizeof(clar_uistate_EditForm),
-    &clar_ui_handlers_EditForm,
-    &clar_ui_form_EditForm
-};
-
-static const rt_ui_item_desc clar_ui_items_File[] = {
-    { "New", (const unsigned char *)"\pNew", 'N', 0 },
-    { 0, 0, 0, 1 },
-    { "Quit", (const unsigned char *)"\pQuit", 'Q', 0 },
-};
-
-static const rt_ui_menu_desc clar_ui_menu_File = {
-    "File", (const unsigned char *)"\pFile", 3, clar_ui_items_File, 0
-};
-
-static const rt_ui_menu_desc clar_ui_menu_Edit = {
-    "Edit", (const unsigned char *)"\pEdit", 0, 0, 1
-};
-
 static const unsigned char clar_ui_blob[] = {
     67, 76, 85, 73, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 44, 0, 0, 0, 2,
     0, 0, 2, 252, 0, 0, 0, 2, 0, 0, 3, 84, 0, 0, 0, 1, 0, 0, 3, 132,
@@ -8885,15 +8812,6 @@ void clar_fn_clar_ui_fire_startempty(void) {
 static void clar_fn_clar_ui_fire_applaunch(void) {
     clar_fn_handler_App_launch();
 }
-
-static const rt_ui_menu_handler clar_ui_menu_handlers[] = {
-    { clar_fn_ui_menuh_File_New_Main, "File", "New", 0, 0, &clar_ui_window_Main },
-    { clar_fn_ui_menuh_File_Quit_app, "File", "Quit", 0, 2, 0 },
-};
-
-static const rt_ui_every_desc clar_ui_every[] = {
-    { clar_fn_ui_every_0, 5 },
-};
 
 int main(int argc, char **argv) {
     clar_init_globals();
