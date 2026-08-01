@@ -1,0 +1,50 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arc_discard_call.cla: native-5d final-review T13 regression fixture for
+// cg68k's cgCallFnScalar. A bare, discarded ECallFn statement
+// (`makeText();`) whose Clarus function returns a fresh, owned handle
+// (Text or List) used to drop the returned D0 value with nothing left to
+// release it -- a NATIVE-ONLY leak: the host/cprint lane already routes
+// every statement's discarded value through its own fpFreeStmtTmps
+// machinery (fpDiscardExprIdx) and was never affected, so this fixture's
+// value under the internal/lowlevel harness (host cc against rt.c, run
+// under CLARUS_MEM_STRICT=1 CLARUS_MEM_PARANOID=1, baked into the harness
+// itself) is as a differential/regression gate -- it must PASS on both
+// lanes, and the actual native-only bug is confirmed separately by
+// inspecting a `--listing` build (no `cg_release_*` JSR after the
+// discarded call's BSR, before the fix). Each helper below is called as a
+// bare statement three times, discarding a freshly allocated result, then
+// a sentinel alert() proves the run actually reached the end (nothing
+// crashed on the double-free/UAF a wrong fix could also produce).
+
+func makeText(): text {
+    var t: text = ""
+    t.append("x")
+    return t
+}
+
+func makeIntList(): list of int {
+    var l: list of int
+    l.push(1)
+    l.push(2)
+    return l
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+
+    i = 0
+    while i < 3 {
+        makeText()
+        i = i + 1
+    }
+
+    i = 0
+    while i < 3 {
+        makeIntList()
+        i = i + 1
+    }
+
+    alert("discard-call-ok")
+}

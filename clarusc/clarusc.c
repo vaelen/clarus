@@ -47044,6 +47044,10 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
     cv_fi = 0;
     int32_t cv_total;
     cv_total = 0;
+    int32_t cv_retType;
+    cv_retType = 0;
+    int32_t cv_off;
+    cv_off = 0;
     cv_fi = clar_fn_findIRFuncIdxByName(clar_fn_irCallFnName(cv_e));
     if ((cv_fi == (-(1))) || (!(clar_fn_shakeReachable(cv_fi)))) {
         clar_str_255 t1;
@@ -47066,6 +47070,11 @@ static void clar_fn_cgCallFnScalar(int32_t cv_e) {
     cv_total = clar_fn_cgPushArgs(clar_fn_irCallFnArgsHead(cv_e));
     clar_fn_cgCallFunc(cv_fi);
     clar_fn_cgCleanupStack(cv_total);
+    cv_retType = clar_fn_irFuncRet(cv_fi);
+    if ((cv_e == cv_cgDiscardExprIdx) && clar_fn_cgNeedsRelease(cv_retType)) {
+        cv_off = clar_fn_cgNewTrackedTmp(cv_retType);
+        clar_fn_cgStoreD0At(6, cv_off, cv_retType);
+    }
 }
 
 static void clar_fn_cgCallFnInto(int32_t cv_e, int32_t cv_dst) {

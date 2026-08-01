@@ -479,12 +479,15 @@ var cgLastTrackedOff: int
 // cgDiscardExprIdx mirrors fpDiscardExprIdx exactly (cprint.cla): the exact
 // IR expr index of the CURRENT bare, discarded SExprStmt's own top-level
 // expression, or -1 -- set immediately before, cleared immediately after,
-// cgStmt's own SExprStmt cgExpr call. Consulted by cgIntr's IListPop/
-// IListShift arm: pop/shift transfer ownership WITHOUT retaining (a plain
-// materialize-and-untrack, like cprint's fpNewTmp+fpHandoff), so a bare
-// `lst.pop();` statement -- the popped value used nowhere -- would
-// otherwise leak; this ONE shape routes through cgNewTrackedTmp instead so
-// the ordinary end-of-statement flush (cgFreeStmtTmps) releases it.
+// cgStmt's own SExprStmt cgExpr call. Consulted by two sites: cgIntr's
+// IListPop/IListShift arm (pop/shift transfer ownership WITHOUT retaining --
+// a plain materialize-and-untrack, like cprint's fpNewTmp+fpHandoff -- so a
+// bare `lst.pop();` statement, the popped value used nowhere, would
+// otherwise leak) and cgCallFnScalar (a bare, discarded call statement
+// returning a fresh handle -- `makeStr();` -- drops D0 with nothing left to
+// release it). Both route that ONE discarded shape through cgNewTrackedTmp
+// instead of the ordinary untracked path, so the end-of-statement flush
+// (cgFreeStmtTmps) releases it (final-review T13).
 var cgDiscardExprIdx: int
 
 // cgMaterializeDepth: final-review I1 guard. cgMaterializeCallResult
@@ -4966,9 +4969,19 @@ func cgMaterializeStrCoerce(a: int, t: int) {
 
 // cgCallFnScalar calls a user Clarus function whose return fits in D0
 // (void or <=4 bytes) -- the common ECallFn shape, used from cgExpr.
+// A bare, discarded call statement (`makeStr();`) whose return is a
+// handle-kind (cgNeedsRelease) type would otherwise leak: D0 is dropped on
+// the floor with nothing left to release it. Mirrors cgIntrListPopLike's
+// own discard-detection shape (`:3955`, cgDiscardExprIdx's own doc comment,
+// `:479-487`): route that ONE case through cgNewTrackedTmp + cgStoreD0At
+// instead, so the ordinary end-of-statement flush (cgFreeStmtTmps) releases
+// it. Every other call context (SAssign/SReturn/nested expr) is unaffected
+// -- D0 is left as-is, exactly as before (final-review T13).
 func cgCallFnScalar(e: int) {
     var fi: int
     var total: int
+    var retType: int
+    var off: int
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
@@ -4984,6 +4997,11 @@ func cgCallFnScalar(e: int) {
     total = cgPushArgs(irCallFnArgsHead(e))
     cgCallFunc(fi)
     cgCleanupStack(total)
+    retType = irFuncRet(fi)
+    if e == cgDiscardExprIdx and cgNeedsRelease(retType) {
+        off = cgNewTrackedTmp(retType)
+        cgStoreD0At(6, off, retType)
+    }
 }
 
 // cgCallFnInto calls a user Clarus function whose return needs a hidden
@@ -6218,8 +6236,9 @@ func cgIsHandleKind(k: IRKind): bool {
 // nested statement -- an if/while/for body -- gets its OWN independent
 // temp-tracking scope, same reentrant swap fpStmt's own saved/fresh lists
 // already establish) and, for a bare SExprStmt, marks cgDiscardExprIdx
-// (cgIntr's own IListPop/IListShift discard-detection, mirroring
-// fpDiscardExprIdx exactly) for the one cgExpr call this statement makes.
+// (consulted by cgIntr's own IListPop/IListShift arm AND cgCallFnScalar's
+// discard-detection, mirroring fpDiscardExprIdx exactly -- see its own doc
+// comment) for the one cgExpr call this statement makes.
 // SReturn/SBreak/SContinue already call cgFreeStmtTmps() themselves (their
 // own tracked temps must release BEFORE the branch out, not after --
 // unreachable code after an unconditional jump is pointless); every other
