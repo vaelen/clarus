@@ -5466,6 +5466,55 @@ func lowerProgram(declHead: int): int {
     // own header comment.
     if lowUiPortFlag and (irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0) {
         lowSynthUiDispatchers()
+        lowUiPortAddRoots()
     }
     return 0
+}
+
+// lowUiPortAddRoots (Task 7 Step 6, native-5e): registers every ported
+// ui.cla/uiwidgets.cla entry point cprint.cla's --uiport intrinsic
+// redirect (fpIntrCall's IUiOpen/IUiClose/... arms) and cpEmitUiMain
+// call by NAME as a shakeProgram() root -- the SAME problem Task 6's own
+// synthesized-dispatcher roots solved (this function's own header
+// comment, just above): none of these are reached via an ordinary IR
+// ECallFn node anywhere (cprint only ever references them by hand-built
+// STRING, inside fpIntrCall/cpEmitUiMain, which runs AFTER shakeProgram
+// has already decided what survives), so without this, shaking would
+// discard every one of them as unreachable dead code -- confirmed
+// empirically (Task 7's own report): the very first --uiport emit after
+// wiring cpEmitUiMain/fpIntrCall's redirects called `clar_fn_rtUiOpen`/
+// `clar_fn_rtUiStartup`/etc. from `main()` with NO matching definition
+// anywhere in the output at all. Every OTHER ui.cla/uiwidgets.cla/
+// uiscript.cla function (rtUiLayout, rtUiMakeWidgets, rtUiHandleUpdate,
+// the whole trace/scripted-interpreter family, ...) needs no root of its
+// own: normal reachability from THESE roots (ordinary Clarus-to-Clarus
+// function calls, which shakeProgram tracks exactly like every other
+// program's call graph) keeps them alive automatically.
+func lowUiPortAddRoots() {
+    shakeAddRoot(intern("rtUiStartup"))
+    shakeAddRoot(intern("rtUiLaunch"))
+    shakeAddRoot(intern("rtUiRun"))
+    shakeAddRoot(intern("rtUiOpen"))
+    shakeAddRoot(intern("rtUiClose"))
+    shakeAddRoot(intern("rtUiQuit"))
+    shakeAddRoot(intern("rtUiFront"))
+    shakeAddRoot(intern("rtUiState"))
+    shakeAddRoot(intern("rtUiSetTitle"))
+    shakeAddRoot(intern("rtUiGetTitle"))
+    shakeAddRoot(intern("rtUiWidgetSetStr"))
+    shakeAddRoot(intern("rtUiWidgetGetStr"))
+    shakeAddRoot(intern("rtUiWidgetGetText"))
+    shakeAddRoot(intern("rtUiWidgetSetText"))
+    shakeAddRoot(intern("rtUiWidgetGetBool"))
+    shakeAddRoot(intern("rtUiWidgetSetBool"))
+    shakeAddRoot(intern("rtUiWidgetGetInt"))
+    shakeAddRoot(intern("rtUiWidgetSetInt"))
+    shakeAddRoot(intern("rtUiMenuEnable"))
+    shakeAddRoot(intern("rtUiCanvasClear"))
+    shakeAddRoot(intern("rtUiCanvasLine"))
+    shakeAddRoot(intern("rtUiCanvasRect"))
+    shakeAddRoot(intern("rtUiCanvasCircle"))
+    shakeAddRoot(intern("rtUiCanvasFillCircle"))
+    shakeAddRoot(intern("rtUiCanvasPattern"))
+    shakeAddRoot(intern("rtUiCanvasDrawText"))
 }

@@ -2466,11 +2466,24 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiOpen() {
         // `open W` -- x's own ty (set at lowering time) is the KWinRef type
         // carrying W's name; see ir.cla's KWinRef doc comment.
+        // Task 7 Step 6 (native-5e): under --uiport, rtUiOpen takes the
+        // window's blob winIdx (an int), not a descriptor pointer --
+        // report log entry #5's own redesign.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiOpen(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
+        }
         return "rt_ui_open(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
     } else if nm == IUiFront() {
+        if cpUiPortFlag {
+            return "clar_fn_rtUiFront(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
+        }
         return "rt_ui_front(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
     } else if nm == IUiClose() {
-        fpEmit("rt_ui_close(" + fpExpr(a0) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiClose(" + fpExpr(a0) + ");")
+        } else {
+            fpEmit("rt_ui_close(" + fpExpr(a0) + ");")
+        }
         return toText("")
     } else if nm == IUiQuit() {
         // `quit` in a UI program (Ch7 Quit Semantics) -- the closeRequest
@@ -2478,13 +2491,20 @@ func fpIntrCall(x: int): text {
         // IUiQuit doc comment for why an exit-code expression, if any, is
         // evaluated by a separate statement lowQuit emits before this one,
         // not passed in here.
-        fpEmit("rt_ui_quit();")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiQuit();")
+        } else {
+            fpEmit("rt_ui_quit();")
+        }
         return toText("")
     } else if nm == IUiState() {
         // Casts rt_ui_state's void* to the firing window's state struct and
         // dereferences it inline, so the ENCLOSING FieldRef's ordinary
         // "(X).cv_name" printer (fpFieldRef) needs no special case at all --
         // see ir.cla's KUiState doc comment.
+        if cpUiPortFlag {
+            return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)clar_fn_rtUiState(" + fpExpr(a0) + "))"
+        }
         return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)rt_ui_state(" + fpExpr(a0) + "))"
     } else if nm == IUiStateDefaults() {
         // Constructs every handle-backed (Text/List/Map/Rec) per-instance
@@ -2507,25 +2527,45 @@ func fpIntrCall(x: int): text {
         }
         return toText("")
     } else if nm == IUiSetTitle() {
-        fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiSetTitle(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        } else {
+            fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
+        }
         return toText("")
     } else if nm == IUiGetTitle() {
         // `title` read (mac-target-4c Task 4b) -- same fpNewTmp("clar_str_255")
         // + fill-in-place-call pattern as IFileName/IUiGetFieldText above.
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_ui_get_title(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiGetTitle(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
+        } else {
+            fpEmit("rt_ui_get_title(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
+        }
         return t
     } else if nm == IUiSetCaption() {
-        fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
+        } else {
+            fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
+        }
         return toText("")
     } else if nm == IUiSetText() {
-        fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
+        } else {
+            fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
+        }
         return toText("")
     } else if nm == IUiGetFieldText() {
         // field.text read (mac-target-4c Task 2) -- same fpNewTmp("clar_str_255")
         // + fill-in-place-call pattern as IFileName above.
         t = fpNewTmp("clar_str_255")
-        fpEmit("rt_ui_widget_get_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetGetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
+        } else {
+            fpEmit("rt_ui_widget_get_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
+        }
         return t
     } else if nm == IUiGetTextviewText() {
         // textview.text read (mac-target-4c Task 2) -- a fresh rt_text
@@ -2533,7 +2573,11 @@ func fpIntrCall(x: int): text {
         // filled in place by rt_ui_widget_get_text.
         t = fpNewTmp("rt_text *")
         fpEmit(t + " = rt_text_new();")
-        fpEmit("rt_ui_widget_get_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetGetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
+        } else {
+            fpEmit("rt_ui_widget_get_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
+        }
         return t
     } else if nm == IUiSetTextviewText() {
         // textview.text write (mac-target-4c Task 2) -- lowWidgetSetAssign
@@ -2545,33 +2589,68 @@ func fpIntrCall(x: int): text {
         // a fresh rt_text handle) at the funnel, and a Text-typed RHS
         // passes through lowCoerceStr unchanged. No fpStrAddr/temp is
         // needed here, unlike IUiSetText's Str-shaped a2.
-        fpEmit("rt_ui_widget_set_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        } else {
+            fpEmit("rt_ui_widget_set_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
+        }
         return toText("")
     } else if nm == IUiGetChecked() {
+        if cpUiPortFlag {
+            return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
+        }
         return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
     } else if nm == IUiSetChecked() {
-        fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IUiGetEnabled() {
+        if cpUiPortFlag {
+            return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
+        }
         return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
     } else if nm == IUiSetEnabled() {
-        fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IUiGetWidth() {
+        if cpUiPortFlag {
+            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
+        }
         return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
     } else if nm == IUiGetHeight() {
+        if cpUiPortFlag {
+            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
+        }
         return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
     } else if nm == IUiGetSelected() {
         // popup/table `selected` read (mac-target-4d Task 5) -- rt_ui.h's
         // rt_ui_widget_get_int returns `short`; the implicit short->int32_t
         // widening on return needs no explicit cast, same as
         // IUiGetWidth/IUiGetHeight just above.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
+        }
         return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
     } else if nm == IUiSetSelected() {
-        fpEmit("rt_ui_widget_set_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiWidgetSetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_ui_widget_set_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IUiMenuEnable() {
-        fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiMenuEnable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        } else {
+            fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
+        }
         return toText("")
     } else if nm == IUiCancel() {
         // `cancel` (Ch5/Ch8) -- writes through the dispatcher-owned scratch
@@ -2599,25 +2678,53 @@ func fpIntrCall(x: int): text {
         // IUiGetWidth/IUiGetHeight's `short` results just below.
         return "rt_ui_ask_save_changes(" + fpStrAddr(a0) + ")"
     } else if nm == IUiCanvasClear() {
-        fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasLine() {
-        fpEmit("rt_ui_canvas_line(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasLine(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_line(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasRect() {
-        fpEmit("rt_ui_canvas_rect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasRect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_rect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasCircle() {
-        fpEmit("rt_ui_canvas_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasFillCircle() {
-        fpEmit("rt_ui_canvas_fill_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasFillCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_fill_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasPattern() {
-        fpEmit("rt_ui_canvas_pattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasPattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_pattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
+        }
         return toText("")
     } else if nm == IUiCanvasDrawText() {
-        fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiCanvasDrawText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
+        } else {
+            fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
+        }
         return toText("")
     } else if nm == IUiEdit() {
         fpUiEditStmt(x, a0, a1, a2)
@@ -4639,6 +4746,28 @@ func cpFindWindowStateFields(winName: string): int {
     return -1
 }
 
+// cpFindWindowIndex (Task 7 Step 6, native-5e): winName's 0-based
+// position in irWindowDescs declaration order -- the SAME index
+// uiblob.cla's own blob builder uses for a Window section entry (both
+// walk irWindowDescs in the same order), so this is exactly the winIdx
+// the ported rtUiOpen/rtUiFront (report log entry #5's own winIdx-not-
+// descriptor-pointer redesign) expect. Same linear-scan-by-name shape as
+// cpFindWinHandlers/cpFindWindowStateFields just above; a window name
+// with no match can't happen here (the checker already rejected an
+// `open`/`front` of an undeclared window type before this ever runs).
+func cpFindWindowIndex(winName: string): int {
+    var i: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        if poolGet(irWindowDescName(i)) == winName {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // cpFindWindowFormRecName (mac-target-4d Task 7) returns winName's form
 // record type name (interned), or -1 if winName isn't a form window --
 // fpUiEditStmt's own lookup for the `new T`/map-target temp's `clar_rec_T`
@@ -5602,6 +5731,31 @@ func cpEmitUiMain() {
     var evCount: string
     var openDocExpr: string
     var startEmptyExpr: string
+
+    // Task 7 Step 6 (native-5e): under --uiport, main() calls the PORTED
+    // rtUiStartup/rtUiLaunch/rtUiRun instead -- all three are zero-arg
+    // (report log entry #5's own redesign: every count/table the old
+    // 8-arg rt_ui_startup signature took now comes straight from the
+    // blob at RUNTIME, via UiProgDesc()/uidesc.cla's own accessors, so
+    // none of this function's own array-building/wrapper-function
+    // machinery below is needed at all under this flag). App.launch
+    // still fires exactly where it always did (between startup and
+    // launch) -- unrelated to any of this port's own changes.
+    if cpUiPortFlag {
+        cpRestBuf.add(toText("int main(int argc, char **argv) {"))
+        cpRestBuf.add(toText("    clar_init_globals();"))
+        cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))
+        cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
+        cpRestBuf.add(toText("    clar_fn_rtUiStartup();"))
+        if irHasLaunch {
+            cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
+        }
+        cpRestBuf.add(toText("    clar_fn_rtUiLaunch();"))
+        cpRestBuf.add(toText("    clar_fn_rtUiRun();"))
+        cpRestBuf.add(toText("    return 0;"))
+        cpRestBuf.add(toText("}"))
+        return
+    }
 
     winsExpr = "0"
     winsCount = "0"
