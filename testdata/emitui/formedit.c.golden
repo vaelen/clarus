@@ -243,6 +243,7 @@ static void clar_fn_rtMapRelease(void * cv_m);
 static int32_t clar_fn_rtMapLastref(void * cv_m);
 static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val);
 static void clar_fn_rtMapGet(void * cv_m, void * cv_key, void * cv_out);
+static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out);
 static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
@@ -777,6 +778,18 @@ static void clar_fn_rtMapGet(void * cv_m, void * cv_key, void * cv_out) {
     rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_idx), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
 }
 
+static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out) {
+    int32_t cv_idx;
+    cv_idx = 0;
+    cv_idx = clar_fn_mapFind(cv_m, cv_key);
+    if (cv_idx < 0) {
+        return 0;
+    }
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_idx), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+    return 1;
+    return 0;
+}
+
 static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key) {
     return (clar_fn_mapFind(cv_m, cv_key) >= 0);
     return 0;
@@ -807,7 +820,7 @@ static void clar_fn_ui_Main_Add_click(void * cv_window) {
 static void clar_fn_ui_Main_Marks_doubleClick(void * cv_window, int32_t cv_i) {
     int32_t t1;
     t1 = (int32_t)(cv_i);
-    rt_ui_edit(&clar_ui_window_EditForm, (const void *)rt_list_at(cv_bookmarks, t1), 0, RT_UI_WB_LIST, 0, cv_bookmarks, (long)(t1), 0, 0);
+    rt_ui_edit(&clar_ui_window_EditForm, (const void *)clar_fn_rtListAt((void*)cv_bookmarks, t1), 0, RT_UI_WB_LIST, 0, cv_bookmarks, (long)(t1), 0, 0);
 }
 
 static void clar_fn_ui_Main_Remove_click(void * cv_window) {
@@ -823,7 +836,7 @@ static void clar_fn_ui_Main_EditMap_click(void * cv_window) {
     clar_fn_rtStrStore((void*)&t1, 255, (void*)(const uint8_t*)&(clar_lit_14));
     clar_rec_Bookmark t2;
     t2 = clar_new_Bookmark();
-    rt_map_get_dv(cv_byName, (const uint8_t*)&t1, &t2);
+    clar_fn_rtMapGetDv((void*)cv_byName, (void*)&t1, (void*)&t2);
     rt_ui_edit(&clar_ui_window_EditForm, (const void *)&t2, 0, RT_UI_WB_MAP, 0, 0, 0, cv_byName, (const unsigned char*)&t1);
 }
 

@@ -385,8 +385,10 @@ func shakeWalkExpr(x: int) {
 // cpStrPorted/cpTextPorted/cpListPorted/cpMapPorted/cpSerPorted/
 // cpCorePorted branches, all of which are unconditionally true in the emit
 // path -- see the file header). Every intrinsic NOT listed here (peek/
-// poke/quit/alert/log/IFileName/every Ui* op) prints as a raw rt_*/rt_ui_*
-// C call with no matching irFuncs entry -- nothing to root.
+// poke/quit/alert/log/IFileName/every other Ui* op) prints as a raw
+// rt_*/rt_ui_* C call with no matching irFuncs entry -- nothing to root.
+// IUiEdit is the one Ui* exception (native-5e Task 3): its kind==3 arm now
+// calls a ported clar_fn_ function, so it gets its own arm below.
 func shakeWalkIntr(x: int) {
     var nm: int
 
@@ -509,6 +511,17 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtMapCount"))
     } else if nm == IMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtMapRelease"))
+
+    // ---- ui ----
+    } else if nm == IUiEdit() {
+        // Plan native-5e Task 3: fpUiEditStmt's kind==3 (map-target) arm now
+        // prints clar_fn_rtMapGetDv instead of the always-compiled bare C
+        // rt_map_get_dv -- root it here (over-approximating regardless of
+        // this call site's actual compile-time kind, same convention as
+        // IMapSet's rtMapHas/rtMapGet above) since it's the one map op NOT
+        // already in the always-rooted core. kind==2's clar_fn_rtListAt
+        // needs no root of its own -- rtListAt is already always-rooted.
+        shakeMarkAndEnqueue(intern("rtMapGetDv"))
 
     // ---- retain/release ----
     } else if nm == IRetain() {

@@ -2634,11 +2634,17 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&(" + addrText + "), 0, RT_UI_WB_ADDR, (void *)&(" + addrText + "), 0, 0, 0, 0);")
     } else if kind == 2 {
         // List element -- src is rt_list_at, RE-DERIVED right here (rt_ui_edit
-        // copies immediately, so the transient pointer is safe).
+        // copies immediately, so the transient pointer is safe). cpListPorted
+        // (unconditional since 5b) redirects the access call itself to
+        // clar_fn_rtListAt, same as fpIndexRef's own KList arm.
         lstText = fpExpr(opA)
         idxT = fpNewTmp("int32_t")
         fpEmit(idxT + " = (int32_t)(" + fpExpr(opB) + ");")
-        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)rt_list_at(" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+        if cpListPorted {
+            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+        } else {
+            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)rt_list_at(" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+        }
     } else if kind == 3 {
         // Map element -- rt_map has no pointer-returning lookup (only a
         // copy-out get), so the initial value is fetched into a fresh
@@ -2656,7 +2662,13 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         recName = poolGet(cpFindWindowFormRecName(winName))
         t = fpNewTmp("clar_rec_" + recName)
         fpEmit(t + " = clar_new_" + recName + "();")
-        fpEmit("rt_map_get_dv(" + mapText + ", (const uint8_t*)&" + keyT + ", &" + t + ");")
+        // cpMapPorted (unconditional since 5b) redirects the get_dv call
+        // itself to clar_fn_rtMapGetDv, same spelling as IMapGetDv above.
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapGetDv((void*)" + mapText + ", (void*)&" + keyT + ", (void*)&" + t + ");")
+        } else {
+            fpEmit("rt_map_get_dv(" + mapText + ", (const uint8_t*)&" + keyT + ", &" + t + ");")
+        }
         fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 0, RT_UI_WB_MAP, 0, 0, 0, " + mapText + ", (const unsigned char*)&" + keyT + ");")
     }
 }
