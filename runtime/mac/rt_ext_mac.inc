@@ -474,8 +474,19 @@ void rt_ext_UiNumToString(int32_t theNum, void *theString) { NumToString((long)t
  * calling the ported action function. Retro68's classic-68k (non-CFM) build defines
  * `NewControlActionUPP(proc)` as the plain identity macro `(proc)` (Controls.h)
  * -- ControlActionUPP IS a raw pascal function pointer on this target, so
- * this wrapper's own address, unwrapped, is a valid actionProc. */
-extern void clar_fn_rtUiScrollbarAction(void *ctrl, int32_t part);
+ * this wrapper's own address, unwrapped, is a valid actionProc.
+ *
+ * `weak`: this whole file is compiled into EVERY program's link now (Task
+ * 11 -- rt_mac.c always #includes it), but clar_fn_rtUiScrollbarAction
+ * only EXISTS in a UI program's own clarusc-emitted C (ui.cla's own
+ * splice). A non-UI program (no window/menu/every) never calls
+ * rt_ext_UiActionEntry at all -- nothing in its own emitted C references
+ * it, since it has no scrollbar-bearing widget -- so the symbol only
+ * needs to LINK, never actually run, for that program; `weak` resolves an
+ * undefined reference to a harmless null address instead of a link
+ * error. A UI program's own strong definition overrides this exactly as
+ * rt_ui_test_script's weak default does (below). */
+extern void clar_fn_rtUiScrollbarAction(void *ctrl, int32_t part) __attribute__((weak));
 static pascal void rt_ext_ui_scrollbar_action(ControlHandle ctrl, short part) {
     clar_fn_rtUiScrollbarAction((void *)ctrl, (int32_t)part);
 }
@@ -496,8 +507,10 @@ void *rt_ext_UiActionEntry(void) { return (void *)NewControlActionUPP(rt_ext_ui_
  * split above) -- packed the same v-high/h-low convention as every other
  * by-value Point/Cell this port uses before handing off to the ported
  * rtUiLdefDraw, added to cpFuncProto's non-static-linkage allowlist
- * (cprint.cla) so this cross-TU call resolves. */
-extern void clar_fn_rtUiLdefDraw(int32_t msg, int32_t select, void *rectPtr, int32_t cellPacked, int32_t dataOffset, int32_t dataLen, void *lh);
+ * (cprint.cla) so this cross-TU call resolves. `weak`: same reasoning as
+ * clar_fn_rtUiScrollbarAction above -- only exists in a UI program's own
+ * emitted C; a non-UI program never calls rt_ext_UiLdefEntry at all. */
+extern void clar_fn_rtUiLdefDraw(int32_t msg, int32_t select, void *rectPtr, int32_t cellPacked, int32_t dataOffset, int32_t dataLen, void *lh) __attribute__((weak));
 static pascal void rt_ext_ui_ldef(short lMessage, Boolean lSelect, Rect *lRect, Cell lCell, short lDataOffset, short lDataLen, ListHandle lHandle) {
     int32_t packed = ((int32_t)lCell.v << 16) | (uint16_t)lCell.h;
     clar_fn_rtUiLdefDraw((int32_t)lMessage, (int32_t)lSelect, (void *)lRect, packed, (int32_t)lDataOffset, (int32_t)lDataLen, (void *)lHandle);
@@ -567,10 +580,15 @@ void rt_ext_UiScreenBits(void *baseAddrOut, void *rowBytesOut, void *boundsOut) 
 
 /* rt_ext_UiLaunchReal and its AE handlers below call
  * clar_fn_clar_ui_fire_launchdoc/clar_fn_clar_ui_fire_startempty -- the
- * lower.cla-synthesized dispatchers every UI program's generated C
- * defines (lowSynthUiDispatchers). This whole file is compiled
- * unconditionally (rt_mac.c #includes it always), and every emitted
- * program is now a ported-lane program, so these symbols always resolve.
+ * lower.cla-synthesized dispatchers a UI program's generated C defines
+ * (lowSynthUiDispatchers). This whole file is compiled unconditionally
+ * (rt_mac.c #includes it always, for every program, UI or not), but a
+ * non-UI program's own emitted C never defines these two symbols (its
+ * main() is the plain CLI path -- it never calls rt_ext_UiLaunchReal at
+ * all, since nothing in a non-UI build's own C references it either), so
+ * both externs are `weak` here: a UI program's own strong definition
+ * overrides as usual, and a non-UI program's build links clean with the
+ * unresolved reference silently pinned to null (never actually called).
  *
  * rt_ext_UiLaunchReal: rt_ui_launch's real-build branch (rt_ui.c:3963-4028)
  * adapted verbatim -- AEInstallEventHandler + the 4 pascal AE handlers +
@@ -583,8 +601,8 @@ void rt_ext_UiScreenBits(void *baseAddrOut, void *rowBytesOut, void *boundsOut) 
  * script-driven, taking rt_ui_launch's OTHER branch, ported in Clarus in
  * ui.cla's own rtUiLaunch) -- ported for contract completeness.
  */
-extern void clar_fn_clar_ui_fire_launchdoc(void *path);
-extern void clar_fn_clar_ui_fire_startempty(void);
+extern void clar_fn_clar_ui_fire_launchdoc(void *path) __attribute__((weak));
+extern void clar_fn_clar_ui_fire_startempty(void) __attribute__((weak));
 
 #define RT_UI_SIZE_HLE_MASK 0x0040 /* isHighLevelEventAware -- see rt_ui.c's own derivation comment, :3780-3798 */
 
