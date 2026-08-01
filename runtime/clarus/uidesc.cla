@@ -1,0 +1,695 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uidesc.cla: the FOUNDATIONAL file for the ported UI runtime (native-5e
+// Task 7 Step 2) -- everything else this port adds (ui.cla/uiwidgets.cla's
+// real bodies, Step 3+; uiscript.cla, Step 3) depends on the three things
+// this file provides: read-only accessor functions over the UI descriptor
+// blob (clarusc/uiblob.cla builds it; this is the runtime-side reader for
+// the SAME format, see that file's header comment for the authoritative
+// section-layout spec -- condensed below), the `RtUiWinst`/`RtUiCanvasBuf`
+// overlay records a ported window instance's memory is shaped as, and
+// `rtUiAllocLocked` (the one shared allocation primitive both use). Spliced
+// FIRST in main.cla's --uiport manifest block, before ui.cla/uiwidgets.cla
+// -- same "foundational types first" convention str->text->list->map
+// already established (see Task 7 report log entry #1).
+//
+// ================================================================
+// The UI descriptor blob (reader side)
+// ================================================================
+//
+// Format (normative source: clarusc/uiblob.cla's own header comment; this
+// is the runtime-side mirror of that spec, not a second definition of it).
+// EVERY field in every section is a big-endian int32 at a 4-byte-aligned,
+// BLOB-ABSOLUTE byte offset (never section-relative) -- bools/counts/flags
+// included, no packed sub-int32 field anywhere. -1 marks an absent/
+// optional reference (no title, no form, an empty array, ...). Strings are
+// Str255 (length byte + raw bytes, no padding) in a trailing string-pool
+// section, referenced by their own blob-absolute byte offset.
+//
+// Section order + field layout (Form/Bind/Table/Col/Layout/EnumArrays are
+// OUT OF SCOPE this slice -- field/textview/popup/table widget kinds and
+// forms aren't ported yet, Tasks 8-10; no accessor exists for them here):
+//   Header (11 int32 @ 0,4,..,40): magic, version, nWins, winsOff, nMenus,
+//     menusOff, nMenuHandlers, mhOff, nEvery, everyOff, appOff.
+//   Window (12 int32, 48 bytes, base = winsOff + winIdx*48): nameOff,
+//     titleOff, w, h, resizable, minW, minH, nWidgets, widgetsOff,
+//     stateSize, handlerMask, formOff (formOff has NO accessor -- out of
+//     scope).
+//   Widget (13 int32, 52 bytes, base = widgetsOff + widgetIdx*52): kind,
+//     nameOff, captionOff, atKind, x, yIsBottom, y, widthIsFill, width,
+//     fillBoth, flags, eventMask, tableOff (tableOff has NO accessor).
+//   Menu (5 int32, 20 bytes, base = menusOff + menuIdx*20): nameOff,
+//     titleOff, nItems, itemsOff, isStandardEdit.
+//   Item (4 int32, 16 bytes, base = a menu's own itemsOff + itemIdx*16):
+//     nameOff, labelOff, key, separator.
+//   MenuHandler (6 int32, 24 bytes, base = mhOff + k*24): menuIdx, itemIdx,
+//     handlerIdx, scopeWinIdx, menuNameOff, itemNameOff.
+//   Every (1 int32, 4 bytes, base = everyOff + k*4): ticks.
+//   App (4 int32, 16 bytes, at appOff if appOff != -1): nameOff,
+//     versionOff, authorOff, aboutOff.
+//
+// Every accessor below returns EITHER the raw `int` value (a count, a
+// dimension, a bool-as-0/1 field surfaced as `bool`) or, per Task 7 report
+// log entry #6 (binding: Str255 data is ALWAYS `ptr`, never `str`, since
+// Clarus has no str<->ptr conversion and no address-of for a local `str`),
+// a `ptr` for every string-shaped field. String-shaped fields come in two
+// forms: a low-level `uidXNameOff(...)` accessor returning the raw blob-
+// absolute int offset (or -1) for a caller that needs to test for absence
+// itself, and a high-level `uidXName(...)` accessor that bakes in the
+// `-1 -> ptr(0)` check (via the shared `uidStrPtr` helper) for the common
+// case. Index parameters (winIdx/widgetIdx/menuIdx/itemIdx/k) are NEVER
+// bounds-checked here -- unlike rtListAt/rtTextIndex's STRICT-panic
+// contract (list.cla/text.cla), which guard genuinely untrusted container
+// indices, every index this layer accepts is compiler-generated (a blob
+// built by uibBuild from the program's own IR, walked by ported Clarus
+// code that only ever iterates 0..uidWinNWidgets(winIdx)-1 and similar) --
+// there is no untrusted caller of this layer to guard against, and a
+// wrong index here is a Task 7+ bug to fix at the call site, not a runtime
+// condition to detect.
+//
+// `UiProgDesc(): ptr` (the "reverse waist" blob-base extern, Task 6) is
+// declared here since this is the first file that needs it -- cprint.cla
+// resolves it specially (straight to `&clar_ui_blob[0]`, no rt_ext_ shim,
+// no trap/inline clause needed) rather than through the ordinary extern
+// dispatch path, so a bare declaration (no `= trap`/`= inline` clause,
+// same shape as the language reference's own `external func GetTicks():
+// int` example) is correct and complete.
+//
+// PEEKL DECISION (verified against docs/clarus-language-reference.md's own
+// Ch13 text, not assumed): "Multi-byte reads and writes use the machine's
+// native byte order -- big-endian on the 68k target. peekw/peekl/pokew/
+// pokel are for values already resident in memory in native order (a
+// Toolbox struct field, a register image); they are never the right tool
+// for a byte layout that leaves the process (a network packet, a saved
+// file) -- build that layout with explicit peekb/pokeb calls." The blob is
+// EXACTLY that second case: a byte layout with a portable, target-
+// independent spec (uiblob.cla's own header comment says cg68k.cla, Task
+// 12, will pour these SAME bytes into the native constant pool too -- the
+// format's own contract is "big-endian," full stop, not "whatever this
+// backend's native order happens to be"), built by uibI32 one byte at a
+// time regardless of host/target. peekl's actual behavior tracks the
+// EXECUTING machine's order, which only coincides with big-endian on the
+// real m68k target this Mac-only module ends up running on -- relying on
+// that coincidence would silently break the moment this format is read
+// from anywhere else (a differential-testing host build, a future tool).
+// So: peekl is NOT used here. `uidI32` below is a hand-rolled big-endian
+// reader (4 `peekb` calls + shifts/or), the exact mirror of uibI32's own
+// writer (clarusc/uiblob.cla: `b.add(int(char(v >> 24))); ...`) run in
+// reverse. The `(b0 << 24) | (b1 << 16) | (b2 << 8) | b3` shift/or idiom
+// is already precedented in this codebase for exactly this purpose --
+// runtime/clarus/ser.cla's rtSerGetI32 (its own big-endian int32 reader
+// for the file-save/load byte format) uses the identical expression.
+//
+// ================================================================
+// RtUiWinst / RtUiCanvasBuf (overlay records over raw allocated memory)
+// ================================================================
+//
+// RtUiWinst is NOT a byte-for-byte port of the C `rt_ui_winst` struct
+// (runtime/mac/rt_ui.c:281-327) -- that C struct's bytes are never read by
+// anything outside rt_ui.c itself (unlike RtText/RtList, which MUST mirror
+// rt_core.inc exactly because both a C reference and Clarus read the same
+// bytes), and rt_ui.c is dropped entirely from the build under
+// CLARUS_UIPORT=1. This is a fresh design, free to choose its own field
+// order, with two binding corrections from Task 7 report log entry #5:
+// `desc: const rt_ui_window_desc *` (a raw descriptor pointer) is GONE --
+// replaced by `winIdx: int` (the blob's own Window-section 0-based index);
+// every `inst->desc->X` read in the C reference becomes a
+// `uidWinX(inst.winIdx)`/`uidWidgetX(inst.winIdx, i)` blob-accessor call in
+// a LATER step (ui.cla/uiwidgets.cla), never a field read here. `focusIdx`
+// is kept (parity with the C struct's slot -- Task 7's own scope note:
+// "the STRUCT LAYOUT is shared... uidesc.cla's winst constants must
+// reserve their slots even if slice-A code never touches them") but is
+// ALWAYS -1 this slice (no FIELD/TEXTVIEW kind can ever be created -- the
+// fail-closed gate, a later step). `traceId` is unconditional here (no
+// `#ifdef RT_MAC_TEST` -- Clarus has no preprocessor, and every exercised
+// path in this port is test-harness-driven anyway).
+//
+// EXCLUDED (Tasks 8-10's own fields, not this slice's problem): teH/tes,
+// hbarsH/hbars, popupsH/popups, popupSelH/popupSel, listsH/lists --
+// FIELD/TEXTVIEW/POPUP/TABLE-specific.
+//
+// Field width: every field below is `int` or `ptr`. Both are EXACTLY 4
+// bytes wide as an overlay-record field, unconditionally -- this is a
+// LANGUAGE-DEFINED width (Ch13: "an overlay field's offset and width must
+// be exactly one of those [int/bool/char/fixed/ptr peek/poke widths]",
+// and peekl always reads/writes 4 bytes), not something that varies by
+// struct-layout inference the way a raw C `Handle` field's width did for
+// rtTextBoxSize/rtListBoxSize (text.cla/list.cla's own doc comments) --
+// this module is Mac-ONLY (never compiled for the differential-testing
+// host, ui.cla's own header comment), so the only target that ever matters
+// is real m68k, where cg68k.cla's own LAYOUT AUTHORITY comment
+// (clarusc/cg68k.cla:30-57) already fixes int/ptr at exactly 4 bytes each,
+// and Retro68's `#pragma options align=mac68k` (2-byte packing, no padding
+// beyond natural alignment -- Task 7 report log entry #4's own derivation)
+// packs consecutive 4-byte C fields with zero gaps too, so both backends
+// agree: consecutive int/ptr fields occupy exactly 4 bytes apiece with no
+// padding between them. `rtUiWinstBoxSize` below is therefore an EXACT
+// count (17 fields x 4 = 68), not a struct-layout guess -- unlike
+// rtTextBoxSize/rtListBoxSize's real host-vs-target Handle-width
+// uncertainty, a small fixed slack is added purely as free insurance
+// against a future miscount when a field is added, not because of any
+// actual sizing ambiguity here (see the constant's own comment).
+//
+// RECT / BITMAP HANDLING (the load-bearing decision every later step
+// depends on -- Task 7 report log entry #7's own WindowRecord/GrafPort
+// offset derivations use the SAME method). A real Toolbox `Rect` is 4
+// packed 16-bit SHORTs (8 bytes total: top@0, left@2, bottom@4, right@6 --
+// verified directly against Retro68's own header, MacTypes.h:511-516,
+// `struct Rect { short top; short left; short bottom; short right; };` --
+// NOT left/top/right/bottom, Inside Mac's own field order is top-left-
+// bottom-right) and a `BitMap` is 14 bytes (baseAddr: Ptr@0 (4), rowBytes:
+// short@4 (2), bounds: Rect@6 (8) -- verified against QuickDraw.h:259-263).
+// An `overlay record` CANNOT model either directly: Ch13 restricts overlay
+// fields to int/bool/char/fixed/ptr, each a FIXED width the language
+// itself defines (4/1/1/4/4 bytes) -- there is no 2-byte overlay field
+// type, so a naive `overlay record RtUiRect { top: int, left: int, ... }`
+// would read/write 4-byte-strided slots over an 8-byte structure and
+// corrupt whatever memory follows it. RESOLUTION: don't use an overlay
+// record for either. Toolbox Rect/BitMap memory (RtUiWinst.rects array
+// entries, or a scratch BitMap a later step builds for SetPortBits/
+// CopyBits) is read/written directly with the BUILT-IN `peekw`/`pokew`/
+// `peekb`/`pokeb`/`pokel` -- no custom helper function needed, because
+// peekw/pokew are EXACTLY the tool the language spec itself recommends for
+// this case ("for values already resident in memory in native order (a
+// Toolbox struct field...)" -- ch13, quoted above), and native order IS
+// big-endian on this module's only-ever target, m68k, which is ALSO a real
+// Toolbox struct's own actual byte order -- no coincidence to worry about
+// here, unlike the blob's peekl question above, because a Toolbox struct's
+// bytes never leave this one process/target. The exact recipe a later step
+// needs, spelled out once here so it never has to be re-derived:
+//   - A `rects` array entry (RtUiWinst.rects, window-local Rect,
+//     `rtUiRectSize` = 8 bytes/entry): `peekw(r+0)`/`pokew(r+0, ...)` for
+//     top, `+2` left, `+4` bottom, `+6` right, where `r = rects + i*8`.
+//   - A scratch Toolbox BitMap (from an RtUiCanvasBuf's scattered fields,
+//     below) at some 14-byte `ptr bm`: `pokel(bm+0, int(cb.bitsBaseAddr))`
+//     (baseAddr, a real Ptr value -- `pokel` is correct here too, it's a
+//     native-order in-memory pointer slot, and m68k `ptr` is exactly
+//     32 bits so no truncation), `pokew(bm+4, cb.bitsRowBytes)` (rowBytes),
+//     `pokew(bm+6, cb.bitsBoundsTop)`, `pokew(bm+8, cb.bitsBoundsLeft)`,
+//     `pokew(bm+10, cb.bitsBoundsBottom)`, `pokew(bm+12, cb.bitsBoundsRight)`
+//     (bounds, same top/left/bottom/right order as a plain Rect since
+//     BitMap.bounds IS a Rect). The 14-byte scratch itself is any `ptr`
+//     the caller owns (a `UiNewPtr(14)` the caller allocates once, e.g.
+//     per RtUiWinst, and reuses across calls -- not this file's job to
+//     allocate, since no Step-2 function ever needs to actually issue a
+//     SetPortBits/CopyBits call).
+//
+// RtUiCanvasBuf mirrors the C `rt_ui_canvas_buf` (rt_ui.c:279) with
+// SCATTERED fields (the other of the two options Task 7's own brief
+// offers) rather than an embedded 14-byte BitMap-shaped region -- chosen
+// BECAUSE overlay records can't express BitMap's 2-byte rowBytes field
+// (same restriction as Rect, immediately above), so there is no way to
+// embed a real BitMap shape in an overlay record at all; scattering into
+// plain `int`/`ptr` overlay fields (each a full, unambiguous 4-byte slot)
+// and building a temporary scratch BitMap on demand (recipe above) is the
+// only option Ch13's field-type restriction leaves open. `port: ptr`
+// doubles as the C reference's own "is this canvas buffered and
+// allocated" flag (`ptr(0)` for every non-canvas widget and every
+// unbuffered canvas) -- same convention, ported as-is. `rtUiCanvasBufSize`
+// (36 bytes = 9 fields x 4, see above for why int/ptr fields are exactly 4
+// bytes each) is a STRIDE for indexing `canvases[i]`, not an allocation
+// safety margin like rtUiWinstBoxSize -- it must stay EXACT (no slack),
+// or every `canvases + i*rtUiCanvasBufSize` computation later steps make
+// misaligns against the next element.
+
+// ---- The reverse-waist blob-base extern (Task 6) ----
+external func UiProgDesc(): ptr
+
+// ---- Big-endian int32 reader (see "PEEKL DECISION" above) ----
+func uidI32(p: ptr): int {
+    var b0: int
+    var b1: int
+    var b2: int
+    var b3: int
+
+    b0 = peekb(p)
+    b1 = peekb(p + 1)
+    b2 = peekb(p + 2)
+    b3 = peekb(p + 3)
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+}
+
+// uidStrPtr turns a blob-absolute Str255 byte offset (or -1, "absent") into
+// a `ptr` a caller can pass straight to a Pascal-string Toolbox trap or a
+// text.cla/etc conversion helper -- the shared "-1 -> ptr(0)" check every
+// high-level Name/Title/Caption/Label accessor below bakes in.
+func uidStrPtr(off: int): ptr {
+    if off == -1 {
+        return ptr(0)
+    }
+    return UiProgDesc() + off
+}
+
+// ================================================================
+// Header (11 int32 @ 0, 4, .., 40)
+// ================================================================
+
+func uidNWins(): int {
+    return uidI32(UiProgDesc() + 8)
+}
+
+func uidWinsOff(): int {
+    return uidI32(UiProgDesc() + 12)
+}
+
+func uidNMenus(): int {
+    return uidI32(UiProgDesc() + 16)
+}
+
+func uidMenusOff(): int {
+    return uidI32(UiProgDesc() + 20)
+}
+
+func uidNMenuHandlers(): int {
+    return uidI32(UiProgDesc() + 24)
+}
+
+func uidMhOff(): int {
+    return uidI32(UiProgDesc() + 28)
+}
+
+func uidNEvery(): int {
+    return uidI32(UiProgDesc() + 32)
+}
+
+func uidEveryOff(): int {
+    return uidI32(UiProgDesc() + 36)
+}
+
+func uidAppOff(): int {
+    return uidI32(UiProgDesc() + 40)
+}
+
+// ================================================================
+// Window (12 int32, 48 bytes/entry, base = winsOff + winIdx*48)
+// ================================================================
+
+func uidWinBase(winIdx: int): ptr {
+    return UiProgDesc() + uidWinsOff() + winIdx * 48
+}
+
+func uidWinNameOff(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 0)
+}
+
+func uidWinName(winIdx: int): ptr {
+    return uidStrPtr(uidWinNameOff(winIdx))
+}
+
+func uidWinTitleOff(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 4)
+}
+
+func uidWinTitle(winIdx: int): ptr {
+    return uidStrPtr(uidWinTitleOff(winIdx))
+}
+
+func uidWinW(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 8)
+}
+
+func uidWinH(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 12)
+}
+
+func uidWinResizable(winIdx: int): bool {
+    return uidI32(uidWinBase(winIdx) + 16) != 0
+}
+
+func uidWinMinW(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 20)
+}
+
+func uidWinMinH(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 24)
+}
+
+func uidWinNWidgets(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 28)
+}
+
+func uidWinWidgetsOff(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 32)
+}
+
+func uidWinStateSize(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 36)
+}
+
+func uidWinHandlerMask(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 40)
+}
+
+// formOff (@ +44) has no accessor: forms are out of scope this slice.
+
+// ================================================================
+// Widget (13 int32, 52 bytes/entry, base = widgetsOff + widgetIdx*52)
+// ================================================================
+
+func uidWidgetBase(winIdx: int, widgetIdx: int): ptr {
+    return UiProgDesc() + uidWinWidgetsOff(winIdx) + widgetIdx * 52
+}
+
+func uidWidgetKind(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 0)
+}
+
+func uidWidgetNameOff(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 4)
+}
+
+func uidWidgetName(winIdx: int, widgetIdx: int): ptr {
+    return uidStrPtr(uidWidgetNameOff(winIdx, widgetIdx))
+}
+
+func uidWidgetCaptionOff(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 8)
+}
+
+func uidWidgetCaption(winIdx: int, widgetIdx: int): ptr {
+    return uidStrPtr(uidWidgetCaptionOff(winIdx, widgetIdx))
+}
+
+func uidWidgetAtKind(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 12)
+}
+
+func uidWidgetX(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 16)
+}
+
+func uidWidgetYIsBottom(winIdx: int, widgetIdx: int): bool {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 20) != 0
+}
+
+func uidWidgetY(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 24)
+}
+
+func uidWidgetWidthIsFill(winIdx: int, widgetIdx: int): bool {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 28) != 0
+}
+
+func uidWidgetWidth(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 32)
+}
+
+func uidWidgetFillBoth(winIdx: int, widgetIdx: int): bool {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 36) != 0
+}
+
+func uidWidgetFlags(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 40)
+}
+
+func uidWidgetEventMask(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 44)
+}
+
+// tableOff (@ +48) has no accessor: tables are out of scope this slice.
+
+// ================================================================
+// Menu (5 int32, 20 bytes/entry, base = menusOff + menuIdx*20)
+// ================================================================
+
+func uidMenuBase(menuIdx: int): ptr {
+    return UiProgDesc() + uidMenusOff() + menuIdx * 20
+}
+
+func uidMenuNameOff(menuIdx: int): int {
+    return uidI32(uidMenuBase(menuIdx) + 0)
+}
+
+func uidMenuName(menuIdx: int): ptr {
+    return uidStrPtr(uidMenuNameOff(menuIdx))
+}
+
+func uidMenuTitleOff(menuIdx: int): int {
+    return uidI32(uidMenuBase(menuIdx) + 4)
+}
+
+func uidMenuTitle(menuIdx: int): ptr {
+    return uidStrPtr(uidMenuTitleOff(menuIdx))
+}
+
+func uidMenuNItems(menuIdx: int): int {
+    return uidI32(uidMenuBase(menuIdx) + 8)
+}
+
+func uidMenuItemsOff(menuIdx: int): int {
+    return uidI32(uidMenuBase(menuIdx) + 12)
+}
+
+func uidMenuIsStandardEdit(menuIdx: int): bool {
+    return uidI32(uidMenuBase(menuIdx) + 16) != 0
+}
+
+// ================================================================
+// Item (4 int32, 16 bytes/entry, base = a menu's own itemsOff +
+// itemIdx*16) -- indexed (menuIdx, itemIdx) rather than a bare items-
+// section-global index, matching Widget's own (winIdx, widgetIdx) shape:
+// callers always have menuIdx on hand (iterating a menu's own items) and
+// this spares them re-deriving itemsOff themselves.
+// ================================================================
+
+func uidItemBase(menuIdx: int, itemIdx: int): ptr {
+    return UiProgDesc() + uidMenuItemsOff(menuIdx) + itemIdx * 16
+}
+
+func uidItemNameOff(menuIdx: int, itemIdx: int): int {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 0)
+}
+
+func uidItemName(menuIdx: int, itemIdx: int): ptr {
+    return uidStrPtr(uidItemNameOff(menuIdx, itemIdx))
+}
+
+func uidItemLabelOff(menuIdx: int, itemIdx: int): int {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 4)
+}
+
+func uidItemLabel(menuIdx: int, itemIdx: int): ptr {
+    return uidStrPtr(uidItemLabelOff(menuIdx, itemIdx))
+}
+
+func uidItemKey(menuIdx: int, itemIdx: int): int {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 8)
+}
+
+func uidItemSeparator(menuIdx: int, itemIdx: int): bool {
+    return uidI32(uidItemBase(menuIdx, itemIdx) + 12) != 0
+}
+
+// ================================================================
+// MenuHandler (6 int32, 24 bytes/entry, base = mhOff + k*24) -- k is the
+// handler's own 0-based position in the array (uiblob.cla's own
+// `handlerIdx` field mirrors k, by construction: uibBuild increments it
+// once per entry in emission order).
+// ================================================================
+
+func uidMenuHandlerBase(k: int): ptr {
+    return UiProgDesc() + uidMhOff() + k * 24
+}
+
+func uidMenuHandlerMenuIdx(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 0)
+}
+
+func uidMenuHandlerItemIdx(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 4)
+}
+
+func uidMenuHandlerHandlerIdx(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 8)
+}
+
+func uidMenuHandlerScopeWinIdx(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 12)
+}
+
+func uidMenuHandlerMenuNameOff(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 16)
+}
+
+func uidMenuHandlerMenuName(k: int): ptr {
+    return uidStrPtr(uidMenuHandlerMenuNameOff(k))
+}
+
+func uidMenuHandlerItemNameOff(k: int): int {
+    return uidI32(uidMenuHandlerBase(k) + 20)
+}
+
+func uidMenuHandlerItemName(k: int): ptr {
+    return uidStrPtr(uidMenuHandlerItemNameOff(k))
+}
+
+// ================================================================
+// Every (1 int32, 4 bytes/entry, base = everyOff + k*4)
+// ================================================================
+
+func uidEveryTicks(k: int): int {
+    return uidI32(UiProgDesc() + uidEveryOff() + k * 4)
+}
+
+// ================================================================
+// App (4 int32, 16 bytes, single instance at appOff -- absent, -1, when
+// the program declares no `app` section)
+// ================================================================
+
+func uidHasApp(): bool {
+    return uidAppOff() != -1
+}
+
+func uidAppNameOff(): int {
+    if not uidHasApp() {
+        return -1
+    }
+    return uidI32(UiProgDesc() + uidAppOff() + 0)
+}
+
+func uidAppName(): ptr {
+    return uidStrPtr(uidAppNameOff())
+}
+
+func uidAppVersionOff(): int {
+    if not uidHasApp() {
+        return -1
+    }
+    return uidI32(UiProgDesc() + uidAppOff() + 4)
+}
+
+func uidAppVersion(): ptr {
+    return uidStrPtr(uidAppVersionOff())
+}
+
+func uidAppAuthorOff(): int {
+    if not uidHasApp() {
+        return -1
+    }
+    return uidI32(UiProgDesc() + uidAppOff() + 8)
+}
+
+func uidAppAuthor(): ptr {
+    return uidStrPtr(uidAppAuthorOff())
+}
+
+func uidAppAboutOff(): int {
+    if not uidHasApp() {
+        return -1
+    }
+    return uidI32(UiProgDesc() + uidAppOff() + 12)
+}
+
+func uidAppAbout(): ptr {
+    return uidStrPtr(uidAppAboutOff())
+}
+
+// ================================================================
+// RtUiWinst / RtUiCanvasBuf overlay records -- see the file header
+// comment's own section for the full design rationale.
+// ================================================================
+
+overlay record RtUiWinst {
+    selfH: ptr           // this struct's own locked box (rt_ui.c:282)
+    wp: ptr               // the WindowPtr (rt_ui.c:283)
+    winIdx: int           // blob Window-section index -- REPLACES the C
+                           // reference's `desc` pointer (report log #5)
+    stateH: ptr            // per-instance user vars box, or ptr(0) if
+    state: ptr             // stateSize==0 (rt_ui.c:285)
+    ctrlsH: ptr             // nWidgets ControlHandles; ptr(0) entries for
+    ctrls: ptr              // non-Control kinds (rt_ui.c:286)
+    rectsH: ptr              // nWidgets Rects (8 bytes/entry, see the file
+    rects: ptr               // header's Rect recipe), window-local coords
+    labelsH: ptr              // nWidgets 256-byte Str255 slots; only LABEL
+    labels: ptr                // kinds used (rt_ui.c:288)
+    canvasH: ptr                 // nWidgets RtUiCanvasBuf records; only
+    canvases: ptr                 // buffered CANVAS kinds used (rt_ui.c:289)
+    enabledH: ptr                  // nWidgets bytes: PROGRAM-set ENABLED
+    logicalEnabled: ptr              // state, independent of window dim
+    focusIdx: int                      // ALWAYS -1 this slice (no FIELD/
+                                        // TEXTVIEW kind can be created)
+    traceId: int                       // unconditional here (no #ifdef --
+                                        // Clarus has no preprocessor)
+}
+
+// rtUiWinstBoxSize is UiNewPtr's argument for allocating an RtUiWinst box
+// (via rtUiAllocLocked, a later step). EXACT, not a guess: 17 fields, each
+// exactly 4 bytes as an overlay-record field (see the file header comment,
+// "Field width" paragraph) = 68 bytes, +12 bytes fixed slack (rounding to
+// 80) purely as free insurance against a future field-count edit, not
+// because of any real sizing ambiguity the way rtTextBoxSize/rtListBoxSize
+// (text.cla/list.cla) have for their own C-struct `Handle`-width question.
+const rtUiWinstBoxSize: int = 80
+
+// RtUiCanvasBuf: SCATTERED fields (not an embedded BitMap-shaped region --
+// see the file header comment's "RECT / BITMAP HANDLING" section for why
+// an overlay record can't express one). `port` doubles as the "buffered
+// and allocated" flag, `ptr(0)` for every non-canvas widget and every
+// unbuffered canvas -- same convention as the C reference (rt_ui.c:279).
+overlay record RtUiCanvasBuf {
+    port: ptr             // the offscreen GrafPort record, or ptr(0)
+    bitsBaseAddr: ptr       // scratch BitMap.baseAddr (see recipe above)
+    bitsRowBytes: int        // scratch BitMap.rowBytes
+    bitsBoundsTop: int        // scratch BitMap.bounds (a Rect: top/left/
+    bitsBoundsLeft: int        // bottom/right, same field order as a real
+    bitsBoundsBottom: int       // Toolbox Rect)
+    bitsBoundsRight: int
+    pixels: ptr                  // the offscreen pixel data block
+    patLevel: int                  // gray-pattern animation level
+}
+
+// rtUiCanvasBufSize is the per-element STRIDE for indexing an
+// RtUiWinst.canvases array (`canvases + i*rtUiCanvasBufSize`) -- unlike
+// rtUiWinstBoxSize above, this MUST stay exact (9 fields x 4 = 36, no
+// slack): padding it would misalign every element after the first.
+const rtUiCanvasBufSize: int = 36
+
+// rtUiRectSize is the per-element stride for an RtUiWinst.rects array (a
+// real Toolbox Rect, 8 bytes: top/left/bottom/right, each a 16-bit SHORT
+// -- see the file header's Rect recipe). Exact, no slack, same reasoning
+// as rtUiCanvasBufSize.
+const rtUiRectSize: int = 8
+
+// rtUiLabelSlotSize is the per-element stride for an RtUiWinst.labels
+// array (one 256-byte Str255 slot per widget -- a 1-byte length prefix
+// plus up to 255 content bytes, rt_ui.c:288's own `unsigned char
+// (*labels)[256]`). Exact, no slack, same reasoning as rtUiCanvasBufSize.
+const rtUiLabelSlotSize: int = 256
+
+// ================================================================
+// rtUiAllocLocked -- mirrors rt_ui_alloc_locked (rt_ui.c:334-342) exactly:
+// a zero-filled Handle that never moves for the rest of its lifetime
+// (locked immediately, stays locked until whatever later step disposes
+// it), panicking ("out of memory") on failure exactly like the C
+// reference and every other *NewHandle*/*NewPtr* birth call in this
+// codebase (TextNewPtr/TextNewHandle et al., text.cla's own header
+// comment).
+//
+// CONTRACT (binding for every caller, Step 4's rtUiOpen the first --
+// rtUiOpen makes ~9 of these calls in a row): returns the Handle `h`
+// ALONE, never the locked master pointer. Rationale: a caller almost
+// always needs the HANDLE far longer than the momentary pointer -- it's
+// what gets stored into an RtUiWinst field pair (`inst.ctrlsH = h`) and
+// what a later rtUiClose eventually disposes -- while the pointer is only
+// ever needed transiently, right after allocating (to poke initial
+// contents in) or right before a Toolbox call. Re-deriving it via
+// `UiHandleDeref(h)` at each such use site is exactly the relocation
+// discipline every other Handle-backed module here already imposes on
+// itself (RtText/RtList's own header comments: "never caches a
+// dereferenced pointer across a call that can allocate/move memory") --
+// returning the pointer instead of the Handle would tempt a caller to
+// cache it across a LATER rtUiAllocLocked call, which (being itself a
+// NewHandleClear) can move other relocatable blocks via heap compaction,
+// a real bug. The one-line idiom a caller needing the pointer immediately
+// uses: `h = rtUiAllocLocked(sz); mp = UiHandleDeref(h)`.
+func rtUiAllocLocked(sz: int): ptr {
+    var h: ptr
+
+    h = UiNewHandleClear(sz)
+    if h == ptr(0) {
+        rtPanic("out of memory")
+    }
+    UiHLock(h)
+    return h
+}

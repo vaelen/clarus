@@ -360,6 +360,11 @@ void rt_ext_UiGetClip(void *rgn) { GetClip((RgnHandle)rgn); }
 void rt_ext_UiDrawGrowIcon(void *window) { DrawGrowIcon((WindowRef)window); }
 void rt_ext_UiBeginUpdate(void *window) { BeginUpdate((WindowRef)window); }
 void rt_ext_UiEndUpdate(void *window) { EndUpdate((WindowRef)window); }
+/* rt_ext_UiTextBox: Task 7 Step 1 review fix -- see uiwidgets.cla's own
+ * UiTextBox comment for why this stateless TextEdit.h primitive (no live
+ * TEHandle involved) belongs in the in-scope extern set despite sharing a
+ * file with the excluded live-TE calls. */
+void rt_ext_UiTextBox(void *text, int32_t length, void *box, short just) { TextBox(text, (long)length, (const Rect *)box, just); }
 
 void rt_ext_UiOpenPort(void *port) { OpenPort((GrafPtr)port); }
 void rt_ext_UiClosePort(void *port) { ClosePort((GrafPtr)port); }

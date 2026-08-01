@@ -582,6 +582,13 @@ on App.startCLI(args: list of string) {
         // needs to treat calls into them any differently from any other
         // extern.
         if uiportFlag {
+            // Task 7 Step 2: uidesc.cla (blob accessors + RtUiWinst/
+            // RtUiCanvasBuf overlay-record TYPES + rtUiAllocLocked) splices
+            // BEFORE ui.cla/uiwidgets.cla -- same "foundational types
+            // first" convention str->text->list->map already established;
+            // ui.cla/uiwidgets.cla's own Step 3+ bodies call uidesc.cla's
+            // accessors and use its overlay record types.
+            neededMods.add("uidesc.cla")
             neededMods.add("ui.cla")
             neededMods.add("uiwidgets.cla")
         }

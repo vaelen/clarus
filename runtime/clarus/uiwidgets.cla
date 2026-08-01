@@ -73,6 +73,25 @@ external func UiGetClip(rgn: ptr) = trap 0xA87A
 external func UiDrawGrowIcon(theWindow: ptr) = trap 0xA904
 external func UiBeginUpdate(theWindow: ptr) = trap 0xA922
 external func UiEndUpdate(theWindow: ptr) = trap 0xA923
+// UiTextBox (TextEdit.h's classic `TextBox(const void *text, long length,
+// const Rect *box, short just)`, trap 0xA9CE, PASCAL convention -- Task 7
+// Step 1 review fix): despite living in TextEdit.h and sharing the
+// TETextBox alias, this is a STATELESS static text-layout-and-draw
+// primitive -- it takes raw bytes+length+rect+justification directly, with
+// NO TEHandle/live TE object involved at all, unlike every other TE call
+// this module's header comment excludes (TEDispose/TEActivate/TEKey/...,
+// which all operate on a live TEHandle a field/textview widget owns).
+// rt_ui_handle_update's RTUI_LABEL draw branch (rt_ui.c:2787-2790) calls it
+// exactly this way: `TETextBox(s + 1, s[0], &inst->rects[i], teJustLeft)`
+// to draw a LABEL's own caption text -- LABEL is one of this slice's four
+// in-scope widget kinds, so this call is genuinely in-scope even though it
+// was mistakenly swept into Step 1's original TE-Manager exclusion list
+// (caught during Step 2's dispatch prep, added directly rather than via a
+// second Step-1 round-trip since it's a pure addition to an otherwise-
+// unmodified file). Justification constants (TextEdit.h): teJustLeft=0,
+// teJustCenter=1, teJustRight=-1 -- rt_ui.c always passes teJustLeft; no
+// Clarus `const` declared here, callers pass the literal `0`.
+external func UiTextBox(text: ptr, length: int, box: ptr, just: word) = trap 0xA9CE
 
 // ---- Canvas offscreen GrafPort management (Ch11) ----
 // rt_ui_canvas_make/rt_ui_canvas_dispose (:2122-2159): a canvas's own

@@ -137,6 +137,7 @@ extern void rt_ext_UiGetClip(void *);
 extern void rt_ext_UiDrawGrowIcon(void *);
 extern void rt_ext_UiBeginUpdate(void *);
 extern void rt_ext_UiEndUpdate(void *);
+extern void rt_ext_UiTextBox(void *, int32_t, void *, short);
 extern void rt_ext_UiOpenPort(void *);
 extern void rt_ext_UiClosePort(void *);
 extern void rt_ext_UiPortSize(short, short);
@@ -191,6 +192,36 @@ typedef struct {
     int32_t cv_cap;
     int32_t cv_valcap;
 } clar_rec_RtMap;
+typedef struct {
+    void * cv_selfH;
+    void * cv_wp;
+    int32_t cv_winIdx;
+    void * cv_stateH;
+    void * cv_state;
+    void * cv_ctrlsH;
+    void * cv_ctrls;
+    void * cv_rectsH;
+    void * cv_rects;
+    void * cv_labelsH;
+    void * cv_labels;
+    void * cv_canvasH;
+    void * cv_canvases;
+    void * cv_enabledH;
+    void * cv_logicalEnabled;
+    int32_t cv_focusIdx;
+    int32_t cv_traceId;
+} clar_rec_RtUiWinst;
+typedef struct {
+    void * cv_port;
+    void * cv_bitsBaseAddr;
+    int32_t cv_bitsRowBytes;
+    int32_t cv_bitsBoundsTop;
+    int32_t cv_bitsBoundsLeft;
+    int32_t cv_bitsBoundsBottom;
+    int32_t cv_bitsBoundsRight;
+    void * cv_pixels;
+    int32_t cv_patLevel;
+} clar_rec_RtUiCanvasBuf;
 typedef struct {
     clar_str_63 cv_name;
     int32_t cv_count;
