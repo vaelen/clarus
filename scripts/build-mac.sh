@@ -61,7 +61,15 @@ fi
 # 2. emit
 OUT="$ROOT/build-mac/$NAME"
 mkdir -p "$OUT"
-"$CLARUSC" emit -o "$OUT/$NAME.c" "${FILES[@]}"
+# CLARUS_UIPORT=1 (native-5e Task 7): emit against the PORTED UI runtime
+# (runtime/clarus/ui*.cla, spliced into the program by clarusc's own
+# --uiport flag) instead of the frozen runtime/mac/rt_ui.c -- see step 3
+# below, where rt_ui.c is dropped from the CMake source list to match.
+UIPORT_FLAG=""
+if [ "$CLARUS_UIPORT" = "1" ]; then
+    UIPORT_FLAG="--uiport"
+fi
+"$CLARUSC" emit $UIPORT_FLAG -o "$OUT/$NAME.c" "${FILES[@]}"
 # 2b. optional compiled-in event script
 EXTRA_SRC=""
 if [ -n "$EVENTS" ]; then
@@ -240,11 +248,23 @@ EXTRA_APP_ARGS=""
 if [ "$HASAPP" = "1" ]; then
     EXTRA_APP_ARGS="TYPE \"APPL\" CREATOR \"${APPID:-????}\""
 fi
+# CLARUS_UIPORT=1 (native-5e Task 7): rt_ui.c is dropped from the CMake
+# source list entirely -- the emitted $NAME.c above already carries the
+# ported UI runtime's own C output (from runtime/clarus/ui*.cla), so
+# linking rt_ui.c too would duplicate every rt_ui_* symbol. rt_mac.c
+# (which #includes runtime/mac/rt_ext_mac.inc -- the ported runtime's own
+# C-side glue, e.g. UiLaunchReal/UiTestEmit/UiStrAddr)/alert.r/events.c
+# stay unconditionally -- only rt_ui.c itself is the frozen C UI runtime
+# this whole task replaces.
+RT_UI_C="$ROOT/runtime/mac/rt_ui.c"
+if [ "$CLARUS_UIPORT" = "1" ]; then
+    RT_UI_C=""
+fi
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
 project($NAME C)
 add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF)
-add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $ROOT/runtime/mac/rt_ui.c $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
+add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $RT_UI_C $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
 EOF
 cmake -S "$OUT" -B "$OUT/build" \
     -DCMAKE_TOOLCHAIN_FILE="$ROOT/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake" \

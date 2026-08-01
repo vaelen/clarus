@@ -101,12 +101,32 @@ func runUIScenario(t *testing.T, scenario string, wantExit int) []uiSnap {
 // under testdata/ui/ per the usual convention.
 func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
 	t.Helper()
+	return runUIScenarioBuild(t, scenario, claRel, wantExit, false)
+}
+
+// runUIScenarioBuild is runUIScenarioSrc with the build step factored out
+// as a parameter (native-5e Task 7): uiport=false is the existing frozen
+// Retro68 UI runtime lane (runtime/mac/rt_ui.c, byte-identical to every
+// prior task); uiport=true builds against the PORTED runtime instead
+// (runtime/clarus/ui*.cla, via build-mac.sh's own CLARUS_UIPORT=1 check) --
+// everything AFTER the build step (RunMac, trace/snap comparison against
+// the SAME testdata/ui/testdata/uisnaps goldens) is verbatim identical
+// either way: the whole point of this port is that both lanes produce
+// byte-identical trace/snap output from the SAME golden set (Global
+// Constraints: "one golden set, strict").
+func runUIScenarioBuild(t *testing.T, scenario string, claRel string, wantExit int, uiport bool) []uiSnap {
+	t.Helper()
 	requireMac(t)
 	root := repoRoot(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
 	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
 
-	bin := runBuildMac(t, name, claRel, "--test", "--events", eventsRel)
+	var extraEnv []string
+	if uiport {
+		name += "Ported"
+		extraEnv = []string{"CLARUS_UIPORT=1"}
+	}
+	bin := runBuildMacEnv(t, name, extraEnv, claRel, "--test", "--events", eventsRel)
 	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
 	trace, snaps := parseUIOutput(t, out)
 
@@ -681,4 +701,79 @@ func TestBookmarksUIScenario(t *testing.T) {
 	if bytes.Equal(s4, s5) {
 		t.Fatalf("bookmarks: snap S4 == S5 -- Remove did not delete a row")
 	}
+}
+
+// ================================================================
+// Ported-lane runners (native-5e Task 7): the SAME scenario set above,
+// built against the PORTED UI runtime (runtime/clarus/ui*.cla) instead
+// of the frozen runtime/mac/rt_ui.c, via runUIScenarioBuild's uiport=true
+// -- verbatim identical trace/snap comparison against the SAME goldens
+// (Global Constraints: "one golden set, strict... NEVER re-blessed").
+// Each individually skips unless CLARUS_UIPORT=1 is set (requireUiPort),
+// so a plain `go test ./internal/mactest` (no env override) exercises
+// ONLY the default lane, unchanged -- these only run under an explicit
+// `CLARUS_UIPORT=1 CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+// <name>Ported`.
+// ================================================================
+
+func requireUiPort(t *testing.T) {
+	t.Helper()
+	if os.Getenv("CLARUS_UIPORT") == "" {
+		t.Skip("set CLARUS_UIPORT=1 (also needs CLARUS_MAC_TESTS=1) to run the ported-UI-runtime lane")
+	}
+}
+
+func TestButtonsUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "buttons", filepath.Join("..", "..", "testdata", "ui", "buttons.cla"), 0, true)
+}
+
+func TestMenusUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "menus", filepath.Join("..", "..", "testdata", "ui", "menus.cla"), 0, true)
+}
+
+func TestWinvarUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "winvar", filepath.Join("..", "..", "testdata", "ui", "winvar.cla"), 0, true)
+}
+
+func TestZoomwinUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "zoomwin", filepath.Join("..", "..", "testdata", "ui", "zoomwin.cla"), 0, true)
+}
+
+func TestCanvasUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "canvas", filepath.Join("..", "..", "testdata", "ui", "canvas.cla"), 0, true)
+}
+
+func TestPatternUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "pattern", filepath.Join("..", "..", "testdata", "ui", "pattern.cla"), 0, true)
+}
+
+func TestHdimUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "hdim", filepath.Join("..", "..", "testdata", "ui", "hdim.cla"), 0, true)
+}
+
+func TestUIAboutPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "about", filepath.Join("..", "..", "testdata", "ui", "about.cla"), 0, true)
+}
+
+func TestSmokeBounceUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "smoke_bounce", filepath.Join("..", "..", "testdata", "valid", "bounce.cla"), 0, true)
+}
+
+func TestSmokeMenuDemoUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "smoke_menudemo", filepath.Join("..", "..", "examples", "menu-demo.cla"), 0, true)
+}
+
+func TestSmokeMandelUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0, true)
 }
