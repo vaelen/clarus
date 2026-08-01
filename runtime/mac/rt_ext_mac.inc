@@ -18,6 +18,19 @@
 #ifndef CLARUS_RT_EXT_MAC_INC
 #define CLARUS_RT_EXT_MAC_INC
 
+/* Task 7 (native-5e UI port): headers for Toolbox calls used by rt_ext_Ui*
+ * wrappers below, several of which are defined ahead of the
+ * "Task 7 glue" include block further down (AppleEvents.h/OSUtils.h at
+ * ~line 384) -- moved up here so every wrapper in the file, regardless of
+ * position, sees the declarations it needs (verified against rt_ui.c's own
+ * include list, the oracle for this port: it pulls in the same headers for
+ * the same reasons). */
+#include <Sound.h>    /* SysBeep -- rt_ext_UiSysBeep */
+#include <Gestalt.h>  /* Gestalt/gestaltAppleEventsAttr -- rt_ext_UiGestalt, rt_ext_UiLaunchReal */
+#include <Devices.h>  /* OpenDeskAcc -- rt_ext_UiOpenDeskAcc */
+#include <SegLoad.h>  /* CountAppFiles/GetAppFiles/ClrAppFiles/AppFile -- rt_ext_UiLaunchReal */
+#include <Resources.h> /* GetResource/ReleaseResource -- rt_ext_UiLaunchReal's SIZE-resource probe */
+
 /* ---- 5a: ptr/Handle waist (Plan 5a Task 3) ---- */
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
 void rt_ext_DisposeHandle(void *h) { DisposeHandle((Handle)h); }
@@ -290,6 +303,11 @@ short rt_ext_UiFindWindow(int32_t pt, void *wpOut) { return (short)FindWindow(rt
 void *rt_ext_UiNewMenu(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
 void rt_ext_UiDisposeMenu(void *theMenu) { DisposeMenu((MenuRef)theMenu); }
 void rt_ext_UiAppendMenu(void *theMenu, void *data) { AppendMenu((MenuRef)theMenu, (ConstStr255Param)data); }
+/* rt_ext_UiAppendMenuStr: UiAppendMenu's `string`-param sibling (Task 7) --
+ * same trap (0xA933), the `string` param arrives already Str255-marshaled
+ * (same convention as every other `string` extern param this port uses),
+ * so the body is identical to rt_ext_UiAppendMenu's. */
+void rt_ext_UiAppendMenuStr(void *theMenu, const uint8_t *data) { AppendMenu((MenuRef)theMenu, (ConstStr255Param)data); }
 void rt_ext_UiInsertMenu(void *theMenu, short beforeId) { InsertMenu((MenuRef)theMenu, beforeId); }
 void rt_ext_UiDeleteMenu(short menuId) { DeleteMenu(menuId); }
 void rt_ext_UiDrawMenuBar(void) { DrawMenuBar(); }
@@ -372,7 +390,7 @@ void rt_ext_UiEndUpdate(void *window) { EndUpdate((WindowRef)window); }
  * UiTextBox comment for why this stateless TextEdit.h primitive (no live
  * TEHandle involved) belongs in the in-scope extern set despite sharing a
  * file with the excluded live-TE calls. */
-void rt_ext_UiTextBox(void *text, int32_t length, void *box, short just) { TextBox(text, (long)length, (const Rect *)box, just); }
+void rt_ext_UiTextBox(void *text, int32_t length, void *box, short just) { TETextBox(text, (long)length, (const Rect *)box, just); }
 
 void rt_ext_UiOpenPort(void *port) { OpenPort((GrafPtr)port); }
 void rt_ext_UiClosePort(void *port) { ClosePort((GrafPtr)port); }

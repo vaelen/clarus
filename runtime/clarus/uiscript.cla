@@ -506,23 +506,31 @@ external func UiScreenBits(baseAddrOut: ptr, rowBytesOut: ptr, boundsOut: ptr)
 // rtUiIntToText above).
 // ================================================================
 
-// rtUiStrEq: byte-compare two NUL-terminated buffers (NOT Str255 --
-// every scripted-verb token this file builds is a raw C-string-shaped
-// scratch buffer, see rtUiScriptTokenize below).
+// rtUiStrEq: compares `a`, a NUL-terminated C-string-shaped scratch buffer
+// (every scripted-verb token this file builds via rtUiScriptTokenize
+// below), against `b`, a Str255/Pascal buffer -- EVERY call site passes
+// `UiStrAddr(<literal>)` for `b`, and `string` literals/params are always
+// Str255-shaped in this codebase (`UiStrAddr`'s own header comment;
+// rtTextAppendStr's identical `peekb(s)`-as-length-then-`s+1`-as-data
+// convention, text.cla), NOT NUL-terminated at byte 0. Task 7 Step 7
+// review fix: the original version compared both sides as NUL-terminated
+// C strings, so `peekb(b+0)` read `b`'s Pascal LENGTH byte (e.g. 5 for
+// "click") instead of its first character -- every verb comparison failed
+// on the very first byte, always falling through to the fail-closed
+// unknown-verb arm.
 func rtUiStrEq(a: ptr, b: ptr): bool {
     var i: int
+    var n: int
 
+    n = peekb(b)
     i = 0
-    while true {
-        if peekb(a + i) != peekb(b + i) {
+    while i < n {
+        if peekb(a + i) != peekb(b + 1 + i) {
             return false
-        }
-        if peekb(a + i) == 0 {
-            return true
         }
         i = i + 1
     }
-    return true
+    return peekb(a + i) == 0
 }
 
 // rtUiAtoi: decimal (optionally negative) parse of a NUL-terminated

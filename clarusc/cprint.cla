@@ -2521,7 +2521,18 @@ func fpIntrCall(x: int): text {
         fld = cpFindWindowStateFields(winName)
         while fld != -1 {
             if irtNeedsCtor(irFieldSlotType(fld)) {
-                cpDefaultInit("((*(clar_uistate_" + winName + " *)rt_ui_state(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
+                // Task 7 Step 7 review fix: this IUiStateDefaults arm had its
+                // own separate "rt_ui_state(...)" cast, hard-coded, unlike
+                // the IUiState arm just above (already correctly
+                // cpUiPortFlag-gated) -- missed by Step 6's redirect pass,
+                // caught by winvar.cla's own real link failure (undefined
+                // reference to rt_ui_state, the frozen C runtime's symbol,
+                // dropped from the --uiport build).
+                if cpUiPortFlag {
+                    cpDefaultInit("((*(clar_uistate_" + winName + " *)clar_fn_rtUiState(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
+                } else {
+                    cpDefaultInit("((*(clar_uistate_" + winName + " *)rt_ui_state(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
+                }
             }
             fld = irFieldSlotNext(fld)
         }
@@ -3240,6 +3251,7 @@ func cpFuncProto(f: int): text {
     var params: text
     var p: int
     var first: bool
+    var linkage: string
 
     params = toText("")
     first = true
@@ -3255,7 +3267,21 @@ func cpFuncProto(f: int): text {
     if first {
         params = toText("void")
     }
-    return toText("static " + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(") + params + toText(")")
+    // native-5e Task 7 Step 7: clar_ui_fire_launchdoc/clar_ui_fire_startempty
+    // are lower.cla's own reverse-waist dispatchers (lowSynthLaunchDoc/
+    // lowSynthStartEmpty) that rt_ext_mac.inc's rt_ext_UiLaunchReal calls by
+    // FIXED NAME from rt_mac.c -- a genuinely different translation unit
+    // from the one this function's body is emitted into (every other
+    // reverse-waist call in this port -- clar_ui_fire_widget/_menu/_every/...
+    // -- is only ever invoked from ui.cla's OWN spliced-in code, same TU as
+    // its `static` definition, so needs no external linkage). Every other
+    // Clarus function stays `static` (unchanged, no name collisions across
+    // separately-compiled programs).
+    linkage = "static "
+    if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" {
+        linkage = ""
+    }
+    return toText(linkage + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(") + params + toText(")")
 }
 
 // cpDefaultInit emits the default-value statement(s) for dst at type t, via
@@ -4019,7 +4045,16 @@ func cpEmitDefaultInitFnProtos() {
         // own condition below already relies on), kept here anyway so the
         // two lists can never silently drift apart into a forward-declared-
         // but-body-skipped mismatch.
-        if shakeReachable(i) and ((cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref"))) {
+        // native-5e Task 7 Step 7: "rtUiState" added -- cpEmitWinReleaseFn's
+        // clar_ui_release_<Win> body (cpUiBuf, same pre-cpEmitFuncs landing
+        // spot as every other buffer this function forward-declares into)
+        // now calls clar_fn_rtUiState under --uiport (Step 7 review fix,
+        // same call this function's IUiStateDefaults arm already makes) --
+        // the exact "call-before-prototype" gap this function's own
+        // maintenance comment warns about, caught by winvar.cla's real
+        // compile failure (implicit declaration, then a conflicting-types
+        // error once the real prototype finally appeared later in the file).
+        if shakeReachable(i) and ((cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref")) or (cpUiPortFlag and nm == "rtUiState")) {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1
@@ -4941,7 +4976,18 @@ func cpEmitWinReleaseFn(winName: string): string {
     while fld != -1 {
         if irtNeedsCtor(irFieldSlotType(fld)) {
             any = true
-            cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
+            // Task 7 Step 7 review fix: same missed cpUiPortFlag gate as
+            // IUiStateDefaults above (this function's own header comment
+            // calls it "the destructor for" that constructor) -- this one
+            // is reachable under --uiport too (lowSynthReleaseVars's
+            // clar_ui_fire_releasevars dispatcher calls straight into
+            // clar_ui_release_<Win>, the function this builds), so it needs
+            // the ported rtUiState accessor, not the frozen C runtime's.
+            if cpUiPortFlag {
+                cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)clar_fn_rtUiState(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
+            } else {
+                cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
+            }
         }
         fld = irFieldSlotNext(fld)
     }
