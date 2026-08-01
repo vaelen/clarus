@@ -5517,12 +5517,17 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiCanvasFillCircle"))
     shakeAddRoot(intern("rtUiCanvasPattern"))
     shakeAddRoot(intern("rtUiCanvasDrawText"))
-    // final-review fix round 1 (Task 7): rtUiDialogsUnported, the shared
-    // fail-closed stub cprint.cla's askOpen/askSave/askSaveChanges/edit/
-    // formIsNew arms all call under --uiport -- same "hand-emitted C
-    // text, not an ordinary IR call, needs its own root" reason every
-    // other name in this list already has.
-    shakeAddRoot(intern("rtUiDialogsUnported"))
+    // Task 10 (native-5e slice D): rtUiAskOpen/rtUiAskSave/
+    // rtUiAskSaveChanges/rtUiEdit/rtUiFormIsNew -- cprint.cla's
+    // askOpen/askSave/askSaveChanges/edit/formIsNew arms all call these by
+    // hand-emitted C text (`clar_fn_rtUiXxx(...)`), not an ordinary IR
+    // call, same "needs its own root" reason every other name in this
+    // list already has.
+    shakeAddRoot(intern("rtUiAskOpen"))
+    shakeAddRoot(intern("rtUiAskSave"))
+    shakeAddRoot(intern("rtUiAskSaveChanges"))
+    shakeAddRoot(intern("rtUiEdit"))
+    shakeAddRoot(intern("rtUiFormIsNew"))
     // Task 9: rtUiLdefDraw (uitable.cla) is a DIFFERENT flavor of the same
     // underlying problem this whole function solves -- not an intrinsic
     // redirect string, but the LDEF pascal wrapper in rt_ext_mac.inc

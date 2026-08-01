@@ -15,12 +15,9 @@
 // reference.md:736).
 //
 // Form-aware field-cap narrowing (rt_ui.c:1819-1842, the CURRENTLY-open-
-// modal-form STR/CHAR-bind lookup) is EXCLUDED -- Task 10's problem (no
-// `edit`/gModal exists yet, this slice). rtUiFieldCap below always returns
-// the plain per-kind cap; Task 10 adds the form-aware narrowing as an
-// additional check ahead of that same return, per the brief's own
-// instruction ("leave named fail-closed or documented-absent hooks where
-// the form logic will attach").
+// modal-form STR/CHAR-bind lookup) is Task 10's own addition, landed
+// directly in rtUiFieldCap below (gModal state itself lives in
+// uidialogs.cla).
 //
 // ================================================================
 // TERec field offsets (Retro68's Multiverse.h:6739 `struct TERec`,
@@ -290,12 +287,48 @@ func rtUiTeClamp(te: ptr, maxLen: int) {
     rtSetLastErr(1, "string truncated")
 }
 
-// rt_ui_field_cap (rt_ui.c:1819-1842) -> rtUiFieldCap. Form-aware
-// narrowing (the CURRENTLY-open-modal-form STR/CHAR-bind lookup) is
-// EXCLUDED -- Task 10 (no `edit`/gModal exists yet this slice); always the
-// plain per-kind cap. Task 10 attaches its own check here, ahead of this
-// same return, per the brief's instruction.
+// rt_ui_field_cap (rt_ui.c:1819-1842) -> rtUiFieldCap. A FIELD's text cap
+// is RTUI_FIELD_TEXT_MAX (255) by default, UNLESS this exact widget is the
+// CURRENTLY open modal form's own STR-bound field with a smaller strCap
+// (a `string(n)`'s own declared cap) or its CHAR-bound field (cap 1) --
+// reuses this existing clamp mechanism with a SMALLER ceiling rather than
+// adding a second clamp path (Task 10). Only ever tighter than
+// rtUiFieldTextMax, never looser: an INT/FIXED/ENUM bind (or no bind at
+// all, or no form open at all) falls through to the plain default.
+// uidesc.cla's own uidFormFindFieldIndex covers rt_ui_form_find_bind's
+// linear-scan role directly (form's binds array, widgetIndex ->
+// fieldIndex, -1 if unbound/no form).
 func rtUiFieldCap(inst: ptr, wIdx: int): int {
+    var w: RtUiWinst
+    var formOff: int
+    var fieldIdx: int
+    var layoutOff: int
+    var ftype: int
+    var strCap: int
+
+    if uidWidgetKind(RtUiWinst(inst).winIdx, wIdx) != rtUiKindField {
+        return rtUiFieldTextMax
+    }
+    if not (rtUiModalActive and rtUiModalInst == inst) {
+        return rtUiFieldTextMax
+    }
+    w = RtUiWinst(inst)
+    formOff = uidWinFormOff(w.winIdx)
+    fieldIdx = uidFormFindFieldIndex(formOff, wIdx)
+    if fieldIdx == -1 {
+        return rtUiFieldTextMax
+    }
+    layoutOff = uidFormLayoutOff(formOff)
+    ftype = uidFieldFtype(layoutOff, fieldIdx)
+    if ftype == rtUiFtStr {
+        strCap = uidFieldStrCap(layoutOff, fieldIdx)
+        if strCap < rtUiFieldTextMax {
+            return strCap
+        }
+    }
+    if ftype == rtUiFtChar {
+        return 1
+    }
     return rtUiFieldTextMax
 }
 

@@ -871,3 +871,41 @@ func TestPopuptableUIScenarioPorted(t *testing.T) {
 	requireUiPort(t)
 	runUIScenarioBuild(t, "popuptable", filepath.Join("..", "..", "testdata", "ui", "popuptable.cla"), 0, true)
 }
+
+// ==================== native-5e Task 10 (slice D): dialogs, StandardFile,
+// modal forms ====================
+//
+// dialogs/formedit/texteditor/texteditor_quit/bookmarks -- the scenario
+// set this task's own brief names, plus the two texteditor scenarios Task
+// 8 moved forward (their .events use answer-save/answer-open/
+// answer-changes, which need askOpen/askSave/askSaveChanges, ported this
+// task). Same byte-identical-golden-compare-only shape as every other
+// Ported wrapper above (no re-assertion of the non-ported tests' own
+// per-snap semantic checks -- those already proved the BEHAVIOR once
+// against the default lane; these prove the PORTED lane produces the
+// identical bytes).
+
+func TestDialogsUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "dialogs", filepath.Join("..", "..", "testdata", "ui", "dialogs.cla"), 0, true)
+}
+
+func TestFormeditUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "formedit", filepath.Join("..", "..", "testdata", "ui", "formedit.cla"), 0, true)
+}
+
+func TestTexteditorUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "texteditor", filepath.Join("..", "..", "examples", "texteditor.cla"), 0, true)
+}
+
+func TestTexteditorQuitUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "texteditor_quit", filepath.Join("..", "..", "examples", "texteditor.cla"), 0, true)
+}
+
+func TestBookmarksUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0, true)
+}

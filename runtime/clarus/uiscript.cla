@@ -3,10 +3,11 @@
 
 // uiscript.cla (native-5e Task 7 Step 5, ported directly by the
 // controlling session -- see task-7-report.md's Step 2 dispatch-log
-// entry): trace helpers (rt_ui.c:373-673, MINUS the dialog answer-queue
-// -- dead this slice, askOpen/askSave/askSaveChanges are outside every
-// one of this slice's own C line ranges) + the scripted-event
-// interpreter + snap (rt_ui.c:4043-4464).
+// entry): trace helpers (rt_ui.c:373-673) + the scripted-event
+// interpreter + snap (rt_ui.c:4043-4464). Task 10 (slice D) completes the
+// dialog answer-queue's own path/str payload (rtUiAnswerStrs/
+// rtUiAnswerPushPath) and the invalid/askOpen/askSave trace helpers,
+// consumed by uidialogs.cla.
 //
 // Trace vocabulary is byte-exact golden vocabulary (rt_ui.c:373-382's
 // own comment, quoted in this task's brief) -- every verb string below is
@@ -53,22 +54,21 @@ var rtUiScriptDbl: bool = false
 
 // ================================================================
 // Scripted dialog/popup answer queue (rt_ui.c:586-658). askOpen/askSave/
-// askSaveChanges consume this queue instead of a real Standard File dialog
-// or Alert(130) -- Task 10's own problem, still fail-closed (ui.cla's
-// rtUiDialogsUnported). Task 9 wires the POPUP kind only (`answer-popup`,
-// consumed by uitable.cla's rtUiPopupClick, gated on rtUiScripted rather
-// than unconditionally -- a popup click is a real widget interaction, not
-// a modal dialog). Fixed 8-slot ring buffer (7 usable -- the full/empty
-// ambiguity of a head==tail ring is broken by never letting tail catch up
-// to head, the usual one-slot-sacrificed idiom): no script ever queues
-// more than a couple of dialogs ahead of where it consumes them, and a
-// script that DOES overflow this gets a loud rtPanic rather than silently
-// clobbering an unconsumed entry.
+// askSaveChanges (uidialogs.cla, Task 10) consume this queue instead of a
+// real Standard File dialog or Alert(130). Task 9 wired the POPUP kind
+// only (`answer-popup`, consumed by uitable.cla's rtUiPopupClick, gated on
+// rtUiScripted rather than unconditionally -- a popup click is a real
+// widget interaction, not a modal dialog). Fixed 8-slot ring buffer (7
+// usable -- the full/empty ambiguity of a head==tail ring is broken by
+// never letting tail catch up to head, the usual one-slot-sacrificed
+// idiom): no script ever queues more than a couple of dialogs ahead of
+// where it consumes them, and a script that DOES overflow this gets a
+// loud rtPanic rather than silently clobbering an unconsumed entry.
 //
-// Each slot is (kind, val) -- no `str` slot yet (the C reference's own
-// rt_ui_answer_push_path, feeding OPEN/SAVE's path answers, is Task 10's
-// own addition; unexercised this task, so this queue carries only what
-// rt_ui_answer_push_val's callers need).
+// Each slot is (kind, val, str) -- `str` (Task 10) is a 256-byte Str255
+// slot, the answer-open/answer-save path payload (rt_ui_answer_push_path's
+// own addition, rt_ui.c:627-640); only OPEN/SAVE-kind entries ever
+// populate it, and only askOpen/askSave ever read it (uidialogs.cla).
 const rtUiAnsOpen: int = 0
 const rtUiAnsSave: int = 1
 const rtUiAnsChanges: int = 2
@@ -77,6 +77,7 @@ const rtUiAnsPopup: int = 4
 
 var rtUiAnswerKinds: ptr = ptr(0)
 var rtUiAnswerVals: ptr = ptr(0)
+var rtUiAnswerStrs: ptr = ptr(0)
 var rtUiAnswerHead: int = 0
 var rtUiAnswerTail: int = 0
 
@@ -84,6 +85,7 @@ func rtUiAnswerInit() {
     if rtUiAnswerKinds == ptr(0) {
         rtUiAnswerKinds = UiNewPtr(32) // 8 slots * 4 bytes
         rtUiAnswerVals = UiNewPtr(32)
+        rtUiAnswerStrs = UiNewPtr(2048) // 8 slots * 256-byte Str255
     }
 }
 
@@ -102,19 +104,67 @@ func rtUiAnswerPushVal(kind: int, val: int) {
     rtUiAnswerTail = (rtUiAnswerTail + 1) mod 8
 }
 
-// rtUiAnswerPop (rt_ui_answer_pop, rt_ui.c:650-658): out-param shape
-// (outKind/outVal, both already-allocated 4-byte scratch) since Clarus
-// functions can't return a small record the way rt_ui_answer_pop returns
-// `const rt_ui_answer *` -- every call site here already owns scratch
-// slots it can pass in (same convention as rtUiCanvasHit's own outIdx).
-func rtUiAnswerPop(outKind: ptr, outVal: ptr) {
+// rtUiAnswerPushPath (rt_ui_answer_push_path, rt_ui.c:627-640, Task 10):
+// `srcC` is a NUL-terminated C-string-shaped buffer (a scripted verb's own
+// rest-of-line argument, rtUiScriptRestOfLine below) -- copied into the
+// ring's own Str255 slot, capped at 255 bytes (Str255's own structural
+// limit), same silent clamp every other Pascal-string fill in this port
+// applies.
+func rtUiAnswerPushPath(kind: int, srcC: ptr) {
+    var n: int
+    var dst: ptr
+    var i: int
+
+    rtUiAnswerCheckRoom()
+    n = 0
+    while peekb(srcC + n) != 0 {
+        n = n + 1
+    }
+    if n > 255 {
+        n = 255
+    }
+    pokel(rtUiAnswerKinds + rtUiAnswerTail * 4, kind)
+    dst = rtUiAnswerStrs + rtUiAnswerTail * 256
+    pokeb(dst, n)
+    i = 0
+    while i < n {
+        pokeb(dst + 1 + i, peekb(srcC + i))
+        i = i + 1
+    }
+    rtUiAnswerTail = (rtUiAnswerTail + 1) mod 8
+}
+
+// rtUiAnswerPopIdx (rt_ui_answer_pop, rt_ui.c:650-658): validates an
+// answer is actually queued (panics otherwise, same "no queued answer"
+// contract), advances the ring, and returns the JUST-CONSUMED slot's own
+// index -- the shared primitive rtUiAnswerPop (below, kind+val only, used
+// by uitable.cla's popup click) and uidialogs.cla's own askOpen/askSave/
+// askSaveChanges (which also need the str slot, and must NOT touch it at
+// all on a CANCEL-kind entry -- rt_ui_ask_open/save never read path255 on
+// their own cancel path either) both build on.
+func rtUiAnswerPopIdx(): int {
+    var idx: int
+
     rtUiAnswerInit()
     if rtUiAnswerHead == rtUiAnswerTail {
         rtPanic("scripted dialog with no queued answer")
     }
-    pokel(outKind, peekl(rtUiAnswerKinds + rtUiAnswerHead * 4))
-    pokel(outVal, peekl(rtUiAnswerVals + rtUiAnswerHead * 4))
+    idx = rtUiAnswerHead
     rtUiAnswerHead = (rtUiAnswerHead + 1) mod 8
+    return idx
+}
+
+// rtUiAnswerPop: out-param shape (outKind/outVal, both already-allocated
+// 4-byte scratch) since Clarus functions can't return a small record the
+// way rt_ui_answer_pop returns `const rt_ui_answer *` -- every call site
+// here already owns scratch slots it can pass in (same convention as
+// rtUiCanvasHit's own outIdx).
+func rtUiAnswerPop(outKind: ptr, outVal: ptr) {
+    var idx: int
+
+    idx = rtUiAnswerPopIdx()
+    pokel(outKind, peekl(rtUiAnswerKinds + idx * 4))
+    pokel(outVal, peekl(rtUiAnswerVals + idx * 4))
 }
 
 // ================================================================
@@ -531,6 +581,35 @@ func rtUiTraceSetInt(namePtr: ptr, wnamePtr: ptr, prop: int, v: int) {
     rtUiEmitLine(t)
 }
 
+// rtUiTraceInvalid (rt_ui.c:405-417, Task 10): `T FIRE <name>.invalid.
+// <wname>` -- deliberately NOT rtUiTraceFire2's usual <name>.<wname>.
+// <event> order (rt_field_desc carries no field name of its own, only the
+// BOUND WIDGET's, which is what's passed here as `wnamePtr`).
+func rtUiTraceInvalid(namePtr: ptr, wnamePtr: ptr) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T FIRE "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr(".invalid."))
+    rtUiTextAppendStrSafe(t, wnamePtr)
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceAskPath (rt_ui.c:663-673, Task 10): `T ASKOPEN <path>` / `T
+// ASKSAVE <path>` -- pathPStr is a Pascal string (the queued answer,
+// already copied out of the ring by the caller).
+func rtUiTraceAskPath(verb: string, pathPStr: ptr) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T "))
+    rtTextAppendStr(t, UiStrAddr(verb))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendStrSafe(t, pathPStr)
+    rtUiEmitLine(t)
+}
+
 // rtUiTraceOpenDoc (rt_ui.c:3956-3958's own inline `T OPENDOC %s`):
 // pathPtr/pathLen name a RAW byte range (NOT Str255 -- rtUiLaunch's own
 // script-scan already has the path as [ptr, len) straight out of the
@@ -878,6 +957,44 @@ func rtUiScriptType() {
     }
 }
 
+// rtUiScriptRestOfLine (rt_ui.c:4427-4428/4431-4432's own `line + 11; if
+// (*p == ' ') p++;`, Task 10): returns a pointer PAST `verbLen` bytes and
+// one separating space (if present) into rtUiScriptLineBuf -- same
+// rest-of-line convention rtUiScriptType uses for `type`'s own C-string,
+// but returning the pointer (into the shared line buffer, valid only
+// until the next rtUiScriptNextLine) instead of walking it directly:
+// answer-open/answer-save's path argument, unlike `type`'s keystrokes,
+// is handed straight to rtUiAnswerPushPath, which copies it out
+// immediately.
+func rtUiScriptRestOfLine(verbLen: int): ptr {
+    var p: int
+
+    p = verbLen
+    if peekb(rtUiScriptLineBuf + p) == int(' ') {
+        p = p + 1
+    }
+    return rtUiScriptLineBuf + p
+}
+
+// rtUiScriptAnswerChanges (rt_ui.c:4434-4440, Task 10): `answer-changes
+// <save|discard|cancel>` -- queues the 0/1/2 saveChoice askSaveChanges
+// returns next.
+func rtUiScriptAnswerChanges() {
+    var v: int
+
+    if rtUiStrEq(rtUiArg1Buf, UiStrAddr("save")) {
+        v = 0
+    } else if rtUiStrEq(rtUiArg1Buf, UiStrAddr("discard")) {
+        v = 1
+    } else if rtUiStrEq(rtUiArg1Buf, UiStrAddr("cancel")) {
+        v = 2
+    } else {
+        rtPanic("answer-changes: bad argument (want save|discard|cancel)")
+        v = 0
+    }
+    rtUiAnswerPushVal(rtUiAnsChanges, v)
+}
+
 func rtUiScriptClose() {
     var wp: ptr
     var inst: ptr
@@ -1112,10 +1229,8 @@ func rtUiLitLine(s: string): ptr {
 // `answer-popup` (Task 9, rt_ui.c:4447-4454) pushes onto the answer queue
 // above -- consumed by uitable.cla's rtUiPopupClick. `answer-open`/
 // `answer-save`/`answer-changes`/`answer-cancel` (the dialog side of the
-// SAME queue, rt_ui.c:4421-4446) stay a named log+quit fail-closed arm:
-// askOpen/askSave/askSaveChanges aren't ported yet (Task 10, ui.cla's
-// rtUiDialogsUnported), so a script naming one of THOSE four hits the same
-// catch-all as a genuinely unrecognized verb. `launchdoc` is a real,
+// SAME queue, rt_ui.c:4421-4446, Task 10) are consumed by uidialogs.cla's
+// rtUiAskOpen/rtUiAskSave/rtUiAskSaveChanges. `launchdoc` is a real,
 // explicit no-op (already consumed once by rtUiLaunch's own pre-scan,
 // rt_ui.c:4455-4461's own comment) -- NOT fail-closed.
 // ================================================================
@@ -1164,11 +1279,28 @@ func rtUiRunScripted() {
             // `answer-open`'s rest-of-line parsing), so rtUiScriptTokenize's
             // own whitespace split already isolated it.
             rtUiAnswerPushVal(rtUiAnsPopup, rtUiAtoi(rtUiArg1Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-open")) {
+            // `answer-open <rest-of-line path>` (Task 10, rt_ui.c:4421-4429):
+            // a path can contain spaces, so it's read past the verb and one
+            // separating space, not via rtUiArg1Buf's own whitespace-split
+            // token. strlen("answer-open") == 11.
+            rtUiAnswerPushPath(rtUiAnsOpen, rtUiScriptRestOfLine(11))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-save")) {
+            // strlen("answer-save") == 11.
+            rtUiAnswerPushPath(rtUiAnsSave, rtUiScriptRestOfLine(11))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-changes")) {
+            rtUiScriptAnswerChanges()
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-cancel")) {
+            // Queues a cancel for whichever of askOpen/askSave consumes it
+            // next -- rtUiAskOpen/rtUiAskSave both recognize
+            // rtUiAnsCancel; rtUiAskSaveChanges does not (its own
+            // three-way cancel is `answer-changes cancel` instead).
+            rtUiAnswerPushVal(rtUiAnsCancel, 0)
         } else if peekb(rtUiVerbBuf) == 0 {
             // blank/whitespace-only line (sscanf found no tokens in the
             // C reference): nothing to dispatch.
         } else {
-            log("uiport: unknown or unsupported scripted verb (dialog answer-open/answer-save/answer-changes/answer-cancel land in Task 10)")
+            log("uiport: unknown or unsupported scripted verb")
             quit 1
         }
         rtUiPumpPassive()

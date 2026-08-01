@@ -617,6 +617,13 @@ on App.startCLI(args: list of string) {
             // "last" by the brief's own stated file-creation order, not
             // a real dependency requirement.
             neededMods.add("uiscript.cla")
+            // Task 10: uidialogs.cla (dialogs, StandardFile, modal forms --
+            // gModal + the fill/validate/writeback walker) -- spliced last;
+            // same "whole-program visibility makes splice order irrelevant
+            // to correctness" note as uiscript.cla's own comment above (its
+            // own uitable.cla RtFt*/rtUiKindPopup/uiscript.cla answer-queue
+            // references resolve fine regardless of splice position).
+            neededMods.add("uidialogs.cla")
         }
         // The manifest: Task 4 (Plan 5b) shipped exactly this one usage-
         // flag/file pair (ser.cla) plus the machinery; Task 7 repointed

@@ -711,10 +711,11 @@ func rtUiOpen(winIdx: int): ptr {
 }
 
 // ================================================================
-// Window teardown/close (rt_ui.c:4740-4897). The gModal (forms) carve-
-// out at rt_ui_close_internal's own top is omitted entirely -- dead
-// code, gModal can never be active this slice (no `edit` intrinsic
-// ported -- Task 10). Task 9 adds the table/popup-specific teardown: a
+// Window teardown/close (rt_ui.c:4740-4897). The gModal (forms) carve-out
+// at rtUiCloseInternal's own top (Task 10) lives on that function itself,
+// below -- not here (rtUiTeardownWindow is the shared "actually tear the
+// Toolbox objects down" primitive both the plain and form-cancel paths
+// call). Task 9 adds the table/popup-specific teardown: a
 // table's ListHandle is disposed BEFORE DisposeWindow (rt_ui.c:4747-4767
 // -- its own vertical scrollbar is a real Control Manager control living
 // in THIS window's own control list, so it would be silently
@@ -801,6 +802,26 @@ func rtUiCloseInternal(inst: ptr): bool {
     var cancelSlot: ptr
     var cancelled: bool
 
+    // Form carve-out (rt_ui.c:4874-4881, Task 10): the currently-modal
+    // window routes to rtUiFormCancel (same carve-out the close-box path
+    // already had, below) BEFORE the generic closeRequest path even runs,
+    // and ALWAYS reports "closed" -- a form has no dirty-document veto of
+    // its own. rtUiFormCancel disposes the window itself, so this returns
+    // immediately after -- nothing below double-closes it. Root-caused
+    // HERE (rt_ui.c's own Fix round 1 writeup, verbatim): a form window
+    // reaching rt_ui_close_internal used to fire a plain closeRequest
+    // (wrong: forms never get that hook) and never ran form teardown, so
+    // gModal stayed `active` with `inst` pointing at memory this function
+    // was about to free -- every later click dereferenced that dangling
+    // pointer, permanently bricking the app. This is the ONE choke point
+    // every caller (rtUiClose, rtUiQuit's cascade, and the close-box/
+    // scripted-close paths that funnel through rtUiClose) shares, so
+    // fixing it here covers all of them at once.
+    if rtUiModalActive and inst == rtUiModalInst {
+        rtUiFormCancel(inst)
+        return true
+    }
+
     w = RtUiWinst(inst)
     winIdx = w.winIdx
     rtUiTraceFire1(uidWinName(winIdx), "closeRequest")
@@ -819,25 +840,6 @@ func rtUiCloseInternal(inst: ptr): bool {
 func rtUiClose(instV: ptr) {
     var ok: bool
     ok = rtUiCloseInternal(instV)
-}
-
-// rtUiDialogsUnported (final-review fix round 1, Task 7): the shared
-// fail-closed stub for every dialog/form intrinsic this slice does not
-// port -- askOpen/askSave/askSaveChanges/edit/formIsNew all need
-// Dialog Manager + StandardFile (askOpen/askSave), the modal-form
-// machinery (edit), or rt_ui_form_is_new's own state (formIsNew), none
-// of which exist yet (Task 10, slice D). Mirrors uiwidgets.cla's
-// widget-kind fail-closed arm (log + quit 1) exactly, not a new pattern.
-// Declared `bool` (not void) so cprint.cla can splice a call to it
-// straight into EVERY one of these intrinsics' own expression position
-// (askOpen/askSave/askSaveChanges/formIsNew all embed their C result
-// directly, same "int 0/1/2 IS the value" convention cprint.cla's own
-// comments describe) -- `quit 1` never returns, so the trailing `return
-// false` is unreachable padding only to satisfy the checker.
-func rtUiDialogsUnported(): bool {
-    log("uiport: dialogs/forms not yet ported -- Task 10 (slice D)")
-    quit 1
-    return false
 }
 
 func rtUiQuit() {
@@ -1804,12 +1806,21 @@ func rtUiFireWidget(inst: ptr, wIdx: int) {
     var ctrl: ptr
     var newVal: int
     var savedPort: ptr
+    var wasModalInst: bool
+    var flags: int
+    var front: ptr
 
     w = RtUiWinst(inst)
     savedPort = rtUiGetPortSaved()
     UiSetPort(w.wp)
     kind = uidWidgetKind(w.winIdx, wIdx)
     ctrl = rtUiCtrlAt(w, wIdx)
+    // Captured BEFORE the switch, not re-read after (rt_ui.c:2692-2696,
+    // Task 10): a successful rtUiFormAccept/rtUiFormCancel below disposes
+    // `inst` (and its window) outright, so `inst` itself must never be
+    // dereferenced again once that's happened -- this bool is the only
+    // thing checked past that point (see the port-restore comment below).
+    wasModalInst = rtUiModalActive and rtUiModalInst == inst
 
     if kind == rtUiKindCheck {
         if UiGetControlValue(ctrl) != 0 {
@@ -1821,14 +1832,41 @@ func rtUiFireWidget(inst: ptr, wIdx: int) {
         rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "change")
         UiFireWidget(w.winIdx, inst, wIdx, rtUiWevChange, newVal, 0)
     } else if kind == rtUiKindButton {
-        // wasModalInst (rt_ui.c:2697/2711-2718) is always false this
-        // slice (gModal can never be active -- no forms ported); the C
-        // reference's own form-accept/form-cancel branches are dead.
-        rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "click")
-        UiFireWidget(w.winIdx, inst, wIdx, rtUiWevClick, 0, 0)
+        // mac-target-4d Task 6 / native-5e Task 10: this is the ONE choke
+        // point every DEFAULT/CANCEL button reaches regardless of source
+        // (real click, scripted click, or Return/Escape key wiring) --
+        // picked as the single place to intercept a modal FORM window's
+        // OK/Cancel buttons (walker-validate/accept, or cancel) instead of
+        // a plain click fire.
+        flags = uidWidgetFlags(w.winIdx, wIdx)
+        if wasModalInst and (flags & rtUiFlagDefault) != 0 {
+            rtUiFormAccept(inst) // a validation failure leaves `inst` open/untouched; success tears it down
+        } else if wasModalInst and (flags & rtUiFlagCancel) != 0 {
+            rtUiFormCancel(inst) // always tears down
+        } else {
+            rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "click")
+            UiFireWidget(w.winIdx, inst, wIdx, rtUiWevClick, 0, 0)
+        }
     }
 
-    UiSetPort(savedPort)
+    // Fix round 1 (rt_ui.c:2728-2745, Task 10): a REAL click reaches here
+    // with the port already SetPort'd to inst->wp by
+    // rtUiHandleContentClick before TrackControl even ran, so the plain
+    // savedPort snapshot above IS w.wp itself in that case -- if
+    // rtUiFormAccept/rtUiFormCancel just disposed it (wasModalInst was
+    // true, and the modal is no longer active -- a validation failure
+    // instead leaves it active, so this stays false then), blindly
+    // restoring savedPort would leave the CURRENT port pointing at freed
+    // WindowRecord memory. Fall back to whatever window is front NOW
+    // instead; if none is left at all, there's nothing valid to set.
+    if wasModalInst and not rtUiModalActive {
+        front = UiFrontWindow()
+        if front != ptr(0) {
+            UiSetPort(front)
+        }
+    } else {
+        UiSetPort(savedPort)
+    }
 }
 
 func rtUiFindFlagged(inst: ptr, flag: int, outIdx: ptr): bool {
@@ -2075,8 +2113,28 @@ func rtUiHandleMouseDown(ev: ptr) {
     wp = ptr(peekl(wpSlot))
     UiDisposePtr(wpSlot)
 
-    // gModal modality filter (rt_ui.c:3429-3446) omitted -- dead, no
-    // forms this slice.
+    // Modality filter (rt_ui.c:3429-3446, Task 10): while a form is open,
+    // a click that isn't headed for IT gets a beep instead -- the menu
+    // bar (any item, since there's no per-item way to tell without
+    // opening it) and any OTHER window of ours (a real System 6 modal
+    // dialog blocks the whole app, not just its own window). DragWindow
+    // ON the modal itself is explicitly allowed (falls through to the
+    // inDrag case below unfiltered); System 6/DA windows (never
+    // rtUiIsOurs) and every other event kind (updates, activates,
+    // timers, TEIdle) are untouched -- this is the ONE gate, nothing
+    // else in the loop changes. The scripted dispatch path
+    // (rtUiScriptClick) calls this exact same function, so scripts get
+    // the identical filtering for free.
+    if rtUiModalActive {
+        if part == 1 {
+            UiSysBeep(1)
+            return
+        }
+        if wp != ptr(0) and rtUiIsOurs(wp) and wp != RtUiWinst(rtUiModalInst).wp {
+            UiSysBeep(1)
+            return
+        }
+    }
 
     if part == 6 {
         if wp != ptr(0) and UiTrackGoAway(wp, wherePt) {
@@ -2130,9 +2188,9 @@ func rtUiHandleMouseDown(ev: ptr) {
 // Cancel-button check below even while a TE is focused. Every TEKey call
 // is followed by a scroll-sync (TEAutoView can move the view even for a
 // caret-only arrow key), but only a MUTATING key (not an arrow) goes
-// through rtUiTeMutated's change trace/event funnel. The modal-form typing
-// filter (rt_ui.c:3611-3629, a bound INT/FIXED field's char whitelist) is
-// EXCLUDED -- Task 10, documented-absent (no gModal exists yet).
+// through rtUiTeMutated's change trace/event funnel. The modal-form
+// typing filter (rt_ui.c:3611-3629, a bound INT/FIXED field's char
+// whitelist, Task 10) runs just ahead of the plain TEKey call, below.
 // ================================================================
 
 func rtUiHandleKey(ev: ptr) {
@@ -2145,6 +2203,8 @@ func rtUiHandleKey(ev: ptr) {
     var wIdx: int
     var w: RtUiWinst
     var savedPort: ptr
+    var fieldIdx: int
+    var ftype: int
 
     ch = peekb(ev + 5)
     modifiers = peekw(ev + 14)
@@ -2167,6 +2227,25 @@ func rtUiHandleKey(ev: ptr) {
             return
         }
         if ch != 27 {
+            // Modal-form typing filter (rt_ui.c:3611-3629, Task 10): a
+            // bound INT/FIXED field only accepts the characters
+            // rtUiFormCharOk allows -- every other keystroke that would
+            // otherwise INSERT (arrows/backspace are never filtered,
+            // they don't insert) beeps and is dropped before it ever
+            // reaches TEKey. A STR/CHAR/unbound field, or any field in a
+            // non-form window, is untouched (falls straight through to
+            // the plain TEKey call below).
+            if rtUiModalActive and rtUiModalInst == inst and ch != 8 and not (ch >= 28 and ch <= 31) {
+                fieldIdx = uidFormFindFieldIndex(uidWinFormOff(winIdx), w.focusIdx)
+                if fieldIdx != -1 {
+                    ftype = uidFieldFtype(uidFormLayoutOff(uidWinFormOff(winIdx)), fieldIdx)
+                    if (ftype == rtUiFtInt or ftype == rtUiFtFixed) and not rtUiFormCharOk(rtUiTeAt(w, w.focusIdx), ch, ftype) {
+                        UiSysBeep(1)
+                        return
+                    }
+                }
+            }
+
             savedPort = rtUiGetPortSaved()
             UiSetPort(wp)
             UiTEKey(ch, rtUiTeAt(w, w.focusIdx))

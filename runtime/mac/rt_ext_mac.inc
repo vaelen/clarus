@@ -34,6 +34,7 @@
                            TEGetScrapLength come from TextEdit.h, already visible transitively. */
 #include <Lists.h>     /* List Manager -- Task 9's uitable.cla externs (rt_ui.c's own precedent, :69) */
 #include <NumberFormatting.h> /* NumToString -- Task 9 table cell int/fixed rendering, no libc needed */
+#include <StandardFile.h> /* SFGetFile/SFPutFile -- Task 10's rt_ext_UiSFGetFile/rt_ext_UiSFPutFile (rt_ui.c's own precedent, :73) */
 
 /* ---- 5a: ptr/Handle waist (Plan 5a Task 3) ---- */
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
@@ -604,6 +605,50 @@ static void rt_ext_ui_pstrcpy(unsigned char *dst, const unsigned char *src) {
     n = src ? src[0] : 0;
     for (i = 0; i < n; i++) dst[1 + i] = src[1 + i];
     dst[0] = n;
+}
+
+/* rt_ext_UiSFGetFile/rt_ext_UiSFPutFile (Task 10): the real (non-scripted)
+ * halves of askOpen/askSave -- rt_ui_ask_open/rt_ui_ask_save's own Point/
+ * SFReply marshaling (rt_ui.c:2399-2455) adapted verbatim. SFGetFile/
+ * SFPutFile are routine-selector Pascal traps (Multiverse.h's own
+ * M68K_INLINE(0x3F3C, <selector>, 0xA9EA) encoding), not a single plain
+ * trap word uidialogs.cla's own `= trap` clause could express directly --
+ * bare Clarus externs (UiSFGetFile/UiSFPutFile, uidialogs.cla) resolving
+ * to these wrappers, same "the cprint-lane rt_ext_ wrapper just calls the
+ * real C name directly" precedent uitext.cla's own UiTEFromScrap/
+ * UiTEToScrap/UiTEGetScrapLength already established. Point is always the
+ * fixed {100,100} corner (rt_ui.c's own comment: "System 6 has no
+ * auto-center convention") -- never varies by caller, so it's baked in
+ * here rather than threaded through as a Clarus-side argument.
+ * SFReply.fName (Str63) is copied into the caller's Str255 scratch via
+ * the same rt_ext_ui_pstrcpy helper just above (already used for an
+ * FSSpec name in the AE odoc handler below). Never exercised by any
+ * golden scenario (every one is script-driven, taking rtUiAskOpen/
+ * rtUiAskSave's OTHER branch in uidialogs.cla) -- ported for contract
+ * completeness, same status as rt_ext_UiLaunchReal below. */
+int32_t rt_ext_UiSFGetFile(void *path255) {
+    Point where;
+    SFTypeList types;
+    SFReply reply;
+    where.h = 100;
+    where.v = 100;
+    types[0] = 'TEXT';
+    SFGetFile(where, (ConstStr255Param)"\p", NULL, 1, types, NULL, &reply);
+    if (!reply.good) return 0;
+    SetVol(NULL, reply.vRefNum);
+    rt_ext_ui_pstrcpy((unsigned char *)path255, reply.fName);
+    return 1;
+}
+int32_t rt_ext_UiSFPutFile(void *suggested255, void *path255) {
+    Point where;
+    SFReply reply;
+    where.h = 100;
+    where.v = 100;
+    SFPutFile(where, (ConstStr255Param)"\pSave as:", (ConstStr255Param)suggested255, NULL, &reply);
+    if (!reply.good) return 0;
+    SetVol(NULL, reply.vRefNum);
+    rt_ext_ui_pstrcpy((unsigned char *)path255, reply.fName);
+    return 1;
 }
 
 static OSErr rt_ext_ui_ae_check_missed(const AppleEvent *evt) {

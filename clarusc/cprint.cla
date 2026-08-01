@@ -2677,12 +2677,11 @@ func fpIntrCall(x: int): text {
         // above for its own out-parameter. Embedded directly (no temp): the
         // call's own int (0/1) result IS the Bool value, same as every
         // other int-returning rt_* call in this function (e.g. IStrCmp).
-        // final-review fix round 1 (Task 7): askOpen needs StandardFile,
-        // not ported this slice (Task 10) -- fail-closed under --uiport,
-        // same rtUiDialogsUnported() stub every dialog/form intrinsic
-        // below uses, rather than a raw rt_ui_ask_open link error.
+        // Task 10 (native-5e slice D): askOpen is ported (uidialogs.cla's
+        // rtUiAskOpen) -- same signature/argument shape as the non-ported
+        // rt_ui_ask_open call just below.
         if cpUiPortFlag {
-            return "clar_fn_rtUiDialogsUnported()"
+            return "clar_fn_rtUiAskOpen((uint8_t*)&(" + fpAddrable(a0) + "))"
         }
         return "rt_ui_ask_open((uint8_t*)&(" + fpAddrable(a0) + "))"
     } else if nm == IUiAskSave() {
@@ -2690,7 +2689,7 @@ func fpIntrCall(x: int): text {
         // above); suggested is read-only, so it takes the ordinary
         // fpStrAddr const-cast path.
         if cpUiPortFlag {
-            return "clar_fn_rtUiDialogsUnported()"
+            return "clar_fn_rtUiAskSave((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
         }
         return "rt_ui_ask_save((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
     } else if nm == IUiAskSaveChanges() {
@@ -2698,7 +2697,7 @@ func fpIntrCall(x: int): text {
         // raw saveChoice enum word (0/1/2), embedded directly like
         // IUiGetWidth/IUiGetHeight's `short` results just below.
         if cpUiPortFlag {
-            return "clar_fn_rtUiDialogsUnported()"
+            return "clar_fn_rtUiAskSaveChanges(" + fpStrAddr(a0) + ")"
         }
         return "rt_ui_ask_save_changes(" + fpStrAddr(a0) + ")"
     } else if nm == IUiCanvasClear() {
@@ -2754,11 +2753,10 @@ func fpIntrCall(x: int): text {
         fpUiEditStmt(x, a0, a1, a2)
         return toText("")
     } else if nm == IUiFormIsNew() {
-        // final-review fix round 1 (Task 7): formIsNew reads rt_ui_edit's
-        // own "was this a `new T`-kind edit" state -- same not-ported-
-        // this-slice fail-closed as IUiAskOpen/IUiAskSave above.
+        // formIsNew reads rt_ui_edit's own "was this a `new T`-kind edit"
+        // state -- Task 10: ported (uidialogs.cla's rtUiFormIsNew).
         if cpUiPortFlag {
-            return "clar_fn_rtUiDialogsUnported()"
+            return "clar_fn_rtUiFormIsNew()"
         }
         return "(rt_ui_form_is_new())"
 
@@ -2808,26 +2806,32 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
     winName = poolGet(irtName(irExprType(x)))
     kind = irIntConstV(kindArg)
 
-    // final-review fix round 1 (Task 7): `edit` needs the modal-form
-    // machinery (rt_ui_edit), not ported this slice (Task 10) -- one
-    // guard here covers all four `kind` arms below (root cause, not a
-    // guard duplicated into each), same rtUiDialogsUnported() stub
-    // IUiAskOpen/IUiAskSave/IUiAskSaveChanges/IUiFormIsNew use.
-    if cpUiPortFlag {
-        fpEmit("clar_fn_rtUiDialogsUnported();")
-        return
-    }
-
+    // Task 10: `edit` is ported (uidialogs.cla's rtUiEdit, signature
+    // `rtUiEdit(winIdx, src, isNew, wbKind, addr, lst, idx, mp, key255)` --
+    // `winIdx` (cpFindWindowIndex) replaces the non-ported lane's own
+    // `&clar_ui_window_<Win>` descriptor pointer, same substitution
+    // IUiOpen/IUiFront/IUiClose already made under cpUiPortFlag). RT_UI_WB_
+    // NONE/ADDR/LIST/MAP are emitted as the literal ints 0/1/2/3 (rt_ui.h's
+    // own numbering, mirrored by uidialogs.cla's rtUiWbNone/Addr/List/Map)
+    // -- no macro is visible to this call site's hand-built C text.
     if kind == 0 {
         // `edit F, new T` -- T is F's own form record type.
         recName = poolGet(cpFindWindowFormRecName(winName))
         t = fpNewTmp("clar_rec_" + recName)
         fpEmit(t + " = clar_new_" + recName + "();")
-        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 1, RT_UI_WB_NONE, 0, 0, 0, 0, 0);")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 1, 0, (void *)0, (void *)0, 0, (void *)0, (void *)0);")
+        } else {
+            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 1, RT_UI_WB_NONE, 0, 0, 0, 0, 0);")
+        }
     } else if kind == 1 {
         // Global or window-scoped per-instance record variable.
         addrText = fpAddrable(opA)
-        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&(" + addrText + "), 0, RT_UI_WB_ADDR, (void *)&(" + addrText + "), 0, 0, 0, 0);")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&(" + addrText + "), 0, 1, (void *)&(" + addrText + "), (void *)0, 0, (void *)0, (void *)0);")
+        } else {
+            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&(" + addrText + "), 0, RT_UI_WB_ADDR, (void *)&(" + addrText + "), 0, 0, 0, 0);")
+        }
     } else if kind == 2 {
         // List element -- src is rt_list_at, RE-DERIVED right here (rt_ui_edit
         // copies immediately, so the transient pointer is safe). cpListPorted
@@ -2836,7 +2840,13 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         lstText = fpExpr(opA)
         idxT = fpNewTmp("int32_t")
         fpEmit(idxT + " = (int32_t)(" + fpExpr(opB) + ");")
-        if cpListPorted {
+        if cpUiPortFlag {
+            if cpListPorted {
+                fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
+            } else {
+                fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)rt_list_at(" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
+            }
+        } else if cpListPorted {
             fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
         } else {
             fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)rt_list_at(" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
@@ -2865,7 +2875,11 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         } else {
             fpEmit("rt_map_get_dv(" + mapText + ", (const uint8_t*)&" + keyT + ", &" + t + ");")
         }
-        fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 0, RT_UI_WB_MAP, 0, 0, 0, " + mapText + ", (const unsigned char*)&" + keyT + ");")
+        if cpUiPortFlag {
+            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 0, 3, (void *)0, (void *)0, 0, (void*)" + mapText + ", (void*)&" + keyT + ");")
+        } else {
+            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 0, RT_UI_WB_MAP, 0, 0, 0, " + mapText + ", (const unsigned char*)&" + keyT + ");")
+        }
     }
 }
 

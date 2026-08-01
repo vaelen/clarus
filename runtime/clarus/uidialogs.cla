@@ -1,0 +1,814 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uidialogs.cla: dialogs, StandardFile, and modal forms -- native-5e
+// Task 10 (slice D, the FINAL port slice). Port target: rt_ui.c:344-371
+// (gModal), 586-673 (scripted answer-queue trace formats, MINUS the ring
+// itself -- Task 9 already ported that half into uiscript.cla), 1803-1842
+// (rt_ui_form_find_bind + the form-aware field cap -- the former is
+// already covered by uidesc.cla's own uidFormFindFieldIndex, the latter
+// completes uitext.cla's Task 8 stub directly, not duplicated here),
+// 2386-2475 (askOpen/askSave/askSaveChanges, both halves), 2658-2746 (the
+// fire_widget form intercept -- lives in ui.cla, not here, since
+// rtUiFireWidget is ui.cla's own function; only its two new callees,
+// rtUiFormAccept/rtUiFormCancel, live here), 3429-3458+3513-3555+3611-3629
+// (the modality filter + typing filter -- ui.cla's own
+// rtUiHandleMouseDown/rtUiHandleKey, calling rtUiFormCharOk here), 4658-
+// 4661 (form WDEF choice -- Task 9 already landed this in rtUiOpen;
+// verified, no change needed), 4844-4933 (close_internal carve-out --
+// ui.cla's own rtUiCloseInternal, calling rtUiFormCancel here), 4935-5273
+// (parse_int, parse_fixed, form_invalid, form_fill, form_accept,
+// rt_ui_edit, form_is_new -- all here).
+//
+// This file owns gModal (module-level state, mirroring the C reference's
+// own file-scope static) and every function that reads or writes it.
+// Everything else in this port (ui.cla/uiwidgets.cla/uitext.cla/
+// uitable.cla) reads gModal only through the four module-level `var`s
+// this file declares (whole-program visibility, docs/clarus-language-
+// reference.md:736 -- same cross-file convention rtUiScripted/
+// rtUiAnswerKinds etc. already establish): rtUiModalActive/rtUiModalInst
+// (uitext.cla's rtUiFieldCap and ui.cla's typing filter both need to ask
+// "is a form open, and is THIS window it"), the rest are private to this
+// file's own walker.
+
+// ================================================================
+// gModal (rt_ui.c:344-371): ONE modal form at a time (rtUiEdit panics if
+// `active` is already set). `buf`/`bufH` is a locked Handle of the form's
+// own recSize bytes, a scratch COPY of the record being edited (never the
+// caller's own memory): rtUiFormFill fills widgets from it at open,
+// rtUiFormAccept mutates it field-by-field as each bind validates, and
+// only the ACCEPT path ever propagates it onward (to
+// addr/lst+idx/mp+key255, per wbKind). `isNew` is read back by
+// rtUiFormIsNew (valid while `active`, i.e. from the moment rtUiEdit
+// opens the window through the end of its own accepted/cancelled handler
+// dispatch). `key255` is a 256-byte OWN copy of the map key (not a
+// pointer to the caller's -- the caller's argument might be a transient
+// buffer that doesn't outlive the call), lazily allocated once and
+// reused across every `edit` call for the program's whole lifetime (same
+// "never disposed, module-lifetime scratch" convention
+// uiscript.cla's own rtUiAnswerKinds/Vals arrays already use).
+// ================================================================
+var rtUiModalActive: bool = false
+var rtUiModalInst: ptr = ptr(0)
+var rtUiModalBufH: ptr = ptr(0)
+var rtUiModalBuf: ptr = ptr(0)
+var rtUiModalIsNew: bool = false
+var rtUiModalWbKind: int = 0
+var rtUiModalAddr: ptr = ptr(0)
+var rtUiModalLst: ptr = ptr(0)
+var rtUiModalIdx: int = 0
+var rtUiModalMp: ptr = ptr(0)
+var rtUiModalKey255: ptr = ptr(0)
+
+// rt_ui.h's RT_UI_WB_* (writeback destination selector) and RTUI_EV_
+// ACCEPTED/CANCELLED (the two win-event kinds this file's own accept/
+// cancel paths fire) -- mirrored here since rt_ui.h is a C header, never
+// included by Clarus source, same convention every other ui*.cla file's
+// own RTUI_* mirror block already follows.
+const rtUiWbNone: int = 0
+const rtUiWbAddr: int = 1
+const rtUiWbList: int = 2
+const rtUiWbMap: int = 3
+const rtUiEvAccepted: int = 5
+const rtUiEvCancelled: int = 6
+
+// ---- StandardFile (Ch12, Task 10): the real (non-scripted) halves of
+// askOpen/askSave. Point is always the fixed {100,100} corner (System 6
+// has no auto-center convention) -- never varies by caller, so it's
+// baked into the C wrapper rather than threaded through as a Clarus-side
+// argument (rt_ui.c:2399-2455's own `where.h = 100; where.v = 100;`,
+// unconditional). SFGetFile/SFPutFile are routine-selector Pascal traps
+// (Multiverse.h's own M68K_INLINE(0x3F3C, <selector>, 0xA9EA) encoding),
+// not a single plain trap word this language's `= trap` clause can
+// express -- bare declaration, same "the cprint-lane rt_ext_ wrapper
+// just calls the real C name directly" precedent uitext.cla's own
+// UiTEFromScrap/UiTEToScrap/UiTEGetScrapLength already established (this
+// file's own header comment quotes theirs). Never exercised by any
+// golden scenario (every one is script-driven, taking the `rtUiScripted`
+// branch below instead) -- ported for contract completeness.
+external func UiSFGetFile(path255Out: ptr): bool
+external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
+
+// ================================================================
+// rt_ui_field_cap's form-aware narrowing (rt_ui.c:1819-1842) completes
+// uitext.cla's Task 8 stub -- see that file's own rtUiFieldCap, which
+// this task edits directly (not duplicated here): the plain per-kind cap
+// stays the default; a FIELD that's the CURRENTLY open modal form's own
+// STR-bound field (with a smaller strCap) or CHAR-bound field (cap 1)
+// narrows it. uidesc.cla's uidFormFindFieldIndex already covers
+// rt_ui_form_find_bind's own linear-scan role directly (form's own binds
+// array, widgetIndex -> fieldIndex), so no separate port of that
+// function lives here.
+// ================================================================
+
+// ================================================================
+// Manual decimal parsers (rt_ui.c:4935-5025): parse_int/parse_fixed. NO
+// libc atoi/strtol -- see the C reference's own header comment (quoted
+// in the task brief) for why: empty/malformed/int32-overflow must all be
+// validation FAILURES, not silently-wrong results. `p`/`len` name the
+// SAME [ptr, len) byte range the C reference's own `unsigned char *`/
+// `short len` pair does (a Str255's data bytes, `text+1`/`text[0]`);
+// `out` is a fresh 4-byte scratch slot poked with the parsed int32 ONLY
+// on success (rtUiFormAccept below passes the record's own field address
+// directly -- see its own comment).
+// ================================================================
+
+// rtUiParseInt (rt_ui.c:4947-4966). ponytail (verbatim from the C
+// reference's own disclosure): rejects the single extreme value
+// INT32_MIN as "overflow" even though it fits -- the overflow guard caps
+// BOTH signs' magnitude at 2147483647 rather than special-casing the
+// negative side's one extra representable value; not worth a second,
+// sign-aware comparison for one edge case no realistic form field needs.
+func rtUiParseInt(p: ptr, len: int, out: ptr): bool {
+    var i: int
+    var neg: bool
+    var v: int
+    var anyDigit: bool
+    var c: int
+
+    if len == 0 {
+        return false
+    }
+    i = 0
+    neg = false
+    if peekb(p) == int('-') {
+        neg = true
+        i = 1
+    }
+    if i >= len {
+        return false // empty, or just "-"
+    }
+    v = 0
+    anyDigit = false
+    while i < len {
+        c = peekb(p + i)
+        if c < int('0') or c > int('9') {
+            return false
+        }
+        if v > (2147483647 - (c - int('0'))) / 10 {
+            return false // would overflow
+        }
+        v = v * 10 + (c - int('0'))
+        anyDigit = true
+        i = i + 1
+    }
+    if not anyDigit {
+        return false
+    }
+    if neg {
+        pokel(out, 0 - v)
+    } else {
+        pokel(out, v)
+    }
+    return true
+}
+
+// rtUiParseFixed (rt_ui.c:4968-5025): 16.16 fixed out, mirroring
+// rtUiFixedToStr's OWN place-value scheme (uitable.cla) in reverse.
+// Integer part: same overflow-checked accumulation as rtUiParseInt,
+// capped at 32767 for EITHER sign (same ponytail simplification as
+// rtUiParseInt's own INT32_MIN carve-out -- the true negative floor is
+// -32768.0, not worth a second sign-aware comparison). Fraction part:
+// digit-by-digit REVERSE Horner (`frac = (frac + digit*65536) / 10`,
+// walked last-digit-first) -- exact for power-of-two fractions (.5,
+// .25, .125, .0625, ...), close (off by at most one unit) for others --
+// run ONLY when a `.` is actually present (`dot >= 0`): a whole number
+// like "7" has NO fraction at all (Fix round 1's own bug, quoted
+// verbatim from the C reference: the loop used to run unconditionally
+// with `dot` still -1, re-walking the WHOLE string, integer digits
+// included, as if they were fractional -- "7" -> 327680+... instead of
+// 7<<16 = 458752). ROUND-TRIP CAVEAT (verbatim): rtUiFixedToStr's own
+// display already FLOORS 65536 fractional levels down to 4 decimal
+// digits -- printing a value then re-parsing those same unedited digits
+// is not guaranteed to reproduce the identical bit pattern for an
+// arbitrary fraction, since 10000 decimal levels and 65536 binary levels
+// don't divide evenly.
+func rtUiParseFixed(p: ptr, len: int, out: ptr): bool {
+    var i: int
+    var dot: int
+    var j: int
+    var neg: bool
+    var ipart: int
+    var frac: int
+    var anyDigit: bool
+    var c: int
+    var limit: int
+    var v: int
+
+    if len == 0 {
+        return false
+    }
+    i = 0
+    dot = -1
+    neg = false
+    if peekb(p) == int('-') {
+        neg = true
+        i = 1
+    }
+    if i >= len {
+        return false
+    }
+    anyDigit = false
+    while i < len {
+        c = peekb(p + i)
+        if c == int('.') and dot < 0 {
+            dot = i
+        } else if c < int('0') or c > int('9') {
+            return false // stray char, or a 2nd '.'
+        } else {
+            anyDigit = true
+        }
+        i = i + 1
+    }
+    if not anyDigit {
+        return false
+    }
+
+    if dot >= 0 {
+        limit = dot
+    } else {
+        limit = len
+    }
+    ipart = 0
+    if neg {
+        j = 1
+    } else {
+        j = 0
+    }
+    while j < limit {
+        c = peekb(p + j)
+        if ipart > (32767 - (c - int('0'))) / 10 {
+            return false // won't fit a fixed's integer half
+        }
+        ipart = ipart * 10 + (c - int('0'))
+        j = j + 1
+    }
+    frac = 0
+    if dot >= 0 {
+        j = len - 1
+        while j > dot {
+            c = peekb(p + j)
+            frac = (frac + (c - int('0')) * 65536) / 10
+            j = j - 1
+        }
+    }
+    v = (ipart << 16) | frac
+    if neg {
+        pokel(out, 0 - v)
+    } else {
+        pokel(out, v)
+    }
+    return true
+}
+
+// rtUiFormInvalid (rt_ui.c:5027-5044): beep, refocus the offending field
+// with its ENTIRE content selected (TESetSelect(0, 32767): 32767 as
+// "past the end" is the documented TextEdit idiom for "select to the
+// end" regardless of actual length), and trace the walker-only `T FIRE
+// <Win>.invalid.<widgetName>` line. Caller (rtUiFormAccept) is already
+// inside rtUiFireWidget's port bracket, so no port dance here.
+func rtUiFormInvalid(inst: ptr, wIdx: int) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    UiSysBeep(1)
+    rtUiTeSetFocus(inst, wIdx)
+    UiTESetSelect(0, 32767, rtUiTeAt(w, wIdx))
+    rtUiTraceInvalid(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx))
+}
+
+// rtUiFormCharOk (rt_ui.c:3528-3555): whether a CONTENT keystroke `ch`
+// may insert into a bound INT/FIXED field -- INT allows digits and a
+// LEADING `-` only; FIXED additionally allows one `.`. Called only for a
+// keystroke that would otherwise reach TEKey as an insertion (the caller
+// already excludes backspace and the four arrow codes). "Leading" `-`
+// means the caret sits at position 0 AND the text doesn't already start
+// with one; at most one `.` anywhere in the field, regardless of caret
+// position -- a simpler rule than "no `.` already between here and the
+// nearest boundary" (documented simplification, verbatim from the C
+// reference).
+func rtUiFormCharOk(te: ptr, ch: int, ftype: int): bool {
+    var teMp: ptr
+    var th: ptr
+    var thMp: ptr
+    var len: int
+    var i: int
+    var first: int
+
+    if ch >= int('0') and ch <= int('9') {
+        return true
+    }
+    teMp = UiHandleDeref(te)
+    if ch == int('-') {
+        if peekw(teMp + rtUiTeSelStart) != 0 {
+            return false
+        }
+        if peekw(teMp + rtUiTeTeLength) == 0 {
+            return true
+        }
+        th = ptr(peekl(teMp + rtUiTeHText))
+        UiHLock(th)
+        thMp = UiHandleDeref(th)
+        first = peekb(thMp)
+        UiHUnlock(th)
+        return first != int('-')
+    }
+    if ch == int('.') and ftype == rtUiFtFixed {
+        th = ptr(peekl(teMp + rtUiTeHText))
+        len = peekw(teMp + rtUiTeTeLength)
+        UiHLock(th)
+        thMp = UiHandleDeref(th)
+        i = 0
+        while i < len {
+            if peekb(thMp + i) == int('.') {
+                UiHUnlock(th)
+                return false
+            }
+            i = i + 1
+        }
+        UiHUnlock(th)
+        return true
+    }
+    return false
+}
+
+// ================================================================
+// The walker (rt_ui.c:5046-5216): fill (rtUiEdit's own first act, right
+// after rtUiOpen) and validate+writeback+accept (the RTUI_DEFAULT
+// button's choke-point target, ui.cla's rtUiFireWidget). Both bypass
+// rtUiWidget{Get,Set}Str/Int/Bool -- rt_ui_form_fill/rt_ui_form_accept's
+// own C code manipulates TE/Control state DIRECTLY (TESetText/
+// SetControlValue/popupSel, not rt_ui_widget_set_str/set_bool/set_int),
+// so no unwanted `T SET ...` trace line escapes a form fill; the ONE
+// exception is rtUiWidgetGetStr for a FIELD's current text during
+// validate (a pure read, which the C reference's own
+// rt_ui_widget_get_str never traces either).
+// ================================================================
+
+// rtUiFormFill (rt_ui.c:5057-5109).
+func rtUiFormFill(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var formOff: int
+    var layoutOff: int
+    var bindsOff: int
+    var nBinds: int
+    var b: int
+    var wIdx: int
+    var fieldIdx: int
+    var ftype: int
+    var fieldOffset: int
+    var base: ptr
+    var kind: int
+    var te: ptr
+    var ctrl: ptr
+    var text: ptr
+    var savedPort: ptr
+    var v: int
+    var strCap: int
+    var baseLen: int
+    var enumCount: int
+    var enumValuesOff: int
+    var sel: int
+    var k: int
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+    formOff = uidWinFormOff(winIdx)
+    layoutOff = uidFormLayoutOff(formOff)
+    bindsOff = uidFormBindsOff(formOff)
+    nBinds = uidFormNBinds(formOff)
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    text = UiNewPtr(256)
+
+    b = 0
+    while b < nBinds {
+        wIdx = uidBindWidgetIndex(bindsOff, b)
+        fieldIdx = uidBindFieldIndex(bindsOff, b)
+        ftype = uidFieldFtype(layoutOff, fieldIdx)
+        fieldOffset = uidFieldOffset(layoutOff, fieldIdx)
+        base = rtUiModalBuf + fieldOffset
+        kind = uidWidgetKind(winIdx, wIdx)
+        te = rtUiTeAt(w, wIdx)
+        ctrl = rtUiCtrlAt(w, wIdx)
+
+        if kind == rtUiKindField and te != ptr(0) {
+            if ftype == rtUiFtStr {
+                strCap = uidFieldStrCap(layoutOff, fieldIdx)
+                baseLen = peekb(base)
+                if baseLen > strCap {
+                    baseLen = strCap
+                }
+                pokeb(text, baseLen)
+                UiBlockMoveData(base + 1, text + 1, baseLen)
+            } else if ftype == rtUiFtInt {
+                UiNumToString(peekl(base), text)
+            } else if ftype == rtUiFtFixed {
+                rtUiFixedToStr(peekl(base), text)
+            } else if ftype == rtUiFtChar {
+                if peekb(base) != 0 {
+                    pokeb(text, 1)
+                    pokeb(text + 1, peekb(base))
+                } else {
+                    pokeb(text, 0)
+                }
+            } else {
+                pokeb(text, 0)
+            }
+            UiTESetText(text + 1, peekb(text), te)
+            UiTECalText(te)
+        } else if kind == rtUiKindCheck and ctrl != ptr(0) {
+            v = peekl(base) // bool: full int32, not a raw byte
+            if v != 0 {
+                UiSetControlValue(ctrl, 1)
+            } else {
+                UiSetControlValue(ctrl, 0)
+            }
+        } else if kind == rtUiKindPopup {
+            v = peekl(base)
+            enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
+            enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
+            sel = 0
+            k = 0
+            while k < enumCount {
+                if uidEnumValue(enumValuesOff, k) == v {
+                    sel = k
+                    k = enumCount // break
+                } else {
+                    k = k + 1
+                }
+            }
+            rtUiSetPopupSelAt(w, wIdx, sel)
+        }
+        b = b + 1
+    }
+    UiDisposePtr(text)
+    UiSetPort(savedPort)
+}
+
+// rtUiFormAccept (rt_ui.c:5111-5216). Declaration order over binds: only
+// INT/FIXED can actually fail; every other kind (STR/CHAR/BOOL/ENUM)
+// always succeeds, so writing it into rtUiModalBuf and moving on is safe
+// even though a LATER bind might still fail -- the partially-updated buf
+// is harmless scratch state, not yet visible to the program. On the
+// first failure: rtUiFormInvalid (beep/focus/select/trace), stop, stay
+// open -- no writeback, no accepted. On full success: apply
+// rtUiModalWbKind's writeback, THEN fire `T FIRE <Win>.accepted` +
+// RTUI_EV_ACCEPTED(a=buf) -- rtUiModalActive is still true for the whole
+// handler call, so rtUiFormIsNew answers correctly from inside it -- and
+// only after the handler returns does rtUiFormTeardown clear gModal and
+// close the window.
+//
+// KNOWN OPEN BUG (task-10-report.md has the full bisection log): a modal
+// form's ACCEPT path (this function), when it processes 2+ binds AND at
+// least one of them is a BOOL/CHECK field, hangs the real DisposeWindow
+// call inside the LATER rtUiFormTeardown -- reproduced on real Mini vMac
+// hardware with reduced fixtures (2 bool binds; 1 int + 1 bool; 1 str + 1
+// bool all hang; 1 bool alone, or 2+ non-bool binds, both work). Ruled
+// out by direct bisection: the per-ftype write logic itself (a fully
+// neutered loop body still hangs iff the record has a bound CHECK and
+// nBinds>=2), GetControlValue specifically (a raw ControlRecord.
+// contrlValue peekw instead of the trap still hangs), call ORDER (a
+// pre-pass reading every CHECK's value before any other bind is
+// processed still hangs), TE focus/activation state (explicitly
+// TEDeactivating before DisposeWindow, in rtUiTeardownWindow below,
+// does not help), and the app's memory partition size (an explicit 1MB
+// SIZE resource does not help). NOT yet isolated to a specific root
+// cause. rtUiFormCancel (no bind processing at all) and rtUiFormAccept
+// itself with <=1 bind both close the SAME kind of window via the SAME
+// rtUiFormTeardown -> rtUiTeardownWindow -> UiDisposeWindow call
+// correctly. Next step for whoever picks this up: attach a real
+// debugger/disassembler to the hung Mini vMac process (or narrow via
+// further reduced fixtures) rather than the black-box bisection this
+// report's own log used.
+func rtUiFormAccept(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var formOff: int
+    var layoutOff: int
+    var bindsOff: int
+    var nBinds: int
+    var recSize: int
+    var b: int
+    var wIdx: int
+    var fieldIdx: int
+    var ftype: int
+    var fieldOffset: int
+    var base: ptr
+    var text: ptr
+    var ok: bool
+    var strCap: int
+    var len: int
+    var z: int
+    var ctrl: ptr
+    var sel: int
+    var enumCount: int
+    var enumValuesOff: int
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+    formOff = uidWinFormOff(winIdx)
+    layoutOff = uidFormLayoutOff(formOff)
+    bindsOff = uidFormBindsOff(formOff)
+    nBinds = uidFormNBinds(formOff)
+    recSize = uidLayoutRecSize(layoutOff)
+    text = UiNewPtr(256)
+
+    b = 0
+    while b < nBinds {
+        wIdx = uidBindWidgetIndex(bindsOff, b)
+        fieldIdx = uidBindFieldIndex(bindsOff, b)
+        ftype = uidFieldFtype(layoutOff, fieldIdx)
+        fieldOffset = uidFieldOffset(layoutOff, fieldIdx)
+        base = rtUiModalBuf + fieldOffset
+
+        if ftype == rtUiFtInt {
+            rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
+            ok = rtUiParseInt(text + 1, peekb(text), base)
+            if not ok {
+                rtUiFormInvalid(inst, wIdx)
+                UiDisposePtr(text)
+                return
+            }
+        } else if ftype == rtUiFtFixed {
+            rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
+            ok = rtUiParseFixed(text + 1, peekb(text), base)
+            if not ok {
+                rtUiFormInvalid(inst, wIdx)
+                UiDisposePtr(text)
+                return
+            }
+        } else if ftype == rtUiFtStr {
+            rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
+            strCap = uidFieldStrCap(layoutOff, fieldIdx)
+            len = peekb(text)
+            if len > strCap {
+                len = strCap
+            }
+            pokeb(base, len)
+            UiBlockMoveData(text + 1, base + 1, len)
+            // zero-pad the fixed-width tail (rt.h RT_FT_STR: "1 len byte
+            // + strCap data bytes, fixed width, zero-padded")
+            z = len
+            while z < strCap {
+                pokeb(base + 1 + z, 0)
+                z = z + 1
+            }
+        } else if ftype == rtUiFtBool {
+            ctrl = rtUiCtrlAt(w, wIdx)
+            if ctrl != ptr(0) and UiGetControlValue(ctrl) != 0 {
+                pokel(base, 1)
+            } else {
+                pokel(base, 0)
+            }
+        } else if ftype == rtUiFtChar {
+            rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)
+            if peekb(text) > 0 {
+                pokeb(base, peekb(text + 1))
+            } else {
+                pokeb(base, 0)
+            }
+        } else if ftype == rtUiFtEnum {
+            sel = rtUiPopupSelAt(w, wIdx)
+            enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
+            enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
+            if enumCount > 0 and sel >= 0 and sel < enumCount {
+                pokel(base, uidEnumValue(enumValuesOff, sel))
+            } else {
+                pokel(base, 0)
+            }
+        }
+        b = b + 1
+    }
+    UiDisposePtr(text)
+
+    if rtUiModalWbKind == rtUiWbAddr {
+        if rtUiModalAddr != ptr(0) {
+            UiBlockMoveData(rtUiModalBuf, rtUiModalAddr, recSize)
+        }
+    } else if rtUiModalWbKind == rtUiWbList {
+        // idx out of range: the row vanished under the form (removed
+        // while it was open) -- skip the writeback silently, still fire
+        // accepted.
+        if rtUiModalLst != ptr(0) and rtUiModalIdx >= 0 and rtUiModalIdx < rtListCount(rtUiModalLst) {
+            UiBlockMoveData(rtUiModalBuf, rtListAt(rtUiModalLst, rtUiModalIdx), recSize)
+        }
+    } else if rtUiModalWbKind == rtUiWbMap {
+        if rtUiModalMp != ptr(0) {
+            rtMapSet(rtUiModalMp, rtUiModalKey255, rtUiModalBuf)
+        }
+    }
+
+    rtUiTraceFire1(uidWinName(winIdx), "accepted")
+    UiFireWinEvent(winIdx, inst, rtUiEvAccepted, int(rtUiModalBuf), 0)
+    rtUiFormTeardown(inst)
+}
+
+// ================================================================
+// Modal lifecycle: teardown/cancel/edit/is_new (rt_ui.c:4907-4933,
+// 5218-5273).
+// ================================================================
+
+// rtUiFormTeardown (rt_ui.c:4915-4923): clears gModal (so a nested
+// rtUiEdit is legal again and rtUiFormIsNew stops answering) and frees
+// the scratch buffer -- THEN the window itself (rtUiTeardownWindow: no
+// closeRequest gate). Order matters: gModal must still read
+// active/isNew while the accepted/cancelled handler runs
+// (rtUiFormAccept/rtUiFormCancel call this only AFTER that handler
+// returns), so clearing it happens here, right before the window
+// actually goes away, not any earlier.
+func rtUiFormTeardown(inst: ptr) {
+    var bufH: ptr
+
+    bufH = rtUiModalBufH
+    rtUiModalActive = false
+    rtUiModalInst = ptr(0)
+    UiDisposeHandle(bufH)
+    rtUiTeardownWindow(inst)
+}
+
+// rtUiFormCancel (rt_ui.c:4925-4933): Cancel (button, Escape, or the
+// close box) never touches the buffer at all.
+func rtUiFormCancel(inst: ptr) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    rtUiTraceFire1(uidWinName(w.winIdx), "cancelled")
+    UiFireWinEvent(w.winIdx, inst, rtUiEvCancelled, 0, 0)
+    rtUiFormTeardown(inst)
+}
+
+// rtUiEdit (rt_ui.c:5227-5263) -- `edit W` (Ch10): opens W (which MUST
+// declare a `form`) modally, its widgets filled from `*src`. One modal
+// at a time: nesting is a program bug, not a runtime state this can
+// recover from, so it panics rather than queuing or silently replacing
+// gModal. `winIdx` replaces the C reference's own `const
+// rt_ui_window_desc *d` (report log entry #5's own redesign, same
+// substitution rtUiOpen/rtUiFront/rtUiClose already made).
+func rtUiEdit(winIdx: int, src: ptr, isNew: int, wbKind: int, addr: ptr, lst: ptr, idx: int, mp: ptr, key255: ptr) {
+    var formOff: int
+    var layoutOff: int
+    var recSize: int
+    var buf: ptr
+    var bufH: ptr
+    var inst: ptr
+    var klen: int
+
+    if rtUiModalActive {
+        rtPanic("edit while a form is already open")
+    }
+    formOff = uidWinFormOff(winIdx)
+    if formOff == -1 {
+        rtPanic("edit: window has no form")
+    }
+    layoutOff = uidFormLayoutOff(formOff)
+    recSize = uidLayoutRecSize(layoutOff)
+
+    bufH = rtUiAllocLocked(recSize)
+    buf = UiHandleDeref(bufH)
+    UiBlockMoveData(src, buf, recSize)
+
+    rtUiModalActive = true
+    rtUiModalInst = ptr(0) // set below, once rtUiOpen returns it
+    rtUiModalBufH = bufH
+    rtUiModalBuf = buf
+    if isNew != 0 {
+        rtUiModalIsNew = true
+    } else {
+        rtUiModalIsNew = false
+    }
+    rtUiModalWbKind = wbKind
+    rtUiModalAddr = addr
+    rtUiModalLst = lst
+    rtUiModalIdx = idx
+    rtUiModalMp = mp
+    if rtUiModalKey255 == ptr(0) {
+        rtUiModalKey255 = UiNewPtr(256)
+    }
+    pokeb(rtUiModalKey255, 0)
+    if wbKind == rtUiWbMap and key255 != ptr(0) {
+        klen = peekb(key255)
+        if klen > 255 {
+            klen = 255
+        }
+        UiBlockMoveData(key255, rtUiModalKey255, klen + 1)
+    }
+
+    inst = rtUiOpen(winIdx)
+    rtUiModalInst = inst
+    rtUiFormFill(inst)
+}
+
+// rtUiFormIsNew (rt_ui.c:5270-5273): valid only while a form is open --
+// 0/false once no form is open, same as "no form, no answer" rather than
+// an undefined read.
+func rtUiFormIsNew(): bool {
+    if rtUiModalActive {
+        return rtUiModalIsNew
+    }
+    return false
+}
+
+// ================================================================
+// Dialogs (Ch12, rt_ui.c:2386-2475): askOpen/askSave/askSaveChanges.
+// Real halves (UiSFGetFile/UiSFPutFile/UiParamText+UiAlert) vs. the
+// scripted answer-queue halves are gated on `rtUiScripted` -- the
+// pragmatic Clarus-side substitute for the C reference's own RT_MAC_TEST
+// COMPILE-TIME macro (this port has no preprocessor, so no compile-time
+// fork is possible at all): every golden scenario is `--events`-driven,
+// so rtUiScripted is already true for the whole run by the time any of
+// these can fire (rtUiLaunch dispatches into rtUiRunScripted, which sets
+// it, before any event handler -- and so any askOpen/askSave/
+// askSaveChanges call -- can run). Same substitution rtUiLaunch's own
+// header comment already made for its real-vs-scripted fork (report log
+// entry #3's "UiTestScript() empty means not a scripted build"
+// heuristic) -- arguably MORE correct than the C reference here, since a
+// genuinely non-scripted (real) run now takes the real StandardFile/
+// Alert path instead of spuriously consulting a test-only queue.
+// ================================================================
+
+// rtUiAskOpen (rt_ui.c:2399-2427).
+func rtUiAskOpen(path255: ptr): bool {
+    var idx: int
+    var kind: int
+
+    if rtUiScripted {
+        idx = rtUiAnswerPopIdx()
+        kind = peekl(rtUiAnswerKinds + idx * 4)
+        if kind == rtUiAnsCancel {
+            rtUiEmitLine(rtUiLitLine("T ASKOPEN cancel"))
+            return false
+        }
+        if kind != rtUiAnsOpen {
+            rtPanic("askOpen: scripted answer kind mismatch")
+            return false
+        }
+        rtUiPstrcpy(path255, rtUiAnswerStrs + idx * 256)
+        rtUiTraceAskPath("ASKOPEN", path255)
+        return true
+    }
+    return UiSFGetFile(path255)
+}
+
+// rtUiAskSave (rt_ui.c:2429-2455).
+func rtUiAskSave(path255: ptr, suggested: ptr): bool {
+    var idx: int
+    var kind: int
+
+    if rtUiScripted {
+        idx = rtUiAnswerPopIdx()
+        kind = peekl(rtUiAnswerKinds + idx * 4)
+        if kind == rtUiAnsCancel {
+            rtUiEmitLine(rtUiLitLine("T ASKSAVE cancel"))
+            return false
+        }
+        if kind != rtUiAnsSave {
+            rtPanic("askSave: scripted answer kind mismatch")
+            return false
+        }
+        rtUiPstrcpy(path255, rtUiAnswerStrs + idx * 256)
+        rtUiTraceAskPath("ASKSAVE", path255)
+        return true
+    }
+    return UiSFPutFile(suggested, path255)
+}
+
+// rtUiAskSaveChanges (rt_ui.c:2457-2475): `item 1/2/3 -> Save/Discard/
+// Cancel 0/1/2` on the real (Alert 130) path -- the scripted path's own
+// `answer-changes` verb already queues the 0/1/2 saveChoice directly
+// (uiscript.cla's rtUiScriptAnswerChanges), so no such translation is
+// needed here.
+func rtUiAskSaveChanges(name: ptr): int {
+    var idx: int
+    var kind: int
+    var v: int
+    var empty: ptr
+    var item: int
+    var t: ptr
+
+    if rtUiScripted {
+        idx = rtUiAnswerPopIdx()
+        kind = peekl(rtUiAnswerKinds + idx * 4)
+        if kind != rtUiAnsChanges {
+            rtPanic("askSaveChanges: scripted answer kind mismatch")
+            return 0
+        }
+        v = peekl(rtUiAnswerVals + idx * 4)
+        t = rtTextNew()
+        rtTextAppendStr(t, UiStrAddr("T ASKCHANGES "))
+        if v == 0 {
+            rtTextAppendStr(t, UiStrAddr("save"))
+        } else if v == 1 {
+            rtTextAppendStr(t, UiStrAddr("discard"))
+        } else {
+            rtTextAppendStr(t, UiStrAddr("cancel"))
+        }
+        rtUiEmitLine(t)
+        return v
+    }
+    empty = rtUiEmptyPStrGet()
+    UiParamText(name, empty, empty, empty)
+    item = UiAlert(130, ptr(0))
+    return item - 1
+}
