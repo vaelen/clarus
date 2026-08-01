@@ -21,6 +21,7 @@ static void clar_fn_rtMapRelease(void * cv_m);
 static int32_t clar_fn_rtMapLastref(void * cv_m);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
+static void * clar_fn_rtUiState(void * cv_instV);
 typedef struct { uint8_t len; uint8_t b[63]; } clar_str_63;
 extern void rt_ext_CorePanic(const uint8_t *);
 extern void rt_ext_CoreSetLastErr(int32_t, const uint8_t *);
@@ -389,7 +390,7 @@ static const rt_ui_widget_desc clar_ui_widgets_Main[] = {
 
 static void clar_ui_release_Main(void *inst)
 {
-    clar_fn_rtTextRelease((void*)(*(clar_uistate_Main *)rt_ui_state(inst)).cv_note);
+    clar_fn_rtTextRelease((void*)(*(clar_uistate_Main *)clar_fn_rtUiState(inst)).cv_note);
 
 }
 
@@ -867,8 +868,8 @@ static void clar_fn_clar_ui_fire_every(int32_t cv_idx);
 static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst);
 static void clar_fn_clar_ui_fire_statedefaults(int32_t cv_winIdx, void * cv_inst);
 static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx);
-static void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
-static void clar_fn_clar_ui_fire_startempty(void);
+void clar_fn_clar_ui_fire_launchdoc(void * cv_path);
+void clar_fn_clar_ui_fire_startempty(void);
 static void clar_fn_clar_ui_fire_applaunch(void);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg) {
@@ -4363,18 +4364,18 @@ static void clar_fn_rtUiTraceOpenDoc(void * cv_pathPtr, int32_t cv_pathLen) {
 static int32_t clar_fn_rtUiStrEq(void * cv_a, void * cv_b) {
     int32_t cv_i;
     cv_i = 0;
+    int32_t cv_n;
+    cv_n = 0;
+    cv_n = rt_peekb(cv_b);
     cv_i = 0;
     while (1) {
-        if (!(1)) break;
-        if (rt_peekb((void *)((char *)(cv_a) + (cv_i))) != rt_peekb((void *)((char *)(cv_b) + (cv_i)))) {
+        if (!((cv_i < cv_n))) break;
+        if (rt_peekb((void *)((char *)(cv_a) + (cv_i))) != rt_peekb((void *)((char *)((void *)((char *)(cv_b) + (1))) + (cv_i)))) {
             return 0;
-        }
-        if (rt_peekb((void *)((char *)(cv_a) + (cv_i))) == 0) {
-            return 1;
         }
         cv_i = (cv_i + 1);
     }
-    return 1;
+    return (rt_peekb((void *)((char *)(cv_a) + (cv_i))) == 0);
     return 0;
 }
 
@@ -4922,7 +4923,7 @@ static void clar_fn_handler_App_launch(void) {
 }
 
 static void clar_fn_ui_Main_opened(void * cv_window) {
-    ((*(clar_uistate_Main *)rt_ui_state(cv_window))).cv_note = (rt_text *)clar_fn_rtTextNew();
+    ((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_note = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_Main *)clar_fn_rtUiState(cv_window))).cv_state = 0;
 }
 
@@ -5138,7 +5139,7 @@ static void clar_fn_clar_ui_fire_releasevars(int32_t cv_winIdx, void * cv_inst) 
 
 static void clar_fn_clar_ui_fire_statedefaults(int32_t cv_winIdx, void * cv_inst) {
     if (cv_winIdx == 0) {
-        ((*(clar_uistate_Main *)rt_ui_state(cv_inst))).cv_note = (rt_text *)clar_fn_rtTextNew();
+        ((*(clar_uistate_Main *)clar_fn_rtUiState(cv_inst))).cv_note = (rt_text *)clar_fn_rtTextNew();
     } else {
         if (cv_winIdx == 1) {
         } else {
@@ -5263,10 +5264,10 @@ static void * clar_fn_clar_ui_fire_staterows(int32_t cv_rowsIdx) {
     return 0;
 }
 
-static void clar_fn_clar_ui_fire_launchdoc(void * cv_path) {
+void clar_fn_clar_ui_fire_launchdoc(void * cv_path) {
 }
 
-static void clar_fn_clar_ui_fire_startempty(void) {
+void clar_fn_clar_ui_fire_startempty(void) {
 }
 
 static void clar_fn_clar_ui_fire_applaunch(void) {
