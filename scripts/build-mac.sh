@@ -257,13 +257,22 @@ fi
 # stay unconditionally -- only rt_ui.c itself is the frozen C UI runtime
 # this whole task replaces.
 RT_UI_C="$ROOT/runtime/mac/rt_ui.c"
+UIPORTDEF=""
 if [ "$CLARUS_UIPORT" = "1" ]; then
     RT_UI_C=""
+    # Task 7 Step 7 review fix: rt_ext_mac.inc's rt_ext_UiLaunchReal (+ its
+    # AE handlers) calls clar_fn_clar_ui_fire_launchdoc/_startempty, symbols
+    # that exist ONLY in a --uiport build's generated C -- rt_ext_mac.inc
+    # itself is #included unconditionally by rt_mac.c on BOTH lanes, so
+    # without this define the default (non-ported) lane linked those
+    # undefined references every time. See that file's own matching
+    # #ifdef CLARUS_UIPORT comment.
+    UIPORTDEF="-DCLARUS_UIPORT=1"
 fi
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
 project($NAME C)
-add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF)
+add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF $UIPORTDEF)
 add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $RT_UI_C $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
 EOF
 cmake -S "$OUT" -B "$OUT/build" \

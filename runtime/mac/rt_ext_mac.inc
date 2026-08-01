@@ -459,6 +459,22 @@ void rt_ext_UiScreenBits(void *baseAddrOut, void *rowBytesOut, void *boundsOut) 
     *(Rect *)boundsOut = qd.screenBits.bounds;
 }
 
+/* Task 7 Step 7 review fix: rt_ext_UiLaunchReal and its AE handlers below
+ * call clar_fn_clar_ui_fire_launchdoc/clar_fn_clar_ui_fire_startempty --
+ * symbols that exist ONLY in a --uiport build's generated C (lower.cla's
+ * lowSynthUiDispatchers runs solely under lowUiPortFlag). This whole file
+ * is compiled unconditionally for BOTH lanes (rt_mac.c #includes it
+ * regardless of --uiport, unlike rt_ui.c, which build-mac.sh actually
+ * drops from the default lane's own CMake source list), so the default
+ * (non-ported, rt_ui.c) lane linked this block's undefined references
+ * every time -- caught by this task's own Step 6 default-lane regression
+ * run (TestButtonsUIScenario/TestTextwidgetsUIScenario/
+ * TestPopuptableUIScenario, none of which had ever been run this
+ * session before), not by anything in Steps 1-5's compile-only checks.
+ * CLARUS_UIPORT (build-mac.sh's own -D, added alongside this fix) is the
+ * signal: defined only when CLARUS_UIPORT=1 built this binary. */
+#ifdef CLARUS_UIPORT
+
 /* rt_ext_UiLaunchReal: rt_ui_launch's real-build branch (rt_ui.c:3963-4028)
  * adapted verbatim -- AEInstallEventHandler + the 4 pascal AE handlers +
  * AEDesc decoding stay pure C (no function pointers reach Clarus, per
@@ -587,5 +603,7 @@ void rt_ext_UiLaunchReal(void) {
         }
     }
 }
+
+#endif /* CLARUS_UIPORT (rt_ext_UiLaunchReal + AE handlers) */
 
 #endif /* CLARUS_RT_EXT_MAC_INC */
