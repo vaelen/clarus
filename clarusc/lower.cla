@@ -5523,4 +5523,14 @@ func lowUiPortAddRoots() {
     // text, not an ordinary IR call, needs its own root" reason every
     // other name in this list already has.
     shakeAddRoot(intern("rtUiDialogsUnported"))
+    // Task 9: rtUiLdefDraw (uitable.cla) is a DIFFERENT flavor of the same
+    // underlying problem this whole function solves -- not an intrinsic
+    // redirect string, but the LDEF pascal wrapper in rt_ext_mac.inc
+    // (rt_ext_ui_ldef, gated CLARUS_UIPORT) calling it by FIXED NAME
+    // (`clar_fn_rtUiLdefDraw`) from a genuinely different translation
+    // unit -- confirmed by a real link failure before this root existed
+    // (undefined reference to `clar_fn_rtUiLdefDraw` from rt_mac.c). No
+    // ordinary Clarus call site reaches it either way, so it needs the
+    // same shakeAddRoot treatment.
+    shakeAddRoot(intern("rtUiLdefDraw"))
 }

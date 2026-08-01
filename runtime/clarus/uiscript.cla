@@ -52,6 +52,72 @@ var rtUiScripted: bool = false
 var rtUiScriptDbl: bool = false
 
 // ================================================================
+// Scripted dialog/popup answer queue (rt_ui.c:586-658). askOpen/askSave/
+// askSaveChanges consume this queue instead of a real Standard File dialog
+// or Alert(130) -- Task 10's own problem, still fail-closed (ui.cla's
+// rtUiDialogsUnported). Task 9 wires the POPUP kind only (`answer-popup`,
+// consumed by uitable.cla's rtUiPopupClick, gated on rtUiScripted rather
+// than unconditionally -- a popup click is a real widget interaction, not
+// a modal dialog). Fixed 8-slot ring buffer (7 usable -- the full/empty
+// ambiguity of a head==tail ring is broken by never letting tail catch up
+// to head, the usual one-slot-sacrificed idiom): no script ever queues
+// more than a couple of dialogs ahead of where it consumes them, and a
+// script that DOES overflow this gets a loud rtPanic rather than silently
+// clobbering an unconsumed entry.
+//
+// Each slot is (kind, val) -- no `str` slot yet (the C reference's own
+// rt_ui_answer_push_path, feeding OPEN/SAVE's path answers, is Task 10's
+// own addition; unexercised this task, so this queue carries only what
+// rt_ui_answer_push_val's callers need).
+const rtUiAnsOpen: int = 0
+const rtUiAnsSave: int = 1
+const rtUiAnsChanges: int = 2
+const rtUiAnsCancel: int = 3
+const rtUiAnsPopup: int = 4
+
+var rtUiAnswerKinds: ptr = ptr(0)
+var rtUiAnswerVals: ptr = ptr(0)
+var rtUiAnswerHead: int = 0
+var rtUiAnswerTail: int = 0
+
+func rtUiAnswerInit() {
+    if rtUiAnswerKinds == ptr(0) {
+        rtUiAnswerKinds = UiNewPtr(32) // 8 slots * 4 bytes
+        rtUiAnswerVals = UiNewPtr(32)
+    }
+}
+
+func rtUiAnswerCheckRoom() {
+    rtUiAnswerInit()
+    if (rtUiAnswerTail + 1) mod 8 == rtUiAnswerHead {
+        rtPanic("scripted dialog answer queue overflow")
+    }
+}
+
+// rtUiAnswerPushVal (rt_ui_answer_push_val, rt_ui.c:642-648).
+func rtUiAnswerPushVal(kind: int, val: int) {
+    rtUiAnswerCheckRoom()
+    pokel(rtUiAnswerKinds + rtUiAnswerTail * 4, kind)
+    pokel(rtUiAnswerVals + rtUiAnswerTail * 4, val)
+    rtUiAnswerTail = (rtUiAnswerTail + 1) mod 8
+}
+
+// rtUiAnswerPop (rt_ui_answer_pop, rt_ui.c:650-658): out-param shape
+// (outKind/outVal, both already-allocated 4-byte scratch) since Clarus
+// functions can't return a small record the way rt_ui_answer_pop returns
+// `const rt_ui_answer *` -- every call site here already owns scratch
+// slots it can pass in (same convention as rtUiCanvasHit's own outIdx).
+func rtUiAnswerPop(outKind: ptr, outVal: ptr) {
+    rtUiAnswerInit()
+    if rtUiAnswerHead == rtUiAnswerTail {
+        rtPanic("scripted dialog with no queued answer")
+    }
+    pokel(outKind, peekl(rtUiAnswerKinds + rtUiAnswerHead * 4))
+    pokel(outVal, peekl(rtUiAnswerVals + rtUiAnswerHead * 4))
+    rtUiAnswerHead = (rtUiAnswerHead + 1) mod 8
+}
+
+// ================================================================
 // Small text-building helpers.
 // ================================================================
 
@@ -932,8 +998,10 @@ func rtUiScriptMenu(m: int, itemNum: int) {
 // events after every scripted action, so InvalRect'd content actually
 // reaches the screen bits before the next action or a `snap` -- same as
 // what a real WaitNextEvent-driven loop would have processed by now.
-// rt_ui_tables_sync's own call (rt_ui.c:4085) is omitted -- dead, tables
-// aren't ported this slice.
+// rtUiTablesSync (uitable.cla) now runs FIRST (Task 9, rt_ui.c:4080-4085):
+// a row-count change LAddRow/LDelRow just InvalRect'd needs to already be
+// queued as an updateEvt by the time the loop below drains it, matching
+// what a real WaitNextEvent-driven pass would have processed by now.
 // ================================================================
 
 func rtUiPumpPassive() {
@@ -941,6 +1009,7 @@ func rtUiPumpPassive() {
     var what: int
     var gotEvent: bool
 
+    rtUiTablesSync()
     ev = UiNewPtr(16)
     gotEvent = UiGetNextEvent(0x0140, ev) // updateMask|activMask
     while gotEvent {
@@ -1040,16 +1109,15 @@ func rtUiLitLine(s: string): ptr {
 
 // ================================================================
 // rtUiRunScripted (rt_ui.c:4367-4464): the main scripted-event loop.
-// `answer-open`/`answer-save`/`answer-changes`/`answer-cancel`/
-// `answer-popup` (the dialog answer queue, rt_ui.c:4421-4454) are a
-// named log+quit fail-closed arm -- this task's own porting rule
-// ("answer queue SHELL only... unknown verb = log+quit") and Task 7
-// report log entry on the fail-closed-gate design: these verbs are real
-// and C-reference-implemented, but this slice never ports the queue
-// itself (dialogs/popups are Tasks 9-10), so a script naming one hits
-// the SAME catch-all as a genuinely unrecognized verb. `launchdoc` is a
-// real, explicit no-op (already consumed once by rtUiLaunch's own
-// pre-scan, rt_ui.c:4455-4461's own comment) -- NOT fail-closed.
+// `answer-popup` (Task 9, rt_ui.c:4447-4454) pushes onto the answer queue
+// above -- consumed by uitable.cla's rtUiPopupClick. `answer-open`/
+// `answer-save`/`answer-changes`/`answer-cancel` (the dialog side of the
+// SAME queue, rt_ui.c:4421-4446) stay a named log+quit fail-closed arm:
+// askOpen/askSave/askSaveChanges aren't ported yet (Task 10, ui.cla's
+// rtUiDialogsUnported), so a script naming one of THOSE four hits the same
+// catch-all as a genuinely unrecognized verb. `launchdoc` is a real,
+// explicit no-op (already consumed once by rtUiLaunch's own pre-scan,
+// rt_ui.c:4455-4461's own comment) -- NOT fail-closed.
 // ================================================================
 
 func rtUiRunScripted() {
@@ -1089,11 +1157,18 @@ func rtUiRunScripted() {
         } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) {
             // no-op: consumed once, up front, by rtUiLaunch's own
             // pre-scan -- must not fire a second time here.
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-popup")) {
+            // `answer-popup N` (rt_ui.c:4447-4454): queues the 0-based item
+            // index a scripted popup click picks next -- arg1 is already a
+            // plain numeric token (no embedded spaces, unlike `type`/
+            // `answer-open`'s rest-of-line parsing), so rtUiScriptTokenize's
+            // own whitespace split already isolated it.
+            rtUiAnswerPushVal(rtUiAnsPopup, rtUiAtoi(rtUiArg1Buf))
         } else if peekb(rtUiVerbBuf) == 0 {
             // blank/whitespace-only line (sscanf found no tokens in the
             // C reference): nothing to dispatch.
         } else {
-            log("uiport: unknown or unsupported scripted verb (dialog answer-* verbs land in Tasks 9-10)")
+            log("uiport: unknown or unsupported scripted verb (dialog answer-open/answer-save/answer-changes/answer-cancel land in Task 10)")
             quit 1
         }
         rtUiPumpPassive()

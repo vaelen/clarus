@@ -27,18 +27,18 @@
 // Str255 (length byte + raw bytes, no padding) in a trailing string-pool
 // section, referenced by their own blob-absolute byte offset.
 //
-// Section order + field layout (Form/Bind/Table/Col/Layout/EnumArrays are
-// OUT OF SCOPE this slice -- field/textview/popup/table widget kinds and
-// forms aren't ported yet, Tasks 8-10; no accessor exists for them here):
+// Section order + field layout. Form/Bind/Table/Col/Layout/EnumArrays
+// (below the App section) were OUT OF SCOPE through Task 8 (no
+// field/textview/popup/table binding existed yet) -- Task 9 adds their
+// accessors, needed by uitable.cla's table/popup code:
 //   Header (11 int32 @ 0,4,..,40): magic, version, nWins, winsOff, nMenus,
 //     menusOff, nMenuHandlers, mhOff, nEvery, everyOff, appOff.
 //   Window (12 int32, 48 bytes, base = winsOff + winIdx*48): nameOff,
 //     titleOff, w, h, resizable, minW, minH, nWidgets, widgetsOff,
-//     stateSize, handlerMask, formOff (formOff has NO accessor -- out of
-//     scope).
+//     stateSize, handlerMask, formOff (-1 if the window has no `form for T`).
 //   Widget (13 int32, 52 bytes, base = widgetsOff + widgetIdx*52): kind,
 //     nameOff, captionOff, atKind, x, yIsBottom, y, widthIsFill, width,
-//     fillBoth, flags, eventMask, tableOff (tableOff has NO accessor).
+//     fillBoth, flags, eventMask, tableOff (-1 unless kind == table).
 //   Menu (5 int32, 20 bytes, base = menusOff + menuIdx*20): nameOff,
 //     titleOff, nItems, itemsOff, isStandardEdit.
 //   Item (4 int32, 16 bytes, base = a menu's own itemsOff + itemIdx*16):
@@ -48,6 +48,25 @@
 //   Every (1 int32, 4 bytes, base = everyOff + k*4): ticks.
 //   App (4 int32, 16 bytes, at appOff if appOff != -1): nameOff,
 //     versionOff, authorOff, aboutOff.
+//   Form (3 int32, 12 bytes, at a window's own formOff): layoutOff, nBinds,
+//     bindsOff (-1 if nBinds == 0).
+//   Bind (2 int32, 8 bytes, base = a form's own bindsOff + k*8):
+//     widgetIndex, fieldIndex.
+//   Table (4 int32, 16 bytes, at a widget's own tableOff): rowsIdx (the
+//     UiTableRows extern's own argument -- clarusc/uiblob.cla's own
+//     "rowsIdx" header note), layoutOff, nCols, colsOff (-1 if nCols == 0).
+//   Col (4 int32, 16 bytes, base = a table's own colsOff + k*16):
+//     headerOff, widthPx, widthFill, fieldIndex.
+//   Layout (2 + nFields*6 int32, at a form's or table's own layoutOff):
+//     recSize, nFields, then nFields field blocks of 6 int32 each (base =
+//     layoutOff + 8 + k*24): ftype (RtFtInt/Fixed/Bool/Char/Str/Enum,
+//     ser.cla's own numbering), offset (byte offset within the bound
+//     record), strCap (RtFtStr only), enumCount (RtFtEnum only),
+//     enumLabelsOff, enumValuesOff (both -1 unless RtFtEnum).
+//   EnumArrays (contiguous int32s, referenced by a Layout field's own
+//     enumLabelsOff/enumValuesOff): enumLabelsOff + n*4 is a Str255
+//     blob-absolute offset (a member's label); enumValuesOff + n*4 is the
+//     member's raw ordinal `int`.
 //
 // Every accessor below returns EITHER the raw `int` value (a count, a
 // dimension, a bool-as-0/1 field surfaced as `bool`) or, per Task 7 report
@@ -342,7 +361,9 @@ func uidWinHandlerMask(winIdx: int): int {
     return uidI32(uidWinBase(winIdx) + 40)
 }
 
-// formOff (@ +44) has no accessor: forms are out of scope this slice.
+func uidWinFormOff(winIdx: int): int {
+    return uidI32(uidWinBase(winIdx) + 44)
+}
 
 // ================================================================
 // Widget (13 int32, 52 bytes/entry, base = widgetsOff + widgetIdx*52)
@@ -408,7 +429,9 @@ func uidWidgetEventMask(winIdx: int, widgetIdx: int): int {
     return uidI32(uidWidgetBase(winIdx, widgetIdx) + 44)
 }
 
-// tableOff (@ +48) has no accessor: tables are out of scope this slice.
+func uidWidgetTableOff(winIdx: int, widgetIdx: int): int {
+    return uidI32(uidWidgetBase(winIdx, widgetIdx) + 48)
+}
 
 // ================================================================
 // Menu (5 int32, 20 bytes/entry, base = menusOff + menuIdx*20)
@@ -587,6 +610,178 @@ func uidAppAbout(): ptr {
 }
 
 // ================================================================
+// Form (3 int32, 12 bytes, at a window's own formOff -- uidWinFormOff
+// above) -- Task 9. `off` here (and everywhere below through EnumArrays)
+// is always a blob-ABSOLUTE byte offset already resolved by the caller
+// through a parent field (uidWinFormOff, uidWidgetTableOff, a Table's own
+// layoutOff/colsOff, a Layout field's own enumLabelsOff/enumValuesOff) --
+// there is no separate "section base" to add, by construction
+// (clarusc/uiblob.cla's own uibEmitForm/uibEmitTable/uibEmitLayout each
+// return the absolute offset they just wrote).
+// ================================================================
+
+func uidFormLayoutOff(off: int): int {
+    return uidI32(UiProgDesc() + off + 0)
+}
+
+func uidFormNBinds(off: int): int {
+    return uidI32(UiProgDesc() + off + 4)
+}
+
+func uidFormBindsOff(off: int): int {
+    return uidI32(UiProgDesc() + off + 8)
+}
+
+// ================================================================
+// Bind (2 int32, 8 bytes/entry, base = a form's own bindsOff + k*8)
+// ================================================================
+
+func uidBindBase(bindsOff: int, k: int): ptr {
+    return UiProgDesc() + bindsOff + k * 8
+}
+
+func uidBindWidgetIndex(bindsOff: int, k: int): int {
+    return uidI32(uidBindBase(bindsOff, k) + 0)
+}
+
+func uidBindFieldIndex(bindsOff: int, k: int): int {
+    return uidI32(uidBindBase(bindsOff, k) + 4)
+}
+
+// uidFormFindFieldIndex scans form `off`'s own binds for the one whose
+// widgetIndex == widgetIdx, returning its fieldIndex (an index into the
+// SAME form's own uidFormLayoutOff layout) -- -1 if `off` is -1 (no form)
+// or no bind matches (rt_ui.h's defensive "unbound widget" contract, same
+// shape as rt_ui_make_widgets' own popup-creation loop, rt_ui.c:1273-1299).
+func uidFormFindFieldIndex(off: int, widgetIdx: int): int {
+    var bindsOff: int
+    var nBinds: int
+    var b: int
+
+    if off == -1 {
+        return -1
+    }
+    bindsOff = uidFormBindsOff(off)
+    nBinds = uidFormNBinds(off)
+    b = 0
+    while b < nBinds {
+        if uidBindWidgetIndex(bindsOff, b) == widgetIdx {
+            return uidBindFieldIndex(bindsOff, b)
+        }
+        b = b + 1
+    }
+    return -1
+}
+
+// ================================================================
+// Table (4 int32, 16 bytes, at a widget's own tableOff -- uidWidgetTableOff
+// above)
+// ================================================================
+
+func uidTableRowsIdx(off: int): int {
+    return uidI32(UiProgDesc() + off + 0)
+}
+
+func uidTableLayoutOff(off: int): int {
+    return uidI32(UiProgDesc() + off + 4)
+}
+
+func uidTableNCols(off: int): int {
+    return uidI32(UiProgDesc() + off + 8)
+}
+
+func uidTableColsOff(off: int): int {
+    return uidI32(UiProgDesc() + off + 12)
+}
+
+// ================================================================
+// Col (4 int32, 16 bytes/entry, base = a table's own colsOff + k*16)
+// ================================================================
+
+func uidColBase(colsOff: int, k: int): ptr {
+    return UiProgDesc() + colsOff + k * 16
+}
+
+func uidColHeaderOff(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 0)
+}
+
+func uidColHeader(colsOff: int, k: int): ptr {
+    return uidStrPtr(uidColHeaderOff(colsOff, k))
+}
+
+func uidColWidthPx(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 4)
+}
+
+func uidColWidthFill(colsOff: int, k: int): bool {
+    return uidI32(uidColBase(colsOff, k) + 8) != 0
+}
+
+func uidColFieldIndex(colsOff: int, k: int): int {
+    return uidI32(uidColBase(colsOff, k) + 12)
+}
+
+// ================================================================
+// Layout (2 + nFields*6 int32, at a form's or table's own layoutOff):
+// recSize@+0, nFields@+4, then nFields field blocks of 6 int32 (24
+// bytes) each starting at layoutOff+8.
+// ================================================================
+
+func uidLayoutRecSize(off: int): int {
+    return uidI32(UiProgDesc() + off + 0)
+}
+
+func uidLayoutNFields(off: int): int {
+    return uidI32(UiProgDesc() + off + 4)
+}
+
+func uidFieldBase(layoutOff: int, k: int): ptr {
+    return UiProgDesc() + layoutOff + 8 + k * 24
+}
+
+func uidFieldFtype(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 0)
+}
+
+func uidFieldOffset(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 4)
+}
+
+func uidFieldStrCap(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 8)
+}
+
+func uidFieldEnumCount(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 12)
+}
+
+func uidFieldEnumLabelsOff(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 16)
+}
+
+func uidFieldEnumValuesOff(layoutOff: int, k: int): int {
+    return uidI32(uidFieldBase(layoutOff, k) + 20)
+}
+
+// ================================================================
+// EnumArrays (contiguous int32s -- a Layout field's own enumLabelsOff/
+// enumValuesOff, EACH already blob-absolute; `n` is 0..enumCount-1).
+// ================================================================
+
+func uidEnumLabelOff(enumLabelsOff: int, n: int): int {
+    return uidI32(UiProgDesc() + enumLabelsOff + n * 4)
+}
+
+func uidEnumLabel(enumLabelsOff: int, n: int): ptr {
+    return uidStrPtr(uidEnumLabelOff(enumLabelsOff, n))
+}
+
+func uidEnumValue(enumValuesOff: int, n: int): int {
+    return uidI32(UiProgDesc() + enumValuesOff + n * 4)
+}
+
+// ================================================================
 // RtUiWinst / RtUiCanvasBuf overlay records -- see the file header
 // comment's own section for the full design rationale.
 // ================================================================
@@ -627,17 +822,36 @@ overlay record RtUiWinst {
                                         // live -- see uitext.cla)
     traceId: int                       // unconditional here (no #ifdef --
                                         // Clarus has no preprocessor)
+    // Task 9: List Manager tables + manual popups (uitable.cla). `lists[i]`
+    // holds one ListHandle per TABLE-kind widget (ptr(0) otherwise);
+    // `popups[i]`/`popupSel[i]` hold one MenuHandle / current 0-based item
+    // index per POPUP-kind widget (ptr(0)/0 otherwise -- NewHandleClear's
+    // own zero-fill already gives every widget this default for free, same
+    // as ctrls/tes/hbars need no explicit per-widget zero loop). Placed
+    // last (not interleaved with the Task 7/8 fields above, unlike those
+    // two's own cross-reference-to-the-C-struct placement) since there is
+    // no C struct field order left to mirror here -- rt_ui_winst's own
+    // lists/popups/popupSel fields sit BEFORE its enabled/focusIdx/traceId
+    // ones (rt_ui.c:281-327), but this port's field order was already a
+    // fresh design by Task 7 (file header comment), so appending is the
+    // smaller diff.
+    listsH: ptr
+    lists: ptr
+    popupsH: ptr
+    popups: ptr
+    popupSelH: ptr
+    popupSel: ptr
 }
 
 // rtUiWinstBoxSize is UiNewPtr's argument for allocating an RtUiWinst box
-// (via rtUiAllocLocked, a later step). EXACT, not a guess: 21 fields (Task
-// 8 added teH/tes/hbarsH/hbars), each exactly 4 bytes as an overlay-record
-// field (see the file header comment, "Field width" paragraph) = 84 bytes,
-// +12 bytes fixed slack (rounding to 96) purely as free insurance against a
-// future field-count edit, not because of any real sizing ambiguity the way
-// rtTextBoxSize/rtListBoxSize (text.cla/list.cla) have for their own
-// C-struct `Handle`-width question.
-const rtUiWinstBoxSize: int = 96
+// (via rtUiAllocLocked, a later step). EXACT, not a guess: 27 fields (Task
+// 9 added listsH/lists/popupsH/popups/popupSelH/popupSel), each exactly 4
+// bytes as an overlay-record field (see the file header comment, "Field
+// width" paragraph) = 108 bytes, +12 bytes fixed slack (rounding to 120)
+// purely as free insurance against a future field-count edit, not because
+// of any real sizing ambiguity the way rtTextBoxSize/rtListBoxSize
+// (text.cla/list.cla) have for their own C-struct `Handle`-width question.
+const rtUiWinstBoxSize: int = 120
 
 // RtUiCanvasBuf: SCATTERED fields (not an embedded BitMap-shaped region --
 // see the file header comment's "RECT / BITMAP HANDLING" section for why

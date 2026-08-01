@@ -853,3 +853,21 @@ func TestTexteditorBigfileUIScenarioPorted(t *testing.T) {
 		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
 	}
 }
+
+// ==================== native-5e Task 9 (slice C): ListManager tables, popups, LDEF ====================
+//
+// popuptable is the ONLY scenario gate this task requires (task-9-brief.md
+// -- popup itself has no golden coverage yet, see popuptable.cla's own
+// header comment: "a form window still aborts" at the time that scenario
+// was authored; popup's real exercise lands with Task 10's formedit/
+// bookmarks scenarios, which need the `edit` intrinsic this port doesn't
+// have yet). Same byte-identical-golden-compare-only shape as every other
+// Ported wrapper above (no re-assertion of TestPopuptableUIScenario's own
+// per-snap semantic checks -- those already proved the BEHAVIOR once
+// against the default lane; this test proves the PORTED lane produces the
+// identical bytes).
+
+func TestPopuptableUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "popuptable", filepath.Join("..", "..", "testdata", "ui", "popuptable.cla"), 0, true)
+}

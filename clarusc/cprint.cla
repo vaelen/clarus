@@ -3313,9 +3313,13 @@ func cpFuncProto(f: int): text {
     // _startempty just above -- this is an ordinary user-visible Clarus
     // function name (not a synthesized dispatcher), so it is matched
     // literally rather than via the `clar_ui_fire_*` synthesized-name
-    // pattern those two use.
+    // pattern those two use. Task 9: rtUiLdefDraw (uitable.cla) joins the
+    // same allowlist for the identical reason -- rt_ext_mac.inc's pascal
+    // LDEF wrapper (rt_ext_ui_ldef, gated CLARUS_UIPORT) calls it by FIXED
+    // NAME (`clar_fn_rtUiLdefDraw`) from rt_mac.c, same cross-TU shape as
+    // rtUiScrollbarAction just above.
     linkage = "static "
-    if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" or poolGet(irFuncName(f)) == "rtUiScrollbarAction" {
+    if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" or poolGet(irFuncName(f)) == "rtUiScrollbarAction" or poolGet(irFuncName(f)) == "rtUiLdefDraw" {
         linkage = ""
     }
     return toText(linkage + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(") + params + toText(")")

@@ -1,0 +1,949 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uitable.cla: List Manager tables, manual popups, and the hand-built LDEF
+// stub -- native-5e Task 9 (slice C). Port target: rt_ui.c:759-773
+// (rt_ui_popup_box), 928-1173 (LDEF section), 1248-1632 (POPUP/TABLE
+// rt_ui_make_widgets cases + table relayout/select/hit/click/sync),
+// 3143-3323+3374-3418 (popup/table click lanes), 4747-4791+4816-4827
+// (teardown), 5505-5539+5569-5579 (set/get int). Creation (the switch cases
+// this file's functions are CALLED FROM) lives in uiwidgets.cla's
+// rtUiMakeWidgets, alongside every other widget kind; layout dispatch
+// (rtUiTableRelayout's own call site) lives in uiwidgets.cla's rtUiLayout;
+// draw dispatch lives in ui.cla's rtUiHandleUpdate; click dispatch lives in
+// ui.cla's rtUiHandleContentClick; teardown ordering lives in ui.cla's
+// rtUiTeardownWindow; property get/set lives in uiwidgets.cla's
+// rtUiWidget{Get,Set}Int -- this file holds the TABLE/POPUP-internal
+// machinery those call into by name (whole-program visibility, docs/
+// clarus-language-reference.md:736).
+//
+// PARKED (rt_ui.c:242-268, RTUI_POPUP_CDEF): the System 7 popup-button
+// Control Manager path is gated off on EVERY system in the C reference
+// (manually verified non-functional without a real 'MENU' resource, see
+// that comment's own evidence) -- this port carries only the gate's
+// CONSEQUENCE (a popup's `ctrls[wIdx]` always stays ptr(0), so every
+// downstream draw/hit/click/dispose site here keys on that, exactly like
+// the oracle's own `!inst->ctrls[wIdx]` guards), not the dead CDEF branch
+// itself. Flip only once clarusc/build-mac.sh emit a real per-popup 'MENU'
+// resource (docs/ROADMAP.md's small-open-items list).
+//
+// Table row values are drawn straight from the bound record's own memory
+// (ftype/offset/strCap/enumCount/enumLabels/enumValues, all read via
+// uidesc.cla's Layout/EnumArrays accessors) -- mirrors rt_ser.inc's own
+// ser_put_field byte layout exactly, including its one documented gotcha:
+// a bool field's C representation is a full int32 (peekl), never a raw
+// byte (rt_ui.c:1100, cprint.cla). rtUiFtInt/Fixed/Bool/Char/Str/Enum
+// (below) mirror ser.cla's own RtFtInt/Fixed/Bool/Char/Str/Enum numbering
+// exactly (both read the SAME uibFieldTypeNum-numbered blob/serialized
+// bytes, clarusc/uiblob.cla:269-291) but are this file's OWN constants,
+// under this file's own `rtUi`-prefixed naming -- ser.cla is only spliced
+// into a program's manifest when that program calls file.save/file.load
+// (clarusc/main.cla's own `usesFileSaveLoad` gate), so a table-only
+// program (no file I/O at all) would leave ser.cla's RtFt* names
+// undefined; reusing them here would make uitable.cla's own always-needed
+// constants depend on an unrelated, sometimes-absent module.
+
+// ---- List Manager (rt_ui.c:928-1632, mac-target-4d Task 4's own oracle) --
+// every routine below dispatches through the SAME single trap (0xA9E7,
+// Retro68's own THREEWORDINLINE(0x3F3C, selector, 0xA9E7) encoding,
+// verified against toolchain/multiversal/CIncludes/Multiverse.h:9669-9714
+// and Retro68/InterfacesAndLibraries/Interfaces/CIncludes/Lists.h) -- the
+// selector word is an encoding detail the real Toolbox call handles
+// internally; cprint's rt_ext_ wrapper just calls the real C name directly
+// (this module's own header comment doesn't repeat that rationale --
+// see ui.cla's Gestalt comment for the precedent of citing a trap word a
+// plain `= trap` clause can't fully express). Point/Cell by-value params
+// pack v (high 16) / h (low 16) into one `int`, same convention as every
+// other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
+external func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7
+external func UiLDispose(lHandle: ptr) = trap 0xA9E7
+external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7
+external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7
+external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7
+external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7
+external func UiLSize(listWidth: word, listHeight: word, lHandle: ptr) = trap 0xA9E7
+external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7
+external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7
+external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9E7
+
+// ---- Menu Manager additions (SetMenuItemText/GetMenuHandle/PopUpMenuSelect
+// -- ui.cla already declares NewMenu/AppendMenu/AppendMenuStr/InsertMenu/
+// DeleteMenu/DisposeMenu/CountMItems/GetMenuItemText, reused here by name).
+// Verified against Retro68's own Menus.h (SetMenuItemText 0xA947 @:2758,
+// GetMenuHandle 0xA949 @:2487, PopUpMenuSelect 0xA80B @:2192-2193) and
+// cross-checked against Multiverse.h (:6008-6091, same three trap words). --
+external func UiSetMenuItemText(theMenu: ptr, item: word, itemString: ptr) = trap 0xA947
+external func UiGetMenuHandle(menuId: word): ptr = trap 0xA949
+external func UiPopUpMenuSelect(theMenu: ptr, top: word, left: word, popUpItem: word): int = trap 0xA80B
+
+// ---- QuickDraw/QuickdrawText additions this slice's draw code needs.
+// InvertRect 0xA8A4 (QuickDraw.h:3046, aliased MacInvertRect; Multiverse.h
+// :2675-2676 agrees). DrawText 0xA885 (QuickdrawText.h:537, aliased
+// MacDrawText; Multiverse.h:2871-2872 agrees). GetFontInfo 0xA88B
+// (QuickdrawText.h, ONEWORDINLINE). LocalToGlobal 0xA870 (QuickDraw.h:3941;
+// Multiverse.h:2527-2528 agrees) -- takes `Point *pt` (an IN-OUT pointer,
+// unlike PopUpMenuSelect's own separate top/left shorts), needed for the
+// popup anchor point (rt_ui.c:3400-3403). NumToString: Retro68's modern
+// NumberFormatting.h declares it with NO inline trap clause at all (a real
+// InterfaceLib call on that header's own terms), but Multiverse.h --
+// already this codebase's cross-check reference for every other trap word
+// -- gives it M68K_INLINE(0x3F3C, 0x0000, 0xA9EE) (:12342-12344), a
+// selector-prefixed Package Manager trap exactly like the List Manager
+// family above; ITS OWN `#pragma parameter NumToString(__D0, __A0)` line
+// just above that (:12342) documents REGISTER convention on 68k, not the
+// plain pascal-stack convention this bare `trap` clause declares -- same
+// unresolved-for-native gap ui.cla's own UiGestalt comment already flags
+// and defers to Task 12 (cg68k has no `reg` clause shape for "one ptr in
+// A0, nothing in D-regs but the trap's own D0 selector"); the cprint lane
+// (this task's only exercised path) is unaffected, since cprint calls the
+// real C `NumToString` name directly regardless of this clause. ----
+external func UiInvertRect(r: ptr) = trap 0xA8A4
+external func UiDrawText(textBuf: ptr, firstByte: word, byteCount: word) = trap 0xA885
+external func UiGetFontInfo(info: ptr) = trap 0xA88B
+external func UiLocalToGlobal(pt: ptr) = trap 0xA870
+external func UiNumToString(theNum: int, theString: ptr) = trap 0xA9EE
+
+// ---- Reverse-waist / per-backend glue externs this file consumes ----
+// UiTableRows: synthesized by clarusc/lower.cla's lowSynthTableRows (Task
+// 6) into clar_ui_fire_staterows -- one arm per irGlobals entry, returning
+// that global's OWN ADDRESS. Read through EVERY draw/sync call, never
+// cached (rt_ui.h:250-267's double-indirection contract: the `rt_list *`
+// stored at that address can be reassigned by the program at any time,
+// e.g. a fresh `list of` value; this port never observes that case in a
+// golden scenario, but the re-read discipline is unconditional regardless).
+external func UiTableRows(rowsIdx: int): ptr
+// UiLdefEntry: pascal-convention code address the List Manager calls back
+// into for every LDEF message (lInitMsg/lDrawMsg/lHiliteMsg/lCloseMsg).
+// cprint: the C pascal wrapper in rt_ext_mac.inc (gated CLARUS_UIPORT,
+// Task 8's rtUiScrollbarAction/UiActionEntry precedent) unpacks Cell into
+// one packed `int` and calls rtUiLdefDraw (below) by fixed name; native
+// (cg68k) JT-slot glue is Task 12's problem, same as UiActionEntry/UiAeEntry.
+external func UiLdefEntry(): ptr
+
+// ================================================================
+// rt_ui.h's RTUI_* constants this slice's code needs (mirrored here, same
+// convention as ui.cla/uiwidgets.cla's own blocks -- rt_ui.h is a C header,
+// never included by Clarus source).
+// ================================================================
+const rtUiKindPopup: int = 6
+const rtUiKindTable: int = 7
+
+const rtUiPopupH: int = 20
+const rtUiPopupW: int = 200
+const rtUiTableH: int = 120
+const rtUiTableW: int = 300
+
+// Native menu ID base for a popup widget's own (never-in-the-bar) menu
+// (rt_ui.c:236-240): widget index i's menu is 1000+i.
+const rtUiPopupMenuIdBase: int = 1000
+
+// LDEF messages (Lists.h enum: lInitMsg=0, lDrawMsg=1, lHiliteMsg=2,
+// lCloseMsg=3).
+const rtUiLInitMsg: int = 0
+const rtUiLDrawMsg: int = 1
+const rtUiLHiliteMsg: int = 2
+const rtUiLCloseMsg: int = 3
+
+// selFlags mask (Lists.h: lOnlyOne = -128, i.e. bit 7 set, 0x80) -- poked
+// as a raw byte (ListRec.selFlags is SInt8), so the bit-pattern spelling
+// (not the signed decimal one) is what a `pokeb` call actually wants.
+const rtUiLOnlyOne: int = 0x80
+
+// RTUI_WEV_SELECT/RTUI_WEV_DBLCLICK (rt_ui.h:121-123) -- table-only widget
+// events, joining uiwidgets.cla's own rtUiWev* block (declared here instead
+// since that file's own header comment scoped its block to Tasks 7/8's
+// kinds).
+const rtUiWevSelect: int = 4
+const rtUiWevDblclick: int = 5
+
+// Row field types (ser.cla's own RtFtInt/Fixed/Bool/Char/Str/Enum
+// numbering, mirrored under this file's own name -- see the file header
+// comment for why these aren't just reused directly).
+const rtUiFtInt: int = 0
+const rtUiFtFixed: int = 1
+const rtUiFtBool: int = 2
+const rtUiFtChar: int = 3
+const rtUiFtStr: int = 4
+const rtUiFtEnum: int = 5
+
+// ================================================================
+// ListRec field offsets (Lists.h `struct ListRec`, cross-checked against
+// Multiverse.h's own `pascal ListHandle LNew(...)` family -- both agree).
+// Same 2-byte mac68k packing / no-padding-beyond-natural-alignment
+// derivation already established for WindowRecord/GrafPort/ControlRecord/
+// TERec elsewhere in this port (Task 7 report log #4/#7, uitext.cla's own
+// TERec header comment): rView(Rect,8)@0 port(GrafPtr)@8 indent(Point,4)@12
+// cellSize(Point,4)@16 visible(ListBounds/Rect,8)@20 vScroll(ControlRef)@28
+// hScroll(ControlRef)@32 selFlags(SInt8)@36 lActive(Boolean)@37
+// lReserved(SInt8)@38 listFlags(SInt8)@39 clikTime(long)@40
+// clikLoc(Point,4)@44 mouseLoc(Point,4)@48 lClickLoop(UPP)@52
+// lastClick(Cell/Point,4)@56 refCon(long)@60 listDefProc(Handle)@64
+// userHandle(Handle)@68 dataBounds(ListBounds/Rect,8)@72 cells(Handle)@80
+// maxIndex(short)@84 cellArray(short[1])@86. A Point's own two sub-fields
+// are v@+0/h@+2 (MacTypes.h `struct Point { short v; short h; }`, same
+// order the file header's Rect recipe already established for top/left/
+// bottom/right). Only the offsets this file's own code actually touches
+// get a named const below (rView/cellSize.h/visible.top/vScroll/selFlags/
+// refCon/listDefProc/dataBounds.bottom) -- the rest (port/indent/hScroll/
+// clikTime/...) are never read or poked anywhere in this port.
+// ================================================================
+const rtUiListRView: int = 0            // Rect: top@+0 left@+2 bottom@+4 right@+6
+const rtUiListCellSizeV: int = 16
+const rtUiListCellSizeH: int = 18
+const rtUiListVisibleTop: int = 20      // ListBounds(Rect).top
+const rtUiListVScroll: int = 28
+const rtUiListSelFlags: int = 36
+const rtUiListRefCon: int = 60
+const rtUiListDefProc: int = 64
+const rtUiListDataBoundsBottom: int = 76 // dataBounds(Rect) base 72, .bottom @+4
+
+// ================================================================
+// Per-instance array-slot accessors (RtUiWinst.lists/popups/popupSel are
+// raw base addresses, one array per window instance sized to that window's
+// own nWidgets -- same idiom as uiwidgets.cla's rtUiCtrlAt/rtUiTeAt family).
+// ================================================================
+
+func rtUiListAt(w: RtUiWinst, i: int): ptr {
+    return ptr(peekl(w.lists + i * 4))
+}
+
+func rtUiSetListAt(w: RtUiWinst, i: int, v: ptr) {
+    pokel(w.lists + i * 4, int(v))
+}
+
+func rtUiPopupAt(w: RtUiWinst, i: int): ptr {
+    return ptr(peekl(w.popups + i * 4))
+}
+
+func rtUiSetPopupAt(w: RtUiWinst, i: int, v: ptr) {
+    pokel(w.popups + i * 4, int(v))
+}
+
+func rtUiPopupSelAt(w: RtUiWinst, i: int): int {
+    return peekl(w.popupSel + i * 4)
+}
+
+func rtUiSetPopupSelAt(w: RtUiWinst, i: int, v: int) {
+    pokel(w.popupSel + i * 4, v)
+}
+
+// ================================================================
+// rt_ui_popup_box (rt_ui.c:767-773) -> rtUiPopupBoxInto: a popup's visible
+// menu-button box, in window-local coords -- narrows the FULL widget rect
+// by the shared RTUI_FIELD_LABEL_W label lane when there's a caption (the
+// same rule RTUI_FIELD's own label uses). Out-param shape (`out`, an
+// already-allocated rtUiRectSize scratch), same convention as every other
+// Rect-producing helper in this port that isn't a tiny record (RtUiWinst's
+// own rects[] entries, rtUiNaturalSize's outW/outH) -- there is no
+// small-value-record precedent for an 8-byte Rect the way RtUiCanvasTarget
+// is for canvas draw state, and every call site here already owns a
+// scratch Rect ptr it can pass in.
+// ================================================================
+
+func rtUiPopupBoxInto(inst: ptr, wIdx: int, out: ptr) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    UiBlockMoveData(rtUiRectAt(w, wIdx), out, rtUiRectSize)
+    if peekb(rtUiLabelAt(w, wIdx)) > 0 {
+        pokew(out + 2, peekw(out + 2) + rtUiFieldLabelW)
+    }
+}
+
+// ================================================================
+// Table LDEF section (rt_ui.c:928-1173).
+// ================================================================
+
+// rtUiTableFillWidth (rt_ui.c:959-970): sums every FIXED-width column's
+// widthPx and returns however much of totalW is left for the (at most one)
+// widthFill column -- shared by the LDEF's own per-row draw and the header
+// strip draw (ui.cla's rtUiHandleUpdate), so the two can never disagree on
+// column boundaries.
+func rtUiTableFillWidth(colsOff: int, nCols: int, totalW: int): int {
+    var fixedSum: int
+    var k: int
+    var fillW: int
+
+    fixedSum = 0
+    k = 0
+    while k < nCols {
+        if not uidColWidthFill(colsOff, k) {
+            fixedSum = fixedSum + uidColWidthPx(colsOff, k)
+        }
+        k = k + 1
+    }
+    fillW = totalW - fixedSum
+    if fillW < 0 {
+        fillW = 0
+    }
+    return fillW
+}
+
+// rtUiFixedToStr (rt_ui.c:1039-1068): Fixed's raw runtime representation is
+// a plain 16.16 signed value -- formats as "-123.4567" (4 fraction digits,
+// zero-padded), built only from UiNumToString (no libc). ponytail: `0 - v`
+// on the most-negative int32 would overflow; not guarded -- a fixed value
+// that extreme is not a realistic table cell and this is a display helper,
+// not a trust boundary (verbatim from the C reference's own disclosure).
+func rtUiFixedToStr(v: int, out255: ptr) {
+    var neg: bool
+    var uv: int
+    var ibuf: ptr
+    var fbuf: ptr
+    var frac: int
+    var n: int
+    var i: int
+    var pad: int
+
+    neg = v < 0
+    if neg {
+        uv = 0 - v
+    } else {
+        uv = v
+    }
+    ibuf = UiNewPtr(256)
+    fbuf = UiNewPtr(256)
+    UiNumToString(uv >> 16, ibuf)
+    frac = ((uv & 0xFFFF) * 10000) / 65536
+    UiNumToString(frac, fbuf)
+
+    n = 0
+    if neg {
+        n = n + 1
+        pokeb(out255 + n, int('-'))
+    }
+    i = 0
+    while i < peekb(ibuf) {
+        n = n + 1
+        pokeb(out255 + n, peekb(ibuf + 1 + i))
+        i = i + 1
+    }
+    n = n + 1
+    pokeb(out255 + n, int('.'))
+    pad = 4 - peekb(fbuf)
+    i = 0
+    while i < pad {
+        n = n + 1
+        pokeb(out255 + n, int('0'))
+        i = i + 1
+    }
+    i = 0
+    while i < peekb(fbuf) {
+        n = n + 1
+        pokeb(out255 + n, peekb(fbuf + 1 + i))
+        i = i + 1
+    }
+    pokeb(out255, n)
+    UiDisposePtr(ibuf)
+    UiDisposePtr(fbuf)
+}
+
+// rtUiTableDrawField (rt_ui.c:1075-1122): renders one field's value into
+// colRect (already ClipRect'd by the caller) by ftype -- mirrors
+// rt_ser.inc's own ser_put_field byte layout exactly, including RtFtBool's
+// one documented gotcha (a full int32 field, never a raw byte). Unknown
+// enum value draws '?' (rt_ui.h's defensive "draw something, never crash"
+// contract).
+func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
+    var base: ptr
+    var ftype: int
+    var v: int
+    var numbuf: ptr
+    var chBuf: ptr
+    var enumCount: int
+    var enumLabelsOff: int
+    var enumValuesOff: int
+    var k: int
+    var lbl: ptr
+    var found: bool
+
+    base = rec + uidFieldOffset(layoutOff, fieldIdx)
+    ftype = uidFieldFtype(layoutOff, fieldIdx)
+    UiMoveTo(peekw(colRect + 2) + 2, peekw(colRect + 4) - 3)
+
+    if ftype == rtUiFtStr {
+        UiDrawText(base + 1, 0, peekb(base))
+    } else if ftype == rtUiFtInt {
+        v = peekl(base)
+        numbuf = UiNewPtr(256)
+        UiNumToString(v, numbuf)
+        UiDrawText(numbuf + 1, 0, peekb(numbuf))
+        UiDisposePtr(numbuf)
+    } else if ftype == rtUiFtFixed {
+        v = peekl(base)
+        numbuf = UiNewPtr(256)
+        rtUiFixedToStr(v, numbuf)
+        UiDrawText(numbuf + 1, 0, peekb(numbuf))
+        UiDisposePtr(numbuf)
+    } else if ftype == rtUiFtBool {
+        v = peekl(base) // int32, not a raw byte -- see rt_ser.inc's own comment on this exact gotcha
+        if v != 0 {
+            chBuf = UiNewPtr(1)
+            pokeb(chBuf, 0xC3) // MacRoman check mark
+            UiDrawText(chBuf, 0, 1)
+            UiDisposePtr(chBuf)
+        }
+    } else if ftype == rtUiFtChar {
+        chBuf = UiNewPtr(1)
+        pokeb(chBuf, peekb(base))
+        UiDrawText(chBuf, 0, 1)
+        UiDisposePtr(chBuf)
+    } else if ftype == rtUiFtEnum {
+        v = peekl(base)
+        enumCount = uidFieldEnumCount(layoutOff, fieldIdx)
+        enumLabelsOff = uidFieldEnumLabelsOff(layoutOff, fieldIdx)
+        enumValuesOff = uidFieldEnumValuesOff(layoutOff, fieldIdx)
+        found = false
+        k = 0
+        while k < enumCount {
+            if uidEnumValue(enumValuesOff, k) == v {
+                lbl = uidEnumLabel(enumLabelsOff, k)
+                UiDrawText(lbl + 1, 0, peekb(lbl))
+                found = true
+                k = enumCount
+            } else {
+                k = k + 1
+            }
+        }
+        if not found {
+            lbl = UiStrAddr("?")
+            UiDrawText(lbl + 1, 0, peekb(lbl))
+        }
+    }
+}
+
+// rtUiTableRowH/rtUiTableHeaderH (rt_ui.c:1131-1144): row height (a table's
+// LM cellSize.v) and header-strip height, both from the CURRENT port's font
+// metrics -- read fresh at creation and at every relayout rather than
+// cached (nothing in this port ever changes the window's default font).
+func rtUiTableRowH(): int {
+    var fi: ptr
+    var h: int
+
+    fi = UiNewPtr(8)
+    UiGetFontInfo(fi)
+    h = peekw(fi + 0) + peekw(fi + 2) + peekw(fi + 6) // ascent + descent + leading
+    UiDisposePtr(fi)
+    if h > 0 {
+        return h
+    }
+    return 1
+}
+
+func rtUiTableHeaderH(): int {
+    return rtUiTableRowH() + 4
+}
+
+// rtUiMakeLdefStub (rt_ui.c:1155-1173): the 6-byte JMP-stub Handle
+// installed as a table's `listDefProc` -- 0x4EF9 (JMP absolute long)
+// followed by UiLdefEntry()'s own flat code address, as two more 16-bit
+// words. Locked forever (HLock, never unlocked): List Manager calls
+// through this Handle as CODE for the table's entire lifetime. Freed
+// explicitly by ui.cla's rtUiTeardownWindow (captured before UiLDispose,
+// which frees the ListRec it lives in) -- List Manager only owns/frees a
+// RESOURCE-backed LDEF (the one UiLNew(theProc=0) initially installs,
+// which this immediately replaces and never touches again), never a
+// caller-supplied Handle like this one. ponytail: no FlushCodeCache -- the
+// 68000 target has no instruction cache to flush (same note the C
+// reference's own comment makes).
+func rtUiMakeLdefStub(): ptr {
+    var h: ptr
+    var mp: ptr
+    var addr: int
+
+    h = UiNewHandleClear(6)
+    if h == ptr(0) {
+        rtPanic("out of memory")
+    }
+    UiHLock(h)
+    mp = UiHandleDeref(h)
+    pokew(mp + 0, 0x4EF9)
+    addr = int(UiLdefEntry())
+    pokew(mp + 2, rtUiHiWord(addr))
+    pokew(mp + 4, rtUiLoWord(addr))
+    return h
+}
+
+// rtUiLdefDraw (rt_ui.c:978-1037) -> the LDEF itself, called by the C
+// pascal wrapper (rt_ext_mac.inc, gated CLARUS_UIPORT) via
+// clar_fn_rtUiLdefDraw -- added to cpFuncProto's non-static-linkage
+// allowlist (cprint.cla) so that separate TU can call it by fixed name,
+// same shape as Task 8's rtUiScrollbarAction. `cellPacked` is Cell (a
+// Point) packed the same v-high/h-low convention as every other by-value
+// Point/Cell this port uses; only its v half (the ROW index) is ever read
+// -- lCell.h is always 0 (this table's single LM column spans the whole
+// row, see the file header comment). `dataOffset`/`dataLen` (meaningful
+// only for LM's OWN cell-data storage, which this table never uses) are
+// unused, matching the C reference's own `(void)` casts.
+//
+// The list's own `refCon` (rtUiListRefCon) holds the widget's Table-section
+// blob offset -- everything this LDEF needs (rowsIdx/layout/cols) hangs
+// off that one int, so it never needs to find its owning RtUiWinst/widget
+// index at all (same design the C reference's own header comment states
+// for `wd->extra`).
+func rtUiLdefDraw(msg: int, select: bool, rectPtr: ptr, cellPacked: int, dataOffset: int, dataLen: int, lh: ptr) {
+    var lhMp: ptr
+    var tableOff: int
+    var rowsIdx: int
+    var layoutOff: int
+    var nCols: int
+    var colsOff: int
+    var rowsAddr: ptr
+    var rows: ptr
+    var count: int
+    var row: int
+    var rec: ptr
+    var fillW: int
+    var x: int
+    var k: int
+    var w: int
+    var colRect: ptr
+    var saveClip: ptr
+
+    if msg == rtUiLDrawMsg {
+        lhMp = UiHandleDeref(lh)
+        tableOff = peekl(lhMp + rtUiListRefCon)
+        rowsIdx = uidTableRowsIdx(tableOff)
+        layoutOff = uidTableLayoutOff(tableOff)
+        nCols = uidTableNCols(tableOff)
+        colsOff = uidTableColsOff(tableOff)
+
+        UiEraseRect(rectPtr)
+        rowsAddr = UiTableRows(rowsIdx)
+        rows = ptr(peekl(rowsAddr))
+        count = rtListCount(rows)
+        // Row out of range (sync lag between LM's own row count and the
+        // live rt_list -- rtUiTableSyncOne closes this gap on the next
+        // chokepoint, but a draw can land here mid-lag) draws blank, never
+        // touches rtListAt OOB. ALWAYS re-derive via rtListAt, fresh, every
+        // call -- never cache a pointer across LDEF invocations (rt_list is
+        // Handle-backed and can move/grow between draws).
+        row = rtUiHiWord(cellPacked)
+        if row >= 0 and row < count {
+            rec = rtListAt(rows, row)
+            fillW = rtUiTableFillWidth(colsOff, nCols, peekw(rectPtr + 6) - peekw(rectPtr + 2))
+            x = peekw(rectPtr + 2)
+            k = 0
+            while k < nCols {
+                if uidColWidthFill(colsOff, k) {
+                    w = fillW
+                } else {
+                    w = uidColWidthPx(colsOff, k)
+                }
+                colRect = UiNewPtr(rtUiRectSize)
+                UiSetRect(colRect, x, peekw(rectPtr + 0), x + w, peekw(rectPtr + 4))
+                saveClip = UiNewRgn()
+                UiGetClip(saveClip)
+                UiClipRect(colRect)
+                rtUiTableDrawField(rec, layoutOff, uidColFieldIndex(colsOff, k), colRect)
+                UiSetClip(saveClip)
+                UiDisposeRgn(saveClip)
+                UiDisposePtr(colRect)
+                x = x + w
+                k = k + 1
+            }
+        }
+        if select {
+            UiInvertRect(rectPtr)
+        }
+    } else if msg == rtUiLHiliteMsg {
+        // Selection toggle only (no content redraw).
+        UiInvertRect(rectPtr)
+    }
+    // lInitMsg/lCloseMsg: no-op, matches the C reference's own empty case.
+}
+
+// ================================================================
+// Table widgets: layout, selection, click, sync (rt_ui.c:1415-1632).
+// ================================================================
+
+// rtUiTableRelayout (rt_ui.c:1422-1464): derives widget i's List Manager
+// view rect (and cell width) from inst.rects[i], already SetRect by the
+// caller (uiwidgets.cla's rtUiLayout) -- the header strip is carved off the
+// TOP of the full widget rect, the LM view is everything below it.
+func rtUiTableRelayout(inst: ptr, i: int) {
+    var w: RtUiWinst
+    var lh: ptr
+    var lhMp: ptr
+    var box: ptr
+    var listRect: ptr
+    var headerH: int
+    var cellW: int
+
+    w = RtUiWinst(inst)
+    lh = rtUiListAt(w, i)
+    if lh == ptr(0) {
+        return
+    }
+    lhMp = UiHandleDeref(lh)
+    box = UiNewPtr(rtUiRectSize)
+    UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
+    listRect = UiNewPtr(rtUiRectSize)
+    UiBlockMoveData(box, listRect, rtUiRectSize)
+    headerH = rtUiTableHeaderH()
+    pokew(listRect + 0, peekw(listRect + 0) + headerH)
+    if peekw(listRect + 4) < peekw(listRect + 0) {
+        pokew(listRect + 4, peekw(listRect + 0))
+    }
+    // The LM view sits strictly INSIDE the FrameRect border and leaves the
+    // classic 15px strip + shared border on the right for LM's own vertical
+    // scroll bar.
+    UiInsetRect(listRect, 1, 0)
+    pokew(listRect + 4, peekw(listRect + 4) - 1)
+    pokew(listRect + 6, peekw(listRect + 6) - rtUiScrollbarW)
+    if peekw(listRect + 4) < peekw(listRect + 0) {
+        pokew(listRect + 4, peekw(listRect + 0))
+    }
+    if peekw(listRect + 6) < peekw(listRect + 2) {
+        pokew(listRect + 6, peekw(listRect + 2))
+    }
+    // List Manager has no dedicated "move" call -- poke rView's position
+    // directly, then LSize to apply the new width/height. cellSize.h stays
+    // equal to the FULL view width (this table's single LM column spans it
+    // entirely) so LClick's own cell hit-testing covers the whole row.
+    pokew(lhMp + rtUiListRView + 0, peekw(listRect + 0))
+    pokew(lhMp + rtUiListRView + 2, peekw(listRect + 2))
+    cellW = peekw(listRect + 6) - peekw(listRect + 2)
+    if cellW < 1 {
+        cellW = 1
+    }
+    pokew(lhMp + rtUiListCellSizeH, cellW)
+    UiLSize(cellW, peekw(listRect + 4) - peekw(listRect + 0), lh)
+    UiInvalRect(box)
+    UiDisposePtr(box)
+    UiDisposePtr(listRect)
+}
+
+// rtUiTableGetSelected (rt_ui.c:1478-1491): scans from row 0 for the
+// (single, lOnlyOne) selected cell -- shared by uiwidgets.cla's
+// rtUiWidgetGetInt SELECTED case and the real click path's own lookup. -1
+// if nothing is selected. Manual-gate finding (Task 4, ported verbatim):
+// NOT LGetSelect(next=true, ...) starting from an off-list hint cell -- a
+// per-cell scan with next=FALSE is what actually works on this toolchain.
+func rtUiTableGetSelected(lh: ptr): int {
+    var lhMp: ptr
+    var count: int
+    var row: int
+    var cell: ptr
+    var found: int
+
+    lhMp = UiHandleDeref(lh)
+    count = peekw(lhMp + rtUiListDataBoundsBottom)
+    cell = UiNewPtr(4)
+    found = -1
+    row = 0
+    while row < count {
+        pokew(cell + 0, row) // v
+        pokew(cell + 2, 0)   // h
+        if UiLGetSelect(false, cell, lh) {
+            found = row
+            row = count // break
+        } else {
+            row = row + 1
+        }
+    }
+    UiDisposePtr(cell)
+    return found
+}
+
+// rtUiTableSelectExclusive (rt_ui.c:1499-1508): deselects whatever is
+// currently selected (if anything), then selects `row` (unless negative,
+// meaning "deselect only") -- the scripted click lane and
+// rtUiWidgetSetInt's programmatic setter both need this explicit
+// exclusivity (a real click's own LClick, combined with lOnlyOne, already
+// gets this for free).
+func rtUiTableSelectExclusive(lh: ptr, row: int) {
+    var cur: int
+
+    cur = rtUiTableGetSelected(lh)
+    if cur >= 0 {
+        UiLSetSelect(false, cur << 16, lh)
+    }
+    if row >= 0 {
+        UiLSetSelect(true, row << 16, lh)
+    }
+}
+
+// rtUiTableHit (rt_ui.c:1515-1526): hit-tests against each table's own LM
+// view rect (rView) -- NOT the full widget rect (the header strip above it
+// is inert) and not the scrollbar strip either (a real Control Manager
+// control, resolved separately by FindControl in ui.cla's
+// rtUiHandleContentClick before this is ever consulted).
+func rtUiTableHit(inst: ptr, localPt: int, outIdx: ptr): bool {
+    var w: RtUiWinst
+    var n: int
+    var i: int
+    var lh: ptr
+
+    w = RtUiWinst(inst)
+    n = uidWinNWidgets(w.winIdx)
+    i = 0
+    while i < n {
+        if uidWidgetKind(w.winIdx, i) == rtUiKindTable {
+            lh = rtUiListAt(w, i)
+            if lh != ptr(0) and UiPtInRect(localPt, UiHandleDeref(lh) + rtUiListRView) {
+                pokel(outIdx, i)
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+func rtUiTableFireSelect(inst: ptr, wIdx: int, row: int) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "select")
+    UiFireWidget(w.winIdx, inst, wIdx, rtUiWevSelect, row, 0)
+}
+
+func rtUiTableFireDblclick(inst: ptr, wIdx: int, row: int) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "doubleClick")
+    UiFireWidget(w.winIdx, inst, wIdx, rtUiWevDblclick, row, 0)
+}
+
+// rtUiTableClick (rt_ui.c:1560-1582): a click that landed in table wIdx's
+// cell area (ui.cla's rtUiHandleContentClick already matched via
+// rtUiTableHit). Real path: LClick does its own tracking (including
+// selection, via lOnlyOne) and returns whether it was a double-click; the
+// row it selected is read back via rtUiTableGetSelected right after.
+// Scripted path (no real mouse for LClick's modal tracking): the row is
+// computed directly from the click point against the list's own live
+// geometry, then selected exclusively. Both paths converge on firing
+// select (always) and, on a double-click, ALSO dblclick, select first
+// either way.
+func rtUiTableClick(inst: ptr, wIdx: int, localPt: int, mods: int) {
+    var w: RtUiWinst
+    var lh: ptr
+    var lhMp: ptr
+    var row: int
+    var dbl: bool
+
+    w = RtUiWinst(inst)
+    lh = rtUiListAt(w, wIdx)
+    lhMp = UiHandleDeref(lh)
+    if rtUiScripted {
+        row = peekw(lhMp + rtUiListVisibleTop) + (rtUiHiWord(localPt) - peekw(lhMp + rtUiListRView + 0)) / peekw(lhMp + rtUiListCellSizeV)
+        if row < 0 {
+            row = 0 // ponytail: no upper clamp against rtListCount -- our own scripts only ever click real rows
+        }
+        rtUiTableSelectExclusive(lh, row)
+        rtUiTableFireSelect(inst, wIdx, row)
+        if rtUiScriptDbl {
+            rtUiTableFireDblclick(inst, wIdx, row)
+        }
+        return
+    }
+    dbl = UiLClick(localPt, mods, lh)
+    row = rtUiTableGetSelected(lh)
+    rtUiTableFireSelect(inst, wIdx, row)
+    if dbl {
+        rtUiTableFireDblclick(inst, wIdx, row)
+    }
+}
+
+// rtUiTableSyncOne (rt_ui.c:1594-1613): re-syncs ONE table's native LM row
+// count to its bound rt_list's current count -- diff, then LAddRow/LDelRow
+// AT THE END (keeps every rendered row's CONTENT correct regardless of
+// where in the underlying list a push/remove actually happened, since the
+// LDEF always re-derives content by fresh index; it can leave a stale LM
+// selection bit on whatever row index was previously highlighted if a
+// MIDDLE row was the one removed -- known, brief-prescribed limitation).
+// Idempotent: a no-op, cheap check when nothing changed.
+func rtUiTableSyncOne(inst: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var lh: ptr
+    var lhMp: ptr
+    var tableOff: int
+    var rowsIdx: int
+    var rowsAddr: ptr
+    var rows: ptr
+    var dataCount: int
+    var lmCount: int
+    var savedPort: ptr
+
+    w = RtUiWinst(inst)
+    lh = rtUiListAt(w, wIdx)
+    if lh == ptr(0) {
+        return
+    }
+    tableOff = uidWidgetTableOff(w.winIdx, wIdx)
+    rowsIdx = uidTableRowsIdx(tableOff)
+    rowsAddr = UiTableRows(rowsIdx)
+    rows = ptr(peekl(rowsAddr))
+    dataCount = rtListCount(rows)
+    lhMp = UiHandleDeref(lh)
+    lmCount = peekw(lhMp + rtUiListDataBoundsBottom)
+    if dataCount == lmCount {
+        return
+    }
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    if dataCount > lmCount {
+        UiLAddRow(dataCount - lmCount, lmCount, lh)
+    } else {
+        UiLDelRow(lmCount - dataCount, dataCount, lh)
+    }
+    lhMp = UiHandleDeref(lh) // re-derive: LAddRow/LDelRow can move memory
+    UiInvalRect(lhMp + rtUiListRView)
+    UiSetPort(savedPort)
+}
+
+// rtUiTablesSync (rt_ui.c:1621-1632, public per rt_ui.h): re-syncs EVERY
+// open window's EVERY table. Walks the Window Manager's own window list
+// exactly like ui.cla's rtUiFlushAllBuffered (same FrontWindow()/nextWindow
+// front-to-back walk, same windowKind filter).
+func rtUiTablesSync() {
+    var wp: ptr
+    var inst: ptr
+    var w: RtUiWinst
+    var n: int
+    var i: int
+
+    wp = UiFrontWindow()
+    while wp != ptr(0) {
+        if peekw(wp + 108) == rtUiWindowKind {
+            inst = ptr(UiGetWRefCon(wp))
+            w = RtUiWinst(inst)
+            n = uidWinNWidgets(w.winIdx)
+            i = 0
+            while i < n {
+                if uidWidgetKind(w.winIdx, i) == rtUiKindTable {
+                    rtUiTableSyncOne(inst, i)
+                }
+                i = i + 1
+            }
+        }
+        wp = ptr(peekl(wp + 144))
+    }
+}
+
+// ================================================================
+// Popup widgets: hit-test, pick, scripted-alive assert, click dispatch
+// (rt_ui.c:3143-3411).
+// ================================================================
+
+// rtUiPopupHit (rt_ui.c:3159-3170): unlike rtUiPopupBoxInto's narrowed
+// drawing/anchor box, this tests the FULL widget rect (label lane
+// included) -- a click anywhere on the widget opens its popup. The
+// `ctrls[i] == ptr(0)` guard mirrors the C reference's own (moot in
+// practice this port -- see the RTUI_POPUP_CDEF header note -- but kept so
+// a control-backed popup could never fall back to this manual lane even in
+// a scenario a future flip didn't anticipate).
+func rtUiPopupHit(inst: ptr, localPt: int, outIdx: ptr): bool {
+    var w: RtUiWinst
+    var n: int
+    var i: int
+
+    w = RtUiWinst(inst)
+    n = uidWinNWidgets(w.winIdx)
+    i = 0
+    while i < n {
+        if uidWidgetKind(w.winIdx, i) == rtUiKindPopup and rtUiCtrlAt(w, i) == ptr(0) and UiPtInRect(localPt, rtUiRectAt(w, i)) {
+            pokel(outIdx, i)
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// rtUiPopupAssertAlive (rt_ui.c:3184-3208): asserts the popup's menu is
+// ACTUALLY alive in the menu list -- GetMenuHandle(1000+wIdx) must find the
+// SAME MenuHandle rtUiMakeWidgets built for THIS instance, with its bound
+// enum's item count intact -- before the scripted path is allowed to fake
+// a pick. Called only from rtUiScripted-gated call sites (uiscript.cla has
+// no preprocessor to gate the function ITSELF the way the C reference's
+// `#ifdef RT_MAC_TEST` does -- every exercised path in this port is
+// test-harness-driven anyway, Task 7 report log's own precedent).
+func rtUiPopupAssertAlive(inst: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var mh: ptr
+    var formOff: int
+    var fieldIndex: int
+    var expect: int
+
+    w = RtUiWinst(inst)
+    mh = UiGetMenuHandle(rtUiPopupMenuIdBase + wIdx)
+    if mh == ptr(0) {
+        rtPanic("popup: GetMenuHandle found no menu in the menu list for this widget (close/reopen left it undeleted or never reinserted)")
+    }
+    if mh != rtUiPopupAt(w, wIdx) {
+        rtPanic("popup: GetMenuHandle returned a menu handle that isn't this instance's own (stale/leaked entry under the same ID)")
+    }
+    formOff = uidWinFormOff(w.winIdx)
+    expect = 0
+    if formOff != -1 {
+        fieldIndex = uidFormFindFieldIndex(formOff, wIdx)
+        if fieldIndex != -1 {
+            expect = uidFieldEnumCount(uidFormLayoutOff(formOff), fieldIndex)
+        }
+    }
+    if UiCountMItems(mh) != expect {
+        rtPanic("popup: menu item count doesn't match the bound enum (rebuilt with stale/leftover items)")
+    }
+}
+
+// rtUiPopupPick (rt_ui.c:3217-3227): shared post-pick logic -- both the
+// real PopUpMenuSelect path and the scripted answer-queue path converge
+// here once each has its own new 0-based item index. A no-op pick (same
+// index re-selected) does NOTHING: no redraw, no trace, no event, matching
+// a real popup click that releases back on the already-showing item.
+func rtUiPopupPick(inst: ptr, wIdx: int, newIndex: int) {
+    var w: RtUiWinst
+
+    w = RtUiWinst(inst)
+    if newIndex == rtUiPopupSelAt(w, wIdx) {
+        return
+    }
+    rtUiSetPopupSelAt(w, wIdx, newIndex)
+    UiInvalRect(rtUiRectAt(w, wIdx))
+    rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "change")
+    UiFireWidget(w.winIdx, inst, wIdx, rtUiWevChange, newIndex, 0)
+}
+
+// rtUiPopupClick (rt_ui.c:3374-3411, the popup-hit dispatch lane): the
+// scripted path (uiscript.cla's answer-popup ring queue) and the real
+// PopUpMenuSelect path both converge on rtUiPopupPick.
+func rtUiPopupClick(inst: ptr, pIdx: int) {
+    var w: RtUiWinst
+    var box: ptr
+    var anchor: ptr
+    var result: int
+    var newItem: int
+    var kindSlot: ptr
+    var valSlot: ptr
+
+    if rtUiScripted {
+        rtUiPopupAssertAlive(inst, pIdx)
+        kindSlot = UiNewPtr(4)
+        valSlot = UiNewPtr(4)
+        rtUiAnswerPop(kindSlot, valSlot)
+        if peekl(kindSlot) != rtUiAnsPopup {
+            rtPanic("popup: scripted answer kind mismatch")
+        }
+        rtUiPopupPick(inst, pIdx, peekl(valSlot))
+        UiDisposePtr(kindSlot)
+        UiDisposePtr(valSlot)
+        return
+    }
+    w = RtUiWinst(inst)
+    box = UiNewPtr(rtUiRectSize)
+    rtUiPopupBoxInto(inst, pIdx, box)
+    anchor = UiNewPtr(4)
+    pokew(anchor + 0, peekw(box + 0)) // v = box.top
+    pokew(anchor + 2, peekw(box + 2)) // h = box.left
+    UiLocalToGlobal(anchor)
+    result = UiPopUpMenuSelect(rtUiPopupAt(w, pIdx), peekw(anchor + 0), peekw(anchor + 2), rtUiPopupSelAt(w, pIdx) + 1)
+    newItem = rtUiLoWord(result)
+    if newItem != 0 {
+        rtUiPopupPick(inst, pIdx, newItem - 1)
+    }
+    UiDisposePtr(anchor)
+    UiDisposePtr(box)
+}

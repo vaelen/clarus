@@ -32,6 +32,8 @@
 #include <Resources.h> /* GetResource/ReleaseResource -- rt_ext_UiLaunchReal's SIZE-resource probe */
 #include <Scrap.h>     /* ZeroScrap -- rt_ext_UiZeroScrap (Task 8); TEFromScrap/TEToScrap/
                            TEGetScrapLength come from TextEdit.h, already visible transitively. */
+#include <Lists.h>     /* List Manager -- Task 9's uitable.cla externs (rt_ui.c's own precedent, :69) */
+#include <NumberFormatting.h> /* NumToString -- Task 9 table cell int/fixed rendering, no libc needed */
 
 /* ---- 5a: ptr/Handle waist (Plan 5a Task 3) ---- */
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
@@ -438,6 +440,34 @@ void rt_ext_UiHSetState(void *h, int32_t flag) { HSetState((Handle)h, (SignedByt
 short rt_ext_UiGetControlMaximum(void *theControl) { return GetControlMaximum((ControlRef)theControl); }
 void rt_ext_UiSetControlMaximum(void *theControl, short newMaximum) { SetControlMaximum((ControlRef)theControl, newMaximum); }
 
+/* ---- native-5e Task 9: uitable.cla's own List Manager/Menu Manager/
+ * QuickDraw/QuickdrawText extern block. One rt_ext_Ui<Name> wrapper per
+ * `external func Ui<Name>` declared there -- same thin cast-and-call
+ * convention as the Task 7/8 blocks above. Point/Cell by-value params
+ * arrive packed (rt_ext_ui_pt, already declared above this file). */
+void *rt_ext_UiLNew(void *rView, void *dataBounds, int32_t cSize, short theProc, void *theWindow, int32_t drawIt, int32_t hasGrow, int32_t scrollHoriz, int32_t scrollVert) {
+    return (void *)LNew((const Rect *)rView, (const Rect *)dataBounds, rt_ext_ui_pt(cSize), theProc, (WindowRef)theWindow, (Boolean)drawIt, (Boolean)hasGrow, (Boolean)scrollHoriz, (Boolean)scrollVert);
+}
+void rt_ext_UiLDispose(void *lHandle) { LDispose((ListHandle)lHandle); }
+short rt_ext_UiLAddRow(short count, short rowNum, void *lHandle) { return LAddRow(count, rowNum, (ListHandle)lHandle); }
+void rt_ext_UiLDelRow(short count, short rowNum, void *lHandle) { LDelRow(count, rowNum, (ListHandle)lHandle); }
+int32_t rt_ext_UiLGetSelect(int32_t next, void *theCell, void *lHandle) { return (int32_t)LGetSelect((Boolean)next, (Cell *)theCell, (ListHandle)lHandle); }
+void rt_ext_UiLSetSelect(int32_t setIt, int32_t theCell, void *lHandle) { LSetSelect((Boolean)setIt, rt_ext_ui_pt(theCell), (ListHandle)lHandle); }
+void rt_ext_UiLSize(short listWidth, short listHeight, void *lHandle) { LSize(listWidth, listHeight, (ListHandle)lHandle); }
+void rt_ext_UiLSetDrawingMode(int32_t drawIt, void *lHandle) { LSetDrawingMode((Boolean)drawIt, (ListHandle)lHandle); }
+void rt_ext_UiLUpdate(void *theRgn, void *lHandle) { LUpdate((RgnHandle)theRgn, (ListHandle)lHandle); }
+int32_t rt_ext_UiLClick(int32_t pt, short modifiers, void *lHandle) { return (int32_t)LClick(rt_ext_ui_pt(pt), (EventModifiers)modifiers, (ListHandle)lHandle); }
+
+void rt_ext_UiSetMenuItemText(void *theMenu, short item, void *itemString) { SetMenuItemText((MenuRef)theMenu, item, (ConstStr255Param)itemString); }
+void *rt_ext_UiGetMenuHandle(short menuId) { return (void *)GetMenuHandle(menuId); }
+int32_t rt_ext_UiPopUpMenuSelect(void *theMenu, short top, short left, short popUpItem) { return (int32_t)PopUpMenuSelect((MenuRef)theMenu, top, left, popUpItem); }
+
+void rt_ext_UiInvertRect(void *r) { InvertRect((const Rect *)r); }
+void rt_ext_UiDrawText(void *textBuf, short firstByte, short byteCount) { DrawText(textBuf, firstByte, byteCount); }
+void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
+void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
+void rt_ext_UiNumToString(int32_t theNum, void *theString) { NumToString((long)theNum, (unsigned char *)theString); }
+
 #ifdef CLARUS_UIPORT
 /* rt_ext_UiActionEntry: the scrollbar action-proc glue-entry extern (this
  * task's own brief -- "the cprint-lane C pascal wrapper goes in
@@ -451,7 +481,30 @@ static pascal void rt_ext_ui_scrollbar_action(ControlHandle ctrl, short part) {
     clar_fn_rtUiScrollbarAction((void *)ctrl, (int32_t)part);
 }
 void *rt_ext_UiActionEntry(void) { return (void *)NewControlActionUPP(rt_ext_ui_scrollbar_action); }
-#endif /* CLARUS_UIPORT (rt_ext_UiActionEntry) */
+
+/* rt_ext_UiLdefEntry (Task 9): the LDEF glue-entry extern. Signature
+ * EXACTLY Lists.h's ListDefProcPtr (pascal void (short lMessage, Boolean
+ * lSelect, Rect *lRect, Cell lCell, short lDataOffset, short lDataLen,
+ * ListHandle lHandle)) -- List Manager calls through the JMP-stub Handle
+ * uitable.cla's own rtUiMakeLdefStub builds with this exact signature.
+ * Unlike rt_ext_UiActionEntry above, this needs no UPP wrapping: the
+ * hand-built JMP stub calls this wrapper's own flat code address directly
+ * (rtUiMakeLdefStub pokes it in as a raw `unsigned long`, mirroring
+ * rt_ui_make_ldef_stub's own `(unsigned long)rt_ui_ldef` exactly) -- no
+ * ControlActionUPP-style indirection is involved anywhere in the LDEF
+ * call path. Cell arrives BY VALUE here (matching the real ListDefProcPtr
+ * prototype, unlike LGetSelect/LSetSelect's own Cell-by-pointer/by-value
+ * split above) -- packed the same v-high/h-low convention as every other
+ * by-value Point/Cell this port uses before handing off to the ported
+ * rtUiLdefDraw, added to cpFuncProto's non-static-linkage allowlist
+ * (cprint.cla) so this cross-TU call resolves. */
+extern void clar_fn_rtUiLdefDraw(int32_t msg, int32_t select, void *rectPtr, int32_t cellPacked, int32_t dataOffset, int32_t dataLen, void *lh);
+static pascal void rt_ext_ui_ldef(short lMessage, Boolean lSelect, Rect *lRect, Cell lCell, short lDataOffset, short lDataLen, ListHandle lHandle) {
+    int32_t packed = ((int32_t)lCell.v << 16) | (uint16_t)lCell.h;
+    clar_fn_rtUiLdefDraw((int32_t)lMessage, (int32_t)lSelect, (void *)lRect, packed, (int32_t)lDataOffset, (int32_t)lDataLen, (void *)lHandle);
+}
+void *rt_ext_UiLdefEntry(void) { return (void *)rt_ext_ui_ldef; }
+#endif /* CLARUS_UIPORT (rt_ext_UiActionEntry, rt_ext_UiLdefEntry) */
 
 /* ==================== Task 7 (native-5e UI port) glue ==================== */
 #include <AppleEvents.h>

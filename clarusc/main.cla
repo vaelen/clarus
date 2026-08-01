@@ -597,10 +597,17 @@ on App.startCLI(args: list of string) {
             // "whole-program visibility makes splice order irrelevant to
             // correctness" note the uiscript.cla comment just below
             // already gives; placed here rather than after uiscript.cla
-            // purely to keep the four widget-surface modules (uidesc/ui/
-            // uiwidgets/uitext) grouped together ahead of the trace/
-            // scripted-interpreter module.
+            // purely to keep the widget-surface modules (uidesc/ui/
+            // uiwidgets/uitext/uitable) grouped together ahead of the
+            // trace/scripted-interpreter module.
             neededMods.add("uitext.cla")
+            // Task 9: uitable.cla (List Manager tables, manual popups, the
+            // LDEF stub) -- spliced right after uitext.cla, same "whole-
+            // program visibility makes splice order irrelevant to
+            // correctness" note as uitext.cla's own comment above (its own
+            // ser.cla RtFt* constant references resolve fine regardless of
+            // ser.cla's own later splice position, below).
+            neededMods.add("uitable.cla")
             // Task 7 Step 5: uiscript.cla (trace helpers + scripted
             // interpreter + snap) -- spliced last of the four ui*.cla
             // modules; its own trace helpers are called BY ui.cla/

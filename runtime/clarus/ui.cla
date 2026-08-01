@@ -340,11 +340,10 @@ const rtUiEvResized: int = 3
 const rtUiEvKey: int = 4
 // Window Manager WDEF procID constants (MacWindows.h, Inside Macintosh I):
 // noGrowDocProc=4 (fixed size, close box, no zoom), zoomDocProc=8
-// (resizable, close box, zoom box). movableDBoxProc (forms) has no
-// `const` here -- forms are out of scope this slice (see rtUiOpen's own
-// comment on why the C reference's `d->form ? ... : ...` branch
-// collapses).
+// (resizable, close box, zoom box), movableDBoxProc=5 (Task 9: a `form for
+// T` window's own WDEF on System 7+ -- MacWindows.h:197-203).
 const rtUiProcNoGrowDoc: int = 4
+const rtUiProcMovableDBox: int = 5
 const rtUiProcZoomDoc: int = 8
 const rtUiMenubarH: int = 20
 const rtUiTitlebarH: int = 19
@@ -501,14 +500,18 @@ func rtUiNaturalSize(winIdx: int, outW: ptr, outH: ptr) {
 }
 
 // ================================================================
-// rt_ui_open (rt_ui.c:4571-4729) -> rtUiOpen(winIdx): ptr. Full port
-// EXCEPT: the table-row-sync loop (dead, no tables) and the
-// auto-focus-first-field/textview loop (dead, no fields/textviews) are
-// omitted -- both unreachable once rtUiMakeWidgets' fail-closed gate
-// holds (uiwidgets.cla). The form-window WDEF branch (`d->form ? ... :
-// ...`) collapses to the plain `resizable ? zoomDocProc : noGrowDocProc`
-// choice: `formOff` is ALWAYS -1 this slice (forms aren't ported), so
-// the C reference's own `d->form` check can never be true here.
+// rt_ui_open (rt_ui.c:4571-4729) -> rtUiOpen(winIdx): ptr. The
+// auto-focus-first-field/textview loop went live Task 8. Task 9 adds two
+// more pieces: the WDEF choice now branches on `formOff` (a window with
+// `form for T` -- e.g. one holding a popup, rt_ui.c:4647-4661 -- always
+// opens as a movable-modal box, System 7 only, falling back to
+// noGrowDocProc on System 6, which has no movable-dBox WDEF at all; a
+// non-form window's own resizable flag picks zoomDocProc/noGrowDocProc
+// exactly as before), and the table-row-sync loop (rt_ui.c:4669-4680,
+// rtUiTableSyncOne per TABLE widget) now runs for real, right after
+// rtUiCanvasReallocAll and BEFORE the auto-focus loop -- per-instance, not
+// the global rtUiTablesSync walk (which starts from FrontWindow() and
+// would skip this window before ShowWindow below makes it visible).
 // ================================================================
 
 func rtUiOpen(winIdx: int): ptr {
@@ -537,6 +540,7 @@ func rtUiOpen(winIdx: int): ptr {
     var titlePtr: ptr
     var i: int
     var savedPort: ptr
+    var formOff: int
 
     instH = rtUiAllocLocked(rtUiWinstBoxSize)
     inst = UiHandleDeref(instH)
@@ -569,6 +573,12 @@ func rtUiOpen(winIdx: int): ptr {
     w.hbars = UiHandleDeref(w.hbarsH)
     w.enabledH = rtUiAllocLocked(nWidgets)
     w.logicalEnabled = UiHandleDeref(w.enabledH)
+    w.listsH = rtUiAllocLocked(nWidgets * 4)
+    w.lists = UiHandleDeref(w.listsH)
+    w.popupsH = rtUiAllocLocked(nWidgets * 4)
+    w.popups = UiHandleDeref(w.popupsH)
+    w.popupSelH = rtUiAllocLocked(nWidgets * 4)
+    w.popupSel = UiHandleDeref(w.popupSelH)
     w.focusIdx = -1
 
     i = 0
@@ -632,7 +642,14 @@ func rtUiOpen(winIdx: int): ptr {
     boundsRect = UiNewPtr(rtUiRectSize)
     UiSetRect(boundsRect, left, top, left + ww, top + hh)
 
-    if uidWinResizable(winIdx) {
+    formOff = uidWinFormOff(winIdx)
+    if formOff != -1 {
+        if rtUiSys7 {
+            procId = rtUiProcMovableDBox
+        } else {
+            procId = rtUiProcNoGrowDoc
+        }
+    } else if uidWinResizable(winIdx) {
         procId = rtUiProcZoomDoc
     } else {
         procId = rtUiProcNoGrowDoc
@@ -649,6 +666,19 @@ func rtUiOpen(winIdx: int): ptr {
     rtUiMakeWidgets(inst)
     rtUiLayout(inst)
     rtUiCanvasReallocAll(inst)
+
+    // Initial row population for any table (rt_ui.c:4669-4680): AFTER
+    // layout, not inside rtUiMakeWidgets -- LAddRow's internal
+    // visible-range math needs the real (non-degenerate) cellSize.h/rView
+    // rtUiLayout's own rtUiTableRelayout pass just gave it, not the zero
+    // placeholder UiLNew was created against.
+    i = 0
+    while i < nWidgets {
+        if uidWidgetKind(winIdx, i) == rtUiKindTable {
+            rtUiTableSyncOne(inst, i)
+        }
+        i = i + 1
+    }
 
     // Auto-focus the FIRST field/textview-kind widget (rt_ui.c:4682-4712,
     // Task 8 -- FIELD/TEXTVIEW widgets can exist as of this task). MUST run
@@ -683,10 +713,22 @@ func rtUiOpen(winIdx: int): ptr {
 // ================================================================
 // Window teardown/close (rt_ui.c:4740-4897). The gModal (forms) carve-
 // out at rt_ui_close_internal's own top is omitted entirely -- dead
-// code, gModal can never be active this slice (no `edit`/forms ported).
-// The table/popup-specific teardown loops (ListHandle/MenuHandle
-// disposal) are omitted for the same reason lists/popups have no
-// RtUiWinst field at all (uidesc.cla).
+// code, gModal can never be active this slice (no `edit` intrinsic
+// ported -- Task 10). Task 9 adds the table/popup-specific teardown: a
+// table's ListHandle is disposed BEFORE DisposeWindow (rt_ui.c:4747-4767
+// -- its own vertical scrollbar is a real Control Manager control living
+// in THIS window's own control list, so it would be silently
+// double-torn-down if DisposeWindow ran first; the JMP-stub listDefProc
+// Handle is ours to free separately, captured BEFORE UiLDispose, which
+// frees the ListRec it lives in). A popup's menu lives in the Menu
+// Manager's own list (InsertMenu at creation, never the bar), independent
+// of this window's Toolbox objects -- DisposeWindow doesn't touch it, so
+// it gets its own explicit teardown (DeleteMenu + DisposeMenu,
+// rt_ui.c:4816-4827) in the SAME per-widget loop as canvas/TE disposal,
+// below. The System 7 CDEF's own private-data-NULL-out block
+// (rt_ui.c:4768-4791) is omitted -- dead, a popup's `ctrls[wIdx]` always
+// stays ptr(0) this port (the RTUI_POPUP_CDEF gate, uitable.cla's own
+// header note).
 // ================================================================
 
 func rtUiTeardownWindow(inst: ptr) {
@@ -694,9 +736,23 @@ func rtUiTeardownWindow(inst: ptr) {
     var winIdx: int
     var n: int
     var i: int
+    var lh: ptr
+    var ldefH: ptr
 
     w = RtUiWinst(inst)
     winIdx = w.winIdx
+
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        lh = rtUiListAt(w, i)
+        if lh != ptr(0) {
+            ldefH = ptr(peekl(UiHandleDeref(lh) + rtUiListDefProc))
+            UiLDispose(lh)
+            UiDisposeHandle(ldefH)
+        }
+        i = i + 1
+    }
 
     UiDisposeWindow(w.wp)
     rtUiTraceClose(winIdx, inst)
@@ -708,7 +764,6 @@ func rtUiTeardownWindow(inst: ptr) {
         UiReleaseVars(winIdx, inst)
     }
 
-    n = uidWinNWidgets(winIdx)
     i = 0
     while i < n {
         rtUiCanvasDispose(rtUiCanvasBufAt(w, i))
@@ -716,6 +771,10 @@ func rtUiTeardownWindow(inst: ptr) {
         // UiDisposeHandle(w.teH) below (Task 8, rt_ui.c:4815).
         if rtUiTeAt(w, i) != ptr(0) {
             UiTEDispose(rtUiTeAt(w, i))
+        }
+        if rtUiPopupAt(w, i) != ptr(0) {
+            UiDeleteMenu(rtUiPopupMenuIdBase + i)
+            UiDisposeMenu(rtUiPopupAt(w, i))
         }
         i = i + 1
     }
@@ -730,6 +789,9 @@ func rtUiTeardownWindow(inst: ptr) {
     UiDisposeHandle(w.teH)
     UiDisposeHandle(w.hbarsH)
     UiDisposeHandle(w.enabledH)
+    UiDisposeHandle(w.listsH)
+    UiDisposeHandle(w.popupsH)
+    UiDisposeHandle(w.popupSelH)
     UiDisposeHandle(w.selfH)
 }
 
@@ -1281,10 +1343,10 @@ func rtUiFlushAllBuffered() {
 }
 
 // ================================================================
-// Update / activate (rt_ui.c:2748-2971). FIELD/TEXTVIEW/POPUP/TABLE draw
-// branches omitted (dead, see uiwidgets.cla's own header comment on the
-// fail-closed gate); the resizable-window grow-icon-corner draw and the
-// BUTTON-default-outline/LABEL-text draw branches are real and in scope.
+// Update / activate (rt_ui.c:2748-2971). POPUP (rt_ui.c:2822-2878, System 6
+// manual box -- the RTUI_POPUP_CDEF branch is excluded, see uitable.cla's
+// own header note) and TABLE (rt_ui.c:2879-2911, header strip + LUpdate)
+// draw branches added Task 9.
 // ================================================================
 
 func rtUiDrawDefaultOutline(box: ptr) {
@@ -1313,6 +1375,22 @@ func rtUiHandleUpdate(wp: ptr) {
     var teMp: ptr
     var frame: ptr
     var labelRect: ptr
+    var box: ptr
+    var itemText: ptr
+    var textRect: ptr
+    var popupH: ptr
+    var cx: int
+    var cy: int
+    var pk: int
+    var lh: ptr
+    var lhMp: ptr
+    var tableOff: int
+    var colsOff: int
+    var nCols: int
+    var fillW: int
+    var hx: int
+    var headerRect: ptr
+    var ck: int
 
     UiSetPort(wp)
     UiBeginUpdate(wp)
@@ -1377,6 +1455,98 @@ func rtUiHandleUpdate(wp: ptr) {
                     UiTextBox(s + 1, peekb(s), labelRect, 0)
                     UiDisposePtr(labelRect)
                 }
+            } else if kind == rtUiKindPopup and rtUiCtrlAt(w, i) == ptr(0) {
+                // label lane (same TETextBox lane a field's own `label:`
+                // uses), then the box itself: FrameRect + a 1px drop
+                // shadow, the current item's text, and a small filled
+                // down-arrow triangle at the right end (rt_ui.c:2832-2878).
+                if peekb(rtUiLabelAt(w, i)) > 0 {
+                    labelRect = UiNewPtr(rtUiRectSize)
+                    UiBlockMoveData(rtUiRectAt(w, i), labelRect, rtUiRectSize)
+                    pokew(labelRect + 6, peekw(labelRect + 2) + rtUiFieldLabelW - 4)
+                    s = rtUiLabelAt(w, i)
+                    UiTextBox(s + 1, peekb(s), labelRect, 0)
+                    UiDisposePtr(labelRect)
+                }
+                box = UiNewPtr(rtUiRectSize)
+                rtUiPopupBoxInto(inst, i, box)
+                UiFrameRect(box)
+                UiMoveTo(peekw(box + 2) + 1, peekw(box + 4) + 1)
+                UiLineTo(peekw(box + 6) + 1, peekw(box + 4) + 1)
+                UiLineTo(peekw(box + 6) + 1, peekw(box + 0) + 1)
+                popupH = rtUiPopupAt(w, i)
+                if popupH != ptr(0) {
+                    // Zeroed first: an empty popup leaves GetMenuItemText's
+                    // out-of-range behavior on item 1 unspecified --
+                    // pre-zeroing guarantees "draws empty" (rt_ui.h's
+                    // defensive contract).
+                    itemText = UiNewPtr(256)
+                    pokeb(itemText, 0)
+                    UiGetMenuItemText(popupH, rtUiPopupSelAt(w, i) + 1, itemText)
+                    textRect = UiNewPtr(rtUiRectSize)
+                    UiBlockMoveData(box, textRect, rtUiRectSize)
+                    UiInsetRect(textRect, 4, 2)
+                    pokew(textRect + 6, peekw(textRect + 6) - 16) // room for the arrow
+                    UiTextBox(itemText + 1, peekb(itemText), textRect, 0)
+                    UiDisposePtr(itemText)
+                    UiDisposePtr(textRect)
+
+                    cx = peekw(box + 6) - 10
+                    cy = (peekw(box + 0) + peekw(box + 4)) / 2 - 2
+                    pk = 0
+                    while pk < 5 {
+                        UiMoveTo(cx - pk, cy + pk)
+                        UiLineTo(cx + pk, cy + pk)
+                        pk = pk + 1
+                    }
+                }
+                UiDisposePtr(box)
+            } else if kind == rtUiKindTable and rtUiListAt(w, i) != ptr(0) {
+                // Header strip: a frame around the whole widget, column
+                // headers drawn at each column's x position (same
+                // rtUiTableFillWidth the LDEF uses, so the two can never
+                // disagree on boundaries), a divider line under the strip,
+                // then LUpdate to let the LDEF draw the actual cell rows
+                // for whatever part of the update region falls inside the
+                // LM view (rt_ui.c:2879-2911). The divider is drawn at
+                // rView.top - 1, not rView.top: that row is the shared
+                // border with the LM view and with the scrollbar's top
+                // frame line, so the LDEF's per-cell EraseRect (which
+                // covers rView.top and below) can never erase it.
+                lh = rtUiListAt(w, i)
+                lhMp = UiHandleDeref(lh)
+                tableOff = uidWidgetTableOff(w.winIdx, i)
+                colsOff = uidTableColsOff(tableOff)
+                nCols = uidTableNCols(tableOff)
+                box = UiNewPtr(rtUiRectSize)
+                UiBlockMoveData(rtUiRectAt(w, i), box, rtUiRectSize)
+                headerRect = UiNewPtr(rtUiRectSize)
+                UiBlockMoveData(box, headerRect, rtUiRectSize)
+                pokew(headerRect + 4, peekw(lhMp + rtUiListRView + 0)) // .bottom = view.top
+                UiFrameRect(box)
+                fillW = rtUiTableFillWidth(colsOff, nCols, peekw(lhMp + rtUiListRView + 6) - peekw(lhMp + rtUiListRView + 2))
+                hx = peekw(lhMp + rtUiListRView + 2)
+                ck = 0
+                while ck < nCols {
+                    UiMoveTo(hx + 2, peekw(headerRect + 4) - 3)
+                    UiDrawText(uidColHeader(colsOff, ck) + 1, 0, peekb(uidColHeader(colsOff, ck)))
+                    if uidColWidthFill(colsOff, ck) {
+                        hx = hx + fillW
+                    } else {
+                        hx = hx + uidColWidthPx(colsOff, ck)
+                    }
+                    ck = ck + 1
+                }
+                UiMoveTo(peekw(box + 2), peekw(headerRect + 4) - 1)
+                UiLineTo(peekw(box + 6), peekw(headerRect + 4) - 1)
+                // ((GrafPtr)wp)->visRgn -- GrafPort.visRgn @ offset 24 (device
+                // INTEGER 2 + portBits BitMap 14 + portRect Rect 8 = 24,
+                // GrafPort is WindowRecord's first field at offset 0 --
+                // same derivation rtUiHandleGrow's own header comment
+                // spells out in full, just above).
+                UiLUpdate(ptr(peekl(wp + 24)), lh)
+                UiDisposePtr(headerRect)
+                UiDisposePtr(box)
             }
             i = i + 1
         }
@@ -1739,16 +1909,23 @@ func rtUiHandleCanvasClick(wp: ptr, inst: ptr, wIdx: int, wherePt: int) {
     }
 }
 
-// rtUiHandleContentClick (rt_ui.c:3229-3419). Task 8 adds the textview-
+// rtUiHandleContentClick (rt_ui.c:3229-3419). Task 8 added the textview-
 // scrollbar tag lane (rt_ui.c:3274-3283, ahead of the plain-widget
 // dispatch -- a scrollbar's own contrlRfCon carries the 0x8000/0xC000 tag,
 // never a plain widget index, so it must be recognized BEFORE that index
 // is used to look anything up) and the TE-hit lane (rt_ui.c:3355-3373).
-// The table-scrollbar lane (rt_ui.c:3238-3273), the POPUP dispatch inside
-// the Control Manager lane (rt_ui.c:3286-3323), the popup-hit lane
-// (rt_ui.c:3374-3411), and the table-hit lane (rt_ui.c:3412-3418) stay
-// OMITTED -- Task 9 (no POPUP/TABLE widget can exist yet).
+// Task 9 adds: the table-scrollbar lane (rt_ui.c:3238-3273, ahead of even
+// the textview-scrollbar tag check -- a table's own vScroll carries none
+// of our refCon tag bits, identified by comparing the control itself
+// instead), the popup-hit lane (rt_ui.c:3374-3411), and the table-hit lane
+// (rt_ui.c:3412-3418). The POPUP dispatch INSIDE the Control Manager lane
+// (rt_ui.c:3286-3323, "FindControl resolved a click to a popup's own
+// CDEF-backed control") is genuinely unreachable in this port and stays
+// unported: ctrls[wIdx] always stays ptr(0) for a popup here (the
+// RTUI_POPUP_CDEF gate, uitable.cla's own header note), so FindControl can
+// never resolve `ctrl` to one -- there is no control for it to find.
 func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
+    var w: RtUiWinst
     var localPt: int
     var ctrlSlot: ptr
     var cpart: int
@@ -1761,7 +1938,16 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
     var tIdxSlot: ptr
     var tIdx: int
     var extendSel: bool
+    var n: int
+    var ti: int
+    var lh: ptr
+    var mods: int
+    var pIdxSlot: ptr
+    var pIdx: int
+    var tblIdxSlot: ptr
+    var tblIdx: int
 
+    w = RtUiWinst(inst)
     UiSetPort(wp)
     localPt = rtUiGlobalToLocalPt(wherePt)
 
@@ -1770,10 +1956,39 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
     ctrl = ptr(peekl(ctrlSlot))
     UiDisposePtr(ctrlSlot)
 
-    // Table's own vertical scrollbar lane (rt_ui.c:3238-3273) is Task 9 --
-    // documented-absent, no TABLE widget can exist yet.
-
     if cpart != 0 and ctrl != ptr(0) {
+        // Table's own vertical scrollbar (rt_ui.c:3238-3273).
+        n = uidWinNWidgets(w.winIdx)
+        ti = 0
+        while ti < n {
+            if uidWidgetKind(w.winIdx, ti) == rtUiKindTable {
+                lh = rtUiListAt(w, ti)
+                if lh != ptr(0) and ctrl == ptr(peekl(UiHandleDeref(lh) + rtUiListVScroll)) {
+                    // No live mouse to hold an arrow/thumb in scripted mode
+                    // (same reason rtUiHandleScrollbarClick's own scripted
+                    // lane only nudges discrete parts) -- List Manager's
+                    // bar has no separate nudge primitive at all (LClick is
+                    // the only entry point for both cells AND the bar), so
+                    // a scripted click landing in the scrollbar strip is
+                    // simply a no-op here.
+                    if rtUiScripted {
+                        return
+                    }
+                    // A pure scrollbar interaction never selects a row or
+                    // fires anything -- LClick's own return is meaningless
+                    // here too, since no cell was clicked; both ignored.
+                    if shiftDown {
+                        mods = 0x200
+                    } else {
+                        mods = 0
+                    }
+                    UiLClick(localPt, mods, lh)
+                    return
+                }
+            }
+            ti = ti + 1
+        }
+
         rfCon = peekl(UiHandleDeref(ctrl) + 36)
         if (rfCon & 0x8000) != 0 {
             // A textview's own scrollbar (tagged at creation,
@@ -1783,8 +1998,6 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
             return
         }
         wIdx = rfCon
-        // RTUI_POPUP's own dispatch lane (rt_ui.c:3286-3323) is Task 9 --
-        // documented-absent, no POPUP widget can exist yet.
         if rtUiScripted {
             rtUiFireWidget(inst, wIdx)
             return
@@ -1822,9 +2035,28 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
     }
     UiDisposePtr(tIdxSlot)
 
-    // Popup-hit lane (rt_ui.c:3374-3411) and table-hit lane
-    // (rt_ui.c:3412-3418) are Task 9 -- documented-absent, no POPUP/TABLE
-    // widget can exist yet.
+    pIdxSlot = UiNewPtr(4)
+    if rtUiPopupHit(inst, localPt, pIdxSlot) {
+        pIdx = peekl(pIdxSlot)
+        UiDisposePtr(pIdxSlot)
+        rtUiPopupClick(inst, pIdx)
+        return
+    }
+    UiDisposePtr(pIdxSlot)
+
+    tblIdxSlot = UiNewPtr(4)
+    if rtUiTableHit(inst, localPt, tblIdxSlot) {
+        tblIdx = peekl(tblIdxSlot)
+        UiDisposePtr(tblIdxSlot)
+        if shiftDown {
+            mods = 0x200
+        } else {
+            mods = 0
+        }
+        rtUiTableClick(inst, tblIdx, localPt, mods)
+        return
+    }
+    UiDisposePtr(tblIdxSlot)
 }
 
 func rtUiHandleMouseDown(ev: ptr) {
@@ -2016,7 +2248,8 @@ func rtUiRun() {
         }
         rtUiEveryPump()
         rtUiTeIdleFront()
-        rtUiFlushAllBuffered()
+        rtUiFlushAllBuffered() // "returns control to the event loop" point, Ch11
+        rtUiTablesSync() // re-sync every table's LM row count before the next UiWaitNextEvent (Task 9, rt_ui.c:4515)
     }
 }
 

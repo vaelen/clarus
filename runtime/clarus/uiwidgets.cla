@@ -138,11 +138,14 @@ const rtUiKindCheck: int = 1
 const rtUiKindCanvas: int = 2
 const rtUiKindLabel: int = 3
 // FIELD/TEXTVIEW (Task 8): the two kinds this slice's fail-closed gate
-// (rtUiMakeWidgets, below) now creates for real. POPUP=6/TABLE=7 still
-// have no `const` here -- Task 9's own problem, same reasoning the
-// pre-Task-8 comment already gave for this whole block.
+// (rtUiMakeWidgets, below) now creates for real.
 const rtUiKindField: int = 4
 const rtUiKindTextview: int = 5
+// rtUiKindPopup=6/rtUiKindTable=7 (Task 9): declared in uitable.cla, not
+// here -- whole-program visibility (docs/clarus-language-reference.md:736)
+// makes the splice order irrelevant; this file's own rtUiKindHeight/
+// rtUiKindWidth/rtUiLayout/rtUiMakeWidgets bodies below reference them by
+// name.
 
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
@@ -300,11 +303,12 @@ func rtUiGetPortSaved(): ptr {
 }
 
 // ================================================================
-// rt_ui_kind_height/rt_ui_kind_width (rt_ui.c:725-756) -- only the
-// button/check/label/canvas cases matter this slice; the `else` fallback
-// mirrors the C reference's own `default: return RTUI_CHECK_H/W` exactly
-// (unreachable in practice once rtUiMakeWidgets' fail-closed gate holds,
-// kept for fidelity).
+// rt_ui_kind_height/rt_ui_kind_width (rt_ui.c:725-756) -- every widget
+// kind now has a real case (Task 9 adds POPUP/TABLE, uitable.cla's own
+// rtUiKindPopup/rtUiKindTable/rtUiPopupH/rtUiPopupW/rtUiTableH/rtUiTableW);
+// the `else` fallback mirrors the C reference's own `default: return
+// RTUI_CHECK_H/W` exactly -- truly unreachable now (every widgetKind the
+// grammar allows has its own case), kept for fidelity.
 // ================================================================
 
 func rtUiKindHeight(kind: int): int {
@@ -326,6 +330,12 @@ func rtUiKindHeight(kind: int): int {
     }
     case rtUiKindTextview {
         return rtUiTextviewH
+    }
+    case rtUiKindPopup {
+        return rtUiPopupH
+    }
+    case rtUiKindTable {
+        return rtUiTableH
     }
     else {
         return rtUiCheckH
@@ -353,6 +363,12 @@ func rtUiKindWidth(kind: int): int {
     }
     case rtUiKindTextview {
         return rtUiTextviewW
+    }
+    case rtUiKindPopup {
+        return rtUiPopupW
+    }
+    case rtUiKindTable {
+        return rtUiTableW
     }
     else {
         return rtUiCheckW
@@ -383,13 +399,16 @@ func rtUiPstrcpy(dst: ptr, src: ptr) {
 }
 
 // ================================================================
-// rt_ui_layout (rt_ui.c:789-926) -> rtUiLayout. Task 8 adds the RTUI_
+// rt_ui_layout (rt_ui.c:789-926) -> rtUiLayout. Task 8 added the RTUI_
 // FIELD/RTUI_TEXTVIEW branch (labeled-field width calc, flushR/flushB
-// fill-edge adjustment, rtUiTeRelayout call, uitext.cla). The RTUI_TABLE
-// branch (rt_ui_table_relayout call) stays dead this slice, per the
-// fail-closed-gate design (Task 7 report log entry #2): no TABLE widget
-// can ever exist in an opened window yet (Task 9), so that one branch
-// would still be unreachable code. PORT DISCIPLINE RULE: GetPort/SetPort
+// fill-edge adjustment, rtUiTeRelayout call, uitext.cla). Task 9 adds the
+// RTUI_TABLE branch (rtUiTableRelayout call, uitable.cla) -- POPUP needs no
+// branch of its own here: it has no Control Manager backing (ctrls[i]
+// stays ptr(0), the RTUI_POPUP_CDEF gate, uitable.cla's own header note),
+// so it falls through to the plain `else if ctrl != ptr(0)` tail below and
+// that guard simply never fires for it, exactly like the C reference's own
+// rt_ui_layout (no `wd->kind == RTUI_POPUP` case exists there either --
+// checked directly, rt_ui.c:892-907). PORT DISCIPLINE RULE: GetPort/SetPort
 // self-assert + restore around the whole function body.
 // ================================================================
 
@@ -520,6 +539,10 @@ func rtUiLayout(inst: ptr) {
             // above -- covers both the initial layout and any later resize
             // re-layout (uitext.cla).
             rtUiTeRelayout(inst, i)
+        } else if kind == rtUiKindTable {
+            // Same "derive from the rect just SetRect above" pattern as the
+            // TE branch just above (Task 9, uitable.cla).
+            rtUiTableRelayout(inst, i)
         } else {
             ctrl = rtUiCtrlAt(w, i)
             if ctrl != ptr(0) {
@@ -540,14 +563,38 @@ func rtUiLayout(inst: ptr) {
 
 // ================================================================
 // rt_ui_make_widgets (rt_ui.c:1175-1421, IN-SCOPE PORTION: BUTTON/CHECK/
-// LABEL/CANVAS from Task 7, FIELD/TEXTVIEW added Task 8) -> rtUiMakeWidgets.
-// THE fail-closed gate lives here (Task 7 report log entry #2): every
-// widget kind this slice can actually create gets an explicit case;
-// anything else (POPUP/TABLE, or any future kind) hits a named log+quit --
-// Tasks 9-10 replace this ONE gate's `else` arm, function by function, as
-// each kind gets ported; nothing downstream of this gate (layout, property
-// get/set, click/update dispatch) needs its OWN fail-closed arm, since none
-// of those kinds can ever reach an opened window.
+// LABEL/CANVAS from Task 7, FIELD/TEXTVIEW added Task 8, POPUP/TABLE added
+// Task 9) -> rtUiMakeWidgets. THE fail-closed gate lives here (Task 7
+// report log entry #2): every widget kind the language grammar allows now
+// has an explicit case (docs/clarus-language-reference.md:1489-1490's own
+// widgetKind production: button/field/textview/check/popup/table/canvas/
+// label, all eight); the `else` arm is defensive only (matching
+// rtUiKindHeight/rtUiKindWidth's own now-unreachable fallback, above) --
+// nothing downstream of this gate (layout, property get/set, click/update
+// dispatch) needs its own fail-closed arm, since no OTHER kind can ever
+// reach an opened window.
+// POPUP (rt_ui.c:1248-1354, RTUI_POPUP_CDEF branch excluded -- see
+// uitable.cla's own header note): a System 6 manual popup, never inserted
+// into the bar -- items are the bound enum's labels (uidWinFormOff +
+// uidFormFindFieldIndex, uidesc.cla), read off the window's own `form`; no
+// form, or no matching bind, leaves the menu (and this popup) empty rather
+// than crashing (rt_ui.h's defensive contract; the language reference's own
+// build-time check, "a popup declared without binds: is rejected", is what
+// actually prevents an unbound popup from being declared).
+// TABLE (rt_ui.c:1356-1404): created against the same zero placeholder
+// rect every other widget kind uses here -- rtUiLayout's very next pass
+// (rtUiTableRelayout) gives it its real view rect/cell width; row COUNT
+// starts at 0 too, populated once layout has run (rtUiOpen's own
+// rtUiTableSyncOne loop, right after its own rtUiLayout call) rather than
+// here. cellSize.h is 1, NOT 0 (LNew's own internal geometry setup divides
+// BY it immediately, at creation time -- a 0 crashes before relayout ever
+// gets a chance to fix it up). drawIt (5th bool) is FALSE, same
+// "don't draw yet" reasoning as every other widget's placeholder creation
+// -- but List Manager's drawIt ALSO sets the list's persistent
+// lDrawingModeOff flag, which stays off permanently (LUpdate never calls
+// the LDEF again for content OR the hilite toggle) until UiLSetDrawingMode
+// turns it back on, right after creation (manual-gate finding, ported
+// verbatim from the C reference's own comment).
 // contrlRfCon poke (rt_ui.c:1409's `(*ctrl)->contrlRfCon = i`): Task 7
 // report log entry #8, ControlRecord.contrlRfCon at offset 36, a plain
 // native-order 4-byte store (`pokel`) -- this is real Toolbox struct
@@ -578,6 +625,19 @@ func rtUiMakeWidgets(inst: ptr) {
     var hb: ptr
     var hbMp: ptr
     var flags: int
+    var mh: ptr
+    var formOff: int
+    var fieldIndex: int
+    var layoutOff: int
+    var enumCount: int
+    var enumLabelsOff: int
+    var b: int
+    var lh: ptr
+    var dataBoundsRect: ptr
+    var rowH: int
+    var cellSizePacked: int
+    var stubH: ptr
+    var tableOff: int
 
     w = RtUiWinst(inst)
     winIdx = w.winIdx
@@ -654,8 +714,52 @@ func rtUiMakeWidgets(inst: ptr) {
                 rtUiSetHbarAt(w, i, ptr(0))
             }
         }
+        case rtUiKindPopup {
+            rtUiSetCtrlAt(w, i, ptr(0))
+            rtUiPstrcpy(rtUiLabelAt(w, i), uidWidgetCaption(winIdx, i))
+            rtUiSetPopupSelAt(w, i, 0)
+            mh = UiNewMenu(rtUiPopupMenuIdBase + i, rtUiEmptyPStrGet())
+            formOff = uidWinFormOff(winIdx)
+            fieldIndex = uidFormFindFieldIndex(formOff, i)
+            if fieldIndex != -1 {
+                layoutOff = uidFormLayoutOff(formOff)
+                enumCount = uidFieldEnumCount(layoutOff, fieldIndex)
+                enumLabelsOff = uidFieldEnumLabelsOff(layoutOff, fieldIndex)
+                b = 0
+                while b < enumCount {
+                    // AppendMenu a one-char placeholder item, then overwrite
+                    // its text with SetMenuItemText -- an enum label's own
+                    // bytes might contain an AppendMenu metacharacter with
+                    // no escaping intended (rt_ui.c:1280-1293).
+                    UiAppendMenuStr(mh, "x")
+                    UiSetMenuItemText(mh, b + 1, uidEnumLabel(enumLabelsOff, b))
+                    b = b + 1
+                }
+            }
+            UiInsertMenu(mh, -1) // NEVER 0 (the bar) -- rt_ui.c:1300's own header note
+            rtUiSetPopupAt(w, i, mh)
+        }
+        case rtUiKindTable {
+            rtUiSetCtrlAt(w, i, ptr(0))
+            rowH = rtUiTableRowH()
+            cellSizePacked = (rowH << 16) | 1
+            dataBoundsRect = UiNewPtr(rtUiRectSize)
+            UiSetRect(dataBoundsRect, 0, 0, 1, 0) // 1 LM column (see uitable.cla's LDEF header note), 0 rows
+            lh = UiLNew(placeholder, dataBoundsRect, cellSizePacked, 0, w.wp, false, false, false, true)
+            UiDisposePtr(dataBoundsRect)
+            if lh == ptr(0) {
+                rtPanic("out of memory")
+            }
+            rtUiSetListAt(w, i, lh)
+            pokeb(UiHandleDeref(lh) + rtUiListSelFlags, rtUiLOnlyOne) // single-selection table
+            tableOff = uidWidgetTableOff(winIdx, i)
+            pokel(UiHandleDeref(lh) + rtUiListRefCon, tableOff) // the LDEF's only state -- see rtUiLdefDraw
+            stubH = rtUiMakeLdefStub()
+            pokel(UiHandleDeref(lh) + rtUiListDefProc, int(stubH))
+            UiLSetDrawingMode(true, lh) // see this function's own header note
+        }
         else {
-            log("uiport: widget kind not yet supported by the ported UI runtime (popup/table land in later tasks)")
+            log("uiport: unrecognized widget kind")
             quit 1
         }
         }
@@ -852,11 +956,71 @@ func rtUiWidgetSetBool(instV: ptr, wIdx: int, prop: int, v: bool) {
     UiSetPort(savedPort)
 }
 
-// rtUiWidgetSetInt (rt_ui.c:5490-5541): popup SELECTED and table SELECTED
-// are the C reference's only two cases, both dead this slice (neither
-// kind can ever be created -- rtUiMakeWidgets' fail-closed gate). No-op;
-// Tasks 9/8 add real bodies here when they port those kinds.
+// rtUiWidgetSetInt (rt_ui.c:5495-5541, Task 9): popup SELECTED and table
+// SELECTED are the C reference's only two cases -- both live now. The
+// System 7 CDEF's own `if (inst->ctrls[wIdx]) SetControlValue(...)` line is
+// omitted: ctrls[wIdx] always stays ptr(0) for a popup this port (the
+// RTUI_POPUP_CDEF gate, uitable.cla's own header note), so that branch
+// could never fire. Table's row clamp is upper-bound ONLY (no lower clamp
+// against 0) -- a negative `v` passes straight through to
+// rtUiTableSelectExclusive, whose own "unless negative, meaning deselect
+// only" contract is exactly what a negative `selected` write is supposed
+// to do (verbatim from the C reference).
 func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
+    var w: RtUiWinst
+    var winIdx: int
+    var savedPort: ptr
+    var kind: int
+    var count: int
+    var sel: int
+    var lh: ptr
+    var tableOff: int
+    var rowsIdx: int
+    var rowsAddr: ptr
+    var rows: ptr
+    var row: int
+
+    w = RtUiWinst(instV)
+    winIdx = w.winIdx
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    kind = uidWidgetKind(winIdx, wIdx)
+    if kind == rtUiKindPopup and prop == rtUiPropSelected {
+        if rtUiPopupAt(w, wIdx) != ptr(0) {
+            count = UiCountMItems(rtUiPopupAt(w, wIdx))
+        } else {
+            count = 0
+        }
+        sel = v
+        if sel < 0 {
+            sel = 0
+        }
+        if count > 0 and sel > count - 1 {
+            sel = count - 1
+        }
+        if count == 0 {
+            sel = 0
+        }
+        rtUiSetPopupSelAt(w, wIdx, sel)
+        UiInvalRect(rtUiRectAt(w, wIdx))
+        rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, sel)
+    }
+    if kind == rtUiKindTable and prop == rtUiPropSelected {
+        lh = rtUiListAt(w, wIdx)
+        tableOff = uidWidgetTableOff(winIdx, wIdx)
+        rowsIdx = uidTableRowsIdx(tableOff)
+        rowsAddr = UiTableRows(rowsIdx)
+        rows = ptr(peekl(rowsAddr))
+        count = rtListCount(rows)
+        row = v
+        if row >= count {
+            row = count - 1
+        }
+        rtUiTableSelectExclusive(lh, row)
+        UiInvalRect(UiHandleDeref(lh) + rtUiListRView)
+        rtUiTraceSetInt(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, row)
+    }
+    UiSetPort(savedPort)
 }
 
 func rtUiWidgetGetBool(instV: ptr, wIdx: int, prop: int): bool {
@@ -878,18 +1042,28 @@ func rtUiWidgetGetBool(instV: ptr, wIdx: int, prop: int): bool {
     return false
 }
 
-// rtUiWidgetGetInt (rt_ui.c:5563-5580): WIDTH/HEIGHT (from the widget's
-// own laid-out rect) are the live cases this slice; popup/table SELECTED
-// is dead (see rtUiWidgetSetInt's own comment) and falls through to the
-// C reference's own unconditional width fallback, same as it does there.
+// rtUiWidgetGetInt (rt_ui.c:5563-5580, Task 9): WIDTH/HEIGHT (from the
+// widget's own laid-out rect) are live since Task 7; popup/table SELECTED
+// are live now too. Popup's own `if (inst->ctrls[wIdx]) return
+// GetControlValue(...) - 1` line is omitted -- same RTUI_POPUP_CDEF
+// reasoning as rtUiWidgetSetInt's own comment (ctrls[wIdx] always ptr(0)
+// this port), so popupSel[wIdx] is the ONLY source of truth here.
 func rtUiWidgetGetInt(instV: ptr, wIdx: int, prop: int): int {
     var w: RtUiWinst
     var r: ptr
+    var kind: int
 
     w = RtUiWinst(instV)
     r = rtUiRectAt(w, wIdx)
     if prop == rtUiPropHeight {
         return peekw(r + 4) - peekw(r + 0)
+    }
+    kind = uidWidgetKind(w.winIdx, wIdx)
+    if prop == rtUiPropSelected and kind == rtUiKindPopup {
+        return rtUiPopupSelAt(w, wIdx)
+    }
+    if prop == rtUiPropSelected and kind == rtUiKindTable {
+        return rtUiTableGetSelected(rtUiListAt(w, wIdx))
     }
     return peekw(r + 6) - peekw(r + 2)
 }
