@@ -3305,9 +3305,17 @@ func cpFuncProto(f: int): text {
     // -- is only ever invoked from ui.cla's OWN spliced-in code, same TU as
     // its `static` definition, so needs no external linkage). Every other
     // Clarus function stays `static` (unchanged, no name collisions across
-    // separately-compiled programs).
+    // separately-compiled programs). Task 8: rtUiScrollbarAction (uitext.cla)
+    // joins this same allowlist for the identical reason -- rt_ext_mac.inc's
+    // pascal action-proc wrapper (rt_ext_ui_scrollbar_action, gated
+    // CLARUS_UIPORT) calls it by FIXED NAME (`clar_fn_rtUiScrollbarAction`)
+    // from rt_mac.c, the same cross-TU shape as clar_ui_fire_launchdoc/
+    // _startempty just above -- this is an ordinary user-visible Clarus
+    // function name (not a synthesized dispatcher), so it is matched
+    // literally rather than via the `clar_ui_fire_*` synthesized-name
+    // pattern those two use.
     linkage = "static "
-    if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" {
+    if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" or poolGet(irFuncName(f)) == "rtUiScrollbarAction" {
         linkage = ""
     }
     return toText(linkage + cpCType(irFuncRet(f)) + " clar_fn_" + poolGet(irFuncName(f)) + "(") + params + toText(")")

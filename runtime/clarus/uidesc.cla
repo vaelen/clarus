@@ -125,9 +125,10 @@
 // `#ifdef RT_MAC_TEST` -- Clarus has no preprocessor, and every exercised
 // path in this port is test-harness-driven anyway).
 //
-// EXCLUDED (Tasks 8-10's own fields, not this slice's problem): teH/tes,
-// hbarsH/hbars, popupsH/popups, popupSelH/popupSel, listsH/lists --
-// FIELD/TEXTVIEW/POPUP/TABLE-specific.
+// EXCLUDED (Tasks 9-10's own fields, not this slice's problem):
+// popupsH/popups, popupSelH/popupSel, listsH/lists -- POPUP/TABLE-
+// specific. teH/tes, hbarsH/hbars (FIELD/TEXTVIEW) are Task 8's own
+// addition -- see RtUiWinst below.
 //
 // Field width: every field below is `int` or `ptr`. Both are EXACTLY 4
 // bytes wide as an overlay-record field, unconditionally -- this is a
@@ -605,22 +606,38 @@ overlay record RtUiWinst {
     labels: ptr                // kinds used (rt_ui.c:288)
     canvasH: ptr                 // nWidgets RtUiCanvasBuf records; only
     canvases: ptr                 // buffered CANVAS kinds used (rt_ui.c:289)
+    // Task 8: TextEdit field/textview widgets (rt_ui.c:304-305). `tes[i]`
+    // holds one TEHandle per widget (ptr(0) for every non-FIELD/TEXTVIEW
+    // kind); a textview's own vertical scrollbar (RTUI_SCROLL_V) is a
+    // normal Control Manager control living in `ctrls[i]`, same array a
+    // button/check use -- `hbars[i]` (below) is ONLY the horizontal
+    // scrollbar (RTUI_SCROLL_H). Placed here, between canvasH/canvases and
+    // enabledH/logicalEnabled, mirroring the C reference's own field order
+    // (not required for a from-scratch overlay design -- see the file
+    // header comment -- but kept for cross-reference clarity against the
+    // oracle).
+    teH: ptr
+    tes: ptr
+    hbarsH: ptr
+    hbars: ptr                    // nWidgets; textview H scrollbar or ptr(0)
     enabledH: ptr                  // nWidgets bytes: PROGRAM-set ENABLED
     logicalEnabled: ptr              // state, independent of window dim
-    focusIdx: int                      // ALWAYS -1 this slice (no FIELD/
-                                        // TEXTVIEW kind can be created)
+    focusIdx: int                      // the one FIELD/TEXTVIEW with the
+                                        // caret, -1 = none (Task 8: now
+                                        // live -- see uitext.cla)
     traceId: int                       // unconditional here (no #ifdef --
                                         // Clarus has no preprocessor)
 }
 
 // rtUiWinstBoxSize is UiNewPtr's argument for allocating an RtUiWinst box
-// (via rtUiAllocLocked, a later step). EXACT, not a guess: 17 fields, each
-// exactly 4 bytes as an overlay-record field (see the file header comment,
-// "Field width" paragraph) = 68 bytes, +12 bytes fixed slack (rounding to
-// 80) purely as free insurance against a future field-count edit, not
-// because of any real sizing ambiguity the way rtTextBoxSize/rtListBoxSize
-// (text.cla/list.cla) have for their own C-struct `Handle`-width question.
-const rtUiWinstBoxSize: int = 80
+// (via rtUiAllocLocked, a later step). EXACT, not a guess: 21 fields (Task
+// 8 added teH/tes/hbarsH/hbars), each exactly 4 bytes as an overlay-record
+// field (see the file header comment, "Field width" paragraph) = 84 bytes,
+// +12 bytes fixed slack (rounding to 96) purely as free insurance against a
+// future field-count edit, not because of any real sizing ambiguity the way
+// rtTextBoxSize/rtListBoxSize (text.cla/list.cla) have for their own
+// C-struct `Handle`-width question.
+const rtUiWinstBoxSize: int = 96
 
 // RtUiCanvasBuf: SCATTERED fields (not an embedded BitMap-shaped region --
 // see the file header comment's "RECT / BITMAP HANDLING" section for why

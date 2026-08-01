@@ -591,6 +591,16 @@ on App.startCLI(args: list of string) {
             neededMods.add("uidesc.cla")
             neededMods.add("ui.cla")
             neededMods.add("uiwidgets.cla")
+            // Task 8: uitext.cla (TextEdit field/textview widgets --
+            // extern block + mutation funnel/relayout/focus/scrollbar
+            // machinery) -- spliced right after uiwidgets.cla, same
+            // "whole-program visibility makes splice order irrelevant to
+            // correctness" note the uiscript.cla comment just below
+            // already gives; placed here rather than after uiscript.cla
+            // purely to keep the four widget-surface modules (uidesc/ui/
+            // uiwidgets/uitext) grouped together ahead of the trace/
+            // scripted-interpreter module.
+            neededMods.add("uitext.cla")
             // Task 7 Step 5: uiscript.cla (trace helpers + scripted
             // interpreter + snap) -- spliced last of the four ui*.cla
             // modules; its own trace helpers are called BY ui.cla/

@@ -1,0 +1,744 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uitext.cla: TextEdit field/textview widgets -- native-5e Task 8 (slice
+// B). Port target: rt_ui.c:1634-2114 (the whole TE section: widest-line,
+// scroll-sync, clamp, field-cap, mutation funnel, relayout, focus, hit,
+// scrollbar action+click, idle), plus the scrollbar action-proc glue
+// (UiActionEntry). Creation (rt_ui.c:1211-1247) lives in uiwidgets.cla's
+// rtUiMakeWidgets, alongside the other widget kinds; layout dispatch lives
+// in uiwidgets.cla's rtUiLayout; property get/set (rt_ui.c:5364-5454) lives
+// in uiwidgets.cla's rtUiWidget{Get,Set}{Str,Text}; std-edit dispatch
+// (rt_ui.c:2560-2619) and the key/click/update/activate integration points
+// live in ui.cla -- this file holds the TE-internal machinery those call
+// into by name (whole-program visibility, docs/clarus-language-
+// reference.md:736).
+//
+// Form-aware field-cap narrowing (rt_ui.c:1819-1842, the CURRENTLY-open-
+// modal-form STR/CHAR-bind lookup) is EXCLUDED -- Task 10's problem (no
+// `edit`/gModal exists yet, this slice). rtUiFieldCap below always returns
+// the plain per-kind cap; Task 10 adds the form-aware narrowing as an
+// additional check ahead of that same return, per the brief's own
+// instruction ("leave named fail-closed or documented-absent hooks where
+// the form logic will attach").
+//
+// ================================================================
+// TERec field offsets (Retro68's Multiverse.h:6739 `struct TERec`,
+// cross-checked against InterfacesAndLibraries/.../CIncludes/TextEdit.h's
+// own `struct TERec` -- both agree once TextEdit.h's `hDispatchRec: long`
+// is read as the same 4 bytes Multiverse.h's `recalBack`+`recalLines`
+// (two shorts) occupy; every OTHER field name/order/width matches
+// verbatim). Same 2-byte mac68k packing / no-padding-beyond-natural-
+// alignment derivation already established for WindowRecord/GrafPort/
+// ControlRecord elsewhere in this port (Task 7 report log #4/#7):
+//   destRect(Rect,8)@0 viewRect(Rect,8)@8 selRect(Rect,8)@16
+//   lineHeight(short)@24 fontAscent(short)@26 selPoint(Point,4)@28
+//   selStart(short)@32 selEnd(short)@34 active(short)@36
+//   wordBreak(ptr)@38 clikLoop(ptr)@42 clickTime(long)@46 clickLoc(short)@50
+//   caretTime(long)@52 caretState(short)@56 just(short)@58 teLength(short)@60
+//   hText(Handle)@62 recalBack+recalLines/hDispatchRec(long)@66
+//   clikStuff(short)@70 crOnly(short)@72 txFont(short)@74 txFace(byte)@76
+//   filler(byte)@77 txMode(short)@78 txSize(short)@80 inPort(ptr)@82
+//   highHook(ptr)@86 caretHook(ptr)@90 nLines(short)@94
+//   lineStarts(short[])@96 (index i at 96+i*2; lineStarts[nLines] is TE's
+//   own sentinel == teLength). A Rect field's own top/left/bottom/right
+//   sub-offsets are +0/+2/+4/+6 (the file header recipe uidesc.cla already
+//   established for a plain Toolbox Rect).
+// ControlRecord.contrlOwner @4 (WindowPtr) -- Multiverse.h:12137, same
+// struct rtUiMakeWidgets' own contrlRfCon@36 poke already cites.
+// ================================================================
+const rtUiTeDestRect: int = 0
+const rtUiTeViewRect: int = 8
+const rtUiTeLineHeight: int = 24
+const rtUiTeSelStart: int = 32
+const rtUiTeSelEnd: int = 34
+const rtUiTeTeLength: int = 60
+const rtUiTeHText: int = 62
+const rtUiTeCrOnly: int = 72
+const rtUiTeNLines: int = 94
+const rtUiTeLineStarts: int = 96
+const rtUiCtrlOwner: int = 4
+
+// scrollbar part codes (ControlDefinitions.h/Multiverse.h:12053-12057):
+// kControlUpButtonPart=inUpButton, kControlDownButtonPart=inDownButton,
+// kControlPageUpPart=inPageUp, kControlPageDownPart=inPageDown,
+// kControlIndicatorPart=inThumb.
+const rtUiCtlUpButton: int = 20
+const rtUiCtlDownButton: int = 21
+const rtUiCtlPageUp: int = 22
+const rtUiCtlPageDown: int = 23
+const rtUiCtlIndicator: int = 129
+
+// TextWidth's own return is a signed short: chunk every line to at most
+// this many bytes per call and accumulate into an `int` instead (fix-hbar
+// review round 1, rt_ui.c:1654-1658) -- QuickDraw bitmap-font widths are
+// additive across a split, so summing chunk widths is exact. Clarus `int`
+// is already 32 bits (the LAYOUT AUTHORITY, both backends), so plain `int`
+// arithmetic below already gives the C reference's own `long lineW`
+// accumulator for free -- no separate widening needed anywhere in this
+// file (also true of rtUiStdEditPaste's own newLen math, further down).
+const rtUiTeWidthChunk: int = 1024
+
+// ---- TextEdit Manager traps (this slice's live-TEHandle calls -- the
+// ones ui.cla/uiwidgets.cla's own header comments explicitly excluded from
+// Step 1's original block, e.g. TETextBox/UiTextBox, which took NO
+// TEHandle and so belonged there instead). Trap words verified against
+// Retro68/InterfacesAndLibraries/Interfaces/CIncludes/TextEdit.h and
+// toolchain/multiversal/CIncludes/Multiverse.h (both agree; each cited to
+// the line actually checked). ----
+external func UiTENew(dst: ptr, view: ptr): ptr = trap 0xA9D2
+external func UiTEDispose(te: ptr) = trap 0xA9CD
+external func UiTESetText(text: ptr, length: int, te: ptr) = trap 0xA9CF
+external func UiTECalText(te: ptr) = trap 0xA9D0
+external func UiTEUpdate(r: ptr, te: ptr) = trap 0xA9D3
+external func UiTEClick(pt: int, extendSel: bool, te: ptr) = trap 0xA9D4
+external func UiTEKey(ch: word, te: ptr) = trap 0xA9DC
+external func UiTECopy(te: ptr) = trap 0xA9D5
+external func UiTECut(te: ptr) = trap 0xA9D6
+external func UiTEDelete(te: ptr) = trap 0xA9D7
+external func UiTEActivate(te: ptr) = trap 0xA9D8
+external func UiTEDeactivate(te: ptr) = trap 0xA9D9
+external func UiTEIdle(te: ptr) = trap 0xA9DA
+external func UiTEPaste(te: ptr) = trap 0xA9DB
+external func UiTESetSelect(start: int, stop: int, te: ptr) = trap 0xA9D1
+external func UiTEScroll(dh: word, dv: word, te: ptr) = trap 0xA9DD
+external func UiTEAutoView(autoFlag: bool, te: ptr) = trap 0xA813
+external func UiTextWidth(tb: ptr, firstByte: word, byteCount: word): word = trap 0xA886
+external func UiTextFont(f: word) = trap 0xA887
+external func UiTextFace(face: word) = trap 0xA888
+external func UiTextSize(s: word) = trap 0xA88A
+// UiTEFromScrap/UiTEToScrap/UiTEGetScrapLength: NO `= trap` clause --
+// checked Multiverse.h (:6968-6980) and TextEdit.h directly, neither gives
+// these an M68K_INLINE trap word (unlike every OTHER TE call above, which
+// all do) -- Retro68's own headers resolve them to a real InterfaceLib
+// call (TEFromScrap/TEToScrap) or, for TEGetScrapLength specifically, a
+// direct low-memory-global macro read (`(long)*(unsigned short*)0x0AB0`)
+// even on a real classic-68k, non-CFM build. Bare declaration is correct
+// here (conv==0, checkExternFunc has no trap-range check for it): the
+// cprint-lane rt_ext_ wrapper just calls the real C name/macro directly,
+// same precedent as UiMacInitToolbox/UiScreenBounds (ui.cla). Native
+// (cg68k) resolution for these three is Task 12's problem, same as every
+// other bare glue extern this port declares.
+external func UiTEFromScrap(): int
+external func UiTEToScrap(): int
+external func UiTEGetScrapLength(): int
+external func UiZeroScrap(): int = trap 0xA9FC
+external func UiHGetState(h: ptr): int = trap 0xA069 reg
+external func UiHSetState(h: ptr, flag: int) = trap 0xA06A reg
+external func UiGetControlMaximum(theControl: ptr): word = trap 0xA962
+external func UiSetControlMaximum(theControl: ptr, newMaximum: word) = trap 0xA965
+// UiActionEntry (the plan's reverse-waist glue-entry table): pascal-
+// convention code address the Toolbox calls back into while tracking a
+// scrollbar's arrow/page parts (TrackControl's actionProc). cprint: a C
+// `pascal` wrapper in rt_ext_mac.inc calling rtUiScrollbarAction (below);
+// native glue (a JT-slot stub) is Task 12's problem, same as
+// UiLdefEntry/UiAeEntry.
+external func UiActionEntry(): ptr
+
+// ================================================================
+// rt_ui_te_widest_line (rt_ui.c:1660-1715) -> rtUiTeWidestLine. Widest
+// line of a crOnly TE, in pixels (fix-hbar: the H-scrollbar range tracks
+// content, not a fixed destRect width).
+// ================================================================
+func rtUiTeWidestLine(te: ptr): int {
+    var teMp: ptr
+    var savedPort: ptr
+    var n: int
+    var i: int
+    var a: int
+    var b: int
+    var hText: ptr
+    var hTextMp: ptr
+    var state: int
+    var lineW: int
+    var pos: int
+    var chunkLen: int
+    var widest: int
+
+    widest = 0
+    teMp = UiHandleDeref(te)
+    n = peekw(teMp + rtUiTeNLines)
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(ptr(peekl(teMp + 82))) // (*te)->inPort
+    UiTextFont(peekw(teMp + 74))
+    UiTextSize(peekw(teMp + 80))
+    UiTextFace(peekb(teMp + 76))
+    hText = ptr(peekl(teMp + rtUiTeHText))
+    state = UiHGetState(hText)
+    UiHLock(hText)
+    hTextMp = UiHandleDeref(hText)
+    i = 0
+    while i < n {
+        a = peekw(teMp + rtUiTeLineStarts + i * 2)
+        b = peekw(teMp + rtUiTeLineStarts + (i + 1) * 2)
+        // a line's terminating CR contributes no width -- trim it.
+        if b > a and peekb(hTextMp + b - 1) == 13 {
+            b = b - 1
+        }
+        lineW = 0
+        pos = a
+        while pos < b {
+            chunkLen = b - pos
+            if chunkLen > rtUiTeWidthChunk {
+                chunkLen = rtUiTeWidthChunk
+            }
+            lineW = lineW + UiTextWidth(hTextMp, pos, chunkLen)
+            if lineW > 32767 {
+                lineW = 32767
+                pos = b
+            } else {
+                pos = pos + chunkLen
+            }
+        }
+        if lineW > widest {
+            widest = lineW
+        }
+        i = i + 1
+    }
+    UiHSetState(hText, state)
+    UiSetPort(savedPort)
+    return widest
+}
+
+// rt_ui_te_scroll_sync (rt_ui.c:1717-1770) -> rtUiTeScrollSync. Recomputes
+// a textview's scrollbar range(s) from its current content and pins each
+// control's value to its TE's *actual* view/dest offset -- a no-op for a
+// field (no scrollbar) or a textview declared without SCROLL_V/H
+// (ctrls[wIdx]/hbars[wIdx] is ptr(0) either way).
+func rtUiTeScrollSync(inst: ptr, wIdx: int) {
+    var w: RtUiWinst
+    var te: ptr
+    var teMp: ptr
+    var sb: ptr
+    var hb: ptr
+    var viewH: int
+    var contentH: int
+    var maxScroll: int
+    var offset: int
+    var viewW: int
+    var widest: int
+
+    w = RtUiWinst(inst)
+    te = rtUiTeAt(w, wIdx)
+    if te == ptr(0) {
+        return
+    }
+    teMp = UiHandleDeref(te)
+    sb = rtUiCtrlAt(w, wIdx)
+    hb = rtUiHbarAt(w, wIdx)
+    if sb != ptr(0) {
+        viewH = peekw(teMp + rtUiTeViewRect + 4) - peekw(teMp + rtUiTeViewRect + 0)
+        contentH = peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
+        maxScroll = contentH - viewH
+        if maxScroll < 0 {
+            maxScroll = 0
+        }
+        UiSetControlMaximum(sb, maxScroll)
+        offset = peekw(teMp + rtUiTeViewRect + 0) - peekw(teMp + rtUiTeDestRect + 0)
+        if offset > maxScroll {
+            UiTEScroll(0, offset - maxScroll, te) // positive dv: content back down
+            offset = maxScroll
+        }
+        UiSetControlValue(sb, offset)
+    }
+    if hb != ptr(0) {
+        viewW = peekw(teMp + rtUiTeViewRect + 6) - peekw(teMp + rtUiTeViewRect + 2)
+        widest = rtUiTeWidestLine(te)
+        maxScroll = widest - viewW
+        if maxScroll < 0 {
+            maxScroll = 0
+        }
+        UiSetControlMaximum(hb, maxScroll)
+        offset = peekw(teMp + rtUiTeViewRect + 2) - peekw(teMp + rtUiTeDestRect + 2)
+        if offset > maxScroll {
+            UiTEScroll(offset - maxScroll, 0, te)
+            offset = maxScroll
+        }
+        UiSetControlValue(hb, offset)
+    }
+}
+
+// rt_ui_te_clamp (rt_ui.c:1772-1801) -> rtUiTeClamp. Enforces the kind's
+// text cap after any mutation that could have grown content past it.
+// Disclosed limitation (verbatim from the C reference): truncation always
+// keeps bytes [0, maxLen) and drops the END of the buffer -- correct when
+// the just-typed character IS the one that pushed teLength over maxLen
+// (the caret is normally at the end), but if the caret is NOT at the end,
+// the byte actually dropped is the buffer's last byte, not the one just
+// typed at the caret. No scenario in this task exercises typing away from
+// the end while already at the cap.
+func rtUiTeClamp(te: ptr, maxLen: int) {
+    var teMp: ptr
+    var th: ptr
+    var thMp: ptr
+    var sel: int
+
+    teMp = UiHandleDeref(te)
+    if peekw(teMp + rtUiTeTeLength) <= maxLen {
+        return
+    }
+    th = ptr(peekl(teMp + rtUiTeHText))
+    UiHLock(th)
+    thMp = UiHandleDeref(th)
+    UiTESetText(thMp, maxLen, te)
+    UiHUnlock(th)
+    sel = peekw(teMp + rtUiTeSelStart)
+    if sel > maxLen {
+        sel = maxLen
+    }
+    UiTESetSelect(sel, sel, te)
+    rtSetLastErr(1, "string truncated")
+}
+
+// rt_ui_field_cap (rt_ui.c:1819-1842) -> rtUiFieldCap. Form-aware
+// narrowing (the CURRENTLY-open-modal-form STR/CHAR-bind lookup) is
+// EXCLUDED -- Task 10 (no `edit`/gModal exists yet this slice); always the
+// plain per-kind cap. Task 10 attaches its own check here, ahead of this
+// same return, per the brief's instruction.
+func rtUiFieldCap(inst: ptr, wIdx: int): int {
+    return rtUiFieldTextMax
+}
+
+// rt_ui_te_mutated (rt_ui.c:1844-1866) -> rtUiTeMutated. THE mutation
+// funnel every field/textview content change routes through (TEKey below;
+// rtUiWidgetSetStr's FIELD branch and rtUiWidgetSetText, uiwidgets.cla).
+// `userEdit` is true for a real user action (TEKey typing, standard-edit
+// Cut/Paste/Clear) and false for a programmatic set (set_str/set_text) --
+// a programmatic set clamps + scroll-syncs only, no trace/event.
+func rtUiTeMutated(inst: ptr, wIdx: int, userEdit: bool) {
+    var w: RtUiWinst
+    var kind: int
+    var te: ptr
+    var cap: int
+
+    w = RtUiWinst(inst)
+    kind = uidWidgetKind(w.winIdx, wIdx)
+    te = rtUiTeAt(w, wIdx)
+    if te != ptr(0) {
+        if kind == rtUiKindField {
+            cap = rtUiFieldCap(inst, wIdx)
+        } else {
+            cap = rtUiTeMax
+        }
+        rtUiTeClamp(te, cap)
+    }
+    rtUiTeScrollSync(inst, wIdx)
+    if not userEdit {
+        return
+    }
+    rtUiTraceFire2(uidWinName(w.winIdx), uidWidgetName(w.winIdx, wIdx), "change")
+    UiFireWidget(w.winIdx, inst, wIdx, rtUiWevChange, 0, 0)
+}
+
+// rt_ui_te_relayout (rt_ui.c:1868-1959) -> rtUiTeRelayout. Derives widget
+// i's TE view/dest rect (and, for a textview, its scrollbar's rect) from
+// the widget's already-SetRect rect (rtUiLayout, uiwidgets.cla).
+func rtUiTeRelayout(inst: ptr, i: int) {
+    var w: RtUiWinst
+    var winIdx: int
+    var kind: int
+    var flags: int
+    var te: ptr
+    var teMp: ptr
+    var widthIsFill: bool
+    var fillBoth: bool
+    var flushR: bool
+    var flushB: bool
+    var vW: int
+    var hH: int
+    var frame: ptr
+    var r: ptr
+    var boxLeft: int
+    var boxTop: int
+    var boxRight: int
+    var boxBottom: int
+    var teLeft: int
+    var teTop: int
+    var teRight: int
+    var teBottom: int
+    var hasV: bool
+    var hasH: bool
+    var vTop: int
+    var hLeft: int
+    var sbBottom: int
+    var sbRight: int
+    var ctrl: ptr
+    var hb: ptr
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+    kind = uidWidgetKind(winIdx, i)
+    te = rtUiTeAt(w, i)
+    if te == ptr(0) {
+        return
+    }
+    teMp = UiHandleDeref(te)
+    flags = uidWidgetFlags(winIdx, i)
+    widthIsFill = uidWidgetWidthIsFill(winIdx, i)
+    fillBoth = uidWidgetFillBoth(winIdx, i)
+
+    // Same flushR/flushB tests as rtUiLayout (kept in sync there).
+    flushR = false
+    if kind == rtUiKindTextview and (flags & rtUiFlagScrollV) != 0 and (widthIsFill or fillBoth) {
+        flushR = true
+    }
+    flushB = false
+    if kind == rtUiKindTextview and (flags & rtUiFlagScrollH) != 0 and fillBoth {
+        flushB = true
+    }
+    vW = rtUiScrollbarW
+    if flushR {
+        vW = vW + 1
+    }
+    hH = rtUiScrollbarW
+    if flushB {
+        hH = hH + 1
+    }
+
+    // EraseRect the old frame position before it's overwritten below
+    // (rt_ui.c:1895-1910) -- a harmless no-op-ish erase the first time a
+    // widget is laid out (viewRect is still TENew's zero placeholder).
+    frame = UiNewPtr(rtUiRectSize)
+    UiBlockMoveData(teMp + rtUiTeViewRect, frame, rtUiRectSize)
+    UiInsetRect(frame, 0 - rtUiTeFrameInset, 0 - rtUiTeFrameInset)
+    UiEraseRect(frame)
+    UiDisposePtr(frame)
+
+    r = rtUiRectAt(w, i)
+    boxTop = peekw(r + 0)
+    boxLeft = peekw(r + 2)
+    boxBottom = peekw(r + 4)
+    boxRight = peekw(r + 6)
+    if kind == rtUiKindField and peekb(rtUiLabelAt(w, i)) > 0 {
+        boxLeft = boxLeft + rtUiFieldLabelW
+    }
+    teLeft = boxLeft
+    teTop = boxTop
+    teRight = boxRight
+    teBottom = boxBottom
+
+    hb = ptr(0)
+    if kind == rtUiKindTextview {
+        ctrl = rtUiCtrlAt(w, i)
+        hb = rtUiHbarAt(w, i)
+        hasV = ctrl != ptr(0)
+        hasH = hb != ptr(0)
+        if hasV {
+            // vTop: a bar starting at the content top extends 1px under
+            // the title-bar line, classic style.
+            if boxTop <= 0 {
+                vTop = -1
+            } else {
+                vTop = boxTop
+            }
+            sbBottom = boxBottom
+            if hasH {
+                sbBottom = boxBottom - hH // stops short of the bottom when an H bar shares the corner
+            }
+            UiMoveControl(ctrl, boxRight - vW, vTop)
+            UiSizeControl(ctrl, vW, sbBottom - vTop)
+            teRight = teRight - vW
+        }
+        if hasH {
+            if boxLeft <= 0 {
+                hLeft = -1
+            } else {
+                hLeft = boxLeft
+            }
+            sbRight = boxRight
+            if hasV {
+                sbRight = boxRight - vW
+            }
+            UiMoveControl(hb, hLeft, boxBottom - hH)
+            UiSizeControl(hb, sbRight - hLeft, hH)
+            teBottom = teBottom - hH
+        }
+    }
+
+    teLeft = teLeft + rtUiTeFrameInset
+    teTop = teTop + rtUiTeFrameInset
+    teRight = teRight - rtUiTeFrameInset
+    teBottom = teBottom - rtUiTeFrameInset
+    if teRight < teLeft {
+        teRight = teLeft
+    }
+    if teBottom < teTop {
+        teBottom = teTop
+    }
+    pokew(teMp + rtUiTeViewRect + 0, teTop)
+    pokew(teMp + rtUiTeViewRect + 2, teLeft)
+    pokew(teMp + rtUiTeViewRect + 4, teBottom)
+    pokew(teMp + rtUiTeViewRect + 6, teRight)
+    pokew(teMp + rtUiTeDestRect + 0, teTop)
+    pokew(teMp + rtUiTeDestRect + 2, teLeft)
+    pokew(teMp + rtUiTeDestRect + 4, teBottom)
+    pokew(teMp + rtUiTeDestRect + 6, teRight)
+    if kind == rtUiKindTextview and hb != ptr(0) {
+        pokew(teMp + rtUiTeDestRect + 6, teLeft + rtUiTeNowrapW)
+    }
+    UiTECalText(te)
+    rtUiTeScrollSync(inst, i)
+
+    frame = UiNewPtr(rtUiRectSize)
+    UiSetRect(frame, teLeft, teTop, teRight, teBottom)
+    UiInsetRect(frame, 0 - rtUiTeFrameInset, 0 - rtUiTeFrameInset)
+    UiInvalRect(frame)
+    UiDisposePtr(frame)
+}
+
+// rt_ui_te_set_focus (rt_ui.c:1961-1976) -> rtUiTeSetFocus. Click-to-focus
+// ("one focused TE per window"): TEDeactivate's the previously focused TE
+// (if any) and TEActivate's the new one. A no-op when the click lands on
+// the already-focused TE.
+func rtUiTeSetFocus(inst: ptr, newIdx: int) {
+    var w: RtUiWinst
+    var te: ptr
+
+    w = RtUiWinst(inst)
+    if w.focusIdx == newIdx {
+        return
+    }
+    if w.focusIdx >= 0 {
+        te = rtUiTeAt(w, w.focusIdx)
+        if te != ptr(0) {
+            UiTEDeactivate(te)
+        }
+    }
+    w.focusIdx = newIdx
+    if w.focusIdx >= 0 {
+        te = rtUiTeAt(w, w.focusIdx)
+        if te != ptr(0) {
+            UiTEActivate(te)
+        }
+    }
+    // Standard-edit Cut/Copy/Paste/Clear dim on "does the front window
+    // have a focused TE" -- a no-op when no standard-edit menu exists.
+    rtUiMenuRecomputeDim()
+}
+
+// rt_ui_te_hit (rt_ui.c:1978-1995) -> rtUiTeHit. Hit-tests against each
+// FIELD/TEXTVIEW's own (already-derived) TE viewRect -- not the widget's
+// full outer box -- so a click on a field's label lane or a textview's
+// scrollbar lane never focuses the TE.
+func rtUiTeHit(inst: ptr, localPt: int, outIdx: ptr): bool {
+    var w: RtUiWinst
+    var n: int
+    var i: int
+    var kind: int
+    var te: ptr
+
+    w = RtUiWinst(inst)
+    n = uidWinNWidgets(w.winIdx)
+    i = 0
+    while i < n {
+        kind = uidWidgetKind(w.winIdx, i)
+        if kind == rtUiKindField or kind == rtUiKindTextview {
+            te = rtUiTeAt(w, i)
+            if te != ptr(0) and UiPtInRect(localPt, UiHandleDeref(te) + rtUiTeViewRect) {
+                pokel(outIdx, i)
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// rt_ui_scrollbar_action (rt_ui.c:1997-2056) -> rtUiScrollbarAction.
+// Continuous scroll-button/page-button tracking (TrackControl's
+// actionProc, called repeatedly while the mouse stays down over an
+// arrow/page part -- never called for inThumb, which TrackControl tracks
+// live on its own). Reached from the Toolbox via UiActionEntry's C pascal
+// wrapper (rt_ext_mac.inc), NOT called directly by any other Clarus
+// function in this port.
+func rtUiScrollbarAction(ctrl: ptr, part: int) {
+    var ctrlMp: ptr
+    var wp: ptr
+    var inst: ptr
+    var rfCon: int
+    var horiz: bool
+    var wIdx: int
+    var te: ptr
+    var teMp: ptr
+    var step: int
+    var viewW: int
+    var lineH: int
+    var viewH: int
+    var oldVal: int
+    var newVal: int
+    var maxVal: int
+    var applied: int
+
+    if part == 0 {
+        return
+    }
+    ctrlMp = UiHandleDeref(ctrl)
+    wp = ptr(peekl(ctrlMp + rtUiCtrlOwner))
+    inst = rtUiWinstOf(wp)
+    if inst == ptr(0) {
+        return
+    }
+    rfCon = peekl(ctrlMp + 36)
+    horiz = (rfCon & 0x4000) != 0
+    wIdx = rfCon & 0x3FFF
+    te = rtUiTeAt(RtUiWinst(inst), wIdx)
+    if te == ptr(0) {
+        return
+    }
+    teMp = UiHandleDeref(te)
+    step = 0
+    if horiz {
+        viewW = peekw(teMp + rtUiTeViewRect + 6) - peekw(teMp + rtUiTeViewRect + 2)
+        if part == rtUiCtlUpButton {
+            step = 0 - rtUiHscrollStep
+        } else if part == rtUiCtlDownButton {
+            step = rtUiHscrollStep
+        } else if part == rtUiCtlPageUp {
+            step = 0 - viewW
+        } else if part == rtUiCtlPageDown {
+            step = viewW
+        } else {
+            return
+        }
+    } else {
+        lineH = peekw(teMp + rtUiTeLineHeight)
+        if lineH <= 0 {
+            lineH = 1
+        }
+        viewH = peekw(teMp + rtUiTeViewRect + 4) - peekw(teMp + rtUiTeViewRect + 0)
+        if part == rtUiCtlUpButton {
+            step = 0 - lineH
+        } else if part == rtUiCtlDownButton {
+            step = lineH
+        } else if part == rtUiCtlPageUp {
+            step = 0 - viewH
+        } else if part == rtUiCtlPageDown {
+            step = viewH
+        } else {
+            return
+        }
+    }
+    oldVal = UiGetControlValue(ctrl)
+    maxVal = UiGetControlMaximum(ctrl)
+    newVal = oldVal + step
+    if newVal < 0 {
+        newVal = 0
+    }
+    if newVal > maxVal {
+        newVal = maxVal
+    }
+    applied = oldVal - newVal
+    if applied == 0 {
+        return
+    }
+    UiSetControlValue(ctrl, newVal)
+    if horiz {
+        UiTEScroll(applied, 0, te)
+    } else {
+        UiTEScroll(0, applied, te)
+    }
+}
+
+// rt_ui_handle_scrollbar_click (rt_ui.c:2058-2095) -> rtUiHandleScrollbarClick.
+// FindControl resolved a click to a textview's scrollbar (contrlRfCon's
+// high bit set) -- dispatched separately from an ordinary widget control
+// (rtUiHandleContentClick, ui.cla), since a scrollbar click never fires a
+// widget event, only scrolls its TE.
+func rtUiHandleScrollbarClick(inst: ptr, ctrl: ptr, wIdx: int, cpart: int, wherePt: int) {
+    var ctrlMp: ptr
+    var horiz: bool
+    var oldVal: int
+    var newVal: int
+    var te: ptr
+
+    if rtUiScripted {
+        // No real mouse to hold an arrow down or drag the thumb -- a
+        // script `click` on a scrollbar part is one discrete nudge via the
+        // same action routine real tracking calls once per part hit. Thumb
+        // clicks aren't meaningfully scriptable (no drag distance) and are
+        // a no-op here.
+        if cpart == rtUiCtlUpButton or cpart == rtUiCtlDownButton or cpart == rtUiCtlPageUp or cpart == rtUiCtlPageDown {
+            rtUiScrollbarAction(ctrl, cpart)
+        }
+        return
+    }
+    if cpart == rtUiCtlIndicator {
+        ctrlMp = UiHandleDeref(ctrl)
+        horiz = (peekl(ctrlMp + 36) & 0x4000) != 0
+        oldVal = UiGetControlValue(ctrl)
+        if UiTrackControl(ctrl, wherePt, ptr(0)) != 0 {
+            newVal = UiGetControlValue(ctrl)
+            te = rtUiTeAt(RtUiWinst(inst), wIdx)
+            if newVal != oldVal and te != ptr(0) {
+                if horiz {
+                    UiTEScroll(oldVal - newVal, 0, te)
+                } else {
+                    UiTEScroll(0, oldVal - newVal, te)
+                }
+            }
+        }
+    } else {
+        UiTrackControl(ctrl, wherePt, UiActionEntry())
+    }
+}
+
+// rt_ui_te_idle_front (rt_ui.c:2097-2114) -> rtUiTeIdleFront. TEIdle
+// blinks the caret; called once per real event-loop iteration (rtUiRun)
+// and once per scripted `tick` (rtUiScriptTick, uiscript.cla) for the
+// FRONTMOST window's focused TE only -- background windows never blink a
+// caret.
+func rtUiTeIdleFront() {
+    var wp: ptr
+    var inst: ptr
+    var w: RtUiWinst
+    var te: ptr
+    var savedPort: ptr
+
+    wp = UiFrontWindow()
+    inst = rtUiWinstOf(wp)
+    if inst == ptr(0) {
+        return
+    }
+    w = RtUiWinst(inst)
+    if w.focusIdx < 0 {
+        return
+    }
+    te = rtUiTeAt(w, w.focusIdx)
+    if te == ptr(0) {
+        return
+    }
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(wp)
+    UiTEIdle(te)
+    UiSetPort(savedPort)
+}
+
+// rt_ui_std_edit_dispatch's own Paste case (rt_ui.c:2589-2612) -> the
+// paste-overflow long math BEFORE TEPaste is called at all: teLength is a
+// short on the real target, so pasting enough scrap to push it past
+// 32,767 wraps NEGATIVE on a naive short computation -- rtUiTeClamp's own
+// `<= maxLen` check would then wave the (apparently-tiny-or-negative)
+// length straight through uncaught, corrupting the TE. Computing newLen
+// in Clarus `int` (32-bit, see rtUiTeWidthChunk's own comment above)
+// BEFORE the paste lands catches this while it's still exact, and skips
+// the paste entirely (no partial insert) on overflow. Factored out of
+// rtUiStdEditDispatch (ui.cla) since it is, on its own, the single most
+// safety-critical line in this whole slice.
+func rtUiStdEditPaste(inst: ptr, te: ptr) {
+    var w: RtUiWinst
+    var teMp: ptr
+    var newLen: int
+    var kind: int
+
+    w = RtUiWinst(inst)
+    UiTEFromScrap()
+    teMp = UiHandleDeref(te)
+    newLen = peekw(teMp + rtUiTeTeLength) - (peekw(teMp + rtUiTeSelEnd) - peekw(teMp + rtUiTeSelStart)) + UiTEGetScrapLength()
+    kind = uidWidgetKind(w.winIdx, w.focusIdx)
+    if kind == rtUiKindTextview and newLen > rtUiTeMax {
+        rtSetLastErr(1, "string truncated")
+    } else {
+        UiTEPaste(te)
+        rtUiTeMutated(inst, w.focusIdx, true)
+    }
+}

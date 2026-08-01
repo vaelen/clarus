@@ -563,6 +563,10 @@ func rtUiOpen(winIdx: int): ptr {
     w.labels = UiHandleDeref(w.labelsH)
     w.canvasH = rtUiAllocLocked(nWidgets * rtUiCanvasBufSize)
     w.canvases = UiHandleDeref(w.canvasH)
+    w.teH = rtUiAllocLocked(nWidgets * 4)
+    w.tes = UiHandleDeref(w.teH)
+    w.hbarsH = rtUiAllocLocked(nWidgets * 4)
+    w.hbars = UiHandleDeref(w.hbarsH)
     w.enabledH = rtUiAllocLocked(nWidgets)
     w.logicalEnabled = UiHandleDeref(w.enabledH)
     w.focusIdx = -1
@@ -646,6 +650,26 @@ func rtUiOpen(winIdx: int): ptr {
     rtUiLayout(inst)
     rtUiCanvasReallocAll(inst)
 
+    // Auto-focus the FIRST field/textview-kind widget (rt_ui.c:4682-4712,
+    // Task 8 -- FIELD/TEXTVIEW widgets can exist as of this task). MUST run
+    // here, BEFORE ShowWindow/SelectWindow below: rtUiMenuRecomputeDim
+    // (inside rtUiTeSetFocus) keys off UiFrontWindow(), which never returns
+    // a still-invisible window, so this call's own recompute is a
+    // same-behavior no-op -- the real dim flip happens once, moments later,
+    // in rtUiAfterFrontChange's own recompute call below.
+    i = 0
+    while i < nWidgets {
+        if uidWidgetKind(winIdx, i) == rtUiKindField or uidWidgetKind(winIdx, i) == rtUiKindTextview {
+            savedPort = rtUiGetPortSaved()
+            UiSetPort(w.wp)
+            rtUiTeSetFocus(inst, i)
+            UiSetPort(savedPort)
+            i = nWidgets // break
+        } else {
+            i = i + 1
+        }
+    }
+
     UiShowWindow(w.wp)
     UiSelectWindow(w.wp)
     rtUiTraceOpen(winIdx, inst)
@@ -688,6 +712,11 @@ func rtUiTeardownWindow(inst: ptr) {
     i = 0
     while i < n {
         rtUiCanvasDispose(rtUiCanvasBufAt(w, i))
+        // TEHandle is its own separate Handle, not covered by
+        // UiDisposeHandle(w.teH) below (Task 8, rt_ui.c:4815).
+        if rtUiTeAt(w, i) != ptr(0) {
+            UiTEDispose(rtUiTeAt(w, i))
+        }
         i = i + 1
     }
 
@@ -698,6 +727,8 @@ func rtUiTeardownWindow(inst: ptr) {
     UiDisposeHandle(w.rectsH)
     UiDisposeHandle(w.labelsH)
     UiDisposeHandle(w.canvasH)
+    UiDisposeHandle(w.teH)
+    UiDisposeHandle(w.hbarsH)
     UiDisposeHandle(w.enabledH)
     UiDisposeHandle(w.selfH)
 }
@@ -1030,13 +1061,22 @@ func rtUiAfterFrontChange() {
     rtUiTraceFrontCheck()
 }
 
-// rtUiStdEditDispatch (rt_ui.c:2560-2619). The real per-item TE dispatch
-// (Cut/Copy/Paste/Clear) is dead this slice -- focusIdx is ALWAYS -1 (no
-// field/textview can exist, rtUiMakeWidgets' fail-closed gate), so the C
-// reference's own `if (!inst || inst->focusIdx < 0) return;` guard
-// always returns before reaching any of it.
+// rtUiStdEditDispatch (rt_ui.c:2560-2619). itemIdx is 0-based, matching
+// the fixed layout rtUiBuildMenus appended (0=Undo, 1=separator, 2=Cut,
+// 3=Copy, 4=Paste, 5=Clear) -- Undo/the separator fall out silently, no
+// focused TE is a silent no-op (native dimming ordinarily keeps a real
+// click/cmd-key from reaching here otherwise, but a scripted `menu M I`
+// call bypasses that gate, so both are guarded defensively here too).
+// Cut/Paste/Clear route their TE mutation through rtUiTeMutated as a USER
+// edit; Copy does not mutate, so it fires no change event/trace at all.
+// PORT DISCIPLINE RULE: self-asserts/restores the port around the TE
+// calls, which draw.
 func rtUiStdEditDispatch(itemIdx: int) {
     var front: ptr
+    var inst: ptr
+    var w: RtUiWinst
+    var te: ptr
+    var savedPort: ptr
 
     front = UiFrontWindow()
     if not rtUiIsOurs(front) {
@@ -1049,6 +1089,39 @@ func rtUiStdEditDispatch(itemIdx: int) {
         // DA-interop scenario is ever added.
         return
     }
+    if itemIdx < 2 or itemIdx > 5 {
+        return // Undo (permanently disabled) or the separator
+    }
+    inst = rtUiWinstOf(front)
+    if inst == ptr(0) {
+        return
+    }
+    w = RtUiWinst(inst)
+    if w.focusIdx < 0 {
+        return
+    }
+    te = rtUiTeAt(w, w.focusIdx)
+    if te == ptr(0) {
+        return
+    }
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    if itemIdx == 2 { // Cut
+        UiTECut(te)
+        UiZeroScrap()
+        UiTEToScrap()
+        rtUiTeMutated(inst, w.focusIdx, true)
+    } else if itemIdx == 3 { // Copy: no mutation -- no change trace/event (pinned)
+        UiTECopy(te)
+        UiZeroScrap()
+        UiTEToScrap()
+    } else if itemIdx == 4 { // Paste -- see rtUiStdEditPaste's own comment (uitext.cla)
+        rtUiStdEditPaste(inst, te)
+    } else if itemIdx == 5 { // Clear
+        UiTEDelete(te)
+        rtUiTeMutated(inst, w.focusIdx, true)
+    }
+    UiSetPort(savedPort)
 }
 
 // rtUiMenuDispatch (rt_ui.c:2623-2656). `h->fire` (a C function pointer)
@@ -1236,6 +1309,10 @@ func rtUiHandleUpdate(wp: ptr) {
     var s: ptr
     var corner: ptr
     var saveClip: ptr
+    var te: ptr
+    var teMp: ptr
+    var frame: ptr
+    var labelRect: ptr
 
     UiSetPort(wp)
     UiBeginUpdate(wp)
@@ -1266,6 +1343,40 @@ func rtUiHandleUpdate(wp: ptr) {
                 if (flags & rtUiFlagDefault) != 0 {
                     rtUiDrawDefaultOutline(rtUiRectAt(w, i))
                 }
+            } else if kind == rtUiKindField or kind == rtUiKindTextview {
+                // Field/textview draw a frame around their TE view
+                // (un-insetting rtUiTeRelayout's own inset gives back
+                // exactly the box that inset came from), then TEUpdate for
+                // the text/caret itself; a field additionally draws its
+                // `label:` lane the same TETextBox way RTUI_LABEL does,
+                // just narrower (rt_ui.c:2791-2821).
+                te = rtUiTeAt(w, i)
+                if te != ptr(0) {
+                    teMp = UiHandleDeref(te)
+                    frame = UiNewPtr(rtUiRectSize)
+                    UiBlockMoveData(teMp + rtUiTeViewRect, frame, rtUiRectSize)
+                    UiInsetRect(frame, 0 - rtUiTeFrameInset, 0 - rtUiTeFrameInset)
+                    // Flush edges (fix-flush): push a frame edge that lands
+                    // on the portRect boundary 1px outward so it merges
+                    // with the window frame.
+                    if peekw(frame + 2) <= 0 {
+                        pokew(frame + 2, -1)
+                    }
+                    if peekw(frame + 0) <= 0 {
+                        pokew(frame + 0, -1)
+                    }
+                    UiFrameRect(frame)
+                    UiDisposePtr(frame)
+                    UiTEUpdate(teMp + rtUiTeViewRect, te)
+                }
+                if kind == rtUiKindField and peekb(rtUiLabelAt(w, i)) > 0 {
+                    labelRect = UiNewPtr(rtUiRectSize)
+                    UiBlockMoveData(rtUiRectAt(w, i), labelRect, rtUiRectSize)
+                    pokew(labelRect + 6, peekw(labelRect + 2) + rtUiFieldLabelW - 4)
+                    s = rtUiLabelAt(w, i)
+                    UiTextBox(s + 1, peekb(s), labelRect, 0)
+                    UiDisposePtr(labelRect)
+                }
             }
             i = i + 1
         }
@@ -1280,6 +1391,8 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
     var n: int
     var i: int
     var ctrl: ptr
+    var hb: ptr
+    var te: ptr
     var enable: bool
 
     inst = rtUiWinstOf(wp)
@@ -1300,7 +1413,28 @@ func rtUiHandleActivate(wp: ptr, activating: bool) {
                 UiHiliteControl(ctrl, 255)
             }
         }
+        // fix-hbar: the H bar joins the same dim loop as the V bar --
+        // no logicalEnabled gate, that array is only ever set for
+        // BUTTONs (rt_ui.c:2951-2954, Task 8).
+        hb = rtUiHbarAt(w, i)
+        if hb != ptr(0) {
+            if activating {
+                UiHiliteControl(hb, 0)
+            } else {
+                UiHiliteControl(hb, 255)
+            }
+        }
         i = i + 1
+    }
+    if w.focusIdx >= 0 {
+        te = rtUiTeAt(w, w.focusIdx)
+        if te != ptr(0) {
+            if activating {
+                UiTEActivate(te)
+            } else {
+                UiTEDeactivate(te)
+            }
+        }
     }
 }
 
@@ -1605,15 +1739,28 @@ func rtUiHandleCanvasClick(wp: ptr, inst: ptr, wIdx: int, wherePt: int) {
     }
 }
 
+// rtUiHandleContentClick (rt_ui.c:3229-3419). Task 8 adds the textview-
+// scrollbar tag lane (rt_ui.c:3274-3283, ahead of the plain-widget
+// dispatch -- a scrollbar's own contrlRfCon carries the 0x8000/0xC000 tag,
+// never a plain widget index, so it must be recognized BEFORE that index
+// is used to look anything up) and the TE-hit lane (rt_ui.c:3355-3373).
+// The table-scrollbar lane (rt_ui.c:3238-3273), the POPUP dispatch inside
+// the Control Manager lane (rt_ui.c:3286-3323), the popup-hit lane
+// (rt_ui.c:3374-3411), and the table-hit lane (rt_ui.c:3412-3418) stay
+// OMITTED -- Task 9 (no POPUP/TABLE widget can exist yet).
 func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
     var localPt: int
     var ctrlSlot: ptr
     var cpart: int
     var ctrl: ptr
+    var rfCon: int
     var wIdx: int
     var trackPart: int
     var cIdxSlot: ptr
     var cIdx: int
+    var tIdxSlot: ptr
+    var tIdx: int
+    var extendSel: bool
 
     UiSetPort(wp)
     localPt = rtUiGlobalToLocalPt(wherePt)
@@ -1623,8 +1770,21 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
     ctrl = ptr(peekl(ctrlSlot))
     UiDisposePtr(ctrlSlot)
 
+    // Table's own vertical scrollbar lane (rt_ui.c:3238-3273) is Task 9 --
+    // documented-absent, no TABLE widget can exist yet.
+
     if cpart != 0 and ctrl != ptr(0) {
-        wIdx = peekl(UiHandleDeref(ctrl) + 36)
+        rfCon = peekl(UiHandleDeref(ctrl) + 36)
+        if (rfCon & 0x8000) != 0 {
+            // A textview's own scrollbar (tagged at creation,
+            // rtUiMakeWidgets) -- scrolls its TE, never fires a widget
+            // event.
+            rtUiHandleScrollbarClick(inst, ctrl, rfCon & 0x3FFF, cpart, localPt)
+            return
+        }
+        wIdx = rfCon
+        // RTUI_POPUP's own dispatch lane (rt_ui.c:3286-3323) is Task 9 --
+        // documented-absent, no POPUP widget can exist yet.
         if rtUiScripted {
             rtUiFireWidget(inst, wIdx)
             return
@@ -1644,6 +1804,27 @@ func rtUiHandleContentClick(wp: ptr, inst: ptr, wherePt: int, shiftDown: bool) {
         return
     }
     UiDisposePtr(cIdxSlot)
+
+    tIdxSlot = UiNewPtr(4)
+    if rtUiTeHit(inst, localPt, tIdxSlot) {
+        tIdx = peekl(tIdxSlot)
+        UiDisposePtr(tIdxSlot)
+        // click-to-focus: shift-click extends the CURRENT selection only
+        // when it lands back in the ALREADY-focused TE.
+        extendSel = shiftDown and tIdx == RtUiWinst(inst).focusIdx
+        rtUiTeSetFocus(inst, tIdx)
+        UiTEClick(localPt, extendSel, rtUiTeAt(RtUiWinst(inst), tIdx))
+        // fix-hbar: TEAutoView can scroll the view on click near an edge --
+        // re-sync the bars' thumbs. Not a mutation, so this does NOT go
+        // through rtUiTeMutated's change trace/event funnel.
+        rtUiTeScrollSync(inst, tIdx)
+        return
+    }
+    UiDisposePtr(tIdxSlot)
+
+    // Popup-hit lane (rt_ui.c:3374-3411) and table-hit lane
+    // (rt_ui.c:3412-3418) are Task 9 -- documented-absent, no POPUP/TABLE
+    // widget can exist yet.
 }
 
 func rtUiHandleMouseDown(ev: ptr) {
@@ -1707,8 +1888,19 @@ func rtUiHandleMouseDown(ev: ptr) {
 }
 
 // ================================================================
-// Keyboard (rt_ui.c:3557-3658). The focused-TE ordering block
-// (rt_ui.c:3586-3643) is omitted -- dead, focusIdx is ALWAYS -1.
+// Keyboard (rt_ui.c:3557-3658). Task 8 adds the focused-TE ordering block
+// (rt_ui.c:3573-3641): cmdKey (above) -> a focused FIELD's Return/Enter
+// fires `enter` (no insertion) -> a focused TE's other keys go to TEKey
+// (including the four arrow codes -- TEKey itself special-cases those,
+// move/collapse the caret, no insertion) -> only THEN the pre-existing
+// default/cancel/generic-key chain. A focused TE swallows Return/typing
+// entirely; Escape is the one exception, left to fall through to the
+// Cancel-button check below even while a TE is focused. Every TEKey call
+// is followed by a scroll-sync (TEAutoView can move the view even for a
+// caret-only arrow key), but only a MUTATING key (not an arrow) goes
+// through rtUiTeMutated's change trace/event funnel. The modal-form typing
+// filter (rt_ui.c:3611-3629, a bound INT/FIXED field's char whitelist) is
+// EXCLUDED -- Task 10, documented-absent (no gModal exists yet).
 // ================================================================
 
 func rtUiHandleKey(ev: ptr) {
@@ -1719,6 +1911,8 @@ func rtUiHandleKey(ev: ptr) {
     var winIdx: int
     var wIdxSlot: ptr
     var wIdx: int
+    var w: RtUiWinst
+    var savedPort: ptr
 
     ch = peekb(ev + 5)
     modifiers = peekw(ev + 14)
@@ -1731,7 +1925,29 @@ func rtUiHandleKey(ev: ptr) {
     if inst == ptr(0) {
         return
     }
-    winIdx = RtUiWinst(inst).winIdx
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+
+    if w.focusIdx >= 0 {
+        if uidWidgetKind(winIdx, w.focusIdx) == rtUiKindField and (ch == 13 or ch == 3) {
+            rtUiTraceFire2(uidWinName(winIdx), uidWidgetName(winIdx, w.focusIdx), "enter")
+            UiFireWidget(winIdx, inst, w.focusIdx, rtUiWevEnter, 0, 0)
+            return
+        }
+        if ch != 27 {
+            savedPort = rtUiGetPortSaved()
+            UiSetPort(wp)
+            UiTEKey(ch, rtUiTeAt(w, w.focusIdx))
+            if ch >= 28 and ch <= 31 {
+                rtUiTeScrollSync(inst, w.focusIdx) // caret move only: no change trace/event
+            } else {
+                rtUiTeMutated(inst, w.focusIdx, true) // USER edit
+            }
+            UiSetPort(savedPort)
+            return
+        }
+        // ch == 27 (Escape): falls through to the Cancel-button check below.
+    }
 
     wIdxSlot = UiNewPtr(4)
     if (ch == 13 or ch == 3) and rtUiFindFlagged(inst, rtUiFlagDefault, wIdxSlot) {
@@ -1799,6 +2015,7 @@ func rtUiRun() {
             rtUiHandleActivate(ptr(peekl(evBuf + 2)), (peekw(evBuf + 14) & 0x1) != 0)
         }
         rtUiEveryPump()
+        rtUiTeIdleFront()
         rtUiFlushAllBuffered()
     }
 }

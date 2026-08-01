@@ -30,6 +30,8 @@
 #include <Devices.h>  /* OpenDeskAcc -- rt_ext_UiOpenDeskAcc */
 #include <SegLoad.h>  /* CountAppFiles/GetAppFiles/ClrAppFiles/AppFile -- rt_ext_UiLaunchReal */
 #include <Resources.h> /* GetResource/ReleaseResource -- rt_ext_UiLaunchReal's SIZE-resource probe */
+#include <Scrap.h>     /* ZeroScrap -- rt_ext_UiZeroScrap (Task 8); TEFromScrap/TEToScrap/
+                           TEGetScrapLength come from TextEdit.h, already visible transitively. */
 
 /* ---- 5a: ptr/Handle waist (Plan 5a Task 3) ---- */
 void *rt_ext_NewHandle(int32_t size) { return (void *)NewHandle((Size)size); }
@@ -397,6 +399,59 @@ void rt_ext_UiClosePort(void *port) { ClosePort((GrafPtr)port); }
 void rt_ext_UiPortSize(short width, short height) { PortSize(width, height); }
 void rt_ext_UiSetOrigin(short h, short v) { SetOrigin(h, v); }
 void rt_ext_UiSetPortBits(void *bm) { SetPortBits((const BitMap *)bm); }
+
+/* ---- native-5e Task 8: uitext.cla's own TextEdit-Manager/Scrap-Manager/
+ * scrollbar extern block. One rt_ext_Ui<Name> wrapper per `external func
+ * Ui<Name>` declared there -- same thin cast-and-call convention as the
+ * Task 7 block just above. */
+void *rt_ext_UiTENew(void *dst, void *view) { return (void *)TENew((const Rect *)dst, (const Rect *)view); }
+void rt_ext_UiTEDispose(void *te) { TEDispose((TEHandle)te); }
+void rt_ext_UiTESetText(void *text, int32_t length, void *te) { TESetText(text, (long)length, (TEHandle)te); }
+void rt_ext_UiTECalText(void *te) { TECalText((TEHandle)te); }
+void rt_ext_UiTEUpdate(void *r, void *te) { TEUpdate((const Rect *)r, (TEHandle)te); }
+void rt_ext_UiTEClick(int32_t pt, int32_t extend, void *te) { TEClick(rt_ext_ui_pt(pt), (Boolean)extend, (TEHandle)te); }
+void rt_ext_UiTEKey(short ch, void *te) { TEKey((CharParameter)ch, (TEHandle)te); }
+void rt_ext_UiTECopy(void *te) { TECopy((TEHandle)te); }
+void rt_ext_UiTECut(void *te) { TECut((TEHandle)te); }
+void rt_ext_UiTEDelete(void *te) { TEDelete((TEHandle)te); }
+void rt_ext_UiTEActivate(void *te) { TEActivate((TEHandle)te); }
+void rt_ext_UiTEDeactivate(void *te) { TEDeactivate((TEHandle)te); }
+void rt_ext_UiTEIdle(void *te) { TEIdle((TEHandle)te); }
+void rt_ext_UiTEPaste(void *te) { TEPaste((TEHandle)te); }
+void rt_ext_UiTESetSelect(int32_t start, int32_t stop, void *te) { TESetSelect((long)start, (long)stop, (TEHandle)te); }
+void rt_ext_UiTEScroll(short dh, short dv, void *te) { TEScroll(dh, dv, (TEHandle)te); }
+void rt_ext_UiTEAutoView(int32_t autoFlag, void *te) { TEAutoView((Boolean)autoFlag, (TEHandle)te); }
+short rt_ext_UiTextWidth(void *tb, short firstByte, short byteCount) { return TextWidth(tb, firstByte, byteCount); }
+void rt_ext_UiTextFont(short f) { TextFont(f); }
+void rt_ext_UiTextFace(short face) { TextFace((short)face); }
+void rt_ext_UiTextSize(short s) { TextSize(s); }
+/* rt_ext_UiTEFromScrap/UiTEToScrap/UiTEGetScrapLength: bare Clarus externs
+ * (uitext.cla's own comment explains why -- no real A-line trap word for
+ * any of the three, verified against Multiverse.h/TextEdit.h) -- just call
+ * the real Toolbox name/macro directly, same as UiMacInitToolbox et al. */
+int32_t rt_ext_UiTEFromScrap(void) { return (int32_t)TEFromScrap(); }
+int32_t rt_ext_UiTEToScrap(void) { return (int32_t)TEToScrap(); }
+int32_t rt_ext_UiTEGetScrapLength(void) { return (int32_t)TEGetScrapLength(); }
+int32_t rt_ext_UiZeroScrap(void) { return (int32_t)ZeroScrap(); }
+int32_t rt_ext_UiHGetState(void *h) { return (int32_t)HGetState((Handle)h); }
+void rt_ext_UiHSetState(void *h, int32_t flag) { HSetState((Handle)h, (SignedByte)flag); }
+short rt_ext_UiGetControlMaximum(void *theControl) { return GetControlMaximum((ControlRef)theControl); }
+void rt_ext_UiSetControlMaximum(void *theControl, short newMaximum) { SetControlMaximum((ControlRef)theControl, newMaximum); }
+
+#ifdef CLARUS_UIPORT
+/* rt_ext_UiActionEntry: the scrollbar action-proc glue-entry extern (this
+ * task's own brief -- "the cprint-lane C pascal wrapper goes in
+ * rt_ext_mac.inc gated CLARUS_UIPORT (aef1a25 precedent), calling your
+ * ported action function"). Retro68's classic-68k (non-CFM) build defines
+ * `NewControlActionUPP(proc)` as the plain identity macro `(proc)` (Controls.h)
+ * -- ControlActionUPP IS a raw pascal function pointer on this target, so
+ * this wrapper's own address, unwrapped, is a valid actionProc. */
+extern void clar_fn_rtUiScrollbarAction(void *ctrl, int32_t part);
+static pascal void rt_ext_ui_scrollbar_action(ControlHandle ctrl, short part) {
+    clar_fn_rtUiScrollbarAction((void *)ctrl, (int32_t)part);
+}
+void *rt_ext_UiActionEntry(void) { return (void *)NewControlActionUPP(rt_ext_ui_scrollbar_action); }
+#endif /* CLARUS_UIPORT (rt_ext_UiActionEntry) */
 
 /* ==================== Task 7 (native-5e UI port) glue ==================== */
 #include <AppleEvents.h>

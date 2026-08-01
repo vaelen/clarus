@@ -137,6 +137,12 @@ const rtUiKindButton: int = 0
 const rtUiKindCheck: int = 1
 const rtUiKindCanvas: int = 2
 const rtUiKindLabel: int = 3
+// FIELD/TEXTVIEW (Task 8): the two kinds this slice's fail-closed gate
+// (rtUiMakeWidgets, below) now creates for real. POPUP=6/TABLE=7 still
+// have no `const` here -- Task 9's own problem, same reasoning the
+// pre-Task-8 comment already gave for this whole block.
+const rtUiKindField: int = 4
+const rtUiKindTextview: int = 5
 
 const rtUiAtXY: int = 0
 const rtUiAtNext: int = 1
@@ -148,8 +154,9 @@ const rtUiFillBoth: int = 1
 const rtUiFlagDefault: int = 1
 const rtUiFlagCancel: int = 2
 const rtUiFlagBuffered: int = 4
-// SCROLL_V=8/SCROLL_H=16 (rt_ui.h): textview-only, no `const` needed --
-// nothing this slice ever tests those bits.
+// SCROLL_V/SCROLL_H (rt_ui.h): textview-only -- live as of Task 8.
+const rtUiFlagScrollV: int = 8
+const rtUiFlagScrollH: int = 16
 
 const rtUiPropCaption: int = 0
 const rtUiPropText: int = 1
@@ -162,6 +169,9 @@ const rtUiPropHeight: int = 6
 const rtUiWevClick: int = 0
 const rtUiWevChange: int = 1
 const rtUiWevDrag: int = 2
+// RTUI_WEV_ENTER (rt_ui.h): field-only, Return/Enter pressed while focused
+// -- no character is inserted (Task 8).
+const rtUiWevEnter: int = 3
 
 // Layout/size constants (rt_ui.c:144-219, the button/check/label/canvas
 // subset -- field/textview/popup/table's own H/W constants have no
@@ -179,11 +189,29 @@ const rtUiLabelW: int = 150
 const rtUiCanvasW: int = 200
 const rtUiScrollbarW: int = 15
 
+// field/textview natural size + labeled-field lane width (rt_ui.c:180-195,
+// Task 8). RTUI_FIELD_BOX_W = RTUI_FIELD_W - RTUI_FIELD_LABEL_W = 130.
+const rtUiFieldH: int = 20
+const rtUiFieldW: int = 200
+const rtUiTextviewH: int = 100
+const rtUiTextviewW: int = 200
+const rtUiFieldLabelW: int = 70
+const rtUiFieldBoxW: int = 130
+const rtUiTeFrameInset: int = 3
+const rtUiTeNowrapW: int = 2000
+const rtUiHscrollStep: int = 8
+const rtUiFieldTextMax: int = 255
+const rtUiTeMax: int = 32000
+
 // pushButProc/checkBoxProc (Universal Interfaces' ControlDefinitions.h --
 // standard Control Manager procID constants, Inside Macintosh I): the
 // `procId` NewControl argument selecting a button vs. a checkbox CDEF.
 const rtUiProcIdPushButton: int = 0
 const rtUiProcIdCheckBox: int = 1
+// scrollBarProc (ControlDefinitions.h/Multiverse.h:12048, Task 8): the
+// standard scrollbar CDEF's procID -- a textview's own V/H scrollbar
+// controls (rtUiMakeWidgets, below).
+const rtUiProcIdScrollBar: int = 16
 
 // ================================================================
 // Per-instance array-slot accessors (RtUiWinst's ctrls/rects/labels/
@@ -213,6 +241,25 @@ func rtUiLabelAt(w: RtUiWinst, i: int): ptr {
 
 func rtUiCanvasBufAt(w: RtUiWinst, i: int): ptr {
     return w.canvases + i * rtUiCanvasBufSize
+}
+
+// rtUiTeAt/rtUiSetTeAt/rtUiHbarAt/rtUiSetHbarAt (Task 8): same
+// per-instance array-slot idiom as rtUiCtrlAt/rtUiSetCtrlAt above, over the
+// tes/hbars arrays uidesc.cla's RtUiWinst gained this task.
+func rtUiTeAt(w: RtUiWinst, i: int): ptr {
+    return ptr(peekl(w.tes + i * 4))
+}
+
+func rtUiSetTeAt(w: RtUiWinst, i: int, v: ptr) {
+    pokel(w.tes + i * 4, int(v))
+}
+
+func rtUiHbarAt(w: RtUiWinst, i: int): ptr {
+    return ptr(peekl(w.hbars + i * 4))
+}
+
+func rtUiSetHbarAt(w: RtUiWinst, i: int, v: ptr) {
+    pokel(w.hbars + i * 4, int(v))
 }
 
 func rtUiEnabledAt(w: RtUiWinst, i: int): bool {
@@ -274,6 +321,12 @@ func rtUiKindHeight(kind: int): int {
     case rtUiKindCanvas {
         return rtUiCanvasH
     }
+    case rtUiKindField {
+        return rtUiFieldH
+    }
+    case rtUiKindTextview {
+        return rtUiTextviewH
+    }
     else {
         return rtUiCheckH
     }
@@ -294,6 +347,12 @@ func rtUiKindWidth(kind: int): int {
     }
     case rtUiKindCanvas {
         return rtUiCanvasW
+    }
+    case rtUiKindField {
+        return rtUiFieldW
+    }
+    case rtUiKindTextview {
+        return rtUiTextviewW
     }
     else {
         return rtUiCheckW
@@ -324,17 +383,14 @@ func rtUiPstrcpy(dst: ptr, src: ptr) {
 }
 
 // ================================================================
-// rt_ui_layout (rt_ui.c:789-926) -> rtUiLayout. Full port EXCEPT the
-// RTUI_FIELD/RTUI_TEXTVIEW branch (labeled-field width calc,
-// rt_ui_te_relayout call) and the RTUI_TABLE branch (rt_ui_table_relayout
-// call) -- both dead this slice, per the fail-closed-gate design (Task 7
-// report log entry #2): no widget of either kind can ever exist in an
-// opened window, so these branches would be unreachable code, not a
-// behavior change. `flushR`/`flushB` (rt_ui.c's own textview-scrollbar-
-// only flush-to-edge booleans) are always false for the same reason --
-// simplified to the plain RTUI_GAP-margin arithmetic directly rather than
-// keeping a dead `false` boolean around. PORT DISCIPLINE RULE: GetPort/
-// SetPort self-assert + restore around the whole function body.
+// rt_ui_layout (rt_ui.c:789-926) -> rtUiLayout. Task 8 adds the RTUI_
+// FIELD/RTUI_TEXTVIEW branch (labeled-field width calc, flushR/flushB
+// fill-edge adjustment, rtUiTeRelayout call, uitext.cla). The RTUI_TABLE
+// branch (rt_ui_table_relayout call) stays dead this slice, per the
+// fail-closed-gate design (Task 7 report log entry #2): no TABLE widget
+// can ever exist in an opened window yet (Task 9), so that one branch
+// would still be unreachable code. PORT DISCIPLINE RULE: GetPort/SetPort
+// self-assert + restore around the whole function body.
 // ================================================================
 
 func rtUiLayout(inst: ptr) {
@@ -350,12 +406,15 @@ func rtUiLayout(inst: ptr) {
     var i: int
     var kind: int
     var atKind: int
+    var flags: int
     var x: int
     var y: int
     var ww: int
     var hh: int
     var widthIsFill: bool
     var fillBoth: bool
+    var flushR: bool
+    var flushB: bool
     var ctrl: ptr
     var ctrlMp: ptr
 
@@ -406,10 +465,34 @@ func rtUiLayout(inst: ptr) {
             y = uidWidgetY(winIdx, i)
         }
 
+        flags = uidWidgetFlags(winIdx, i)
         widthIsFill = uidWidgetWidthIsFill(winIdx, i)
         fillBoth = uidWidgetFillBoth(winIdx, i)
+        // Classic flush scrollbars (rt_ui.c:863-873, Task 8): a fill-to-
+        // edge textview with a scrollbar on that edge puts the bar IN the
+        // window frame rather than floating RTUI_GAP px inside it.
+        flushR = false
+        if kind == rtUiKindTextview and (flags & rtUiFlagScrollV) != 0 and (widthIsFill or fillBoth) {
+            flushR = true
+        }
+        flushB = false
+        if kind == rtUiKindTextview and (flags & rtUiFlagScrollH) != 0 and fillBoth {
+            flushB = true
+        }
         if widthIsFill or fillBoth {
-            ww = contentW - x - rtUiGap
+            if flushR {
+                ww = contentW - x + 1
+            } else {
+                ww = contentW - x - rtUiGap
+            }
+        } else if kind == rtUiKindField and peekb(rtUiLabelAt(w, i)) > 0 {
+            // Labeled field: `width:` is the EDIT BOX; the label lane is
+            // added on top (rt_ui.c:876-880).
+            if uidWidgetWidth(winIdx, i) == 0 {
+                ww = rtUiFieldBoxW + rtUiFieldLabelW
+            } else {
+                ww = uidWidgetWidth(winIdx, i) + rtUiFieldLabelW
+            }
         } else if uidWidgetWidth(winIdx, i) == 0 {
             ww = rtUiKindWidth(kind)
         } else {
@@ -419,7 +502,11 @@ func rtUiLayout(inst: ptr) {
             ww = 0
         }
         if fillBoth {
-            hh = contentH - y - rtUiGap
+            if flushB {
+                hh = contentH - y + 1
+            } else {
+                hh = contentH - y - rtUiGap
+            }
             if hh < 0 {
                 hh = 0
             }
@@ -427,11 +514,19 @@ func rtUiLayout(inst: ptr) {
 
         UiSetRect(rtUiRectAt(w, i), x, y, x + ww, y + hh)
 
-        ctrl = rtUiCtrlAt(w, i)
-        if ctrl != ptr(0) {
-            ctrlMp = UiHandleDeref(ctrl)
-            UiMoveControl(ctrl, x, y)
-            UiSizeControl(ctrl, ww, hh)
+        if kind == rtUiKindField or kind == rtUiKindTextview {
+            // Derives the TE view/dest rect (and, for a textview, moves/
+            // sizes its own scrollbar control(s)) from the rect just SetRect
+            // above -- covers both the initial layout and any later resize
+            // re-layout (uitext.cla).
+            rtUiTeRelayout(inst, i)
+        } else {
+            ctrl = rtUiCtrlAt(w, i)
+            if ctrl != ptr(0) {
+                ctrlMp = UiHandleDeref(ctrl)
+                UiMoveControl(ctrl, x, y)
+                UiSizeControl(ctrl, ww, hh)
+            }
         }
 
         prevLeft = x
@@ -444,20 +539,25 @@ func rtUiLayout(inst: ptr) {
 }
 
 // ================================================================
-// rt_ui_make_widgets (rt_ui.c:1175-1421, IN-SCOPE PORTION ONLY) ->
-// rtUiMakeWidgets. THE fail-closed gate lives here (Task 7 report log
-// entry #2): every widget kind this slice can actually create
-// (BUTTON/CHECK/LABEL/CANVAS) gets an explicit case; anything else
-// (FIELD/TEXTVIEW/POPUP/TABLE, or any future kind) hits a named log+quit
-// -- Tasks 8-10 replace this ONE gate's `else` arm, function by function,
-// as each kind gets ported; nothing downstream of this gate (layout,
-// property get/set, click/update dispatch) needs its OWN fail-closed
-// arm, since none of those kinds can ever reach an opened window.
+// rt_ui_make_widgets (rt_ui.c:1175-1421, IN-SCOPE PORTION: BUTTON/CHECK/
+// LABEL/CANVAS from Task 7, FIELD/TEXTVIEW added Task 8) -> rtUiMakeWidgets.
+// THE fail-closed gate lives here (Task 7 report log entry #2): every
+// widget kind this slice can actually create gets an explicit case;
+// anything else (POPUP/TABLE, or any future kind) hits a named log+quit --
+// Tasks 9-10 replace this ONE gate's `else` arm, function by function, as
+// each kind gets ported; nothing downstream of this gate (layout, property
+// get/set, click/update dispatch) needs its OWN fail-closed arm, since none
+// of those kinds can ever reach an opened window.
 // contrlRfCon poke (rt_ui.c:1409's `(*ctrl)->contrlRfCon = i`): Task 7
 // report log entry #8, ControlRecord.contrlRfCon at offset 36, a plain
 // native-order 4-byte store (`pokel`) -- this is real Toolbox struct
 // memory (not blob data), so native order is correct, not uidesc.cla's
 // big-endian `uidI32` (which is only for the blob's own portable bytes).
+// Task 8: the generic poke is now guarded `kind != rtUiKindTextview`
+// (rt_ui.c:1410's own `wd->kind != RTUI_TEXTVIEW` guard) -- a textview's
+// OWN ctrls[i] (its vertical scrollbar) already got its own tagged
+// contrlRfCon (0x8000|i) directly inside the TEXTVIEW case, below; letting
+// the generic poke run afterward would stomp that tag back to a plain `i`.
 // PORT DISCIPLINE RULE: GetPort/SetPort self-assert + restore.
 // ================================================================
 
@@ -473,6 +573,11 @@ func rtUiMakeWidgets(inst: ptr) {
     var cap: ptr
     var ctrl: ptr
     var ctrlMp: ptr
+    var teH: ptr
+    var teMp: ptr
+    var hb: ptr
+    var hbMp: ptr
+    var flags: int
 
     w = RtUiWinst(inst)
     winIdx = w.winIdx
@@ -507,14 +612,56 @@ func rtUiMakeWidgets(inst: ptr) {
             rtUiSetCtrlAt(w, i, ptr(0))
             rtUiPstrcpy(rtUiLabelAt(w, i), uidWidgetCaption(winIdx, i))
         }
+        case rtUiKindField {
+            // `label:` reuses the labels[]/TETextBox lane RTUI_LABEL
+            // already has (rt_ui.c:1211-1218); the field itself is a TE,
+            // not a Control Manager widget.
+            rtUiSetCtrlAt(w, i, ptr(0))
+            rtUiPstrcpy(rtUiLabelAt(w, i), uidWidgetCaption(winIdx, i))
+            teH = UiTENew(placeholder, placeholder)
+            rtUiSetTeAt(w, i, teH)
+        }
+        case rtUiKindTextview {
+            teH = UiTENew(placeholder, placeholder)
+            rtUiSetTeAt(w, i, teH)
+            // fix-hbar: keep the caret visible on typing/arrow-keys/
+            // clicks, both axes (rt_ui.c:1221-1225).
+            UiTEAutoView(true, teH)
+            flags = uidWidgetFlags(winIdx, i)
+            if (flags & rtUiFlagScrollV) != 0 {
+                ctrl = UiNewControl(w.wp, placeholder, emptyStr, true, 0, 0, 0, rtUiProcIdScrollBar, 0)
+                rtUiSetCtrlAt(w, i, ctrl)
+                // High bit tags this control as a textview's scrollbar (not
+                // a plain widget index), rt_ui.c:1229-1235 -- set directly
+                // here, bypassing the generic poke below (guarded off for
+                // TEXTVIEW).
+                ctrlMp = UiHandleDeref(ctrl)
+                pokel(ctrlMp + 36, 0x8000 | i)
+            } else {
+                rtUiSetCtrlAt(w, i, ptr(0))
+            }
+            if (flags & rtUiFlagScrollH) != 0 {
+                // crOnly = -1: no word wrap, lines break only at CR
+                // (rt_ui.c:1240, TERec.crOnly @ offset 72 -- see uitext.cla
+                // header comment for the full TERec offset derivation).
+                teMp = UiHandleDeref(teH)
+                pokew(teMp + rtUiTeCrOnly, -1)
+                hb = UiNewControl(w.wp, placeholder, emptyStr, true, 0, 0, 0, rtUiProcIdScrollBar, 0)
+                rtUiSetHbarAt(w, i, hb)
+                hbMp = UiHandleDeref(hb)
+                pokel(hbMp + 36, 0xC000 | i)
+            } else {
+                rtUiSetHbarAt(w, i, ptr(0))
+            }
+        }
         else {
-            log("uiport: widget kind not yet supported by the ported UI runtime (field/textview/popup/table land in later tasks)")
+            log("uiport: widget kind not yet supported by the ported UI runtime (popup/table land in later tasks)")
             quit 1
         }
         }
 
         ctrl = rtUiCtrlAt(w, i)
-        if ctrl != ptr(0) {
+        if ctrl != ptr(0) and kind != rtUiKindTextview {
             ctrlMp = UiHandleDeref(ctrl)
             pokel(ctrlMp + 36, i)
         }
@@ -529,16 +676,15 @@ func rtUiMakeWidgets(inst: ptr) {
 // ================================================================
 // Widget property get/set surface (rt_ui.c:5339-5581). Every Str255
 // in/out parameter is `ptr`, never `str` (Task 7 report log entry #6).
-// FIELD/TEXTVIEW-only branches are OMITTED (the C reference's own kind
-// checks would simply never match, since neither kind can ever exist
-// post-gate) rather than ported as dead code -- rtUiWidgetGetStr's
-// FIELD+TEXT case, rtUiWidgetSetText/GetText's TEXTVIEW gate, and
-// rtUiWidgetSetInt/GetInt's popup/table SELECTED cases are the four
-// spots where this collapses a whole C branch into "always the
-// fallback." Trace calls (rtUiTraceSetStr/SetBool/SetInt) are
-// uiscript.cla's (a later section of this same porting pass) -- called
-// here by name per the whole-program-visibility rule (docs/clarus-
-// language-reference.md:736).
+// FIELD+TEXT (rtUiWidgetSetStr/GetStr) and TEXTVIEW (rtUiWidgetGetText/
+// SetText) are live as of Task 8 (rt_ui.c:5364-5454). rtUiWidgetSetInt/
+// GetInt's popup/table SELECTED cases stay OMITTED (Task 9) -- the C
+// reference's own kind checks would simply never match, since neither
+// kind can exist post-gate yet. Trace calls (rtUiTraceSetStr/SetBool/
+// SetInt) are uiscript.cla's -- called here by name per the whole-
+// program-visibility rule (docs/clarus-language-reference.md:736); TE
+// field/text calls (UiTESetText/UiTECalText/...) are declared in
+// uitext.cla, same rule.
 // ================================================================
 
 func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
@@ -547,6 +693,8 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
     var savedPort: ptr
     var kind: int
     var ctrl: ptr
+    var te: ptr
+    var len: int
 
     w = RtUiWinst(instV)
     winIdx = w.winIdx
@@ -555,35 +703,116 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
     kind = uidWidgetKind(winIdx, wIdx)
     rtUiTraceSetStr(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, s)
     ctrl = rtUiCtrlAt(w, wIdx)
+    te = rtUiTeAt(w, wIdx)
     if kind == rtUiKindLabel and prop == rtUiPropText {
         rtUiPstrcpy(rtUiLabelAt(w, wIdx), s)
         UiInvalRect(rtUiRectAt(w, wIdx))
     } else if kind == rtUiKindButton and prop == rtUiPropCaption and ctrl != ptr(0) {
         UiSetControlTitle(ctrl, s)
+    } else if kind == rtUiKindField and prop == rtUiPropText and te != ptr(0) {
+        // Str255 is already capped at 255 bytes structurally, so
+        // rtUiTeMutated's own clamp is a no-op safety net here, not a
+        // real truncation path (rt_ui.c:5364-5374).
+        if s != ptr(0) {
+            len = peekb(s)
+        } else {
+            len = 0
+        }
+        UiTESetText(s + 1, len, te)
+        UiTECalText(te)
+        UiInvalRect(UiHandleDeref(te) + rtUiTeViewRect)
+        rtUiTeMutated(instV, wIdx, false) // PROGRAMMATIC set -- no trace/event
     }
-    // FIELD+TEXT (rt_ui.c:5364-5374) is dead this slice -- see the file
-    // header comment.
     UiSetPort(savedPort)
 }
 
-// rtUiWidgetGetStr (rt_ui.c:5381-5399): the C reference's only live case
-// (FIELD+TEXT) is dead this slice (see file header comment) -- always the
-// zero-length-Pascal-string fallback, matching its own `dst255[0] = 0`
-// default for a non-matching kind/prop.
+// rtUiWidgetGetStr (rt_ui.c:5381-5399): fill-in-place read; a non-matching
+// kind/prop writes a length-0 Pascal string.
 func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int, dst255: ptr) {
+    var w: RtUiWinst
+    var kind: int
+    var te: ptr
+    var teMp: ptr
+    var len: int
+    var hText: ptr
+
+    w = RtUiWinst(instV)
+    kind = uidWidgetKind(w.winIdx, wIdx)
     pokeb(dst255, 0)
+    if kind == rtUiKindField and prop == rtUiPropText {
+        te = rtUiTeAt(w, wIdx)
+        if te != ptr(0) {
+            teMp = UiHandleDeref(te)
+            len = peekw(teMp + rtUiTeTeLength)
+            if len > 255 {
+                len = 255 // defensive only -- rtUiTeMutated already keeps a field's own content <=255
+            }
+            hText = ptr(peekl(teMp + rtUiTeHText))
+            UiBlockMoveData(UiHandleDeref(hText), dst255 + 1, len)
+            pokeb(dst255, len)
+        }
+    }
 }
 
-// rtUiWidgetGetText/rtUiWidgetSetText (rt_ui.c:5401-5454): TEXTVIEW-only
-// in the C reference; dead this slice (see file header comment) -- always
-// takes the "no textview" fallback (a fresh zero-length rt_text via
-// text.cla's already-ported rtTextFromBytes) / a plain no-op,
-// respectively.
+// rtUiWidgetGetText/rtUiWidgetSetText (rt_ui.c:5401-5454): TEXTVIEW's
+// RTUI_PROP_TEXT, bridged via text.cla's rtTextFromBytes/rtTextToBytes.
+// No RT_MAC_TEST trace line (see the C reference's own comment: no `T SET`
+// entry exists for an rt_text value; SetText's own mutation-funnel call
+// already traces `change` when it fires).
 func rtUiWidgetGetText(instV: ptr, wIdx: int, out: ptr) {
-    rtTextFromBytes(out, ptr(0), 0, 0)
+    var w: RtUiWinst
+    var kind: int
+    var te: ptr
+    var teMp: ptr
+    var len: int
+    var hText: ptr
+
+    w = RtUiWinst(instV)
+    kind = uidWidgetKind(w.winIdx, wIdx)
+    te = rtUiTeAt(w, wIdx)
+    if kind != rtUiKindTextview or te == ptr(0) {
+        rtTextFromBytes(out, ptr(0), 0, 0)
+        return
+    }
+    teMp = UiHandleDeref(te)
+    len = peekw(teMp + rtUiTeTeLength)
+    hText = ptr(peekl(teMp + rtUiTeHText))
+    UiHLock(hText)
+    rtTextFromBytes(out, UiHandleDeref(hText), len, len)
+    UiHUnlock(hText)
 }
 
 func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
+    var w: RtUiWinst
+    var kind: int
+    var te: ptr
+    var savedPort: ptr
+    var buf: ptr
+    var copied: int
+
+    w = RtUiWinst(instV)
+    kind = uidWidgetKind(w.winIdx, wIdx)
+    te = rtUiTeAt(w, wIdx)
+    if kind != rtUiKindTextview or te == ptr(0) {
+        return
+    }
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    // A heap scratch buffer, not a stack one (rt_ui.c:5439-5444): RTUI_
+    // TE_MAX (32000) bytes would blow a 68k app's small default stack.
+    // rtTextToBytes itself clamps to bufcap and calls rtSetLastErr on
+    // overflow -- no separate clamp/lasterr call needed here.
+    buf = UiNewPtr(rtUiTeMax)
+    if buf == ptr(0) {
+        rtPanic("out of memory")
+    }
+    copied = rtTextToBytes(t, buf, rtUiTeMax)
+    UiTESetText(buf, copied, te)
+    UiDisposePtr(buf)
+    UiTECalText(te)
+    UiInvalRect(UiHandleDeref(te) + rtUiTeViewRect)
+    rtUiTeMutated(instV, wIdx, false) // PROGRAMMATIC set -- no trace/event
+    UiSetPort(savedPort)
 }
 
 func rtUiWidgetSetBool(instV: ptr, wIdx: int, prop: int, v: bool) {

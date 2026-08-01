@@ -777,3 +777,79 @@ func TestSmokeMandelUIScenarioPorted(t *testing.T) {
 	requireUiPort(t)
 	runUIScenarioBuild(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0, true)
 }
+
+// ==================== native-5e Task 8 (slice B): TextEdit widgets ====================
+//
+// texteditor/texteditor_quit are NOT in this set: examples/texteditor.cla's
+// own .events scripts (testdata/ui/texteditor.events, texteditor_quit.events)
+// use the `answer-save`/`answer-open`/`answer-changes` scripted dialog-
+// answer verbs, which route through askOpen/askSave/askSaveChanges -- Task
+// 10 (slice D) surface, not yet ported (uiscript.cla's scripted interpreter
+// has no `answer-*` verb at all yet; ui.cla's askOpen/askSave/
+// askSaveChanges still hit rtUiDialogsUnported's fail-closed stub). Moved
+// forward to Task 10's own scenario sweep -- see task-8-report.md.
+// texteditor_bigfile IS in this set: its own .events (`launchdoc` + `quit`
+// only) never reaches openPath's askSave/askOpen calls at all (the file is
+// rejected by the too-large guard before either dialog is ever touched),
+// so it only exercises Task 7 (App.openDocument) + the base-runtime
+// `alert()` primitive (rt_alert, unrelated to the UI dialog surface) --
+// confirmed to compile+run without ever calling rtUiDialogsUnported.
+
+func TestTextwidgetsUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "textwidgets", filepath.Join("..", "..", "testdata", "ui", "textwidgets.cla"), 0, true)
+}
+
+func TestEditMenuUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "editmenu", filepath.Join("..", "..", "testdata", "ui", "editmenu.cla"), 0, true)
+}
+
+func TestHscrollUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "hscroll", filepath.Join("..", "..", "testdata", "ui", "hscroll.cla"), 0, true)
+}
+
+func TestOpendocUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "opendoc", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0, true)
+}
+
+func TestOpendocEmptyUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	runUIScenarioBuild(t, "opendoc_empty", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0, true)
+}
+
+// TestTexteditorBigfileUIScenarioPorted mirrors TestTexteditorBigfileUIScenario
+// (above) against the ported lane -- same two-source build (examples/
+// texteditor.cla + testdata/ui/texteditor_bigfile_setup.cla), same
+// alert-text-then-trace comparison, CLARUS_UIPORT=1 threaded through.
+func TestTexteditorBigfileUIScenarioPorted(t *testing.T) {
+	requireUiPort(t)
+	root := repoRoot(t)
+	scenario := "texteditor_bigfile"
+
+	bin := runBuildMacEnv(t, "UITexteditorBigfilePorted", []string{"CLARUS_UIPORT=1"},
+		filepath.Join("..", "..", "examples", "texteditor.cla"),
+		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
+		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", scenario+".events"))
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+
+	if !strings.Contains(out, texteditorBigfileAlertMsg) {
+		t.Fatalf("%s: expected alert message %q in capture, got: %q", scenario, texteditorBigfileAlertMsg, out)
+	}
+	filtered := strings.Replace(out, texteditorBigfileAlertMsg+"\n", "", 1)
+	trace, _ := parseUIOutput(t, filtered)
+
+	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")
+	want, err := os.ReadFile(traceGolden)
+	if err != nil {
+		t.Fatalf("reading trace golden %s: %v", traceGolden, err)
+	}
+	if trace != string(want) {
+		t.Fatalf("%s: trace mismatch:%s", scenario, firstDiff(string(want), trace))
+	}
+	if exitCode != 0 {
+		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
+	}
+}

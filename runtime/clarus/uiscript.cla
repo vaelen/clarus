@@ -724,8 +724,17 @@ func rtUiScriptClick(x: int, y: int, dbl: bool) {
     UiDisposePtr(ev)
 }
 
-// rtUiScriptDrag (rt_ui.c:4144-4167): the TE-hit/focused-field-extend
-// branch (:4164-4166) is omitted -- dead, no field/textview can exist.
+// rtUiScriptDrag (rt_ui.c:4144-4167). Task 8 adds the TE-hit/focused-
+// field-extend branch (rt_ui.c:4164-4166, previously omitted as dead --
+// no field/textview could exist before this task): a scripted `drag`
+// extends the CURRENTLY-focused TE's selection to (x,y), via TEClick's own
+// `extend` flag (the exact mechanism a real click already uses for
+// shift-extend -- TE's own selection math only depends on the anchor and
+// the final point, never the path between them, so this reproduces the
+// identical final selection a real click-hold-drag-release would).
+// Deliberately does NOT start a new TE's focus on a drag (only extends
+// the already-focused one, gated on tIdx == inst->focusIdx) -- "drag" is
+// a continuation of a prior click, not an independent click of its own.
 func rtUiScriptDrag(x: int, y: int) {
     var wherePt: int
     var wpSlot: ptr
@@ -735,6 +744,8 @@ func rtUiScriptDrag(x: int, y: int) {
     var localPt: int
     var cIdxSlot: ptr
     var cIdx: int
+    var tIdxSlot: ptr
+    var tIdx: int
 
     wherePt = (y << 16) | (x & 0xFFFF)
     wpSlot = UiNewPtr(4)
@@ -758,6 +769,17 @@ func rtUiScriptDrag(x: int, y: int) {
         return
     }
     UiDisposePtr(cIdxSlot)
+
+    tIdxSlot = UiNewPtr(4)
+    if rtUiTeHit(inst, localPt, tIdxSlot) {
+        tIdx = peekl(tIdxSlot)
+        UiDisposePtr(tIdxSlot)
+        if tIdx == RtUiWinst(inst).focusIdx and rtUiTeAt(RtUiWinst(inst), tIdx) != ptr(0) {
+            UiTEClick(localPt, true, rtUiTeAt(RtUiWinst(inst), tIdx))
+        }
+        return
+    }
+    UiDisposePtr(tIdxSlot)
 }
 
 func rtUiScriptKey(ch: int) {
@@ -868,9 +890,9 @@ func rtUiScriptZoom() {
 // rtUiScriptEveryPump/rtUiScriptTick (rt_ui.c:4283-4301): `tick N`
 // advances a VIRTUAL tick counter (real TickCount is never consulted in
 // scripted mode) -- same reschedule-from-now policy as rtUiEveryPump
-// (ui.cla), just against rtUiVirtualTicks. rtUiTeIdleFront
-// (rt_ui.c:4299) is omitted -- dead, TE-only (no focused field/textview
-// can ever exist).
+// (ui.cla), just against rtUiVirtualTicks. rtUiTeIdleFront (rt_ui.c:4299,
+// uitext.cla) blinks the frontmost window's focused TE caret, same as a
+// real event-loop iteration (Task 8: live as of this task).
 func rtUiScriptEveryPump() {
     var i: int
     var due: int
@@ -893,6 +915,7 @@ func rtUiScriptEveryPump() {
 func rtUiScriptTick(n: int) {
     rtUiVirtualTicks = rtUiVirtualTicks + n
     rtUiScriptEveryPump()
+    rtUiTeIdleFront()
     rtUiFlushAllBuffered()
 }
 
