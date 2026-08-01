@@ -34,6 +34,18 @@ external func UiSetControlValue(theControl: ptr, newValue: word) = trap 0xA963
 external func UiGetControlValue(theControl: ptr): word = trap 0xA960
 external func UiSetControlTitle(theControl: ptr, title: ptr) = trap 0xA95F
 external func UiDrawControls(theWindow: ptr) = trap 0xA969
+// UiFindControl/UiTrackControl (Controls.h, trap 0xA96C/0xA968, PASCAL
+// convention -- Task 7 Step 4 review fix, controller): missing from
+// Step 1's own extern block despite being THE dispatch path
+// rt_ui_handle_content_click (rt_ui.c:3236-3343) uses for every
+// button/check click -- caught while porting that function. FindControl's
+// `theControl` is itself an OUT-param (`ControlRef *`), needing the same
+// scratch-slot-then-deref pattern as UiGetPort/UiFindWindow.
+// TrackControl's `actionProc` is always `ptr(0)` (NULL) at every call
+// site this slice makes -- no scrollbar/live-tracking action proc is
+// needed for a plain button/check.
+external func UiFindControl(testPoint: int, theWindow: ptr, theControl: ptr): word = trap 0xA96C
+external func UiTrackControl(theControl: ptr, startPoint: int, actionProc: ptr): word = trap 0xA968
 
 // ---- QuickDraw drawing / geometry ----
 // rt_ui_draw_default_outline (:2750-2759, PenSize/FrameRoundRect/
@@ -104,3 +116,944 @@ external func UiClosePort(port: ptr) = trap 0xA87D
 external func UiPortSize(width: word, height: word) = trap 0xA876
 external func UiSetOrigin(h: word, v: word) = trap 0xA878
 external func UiSetPortBits(bm: ptr) = trap 0xA875
+
+// ================================================================
+// Task 7 Step 3: function bodies. Ported directly by the controlling
+// session (not a further-dispatched subagent -- see task-7-report.md's
+// Step 2 entry for why). Everything below reads/writes RtUiWinst/
+// RtUiCanvasBuf (runtime/clarus/uidesc.cla, Step 2) exclusively through
+// that file's own accessors/constants -- never a raw C struct, since none
+// exists (rt_ui.c is dropped from the build under --uiport).
+// ================================================================
+
+// ---- rt_ui.h's RTUI_* constants this slice's code needs (mirrored here
+// since rt_ui.h is a C header, never included by Clarus source; every
+// value cited to its own #define). FIELD=4/TEXTVIEW=5/POPUP=6/TABLE=7
+// have no `const` here -- rtUiMakeWidgets' fail-closed gate (below) is the
+// ONE place that would need them, and it never needs to name them
+// individually (its `else` arm already catches "anything not
+// button/check/label/canvas"). ----
+const rtUiKindButton: int = 0
+const rtUiKindCheck: int = 1
+const rtUiKindCanvas: int = 2
+const rtUiKindLabel: int = 3
+
+const rtUiAtXY: int = 0
+const rtUiAtNext: int = 1
+const rtUiAtRight: int = 2
+const rtUiAtAuto: int = 3
+
+const rtUiFillBoth: int = 1
+
+const rtUiFlagDefault: int = 1
+const rtUiFlagCancel: int = 2
+const rtUiFlagBuffered: int = 4
+// SCROLL_V=8/SCROLL_H=16 (rt_ui.h): textview-only, no `const` needed --
+// nothing this slice ever tests those bits.
+
+const rtUiPropCaption: int = 0
+const rtUiPropText: int = 1
+const rtUiPropEnabled: int = 2
+const rtUiPropChecked: int = 3
+const rtUiPropSelected: int = 4
+const rtUiPropWidth: int = 5
+const rtUiPropHeight: int = 6
+
+const rtUiWevClick: int = 0
+const rtUiWevChange: int = 1
+const rtUiWevDrag: int = 2
+
+// Layout/size constants (rt_ui.c:144-219, the button/check/label/canvas
+// subset -- field/textview/popup/table's own H/W constants have no
+// `const` here for the same reason as the kind constants above).
+const rtUiGap: int = 8
+const rtUiAutoMargin: int = 12
+const rtUiScreenMargin: int = 2
+const rtUiButtonH: int = 20
+const rtUiCheckH: int = 16
+const rtUiLabelH: int = 16
+const rtUiCanvasH: int = 100
+const rtUiButtonW: int = 80
+const rtUiCheckW: int = 90
+const rtUiLabelW: int = 150
+const rtUiCanvasW: int = 200
+const rtUiScrollbarW: int = 15
+
+// pushButProc/checkBoxProc (Universal Interfaces' ControlDefinitions.h --
+// standard Control Manager procID constants, Inside Macintosh I): the
+// `procId` NewControl argument selecting a button vs. a checkbox CDEF.
+const rtUiProcIdPushButton: int = 0
+const rtUiProcIdCheckBox: int = 1
+
+// ================================================================
+// Per-instance array-slot accessors (RtUiWinst's ctrls/rects/labels/
+// canvases/logicalEnabled fields are raw base ADDRESSES, one array per
+// window instance sized to that window's own nWidgets -- not overlay
+// records themselves, since overlay records are a FIXED field set, not a
+// dynamically-sized array; plain peekl/pokel indexing, same idiom
+// RtList's own element access uses internally). Centralized here so every
+// caller below spells "the button control for widget i" the same way.
+// ================================================================
+
+func rtUiCtrlAt(w: RtUiWinst, i: int): ptr {
+    return ptr(peekl(w.ctrls + i * 4))
+}
+
+func rtUiSetCtrlAt(w: RtUiWinst, i: int, v: ptr) {
+    pokel(w.ctrls + i * 4, int(v))
+}
+
+func rtUiRectAt(w: RtUiWinst, i: int): ptr {
+    return w.rects + i * rtUiRectSize
+}
+
+func rtUiLabelAt(w: RtUiWinst, i: int): ptr {
+    return w.labels + i * rtUiLabelSlotSize
+}
+
+func rtUiCanvasBufAt(w: RtUiWinst, i: int): ptr {
+    return w.canvases + i * rtUiCanvasBufSize
+}
+
+func rtUiEnabledAt(w: RtUiWinst, i: int): bool {
+    return peekb(w.logicalEnabled + i) != 0
+}
+
+func rtUiSetEnabledAt(w: RtUiWinst, i: int, v: bool) {
+    if v {
+        pokeb(w.logicalEnabled + i, 1)
+    } else {
+        pokeb(w.logicalEnabled + i, 0)
+    }
+}
+
+// ================================================================
+// Port save/restore scratch (PORT DISCIPLINE RULE, rt_ui.h -- quoted in
+// full in ui.cla's own header comment). UiGetPort's real Toolbox
+// signature is an OUT-parameter (`pascal void GetPort(GrafPtr *port)`),
+// needing the ADDRESS of a ptr-sized slot to write into -- Clarus has no
+// address-of operator for a local variable (same restriction Task 7
+// report log entry #6 already worked out for `str`), so a genuinely
+// fresh scratch slot is allocated, read back, and freed on EVERY call --
+// never a shared/global slot, which would break the moment one
+// port-save/restore bracket calls another function that ALSO does its
+// own port save/restore before the outer one restores (this happens
+// constantly here: rtUiOpen's own bracket, a later step, calls
+// rtUiMakeWidgets/rtUiLayout, each of which brackets its OWN port
+// save/restore around its body).
+func rtUiGetPortSaved(): ptr {
+    var slot: ptr
+    var p: ptr
+
+    slot = UiNewPtr(4)
+    UiGetPort(slot)
+    p = ptr(peekl(slot))
+    UiDisposePtr(slot)
+    return p
+}
+
+// ================================================================
+// rt_ui_kind_height/rt_ui_kind_width (rt_ui.c:725-756) -- only the
+// button/check/label/canvas cases matter this slice; the `else` fallback
+// mirrors the C reference's own `default: return RTUI_CHECK_H/W` exactly
+// (unreachable in practice once rtUiMakeWidgets' fail-closed gate holds,
+// kept for fidelity).
+// ================================================================
+
+func rtUiKindHeight(kind: int): int {
+    switch kind {
+    case rtUiKindButton {
+        return rtUiButtonH
+    }
+    case rtUiKindCheck {
+        return rtUiCheckH
+    }
+    case rtUiKindLabel {
+        return rtUiLabelH
+    }
+    case rtUiKindCanvas {
+        return rtUiCanvasH
+    }
+    else {
+        return rtUiCheckH
+    }
+    }
+    return rtUiCheckH
+}
+
+func rtUiKindWidth(kind: int): int {
+    switch kind {
+    case rtUiKindButton {
+        return rtUiButtonW
+    }
+    case rtUiKindCheck {
+        return rtUiCheckW
+    }
+    case rtUiKindLabel {
+        return rtUiLabelW
+    }
+    case rtUiKindCanvas {
+        return rtUiCanvasW
+    }
+    else {
+        return rtUiCheckW
+    }
+    }
+    return rtUiCheckW
+}
+
+// ================================================================
+// rt_ui_pstrcpy (rt_ui.c:918-925): copies src's Pascal-string bytes into
+// dst (assumed to have room -- every caller targets a 256-byte labels[]
+// slot). src == ptr(0) copies a zero-length string, matching the C
+// reference's own `n = src ? src[0] : 0` null-safety (rt_ui.c's own
+// `kEmptyPStr` fallback becomes unnecessary here for exactly this reason
+// -- this function already treats an absent caption as empty).
+// ================================================================
+
+func rtUiPstrcpy(dst: ptr, src: ptr) {
+    var n: int
+
+    if src == ptr(0) {
+        pokeb(dst, 0)
+        return
+    }
+    n = peekb(src)
+    UiBlockMoveData(src + 1, dst + 1, n)
+    pokeb(dst, n)
+}
+
+// ================================================================
+// rt_ui_layout (rt_ui.c:789-926) -> rtUiLayout. Full port EXCEPT the
+// RTUI_FIELD/RTUI_TEXTVIEW branch (labeled-field width calc,
+// rt_ui_te_relayout call) and the RTUI_TABLE branch (rt_ui_table_relayout
+// call) -- both dead this slice, per the fail-closed-gate design (Task 7
+// report log entry #2): no widget of either kind can ever exist in an
+// opened window, so these branches would be unreachable code, not a
+// behavior change. `flushR`/`flushB` (rt_ui.c's own textview-scrollbar-
+// only flush-to-edge booleans) are always false for the same reason --
+// simplified to the plain RTUI_GAP-margin arithmetic directly rather than
+// keeping a dead `false` boolean around. PORT DISCIPLINE RULE: GetPort/
+// SetPort self-assert + restore around the whole function body.
+// ================================================================
+
+func rtUiLayout(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var savedPort: ptr
+    var contentW: int
+    var contentH: int
+    var prevLeft: int
+    var prevRight: int
+    var prevBottom: int
+    var n: int
+    var i: int
+    var kind: int
+    var atKind: int
+    var x: int
+    var y: int
+    var ww: int
+    var hh: int
+    var widthIsFill: bool
+    var fillBoth: bool
+    var ctrl: ptr
+    var ctrlMp: ptr
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+
+    // wp_content_width/wp_content_height (rt_ui.c:775-787): a WindowPtr's
+    // own embedded GrafPort.portRect IS the window's content rect in
+    // classic Mac OS (content-local coords always start at (0,0)) -- read
+    // directly (Task 7 report log entry #7: portRect at GrafPort offset
+    // 16, fields top/left/bottom/right at +0/+2/+4/+6 within it, so
+    // absolute offsets 16/18/20/22 off the WindowPtr itself, which IS a
+    // GrafPtr since GrafPort is WindowRecord's first field at offset 0).
+    contentW = peekw(w.wp + 22) - peekw(w.wp + 18)
+    contentH = peekw(w.wp + 20) - peekw(w.wp + 16)
+    prevLeft = 0
+    prevRight = 0
+    prevBottom = 0
+
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        kind = uidWidgetKind(winIdx, i)
+        atKind = uidWidgetAtKind(winIdx, i)
+        hh = rtUiKindHeight(kind)
+
+        switch atKind {
+        case rtUiAtRight {
+            x = prevRight + rtUiGap
+        }
+        case rtUiAtNext {
+            x = prevLeft
+        }
+        case rtUiAtAuto {
+            x = rtUiAutoMargin
+        }
+        else {
+            x = uidWidgetX(winIdx, i)
+        }
+        }
+
+        if uidWidgetYIsBottom(winIdx, i) or atKind == rtUiAtAuto {
+            y = prevBottom + rtUiGap
+        } else {
+            y = uidWidgetY(winIdx, i)
+        }
+
+        widthIsFill = uidWidgetWidthIsFill(winIdx, i)
+        fillBoth = uidWidgetFillBoth(winIdx, i)
+        if widthIsFill or fillBoth {
+            ww = contentW - x - rtUiGap
+        } else if uidWidgetWidth(winIdx, i) == 0 {
+            ww = rtUiKindWidth(kind)
+        } else {
+            ww = uidWidgetWidth(winIdx, i)
+        }
+        if ww < 0 {
+            ww = 0
+        }
+        if fillBoth {
+            hh = contentH - y - rtUiGap
+            if hh < 0 {
+                hh = 0
+            }
+        }
+
+        UiSetRect(rtUiRectAt(w, i), x, y, x + ww, y + hh)
+
+        ctrl = rtUiCtrlAt(w, i)
+        if ctrl != ptr(0) {
+            ctrlMp = UiHandleDeref(ctrl)
+            UiMoveControl(ctrl, x, y)
+            UiSizeControl(ctrl, ww, hh)
+        }
+
+        prevLeft = x
+        prevRight = x + ww
+        prevBottom = y + hh
+        i = i + 1
+    }
+
+    UiSetPort(savedPort)
+}
+
+// ================================================================
+// rt_ui_make_widgets (rt_ui.c:1175-1421, IN-SCOPE PORTION ONLY) ->
+// rtUiMakeWidgets. THE fail-closed gate lives here (Task 7 report log
+// entry #2): every widget kind this slice can actually create
+// (BUTTON/CHECK/LABEL/CANVAS) gets an explicit case; anything else
+// (FIELD/TEXTVIEW/POPUP/TABLE, or any future kind) hits a named log+quit
+// -- Tasks 8-10 replace this ONE gate's `else` arm, function by function,
+// as each kind gets ported; nothing downstream of this gate (layout,
+// property get/set, click/update dispatch) needs its OWN fail-closed
+// arm, since none of those kinds can ever reach an opened window.
+// contrlRfCon poke (rt_ui.c:1409's `(*ctrl)->contrlRfCon = i`): Task 7
+// report log entry #8, ControlRecord.contrlRfCon at offset 36, a plain
+// native-order 4-byte store (`pokel`) -- this is real Toolbox struct
+// memory (not blob data), so native order is correct, not uidesc.cla's
+// big-endian `uidI32` (which is only for the blob's own portable bytes).
+// PORT DISCIPLINE RULE: GetPort/SetPort self-assert + restore.
+// ================================================================
+
+func rtUiMakeWidgets(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var savedPort: ptr
+    var placeholder: ptr
+    var emptyStr: ptr
+    var n: int
+    var i: int
+    var kind: int
+    var cap: ptr
+    var ctrl: ptr
+    var ctrlMp: ptr
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+
+    placeholder = UiNewPtr(rtUiRectSize)
+    UiSetRect(placeholder, 0, 0, 0, 0)
+    emptyStr = UiNewPtr(1)
+    pokeb(emptyStr, 0)
+
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        kind = uidWidgetKind(winIdx, i)
+        cap = uidWidgetCaption(winIdx, i)
+        if cap == ptr(0) {
+            cap = emptyStr
+        }
+
+        switch kind {
+        case rtUiKindButton {
+            ctrl = UiNewControl(w.wp, placeholder, cap, true, 0, 0, 1, rtUiProcIdPushButton, 0)
+            rtUiSetCtrlAt(w, i, ctrl)
+        }
+        case rtUiKindCheck {
+            ctrl = UiNewControl(w.wp, placeholder, cap, true, 0, 0, 1, rtUiProcIdCheckBox, 0)
+            rtUiSetCtrlAt(w, i, ctrl)
+        }
+        case rtUiKindLabel, rtUiKindCanvas {
+            rtUiSetCtrlAt(w, i, ptr(0))
+            rtUiPstrcpy(rtUiLabelAt(w, i), uidWidgetCaption(winIdx, i))
+        }
+        else {
+            log("uiport: widget kind not yet supported by the ported UI runtime (field/textview/popup/table land in later tasks)")
+            quit 1
+        }
+        }
+
+        ctrl = rtUiCtrlAt(w, i)
+        if ctrl != ptr(0) {
+            ctrlMp = UiHandleDeref(ctrl)
+            pokel(ctrlMp + 36, i)
+        }
+        i = i + 1
+    }
+
+    UiDisposePtr(emptyStr)
+    UiDisposePtr(placeholder)
+    UiSetPort(savedPort)
+}
+
+// ================================================================
+// Widget property get/set surface (rt_ui.c:5339-5581). Every Str255
+// in/out parameter is `ptr`, never `str` (Task 7 report log entry #6).
+// FIELD/TEXTVIEW-only branches are OMITTED (the C reference's own kind
+// checks would simply never match, since neither kind can ever exist
+// post-gate) rather than ported as dead code -- rtUiWidgetGetStr's
+// FIELD+TEXT case, rtUiWidgetSetText/GetText's TEXTVIEW gate, and
+// rtUiWidgetSetInt/GetInt's popup/table SELECTED cases are the four
+// spots where this collapses a whole C branch into "always the
+// fallback." Trace calls (rtUiTraceSetStr/SetBool/SetInt) are
+// uiscript.cla's (a later section of this same porting pass) -- called
+// here by name per the whole-program-visibility rule (docs/clarus-
+// language-reference.md:736).
+// ================================================================
+
+func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var savedPort: ptr
+    var kind: int
+    var ctrl: ptr
+
+    w = RtUiWinst(instV)
+    winIdx = w.winIdx
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    kind = uidWidgetKind(winIdx, wIdx)
+    rtUiTraceSetStr(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, s)
+    ctrl = rtUiCtrlAt(w, wIdx)
+    if kind == rtUiKindLabel and prop == rtUiPropText {
+        rtUiPstrcpy(rtUiLabelAt(w, wIdx), s)
+        UiInvalRect(rtUiRectAt(w, wIdx))
+    } else if kind == rtUiKindButton and prop == rtUiPropCaption and ctrl != ptr(0) {
+        UiSetControlTitle(ctrl, s)
+    }
+    // FIELD+TEXT (rt_ui.c:5364-5374) is dead this slice -- see the file
+    // header comment.
+    UiSetPort(savedPort)
+}
+
+// rtUiWidgetGetStr (rt_ui.c:5381-5399): the C reference's only live case
+// (FIELD+TEXT) is dead this slice (see file header comment) -- always the
+// zero-length-Pascal-string fallback, matching its own `dst255[0] = 0`
+// default for a non-matching kind/prop.
+func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int, dst255: ptr) {
+    pokeb(dst255, 0)
+}
+
+// rtUiWidgetGetText/rtUiWidgetSetText (rt_ui.c:5401-5454): TEXTVIEW-only
+// in the C reference; dead this slice (see file header comment) -- always
+// takes the "no textview" fallback (a fresh zero-length rt_text via
+// text.cla's already-ported rtTextFromBytes) / a plain no-op,
+// respectively.
+func rtUiWidgetGetText(instV: ptr, wIdx: int, out: ptr) {
+    rtTextFromBytes(out, ptr(0), 0, 0)
+}
+
+func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
+}
+
+func rtUiWidgetSetBool(instV: ptr, wIdx: int, prop: int, v: bool) {
+    var w: RtUiWinst
+    var winIdx: int
+    var savedPort: ptr
+    var kind: int
+    var ctrl: ptr
+
+    w = RtUiWinst(instV)
+    winIdx = w.winIdx
+    savedPort = rtUiGetPortSaved()
+    UiSetPort(w.wp)
+    kind = uidWidgetKind(winIdx, wIdx)
+    rtUiTraceSetBool(uidWinName(winIdx), uidWidgetName(winIdx, wIdx), prop, v)
+    ctrl = rtUiCtrlAt(w, wIdx)
+    if kind == rtUiKindCheck and prop == rtUiPropChecked and ctrl != ptr(0) {
+        if v {
+            UiSetControlValue(ctrl, 1)
+        } else {
+            UiSetControlValue(ctrl, 0)
+        }
+    } else if kind == rtUiKindButton and prop == rtUiPropEnabled and ctrl != ptr(0) {
+        // logicalEnabled (rt_ui.c:5471-5486): remembers the PROGRAM's own
+        // enabled/disabled choice independent of window active/inactive
+        // dimming; only visibly undims right now if this window is
+        // currently frontmost (deferred to the next activate otherwise).
+        rtUiSetEnabledAt(w, wIdx, v)
+        if w.wp == UiFrontWindow() {
+            if v {
+                UiHiliteControl(ctrl, 0)
+            } else {
+                UiHiliteControl(ctrl, 255)
+            }
+        }
+    }
+    UiSetPort(savedPort)
+}
+
+// rtUiWidgetSetInt (rt_ui.c:5490-5541): popup SELECTED and table SELECTED
+// are the C reference's only two cases, both dead this slice (neither
+// kind can ever be created -- rtUiMakeWidgets' fail-closed gate). No-op;
+// Tasks 9/8 add real bodies here when they port those kinds.
+func rtUiWidgetSetInt(instV: ptr, wIdx: int, prop: int, v: int) {
+}
+
+func rtUiWidgetGetBool(instV: ptr, wIdx: int, prop: int): bool {
+    var w: RtUiWinst
+    var winIdx: int
+    var kind: int
+    var ctrl: ptr
+
+    w = RtUiWinst(instV)
+    winIdx = w.winIdx
+    kind = uidWidgetKind(winIdx, wIdx)
+    ctrl = rtUiCtrlAt(w, wIdx)
+    if kind == rtUiKindCheck and prop == rtUiPropChecked and ctrl != ptr(0) {
+        return UiGetControlValue(ctrl) != 0
+    }
+    if kind == rtUiKindButton and prop == rtUiPropEnabled and ctrl != ptr(0) {
+        return rtUiEnabledAt(w, wIdx)
+    }
+    return false
+}
+
+// rtUiWidgetGetInt (rt_ui.c:5563-5580): WIDTH/HEIGHT (from the widget's
+// own laid-out rect) are the live cases this slice; popup/table SELECTED
+// is dead (see rtUiWidgetSetInt's own comment) and falls through to the
+// C reference's own unconditional width fallback, same as it does there.
+func rtUiWidgetGetInt(instV: ptr, wIdx: int, prop: int): int {
+    var w: RtUiWinst
+    var r: ptr
+
+    w = RtUiWinst(instV)
+    r = rtUiRectAt(w, wIdx)
+    if prop == rtUiPropHeight {
+        return peekw(r + 4) - peekw(r + 0)
+    }
+    return peekw(r + 6) - peekw(r + 2)
+}
+
+// ================================================================
+// Canvas offscreen buffer management (rt_ui.c:2122-2196; per the brief's
+// own file split -- "uiwidgets.cla: layout engine + button/check/label/
+// canvas" -- canvas buffer lifecycle lives here, alongside canvas
+// creation/layout; only the "walk every open window" umbrella
+// (rt_ui_flush_all_buffered) moves to ui.cla, Step 4, since it needs the
+// same window-list-walking primitives (windowKind/nextWindow offsets)
+// rtUiQuit/rtUiFront use there).
+// ================================================================
+
+// rtUiScratchBitMap: a single reusable 14-byte scratch Toolbox BitMap
+// (Task 7 report log entry #7's own "RECT / BITMAP HANDLING" recipe,
+// uidesc.cla's header comment) -- lazily allocated once, reused for every
+// SetPortBits/CopyBits call this module makes. Safe to share (unlike
+// rtUiGetPortSaved's OWN necessarily-fresh-per-call scratch): nothing
+// here holds a canvas-drawing call open across ANOTHER canvas-drawing
+// call the way port-save/restore brackets nest around arbitrary callees.
+var rtUiScratchBitMap: ptr = ptr(0)
+
+func rtUiScratchBitMapGet(): ptr {
+    if rtUiScratchBitMap == ptr(0) {
+        rtUiScratchBitMap = UiNewPtr(14)
+    }
+    return rtUiScratchBitMap
+}
+
+// rtUiBitMapFill pokes cb's scattered fields into the shared scratch
+// BitMap at its own real Toolbox layout (baseAddr@0 ptr/4, rowBytes@4
+// short/2, bounds@6 Rect/8 -- Task 7 report log entry #7).
+func rtUiBitMapFill(cb: RtUiCanvasBuf): ptr {
+    var bm: ptr
+
+    bm = rtUiScratchBitMapGet()
+    pokel(bm + 0, int(cb.bitsBaseAddr))
+    pokew(bm + 4, cb.bitsRowBytes)
+    pokew(bm + 6, cb.bitsBoundsTop)
+    pokew(bm + 8, cb.bitsBoundsLeft)
+    pokew(bm + 10, cb.bitsBoundsBottom)
+    pokew(bm + 12, cb.bitsBoundsRight)
+    return bm
+}
+
+func rtUiCanvasDispose(cb: ptr) {
+    var buf: RtUiCanvasBuf
+
+    buf = RtUiCanvasBuf(cb)
+    if buf.port == ptr(0) {
+        return
+    }
+    UiClosePort(buf.port)
+    UiDisposePtr(buf.port)
+    UiDisposePtr(buf.pixels)
+    buf.port = ptr(0)
+    buf.pixels = ptr(0)
+}
+
+func rtUiCanvasMake(cb: ptr, ww: int, hh: int) {
+    var buf: RtUiCanvasBuf
+    var rowBytes: int
+    var bm: ptr
+    var w2: int
+    var h2: int
+
+    w2 = ww
+    h2 = hh
+    if w2 < 1 {
+        w2 = 1
+    }
+    if h2 < 1 {
+        h2 = 1
+    }
+    buf = RtUiCanvasBuf(cb)
+    buf.port = UiNewPtrClear(108) // sizeof(GrafPort) -- Task 7 report log #4
+    if buf.port == ptr(0) {
+        rtPanic("out of memory")
+    }
+    rowBytes = ((w2 + 15) / 16) * 2
+    buf.pixels = UiNewPtrClear(rowBytes * h2)
+    if buf.pixels == ptr(0) {
+        rtPanic("out of memory")
+    }
+    UiOpenPort(buf.port)
+    buf.bitsBaseAddr = buf.pixels
+    buf.bitsRowBytes = rowBytes
+    buf.bitsBoundsTop = 0
+    buf.bitsBoundsLeft = 0
+    buf.bitsBoundsBottom = h2
+    buf.bitsBoundsRight = w2
+    bm = rtUiBitMapFill(buf)
+    UiSetPortBits(bm)
+    UiPortSize(w2, h2)
+    UiSetOrigin(0, 0)
+}
+
+func rtUiCanvasReallocAll(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var n: int
+    var i: int
+    var kind: int
+    var flags: int
+    var r: ptr
+
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        kind = uidWidgetKind(winIdx, i)
+        flags = uidWidgetFlags(winIdx, i)
+        if kind == rtUiKindCanvas and (flags & rtUiFlagBuffered) != 0 {
+            r = rtUiRectAt(w, i)
+            rtUiCanvasDispose(rtUiCanvasBufAt(w, i))
+            rtUiCanvasMake(rtUiCanvasBufAt(w, i), peekw(r + 6) - peekw(r + 2), peekw(r + 4) - peekw(r + 0))
+        }
+        i = i + 1
+    }
+}
+
+// rtUiFlushBufferedCanvases (rt_ui.c:2172-2187): blits every buffered
+// canvas's offscreen content to its window, once per rtUiRun iteration
+// (Ch11's "single copy when the current handler or timer returns to the
+// event loop") and also covers redrawing after an updateEvt.
+func rtUiFlushBufferedCanvases(inst: ptr) {
+    var w: RtUiWinst
+    var winIdx: int
+    var n: int
+    var i: int
+    var buf: RtUiCanvasBuf
+    var bm: ptr
+
+    if inst == ptr(0) {
+        return
+    }
+    w = RtUiWinst(inst)
+    winIdx = w.winIdx
+    n = uidWinNWidgets(winIdx)
+    i = 0
+    while i < n {
+        buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, i))
+        if buf.port != ptr(0) {
+            UiSetPort(w.wp)
+            bm = rtUiBitMapFill(buf)
+            // dstBits = &((GrafPtr)wp)->portBits -- portBits is GrafPort's
+            // own second field, right after `device` (short, 2 bytes), so
+            // offset 2 off the WindowPtr itself (WindowRecord's embedded
+            // GrafPort starts at offset 0 -- Task 7 report log entry #7).
+            // srcRect = &cb->bits.bounds = the scratch BitMap's own
+            // bounds sub-field, offset 6 within its 14-byte layout.
+            UiCopyBits(bm, w.wp + 2, bm + 6, rtUiRectAt(w, i), 0, ptr(0))
+        }
+        i = i + 1
+    }
+}
+
+// ================================================================
+// Canvas drawing ops (rt_ui.c:5583-5723, Ch11) + the 9-entry gray
+// pattern table.
+// ================================================================
+
+record RtUiCanvasTarget {
+    port: ptr
+    dx: int
+    dy: int
+    savedPort: ptr
+}
+
+// rtUiCanvasBegin/rtUiCanvasEnd (rt_ui.c:5596-5619): self-assert/restore
+// the port (PORT DISCIPLINE RULE) around every canvas op, targeting the
+// canvas's own offscreen port (buffered) or the window's port at an
+// offset (unbuffered) either way.
+func rtUiCanvasBegin(instV: ptr, wIdx: int): RtUiCanvasTarget {
+    var w: RtUiWinst
+    var buf: RtUiCanvasBuf
+    var t: RtUiCanvasTarget
+    var r: ptr
+
+    w = RtUiWinst(instV)
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
+    if buf.port != ptr(0) {
+        t.port = buf.port
+        t.dx = 0
+        t.dy = 0
+    } else {
+        t.port = w.wp
+        r = rtUiRectAt(w, wIdx)
+        t.dx = peekw(r + 2)
+        t.dy = peekw(r + 0)
+    }
+    t.savedPort = rtUiGetPortSaved()
+    UiSetPort(t.port)
+    return t
+}
+
+func rtUiCanvasEnd(t: RtUiCanvasTarget) {
+    UiSetPort(t.savedPort)
+}
+
+// rtUiGrayPats (rt_ui.c:5621-5635): nine 8x8 fill patterns, level 0
+// (white) .. 8 (black), an ordered-dither density ramp -- transcribed
+// byte-for-byte from the C reference's own array, lazily allocated once.
+var rtUiGrayPats: ptr = ptr(0)
+
+func rtUiGrayPatsGet(): ptr {
+    var p: ptr
+
+    if rtUiGrayPats != ptr(0) {
+        return rtUiGrayPats
+    }
+    p = UiNewPtr(72)
+    pokeb(p + 0, 0x00)
+    pokeb(p + 1, 0x00)
+    pokeb(p + 2, 0x00)
+    pokeb(p + 3, 0x00)
+    pokeb(p + 4, 0x00)
+    pokeb(p + 5, 0x00)
+    pokeb(p + 6, 0x00)
+    pokeb(p + 7, 0x00)
+    pokeb(p + 8, 0x88)
+    pokeb(p + 9, 0x00)
+    pokeb(p + 10, 0x22)
+    pokeb(p + 11, 0x00)
+    pokeb(p + 12, 0x88)
+    pokeb(p + 13, 0x00)
+    pokeb(p + 14, 0x22)
+    pokeb(p + 15, 0x00)
+    pokeb(p + 16, 0x88)
+    pokeb(p + 17, 0x22)
+    pokeb(p + 18, 0x88)
+    pokeb(p + 19, 0x22)
+    pokeb(p + 20, 0x88)
+    pokeb(p + 21, 0x22)
+    pokeb(p + 22, 0x88)
+    pokeb(p + 23, 0x22)
+    pokeb(p + 24, 0xAA)
+    pokeb(p + 25, 0x22)
+    pokeb(p + 26, 0xAA)
+    pokeb(p + 27, 0x88)
+    pokeb(p + 28, 0xAA)
+    pokeb(p + 29, 0x22)
+    pokeb(p + 30, 0xAA)
+    pokeb(p + 31, 0x88)
+    pokeb(p + 32, 0xAA)
+    pokeb(p + 33, 0x55)
+    pokeb(p + 34, 0xAA)
+    pokeb(p + 35, 0x55)
+    pokeb(p + 36, 0xAA)
+    pokeb(p + 37, 0x55)
+    pokeb(p + 38, 0xAA)
+    pokeb(p + 39, 0x55)
+    pokeb(p + 40, 0x55)
+    pokeb(p + 41, 0xDD)
+    pokeb(p + 42, 0x55)
+    pokeb(p + 43, 0x77)
+    pokeb(p + 44, 0x55)
+    pokeb(p + 45, 0xDD)
+    pokeb(p + 46, 0x55)
+    pokeb(p + 47, 0x77)
+    pokeb(p + 48, 0x77)
+    pokeb(p + 49, 0xDD)
+    pokeb(p + 50, 0x77)
+    pokeb(p + 51, 0xDD)
+    pokeb(p + 52, 0x77)
+    pokeb(p + 53, 0xDD)
+    pokeb(p + 54, 0x77)
+    pokeb(p + 55, 0xDD)
+    pokeb(p + 56, 0x77)
+    pokeb(p + 57, 0xFF)
+    pokeb(p + 58, 0xDD)
+    pokeb(p + 59, 0xFF)
+    pokeb(p + 60, 0x77)
+    pokeb(p + 61, 0xFF)
+    pokeb(p + 62, 0xDD)
+    pokeb(p + 63, 0xFF)
+    pokeb(p + 64, 0xFF)
+    pokeb(p + 65, 0xFF)
+    pokeb(p + 66, 0xFF)
+    pokeb(p + 67, 0xFF)
+    pokeb(p + 68, 0xFF)
+    pokeb(p + 69, 0xFF)
+    pokeb(p + 70, 0xFF)
+    pokeb(p + 71, 0xFF)
+    rtUiGrayPats = p
+    return p
+}
+
+func rtUiCanvasPattern(instV: ptr, wIdx: int, level: int) {
+    var w: RtUiWinst
+    var buf: RtUiCanvasBuf
+    var lv: int
+
+    lv = level
+    if lv < 0 {
+        lv = 0
+    }
+    if lv > 8 {
+        lv = 8
+    }
+    w = RtUiWinst(instV)
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
+    buf.patLevel = lv
+}
+
+func rtUiCanvasClear(instV: ptr, wIdx: int) {
+    var t: RtUiCanvasTarget
+    var w: RtUiWinst
+    var buf: RtUiCanvasBuf
+    var scratch: ptr
+
+    w = RtUiWinst(instV)
+    t = rtUiCanvasBegin(instV, wIdx)
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
+    if buf.port != ptr(0) {
+        scratch = UiNewPtr(rtUiRectSize)
+        UiSetRect(scratch, buf.bitsBoundsLeft, buf.bitsBoundsTop, buf.bitsBoundsRight, buf.bitsBoundsBottom)
+        UiEraseRect(scratch)
+        UiDisposePtr(scratch)
+    } else {
+        UiEraseRect(rtUiRectAt(w, wIdx))
+    }
+    rtUiCanvasEnd(t)
+}
+
+func rtUiCanvasLine(instV: ptr, wIdx: int, x0: int, y0: int, x1: int, y1: int) {
+    var t: RtUiCanvasTarget
+
+    t = rtUiCanvasBegin(instV, wIdx)
+    UiMoveTo(x0 + t.dx, y0 + t.dy)
+    UiLineTo(x1 + t.dx, y1 + t.dy)
+    rtUiCanvasEnd(t)
+}
+
+func rtUiCanvasRect(instV: ptr, wIdx: int, x: int, y: int, ww: int, hh: int, fill: bool) {
+    var t: RtUiCanvasTarget
+    var w: RtUiWinst
+    var buf: RtUiCanvasBuf
+    var r: ptr
+    var pats: ptr
+
+    t = rtUiCanvasBegin(instV, wIdx)
+    w = RtUiWinst(instV)
+    r = UiNewPtr(rtUiRectSize)
+    UiSetRect(r, x + t.dx, y + t.dy, x + t.dx + ww, y + t.dy + hh)
+    if fill {
+        buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
+        pats = rtUiGrayPatsGet()
+        UiFillRect(r, pats + buf.patLevel * 8)
+    } else {
+        UiFrameRect(r)
+    }
+    UiDisposePtr(r)
+    rtUiCanvasEnd(t)
+}
+
+func rtUiCanvasFillCircle(instV: ptr, wIdx: int, x: int, y: int, radius: int) {
+    var t: RtUiCanvasTarget
+    var w: RtUiWinst
+    var buf: RtUiCanvasBuf
+    var box: ptr
+    var pats: ptr
+
+    t = rtUiCanvasBegin(instV, wIdx)
+    w = RtUiWinst(instV)
+    box = UiNewPtr(rtUiRectSize)
+    UiSetRect(box, x + t.dx - radius, y + t.dy - radius, x + t.dx + radius, y + t.dy + radius)
+    buf = RtUiCanvasBuf(rtUiCanvasBufAt(w, wIdx))
+    pats = rtUiGrayPatsGet()
+    UiFillOval(box, pats + buf.patLevel * 8)
+    UiDisposePtr(box)
+    rtUiCanvasEnd(t)
+}
+
+func rtUiCanvasCircle(instV: ptr, wIdx: int, x: int, y: int, radius: int) {
+    var t: RtUiCanvasTarget
+    var box: ptr
+
+    t = rtUiCanvasBegin(instV, wIdx)
+    box = UiNewPtr(rtUiRectSize)
+    UiSetRect(box, x + t.dx - radius, y + t.dy - radius, x + t.dx + radius, y + t.dy + radius)
+    UiFrameOval(box)
+    UiDisposePtr(box)
+    rtUiCanvasEnd(t)
+}
+
+func rtUiCanvasDrawText(instV: ptr, wIdx: int, x: int, y: int, s: ptr) {
+    var t: RtUiCanvasTarget
+
+    t = rtUiCanvasBegin(instV, wIdx)
+    UiMoveTo(x + t.dx, y + t.dy)
+    UiDrawString(s)
+    rtUiCanvasEnd(t)
+}

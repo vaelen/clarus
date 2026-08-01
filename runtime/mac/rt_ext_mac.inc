@@ -332,6 +332,14 @@ void rt_ext_UiSetControlValue(void *theControl, short newValue) { SetControlValu
 short rt_ext_UiGetControlValue(void *theControl) { return (short)GetControlValue((ControlRef)theControl); }
 void rt_ext_UiSetControlTitle(void *theControl, void *title) { SetControlTitle((ControlRef)theControl, (ConstStr255Param)title); }
 void rt_ext_UiDrawControls(void *theWindow) { DrawControls((WindowRef)theWindow); }
+/* rt_ext_UiFindControl/rt_ext_UiTrackControl: Task 7 Step 4 review fix --
+ * see uiwidgets.cla's own comment. */
+short rt_ext_UiFindControl(int32_t testPoint, void *theWindow, void *theControl) {
+    return FindControl(rt_ext_ui_pt(testPoint), (WindowRef)theWindow, (ControlRef *)theControl);
+}
+short rt_ext_UiTrackControl(void *theControl, int32_t startPoint, void *actionProc) {
+    return TrackControl((ControlRef)theControl, rt_ext_ui_pt(startPoint), (ControlActionUPP)actionProc);
+}
 
 void rt_ext_UiMoveTo(short h, short v) { MoveTo(h, v); }
 void rt_ext_UiLineTo(short h, short v) { LineTo(h, v); }
@@ -371,5 +379,195 @@ void rt_ext_UiClosePort(void *port) { ClosePort((GrafPtr)port); }
 void rt_ext_UiPortSize(short width, short height) { PortSize(width, height); }
 void rt_ext_UiSetOrigin(short h, short v) { SetOrigin(h, v); }
 void rt_ext_UiSetPortBits(void *bm) { SetPortBits((const BitMap *)bm); }
+
+/* ==================== Task 7 (native-5e UI port) glue ==================== */
+#include <AppleEvents.h>
+#include <OSUtils.h> /* SetCurrentA5 -- rt_ext_UiCurrentA5 (Task 7 Step 5) */
+
+/* rt_ext_UiStrAddr (Task 7 Step 5, uiscript.cla's own UiStrAddr): the
+ * `string` extern param `s` ALREADY arrives here as a plain address
+ * (the compiler's own str-marshaling did the work at the call site) --
+ * this is a pure identity function, letting Clarus source recover a
+ * `ptr` from a literal/local `string` expression it otherwise has no
+ * address-of operator for (see uiscript.cla's own header comment).
+ */
+void *rt_ext_UiStrAddr(const uint8_t *s) { return (void *)s; }
+
+/* rt_ext_UiCurrentA5: this task's own brief already calls out
+ * "UiCurrentA5 (cprint shim only this task)" as required. */
+void *rt_ext_UiCurrentA5(void) { return (void *)SetCurrentA5(); }
+
+/* rt_ext_UiTestEmit: no-ops unless RT_MAC_TEST (mirrors rt_mac.c's own
+ * pattern -- this task's own brief). `s` is a `ptr` to a fresh rt_text*
+ * (text.cla's own box layout: `{ int32_t rc; Handle h; int32_t len;
+ * int32_t cap; }`, rt_core.inc) -- read its bytes directly and hand them
+ * to the EXISTING rt_test_emit (rt_mac.c:160, NUL-terminated-C-string
+ * convention, unchanged).
+ */
+#ifdef RT_MAC_TEST
+void rt_ext_UiTestEmit(void *s) {
+    rt_text *t = (rt_text *)s;
+    char buf[512];
+    int32_t n = t->len;
+    if (n > (int32_t)sizeof(buf) - 1) n = (int32_t)sizeof(buf) - 1;
+    if (n > 0) memmove(buf, *(t->h), (size_t)n);
+    buf[n] = '\0';
+    rt_test_emit(buf);
+}
+#else
+void rt_ext_UiTestEmit(void *s) { (void)s; }
+#endif
+
+/* rt_ui_test_script's weak default (Task 7 Step 4): moved here from
+ * rt_ui.c, which is dropped from the CMake source list entirely under
+ * CLARUS_UIPORT=1 (build-mac.sh) -- without this, a --uiport build with
+ * no `--events` override (a real, non-scripted build) would leave the
+ * symbol wholly undefined, a link error. Every scripted scenario's own
+ * generated events.c still provides a STRONG override (unchanged
+ * weak/strong precedent, same as rt_app_creator's own, rt_mac.c:380).
+ */
+__attribute__((weak)) const char rt_ui_test_script[] = "";
+
+void rt_ext_UiMacInitToolbox(void) { rt_mac_init_toolbox(); }
+void rt_ext_UiRtQuit(int32_t code) { rt_quit(code); }
+void *rt_ext_UiTestScript(void) { return (void *)rt_ui_test_script; }
+void rt_ext_UiScreenBounds(void *out) { *(Rect *)out = qd.screenBits.bounds; }
+/* rt_ext_UiScreenBits: Task 7 Step 5's own pragmatic snap-data accessor
+ * -- see uiscript.cla's own UiScreenBits comment for why this exists
+ * alongside (not instead of) UiCurrentA5. */
+void rt_ext_UiScreenBits(void *baseAddrOut, void *rowBytesOut, void *boundsOut) {
+    *(void **)baseAddrOut = (void *)qd.screenBits.baseAddr;
+    *(int32_t *)rowBytesOut = (int32_t)qd.screenBits.rowBytes;
+    *(Rect *)boundsOut = qd.screenBits.bounds;
+}
+
+/* rt_ext_UiLaunchReal: rt_ui_launch's real-build branch (rt_ui.c:3963-4028)
+ * adapted verbatim -- AEInstallEventHandler + the 4 pascal AE handlers +
+ * AEDesc decoding stay pure C (no function pointers reach Clarus, per
+ * Task 7 report log entry #3); each handler calls the Task-6-synthesized
+ * dispatcher's own raw C symbol directly (same TU, no extern-indirection
+ * needed) instead of the C reference's own openDoc/startEmpty function-
+ * pointer args (gone: the synthesized dispatchers are always reachable by
+ * name now). Never exercised by any golden scenario (every one is
+ * script-driven, taking rt_ui_launch's OTHER branch, ported in Clarus in
+ * ui.cla's own rtUiLaunch) -- ported for contract completeness.
+ */
+extern void clar_fn_clar_ui_fire_launchdoc(void *path);
+extern void clar_fn_clar_ui_fire_startempty(void);
+
+#define RT_UI_SIZE_HLE_MASK 0x0040 /* isHighLevelEventAware -- see rt_ui.c's own derivation comment, :3780-3798 */
+
+static void rt_ext_ui_pstrcpy(unsigned char *dst, const unsigned char *src) {
+    unsigned char n, i;
+    n = src ? src[0] : 0;
+    for (i = 0; i < n; i++) dst[1 + i] = src[1 + i];
+    dst[0] = n;
+}
+
+static OSErr rt_ext_ui_ae_check_missed(const AppleEvent *evt) {
+    DescType actualType;
+    Size actualSize;
+    if (AEGetAttributePtr(evt, keyMissedKeywordAttr, typeWildCard, &actualType, NULL, 0, &actualSize) == noErr) {
+        return errAEParamMissed;
+    }
+    return noErr;
+}
+
+static pascal OSErr rt_ext_ui_ae_oapp(const AppleEvent *evt, AppleEvent *reply, long refcon) {
+    OSErr err;
+    (void)reply; (void)refcon;
+    err = rt_ext_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
+    clar_fn_clar_ui_fire_startempty();
+    return noErr;
+}
+
+static pascal OSErr rt_ext_ui_ae_odoc(const AppleEvent *evt, AppleEvent *reply, long refcon) {
+    AEDescList docList;
+    long n, i;
+    OSErr err;
+    (void)reply; (void)refcon;
+    if (AEGetParamDesc(evt, keyDirectObject, typeAEList, &docList) != noErr) return noErr;
+    if (AECountItems(&docList, &n) == noErr) {
+        for (i = 1; i <= n; i++) {
+            FSSpec spec;
+            AEKeyword kw;
+            DescType actualType;
+            Size actualSize;
+            short wd;
+            unsigned char path255[256];
+            if (AEGetNthPtr(&docList, i, typeFSS, &kw, &actualType, &spec, (long)sizeof(spec), &actualSize) != noErr) continue;
+            if (OpenWD(spec.vRefNum, spec.parID, 'ERIK', &wd) == noErr) SetVol(NULL, wd);
+            rt_ext_ui_pstrcpy(path255, spec.name);
+            clar_fn_clar_ui_fire_launchdoc(path255);
+        }
+    }
+    AEDisposeDesc(&docList);
+    err = rt_ext_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
+    return noErr;
+}
+
+static pascal OSErr rt_ext_ui_ae_pdoc(const AppleEvent *evt, AppleEvent *reply, long refcon) {
+    (void)evt; (void)reply; (void)refcon;
+    return errAEEventNotHandled;
+}
+
+static pascal OSErr rt_ext_ui_ae_quit(const AppleEvent *evt, AppleEvent *reply, long refcon) {
+    OSErr err;
+    (void)reply; (void)refcon;
+    err = rt_ext_ui_ae_check_missed(evt);
+    if (err != noErr) return err;
+    rt_ext_UiRtQuit(0); /* rt_ui_quit's real cascade is the ported rtUiQuit --
+                            unreachable from here without function pointers,
+                            so this mirrors ONLY the C reference's degenerate
+                            "quit AE with no windows open" case; a real
+                            close-cascade quit-via-AE isn't exercised by any
+                            golden (see this block's own header comment). */
+    return noErr;
+}
+
+void rt_ext_UiLaunchReal(void) {
+    long resp;
+    int aeAware;
+
+    aeAware = 0;
+    if (Gestalt(gestaltAppleEventsAttr, &resp) == noErr && resp != 0) {
+        Handle sizeH = GetResource('SIZE', -1);
+        if (sizeH) {
+            HLock(sizeH);
+            if ((*(short *)*sizeH) & RT_UI_SIZE_HLE_MASK) aeAware = 1;
+            HUnlock(sizeH);
+            ReleaseResource(sizeH);
+        }
+    }
+
+    if (aeAware) {
+        AEInstallEventHandler(kCoreEventClass, kAEOpenApplication, NewAEEventHandlerUPP(rt_ext_ui_ae_oapp), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments, NewAEEventHandlerUPP(rt_ext_ui_ae_odoc), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEPrintDocuments, NewAEEventHandlerUPP(rt_ext_ui_ae_pdoc), 0, false);
+        AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, NewAEEventHandlerUPP(rt_ext_ui_ae_quit), 0, false);
+        return;
+    }
+
+    {
+        short count, i;
+        OSErr msg;
+        CountAppFiles(&msg, &count);
+        if (count > 0) {
+            for (i = 1; i <= count; i++) {
+                AppFile file;
+                unsigned char path255[256];
+                GetAppFiles(i, &file);
+                SetVol(NULL, file.vRefNum);
+                rt_ext_ui_pstrcpy(path255, file.fName);
+                clar_fn_clar_ui_fire_launchdoc(path255);
+            }
+            for (i = 1; i <= count; i++) ClrAppFiles(i);
+        } else {
+            clar_fn_clar_ui_fire_startempty();
+        }
+    }
+}
 
 #endif /* CLARUS_RT_EXT_MAC_INC */

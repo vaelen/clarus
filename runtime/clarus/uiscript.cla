@@ -1,0 +1,1070 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uiscript.cla (native-5e Task 7 Step 5, ported directly by the
+// controlling session -- see task-7-report.md's Step 2 dispatch-log
+// entry): trace helpers (rt_ui.c:373-673, MINUS the dialog answer-queue
+// -- dead this slice, askOpen/askSave/askSaveChanges are outside every
+// one of this slice's own C line ranges) + the scripted-event
+// interpreter + snap (rt_ui.c:4043-4464).
+//
+// Trace vocabulary is byte-exact golden vocabulary (rt_ui.c:373-382's
+// own comment, quoted in this task's brief) -- every verb string below is
+// transcribed character-for-character from the C reference; do not
+// reword.
+//
+// UiStrAddr (below) is this file's own small, load-bearing addition: the
+// ONLY way to get a `ptr` from a Clarus STRING LITERAL (needed for every
+// fixed trace-vocabulary fragment -- "T ", "OPEN", "FIRE", ".", " ", ...)
+// is to round-trip it through an `external func` parameter typed
+// `string` -- extern `string`/`str` params auto-marshal the address of
+// the caller's value (Task 7 report log entry #6's own finding,
+// confirmed again here: `docs/clarus-language-reference.md`'s "a str
+// parameter is marshalled as the address of the caller's Str255" applies
+// to ANY string-typed caller expression, including a literal, not just a
+// blob-computed one) -- an ordinary (non-extern) Clarus function has no
+// such marshaling, so `rtTextAppendStr`'s own `s: ptr` parameter
+// (text.cla) could never accept a literal directly. `UiStrAddr` is a
+// trivial C-level identity function (`rt_ext_UiStrAddr`, rt_ext_mac.inc)
+// that just returns the address the marshaling already produced.
+external func UiStrAddr(s: string): ptr
+
+// UiTestEmit (plan's own reverse-waist glue-extern table): capture-line
+// hook. Declared `ptr` -- every trace line this file builds is a fresh
+// `rt_text*` (text.cla's own `ptr`-typed box handle), and every call
+// site here already treats it as `ptr` throughout (rtTextNew/
+// rtTextAppendStr/etc. are all `ptr`-typed), so a plain `ptr` param is
+// the natural match -- no Str255/`string` round-trip needed. cprint shim
+// -> rt_ext_UiTestEmit (rt_ext_mac.inc): no-ops unless RT_MAC_TEST
+// (mirrors rt_mac.c's own pattern -- this task's own brief).
+external func UiTestEmit(s: ptr)
+
+// UiCurrentA5 (plan's own reverse-waist glue-extern table): the A5 world
+// base, needed by rtUiTestSnap (below) to walk qd.screenBits without a
+// hand-derived offset. cprint shim -> `(void *)SetCurrentA5()`-equivalent
+// (this task's own brief: "UiCurrentA5 (cprint shim only this task)").
+external func UiCurrentA5(): ptr
+
+// ================================================================
+// Scripted-mode flags (rt_ui.c:569-584).
+// ================================================================
+var rtUiScripted: bool = false
+var rtUiScriptDbl: bool = false
+
+// ================================================================
+// Small text-building helpers.
+// ================================================================
+
+// rtUiTextAppendStrSafe: text.cla's rtTextAppendStr assumes a non-null
+// Str255 source; several blob-sourced fields here (App section strings)
+// are legitimately `ptr(0)` (absent) via uidesc.cla's own `-1 -> ptr(0)`
+// convention -- treat that as "append nothing", matching the C
+// reference's own `fields[f] ? fields[f][0] : 0` null-safety
+// (rt_ui_trace_about, rt_ui.c:455-464).
+func rtUiTextAppendStrSafe(t: ptr, s: ptr) {
+    if s != ptr(0) {
+        rtTextAppendStr(t, s)
+    }
+}
+
+// rtUiIntToText: no numeric-formatting builtin exists for ordinary
+// Clarus programs (`numToStr` is clarusc's OWN compiler-internal helper,
+// confirmed unavailable to a plain program by direct test: `undefined:
+// numToStr` from the Go reference's own checker) -- standard
+// divide-by-10 decimal conversion, building digits into a scratch
+// buffer in reverse then appending them back-to-front. Returns a fresh
+// owned Text (caller's job to rtTextAppendText + rtTextRelease it, or
+// just rtTextRelease it directly if it's the whole result).
+func rtUiIntToText(v: int): ptr {
+    var t: ptr
+    var n: int
+    var neg: bool
+    var digits: ptr
+    var i: int
+    var d: int
+
+    t = rtTextNew()
+    n = v
+    neg = n < 0
+    if neg {
+        n = -n
+    }
+    digits = UiNewPtr(16)
+    i = 0
+    if n == 0 {
+        pokeb(digits, int('0'))
+        i = 1
+    } else {
+        while n > 0 {
+            d = n mod 10
+            pokeb(digits + i, int('0') + d)
+            n = n / 10
+            i = i + 1
+        }
+    }
+    if neg {
+        rtTextAppendChar(t, int('-'))
+    }
+    while i > 0 {
+        i = i - 1
+        rtTextAppendChar(t, peekb(digits + i))
+    }
+    UiDisposePtr(digits)
+    return t
+}
+
+// rtUiTextAppendInt: convenience -- append v's decimal text directly
+// into t (the common case; avoids every call site repeating the
+// build-then-append-then-release dance rtUiIntToText alone would need).
+func rtUiTextAppendInt(t: ptr, v: int) {
+    var nt: ptr
+
+    nt = rtUiIntToText(v)
+    rtTextAppendText(t, nt)
+    rtTextRelease(nt)
+}
+
+func rtUiEmitLine(t: ptr) {
+    UiTestEmit(t)
+    rtTextRelease(t)
+}
+
+// ================================================================
+// Trace helpers (rt_ui.c:373-673). Each mirrors its own C function 1:1;
+// the per-WinType instance counter (rt_ui_trace_next_id's own linear
+// scan, rt_ui.c:526-536) collapses to a direct `winIdx`-indexed array
+// read (Task 7 report log entry #5's own redesign already makes this
+// possible -- no descriptor-pointer scan needed).
+// ================================================================
+
+var rtUiTraceWinCounts: ptr = ptr(0)
+var rtUiTraceLastFront: ptr = ptr(0)
+var rtUiDimPrevArr: ptr = ptr(0)
+var rtUiDimFirst: bool = true
+var rtUiStdEditDimPrev: bool = false
+
+// rtUiTraceInit: rt_ui_startup's own trace-bookkeeping setup
+// (rt_ui.c:3742-3748), ported here (uiscript.cla owns every trace-only
+// global) rather than inline in ui.cla's rtUiStartup.
+func rtUiTraceInit() {
+    var nWins: int
+    var nMh: int
+
+    nWins = uidNWins()
+    if nWins > 0 {
+        rtUiTraceWinCounts = UiNewPtrClear(nWins * 4)
+    } else {
+        rtUiTraceWinCounts = ptr(0)
+    }
+    nMh = uidNMenuHandlers()
+    if nMh > 0 {
+        rtUiDimPrevArr = UiNewPtrClear(nMh)
+    } else {
+        rtUiDimPrevArr = ptr(0)
+    }
+    rtUiDimFirst = true
+    rtUiStdEditDimPrev = false
+    rtUiTraceLastFront = ptr(0)
+}
+
+// rtUiTraceNextId (rt_ui.c:526-536): 1-based per-WinType instance
+// counter for T OPEN/CLOSE/FRONT ids.
+func rtUiTraceNextId(winIdx: int): int {
+    var v: int
+
+    if rtUiTraceWinCounts == ptr(0) {
+        return 0
+    }
+    v = peekl(rtUiTraceWinCounts + winIdx * 4) + 1
+    pokel(rtUiTraceWinCounts + winIdx * 4, v)
+    return v
+}
+
+// rtUiTraceOpen/rtUiTraceClose: `T OPEN <name> <id>` / `T CLOSE <name>
+// <id>` (rt_ui_trace_id, rt_ui.c:384-389) -- id is computed here
+// (rtUiTraceNextId) and stashed nowhere else the C reference's own
+// `inst->traceId` field would have cached it; RtUiWinst.traceId (kept
+// for struct-layout parity, uidesc.cla's own header comment) is written
+// here too so a later read (none exists this slice) would still see it.
+func rtUiTraceOpen(winIdx: int, inst: ptr) {
+    var id: int
+    var t: ptr
+    var w: RtUiWinst
+
+    id = rtUiTraceNextId(winIdx)
+    w = RtUiWinst(inst)
+    w.traceId = id
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T OPEN "))
+    rtUiTextAppendStrSafe(t, uidWinName(winIdx))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendInt(t, id)
+    rtUiEmitLine(t)
+}
+
+func rtUiTraceClose(winIdx: int, inst: ptr) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T CLOSE "))
+    rtUiTextAppendStrSafe(t, uidWinName(winIdx))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendInt(t, RtUiWinst(inst).traceId)
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceFire1/rtUiTraceFire2 (rt_ui.c:391-403): `T FIRE <name>.<event>`
+// / `T FIRE <name>.<wname>.<event>`.
+func rtUiTraceFire1(namePtr: ptr, event: string) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T FIRE "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtTextAppendStr(t, UiStrAddr(event))
+    rtUiEmitLine(t)
+}
+
+func rtUiTraceFire2(namePtr: ptr, wnamePtr: ptr, event: string) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T FIRE "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtUiTextAppendStrSafe(t, wnamePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtTextAppendStr(t, UiStrAddr(event))
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceMenuSelectFor (rt_ui.c:419-424): `T FIRE <menu>.<item>.select`
+// -- looks the names up itself (menu/item name blob offsets, via k) so
+// ui.cla's own rtUiMenuDispatch doesn't need to.
+func rtUiTraceMenuSelectFor(k: int) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T FIRE "))
+    rtUiTextAppendStrSafe(t, uidMenuHandlerMenuName(k))
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtUiTextAppendStrSafe(t, uidMenuHandlerItemName(k))
+    rtTextAppendStr(t, UiStrAddr(".select"))
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceEveryFire (rt_ui.c:426-431): `T FIRE every.<n>`.
+func rtUiTraceEveryFire(n: int) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T FIRE every."))
+    rtUiTextAppendInt(t, n)
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceDimCheck/rtUiTraceStdEditDim/rtUiTraceDimFirstDone (rt_ui.c:
+// 433-448, 556-567): `T DIM <menu>.<item> <0/1>` -- only on a CHANGE from
+// the last computed state, and never on rt_ui_startup's own first
+// (pre-any-window) computation (rtUiDimFirst).
+func rtUiTraceDimCheck(k: int, enable: bool) {
+    var prev: int
+    var enableInt: int
+    var t: ptr
+
+    if enable {
+        enableInt = 1
+    } else {
+        enableInt = 0
+    }
+    if rtUiDimPrevArr == ptr(0) {
+        return
+    }
+    prev = peekb(rtUiDimPrevArr + k)
+    if not rtUiDimFirst and prev != enableInt {
+        t = rtTextNew()
+        rtTextAppendStr(t, UiStrAddr("T DIM "))
+        rtUiTextAppendStrSafe(t, uidMenuHandlerMenuName(k))
+        rtTextAppendStr(t, UiStrAddr("."))
+        rtUiTextAppendStrSafe(t, uidMenuHandlerItemName(k))
+        rtTextAppendStr(t, UiStrAddr(" "))
+        rtUiTextAppendInt(t, enableInt)
+        rtUiEmitLine(t)
+    }
+    pokeb(rtUiDimPrevArr + k, enableInt)
+}
+
+// rtUiTraceStdEditDim: same change-detection contract as
+// rtUiTraceDimCheck, but for the 4 fixed Cut/Copy/Paste/Clear items
+// (rt_ui.c:2513-2518) -- traced as a group of 4 T DIM lines.
+func rtUiTraceStdEditDim(enable: bool) {
+    var enableInt: int
+    var t: ptr
+
+    if enable {
+        enableInt = 1
+    } else {
+        enableInt = 0
+    }
+    if rtUiDimFirst or rtUiStdEditDimPrev == enable {
+        rtUiStdEditDimPrev = enable
+        return
+    }
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T DIM "))
+    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+    rtTextAppendStr(t, UiStrAddr(".Cut "))
+    rtUiTextAppendInt(t, enableInt)
+    rtUiEmitLine(t)
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T DIM "))
+    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+    rtTextAppendStr(t, UiStrAddr(".Copy "))
+    rtUiTextAppendInt(t, enableInt)
+    rtUiEmitLine(t)
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T DIM "))
+    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+    rtTextAppendStr(t, UiStrAddr(".Paste "))
+    rtUiTextAppendInt(t, enableInt)
+    rtUiEmitLine(t)
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T DIM "))
+    rtUiTextAppendStrSafe(t, uidMenuTitle(rtUiStdEditMenuIdx))
+    rtTextAppendStr(t, UiStrAddr(".Clear "))
+    rtUiTextAppendInt(t, enableInt)
+    rtUiEmitLine(t)
+    rtUiStdEditDimPrev = enable
+}
+
+func rtUiTraceDimFirstDone() {
+    rtUiDimFirst = false
+}
+
+// rtUiTraceFrontCheck (rt_ui.c:544-554): `T FRONT <name> <id>`, only
+// when the frontmost-of-ours WINDOW actually changed.
+func rtUiTraceFrontCheck() {
+    var wp: ptr
+    var cur: ptr
+    var t: ptr
+
+    wp = UiFrontWindow()
+    if rtUiIsOurs(wp) {
+        cur = ptr(UiGetWRefCon(wp))
+    } else {
+        cur = ptr(0)
+    }
+    if cur == rtUiTraceLastFront {
+        return
+    }
+    rtUiTraceLastFront = cur
+    if cur != ptr(0) {
+        t = rtTextNew()
+        rtTextAppendStr(t, UiStrAddr("T FRONT "))
+        rtUiTextAppendStrSafe(t, uidWinName(RtUiWinst(cur).winIdx))
+        rtTextAppendStr(t, UiStrAddr(" "))
+        rtUiTextAppendInt(t, RtUiWinst(cur).traceId)
+        rtUiEmitLine(t)
+    }
+}
+
+// rtUiTraceAbout (rt_ui.c:449-467): `T ABOUT <name>|<version>|<author>|
+// <about>`.
+func rtUiTraceAbout() {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T ABOUT "))
+    rtUiTextAppendStrSafe(t, uidAppName())
+    rtTextAppendStr(t, UiStrAddr("|"))
+    rtUiTextAppendStrSafe(t, uidAppVersion())
+    rtTextAppendStr(t, UiStrAddr("|"))
+    rtUiTextAppendStrSafe(t, uidAppAuthor())
+    rtTextAppendStr(t, UiStrAddr("|"))
+    rtUiTextAppendStrSafe(t, uidAppAbout())
+    rtUiEmitLine(t)
+}
+
+// rtUiPropName (rt_ui.c:469-485): Ch8's own runtime-property names.
+func rtUiPropNamePtr(prop: int): ptr {
+    if prop == rtUiPropCaption {
+        return UiStrAddr("caption")
+    }
+    if prop == rtUiPropText {
+        return UiStrAddr("text")
+    }
+    if prop == rtUiPropEnabled {
+        return UiStrAddr("enabled")
+    }
+    if prop == rtUiPropChecked {
+        return UiStrAddr("checked")
+    }
+    if prop == rtUiPropSelected {
+        return UiStrAddr("selected")
+    }
+    if prop == rtUiPropWidth {
+        return UiStrAddr("width")
+    }
+    if prop == rtUiPropHeight {
+        return UiStrAddr("height")
+    }
+    return UiStrAddr("?")
+}
+
+// rtUiTraceSetStr/SetBool/SetInt (rt_ui.c:487-517): `T SET
+// <name>.<wname>.<prop> <value>`.
+func rtUiTraceSetStr(namePtr: ptr, wnamePtr: ptr, prop: int, s: ptr) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T SET "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtUiTextAppendStrSafe(t, wnamePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtTextAppendStr(t, rtUiPropNamePtr(prop))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendStrSafe(t, s)
+    rtUiEmitLine(t)
+}
+
+func rtUiTraceSetBool(namePtr: ptr, wnamePtr: ptr, prop: int, v: bool) {
+    var t: ptr
+    var vi: int
+
+    if v {
+        vi = 1
+    } else {
+        vi = 0
+    }
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T SET "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtUiTextAppendStrSafe(t, wnamePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtTextAppendStr(t, rtUiPropNamePtr(prop))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendInt(t, vi)
+    rtUiEmitLine(t)
+}
+
+func rtUiTraceSetInt(namePtr: ptr, wnamePtr: ptr, prop: int, v: int) {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T SET "))
+    rtUiTextAppendStrSafe(t, namePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtUiTextAppendStrSafe(t, wnamePtr)
+    rtTextAppendStr(t, UiStrAddr("."))
+    rtTextAppendStr(t, rtUiPropNamePtr(prop))
+    rtTextAppendStr(t, UiStrAddr(" "))
+    rtUiTextAppendInt(t, v)
+    rtUiEmitLine(t)
+}
+
+// rtUiTraceOpenDoc (rt_ui.c:3956-3958's own inline `T OPENDOC %s`):
+// pathPtr/pathLen name a RAW byte range (NOT Str255 -- rtUiLaunch's own
+// script-scan already has the path as [ptr, len) straight out of the
+// script text, no Pascal length byte).
+func rtUiTraceOpenDoc(pathPtr: ptr, pathLen: int) {
+    var t: ptr
+    var pathText: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr("T OPENDOC "))
+    pathText = rtTextNew()
+    rtTextFromBytes(pathText, pathPtr, pathLen, pathLen)
+    rtTextAppendText(t, pathText)
+    rtTextRelease(pathText)
+    rtUiEmitLine(t)
+}
+
+// ================================================================
+// UiScreenBits: a pragmatic, deliberately narrower alternative to
+// hand-deriving qd's A5-relative offset in Clarus for rtUiTestSnap's own
+// data needs (screenBits.baseAddr/rowBytes/bounds) -- `UiCurrentA5` is
+// still declared+implemented above per this task's own required
+// contract (a later task's native-lane qd-globals access will need it
+// for real), but getting screen-framebuffer bytes wrong here would
+// silently corrupt every scenario's own snap/PBM comparison, the
+// highest-stakes byte-exact surface this whole port has -- a thin,
+// unambiguous C-side accessor removes all A5-arithmetic risk from the
+// one call site that matters most. ponytail: narrower than the plan's
+// own "UiCurrentA5 for qd-globals access" phrasing suggests, but correct
+// and safe; revisit if a later task's native-lane snap path needs
+// rtUiTestSnap itself to go through `UiCurrentA5` specifically.
+// ================================================================
+external func UiScreenBits(baseAddrOut: ptr, rowBytesOut: ptr, boundsOut: ptr)
+
+// ================================================================
+// Small string/number utilities the scripted interpreter needs (no
+// libc-style helpers exist for ordinary Clarus programs -- str/int
+// parsing and comparison are hand-rolled here, same spirit as
+// rtUiIntToText above).
+// ================================================================
+
+// rtUiStrEq: byte-compare two NUL-terminated buffers (NOT Str255 --
+// every scripted-verb token this file builds is a raw C-string-shaped
+// scratch buffer, see rtUiScriptTokenize below).
+func rtUiStrEq(a: ptr, b: ptr): bool {
+    var i: int
+
+    i = 0
+    while true {
+        if peekb(a + i) != peekb(b + i) {
+            return false
+        }
+        if peekb(a + i) == 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// rtUiAtoi: decimal (optionally negative) parse of a NUL-terminated
+// buffer, stopping at the first non-digit -- same tolerant behavior C's
+// own `atoi` has (rt_ui_script_click/_menu/_resize/_tick all use atoi on
+// unvalidated script args).
+func rtUiAtoi(s: ptr): int {
+    var i: int
+    var neg: bool
+    var v: int
+    var c: int
+
+    i = 0
+    neg = false
+    if peekb(s) == int('-') {
+        neg = true
+        i = 1
+    }
+    v = 0
+    while true {
+        c = peekb(s + i)
+        if c < int('0') or c > int('9') {
+            break
+        }
+        v = v * 10 + (c - int('0'))
+        i = i + 1
+    }
+    if neg {
+        v = -v
+    }
+    return v
+}
+
+// rtUiScriptKeyArg (rt_ui.c:4201-4213): an all-digit arg1 is a decimal
+// byte CODE (`key 13` sends Return); otherwise the literal first
+// character (`key x` sends 'x').
+func rtUiScriptKeyArg(s: ptr): int {
+    var i: int
+    var allDigits: bool
+    var c: int
+
+    if peekb(s) == 0 {
+        return 0
+    }
+    allDigits = true
+    i = 0
+    while peekb(s + i) != 0 {
+        c = peekb(s + i)
+        if c < int('0') or c > int('9') {
+            allDigits = false
+        }
+        i = i + 1
+    }
+    if allDigits {
+        return rtUiAtoi(s)
+    }
+    return peekb(s)
+}
+
+// rtUiTextAppendCStr: append a NUL-terminated (not Str255) buffer's
+// bytes -- used for scripted-verb args (rtUiScriptTokenize's own output
+// buffers), which carry no Pascal length prefix.
+func rtUiTextAppendCStr(t: ptr, s: ptr) {
+    var n: int
+    var scratch: ptr
+
+    n = 0
+    while peekb(s + n) != 0 {
+        n = n + 1
+    }
+    scratch = rtTextNew()
+    rtTextFromBytes(scratch, s, n, n)
+    rtTextAppendText(t, scratch)
+    rtTextRelease(scratch)
+}
+
+// ================================================================
+// Script line reading + tokenizing (rt_ui_script_next_line, rt_ui.c:
+// 4053-4068; the verb/arg1/arg2 sscanf split, rt_ui_run_scripted's own
+// `sscanf(line, "%31s %63s %63s", ...)`, rt_ui.c:4380).
+// ================================================================
+
+var rtUiScriptCursor: ptr = ptr(0)
+var rtUiScriptCursorInit: bool = false
+var rtUiScriptLineBuf: ptr = ptr(0)
+var rtUiScriptLineLen: int = 0
+var rtUiVerbBuf: ptr = ptr(0)
+var rtUiArg1Buf: ptr = ptr(0)
+var rtUiArg2Buf: ptr = ptr(0)
+var rtUiVirtualTicks: int = 0
+
+func rtUiScriptNextLine(): bool {
+    var n: int
+
+    if not rtUiScriptCursorInit {
+        rtUiScriptCursor = UiTestScript()
+        rtUiScriptCursorInit = true
+    }
+    if rtUiScriptLineBuf == ptr(0) {
+        rtUiScriptLineBuf = UiNewPtr(256)
+    }
+    while true {
+        if peekb(rtUiScriptCursor) == 0 {
+            return false
+        }
+        n = 0
+        while peekb(rtUiScriptCursor) != 0 and peekb(rtUiScriptCursor) != 10 {
+            if n < 255 {
+                pokeb(rtUiScriptLineBuf + n, peekb(rtUiScriptCursor))
+                n = n + 1
+            }
+            rtUiScriptCursor = rtUiScriptCursor + 1
+        }
+        if peekb(rtUiScriptCursor) == 10 {
+            rtUiScriptCursor = rtUiScriptCursor + 1
+        }
+        pokeb(rtUiScriptLineBuf + n, 0)
+        rtUiScriptLineLen = n
+        if n > 0 {
+            return true
+        }
+    }
+    return false
+}
+
+func rtUiSkipSpaces(p: int): int {
+    var q: int
+
+    q = p
+    while q < rtUiScriptLineLen and peekb(rtUiScriptLineBuf + q) == int(' ') {
+        q = q + 1
+    }
+    return q
+}
+
+func rtUiCopyToken(p: int, dst: ptr, maxLen: int): int {
+    var q: int
+    var n: int
+
+    q = p
+    n = 0
+    while q < rtUiScriptLineLen and peekb(rtUiScriptLineBuf + q) != int(' ') {
+        if n < maxLen {
+            pokeb(dst + n, peekb(rtUiScriptLineBuf + q))
+            n = n + 1
+        }
+        q = q + 1
+    }
+    pokeb(dst + n, 0)
+    return q
+}
+
+func rtUiScriptTokenize() {
+    var p: int
+
+    if rtUiVerbBuf == ptr(0) {
+        rtUiVerbBuf = UiNewPtr(64)
+        rtUiArg1Buf = UiNewPtr(64)
+        rtUiArg2Buf = UiNewPtr(64)
+    }
+    p = rtUiSkipSpaces(0)
+    p = rtUiCopyToken(p, rtUiVerbBuf, 63)
+    p = rtUiSkipSpaces(p)
+    p = rtUiCopyToken(p, rtUiArg1Buf, 63)
+    p = rtUiSkipSpaces(p)
+    p = rtUiCopyToken(p, rtUiArg2Buf, 63)
+}
+
+// ================================================================
+// Scripted verb actions (rt_ui.c:4092-4365). Each fires through the
+// EXACT SAME dispatch a real event would (rtUiHandleMouseDown/
+// rtUiHandleKey/rtUiMenuDispatch/rtUiApplyResize/rtUiApplyZoom/
+// rtUiClose, all ui.cla), same as the C reference's own design intent
+// (its own comments on each function, quoted per-function below only
+// where the port diverges).
+// ================================================================
+
+func rtUiScriptClick(x: int, y: int, dbl: bool) {
+    var ev: ptr
+
+    ev = UiNewPtr(16)
+    pokew(ev + 0, 1) // mouseDown
+    pokel(ev + 2, 0)
+    pokel(ev + 6, 0)
+    pokew(ev + 10, y) // where.v
+    pokew(ev + 12, x) // where.h
+    pokew(ev + 14, 0)
+    rtUiScriptDbl = dbl
+    rtUiHandleMouseDown(ev)
+    rtUiScriptDbl = false
+    UiDisposePtr(ev)
+}
+
+// rtUiScriptDrag (rt_ui.c:4144-4167): the TE-hit/focused-field-extend
+// branch (:4164-4166) is omitted -- dead, no field/textview can exist.
+func rtUiScriptDrag(x: int, y: int) {
+    var wherePt: int
+    var wpSlot: ptr
+    var part: int
+    var wp: ptr
+    var inst: ptr
+    var localPt: int
+    var cIdxSlot: ptr
+    var cIdx: int
+
+    wherePt = (y << 16) | (x & 0xFFFF)
+    wpSlot = UiNewPtr(4)
+    part = UiFindWindow(wherePt, wpSlot)
+    wp = ptr(peekl(wpSlot))
+    UiDisposePtr(wpSlot)
+    if part != 3 or wp != UiFrontWindow() {
+        return
+    }
+    inst = rtUiWinstOf(wp)
+    if inst == ptr(0) {
+        return
+    }
+    UiSetPort(wp)
+    localPt = rtUiGlobalToLocalPt(wherePt)
+    cIdxSlot = UiNewPtr(4)
+    if rtUiCanvasHit(inst, localPt, cIdxSlot) {
+        cIdx = peekl(cIdxSlot)
+        UiDisposePtr(cIdxSlot)
+        rtUiFireCanvasXY(inst, cIdx, rtUiWevDrag, localPt)
+        return
+    }
+    UiDisposePtr(cIdxSlot)
+}
+
+func rtUiScriptKey(ch: int) {
+    var ev: ptr
+
+    ev = UiNewPtr(16)
+    pokew(ev + 0, 3) // keyDown
+    pokel(ev + 2, ch)
+    pokel(ev + 6, 0)
+    pokel(ev + 10, 0)
+    pokew(ev + 14, 0)
+    rtUiHandleKey(ev)
+    UiDisposePtr(ev)
+}
+
+// rtUiScriptType (rt_ui.c:4390-4403): the rest-of-line after "type "
+// (can contain spaces, so it bypasses rtUiScriptTokenize's own
+// space-delimited args entirely, reading straight off
+// rtUiScriptLineBuf).
+func rtUiScriptType() {
+    var p: int
+
+    p = 4 // strlen("type")
+    if peekb(rtUiScriptLineBuf + p) == int(' ') {
+        p = p + 1
+    }
+    while p < rtUiScriptLineLen {
+        rtUiScriptKey(peekb(rtUiScriptLineBuf + p))
+        p = p + 1
+    }
+}
+
+func rtUiScriptClose() {
+    var wp: ptr
+    var inst: ptr
+
+    wp = UiFrontWindow()
+    if wp == ptr(0) {
+        return
+    }
+    inst = rtUiWinstOf(wp)
+    if inst != ptr(0) {
+        rtUiClose(inst)
+    }
+}
+
+func rtUiScriptResize(w: int, h: int) {
+    var wp: ptr
+    var inst: ptr
+
+    wp = UiFrontWindow()
+    if wp == ptr(0) {
+        return
+    }
+    inst = rtUiWinstOf(wp)
+    if inst != ptr(0) and uidWinResizable(RtUiWinst(inst).winIdx) {
+        rtUiApplyResize(wp, inst, w, h)
+    }
+}
+
+// rtUiScriptZoom (rt_ui.c:4255-4274): direction chosen by comparing the
+// window's CURRENT content bounds against the standard zoom rect.
+func rtUiScriptZoom() {
+    var wp: ptr
+    var inst: ptr
+    var screenBoundsSlot: ptr
+    var screenW: int
+    var screenH: int
+    var std: ptr
+    var contRgnH: ptr
+    var contRgnMp: ptr
+    var content: ptr
+    var part: int
+    var eq: bool
+
+    wp = UiFrontWindow()
+    if wp == ptr(0) {
+        return
+    }
+    inst = rtUiWinstOf(wp)
+    if inst == ptr(0) or not uidWinResizable(RtUiWinst(inst).winIdx) {
+        return
+    }
+    screenBoundsSlot = UiNewPtr(rtUiRectSize)
+    UiScreenBounds(screenBoundsSlot)
+    screenW = peekw(screenBoundsSlot + 6) - peekw(screenBoundsSlot + 2)
+    screenH = peekw(screenBoundsSlot + 4) - peekw(screenBoundsSlot + 0)
+    UiDisposePtr(screenBoundsSlot)
+    std = UiNewPtr(rtUiRectSize)
+    UiSetRect(std, 4, rtUiMenubarH + rtUiTitlebarH, screenW - rtUiScreenMargin, screenH - rtUiScreenMargin)
+
+    contRgnH = ptr(peekl(wp + 118))
+    contRgnMp = ptr(peekl(contRgnH))
+    content = UiNewPtr(rtUiRectSize)
+    UiBlockMoveData(contRgnMp + 2, content, rtUiRectSize)
+
+    eq = UiEqualRect(content, std)
+    UiDisposePtr(content)
+    UiDisposePtr(std)
+    if eq {
+        part = 7 // inZoomIn
+    } else {
+        part = 8 // inZoomOut
+    }
+    rtUiApplyZoom(wp, inst, part)
+}
+
+// rtUiScriptEveryPump/rtUiScriptTick (rt_ui.c:4283-4301): `tick N`
+// advances a VIRTUAL tick counter (real TickCount is never consulted in
+// scripted mode) -- same reschedule-from-now policy as rtUiEveryPump
+// (ui.cla), just against rtUiVirtualTicks. rtUiTeIdleFront
+// (rt_ui.c:4299) is omitted -- dead, TE-only (no focused field/textview
+// can ever exist).
+func rtUiScriptEveryPump() {
+    var i: int
+    var due: int
+
+    if rtUiEveryDueArr == ptr(0) {
+        return
+    }
+    i = 0
+    while i < rtUiNEveryVal {
+        due = peekl(rtUiEveryDueArr + i * 4)
+        if rtUiVirtualTicks - due >= 0 {
+            pokel(rtUiEveryDueArr + i * 4, rtUiVirtualTicks + uidEveryTicks(i))
+            rtUiTraceEveryFire(i)
+            UiFireEvery(i)
+        }
+        i = i + 1
+    }
+}
+
+func rtUiScriptTick(n: int) {
+    rtUiVirtualTicks = rtUiVirtualTicks + n
+    rtUiScriptEveryPump()
+    rtUiFlushAllBuffered()
+}
+
+// rtUiScriptMenu (rt_ui.c:4346-4365): bar position M / 1-based item I ->
+// native (menuID, itemNum) is the IDENTITY mapping (see the C reference's
+// own extensive comment on why) -- `menu 2 1` is the first declared
+// menu's first item.
+func rtUiScriptMenu(m: int, itemNum: int) {
+    rtUiMenuDispatch((m << 16) | (itemNum & 0xFFFF))
+}
+
+// ================================================================
+// rtUiPumpPassive (rt_ui.c:4077-4090): drains queued update/activate
+// events after every scripted action, so InvalRect'd content actually
+// reaches the screen bits before the next action or a `snap` -- same as
+// what a real WaitNextEvent-driven loop would have processed by now.
+// rt_ui_tables_sync's own call (rt_ui.c:4085) is omitted -- dead, tables
+// aren't ported this slice.
+// ================================================================
+
+func rtUiPumpPassive() {
+    var ev: ptr
+    var what: int
+    var gotEvent: bool
+
+    ev = UiNewPtr(16)
+    gotEvent = UiGetNextEvent(0x0140, ev) // updateMask|activMask
+    while gotEvent {
+        what = peekw(ev + 0)
+        if what == 6 {
+            rtUiHandleUpdate(ptr(peekl(ev + 2)))
+        } else if what == 8 {
+            rtUiHandleActivate(ptr(peekl(ev + 2)), (peekw(ev + 14) & 0x1) != 0)
+        }
+        gotEvent = UiGetNextEvent(0x0140, ev)
+    }
+    UiDisposePtr(ev)
+}
+
+// ================================================================
+// Snap (rt_ui.c:4303-4344): hex-dumps the FULL screen framebuffer
+// between `##CLARUS-SNAP## <name>`/`##CLARUS-SNAP-END##` sentinels, 128
+// uppercase hex chars (64 source bytes) per line. rowBytes is asserted
+// (not just assumed) to be 64, matching the C reference's own contract.
+// ================================================================
+
+func rtUiHexDigit(d: int): int {
+    if d < 10 {
+        return int('0') + d
+    }
+    return int('A') + (d - 10)
+}
+
+func rtUiHexLineText(src: ptr): ptr {
+    var t: ptr
+    var i: int
+    var b: int
+
+    t = rtTextNew()
+    i = 0
+    while i < 64 {
+        b = peekb(src + i)
+        rtTextAppendChar(t, rtUiHexDigit((b >> 4) & 0xF))
+        rtTextAppendChar(t, rtUiHexDigit(b & 0xF))
+        i = i + 1
+    }
+    return t
+}
+
+func rtUiTestSnap(namePtr: ptr) {
+    var baseAddrSlot: ptr
+    var rowBytesSlot: ptr
+    var boundsSlot: ptr
+    var baseAddr: ptr
+    var rowBytes: int
+    var rows: int
+    var total: int
+    var off: int
+    var hdr: ptr
+
+    baseAddrSlot = UiNewPtr(4)
+    rowBytesSlot = UiNewPtr(4)
+    boundsSlot = UiNewPtr(rtUiRectSize)
+    UiScreenBits(baseAddrSlot, rowBytesSlot, boundsSlot)
+    baseAddr = ptr(peekl(baseAddrSlot))
+    rowBytes = peekl(rowBytesSlot)
+    if rowBytes != 64 {
+        rtPanic("snap: screenBits.rowBytes is not 64")
+    }
+    rows = peekw(boundsSlot + 4) - peekw(boundsSlot + 0)
+    UiDisposePtr(baseAddrSlot)
+    UiDisposePtr(rowBytesSlot)
+    UiDisposePtr(boundsSlot)
+
+    total = rows * rowBytes
+
+    hdr = rtTextNew()
+    rtTextAppendStr(hdr, UiStrAddr("##CLARUS-SNAP## "))
+    rtUiTextAppendCStr(hdr, namePtr)
+    rtUiEmitLine(hdr)
+
+    off = 0
+    while off < total {
+        rtUiEmitLine(rtUiHexLineText(baseAddr + off))
+        off = off + 64
+    }
+
+    rtUiEmitLine(rtUiLitLine("##CLARUS-SNAP-END##"))
+}
+
+// rtUiLitLine: build a fresh Text from a single string literal --
+// convenience for a "whole line is one fixed literal" emit (used above;
+// every OTHER trace helper interleaves literals with blob/computed data
+// so builds its own Text piecemeal instead).
+func rtUiLitLine(s: string): ptr {
+    var t: ptr
+
+    t = rtTextNew()
+    rtTextAppendStr(t, UiStrAddr(s))
+    return t
+}
+
+// ================================================================
+// rtUiRunScripted (rt_ui.c:4367-4464): the main scripted-event loop.
+// `answer-open`/`answer-save`/`answer-changes`/`answer-cancel`/
+// `answer-popup` (the dialog answer queue, rt_ui.c:4421-4454) are a
+// named log+quit fail-closed arm -- this task's own porting rule
+// ("answer queue SHELL only... unknown verb = log+quit") and Task 7
+// report log entry on the fail-closed-gate design: these verbs are real
+// and C-reference-implemented, but this slice never ports the queue
+// itself (dialogs/popups are Tasks 9-10), so a script naming one hits
+// the SAME catch-all as a genuinely unrecognized verb. `launchdoc` is a
+// real, explicit no-op (already consumed once by rtUiLaunch's own
+// pre-scan, rt_ui.c:4455-4461's own comment) -- NOT fail-closed.
+// ================================================================
+
+func rtUiRunScripted() {
+    rtUiScripted = true
+    UiHideCursor()
+    while true {
+        if not rtUiScriptNextLine() {
+            rtUiQuit()
+            return
+        }
+        rtUiScriptTokenize()
+
+        if rtUiStrEq(rtUiVerbBuf, UiStrAddr("click")) {
+            rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), false)
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("dblclick")) {
+            rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), true)
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("drag")) {
+            rtUiScriptDrag(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("key")) {
+            rtUiScriptKey(rtUiScriptKeyArg(rtUiArg1Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("type")) {
+            rtUiScriptType()
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("menu")) {
+            rtUiScriptMenu(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("close")) {
+            rtUiScriptClose()
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("resize")) {
+            rtUiScriptResize(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("zoom")) {
+            rtUiScriptZoom()
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("tick")) {
+            rtUiScriptTick(rtUiAtoi(rtUiArg1Buf))
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {
+            rtUiTestSnap(rtUiArg1Buf)
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("quit")) {
+            rtUiQuit()
+        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) {
+            // no-op: consumed once, up front, by rtUiLaunch's own
+            // pre-scan -- must not fire a second time here.
+        } else if peekb(rtUiVerbBuf) == 0 {
+            // blank/whitespace-only line (sscanf found no tokens in the
+            // C reference): nothing to dispatch.
+        } else {
+            log("uiport: unknown or unsupported scripted verb (dialog answer-* verbs land in Tasks 9-10)")
+            quit 1
+        }
+        rtUiPumpPassive()
+    }
+}

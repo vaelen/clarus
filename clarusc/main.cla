@@ -591,6 +591,15 @@ on App.startCLI(args: list of string) {
             neededMods.add("uidesc.cla")
             neededMods.add("ui.cla")
             neededMods.add("uiwidgets.cla")
+            // Task 7 Step 5: uiscript.cla (trace helpers + scripted
+            // interpreter + snap) -- spliced last of the four ui*.cla
+            // modules; its own trace helpers are called BY ui.cla/
+            // uiwidgets.cla (whole-program visibility makes the splice
+            // order itself irrelevant to that -- see docs/clarus-
+            // language-reference.md:736), so this position is only
+            // "last" by the brief's own stated file-creation order, not
+            // a real dependency requirement.
+            neededMods.add("uiscript.cla")
         }
         // The manifest: Task 4 (Plan 5b) shipped exactly this one usage-
         // flag/file pair (ser.cla) plus the machinery; Task 7 repointed
