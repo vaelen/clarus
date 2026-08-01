@@ -137,6 +137,16 @@ func TestNativeFixedOps(t *testing.T) {
 	runNativeHostCompare(t, "fixedops.cla")
 }
 
+// TestNativeArrWholeAssign is native-5e Task 2's (5d final-review C1) boot
+// test for whole-fixed-array assignment (`b = a` / `r.field = arrVar` /
+// `lst[i] = row` for `arr N of T`) -- testdata/cg68k/arr_whole_assign.cla,
+// the same regression matrix as testdata/lowlevel/arr_whole_assign.cla
+// (that copy is the host-lane cprint-vs-host-cc oracle under
+// internal/lowlevel; this one is the Go-compiler-vs-native-boot oracle).
+func TestNativeArrWholeAssign(t *testing.T) {
+	runNativeHostCompare(t, "arr_whole_assign.cla")
+}
+
 // TestNativeSmokeForcedMultiSegment is native-5d Task 15's forced-
 // multi-segment boot proof: the SAME known-good smoke.cla TestNativeSmoke
 // already boots successfully with the default (real, 32760-byte)

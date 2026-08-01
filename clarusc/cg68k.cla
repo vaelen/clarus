@@ -3163,7 +3163,11 @@ func cgEmitStoreErr(dst: int, src: int) {
 // EVarRef/EFieldRef/EIndexRef -- cgStmt's SAssign arm only calls this for
 // those three, cgExprAddr handles all three (cgIndexRefAddr included).
 // cgSizeOf(KArr) is already the element-padded full array size (the file
-// header's own LAYOUT AUTHORITY), so a raw byte copy is correct.
+// header's own LAYOUT AUTHORITY), so a raw byte copy is correct -- PROVIDED
+// the element type doesn't cgNeedsRelease (the caller, cgStmt's SAssign
+// arm, fails closed before ever reaching here otherwise; this function
+// itself has no ARC awareness and must not be called for a handle-bearing
+// element type).
 func cgEmitStoreArr(dst: int, src: int) {
     var sz: int
 
@@ -6332,6 +6336,26 @@ func cgStmt(s: int) {
             // address+block-copy the KRec/KErr catch-alls above already
             // use. Was a fail-closed log+quit until this task; see git
             // history for the prior placeholder's reasoning.
+            //
+            // Fix-round-1 (review): a raw block copy is only sound for
+            // scalar (or scalar-only-record) elements -- an element type
+            // that itself cgNeedsRelease (text[n]/list of/map of, or a
+            // handle-bearing record element) would have its handle
+            // duplicated by the copy with NO retain, and the dst's OLD
+            // handle (if any) never released: a silent double-release/
+            // use-after-free, strictly worse than the build error this
+            // task is replacing. cgNeedsRelease(dstKind's own KArr type)
+            // already recurses into the element type (cg68k.cla:1978-1980),
+            // so this one call covers nested arrays and handle-bearing
+            // record elements alike. Fail closed here exactly like the
+            // pre-task placeholder did for the whole KArr case; the
+            // upgrade path is a retain/release walk over the block copy
+            // (mirroring cgRetainAt/cgReleaseAt's own KArr loop) -- a
+            // future task, not this one.
+            if cgNeedsRelease(irExprType(dst)) {
+                log("cg68k: cgStmt: SAssign: whole-array assignment of handle-bearing elements unsupported natively -- assign element-wise")
+                quit 1
+            }
             cgEmitStoreArr(dst, irAssignSrc(s))
         } else {
             // Fail-closed rule (5d): any OTHER dst shape this backend

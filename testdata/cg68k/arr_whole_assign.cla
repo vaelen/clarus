@@ -1,31 +1,30 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// arr_whole_assign.cla: native-5e Task 2 (5d final-review C1) regression
-// fixture for cg68k's whole-fixed-array assignment (`b = a` / `r.field =
-// arrVar`, for `arr N of T` -- Ch3's copy-by-value rule for T[n]). Until
-// this task, cg68k's SAssign arm had no KArr codegen and failed closed
-// (log+quit, cg68k.cla's own prior comment) for exactly this shape; the
-// host/cprint lane already gets it right (a plain C struct copy), so this
-// fixture's value under the internal/lowlevel harness is a host-lane
-// regression gate (must stay green across the fix) plus the emit68k build
-// itself is the pre/post-fix signal for the native side (see the task
-// report for the emit68k-fails-then-succeeds evidence).
+// arr_whole_assign.cla: native-5e Task 2 (5d final-review C1) native boot
+// gate -- TestNativeArrWholeAssign (internal/mactest/native_test.go) builds
+// this BOTH ways via runNativeHostCompare: the host expectation via
+// build.Build (the Go compiler -- this fixture is deliberately
+// Go-compiler-compatible, no Ch13 surface, same discipline as smoke.cla's
+// own header comment), and the native image via `clarusc emit68k`, then
+// requires the emulator's captured output to be byte-identical to the
+// host's stdout. Content is the same regression matrix as
+// testdata/lowlevel/arr_whole_assign.cla (that copy is the host-lane
+// cprint-vs-host-cc/strict-leak-gate oracle under internal/lowlevel; this
+// one is the Go-compiler-vs-native-boot oracle under internal/mactest --
+// two different toolchains/oracles per the existing testdata/cg68k vs
+// testdata/lowlevel split, same fixture shape, deliberately kept as two
+// physical files rather than an include so each corpus stays self-
+// contained per its own harness's glob/build conventions).
 //
 // Each case: build a source array/record, whole-assign it into a
 // destination, then MUTATE the source afterward and assert the destination
-// kept the original values (Ch3 copy-by-value, not aliasing).
-//
-// `Pt[3]` (arr N of Rec) IS legal per the reference (Ch3's T[n] table plus
-// the existing arc_fixwave_arrays.cla `Item[3]`/`Holder.items: Item[3]`
-// precedent) -- included below. Pt is deliberately scalar-only (no text/
-// list/map field): a whole-array block copy of a HANDLE-bearing record
-// element would need its own ARC retain/release walk, which is a separate,
-// pre-existing gap in cg68k's whole-record-copy support (cgEmitStoreRec's
-// own generic tail is already a raw block copy for KRec, with no retain
-// call) -- out of scope for this task, which only wires up KArr's own
-// address+block-copy codegen per the brief's own "raw byte copy is
-// correct" scoping to the element-padding layout.
+// kept the original values (Ch3 copy-by-value, not aliasing). `Pt[3]` (arr
+// N of Rec) is deliberately scalar-only (no text/list/map field) -- a
+// whole-array block copy of a HANDLE-bearing element fails closed instead
+// (cg68k.cla's cgNeedsRelease guard, testdata/lowlevel/arr_whole_assign.cla's
+// own header comment has the full rationale; not exercised here since this
+// fixture is asserting the SUCCESS path).
 
 record Box {
     ints: int[4]

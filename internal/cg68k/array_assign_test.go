@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,44 @@ func TestSAssignWholeArraySucceeds(t *testing.T) {
 	}
 	if !bytes.Equal(want, got) {
 		t.Fatalf("%s: vasm round-trip diverged (encoder %d bytes, vasm %d bytes)", segS, len(want), len(got))
+	}
+}
+
+// TestSAssignWholeArrayHandleElemFailsClosed is fix-round-1's regression:
+// a scalar-element whole-array assign now succeeds (TestSAssignWholeArraySucceeds
+// above), but an element type that itself needs ARC release (text[n] here;
+// same for list-of/map-of or a handle-bearing record element) must still
+// fail closed -- cgEmitStoreArr's raw block copy has no retain/release walk,
+// so silently allowing it would duplicate the handle with no retain and
+// leak/UAF the dst's old value. Pins the exact named error cgStmt's SAssign
+// KArr arm now raises for this shape, mirroring the pre-Task-2 pinned-error
+// test this file used to have for the (now-fixed) scalar case.
+func TestSAssignWholeArrayHandleElemFailsClosed(t *testing.T) {
+	exe := buildClarusc(t)
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "wholearraytext.cla")
+	body := `on App.launch {
+    var a: text[2]
+    var b: text[2]
+    a[0] = "x"
+    b = a
+}
+`
+	if err := os.WriteFile(src, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outBin := filepath.Join(dir, "out.bin")
+	cmd := exec.Command(exe, "emit68k", "-o", outBin, src)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("emit68k unexpectedly succeeded on a handle-bearing whole-array assignment:\n%s", out)
+	}
+	if !strings.Contains(string(out), "whole-array assignment of handle-bearing elements unsupported natively") {
+		t.Fatalf("expected the named handle-bearing-element fail-closed error, got:\n%s", out)
+	}
+	if _, statErr := os.Stat(outBin); statErr == nil {
+		t.Errorf("emit68k left a .bin behind despite the whole-array-assign error")
 	}
 }
