@@ -1,0 +1,109 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// arr_whole_assign.cla: native-5e Task 2 (5d final-review C1) regression
+// fixture for cg68k's whole-fixed-array assignment (`b = a` / `r.field =
+// arrVar`, for `arr N of T` -- Ch3's copy-by-value rule for T[n]). Until
+// this task, cg68k's SAssign arm had no KArr codegen and failed closed
+// (log+quit, cg68k.cla's own prior comment) for exactly this shape; the
+// host/cprint lane already gets it right (a plain C struct copy), so this
+// fixture's value under the internal/lowlevel harness is a host-lane
+// regression gate (must stay green across the fix) plus the emit68k build
+// itself is the pre/post-fix signal for the native side (see the task
+// report for the emit68k-fails-then-succeeds evidence).
+//
+// Each case: build a source array/record, whole-assign it into a
+// destination, then MUTATE the source afterward and assert the destination
+// kept the original values (Ch3 copy-by-value, not aliasing).
+//
+// `Pt[3]` (arr N of Rec) IS legal per the reference (Ch3's T[n] table plus
+// the existing arc_fixwave_arrays.cla `Item[3]`/`Holder.items: Item[3]`
+// precedent) -- included below. Pt is deliberately scalar-only (no text/
+// list/map field): a whole-array block copy of a HANDLE-bearing record
+// element would need its own ARC retain/release walk, which is a separate,
+// pre-existing gap in cg68k's whole-record-copy support (cgEmitStoreRec's
+// own generic tail is already a raw block copy for KRec, with no retain
+// call) -- out of scope for this task, which only wires up KArr's own
+// address+block-copy codegen per the brief's own "raw byte copy is
+// correct" scoping to the element-padding layout.
+
+record Box {
+    ints: int[4]
+}
+
+record Pt {
+    x: int
+    y: int
+}
+
+on App.startCLI(args: list of string) {
+    var a: int[4]
+    var b: int[4]
+    var c: char[3]
+    var d: char[3]
+    var r: Box
+    var pa: Pt[3]
+    var pb: Pt[3]
+
+    // int[4] whole assign, then mutate the source.
+    a[0] = 10
+    a[1] = 20
+    a[2] = 30
+    a[3] = 40
+    b = a
+    a[0] = 999
+    a[1] = 999
+    a[2] = 999
+    a[3] = 999
+    if b[0] == 10 and b[1] == 20 and b[2] == 30 and b[3] == 40 {
+        alert("int-copy-ok")
+    } else {
+        alert("int-copy-FAIL")
+    }
+
+    // char[3] whole assign, then mutate the source.
+    c[0] = 'x'
+    c[1] = 'y'
+    c[2] = 'z'
+    d = c
+    c[0] = 'q'
+    c[1] = 'q'
+    c[2] = 'q'
+    if d[0] == 'x' and d[1] == 'y' and d[2] == 'z' {
+        alert("char-copy-ok")
+    } else {
+        alert("char-copy-FAIL")
+    }
+
+    // r.field = arrVar (EFieldRef dst), then mutate the source and confirm
+    // the record field's copy is independent.
+    r.ints = b
+    if r.ints[0] == 10 and r.ints[1] == 20 and r.ints[2] == 30 and r.ints[3] == 40 {
+        alert("field-copy-ok")
+    } else {
+        alert("field-copy-FAIL")
+    }
+    b[0] = 555
+    if r.ints[0] == 10 {
+        alert("field-copy-independent-ok")
+    } else {
+        alert("field-copy-independent-FAIL")
+    }
+
+    // Pt[3] (arr N of Rec, scalar-only element) whole assign, then mutate
+    // the source.
+    pa[0].x = 1
+    pa[0].y = 2
+    pa[1].x = 3
+    pa[1].y = 4
+    pa[2].x = 5
+    pa[2].y = 6
+    pb = pa
+    pa[0].x = 999
+    pa[1].y = 999
+    if pb[0].x == 1 and pb[0].y == 2 and pb[1].x == 3 and pb[1].y == 4 and pb[2].x == 5 and pb[2].y == 6 {
+        alert("rec-arr-copy-ok")
+    } else {
+        alert("rec-arr-copy-FAIL")
+    }
+}

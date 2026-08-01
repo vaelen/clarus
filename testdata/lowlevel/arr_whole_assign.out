@@ -1,0 +1,5 @@
+int-copy-ok
+char-copy-ok
+field-copy-ok
+field-copy-independent-ok
+rec-arr-copy-ok

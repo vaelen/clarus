@@ -3150,6 +3150,32 @@ func cgEmitStoreErr(dst: int, src: int) {
     cgBlockCopy(sz)
 }
 
+// cgEmitStoreArr (5e final-review C1) is whole-fixed-array assignment
+// (`b = a`, `r.field = arrVar`, for `arr N of T` -- Ch3's copy-by-value
+// rule) via address+block-copy: identical generic tail to
+// cgEmitStoreRec/cgEmitStoreErr's own default arm (same A0/A1-across-call
+// clobber discipline -- src's address is computed and pushed BEFORE dst's
+// address computation touches A0/D-scratch, so no intervening JSR can
+// clobber either address once both are live in A0/A1). No ENewRec/ECallFn
+// fast-path needed here (unlike cgEmitStoreRec): there is no array
+// constructor expr in the IR, and cgExprAddr's own materialize fallback
+// already covers any non-addressable src generically. dst is always
+// EVarRef/EFieldRef/EIndexRef -- cgStmt's SAssign arm only calls this for
+// those three, cgExprAddr handles all three (cgIndexRefAddr included).
+// cgSizeOf(KArr) is already the element-padded full array size (the file
+// header's own LAYOUT AUTHORITY), so a raw byte copy is correct.
+func cgEmitStoreArr(dst: int, src: int) {
+    var sz: int
+
+    sz = cgSizeOf(irExprType(dst))
+    cgExprAddr(src)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(dst)
+    a68Emit(OpMovea, 4, AmAn, 0, 0, AmAn, 1, 0)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgBlockCopy(sz)
+}
+
 // cgEmitReturnRec mirrors cgEmitStoreStr/cgEmitReturnRec's own str sibling
 // (cgEmitReturnStr) for a `return <rec expr>` inside a function whose
 // return needs a hidden pointer: the destination is the POINTER VALUE
@@ -6299,22 +6325,21 @@ func cgStmt(s: int) {
             cgEmitStoreRec(dst, irAssignSrc(s))
         } else if (dstK == EVarRef or dstK == EFieldRef) and dstKind == KErr {
             cgEmitStoreErr(dst, irAssignSrc(s))
+        } else if (dstK == EVarRef or dstK == EFieldRef or dstK == EIndexRef) and dstKind == KArr {
+            // 5e (final-review C1): whole-fixed-array assignment (`b = a`
+            // / `r.field = arr` for `arr N of T`) -- Ch3 documents fixed
+            // arrays as copy-by-value; cgEmitStoreArr does the same
+            // address+block-copy the KRec/KErr catch-alls above already
+            // use. Was a fail-closed log+quit until this task; see git
+            // history for the prior placeholder's reasoning.
+            cgEmitStoreArr(dst, irAssignSrc(s))
         } else {
-            // Final-review C1: this arm is reached by whole-fixed-array
-            // assignment (`b = a` / `r.field = arr` for `arr N of T`) --
-            // Ch3 documents fixed arrays as copy-by-value and the host
-            // backend does the copy correctly, but this backend has no
-            // KArr block-copy codegen yet. The old behavior here was a
-            // silent a68Comment no-op that dropped the store entirely
-            // (host/native miscompile). Task 14.7's own lesson -- "a
-            // catch-all default that produces a plausible-looking wrong
-            // value is strictly worse than one that stops the build" --
-            // applies exactly here, so fail closed like every other
-            // non-scalar catch-all in this file (EVarRef/EFieldRef/
-            // EIndexRef above). Real fix (cgExprAddr + cgBlockCopy) is a
-            // 5e item; a loud compile error is strictly better than a
-            // silent no-op until then.
-            log("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " (whole fixed-array assignment) unsupported natively -- bind/store element-wise instead")
+            // Fail-closed rule (5d): any OTHER dst shape this backend
+            // doesn't yet have codegen for stops the build loudly rather
+            // than silently dropping the store (Task 14.7's own lesson --
+            // a plausible-looking wrong value is strictly worse than a
+            // build error).
+            log("cg68k: cgStmt: SAssign dst kind " + numToStr(int(dstK)) + " kind " + numToStr(int(dstKind)) + " unsupported natively")
             quit 1
         }
     } else if k == SStoreStr {
