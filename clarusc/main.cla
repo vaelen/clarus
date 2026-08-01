@@ -566,6 +566,25 @@ on App.startCLI(args: list of string) {
         // regardless. This is the LAST *ArcPorted flag for this wave --
         // every heap-backed family's ARC traffic is now Clarus-owned.
         cpMapArcPorted = true
+        // native-5e Task 7 Step 1: ui.cla/uiwidgets.cla splice in under
+        // --uiport ONLY (uiportFlag, set above from the CLI flag) -- unlike
+        // core/str/text/list/map above, a non-UI program has no use for a
+        // Toolbox extern block, so this is gated like ser.cla's own
+        // usesFileSaveLoad block just below, not unconditional. Spliced
+        // AFTER map.cla (declare-before-use is moot here -- Step 1 adds
+        // pure extern declarations, no bodies calling anything else in the
+        // manifest yet) and BEFORE ser.cla, mirroring the ser.cla gated-
+        // splice pattern this comment sits next to. No `cpUiPorted`-style
+        // flag needed: `cpUiPortFlag` (cprint.cla, set from this same
+        // uiportFlag a few lines below) already gates every downstream
+        // redirect that will eventually need one -- these two files are
+        // just extern DECLARATIONS with no bodies, so nothing in cprint
+        // needs to treat calls into them any differently from any other
+        // extern.
+        if uiportFlag {
+            neededMods.add("ui.cla")
+            neededMods.add("uiwidgets.cla")
+        }
         // The manifest: Task 4 (Plan 5b) shipped exactly this one usage-
         // flag/file pair (ser.cla) plus the machinery; Task 7 repointed
         // "ser.cla" at the real serialization module (rtFileSave/

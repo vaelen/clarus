@@ -228,4 +228,143 @@ void *rt_ext_MapNewPtr(int32_t size) {
 }
 void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* ---- native-5e Task 7 Step 1: ui.cla/uiwidgets.cla Toolbox extern block ----
+ * One rt_ext_Ui<Name> wrapper per `external func Ui<Name>` declared in
+ * runtime/clarus/ui.cla and runtime/clarus/uiwidgets.cla -- Mac-ONLY (no
+ * internal/build/rt/rt_ext_host.inc counterpart: there is no host/console
+ * UI). Each is a thin one-line cast-and-call of the real Toolbox routine,
+ * mirroring the two files' own doc comments for exactly which rt_ui.c call
+ * site(s) need it; no logic beyond the cast (Step 1 adds no behavior).
+ * cprint always renders an extern call as `rt_ext_NAME(args)` regardless of
+ * its `trap`/`inline` clause (fpCallExt, cprint.cla:1016 -- clauses are a
+ * codegen68k-only concern, confirmed by grep: cprint.cla has no "inline"/
+ * trap-clause handling at all) -- so UiHandleDeref needs a wrapper here too,
+ * exactly like TextHandleDeref/ListHandleDeref/MapHandleDeref already do
+ * above, even though its own declaration reads `= inline deref`. */
+/* rt_ext_ui_pt: every Point-by-value extern param (ui.cla/uiwidgets.cla's
+ * own doc comments: "4-byte Toolbox by-value structs (Point/Cell) are
+ * `int` extern params, packed v/h, v in the high word") arrives here as a
+ * plain int32_t -- rebuild the real Point by shifting rather than
+ * `*(Point *)&pt` (a strict-aliasing violation the m68k cross-compiler is
+ * not guaranteed to tolerate); v in the high 16 bits, h in the low 16,
+ * matching QuickDraw's own Point-as-long convention on this big-endian
+ * target. */
+static Point rt_ext_ui_pt(int32_t packed) {
+    Point p;
+    p.v = (short)(packed >> 16);
+    p.h = (short)(packed & 0xFFFF);
+    return p;
+}
+void *rt_ext_UiHandleDeref(void *h) { return *(void **)h; }
+void *rt_ext_UiNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
+void *rt_ext_UiNewPtrClear(int32_t size) { return (void *)NewPtrClear((Size)size); }
+void *rt_ext_UiNewHandleClear(int32_t size) { return (void *)NewHandleClear((Size)size); }
+void rt_ext_UiDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_UiDisposePtr(void *p) { DisposePtr((Ptr)p); }
+void rt_ext_UiHLock(void *h) { HLock((Handle)h); }
+void rt_ext_UiHUnlock(void *h) { HUnlock((Handle)h); }
+void rt_ext_UiBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+
+void rt_ext_UiGetPort(void *port) { GetPort((GrafPtr *)port); }
+void rt_ext_UiSetPort(void *port) { SetPort((GrafPtr)port); }
+
+void *rt_ext_UiFrontWindow(void) { return (void *)FrontWindow(); }
+void *rt_ext_UiNewWindow(void *wStorage, void *boundsRect, void *title, int32_t visible, short procId, void *behind, int32_t goAwayFlag, int32_t refCon) {
+    return (void *)NewWindow(wStorage, (const Rect *)boundsRect, (ConstStr255Param)title, (Boolean)visible, procId, (WindowRef)behind, (Boolean)goAwayFlag, (long)refCon);
+}
+void rt_ext_UiShowWindow(void *window) { ShowWindow((WindowRef)window); }
+void rt_ext_UiDisposeWindow(void *window) { DisposeWindow((WindowRef)window); }
+void rt_ext_UiSetWRefCon(void *window, int32_t data) { SetWRefCon((WindowRef)window, (long)data); }
+int32_t rt_ext_UiGetWRefCon(void *window) { return (int32_t)GetWRefCon((WindowRef)window); }
+void rt_ext_UiSetWTitle(void *window, void *title) { SetWTitle((WindowRef)window, (ConstStr255Param)title); }
+void rt_ext_UiGetWTitle(void *window, void *title) { GetWTitle((WindowRef)window, (unsigned char *)title); }
+void rt_ext_UiSelectWindow(void *window) { SelectWindow((WindowRef)window); }
+void rt_ext_UiDragWindow(void *window, int32_t startPt, void *boundsRect) { DragWindow((WindowRef)window, rt_ext_ui_pt(startPt), (const Rect *)boundsRect); }
+int32_t rt_ext_UiGrowWindow(void *window, int32_t startPt, void *bBox) { return (int32_t)GrowWindow((WindowRef)window, rt_ext_ui_pt(startPt), (const Rect *)bBox); }
+void rt_ext_UiSizeWindow(void *window, short w, short h, int32_t fUpdate) { SizeWindow((WindowRef)window, w, h, (Boolean)fUpdate); }
+void rt_ext_UiZoomWindow(void *window, short partCode, int32_t front) { ZoomWindow((WindowRef)window, partCode, (Boolean)front); }
+int32_t rt_ext_UiTrackBox(void *window, int32_t thePt, short partCode) { return (int32_t)TrackBox((WindowRef)window, rt_ext_ui_pt(thePt), partCode); }
+int32_t rt_ext_UiTrackGoAway(void *window, int32_t thePt) { return (int32_t)TrackGoAway((WindowRef)window, rt_ext_ui_pt(thePt)); }
+short rt_ext_UiFindWindow(int32_t pt, void *wpOut) { return (short)FindWindow(rt_ext_ui_pt(pt), (WindowRef *)wpOut); }
+
+void *rt_ext_UiNewMenu(short menuId, void *menuTitle) { return (void *)NewMenu(menuId, (ConstStr255Param)menuTitle); }
+void rt_ext_UiDisposeMenu(void *theMenu) { DisposeMenu((MenuRef)theMenu); }
+void rt_ext_UiAppendMenu(void *theMenu, void *data) { AppendMenu((MenuRef)theMenu, (ConstStr255Param)data); }
+void rt_ext_UiInsertMenu(void *theMenu, short beforeId) { InsertMenu((MenuRef)theMenu, beforeId); }
+void rt_ext_UiDeleteMenu(short menuId) { DeleteMenu(menuId); }
+void rt_ext_UiDrawMenuBar(void) { DrawMenuBar(); }
+void rt_ext_UiHiliteMenu(short menuId) { HiliteMenu(menuId); }
+void rt_ext_UiEnableItem(void *theMenu, short item) { EnableItem((MenuRef)theMenu, item); }
+void rt_ext_UiDisableItem(void *theMenu, short item) { DisableItem((MenuRef)theMenu, item); }
+short rt_ext_UiCountMItems(void *theMenu) { return (short)CountMItems((MenuRef)theMenu); }
+void rt_ext_UiGetMenuItemText(void *theMenu, short item, void *itemString) { GetMenuItemText((MenuRef)theMenu, item, (unsigned char *)itemString); }
+void rt_ext_UiAppendResMenu(void *theMenu, int32_t theType) { AppendResMenu((MenuRef)theMenu, (ResType)theType); }
+int32_t rt_ext_UiMenuSelect(int32_t startPt) { return (int32_t)MenuSelect(rt_ext_ui_pt(startPt)); }
+int32_t rt_ext_UiMenuKey(uint8_t ch) { return (int32_t)MenuKey((CharParameter)ch); }
+
+int32_t rt_ext_UiWaitNextEvent(short eventMask, void *theEvent, int32_t sleep, void *mouseRgn) {
+    return (int32_t)WaitNextEvent((EventMask)eventMask, (EventRecord *)theEvent, (UInt32)sleep, (RgnHandle)mouseRgn);
+}
+int32_t rt_ext_UiGetNextEvent(short eventMask, void *theEvent) { return (int32_t)GetNextEvent((EventMask)eventMask, (EventRecord *)theEvent); }
+void rt_ext_UiFlushEvents(short whichMask, short stopMask) { FlushEvents((EventMask)whichMask, (EventMask)stopMask); }
+int32_t rt_ext_UiStillDown(void) { return (int32_t)StillDown(); }
+void rt_ext_UiGetMouse(void *mouseLoc) { GetMouse((Point *)mouseLoc); }
+void rt_ext_UiGlobalToLocal(void *pt) { GlobalToLocal((Point *)pt); }
+void rt_ext_UiSysBeep(short duration) { SysBeep(duration); }
+
+int32_t rt_ext_UiTickCount(void) { return (int32_t)TickCount(); }
+short rt_ext_UiGestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+void rt_ext_UiHideCursor(void) { HideCursor(); }
+short rt_ext_UiOpenDeskAcc(void *deskAccName) { return OpenDeskAcc((ConstStr255Param)deskAccName); }
+void rt_ext_UiParamText(void *param0, void *param1, void *param2, void *param3) {
+    ParamText((ConstStr255Param)param0, (ConstStr255Param)param1, (ConstStr255Param)param2, (ConstStr255Param)param3);
+}
+short rt_ext_UiNoteAlert(short alertId, void *modalFilter) { return NoteAlert(alertId, (ModalFilterUPP)modalFilter); }
+short rt_ext_UiAlert(short alertId, void *modalFilter) { return Alert(alertId, (ModalFilterUPP)modalFilter); }
+
+void *rt_ext_UiNewControl(void *owningWindow, void *boundsRect, void *controlTitle, int32_t initiallyVisible, short initialValue, short minimumValue, short maximumValue, short procId, int32_t controlReference) {
+    return (void *)NewControl((WindowRef)owningWindow, (const Rect *)boundsRect, (ConstStr255Param)controlTitle, (Boolean)initiallyVisible, initialValue, minimumValue, maximumValue, procId, (SInt32)controlReference);
+}
+void rt_ext_UiMoveControl(void *theControl, short h, short v) { MoveControl((ControlRef)theControl, h, v); }
+void rt_ext_UiSizeControl(void *theControl, short w, short h) { SizeControl((ControlRef)theControl, w, h); }
+void rt_ext_UiHiliteControl(void *theControl, short hiliteState) { HiliteControl((ControlRef)theControl, hiliteState); }
+void rt_ext_UiSetControlValue(void *theControl, short newValue) { SetControlValue((ControlRef)theControl, newValue); }
+short rt_ext_UiGetControlValue(void *theControl) { return (short)GetControlValue((ControlRef)theControl); }
+void rt_ext_UiSetControlTitle(void *theControl, void *title) { SetControlTitle((ControlRef)theControl, (ConstStr255Param)title); }
+void rt_ext_UiDrawControls(void *theWindow) { DrawControls((WindowRef)theWindow); }
+
+void rt_ext_UiMoveTo(short h, short v) { MoveTo(h, v); }
+void rt_ext_UiLineTo(short h, short v) { LineTo(h, v); }
+void rt_ext_UiSetRect(void *r, short left, short top, short right, short bottom) { SetRect((Rect *)r, left, top, right, bottom); }
+void rt_ext_UiInsetRect(void *r, short dh, short dv) { InsetRect((Rect *)r, dh, dv); }
+int32_t rt_ext_UiEqualRect(void *rect1, void *rect2) { return (int32_t)EqualRect((const Rect *)rect1, (const Rect *)rect2); }
+void rt_ext_UiEraseRect(void *r) { EraseRect((const Rect *)r); }
+void rt_ext_UiFrameRect(void *r) { FrameRect((const Rect *)r); }
+void rt_ext_UiFillRect(void *r, void *pat) { FillRect((const Rect *)r, (const Pattern *)pat); }
+void rt_ext_UiInvalRect(void *badRect) { InvalRect((const Rect *)badRect); }
+int32_t rt_ext_UiPtInRect(int32_t pt, void *r) { return (int32_t)PtInRect(rt_ext_ui_pt(pt), (const Rect *)r); }
+void rt_ext_UiFrameOval(void *r) { FrameOval((const Rect *)r); }
+void rt_ext_UiFillOval(void *r, void *pat) { FillOval((const Rect *)r, (const Pattern *)pat); }
+void rt_ext_UiPenSize(short width, short height) { PenSize(width, height); }
+void rt_ext_UiPenNormal(void) { PenNormal(); }
+void rt_ext_UiFrameRoundRect(void *r, short ovalWidth, short ovalHeight) { FrameRoundRect((const Rect *)r, ovalWidth, ovalHeight); }
+void rt_ext_UiDrawString(void *s) { DrawString((ConstStr255Param)s); }
+void rt_ext_UiCopyBits(void *srcBits, void *dstBits, void *srcRect, void *dstRect, short mode, void *maskRgn) {
+    CopyBits((const BitMap *)srcBits, (const BitMap *)dstBits, (const Rect *)srcRect, (const Rect *)dstRect, mode, (RgnHandle)maskRgn);
+}
+void *rt_ext_UiNewRgn(void) { return (void *)NewRgn(); }
+void rt_ext_UiDisposeRgn(void *rgn) { DisposeRgn((RgnHandle)rgn); }
+void rt_ext_UiClipRect(void *r) { ClipRect((const Rect *)r); }
+void rt_ext_UiSetClip(void *rgn) { SetClip((RgnHandle)rgn); }
+void rt_ext_UiGetClip(void *rgn) { GetClip((RgnHandle)rgn); }
+void rt_ext_UiDrawGrowIcon(void *window) { DrawGrowIcon((WindowRef)window); }
+void rt_ext_UiBeginUpdate(void *window) { BeginUpdate((WindowRef)window); }
+void rt_ext_UiEndUpdate(void *window) { EndUpdate((WindowRef)window); }
+
+void rt_ext_UiOpenPort(void *port) { OpenPort((GrafPtr)port); }
+void rt_ext_UiClosePort(void *port) { ClosePort((GrafPtr)port); }
+void rt_ext_UiPortSize(short width, short height) { PortSize(width, height); }
+void rt_ext_UiSetOrigin(short h, short v) { SetOrigin(h, v); }
+void rt_ext_UiSetPortBits(void *bm) { SetPortBits((const BitMap *)bm); }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

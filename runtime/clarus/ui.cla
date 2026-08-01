@@ -1,0 +1,260 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// ui.cla: Toolbox extern trap block for the ported UI runtime, "slice A"
+// (native-5e Task 7, Step 1 ONLY -- no bodies, no `overlay record`s yet;
+// those land in Step 2+). Ports runtime/mac/rt_ui.c function-by-function
+// into runtime/clarus/ui*.cla, the same way text.cla/list.cla/map.cla
+// ported rt_core.inc -- but UI has no host/console equivalent (there is no
+// text-mode window/menu/event system), so this module is Mac-ONLY: its
+// externs get a matching rt_ext_Ui* wrapper in runtime/mac/rt_ext_mac.inc
+// ONLY, never in internal/build/rt/rt_ext_host.inc (contrast text.cla,
+// whose externs get a wrapper on BOTH sides).
+//
+// Scope (Task 7 brief's slice A, union of rt_ui.c line ranges): 334-926,
+// 1175-1213, 2122-2384, 2483-2537, 2623-2758, 2760-3141, 3421-3751,
+// 3806-3816+3919-3962 (rt_ui_launch's signature + its RT_MAC_TEST branch
+// ONLY -- the real-build AppleEvent branch, :3963-4028, plus the AE
+// handlers themselves, rt_ui_ae_check_missed/ae_oapp/ae_odoc/ae_pdoc/
+// ae_quit at :3817-3918, are OUT of scope for this step: AE/Resource/
+// AppFiles/WD machinery needs real Pascal function-pointer callbacks,
+// which Clarus cannot express -- a later step keeps that whole mechanism
+// as C-side glue in rt_ext_mac.inc, reachable from ported Clarus through a
+// small number of new glue externs THAT step adds itself, not these),
+// 4043-4464, 4467-4914, 5294-5337, 5339-5723. Two exclusion rules apply
+// throughout: (1) no List-Manager/TextEdit-Manager call (LDispose,
+// LActivate, LSetSelect, LUpdate, TEDispose, TEActivate, TEDeactivate,
+// TEClick, TEKey, TECalText, TESetSelect, TESetText, TETextBox, TEUpdate)
+// gets an extern here -- those only appear in code paths for the
+// field/textview/table widget kinds, out of scope this slice; wherever one
+// appears inside an otherwise in-scope function only because of a
+// kind-switch arm for an out-of-scope kind, that whole arm is a later
+// task's problem. (2) Ch10 forms (rt_ui_edit and its own helpers --
+// rt_ui_form_teardown/form_cancel/parse_int/parse_fixed/form_invalid/
+// form_fill/form_accept/form_is_new, rt_ui.c:4915-5293) are, for the same
+// reason, excluded even though their numeric lines fall inside the outer
+// 4467-5337 span the brief cites: a form only ever binds popup/field/table
+// widgets (out of scope), rtUiEdit is absent from this task's own Produces
+// list, and its one Toolbox call NumToString never appears outside that
+// span -- so it needed no extern here at all (confirmed by grep: every
+// NumToString call site in rt_ui.c falls either inside this excluded span
+// or inside the also-out-of-scope rt_ui_fixed_to_str/rt_ui_table_draw_field
+// helpers, :1048-1130).
+//
+// `Ui`-prefixed extern names (UiSetPort, UiFrontWindow, ...), never the
+// bare Toolbox name: same collision hazard text.cla's own header comment
+// documents for Text/List/Map/Ser's own prefixed copies of NewPtr/
+// DisposeHandle/etc -- checkFuncSig/scopeDeclare key purely on NAME (no
+// signature comparison), so a user program's own `external func SetPort`
+// (the documented Ch13 escape hatch) would otherwise collide with this
+// module's. Every Pascal-string-buffer parameter (a menu/window/control
+// title, an itemText out-buffer, DrawString's text, ParamText's four
+// strings, ...) is declared `ptr`, NOT `str`: Clarus has no str->ptr
+// conversion and no address-of for a local `str` variable, but Step 2's
+// callers need to pass BOTH blob-computed addresses (already `ptr`,
+// pointing into the UI descriptor blob's string pool) and runtime-built
+// scratch Pascal strings (a `UiNewPtr` scratch + `pokeb`, the same idiom
+// text.cla/list.cla already use) to these same traps -- a `str`-typed
+// param could accept neither. No existing runtime module declares a `str`
+// extern param anywhere (grep confirms); `ptr` is the established idiom.
+//
+// Every 16-bit Toolbox INTEGER (window/control coordinates, short counts,
+// short IDs/refnums/indices, WindowPartCode/ControlPartCode/MenuID/
+// EventMask) is `word` (Task 4's extern type, docs/clarus-language-
+// reference.md's own worked examples `UiMoveTo(h: word, v: word) = trap
+// 0xA893` and `UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C` are
+// used verbatim below). A 4-byte Toolbox by-value struct (a Point argument
+// -- MenuSelect/DragWindow/GrowWindow/TrackBox/TrackGoAway/PtInRect/
+// FindWindow's own `pt`) is `int` (packed v/h, v in the high word, matching
+// QuickDraw's own Point-as-long convention) -- never a `ptr`, since it's
+// passed BY VALUE, not by address. A genuine 32-bit Toolbox value (Size,
+// OSType/ResType/FourCharCode, a `long` refcon/result) is `int`. Pointers
+// to Rect/EventRecord/WindowRecord/other records are plain `ptr` --
+// `overlay record` views of them are a Step 2 concern, not this one.
+//
+// Trap convention: an ordinary Toolbox call (every Window/Menu/Control/
+// QuickDraw/Event/Dialog/Gestalt/OS-Utility routine below, the vast
+// majority) is PASCAL convention, `= trap 0xNNNN` with no `reg` suffix.
+// The register-based Memory Manager family (UiHLock/UiHUnlock/UiNewPtr/
+// UiNewPtrClear/UiNewHandleClear/UiDisposeHandle/UiDisposePtr/
+// UiBlockMoveData) mirrors text.cla's own OWN-prefixed copies of the exact
+// same primitives byte-for-byte (same trap words, same `reg` clause) --
+// same "each module gets its own name" rationale as text.cla's header
+// comment, since this module needs its OWN scratch-allocation surface
+// distinct from Text/List/Map/Ser/Str/Native's. UiTickCount is the one
+// non-Memory-Manager `reg` trap: Inside Macintosh documents it as a
+// register-based OS trap (result in D0, no stack args), matching this
+// task's own brief. Every trap word below not already in text.cla's own
+// verified set was independently re-derived against Retro68's Traps.h
+// (converted from CR-only line endings per the repo's own documented
+// recipe) AND the actual Universal Interfaces C prototype (MacWindows.h/
+// Menus.h/Controls.h/QuickDraw.h/QuickdrawText.h/Events.h/Gestalt.h/
+// Dialogs.h/Devices.h -- also CR-only, also converted) for parameter
+// order/type, since Traps.h alone gives no parameter information. Four
+// trap words this task resolved beyond the brief's own pre-resolved table
+// (all confirmed against the real headers, `grep -a` -- these files carry
+// the ISO-8859 copyright byte, which makes a locale-default `grep` treat
+// them as binary and silently match nothing without `-a`): EqualRect
+// 0xA8A6 (QuickDraw.h, aliased `MacEqualRect`), HideCursor 0xA852
+// (QuickDraw.h), BeginUpdate/EndUpdate 0xA922/0xA923 (MacWindows.h; the
+// Traps.h enum itself spells these `_BeginUpDate`/`_EndUpDate`, capital D,
+// but the actual EXTERN_API function names -- and rt_ui.c's own call
+// spelling -- are the conventional `BeginUpdate`/`EndUpdate`), SetPortBits
+// 0xA875 (QuickDraw.h; the same trap Traps.h's enum calls `_SetPBits` --
+// SetPortBits is the modern Universal-Interfaces name for the identical
+// trap). BlockMoveData is 0xA22E, NOT 0xA02E (plain BlockMove, a distinct
+// trap) -- same distinction text.cla's own header comment makes; verified
+// again here directly against QuickDraw.h's own `BlockMoveData` prototype.
+//
+// Gestalt (UiGestalt, below) is declared PLAIN `trap 0xA1AD` per this
+// task's own given resolution, matching every other Toolbox call here --
+// but Gestalt.h's own `#pragma parameter __D0 Gestalt(__D0, __A1)`, gated
+// on exactly `TARGET_CPU_68K && !TARGET_RT_MAC_CFM` (this repo's own real
+// target), documents Gestalt as REGISTER convention on 68k: selector in
+// D0, response pointer in A1, result in D0 -- not the plain Pascal stack
+// convention this declaration uses. Clarus's own `reg` clause has no way
+// to express "the one ptr param goes in A1, not A0" (its ptr slots fill
+// A0 then A1 in declaration order), so there is no clean way to express
+// Gestalt's actual calling convention as a `reg` extern either. Flagged
+// here for whichever step first makes UiGestalt reachable at runtime (it
+// backs rt_ui_startup's System 7 check, rt_ui.c:3737) to verify against a
+// real Mac Plus/System 6 run -- this step only declares the symbol.
+//
+// LMGetCurApName (rt_ui_apple_select's else-branch, rt_ui.c:2295, for a
+// program with no `app name` section) is NOT a trap at all -- it is a
+// direct read of the CurApName low-memory global at the fixed address
+// 0x0910 (Universal Interfaces' own LMGetCurApName is just `(StringPtr)
+// 0x910`, a cast of a constant, not a real call). No extern is declared
+// for it here; a later step passes `ptr(0x910)` directly to UiParamText's
+// first argument at that one call site, using the existing `ptr(intExpr)`
+// conversion -- no new language feature needed.
+//
+// Split from uiwidgets.cla: this file holds Window Manager, Menu Manager,
+// Event Manager, Gestalt/OS-Utility, Dialog Manager (Alert family), the
+// two universal QuickDraw port primitives (SetPort/GetPort -- read by
+// nearly every in-scope function under rt_ui.h's own PORT DISCIPLINE RULE,
+// so they belong with the "core" file, not the widget one), and this
+// module's own Memory Manager scratch-allocation family -- the traps
+// rt_ui_startup/rt_ui_run/window-management/menu-management/every-pump/
+// winst-instance-management code needs. uiwidgets.cla holds Control
+// Manager basics and QuickDraw drawing/geometry traps -- the ones widget
+// layout/creation/canvas-drawing code needs, plus the canvas offscreen
+// GrafPort's own OpenPort/ClosePort/PortSize/SetOrigin/SetPortBits (Ch11,
+// rt_ui_canvas_make/dispose) since those are canvas-specific, not general
+// port save/restore.
+
+// ---- Memory Manager (this module's own scratch-allocation family) ----
+// Mirrors text.cla's TextHandleDeref/TextNewPtr/TextDisposePtr/
+// TextNewHandle/TextDisposeHandle/TextHLock/TextHUnlock/TextBlockMoveData
+// exactly (same trap words, same `reg` clauses) -- this module's own copy,
+// per the naming-collision rationale above. No `UiRcCheck`/ARC pairing:
+// unlike Text/List/Map, nothing in this slice's winst/canvas allocation is
+// reference-counted (rt_ui.c's own struct rt_ui_winst is a plain malloc'd
+// -- NewHandleClear'd -- box, freed unconditionally by rt_ui_close, never
+// rc-tracked).
+external func UiHandleDeref(h: ptr): ptr = inline deref
+external func UiNewPtr(size: int): ptr = trap 0xA11E reg
+external func UiNewPtrClear(size: int): ptr = trap 0xA31E reg
+external func UiNewHandleClear(size: int): ptr = trap 0xA322 reg
+external func UiDisposeHandle(h: ptr) = trap 0xA023 reg
+external func UiDisposePtr(p: ptr) = trap 0xA01F reg
+external func UiHLock(h: ptr) = trap 0xA029 reg
+external func UiHUnlock(h: ptr) = trap 0xA02A reg
+external func UiBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
+
+// ---- QuickDraw port basics (PORT DISCIPLINE RULE, rt_ui.h) ----
+// Read/written by nearly every in-scope function that draws (each
+// self-asserts GetPort/SetPort, restores the caller's port before
+// returning) -- too pervasive to belong to either "core" or "widgets"
+// alone; kept here since rt_ui_startup itself (the module's own entry
+// point) needs GetPort/SetPort before anything widget-shaped exists.
+external func UiGetPort(port: ptr) = trap 0xA874
+external func UiSetPort(port: ptr) = trap 0xA873
+
+// ---- Window Manager ----
+// rt_ui_open (:4571-4739, NewWindow/ShowWindow/SetWRefCon), rt_ui_close/
+// rt_ui_teardown_window (:4740-4914, DisposeWindow), rt_ui_set_title/
+// rt_ui_get_title (:5329-5337), rt_ui_front/rt_ui_winst_of (:676-799,
+// 5294-5337, FrontWindow/GetWRefCon), rt_ui_handle_mouse_down (:3421-3499,
+// FindWindow/SelectWindow/DragWindow/GrowWindow/TrackGoAway), rt_ui_apply_
+// zoom/rt_ui_handle_zoom (:3053-3096, ZoomWindow/TrackBox), rt_ui_apply_
+// resize (:2991-3009, SizeWindow), rt_ui_handle_update's resizable-corner
+// lane and rt_ui_script_click (:2760-2782, 4102-4173, DrawGrowIcon/
+// FindWindow).
+external func UiFrontWindow(): ptr = trap 0xA924
+external func UiNewWindow(wStorage: ptr, boundsRect: ptr, title: ptr, visible: bool, procId: word, behind: ptr, goAwayFlag: bool, refCon: int): ptr = trap 0xA913
+external func UiShowWindow(theWindow: ptr) = trap 0xA915
+external func UiDisposeWindow(theWindow: ptr) = trap 0xA914
+external func UiSetWRefCon(theWindow: ptr, data: int) = trap 0xA918
+external func UiGetWRefCon(theWindow: ptr): int = trap 0xA917
+external func UiSetWTitle(theWindow: ptr, title: ptr) = trap 0xA91A
+external func UiGetWTitle(theWindow: ptr, title: ptr) = trap 0xA919
+external func UiSelectWindow(theWindow: ptr) = trap 0xA91F
+external func UiDragWindow(theWindow: ptr, startPt: int, boundsRect: ptr) = trap 0xA925
+external func UiGrowWindow(theWindow: ptr, startPt: int, bBox: ptr): int = trap 0xA92B
+external func UiSizeWindow(theWindow: ptr, w: word, h: word, fUpdate: bool) = trap 0xA91D
+external func UiZoomWindow(theWindow: ptr, partCode: word, front: bool) = trap 0xA83A
+external func UiTrackBox(theWindow: ptr, thePt: int, partCode: word): bool = trap 0xA83B
+external func UiTrackGoAway(theWindow: ptr, thePt: int): bool = trap 0xA91E
+external func UiFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
+
+// ---- Menu Manager ----
+// rt_ui_build_menus/rt_ui_build_apple_menu (:2198-2384, NewMenu/AppendMenu/
+// InsertMenu/DrawMenuBar/AppendResMenu/DisableItem), rt_ui_menu_enable
+// (:2375-2384, EnableItem/DisableItem), rt_ui_menu_dispatch (:2623-2656,
+// HiliteMenu), rt_ui_handle_mouse_down/rt_ui_handle_key (:3421-3751,
+// MenuSelect/MenuKey), rt_ui_apple_select (:2283-2306, GetMenuItemText/
+// OpenDeskAcc -- OpenDeskAcc lives in the OS-Utility group below since
+// Devices.h, not Menus.h, declares it), rt_ui_teardown_window (:4740-4914,
+// DeleteMenu/DisposeMenu, popup-menu cleanup -- the DELETE/DISPOSE calls
+// themselves are generic Menu Manager traps, needed regardless of the
+// popup KIND itself being out of scope), rt_ui_table_draw_field/friends'
+// CountMItems use is out of scope (table kind), but rt_ui_widget_get_int's
+// popup SELECTED-count use (:5339-5723, in the produces list) needs it.
+external func UiNewMenu(menuId: word, menuTitle: ptr): ptr = trap 0xA931
+external func UiDisposeMenu(theMenu: ptr) = trap 0xA932
+external func UiAppendMenu(theMenu: ptr, data: ptr) = trap 0xA933
+external func UiInsertMenu(theMenu: ptr, beforeId: word) = trap 0xA935
+external func UiDeleteMenu(menuId: word) = trap 0xA936
+external func UiDrawMenuBar() = trap 0xA937
+external func UiHiliteMenu(menuId: word) = trap 0xA938
+external func UiEnableItem(theMenu: ptr, item: word) = trap 0xA939
+external func UiDisableItem(theMenu: ptr, item: word) = trap 0xA93A
+external func UiCountMItems(theMenu: ptr): word = trap 0xA950
+external func UiGetMenuItemText(theMenu: ptr, item: word, itemString: ptr) = trap 0xA946
+external func UiAppendResMenu(theMenu: ptr, theType: int) = trap 0xA94D
+external func UiMenuSelect(startPt: int): int = trap 0xA93D
+external func UiMenuKey(ch: char): int = trap 0xA93E
+
+// ---- Event Manager ----
+// rt_ui_run's real event loop (:4467-4530, WaitNextEvent), rt_ui_run_
+// scripted/rt_ui_pump_passive (:4043-4464, GetNextEvent/FlushEvents(via
+// rt_ui_startup)), rt_ui_handle_canvas_click (:3122-3141, StillDown/
+// GetMouse), rt_ui_script_click (:4102-4173, GlobalToLocal), rt_ui_
+// handle_mouse_down (:3421-3499, SysBeep on a disabled-menu-bar or
+// disabled-widget click), rt_ui_handle_key (:3557-3673, SysBeep on an
+// unhandled key).
+external func UiWaitNextEvent(eventMask: word, theEvent: ptr, sleep: int, mouseRgn: ptr): bool = trap 0xA860
+external func UiGetNextEvent(eventMask: word, theEvent: ptr): bool = trap 0xA970
+external func UiFlushEvents(whichMask: word, stopMask: word) = trap 0xA032
+external func UiStillDown(): bool = trap 0xA973
+external func UiGetMouse(mouseLoc: ptr) = trap 0xA972
+external func UiGlobalToLocal(pt: ptr) = trap 0xA871
+external func UiSysBeep(duration: word) = trap 0xA9C8
+
+// ---- Gestalt / OS Utility / Dialog Manager (Alert family) ----
+// rt_ui_startup's System 7 check (:3727-3816, Gestalt/FlushEvents),
+// rt_ui_run_scripted's determinism setup (:4367-4374, HideCursor),
+// rt_ui_apple_select (:2283-2306, ParamText/Alert/NoteAlert/OpenDeskAcc),
+// rt_ui_ask_save_changes's own ParamText+Alert(130) use is OUT of scope
+// (Ch12 dialogs, a later task's rt_ui.c:2429-2482 -- not in this slice's
+// line ranges). UiTickCount backs rt_ui_every_pump/rt_ui_startup's
+// TickCount-vs-gVirtualTicks scheduling (:3674-3816) and rt_ui_script_tick
+// (:4295-4314).
+external func UiTickCount(): int = trap 0xA975 reg
+external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD
+external func UiHideCursor() = trap 0xA852
+external func UiOpenDeskAcc(deskAccName: ptr): word = trap 0xA9B6
+external func UiParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B
+external func UiNoteAlert(alertId: word, modalFilter: ptr): word = trap 0xA987
+external func UiAlert(alertId: word, modalFilter: ptr): word = trap 0xA985

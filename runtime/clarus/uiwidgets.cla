@@ -1,0 +1,87 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uiwidgets.cla: Toolbox extern trap block, continued from ui.cla (see that
+// file's header comment for the full scope/exclusion/naming-collision/
+// trap-resolution rationale -- it applies identically here, not repeated).
+// This file holds Control Manager basics and QuickDraw drawing/geometry
+// traps -- the ones widget layout/creation and canvas-drawing code needs
+// (button/check/label/canvas, the four widget kinds in scope this slice) --
+// plus the canvas offscreen GrafPort's own port-management primitives
+// (OpenPort/ClosePort/PortSize/SetOrigin/SetPortBits), kept separate from
+// ui.cla's universal SetPort/GetPort since these four are canvas-specific
+// (Ch11, rt_ui_canvas_make/rt_ui_canvas_dispose), not general save/restore.
+// Step 1 ONLY: extern declarations, no bodies, no `overlay record`s yet.
+
+// ---- Control Manager ----
+// rt_ui_make_widgets' button/check creation (:1175-1213 -- the in-scope
+// slice of a function that runs 1175-1421 in full; 1213-1421's field/
+// textview/popup/table NewControl calls are a later task's problem),
+// rt_ui_layout (:789-926, MoveControl/SizeControl repositioning any
+// control-backed widget generically), rt_ui_handle_activate (:2938-2971,
+// HiliteControl dim/undim on window (de)activate), rt_ui_widget_set_bool's
+// ENABLED/CHECKED props and rt_ui_widget_get_bool (:5339-5723,
+// HiliteControl/SetControlValue/GetControlValue), rt_ui_widget_set_str's
+// CAPTION prop (SetControlTitle), rt_ui_handle_update (:2760-2937,
+// DrawControls). rt_ui_widget_set_int/get_int's popup SELECTED prop also
+// uses SetControlValue/GetControlValue -- in the produces list (rtUiWidget
+// SetInt/GetInt) even though no popup widget can be CREATED this slice.
+external func UiNewControl(owningWindow: ptr, boundsRect: ptr, controlTitle: ptr, initiallyVisible: bool, initialValue: word, minimumValue: word, maximumValue: word, procId: word, controlReference: int): ptr = trap 0xA954
+external func UiMoveControl(theControl: ptr, h: word, v: word) = trap 0xA959
+external func UiSizeControl(theControl: ptr, w: word, h: word) = trap 0xA95C
+external func UiHiliteControl(theControl: ptr, hiliteState: word) = trap 0xA95D
+external func UiSetControlValue(theControl: ptr, newValue: word) = trap 0xA963
+external func UiGetControlValue(theControl: ptr): word = trap 0xA960
+external func UiSetControlTitle(theControl: ptr, title: ptr) = trap 0xA95F
+external func UiDrawControls(theWindow: ptr) = trap 0xA969
+
+// ---- QuickDraw drawing / geometry ----
+// rt_ui_draw_default_outline (:2750-2759, PenSize/FrameRoundRect/
+// PenNormal), rt_ui_layout (:789-926, SetRect), rt_ui_handle_grow/rt_ui_
+// apply_zoom (:2991-3096, SetRect/EraseRect/InvalRect/EqualRect), rt_ui_
+// handle_update (:2760-2937, BeginUpdate/EndUpdate/DrawGrowIcon/ClipRect/
+// SetClip/GetClip/NewRgn/DisposeRgn/FrameRect -- the RTUI_BUTTON default-
+// outline arm only; RTUI_LABEL/FIELD/TEXTVIEW/POPUP/TABLE arms are TE/List
+// Manager or out-of-scope-kind territory, excluded per ui.cla's rule),
+// rt_ui_canvas_* ops (:5596-5723, MoveTo/LineTo/SetRect/EraseRect/
+// FrameRect/FillRect/FrameOval/FillOval/DrawString/PtInRect via rt_ui_
+// canvas_hit :3099-3110), rt_ui_flush_buffered_canvases (:2177-2196,
+// CopyBits). InsetRect backs rt_ui_draw_default_outline (:2754) and rt_ui_
+// handle_mouse_down's drag-bounds inset (:3467).
+external func UiMoveTo(h: word, v: word) = trap 0xA893
+external func UiLineTo(h: word, v: word) = trap 0xA891
+external func UiSetRect(r: ptr, left: word, top: word, right: word, bottom: word) = trap 0xA8A7
+external func UiInsetRect(r: ptr, dh: word, dv: word) = trap 0xA8A9
+external func UiEqualRect(rect1: ptr, rect2: ptr): bool = trap 0xA8A6
+external func UiEraseRect(r: ptr) = trap 0xA8A3
+external func UiFrameRect(r: ptr) = trap 0xA8A1
+external func UiFillRect(r: ptr, pat: ptr) = trap 0xA8A5
+external func UiInvalRect(badRect: ptr) = trap 0xA928
+external func UiPtInRect(pt: int, r: ptr): bool = trap 0xA8AD
+external func UiFrameOval(r: ptr) = trap 0xA8B7
+external func UiFillOval(r: ptr, pat: ptr) = trap 0xA8BB
+external func UiPenSize(width: word, height: word) = trap 0xA89B
+external func UiPenNormal() = trap 0xA89E
+external func UiFrameRoundRect(r: ptr, ovalWidth: word, ovalHeight: word) = trap 0xA8B0
+external func UiDrawString(s: ptr) = trap 0xA884
+external func UiCopyBits(srcBits: ptr, dstBits: ptr, srcRect: ptr, dstRect: ptr, mode: word, maskRgn: ptr) = trap 0xA8EC
+external func UiNewRgn(): ptr = trap 0xA8D8
+external func UiDisposeRgn(rgn: ptr) = trap 0xA8D9
+external func UiClipRect(r: ptr) = trap 0xA87B
+external func UiSetClip(rgn: ptr) = trap 0xA879
+external func UiGetClip(rgn: ptr) = trap 0xA87A
+external func UiDrawGrowIcon(theWindow: ptr) = trap 0xA904
+external func UiBeginUpdate(theWindow: ptr) = trap 0xA922
+external func UiEndUpdate(theWindow: ptr) = trap 0xA923
+
+// ---- Canvas offscreen GrafPort management (Ch11) ----
+// rt_ui_canvas_make/rt_ui_canvas_dispose (:2122-2159): a canvas's own
+// off-screen GrafPort (RTUI_BUFFERED flag) is OpenPort'd/ClosePort'd, sized
+// and re-origined once at creation -- distinct from ui.cla's UiSetPort/
+// UiGetPort save/restore pattern, which every drawing entry point uses to
+// self-assert the CURRENT port per rt_ui.h's PORT DISCIPLINE RULE.
+external func UiOpenPort(port: ptr) = trap 0xA86F
+external func UiClosePort(port: ptr) = trap 0xA87D
+external func UiPortSize(width: word, height: word) = trap 0xA876
+external func UiSetOrigin(h: word, v: word) = trap 0xA878
+external func UiSetPortBits(bm: ptr) = trap 0xA875
