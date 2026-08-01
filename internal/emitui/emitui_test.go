@@ -275,12 +275,11 @@ func TestEmitUiTablePopupGuards(t *testing.T) {
 	}
 }
 
-// uiBlobArrayRe/uiBlobIntRe extract clar_ui_blob's byte VALUES out of a
-// --uiport emit's C source -- the blob's own byte identity is the only
-// normative contract (uiblob.cla's own doc comment); the surrounding C
-// array-literal spelling (line wrapping, indentation) is cprint.cla's own
-// business and gets pinned separately, in Task 6, once there's a full
-// --uiport .c.golden to compare against.
+// uiBlobArrayRe/uiBlobIntRe extract clar_ui_blob's byte VALUES out of an
+// emit's C source -- the blob's own byte identity is the only normative
+// contract (uiblob.cla's own doc comment); the surrounding C array-literal
+// spelling (line wrapping, indentation) is cprint.cla's own business and is
+// pinned separately, via TestEmitUiGoldens' uiblob_probe.c.golden.
 var uiBlobArrayRe = regexp.MustCompile(`(?s)clar_ui_blob\[\] = \{(.*?)\};`)
 var uiBlobIntRe = regexp.MustCompile(`-?\d+`)
 
@@ -304,8 +303,8 @@ func extractUiBlob(src string) ([]byte, error) {
 	return out, nil
 }
 
-// TestUiBlobGolden (Task 5, native-5e) pins uiblob.cla's uibBuild() byte
-// output for testdata/emitui/uiblob_probe.cla against
+// TestUiBlobGolden pins uiblob.cla's uibBuild() byte output for
+// testdata/emitui/uiblob_probe.cla against
 // testdata/emitui/uiblob_probe.blob.golden -- the plan's normative UI
 // descriptor blob format ("The UI descriptor blob" section,
 // docs/superpowers/plans/2026-08-01-native-5e-ui-runtime.md) -- then
@@ -313,13 +312,13 @@ func extractUiBlob(src string) ([]byte, error) {
 // menu handlers/every/app, re-deriving every string-pool reference)
 // rather than trusting the raw byte-compare alone, so a future change
 // that reorders fields but happens to preserve the total byte count
-// doesn't slip through undetected. Also byte-compares the WHOLE --uiport
-// emit against testdata/emitui/uiblob_probe.uiport.c.golden (Task 6: pins
-// the synthesized clar_ui_fire_* dispatcher shapes + the legacy-emission
-// suppression) and compile-checks it under the m68k toolchain.
+// doesn't slip through undetected. The whole-emit C shape (synthesized
+// clar_ui_fire_* dispatchers, etc.) is pinned separately, by
+// TestEmitUiGoldens' own uiblob_probe.c.golden -- this test only needs a
+// fresh emit to extract the blob bytes from.
 //
 // To regenerate the golden after an intentional uiblob.cla format change:
-// run `clarusc emit --uiport -o /tmp/out.c testdata/emitui/uiblob_probe.cla`,
+// run `clarusc emit -o /tmp/out.c testdata/emitui/uiblob_probe.cla`,
 // extract the clar_ui_blob[] array's byte values (extractUiBlob above does
 // exactly this), and write them as raw bytes to
 // testdata/emitui/uiblob_probe.blob.golden.
@@ -329,37 +328,16 @@ func TestUiBlobGolden(t *testing.T) {
 	fixture := filepath.Join(root, "testdata", "emitui", "uiblob_probe.cla")
 
 	outC := filepath.Join(t.TempDir(), "out.c")
-	cmd := exec.Command(exe, "emit", "--uiport", "-o", outC, fixture)
+	cmd := exec.Command(exe, "emit", "-o", outC, fixture)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("clarusc emit --uiport -o %s %s: %v\nstdout: %s\nstderr: %s", outC, fixture, err, stdout.String(), stderr.String())
+		t.Fatalf("clarusc emit -o %s %s: %v\nstdout: %s\nstderr: %s", outC, fixture, err, stdout.String(), stderr.String())
 	}
 	src, err := os.ReadFile(outC)
 	if err != nil {
 		t.Fatalf("read emitted %s: %v", outC, err)
-	}
-
-	// native-5e Task 6: pin the WHOLE --uiport emit byte-for-byte, not just
-	// the blob -- this is where the synthesized clar_ui_fire_winevent/
-	// _widget/_menu/_every/_releasevars/_statedefaults/_staterows/
-	// _launchdoc/_startempty/_applaunch shapes (lower.cla's
-	// lowSynthUiDispatchers) and the legacy-emission suppression
-	// (cpEmitWinHandlersFwd's nulled winFn/widgetFn slots,
-	// cpEmitUiWiring's skipped cpEmitUiDispatchers, cpEmitAppInfo's
-	// skipped rt_ui_app_info) get pinned. To regenerate after an
-	// intentional lower.cla/cprint.cla --uiport change: `clarusc emit
-	// --uiport -o testdata/emitui/uiblob_probe.uiport.c.golden
-	// testdata/emitui/uiblob_probe.cla`, then re-diff by hand that the
-	// churn is the one you intended.
-	uiportGoldenPath := filepath.Join(root, "testdata", "emitui", "uiblob_probe.uiport.c.golden")
-	uiportWant, err := os.ReadFile(uiportGoldenPath)
-	if err != nil {
-		t.Fatalf("read golden %s: %v", uiportGoldenPath, err)
-	}
-	if !bytes.Equal(src, uiportWant) {
-		t.Errorf("%s: --uiport emit does not match %s\n--- got ---\n%s\n--- want ---\n%s", fixture, uiportGoldenPath, src, uiportWant)
 	}
 
 	got, err := extractUiBlob(string(src))

@@ -240,7 +240,7 @@ on App.startCLI(args: list of string) {
     var vh: int
     var rtDir: string
     var haveRtDir: bool
-    var uiportFlag: bool
+    var isUiProg: bool
     var neededMods: list of string
     var rtHeads: list of int
     var combined2: int
@@ -311,7 +311,6 @@ on App.startCLI(args: list of string) {
     haveOutPath = false
     rtDir = ""
     haveRtDir = false
-    uiportFlag = false
     i = startArg
     while i < args.count {
         if (emitMode or emitMode68k) and args[i] == "-o" {
@@ -341,24 +340,6 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
-        } else if emitMode and args[i] == "--uiport" {
-            // native-5e Task 5: additionally emit the flat pointer-free UI
-            // descriptor blob (uiblob.cla's uibBuild(), the plan's
-            // normative blob format) as `clar_ui_blob[]` + per-window
-            // sizeof asserts -- see cprint.cla's cpEmitUiBlob/cpUiPortFlag.
-            // Default off: every existing testdata/emitui/*.c.golden is
-            // emitted with this flag ABSENT and must stay byte-identical.
-            // Task 6 adds: lower.cla synthesizes the reverse-waist
-            // dispatcher IRFuncs (ordinary functions, printed by the normal
-            // cpEmitFuncs pass) and cprint suppresses the now-redundant OLD
-            // per-window winevent/widget dispatcher bodies + rt_ui_app_info
-            // for a real UI program (the blob's own App section already
-            // carries it) -- the window/menu descriptor tables themselves,
-            // the menu-handler array, and the every array stay printed
-            // unconditionally either way: rt_ui_startup (cpEmitUiMain)
-            // still needs them until Task 7's ui.cla port replaces its
-            // caller side. Task 11 is the flip that retires all of it.
-            uiportFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
         } else if emitMode68k and args[i] == "--seglimit" {
@@ -499,6 +480,23 @@ on App.startCLI(args: list of string) {
     // diagnostic is a compiler bug, but it must still surface, attributed
     // to the runtime file via expand's own setDeclFile loop.
     if emitMode or emitMode68k {
+        // isUiProg reports whether this program declares any window, menu,
+        // or `every` block -- computed from the checked AST decl list
+        // (`combined`) so it's available BEFORE lowering: ir.cla's
+        // irIsUiProgram() (cprint.cla) reads IR arrays lowerProgram doesn't
+        // populate until later, so it can't gate the manifest splice below.
+        // Same "usage flag from checkProgram's own decl list" convention as
+        // usesFileSaveLoad, just computed here rather than as a check.cla
+        // global (window/menu/every detection needs no type info).
+        isUiProg = false
+        d = combined
+        while d != -1 {
+            if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
+                isUiProg = true
+            }
+            d = declNext(d)
+        }
+
         // Plan native-5d Task 3: core.cla is spliced FIRST, ahead of every
         // other manifest entry -- str.cla/text.cla/list.cla/map.cla/
         // ser.cla all call its rtSetLastErr/rtPanic directly now (no more
@@ -566,22 +564,15 @@ on App.startCLI(args: list of string) {
         // regardless. This is the LAST *ArcPorted flag for this wave --
         // every heap-backed family's ARC traffic is now Clarus-owned.
         cpMapArcPorted = true
-        // native-5e Task 7 Step 1: ui.cla/uiwidgets.cla splice in under
-        // --uiport ONLY (uiportFlag, set above from the CLI flag) -- unlike
-        // core/str/text/list/map above, a non-UI program has no use for a
-        // Toolbox extern block, so this is gated like ser.cla's own
-        // usesFileSaveLoad block just below, not unconditional. Spliced
-        // AFTER map.cla (declare-before-use is moot here -- Step 1 adds
-        // pure extern declarations, no bodies calling anything else in the
-        // manifest yet) and BEFORE ser.cla, mirroring the ser.cla gated-
-        // splice pattern this comment sits next to. No `cpUiPorted`-style
-        // flag needed: `cpUiPortFlag` (cprint.cla, set from this same
-        // uiportFlag a few lines below) already gates every downstream
-        // redirect that will eventually need one -- these two files are
-        // just extern DECLARATIONS with no bodies, so nothing in cprint
-        // needs to treat calls into them any differently from any other
-        // extern.
-        if uiportFlag {
+        // ui.cla/uiwidgets.cla splice in for a UI program (isUiProg,
+        // computed above) ONLY -- unlike core/str/text/list/map above, a
+        // non-UI program has no use for a Toolbox extern block, so this is
+        // gated like ser.cla's own usesFileSaveLoad block just below, not
+        // unconditional. Spliced AFTER map.cla (declare-before-use is moot
+        // here -- these add pure extern declarations, no bodies calling
+        // anything else in the manifest yet) and BEFORE ser.cla, mirroring
+        // the ser.cla gated-splice pattern this comment sits next to.
+        if isUiProg {
             // Task 7 Step 2: uidesc.cla (blob accessors + RtUiWinst/
             // RtUiCanvasBuf overlay-record TYPES + rtUiAllocLocked) splices
             // BEFORE ui.cla/uiwidgets.cla -- same "foundational types
@@ -742,15 +733,9 @@ on App.startCLI(args: list of string) {
         }
 
         irReset()
-        // native-5e Task 6: lower.cla's own copy of --uiport must be set
-        // BEFORE lowerProgram runs (unlike cpUiPortFlag below, which
-        // emitProgram doesn't need until after) -- lowerProgram's own tail
-        // synthesizes the reverse-waist dispatcher IRFuncs when it's set.
-        lowUiPortFlag = uiportFlag
         lowerProgram(combined2)
         if emitMode {
             shakeProgram()
-            cpUiPortFlag = uiportFlag
             cSrc = emitProgram()
             wrote = file.writeText(outPath, cSrc)
             if not wrote {

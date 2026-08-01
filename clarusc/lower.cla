@@ -112,14 +112,6 @@ var lowCurWinType: int
 var lowCurHandlerEvent: int
 var lowCurAcceptedParam: int
 
-// lowUiPortFlag (native-5e Task 6) mirrors main.cla's `--uiport` flag,
-// set BEFORE lowerProgram runs (cpUiPortFlag, cprint.cla's own copy, isn't
-// set until after -- lowering needs its own gate to decide whether to
-// synthesize the reverse-waist dispatcher IRFuncs at all; see
-// lowSynthUiDispatchers). Default false: every existing lowering path
-// (flag absent) is completely unaffected.
-var lowUiPortFlag: bool
-
 // uiWinHandlersIdx (Task 5) maps a window type name to its irWinHandlers
 // arena index, lazily created on that window's FIRST registered handler
 // (lowGetOrCreateWinHandlers) -- a window with no `extend` block at all
@@ -4769,7 +4761,7 @@ func lowSynthesizeMissingOpenedHandlers() {
 }
 
 // ================================================================
-// native-5e Task 6: --uiport reverse-waist dispatcher synthesis
+// Reverse-waist dispatcher synthesis
 // ================================================================
 //
 // lowSynthUiDispatchers builds the 10 program-emitted reverse-waist
@@ -4785,11 +4777,11 @@ func lowSynthesizeMissingOpenedHandlers() {
 // they call (IUiState, IUiSetCancelFlag, IUiValueAtPtr, IUiAddrOfGlobal,
 // ...), exactly like every other UI construct already works.
 //
-// Called once, from lowerProgram's tail, only when --uiport (lowUiPortFlag)
-// is set and the program actually declares a window/menu/every -- mirrors
-// irIsUiProgram()'s own gate, duplicated here rather than called across
-// the cprint.cla layering boundary (lower.cla is included BEFORE cprint.cla
-// in main.cla's manifest, and is meant to stay backend-agnostic).
+// Called once, from lowerProgram's tail, only when the program actually
+// declares a window/menu/every -- mirrors irIsUiProgram()'s own gate,
+// duplicated here rather than called across the cprint.cla layering
+// boundary (lower.cla is included BEFORE cprint.cla in main.cla's
+// manifest, and is meant to stay backend-agnostic).
 //
 // Every synthesized function is registered as a shakeProgram() root
 // (shakeAddRoot): nothing calls any of them yet -- ui.cla, their only
@@ -5460,11 +5452,10 @@ func lowerProgram(declHead: int): int {
         d = declNext(d)
     }
     lowSynthesizeMissingOpenedHandlers()
-    // native-5e Task 6: --uiport's reverse-waist dispatcher synthesis --
-    // duplicates irIsUiProgram()'s own gate (cprint.cla) rather than
-    // calling across the layering boundary; see lowSynthUiDispatchers'
-    // own header comment.
-    if lowUiPortFlag and (irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0) {
+    // Reverse-waist dispatcher synthesis -- duplicates irIsUiProgram()'s
+    // own gate (cprint.cla) rather than calling across the layering
+    // boundary; see lowSynthUiDispatchers' own header comment.
+    if irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0 {
         lowSynthUiDispatchers()
         lowUiPortAddRoots()
     }

@@ -470,11 +470,8 @@ void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
 void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
 void rt_ext_UiNumToString(int32_t theNum, void *theString) { NumToString((long)theNum, (unsigned char *)theString); }
 
-#ifdef CLARUS_UIPORT
-/* rt_ext_UiActionEntry: the scrollbar action-proc glue-entry extern (this
- * task's own brief -- "the cprint-lane C pascal wrapper goes in
- * rt_ext_mac.inc gated CLARUS_UIPORT (aef1a25 precedent), calling your
- * ported action function"). Retro68's classic-68k (non-CFM) build defines
+/* rt_ext_UiActionEntry: the scrollbar action-proc glue-entry extern,
+ * calling the ported action function. Retro68's classic-68k (non-CFM) build defines
  * `NewControlActionUPP(proc)` as the plain identity macro `(proc)` (Controls.h)
  * -- ControlActionUPP IS a raw pascal function pointer on this target, so
  * this wrapper's own address, unwrapped, is a valid actionProc. */
@@ -506,7 +503,6 @@ static pascal void rt_ext_ui_ldef(short lMessage, Boolean lSelect, Rect *lRect, 
     clar_fn_rtUiLdefDraw((int32_t)lMessage, (int32_t)lSelect, (void *)lRect, packed, (int32_t)lDataOffset, (int32_t)lDataLen, (void *)lHandle);
 }
 void *rt_ext_UiLdefEntry(void) { return (void *)rt_ext_ui_ldef; }
-#endif /* CLARUS_UIPORT (rt_ext_UiActionEntry, rt_ext_UiLdefEntry) */
 
 /* ==================== Task 7 (native-5e UI port) glue ==================== */
 #include <AppleEvents.h>
@@ -546,13 +542,13 @@ void rt_ext_UiTestEmit(void *s) {
 void rt_ext_UiTestEmit(void *s) { (void)s; }
 #endif
 
-/* rt_ui_test_script's weak default (Task 7 Step 4): moved here from
- * rt_ui.c, which is dropped from the CMake source list entirely under
- * CLARUS_UIPORT=1 (build-mac.sh) -- without this, a --uiport build with
- * no `--events` override (a real, non-scripted build) would leave the
- * symbol wholly undefined, a link error. Every scripted scenario's own
- * generated events.c still provides a STRONG override (unchanged
- * weak/strong precedent, same as rt_app_creator's own, rt_mac.c:380).
+/* rt_ui_test_script's weak default: moved here from rt_ui.c, which is
+ * never linked (build-mac.sh drops it from the CMake source list
+ * entirely) -- without this, a build with no `--events` override (a
+ * real, non-scripted build) would leave the symbol wholly undefined, a
+ * link error. Every scripted scenario's own generated events.c still
+ * provides a STRONG override (unchanged weak/strong precedent, same as
+ * rt_app_creator's own, rt_mac.c:380).
  */
 __attribute__((weak)) const char rt_ui_test_script[] = "";
 
@@ -569,23 +565,14 @@ void rt_ext_UiScreenBits(void *baseAddrOut, void *rowBytesOut, void *boundsOut) 
     *(Rect *)boundsOut = qd.screenBits.bounds;
 }
 
-/* Task 7 Step 7 review fix: rt_ext_UiLaunchReal and its AE handlers below
- * call clar_fn_clar_ui_fire_launchdoc/clar_fn_clar_ui_fire_startempty --
- * symbols that exist ONLY in a --uiport build's generated C (lower.cla's
- * lowSynthUiDispatchers runs solely under lowUiPortFlag). This whole file
- * is compiled unconditionally for BOTH lanes (rt_mac.c #includes it
- * regardless of --uiport, unlike rt_ui.c, which build-mac.sh actually
- * drops from the default lane's own CMake source list), so the default
- * (non-ported, rt_ui.c) lane linked this block's undefined references
- * every time -- caught by this task's own Step 6 default-lane regression
- * run (TestButtonsUIScenario/TestTextwidgetsUIScenario/
- * TestPopuptableUIScenario, none of which had ever been run this
- * session before), not by anything in Steps 1-5's compile-only checks.
- * CLARUS_UIPORT (build-mac.sh's own -D, added alongside this fix) is the
- * signal: defined only when CLARUS_UIPORT=1 built this binary. */
-#ifdef CLARUS_UIPORT
-
-/* rt_ext_UiLaunchReal: rt_ui_launch's real-build branch (rt_ui.c:3963-4028)
+/* rt_ext_UiLaunchReal and its AE handlers below call
+ * clar_fn_clar_ui_fire_launchdoc/clar_fn_clar_ui_fire_startempty -- the
+ * lower.cla-synthesized dispatchers every UI program's generated C
+ * defines (lowSynthUiDispatchers). This whole file is compiled
+ * unconditionally (rt_mac.c #includes it always), and every emitted
+ * program is now a ported-lane program, so these symbols always resolve.
+ *
+ * rt_ext_UiLaunchReal: rt_ui_launch's real-build branch (rt_ui.c:3963-4028)
  * adapted verbatim -- AEInstallEventHandler + the 4 pascal AE handlers +
  * AEDesc decoding stay pure C (no function pointers reach Clarus, per
  * Task 7 report log entry #3); each handler calls the Task-6-synthesized
@@ -757,7 +744,5 @@ void rt_ext_UiLaunchReal(void) {
         }
     }
 }
-
-#endif /* CLARUS_UIPORT (rt_ext_UiLaunchReal + AE handlers) */
 
 #endif /* CLARUS_RT_EXT_MAC_INC */

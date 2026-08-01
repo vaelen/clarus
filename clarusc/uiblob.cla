@@ -3,9 +3,9 @@
 
 // uiblob.cla (Task 5, native-5e plan): builds the flat, pointer-free UI
 // descriptor blob from the IR UI descs (ir.cla:287-584) -- ONE
-// backend-neutral builder both cprint.cla (under --uiport, cpEmitUiBlob)
-// and, later, cg68k.cla (Task 12, pouring the same bytes into the native
-// constant pool) call, so the two backends emit byte-identical blobs BY
+// backend-neutral builder both cprint.cla (cpEmitUiBlob) and, later,
+// cg68k.cla (Task 12, pouring the same bytes into the native constant
+// pool) call, so the two backends emit byte-identical blobs BY
 // CONSTRUCTION rather than by keeping two hand-written encoders in sync.
 //
 // Format (normative -- docs/superpowers/plans/2026-08-01-native-5e-ui-
@@ -498,8 +498,8 @@ func uibWinHandlerMask(whIdx: int, stateFieldsHead: int): int {
 // between this copy of the loop and cg68k's own real code-generated
 // struct layout is thus only possible if one of these two loops itself
 // changes without the other -- which is exactly what cprint.cla's
-// --uiport `clar_ui_szassert_<Win>` (right after this function's only
-// other caller, cpEmitWindowDescs) exists to catch at C compile time.
+// `clar_ui_szassert_<Win>` (right after this function's only other
+// caller, cpEmitUiStateStructs) exists to catch at C compile time.
 func uibStateSize(winIdx: int): int {
     var f: int
     var cur: int

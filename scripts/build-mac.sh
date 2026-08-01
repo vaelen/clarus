@@ -61,15 +61,7 @@ fi
 # 2. emit
 OUT="$ROOT/build-mac/$NAME"
 mkdir -p "$OUT"
-# CLARUS_UIPORT=1 (native-5e Task 7): emit against the PORTED UI runtime
-# (runtime/clarus/ui*.cla, spliced into the program by clarusc's own
-# --uiport flag) instead of the frozen runtime/mac/rt_ui.c -- see step 3
-# below, where rt_ui.c is dropped from the CMake source list to match.
-UIPORT_FLAG=""
-if [ "$CLARUS_UIPORT" = "1" ]; then
-    UIPORT_FLAG="--uiport"
-fi
-"$CLARUSC" emit $UIPORT_FLAG -o "$OUT/$NAME.c" "${FILES[@]}"
+"$CLARUSC" emit -o "$OUT/$NAME.c" "${FILES[@]}"
 # 2b. optional compiled-in event script
 EXTRA_SRC=""
 if [ -n "$EVENTS" ]; then
@@ -237,43 +229,26 @@ fi
 
 # 3. Retro68 build
 #
-# rt_ui.c is always added to the sources (Task 5, mac-target-4b), even for a
-# UI-free program: the simplest correct approach over conditionally
-# detecting UI declarations in the generated C, at the cost of a UI-free
-# .bin linking a few dead rt_ui_* functions it never calls -- acceptable per
-# the plan's own note. -I.../runtime/mac is needed unconditionally too, both
-# for rt_ui.c's own #include "rt_ui.h" and for a UI program's generated
-# $NAME.c, which includes the same header when it declares any window/menu.
+# rt_ui.c (the frozen legacy C UI runtime, runtime/mac/rt_ui.c) is NEVER
+# linked (native-5e Task 11: the ported UI runtime, runtime/clarus/ui*.cla,
+# spliced into the emitted $NAME.c above by clarusc itself, is the only UI
+# path now) -- it stays in-tree, untouched, as the frozen oracle for
+# uiprobe's differential testing, but the app link never sees it. rt_mac.c
+# (which #includes runtime/mac/rt_ext_mac.inc -- the ported runtime's own
+# C-side glue, e.g. UiLaunchReal/UiTestEmit/UiStrAddr)/alert.r/events.c
+# stay unconditionally. -I.../runtime/mac is needed unconditionally too,
+# both for rt_ext_mac.inc's own headers and for a UI program's generated
+# $NAME.c, which includes rt_ui.h (types/macros only) when it declares any
+# window/menu/every.
 EXTRA_APP_ARGS=""
 if [ "$HASAPP" = "1" ]; then
     EXTRA_APP_ARGS="TYPE \"APPL\" CREATOR \"${APPID:-????}\""
 fi
-# CLARUS_UIPORT=1 (native-5e Task 7): rt_ui.c is dropped from the CMake
-# source list entirely -- the emitted $NAME.c above already carries the
-# ported UI runtime's own C output (from runtime/clarus/ui*.cla), so
-# linking rt_ui.c too would duplicate every rt_ui_* symbol. rt_mac.c
-# (which #includes runtime/mac/rt_ext_mac.inc -- the ported runtime's own
-# C-side glue, e.g. UiLaunchReal/UiTestEmit/UiStrAddr)/alert.r/events.c
-# stay unconditionally -- only rt_ui.c itself is the frozen C UI runtime
-# this whole task replaces.
-RT_UI_C="$ROOT/runtime/mac/rt_ui.c"
-UIPORTDEF=""
-if [ "$CLARUS_UIPORT" = "1" ]; then
-    RT_UI_C=""
-    # Task 7 Step 7 review fix: rt_ext_mac.inc's rt_ext_UiLaunchReal (+ its
-    # AE handlers) calls clar_fn_clar_ui_fire_launchdoc/_startempty, symbols
-    # that exist ONLY in a --uiport build's generated C -- rt_ext_mac.inc
-    # itself is #included unconditionally by rt_mac.c on BOTH lanes, so
-    # without this define the default (non-ported) lane linked those
-    # undefined references every time. See that file's own matching
-    # #ifdef CLARUS_UIPORT comment.
-    UIPORTDEF="-DCLARUS_UIPORT=1"
-fi
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
 project($NAME C)
-add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF $UIPORTDEF)
-add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $RT_UI_C $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
+add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF)
+add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
 EOF
 cmake -S "$OUT" -B "$OUT/build" \
     -DCMAKE_TOOLCHAIN_FILE="$ROOT/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake" \

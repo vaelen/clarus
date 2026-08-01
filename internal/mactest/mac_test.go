@@ -39,23 +39,9 @@ func repoRoot(t *testing.T) string {
 // for the same script and the same "did it produce a .bin" check.
 func runBuildMac(t *testing.T, name string, args ...string) string {
 	t.Helper()
-	return runBuildMacEnv(t, name, nil, args...)
-}
-
-// runBuildMacEnv is runBuildMac with explicit extra environment variables
-// (in addition to the test process's own os.Environ()) -- native-5e Task 7's
-// own ported-lane runner uses this to set CLARUS_UIPORT=1 on the build-mac.sh
-// child process EXPLICITLY (a parameter, not ambient global env mutation
-// shared across concurrently-running tests) rather than requiring the whole
-// `go test` invocation itself to run under that env var.
-func runBuildMacEnv(t *testing.T, name string, extraEnv []string, args ...string) string {
-	t.Helper()
 	root := repoRoot(t)
 	cmdArgs := append([]string{name}, args...)
 	cmd := exec.Command(filepath.Join(root, "scripts", "build-mac.sh"), cmdArgs...)
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
-	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

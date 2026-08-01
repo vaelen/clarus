@@ -101,32 +101,21 @@ func runUIScenario(t *testing.T, scenario string, wantExit int) []uiSnap {
 // under testdata/ui/ per the usual convention.
 func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
 	t.Helper()
-	return runUIScenarioBuild(t, scenario, claRel, wantExit, false)
+	return runUIScenarioBuild(t, scenario, claRel, wantExit)
 }
 
-// runUIScenarioBuild is runUIScenarioSrc with the build step factored out
-// as a parameter (native-5e Task 7): uiport=false is the existing frozen
-// Retro68 UI runtime lane (runtime/mac/rt_ui.c, byte-identical to every
-// prior task); uiport=true builds against the PORTED runtime instead
-// (runtime/clarus/ui*.cla, via build-mac.sh's own CLARUS_UIPORT=1 check) --
-// everything AFTER the build step (RunMac, trace/snap comparison against
-// the SAME testdata/ui/testdata/uisnaps goldens) is verbatim identical
-// either way: the whole point of this port is that both lanes produce
-// byte-identical trace/snap output from the SAME golden set (Global
-// Constraints: "one golden set, strict").
-func runUIScenarioBuild(t *testing.T, scenario string, claRel string, wantExit int, uiport bool) []uiSnap {
+// runUIScenarioBuild is runUIScenarioSrc with the build step factored out:
+// builds claRel against the ported UI runtime (runtime/clarus/ui*.cla --
+// scripts/build-mac.sh's only path now, rt_ui.c is never linked), then
+// RunMac + trace/snap comparison against testdata/ui/testdata/uisnaps.
+func runUIScenarioBuild(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
 	t.Helper()
 	requireMac(t)
 	root := repoRoot(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
 	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
 
-	var extraEnv []string
-	if uiport {
-		name += "Ported"
-		extraEnv = []string{"CLARUS_UIPORT=1"}
-	}
-	bin := runBuildMacEnv(t, name, extraEnv, claRel, "--test", "--events", eventsRel)
+	bin := runBuildMac(t, name, claRel, "--test", "--events", eventsRel)
 	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
 	trace, snaps := parseUIOutput(t, out)
 
@@ -701,211 +690,4 @@ func TestBookmarksUIScenario(t *testing.T) {
 	if bytes.Equal(s4, s5) {
 		t.Fatalf("bookmarks: snap S4 == S5 -- Remove did not delete a row")
 	}
-}
-
-// ================================================================
-// Ported-lane runners (native-5e Task 7): the SAME scenario set above,
-// built against the PORTED UI runtime (runtime/clarus/ui*.cla) instead
-// of the frozen runtime/mac/rt_ui.c, via runUIScenarioBuild's uiport=true
-// -- verbatim identical trace/snap comparison against the SAME goldens
-// (Global Constraints: "one golden set, strict... NEVER re-blessed").
-// Each individually skips unless CLARUS_UIPORT=1 is set (requireUiPort),
-// so a plain `go test ./internal/mactest` (no env override) exercises
-// ONLY the default lane, unchanged -- these only run under an explicit
-// `CLARUS_UIPORT=1 CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
-// <name>Ported`.
-// ================================================================
-
-func requireUiPort(t *testing.T) {
-	t.Helper()
-	if os.Getenv("CLARUS_UIPORT") == "" {
-		t.Skip("set CLARUS_UIPORT=1 (also needs CLARUS_MAC_TESTS=1) to run the ported-UI-runtime lane")
-	}
-}
-
-func TestButtonsUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "buttons", filepath.Join("..", "..", "testdata", "ui", "buttons.cla"), 0, true)
-}
-
-func TestMenusUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "menus", filepath.Join("..", "..", "testdata", "ui", "menus.cla"), 0, true)
-}
-
-func TestWinvarUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "winvar", filepath.Join("..", "..", "testdata", "ui", "winvar.cla"), 0, true)
-}
-
-func TestZoomwinUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "zoomwin", filepath.Join("..", "..", "testdata", "ui", "zoomwin.cla"), 0, true)
-}
-
-func TestCanvasUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "canvas", filepath.Join("..", "..", "testdata", "ui", "canvas.cla"), 0, true)
-}
-
-func TestPatternUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "pattern", filepath.Join("..", "..", "testdata", "ui", "pattern.cla"), 0, true)
-}
-
-func TestHdimUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "hdim", filepath.Join("..", "..", "testdata", "ui", "hdim.cla"), 0, true)
-}
-
-func TestUIAboutPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "about", filepath.Join("..", "..", "testdata", "ui", "about.cla"), 0, true)
-}
-
-func TestSmokeBounceUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "smoke_bounce", filepath.Join("..", "..", "testdata", "valid", "bounce.cla"), 0, true)
-}
-
-func TestSmokeMenuDemoUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "smoke_menudemo", filepath.Join("..", "..", "examples", "menu-demo.cla"), 0, true)
-}
-
-func TestSmokeMandelUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0, true)
-}
-
-// ==================== native-5e Task 8 (slice B): TextEdit widgets ====================
-//
-// texteditor/texteditor_quit are NOT in this set: examples/texteditor.cla's
-// own .events scripts (testdata/ui/texteditor.events, texteditor_quit.events)
-// use the `answer-save`/`answer-open`/`answer-changes` scripted dialog-
-// answer verbs, which route through askOpen/askSave/askSaveChanges -- Task
-// 10 (slice D) surface, not yet ported (uiscript.cla's scripted interpreter
-// has no `answer-*` verb at all yet; ui.cla's askOpen/askSave/
-// askSaveChanges still hit rtUiDialogsUnported's fail-closed stub). Moved
-// forward to Task 10's own scenario sweep -- see task-8-report.md.
-// texteditor_bigfile IS in this set: its own .events (`launchdoc` + `quit`
-// only) never reaches openPath's askSave/askOpen calls at all (the file is
-// rejected by the too-large guard before either dialog is ever touched),
-// so it only exercises Task 7 (App.openDocument) + the base-runtime
-// `alert()` primitive (rt_alert, unrelated to the UI dialog surface) --
-// confirmed to compile+run without ever calling rtUiDialogsUnported.
-
-func TestTextwidgetsUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "textwidgets", filepath.Join("..", "..", "testdata", "ui", "textwidgets.cla"), 0, true)
-}
-
-func TestEditMenuUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "editmenu", filepath.Join("..", "..", "testdata", "ui", "editmenu.cla"), 0, true)
-}
-
-func TestHscrollUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "hscroll", filepath.Join("..", "..", "testdata", "ui", "hscroll.cla"), 0, true)
-}
-
-func TestOpendocUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "opendoc", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0, true)
-}
-
-func TestOpendocEmptyUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "opendoc_empty", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0, true)
-}
-
-// TestTexteditorBigfileUIScenarioPorted mirrors TestTexteditorBigfileUIScenario
-// (above) against the ported lane -- same two-source build (examples/
-// texteditor.cla + testdata/ui/texteditor_bigfile_setup.cla), same
-// alert-text-then-trace comparison, CLARUS_UIPORT=1 threaded through.
-func TestTexteditorBigfileUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	root := repoRoot(t)
-	scenario := "texteditor_bigfile"
-
-	bin := runBuildMacEnv(t, "UITexteditorBigfilePorted", []string{"CLARUS_UIPORT=1"},
-		filepath.Join("..", "..", "examples", "texteditor.cla"),
-		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
-		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", scenario+".events"))
-	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
-
-	if !strings.Contains(out, texteditorBigfileAlertMsg) {
-		t.Fatalf("%s: expected alert message %q in capture, got: %q", scenario, texteditorBigfileAlertMsg, out)
-	}
-	filtered := strings.Replace(out, texteditorBigfileAlertMsg+"\n", "", 1)
-	trace, _ := parseUIOutput(t, filtered)
-
-	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")
-	want, err := os.ReadFile(traceGolden)
-	if err != nil {
-		t.Fatalf("reading trace golden %s: %v", traceGolden, err)
-	}
-	if trace != string(want) {
-		t.Fatalf("%s: trace mismatch:%s", scenario, firstDiff(string(want), trace))
-	}
-	if exitCode != 0 {
-		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
-	}
-}
-
-// ==================== native-5e Task 9 (slice C): ListManager tables, popups, LDEF ====================
-//
-// popuptable is the ONLY scenario gate this task requires (task-9-brief.md
-// -- popup itself has no golden coverage yet, see popuptable.cla's own
-// header comment: "a form window still aborts" at the time that scenario
-// was authored; popup's real exercise lands with Task 10's formedit/
-// bookmarks scenarios, which need the `edit` intrinsic this port doesn't
-// have yet). Same byte-identical-golden-compare-only shape as every other
-// Ported wrapper above (no re-assertion of TestPopuptableUIScenario's own
-// per-snap semantic checks -- those already proved the BEHAVIOR once
-// against the default lane; this test proves the PORTED lane produces the
-// identical bytes).
-
-func TestPopuptableUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "popuptable", filepath.Join("..", "..", "testdata", "ui", "popuptable.cla"), 0, true)
-}
-
-// ==================== native-5e Task 10 (slice D): dialogs, StandardFile,
-// modal forms ====================
-//
-// dialogs/formedit/texteditor/texteditor_quit/bookmarks -- the scenario
-// set this task's own brief names, plus the two texteditor scenarios Task
-// 8 moved forward (their .events use answer-save/answer-open/
-// answer-changes, which need askOpen/askSave/askSaveChanges, ported this
-// task). Same byte-identical-golden-compare-only shape as every other
-// Ported wrapper above (no re-assertion of the non-ported tests' own
-// per-snap semantic checks -- those already proved the BEHAVIOR once
-// against the default lane; these prove the PORTED lane produces the
-// identical bytes).
-
-func TestDialogsUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "dialogs", filepath.Join("..", "..", "testdata", "ui", "dialogs.cla"), 0, true)
-}
-
-func TestFormeditUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "formedit", filepath.Join("..", "..", "testdata", "ui", "formedit.cla"), 0, true)
-}
-
-func TestTexteditorUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "texteditor", filepath.Join("..", "..", "examples", "texteditor.cla"), 0, true)
-}
-
-func TestTexteditorQuitUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "texteditor_quit", filepath.Join("..", "..", "examples", "texteditor.cla"), 0, true)
-}
-
-func TestBookmarksUIScenarioPorted(t *testing.T) {
-	requireUiPort(t)
-	runUIScenarioBuild(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0, true)
 }

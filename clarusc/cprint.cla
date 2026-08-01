@@ -61,17 +61,8 @@ include "shake.cla"
 var cpTypeBuf: list of text   // string-capacity (+ array-wrapper, Task 4+) typedefs
 var cpLitBuf: list of text    // string-literal pool
 var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err) + UI state structs
-var cpUiBuf: list of text     // rt_ui_widget_desc/window_desc/item_desc/menu_desc tables (Task 4)
+var cpUiBuf: list of text     // clar_ui_blob[] (the UI descriptor blob) + per-window state structs
 var cpRestBuf: list of text   // globals init, funcs, main
-
-// cpUiPortFlag (Task 5, native-5e) mirrors main.cla's `--uiport` flag
-// (set there, right before emitProgram is called) -- gates cpEmitUiBlob's
-// `clar_ui_blob[]` + per-window sizeof-assert emission ONLY; every
-// pre-existing rt_ui_*_desc table cpEmitUiDescs prints stays unconditional
-// (Task 11 is the flip that retires them), so every existing
-// testdata/emitui/*.c.golden -- emitted with this flag absent -- stays
-// byte-identical regardless of this task's changes.
-var cpUiPortFlag: bool
 
 // cpCorePorted (Plan native-5d Task 3) is core.cla's own ported-module
 // flag -- UNCONDITIONAL like cpStrPorted/cpTextPorted/cpListPorted/
@@ -1095,26 +1086,23 @@ func fpCallExt(e: int): text {
         args = args + argText
         a = irExprNext(a)
     }
-    // native-5e Task 6: under --uiport, ui.cla's reverse-waist externs
-    // (Task 7+) resolve to lower.cla's synthesized clar_ui_fire_* IRFuncs
-    // (called directly, no rt_ext_ shim exists for them) rather than the
-    // ordinary host-symbol path below -- lowUiSynthExternName is the ONE
-    // place (per the plan's reverse-waist section) that owns the name
-    // mapping. The synthesized IRFuncs are ORDINARY functions (the whole
-    // point -- no per-backend dispatcher emission), so the call still goes
-    // through the SAME "clar_fn_" symbol convention every other function
-    // call does (the `nat_<Name>` extern-fallback precedent, cg68k.cla's
-    // cgCallExtNatFallback, resolves the exact same way: an ordinary
-    // function, called by its ordinary name). UiProgDesc is a special case
-    // (not a synthesized FUNCTION at all -- see ir.cla's own doc comment on
-    // why): it resolves straight to the blob's own address, never a call.
-    if cpUiPortFlag and poolGet(irCallExtName(e)) == "UiProgDesc" {
+    // ui.cla's reverse-waist externs (Task 7+) resolve to lower.cla's
+    // synthesized clar_ui_fire_* IRFuncs (called directly, no rt_ext_ shim
+    // exists for them) rather than the ordinary host-symbol path below --
+    // lowUiSynthExternName is the ONE place (per the plan's reverse-waist
+    // section) that owns the name mapping. The synthesized IRFuncs are
+    // ORDINARY functions (the whole point -- no per-backend dispatcher
+    // emission), so the call still goes through the SAME "clar_fn_" symbol
+    // convention every other function call does (the `nat_<Name>`
+    // extern-fallback precedent, cg68k.cla's cgCallExtNatFallback, resolves
+    // the exact same way: an ordinary function, called by its ordinary
+    // name). UiProgDesc is a special case (not a synthesized FUNCTION at
+    // all -- see ir.cla's own doc comment on why): it resolves straight to
+    // the blob's own address, never a call.
+    if poolGet(irCallExtName(e)) == "UiProgDesc" {
         call = "(&clar_ui_blob[0])"
     } else {
-        synthName = -1
-        if cpUiPortFlag {
-            synthName = lowUiSynthExternName(irCallExtName(e))
-        }
+        synthName = lowUiSynthExternName(irCallExtName(e))
         if synthName != -1 {
             call = "clar_fn_" + poolGet(synthName) + "(" + args + ")"
         } else {
@@ -2574,21 +2562,11 @@ func fpIntrCall(x: int): text {
         // Task 7 Step 6 (native-5e): under --uiport, rtUiOpen takes the
         // window's blob winIdx (an int), not a descriptor pointer --
         // report log entry #5's own redesign.
-        if cpUiPortFlag {
-            return "clar_fn_rtUiOpen(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
-        }
-        return "rt_ui_open(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
+        return "clar_fn_rtUiOpen(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
     } else if nm == IUiFront() {
-        if cpUiPortFlag {
-            return "clar_fn_rtUiFront(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
-        }
-        return "rt_ui_front(&clar_ui_window_" + poolGet(irtName(irExprType(x))) + ")"
+        return "clar_fn_rtUiFront(" + numToStr(cpFindWindowIndex(poolGet(irtName(irExprType(x))))) + ")"
     } else if nm == IUiClose() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiClose(" + fpExpr(a0) + ");")
-        } else {
-            fpEmit("rt_ui_close(" + fpExpr(a0) + ");")
-        }
+        fpEmit("clar_fn_rtUiClose(" + fpExpr(a0) + ");")
         return toText("")
     } else if nm == IUiQuit() {
         // `quit` in a UI program (Ch7 Quit Semantics) -- the closeRequest
@@ -2596,21 +2574,14 @@ func fpIntrCall(x: int): text {
         // IUiQuit doc comment for why an exit-code expression, if any, is
         // evaluated by a separate statement lowQuit emits before this one,
         // not passed in here.
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiQuit();")
-        } else {
-            fpEmit("rt_ui_quit();")
-        }
+        fpEmit("clar_fn_rtUiQuit();")
         return toText("")
     } else if nm == IUiState() {
         // Casts rt_ui_state's void* to the firing window's state struct and
         // dereferences it inline, so the ENCLOSING FieldRef's ordinary
         // "(X).cv_name" printer (fpFieldRef) needs no special case at all --
         // see ir.cla's KUiState doc comment.
-        if cpUiPortFlag {
-            return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)clar_fn_rtUiState(" + fpExpr(a0) + "))"
-        }
-        return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)rt_ui_state(" + fpExpr(a0) + "))"
+        return "(*(clar_uistate_" + poolGet(irtName(irExprType(x))) + " *)clar_fn_rtUiState(" + fpExpr(a0) + "))"
     } else if nm == IUiStateDefaults() {
         // Constructs every handle-backed (Text/List/Map/Rec) per-instance
         // var in the firing window's state block -- the FIRST statement of
@@ -2626,62 +2597,31 @@ func fpIntrCall(x: int): text {
         fld = cpFindWindowStateFields(winName)
         while fld != -1 {
             if irtNeedsCtor(irFieldSlotType(fld)) {
-                // Task 7 Step 7 review fix: this IUiStateDefaults arm had its
-                // own separate "rt_ui_state(...)" cast, hard-coded, unlike
-                // the IUiState arm just above (already correctly
-                // cpUiPortFlag-gated) -- missed by Step 6's redirect pass,
-                // caught by winvar.cla's own real link failure (undefined
-                // reference to rt_ui_state, the frozen C runtime's symbol,
-                // dropped from the --uiport build).
-                if cpUiPortFlag {
-                    cpDefaultInit("((*(clar_uistate_" + winName + " *)clar_fn_rtUiState(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
-                } else {
-                    cpDefaultInit("((*(clar_uistate_" + winName + " *)rt_ui_state(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
-                }
+                cpDefaultInit("((*(clar_uistate_" + winName + " *)clar_fn_rtUiState(" + inst + "))).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld), 0, -1)
             }
             fld = irFieldSlotNext(fld)
         }
         return toText("")
     } else if nm == IUiSetTitle() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiSetTitle(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
-        } else {
-            fpEmit("rt_ui_set_title(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
-        }
+        fpEmit("clar_fn_rtUiSetTitle(" + fpExpr(a0) + ", " + fpStrAddr(a1) + ");")
         return toText("")
     } else if nm == IUiGetTitle() {
         // `title` read (mac-target-4c Task 4b) -- same fpNewTmp("clar_str_255")
         // + fill-in-place-call pattern as IFileName/IUiGetFieldText above.
         t = fpNewTmp("clar_str_255")
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiGetTitle(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
-        } else {
-            fpEmit("rt_ui_get_title(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
-        }
+        fpEmit("clar_fn_rtUiGetTitle(" + fpExpr(a0) + ", (uint8_t*)&" + t + ");")
         return t
     } else if nm == IUiSetCaption() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
-        } else {
-            fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CAPTION, " + fpStrAddr(a2) + ");")
         return toText("")
     } else if nm == IUiSetText() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
-        } else {
-            fpEmit("rt_ui_widget_set_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, " + fpStrAddr(a2) + ");")
         return toText("")
     } else if nm == IUiGetFieldText() {
         // field.text read (mac-target-4c Task 2) -- same fpNewTmp("clar_str_255")
         // + fill-in-place-call pattern as IFileName above.
         t = fpNewTmp("clar_str_255")
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetGetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
-        } else {
-            fpEmit("rt_ui_widget_get_str(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
-        }
+        fpEmit("clar_fn_rtUiWidgetGetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
         return t
     } else if nm == IUiGetTextviewText() {
         // textview.text read (mac-target-4c Task 2) -- a fresh rt_text
@@ -2689,11 +2629,7 @@ func fpIntrCall(x: int): text {
         // filled in place by rt_ui_widget_get_text.
         t = fpNewTmp("rt_text *")
         fpEmit(t + " = rt_text_new();")
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetGetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
-        } else {
-            fpEmit("rt_ui_widget_get_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
-        }
+        fpEmit("clar_fn_rtUiWidgetGetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + t + ");")
         return t
     } else if nm == IUiSetTextviewText() {
         // textview.text write (mac-target-4c Task 2) -- lowWidgetSetAssign
@@ -2705,68 +2641,33 @@ func fpIntrCall(x: int): text {
         // a fresh rt_text handle) at the funnel, and a Text-typed RHS
         // passes through lowCoerceStr unchanged. No fpStrAddr/temp is
         // needed here, unlike IUiSetText's Str-shaped a2.
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
-        } else {
-            fpEmit("rt_ui_widget_set_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(a2) + ");")
         return toText("")
     } else if nm == IUiGetChecked() {
-        if cpUiPortFlag {
-            return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
-        }
-        return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
+        return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED)"
     } else if nm == IUiSetChecked() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
-        } else {
-            fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_CHECKED, (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
     } else if nm == IUiGetEnabled() {
-        if cpUiPortFlag {
-            return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
-        }
-        return "rt_ui_widget_get_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
+        return "clar_fn_rtUiWidgetGetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED)"
     } else if nm == IUiSetEnabled() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
-        } else {
-            fpEmit("rt_ui_widget_set_bool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetBool(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_ENABLED, (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
     } else if nm == IUiGetWidth() {
-        if cpUiPortFlag {
-            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
-        }
-        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_WIDTH)"
     } else if nm == IUiGetHeight() {
-        if cpUiPortFlag {
-            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
-        }
-        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_HEIGHT)"
     } else if nm == IUiGetSelected() {
         // popup/table `selected` read (mac-target-4d Task 5) -- rt_ui.h's
         // rt_ui_widget_get_int returns `short`; the implicit short->int32_t
         // widening on return needs no explicit cast, same as
         // IUiGetWidth/IUiGetHeight just above.
-        if cpUiPortFlag {
-            return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
-        }
-        return "rt_ui_widget_get_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
+        return "clar_fn_rtUiWidgetGetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED)"
     } else if nm == IUiSetSelected() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiWidgetSetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
-        } else {
-            fpEmit("rt_ui_widget_set_int(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
-        }
+        fpEmit("clar_fn_rtUiWidgetSetInt(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_SELECTED, (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
     } else if nm == IUiMenuEnable() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiMenuEnable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
-        } else {
-            fpEmit("rt_ui_menu_enable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
-        }
+        fpEmit("clar_fn_rtUiMenuEnable(" + fpExpr(a0) + ", " + fpExpr(a1) + ", (int32_t)(" + fpExpr(a2) + "));")
         return toText("")
     } else if nm == IUiCancel() {
         // `cancel` (Ch5/Ch8) -- writes through the dispatcher-owned scratch
@@ -2785,74 +2686,37 @@ func fpIntrCall(x: int): text {
         // Task 10 (native-5e slice D): askOpen is ported (uidialogs.cla's
         // rtUiAskOpen) -- same signature/argument shape as the non-ported
         // rt_ui_ask_open call just below.
-        if cpUiPortFlag {
-            return "clar_fn_rtUiAskOpen((uint8_t*)&(" + fpAddrable(a0) + "))"
-        }
-        return "rt_ui_ask_open((uint8_t*)&(" + fpAddrable(a0) + "))"
+        return "clar_fn_rtUiAskOpen((uint8_t*)&(" + fpAddrable(a0) + "))"
     } else if nm == IUiAskSave() {
         // `askSave(p, suggested)` -- p filled in place (see IUiAskOpen
         // above); suggested is read-only, so it takes the ordinary
         // fpStrAddr const-cast path.
-        if cpUiPortFlag {
-            return "clar_fn_rtUiAskSave((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
-        }
-        return "rt_ui_ask_save((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
+        return "clar_fn_rtUiAskSave((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
     } else if nm == IUiAskSaveChanges() {
         // `askSaveChanges(name)` -- name is read-only; the result is the
         // raw saveChoice enum word (0/1/2), embedded directly like
         // IUiGetWidth/IUiGetHeight's `short` results just below.
-        if cpUiPortFlag {
-            return "clar_fn_rtUiAskSaveChanges(" + fpStrAddr(a0) + ")"
-        }
-        return "rt_ui_ask_save_changes(" + fpStrAddr(a0) + ")"
+        return "clar_fn_rtUiAskSaveChanges(" + fpStrAddr(a0) + ")"
     } else if nm == IUiCanvasClear() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_clear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasClear(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
     } else if nm == IUiCanvasLine() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasLine(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_line(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasLine(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ");")
         return toText("")
     } else if nm == IUiCanvasRect() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasRect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_rect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasRect(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ", " + fpExpr(fpArgAt(a0, 5)) + ", " + fpExpr(fpArgAt(a0, 6)) + ");")
         return toText("")
     } else if nm == IUiCanvasCircle() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
         return toText("")
     } else if nm == IUiCanvasFillCircle() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasFillCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_fill_circle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasFillCircle(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpExpr(fpArgAt(a0, 4)) + ");")
         return toText("")
     } else if nm == IUiCanvasPattern() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasPattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_pattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasPattern(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ");")
         return toText("")
     } else if nm == IUiCanvasDrawText() {
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiCanvasDrawText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
-        } else {
-            fpEmit("rt_ui_canvas_draw_text(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
-        }
+        fpEmit("clar_fn_rtUiCanvasDrawText(" + fpExpr(a0) + ", " + fpExpr(a1) + ", " + fpExpr(fpArgAt(a0, 2)) + ", " + fpExpr(fpArgAt(a0, 3)) + ", " + fpStrAddr(fpArgAt(a0, 4)) + ");")
         return toText("")
     } else if nm == IUiEdit() {
         fpUiEditStmt(x, a0, a1, a2)
@@ -2860,10 +2724,7 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiFormIsNew() {
         // formIsNew reads rt_ui_edit's own "was this a `new T`-kind edit"
         // state -- Task 10: ported (uidialogs.cla's rtUiFormIsNew).
-        if cpUiPortFlag {
-            return "clar_fn_rtUiFormIsNew()"
-        }
-        return "(rt_ui_form_is_new())"
+        return "clar_fn_rtUiFormIsNew()"
 
     // ---- native-5e Task 6: reverse-waist dispatcher synthesis intrinsics
     // (ir.cla's own doc comment on all three) ----
@@ -2911,11 +2772,9 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
     winName = poolGet(irtName(irExprType(x)))
     kind = irIntConstV(kindArg)
 
-    // Task 10: `edit` is ported (uidialogs.cla's rtUiEdit, signature
+    // `edit` is ported (uidialogs.cla's rtUiEdit, signature
     // `rtUiEdit(winIdx, src, isNew, wbKind, addr, lst, idx, mp, key255)` --
-    // `winIdx` (cpFindWindowIndex) replaces the non-ported lane's own
-    // `&clar_ui_window_<Win>` descriptor pointer, same substitution
-    // IUiOpen/IUiFront/IUiClose already made under cpUiPortFlag). RT_UI_WB_
+    // `winIdx` (cpFindWindowIndex) identifies the window). RT_UI_WB_
     // NONE/ADDR/LIST/MAP are emitted as the literal ints 0/1/2/3 (rt_ui.h's
     // own numbering, mirrored by uidialogs.cla's rtUiWbNone/Addr/List/Map)
     // -- no macro is visible to this call site's hand-built C text.
@@ -2924,19 +2783,11 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         recName = poolGet(cpFindWindowFormRecName(winName))
         t = fpNewTmp("clar_rec_" + recName)
         fpEmit(t + " = clar_new_" + recName + "();")
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 1, 0, (void *)0, (void *)0, 0, (void *)0, (void *)0);")
-        } else {
-            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 1, RT_UI_WB_NONE, 0, 0, 0, 0, 0);")
-        }
+        fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 1, 0, (void *)0, (void *)0, 0, (void *)0, (void *)0);")
     } else if kind == 1 {
         // Global or window-scoped per-instance record variable.
         addrText = fpAddrable(opA)
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&(" + addrText + "), 0, 1, (void *)&(" + addrText + "), (void *)0, 0, (void *)0, (void *)0);")
-        } else {
-            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&(" + addrText + "), 0, RT_UI_WB_ADDR, (void *)&(" + addrText + "), 0, 0, 0, 0);")
-        }
+        fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&(" + addrText + "), 0, 1, (void *)&(" + addrText + "), (void *)0, 0, (void *)0, (void *)0);")
     } else if kind == 2 {
         // List element -- src is rt_list_at, RE-DERIVED right here (rt_ui_edit
         // copies immediately, so the transient pointer is safe). cpListPorted
@@ -2945,16 +2796,10 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         lstText = fpExpr(opA)
         idxT = fpNewTmp("int32_t")
         fpEmit(idxT + " = (int32_t)(" + fpExpr(opB) + ");")
-        if cpUiPortFlag {
-            if cpListPorted {
-                fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
-            } else {
-                fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)rt_list_at(" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
-            }
-        } else if cpListPorted {
-            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+        if cpListPorted {
+            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)clar_fn_rtListAt((void*)" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
         } else {
-            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)rt_list_at(" + lstText + ", " + idxT + "), 0, RT_UI_WB_LIST, 0, " + lstText + ", (long)(" + idxT + "), 0, 0);")
+            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)rt_list_at(" + lstText + ", " + idxT + "), 0, 2, (void *)0, (void*)" + lstText + ", (int32_t)(" + idxT + "), (void *)0, (void *)0);")
         }
     } else if kind == 3 {
         // Map element -- rt_map has no pointer-returning lookup (only a
@@ -2980,11 +2825,7 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
         } else {
             fpEmit("rt_map_get_dv(" + mapText + ", (const uint8_t*)&" + keyT + ", &" + t + ");")
         }
-        if cpUiPortFlag {
-            fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 0, 3, (void *)0, (void *)0, 0, (void*)" + mapText + ", (void*)&" + keyT + ");")
-        } else {
-            fpEmit("rt_ui_edit(&clar_ui_window_" + winName + ", (const void *)&" + t + ", 0, RT_UI_WB_MAP, 0, 0, 0, " + mapText + ", (const unsigned char*)&" + keyT + ");")
-        }
+        fpEmit("clar_fn_rtUiEdit(" + numToStr(cpFindWindowIndex(winName)) + ", (void *)&" + t + ", 0, 3, (void *)0, (void *)0, 0, (void*)" + mapText + ", (void*)&" + keyT + ");")
     }
 }
 
@@ -4044,13 +3885,13 @@ func cpEmitExternProtos() {
 
     i = 0
     while i < irExternCount() {
-        // native-5e Task 6: under --uiport, ui.cla's reverse-waist externs
-        // (Task 7+) never link against a rt_ext_ shim at all -- either they
-        // resolve straight to a synthesized clar_ui_fire_* function
-        // (lowUiSynthExternName) or, for UiProgDesc, straight to the blob's
-        // own address (fpCallExt's own special case) -- so declaring this
-        // prototype would be dead and, worse, a NAME nothing ever defines.
-        skip = cpUiPortFlag and (lowUiSynthExternName(irExternName(i)) != -1 or poolGet(irExternName(i)) == "UiProgDesc")
+        // ui.cla's reverse-waist externs (Task 7+) never link against a
+        // rt_ext_ shim at all -- either they resolve straight to a
+        // synthesized clar_ui_fire_* function (lowUiSynthExternName) or,
+        // for UiProgDesc, straight to the blob's own address (fpCallExt's
+        // own special case) -- so declaring this prototype would be dead
+        // and, worse, a NAME nothing ever defines.
+        skip = lowUiSynthExternName(irExternName(i)) != -1 or poolGet(irExternName(i)) == "UiProgDesc"
         if not skip {
             params = ""
             first = true
@@ -4205,16 +4046,16 @@ func cpEmitDefaultInitFnProtos() {
         // own condition below already relies on), kept here anyway so the
         // two lists can never silently drift apart into a forward-declared-
         // but-body-skipped mismatch.
-        // native-5e Task 7 Step 7: "rtUiState" added -- cpEmitWinReleaseFn's
-        // clar_ui_release_<Win> body (cpUiBuf, same pre-cpEmitFuncs landing
-        // spot as every other buffer this function forward-declares into)
-        // now calls clar_fn_rtUiState under --uiport (Step 7 review fix,
-        // same call this function's IUiStateDefaults arm already makes) --
-        // the exact "call-before-prototype" gap this function's own
+        // "rtUiState" added -- cpEmitWinReleaseFn's clar_ui_release_<Win>
+        // body (cpUiBuf, same pre-cpEmitFuncs landing spot as every other
+        // buffer this function forward-declares into) calls
+        // clar_fn_rtUiState (same call this function's IUiStateDefaults arm
+        // already makes) -- the exact "call-before-prototype" gap this
+        // function's own
         // maintenance comment warns about, caught by winvar.cla's real
         // compile failure (implicit declaration, then a conflicting-types
         // error once the real prototype finally appeared later in the file).
-        if shakeReachable(i) and ((cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref")) or (cpUiPortFlag and nm == "rtUiState")) {
+        if shakeReachable(i) and ((cpStrPorted and nm == "rtStrStore") or (cpTextPorted and (nm == "rtTextNew" or nm == "rtTextStore")) or (cpTextArcPorted and (nm == "rtTextRetain" or nm == "rtTextRelease")) or (cpListPorted and (nm == "rtListNew" or nm == "rtListAt" or nm == "rtListCount")) or (cpListArcPorted and (nm == "rtListRetain" or nm == "rtListRelease" or nm == "rtListLastref")) or (cpMapPorted and (nm == "rtMapNew" or nm == "rtMapValAt" or nm == "rtMapCount")) or (cpMapArcPorted and (nm == "rtMapRetain" or nm == "rtMapRelease" or nm == "rtMapLastref")) or nm == "rtUiState") {
             cpTypeBuf.add(cpFuncProto(i) + ";")
         }
         i = i + 1
@@ -4648,27 +4489,15 @@ func cpEmitEnums() {
 }
 
 // ================================================================
-// UI descriptor printing (Task 4): irWindowDescs/irMenuDescs (ir.cla) ->
-// static const rt_ui_widget_desc[]/rt_ui_window_desc/rt_ui_item_desc[]/
-// rt_ui_menu_desc tables, matching the shape internal/mactest/uiprobe/
-// probe_ui.c hand-authors (rt_ui.h's own living example). Every C
-// identifier this section mints uses the "clar_ui_" prefix, alongside this
-// file's existing cv_/clar_fn_/clar_rec_/clar_str_/clar_lit_/clar_enum_/
-// clar_new_ conventions -- never bare, so a generated name can never
-// collide with a user identifier (those are always cv_/clar_fn_-prefixed
-// too). Handler-table fields (rt_ui_window_desc.handlers) print a bare `0`
-// for a window with no `extend` block at all (NULL still compiles and
-// links against rt_ui.h's `const rt_ui_handlers *` field type); Task 5 wires
-// a real `&clar_ui_handlers_NAME` for every window that registers at least
-// one handler -- see cpEmitWinHandlersFwd/cpEmitUiDispatchers below.
+// UI descriptor printing: irWindowDescs/irMenuDescs/irEveryHead (ir.cla) ->
+// the flat pointer-free UI descriptor blob (uiblob.cla's uibBuild(),
+// cpEmitUiBlob below) that ui.cla reads at runtime -- the ONLY UI
+// descriptor format emitted. Every C identifier this section mints uses
+// the "clar_ui_" prefix, alongside this file's existing cv_/clar_fn_/
+// clar_rec_/clar_str_/clar_lit_/clar_enum_/clar_new_ conventions -- never
+// bare, so a generated name can never collide with a user identifier
+// (those are always cv_/clar_fn_-prefixed too).
 // ================================================================
-
-func cpBoolLit(b: bool): string {
-    if b {
-        return "1"
-    }
-    return "0"
-}
 
 // cpOctal3 renders v (0-255) as exactly three octal digits, for C string
 // escapes: \311 is self-delimiting where \xC9 would swallow a following
@@ -4732,122 +4561,6 @@ func cpUiTitleStr(idx: int): string {
     return "(const unsigned char *)\"\\p" + cpEscapeCStr(poolGet(idx)) + "\""
 }
 
-// cpMenuKeyChar renders a menu item's key-equivalent slot (`unsigned char
-// key`): 0 if the item declared no `key "K"`, else a C char literal.
-func cpMenuKeyChar(keyIdx: int): string {
-    var s: string
-
-    if keyIdx == -1 {
-        return "0"
-    }
-    s = poolGet(keyIdx)
-    if s.length == 0 {
-        return "0"
-    }
-    return "'" + s + "'"
-}
-
-// cpWidgetKindMacro is an explicit five-way dispatch over rt_ui's whole
-// widget-kind surface (mac-target-4c Task 2) -- lower.cla's lowWidgetDesc
-// already rejects every other kind before an IRWidgetDesc can exist, so
-// reaching the fallthrough below means an IRWidgetDesc was constructed with
-// a kind that guard didn't validate (an internal-invariant break, not a
-// user-facing error), reported loudly rather than silently mis-emitted as
-// RTUI_LABEL the way the old default fallthrough did.
-func cpWidgetKindMacro(kindIdx: int): string {
-    var kind: string
-
-    kind = poolGet(kindIdx)
-    if kind == "button" {
-        return "RTUI_BUTTON"
-    }
-    if kind == "check" {
-        return "RTUI_CHECK"
-    }
-    if kind == "canvas" {
-        return "RTUI_CANVAS"
-    }
-    if kind == "label" {
-        return "RTUI_LABEL"
-    }
-    if kind == "field" {
-        return "RTUI_FIELD"
-    }
-    if kind == "textview" {
-        return "RTUI_TEXTVIEW"
-    }
-    if kind == "popup" {
-        return "RTUI_POPUP"
-    }
-    if kind == "table" {
-        return "RTUI_TABLE"
-    }
-    log("cprint: unknown widget kind " + kind)
-    quit 1
-    return ""
-}
-
-func cpAtKindMacro(k: int): string {
-    if k == 1 {
-        return "RTUI_AT_NEXT"
-    }
-    if k == 2 {
-        return "RTUI_AT_RIGHT"
-    }
-    if k == 3 {
-        return "RTUI_AT_AUTO"
-    }
-    return "RTUI_AT_XY"
-}
-
-func cpFillMacro(fillBoth: bool): string {
-    if fillBoth {
-        return "RTUI_FILL_BOTH"
-    }
-    return "RTUI_FILL_NONE"
-}
-
-func cpWidgetFlagsMacro(isDefault: bool, isCancel: bool, isBuffered: bool, isScrollV: bool, isScrollH: bool): string {
-    var s: string
-
-    s = ""
-    if isDefault {
-        s = "RTUI_DEFAULT"
-    }
-    if isCancel {
-        if s == "" {
-            s = "RTUI_CANCEL"
-        } else {
-            s = s + " | RTUI_CANCEL"
-        }
-    }
-    if isBuffered {
-        if s == "" {
-            s = "RTUI_BUFFERED"
-        } else {
-            s = s + " | RTUI_BUFFERED"
-        }
-    }
-    if isScrollV {
-        if s == "" {
-            s = "RTUI_SCROLL_V"
-        } else {
-            s = s + " | RTUI_SCROLL_V"
-        }
-    }
-    if isScrollH {
-        if s == "" {
-            s = "RTUI_SCROLL_H"
-        } else {
-            s = s + " | RTUI_SCROLL_H"
-        }
-    }
-    if s == "" {
-        return "0"
-    }
-    return s
-}
-
 // cpEmitUiStateStruct prints one window's per-instance-var state struct
 // (clar_uistate_NAME) into cpRecBuf -- a plain typedef, deliberately NOT
 // routed through cpEmitRecords: a UI state block is allocated and zeroed by
@@ -4905,79 +4618,6 @@ func cpEmitUiStateStruct(name: string, fieldsHead: int) {
     }
     cpRecBuf.add(toText("} clar_uistate_" + name + ";"))
     cpRecBuf.add(toText(""))
-}
-
-// cpEmitWidgetDescArray prints one window's rt_ui_widget_desc[] array (Ch8)
-// into cpUiBuf, in the SAME order lower.cla's lowWindowDecl chained them --
-// the order uiWidgetIndex (lower.cla) and this array's own positions agree
-// on. Returns the array's own C name, for the window desc below to
-// reference.
-func cpEmitWidgetDescArray(winName: string, headIdx: int): string {
-    var name: string
-    var w: int
-    var yStr: string
-    var widthStr: string
-    var capIdx: int
-    var kind: string
-
-    // Pre-pass (mac-target-4d Task 5): any table widget's cols[]/table_desc
-    // must already exist before the widget array below takes their address
-    // (same "declare before use" reasoning as cpEmitMenuItemsArray's own
-    // call-before-reference in cpEmitMenuDescs) -- a window with no table at
-    // all makes this loop a no-op, so every pre-Task-5 golden's cpUiBuf text
-    // is completely untouched.
-    w = headIdx
-    while w != -1 {
-        if poolGet(irWidgetDescKind(w)) == "table" {
-            cpEmitOneTableDesc(winName, w)
-        }
-        w = irWidgetDescNext(w)
-    }
-
-    name = "clar_ui_widgets_" + winName
-    cpUiBuf.add(toText("static const rt_ui_widget_desc " + name + "[] = {"))
-    w = headIdx
-    while w != -1 {
-        yStr = "RTUI_BOTTOM"
-        if not irWidgetDescYIsBottom(w) {
-            yStr = numToStr(irWidgetDescY(w))
-        }
-        widthStr = "RTUI_FILL"
-        if not irWidgetDescWidthIsFill(w) {
-            widthStr = numToStr(irWidgetDescWidth(w))
-        }
-        // Ch8 doc addition (mac-target-4d final-validation Fix wave, FIX 1):
-        // a widget with no caption/label/text property at all (captionIdx
-        // -1) falls back to its own declared NAME -- the same "member name
-        // when unlabeled" rule Chapter 3 already gives an unlabeled enum
-        // member (lowEnumDecl, clarusc/lower.cla). Scoped to the five kinds
-        // that can even declare a caption-like property at all (checker's
-        // widgetDeclProps: button.caption, check.caption, field.label,
-        // popup.label, label.text -- the only ones rt_ui.c's `cap = wd->
-        // caption ? ... : kEmptyPStr` ever feeds into NewControl's title or
-        // a TETextBox lane); table/textview/canvas have no such property in
-        // the grammar, so their captionIdx is always -1 for an unrelated
-        // reason (there was never anything TO label), and baking a name in
-        // there would just be inert noise in the emitted C. One spot, not
-        // one per kind.
-        capIdx = irWidgetDescCaption(w)
-        if capIdx == -1 {
-            kind = poolGet(irWidgetDescKind(w))
-            if kind == "button" or kind == "check" or kind == "field" or kind == "popup" or kind == "label" {
-                capIdx = irWidgetDescName(w)
-            }
-        }
-        cpUiBuf.add(toText("    { " + cpWidgetKindMacro(irWidgetDescKind(w)) + ", \"" + poolGet(irWidgetDescName(w)) + "\", " +
-            cpUiCaptionOrNull(capIdx) + ", " +
-            cpAtKindMacro(irWidgetDescAtKind(w)) + ", " + numToStr(irWidgetDescX(w)) + ", " + yStr + ", " + widthStr + ", " +
-            cpFillMacro(irWidgetDescFillBoth(w)) + ", " +
-            cpWidgetFlagsMacro(irWidgetDescIsDefault(w), irWidgetDescIsCancel(w), irWidgetDescIsBuffered(w), irWidgetDescIsScrollV(w), irWidgetDescIsScrollH(w)) +
-            cpUiWidgetExtra(winName, w) + " },"))
-        w = irWidgetDescNext(w)
-    }
-    cpUiBuf.add(toText("};"))
-    cpUiBuf.add(toText(""))
-    return name
 }
 
 // cpFindWinHandlers returns winName's irWinHandlers arena index, or -1 if
@@ -5077,387 +4717,35 @@ func cpFindGlobalRecName(globalNameIdx: int): int {
     return -1
 }
 
-// cpEmitOneTableDesc (mac-target-4d Task 4) prints, for one table widget,
-// its rt_ui_col_desc[] array and rt_ui_table_desc into cpUiBuf -- the same
-// cpEmitMenuItemsArray precedent (Task 2), called from cpEmitWidgetDescArray's
-// pre-pass BEFORE that window's own rt_ui_widget_desc[] array (whose table
-// row takes this table_desc's ADDRESS, so it must already exist). Also
-// forward-declares the bound `rows:` global as a bare tentative definition
-// (`static rt_list *cv_NAME;`, no initializer) -- legal C even though
-// cpEmitGlobalsInit (called later in emitProgram, but printing into
-// cpRestBuf, which assembles AFTER cpUiBuf) declares the SAME global again;
-// multiple tentative definitions of one static object merge under C's own
-// rules, so this is the simplest way to satisfy "declared before used"
-// without reordering cpEmitGlobalsInit's own buffer (which every OTHER
-// existing golden's byte-identical output depends on staying put).
-func cpEmitOneTableDesc(winName: string, w: int): string {
-    var wgName: string
-    var globalName: string
-    var recName: string
-    var colsName: string
-    var tableName: string
-    var c: int
-    var nCols: int
-    var widthFillStr: string
-
-    wgName = poolGet(irWidgetDescName(w))
-    globalName = poolGet(irWidgetDescRowsGlobalIdx(w))
-    recName = poolGet(cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(w)))
-
-    cpUiBuf.add(toText("static rt_list *cv_" + globalName + ";"))
-
-    colsName = "clar_ui_cols_" + winName + "_" + wgName
-    cpUiBuf.add(toText("static const rt_ui_col_desc " + colsName + "[] = {"))
-    c = irWidgetDescColumnsHead(w)
-    nCols = 0
-    while c != -1 {
-        widthFillStr = "0"
-        if irColumnDescWidthFill(c) {
-            widthFillStr = "1"
-        }
-        cpUiBuf.add(toText("    { " + cpUiCaptionOrNull(irColumnDescHeader(c)) + ", " + numToStr(irColumnDescWidthPx(c)) + ", " + widthFillStr + ", " + numToStr(irColumnDescFieldIndex(c)) + " },"))
-        nCols = nCols + 1
-        c = irColumnDescNext(c)
-    }
-    cpUiBuf.add(toText("};"))
-
-    tableName = "clar_ui_table_" + winName + "_" + wgName
-    cpUiBuf.add(toText("static const rt_ui_table_desc " + tableName + " = { &cv_" + globalName + ", &clar_layout_" + recName + ", " + numToStr(nCols) + ", " + colsName + " };"))
-    cpUiBuf.add(toText(""))
-    return tableName
-}
-
-// cpUiWidgetExtra returns the trailing rt_ui_widget_desc `extra` field text
-// (", (const void *)&clar_ui_table_<Win>_<W>", comma-prefixed to append onto
-// an already-open row literal) for a table widget, or "" for every other
-// kind -- the row keeps its old 9-field shape when extra is empty, so every
-// pre-Task-5 golden (no table/popup ever reaches here) stays byte-identical
-// (mac-target-4d Task 5's own "10th field only when non-NULL" contract).
-func cpUiWidgetExtra(winName: string, w: int): string {
-    if poolGet(irWidgetDescKind(w)) == "table" {
-        return ", (const void *)&clar_ui_table_" + winName + "_" + poolGet(irWidgetDescName(w))
-    }
-    return ""
-}
-
-// cpWidgetKindForIndex returns the widget kind word ("button"/"check"/
-// "canvas"/"label"/"field"/"textview") at position widgetIndex in window
-// winName's declared widget list -- cpEmitOneWidgetDispatcher needs this to
-// pick each widget's calling convention (0 args for button click/check
-// change/field enter vs. (x, y) from a/b for canvas click/drag).
-func cpWidgetKindForIndex(winName: string, widgetIndex: int): string {
-    var i: int
-    var w: int
-    var n: int
-
-    i = 0
-    while i < irWindowDescs.count {
-        if poolGet(irWindowDescName(i)) == winName {
-            w = irWindowDescWidgetsHead(i)
-            n = 0
-            while w != -1 {
-                if n == widgetIndex {
-                    return poolGet(irWidgetDescKind(w))
-                }
-                n = n + 1
-                w = irWidgetDescNext(w)
-            }
-        }
-        i = i + 1
-    }
-    return "" // unreachable for a checker-clean program
-}
-
-// cpWinHandlersHasWinEvent/HasWidget report whether window handlers `whIdx`
-// registered at least one bare window event / widget event -- used both to
-// decide whether to forward-declare+wire that half of the rt_ui_handlers
-// struct (cpEmitWinHandlersFwd) and whether to define its dispatcher body
-// at all (cpEmitUiDispatchers).
-func cpWinHandlersHasWinEvent(whIdx: int): bool {
-    return irWinHandlersOpenedFn(whIdx) != -1 or irWinHandlersCloseRequestFn(whIdx) != -1 or irWinHandlersClosedFn(whIdx) != -1 or irWinHandlersResizedFn(whIdx) != -1 or irWinHandlersKeyFn(whIdx) != -1 or irWinHandlersAcceptedFn(whIdx) != -1 or irWinHandlersCancelledFn(whIdx) != -1
-}
-
-func cpWinHandlersHasWidget(whIdx: int): bool {
-    return irWinHandlersWidgetHead(whIdx) != -1
-}
-
 // cpEmitWinReleaseFn (memory-audit-4e Task 8) emits, for winName's state
-// block, a static void clar_ui_release_<Win>(void *inst) freeing every
-// irtNeedsCtor per-instance var, UNCONDITIONALLY (ARC Task 6 -- Tasks 4-5
-// made every store into a window var counted, so the old lowWinVarQualifies
-// escape-walker consult guarding against a double-freed alias is now
-// provably unnecessary; see cpEmitGlobalsInit's matching comment for the
-// globals-side version of this same argument). Exact mirror of
-// fpIntrCall's IUiStateDefaults() case above (the constructor this is the
-// destructor for), freeing instead of constructing, via the same
-// cpEmitRelease helper Task 5's globals and Task 7's locals already use. No
-// forward-declare/define split like winFn/widgetFn below needs: cpEmitRelease
-// may emit clar_fn_rtTextRelease/rtListRelease/rtMapRelease calls (ARC), but
-// their prototypes come from cpEmitDefaultInitFnProtos into cpTypeBuf, which
-// emitProgram assembles before cpUiBuf where this function's body lands, so
-// it can be defined here directly. Returns the
-// function's own C name, or "0" if winName has no needs-ctor field at all
-// (callers wire a plain 0 into rt_ui_handlers.releaseVars instead of a
-// pointer to an empty function).
-func cpEmitWinReleaseFn(winName: string): string {
-    var fld: int
-    var any: bool
-    var body: text
-    var fname: string
-
-    fld = cpFindWindowStateFields(winName)
-    any = false
-    body = ""
-    while fld != -1 {
-        if irtNeedsCtor(irFieldSlotType(fld)) {
-            any = true
-            // Task 7 Step 7 review fix: same missed cpUiPortFlag gate as
-            // IUiStateDefaults above (this function's own header comment
-            // calls it "the destructor for" that constructor) -- this one
-            // is reachable under --uiport too (lowSynthReleaseVars's
-            // clar_ui_fire_releasevars dispatcher calls straight into
-            // clar_ui_release_<Win>, the function this builds), so it needs
-            // the ported rtUiState accessor, not the frozen C runtime's.
-            if cpUiPortFlag {
-                cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)clar_fn_rtUiState(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
-            } else {
-                cpEmitRelease(body, "(*(clar_uistate_" + winName + " *)rt_ui_state(inst)).cv_" + poolGet(irFieldSlotName(fld)), irFieldSlotType(fld))
-            }
-        }
-        fld = irFieldSlotNext(fld)
-    }
-    if not any {
-        return "0"
-    }
-    fname = "clar_ui_release_" + winName
-    cpUiBuf.add(toText("static void " + fname + "(void *inst)"))
-    cpUiBuf.add(toText("{"))
-    cpUiBuf.add(body)
-    cpUiBuf.add(toText("}"))
-    cpUiBuf.add(toText(""))
-    return fname
-}
-
-// cpEmitWinHandlersFwd prints (into cpUiBuf, BEFORE any clar_fn_ handler-body
-// prototype exists anywhere in the emitted file -- cpEmitFuncs's own
-// "prototypes up front" pass hasn't run yet at this point in emitProgram's
-// assembly order) the forward declarations for window `winName`'s dispatcher
-// functions (whichever of winEvent/widget actually have >=1 registered
-// handler -- matching probe_ui.c's own "0 for the unused half" convention,
-// e.g. kBounceHandlers = { bounce_win_event, 0 }) plus the rt_ui_handlers
-// struct wiring them together. The dispatcher bodies themselves are defined
-// later (cpEmitUiDispatchers, called AFTER cpEmitFuncs -- see that
-// function's header comment for why the split is necessary). Returns the
-// handlers struct's own C name (for the window desc to reference), or "0"
-// if winName has no `extend` block at all.
-func cpEmitWinHandlersFwd(winName: string): string {
-    var whIdx: int
-    var winFn: string
-    var widgetFn: string
-    var releaseFn: string
-
-    whIdx = cpFindWinHandlers(winName)
-    if whIdx == -1 {
-        return "0"
-    }
-    winFn = "0"
-    if cpWinHandlersHasWinEvent(whIdx) and not cpUiPortFlag {
-        // native-5e Task 6: under --uiport, clar_ui_fire_winevent (lower.cla's
-        // synthesized dispatcher) replaces this per-window function entirely
-        // -- suppressed here (not just left undefined) so this struct never
-        // forward-declares a name cpEmitUiDispatchers no longer defines.
-        // rt_ui_startup itself is untouched this task (Task 7's job), so the
-        // struct -- and this NULL slot -- still has to exist.
-        winFn = "clar_ui_winevent_" + winName
-        cpUiBuf.add(toText("static void " + winFn + "(void *inst, short event, long a, long b);"))
-    }
-    widgetFn = "0"
-    if cpWinHandlersHasWidget(whIdx) and not cpUiPortFlag {
-        widgetFn = "clar_ui_widget_" + winName
-        cpUiBuf.add(toText("static void " + widgetFn + "(void *inst, short widgetIndex, short event, long a, long b);"))
-    }
-    releaseFn = cpEmitWinReleaseFn(winName)
-    cpUiBuf.add(toText("static const rt_ui_handlers clar_ui_handlers_" + winName + " = { " + winFn + ", " + widgetFn + ", " + releaseFn + " };"))
-    cpUiBuf.add(toText(""))
-    return "clar_ui_handlers_" + winName
-}
-
-// cpEmitOneFormDesc (mac-target-4d Task 7) prints, for one form window, its
-// rt_ui_bind_desc[] array (if it has >=1 bound widget; a bare "0" pointer
-// otherwise -- an empty-braces array isn't valid C, and rt_ui_form_desc's
-// own nBinds=0 already tells the runtime never to read the pointer) and its
-// rt_ui_form_desc, into cpUiBuf -- the same cpEmitOneTableDesc precedent
-// (Task 4). Returns the form desc's own C name, for the window desc's
-// trailing `form` field to reference.
-func cpEmitOneFormDesc(winName: string, formRecNameIdx: int, bindsHead: int): string {
-    var bindsName: string
-    var formName: string
-    var b: int
-    var nBinds: int
-    var bindsRef: string
-
-    bindsName = "clar_ui_binds_" + winName
-    nBinds = 0
-    b = bindsHead
-    while b != -1 {
-        nBinds = nBinds + 1
-        b = irBindDescNext(b)
-    }
-
-    bindsRef = "0"
-    if nBinds > 0 {
-        cpUiBuf.add(toText("static const rt_ui_bind_desc " + bindsName + "[] = {"))
-        b = bindsHead
-        while b != -1 {
-            cpUiBuf.add(toText("    { " + numToStr(irBindDescWidgetIndex(b)) + ", " + numToStr(irBindDescFieldIndex(b)) + " },"))
-            b = irBindDescNext(b)
-        }
-        cpUiBuf.add(toText("};"))
-        bindsRef = bindsName
-    }
-
-    formName = "clar_ui_form_" + winName
-    cpUiBuf.add(toText("static const rt_ui_form_desc " + formName + " = { &clar_layout_" + poolGet(formRecNameIdx) + ", " + numToStr(nBinds) + ", " + bindsRef + " };"))
-    cpUiBuf.add(toText(""))
-    return formName
-}
-
-// cpEmitWindowDescs prints every window TYPE's widget array + state struct +
-// rt_ui_window_desc, in declaration order, into cpUiBuf/cpRecBuf. A form
-// window (mac-target-4d Task 7) additionally gets its bind table/form desc
-// (cpEmitOneFormDesc) and the window desc's own trailing `form` field,
-// appended ONLY when set (irWindowDescFormRecName(i) != -1) -- every
-// non-form window's own 11-field literal stays byte-identical to every
-// pre-Task-7 golden.
-func cpEmitWindowDescs() {
+// cpEmitUiStateStructs prints every window TYPE's per-instance state struct
+// (`clar_uistate_<Win>`) into cpRecBuf, in declaration order, plus a
+// sizeof-layout assert against uiblob.cla's own uibStateSize -- catches any
+// divergence between the blob's LAYOUT AUTHORITY (mirroring cg68k.cla's,
+// cg68k.cla:713-807) and this real C struct as a build-time compile error,
+// not a silent size mismatch discovered only at runtime. Every other
+// window-TYPE fact (widgets, handlers, forms, menus) lives entirely in the
+// blob (cpEmitUiBlob) that ui.cla reads at runtime -- this function only
+// emits what the C TYPE SYSTEM itself still needs: the struct IUiState/
+// IUiStateDefaults cast through (the release path is the synthesized
+// clar_ui_fire_releasevars, an ordinary IRFunc -- no C struct name to
+// reference there).
+func cpEmitUiStateStructs() {
     var i: int
     var name: string
-    var widgetsArrName: string
-    var nWidgets: int
-    var w: int
-    var handlersName: string
-    var formDescName: string
 
     i = 0
     while i < irWindowDescs.count {
         name = poolGet(irWindowDescName(i))
-
-        widgetsArrName = "0"
-        nWidgets = 0
-        w = irWindowDescWidgetsHead(i)
-        if w != -1 {
-            widgetsArrName = cpEmitWidgetDescArray(name, w)
-            while w != -1 {
-                nWidgets = nWidgets + 1
-                w = irWidgetDescNext(w)
-            }
-        }
-
         if irWindowDescStateFieldsHead(i) != -1 {
             cpEmitUiStateStruct(name, irWindowDescStateFieldsHead(i))
-            if cpUiPortFlag {
-                // Task 5 (native-5e): catches any divergence between
-                // uiblob.cla's uibStateSize (mirroring cg68k.cla's
-                // LAYOUT AUTHORITY, cg68k.cla:713-807) and the real C
-                // struct layout above -- a build-time compile error, not a
-                // silent size mismatch discovered only at runtime. Skipped
-                // for the no-state-fields case just below: that struct is
-                // a deliberate one-byte placeholder never sized against
-                // real field layout, so there is nothing to compare.
-                cpRecBuf.add(toText("typedef char clar_ui_szassert_" + name + "[(sizeof(clar_uistate_" + name + ") == " + numToStr(uibStateSize(i)) + ") ? 1 : -1];"))
-                cpRecBuf.add(toText(""))
-            }
+            cpRecBuf.add(toText("typedef char clar_ui_szassert_" + name + "[(sizeof(clar_uistate_" + name + ") == " + numToStr(uibStateSize(i)) + ") ? 1 : -1];"))
+            cpRecBuf.add(toText(""))
         } else {
             // No per-instance vars: a zero-size struct isn't portable C, so
             // a one-byte placeholder stands in -- nothing ever reads it.
             cpRecBuf.add(toText("typedef struct { char clar_ui_unused; } clar_uistate_" + name + ";"))
             cpRecBuf.add(toText(""))
-        }
-
-        handlersName = cpEmitWinHandlersFwd(name)
-        if handlersName != "0" {
-            handlersName = "&" + handlersName
-        }
-
-        formDescName = "0"
-        if irWindowDescFormRecName(i) != -1 {
-            formDescName = "&" + cpEmitOneFormDesc(name, irWindowDescFormRecName(i), irWindowDescFormBindsHead(i))
-        }
-
-        cpUiBuf.add(toText("static const rt_ui_window_desc clar_ui_window_" + name + " = {"))
-        cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irWindowDescTitle(i)) + ","))
-        cpUiBuf.add(toText("    " + numToStr(irWindowDescW(i)) + ", " + numToStr(irWindowDescH(i)) + ", " + cpBoolLit(irWindowDescResizable(i)) + ", " + numToStr(irWindowDescMinW(i)) + ", " + numToStr(irWindowDescMinH(i)) + ","))
-        cpUiBuf.add(toText("    " + numToStr(nWidgets) + ", " + widgetsArrName + ","))
-        cpUiBuf.add(toText("    (short)sizeof(clar_uistate_" + name + "),"))
-        if formDescName == "0" {
-            cpUiBuf.add(toText("    " + handlersName))
-        } else {
-            cpUiBuf.add(toText("    " + handlersName + ","))
-            cpUiBuf.add(toText("    " + formDescName))
-        }
-        cpUiBuf.add(toText("};"))
-        cpUiBuf.add(toText(""))
-        i = i + 1
-    }
-}
-
-// cpEmitMenuItemsArray prints one menu's rt_ui_item_desc[] array (Ch9) into
-// cpUiBuf, in declaration order (separators occupy a real slot, matching
-// lower.cla's uiMenuItemIdx numbering exactly).
-func cpEmitMenuItemsArray(menuName: string, headIdx: int): string {
-    var name: string
-    var it: int
-
-    name = "clar_ui_items_" + menuName
-    cpUiBuf.add(toText("static const rt_ui_item_desc " + name + "[] = {"))
-    it = headIdx
-    while it != -1 {
-        if irMenuItemDescIsSeparator(it) {
-            cpUiBuf.add(toText("    { 0, 0, 0, 1 },"))
-        } else {
-            cpUiBuf.add(toText("    { \"" + poolGet(irMenuItemDescName(it)) + "\", " + cpUiCaptionOrNull(irMenuItemDescCaption(it)) + ", " + cpMenuKeyChar(irMenuItemDescKey(it)) + ", 0 },"))
-        }
-        it = irMenuItemDescNext(it)
-    }
-    cpUiBuf.add(toText("};"))
-    cpUiBuf.add(toText(""))
-    return name
-}
-
-// cpEmitMenuDescs prints every menu's items array + rt_ui_menu_desc, in
-// declaration order, into cpUiBuf. A `standard edit` menu (mac-target-4c
-// Task 3) skips the items array entirely -- the runtime builds Undo/Cut/
-// Copy/Paste/Clear itself -- and emits the pinned `0, 0, 1` tail instead of
-// a real item count/array; every OTHER menu now also gains the trailing
-// `standardEdit` field (always 0), since rt_ui_menu_desc (rt_ui.h) gained
-// that field for every menu, not just standard-edit ones.
-func cpEmitMenuDescs() {
-    var i: int
-    var name: string
-    var itemsName: string
-    var nItems: int
-    var it: int
-
-    i = 0
-    while i < irMenuDescs.count {
-        name = poolGet(irMenuDescName(i))
-        if irMenuDescIsStandardEdit(i) {
-            cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
-            cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", 0, 0, 1"))
-            cpUiBuf.add(toText("};"))
-            cpUiBuf.add(toText(""))
-        } else {
-            itemsName = cpEmitMenuItemsArray(name, irMenuDescItemsHead(i))
-            nItems = 0
-            it = irMenuDescItemsHead(i)
-            while it != -1 {
-                nItems = nItems + 1
-                it = irMenuItemDescNext(it)
-            }
-            cpUiBuf.add(toText("static const rt_ui_menu_desc clar_ui_menu_" + name + " = {"))
-            cpUiBuf.add(toText("    \"" + name + "\", " + cpUiTitleStr(irMenuDescTitle(i)) + ", " + numToStr(nItems) + ", " + itemsName + ", 0"))
-            cpUiBuf.add(toText("};"))
-            cpUiBuf.add(toText(""))
         }
         i = i + 1
     }
@@ -5473,15 +4761,14 @@ func cpEmitAppInfo() {
     var line: text
 
     if not irHasApp { return }
-    if cpUiPortFlag and irIsUiProgram() {
-        // native-5e Task 6: for a real UI program, the blob's own App
-        // section (cpEmitUiBlob, Task 5) already carries these same four
-        // fields -- rt_ui_app_info would be pure duplication. NOT gated on
-        // cpUiPortFlag alone: an app-only, non-UI program's cpUiBuf (where
-        // the blob would otherwise land) never gets appended to the output
-        // at all (emitProgram's own irIsUiProgram() gate), so THAT
-        // program's app metadata would vanish outright if this stayed
-        // gated on the flag alone.
+    if irIsUiProgram() {
+        // For a real UI program, the blob's own App section (cpEmitUiBlob)
+        // already carries these same four fields -- rt_ui_app_info would be
+        // pure duplication. An app-only, non-UI program's cpUiBuf (where the
+        // blob would otherwise land) never gets appended to the output at
+        // all (emitProgram's own irIsUiProgram() gate), so THAT program's
+        // app metadata would vanish outright if this stayed gated on
+        // irHasApp alone.
         return
     }
     // Built as `text` field-by-field, not one `string` concatenation: the
@@ -5541,12 +4828,9 @@ func cpHexByte(b: int): string {
     return out
 }
 
-// cpEmitUiBlob (Task 5, native-5e) prints uiblob.cla's uibBuild() result
-// -- the plan's normative flat pointer-free UI descriptor blob -- as a
-// byte array into cpUiBuf, under --uiport only (cpUiPortFlag). This is
-// purely ADDITIVE: every rt_ui_*_desc table cpEmitWindowDescs/
-// cpEmitMenuDescs already print above is untouched (Task 11 is the flip
-// that retires them and makes ui.cla read this blob exclusively). Grouped
+// cpEmitUiBlob prints uiblob.cla's uibBuild() result -- the plan's
+// normative flat pointer-free UI descriptor blob, the ONLY UI descriptor
+// format ui.cla reads at runtime -- as a byte array into cpUiBuf. Grouped
 // 20 bytes/line for a readable golden diff; the grouping has no semantic
 // meaning, byte VALUES are the only normative contract (uiblob.cla's own
 // doc comment).
@@ -5575,11 +4859,8 @@ func cpEmitUiBlob() {
 }
 
 func cpEmitUiDescs() {
-    cpEmitWindowDescs()
-    cpEmitMenuDescs()
-    if cpUiPortFlag {
-        cpEmitUiBlob()
-    }
+    cpEmitUiStateStructs()
+    cpEmitUiBlob()
     if irAnyCloseRequestHandler() {
         // Into cpUiBuf, NOT cpEmitUiWiring's cpRestBuf section: a
         // closeRequest handler's own BODY (an ordinary IRFunc, printed by
@@ -5618,209 +4899,6 @@ func irAnyCloseRequestHandler(): bool {
         i = i + 1
     }
     return false
-}
-
-// cpEmitOneWinEventDispatcher defines (into cpRestBuf) window `winName`'s
-// winEvent dispatcher body -- cpEmitWinHandlersFwd already forward-declared
-// its prototype into cpUiBuf; this runs AFTER cpEmitFuncs (see
-// cpEmitUiWiring) so every clar_fn_ handler-body name it calls is already
-// declared. The RTUI_EV_CLOSEREQUEST case sets clar_ui_cur_cancel from `a`
-// BEFORE calling in (the ledger's `a = (long)&long cancelFlag` convention);
-// RTUI_EV_KEY casts `a` to the handler's own declared `char` param.
-func cpEmitOneWinEventDispatcher(winName: string, whIdx: int) {
-    if not cpWinHandlersHasWinEvent(whIdx) {
-        return
-    }
-    cpRestBuf.add(toText("static void clar_ui_winevent_" + winName + "(void *inst, short event, long a, long b) {"))
-    cpRestBuf.add(toText("    switch (event) {"))
-    if irWinHandlersOpenedFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_OPENED: clar_fn_" + poolGet(irWinHandlersOpenedFn(whIdx)) + "(inst); break;"))
-    }
-    if irWinHandlersCloseRequestFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_CLOSEREQUEST: clar_ui_cur_cancel = (long *)a; clar_fn_" + poolGet(irWinHandlersCloseRequestFn(whIdx)) + "(inst); break;"))
-    }
-    if irWinHandlersClosedFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_CLOSED: clar_fn_" + poolGet(irWinHandlersClosedFn(whIdx)) + "(inst); break;"))
-    }
-    if irWinHandlersResizedFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_RESIZED: clar_fn_" + poolGet(irWinHandlersResizedFn(whIdx)) + "(inst); break;"))
-    }
-    if irWinHandlersKeyFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_KEY: clar_fn_" + poolGet(irWinHandlersKeyFn(whIdx)) + "(inst, (char)a); break;"))
-    }
-    if irWinHandlersAcceptedFn(whIdx) != -1 {
-        // Ch10: `on accepted(b: T)` -- `a` is (long)&<the walker's own
-        // validated record>; the handler's own declared param is BY VALUE
-        // (cast+deref), never a pointer (rt_ui.h's RTUI_EV_ACCEPTED comment).
-        cpRestBuf.add(toText("    case RTUI_EV_ACCEPTED: clar_fn_" + poolGet(irWinHandlersAcceptedFn(whIdx)) + "(inst, *(clar_rec_" + poolGet(irWinHandlersFormRecName(whIdx)) + " *)a); break;"))
-    }
-    if irWinHandlersCancelledFn(whIdx) != -1 {
-        cpRestBuf.add(toText("    case RTUI_EV_CANCELLED: clar_fn_" + poolGet(irWinHandlersCancelledFn(whIdx)) + "(inst); break;"))
-    }
-    cpRestBuf.add(toText("    default: break;"))
-    cpRestBuf.add(toText("    }"))
-    cpRestBuf.add(toText("}"))
-    cpRestBuf.add(toText(""))
-}
-
-// cpEmitOneWidgetDispatcher defines (into cpRestBuf) window `winName`'s
-// widget dispatcher body -- switches on widgetIndex, then on event; each
-// widget's calling convention (0 args for button click / check change vs.
-// (x, y) cast from a/b for canvas click/drag) is picked by that widget's OWN
-// kind (cpWidgetKindForIndex), since RTUI_WEV_CLICK is shared by both
-// button.click and canvas.click.
-func cpEmitOneWidgetDispatcher(winName: string, whIdx: int) {
-    var wEntry: int
-    var kind: string
-    var idx: int
-
-    if not cpWinHandlersHasWidget(whIdx) {
-        return
-    }
-    cpRestBuf.add(toText("static void clar_ui_widget_" + winName + "(void *inst, short widgetIndex, short event, long a, long b) {"))
-    cpRestBuf.add(toText("    switch (widgetIndex) {"))
-    wEntry = irWinHandlersWidgetHead(whIdx)
-    while wEntry != -1 {
-        idx = irWidgetHandlerEntryWidgetIndex(wEntry)
-        kind = cpWidgetKindForIndex(winName, idx)
-        cpRestBuf.add(toText("    case " + numToStr(idx) + ":"))
-        if kind == "canvas" {
-            if irWidgetHandlerEntryClickFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_CLICK) clar_fn_" + poolGet(irWidgetHandlerEntryClickFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
-            }
-            if irWidgetHandlerEntryDragFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_DRAG) clar_fn_" + poolGet(irWidgetHandlerEntryDragFn(wEntry)) + "(inst, (int32_t)a, (int32_t)b);"))
-            }
-        } else if kind == "table" {
-            // table.select/doubleClick (mac-target-4d Task 5): one-arg
-            // handlers, the clicked row index (RTUI_WEV_SELECT/DBLCLICK's
-            // `a`) -- same (int32_t)a cast canvas's click/drag already use.
-            if irWidgetHandlerEntrySelectFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_SELECT) clar_fn_" + poolGet(irWidgetHandlerEntrySelectFn(wEntry)) + "(inst, (int32_t)a);"))
-            }
-            if irWidgetHandlerEntryDoubleClickFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_DBLCLICK) clar_fn_" + poolGet(irWidgetHandlerEntryDoubleClickFn(wEntry)) + "(inst, (int32_t)a);"))
-            }
-        } else {
-            // button (click only) / check/field/textview (change only) /
-            // field (enter, mac-target-4c Task 2): all zero-param Clarus
-            // handlers (Ch8's event table).
-            if irWidgetHandlerEntryClickFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_CLICK) clar_fn_" + poolGet(irWidgetHandlerEntryClickFn(wEntry)) + "(inst);"))
-            }
-            if irWidgetHandlerEntryChangeFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_CHANGE) clar_fn_" + poolGet(irWidgetHandlerEntryChangeFn(wEntry)) + "(inst);"))
-            }
-            if irWidgetHandlerEntryEnterFn(wEntry) != -1 {
-                cpRestBuf.add(toText("        if (event == RTUI_WEV_ENTER) clar_fn_" + poolGet(irWidgetHandlerEntryEnterFn(wEntry)) + "(inst);"))
-            }
-        }
-        cpRestBuf.add(toText("        break;"))
-        wEntry = irWidgetHandlerEntryNext(wEntry)
-    }
-    cpRestBuf.add(toText("    default: break;"))
-    cpRestBuf.add(toText("    }"))
-    cpRestBuf.add(toText("}"))
-    cpRestBuf.add(toText(""))
-}
-
-// cpEmitUiDispatchers defines every window type's forward-declared
-// dispatcher bodies, in declaration order.
-func cpEmitUiDispatchers() {
-    var i: int
-    var name: string
-    var whIdx: int
-
-    i = 0
-    while i < irWindowDescs.count {
-        name = poolGet(irWindowDescName(i))
-        whIdx = cpFindWinHandlers(name)
-        if whIdx != -1 {
-            cpEmitOneWinEventDispatcher(name, whIdx)
-            cpEmitOneWidgetDispatcher(name, whIdx)
-        }
-        i = i + 1
-    }
-}
-
-// cpEmitMenuHandlerArray prints the rt_ui_menu_handler[] table (Ch9), in
-// declaration order -- referencing clar_fn_ fire functions (already
-// declared by cpEmitFuncs, called before this) and window-desc pointers
-// (already fully defined earlier in cpUiBuf; a forward-direction reference
-// is always fine in C).
-func cpEmitMenuHandlerArray() {
-    var e: int
-    var scopeStr: string
-
-    if irMenuHandlersHead == -1 {
-        return
-    }
-    cpRestBuf.add(toText("static const rt_ui_menu_handler clar_ui_menu_handlers[] = {"))
-    e = irMenuHandlersHead
-    while e != -1 {
-        scopeStr = "0"
-        if irMenuHandlerEntryScopeWinType(e) != -1 {
-            scopeStr = "&clar_ui_window_" + poolGet(irMenuHandlerEntryScopeWinType(e))
-        }
-        cpRestBuf.add(toText("    { clar_fn_" + poolGet(irMenuHandlerEntryFuncName(e)) + ", \"" +
-            cpEscapeCStr(poolGet(irMenuHandlerEntryMenuName(e))) + "\", \"" +
-            cpEscapeCStr(poolGet(irMenuHandlerEntryItemName(e))) + "\", " +
-            numToStr(irMenuHandlerEntryMenuIdx(e)) + ", " + numToStr(irMenuHandlerEntryItemIdx(e)) + ", " + scopeStr + " },"))
-        e = irMenuHandlerEntryNext(e)
-    }
-    cpRestBuf.add(toText("};"))
-    cpRestBuf.add(toText(""))
-}
-
-// cpEmitEveryArray prints the rt_ui_every_desc[] table (Ch7/Ch11), in
-// declaration order (the SAME order the `T FIRE every.<n>` trace index
-// uses).
-func cpEmitEveryArray() {
-    var e: int
-
-    if irEveryHead == -1 {
-        return
-    }
-    cpRestBuf.add(toText("static const rt_ui_every_desc clar_ui_every[] = {"))
-    e = irEveryHead
-    while e != -1 {
-        cpRestBuf.add(toText("    { clar_fn_" + poolGet(irEveryEntryFuncName(e)) + ", " + numToStr(irEveryEntryTicks(e)) + " },"))
-        e = irEveryEntryNext(e)
-    }
-    cpRestBuf.add(toText("};"))
-    cpRestBuf.add(toText(""))
-}
-
-// cpEmitUiWiring emits (into cpRestBuf, called AFTER cpEmitFuncs so every
-// clar_fn_ name it references is already declared -- see
-// cpEmitOneWinEventDispatcher's header comment): the dispatcher
-// definitions, the menu-handler array, and the every array (the
-// `clar_ui_cur_cancel` scratch global itself is declared earlier, by
-// cpEmitUiDescs -- see that function's header comment for why). A no-op for
-// a UI-free program.
-func cpEmitUiWiring() {
-    if not irIsUiProgram() {
-        return
-    }
-    if not cpUiPortFlag {
-        // native-5e Task 6: clar_ui_winevent_<Win>/clar_ui_widget_<Win> --
-        // the OLD per-window dispatcher bodies (cpEmitOneWinEventDispatcher/
-        // cpEmitOneWidgetDispatcher) -- are suppressed under --uiport;
-        // lower.cla's synthesized clar_ui_fire_winevent/_widget (ordinary
-        // IRFuncs, printed by cpEmitFuncs above like any other function)
-        // replace them. cpEmitWinHandlersFwd (cpEmitWindowDescs, called
-        // earlier) already nulled the two forward-declared function-pointer
-        // slots that used to name them, so nothing is left dangling.
-        //
-        // clar_ui_menu_handlers[]/clar_ui_every[] (cpEmitMenuHandlerArray/
-        // cpEmitEveryArray) are NOT suppressed: cpEmitUiMain -- untouched
-        // this task, Task 7's job -- still passes their addresses to
-        // rt_ui_startup by name; suppressing them here would leave that
-        // still-live call site referencing an undefined symbol.
-        cpEmitUiDispatchers()
-    }
-    cpEmitMenuHandlerArray()
-    cpEmitEveryArray()
 }
 
 // cpEmitGlobalsInit declares every global as a bare (uninitialized-in-C)
@@ -5990,135 +5068,25 @@ func cpEmitStrLits() {
     }
 }
 
-// cpEmitUiMain prints main() for a program declaring any window/menu/every
-// (Task 5): rt_args_init/clar_init_globals (same relative order as the
-// non-UI path below -- nothing depends on the other), the window-desc and
-// menu-desc pointer arrays rt_ui_startup wants, rt_ui_startup itself,
-// launch (Ch7: startCLI never fires on the Macintosh, so a UI program's own
-// `on App.startCLI` handler, if any, is simply never called here -- dead
-// per the reference, not a lowering gap), then rt_ui_launch (mac-target-4c
-// Task 5) -- which decides openDocument-vs-startEmpty itself (GetAppFiles/
-// AppleEvents on a real build, the scripted `launchdoc` verb under
-// RT_MAC_TEST) -- then rt_ui_run (returns on quit).
+// cpEmitUiMain prints main() for a program declaring any window/menu/every:
+// clar_init_globals/rt_args_init, then the PORTED rtUiStartup/rtUiLaunch/
+// rtUiRun -- all three zero-arg (every count/table the runtime needs comes
+// straight from the blob at RUNTIME, via UiProgDesc()/uidesc.cla's own
+// accessors). App.launch fires between startup and launch (Ch7: startCLI
+// never fires on the Macintosh, so a UI program's own `on App.startCLI`
+// handler, if any, is simply never called here -- dead per the reference,
+// not a lowering gap).
 func cpEmitUiMain() {
-    var i: int
-    var winsExpr: string
-    var winsCount: string
-    var menusExpr: string
-    var menusCount: string
-    var mhExpr: string
-    var mhCount: string
-    var evExpr: string
-    var evCount: string
-    var openDocExpr: string
-    var startEmptyExpr: string
-
-    // Task 7 Step 6 (native-5e): under --uiport, main() calls the PORTED
-    // rtUiStartup/rtUiLaunch/rtUiRun instead -- all three are zero-arg
-    // (report log entry #5's own redesign: every count/table the old
-    // 8-arg rt_ui_startup signature took now comes straight from the
-    // blob at RUNTIME, via UiProgDesc()/uidesc.cla's own accessors, so
-    // none of this function's own array-building/wrapper-function
-    // machinery below is needed at all under this flag). App.launch
-    // still fires exactly where it always did (between startup and
-    // launch) -- unrelated to any of this port's own changes.
-    if cpUiPortFlag {
-        cpRestBuf.add(toText("int main(int argc, char **argv) {"))
-        cpRestBuf.add(toText("    clar_init_globals();"))
-        cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))
-        cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
-        cpRestBuf.add(toText("    clar_fn_rtUiStartup();"))
-        if irHasLaunch {
-            cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
-        }
-        cpRestBuf.add(toText("    clar_fn_rtUiLaunch();"))
-        cpRestBuf.add(toText("    clar_fn_rtUiRun();"))
-        cpRestBuf.add(toText("    return 0;"))
-        cpRestBuf.add(toText("}"))
-        return
-    }
-
-    winsExpr = "0"
-    winsCount = "0"
-    if irWindowDescs.count > 0 {
-        cpRestBuf.add(toText("static const rt_ui_window_desc *clar_ui_windows[] = {"))
-        i = 0
-        while i < irWindowDescs.count {
-            cpRestBuf.add(toText("    &clar_ui_window_" + poolGet(irWindowDescName(i)) + ","))
-            i = i + 1
-        }
-        cpRestBuf.add(toText("};"))
-        cpRestBuf.add(toText(""))
-        winsExpr = "clar_ui_windows"
-        winsCount = numToStr(irWindowDescs.count)
-    }
-
-    menusExpr = "0"
-    menusCount = "0"
-    if irMenuDescs.count > 0 {
-        cpRestBuf.add(toText("static const rt_ui_menu_desc *clar_ui_menus[] = {"))
-        i = 0
-        while i < irMenuDescs.count {
-            cpRestBuf.add(toText("    &clar_ui_menu_" + poolGet(irMenuDescName(i)) + ","))
-            i = i + 1
-        }
-        cpRestBuf.add(toText("};"))
-        cpRestBuf.add(toText(""))
-        menusExpr = "clar_ui_menus"
-        menusCount = numToStr(irMenuDescs.count)
-    }
-
-    mhExpr = "0"
-    mhCount = "0"
-    if irMenuHandlersHead != -1 {
-        mhExpr = "clar_ui_menu_handlers"
-        mhCount = numToStr(irMenuHandlerCount)
-    }
-
-    evExpr = "0"
-    evCount = "0"
-    if irEveryHead != -1 {
-        evExpr = "clar_ui_every"
-        evCount = numToStr(irEveryCount)
-    }
-
-    // openDocument's handler takes its `path: string` by value (clar_str_255,
-    // same convention as every other by-value string param -- see
-    // cpFuncProto), but rt_ui_launch's fnptr ABI (rt_ui.h) is pinned to
-    // `void (*)(const uint8_t *path255)` so rt_ui.c -- which never sees
-    // clar_str_255, a per-program typedef -- can call it without knowing the
-    // emitted program's own types. clar_str_255 and a Str255-shaped
-    // `path255` buffer are the SAME 256-byte layout (uint8_t len + 255
-    // bytes), the same identity every other rt_ui string call site already
-    // relies on (e.g. rt_ui_ask_open's `(uint8_t*)&(clar_str_255_var)`), so
-    // the wrapper below is a bare reinterpret + by-value call, no copy.
-    openDocExpr = "0"
-    if irHasOpenDocument {
-        cpRestBuf.add(toText("static void clar_ui_opendoc_wrap(const uint8_t *path255) {"))
-        cpRestBuf.add(toText("    clar_fn_handler_App_openDocument(*(const clar_str_255 *)path255);"))
-        cpRestBuf.add(toText("}"))
-        cpRestBuf.add(toText(""))
-        openDocExpr = "clar_ui_opendoc_wrap"
-    }
-
-    // startEmpty already matches rt_ui_launch's `void (*)(void)` exactly
-    // (no params) -- no wrapper needed, the bare function name decays to a
-    // pointer like any other C function reference.
-    startEmptyExpr = "0"
-    if irHasStartEmpty {
-        startEmptyExpr = "clar_fn_handler_App_startEmpty"
-    }
-
     cpRestBuf.add(toText("int main(int argc, char **argv) {"))
     cpRestBuf.add(toText("    clar_init_globals();"))
     cpRestBuf.add(toText("    rt_register_cleanup(cl_free_globals);"))
     cpRestBuf.add(toText("    rt_args_init(argc, argv);"))
-    cpRestBuf.add(toText("    rt_ui_startup(" + winsExpr + ", " + winsCount + ", " + menusExpr + ", " + menusCount + ", " + mhExpr + ", " + mhCount + ", " + evExpr + ", " + evCount + ");"))
+    cpRestBuf.add(toText("    clar_fn_rtUiStartup();"))
     if irHasLaunch {
         cpRestBuf.add(toText("    clar_fn_handler_App_launch();"))
     }
-    cpRestBuf.add(toText("    rt_ui_launch(" + openDocExpr + ", " + startEmptyExpr + ");"))
-    cpRestBuf.add(toText("    rt_ui_run();"))
+    cpRestBuf.add(toText("    clar_fn_rtUiLaunch();"))
+    cpRestBuf.add(toText("    clar_fn_rtUiRun();"))
     cpRestBuf.add(toText("    return 0;"))
     cpRestBuf.add(toText("}"))
 }
@@ -6222,16 +5190,13 @@ func emitProgram(): text {
     cpEmitRecords()
     cpEmitLayouts()
     cpEmitSerDescs()
-    if cpUiPortFlag {
-        cpEmitUiLayoutAsserts()
-    }
+    cpEmitUiLayoutAsserts()
     cpEmitEnums()
     cpEmitUiDescs()
     cpEmitAppInfo()
     cpEmitGlobalsInit()
     cpEmitExternProtos()
     cpEmitFuncs()
-    cpEmitUiWiring()
     cpEmitMain()
     // ARC Task 7: cpEmitRcWalks must run AFTER cpEmitFuncs()/
     // cpEmitGlobalsInit() -- see its own doc comment. It still populates
@@ -6245,15 +5210,14 @@ func emitProgram(): text {
     cpAppendLine(out, "#include \"rt.h\"")
     if irIsUiProgram() or irHasApp {
         // Only when the program actually declares a window/menu/every, OR
-        // an `app` section -- a UI-free, app-free program's emitted C must
-        // stay byte-identical to before this task (the differential suite
-        // enforces it). An every-only program (no window/menu at all)
-        // still needs rt_ui.h: its main() calls rt_ui_startup/rt_ui_run
-        // (Task 5) same as any other UI program. An `app`-only program
-        // (Task 2) needs rt_ui.h too, for the rt_ui_app_desc typedef its
-        // rt_ui_app_info definition uses -- irIsUiProgram() itself stays
-        // untouched: widening THAT would route a CLI program into
-        // cpEmitUiMain, the wrong main().
+        // an `app` section -- a UI-free, app-free program's emitted C stays
+        // byte-identical without it. An every-only program (no window/menu
+        // at all) still needs rt_ui.h: its main() calls the ported
+        // rtUiStartup/rtUiRun, which use rt_ui.h's RTUI_* constants, same
+        // as any other UI program. An `app`-only program needs rt_ui.h too,
+        // for the rt_ui_app_desc typedef its rt_ui_app_info definition uses
+        // -- irIsUiProgram() itself stays untouched: widening THAT would
+        // route a CLI program into cpEmitUiMain, the wrong main().
         cpAppendLine(out, "#include \"rt_ui.h\"")
     }
     cpAppendLine(out, "#include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */")
