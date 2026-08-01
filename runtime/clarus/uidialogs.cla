@@ -460,28 +460,17 @@ func rtUiFormFill(inst: ptr) {
 // only after the handler returns does rtUiFormTeardown clear gModal and
 // close the window.
 //
-// KNOWN OPEN BUG (task-10-report.md has the full bisection log): a modal
-// form's ACCEPT path (this function), when it processes 2+ binds AND at
-// least one of them is a BOOL/CHECK field, hangs the real DisposeWindow
-// call inside the LATER rtUiFormTeardown -- reproduced on real Mini vMac
-// hardware with reduced fixtures (2 bool binds; 1 int + 1 bool; 1 str + 1
-// bool all hang; 1 bool alone, or 2+ non-bool binds, both work). Ruled
-// out by direct bisection: the per-ftype write logic itself (a fully
-// neutered loop body still hangs iff the record has a bound CHECK and
-// nBinds>=2), GetControlValue specifically (a raw ControlRecord.
-// contrlValue peekw instead of the trap still hangs), call ORDER (a
-// pre-pass reading every CHECK's value before any other bind is
-// processed still hangs), TE focus/activation state (explicitly
-// TEDeactivating before DisposeWindow, in rtUiTeardownWindow below,
-// does not help), and the app's memory partition size (an explicit 1MB
-// SIZE resource does not help). NOT yet isolated to a specific root
-// cause. rtUiFormCancel (no bind processing at all) and rtUiFormAccept
-// itself with <=1 bind both close the SAME kind of window via the SAME
-// rtUiFormTeardown -> rtUiTeardownWindow -> UiDisposeWindow call
-// correctly. Next step for whoever picks this up: attach a real
-// debugger/disassembler to the hung Mini vMac process (or narrow via
-// further reduced fixtures) rather than the black-box bisection this
-// report's own log used.
+// Every offset this loop pokes through (and rtUiModalBuf's own size)
+// comes from the blob's Layout section, which MUST describe the record
+// layout the emitted C actually uses -- a bool field is a full int32_t
+// there, not cg68k's 2-byte slot. It once didn't: a form with 2+ binds
+// including a CHECK poked 4 bytes into the last 2 bytes of the
+// recSize-sized scratch Handle and corrupted the heap, hanging the later
+// DisposeWindow. Fixed in cprint.cla's cpC* layout authority (sourced by
+// uiblob.cla's uibEmitLayout) and guarded by the per-record
+// clar_ui_layoutassert_<R> compile-time asserts, so a recurrence is a
+// build error rather than a runtime hang. Full story: task-10-report.md's
+// addendum.
 func rtUiFormAccept(inst: ptr) {
     var w: RtUiWinst
     var winIdx: int
