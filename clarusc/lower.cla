@@ -5517,4 +5517,10 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiCanvasFillCircle"))
     shakeAddRoot(intern("rtUiCanvasPattern"))
     shakeAddRoot(intern("rtUiCanvasDrawText"))
+    // final-review fix round 1 (Task 7): rtUiDialogsUnported, the shared
+    // fail-closed stub cprint.cla's askOpen/askSave/askSaveChanges/edit/
+    // formIsNew arms all call under --uiport -- same "hand-emitted C
+    // text, not an ordinary IR call, needs its own root" reason every
+    // other name in this list already has.
+    shakeAddRoot(intern("rtUiDialogsUnported"))
 }

@@ -115,10 +115,26 @@
 // convention this declaration uses. Clarus's own `reg` clause has no way
 // to express "the one ptr param goes in A1, not A0" (its ptr slots fill
 // A0 then A1 in declaration order), so there is no clean way to express
-// Gestalt's actual calling convention as a `reg` extern either. Flagged
-// here for whichever step first makes UiGestalt reachable at runtime (it
-// backs rt_ui_startup's System 7 check, rt_ui.c:3737) to verify against a
-// real Mac Plus/System 6 run -- this step only declares the symbol.
+// Gestalt's actual calling convention as a `reg` extern either.
+//
+// VERIFIED BY BOOT (final-review fix round 2, Task 7 Step 7): `rtUiStartup`
+// (below) calls `UiGestalt` unconditionally, first thing, on every single
+// program this port builds -- 8 real Mac Plus/System 6.0.8 Mini vMac boots
+// this session (buttons/menus/canvas/pattern/about/smoke_bounce/
+// smoke_menudemo/smoke_mandel) all called it, all resolved `rtUiSys7`
+// correctly (System 6.0.8 -> false, confirmed by every one of those 8
+// scenarios' trace/pixel output matching its frozen golden byte-for-byte),
+// none crashed. IMPORTANT SCOPE NOTE: this only exercises the cprint/
+// C-emission lane's OWN call path -- `UiGestalt`'s cprint-side wrapper
+// (`rt_ext_UiGestalt`, rt_ext_mac.inc) calls the REAL C `Gestalt()`
+// function through Retro68's own headers, which handle the D0/A1 register
+// convention correctly regardless of what THIS extern's `trap 0xA1AD`
+// clause says -- the raw-trap-word register-convention risk this comment
+// describes is specifically about the NATIVE (cg68k, no C wrapper) UI
+// codegen lane, which does not exist yet (a later task). That path is
+// still genuinely unverified; this note records only that the cprint
+// lane's own call is now proven correct on real hardware, not that the
+// underlying register-convention question is closed.
 //
 // LMGetCurApName (rt_ui_apple_select's else-branch, rt_ui.c:2295, for a
 // program with no `app name` section) is NOT a trap at all -- it is a
@@ -712,6 +728,25 @@ func rtUiClose(instV: ptr) {
     ok = rtUiCloseInternal(instV)
 }
 
+// rtUiDialogsUnported (final-review fix round 1, Task 7): the shared
+// fail-closed stub for every dialog/form intrinsic this slice does not
+// port -- askOpen/askSave/askSaveChanges/edit/formIsNew all need
+// Dialog Manager + StandardFile (askOpen/askSave), the modal-form
+// machinery (edit), or rt_ui_form_is_new's own state (formIsNew), none
+// of which exist yet (Task 10, slice D). Mirrors uiwidgets.cla's
+// widget-kind fail-closed arm (log + quit 1) exactly, not a new pattern.
+// Declared `bool` (not void) so cprint.cla can splice a call to it
+// straight into EVERY one of these intrinsics' own expression position
+// (askOpen/askSave/askSaveChanges/formIsNew all embed their C result
+// directly, same "int 0/1/2 IS the value" convention cprint.cla's own
+// comments describe) -- `quit 1` never returns, so the trailing `return
+// false` is unreachable padding only to satisfy the checker.
+func rtUiDialogsUnported(): bool {
+    log("uiport: dialogs/forms not yet ported -- Task 10 (slice D)")
+    quit 1
+    return false
+}
+
 func rtUiQuit() {
     var wp: ptr
     var next: ptr
@@ -1300,6 +1335,39 @@ func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
     UiFireWinEvent(w.winIdx, inst, rtUiEvResized, 0, 0)
 }
 
+// rtUiHandleGrow (rt_ui.c:3010-3040): the oracle reads
+// `((WindowPeek)wp)->contRgn)->rgnBBox` directly (real C struct access);
+// this port must hand-derive the same two offsets, verified against the
+// actual layout structs Retro68's build uses (final-review fix round 2 --
+// not verified against a header when first written; searching for a
+// `MacRegion` type failed because the real name is plain `Region`):
+// `toolchain/multiversal/CIncludes/Multiverse.h` (the consolidated header
+// Retro68's own multiversal defs generate; same header set every other
+// offset in this port cites) --
+//   `struct WindowRecord { GrafPort port; INTEGER windowKind; Boolean
+//   visible; Boolean hilited; Boolean goAwayFlag; Boolean spareFlag;
+//   RgnHandle strucRgn; RgnHandle contRgn; ... }` -- GrafPort is the
+//   well-documented (Inside Macintosh I) 108-byte record, confirmed by
+//   summing Multiverse.h's own GrafPort field list byte-for-byte
+//   (device INTEGER 2 + portBits BitMap 14 + portRect Rect 8 + visRgn/
+//   clipRgn RgnHandle 4+4 + bkPat/fillPat Pattern 8+8 + pnLoc/pnSize
+//   Point 4+4 + pnMode INTEGER 2 + pnPat Pattern 8 + pnVis/txFont
+//   INTEGER 2+2 + txFace Style(byte) 1 + filler Byte 1 + txMode/txSize
+//   INTEGER 2+2 + spExtra Fixed 4 + fgColor/bkColor LONGINT 4+4 +
+//   colrBit/patStretch INTEGER 2+2 + picSave/rgnSave/polySave Handle
+//   4+4+4 + grafProcs ptr 4 = 108). `contRgn` therefore sits at
+//   108 (port) + 2 (windowKind) + 1+1+1+1 (the four Booleans) + 4
+//   (strucRgn) = 118 -- `wp + 118` below.
+//   `struct Region { INTEGER rgnSize; Rect rgnBBox; }` -- `rgnBBox`
+//   (a Rect: top/left/bottom/right, each INTEGER) sits at offset 2 past
+//   rgnSize, so rgnBBox.top is `contRgnMp + 2`, rgnBBox.left is
+//   `contRgnMp + 4` -- exactly what `contTop`/`contLeft` below read.
+// No scripted scenario exercises this path (real mouse-drag-driven
+// GrowWindow only, via `UiGrowWindow` below -- no `RT_MAC_TEST` scripted
+// verb feeds a live resize-corner drag; `zoomwin`/`hdim`'s own `resize`
+// verb goes through `rtUiScriptResize` -> `rtUiApplyResize` directly,
+// never through this function). Verified by header derivation only, not
+// by a boot -- flagged here rather than left silently unverified.
 func rtUiHandleGrow(wp: ptr, inst: ptr, wherePt: int) {
     var w: RtUiWinst
     var contRgnH: ptr

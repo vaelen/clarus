@@ -2677,16 +2677,29 @@ func fpIntrCall(x: int): text {
         // above for its own out-parameter. Embedded directly (no temp): the
         // call's own int (0/1) result IS the Bool value, same as every
         // other int-returning rt_* call in this function (e.g. IStrCmp).
+        // final-review fix round 1 (Task 7): askOpen needs StandardFile,
+        // not ported this slice (Task 10) -- fail-closed under --uiport,
+        // same rtUiDialogsUnported() stub every dialog/form intrinsic
+        // below uses, rather than a raw rt_ui_ask_open link error.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiDialogsUnported()"
+        }
         return "rt_ui_ask_open((uint8_t*)&(" + fpAddrable(a0) + "))"
     } else if nm == IUiAskSave() {
         // `askSave(p, suggested)` -- p filled in place (see IUiAskOpen
         // above); suggested is read-only, so it takes the ordinary
         // fpStrAddr const-cast path.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiDialogsUnported()"
+        }
         return "rt_ui_ask_save((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
     } else if nm == IUiAskSaveChanges() {
         // `askSaveChanges(name)` -- name is read-only; the result is the
         // raw saveChoice enum word (0/1/2), embedded directly like
         // IUiGetWidth/IUiGetHeight's `short` results just below.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiDialogsUnported()"
+        }
         return "rt_ui_ask_save_changes(" + fpStrAddr(a0) + ")"
     } else if nm == IUiCanvasClear() {
         if cpUiPortFlag {
@@ -2741,6 +2754,12 @@ func fpIntrCall(x: int): text {
         fpUiEditStmt(x, a0, a1, a2)
         return toText("")
     } else if nm == IUiFormIsNew() {
+        // final-review fix round 1 (Task 7): formIsNew reads rt_ui_edit's
+        // own "was this a `new T`-kind edit" state -- same not-ported-
+        // this-slice fail-closed as IUiAskOpen/IUiAskSave above.
+        if cpUiPortFlag {
+            return "clar_fn_rtUiDialogsUnported()"
+        }
         return "(rt_ui_form_is_new())"
 
     // ---- native-5e Task 6: reverse-waist dispatcher synthesis intrinsics
@@ -2788,6 +2807,16 @@ func fpUiEditStmt(x: int, kindArg: int, opA: int, opB: int) {
 
     winName = poolGet(irtName(irExprType(x)))
     kind = irIntConstV(kindArg)
+
+    // final-review fix round 1 (Task 7): `edit` needs the modal-form
+    // machinery (rt_ui_edit), not ported this slice (Task 10) -- one
+    // guard here covers all four `kind` arms below (root cause, not a
+    // guard duplicated into each), same rtUiDialogsUnported() stub
+    // IUiAskOpen/IUiAskSave/IUiAskSaveChanges/IUiFormIsNew use.
+    if cpUiPortFlag {
+        fpEmit("clar_fn_rtUiDialogsUnported();")
+        return
+    }
 
     if kind == 0 {
         // `edit F, new T` -- T is F's own form record type.
