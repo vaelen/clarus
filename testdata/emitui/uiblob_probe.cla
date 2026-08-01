@@ -1,0 +1,167 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uiblob_probe.cla: Task 5 (native-5e) fixture for uiblob.cla's builder --
+// pins testdata/emitui/uiblob_probe.blob.golden (the raw blob bytes,
+// bytes-are-the-only-normative-contract per uiblob.cla's own doc comment)
+// and is also compile-checked under --uiport (internal/emitui's own
+// TestUiBlobGolden). Exercises every section the plan's blob-format spec
+// defines in one program:
+//   - window Main: every non-popup widget kind (button/check/canvas/
+//     label/field/textview/table), all four atKind values, the caption-
+//     fallback rule (Flag has no `caption:` at all), a table bound to a
+//     global `list of` record (2 columns, one fixed-width one fill), a
+//     `text` per-instance var (irtNeedsCtor -> handlerMask bit 8), every
+//     bare window event (opened/closeRequest/closed/resized/key ->
+//     handlerMask bits 0-4), and every widget event kind (click/change/
+//     drag/enter/select/doubleClick -> widget eventMask bits 0-5 spread
+//     across Go/Flag/Board/Name/Rows).
+//   - window EditForm: `form for FormRec` (field/popup/check binds,
+//     the Layout section's KStr/KInt/KEnum/KBool field-kind spread),
+//     accepted/cancelled (handlerMask bits 5-6), no per-instance vars
+//     (the "no szassert" skip path).
+//   - two menus: File (an item, a separator, a key equivalent, an
+//     app-scope AND a window-scoped `select` handler -> MenuHandler
+//     section with 2 entries, one scopeWinIdx -1, one resolved) and Edit
+//     (`standard edit`, nItems 0).
+//   - one `app` section (all four fields) and one `every` block.
+
+enum Status {
+    Open
+    Closed
+    Pending
+}
+
+record Row {
+    name:  string(63)
+    count: int
+}
+
+var rows: list of Row
+
+record FormRec {
+    label:  string(63)
+    qty:    int
+    status: Status
+    flag:   bool
+}
+
+var ticks: int = 0
+
+app Probe {
+    name: "Probe"
+    version: "1.0"
+    author: "Test"
+    about: "UI blob probe fixture"
+}
+
+window Main {
+    title: "Main"
+    size: 400, 300
+    resizable
+
+    button Go   { at: 10, 10; caption: "Go"; default }
+    check Flag  { at: right, 10 }
+    canvas Board { at: next, bottom; buffered }
+    label Lbl   { at: next, bottom; text: "Status" }
+    field Name  { label: "Name:" }
+    textview Body { at: next, bottom; fill: both; scrollbar: vertical }
+    table Rows {
+        at: next, bottom
+        rows: rows
+        column "Name"  shows name  width 140
+        column "Count" shows count width fill
+    }
+
+    var state: int
+    var note: text
+}
+
+window EditForm {
+    title: "Edit"
+    size: 300, 200
+    form for FormRec
+
+    field FLabel   { binds: label;  label: "Label:" }
+    popup FStatus  { binds: status; label: "Status:" }
+    check FFlag    { binds: flag;   caption: "Flag" }
+    button OK      { default }
+    button Cancel  { cancel }
+}
+
+menu File {
+    item New "New" key "N"
+    separator
+    item Quit "Quit" key "Q"
+}
+
+menu Edit {
+    standard edit
+}
+
+every 5 ticks {
+    ticks = ticks + 1
+}
+
+on App.launch {
+    open Main
+}
+
+extend Main {
+    on opened {
+        state = 0
+    }
+    on closeRequest {
+    }
+    on closed {
+    }
+    on resized {
+    }
+    on key(k: char) {
+        state = state + 1
+    }
+    on Go.click {
+        edit EditForm, new FormRec
+    }
+    on Flag.change {
+        state = 1
+    }
+    on Board.click(x: int, y: int) {
+        Board.fillCircle(x, y, 5)
+    }
+    on Board.drag(x: int, y: int) {
+        Board.line(x, y, x, y)
+    }
+    on Name.enter {
+        note.append("x")
+    }
+    on Rows.select(i: int) {
+        state = i
+    }
+    on Rows.doubleClick(i: int) {
+        Rows.selected = i
+    }
+
+    extend File {
+        on New.select {
+            state = 2
+        }
+    }
+}
+
+extend EditForm {
+    on accepted(b: FormRec) {
+        var r: Row
+        r.name = b.label
+        r.count = b.qty
+        rows.add(r)
+    }
+    on cancelled {
+    }
+}
+
+extend File {
+    on Quit.select {
+        quit
+    }
+}

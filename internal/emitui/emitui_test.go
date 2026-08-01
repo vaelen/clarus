@@ -19,9 +19,13 @@ package emitui
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -268,5 +272,462 @@ func TestEmitUiTablePopupGuards(t *testing.T) {
 				t.Errorf("output %q missing %q", out.String(), c.want)
 			}
 		})
+	}
+}
+
+// uiBlobArrayRe/uiBlobIntRe extract clar_ui_blob's byte VALUES out of a
+// --uiport emit's C source -- the blob's own byte identity is the only
+// normative contract (uiblob.cla's own doc comment); the surrounding C
+// array-literal spelling (line wrapping, indentation) is cprint.cla's own
+// business and gets pinned separately, in Task 6, once there's a full
+// --uiport .c.golden to compare against.
+var uiBlobArrayRe = regexp.MustCompile(`(?s)clar_ui_blob\[\] = \{(.*?)\};`)
+var uiBlobIntRe = regexp.MustCompile(`-?\d+`)
+
+func extractUiBlob(src string) ([]byte, error) {
+	m := uiBlobArrayRe.FindStringSubmatch(src)
+	if m == nil {
+		return nil, fmt.Errorf("clar_ui_blob[] array literal not found")
+	}
+	nums := uiBlobIntRe.FindAllString(m[1], -1)
+	out := make([]byte, len(nums))
+	for i, s := range nums {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, fmt.Errorf("parse byte %q: %w", s, err)
+		}
+		if n < 0 || n > 255 {
+			return nil, fmt.Errorf("byte value %d out of 0-255 range at index %d", n, i)
+		}
+		out[i] = byte(n)
+	}
+	return out, nil
+}
+
+// TestUiBlobGolden (Task 5, native-5e) pins uiblob.cla's uibBuild() byte
+// output for testdata/emitui/uiblob_probe.cla against
+// testdata/emitui/uiblob_probe.blob.golden -- the plan's normative UI
+// descriptor blob format ("The UI descriptor blob" section,
+// docs/superpowers/plans/2026-08-01-native-5e-ui-runtime.md) -- then
+// structurally decodes the GOLDEN (header -> windows -> widgets/menus/
+// menu handlers/every/app, re-deriving every string-pool reference)
+// rather than trusting the raw byte-compare alone, so a future change
+// that reorders fields but happens to preserve the total byte count
+// doesn't slip through undetected. Also compile-checks a --uiport emit of
+// the same fixture under the m68k toolchain (mirrors TestEmitUiGoldens'
+// own compile-check, minus a full .c.golden byte-compare -- that lands in
+// Task 6, once cg68k/ui.cla actually consume the blob).
+//
+// To regenerate the golden after an intentional uiblob.cla format change:
+// run `clarusc emit --uiport -o /tmp/out.c testdata/emitui/uiblob_probe.cla`,
+// extract the clar_ui_blob[] array's byte values (extractUiBlob above does
+// exactly this), and write them as raw bytes to
+// testdata/emitui/uiblob_probe.blob.golden.
+func TestUiBlobGolden(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildClarusc(t)
+	fixture := filepath.Join(root, "testdata", "emitui", "uiblob_probe.cla")
+
+	outC := filepath.Join(t.TempDir(), "out.c")
+	cmd := exec.Command(exe, "emit", "--uiport", "-o", outC, fixture)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("clarusc emit --uiport -o %s %s: %v\nstdout: %s\nstderr: %s", outC, fixture, err, stdout.String(), stderr.String())
+	}
+	src, err := os.ReadFile(outC)
+	if err != nil {
+		t.Fatalf("read emitted %s: %v", outC, err)
+	}
+
+	got, err := extractUiBlob(string(src))
+	if err != nil {
+		t.Fatalf("extract clar_ui_blob[] from %s: %v", outC, err)
+	}
+
+	goldenPath := filepath.Join(root, "testdata", "emitui", "uiblob_probe.blob.golden")
+	want, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("read golden %s: %v", goldenPath, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s: decoded clar_ui_blob bytes do not match %s (%d vs %d bytes) -- see this test's own doc comment for how to regenerate", fixture, goldenPath, len(got), len(want))
+	}
+
+	// Structural decode against the COMMITTED golden (Step 3 of the task
+	// brief) -- walks every section by its own header-declared offset/
+	// count, re-deriving string-pool references.
+	d := &uiBlobDecoder{t: t, b: want}
+	d.checkHeader()
+	d.checkWindows()
+	d.checkMenus()
+	d.checkMenuHandlers()
+	d.checkEvery()
+	d.checkApp()
+
+	gcc := m68kGCC(t)
+	obj := filepath.Join(t.TempDir(), "out.o")
+	ccCmd := exec.Command(gcc, "-x", "c", "-c",
+		"-I"+filepath.Join(root, "internal", "build", "rt"),
+		"-I"+filepath.Join(root, "runtime", "mac"),
+		outC, "-o", obj)
+	var ccOut bytes.Buffer
+	ccCmd.Stdout = &ccOut
+	ccCmd.Stderr = &ccOut
+	if err := ccCmd.Run(); err != nil {
+		t.Fatalf("m68k-apple-macos-gcc -c %s (--uiport emit of %s): %v\n%s", outC, fixture, err, ccOut.String())
+	}
+	if fi, statErr := os.Stat(obj); statErr != nil || fi.Size() == 0 {
+		t.Fatalf("m68k-apple-macos-gcc -c %s: no object file produced (stat: %v)\n%s", outC, statErr, ccOut.String())
+	}
+}
+
+// uiBlobDecoder is a minimal reader over a raw UI descriptor blob --
+// every integer field is a big-endian int32 at a 4-byte-aligned offset,
+// blob-absolute (never section-relative); a Str255 is a length byte plus
+// raw bytes, referenced the same way, -1 marking "absent" (see
+// uiblob.cla's own doc comment, which this mirrors).
+type uiBlobDecoder struct {
+	t *testing.T
+	b []byte
+
+	nWins, winsOff       int
+	nMenus, menusOff     int
+	nMenuHandlers, mhOff int
+	nEvery, everyOff     int
+	appOff               int
+}
+
+func (d *uiBlobDecoder) i32(off int) int {
+	d.t.Helper()
+	if off < 0 || off+4 > len(d.b) {
+		d.t.Fatalf("uiblob: i32 offset %d out of range (blob is %d bytes)", off, len(d.b))
+	}
+	return int(int32(binary.BigEndian.Uint32(d.b[off : off+4])))
+}
+
+// str reads a Str255 at a blob-absolute offset, or ("", false) for the -1
+// "absent" sentinel.
+func (d *uiBlobDecoder) str(off int) (string, bool) {
+	d.t.Helper()
+	if off == -1 {
+		return "", false
+	}
+	if off < 0 || off >= len(d.b) {
+		d.t.Fatalf("uiblob: str offset %d out of range (blob is %d bytes)", off, len(d.b))
+	}
+	n := int(d.b[off])
+	end := off + 1 + n
+	if end > len(d.b) {
+		d.t.Fatalf("uiblob: str at %d (len %d) runs past blob end (%d bytes)", off, n, len(d.b))
+	}
+	return string(d.b[off+1 : end]), true
+}
+
+// checkHeader decodes the 11-int32 header and asserts the fixture's own
+// known shape (uiblob_probe.cla's doc comment: 2 windows, 2 menus, 2 menu
+// handlers, 1 every block, 1 app section).
+func (d *uiBlobDecoder) checkHeader() {
+	d.t.Helper()
+	if magic := d.i32(0); magic != 0x434C5549 {
+		d.t.Fatalf("uiblob: magic = %#x, want 'CLUI' (0x434C5549)", magic)
+	}
+	if v := d.i32(4); v != 1 {
+		d.t.Fatalf("uiblob: version = %d, want 1", v)
+	}
+	d.nWins = d.i32(8)
+	d.winsOff = d.i32(12)
+	d.nMenus = d.i32(16)
+	d.menusOff = d.i32(20)
+	d.nMenuHandlers = d.i32(24)
+	d.mhOff = d.i32(28)
+	d.nEvery = d.i32(32)
+	d.everyOff = d.i32(36)
+	d.appOff = d.i32(40)
+
+	if d.winsOff != 44 {
+		d.t.Errorf("uiblob: winsOff = %d, want 44 (header is fixed at 11 int32 = 44 bytes)", d.winsOff)
+	}
+	if d.nWins != 2 {
+		d.t.Errorf("uiblob: nWins = %d, want 2", d.nWins)
+	}
+	if d.nMenus != 2 {
+		d.t.Errorf("uiblob: nMenus = %d, want 2", d.nMenus)
+	}
+	if d.nMenuHandlers != 2 {
+		d.t.Errorf("uiblob: nMenuHandlers = %d, want 2", d.nMenuHandlers)
+	}
+	if d.nEvery != 1 {
+		d.t.Errorf("uiblob: nEvery = %d, want 1", d.nEvery)
+	}
+	if d.appOff == -1 {
+		d.t.Errorf("uiblob: appOff = -1, want a real offset (fixture declares an `app` section)")
+	}
+}
+
+// checkWindows decodes both windows (Main: every non-popup widget kind
+// plus a table; EditForm: `form for`, incl. a popup) and follows their
+// nested Widget/Table/Col/Form/Bind/Layout/EnumArrays references.
+func (d *uiBlobDecoder) checkWindows() {
+	d.t.Helper()
+	if d.nWins != 2 {
+		return // checkHeader already reported this
+	}
+
+	type wantWin struct {
+		name        string
+		nWidgets    int
+		kinds       []int // RTUI_* numeric kind, declared order
+		stateSize   int
+		handlerMask int
+		isForm      bool
+	}
+	// kind numbers: button 0, check 1, canvas 2, label 3, field 4,
+	// textview 5, popup 6, table 7 (rt_ui.h:53-60).
+	wants := []wantWin{
+		{name: "Main", nWidgets: 7, kinds: []int{0, 1, 2, 3, 4, 5, 7}, stateSize: 8, handlerMask: 287, isForm: false},
+		{name: "EditForm", nWidgets: 5, kinds: []int{4, 6, 1, 0, 0}, stateSize: 0, handlerMask: 96, isForm: true},
+	}
+
+	for wi, want := range wants {
+		base := d.winsOff + wi*48
+		name, ok := d.str(d.i32(base))
+		if !ok || name != want.name {
+			d.t.Errorf("uiblob: window %d name = %q (ok=%v), want %q", wi, name, ok, want.name)
+		}
+		if _, ok := d.str(d.i32(base + 4)); !ok {
+			d.t.Errorf("uiblob: window %d (%s) titleOff = -1, want a real title", wi, want.name)
+		}
+		nWidgets := d.i32(base + 28)
+		widgetsOff := d.i32(base + 32)
+		stateSize := d.i32(base + 36)
+		handlerMask := d.i32(base + 40)
+		formOff := d.i32(base + 44)
+
+		if nWidgets != want.nWidgets {
+			d.t.Errorf("uiblob: window %d (%s) nWidgets = %d, want %d", wi, want.name, nWidgets, want.nWidgets)
+		}
+		if stateSize != want.stateSize {
+			d.t.Errorf("uiblob: window %d (%s) stateSize = %d, want %d", wi, want.name, stateSize, want.stateSize)
+		}
+		if handlerMask != want.handlerMask {
+			d.t.Errorf("uiblob: window %d (%s) handlerMask = %d, want %d", wi, want.name, handlerMask, want.handlerMask)
+		}
+		if want.isForm && formOff == -1 {
+			d.t.Errorf("uiblob: window %d (%s) formOff = -1, want a real form desc", wi, want.name)
+		}
+		if !want.isForm && formOff != -1 {
+			d.t.Errorf("uiblob: window %d (%s) formOff = %d, want -1 (not a form window)", wi, want.name, formOff)
+		}
+
+		for kwi, wantKind := range want.kinds {
+			if kwi >= nWidgets {
+				break
+			}
+			wb := widgetsOff + kwi*52
+			if kind := d.i32(wb); kind != wantKind {
+				d.t.Errorf("uiblob: window %d (%s) widget %d kind = %d, want %d", wi, want.name, kwi, kind, wantKind)
+			}
+			if wname, ok := d.str(d.i32(wb + 4)); !ok || wname == "" {
+				d.t.Errorf("uiblob: window %d (%s) widget %d name = %q (ok=%v), want a non-empty name", wi, want.name, kwi, wname, ok)
+			}
+		}
+	}
+
+	// Main.Flag (widget index 1) declares no `caption:` at all -- the
+	// caption-fallback rule (uibWidgetCaptionIdx, applied at blob build
+	// time) must resolve captionOff to its own name, "Flag".
+	mainBase := d.winsOff
+	mainWidgetsOff := d.i32(mainBase + 32)
+	flagCapOff := d.i32(mainWidgetsOff + 1*52 + 8)
+	if cap, ok := d.str(flagCapOff); !ok || cap != "Flag" {
+		d.t.Errorf("uiblob: Main.Flag captionOff = %q (ok=%v), want \"Flag\" (caption-fallback rule)", cap, ok)
+	}
+
+	// Main.Rows (widget index 6, a table): rowsIdx/layout/2 columns.
+	rowsWidgetBase := mainWidgetsOff + 6*52
+	tableOff := d.i32(rowsWidgetBase + 48)
+	if tableOff == -1 {
+		d.t.Fatalf("uiblob: Main.Rows tableOff = -1, want a real table desc")
+	}
+	nCols := d.i32(tableOff + 8)
+	colsOff := d.i32(tableOff + 12)
+	if nCols != 2 {
+		d.t.Errorf("uiblob: Main.Rows nCols = %d, want 2", nCols)
+	}
+	wantCols := []struct {
+		header    string
+		widthFill int
+	}{{"Name", 0}, {"Count", 1}}
+	for ci, want := range wantCols {
+		if ci >= nCols {
+			break
+		}
+		cb := colsOff + ci*16
+		if header, ok := d.str(d.i32(cb)); !ok || header != want.header {
+			d.t.Errorf("uiblob: Main.Rows col %d header = %q (ok=%v), want %q", ci, header, ok, want.header)
+		}
+		if widthFill := d.i32(cb + 8); widthFill != want.widthFill {
+			d.t.Errorf("uiblob: Main.Rows col %d widthFill = %d, want %d", ci, widthFill, want.widthFill)
+		}
+	}
+
+	// EditForm's Form entry: 3 binds (FLabel->label idx 0, FStatus->status
+	// idx 2, FFlag->flag idx 3 -- record FormRec{label,qty,status,flag}),
+	// and its Layout's status field (index 2) is the ENUM one with 3
+	// members matching `enum Status { Open Closed Pending }`.
+	editBase := d.winsOff + 48
+	formOff := d.i32(editBase + 44)
+	layoutOff := d.i32(formOff)
+	nBinds := d.i32(formOff + 4)
+	bindsOff := d.i32(formOff + 8)
+	if nBinds != 3 {
+		d.t.Errorf("uiblob: EditForm nBinds = %d, want 3", nBinds)
+	}
+	wantBinds := [][2]int{{0, 0}, {1, 2}, {2, 3}}
+	for bi, want := range wantBinds {
+		if bi >= nBinds {
+			break
+		}
+		bb := bindsOff + bi*8
+		widgetIndex := d.i32(bb)
+		fieldIndex := d.i32(bb + 4)
+		if widgetIndex != want[0] || fieldIndex != want[1] {
+			d.t.Errorf("uiblob: EditForm bind %d = (widgetIndex %d, fieldIndex %d), want (%d, %d)", bi, widgetIndex, fieldIndex, want[0], want[1])
+		}
+	}
+	nFields := d.i32(layoutOff + 4)
+	if nFields != 4 {
+		d.t.Errorf("uiblob: EditForm form Layout nFields = %d, want 4", nFields)
+		return
+	}
+	statusFieldBase := layoutOff + 8 + 2*24
+	if ftype := d.i32(statusFieldBase); ftype != 5 {
+		d.t.Errorf("uiblob: EditForm form Layout field 2 (status) ftype = %d, want 5 (RT_FT_ENUM)", ftype)
+	}
+	enumCount := d.i32(statusFieldBase + 12)
+	enumLabelsOff := d.i32(statusFieldBase + 16)
+	enumValuesOff := d.i32(statusFieldBase + 20)
+	if enumCount != 3 {
+		d.t.Errorf("uiblob: EditForm form Layout field 2 (status) enumCount = %d, want 3", enumCount)
+		return
+	}
+	wantLabels := []string{"Open", "Closed", "Pending"}
+	for ei, wantLabel := range wantLabels {
+		labOff := d.i32(enumLabelsOff + ei*4)
+		val := d.i32(enumValuesOff + ei*4)
+		if lab, ok := d.str(labOff); !ok || lab != wantLabel {
+			d.t.Errorf("uiblob: EditForm status enum member %d label = %q (ok=%v), want %q", ei, lab, ok, wantLabel)
+		}
+		if val != ei {
+			d.t.Errorf("uiblob: EditForm status enum member %d value = %d, want %d", ei, val, ei)
+		}
+	}
+}
+
+// checkMenus decodes File (3 items: an item, a separator, an item) and
+// Edit (`standard edit`, nItems 0).
+func (d *uiBlobDecoder) checkMenus() {
+	d.t.Helper()
+	if d.nMenus != 2 {
+		return
+	}
+
+	fileBase := d.menusOff
+	if name, ok := d.str(d.i32(fileBase)); !ok || name != "File" {
+		d.t.Errorf("uiblob: menu 0 name = %q (ok=%v), want \"File\"", name, ok)
+	}
+	nItems := d.i32(fileBase + 8)
+	itemsOff := d.i32(fileBase + 12)
+	if isStd := d.i32(fileBase + 16); nItems != 3 || isStd != 0 {
+		d.t.Errorf("uiblob: menu File nItems=%d isStd=%d, want 3/0", nItems, isStd)
+	}
+	if nItems == 3 {
+		sepBase := itemsOff + 1*16
+		if name, ok := d.str(d.i32(sepBase)); ok {
+			d.t.Errorf("uiblob: menu File item 1 nameOff resolves to %q, want -1 (a bare `separator`)", name)
+		}
+		if sep := d.i32(sepBase + 12); sep != 1 {
+			d.t.Errorf("uiblob: menu File item 1 separator = %d, want 1", sep)
+		}
+	}
+
+	editBase := d.menusOff + 20
+	if name, ok := d.str(d.i32(editBase)); !ok || name != "Edit" {
+		d.t.Errorf("uiblob: menu 1 name = %q (ok=%v), want \"Edit\"", name, ok)
+	}
+	nItems = d.i32(editBase + 8)
+	itemsOff = d.i32(editBase + 12)
+	isStd := d.i32(editBase + 16)
+	if nItems != 0 || itemsOff != -1 || isStd != 1 {
+		d.t.Errorf("uiblob: menu Edit nItems=%d itemsOff=%d isStd=%d, want 0/-1/1", nItems, itemsOff, isStd)
+	}
+}
+
+// checkMenuHandlers decodes File.New (window-scoped, `extend Main {
+// extend File { on New.select ... } }`) and File.Quit (app-scope,
+// top-level `extend File { on Quit.select ... }`).
+func (d *uiBlobDecoder) checkMenuHandlers() {
+	d.t.Helper()
+	if d.nMenuHandlers != 2 {
+		return
+	}
+
+	h0 := d.mhOff
+	if itemName, ok := d.str(d.i32(h0 + 20)); !ok || itemName != "New" {
+		d.t.Errorf("uiblob: menuHandler 0 itemName = %q (ok=%v), want \"New\"", itemName, ok)
+	}
+	if scope := d.i32(h0 + 12); scope != 0 {
+		d.t.Errorf("uiblob: menuHandler 0 (File.New) scopeWinIdx = %d, want 0 (Main)", scope)
+	}
+	if hIdx := d.i32(h0 + 8); hIdx != 0 {
+		d.t.Errorf("uiblob: menuHandler 0 handlerIdx = %d, want 0 (its own section position)", hIdx)
+	}
+
+	h1 := d.mhOff + 24
+	if itemName, ok := d.str(d.i32(h1 + 20)); !ok || itemName != "Quit" {
+		d.t.Errorf("uiblob: menuHandler 1 itemName = %q (ok=%v), want \"Quit\"", itemName, ok)
+	}
+	if scope := d.i32(h1 + 12); scope != -1 {
+		d.t.Errorf("uiblob: menuHandler 1 (File.Quit) scopeWinIdx = %d, want -1 (app-scope)", scope)
+	}
+	if hIdx := d.i32(h1 + 8); hIdx != 1 {
+		d.t.Errorf("uiblob: menuHandler 1 handlerIdx = %d, want 1", hIdx)
+	}
+}
+
+// checkEvery decodes the fixture's one `every 5 ticks { }` block.
+func (d *uiBlobDecoder) checkEvery() {
+	d.t.Helper()
+	if d.nEvery != 1 {
+		return
+	}
+	if ticks := d.i32(d.everyOff); ticks != 5 {
+		d.t.Errorf("uiblob: every[0].ticks = %d, want 5", ticks)
+	}
+}
+
+// checkApp decodes the fixture's `app Probe { ... }` section.
+func (d *uiBlobDecoder) checkApp() {
+	d.t.Helper()
+	if d.appOff == -1 {
+		return
+	}
+	wants := []struct {
+		field string
+		off   int
+		want  string
+	}{
+		{"name", 0, "Probe"},
+		{"version", 4, "1.0"},
+		{"author", 8, "Test"},
+		{"about", 12, "UI blob probe fixture"},
+	}
+	for _, w := range wants {
+		v, ok := d.str(d.i32(d.appOff + w.off))
+		if !ok || v != w.want {
+			d.t.Errorf("uiblob: app.%s = %q (ok=%v), want %q", w.field, v, ok, w.want)
+		}
 	}
 }

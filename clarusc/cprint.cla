@@ -64,6 +64,15 @@ var cpRecBuf: list of text    // record structs (seeded with clar_rec_Err) + UI 
 var cpUiBuf: list of text     // rt_ui_widget_desc/window_desc/item_desc/menu_desc tables (Task 4)
 var cpRestBuf: list of text   // globals init, funcs, main
 
+// cpUiPortFlag (Task 5, native-5e) mirrors main.cla's `--uiport` flag
+// (set there, right before emitProgram is called) -- gates cpEmitUiBlob's
+// `clar_ui_blob[]` + per-window sizeof-assert emission ONLY; every
+// pre-existing rt_ui_*_desc table cpEmitUiDescs prints stays unconditional
+// (Task 11 is the flip that retires them), so every existing
+// testdata/emitui/*.c.golden -- emitted with this flag absent -- stays
+// byte-identical regardless of this task's changes.
+var cpUiPortFlag: bool
+
 // cpCorePorted (Plan native-5d Task 3) is core.cla's own ported-module
 // flag -- UNCONDITIONAL like cpStrPorted/cpTextPorted/cpListPorted/
 // cpMapPorted (main.cla sets it true directly, right alongside the
@@ -4881,6 +4890,18 @@ func cpEmitWindowDescs() {
 
         if irWindowDescStateFieldsHead(i) != -1 {
             cpEmitUiStateStruct(name, irWindowDescStateFieldsHead(i))
+            if cpUiPortFlag {
+                // Task 5 (native-5e): catches any divergence between
+                // uiblob.cla's uibStateSize (mirroring cg68k.cla's
+                // LAYOUT AUTHORITY, cg68k.cla:713-807) and the real C
+                // struct layout above -- a build-time compile error, not a
+                // silent size mismatch discovered only at runtime. Skipped
+                // for the no-state-fields case just below: that struct is
+                // a deliberate one-byte placeholder never sized against
+                // real field layout, so there is nothing to compare.
+                cpRecBuf.add(toText("typedef char clar_ui_szassert_" + name + "[(sizeof(clar_uistate_" + name + ") == " + numToStr(uibStateSize(i)) + ") ? 1 : -1];"))
+                cpRecBuf.add(toText(""))
+            }
         } else {
             // No per-instance vars: a zero-size struct isn't portable C, so
             // a one-byte placeholder stands in -- nothing ever reads it.
@@ -5044,9 +5065,45 @@ func cpHexByte(b: int): string {
     return out
 }
 
+// cpEmitUiBlob (Task 5, native-5e) prints uiblob.cla's uibBuild() result
+// -- the plan's normative flat pointer-free UI descriptor blob -- as a
+// byte array into cpUiBuf, under --uiport only (cpUiPortFlag). This is
+// purely ADDITIVE: every rt_ui_*_desc table cpEmitWindowDescs/
+// cpEmitMenuDescs already print above is untouched (Task 11 is the flip
+// that retires them and makes ui.cla read this blob exclusively). Grouped
+// 20 bytes/line for a readable golden diff; the grouping has no semantic
+// meaning, byte VALUES are the only normative contract (uiblob.cla's own
+// doc comment).
+func cpEmitUiBlob() {
+    var bytes: list of int
+    var i: int
+    var line: string
+
+    bytes = uibBuild()
+    cpUiBuf.add(toText("static const unsigned char clar_ui_blob[] = {"))
+    line = "   "
+    i = 0
+    while i < bytes.count {
+        line = line + " " + numToStr(bytes[i]) + ","
+        if i mod 20 == 19 {
+            cpUiBuf.add(toText(line))
+            line = "   "
+        }
+        i = i + 1
+    }
+    if line != "   " {
+        cpUiBuf.add(toText(line))
+    }
+    cpUiBuf.add(toText("};"))
+    cpUiBuf.add(toText(""))
+}
+
 func cpEmitUiDescs() {
     cpEmitWindowDescs()
     cpEmitMenuDescs()
+    if cpUiPortFlag {
+        cpEmitUiBlob()
+    }
     if irAnyCloseRequestHandler() {
         // Into cpUiBuf, NOT cpEmitUiWiring's cpRestBuf section: a
         // closeRequest handler's own BODY (an ordinary IRFunc, printed by

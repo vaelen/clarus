@@ -1,0 +1,1037 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uiblob.cla (Task 5, native-5e plan): builds the flat, pointer-free UI
+// descriptor blob from the IR UI descs (ir.cla:287-584) -- ONE
+// backend-neutral builder both cprint.cla (under --uiport, cpEmitUiBlob)
+// and, later, cg68k.cla (Task 12, pouring the same bytes into the native
+// constant pool) call, so the two backends emit byte-identical blobs BY
+// CONSTRUCTION rather than by keeping two hand-written encoders in sync.
+//
+// Format (normative -- docs/superpowers/plans/2026-08-01-native-5e-ui-
+// runtime.md, "The UI descriptor blob" section; every field list/order
+// below is copied from there verbatim): all integer fields are
+// big-endian int32 at 4-byte-aligned offsets, EVERY field in every
+// section is one such int32 (bools/flags/counts included -- there is no
+// packed sub-int32 field anywhere in this format); strings are Str255
+// (one length byte + raw bytes, no padding) in a trailing string-pool
+// section, referenced by an int32 BYTE OFFSET FROM THE BLOB'S OWN START
+// (not relative to any section) -- so are all other "off" fields
+// (winsOff, widgetsOff, itemsOff, ...): every offset in this format is
+// blob-absolute, the uidesc.cla accessor functions the plan describes
+// read it with peekl/peekb over "blob base + offset" alone. -1 marks an
+// absent/optional reference (a NULL Str255, a window with no form, a
+// widget that isn't a table, an `app` section-free program's appOff,
+// ...) -- extended here, by this builder's own choice (not separately
+// pinned by the plan text), to also cover an EMPTY array-of-N pointer
+// (nWidgets/nItems/nCols/nBinds == 0 -> that section's own "off" field is
+// -1 too, uniformly) since a consumer would never dereference it anyway.
+//
+// Section order (this builder's own choice -- the plan pins each
+// section's OWN field layout, not the concatenation order across
+// sections): Header, Window, Widget, Menu, Item, MenuHandler, Every, App,
+// Form, Bind, Table, Col, Layout, EnumArrays (Layout's own inline
+// enumLabelsOff/enumValuesOff int32 arrays), String pool. Layout is
+// placed late (after everything that can REFERENCE a Layout entry --
+// Form/Table) precisely so that every earlier section's base offset is
+// computable from simple IR COUNTS alone (irWindowDescs.count,
+// irWidgetDescs.count, ...), with only Layout/EnumArrays needing an
+// actual field-by-field sizing walk (uibSizeLayoutFor) before the
+// String-pool base -- and hence every string reference anywhere -- can be
+// resolved. This is what lets the real emission pass below write every
+// offset field DIRECTLY, in one single walk over the IR, with no
+// deferred-fixup/patch-list machinery: every section base is known before
+// the first byte is emitted.
+//
+// One Layout entry is built per REFERENCING occurrence (one per form
+// window, one per table widget) -- NOT deduplicated by underlying record
+// type, even if two windows/tables share one record. ponytail: simpler
+// (no record-type interning map to keep consistent between the sizing
+// pass and the emission pass); the resulting blob is a few dozen bytes
+// larger per repeat at worst. Revisit only if a real program's blob size
+// becomes a concern.
+//
+// A table widget's `rowsIdx` (Table section, first field) is this
+// builder's own choice too: the position of the bound `rows:` global
+// within irGlobals (declaration order), NOT re-derived from anything the
+// plan's blob-format section itself defines -- that section says only
+// "argument for the UiTableRows extern below" and leaves the extern's own
+// definition to the plan's "reverse waist" section (out of this task's
+// scope, Tasks 6-10). irGlobals' own declaration-order position is a
+// stable, deterministic index a runtime-side globals registry can index
+// into the same way; Task 6+ may need to adjust this if the actual
+// extern's contract differs.
+//
+// Byte extraction: `char(v)` keeps only v's low byte (`char(-1) == 255`,
+// language reference Ch3/Ch4) -- the SAME two's-complement truncation
+// app68PutByte/Word/Long (app68k.cla:90-100) and asm68k.cla's own
+// a68PutByte/Word/Long already rely on for negative values (a -1 "no
+// name" sentinel here, an ID there); uibI32 below is that same idiom,
+// just accumulating into a `list of int` (byte values 0-255) instead of
+// a `text` buffer -- the brief's own required return shape for uibBuild.
+
+// ================================================================
+// Small helpers (fresh-handle idiom mirrors app68FreshIntList/
+// app68FreshTextList, app68k.cla:73-81 -- a `var l: list of int` /
+// `var m: map of int` local is already an empty handle; returning it
+// gives uibReset a clean way to REPLACE a global's handle rather than
+// pop-draining it, which a `map of int` has no equivalent for anyway).
+// ================================================================
+
+func uibFreshIntList(): list of int {
+    var l: list of int
+    return l
+}
+
+func uibFreshIntMap(): map of int {
+    var m: map of int
+    return m
+}
+
+func uibBool(b: bool): int {
+    if b {
+        return 1
+    }
+    return 0
+}
+
+// uibI32 appends v's big-endian 4-byte encoding to b (a byte-value list,
+// 0-255 each entry) -- see the file header's "Byte extraction" note.
+func uibI32(b: list of int, v: int) {
+    b.add(int(char(v >> 24)))
+    b.add(int(char(v >> 16)))
+    b.add(int(char(v >> 8)))
+    b.add(int(char(v)))
+}
+
+// ================================================================
+// Whole-build state -- one uibBuild() call per emitted program (like
+// cprint.cla's cpTypeBuf/cpLitBuf/.../cpUiBuf, cprint.cla:56-65, this is
+// the same "module-level buffers assembled across many small functions,
+// reset once at the top of the one whole-build entry point" shape,
+// reused rather than threading 8+ list/map params through every helper
+// below).
+// ================================================================
+
+var uibHeader: list of int
+var uibWindows: list of int
+var uibWidgets: list of int
+var uibMenus: list of int
+var uibItems: list of int
+var uibMenuHandlers: list of int
+var uibEvery: list of int
+var uibApp: list of int
+var uibForms: list of int
+var uibBinds: list of int
+var uibTables: list of int
+var uibCols: list of int
+var uibLayouts: list of int
+var uibEnumArrays: list of int
+var uibStrings: list of int
+
+// uibStrMemo dedups string-pool entries by interned pool index (key =
+// numToStr(poolIdx), same string-keyed `map of int` idiom as cprint.cla's
+// cpStrCapsEmitted/cpArrEmitted, cprint.cla:209-216) -- a name/caption
+// referenced from two places (e.g. the caption-fallback rule reusing a
+// widget's own nameIdx as its captionIdx too) gets ONE Str255 entry.
+var uibStrMemo: map of int
+
+// Section base offsets (blob-absolute, computed once near the top of
+// uibBuild before any byte is emitted -- see the file header's "Section
+// order" note for why this is possible in one pass).
+var uibBaseWindows: int
+var uibBaseWidgets: int
+var uibBaseMenus: int
+var uibBaseItems: int
+var uibBaseMenuHandlers: int
+var uibBaseEvery: int
+var uibBaseApp: int
+var uibBaseForms: int
+var uibBaseBinds: int
+var uibBaseTables: int
+var uibBaseCols: int
+var uibBaseLayouts: int
+var uibBaseEnumArrays: int
+var uibBaseStrings: int
+
+// uibReset clears every module-level buffer/base back to a blank slate --
+// called once, first thing, inside uibBuild (cpResetBuffers' own
+// precedent, cprint.cla:5582-5598), so a hypothetical second uibBuild
+// call in one process never sees the previous run's bytes.
+func uibReset() {
+    uibHeader = uibFreshIntList()
+    uibWindows = uibFreshIntList()
+    uibWidgets = uibFreshIntList()
+    uibMenus = uibFreshIntList()
+    uibItems = uibFreshIntList()
+    uibMenuHandlers = uibFreshIntList()
+    uibEvery = uibFreshIntList()
+    uibApp = uibFreshIntList()
+    uibForms = uibFreshIntList()
+    uibBinds = uibFreshIntList()
+    uibTables = uibFreshIntList()
+    uibCols = uibFreshIntList()
+    uibLayouts = uibFreshIntList()
+    uibEnumArrays = uibFreshIntList()
+    uibStrings = uibFreshIntList()
+    uibStrMemo = uibFreshIntMap()
+    uibBaseWindows = 0
+    uibBaseWidgets = 0
+    uibBaseMenus = 0
+    uibBaseItems = 0
+    uibBaseMenuHandlers = 0
+    uibBaseEvery = 0
+    uibBaseApp = 0
+    uibBaseForms = 0
+    uibBaseBinds = 0
+    uibBaseTables = 0
+    uibBaseCols = 0
+    uibBaseLayouts = 0
+    uibBaseEnumArrays = 0
+    uibBaseStrings = 0
+    uibSizeLayoutsAcc = 0
+    uibSizeEnumArraysAcc = 0
+}
+
+// uibStr interns poolIdx (an interned pool index, or -1 for "no string")
+// into the string pool, returning its blob-absolute Str255 offset (or -1
+// unchanged). uibBaseStrings must already be its FINAL value before the
+// first call (see uibBuild's ordering) -- every returned offset is
+// final/blob-absolute the moment it's produced, no later fixup pass.
+func uibStr(poolIdx: int): int {
+    var key: string
+    var off: int
+    var s: string
+    var i: int
+
+    if poolIdx == -1 {
+        return -1
+    }
+    key = numToStr(poolIdx)
+    if uibStrMemo.has(key) {
+        return uibStrMemo[key]
+    }
+    off = uibBaseStrings + uibStrings.count
+    s = poolGet(poolIdx)
+    uibStrings.add(s.length)
+    i = 0
+    while i < s.length {
+        uibStrings.add(int(s[i]))
+        i = i + 1
+    }
+    uibStrMemo[key] = off
+    return off
+}
+
+// ================================================================
+// Kind/type numeric mappings -- the blob stores rt_ui.h's #define values
+// directly (no C macro spelling needed, unlike cprint.cla's
+// cpWidgetKindMacro/cpSerFieldRow, which this mirrors): RTUI_BUTTON..
+// RTUI_TABLE are 0..7 (runtime/mac/rt_ui.h:53-60); RT_FT_INT..RT_FT_ENUM
+// are 0..5 (cprint.cla:4158, cpEmitSerDescs' own doc comment). Both fail
+// closed (Global Constraints' fail-closed rule) on an unrecognized kind,
+// matching cpWidgetKindMacro's own precedent exactly.
+// ================================================================
+
+func uibWidgetKindNum(kindIdx: int): int {
+    var kind: string
+
+    kind = poolGet(kindIdx)
+    if kind == "button" {
+        return 0
+    }
+    if kind == "check" {
+        return 1
+    }
+    if kind == "canvas" {
+        return 2
+    }
+    if kind == "label" {
+        return 3
+    }
+    if kind == "field" {
+        return 4
+    }
+    if kind == "textview" {
+        return 5
+    }
+    if kind == "popup" {
+        return 6
+    }
+    if kind == "table" {
+        return 7
+    }
+    log("uiblob: unknown widget kind " + kind)
+    quit 1
+    return -1
+}
+
+func uibFieldTypeNum(k: IRKind): int {
+    if k == KInt {
+        return 0
+    }
+    if k == KFixed {
+        return 1
+    }
+    if k == KBool {
+        return 2
+    }
+    if k == KChar {
+        return 3
+    }
+    if k == KStr {
+        return 4
+    }
+    if k == KEnum {
+        return 5
+    }
+    log("uiblob: unsupported form/table row field type")
+    quit 1
+    return -1
+}
+
+// ================================================================
+// Lookup helpers
+// ================================================================
+
+// uibFindWinIndex returns nameIdx's position in irWindowDescs -- the
+// SAME 0-based index this builder uses as a window's own "winIdx"
+// throughout (the window SECTION order, task brief's own stated
+// convention), since irWindowDescs is walked 0..count directly below
+// (ir.cla's own arena-index-is-list-position convention, e.g.
+// irWidgetDescName(i) == irWidgetDescs[i].nameIdx).
+func uibFindWinIndex(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irWindowDescs.count {
+        if irWindowDescName(i) == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    log("uiblob: unknown window " + poolGet(nameIdx))
+    quit 1
+    return -1
+}
+
+// uibFindEnumIdx returns nameIdx's irEnums arena index -- same linear
+// scan as cpEnumCount (cprint.cla:1231-1253), which this calls alongside
+// for the member COUNT; kept separate because cpEnumCount returns only a
+// count, and uibEmitLayout also needs the members HEAD to walk their
+// labels/values.
+func uibFindEnumIdx(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irEnums.count {
+        if irEnumLayoutName(i) == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    log("uiblob: unknown enum " + poolGet(nameIdx))
+    quit 1
+    return -1
+}
+
+// uibGlobalIndex returns nameIdx's position in irGlobals (declaration
+// order) -- see the file header's "rowsIdx" note for why this is a
+// table widget's Table.rowsIdx.
+func uibGlobalIndex(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irGlobals.count {
+        if irGlobalName(i) == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    log("uiblob: unknown global " + poolGet(nameIdx))
+    quit 1
+    return -1
+}
+
+// uibWidgetCaptionIdx applies the caption-fallback rule (cprint.cla:
+// 4508-4534's own doc comment has the full rationale) AT BLOB BUILD TIME
+// -- a widget with no caption/label/text property (captionIdx -1) falls
+// back to its own declared name, but ONLY for the five kinds that can
+// even declare a caption-like property (button/check/field/popup/label).
+// ui.cla (a later task) reads captionOff straight off the blob and never
+// re-implements this rule.
+func uibWidgetCaptionIdx(w: int): int {
+    var capIdx: int
+    var kind: string
+
+    capIdx = irWidgetDescCaption(w)
+    if capIdx == -1 {
+        kind = poolGet(irWidgetDescKind(w))
+        if kind == "button" or kind == "check" or kind == "field" or kind == "popup" or kind == "label" {
+            capIdx = irWidgetDescName(w)
+        }
+    }
+    return capIdx
+}
+
+// uibWidgetHandlerEntry returns widgetIndex's IRWidgetHandlerEntry within
+// window handlers whIdx (-1 if whIdx is -1, i.e. no `extend` block at
+// all, or the widget registered no handler) -- linear scan over
+// irWinHandlersWidgetHead's chain, same precedent as
+// cpWidgetKindForIndex's own widget-list walk (cprint.cla:4691-4712).
+func uibWidgetHandlerEntry(whIdx: int, widgetIndex: int): int {
+    var e: int
+
+    if whIdx == -1 {
+        return -1
+    }
+    e = irWinHandlersWidgetHead(whIdx)
+    while e != -1 {
+        if irWidgetHandlerEntryWidgetIndex(e) == widgetIndex {
+            return e
+        }
+        e = irWidgetHandlerEntryNext(e)
+    }
+    return -1
+}
+
+// uibWidgetEventMask computes a widget's eventMask field: bit i =
+// RTUI_WEV_i handler present (RTUI_WEV_CLICK..RTUI_WEV_DBLCLICK are 0-5,
+// runtime/mac/rt_ui.h:115-122).
+func uibWidgetEventMask(whIdx: int, widgetIndex: int): int {
+    var e: int
+    var mask: int
+
+    e = uibWidgetHandlerEntry(whIdx, widgetIndex)
+    if e == -1 {
+        return 0
+    }
+    mask = 0
+    if irWidgetHandlerEntryClickFn(e) != -1 {
+        mask = mask | 1
+    }
+    if irWidgetHandlerEntryChangeFn(e) != -1 {
+        mask = mask | 2
+    }
+    if irWidgetHandlerEntryDragFn(e) != -1 {
+        mask = mask | 4
+    }
+    if irWidgetHandlerEntryEnterFn(e) != -1 {
+        mask = mask | 8
+    }
+    if irWidgetHandlerEntrySelectFn(e) != -1 {
+        mask = mask | 16
+    }
+    if irWidgetHandlerEntryDoubleClickFn(e) != -1 {
+        mask = mask | 32
+    }
+    return mask
+}
+
+// uibWinHandlerMask computes a window's handlerMask field: bit i =
+// RTUI_EV_i handler present (RTUI_EV_OPENED..RTUI_EV_CANCELLED are 0-6,
+// runtime/mac/rt_ui.h:98-112), bit 8 = releaseVars needed (any
+// irtNeedsCtor state field -- the exact walk cpEmitWinReleaseFn,
+// cprint.cla:4745-4760, uses to decide whether to emit a release
+// function at all; this only decides whether the BIT is set, independent
+// of whether the window even has an `extend` block, since a needs-ctor
+// state field can exist with no handlers registered at all).
+func uibWinHandlerMask(whIdx: int, stateFieldsHead: int): int {
+    var mask: int
+    var f: int
+    var needsRelease: bool
+
+    mask = 0
+    if whIdx != -1 {
+        if irWinHandlersOpenedFn(whIdx) != -1 {
+            mask = mask | 1
+        }
+        if irWinHandlersCloseRequestFn(whIdx) != -1 {
+            mask = mask | 2
+        }
+        if irWinHandlersClosedFn(whIdx) != -1 {
+            mask = mask | 4
+        }
+        if irWinHandlersResizedFn(whIdx) != -1 {
+            mask = mask | 8
+        }
+        if irWinHandlersKeyFn(whIdx) != -1 {
+            mask = mask | 16
+        }
+        if irWinHandlersAcceptedFn(whIdx) != -1 {
+            mask = mask | 32
+        }
+        if irWinHandlersCancelledFn(whIdx) != -1 {
+            mask = mask | 64
+        }
+    }
+    needsRelease = false
+    f = stateFieldsHead
+    while f != -1 {
+        if irtNeedsCtor(irFieldSlotType(f)) {
+            needsRelease = true
+        }
+        f = irFieldSlotNext(f)
+    }
+    if needsRelease {
+        mask = mask | 256
+    }
+    return mask
+}
+
+// uibStateSize (the brief's own required public signature,
+// `uibStateSize(winIdx): int`) computes window winIdx's per-instance
+// state block size, IN BYTES, per cg68k.cla's record layout rules --
+// cg68k.cla's own "LAYOUT AUTHORITY" (cg68k.cla:641-644), specifically
+// cgRecordSize's walk (cg68k.cla:788-807): each field starts at its own
+// cgAlignOf-rounded offset and occupies cgSlotSizeOf bytes (the padded-
+// to-2-bytes-in-any-aggregate rule), total rounded up to an even size.
+// This is NOT cgRecordSize itself (which looks a record up BY NAME via
+// cgFindRecordByName) because a window's per-instance vars
+// (IRWindowDesc.stateFieldsHead) are never an irRecords entry --
+// cpEmitUiStateStruct (cprint.cla:4457-4473) emits clar_uistate_<Win> as
+// a bare typedef straight from the stateFieldsHead chain, never through
+// cpEmitRecords/irRecords -- so there is no name to look up; this is the
+// same field-chain walk with the SAME three primitives
+// (cgAlignUp/cgAlignOf/cgSlotSizeOf, reused verbatim, cg68k.cla:706-738),
+// just started from a directly-given chain head instead. A divergence
+// between this copy of the loop and cg68k's own real code-generated
+// struct layout is thus only possible if one of these two loops itself
+// changes without the other -- which is exactly what cprint.cla's
+// --uiport `clar_ui_szassert_<Win>` (right after this function's only
+// other caller, cpEmitWindowDescs) exists to catch at C compile time.
+func uibStateSize(winIdx: int): int {
+    var f: int
+    var cur: int
+
+    cur = 0
+    f = irWindowDescStateFieldsHead(winIdx)
+    while f != -1 {
+        cur = cgAlignUp(cur, cgAlignOf(irFieldSlotType(f)))
+        cur = cur + cgSlotSizeOf(irFieldSlotType(f))
+        f = irFieldSlotNext(f)
+    }
+    return cgAlignUp(cur, 2)
+}
+
+// ================================================================
+// Layout/Table/Form/Widget emission
+// ================================================================
+
+// uibEmitLayout builds one Layout entry (recSize, nFields, then nFields
+// field blocks of 6 int32s: ftype, offset, strCap, enumCount,
+// enumLabelsOff, enumValuesOff) for recNameIdx into uibLayouts (and, for
+// any enum field, its inline label/value int32 arrays into
+// uibEnumArrays) -- called once per REFERENCING occurrence (a form
+// window, a table widget), see the file header's no-dedup note. recSize
+// reuses cg68k.cla's cgRecordSize; each field's offset reuses cg68k.cla's
+// cgFieldOffset -- both the SAME layout authority uibStateSize's own doc
+// comment cites, so a form/table record's blob layout and its real C
+// struct layout can never independently drift.
+func uibEmitLayout(recNameIdx: int): int {
+    var ri: int
+    var f: int
+    var nFields: int
+    var off: int
+    var t: int
+    var k: IRKind
+    var strCap: int
+    var enumCount: int
+    var enumLabelsOff: int
+    var enumValuesOff: int
+    var ei: int
+    var m: int
+
+    ri = cgFindRecordByName(recNameIdx)
+    if ri == -1 {
+        log("uiblob: unknown record " + poolGet(recNameIdx))
+        quit 1
+    }
+
+    nFields = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        nFields = nFields + 1
+        f = irFieldSlotNext(f)
+    }
+
+    off = uibBaseLayouts + uibLayouts.count
+    uibI32(uibLayouts, cgRecordSize(recNameIdx))
+    uibI32(uibLayouts, nFields)
+
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        t = irFieldSlotType(f)
+        k = irtKind(t)
+        strCap = 0
+        enumCount = 0
+        enumLabelsOff = -1
+        enumValuesOff = -1
+        if k == KStr {
+            strCap = irtN(t)
+        } else if k == KEnum {
+            enumCount = cpEnumCount(irtName(t))
+            ei = uibFindEnumIdx(irtName(t))
+            enumLabelsOff = uibBaseEnumArrays + uibEnumArrays.count
+            m = irEnumLayoutMembersHead(ei)
+            while m != -1 {
+                uibI32(uibEnumArrays, uibStr(irEnumMemberLabel(m)))
+                m = irEnumMemberNext(m)
+            }
+            enumValuesOff = uibBaseEnumArrays + uibEnumArrays.count
+            m = irEnumLayoutMembersHead(ei)
+            while m != -1 {
+                uibI32(uibEnumArrays, irEnumMemberValue(m))
+                m = irEnumMemberNext(m)
+            }
+        }
+        uibI32(uibLayouts, uibFieldTypeNum(k))
+        uibI32(uibLayouts, cgFieldOffset(recNameIdx, irFieldSlotName(f)))
+        uibI32(uibLayouts, strCap)
+        uibI32(uibLayouts, enumCount)
+        uibI32(uibLayouts, enumLabelsOff)
+        uibI32(uibLayouts, enumValuesOff)
+        f = irFieldSlotNext(f)
+    }
+    return off
+}
+
+// uibSizeLayoutsAcc/uibSizeEnumArraysAcc are the sizing pre-pass's own
+// running totals (bytes) -- separate from the uibBase* vars (which hold
+// real BASE OFFSETS once the pre-pass is done) precisely so the two
+// meanings are never conflated in one variable. See uibBuild's sizing
+// pre-pass.
+var uibSizeLayoutsAcc: int
+var uibSizeEnumArraysAcc: int
+
+// uibSizeLayoutFor accumulates recNameIdx's Layout entry's own byte size
+// (and any of its enum fields' EnumArrays bytes) into
+// uibSizeLayoutsAcc/uibSizeEnumArraysAcc -- the SAME field walk as
+// uibEmitLayout above, minus actually writing any bytes, needed so
+// uibBaseStrings (and hence every string reference anywhere, including
+// ones emitted long before any Layout entry) is known up front. See the
+// file header's "Section order" note.
+func uibSizeLayoutFor(recNameIdx: int) {
+    var ri: int
+    var f: int
+    var nFields: int
+    var t: int
+    var k: IRKind
+
+    ri = cgFindRecordByName(recNameIdx)
+    if ri == -1 {
+        log("uiblob: unknown record " + poolGet(recNameIdx))
+        quit 1
+    }
+    nFields = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        nFields = nFields + 1
+        t = irFieldSlotType(f)
+        k = irtKind(t)
+        if k == KEnum {
+            uibSizeEnumArraysAcc = uibSizeEnumArraysAcc + cpEnumCount(irtName(t)) * 8
+        }
+        f = irFieldSlotNext(f)
+    }
+    uibSizeLayoutsAcc = uibSizeLayoutsAcc + (2 + nFields * 6) * 4
+}
+
+// uibEmitTable builds widget w's Table entry (rowsIdx, layoutOff, nCols,
+// colsOff) plus its Col entries into uibTables/uibCols (and, via
+// uibEmitLayout, uibLayouts/uibEnumArrays for the bound row record) --
+// called only for a `kind == "table"` widget.
+func uibEmitTable(w: int): int {
+    var recNameIdx: int
+    var layoutOff: int
+    var off: int
+    var c: int
+    var nCols: int
+    var colsOff: int
+
+    recNameIdx = cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(w))
+    layoutOff = uibEmitLayout(recNameIdx)
+
+    colsOff = uibBaseCols + uibCols.count
+    nCols = 0
+    c = irWidgetDescColumnsHead(w)
+    while c != -1 {
+        uibI32(uibCols, uibStr(irColumnDescHeader(c)))
+        uibI32(uibCols, irColumnDescWidthPx(c))
+        uibI32(uibCols, uibBool(irColumnDescWidthFill(c)))
+        uibI32(uibCols, irColumnDescFieldIndex(c))
+        nCols = nCols + 1
+        c = irColumnDescNext(c)
+    }
+    if nCols == 0 {
+        colsOff = -1
+    }
+
+    off = uibBaseTables + uibTables.count
+    uibI32(uibTables, uibGlobalIndex(irWidgetDescRowsGlobalIdx(w)))
+    uibI32(uibTables, layoutOff)
+    uibI32(uibTables, nCols)
+    uibI32(uibTables, colsOff)
+    return off
+}
+
+// uibEmitForm builds window win's Form entry (layoutOff, nBinds,
+// bindsOff) plus its Bind entries into uibForms/uibBinds (and, via
+// uibEmitLayout, uibLayouts/uibEnumArrays for the form's own record) --
+// called only for a window with formRecNameIdx != -1.
+func uibEmitForm(win: int): int {
+    var recNameIdx: int
+    var layoutOff: int
+    var off: int
+    var bd: int
+    var bindsOff: int
+    var nBinds: int
+
+    recNameIdx = irWindowDescFormRecName(win)
+    layoutOff = uibEmitLayout(recNameIdx)
+
+    bindsOff = uibBaseBinds + uibBinds.count
+    nBinds = 0
+    bd = irWindowDescFormBindsHead(win)
+    while bd != -1 {
+        uibI32(uibBinds, irBindDescWidgetIndex(bd))
+        uibI32(uibBinds, irBindDescFieldIndex(bd))
+        nBinds = nBinds + 1
+        bd = irBindDescNext(bd)
+    }
+    if nBinds == 0 {
+        bindsOff = -1
+    }
+
+    off = uibBaseForms + uibForms.count
+    uibI32(uibForms, layoutOff)
+    uibI32(uibForms, nBinds)
+    uibI32(uibForms, bindsOff)
+    return off
+}
+
+// uibEmitWidget builds widget desc w's 13-int32 Widget entry into
+// uibWidgets. whIdx is w's window's irWinHandlers index (-1 if that
+// window has no `extend` block); widgetIndex is w's own 0-based position
+// within its window's declared widget list (uibWidgetEventMask's lookup
+// key, same "uiWidgetIndex order" convention lower.cla/cprint.cla
+// already use).
+func uibEmitWidget(w: int, whIdx: int, widgetIndex: int) {
+    var flags: int
+    var tableOff: int
+
+    flags = 0
+    if irWidgetDescIsDefault(w) {
+        flags = flags | 1
+    }
+    if irWidgetDescIsCancel(w) {
+        flags = flags | 2
+    }
+    if irWidgetDescIsBuffered(w) {
+        flags = flags | 4
+    }
+    if irWidgetDescIsScrollV(w) {
+        flags = flags | 8
+    }
+    if irWidgetDescIsScrollH(w) {
+        flags = flags | 16
+    }
+
+    tableOff = -1
+    if poolGet(irWidgetDescKind(w)) == "table" {
+        tableOff = uibEmitTable(w)
+    }
+
+    uibI32(uibWidgets, uibWidgetKindNum(irWidgetDescKind(w)))
+    uibI32(uibWidgets, uibStr(irWidgetDescName(w)))
+    uibI32(uibWidgets, uibStr(uibWidgetCaptionIdx(w)))
+    uibI32(uibWidgets, irWidgetDescAtKind(w))
+    uibI32(uibWidgets, irWidgetDescX(w))
+    uibI32(uibWidgets, uibBool(irWidgetDescYIsBottom(w)))
+    uibI32(uibWidgets, irWidgetDescY(w))
+    uibI32(uibWidgets, uibBool(irWidgetDescWidthIsFill(w)))
+    uibI32(uibWidgets, irWidgetDescWidth(w))
+    uibI32(uibWidgets, uibBool(irWidgetDescFillBoth(w)))
+    uibI32(uibWidgets, flags)
+    uibI32(uibWidgets, uibWidgetEventMask(whIdx, widgetIndex))
+    uibI32(uibWidgets, tableOff)
+}
+
+// uibEmitMenuItem builds item m's 4-int32 Item entry into uibItems.
+func uibEmitMenuItem(m: int) {
+    var keyIdx: int
+    var keyVal: int
+    var s: string
+
+    keyIdx = irMenuItemDescKey(m)
+    keyVal = 0
+    if keyIdx != -1 {
+        s = poolGet(keyIdx)
+        if s.length > 0 {
+            keyVal = int(s[0])
+        }
+    }
+    uibI32(uibItems, uibStr(irMenuItemDescName(m)))
+    uibI32(uibItems, uibStr(irMenuItemDescCaption(m)))
+    uibI32(uibItems, keyVal)
+    uibI32(uibItems, uibBool(irMenuItemDescIsSeparator(m)))
+}
+
+// ================================================================
+// Top level
+// ================================================================
+
+// uibBuild is the brief's own required entry point: builds and returns
+// the whole blob as a `list of int` (byte values 0-255). One call does
+// everything -- sizing pre-pass, base-offset computation, then a single
+// walk over every IR UI desc emitting real bytes with already-final
+// offsets (see the file header's "Section order" note for why no
+// deferred-fixup pass is needed).
+func uibBuild(): list of int {
+    var i: int
+    var winName: string
+    var whIdx: int
+    var w: int
+    var widgetIdx: int
+    var widgetsOffThis: int
+    var nWidgetsThis: int
+    var nFormsThis: int
+    var nTablesThis: int
+    var formOff: int
+    var stateSize: int
+    var handlerMask: int
+    var itemsOffThis: int
+    var nItemsThis: int
+    var m: int
+    var e: int
+    var handlerIdx: int
+    var scopeIdx: int
+    var appOffVal: int
+    var pad: int
+    var totalLen: int
+    var result: list of int
+
+    uibReset()
+
+    // ---- Sizing pre-pass: Layout/EnumArrays total size (bytes), so
+    // uibBaseStrings (below) is final before any byte is emitted. See
+    // uibSizeLayoutFor's own doc comment.
+    i = 0
+    while i < irWindowDescs.count {
+        if irWindowDescFormRecName(i) != -1 {
+            uibSizeLayoutFor(irWindowDescFormRecName(i))
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < irWidgetDescs.count {
+        if poolGet(irWidgetDescKind(i)) == "table" {
+            uibSizeLayoutFor(cpFindGlobalRecName(irWidgetDescRowsGlobalIdx(i)))
+        }
+        i = i + 1
+    }
+
+    // ---- nForms/nTables (Forms/Tables are fixed-size sections, but
+    // their ENTRY COUNT -- unlike every other fixed-size section's,
+    // which is a plain arena .count -- needs its own small scan).
+    nFormsThis = 0
+    i = 0
+    while i < irWindowDescs.count {
+        if irWindowDescFormRecName(i) != -1 {
+            nFormsThis = nFormsThis + 1
+        }
+        i = i + 1
+    }
+    nTablesThis = 0
+    i = 0
+    while i < irWidgetDescs.count {
+        if poolGet(irWidgetDescKind(i)) == "table" {
+            nTablesThis = nTablesThis + 1
+        }
+        i = i + 1
+    }
+
+    // ---- Base offsets, in concatenation order (Header, Window, Widget,
+    // Menu, Item, MenuHandler, Every, App, Form, Bind, Table, Col,
+    // Layout, EnumArrays, String pool). Header is always 44 bytes (11
+    // int32 fields); every other fixed-size section's size is
+    // entryCount * itsOwnFieldCount * 4; Layout/EnumArrays use the
+    // sizing pre-pass's totals above.
+    uibBaseWindows = 44
+    uibBaseWidgets = uibBaseWindows + irWindowDescs.count * 48
+    uibBaseMenus = uibBaseWidgets + irWidgetDescs.count * 52
+    uibBaseItems = uibBaseMenus + irMenuDescs.count * 20
+    uibBaseMenuHandlers = uibBaseItems + irMenuItemDescs.count * 16
+    uibBaseEvery = uibBaseMenuHandlers + irMenuHandlerCount * 24
+    uibBaseApp = uibBaseEvery + irEveryCount * 4
+    uibBaseForms = uibBaseApp
+    if irHasApp {
+        uibBaseForms = uibBaseApp + 16
+    }
+    uibBaseBinds = uibBaseForms + nFormsThis * 12
+    uibBaseTables = uibBaseBinds + irBindDescs.count * 8
+    uibBaseCols = uibBaseTables + nTablesThis * 16
+    uibBaseLayouts = uibBaseCols + irColumnDescs.count * 16
+    uibBaseEnumArrays = uibBaseLayouts + uibSizeLayoutsAcc
+    uibBaseStrings = uibBaseEnumArrays + uibSizeEnumArraysAcc
+
+    // ---- Real emission pass: Windows (+ nested Widgets/Tables/Cols/
+    // Forms/Binds/Layouts/EnumArrays), Menus (+ Items), MenuHandlers,
+    // Every, App, then the Header last (it only needs the bases above,
+    // already known, and irHasApp/the arena counts, also already known
+    // -- nothing here depends on anything the emission loops below
+    // produce).
+    i = 0
+    while i < irWindowDescs.count {
+        winName = poolGet(irWindowDescName(i))
+        whIdx = cpFindWinHandlers(winName)
+
+        widgetsOffThis = uibBaseWidgets + uibWidgets.count
+        nWidgetsThis = 0
+        widgetIdx = 0
+        w = irWindowDescWidgetsHead(i)
+        while w != -1 {
+            uibEmitWidget(w, whIdx, widgetIdx)
+            nWidgetsThis = nWidgetsThis + 1
+            widgetIdx = widgetIdx + 1
+            w = irWidgetDescNext(w)
+        }
+        if nWidgetsThis == 0 {
+            widgetsOffThis = -1
+        }
+
+        formOff = -1
+        if irWindowDescFormRecName(i) != -1 {
+            formOff = uibEmitForm(i)
+        }
+
+        stateSize = uibStateSize(i)
+        handlerMask = uibWinHandlerMask(whIdx, irWindowDescStateFieldsHead(i))
+
+        uibI32(uibWindows, uibStr(irWindowDescName(i)))
+        uibI32(uibWindows, uibStr(irWindowDescTitle(i)))
+        uibI32(uibWindows, irWindowDescW(i))
+        uibI32(uibWindows, irWindowDescH(i))
+        uibI32(uibWindows, uibBool(irWindowDescResizable(i)))
+        uibI32(uibWindows, irWindowDescMinW(i))
+        uibI32(uibWindows, irWindowDescMinH(i))
+        uibI32(uibWindows, nWidgetsThis)
+        uibI32(uibWindows, widgetsOffThis)
+        uibI32(uibWindows, stateSize)
+        uibI32(uibWindows, handlerMask)
+        uibI32(uibWindows, formOff)
+
+        i = i + 1
+    }
+
+    i = 0
+    while i < irMenuDescs.count {
+        itemsOffThis = uibBaseItems + uibItems.count
+        nItemsThis = 0
+        if not irMenuDescIsStandardEdit(i) {
+            m = irMenuDescItemsHead(i)
+            while m != -1 {
+                uibEmitMenuItem(m)
+                nItemsThis = nItemsThis + 1
+                m = irMenuItemDescNext(m)
+            }
+        }
+        if nItemsThis == 0 {
+            itemsOffThis = -1
+        }
+
+        uibI32(uibMenus, uibStr(irMenuDescName(i)))
+        uibI32(uibMenus, uibStr(irMenuDescTitle(i)))
+        uibI32(uibMenus, nItemsThis)
+        uibI32(uibMenus, itemsOffThis)
+        uibI32(uibMenus, uibBool(irMenuDescIsStandardEdit(i)))
+
+        i = i + 1
+    }
+
+    handlerIdx = 0
+    e = irMenuHandlersHead
+    while e != -1 {
+        scopeIdx = -1
+        if irMenuHandlerEntryScopeWinType(e) != -1 {
+            scopeIdx = uibFindWinIndex(irMenuHandlerEntryScopeWinType(e))
+        }
+        uibI32(uibMenuHandlers, irMenuHandlerEntryMenuIdx(e))
+        uibI32(uibMenuHandlers, irMenuHandlerEntryItemIdx(e))
+        uibI32(uibMenuHandlers, handlerIdx)
+        uibI32(uibMenuHandlers, scopeIdx)
+        uibI32(uibMenuHandlers, uibStr(irMenuHandlerEntryMenuName(e)))
+        uibI32(uibMenuHandlers, uibStr(irMenuHandlerEntryItemName(e)))
+        handlerIdx = handlerIdx + 1
+        e = irMenuHandlerEntryNext(e)
+    }
+
+    e = irEveryHead
+    while e != -1 {
+        uibI32(uibEvery, irEveryEntryTicks(e))
+        e = irEveryEntryNext(e)
+    }
+
+    if irHasApp {
+        uibI32(uibApp, uibStr(irAppName))
+        uibI32(uibApp, uibStr(irAppVersion))
+        uibI32(uibApp, uibStr(irAppAuthor))
+        uibI32(uibApp, uibStr(irAppAbout))
+    }
+
+    appOffVal = -1
+    if irHasApp {
+        appOffVal = uibBaseApp
+    }
+    uibI32(uibHeader, 0x434C5549)
+    uibI32(uibHeader, 1)
+    uibI32(uibHeader, irWindowDescs.count)
+    uibI32(uibHeader, uibBaseWindows)
+    uibI32(uibHeader, irMenuDescs.count)
+    uibI32(uibHeader, uibBaseMenus)
+    uibI32(uibHeader, irMenuHandlerCount)
+    uibI32(uibHeader, uibBaseMenuHandlers)
+    uibI32(uibHeader, irEveryCount)
+    uibI32(uibHeader, uibBaseEvery)
+    uibI32(uibHeader, appOffVal)
+
+    // ---- Pad the whole blob (String pool is last) to a 4-byte multiple.
+    totalLen = uibBaseStrings + uibStrings.count
+    pad = (4 - (totalLen mod 4)) mod 4
+    i = 0
+    while i < pad {
+        uibStrings.add(0)
+        i = i + 1
+    }
+
+    // ---- Final concatenation, in the SAME order the base offsets above
+    // were computed in.
+    result = uibFreshIntList()
+    uibAppendAll(result, uibHeader)
+    uibAppendAll(result, uibWindows)
+    uibAppendAll(result, uibWidgets)
+    uibAppendAll(result, uibMenus)
+    uibAppendAll(result, uibItems)
+    uibAppendAll(result, uibMenuHandlers)
+    uibAppendAll(result, uibEvery)
+    uibAppendAll(result, uibApp)
+    uibAppendAll(result, uibForms)
+    uibAppendAll(result, uibBinds)
+    uibAppendAll(result, uibTables)
+    uibAppendAll(result, uibCols)
+    uibAppendAll(result, uibLayouts)
+    uibAppendAll(result, uibEnumArrays)
+    uibAppendAll(result, uibStrings)
+    return result
+}
+
+// uibAppendAll appends every byte of src onto dst, in order.
+func uibAppendAll(dst: list of int, src: list of int) {
+    var i: int
+
+    i = 0
+    while i < src.count {
+        dst.add(src[i])
+        i = i + 1
+    }
+}

@@ -32,6 +32,7 @@ include "asm68k.cla"
 include "app68k.cla"
 include "cprint.cla"
 include "cg68k.cla"
+include "uiblob.cla"
 
 // seenPaths keys the include-once set (driver.go's `seen`). Go keys by
 // cleaned absolute path so the same file reached two ways dedups; this port
@@ -239,6 +240,7 @@ on App.startCLI(args: list of string) {
     var vh: int
     var rtDir: string
     var haveRtDir: bool
+    var uiportFlag: bool
     var neededMods: list of string
     var rtHeads: list of int
     var combined2: int
@@ -309,6 +311,7 @@ on App.startCLI(args: list of string) {
     haveOutPath = false
     rtDir = ""
     haveRtDir = false
+    uiportFlag = false
     i = startArg
     while i < args.count {
         if (emitMode or emitMode68k) and args[i] == "-o" {
@@ -338,6 +341,17 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
+        } else if emitMode and args[i] == "--uiport" {
+            // native-5e Task 5: additionally emit the flat pointer-free UI
+            // descriptor blob (uiblob.cla's uibBuild(), the plan's
+            // normative blob format) as `clar_ui_blob[]` + per-window
+            // sizeof asserts -- see cprint.cla's cpEmitUiBlob/cpUiPortFlag.
+            // Default off: every existing testdata/emitui/*.c.golden is
+            // emitted with this flag ABSENT and must stay byte-identical.
+            // The pre-existing rt_ui_window_desc/rt_ui_widget_desc/...
+            // tables are printed unconditionally either way (Task 11 is
+            // the flip that retires them) -- this flag only ADDS the blob.
+            uiportFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
         } else if emitMode68k and args[i] == "--seglimit" {
@@ -665,6 +679,7 @@ on App.startCLI(args: list of string) {
         lowerProgram(combined2)
         if emitMode {
             shakeProgram()
+            cpUiPortFlag = uiportFlag
             cSrc = emitProgram()
             wrote = file.writeText(outPath, cSrc)
             if not wrote {
