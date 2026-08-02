@@ -1733,10 +1733,11 @@ func rtUiApplyResize(wp: ptr, inst: ptr, newW: int, newH: int) {
 // `((WindowPeek)wp)->contRgn)->rgnBBox` directly (real C struct access);
 // this port must hand-derive the same two offsets, verified against the
 // actual layout structs Retro68's build uses (final-review fix round 2 --
-// not verified against a header when first written; Retro68's own headers
-// do define a `MacRegion` type alongside plain `Region` -- the offsets
-// below are taken from the `Region` struct itself, not from a naming
-// confusion):
+// not verified against a header when first written; the type is plainly
+// `Region` in this toolchain's headers, Multiverse.h:1698 -- no
+// `MacRegion` alias exists here; grepped both `Retro68/` and `toolchain/`
+// in full, zero hits. Apple's own Universal Interfaces may name it
+// differently elsewhere, but not in this repo's in-tree toolchain):
 // `toolchain/multiversal/CIncludes/Multiverse.h` (the consolidated header
 // Retro68's own multiversal defs generate; same header set every other
 // offset in this port cites) --
