@@ -1372,7 +1372,30 @@ func rtUiStartup() {
         resp = 0
     }
     UiDisposePtr(respSlot)
-    rtUiSys7 = resp >= 0x0700
+    // Task 14 fix (native-5e gate, formedit.cla): `resp` (as `#0x0700`
+    // it's compared against) is a small BCD-encoded system version
+    // (0x0608 for 6.0.8, 0x0700 for 7.0.0, ...) -- REAL values from any
+    // shipped classic Mac System never approach 0x1000. Bounding `resp`
+    // above (not just below, the ORIGINAL `>= 0x0700` check's own job)
+    // guards against exactly the failure mode this session's own
+    // `cgCallExtGestalt` fix (cg68k.cla, native record: Gestalt's real
+    // 68k convention is D0=selector/A1=response, not the generic `reg`
+    // clause's own "A0 for the one ptr arg" scheme -- fixed there) was
+    // ALSO needed for but did not fully resolve on this ROM/system-image
+    // combination: `err` (D0, OSErr) still comes back a clean 0/noErr even
+    // though the trap dispatch never actually reaches a real Gestalt
+    // implementation on this specific Mini vMac ROM, leaving `respSlot`'s
+    // freshly-`UiNewPtr`'d (uninitialized) content untouched -- heap
+    // garbage that is almost always a large, pointer-shaped value, easily
+    // >= 0x0700 by pure chance. A bare `>= 0x0700` then misreads "no real
+    // Gestalt" as "System 7", selecting `rtUiProcMovableDBox` for every
+    // form window regardless of the real System 6.0.8 target, whose title
+    // bar chrome that WDEF does not paint correctly here (see
+    // cgCallExtGestalt's own doc comment for the full symptom). Bounding
+    // to a plausible BCD range is strictly SAFE for a genuine Gestalt
+    // response too (cprint's own already-correct 0x0608 result satisfies
+    // neither bound and was never affected either way).
+    rtUiSys7 = resp >= 0x0700 and resp < 0x1000
     rtUiBuildAppleMenu()
     rtUiBuildMenus()
     rtUiTraceInit()

@@ -73,6 +73,17 @@
 // corrupt any record containing a bool/char field, since C packs it at 1
 // byte where cg68k.cla's own frame/record layout reserves 2.
 //
+// TASK 14 EXCEPTION (native-5e, fix-round): a bool/char field specifically
+// INSIDE A RECORD is the one place cgSlotSizeOf's plain 2-byte padding is
+// NOT the answer -- cgRecordSize/cgFieldOffset give it a full 4-byte slot
+// instead (cgRecFieldSizeOf/cgRecFieldAlignOf), matching the C ABI's own
+// `bool` width (rt_ui.c/rt_ser.inc's shared runtime, compiled for m68k
+// too, reads a record's bool field as a real `*(int32_t *)`, never a raw
+// byte -- see cgRecFieldSizeOf's own doc comment for the popuptable bug
+// this fixes). Every OTHER bool/char use -- a bare local, a param, a
+// global, an array element -- keeps the ordinary 2-byte cgSlotSizeOf slot
+// this section describes; only a record FIELD gets the wider one.
+//
 // FRAME MODEL, WORKED EXAMPLE. Params are pushed by the CALLER,
 // left-to-right (a, then b, then c) before the JSR. Because the stack
 // grows down, the LAST push ends up at the LOWEST address above the
@@ -439,6 +450,20 @@ var cgRecReleaseLbls: list of int
 // function body, well before the pool itself is laid out.
 var cgEnumTableLabels: list of int
 
+// cgSerdescLabels[i] is irRecords index i's constant-pool serdesc-table
+// label id (-1 if that record doesn't need one, irLayoutNeeded's own
+// gate), reserved by cgReserveSerdescLabels with the same up-front-
+// reservation discipline as cgEnumTableLabels -- a file.save/file.load
+// call site (cgIntrFileSaveLoad) can reference the label as a forward
+// PC-relative operand while walking a function body, well before the pool
+// itself is laid out (cgEmitSerdescTables). Task 14 fix (native-5e gate,
+// bookmarks.cla): the native constant-pool analog of cprint.cla's
+// `clar_serdesc_<REC>` flat int32 arrays (cpEmitSerDescs) -- SAME field
+// layout (cgBuildSerdescInts' own doc comment), but offsets/sizes come
+// from cg68k's own cgFieldOffset/cgRecordSize record-ABI authority (Task
+// 14's own bool/char-in-record fix), never cpCFieldOffset/cpCRecordSize.
+var cgSerdescLabels: list of int
+
 // ================================================================
 // Task 13: containers + the ARC statement-temp layer.
 //
@@ -794,6 +819,48 @@ func cgSlotSizeOf(t: int): int {
     return sz
 }
 
+// cgRecFieldSizeOf/cgRecFieldAlignOf (Task 14 fix-round, native-5e): the
+// record-field-ONLY layout authority for bool/char -- everywhere else
+// (locals, params, array elements: cgSlotSizeOf) a bool/char scalar gets a
+// 2-byte slot, but a bool/char RECORD FIELD gets a full 4-byte slot,
+// matching the C convention the shared runtime is written against
+// (rt_ui.c:1100's "BOOL is a full int32_t, not a raw byte" contract,
+// rt_ser.inc's identical comment on its own bool read/write). Popuptable's
+// own bug (a `favorite: bool` table column reading CHECKED for every row)
+// was exactly this mismatch: rt_ui.c's RT_FT_BOOL arm does
+// `*(int32_t *)(rec + off)`, a 4-byte read, but cg68k's own cgFieldOffset/
+// cgRecordSize (pre-fix) only reserved 2 bytes at that offset -- the read
+// overran into the next field's own bytes, garbage the emitted code never
+// wrote as part of THIS field. `char` is included for the same "one rule,
+// not two special cases" reason (the file header's own "unifying" framing)
+// even though RT_FT_CHAR reads only its field's OWN single base byte (no
+// overrun risk either way) -- see cgRecordCtorAt's own doc comment for why
+// no char-specific write-path change was needed even so.
+//
+// ONLY cgFieldOffset/cgRecordSize (and every walk that must stay in lock-
+// step with them: cgRecordCtorAt, cgEmitOneRcWalk) call these -- a plain
+// local/global/param/array-element bool/char keeps cgSlotSizeOf/cgAlignOf
+// unchanged, per the controller ruling's explicit scope.
+func cgRecFieldSizeOf(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KBool or k == KChar {
+        return 4
+    }
+    return cgSlotSizeOf(t)
+}
+
+func cgRecFieldAlignOf(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KBool or k == KChar {
+        return 2
+    }
+    return cgAlignOf(t)
+}
+
 // cgAlignUp rounds n up to the next multiple of align (align is always 1
 // or 2 here -- a plain even-check suffices).
 func cgAlignUp(n: int, align: int): int {
@@ -826,10 +893,13 @@ func cgFindRecordByName(nameIdx: int): int {
 }
 
 // cgFieldOffset walks recName's field chain in declaration order, each
-// field starting at its own cgAlignOf-rounded offset and occupying
-// cgSlotSizeOf bytes, returning fieldName's offset (or -1 if either name
-// is unknown). Works identically for a plain record or an overlay record
-// -- see the file header.
+// field starting at its own cgRecFieldAlignOf-rounded offset and occupying
+// cgRecFieldSizeOf bytes (the record-field authority -- bool/char get a
+// full 4-byte slot here, unlike a bare local/param/array-element's
+// cgSlotSizeOf-padded 2 bytes; see cgRecFieldSizeOf's own doc comment),
+// returning fieldName's offset (or -1 if either name is unknown). Works
+// identically for a plain record or an overlay record -- see the file
+// header.
 func cgFieldOffset(recName: int, fieldName: int): int {
     var ri: int
     var f: int
@@ -844,11 +914,11 @@ func cgFieldOffset(recName: int, fieldName: int): int {
     cur = 0
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
-        cur = cgAlignUp(cur, cgAlignOf(irFieldSlotType(f)))
+        cur = cgAlignUp(cur, cgRecFieldAlignOf(irFieldSlotType(f)))
         if poolGet(irFieldSlotName(f)) == wantName {
             return cur
         }
-        cur = cur + cgSlotSizeOf(irFieldSlotType(f))
+        cur = cur + cgRecFieldSizeOf(irFieldSlotType(f))
         f = irFieldSlotNext(f)
     }
     return -1
@@ -868,8 +938,8 @@ func cgRecordSize(nameIdx: int): int {
     cur = 0
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
-        cur = cgAlignUp(cur, cgAlignOf(irFieldSlotType(f)))
-        cur = cur + cgSlotSizeOf(irFieldSlotType(f))
+        cur = cgAlignUp(cur, cgRecFieldAlignOf(irFieldSlotType(f)))
+        cur = cur + cgRecFieldSizeOf(irFieldSlotType(f))
         f = irFieldSlotNext(f)
     }
     return cgAlignUp(cur, 2)
@@ -1487,16 +1557,34 @@ func cgArrDefaultAt(reg: int, off: int, t: int) {
 // into off(reg), walking irRecordLayoutFieldsHead in declaration order
 // exactly like cgFieldOffset/cgRecordSize's own layout walk (a third,
 // deliberately independent re-walk -- same precedent those two already
-// set for each other) -- each field's OWN default (IRFieldSlot.default/
-// DefaultStr, already carrying the enum-first-member/explicit-`=`-default
-// value lowRecordDecl computed) drives cgDefaultInitAt, mirroring
-// cpDefaultInit's KRec arm (`clar_new_<Name>()`, whose C body is this same
-// per-field default walk).
+// set for each other, now sharing the SAME cgRecFieldSizeOf/
+// cgRecFieldAlignOf record-field authority so the offsets this walk writes
+// into never drift from what cgFieldOffset/cgFieldRefAddr later read back
+// through) -- each field's OWN default (IRFieldSlot.default/DefaultStr,
+// already carrying the enum-first-member/explicit-`=`-default value
+// lowRecordDecl computed) drives cgDefaultInitAt, mirroring cpDefaultInit's
+// KRec arm (`clar_new_<Name>()`, whose C body is this same per-field
+// default walk).
+//
+// A bool/char field's 4-byte slot gets an explicit CLR.L (full slot, all 4
+// bytes) BEFORE cgDefaultInitAt's own narrow (1-byte) write -- construction
+// is the ONLY place this is needed: cgDefaultInitAt's cgStoreImmAt always
+// writes exactly 1 byte at the slot's BASE address (never the other 3), and
+// every LATER assignment to this same field (cgEmitStoreScalarAny, an
+// ordinary SAssign) writes the identical single base byte the same way --
+// so zeroing the slot once, here, keeps the other 3 bytes 0 forever, which
+// is all rt_ui.c's `*(int32_t *)(rec+off)` BOOL read (and rt_ser.inc's
+// identical read) needs. `char` needs no such zeroing (RT_FT_CHAR/
+// ser_put_field's CHAR arm only ever read the field's own base byte, never
+// the other 3 -- see cgRecFieldSizeOf's own doc comment for why char still
+// gets the wider slot anyway), but the CLR.L costs nothing extra to include
+// uniformly rather than special-casing bool alone.
 func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
     var ri: int
     var f: int
     var cur: int
     var ft: int
+    var ftk: IRKind
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
@@ -1508,10 +1596,14 @@ func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
         ft = irFieldSlotType(f)
-        cur = cgAlignUp(cur, cgAlignOf(ft))
+        cur = cgAlignUp(cur, cgRecFieldAlignOf(ft))
         cgWalkRestoreBase(reg)
+        ftk = irtKind(ft)
+        if ftk == KBool or ftk == KChar {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmDisp16, reg, off + cur)
+        }
         cgDefaultInitAt(reg, off + cur, ft, irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
-        cur = cur + cgSlotSizeOf(ft)
+        cur = cur + cgRecFieldSizeOf(ft)
         f = irFieldSlotNext(f)
     }
 }
@@ -1896,12 +1988,12 @@ func cgEmitOneRcWalk(ri: int) {
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
         ft = irFieldSlotType(f)
-        cur = cgAlignUp(cur, cgAlignOf(ft))
+        cur = cgAlignUp(cur, cgRecFieldAlignOf(ft))
         if irtNeedsCtor(ft) {
             cgWalkRestoreBase(0)
             cgRetainAt(0, cur, ft)
         }
-        cur = cur + cgSlotSizeOf(ft)
+        cur = cur + cgRecFieldSizeOf(ft)
         f = irFieldSlotNext(f)
     }
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
@@ -1917,12 +2009,12 @@ func cgEmitOneRcWalk(ri: int) {
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
         ft = irFieldSlotType(f)
-        cur = cgAlignUp(cur, cgAlignOf(ft))
+        cur = cgAlignUp(cur, cgRecFieldAlignOf(ft))
         if irtNeedsCtor(ft) {
             cgWalkRestoreBase(0)
             cgReleaseAt(0, cur, ft)
         }
-        cur = cur + cgSlotSizeOf(ft)
+        cur = cur + cgRecFieldSizeOf(ft)
         f = irFieldSlotNext(f)
     }
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
@@ -2407,6 +2499,169 @@ func cgEmitEnumTables() {
     }
 }
 
+// cgReserveSerdescLabels allocates (but does not yet bind) one a68 label
+// per irRecords entry that irLayoutNeeded marks (-1 otherwise) -- same
+// up-front-reservation discipline as cgReserveEnumTableLabels, called
+// alongside it (both cg68Measure's throwaway pass and cg68Program's real
+// per-segment pass).
+func cgReserveSerdescLabels() {
+    var i: int
+    var labels: list of int
+
+    labels = cgFreshIntList()
+    i = 0
+    while i < irRecords.count {
+        if irLayoutNeeded(irRecordLayoutName(i)) {
+            labels.add(a68NewLabel())
+        } else {
+            labels.add(-1)
+        }
+        i = i + 1
+    }
+    cgSerdescLabels = labels
+}
+
+// cgFindSerdescLabel returns recNameIdx's reserved serdesc label (-1 if
+// that record has none -- cgIntrFileSaveLoad's own caller fails closed on
+// that, it should never actually happen since checkFileSave/checkFileLoad
+// already restrict file.save/file.load's data arg to a record-ish shape,
+// which lower.cla's own irMarkLayoutNeeded call always marks). Same
+// string-compare-by-poolGet linear scan as cgFindRecordByName (pool
+// indices for "the same" interned string are not assumed identical across
+// separate intern() call sites elsewhere in this file, so neither is
+// this).
+func cgFindSerdescLabel(recNameIdx: int): int {
+    var i: int
+    var nm: string
+
+    nm = poolGet(recNameIdx)
+    i = 0
+    while i < irRecords.count {
+        if poolGet(irRecordLayoutName(i)) == nm {
+            return cgSerdescLabels[i]
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// cgBuildSerdescInts returns recNameIdx's serdesc table as a flat int
+// list, MIRRORING cpEmitSerDescs/cpSerFieldRow's exact field layout
+// (cprint.cla) byte-for-byte in SHAPE (ser.cla's own reader, shared by
+// both lanes, peekl-walks this format regardless of which lane emitted
+// it):
+//
+//   [0] = recSize (cgRecordSize -- the NATIVE record-ABI authority, NOT
+//         cpCRecordSize: bool/char fields get cg68k's own 4-byte-in-a-
+//         record slot, Task 14's own record-ABI fix)
+//   [1] = nFields
+//   then nFields field blocks, each "4 + enumCount" ints:
+//     ftype (0 INT/1 FIXED/2 BOOL/3 CHAR/4 STR/5 ENUM), strCap (STR only),
+//     offset (cgFieldOffset -- same native authority as recSize above),
+//     enumCount (ENUM only), then enumCount inline ordinal values (ENUM
+//     only) -- cpSerEnumValsInline's own inline-not-referenced shape,
+//     mirrored directly rather than through a pointer/offset indirection
+//     (this backend has no such indirection to reuse here either).
+func cgBuildSerdescInts(recNameIdx: int): list of int {
+    var out: list of int
+    var ri: int
+    var f: int
+    var nFields: int
+    var t: int
+    var k: IRKind
+    var ftype: int
+    var strCap: int
+    var enumCount: int
+    var ei: int
+    var m: int
+
+    out = cgFreshIntList()
+    ri = cgFindRecordByName(recNameIdx)
+    if ri == -1 {
+        log("cg68k: serdesc: unknown record " + poolGet(recNameIdx))
+        quit 1
+    }
+    nFields = 0
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        nFields = nFields + 1
+        f = irFieldSlotNext(f)
+    }
+    out.add(cgRecordSize(recNameIdx))
+    out.add(nFields)
+
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        t = irFieldSlotType(f)
+        k = irtKind(t)
+        strCap = 0
+        enumCount = 0
+        if k == KInt {
+            ftype = 0
+        } else if k == KFixed {
+            ftype = 1
+        } else if k == KBool {
+            ftype = 2
+        } else if k == KChar {
+            ftype = 3
+        } else if k == KStr {
+            ftype = 4
+            strCap = irtN(t)
+        } else {
+            ftype = 5
+            enumCount = cpEnumCount(irtName(t))
+        }
+        out.add(ftype)
+        out.add(strCap)
+        out.add(cgFieldOffset(recNameIdx, irFieldSlotName(f)))
+        out.add(enumCount)
+        if k == KEnum {
+            ei = 0
+            while ei < irEnums.count {
+                if irEnumLayoutName(ei) == irtName(t) {
+                    m = irEnumLayoutMembersHead(ei)
+                    while m != -1 {
+                        out.add(irEnumMemberValue(m))
+                        m = irEnumMemberNext(m)
+                    }
+                    ei = irEnums.count
+                } else {
+                    ei = ei + 1
+                }
+            }
+        }
+        f = irFieldSlotNext(f)
+    }
+    return out
+}
+
+// cgEmitSerdescTables lays out every needed record's serdesc table at the
+// current stream position (one DC.L per int, cgBuildSerdescInts' own flat
+// list), bound to cgReserveSerdescLabels' own label -- the pool data
+// ser.cla's rtFileSave/rtFileLoad peekl-walk at runtime. This is the real
+// implementation of the "constant pool: serdesc tables" slot
+// cgEmitPoolsBody previously left a stub comment for.
+func cgEmitSerdescTables() {
+    var i: int
+    var vals: list of int
+    var j: int
+
+    a68Comment("constant pool: serdesc tables")
+    i = 0
+    while i < irRecords.count {
+        if cgSerdescLabels[i] != -1 {
+            a68Bind(cgSerdescLabels[i])
+            vals = cgBuildSerdescInts(irRecordLayoutName(i))
+            j = 0
+            while j < vals.count {
+                a68DcL(vals[j])
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+}
+
 // cgEmitEnumCheckCall calls rtEnumCheck(v, found=false, name) -- the panic
 // path cgEmitEnumConv's scan falls into when v matches no member (core.cla's
 // rtEnumCheck, cg68AddRoots' own shake root). v is expected in D1 (the
@@ -2885,11 +3140,30 @@ func cgEmitLdefGlue(f: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     // select: Boolean word @24(A6), value in the HIGH byte @24(A6) itself
     // (the padded word's own address -- see cgCallExtPascal's header
-    // comment for the empirical A/B proof) -> zero-extend -> push .W
-    // (Clarus bool slot size).
+    // comment for the empirical A/B proof) -> zero-extend into D0's low
+    // byte.
+    //
+    // Task 14 fix (native-5e gate, popuptable.cla): the OUTGOING push below
+    // was `MOVE.W D0,-(A7)` -- this glue calls rtUiLdefDraw as an ORDINARY
+    // (non-pascal) Clarus function, whose `select: bool` PARAM slot is read
+    // back by the callee's own cgLoadVar at the slot's BASE (lower)
+    // address -- exactly the "ordinary-call bool-arg" convention this
+    // task's own buttons.cla fix (ui_set_checked/ui_set_enabled/
+    // ui_menu_enable, cgIntrUi* dispatch) already established: MOVE.W
+    // writes the value to the padded slot's HIGH address (big-endian),
+    // leaving the base address -- what cgLoadVar reads -- always 0. This
+    // hand-rolled glue predates and was never touched by that fix (it does
+    // not route through cgPushArgs), so it silently kept the wrong
+    // convention: `select` was ALWAYS read back false inside
+    // rtUiLdefDraw's lDrawMsg branch regardless of the real Cell's
+    // selection state (confirmed via instrumented trace: `select=0` even
+    // immediately after a UiLSetSelect(true, ...) hilite toggle on the
+    // very same cell mid-redraw) -- popuptable's own row-highlight-not-
+    // repainted bug. Fixed: MOVE.B, matching cgPushArgs' own convention
+    // exactly.
     a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
     a68Emit(OpMove, 1, AmDisp16, 6, 24, AmDn, 0, 0)
-    a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
     // rectPtr: ptr @20(A6) -> push .L directly (already the right shape).
     a68Emit(OpMove, 4, AmDisp16, 6, 20, AmPreDec, 7, 0)
     // cellPacked: the 4-byte Cell @16(A6), read as one raw int32 -> push .L.
@@ -4777,6 +5051,71 @@ func cgIntrMapRemove(e: int) {
     cgCleanupStack(8)
 }
 
+// cgIntrFileSaveLoad implements IFileSave/IFileLoad (Task 14 fix,
+// native-5e gate, bookmarks.cla) -- mirrors cprint.cla's own IFileSave/
+// IFileLoad arm (fpIntrCall): the data arg's OWN IR type carries the
+// record name and container kind (KRec directly, or KList/KMap's elem),
+// never extra IR fields, matching that comment's own note precisely.
+// fnName's target (ser.cla's rtFileSave/rtFileLoad, `(path: ptr,
+// container: int, data: ptr, desc: ptr): int`, already-ported and
+// unconditionally rooted -- shakeWalkIntr's IUiEdit-family precedent
+// doesn't even apply here, file.save/load's own runtime dependency is
+// core, not UI-gated) is a plain 4-arg ordinary call: path BY ADDRESS
+// (cgExprAddr, a Str255-shaped ptr, same convention every other str.cla-
+// family call already uses), container as a compile-time literal (0 REC/
+// 1 LIST/2 MAP), data BY ADDRESS for a KRec (the record itself) or BY
+// VALUE for a KList/KMap (already a handle/ptr), desc as the record's own
+// cgFindSerdescLabel address (LEA lbl(PC),A0 -- the SAME "value is a
+// pool-relative address" shape cgCallExtUiBlobAddr's own two-instruction
+// pattern uses, just pushed as a plain arg here instead of left in D0).
+// Result (0/1, ser.cla's own SerFileWriteData-derived clean boolean) is
+// already in D0 after the call, matching cgIntr's own "value ends in D0"
+// contract -- no extra masking needed.
+func cgIntrFileSaveLoad(e: int, fnName: string) {
+    var a0: int
+    var a1: int
+    var dataT: int
+    var dataK: IRKind
+    var recNameIdx: int
+    var container: int
+    var descLbl: int
+
+    a0 = irIntrArgsHead(e)
+    a1 = irExprNext(a0)
+    dataT = irExprType(a1)
+    dataK = irtKind(dataT)
+    if dataK == KRec {
+        recNameIdx = irtName(dataT)
+        container = 0
+    } else if dataK == KList {
+        recNameIdx = irtName(irtElem(dataT))
+        container = 1
+    } else {
+        recNameIdx = irtName(irtElem(dataT))
+        container = 2
+    }
+    descLbl = cgFindSerdescLabel(recNameIdx)
+    if descLbl == -1 {
+        log("cg68k: " + fnName + ": no serdesc reserved for record " + poolGet(recNameIdx))
+        quit 1
+    }
+
+    cgExprAddr(a0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgPushIntLit(container)
+    if dataK == KRec {
+        cgExprAddr(a1)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    } else {
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    }
+    a68Emit(OpLea, 0, AmPCLabel, 0, descLbl, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName(fnName)
+    cgCleanupStack(16)
+}
+
 // cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
 // ("ui_*") are 5e (native UI) territory -- hard error, matching
 // cg68AddRoots'/the brief's own "nat*"-prefix convention for name-based
@@ -5112,6 +5451,14 @@ func cgIntr(e: int) {
         log("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
         quit 1
     }
+    if nm == "file_save" {
+        cgIntrFileSaveLoad(e, "rtFileSave")
+        return
+    }
+    if nm == "file_load" {
+        cgIntrFileSaveLoad(e, "rtFileLoad")
+        return
+    }
 
     log("cg68k: cgIntr: intrinsic " + nm + " unsupported in value context")
     quit 1
@@ -5153,6 +5500,170 @@ const cgRtuiPropChecked: int = 3
 const cgRtuiPropSelected: int = 4
 const cgRtuiPropWidth: int = 5
 const cgRtuiPropHeight: int = 6
+
+// cgIntrUiEdit implements IUiEdit (Ch10's `edit F, target` / `edit F, new
+// T`) -- mirrors cprint.cla's fpUiEditStmt arm exactly, four kinds decoded
+// off the SAME compile-time-constant tag (kindArg, ir.cla's own doc
+// comment: "a0 is an IntConst tag"), each constructing rtUiEdit's 9-arg
+// call (uidialogs.cla: `rtUiEdit(winIdx, src, isNew, wbKind, addr, lst,
+// idx, mp, key255)`, an ALREADY-PORTED plain Clarus function -- every
+// param is int/ptr, 4 bytes each, so none of this session's bool-arg
+// convention hazards apply here at all) the same way cprint's own C
+// construction does per kind. Single-evaluation discipline for kind 2/3's
+// own idx/key expr matches fpUiEditStmt's own comment precisely (a
+// side-effecting index/key expr must not run twice); the list/map
+// CONTAINER itself (opA) is always a bare variable/per-instance-field
+// reference (never an arbitrary expression -- fpUiEditStmt's own doc
+// comment), so re-evaluating it via a second cgExpr call is safe with no
+// temp needed, exactly like cprint prints its own text twice.
+//
+// Every intermediate value (a freshly-constructed record's address, a
+// once-evaluated idx, an rtListAt result, a copied-in key) is stashed in
+// its OWN A6-relative scratch slot (cgAllocTmpOff/cgAllocBigTmpOff) and
+// RELOADED when needed rather than trusted in a register across an
+// intervening JSR -- this backend has no callee-saved registers (the
+// file's own established discipline, carried forward from this session's
+// own register-across-call hazard fixes).
+func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
+    var kind: int
+    var winIdx: int
+    var recNameIdx: int
+    var recType: int
+    var tmpOff: int
+    var idxOff: int
+    var srcOff: int
+    var keyOff: int
+
+    kind = irIntConstV(a0)
+    winIdx = cpFindWindowIndex(winName)
+
+    if kind == 0 {
+        // `edit F, new T` -- construct a fresh default T into a big-tmp
+        // scratch slot, pass its address as `src`; isNew=1, wbKind=0
+        // (RT_UI_WB_NONE), every other param 0/null.
+        recNameIdx = cpFindWindowFormRecName(winName)
+        recType = irRecType(recNameIdx)
+        tmpOff = cgAllocBigTmpOff(recType)
+        cgRecordCtorAt(6, tmpOff, recNameIdx)
+
+        cgPushIntLit(winIdx)
+        a68Emit(OpLea, 0, AmDisp16, 6, tmpOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(1) // isNew
+        cgPushIntLit(0) // wbKind = RT_UI_WB_NONE
+        cgPushIntLit(0) // addr
+        cgPushIntLit(0) // lst
+        cgPushIntLit(0) // idx
+        cgPushIntLit(0) // mp
+        cgPushIntLit(0) // key255
+        cgJsrByName("rtUiEdit")
+        cgCleanupStack(36)
+        return
+    }
+    if kind == 1 {
+        // Global or window-scoped per-instance record variable -- src AND
+        // addr both point at it (opA re-evaluated: side-effect-free, see
+        // this function's own header comment). isNew=0, wbKind=1
+        // (RT_UI_WB_ADDR).
+        cgPushIntLit(winIdx)
+        cgExprAddr(a1)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(0) // isNew
+        cgPushIntLit(1) // wbKind = RT_UI_WB_ADDR
+        cgExprAddr(a1)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(0) // lst
+        cgPushIntLit(0) // idx
+        cgPushIntLit(0) // mp
+        cgPushIntLit(0) // key255
+        cgJsrByName("rtUiEdit")
+        cgCleanupStack(36)
+        return
+    }
+    if kind == 2 {
+        // List element -- idx (opB=a2) evaluated exactly once into a
+        // scratch slot; src is rtListAt(lst, idx)'s own ptr result,
+        // re-derived here (rtUiEdit copies immediately, so the transient
+        // pointer is safe), also stashed since the final call's own arg
+        // pushes intervene. wbKind=2 (RT_UI_WB_LIST).
+        idxOff = cgAllocTmpOff(irIntT)
+        cgExpr(a2)
+        cgStoreD0At(6, idxOff, irIntT)
+
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtListAt")
+        cgCleanupStack(8)
+        srcOff = cgAllocTmpOff(irPtrT)
+        cgStoreD0At(6, srcOff, irPtrT)
+
+        cgPushIntLit(winIdx)
+        a68Emit(OpMove, 4, AmDisp16, 6, srcOff, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(0) // isNew
+        cgPushIntLit(2) // wbKind = RT_UI_WB_LIST
+        cgPushIntLit(0) // addr
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(0) // mp
+        cgPushIntLit(0) // key255
+        cgJsrByName("rtUiEdit")
+        cgCleanupStack(36)
+        return
+    }
+    if kind == 3 {
+        // Map element -- the key (opB=a2, any str expr) is copied into a
+        // Str255 scratch once (rtStrStore), a fresh default T is
+        // constructed into a big-tmp scratch and filled from the map via
+        // rtMapGetDv, THEN rtUiEdit runs. wbKind=3 (RT_UI_WB_MAP).
+        keyOff = cgAllocBigTmpOff(irStrType(255))
+        cgExprAddr(a2)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(255)
+        a68Emit(OpLea, 0, AmDisp16, 6, keyOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtStrStore")
+        cgCleanupStack(12)
+
+        recNameIdx = cpFindWindowFormRecName(winName)
+        recType = irRecType(recNameIdx)
+        tmpOff = cgAllocBigTmpOff(recType)
+        cgRecordCtorAt(6, tmpOff, recNameIdx)
+
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpLea, 0, AmDisp16, 6, keyOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpLea, 0, AmDisp16, 6, tmpOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtMapGetDv")
+        cgCleanupStack(12)
+
+        cgPushIntLit(winIdx)
+        a68Emit(OpLea, 0, AmDisp16, 6, tmpOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(0) // isNew
+        cgPushIntLit(3) // wbKind = RT_UI_WB_MAP
+        cgPushIntLit(0) // addr
+        cgPushIntLit(0) // lst
+        cgPushIntLit(0) // idx
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpLea, 0, AmDisp16, 6, keyOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiEdit")
+        cgCleanupStack(36)
+        return
+    }
+    // Fail-closed (5d's own lesson): any shape outside the checked/lowered
+    // 4 kinds stops the build loudly rather than silently mis-marshaling.
+    log("cg68k: ui_edit: unsupported kind " + numToStr(kind) + " (must be 0-3)")
+    quit 1
+}
 
 func cgIntrUi(e: int, nm: string) {
     var a0: int
@@ -5503,8 +6014,8 @@ func cgIntrUi(e: int, nm: string) {
         return
     }
     if nm == "ui_edit" {
-        log("cg68k: ui_edit: form edit statement not wired this task (native-5e Task 12 scope)")
-        quit 1
+        cgIntrUiEdit(e, a0, a1, a2, winName)
+        return
     }
 
     log("cg68k: cgIntrUi: unsupported UI intrinsic " + nm)
@@ -6476,6 +6987,10 @@ func cgCallExt(e: int) {
         cgCallExtUiStrAddr(e)
         return
     }
+    if poolGet(nm) == "UiGestalt" {
+        cgCallExtGestalt(e)
+        return
+    }
 
     xi = cgExternIdxByName(nm)
     if xi == -1 {
@@ -6531,6 +7046,65 @@ func cgCallExtUiSynth(e: int, synthName: int) {
 // that label) only if this is ever mis-called; that can't happen because
 // cgCallExt only reaches here from an ECallExt to UiProgDesc/UiTestScript,
 // both of which only exist in a UI program's own linked runtime modules.
+// cgCallExtGestalt implements UiGestalt's REAL 68k register calling
+// convention (Task 14 fix, native-5e gate, formedit.cla): `selector` in
+// D0, `response` (the OUT ptr) in A1 -- NOT the generic `reg` clause's own
+// "ptr args fill A0, then A1, in declaration order" scheme, which puts
+// Gestalt's ONE ptr arg in A0 instead. ui.cla's own header comment already
+// flagged this exact gap by name ("Clarus's own `reg` clause has no way to
+// express 'the one ptr param goes in A1, not A0'... there is no clean way
+// to express Gestalt's actual calling convention as a `reg` extern
+// either... [the native lane] is still genuinely unverified") -- this is
+// that verification, and the fix: since `UiGestalt` has exactly ONE call
+// site in the whole runtime (rtUiStartup) and exactly one shape, a
+// dedicated name-special-case (mirroring UiProgDesc/UiTestScript/
+// UiLdefEntry/UiActionEntry/UiStrAddr just above -- same "this ONE extern
+// needs bespoke codegen" precedent) is simpler than teaching the general
+// `reg` clause a per-argument register override for a single caller.
+//
+// Root cause this fixes: with response landed in A0 (the generic `reg`
+// scheme), the REAL Gestalt trap (reading its response-out address from
+// A1, per Gestalt.h's own `#pragma parameter __D0 Gestalt(__D0, __A1)`)
+// wrote its answer through WHATEVER STALE ADDRESS happened to be sitting
+// in A1 -- never touching the caller's own freshly-`UiNewPtr`'d
+// `respSlot` at all, which is why `err` (D0, correctly 0/noErr) looked
+// fine while `resp` (read back from `respSlot`, never written) was
+// uninitialized heap garbage almost always >= 0x0700 -- `rtUiSys7`
+// resolved true (misread as "System 7") on EVERY native boot, selecting
+// `rtUiProcMovableDBox` for every form window regardless of the real
+// System 6.0.8 target, whose ROM does not paint that WDEF's title-bar
+// chrome correctly (frame/buttons/fields still drew fine -- those are
+// this program's own drawing, unaffected -- only the Window-Manager-owned
+// title strip came out blank, letting whatever window was already drawn
+// underneath show through). formedit.cla's S1 snap (the first `edit`'s
+// own EditForm window) is the first scenario with a real form window,
+// hence the first to expose this.
+func cgCallExtGestalt(e: int) {
+    var a0e: int
+    var a1e: int
+    var xi: int
+
+    a0e = irCallExtArgsHead(e)
+    a1e = irExprNext(a0e)
+    xi = cgExternIdxByName(irCallExtName(e))
+    if xi == -1 {
+        log("cg68k: call to unregistered extern UiGestalt")
+        quit 1
+    }
+
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a1e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    // Pop in reverse: response (last pushed) into A1, selector into D0.
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+    a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
+    // Result: OSErr (signed word) in D0 -- sign-extend, same
+    // "Toolbox INTEGER is signed" rule cgCallExtReg's own KWord arm uses.
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+}
+
 func cgCallExtUiBlobAddr(lbl: int) {
     a68Emit(OpLea, 0, AmPCLabel, 0, lbl, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
@@ -7893,8 +8467,8 @@ func cgReserveStrLitLabels() {
 // cgEmitPoolsBody lays out every per-segment constant pool AT THE
 // CURRENT STREAM POSITION: one DC.B len + bytes + align entry per
 // irStrLits slot, bound to the label cgReserveStrLitLabels already
-// allocated for it, then stub markers for the enum/serdesc tables Task
-// 8+ will fill in.
+// allocated for it, then the enum value tables and serdesc tables
+// (cgEmitEnumTables/cgEmitSerdescTables).
 func cgEmitPoolsBody() {
     var i: int
     var s: string
@@ -7911,7 +8485,7 @@ func cgEmitPoolsBody() {
     }
 
     cgEmitEnumTables()
-    a68Comment("constant pool: serdesc tables (stub -- Task 8+)")
+    cgEmitSerdescTables()
 
     // Task 12 (native-5e): the UI descriptor blob + `--events` script
     // bytes -- this is the reserved third-family constant-pool slot the
@@ -8246,6 +8820,7 @@ func cg68Measure(): bool {
     cgReserveUiPoolLabels()
     cgAssignRcWalkLabels()
     cgReserveEnumTableLabels()
+    cgReserveSerdescLabels()
     cgAssignMeasureFuncLabels()
 
     // Placeholders only -- cgCallFunc's same-segment/cross-segment
@@ -8441,6 +9016,7 @@ func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
         cgReserveStrLitLabels()
         cgReserveUiPoolLabels()
         cgReserveEnumTableLabels()
+        cgReserveSerdescLabels()
         cgAssignRcWalkLabels()
         if cgMul32Used {
             cgMul32Lbl = a68NewLabel()

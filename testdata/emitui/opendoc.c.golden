@@ -2876,7 +2876,7 @@ static void clar_fn_rtUiStartup(void) {
         cv_resp = 0;
     }
     rt_ext_UiDisposePtr(cv_respSlot);
-    cv_rtUiSys7 = (cv_resp >= 1792);
+    cv_rtUiSys7 = ((cv_resp >= 1792) && (cv_resp < 4096));
     clar_fn_rtUiBuildAppleMenu();
     clar_fn_rtUiBuildMenus();
     clar_fn_rtUiTraceInit();

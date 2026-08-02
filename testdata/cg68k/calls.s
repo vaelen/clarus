@@ -4115,4 +4115,4 @@ LBL_74:
         DC.L $00000000
         DC.L $00000001
         DC.L $00000002
-        ; constant pool: serdesc tables (stub -- Task 8+)
+        ; constant pool: serdesc tables
