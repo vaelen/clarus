@@ -1,0 +1,546 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// res68k.cla: native-5e Task 13's resource-parity content builders --
+// specific ALRT/DITL/vers/signature-STR/FREF/BNDL/ICN#/ICON byte layouts,
+// plus a PBM->ICN# decoder ported from scripts/pbm2icn.c. Kept separate
+// from app68k.cla (which owns the generic (type, id, data) resource-fork
+// MECHANISM + MacBinary framing) -- this file only produces raw resource
+// bytes; it has no idea how those bytes get assembled into a fork.
+//
+// GROUND TRUTH. Every byte layout below was cross-checked against a REAL
+// Retro68 build's own resource fork (Rez-compiled `runtime/mac/alert.r`
+// plus `scripts/build-mac.sh`'s generated appres.r, combined with Elf2Mac's
+// CODE/SIZE and dumped byte-for-byte during this task's own golden
+// extraction) -- not against memory of Inside Macintosh or the Rez manual.
+// testdata/mac/resparity/*.bin are those extracted bytes, pinned as this
+// task's own golden test (internal/mactest's TestApp68kResourceParity)
+// compares this file's own output against.
+//
+// ALRT (14 bytes): rect (4 signed words: top, left, bottom, right), DITL
+// id (word), stage-info word, position word. This codebase only ever uses
+// ONE stage-info word (0x4444 -- "OK, visible, silent" x4, the only stage
+// spec any of runtime/mac/alert.r's or build-mac.sh's own ALRT resources
+// declare) and ONE position code (0x300a -- Rez's alertPositionMainScreen,
+// likewise the only one used anywhere in this codebase), so both are
+// hardcoded rather than threaded as parameters no caller would ever vary.
+//
+// DITL (2-byte item-count-minus-1 header, then items): each item is a
+// 4-byte zero placeholder (the in-memory handle field; always zero on
+// disk) + rect (4 signed words) + type byte ((0x80 if disabled) | type
+// code -- Button=4, StaticText=8, Icon=0x20, confirmed against the real
+// extraction) + a length byte + that many data bytes + one zero pad byte
+// IF the data length is odd (item entries are word-aligned; verified
+// against DITL 130's own "Save changes to ...?" item, whose 21-byte string
+// is followed by exactly one pad byte in the real extraction).
+func app68PutRectWords(out: text, top: int, left: int, bottom: int, right: int) {
+    app68PutWord(out, top)
+    app68PutWord(out, left)
+    app68PutWord(out, bottom)
+    app68PutWord(out, right)
+}
+
+func app68BuildAlrt(top: int, left: int, bottom: int, right: int, ditlId: int): text {
+    var out: text
+
+    out = ""
+    app68PutRectWords(out, top, left, bottom, right)
+    app68PutWord(out, ditlId)
+    app68PutWord(out, 0x4444) // "OK, visible, silent" x4 -- the only stage spec this codebase uses
+    app68PutWord(out, 0x300a) // Rez's alertPositionMainScreen -- the only position this codebase uses
+    return out
+}
+
+// app68DitlTypeButton/StaticText/Icon are the DITL item type codes
+// (confirmed against the real extraction, see file header comment); the
+// 0x80 "disabled" bit is ORed in by the caller, not baked in here, since
+// the SAME type (StaticText) appears both enabled and disabled shapes
+// across this codebase's DITLs (none currently do, but the byte-level
+// contract is item-type | disable-bit, not a fixed constant per type).
+const app68DitlTypeButton: int = 0x04
+const app68DitlTypeStaticText: int = 0x08
+const app68DitlTypeIcon: int = 0x20
+const app68DitlDisabled: int = 0x80
+
+func app68DitlItem(out: text, top: int, left: int, bottom: int, right: int, typeByte: int, data: text) {
+    app68PutLong(out, 0) // in-memory handle placeholder -- always zero on disk
+    app68PutRectWords(out, top, left, bottom, right)
+    app68PutByte(out, typeByte)
+    app68PutByte(out, data.length)
+    out.append(data)
+    if data.length mod 2 == 1 {
+        app68PutByte(out, 0) // word-align the next item
+    }
+}
+
+// app68BuildDitl128/130 mirror runtime/mac/alert.r's ALRT 128 (a plain OK
+// alert, "^0" ParamText slot) and ALRT 130 (askSaveChanges's three-way
+// Save/Don't Save/Cancel confirmation) DITLs -- byte-for-byte, rects and
+// all, transcribed straight from alert.r's own resource declarations.
+func app68BuildDitl128(): text {
+    var out: text
+
+    out = ""
+    app68PutWord(out, 1) // 2 items - 1
+    app68DitlItem(out, 120, 360, 140, 420, app68DitlTypeButton, toText("OK"))
+    app68DitlItem(out, 10, 20, 110, 420, app68DitlTypeStaticText | app68DitlDisabled, toText("^0"))
+    return out
+}
+
+func app68BuildDitl130(): text {
+    var out: text
+
+    out = ""
+    app68PutWord(out, 3) // 4 items - 1
+    app68DitlItem(out, 80, 290, 100, 360, app68DitlTypeButton, toText("Save"))
+    app68DitlItem(out, 80, 20, 100, 140, app68DitlTypeButton, toText("Don't Save"))
+    app68DitlItem(out, 80, 210, 100, 280, app68DitlTypeButton, toText("Cancel"))
+    app68DitlItem(out, 10, 20, 60, 360, app68DitlTypeStaticText | app68DitlDisabled, toText("Save changes to \"^0\"?"))
+    return out
+}
+
+// app68BuildDitl129 mirrors build-mac.sh's generated appres.r ALRT 129
+// About DITL (4 ParamText slots: name, version, author, about text) --
+// byte-for-byte, transcribed from build-mac.sh:101-107. hasIcon appends
+// the fifth Icon item (build-mac.sh's ICONITEM, only present when the
+// program declares an app icon) -- iconResId is that icon's OWN resource
+// id (128, the app icon; build-mac.sh always uses 128 here too), written
+// as the item's 2-byte data per the real extraction (Icon items store
+// their icon resource ID as a plain word, not a Pascal string).
+func app68BuildDitl129(hasIcon: bool, iconResId: int): text {
+    var out: text
+    var n: int
+    var iconData: text
+
+    out = ""
+    if hasIcon {
+        n = 4 // 5 items - 1
+    } else {
+        n = 3 // 4 items - 1
+    }
+    app68PutWord(out, n)
+    app68DitlItem(out, 150, 350, 170, 410, app68DitlTypeButton, toText("OK"))
+    app68DitlItem(out, 13, 70, 29, 410, app68DitlTypeStaticText | app68DitlDisabled, toText("^0  ^1"))
+    app68DitlItem(out, 33, 70, 49, 410, app68DitlTypeStaticText | app68DitlDisabled, toText("^2"))
+    app68DitlItem(out, 60, 20, 140, 410, app68DitlTypeStaticText | app68DitlDisabled, toText("^3"))
+    if hasIcon {
+        iconData = ""
+        app68PutWord(iconData, iconResId)
+        app68DitlItem(out, 13, 20, 45, 52, app68DitlTypeIcon | app68DitlDisabled, iconData)
+    }
+    return out
+}
+
+// app68BuildStr255 encodes s as a raw Str255 (length byte + bytes) -- the
+// shape shared by a 'vers' resource's two Str255 fields and a program's
+// own signature-typed STR resource (build-mac.sh's `type '$APPID' as
+// 'STR '` -- an alias that only affects Rez's TEMPLATE choice, not the
+// on-disk bytes, confirmed against the real extraction: content is a bare
+// Str255, nothing more).
+func app68BuildStr255(s: string): text {
+    var out: text
+
+    out = ""
+    app68PutByte(out, s.length)
+    out.append(s)
+    return out
+}
+
+// app68BuildVers mirrors build-mac.sh's generated 'vers' (1) resource:
+// majorRev=1, minorAndBugRev=0, stage=release(0x80), nonRelRev=0,
+// region=verUS(0), then the two Str255 version strings -- byte-for-byte
+// against the real extraction (testdata/mac/resparity/*_vers_1.bin).
+// These four numeric fields are constants, not parameters: build-mac.sh
+// itself hardcodes them the same way for every program (only the two
+// strings vary), so there is nothing for a caller to ever plausibly vary.
+func app68BuildVers(shortVer: string, longVer: string): text {
+    var out: text
+
+    out = ""
+    app68PutByte(out, 1)    // majorRev
+    app68PutByte(out, 0)    // minorAndBugRev
+    app68PutByte(out, 0x80) // stage = release
+    app68PutByte(out, 0)    // nonRelRev
+    app68PutWord(out, 0)    // region = verUS
+    out.append(app68BuildStr255(shortVer))
+    out.append(app68BuildStr255(longVer))
+    return out
+}
+
+// app68BuildFref mirrors build-mac.sh's FREF 128 ('APPL', the app itself)
+// and FREF 129 ('TEXT', Clarus's one file.save/load document type):
+// 4-byte file type + 2-byte local BNDL id + an empty Pascal name (a
+// single zero length byte) -- byte-for-byte against the real extraction.
+func app68BuildFref(fileType: string, localId: int): text {
+    var out: text
+
+    out = ""
+    app68PutFixed(out, fileType, 4)
+    app68PutWord(out, localId)
+    app68PutByte(out, 0) // empty Pascal name
+    return out
+}
+
+// app68BuildBndl mirrors build-mac.sh's BNDL 128: signature(4) + BNDL
+// version(word, always 0) + 2 sub-arrays (ICN#, FREF), each local ids
+// {0,1} mapped to resource ids {128,129} (app icon/APPL FREF and doc
+// icon/TEXT FREF respectively) -- byte-for-byte against the real
+// extraction. This shape is fixed (build-mac.sh always emits exactly
+// this BNDL for every icon-declaring program: one app icon + one doc
+// icon, never more), so it is hardcoded rather than generalized to an
+// arbitrary icon family a Clarus program has no syntax to declare anyway.
+func app68BuildBndl(appId: string): text {
+    var out: text
+
+    out = ""
+    app68PutFixed(out, appId, 4)
+    app68PutWord(out, 0) // BNDL version
+    app68PutWord(out, 1) // sub-array count - 1 (ICN#, FREF)
+    out.append("ICN#")
+    app68PutWord(out, 1) // id-pair count - 1
+    app68PutWord(out, 0)
+    app68PutWord(out, 128)
+    app68PutWord(out, 1)
+    app68PutWord(out, 129)
+    out.append("FREF")
+    app68PutWord(out, 1)
+    app68PutWord(out, 0)
+    app68PutWord(out, 128)
+    app68PutWord(out, 1)
+    app68PutWord(out, 129)
+    return out
+}
+
+// ================================================================
+// PBM -> ICN#/ICON decode, ported from scripts/pbm2icn.c (Task 13's own
+// brief: "port pbm2icn.c's conversion into app68k"). 32x32 1-bit PBM
+// (P1 ASCII or P4 raw) -> a 128-byte icon bitmap (app68PbmDecode) plus a
+// derived 128-byte transparency mask (app68PbmComputeMask, the same
+// 4-connectivity flood-fill-from-the-border algorithm as pbm2icn.c's
+// compute_mask -- see that file's own doc comment for the algorithm's
+// stated ceiling: a silhouette mask, not a designed-transparency one).
+// ICN# 128 is icon+mask (256 bytes); ICON 128 is the bare icon (128
+// bytes, no mask -- what the Dialog Manager's DITL Icon item draws via
+// GetIcon).
+
+func app68PbmIsSpace(c: int): bool {
+    return c == 32 or c == 9 or c == 10 or c == 13 or c == 11 or c == 12
+}
+
+func app68PbmIsDigit(c: int): bool {
+    return c >= int('0') and c <= int('9')
+}
+
+// app68PbmSkipWs advances pos past whitespace and '#'-to-end-of-line
+// comments (pbm2icn.c's skip_ws), returning the new position.
+func app68PbmSkipWs(raw: text, pos: int): int {
+    var c: int
+
+    while pos < raw.length {
+        c = int(raw[pos])
+        if app68PbmIsSpace(c) {
+            pos = pos + 1
+        } else if c == int('#') {
+            while pos < raw.length and int(raw[pos]) != 10 {
+                pos = pos + 1
+            }
+        } else {
+            return pos
+        }
+    }
+    return pos
+}
+
+func app68PbmGetBit(icon: text, row: int, col: int): int {
+    var i: int
+
+    i = row * 32 + col
+    return (int(icon[i / 8]) >> (7 - (i mod 8))) & 1
+}
+
+// app68PbmDecode parses raw as a 32x32 P1/P4 PBM, appending the 128-byte
+// icon bitmap to iconOut (which the caller passes fresh/empty) and
+// returning true on success -- false (iconOut left however far the parse
+// got) on any malformed/wrong-size input, mirroring pbm2icn.c's own die()
+// conditions (not P1/P4, dimensions != 32x32, truncated raster data).
+func app68PbmDecode(raw: text, iconOut: text): bool {
+    var pos: int
+    var c1: int
+    var isP4: bool
+    var w: int
+    var h: int
+    var i: int
+    var byteIdx: int
+    var bitIdx: int
+    var b: int
+
+    if raw.length < 2 {
+        return false
+    }
+    if int(raw[0]) != int('P') {
+        return false
+    }
+    c1 = int(raw[1])
+    if c1 == int('4') {
+        isP4 = true
+    } else if c1 == int('1') {
+        isP4 = false
+    } else {
+        return false
+    }
+    pos = 2
+
+    pos = app68PbmSkipWs(raw, pos)
+    w = 0
+    while pos < raw.length and app68PbmIsDigit(int(raw[pos])) {
+        w = w * 10 + (int(raw[pos]) - int('0'))
+        pos = pos + 1
+    }
+    pos = app68PbmSkipWs(raw, pos)
+    h = 0
+    while pos < raw.length and app68PbmIsDigit(int(raw[pos])) {
+        h = h * 10 + (int(raw[pos]) - int('0'))
+        pos = pos + 1
+    }
+    if w != 32 or h != 32 {
+        return false
+    }
+
+    i = 0
+    while i < 128 {
+        iconOut.append(char(0))
+        i = i + 1
+    }
+
+    if isP4 {
+        if pos >= raw.length or not app68PbmIsSpace(int(raw[pos])) {
+            return false
+        }
+        pos = pos + 1
+        if raw.length - pos < 128 {
+            return false
+        }
+        i = 0
+        while i < 128 {
+            iconOut[i] = raw[pos + i]
+            i = i + 1
+        }
+    } else {
+        i = 0
+        while i < 1024 {
+            pos = app68PbmSkipWs(raw, pos)
+            if pos >= raw.length {
+                return false
+            }
+            c1 = int(raw[pos])
+            pos = pos + 1
+            if c1 != int('0') and c1 != int('1') {
+                return false
+            }
+            if c1 == int('1') {
+                byteIdx = i / 8
+                bitIdx = i mod 8
+                b = int(iconOut[byteIdx])
+                iconOut[byteIdx] = char(b | (0x80 >> bitIdx))
+            }
+            i = i + 1
+        }
+    }
+    return true
+}
+
+// app68PbmComputeMask ports pbm2icn.c's compute_mask: flood-fill from
+// every white (bit=0) border pixel, 4-connectivity; everything reached is
+// exterior. maskOut (caller passes fresh/empty) starts opaque (0xFF)
+// everywhere, then every reached exterior white pixel is cleared to
+// transparent (0) -- black pixels and any enclosed white "holes" stay
+// opaque, same as the C original.
+func app68PbmComputeMask(icon: text, maskOut: text) {
+    var i: int
+    var visited: text
+    var qx: list of int
+    var qy: list of int
+    var qh: int
+    var c: int
+    var row: int
+    var x: int
+    var y: int
+    var nx: int
+    var ny: int
+    var d: int
+    var dx: list of int
+    var dy: list of int
+    var byteIdx: int
+    var bitIdx: int
+    var b: int
+
+    i = 0
+    while i < 128 {
+        maskOut.append(char(0xFF))
+        i = i + 1
+    }
+
+    visited = ""
+    i = 0
+    while i < 1024 {
+        visited.append(char(0))
+        i = i + 1
+    }
+
+    qx = app68FreshIntList()
+    qy = app68FreshIntList()
+
+    c = 0
+    while c < 32 {
+        if int(visited[c]) == 0 and app68PbmGetBit(icon, 0, c) == 0 {
+            visited[c] = char(1)
+            qx.add(c)
+            qy.add(0)
+        }
+        if int(visited[31 * 32 + c]) == 0 and app68PbmGetBit(icon, 31, c) == 0 {
+            visited[31 * 32 + c] = char(1)
+            qx.add(c)
+            qy.add(31)
+        }
+        c = c + 1
+    }
+    row = 0
+    while row < 32 {
+        if int(visited[row * 32]) == 0 and app68PbmGetBit(icon, row, 0) == 0 {
+            visited[row * 32] = char(1)
+            qx.add(0)
+            qy.add(row)
+        }
+        if int(visited[row * 32 + 31]) == 0 and app68PbmGetBit(icon, row, 31) == 0 {
+            visited[row * 32 + 31] = char(1)
+            qx.add(31)
+            qy.add(row)
+        }
+        row = row + 1
+    }
+
+    dx = app68FreshIntList()
+    dx.add(1)
+    dx.add(-1)
+    dx.add(0)
+    dx.add(0)
+    dy = app68FreshIntList()
+    dy.add(0)
+    dy.add(0)
+    dy.add(1)
+    dy.add(-1)
+
+    qh = 0
+    while qh < qx.count {
+        x = qx[qh]
+        y = qy[qh]
+        qh = qh + 1
+        byteIdx = (y * 32 + x) / 8
+        bitIdx = (y * 32 + x) mod 8
+        b = int(maskOut[byteIdx])
+        maskOut[byteIdx] = char(b & (0xFF ^ (0x80 >> bitIdx)))
+        d = 0
+        while d < 4 {
+            nx = x + dx[d]
+            ny = y + dy[d]
+            if nx >= 0 and nx < 32 and ny >= 0 and ny < 32 {
+                if int(visited[ny * 32 + nx]) == 0 and app68PbmGetBit(icon, ny, nx) == 0 {
+                    visited[ny * 32 + nx] = char(1)
+                    qx.add(nx)
+                    qy.add(ny)
+                }
+            }
+            d = d + 1
+        }
+    }
+}
+
+// app68BuildIcnFamily decodes iconPbmRaw into (icon, ICN# bytes) --
+// ICN# = icon (128) + mask (128); the caller also wants the bare icon
+// bytes separately for the ICON resource, so both are returned via the
+// two text out-params (Clarus functions mutate `text` params in place,
+// Ch3/Ch13 -- the established convention every function in this file
+// already uses). Returns false (both buffers left however far they got)
+// if iconPbmRaw isn't a well-formed 32x32 P1/P4 PBM.
+func app68BuildIcnFamily(iconPbmRaw: text, iconOut: text, icnOut: text): bool {
+    var mask: text
+
+    if not app68PbmDecode(iconPbmRaw, iconOut) {
+        return false
+    }
+    mask = ""
+    app68PbmComputeMask(iconOut, mask)
+    icnOut.append(iconOut)
+    icnOut.append(mask)
+    return true
+}
+
+// ================================================================
+// Doc icon (ICN#/ICON 129): a static, hand-drawn 32x32 dog-eared-page
+// glyph, identical for every icon-declaring program (build-mac.sh:181-212
+// -- there is no per-document-type icon declaration to derive one from).
+// Transcribed hex, byte-for-byte, from build-mac.sh's own literal Rez hex
+// blocks -- decoded via app68HexDecodeAppend rather than 256 individual
+// app68PutByte calls, so this source stays eyeball-diffable against
+// build-mac.sh's own text.
+func app68HexVal(c: int): int {
+    if c >= int('0') and c <= int('9') {
+        return c - int('0')
+    }
+    if c >= int('A') and c <= int('F') {
+        return c - int('A') + 10
+    }
+    if c >= int('a') and c <= int('f') {
+        return c - int('a') + 10
+    }
+    return 0
+}
+
+// app68HexDecodeAppend decodes every hex-digit PAIR in hexStr (ignoring
+// any other byte -- spaces, in practice) and appends the resulting bytes
+// to out.
+func app68HexDecodeAppend(out: text, hexStr: string) {
+    var i: int
+    var c: int
+    var hi: int
+    var have: bool
+
+    have = false
+    hi = 0
+    i = 0
+    while i < hexStr.length {
+        c = int(hexStr[i])
+        if (c >= int('0') and c <= int('9')) or (c >= int('A') and c <= int('F')) or (c >= int('a') and c <= int('f')) {
+            if not have {
+                hi = app68HexVal(c)
+                have = true
+            } else {
+                out.append(char(hi * 16 + app68HexVal(c)))
+                have = false
+            }
+        }
+        i = i + 1
+    }
+}
+
+func app68DocIconBitmapAppend(out: text) {
+    app68HexDecodeAppend(out, "0000 0000 0000 0000 0000 0000 03FF F000")
+    app68HexDecodeAppend(out, "0200 1800 0200 1400 0200 1200 0200 1100")
+    app68HexDecodeAppend(out, "0200 1080 0200 1040 0200 0040 0200 0040")
+    app68HexDecodeAppend(out, "0200 0040 0200 0040 027F FE40 0200 0040")
+    app68HexDecodeAppend(out, "0200 0040 0200 0040 027F F040 0200 0040")
+    app68HexDecodeAppend(out, "0200 0040 0200 0040 0200 0040 0200 0040")
+    app68HexDecodeAppend(out, "0200 0040 0200 0040 0200 0040 0200 0040")
+    app68HexDecodeAppend(out, "03FF FFC0 0000 0000 0000 0000 0000 0000")
+}
+
+func app68DocIconMaskAppend(out: text) {
+    app68HexDecodeAppend(out, "0000 0000 0000 0000 0000 0000 03FF F000")
+    app68HexDecodeAppend(out, "03FF F800 03FF FC00 03FF FE00 03FF FF00")
+    app68HexDecodeAppend(out, "03FF FF80 03FF FFC0 03FF FFC0 03FF FFC0")
+    app68HexDecodeAppend(out, "03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0")
+    app68HexDecodeAppend(out, "03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0")
+    app68HexDecodeAppend(out, "03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0")
+    app68HexDecodeAppend(out, "03FF FFC0 03FF FFC0 03FF FFC0 03FF FFC0")
+    app68HexDecodeAppend(out, "03FF FFC0 0000 0000 0000 0000 0000 0000")
+}

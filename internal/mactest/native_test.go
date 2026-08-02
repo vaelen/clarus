@@ -316,6 +316,29 @@ func TestSmokeBounceOn68k(t *testing.T) {
 	checkUIGoldens(t, "smoke_bounce", out, exitCode, 0)
 }
 
+// TestAboutOn68k is Task 13's (native-5e resource parity) own spot-boot:
+// the `about` scenario natively -- an `app` section with all four
+// About-relevant properties set (testdata/ui/about.cla), no icon. This is
+// the first native boot to exercise the Apple-menu build
+// (rtUiBuildAppleMenu, runtime/clarus/ui.cla) and its About item dispatch
+// (rtUiAppleSelect -> rtUiTraceAbout) on real hardware. Note: the ported
+// runtime's rtUiAppleSelect ALWAYS traces the About fields instead of
+// drawing the real ParamText+Alert(129) dialog (ui.cla's own doc comment
+// on rtUiAppleSelect -- a deliberate, pre-existing simplification, not
+// something this task changed) -- so this boot does NOT actually exercise
+// Alert(129)/the ALRT 129 resource's Toolbox draw path; it exercises the
+// Apple-menu build/dispatch plumbing and confirms TestApp68kResourceParity's
+// ALRT/DITL 129 bytes sit in a resource fork that boots and runs cleanly
+// either way.
+func TestAboutOn68k(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "about.events")
+	claRel := filepath.Join("..", "..", "testdata", "ui", "about.cla")
+	bin := buildNative68kUI(t, "about", eventsRel, claRel)
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	checkUIGoldens(t, "about", out, exitCode, 0)
+}
+
 // TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
 // TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
 // via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the

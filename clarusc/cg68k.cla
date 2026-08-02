@@ -172,6 +172,22 @@ var cgUiEventsLabel: int
 // trailing NUL either way.
 var cgEventsBytes: text
 
+// cgAppRawName/cgAppIconPath (Task 13, native-5e resource parity) --
+// main.cla sets both before calling cg68Program, resolved the same way
+// `clarusc appinfo`'s own name/icon fallback logic already does (name
+// property > app label > entry file's basename; icon joined against the
+// app section's OWN declaring file's directory, appDeclPathIdx) -- neither
+// reaches IR (irAppName is -1 unless a `name:` property was declared
+// explicitly, and icon is deliberately build-time-only per ir.cla's own
+// header comment), so cg68WriteImage's resource builders need these
+// threaded in from main.cla's AST-level walk rather than reading IR.
+// cgAppRawName is "" for a non-app-declared program (cg68WriteImage never
+// reads it in that case); cgAppIconPath is "" whenever the program has no
+// declared app icon (the common case -- most app-declared programs have
+// no icon).
+var cgAppRawName: string
+var cgAppIconPath: string
+
 // cgFreshIntList hands back a genuinely empty list (same trick
 // shakeFreshIntList/shakeFreshBoolList use, shake.cla).
 func cgFreshIntList(): list of int {
@@ -7719,20 +7735,162 @@ func cgAppName(outPath: string): string(31) {
     return name
 }
 
+// cg68ResourceParitySet (Task 13, native-5e) assembles the extraTypes/
+// extraIds/extraDatas triples app68Build folds in beside CODE/SIZE --
+// same rules as scripts/build-mac.sh:81-232's Rez-driven appres.r
+// generation, mirrored here for the native (no Rez, no Retro68) lane:
+//   - a UI program (irIsUiProgram()) unconditionally gets the base alert
+//     ALRT/DITL 128 + 130 (runtime/mac/alert.r's own resources -- askOpen
+//     error / askSaveChanges, reachable from ui.cla/uidialogs.cla
+//     regardless of whether the program declares an `app` section).
+//   - an app-declared program (irHasApp) additionally gets the About
+//     ALRT/DITL 129 (icon item present iff the program also declares an
+//     app icon), a `vers` resource when a version is declared, and --
+//     only when an app icon is declared (cgAppIconPath != "") -- the
+//     signature STR + FREF 128/129 + BNDL 128 + app ICN#/ICON 128
+//     (decoded from the declared PBM) + the static doc icon ICN#/ICON
+//     129. SIZE(-1) is always present, for every program, with
+//     isHighLevelEventAware set iff irHasApp (app68BuildSize's own doc
+//     comment).
+// Fails closed (log + quit 1) if a declared icon path can't be read or
+// isn't a well-formed 32x32 PBM -- the check.cla/main.cla layer never
+// validates the file itself (build-time-only per ir.cla's header
+// comment), so this is the first point anything actually opens it for a
+// native build.
+func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, extraDatas: list of text) {
+    var hasIcon: bool
+    var pbmRaw: text
+    var iconBytes: text
+    var icnBytes: text
+    var docIcon: text
+    var docIcn: text
+    var idStr: string
+    var verStr: string
+
+    if irIsUiProgram() {
+        extraTypes.add("ALRT")
+        extraIds.add(128)
+        extraDatas.add(app68BuildAlrt(40, 40, 190, 460, 128))
+        extraTypes.add("DITL")
+        extraIds.add(128)
+        extraDatas.add(app68BuildDitl128())
+        extraTypes.add("ALRT")
+        extraIds.add(130)
+        extraDatas.add(app68BuildAlrt(40, 40, 156, 420, 130))
+        extraTypes.add("DITL")
+        extraIds.add(130)
+        extraDatas.add(app68BuildDitl130())
+    }
+
+    hasIcon = cgAppIconPath != ""
+    iconBytes = ""
+    if hasIcon {
+        pbmRaw = ""
+        if not file.readText(cgAppIconPath, pbmRaw) {
+            log("cg68Program: cannot read app icon " + cgAppIconPath + ": " + lastError.message)
+            quit 1
+        }
+        icnBytes = ""
+        if not app68BuildIcnFamily(pbmRaw, iconBytes, icnBytes) {
+            log("cg68Program: app icon " + cgAppIconPath + " is not a well-formed 32x32 P1/P4 PBM")
+            quit 1
+        }
+    }
+
+    if irHasApp {
+        extraTypes.add("ALRT")
+        extraIds.add(129)
+        extraDatas.add(app68BuildAlrt(40, 40, 220, 460, 129))
+        extraTypes.add("DITL")
+        extraIds.add(129)
+        extraDatas.add(app68BuildDitl129(hasIcon, 128))
+
+        if irAppVersion != -1 {
+            verStr = poolGet(irAppVersion)
+            extraTypes.add("vers")
+            extraIds.add(1)
+            extraDatas.add(app68BuildVers(verStr, cgAppRawName + " " + verStr))
+        }
+
+        if hasIcon {
+            verStr = ""
+            if irAppVersion != -1 {
+                verStr = poolGet(irAppVersion)
+            }
+            idStr = cgAppRawName + " " + verStr
+
+            extraTypes.add(poolGet(irAppId))
+            extraIds.add(0)
+            extraDatas.add(app68BuildStr255(idStr))
+
+            extraTypes.add("FREF")
+            extraIds.add(128)
+            extraDatas.add(app68BuildFref("APPL", 0))
+            extraTypes.add("FREF")
+            extraIds.add(129)
+            extraDatas.add(app68BuildFref("TEXT", 1))
+
+            extraTypes.add("BNDL")
+            extraIds.add(128)
+            extraDatas.add(app68BuildBndl(poolGet(irAppId)))
+
+            extraTypes.add("ICN#")
+            extraIds.add(128)
+            extraDatas.add(icnBytes)
+            extraTypes.add("ICON")
+            extraIds.add(128)
+            extraDatas.add(iconBytes)
+
+            docIcon = ""
+            app68DocIconBitmapAppend(docIcon)
+            docIcn = ""
+            docIcn.append(docIcon)
+            app68DocIconMaskAppend(docIcn)
+            extraTypes.add("ICN#")
+            extraIds.add(129)
+            extraDatas.add(docIcn)
+            extraTypes.add("ICON")
+            extraIds.add(129)
+            extraDatas.add(docIcon)
+        }
+    }
+
+    extraTypes.add("SIZE")
+    extraIds.add(-1)
+    extraDatas.add(app68BuildSize(irHasApp))
+}
+
 // cg68WriteImage builds the real MacBinary application image (app68k.cla)
 // from every segment's already-finished stream and writes it to outPath.
 // jtEntries/jtSegNums are indexed by FINAL JT slot number
 // (cgAssignFinalJtSlots), already fully populated by cg68Program's own
 // per-segment loop; segBytes[s-1] is segment s's raw code bytes
 // (cgSegJtFirst[s-1]/cgSegJtCount[s-1] give that segment's own JT range
-// for its CODE-N header). "????" (the unregistered-developer creator
-// code) matches this repo's own existing default (scripts/build-mac.sh's
-// `${APPID:-????}`) -- there is no --creator flag yet, so every native-5d
-// image gets the same one.
+// for its CODE-N header). creator (Task 13, native-5e) is the program's
+// own declared app id (irAppId) when it declared one, else "????" (the
+// unregistered-developer creator code, this repo's own existing default,
+// scripts/build-mac.sh's `${APPID:-????}`) -- matches the MacBinary
+// header's own creator field, which app68BuildHeader already threads
+// through unconditionally (nothing to change there).
 func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of int, segBytes: list of text): bool {
     var img: text
+    var creator: string(7)
+    var extraTypes: list of string
+    var extraIds: list of int
+    var extraDatas: list of text
 
-    img = app68Build(cgAppName(outPath), "????", segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size)
+    if irHasApp and irAppId != -1 {
+        creator = poolGet(irAppId)
+    } else {
+        creator = "????"
+    }
+
+    extraTypes = cgFreshStringList()
+    extraIds = cgFreshIntList()
+    extraDatas = cgFreshTextList()
+    cg68ResourceParitySet(extraTypes, extraIds, extraDatas)
+
+    img = app68Build(cgAppName(outPath), creator, segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraDatas)
     if not file.writeText(outPath, img) {
         log("cg68Program: cannot write " + outPath + ": " + lastError.message)
         return false

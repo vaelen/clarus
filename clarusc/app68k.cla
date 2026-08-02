@@ -63,6 +63,20 @@
 // COUNT grows with segBytes.count; app68BuildResourceFork computes every
 // map offset (ref-list offsets, name-list offset) from segBytes.count
 // rather than the Task-10 hardcoded 2-resource constants.
+//
+// RESOURCE PARITY (Task 13, native-5e). app68BuildResourceFork is
+// generalized further: fully generic (type, id, data) triples (three
+// parallel lists -- Clarus has no tuple/record-in-a-list here), grouped
+// by type and sorted (types ascending byte-wise, ids ascending within a
+// type) to match a REAL Retro68-built resource fork byte-for-byte
+// (verified against testdata/mac/resparity's goldens, extracted from
+// `scripts/build-mac.sh testdata/ui/{appres,about}.cla`). app68Build's
+// own extraTypes/extraIds/extraDatas parameters carry cg68k.cla's
+// resource-parity set (ALRT/DITL alerts, About, SIZE(-1), vers, the app
+// icon family + BNDL/FREF/signature STR); the specific resource BUILDERS
+// (ALRT/DITL bytes, PBM->ICN# decode ported from scripts/pbm2icn.c, etc.)
+// live in res68k.cla, kept separate from this file's own image-assembly
+// mechanism (policy call, recorded here per the task brief).
 
 // app68FreshIntList/app68FreshTextList hand back genuinely empty lists
 // (the same trick cg68k.cla's cgFreshIntList/cgFreshTextList use) -- this
@@ -77,6 +91,11 @@ func app68FreshIntList(): list of int {
 
 func app68FreshTextList(): list of text {
     var l: list of text
+    return l
+}
+
+func app68FreshStringList(): list of string {
+    var l: list of string
     return l
 }
 
@@ -243,60 +262,174 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
     return out
 }
 
-// app68BuildSize builds the 10-byte SIZE(-1) payload: flags word (only
-// is32BitCompatible set -- 0x0080; canBackground and MultiFinder-
-// awareness both off, see file header comment), then preferred and
-// minimum memory size, both 384KB per this task's brief.
-func app68BuildSize(): text {
+// app68BuildSize builds the 10-byte SIZE(-1) payload: flags word, then
+// preferred and minimum memory size, both 384KB (this task's own brief;
+// UNCHANGED by hlEventAware -- Task 13 (native-5e) mirrors build-mac.sh's
+// appres.r *flag word* exactly (its own comment: notHighLevelEventAware ->
+// isHighLevelEventAware is "what makes a Clarus build AppleEvent-aware"),
+// not its memory partition size, which is a pure Rez-side tuning choice
+// (1024*1024 there) this native writer has no reason to copy byte-for-
+// byte -- 384KB stays this backend's own already-proven default either
+// way. hlEventAware=false: only is32BitCompatible set (0x0080, Task 10's
+// original, still used for a non-app-declared program). hlEventAware=true
+// (irHasApp, Task 13): is32BitCompatible + isHighLevelEventAware (0x0080 |
+// 0x0040 = 0x00C0) -- verified against a REAL Retro68 build's own SIZE(-1)
+// bytes for an app-section program (testdata/mac/resparity), which is
+// exactly 0x00C0 despite its differing size longs, confirming the flag
+// word (and only the flag word) needs to match.
+func app68BuildSize(hlEventAware: bool): text {
     var out: text
+    var flags: int
 
+    flags = 0x0080
+    if hlEventAware {
+        flags = flags | 0x0040
+    }
     out = ""
-    app68PutWord(out, 0x0080)
+    app68PutWord(out, flags)
     app68PutLong(out, 393216)
     app68PutLong(out, 393216)
     return out
 }
 
+// app68TypeIndexOf returns the index of t within types, or -1 -- a tiny
+// linear scan (types never holds more than a handful of distinct 4-char
+// resource type codes per program), used by app68BuildResourceFork's own
+// dedup pass below.
+func app68TypeIndexOf(types: list of string, t: string): int {
+    var i: int
+
+    i = 0
+    while i < types.count {
+        if types[i] == t {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // app68BuildResourceFork assembles the full resource fork: 256-byte
-// header (16 real bytes + 240 reserved), every resource's data
-// (length-prefixed: CODE 0, then CODE 1..codeRes.count, then SIZE -1),
-// then the resource map (type list: CODE, SIZE -- always exactly two
-// TYPES no matter how many CODE ids there are; ref lists; no name list
-// -- every resource here is unnamed). Layout mirrors Retro68's
-// ResourceFork.cc::writeFork exactly (see file header comment).
-// codeRes[0] is CODE 0 (the A5/JT header); codeRes[1..] are CODE
-// 1..codeRes.count-1 (Task 15: one per segment, generalized from Task
-// 10's fixed 2-resource/single-segment shape).
-func app68BuildResourceFork(codeRes: list of text, sizeRes: text): text {
+// header (16 real bytes + 240 reserved), every resource's data (length-
+// prefixed), then the resource map (type list, ref lists, no name list --
+// every resource this backend ever emits is unnamed). Layout mirrors
+// Retro68's ResourceFork.cc::writeFork exactly (see file header comment).
+//
+// Task 13 (native-5e) generalizes this from Task 10/15's hardcoded
+// CODE+SIZE-only shape to a fully generic parallel (type, id, data) list
+// -- resTypes[i]/resIds[i]/resDatas[i] describe resource i; Clarus has no
+// tuple/record-in-a-list here (app68k.cla's own established convention,
+// see codeRes/jtEntries/jtSegNums above), so three parallel lists play
+// that role, same as everywhere else in this file.
+//
+// ORDERING, verified against a REAL Retro68-built resource fork (Rez +
+// Elf2Mac combined, dumped byte-for-byte during this task's own golden
+// extraction, testdata/mac/resparity): resources are grouped by TYPE,
+// types sorted ascending by their raw 4 bytes (case-sensitive, e.g.
+// 'ALRT' < 'BNDL' < 'CODE' < 'DITL' < ... < 'vers' -- uppercase sorts
+// before lowercase in ASCII); within a type, resources sort by ID
+// ascending. This function computes that grouping/sort itself so callers
+// never need to pre-order their resTypes/resIds/resDatas triples.
+func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDatas: list of text): text {
     var data: text
     var map: text
     var out: text
-    var codeOffs: list of int
-    var offSize: int
+    var n: int
     var i: int
-    var numCode: int
-    var codeRefListLen: int
-    var sizeRefListOff: int
+    var j: int
+    var g: int
+    var ti: int
+    var idx: int
+    var tmpS: string
+    var tmpI: int
+    var uniqTypes: list of string
+    var order: list of int      // resTypes-index, grouped by sorted type then id asc
+    var typeCount: list of int  // parallel to uniqTypes: how many resources of that type
+    var dataOffs: list of int   // parallel to `order`: that resource's data offset
+    var group: list of int
+    var typeListRegionLen: int
+    var refListTotalLen: int
+    var running: int
     var nameListOff: int
 
-    numCode = codeRes.count
+    n = resTypes.count
 
-    data = ""
-    codeOffs = app68FreshIntList()
+    // 1. distinct types, first-seen order.
+    uniqTypes = app68FreshStringList()
     i = 0
-    while i < numCode {
-        codeOffs.add(data.length)
-        app68PutLong(data, codeRes[i].length)
-        data.append(codeRes[i])
+    while i < n {
+        if app68TypeIndexOf(uniqTypes, resTypes[i]) == -1 {
+            uniqTypes.add(resTypes[i])
+        }
         i = i + 1
     }
-    offSize = data.length
-    app68PutLong(data, sizeRes.length)
-    data.append(sizeRes)
 
-    codeRefListLen = numCode * 12
-    sizeRefListOff = 18 + codeRefListLen
-    nameListOff = 58 + codeRefListLen // = 28(typelist start) + 18(typelist len) + codeRefListLen + 12(size reflist len)
+    // 2. sort uniqTypes ascending, byte-wise (insertion sort -- tiny N).
+    i = 1
+    while i < uniqTypes.count {
+        tmpS = uniqTypes[i]
+        j = i - 1
+        while j >= 0 and uniqTypes[j] > tmpS {
+            uniqTypes[j + 1] = uniqTypes[j]
+            j = j - 1
+        }
+        uniqTypes[j + 1] = tmpS
+        i = i + 1
+    }
+
+    // 3. `order`: for each type in sorted order, the resTypes-indices of
+    //    that type, sorted by id ascending (insertion sort per group).
+    order = app68FreshIntList()
+    typeCount = app68FreshIntList()
+    ti = 0
+    while ti < uniqTypes.count {
+        group = app68FreshIntList()
+        i = 0
+        while i < n {
+            if resTypes[i] == uniqTypes[ti] {
+                group.add(i)
+            }
+            i = i + 1
+        }
+        g = 1
+        while g < group.count {
+            tmpI = group[g]
+            j = g - 1
+            while j >= 0 and resIds[group[j]] > resIds[tmpI] {
+                group[j + 1] = group[j]
+                j = j - 1
+            }
+            group[j + 1] = tmpI
+            g = g + 1
+        }
+        typeCount.add(group.count)
+        g = 0
+        while g < group.count {
+            order.add(group[g])
+            g = g + 1
+        }
+        ti = ti + 1
+    }
+
+    // data section: length-prefixed resource data, in `order`.
+    data = ""
+    dataOffs = app68FreshIntList()
+    i = 0
+    while i < order.count {
+        idx = order[i]
+        dataOffs.add(data.length)
+        app68PutLong(data, resDatas[idx].length)
+        data.append(resDatas[idx])
+        i = i + 1
+    }
+
+    // type list + ref lists. typeListRegionLen is the 2-byte type-count
+    // header plus 8 bytes per distinct type (4-byte type + count-1 word +
+    // ref-list-offset word); refListTotalLen is every type's own ref list
+    // (12 bytes/resource) laid end to end right after that region.
+    typeListRegionLen = 2 + uniqTypes.count * 8
+    refListTotalLen = order.count * 12
+    nameListOff = 28 + typeListRegionLen + refListTotalLen // map-start-relative; no names, so it's the sentinel just past the last ref list
 
     map = ""
     while map.length < 24 {          // 16-byte header-copy placeholder (zeros,
@@ -305,27 +438,32 @@ func app68BuildResourceFork(codeRes: list of text, sizeRes: text): text {
                                       // handle + 2-byte file ref + 2-byte attrs
     app68PutWord(map, 28)            // type list offset from map start (fixed:
                                       // 2 header words follow immediately)
-    app68PutWord(map, nameListOff)   // name list offset from map start (no
-                                      // names, ends right after the ref lists)
-    app68PutWord(map, 1)             // type count - 1 (CODE, SIZE)
-    map.append("CODE")
-    app68PutWord(map, numCode - 1)   // CODE resource count - 1
-    app68PutWord(map, 18)            // CODE ref list offset from type-list start
-    map.append("SIZE")
-    app68PutWord(map, 0)             // SIZE resource count - 1 (id -1)
-    app68PutWord(map, sizeRefListOff) // SIZE ref list offset from type-list start
-    i = 0
-    while i < numCode {
-        app68PutWord(map, i)             // CODE id (0, 1, 2, ...)
-        app68PutWord(map, 0xFFFF)        // no name
-        app68PutLong(map, codeOffs[i])   // attr byte (0) + 3-byte data offset
-        app68PutLong(map, 0)             // handle placeholder
-        i = i + 1
+    app68PutWord(map, nameListOff)   // name list offset from map start
+    app68PutWord(map, uniqTypes.count - 1)
+
+    running = typeListRegionLen
+    ti = 0
+    while ti < uniqTypes.count {
+        map.append(uniqTypes[ti])
+        app68PutWord(map, typeCount[ti] - 1)
+        app68PutWord(map, running)       // this type's ref list offset from type-list start
+        running = running + typeCount[ti] * 12
+        ti = ti + 1
     }
-    app68PutWord(map, -1)            // SIZE id -1
-    app68PutWord(map, 0xFFFF)
-    app68PutLong(map, offSize)
-    app68PutLong(map, 0)
+    ti = 0
+    idx = 0
+    while ti < uniqTypes.count {
+        i = 0
+        while i < typeCount[ti] {
+            app68PutWord(map, resIds[order[idx]])
+            app68PutWord(map, 0xFFFF)        // no name
+            app68PutLong(map, dataOffs[idx]) // attr byte (0) + 3-byte data offset
+            app68PutLong(map, 0)             // handle placeholder
+            idx = idx + 1
+            i = i + 1
+        }
+        ti = ti + 1
+    }
 
     out = ""
     app68PutLong(out, 256)                     // data offset from fork start
@@ -341,20 +479,24 @@ func app68BuildResourceFork(codeRes: list of text, sizeRes: text): text {
 }
 
 // app68Build is the top-level entry point: builds CODE 0, CODE 1..N (one
-// per segment), and SIZE(-1), assembles the resource fork, wraps it in a
-// 128-byte MacBinary II header, and pads the whole thing to a multiple
-// of 128 bytes. segBytes[s] is segment (s+1)'s raw code bytes;
-// jtEntries[i]/jtSegNums[i] is JT slot i's routine offset (within its
-// own segment) and owning segment number; segJtFirst[s]/segJtCount[s]
-// is segment (s+1)'s own contiguous JT slot range (cg68k.cla's
+// per segment), folds in extraTypes/extraIds/extraDatas (Task 13: SIZE(-1)
+// always, plus whatever resource-parity set cg68WriteImage assembled --
+// ALRT/DITL/vers/icon family/BNDL/FREF/signature STR), assembles the
+// resource fork, wraps it in a 128-byte MacBinary II header, and pads the
+// whole thing to a multiple of 128 bytes. segBytes[s] is segment (s+1)'s
+// raw code bytes; jtEntries[i]/jtSegNums[i] is JT slot i's routine offset
+// (within its own segment) and owning segment number; segJtFirst[s]/
+// segJtCount[s] is segment (s+1)'s own contiguous JT slot range (cg68k.cla's
 // cgAssignFinalJtSlots), used for that segment's CODE-(s+1) header.
-func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int): text {
+func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraDatas: list of text): text {
     var code0: text
     var codeRes: list of text
-    var sizeRes: text
     var rsrc: text
     var out: text
     var i: int
+    var resTypes: list of string
+    var resIds: list of int
+    var resDatas: list of text
 
     code0 = app68BuildCode0(jtEntries, jtSegNums, belowA5)
     codeRes = app68FreshTextList()
@@ -364,8 +506,26 @@ func app68Build(appName: string(31), creator: string(7), segBytes: list of text,
         codeRes.add(app68BuildCodeN(segBytes[i], segJtFirst[i], segJtCount[i]))
         i = i + 1
     }
-    sizeRes = app68BuildSize()
-    rsrc = app68BuildResourceFork(codeRes, sizeRes)
+
+    resTypes = app68FreshStringList()
+    resIds = app68FreshIntList()
+    resDatas = app68FreshTextList()
+    i = 0
+    while i < codeRes.count {
+        resTypes.add("CODE")
+        resIds.add(i)
+        resDatas.add(codeRes[i])
+        i = i + 1
+    }
+    i = 0
+    while i < extraTypes.count {
+        resTypes.add(extraTypes[i])
+        resIds.add(extraIds[i])
+        resDatas.add(extraDatas[i])
+        i = i + 1
+    }
+
+    rsrc = app68BuildResourceFork(resTypes, resIds, resDatas)
 
     out = app68BuildHeader(appName, creator, rsrc.length)
     out.append(rsrc)

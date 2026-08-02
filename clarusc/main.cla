@@ -30,6 +30,7 @@ include "lower.cla"
 include "shake.cla"
 include "asm68k.cla"
 include "app68k.cla"
+include "res68k.cla"
 include "cprint.cla"
 include "cg68k.cla"
 include "uiblob.cla"
@@ -516,6 +517,47 @@ on App.startCLI(args: list of string) {
                 isUiProg = true
             }
             d = declNext(d)
+        }
+
+        // Task 13 (native-5e resource parity): resolve the app section's
+        // raw name (the same name-property > app-label > file-basename
+        // fallback `clarusc appinfo` uses, above) and icon path (joined
+        // against the app section's OWN declaring file's directory, same
+        // as appinfoMode's own iconV line) into cg68k.cla's cgAppRawName/
+        // cgAppIconPath globals -- cg68WriteImage's resource builders need
+        // both, and neither reaches IR (irAppName is -1 unless a `name:`
+        // property was declared explicitly; icon is deliberately never
+        // lowered at all, ir.cla's own header comment). emit68k-only: the
+        // C lane's own icon handling is scripts/build-mac.sh + pbm2icn.c,
+        // untouched by this task.
+        if emitMode68k {
+            d = combined
+            appIdx = -1
+            while d != -1 {
+                if declKind(d) == DkApp { appIdx = d }
+                d = declNext(d)
+            }
+            nameV = ""
+            iconV = ""
+            resolved = ""
+            if appIdx != -1 {
+                item = appDeclPropsHead(appIdx)
+                while item != -1 {
+                    pname = poolGet(propertyName(item))
+                    vh = propertyValuesHead(item)
+                    if pname == "name" { nameV = poolGet(stringLitIdx(vh)) }
+                    if pname == "icon" { iconV = poolGet(stringLitIdx(vh)) }
+                    item = declNext(item)
+                }
+                if nameV != "" { resolved = nameV } else { resolved = poolGet(appDeclName(appIdx)) }
+            }
+            if resolved == "" { resolved = baseNameNoExt(fileArgs[0]) }
+            cgAppRawName = resolved
+            if appIdx != -1 and iconV != "" {
+                cgAppIconPath = joinPath(dirOf(poolGet(appDeclPathIdx(appIdx))), iconV)
+            } else {
+                cgAppIconPath = ""
+            }
         }
 
         // Plan native-5d Task 3: core.cla is spliced FIRST, ahead of every
