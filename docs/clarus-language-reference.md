@@ -1397,7 +1397,8 @@ An `external func` declaration may end with a clause tying it to a specific Tool
 
 ```
 externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
-             [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
+             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "reg" [ "memerr" ] ]
+                   | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
 ```
 
 `= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result returned in the caller-reserved stack slot the call pops after the trap — the same slot a real Pascal trap always writes its result to; D0 is not the calling convention's result location, it is only where the compiled code lands the value after popping that slot):
@@ -1406,13 +1407,27 @@ externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
 external func TickCount(): int = trap 0xA975
 ```
 
+A `bool` or `char` parameter or result under the plain `trap` clause still occupies a full 16-bit stack word — Pascal never packs sub-word arguments — but the value itself lives in that word's HIGH-order byte (the word's own, lowest, address), not its low byte: pushing a `bool`/`char` argument shifts the value up 8 bits before the word push, and reading a `bool`/`char` result shifts the popped word down 8 bits before use. This is normative and empirically verified (native-5e Task 12, against a real ROM trap and a real Toolbox struct field on Mini vMac hardware) — an earlier (5d-era) low-byte claim for this same convention was wrong and is superseded by this paragraph. `word` (below) parameters and results are unaffected: a `word` is a genuine 16-bit value, not a narrower value padded into a word, so it always occupies the word's full span with no shift.
+
 Appending `reg` selects the register calling convention some traps use instead: at most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
 
 ```rust
 external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
 ```
 
-`= inline deref` and `= inline nop` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
+`reg` assumes the trap leaves a meaningful result in D0. Some register-convention Toolbox routines are Pascal `PROCEDURE`s (no result at all) whose real error code instead lives in the well-known low-memory global `MemErr` ($0220) — `SetHandleSize`, `SetPtrSize`, and their kin, per Inside Macintosh's own Memory Manager chapter. `reg memerr` names that shape: the call marshals exactly like plain `reg`, but the declared return value is read back from `MemErr` after the trap (sign-extended, like any other Toolbox `OSErr`/`INTEGER`) instead of from D0:
+
+```rust
+external func SetHandleSize(h: ptr, newSize: int): int = trap 0xA024 reg memerr
+```
+
+Some Toolbox packages share a single trap word across many routines, distinguished by a selector word the caller pushes immediately before the trap — the List Manager's `LNew`/`LDispose`/`LAddRow`/etc. all dispatch through the one trap `0xA9E7` this way. `trap NNNN sel SELECTOR` names that shape: `SELECTOR` (an unsigned 16-bit value, decimal or hex) is pushed as one more Pascal-convention stack word, closest to the trap itself, after every declared argument — the trap dispatcher pops it along with the rest, so no separate caller cleanup is needed. `sel` and `reg` are mutually exclusive — a selector-dispatch trap is always Pascal-convention:
+
+```rust
+external func LAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
+```
+
+`= inline deref`, `= inline nop`, and `= inline a5` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
 
 ```rust
 external func HandleToPtr(h: ptr): ptr = inline deref
@@ -1422,6 +1437,12 @@ external func HandleToPtr(h: ptr): ptr = inline deref
 
 ```rust
 external func DebugBreak() = inline nop
+```
+
+`inline a5` requires zero parameters and a `ptr` return; it reads the current value of the 68k A5 register — the classic Mac OS application-globals base pointer, valid for the lifetime of the running application (not a call-specific value, so there is nothing to marshal):
+
+```rust
+external func CurrentA5(): ptr = inline a5
 ```
 
 ### The `word` Extern Type
@@ -1477,10 +1498,11 @@ type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
 
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
-externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
-            [ "=" ( "trap" ( INT | HEXINT ) [ "reg" ] | "inline" ( "deref" | "nop" ) ) ] ;
+externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" ( type | "word" ) ]
+            [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "reg" [ "memerr" ] ]
+                  | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
 params      = param { "," param } ;
-param       = IDENT ":" type ;
+param       = IDENT ":" ( type | "word" ) ;
 
 windowDecl  = "window" IDENT "{" { windowItem } "}" ;
 windowItem  = property | widgetDecl | varDecl | "form" "for" IDENT ;

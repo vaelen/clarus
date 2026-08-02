@@ -1364,10 +1364,19 @@ func newExternFuncDecl(nameIdx: int, paramsHead: int, retType: int, trapVal: int
 
 // externFuncTrap returns a DkExternFunc's trap word (0xA000..0xAFFF once
 // checked), or -1 if it has no trap clause (bare, or an inline clause).
-// Masked to the low 16 bits: `c` may also carry a packed selector in its
-// upper 16 bits (externFuncSel, below) -- parseExternFuncDecl's own
-// packing comment explains why there's no separate DeclNode field for it.
+// `c` may also carry a packed selector in its upper 16 bits (externFuncSel,
+// below) -- parseExternFuncDecl's own packing comment explains why there's
+// no separate DeclNode field for it. The no-clause case is short-circuited
+// (not just masked): parseExternFuncDecl packs `c` as exactly -1 (all bits
+// set) when there is no trap clause, and `-1 & 0xFFFF` would otherwise
+// return 0xFFFF, not -1, breaking the contract this doc comment promises
+// (found harmless-in-practice during native-5e Task 14/15 -- every caller
+// of externFuncTrap only reads it under a conv that implies a trap clause
+// exists -- but fixed for real rather than left as a doc-only caveat).
 func externFuncTrap(i: int): int {
+    if decls[i].c == -1 {
+        return -1
+    }
     return decls[i].c & 0xFFFF
 }
 

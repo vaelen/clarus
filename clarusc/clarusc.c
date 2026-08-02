@@ -8134,6 +8134,9 @@ static int32_t clar_fn_newExternFuncDecl(int32_t cv_nameIdx, int32_t cv_paramsHe
 }
 
 static int32_t clar_fn_externFuncTrap(int32_t cv_i) {
+    if (((*(clar_rec_DeclNode*)rt_list_at(cv_decls, (int32_t)(cv_i)))).cv_c == (-(1))) {
+        return (-(1));
+    }
     return (((*(clar_rec_DeclNode*)rt_list_at(cv_decls, (int32_t)(cv_i)))).cv_c & 65535);
     return 0;
 }
@@ -49399,17 +49402,17 @@ static void clar_fn_cgCallExtPascal(int32_t cv_e, int32_t cv_xi) {
     cv_t = 0;
     int32_t cv_retTy;
     cv_retTy = 0;
-    int32_t cv_retIsWord;
-    cv_retIsWord = 0;
-    int32_t cv_retIsWordType;
-    cv_retIsWordType = 0;
+    int32_t cv_retIsShortSlot;
+    cv_retIsShortSlot = 0;
+    int32_t cv_retIsSigned;
+    cv_retIsSigned = 0;
     int32_t cv_j;
     cv_j = 0;
     cv_retTy = clar_fn_irExternRet(cv_xi);
-    cv_retIsWordType = (clar_fn_irtKind(cv_retTy) == 17);
-    cv_retIsWord = (((clar_fn_irtKind(cv_retTy) == 2) || (clar_fn_irtKind(cv_retTy) == 4)) || cv_retIsWordType);
+    cv_retIsSigned = (clar_fn_irtKind(cv_retTy) == 17);
+    cv_retIsShortSlot = (((clar_fn_irtKind(cv_retTy) == 2) || (clar_fn_irtKind(cv_retTy) == 4)) || cv_retIsSigned);
     if (clar_fn_irtKind(cv_retTy) != 0) {
-        if (cv_retIsWord) {
+        if (cv_retIsShortSlot) {
             clar_fn_a68Emit(35, 2, 0, 0, 0, 5, 7, 0);
         } else {
             clar_fn_a68Emit(35, 4, 0, 0, 0, 5, 7, 0);
@@ -49450,11 +49453,11 @@ static void clar_fn_cgCallExtPascal(int32_t cv_e, int32_t cv_xi) {
     clar_fn_rtStrStore((void*)&t2, 63, (void*)(const uint8_t*)&(t1));
     clar_fn_a68EmitTrap(clar_fn_irExternTrap(cv_xi), t2);
     if (clar_fn_irtKind(cv_retTy) != 0) {
-        if (cv_retIsWordType) {
+        if (cv_retIsSigned) {
             clar_fn_a68Emit(0, 2, 4, 7, 0, 1, 0, 0);
             clar_fn_a68Emit(24, 4, 0, 0, 0, 1, 0, 0);
         } else {
-            if (cv_retIsWord) {
+            if (cv_retIsShortSlot) {
                 clar_fn_a68Emit(35, 4, 0, 0, 0, 1, 0, 0);
                 clar_fn_a68Emit(0, 2, 4, 7, 0, 1, 0, 0);
                 clar_fn_a68Emit(18, 4, 8, 0, 8, 1, 0, 0);

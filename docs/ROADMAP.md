@@ -728,6 +728,210 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   ("Outcomes" section); plan:
   `docs/superpowers/plans/2026-07-30-native-5d-codegen68k.md`.
 
+- **5e (UI runtime port, landed on branch `native-5e`, 2026-08-03): DONE.**
+  `runtime/mac/rt_ui.c` (5,723 lines, ~169 Toolbox routines) ported to
+  Clarus — `runtime/clarus/{ui,uiwidgets,uitable,uidialogs}.cla` — so that
+  UI apps build and run entirely through `clarusc emit68k`, no C, no
+  cmake, no Retro68. **All 23 `testdata/ui` scenarios are byte-identical
+  (trace + PBM snaps) against the SAME frozen goldens the Retro68/gcc
+  lane already used** — one golden set, no per-backend re-bless, exactly
+  the ratified end gate. `rt_ui.c` + `uiprobe` stay in-tree, frozen, out
+  of the app-build path — the port's oracle until 5f's Retro68
+  retirement, per the spec's own decision 5.
+
+  **Staging as executed.** The spec's per-family two-lane plan (Retro68
+  redirect proven first, native flip once all 23 goldens are green ported)
+  held, but the redirect mechanism itself was a plan-time adjudication, not
+  the spec's original per-family framing: the UI runtime is one
+  interconnected event loop (shared `winst`/`gModal` state), so a
+  half-ported/half-C split couldn't be per-family — a temporary
+  `clarusc emit --uiport` flag flipped the WHOLE ported runtime in per
+  SCENARIO as each scenario's own widget surface landed (Tasks 7-10 moved
+  scenarios into the ported set slice by slice: 8 first, 9 more, 21, then
+  the last 2 blocked on a real hang — see below), with the flag and every
+  legacy `rt_ui_*_desc` emission arm deleted outright once all 23 were
+  green ported (Task 11, "the flip"). Native bring-up (Tasks 12-14) was
+  the single late stage the spec called for, not interleaved — the native
+  lane links only Clarus code, so a partial UI runtime cannot run there at
+  all.
+
+  **The record ABI is lane-specific — the branch's biggest lesson, found
+  twice.** The UI descriptor blob's `Layout` section (record size +
+  per-field byte offsets — the numbers `rtUiFormFill`/`rtUiFormAccept`/
+  `rtUiTableDrawField` peek and poke a record through) cannot use one
+  layout rule for both backends: the cprint lane's real record shape is
+  the emitted C struct (`bool`/`char` fields are a full 4-byte
+  `int32_t`/`uint8_t`-but-4-byte-aligned slot, matching m68k GCC's own
+  16-bit `BIGGEST_ALIGNMENT`), while cg68k's own naive record layout gives
+  `bool`/`char` a 2-byte slot everywhere. **Task 10** hit this first, on
+  the cprint/ported lane: `uibEmitLayout` had sourced the blob from
+  cg68k's rules even though nothing native existed yet, so a 2-record-with-
+  a-bool form (`formedit`/`bookmarks`) overran its scratch Handle by 2
+  bytes on every accept, corrupting the Memory Manager's free list just
+  enough that the NEXT `DisposeWindow` call spun forever — a real-hardware
+  hang with zero captured output, bisected over five ruled-out hypotheses
+  before the actual root cause (a `recSize` off-by-2, 330 vs. the real 332)
+  was found. Fixed by giving cprint its own C-ABI layout authority
+  (`cpCRecordSize`/`cpCFieldOffset` in `cprint.cla`) plus a compile-time
+  `clar_ui_layoutassert_<R>` guard so a future divergence is a build
+  error, not a silent corruption. **Task 14** hit the SAME class a second
+  time, natively: `cgRecordSize`/`cgFieldOffset` (cg68k's own layout
+  authority, which the blob's native lane correctly sourced from per
+  Task 12's carry) gave a record's `bool`/`char` FIELD the same 2-byte
+  slot a bare local/param gets, but the shared runtime's `bool`-field read
+  is a hardcoded 4-byte `peekl` (matching the serialization/cprint
+  convention) — `popuptable`'s `favorite: bool` column showed every row
+  checked, a 4-byte overread into the next field. Fixed by splitting
+  record-field sizing from local/param/array sizing (`cgRecFieldSizeOf`/
+  `cgRecFieldAlignOf`, used only inside `cgFieldOffset`/`cgRecordSize`/
+  `cgRecordCtorAt`/`cgEmitOneRcWalk`) so a record's `bool`/`char` field
+  gets the full 4-byte slot the shared runtime already assumes, without
+  touching a bare local/param's 2-byte sizing anywhere else. The ruling
+  (recorded in the ledger, carried into both fixes): record-field ABI is
+  decided per lane, deliberately, never inherited by copy-paste from the
+  other lane's own authority.
+
+  **The pascal byte-arg placement question is settled, and the 5d-era
+  guess was wrong.** 5d's own doubt (no byte-arg pascal trap existed yet
+  to test against) guessed a `bool`/`char` pascal parameter's value sits in
+  the padded word's LOW byte. The first real byte-arg trap this branch
+  exercised (`NewWindow`'s `goAwayFlag`, `smoke_bounce`'s native boot)
+  proved the opposite empirically, via A/B `log()` instrumentation
+  comparing the native lane against the ported/gcc lane over the same
+  shared `ui.cla` source: the ROM trap dispatcher reads the value back as a
+  single byte at the padded word's OWN (lowest) address, which in 68k
+  big-endian layout is that word's HIGH-order byte. The mirror-image bug
+  (a Boolean pascal RESULT read from the wrong half after popping) was
+  found and fixed a task later (`winvar`'s snap: a correctly-traced click
+  that never repainted, because `UiGetNextEvent`'s own "no event" read was
+  wrong). Both fixed in `cgCallExtPascal` (`LSL.W #8` before an arg push,
+  `LSR.L #8` instead of `AND.L #255` after a result pop); the language
+  reference's Trap and Inline Clauses section now states this as
+  normative, replacing the superseded low-byte text (Task 15). A THIRD
+  instance of the identical byte-position bug (`cgEmitLdefGlue`'s
+  hand-rolled inbound `lSelect` read) was found by code review, not a live
+  boot — it predated the fix and was never routed through the general
+  `cgCallExtPascal` path this fix covers, a reminder that a convention
+  fixed in one place doesn't retroactively fix every hand-rolled call site
+  that duplicates it.
+
+  **The JT/glue-address mechanism.** Three real Toolbox→Clarus callback
+  seams (the ListManager LDEF, control action procs, AppleEvent handlers)
+  all need a `pascal`-convention entry point the ROM can call. cprint kept
+  small C `pascal` wrapper functions in the mac shim (gcc implements the
+  convention for free); cg68k instead synthesizes two empty-bodied IRFuncs
+  (`clar_ui_glue_ldef`/`clar_ui_glue_action`) that get a real jump-table
+  slot for free from the existing JT-assignment pass, then hand-emits their
+  bodies (`cgEmitLdefGlue`/`cgEmitActionGlue`): LINK, read the pascal args
+  at their own fixed positive-A6 offsets, re-push in Clarus's own
+  convention, JSR the real ported function, UNLK, pop the return address,
+  ADDA the caller's own pushed arg bytes (the 68000 has no RTD — the
+  callee must clean up by hand), JMP back. The glue's own call-site address
+  (what `UiLdefEntry()`/`UiActionEntry()` return to the Toolbox) is the JT
+  ENTRY's address (`LEA 32+8*slot+2(A5),A0` — segment-safe from any
+  segment, the classic Mac idiom), not a raw code label — cg68k has no
+  data-relocation mechanism and needed none once this route was chosen.
+  AppleEvent handler glue (×4) was never built: no `external func
+  UiAeEntry` exists anywhere in the ported source — AE wiring stayed
+  hardcoded C in `rt_ext_mac.inc` on the cprint lane, so there was nothing
+  to wire on the native lane either; real native AE dispatch remains
+  untested (see Honest limits).
+
+  **The List Manager selector-trap discovery.** Package Manager routines
+  like the entire List Manager family (`LNew`/`LAddRow`/`LSetSelect`/…)
+  share ONE trap word (`0xA9E7`) distinguished only by a selector WORD the
+  real Toolbox glue pushes immediately before the trap — a shape the
+  5d-era trap-clause grammar had no way to express at all. `popuptable`'s
+  native boot crashed with "illegal instruction" before any window ever
+  drew, because every List Manager extern read whatever garbage happened
+  to be on the stack as its selector. Fixed with a new grammar clause,
+  `= trap NNNN sel SELECTOR` (mutually exclusive with `reg`, since a
+  selector-dispatch trap is always Pascal-convention) — the selector is
+  pushed as one more `.W` word, closest to the trap, after every declared
+  argument; the trap dispatcher pops it along with the rest.
+
+  **`SetApplLimit` stack reservation.** `smoke_menudemo`/`smoke_mandel`
+  (the full acceptance examples, not the small `testdata/ui` fixtures) hung
+  the emulator with a real "stack collision with heap" system error once
+  the earlier bugs above were fixed — `cgEmitStartup` called
+  `_MaxApplZone` with no preceding `_SetApplLimit`, so the heap zone grew
+  right up to wherever the stack pointer happened to sit at boot, leaving
+  zero room for the stack to grow into during a real scripted event's deep
+  call chain (naive per-function LINK frames, no peephole/regalloc yet, so
+  a single `str` temp alone costs 256 bytes and a menu dispatch stacks
+  several such frames). Fixed by reading the current `ApplLimit`
+  (`GetApplLimit`, a low-memory-global read, the same "inline glue reads a
+  global" mechanism `MemError`'s own `$0220` uses), lowering it by a fixed
+  32KB reserve via a real `SetApplLimit` trap, before `MaxApplZone`.
+
+  **Honest limits.** (1) The Mini vMac ROM's `Gestalt` trap dispatch never
+  reaches a real Gestalt implementation on this emulator — `err`/D0 comes
+  back a clean 0/noErr but `resp` is heap garbage, which without a guard
+  misread as a plausible System-7 version and selected the wrong window
+  WDEF for modal forms; `rtUiStartup` bounds `resp` to a plausible BCD
+  system-version range before trusting it (strictly safe for the cprint
+  lane too, whose real Gestalt result is always correct either way) — a
+  workaround for this ROM/emulator, not a language or codegen limit.
+  (2) Real-hardware-untested: LM selector-trap dispatch and the Gestalt
+  bound above are proven only on Mini vMac, never a real 68k Mac; AppleEvent
+  handler glue was never built (nothing to wire, see above), so native AE
+  launch/open-document dispatch is untested by any golden; Scrap Manager
+  (`TEFromScrap`/`TEToScrap`) and real `SFGetFile`/`SFPutFile` are clean
+  fail-closed/false-returning stubs on the native lane (`uitext.cla`/
+  `uidialogs.cla`) — every scripted scenario's `askOpen`/`askSave`/copy-
+  paste path uses the already-ported test-mode substitute instead, so
+  neither the real StandardFile Package-dispatch trap nor real Scrap
+  round-tripping has ever run natively. (3) rc-leak parity remains
+  structural, not measured, same limit 5d recorded — the host leak ledger
+  cannot run on the Mac; the mirror-of-cprint discipline is the guarantee.
+  (4) Purgeable resource attribute bits are still not reproduced in
+  `app68k`'s resource-fork writer (carried from 5d's resource-parity work,
+  correctness-neutral, ~1.5KB non-purgeable on a 384KB heap). (5) Full
+  minors list (13 items found and adjudicated across Tasks 1-14, most
+  deferred as pre-existing/out-of-scope/code-behavior — 4 cheap doc/comment
+  ones fixed in Task 15, the rest left for final review triage): see
+  `.superpowers/sdd/2026-08-01-native-5e-ui-runtime/progress.md`.
+
+  **Gate numbers.** Full gated `internal/mactest` suite
+  (`CLARUS_MAC_TESTS=1 go test ./internal/mactest -timeout 60m`, every
+  Retro68 test AND every native test in one run): **777.6s wall-clock, 0
+  FAIL** — 23/23 UI scenarios on BOTH lanes, `smoke_bounce`/`about`/
+  `texteditor_bigfile`/suite/runerr/abort on native, resource parity, one
+  run, no flags. Per-scenario native timing (build = `clarusc emit68k`
+  wall time, ~0.3s constant after the first scenario in a process; boot =
+  `RunMac` wall time, LaunchAPPL + Mini vMac + full scripted run) ranged
+  3.47s (`buttons`, few-widget) to 43.45s (`textwidgets`, 32,000-byte
+  textview clamp-boundary string work) — `bookmarks` (file I/O + table +
+  form, 17.16s) and `formedit` (modal form + validation, 13.51s) were the
+  next-heaviest. This is naive-codegen's own lower bound with zero
+  peephole/regalloc — the same "buy-back baseline" framing 5d recorded,
+  now with a real per-scenario UI table to buy back against (full table:
+  `.superpowers/sdd/2026-08-01-native-5e-ui-runtime/task-14-report.md`).
+  `go test ./... -timeout 30m`: green throughout, including
+  `internal/selfhost`'s bootstrap/fixed-point/differential-fence suite,
+  `internal/cg68k`'s golden/vasm/determinism suite (extended to every
+  emitted CODE segment, not just segment 1, during review), and
+  `internal/emitui`'s golden suite.
+
+  **5f-input inventory** (deferred work feeding 5f — Retro68
+  retirement/self-host, per the spec's own non-goals): `rt_ui.c` +
+  `uiprobe` deletion (frozen, in-tree, out of the build path since Task 11
+  — 5f's Retro68-retirement business, not 5e's); Mac-resident `clarusc`
+  (no native-hosted compiler yet — this branch only ever cross-compiles
+  from the host); the compilation cache (parked since 5d, still parked);
+  the peephole/regalloc buy-back phase, now with a full 23-scenario native
+  timing baseline (task-14-report.md) to measure against instead of a
+  single suite number; the honest limits above (Scrap/SF real dispatch,
+  AE handler glue, real-hardware LM/Gestalt verification) as candidate
+  follow-up work, not blocking anything already gated.
+
+  Full task-by-task detail:
+  `.superpowers/sdd/2026-08-01-native-5e-ui-runtime/task-{1..15}-report.md`
+  (progress ledger: same directory's `progress.md`); design:
+  `docs/superpowers/specs/2026-08-01-native-5e-ui-runtime-design.md`
+  ("Outcomes" section); plan:
+  `docs/superpowers/plans/2026-08-01-native-5e-ui-runtime.md`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

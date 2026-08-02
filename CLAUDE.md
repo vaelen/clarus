@@ -63,6 +63,13 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
 - Build a Clarus program for Mac: `scripts/build-mac.sh <Name> <files.cla...> [--test]`
   (snapshot-bootstrapped clarusc emit → Retro68 cmake → `.bin`/`.APPL`/`.dsk`
   under `build-mac/`).
+- Build a Clarus program as a NATIVE 68k binary (no C, no cmake, no
+  Retro68): `scripts/build-68k.sh [Name] <files.cla...> [--events FILE]`
+  (snapshot-bootstrapped clarusc `emit68k` directly → `.bin` under
+  `build-68k/`; `Name` is optional — derived from `clarusc appinfo` when
+  the first arg is a `.cla` file). `--events FILE` pours a scripted-event
+  file into the native constant pool for deterministic UI driving, the
+  native counterpart to `build-mac.sh`'s own `--events` below.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +

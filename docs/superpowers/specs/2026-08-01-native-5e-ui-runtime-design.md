@@ -302,3 +302,170 @@ unhandled shape is a named log+quit, never a silent zero/no-op.
 - No compilation cache (still parked post-5d).
 - No Retro68 retirement, no Mac-resident clarusc (5f).
 - No host-side UI runtime.
+
+## Outcomes (2026-08-03, Tasks 1-15 landed)
+
+The design landed close to as-written — module split, dispatch mechanism,
+callback glue split, and resource parity all shipped the shape this spec
+describes. The real deviations are the four already recorded as
+plan-time adjudications above (all confirmed as-executed, not revised
+further) plus one big lesson the exploration surfaced that the spec did
+not anticipate: the descriptor blob's record layout is lane-specific, not
+lane-agnostic. Full task-by-task numbers are in
+`.superpowers/sdd/2026-08-01-native-5e-ui-runtime/task-{1..15}-report.md`
+and `progress.md`; this section is the as-built architecture record.
+
+- **`--uiport` per-scenario staging: as adjudicated, executed exactly.**
+  `clarusc emit --uiport` selected the ported Clarus UI runtime instead of
+  legacy `rt_ui_*_desc` C emission; scenarios moved onto the ported lane in
+  slices as each family's widget surface landed (Tasks 7-10: 8, then 9,
+  then a run to 21/23, then the last 2 once a real hang was root-caused),
+  never per-family the way 5b/5c′'s redirect flags worked, because the
+  event loop shares mutable state (`winst[]`, `gModal`) across every
+  family at once — a program cannot run half the loop in C and half in
+  Clarus. Deleted outright in Task 11 ("the flip"): every legacy emission
+  arm (`cpEmitWidgetDescArray`, `cpEmitOneFormDesc`, `cpEmitUiDispatchers`,
+  `cpEmitUiWiring`, and their helpers), the flag itself, and both build
+  script's `CLARUS_UIPORT` branches — the ported runtime is now the only
+  cprint path for a UI program, unconditionally.
+- **Descriptor blob format v1: as designed, plus the lane-specific Layout
+  correction (the big lesson).** The flat, pointer-free int-table shape
+  (fixed-width fields, strings as blob-string-pool offsets, sub-tables by
+  index) shipped exactly as designed — `uiblob.cla`'s `uibBuild()` emits
+  one shared byte layout, walked by `peekw`/`peekl` natively and the
+  matching array-accessor layer on cprint. What the spec did NOT
+  anticipate: the blob's `Layout` section (record size + per-field byte
+  offsets, used by the form-accept and table-draw paths to read/write a
+  record through raw offsets) encodes a *record ABI*, and cprint and cg68k
+  do not agree on one — cprint's real record shape is the emitted C
+  struct (`bool`/`char` = a full 4-byte-aligned slot, matching m68k GCC's
+  own `BIGGEST_ALIGNMENT`), cg68k's own naive layout gives `bool`/`char` a
+  bare 2-byte slot everywhere. Task 10 found this on the ported/cprint
+  lane first (a hang from a 2-byte scratch-buffer overrun corrupting the
+  Memory Manager free list, `formedit`/`bookmarks`'s modal accept path);
+  Task 14 found the SAME class again natively (`popuptable`'s `bool`
+  column always reading CHECKED, a 4-byte overread of a 2-byte-sliced
+  field). The durable fix on both lanes: give EACH lane its own explicit
+  record-field layout authority (cprint: `cpCRecordSize`/`cpCFieldOffset`;
+  cg68k: `cgRecFieldSizeOf`/`cgRecFieldAlignOf`, scoped to
+  `cgFieldOffset`/`cgRecordSize`/`cgRecordCtorAt`/`cgEmitOneRcWalk`
+  only — a bare local/param/array element's own 2-byte `bool`/`char`
+  sizing is untouched), plus a compile-time `clar_ui_layoutassert_<R>`
+  guard on the cprint lane so a future divergence between the hand-derived
+  rule and what the C compiler actually does is a build error, not a
+  silent corruption. `uibEmitLayout` selects the authority off a
+  `uibNativeLane: bool` switch. The ruling this settled, carried loudly
+  between tasks in the ledger: record-field ABI is a per-lane decision,
+  made deliberately, never inherited by copying the other lane's own
+  rule.
+- **Dispatcher externs as synthesized IRFuncs: as designed, on both
+  lanes.** `UiFireWinEvent`/`UiFireWidget`/`UiFireMenu`/`UiFireEvery`/
+  `UiReleaseVars`/`UiFireLaunch` are `external func` declarations whose
+  BODY clarusc synthesizes per program (a switch over an index, calling
+  the program's own real handler functions) — cprint emits them as
+  ordinary C functions (replacing the old function-pointer-table
+  indirection exactly as planned); cg68k emits them as ordinary compiled
+  functions reached by direct `JSR`, via `cgCallExtUiSynth`'s pre-dispatch
+  arm in `cgCallExt` (a name-based lookup ahead of the trap-clause switch,
+  since a synthesized dispatcher extern carries no trap clause at all).
+  No new language surface beyond what the spec named.
+- **Toolbox→Clarus callback glue: as designed, via JT entry addresses
+  specifically (plan-time adjudication 3, confirmed as the only workable
+  choice).** cprint kept small C `pascal` wrapper functions in the mac
+  shim exactly as designed. cg68k synthesizes two empty-bodied IRFuncs
+  (`clar_ui_glue_ldef`/`clar_ui_glue_action`, `cg68SynthUiGlue`, called
+  right after `lowerProgram`/`cg68AddRoots` so `cgAssignFinalJtSlots`
+  gives them a real JT slot for free) and hand-emits their bodies
+  (`cgEmitLdefGlue`/`cgEmitActionGlue` in `cgEmitFunc`, matched by name):
+  unwind the pascal argument frame at fixed positive-A6 offsets, re-push
+  in Clarus's own convention, `JSR` the real ported function, pop the
+  return address, `ADDA` the caller's own pushed arg bytes (68000
+  callee-pops, no RTD), `JMP` back. `UiLdefEntry()`/`UiActionEntry()`
+  return the glue's JT ENTRY address (`LEA 32+8*slot+2(A5),A0` — segment-
+  safe from any segment), not a raw code label, exactly the adjudication's
+  own reasoning: cg68k has no data-relocation mechanism and needed none
+  once entry addresses, not code labels, were the contract. AppleEvent
+  handler glue (×4) was never built on EITHER lane — no `external func
+  UiAeEntry` exists anywhere in the ported source, so there was nothing
+  for cg68k to wire either; native AE dispatch is untested (see the
+  ROADMAP entry's honest limits).
+- **`--events` pool blob: as adjudicated (item 4), executed exactly.**
+  `emit68k --events FILE` reads the scripted-event file and
+  `cgEmitUiEventsPool` pours its bytes into the constant pool behind a
+  `UiTestScript()` extern (`cgCallExtUiBlobAddr`, `LEA lbl(PC),A0` then
+  `MOVE.L A0,D0` — an early bug left the `MOVE.L` off, so the computed
+  address was silently discarded and `rtUiRun`'s script-vs-real gate
+  always fell through to the real event loop; fixed in the same task that
+  found it). `scripts/build-68k.sh` gained a matching `--events FILE`
+  pass-through flag, mirroring `build-mac.sh`'s pre-existing
+  `CLARUS_UIPORT`-era events mechanism.
+- **Record-ABI unification ruling (the controller ruling that resolved
+  Task 14's own popuptable bug, recorded here for the permanent record):**
+  `bool`/`char` inside a RECORD get a full slot matching the shared
+  runtime's own read width — 4 bytes on cg68k (unifying with the C
+  convention `rt_ui.c:1100` already assumed, since the shared `.cla`
+  runtime source cannot itself be lane-conditional) — but this is scoped
+  to record FIELDS only; a bare local, parameter, or array element keeps
+  its pre-existing 2-byte `bool`/`char` sizing on cg68k, unaffected. Every
+  reader of record layout (`cgRecordSize`/`cgFieldOffset`/
+  `cgRecordCtorAt`/`cgEmitOneRcWalk`) re-derives from the same two new
+  functions; `uibEmitLayout`'s native lane already sourced its Layout
+  section from `cgRecordSize`/`cgFieldOffset` (Task 12), so it inherited
+  the fix for free once cg68k's own authority changed underneath it.
+- **Pascal byte-arg placement: settled empirically, and the pre-existing
+  5d-era guess it settles was WRONG.** Neither this spec's own
+  "byte-arg question... rests on secondary sources" framing nor 5d's own
+  low-byte guess had a real trap to test against before this branch. The
+  first one this branch exercised (`NewWindow`'s `goAwayFlag`,
+  `smoke_bounce`'s native boot) proved the value lives in the padded
+  word's HIGH-order byte (the word's own, lowest, address) — found via A/B
+  `log()` instrumentation on `WindowRecord.goAwayFlag`, comparing the
+  native lane against the ported/gcc lane over the identical shared
+  `ui.cla` source. Fixed in `cgCallExtPascal`: an argument shifts up 8
+  bits (`LSL.W #8`) before the word push; a result shifts down 8 bits
+  (`LSR.L #8`, replacing an `AND.L #255` that kept the wrong half) after
+  the word pop. `word`-typed (genuine 16-bit Toolbox `INTEGER`) params and
+  results are unaffected — they occupy the word's full span, nothing
+  padded, nothing to shift. **Correction to the 5d-era claim:** any prior
+  documentation or code comment asserting a pascal bool/char value lands
+  in the padded word's LOW byte was wrong; the language reference's Trap
+  and Inline Clauses section (Task 15) now states the HIGH-byte rule as
+  normative, and `cgCallExtPascal`'s own header comment in `cg68k.cla`
+  carries the same correction with the empirical trail.
+- **Deviations from the spec as written, each with why:**
+  - The per-scenario (not per-family) `--uiport` flip (plan-time
+    adjudication 1) — the event loop's shared mutable state made a
+    per-family split unworkable; see above.
+  - The lane-specific blob `Layout` section (not anticipated at all,
+    found mid-flight) — see the record-ABI lesson above; the spec's own
+    "byte-equivalent table content" framing assumed one shared record
+    shape existed to be byte-equivalent about, which turned out false.
+  - `word` as a stage-0 addition (plan-time adjudication 2) — the
+    Toolbox's INTEGER-heavy surface had no 16-bit marshaling shape in 5d's
+    pascal convention at all; landed exactly as adjudicated, no further
+    change.
+  - Glue via JT entry addresses, not code labels (plan-time adjudication
+    3) — cg68k's total absence of a data-relocation mechanism made this
+    the only workable choice, not a preference between two working ones.
+  - `reg memerr` and `trap ... sel SELECTOR` (Task 14 additions, not in
+    the spec's original trap-clause inventory at all): found empirically
+    bringing up native scenarios past `smoke_bounce` — `SetHandleSize`'s
+    real Pascal signature is `void` (Memory Manager routines are
+    PROCEDUREs, not FUNCTIONs; the real error lives in the low-memory
+    global `MemErr`), and the entire List Manager family shares one trap
+    word distinguished by a selector the 5d-era trap grammar had no way to
+    express. Both are additive grammar clauses on the existing `external
+    func` trap-clause mechanism, not a new mechanism.
+  - `= inline a5` (Task 12 addition, also not in the spec's original
+    inventory): `UiCurrentA5` needed the 68k A5 register (the classic
+    Mac application-globals base) with no trap to read it through — a
+    third `inline` variant alongside the existing `deref`/`nop`, same
+    zero-marshaling-needed shape.
+
+Nothing in the architecture was reverted. Every deviation above is either
+a plan-time adjudication already recorded and executed as planned, a small
+additive grammar clause the exploration found necessary (word, reg memerr,
+trap sel, inline a5), or the one real design gap (lane-specific record
+ABI) that the spec's "byte-equivalent blob" framing did not anticipate and
+that both porting tasks (10 and 14) had to close independently, in the
+same way, for the same underlying reason.

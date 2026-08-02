@@ -6655,12 +6655,12 @@ func cgCallExtReg(e: int, xi: int) {
         // only D0's LOW WORD) makes no promise about D0's UPPER word --
         // EXT.L unconditionally re-derives the full signed 32-bit value
         // from D0's own low word, discarding whatever was there before,
-        // matching cgCallExtPascal's own retIsWordType arm exactly (same
+        // matching cgCallExtPascal's own retIsSigned arm exactly (same
         // "Toolbox INTEGER is signed" rule).
         a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
     } else if irtKind(retTy) == KBool or irtKind(retTy) == KChar {
         // Same reasoning, zero-extend arm (mirrors cgCallExtPascal's own
-        // retIsWord-but-not-word-type arm): mask to the low byte.
+        // retIsShortSlot-but-not-retIsSigned arm): mask to the low byte.
         a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
     }
     // else: KVoid (nothing to bring back) or plain int -- already in D0,
@@ -6696,7 +6696,7 @@ func cgCallExtRegMemErr(e: int, xi: int) {
     cgRegPassArgsAndTrap(e, xi)
     // MOVE.W $0220.W,D0 ; EXT.L D0 -- read the low-memory MemErr global
     // (a signed 16-bit OSErr) and sign-extend it into the full register,
-    // matching cgCallExtReg's own retIsWordType arm exactly (same
+    // matching cgCallExtReg's own KWord (retIsSigned-equivalent) arm exactly (same
     // "Toolbox INTEGER is signed" rule -- MemErr is that same shape).
     a68Emit(OpMove, 2, AmAbsW, 0, 0x0220, AmDn, 0, 0)
     a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
@@ -6730,7 +6730,7 @@ func cgCallExtRegMemErr(e: int, xi: int) {
 // `.W`. See this session's task-12-report.md continuation-session section
 // for the full A/B trace.
 //
-// The bool-RETURN pop below (the `retIsWord`-but-not-`retIsWordType` arm)
+// The bool-RETURN pop below (the `retIsShortSlot`-but-not-`retIsSigned` arm)
 // FIXED in Task 14 (native-5e): confirmed the mirror-image of the
 // argument-side bug -- winvar.cla's snap showed a window frame with NO
 // controls/text ever painted despite a fully correct trace, root-caused
@@ -6764,15 +6764,23 @@ func cgCallExtPascal(e: int, xi: int) {
     var a: int
     var t: int
     var retTy: int
-    var retIsWord: bool
-    var retIsWordType: bool
+    // Task 4/15 (native-5e) naming: retIsShortSlot means "this result
+    // occupies a padded WORD stack slot, not a plain .L" (bool/char/word
+    // all qualify); retIsSigned narrows that to "and the value read back
+    // is sign-extended, not zero-extended" (word only -- Toolbox INTEGER
+    // is signed, unlike a byte-sized Pascal bool/char result). Renamed
+    // from retIsWord/retIsWordType, which read as if only a `word`-typed
+    // extern qualified -- misleading, since bool/char share the slot-width
+    // arm too.
+    var retIsShortSlot: bool
+    var retIsSigned: bool
     var j: int
 
     retTy = irExternRet(xi)
-    retIsWordType = irtKind(retTy) == KWord
-    retIsWord = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsWordType
+    retIsSigned = irtKind(retTy) == KWord
+    retIsShortSlot = irtKind(retTy) == KBool or irtKind(retTy) == KChar or retIsSigned
     if irtKind(retTy) != KVoid {
-        if retIsWord {
+        if retIsShortSlot {
             a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
         } else {
             a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
@@ -6833,13 +6841,13 @@ func cgCallExtPascal(e: int, xi: int) {
     }
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
     if irtKind(retTy) != KVoid {
-        if retIsWordType {
+        if retIsSigned {
             // Sign-extend: MOVE.W (A7)+,D0 loads the popped result word
             // into D0's low 16 bits, then EXT.L D0 propagates its sign
             // bit across the full register -- Toolbox INTEGER is signed.
             a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
             a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-        } else if retIsWord {
+        } else if retIsShortSlot {
             // Task 14 fix (native-5e gate, winvar.cla): CONFIRMED, not
             // just suspected -- the mirror-image bug this function's own
             // header comment flagged as open. winvar.cla's snap (S1)

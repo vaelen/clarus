@@ -1365,6 +1365,10 @@ func irIndexRefI(i: int): int {
     return irExprs[i].b
 }
 
+// newIRBin builds an EBin node. `op` is an interned string index (the
+// operator's own spelling, e.g. "+" or "and" -- see the EBin field-layout
+// comment near this file's top) stored in `name`, NOT a numeric AST/lexer
+// operator-token constant; callers must intern the spelling first.
 func newIRBin(op: int, x: int, y: int, ty: int): int {
     var n: IRExpr
 
