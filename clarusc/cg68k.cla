@@ -804,11 +804,14 @@ func cgAlignOf(t: int): int {
     return 1
 }
 
-// cgSlotSizeOf is the padded size a type occupies inside a record field,
-// array element, frame local, or frame param slot -- identical to
-// cgSizeOf except a bare 1-byte bool/char is rounded up to 2 (the file
-// header's "occupying 2 in any aggregate or stack slot" rule). Every
-// other kind's cgSizeOf is already even, so this is a no-op for them.
+// cgSlotSizeOf is the padded size a type occupies as a frame local, frame
+// param, array element, or window-state slot (cgUiStateFieldOffset/
+// cgIntrUiStateDefaults's own walk -- a window's per-instance vars are
+// never an irRecords entry, so they are NOT record fields; see
+// cgRecFieldSizeOf below for the actual record-field authority) --
+// identical to cgSizeOf except a bare 1-byte bool/char is rounded up to 2
+// (the file header's "occupying 2 in any aggregate or stack slot" rule).
+// Every other kind's cgSizeOf is already even, so this is a no-op for them.
 func cgSlotSizeOf(t: int): int {
     var sz: int
 
@@ -6659,8 +6662,16 @@ func cgCallExtReg(e: int, xi: int) {
         // "Toolbox INTEGER is signed" rule).
         a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
     } else if irtKind(retTy) == KBool or irtKind(retTy) == KChar {
-        // Same reasoning, zero-extend arm (mirrors cgCallExtPascal's own
-        // retIsShortSlot-but-not-retIsSigned arm): mask to the low byte.
+        // NOT the same shift cgCallExtPascal's retIsShortSlot arm needs
+        // (that arm's LSR.L #8): the LSR there undoes the Pascal
+        // calling convention's own stack-word padding -- a Pascal trap's
+        // Bool/Char result is popped as a WORD with the real byte in the
+        // HIGH half (mirroring the argument-side word-padding rule), so
+        // D0's low 16 bits need shifting down before the byte is usable.
+        // A `reg`-convention trap has no such stack round-trip: the
+        // result lands directly in D0 with the real byte already in D0's
+        // OWN low byte, so a plain AND.L #255 mask is already correct --
+        // shifting here would mask the WRONG byte.
         a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
     }
     // else: KVoid (nothing to bring back) or plain int -- already in D0,

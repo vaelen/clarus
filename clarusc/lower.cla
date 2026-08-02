@@ -5254,38 +5254,6 @@ func lowSynthReleaseVars() {
     shakeAddRoot(fnameIdx)
 }
 
-// lowSynthStateDefaults builds clar_ui_fire_statedefaults(winIdx, inst) --
-// one IUiStateDefaults() call per window, unconditionally (its OWN cprint
-// impl, fpIntrCall's IUiStateDefaults case, already walks the window's
-// state fields and no-ops if none need construction -- see that case's own
-// comment -- so there is nothing to gate here), folded behind one outer
-// switch(winIdx).
-func lowSynthStateDefaults() {
-    var paramsHead: int
-    var conds: list of int
-    var bodies: list of int
-    var i: int
-    var winNameIdx: int
-    var chain: int
-    var fnameIdx: int
-
-    paramsHead = newIRLocal(intern("winIdx"), irIntT)
-    irLocalListAppend(paramsHead, newIRLocal(intern("inst"), irPtrT))
-
-    i = 0
-    while i < irWindowDescs.count {
-        winNameIdx = irWindowDescName(i)
-        conds.add(lowSynthEqInt("winIdx", i))
-        bodies.add(newIRExprStmt(newIRIntr(IUiStateDefaults(), lowSynthPtrRef("inst"), irUiStateType(winNameIdx))))
-        i = i + 1
-    }
-
-    chain = lowSynthFoldIfChain(conds, bodies, lowSynthPanic("clar_ui_fire_statedefaults", "winIdx", -1))
-    fnameIdx = intern("clar_ui_fire_statedefaults")
-    newIRFunc(fnameIdx, paramsHead, irVoidT, -1, chain)
-    shakeAddRoot(fnameIdx)
-}
-
 // lowSynthTableRows builds clar_ui_fire_staterows(rowsIdx): ptr -- one arm
 // per irGlobals entry, returning that global's own address (IUiAddrOfGlobal),
 // at EXACTLY the position uiblob.cla's uibGlobalIndex already uses for a
@@ -5317,14 +5285,16 @@ func lowSynthTableRows() {
     shakeAddRoot(fnameIdx)
 }
 
-// lowSynthLaunchDoc/StartEmpty/AppLaunch build the three toggle-style
-// reverse-waist functions -- not index-dispatched at all (no fail-closed
-// panic: there is nothing to be "out of range"), just "does the program
-// declare this App handler at all" (irHasOpenDocument/irHasStartEmpty/
-// irHasLaunch), matching the plan's own "empty-body synthesis when a
-// program has no handler of a class" rule. Handler func names are
-// lowTopHandler's own (lower.cla:3437-3455): "handler_App_openDocument"/
-// "handler_App_startEmpty"/"handler_App_launch".
+// lowSynthLaunchDoc/StartEmpty build the two toggle-style reverse-waist
+// functions -- not index-dispatched at all (no fail-closed panic: there is
+// nothing to be "out of range"), just "does the program declare this App
+// handler at all" (irHasOpenDocument/irHasStartEmpty), matching the plan's
+// own "empty-body synthesis when a program has no handler of a class" rule.
+// Handler func names are lowTopHandler's own (lower.cla:3437-3455):
+// "handler_App_openDocument"/"handler_App_startEmpty". (There is no
+// AppLaunch counterpart: both backends call handler_App_launch directly at
+// startup -- cg68k.cla's cgEmitStartupCallIfPresent, cprint.cla's own
+// startup emission -- so no clar_ui_fire_applaunch dispatcher is needed.)
 
 func lowSynthLaunchDoc() {
     var paramsHead: int
@@ -5354,19 +5324,6 @@ func lowSynthStartEmpty() {
     shakeAddRoot(fnameIdx)
 }
 
-func lowSynthAppLaunch() {
-    var body: int
-    var fnameIdx: int
-
-    body = -1
-    if irHasLaunch {
-        body = newIRExprStmt(newIRCallFn(intern("handler_App_launch"), -1, irVoidT))
-    }
-    fnameIdx = intern("clar_ui_fire_applaunch")
-    newIRFunc(fnameIdx, -1, irVoidT, -1, body)
-    shakeAddRoot(fnameIdx)
-}
-
 // lowSynthUiDispatchers is the whole section's one entry point (called
 // from lowerProgram's tail).
 func lowSynthUiDispatchers() {
@@ -5375,11 +5332,9 @@ func lowSynthUiDispatchers() {
     lowSynthFireMenu()
     lowSynthFireEvery()
     lowSynthReleaseVars()
-    lowSynthStateDefaults()
     lowSynthTableRows()
     lowSynthLaunchDoc()
     lowSynthStartEmpty()
-    lowSynthAppLaunch()
 }
 
 // lowUiSynthExternName maps a reverse-waist extern's OWN declared Clarus
@@ -5390,7 +5345,7 @@ func lowSynthUiDispatchers() {
 // extern-prototype pass (skip declaring a rt_ext_ shim nobody defines)
 // consult. Returns -1 for any other extern name, including UiProgDesc
 // (resolved separately -- see ir.cla's own doc comment on why it isn't one
-// of these 10 synthesized functions) and every per-backend glue extern in
+// of these 8 synthesized functions) and every per-backend glue extern in
 // the reverse-waist section's second half (UiLdefEntry/UiAeEntry/
 // UiActionEntry/UiCurrentA5/UiTestEmit/UiTestScript), none of which this
 // task touches.
@@ -5405,9 +5360,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
     if nm == "UiReleaseVars" { return intern("clar_ui_fire_releasevars") }
     if nm == "UiFireLaunchDoc" { return intern("clar_ui_fire_launchdoc") }
     if nm == "UiFireStartEmpty" { return intern("clar_ui_fire_startempty") }
-    if nm == "UiFireAppLaunch" { return intern("clar_ui_fire_applaunch") }
     if nm == "UiTableRows" { return intern("clar_ui_fire_staterows") }
-    if nm == "UiStateDefaults" { return intern("clar_ui_fire_statedefaults") }
     return -1
 }
 
