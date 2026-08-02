@@ -22,6 +22,9 @@ LBL_95:
 LBL_97:
         CLR.W (A0)+
         DBRA D0,LBL_97
+        MOVEA.L $0130.W,A0
+        ADDA.L #-32768,A0
+        DC.W $A02D  ; _SetApplLimit
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters
         BSR.W LBL_96

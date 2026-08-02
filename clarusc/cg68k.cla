@@ -1143,6 +1143,15 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
     cgCallFunc(fi)
 }
 
+// cgStartupStackReserve (Task 14, native-5e) is the extra headroom
+// cgEmitStartup reserves for the stack via SetApplLimit before
+// MaxApplZone -- see that function's own doc comment for the "stack
+// collision with heap" bug this fixes. 32KB is generous relative to this
+// backend's own worst observed frame depth (naive codegen, no peephole/
+// regalloc yet -- every str temp alone is 256 bytes) without meaningfully
+// starving the heap on a real partition.
+const cgStartupStackReserve: int = 32768
+
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
 // first function in the stream. See the file header for the full shape;
 // briefly: zero below-A5, seed _MaxApplZone/_MoreMasters, call the
@@ -1186,6 +1195,34 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     } else {
         a68Comment("no globals below A5 -- nothing to zero")
     }
+
+    // Reserve extra stack space BEFORE MaxApplZone (Task 14, native-5e):
+    // the classic idiom -- read the current ApplLimit (GetApplLimit, a
+    // low-memory global at absolute address $0130, the SAME "inline glue
+    // reads a global, not a real trap dispatch" mechanism MemError uses
+    // at $0220 -- Retro68's own MacMemory.h glues both this way), lower
+    // it by cgStartupStackReserve bytes via a real SetApplLimit trap
+    // (0xA02D -- #pragma parameter SetApplLimit(__A0) means the arg goes
+    // DIRECTLY in A0, no stack push at all, unlike an ordinary `reg`
+    // call), and only THEN grow the heap zone via MaxApplZone -- which,
+    // with no preceding SetApplLimit call, grows right up to whatever the
+    // stack pointer happens to be at THIS EXACT boot moment, leaving zero
+    // headroom for the stack to grow later.
+    //
+    // Root cause this fixes (Task 14's own native gate): naive cg68k
+    // codegen gives every function its own LINK frame sized for its own
+    // locals/temps (a single str temp alone is 256 bytes), and a real
+    // scripted UI event's own call chain (rtUiMenuDispatch -> UiFireMenu
+    // -> the program's own handler -> further widget/text calls) stacks
+    // several such frames -- observed on real hardware as a "stack
+    // collision with heap" system error (Andrew, watching the emulator)
+    // hanging smoke_menudemo/smoke_mandel (bigger, multi-segment real
+    // programs; the small single-segment testdata/ui/*.cla fixtures
+    // happened to stay shallow enough not to trip it, by luck rather than
+    // by any actual margin).
+    a68Emit(OpMovea, 4, AmAbsW, 0, 0x0130, AmAn, 0, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - cgStartupStackReserve, AmAn, 0, 0)
+    a68EmitTrap(0xA02D, "_SetApplLimit")
 
     a68EmitTrap(0xA063, "_MaxApplZone")
     a68EmitTrap(0xA036, "_MoreMasters")
@@ -5108,6 +5145,7 @@ func cgIntrUi(e: int, nm: string) {
     var winIdx: int
     var winName: string
     var winNameIdx: int
+    var fi: int
 
     a0 = irIntrArgsHead(e)
     a1 = -1
@@ -5355,9 +5393,45 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
         return
     }
-    if nm == "ui_get_title" or nm == "ui_get_field_text" or nm == "ui_get_textview_text" {
-        log("cg68k: " + nm + ": str/text materialization not wired this task (native-5e Task 12 scope)")
+    if nm == "ui_get_title" or nm == "ui_get_field_text" {
+        // KStr (fixed-capacity, non-scalar) -- never reaches cgExpr's
+        // VALUE context by construction (cgEmitStoreStr's own arms handle
+        // both, Task 14); a real reach here would mean some OTHER src
+        // context fed a KStr EIntr straight to cgExpr, the exact hazard
+        // that function's own header comment fails loud on.
+        log("cg68k: " + nm + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
         quit 1
+    }
+    if nm == "ui_get_textview_text" {
+        // Task 14 (native-5e gate, textwidgets.cla): `textview.text` read
+        // -- KText is scalar-sized (a bare ptr, cgIsScalarKind), so unlike
+        // ui_get_field_text/ui_get_title's KStr materialize-in-place
+        // shape, this one yields its result in D0 like any other cgExpr
+        // value: a fresh rtTextNew() box, filled by
+        // rtUiWidgetGetText(instV, wIdx, out). The fresh box's own D0
+        // result is stashed on the stack (cgCallFunc's own "no callee-
+        // saved registers" rule applies here exactly as it does to
+        // cgDefaultInitTextAt's near-identical hazard, above) across the
+        // instV/wIdx evaluation, then re-read (a plain stack peek, not a
+        // register) to push as the 3rd arg, and popped back into D0 as
+        // the final result.
+        fi = findIRFuncIdxByName(intern("rtTextNew"))
+        if fi == -1 or not shakeReachable(fi) {
+            log("cg68k: rtTextNew not found/reachable")
+            quit 1
+        }
+        cgCallFunc(fi)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiWidgetGetText")
+        cgCleanupStack(12)
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+        return
     }
     if nm == "ui_edit" or nm == "ui_ask_open" or nm == "ui_ask_save" or nm == "ui_ask_save_changes" or nm == "ui_form_is_new" {
         log("cg68k: " + nm + ": dialog/StandardFile intrinsics not wired this task (native-5e Task 12 scope, pairs with nat_UiSFGetFile/nat_UiSFPutFile stubs)")
@@ -6693,6 +6767,50 @@ func cgEmitStoreStr(dst: int, src: int) {
             // inner expr (now itself materializes via cgExprAddr's own
             // Task 14.7 fallback if the inner expr isn't addressable).
             src = irIntrArgsHead(src)
+        } else if nm == "ui_get_field_text" {
+            // Task 14 (native-5e gate, textwidgets.cla): `field.text` read
+            // -- fills dst IN PLACE via rtUiWidgetGetStr(instV, wIdx,
+            // RTUI_PROP_TEXT, dstAddr), same fill-in-place shape as
+            // "file_name" above, just 4 args (2 value, 1 literal prop
+            // const, 1 address) instead of 2. Pushed in DECLARATION order
+            // (instV, wIdx, prop, dst255), matching
+            // `func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int,
+            // dst255: ptr)` (uiwidgets.cla) exactly.
+            a0e = irIntrArgsHead(src)
+            a1e = irExprNext(a0e)
+            fi = findIRFuncIdxByName(intern("rtUiWidgetGetStr"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiWidgetGetStr not found/reachable")
+                quit 1
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExpr(a1e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            a68Emit(OpMove, 4, AmImm, 0, cgRtuiPropText, AmPreDec, 7, 0)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(16)
+            return
+        } else if nm == "ui_get_title" {
+            // Task 14 (native-5e gate): bare `title` / `w.title` read --
+            // fills dst in place via rtUiGetTitle(instV, dst255), the
+            // window-scoped (no wIdx/prop) sibling of ui_get_field_text
+            // just above.
+            a0e = irIntrArgsHead(src)
+            fi = findIRFuncIdxByName(intern("rtUiGetTitle"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiGetTitle not found/reachable")
+                quit 1
+            }
+            cgExpr(a0e)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(dst)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(8)
+            return
         } else {
             log("cg68k: cgEmitStoreStr: intrinsic " + nm + " unsupported in store context")
             quit 1
