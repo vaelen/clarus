@@ -44459,7 +44459,7 @@ static void clar_fn_cgEmitLdefGlue(int32_t cv_f) {
     clar_fn_a68Emit(24, 4, 0, 0, 0, 1, 0, 0);
     clar_fn_a68Emit(0, 4, 1, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(35, 4, 0, 0, 0, 1, 0, 0);
-    clar_fn_a68Emit(0, 1, 6, 6, 25, 1, 0, 0);
+    clar_fn_a68Emit(0, 1, 6, 6, 24, 1, 0, 0);
     clar_fn_a68Emit(0, 2, 1, 0, 0, 5, 7, 0);
     clar_fn_a68Emit(0, 4, 6, 6, 20, 5, 7, 0);
     clar_fn_a68Emit(0, 4, 6, 6, 16, 5, 7, 0);

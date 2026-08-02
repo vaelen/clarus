@@ -2702,18 +2702,21 @@ func cgEmitFunc(f: int) {
 // TOOLBOX with args pushed PASCAL convention (left to right -- the
 // FIRST-declared param ends up at the HIGHEST stack address, the LAST at
 // the lowest, closest to the return address JSR pushed; a byte/word-sized
-// value -- Boolean/short -- still occupies a full stack WORD, and per
-// cgCallExtPascal's own Task 9 finding the value itself lives in that
-// word's LOW byte, not the high one) -- NOT the LINK-based positive-A6-
-// offset convention cgEmitFunc's own ordinary functions use for their
-// OWN declared params (which happens to assign offsets in the same
-// left-to-right/highest-first order, by coincidence of both conventions
-// pushing left to right, but at different slot WIDTHS: Clarus always
-// pushes int/ptr as a full .L and bool/char as a full .W, matching pascal
-// convention's own word-padding for byte-sized values, but a pascal
-// `short` is only 2 bytes on the wire where a Clarus `int` argument
-// would need 4 -- hence RE-READING and RE-PUSHING every argument here,
-// never just forwarding raw stack bytes).
+// value -- Boolean/short -- still occupies a full stack WORD). REVISED
+// (Task 12 continuation): a Boolean value in that padded word lives in
+// the word's HIGH-order byte -- its OWN (lowest) address -- not the low
+// one; see cgCallExtPascal's own header comment for the empirical A/B
+// proof this was corrected against. `cgEmitLdefGlue`'s own `lSelect`
+// read below is fixed to match (24(A6), not 25(A6)) -- NOT the LINK-based
+// positive-A6-offset convention cgEmitFunc's own ordinary functions use
+// for their OWN declared params (which happens to assign offsets in the
+// same left-to-right/highest-first order, by coincidence of both
+// conventions pushing left to right, but at different slot WIDTHS:
+// Clarus always pushes int/ptr as a full .L and bool/char as a full .W,
+// matching pascal convention's own word-padding for byte-sized values,
+// but a pascal `short` is only 2 bytes on the wire where a Clarus `int`
+// argument would need 4 -- hence RE-READING and RE-PUSHING every argument
+// here, never just forwarding raw stack bytes).
 //
 // Each glue LINKs its own zero-size A6 frame (clean fixed offsets for the
 // incoming pascal args, immune to its own outgoing pushes moving A7),
@@ -2728,18 +2731,24 @@ func cgEmitFunc(f: int) {
 // caller's own pushed args -- pascal callee-pop convention), then JMP
 // through the scratch register.
 //
-// UNVERIFIED ON REAL HARDWARE this task: neither glue is exercised by
-// Task 12's own gate (smoke_bounce has no table/scrollbar widget), but
-// BOTH must still compile+JT-slot correctly for smoke_bounce to build at
-// all -- rtUiMakeWidgets (uiwidgets.cla), reachable for any window with
-// any widget, contains the table/scrollbar creation branches UNCONDITION
-// ALLY (Clarus has no branch-level dead-code elimination, only whole-
-// function reachability), and those branches call UiLNew/scrollbar setup,
-// which read UiLdefEntry()/UiActionEntry(). First real hardware exercise
-// (a table or scrollbar boot on native) is Task 14's job; if the
-// low-byte-Boolean assumption above turns out wrong there, the fix
-// belongs in BOTH this file and cgCallExtPascal (Ch13), per the plan's
-// own note.
+// UNVERIFIED ON REAL HARDWARE this task: neither glue is CALLED AT RUNTIME
+// by Task 12's own gate (smoke_bounce has no table/scrollbar widget to
+// actually invoke them from Toolbox code), but BOTH compile into the
+// binary and get a real JT slot -- rtUiMakeWidgets (uiwidgets.cla),
+// reachable for any window with any widget, contains the table/scrollbar
+// creation branches UNCONDITIONALLY (Clarus has no branch-level
+// dead-code elimination, only whole-function reachability), and those
+// branches call UiLNew/scrollbar setup, which read UiLdefEntry()/
+// UiActionEntry(). Correction (review round 1): an earlier draft of this
+// task's own report claimed these were "shaken away as unreachable" for
+// bounce.cla because `grep clar_ui_glue_ldef` found nothing in
+// bounce.s -- that grep only ever inspected CODE segment 1's own listing;
+// the glue stubs actually land in segments 3/4 (cgPackProgram's own
+// packing decision), which the listing golden/vasm round-trip did not
+// cover until this review round extended both to every emitted segment
+// (internal/cg68k). First RUNTIME hardware exercise (a table or
+// scrollbar boot on native, actually calling through the JT slot) is
+// still Task 14's job.
 
 // cgEmitLdefGlue: pascal void LDEF(short lMessage, Boolean lSelect,
 // Rect *lRect, Cell lCell, short lDataOffset, short lDataLen,
@@ -2771,14 +2780,20 @@ func cgEmitLdefGlue(f: int) {
     a68Emit(OpMove, 2, AmDisp16, 6, 26, AmDn, 0, 0)
     a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    // select: Boolean word @24(A6), value in the LOW byte @25(A6) ->
-    // zero-extend -> push .W (Clarus bool slot size).
+    // select: Boolean word @24(A6), value in the HIGH byte @24(A6) itself
+    // (the padded word's own address -- see cgCallExtPascal's header
+    // comment for the empirical A/B proof) -> zero-extend -> push .W
+    // (Clarus bool slot size).
     a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 1, AmDisp16, 6, 25, AmDn, 0, 0)
+    a68Emit(OpMove, 1, AmDisp16, 6, 24, AmDn, 0, 0)
     a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
     // rectPtr: ptr @20(A6) -> push .L directly (already the right shape).
     a68Emit(OpMove, 4, AmDisp16, 6, 20, AmPreDec, 7, 0)
     // cellPacked: the 4-byte Cell @16(A6), read as one raw int32 -> push .L.
+    // (audited against the corrected Boolean high-byte convention above:
+    // a Cell/Point is a genuine 4-byte packed pair, not a byte-sized
+    // value padded into a word, so there is no byte-position ambiguity
+    // here -- the full 4 bytes at 16(A6) are read as-is, unchanged.)
     a68Emit(OpMove, 4, AmDisp16, 6, 16, AmPreDec, 7, 0)
     // dataOffset: short @14(A6) -> sign-extend -> push .L.
     a68Emit(OpMove, 2, AmDisp16, 6, 14, AmDn, 0, 0)
@@ -3111,6 +3126,12 @@ func cgFieldRefAddr(e: int) {
 // irRecords entry"), just stopping at the matching field instead of
 // running to the end. -1 if fieldNameIdx isn't one of winIdx's own state
 // fields, matching cgFieldOffset's own not-found contract.
+//
+// TODO cross-link: this is a SEPARATE copy of uibStateSize's own loop
+// (uiblob.cla), not a shared call -- the two must be kept in sync by
+// hand; no runtime assert exists on the native lane to catch a future
+// divergence (deliberate, low risk -- see uibStateSize's own doc comment
+// for the same note from the other side).
 func cgUiStateFieldOffset(winIdx: int, fieldNameIdx: int): int {
     var f: int
     var cur: int
@@ -5902,16 +5923,44 @@ func cgCallExtReg(e: int, xi: int) {
 // cgCallExtPascal implements the locked PASCAL rule: reserve a result
 // slot first when the extern returns a value (CLR.L for int/ptr, CLR.W
 // for bool/char/word -- Toolbox convention: a byte- or word-sized Pascal
-// parameter or result still occupies a full stack WORD -- verified
-// against the classic 68k Mac runtime calling-convention docs (Apple's
-// "Classic 68K Stack Structure and Calling Conventions" / "Pascal
-// Calling Conventions" reference; see the Task 9 report), NOT the
-// high-byte placement an earlier draft of that brief speculated), push
-// args left-to-right (str/text by ADDRESS via cgExprAddr, matching
-// fpCallExt's own C-seam marshaling of a KStr argument through
-// fpStrAddr; int/ptr as .L, bool/char/word as .W -- the already-zero/
-// sign-extended D0 value's low word lands in the pushed word
-// automatically, no shift needed), the trap word, then pop the result.
+// parameter or result still occupies a full stack WORD), push args
+// left-to-right (str/text by ADDRESS via cgExprAddr, matching fpCallExt's
+// own C-seam marshaling of a KStr argument through fpStrAddr; int/ptr as
+// .L, word as .W; bool/char ALSO as .W but see below), the trap word,
+// then pop the result.
+//
+// REVISED (Task 12 continuation, native-5e): the earlier claim right
+// above -- that a Bool/Char value lands in the padded word's LOW byte,
+// "no shift needed" -- was WRONG and has been empirically REFUTED. The
+// real ROM trap dispatcher reads a Bool/Char pascal parameter back as a
+// single byte at the padded word's OWN (lowest) address, which in 68k
+// big-endian layout is that word's HIGH-order byte. Root-caused via A/B
+// `log()` instrumentation (WindowRecord.goAwayFlag, offset verified
+// against Retro68's own MacWindows.h) comparing this native lane against
+// the ported/gcc lane (same shared `ui.cla` source, correct there): a
+// `true` argument to `UiNewWindow`'s `goAwayFlag` came back `false` here
+// with the old low-byte push, matching every other symptom this task's
+// own gate first surfaced (missing window close box; native widgets never
+// receiving clicks, from `NewControl`'s `initiallyVisible`). Fixed below:
+// Bool/Char args are shifted into the high byte (`LSL.W #8`) before the
+// word push; `word`-typed args (a genuine 16-bit Toolbox INTEGER, not a
+// byte value padded to a word) are unaffected and still pushed as a plain
+// `.W`. See this session's task-12-report.md continuation-session section
+// for the full A/B trace.
+//
+// The bool-RETURN pop below (the `retIsWord`-but-not-`retIsWordType` arm)
+// still masks the LOW byte (`AND.L #255`) after popping the result word --
+// a SUSPECTED mirror-image of the same bug (if the ROM also returns
+// Bool/Char in the high byte, this mask reads the wrong one), but NOT
+// fixed here: no currently-passing native test exercises a pascal trap
+// returning a TRUE Bool/Char to safely characterize it against (the
+// obvious candidates -- UiWaitNextEvent/UiGetNextEvent/UiStillDown/
+// UiTrackGoAway/UiPtInRect/UiEqualRect -- are only ever driven through
+// scripted runs that never hit a real pending Toolbox event, so a
+// wrong-byte read is indistinguishable from a correct one there). Ledger
+// carries this open to Task 14 (or whichever task first depends on a TRUE
+// boolean pascal return) -- root-cause via the same A/B log()-instrumentation
+// technique before touching the mask.
 //
 // The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
 // executing a Pascal-convention trap (Apple's Trap Manager docs: "the
@@ -5997,10 +6046,19 @@ func cgCallExtPascal(e: int, xi: int) {
         } else if retIsWord {
             // Zero-extend: CLR.L D0 first (MOVE.W leaves D0's upper 16
             // bits untouched, cgLoadVar's own bool/char pattern), then
-            // mask off any stray high-byte padding within the popped
-            // word itself (AND.L #255) -- belt-and-suspenders for a
-            // "high byte undefined" result slot, matching the zero/
-            // sign-extend-per-type instruction in the locked rule.
+            // AND.L #255 to keep only the LOW byte of the popped word.
+            // KNOWN SUSPECTED BUG (carried open, not fixed this session):
+            // this function's own ARGUMENT push for Bool/Char was just
+            // corrected to the HIGH byte of the padded word (see this
+            // func's header comment) after empirical A/B proof against
+            // the ported lane -- if the ROM's RETURN convention is the
+            // same high-byte placement (unverified either way), this
+            // mask is keeping the wrong byte. Left as-is: no currently-
+            // passing native test exercises a pascal trap returning a
+            // TRUE Bool/Char (see header comment for the candidate list
+            // and why the scripted-only lanes can't distinguish
+            // right-byte from wrong-byte here). Ledger carries this to
+            // Task 14 -- root-cause via A/B log() instrumentation first.
             a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
             a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
             a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)

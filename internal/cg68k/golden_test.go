@@ -80,10 +80,42 @@ func (e *diagError) Error() string {
 	return b.String()
 }
 
+// segCount returns how many out.segN.s listings emit68k wrote to runDir
+// (1 for every single-segment fixture; smoke.cla/bounce.cla are the only
+// multi-segment ones as of this writing -- 2 and 4 respectively).
+func segCount(t *testing.T, runDir string) int {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(runDir, "out.seg*.s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatalf("no out.seg*.s listings found in %s", runDir)
+	}
+	return len(matches)
+}
+
+// segGoldenPath is segment n's own golden path for fixture name (without
+// its .cla extension): segment 1 keeps the pre-existing, un-suffixed
+// <name>.s (every already-committed golden is named this way -- renaming
+// them all just to add a suffix would be pure churn), segment N>1 uses
+// <name>.segN.s (review round 1: TestCg68kGoldens/TestCg68kVasmRoundTrip
+// only ever inspected out.seg1.s, leaving the pascal-entry glue stubs --
+// which land in bounce.cla's segments 3/4 -- with zero mechanical
+// coverage; extending both tests to every emitted segment closes that
+// blind spot).
+func segGoldenPath(root, name string, n int) string {
+	base := name[:len(name)-len(".cla")]
+	if n == 1 {
+		return filepath.Join(root, "testdata", "cg68k", base+".s")
+	}
+	return filepath.Join(root, "testdata", "cg68k", fmt.Sprintf("%s.seg%d.s", base, n))
+}
+
 // TestCg68kGoldens runs `clarusc emit68k -o out.bin --listing <fixture>` on
-// every testdata/cg68k/*.cla fixture and compares out.seg1.s against the
-// committed <fixture>.s golden. CLARUS_CG68K_BLESS=1 regenerates the
-// goldens instead of comparing.
+// every testdata/cg68k/*.cla fixture and compares EVERY emitted out.segN.s
+// against its own committed golden (segGoldenPath). CLARUS_CG68K_BLESS=1
+// regenerates the goldens instead of comparing.
 func TestCg68kGoldens(t *testing.T) {
 	root := repoRoot(t)
 	exe := buildClarusc(t)
@@ -109,26 +141,32 @@ func TestCg68kGoldens(t *testing.T) {
 				t.Fatalf("clarusc emit68k -o %s --listing %s: %v\n%s", outBin, fixture, err, out)
 			}
 
-			segS := filepath.Join(runDir, "out.seg1.s")
-			got, err := os.ReadFile(segS)
-			if err != nil {
-				t.Fatalf("read %s: %v", segS, err)
-			}
+			n := segCount(t, runDir)
+			for seg := 1; seg <= n; seg++ {
+				seg := seg
+				t.Run(fmt.Sprintf("seg%d", seg), func(t *testing.T) {
+					segS := filepath.Join(runDir, fmt.Sprintf("out.seg%d.s", seg))
+					got, err := os.ReadFile(segS)
+					if err != nil {
+						t.Fatalf("read %s: %v", segS, err)
+					}
 
-			golden := filepath.Join(root, "testdata", "cg68k", name[:len(name)-len(".cla")]+".s")
-			if bless {
-				if err := os.WriteFile(golden, got, 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
+					golden := segGoldenPath(root, name, seg)
+					if bless {
+						if err := os.WriteFile(golden, got, 0o644); err != nil {
+							t.Fatal(err)
+						}
+						return
+					}
 
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("read golden %s (run with CLARUS_CG68K_BLESS=1 to create it): %v", golden, err)
-			}
-			if string(got) != string(want) {
-				t.Errorf("%s: emitted listing does not match %s\n--- got ---\n%s\n--- want ---\n%s", fixture, golden, got, want)
+					want, err := os.ReadFile(golden)
+					if err != nil {
+						t.Fatalf("read golden %s (run with CLARUS_CG68K_BLESS=1 to create it): %v", golden, err)
+					}
+					if string(got) != string(want) {
+						t.Errorf("%s seg%d: emitted listing does not match %s\n--- got ---\n%s\n--- want ---\n%s", fixture, seg, golden, got, want)
+					}
+				})
 			}
 		})
 	}
@@ -192,9 +230,12 @@ func hexWindow(data []byte, off int) string {
 // bytes agree for REAL function bodies (Task 7's own TestVasmRoundTrip-
 // style sibling covers only asm68k.cla's self-exerciser, which never
 // exercises cg68k.cla's own emission choices): for every testdata/cg68k
-// fixture, assemble the just-emitted out.seg1.s with vasm and require the
-// result to be byte-identical to out.seg1.dat (cg68k.cla's own encoder,
-// via asm68k.cla's a68Bytes()).
+// fixture and EVERY segment it emits (review round 1: previously seg1
+// only, leaving segments 2-4 -- where bounce.cla's pascal-entry glue
+// stubs actually land -- with zero mechanical proof that listing and
+// bytes agree), assemble the just-emitted out.segN.s with vasm and
+// require the result to be byte-identical to out.segN.dat (cg68k.cla's
+// own encoder, via asm68k.cla's a68Bytes()).
 func TestCg68kVasmRoundTrip(t *testing.T) {
 	root := repoRoot(t)
 	exe := buildClarusc(t)
@@ -219,38 +260,44 @@ func TestCg68kVasmRoundTrip(t *testing.T) {
 				t.Fatalf("clarusc emit68k -o %s --listing %s: %v\n%s", outBin, fixture, err, out)
 			}
 
-			segS := filepath.Join(runDir, "out.seg1.s")
-			segDat := filepath.Join(runDir, "out.seg1.dat")
-			vasmOut := filepath.Join(runDir, "vasm_out.bin")
+			n := segCount(t, runDir)
+			for seg := 1; seg <= n; seg++ {
+				seg := seg
+				t.Run(fmt.Sprintf("seg%d", seg), func(t *testing.T) {
+					segS := filepath.Join(runDir, fmt.Sprintf("out.seg%d.s", seg))
+					segDat := filepath.Join(runDir, fmt.Sprintf("out.seg%d.dat", seg))
+					vasmOut := filepath.Join(runDir, fmt.Sprintf("vasm_out.seg%d.bin", seg))
 
-			vasmCmd := exec.Command(vasm, "-quiet", "-m68000", "-no-opt", "-Fbin", "-o", vasmOut, segS)
-			if out, err := vasmCmd.CombinedOutput(); err != nil {
-				t.Fatalf("vasm assemble %s: %v\n%s", segS, err, out)
-			}
-
-			want, err := os.ReadFile(segDat) // cg68k.cla's own encoder (via asm68k.cla)
-			if err != nil {
-				t.Fatalf("read %s: %v", segDat, err)
-			}
-			got, err := os.ReadFile(vasmOut) // vasm's assembly of the same listing
-			if err != nil {
-				t.Fatalf("read %s: %v", vasmOut, err)
-			}
-
-			if !bytes.Equal(want, got) {
-				n := len(want)
-				if len(got) < n {
-					n = len(got)
-				}
-				off := n
-				for i := 0; i < n; i++ {
-					if want[i] != got[i] {
-						off = i
-						break
+					vasmCmd := exec.Command(vasm, "-quiet", "-m68000", "-no-opt", "-Fbin", "-o", vasmOut, segS)
+					if out, err := vasmCmd.CombinedOutput(); err != nil {
+						t.Fatalf("vasm assemble %s: %v\n%s", segS, err, out)
 					}
-				}
-				t.Fatalf("%s: vasm round-trip diverged at byte offset %d (encoder %d bytes, vasm %d bytes)\n encoder: %s\n vasm:    %s",
-					name, off, len(want), len(got), hexWindow(want, off), hexWindow(got, off))
+
+					want, err := os.ReadFile(segDat) // cg68k.cla's own encoder (via asm68k.cla)
+					if err != nil {
+						t.Fatalf("read %s: %v", segDat, err)
+					}
+					got, err := os.ReadFile(vasmOut) // vasm's assembly of the same listing
+					if err != nil {
+						t.Fatalf("read %s: %v", vasmOut, err)
+					}
+
+					if !bytes.Equal(want, got) {
+						m := len(want)
+						if len(got) < m {
+							m = len(got)
+						}
+						off := m
+						for i := 0; i < m; i++ {
+							if want[i] != got[i] {
+								off = i
+								break
+							}
+						}
+						t.Fatalf("%s seg%d: vasm round-trip diverged at byte offset %d (encoder %d bytes, vasm %d bytes)\n encoder: %s\n vasm:    %s",
+							name, seg, off, len(want), len(got), hexWindow(want, off), hexWindow(got, off))
+					}
+				})
 			}
 		})
 	}

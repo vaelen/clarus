@@ -510,6 +510,13 @@ func uibWinHandlerMask(whIdx: int, stateFieldsHead: int): int {
 // changes without the other -- which is exactly what cprint.cla's
 // `clar_ui_szassert_<Win>` (right after this function's only other
 // caller, cpEmitUiStateStructs) exists to catch at C compile time.
+// TODO cross-link: cg68k.cla's cgUiStateFieldOffset runs this SAME walk
+// independently (own copy of the loop, not a shared call) to compute one
+// field's offset instead of the whole record's size -- the two must be
+// kept in sync by hand; no runtime assert exists on the native lane to
+// catch a future divergence (deliberate, low risk: both are short,
+// rarely-touched, and cprint.cla's own C-side szassert already guards the
+// cprint-lane analog cgUiStateFieldOffset was modeled on).
 func uibStateSize(winIdx: int): int {
     var f: int
     var cur: int
