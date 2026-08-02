@@ -268,7 +268,25 @@ external func UiSysBeep(duration: word) = trap 0xA9C8
 // TickCount-vs-gVirtualTicks scheduling (:3674-3816) and rt_ui_script_tick
 // (:4295-4314).
 external func UiTickCount(): int = trap 0xA975 reg
-external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD
+// UiGestalt's own calling convention (Task 12, native-5e review fix, FIRST
+// NATIVE UI BOOT root-cause): `reg`, NOT plain pascal -- Gestalt is one of
+// the classic Mac Toolbox's few REGISTER-based traps (verified directly
+// against Retro68's own multiversal/defs/Gestalt.yaml: `selector`
+// `register: D0`, `responsep` `register: Out<A0>`, `returnreg: D0` -- no
+// stack-pushed args, no pascal result-reservation slot at all). Declaring
+// it as a plain pascal trap (the pre-Task-12 state -- harmless on the
+// cprint lane, which always resolves to the real C `rt_ext_UiGestalt` ->
+// `Gestalt()` regardless of the declared clause) meant cg68k's own
+// cgCallExtPascal pushed selector/response onto the STACK, which the
+// REAL register-based GestaltDispatch trap handler never reads -- by trap
+// time D0 held whatever `response`'s own load left there (the marshaling
+// loop's last MOVE.L into D0 before pushing it), and A0 was untouched
+// garbage, so Gestalt read a garbage selector and wrote its result
+// through a wild A0 pointer: reproduced empirically as a full machine
+// hang (Mini vMac stuck on its own boot-time gray test-pattern screen,
+// bisected via UiRtQuit(N) checkpoints -- exit 79 reached right before
+// this call, no exit 80 ever written after it).
+external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD reg
 external func UiHideCursor() = trap 0xA852
 external func UiOpenDeskAcc(deskAccName: ptr): word = trap 0xA9B6
 external func UiParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B
@@ -291,6 +309,21 @@ external func UiAlert(alertId: word, modalFilter: ptr): word = trap 0xA985
 // bare is correct for them too). rt_ext_mac.inc gets one matching C
 // wrapper per non-reverse-waist entry below. ----
 external func UiMacInitToolbox()
+
+// nat_UiMacInitToolbox's own nat_ fallback body -- and the natQdGlobals
+// state it and UiScreenBounds/UiScreenBits (below) share -- lives in
+// native.cla, NOT here (Task 12, native-5e review fix): ui.cla is spliced
+// for BOTH backends (any UI program, native or cprint), but
+// natQdInited/natQdGlobals are pure NATIVE-lane state -- putting them here
+// added 2 unconditional `irGlobals` entries to EVERY UI program on BOTH
+// lanes, silently shifting every later global's `clar_ui_fire_staterows`
+// rowsIdx position and breaking testdata/emitui/uiblob_probe.blob.golden
+// (found by the full-suite gate: same size, different bytes). native.cla
+// is emit68k-only (main.cla's manifest, `if emitMode68k`), so its own
+// globals are invisible to the cprint lane entirely -- the correct home
+// for native-only state, same discipline natUiEmitBuf (Task 12) already
+// established there. native.cla's own NatNewPtr (not UiNewPtr, ui.cla-
+// only) backs the allocation.
 external func UiRtQuit(code: int)
 // UiTestScript (plan's own reverse-waist glue-extern table, "normative
 // for Tasks 6-10, 12"): cprint shim returns rt_ui_test_script -- SAME
@@ -310,11 +343,32 @@ external func UiTestScript(): ptr
 // them are script-driven); ported for contract completeness, not a
 // tested path.
 external func UiLaunchReal()
+
+// nat_UiLaunchReal (Task 12, native-5e): UiLaunchReal's clause-less nat_
+// fallback -- cgCallExtNatFallback resolves it here by name. The native
+// backend has no AppleEvent handlers installed yet (Task 13's own
+// resource-parity work: the SIZE flags marking isHighLevelEventAware, and
+// the AEInstallEventHandler-equivalent wiring UiLaunchReal's own C-side
+// counterpart does) -- every golden scenario builds with `--events`
+// anyway, so rtUiLaunch's real-build branch (this one) is NEVER taken for
+// any of them (`peekb(UiTestScript()) == 0` is the sole gate, ui.cla's own
+// rtUiLaunch), making this purely a "must compile, need not be exercised"
+// stub this task. Degrades to the same "no launch-doc guest event found"
+// path the scripted branch takes when its own script has no `launchdoc`
+// line: UiFireStartEmpty() -- the honest answer for what a native,
+// non-scripted launch can determine today with no real AE detection.
+func nat_UiLaunchReal() {
+    UiFireStartEmpty()
+}
+
 // UiScreenBounds: qd.screenBits.bounds is a QuickDraw GLOBAL (not a trap
 // result) -- wraps it directly in C rather than hand-deriving an
 // A5-relative offset into QDGlobals (rt_ui_open's own screen-clamp math,
 // rt_ui.c:4617-4645, and rt_ui_handle_grow's, :3024-3025, both need it).
 external func UiScreenBounds(out: ptr)
+
+// nat_UiScreenBounds's own nat_ fallback body lives in native.cla, same
+// cross-lane-global-leak fix as nat_UiMacInitToolbox above.
 
 // ---- Reverse-waist synthesized dispatchers (Task 6) this file's ported
 // dispatch functions call. Bare (see above); cprint's `lowUiSynthExternName`

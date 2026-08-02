@@ -780,3 +780,169 @@ func nat_SerFileReadTextInto(path: ptr, out: ptr): int {
     }
     return 0
 }
+
+// ================================================================
+// Task 12 (native-5e): nat_ fallbacks for the reverse waist's own
+// per-backend glue externs that need no UI-specific runtime symbol (see
+// ui.cla for nat_UiLaunchReal, which DOES need one -- UiFireStartEmpty --
+// and so lives there instead, since native.cla is spliced into EVERY
+// native build, UI or not, while ui.cla is UI-only).
+// ================================================================
+
+// nat_UiTestEmit: uiscript.cla's `external func UiTestEmit(s: ptr)` --
+// clause-less, so cgCallExtNatFallback resolves it here by name. `s` is a
+// fresh `rt_text*` box (text.cla) holding one already-CRLF/newline-
+// rendered trace/snap line (rtUiEmitLine's own contract, uiscript.cla) --
+// copy its bytes out (rtTextToBytes, capped well above every real line
+// this port ever builds -- the longest is a 64-byte hex-dump row, uitest
+// script.cla's rtUiTestSnap), append the trailing LF, and write+flush
+// immediately, mirroring rt_mac.c's rt_test_emit -> rt_test_write, which
+// FlushVol's after EVERY write (unlike natLog's own end-of-run-only
+// buffering) so trace/snap output survives a mid-run crash on real
+// hardware exactly like the cprint lane's capture file does.
+var natUiEmitBuf: ptr = ptr(0)
+
+func nat_UiTestEmit(s: ptr) {
+    var n: int
+
+    natInit()
+    if natUiEmitBuf == ptr(0) {
+        natUiEmitBuf = NatNewPtr(512)
+    }
+    n = rtTextToBytes(s, natUiEmitBuf, 511)
+    pokeb(natUiEmitBuf + n, 10)
+    n = n + 1
+    natWriteBytes(natUiEmitBuf, n)
+    natFlush()
+}
+
+// nat_UiRtQuit: ui.cla's `external func UiRtQuit(code: int)` -- the
+// ported rtUiQuit's own terminal call (rt_ext_UiRtQuit -> rt_quit(code) on
+// the cprint lane). natQuit IS this backend's rt_quit: same exit trailer
+// (`##CLARUS-EXIT## <code>` + the buffered log), same ExitToShell, same
+// natDone re-entry guard -- a plain forward, no new behavior.
+func nat_UiRtQuit(code: int) {
+    natQuit(code)
+}
+
+// ================================================================
+// nat_UiMacInitToolbox/nat_UiScreenBounds/nat_UiScreenBits (Task 12,
+// native-5e; MOVED here from ui.cla/uiscript.cla by this task's own
+// review-fix round -- see the ledger): ui.cla/uiscript.cla are spliced
+// for BOTH backends (any UI program), so state declared there is an
+// unconditional `irGlobals` entry on the CPRINT lane too, silently
+// shifting every later global's `clar_ui_fire_staterows` rowsIdx position
+// -- broke testdata/emitui/uiblob_probe.blob.golden (found by the full-
+// suite gate). native.cla is emit68k-only (main.cla's manifest, `if
+// emitMode68k`), invisible to cprint entirely -- the correct home for
+// native-only UI glue, same discipline natUiEmitBuf already established.
+// NatNewPtr (not ui.cla's UiNewPtr) backs the allocation.
+// ================================================================
+
+// natQdGlobals is this backend's own QDGlobals-shaped storage block --
+// InitGraf's own `globalPtr` argument is conventionally `&qd.thePort`;
+// QuickDraw internally derives every OTHER qd field's address by walking
+// BACKWARD from that one pointer using the struct's own fixed layout
+// (Quickdraw.h's `struct QDGlobals`). Sized 206 bytes (privates 76 +
+// randSeed 4 + screenBits/BitMap 14 + arrow/Cursor 68 + 5 Patterns of 8 =
+// 40 + thePort 4 = 206, every field size verified directly against
+// Retro68's own Quickdraw.h struct definitions), thePort at the trailing
+// 4 bytes (offset 202) -- every other field's own offset, keyed off the
+// SAME struct order, is what nat_UiScreenBounds/nat_UiScreenBits below
+// read back via natQdGlobals + <offset>. NatNewPtr (NewPtrClear, 0xA31E)
+// rather than a plain uninitialized NewPtr: this module's own header
+// comment already explains why a File Manager PB needs its unwritten
+// fields pre-zeroed (natInit's own natPb) -- the same hazard applies here
+// (InitGraf reads/writes fields this code never explicitly initializes).
+var natQdInited: bool = false
+var natQdGlobals: ptr = ptr(0)
+
+external func NatInitGraf(globalPtr: ptr) = trap 0xA86E
+external func NatInitFonts() = trap 0xA8FE
+external func NatInitWindows() = trap 0xA912
+external func NatInitMenus() = trap 0xA930
+external func NatTEInit() = trap 0xA9CC
+external func NatInitDialogs(resumeProc: ptr) = trap 0xA97B
+external func NatInitCursor() = trap 0xA850
+external func NatMoreMasters() = trap 0xA036
+
+// nat_UiMacInitToolbox: ui.cla's `external func UiMacInitToolbox()` --
+// the SAME InitGraf/InitFonts/InitWindows/InitMenus/TEInit/InitDialogs/
+// InitCursor sequence rt_mac.c's own rt_mac_toolbox_init runs
+// (runtime/mac/rt_mac.c:32-44), idempotent (natQdInited) the same way.
+// Every trap word verified directly against Retro68's own
+// InterfacesAndLibraries/Interfaces/CIncludes/*.h (ONEWORDINLINE) and
+// multiversal/defs/WindowMgr.yaml (InitWindows, absent from the CIncludes
+// headers entirely -- found in the multiversal source instead): none
+// carry a `register:` annotation in multiversal's own schema (which DOES
+// support one, per ADB.yaml's own A0-register entries), confirming plain
+// Pascal stack-passed args, not an A0-register special case.
+//
+// Three extra NatMoreMasters calls (Task 12, native-5e review fix, FIRST
+// NATIVE UI BOOT second root-cause): cgEmitStartup's own single
+// `_MoreMasters` call (one 64-master-pointer block) is the classic Mac
+// baseline every native program gets, non-UI or UI -- proven sufficient
+// for hello.cla/test_suite.cla, but NOT for a live Window/Menu Manager:
+// InitWindows/InitMenus/TEInit/InitDialogs and their own later handle-
+// heavy operations (DrawMenuBar's own temporary region/handle traffic
+// among them) are well-documented (Inside Macintosh) to need SEVERAL
+// master-pointer blocks, not one -- a real classic app's own startup
+// idiom is 2-4 MoreMasters calls before touching the Window/Menu
+// Manager. Reproduced empirically: bisected via UiRtQuit(N) checkpoints
+// through rtUiStartup (Mini vMac boot -> gray test-pattern screen, never
+// progressing) -- every checkpoint through `rtUiBuildMenus`'s own
+// zero-menu tail (nMenus==0, so its only unconditional Toolbox call is
+// UiDrawMenuBar) fired correctly; UiDrawMenuBar itself (a proven-safe
+// zero-arg pascal trap encoding -- the SAME shape as the 5 already-
+// working Init* calls just above it) is where the app never reaches its
+// own next checkpoint -- consistent with a master-pointer exhaustion
+// stall/hang deep inside the Menu Manager's own region allocation, not a
+// codegen/calling-convention bug.
+func nat_UiMacInitToolbox() {
+    if natQdInited {
+        return
+    }
+    natQdInited = true
+    natQdGlobals = NatNewPtr(206)
+    NatInitGraf(natQdGlobals + 202)
+    NatInitFonts()
+    NatMoreMasters()
+    NatInitWindows()
+    NatMoreMasters()
+    NatInitMenus()
+    NatMoreMasters()
+    NatTEInit()
+    NatInitDialogs(ptr(0))
+    NatInitCursor()
+}
+
+// nat_UiScreenBounds: ui.cla's `external func UiScreenBounds(out: ptr)` --
+// qd.screenBits.bounds is the 8-byte Rect at natQdGlobals+86 (two longs,
+// peekl/pokel -- no BlockMoveData trap needed for a fixed 8-byte copy),
+// matching rt_ext_UiScreenBounds's own `*(Rect *)out = qd.screenBits.bounds`.
+func nat_UiScreenBounds(out: ptr) {
+    pokel(out, peekl(natQdGlobals + 86))
+    pokel(out + 4, peekl(natQdGlobals + 90))
+}
+
+// nat_UiScreenBits: uiscript.cla's `external func UiScreenBits(baseAddrOut,
+// rowBytesOut, boundsOut: ptr)` -- reads baseAddr/rowBytes/bounds straight
+// out of natQdGlobals (baseAddr @80, rowBytes @84 as a signed 16-bit
+// field, bounds @86 for 8 bytes), matching rt_ext_UiScreenBits's own
+// three-field copy field for field. rowBytes is sign-extended by hand
+// (peekw is an UNSIGNED read, cg68k.cla's own documented convention) to
+// match the C shim's `(int32_t)qd.screenBits.rowBytes` cast -- harmless
+// for this port's own screen (rowBytes==64, well under 32768) but correct
+// either way.
+func nat_UiScreenBits(baseAddrOut: ptr, rowBytesOut: ptr, boundsOut: ptr) {
+    var rb: int
+
+    pokel(baseAddrOut, peekl(natQdGlobals + 80))
+    rb = peekw(natQdGlobals + 84)
+    if rb >= 32768 {
+        rb = rb - 65536
+    }
+    pokel(rowBytesOut, rb)
+    pokel(boundsOut, peekl(natQdGlobals + 86))
+    pokel(boundsOut + 4, peekl(natQdGlobals + 90))
+}

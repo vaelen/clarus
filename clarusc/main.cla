@@ -220,6 +220,9 @@ on App.startCLI(args: list of string) {
     var emitMode68k: bool
     var listingFlag: bool
     var segLimitFlag: int
+    var eventsPath: string
+    var haveEvents: bool
+    var eventsBytes: text
     var ok68: bool
     var appinfoMode: bool
     var startArg: int
@@ -283,6 +286,8 @@ on App.startCLI(args: list of string) {
     emitMode68k = false
     listingFlag = false
     segLimitFlag = 0
+    eventsPath = ""
+    haveEvents = false
     appinfoMode = false
     startArg = 0
     if args[0] == "emit" {
@@ -356,6 +361,22 @@ on App.startCLI(args: list of string) {
                 quit 2
             }
             segLimitFlag = cgParseDecimal(args[i])
+        } else if emitMode68k and args[i] == "--events" {
+            // Task 12 (native-5e): a scripted-event source file, byte-for-
+            // byte identical in purpose to scripts/build-mac.sh's own
+            // `--events FILE` (which round-trips the file through a
+            // generated C string literal for the cprint lane) -- here the
+            // raw file bytes are poured straight into the native constant
+            // pool (cgEventsBytes, read below, consumed by cg68k.cla's
+            // cgEmitUiEventsPool), NUL-terminated, with no C-string
+            // escaping needed since nothing re-parses it as source.
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] [--seglimit N] [--events FILE] FILE...")
+                quit 2
+            }
+            eventsPath = args[i]
+            haveEvents = true
         } else {
             fileArgs.add(args[i])
         }
@@ -747,7 +768,24 @@ on App.startCLI(args: list of string) {
             // shaking (cg68AddRoots's own doc comment, cg68k.cla), then hand
             // off to cg68Program instead of emitProgram.
             cg68AddRoots()
+            // Task 12 (native-5e): synthesize the UI pascal-entry glue
+            // stubs (LDEF/scrollbar-action) as ordinary (empty-bodied)
+            // IRFuncs and root them, BEFORE shaking -- see
+            // cg68SynthUiGlue's own doc comment (cg68k.cla) for why this
+            // is the one safe injection point (after lowerProgram, before
+            // shakeProgram/cgAssignFinalJtSlots).
+            cg68SynthUiGlue()
             shakeProgram()
+            if haveEvents {
+                eventsBytes = ""
+                if not file.readText(eventsPath, eventsBytes) {
+                    log("clarusc emit68k: cannot read " + eventsPath + ": " + lastError.message)
+                    quit 1
+                }
+                cgEventsBytes = eventsBytes
+            } else {
+                cgEventsBytes = ""
+            }
             ok68 = cg68Program(outPath, listingFlag, segLimitFlag)
             if not ok68 {
                 log("clarusc emit68k: cg68Program failed")

@@ -43,8 +43,15 @@ external func UiTestEmit(s: ptr)
 // UiCurrentA5 (plan's own reverse-waist glue-extern table): the A5 world
 // base, needed by rtUiTestSnap (below) to walk qd.screenBits without a
 // hand-derived offset. cprint shim -> `(void *)SetCurrentA5()`-equivalent
-// (this task's own brief: "UiCurrentA5 (cprint shim only this task)").
-external func UiCurrentA5(): ptr
+// (Task 7's own brief: "UiCurrentA5 (cprint shim only this task)"). Task
+// 12 (native-5e) gives it its own `= inline a5` clause: cg68k.cla's
+// cgCallExtA5 emits the one-instruction `MOVE.L A5,D0` directly, no trap
+// or nat_ fallback needed -- A5 is this backend's own fixed world-pointer
+// register for the whole program's run. cprint ignores the clause
+// entirely (irExternConv is a native-only concern -- fpCallExt always
+// resolves to rt_ext_UiCurrentA5 regardless), so this is a no-op change on
+// that lane.
+external func UiCurrentA5(): ptr = inline a5
 
 // ================================================================
 // Scripted-mode flags (rt_ui.c:569-584).
@@ -643,6 +650,10 @@ func rtUiTraceOpenDoc(pathPtr: ptr, pathLen: int) {
 // rtUiTestSnap itself to go through `UiCurrentA5` specifically.
 // ================================================================
 external func UiScreenBits(baseAddrOut: ptr, rowBytesOut: ptr, boundsOut: ptr)
+
+// nat_UiScreenBits's own nat_ fallback body lives in native.cla (Task 12,
+// native-5e review fix), same cross-lane-global-leak reason as
+// nat_UiMacInitToolbox/nat_UiScreenBounds (ui.cla).
 
 // ================================================================
 // Small string/number utilities the scripted interpreter needs (no

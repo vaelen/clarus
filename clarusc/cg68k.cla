@@ -152,6 +152,26 @@ var cgGlobalsBelowA5Size: int
 // cgStrLitLabels[i] is irStrLits index i's pool-entry label id.
 var cgStrLitLabels: list of int
 
+// cgUiBlobLabel/cgUiEventsLabel (Task 12, native-5e): pool-entry label ids
+// for the UI descriptor blob (uiblob.cla's uibBuild(), cg68k's own record-
+// layout authority) and the `--events` script bytes -- reserved up front
+// (cgReserveUiPoolLabels, same "reserve before any body can reference it"
+// discipline as cgReserveStrLitLabels) so UiProgDesc/UiTestScript call
+// sites, walked long before cgEmitPoolsBody itself runs, can already emit
+// a PC-relative reference to them. -1 for a non-UI program (never bound,
+// never referenced -- see cgCallExtUiBlobAddr's own doc comment).
+var cgUiBlobLabel: int
+var cgUiEventsLabel: int
+
+// cgEventsBytes holds the raw bytes of the file `emit68k --events FILE`
+// named (main.cla sets this global before calling cg68Program) -- empty
+// (never set) for a build with no `--events` flag, which is every non-
+// scripted native UI build; UiTestScript()'s own NUL-first-byte contract
+// (rtUiLaunch/rtUiRun) needs only a single 0 byte for that case, which
+// cgEmitUiEventsBlob supplies unconditionally as the pool bytes' own
+// trailing NUL either way.
+var cgEventsBytes: text
+
 // cgFreshIntList hands back a genuinely empty list (same trick
 // shakeFreshIntList/shakeFreshBoolList use, shake.cla).
 func cgFreshIntList(): list of int {
@@ -610,6 +630,35 @@ func cg68AddRoots() {
     shakeAddRoot(intern("rtEnumCheck"))
 }
 
+// cg68SynthUiGlue (Task 12, native-5e) synthesizes the two pascal-entry
+// glue stubs as ordinary (EMPTY-bodied) IRFuncs, exactly the way
+// lower.cla's lowSynthUiDispatchers synthesizes the reverse-waist
+// dispatchers -- reusing newIRFunc/shakeAddRoot gets them a real irFuncs
+// slot, and hence (for free, via the SAME cgAssignFinalJtSlots pass every
+// ordinary function already goes through) a real JT slot, with zero new
+// segment/JT bookkeeping. The body is a placeholder (-1, "no statements")
+// -- never walked: cgEmitFunc's own name check (below) recognizes these
+// two names and emits a hand-built pascal-frame-unwinding body instead of
+// LINK+cgStmts+UNLK. Called from main.cla, AFTER lowerProgram but BEFORE
+// shakeProgram -- the same safe injection point cg68AddRoots already
+// uses for native-only roots (lowerProgram itself stays backend-neutral;
+// cprint never references these two names, so they simply stay
+// unreached/shaken-away dead code on that lane -- no cprint golden churn).
+//
+// Gated on irIsUiProgram(): a non-UI native program never links
+// uitable.cla/uitext.cla (main.cla's own isUiProg manifest gate), so
+// UiLdefEntry/UiActionEntry don't exist as externs to resolve for one,
+// and these two stubs would just be permanently-dead weight.
+func cg68SynthUiGlue() {
+    if not irIsUiProgram() {
+        return
+    }
+    newIRFunc(intern("clar_ui_glue_ldef"), -1, irVoidT, -1, -1)
+    shakeAddRoot(intern("clar_ui_glue_ldef"))
+    newIRFunc(intern("clar_ui_glue_action"), -1, irVoidT, -1, -1)
+    shakeAddRoot(intern("clar_ui_glue_action"))
+}
+
 // ================================================================
 // Small local copies of cprint.cla helpers this file also needs -- kept
 // local rather than depending on cprint.cla (see the file header: the two
@@ -1019,6 +1068,20 @@ func cgAssignGlobalOffsets() {
         i = i + 1
     }
     cgGlobalOffsets = offs
+
+    // Task 12 (native-5e): one extra below-A5 cell for the closeRequest
+    // scratch pointer (cgUiCurCancelOff -- cprint's own file-scope
+    // `static long *clar_ui_cur_cancel;`) -- reserved unconditionally for
+    // any UI program (cheap; a program with no closeRequest handler at
+    // all just never reads or writes it), zeroed for free by the
+    // startup zero-loop's own below-A5 sweep (cgEmitStartup) exactly like
+    // every ordinary irGlobals cell.
+    if irIsUiProgram() {
+        running = running - 4
+        cgUiCurCancelOff = running
+    } else {
+        cgUiCurCancelOff = 0
+    }
     cgGlobalsBelowA5Size = 0 - running
 }
 
@@ -1128,11 +1191,33 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
         a68Comment("natInit not present -- wired in Task 11")
     }
 
-    a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
-    cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
-    cgEmitStartupCallIfPresent("handler_App_startEmpty", irHasStartEmpty)
-    cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
-    cgEmitStartupCallIfPresent("handler_App_openDocument", irHasOpenDocument)
+    // Task 12 (native-5e): a UI program's startup mirrors cpEmitUiMain's
+    // own ported call order exactly (clar_init_globals/rt_args_init are
+    // cg_init_globals/natInit's own equivalents, already run above):
+    // rtUiStartup, then App.launch if the program declares one (fires
+    // BETWEEN startup and launch, same as cpEmitUiMain -- Ch7: startCLI
+    // never fires on the Macintosh, so a UI program's own `on
+    // App.startCLI` handler, if any, is simply never called, same as the
+    // C lane), then rtUiLaunch, then rtUiRun. rtUiRun never returns (the
+    // real event loop and the scripted interpreter both loop until
+    // rtUiQuit -> UiRtQuit -> nat_UiRtQuit -> natQuit -> ExitToShell,
+    // which itself never returns) -- the free-globals/natQuit/RTS tail
+    // below is therefore dead code on this path, kept only so the
+    // function has one uniform, simple structure rather than an early
+    // return the assembler/measure pass would need to special-case.
+    if irIsUiProgram() {
+        a68Comment("UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun")
+        cgEmitStartupCallIfPresent("rtUiStartup", true)
+        cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
+        cgEmitStartupCallIfPresent("rtUiLaunch", true)
+        cgEmitStartupCallIfPresent("rtUiRun", true)
+    } else {
+        a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
+        cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
+        cgEmitStartupCallIfPresent("handler_App_startEmpty", irHasStartEmpty)
+        cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
+        cgEmitStartupCallIfPresent("handler_App_openDocument", irHasOpenDocument)
+    }
 
     a68EmitBr(OpBsr, 0, freeGlobalsLbl)
     a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
@@ -2423,6 +2508,24 @@ func cgEmitFunc(f: int) {
     var recLocalTypes: list of int
     var tmpOffs: list of int
     var bigTmpOffs: list of int
+    var fname: string
+
+    // Task 12 (native-5e): the two pascal-entry glue stubs cg68SynthUiGlue
+    // synthesizes as empty-bodied placeholders -- recognized here BY NAME
+    // (the same "no per-node IR shape, dispatch on the synthesized
+    // function's own fixed name" convention cgCallExtUiSynth/
+    // cgCallExtUiGlueAddr already use) and given a hand-built
+    // pascal-frame-unwinding body instead of the ordinary LINK+cgStmts+
+    // UNLK below -- see cgEmitLdefGlue/cgEmitActionGlue's own doc comments.
+    fname = poolGet(irFuncName(f))
+    if fname == "clar_ui_glue_ldef" {
+        cgEmitLdefGlue(f)
+        return
+    }
+    if fname == "clar_ui_glue_action" {
+        cgEmitActionGlue(f)
+        return
+    }
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
@@ -2591,6 +2694,145 @@ func cgEmitFunc(f: int) {
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+}
+
+// ================================================================
+// Task 12 (native-5e): pascal-entry glue stubs -- LDEF (List Manager
+// callback) and the scrollbar control-action proc. Both are called BY THE
+// TOOLBOX with args pushed PASCAL convention (left to right -- the
+// FIRST-declared param ends up at the HIGHEST stack address, the LAST at
+// the lowest, closest to the return address JSR pushed; a byte/word-sized
+// value -- Boolean/short -- still occupies a full stack WORD, and per
+// cgCallExtPascal's own Task 9 finding the value itself lives in that
+// word's LOW byte, not the high one) -- NOT the LINK-based positive-A6-
+// offset convention cgEmitFunc's own ordinary functions use for their
+// OWN declared params (which happens to assign offsets in the same
+// left-to-right/highest-first order, by coincidence of both conventions
+// pushing left to right, but at different slot WIDTHS: Clarus always
+// pushes int/ptr as a full .L and bool/char as a full .W, matching pascal
+// convention's own word-padding for byte-sized values, but a pascal
+// `short` is only 2 bytes on the wire where a Clarus `int` argument
+// would need 4 -- hence RE-READING and RE-PUSHING every argument here,
+// never just forwarding raw stack bytes).
+//
+// Each glue LINKs its own zero-size A6 frame (clean fixed offsets for the
+// incoming pascal args, immune to its own outgoing pushes moving A7),
+// unwinds/converts every pascal arg into the callee's OWN Clarus calling
+// convention, JSRs the real ported function via cgCallFunc (a JT-slot
+// jump if that function landed in a different segment, exactly like any
+// other cross-segment call), then returns PASCAL style: this backend's
+// 68000 target has no RTD instruction (68010+ only), so the standard
+// no-RTD callee-pop sequence applies -- UNLK (restores A7 to right after
+// the ORIGINAL return address), pop that return address into a scratch
+// address register, ADDA the pascal arg bytes off A7 (deallocating the
+// caller's own pushed args -- pascal callee-pop convention), then JMP
+// through the scratch register.
+//
+// UNVERIFIED ON REAL HARDWARE this task: neither glue is exercised by
+// Task 12's own gate (smoke_bounce has no table/scrollbar widget), but
+// BOTH must still compile+JT-slot correctly for smoke_bounce to build at
+// all -- rtUiMakeWidgets (uiwidgets.cla), reachable for any window with
+// any widget, contains the table/scrollbar creation branches UNCONDITION
+// ALLY (Clarus has no branch-level dead-code elimination, only whole-
+// function reachability), and those branches call UiLNew/scrollbar setup,
+// which read UiLdefEntry()/UiActionEntry(). First real hardware exercise
+// (a table or scrollbar boot on native) is Task 14's job; if the
+// low-byte-Boolean assumption above turns out wrong there, the fix
+// belongs in BOTH this file and cgCallExtPascal (Ch13), per the plan's
+// own note.
+
+// cgEmitLdefGlue: pascal void LDEF(short lMessage, Boolean lSelect,
+// Rect *lRect, Cell lCell, short lDataOffset, short lDataLen,
+// ListHandle lHandle) -- Lists.h's ListDefProcPtr, EXACTLY (Task 9's own
+// port comment, uitable.cla). Pascal arg bytes, left to right: lMessage
+// (2), lSelect (2), lRect (4), lCell (4), lDataOffset (2), lDataLen (2),
+// lHandle (4) = 20 total; after this glue's own LINK A6,#0, the LAST-
+// pushed (lHandle) sits at 8(A6), the FIRST-pushed (lMessage) at 26(A6)
+// (cgEmitFunc's own reverse-offset-assignment rule, applied by hand).
+// `lCell` (a Point -- two packed shorts) is read as a single 4-byte
+// value: its raw big-endian in-memory bytes ARE exactly the packed int32
+// rtUiLdefDraw's own `cellPacked: int` parameter wants, no shift/OR
+// needed. Target: rtUiLdefDraw(msg: int, select: bool, rectPtr: ptr,
+// cellPacked: int, dataOffset: int, dataLen: int, lh: ptr) -- uitable.cla.
+func cgEmitLdefGlue(f: int) {
+    var fi: int
+
+    a68Comment("func clar_ui_glue_ldef (JT slot " + numToStr(cgJtSlot(f)) + ") -- pascal LDEF entry")
+    a68Bind(cgFuncLabels[f])
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
+
+    fi = findIRFuncIdxByName(intern("rtUiLdefDraw"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtUiLdefDraw not found/reachable (clar_ui_glue_ldef)")
+        quit 1
+    }
+
+    // msg: short @26(A6) -> sign-extend -> push .L
+    a68Emit(OpMove, 2, AmDisp16, 6, 26, AmDn, 0, 0)
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    // select: Boolean word @24(A6), value in the LOW byte @25(A6) ->
+    // zero-extend -> push .W (Clarus bool slot size).
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 1, AmDisp16, 6, 25, AmDn, 0, 0)
+    a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+    // rectPtr: ptr @20(A6) -> push .L directly (already the right shape).
+    a68Emit(OpMove, 4, AmDisp16, 6, 20, AmPreDec, 7, 0)
+    // cellPacked: the 4-byte Cell @16(A6), read as one raw int32 -> push .L.
+    a68Emit(OpMove, 4, AmDisp16, 6, 16, AmPreDec, 7, 0)
+    // dataOffset: short @14(A6) -> sign-extend -> push .L.
+    a68Emit(OpMove, 2, AmDisp16, 6, 14, AmDn, 0, 0)
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    // dataLen: short @12(A6) -> sign-extend -> push .L.
+    a68Emit(OpMove, 2, AmDisp16, 6, 12, AmDn, 0, 0)
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    // lh: ptr @8(A6) -> push .L directly.
+    a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
+
+    cgCallFunc(fi)
+    cgCleanupStack(26) // 4+2+4+4+4+4+4
+
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgCleanupStack(20) // the pascal caller's own 20 arg bytes
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
+}
+
+// cgEmitActionGlue: pascal void ControlActionProc(ControlHandle theControl,
+// short partCode) -- Controls.h's ControlActionUPP, matching
+// rt_ext_mac.inc's own rt_ext_ui_scrollbar_action wrapper exactly. Pascal
+// arg bytes: ctrl (4), part (2) = 6 total; after LINK A6,#0, part (last
+// pushed) sits at 8(A6), ctrl (first pushed) at 10(A6). Target:
+// rtUiScrollbarAction(ctrl: ptr, part: int) -- uitext.cla.
+func cgEmitActionGlue(f: int) {
+    var fi: int
+
+    a68Comment("func clar_ui_glue_action (JT slot " + numToStr(cgJtSlot(f)) + ") -- pascal control-action entry")
+    a68Bind(cgFuncLabels[f])
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
+
+    fi = findIRFuncIdxByName(intern("rtUiScrollbarAction"))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: rtUiScrollbarAction not found/reachable (clar_ui_glue_action)")
+        quit 1
+    }
+
+    // ctrl: ptr @10(A6) -> push .L directly.
+    a68Emit(OpMove, 4, AmDisp16, 6, 10, AmPreDec, 7, 0)
+    // part: short @8(A6) -> sign-extend -> push .L.
+    a68Emit(OpMove, 2, AmDisp16, 6, 8, AmDn, 0, 0)
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+
+    cgCallFunc(fi)
+    cgCleanupStack(8) // 4+4
+
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgCleanupStack(6) // the pascal caller's own 6 arg bytes
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
 }
 
 // ================================================================
@@ -2794,13 +3036,41 @@ func cgFieldRefAddr(e: int) {
     var recNameIdx: int
     var off: int
     var fieldName: string
+    var winIdx: int
 
     baseT = irExprType(irFieldRefX(e))
-    if irtKind(baseT) == KOverlay {
+    if irtKind(baseT) == KOverlay or irtKind(baseT) == KUiState {
+        // KUiState (Task 12, native-5e): a window instance's per-
+        // instance state-struct field (`g.x`) -- X is an IUiState
+        // intrinsic call (or, transitively, another KUiState-typed
+        // expr), whose OWN result value already IS the base address
+        // (rtUiState's return), same "value is the address" shape
+        // KOverlay already established -- NOT address-of.
         cgExpr(irFieldRefX(e))
         a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
     } else {
         cgExprAddr(irFieldRefX(e))
+    }
+    if irtKind(baseT) == KUiState {
+        // A window's per-instance state fields (window { var ... }) live
+        // in irWindowDescStateFieldsHead, never irRecords -- cgFieldOffset/
+        // cgFindRecordByName's registry has no entry for a window's own
+        // name, so this needs its own walk (cgUiStateFieldOffset, the
+        // SAME field-chain layout uiblob.cla's uibStateSize computes for
+        // the blob's own stateSize field, cg68k's own LAYOUT AUTHORITY
+        // primitives reused verbatim).
+        winIdx = cpFindWindowIndex(poolGet(irtName(baseT)))
+        if winIdx == -1 {
+            log("cg68k: unknown window " + poolGet(irtName(baseT)))
+            quit 1
+        }
+        off = cgUiStateFieldOffset(winIdx, irFieldRefName(e))
+        if off == -1 {
+            log("cg68k: unknown state field " + poolGet(irFieldRefName(e)) + " on " + poolGet(irtName(baseT)))
+            quit 1
+        }
+        a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
+        return
     }
     if irtKind(baseT) == KErr {
         // Task 14.7: `error` (KErr) is a builtin fixed-layout struct, not
@@ -2831,6 +3101,33 @@ func cgFieldRefAddr(e: int) {
         quit 1
     }
     a68Emit(OpLea, 0, AmDisp16, 0, off, AmAn, 0, 0)
+}
+
+// cgUiStateFieldOffset (Task 12, native-5e) walks window winIdx's own
+// state-field chain (irWindowDescStateFieldsHead) computing
+// fieldNameIdx's byte offset -- the SAME cgAlignOf/cgSlotSizeOf walk
+// uiblob.cla's uibStateSize runs (that function's own doc comment: "this
+// is NOT cgRecordSize itself... a window's per-instance vars are never an
+// irRecords entry"), just stopping at the matching field instead of
+// running to the end. -1 if fieldNameIdx isn't one of winIdx's own state
+// fields, matching cgFieldOffset's own not-found contract.
+func cgUiStateFieldOffset(winIdx: int, fieldNameIdx: int): int {
+    var f: int
+    var cur: int
+    var t: int
+
+    cur = 0
+    f = irWindowDescStateFieldsHead(winIdx)
+    while f != -1 {
+        t = irFieldSlotType(f)
+        cur = cgAlignUp(cur, cgAlignOf(t))
+        if irFieldSlotName(f) == fieldNameIdx {
+            return cur
+        }
+        cur = cur + cgSlotSizeOf(t)
+        f = irFieldSlotNext(f)
+    }
+    return -1
 }
 
 // cgIndexRefAddr implements fpIndexRef's own addressing contract (the
@@ -4362,8 +4659,8 @@ func cgIntr(e: int) {
 
     nm = poolGet(irIntrName(e))
     if nm.length >= 3 and nm[0] == 'u' and nm[1] == 'i' and nm[2] == '_' {
-        log("UI intrinsics are 5e (native): " + nm)
-        quit 1
+        cgIntrUi(e, nm)
+        return
     }
     if nm == "str_cmp" {
         a0e = irIntrArgsHead(e)
@@ -4683,6 +4980,397 @@ func cgIntr(e: int) {
     log("cg68k: cgIntr: intrinsic " + nm + " unsupported in value context")
     quit 1
 }
+
+// ================================================================
+// Task 12 (native-5e): the Ch7-11 UI surface's own intrinsic family
+// ("ui_*", ir.cla's IUiXxx() name table) -- the user-program-source
+// lowering targets for `open`/`close`/`.title`/canvas draw calls/widget
+// property get-set/etc. Distinct from the reverse-waist SYNTHESIZED
+// dispatcher externs (UiFireWinEvent & co, resolved by
+// cgCallExtUiSynth): these are ordinary EIntr nodes lower.cla emits
+// directly from a checked Clarus program's own AST (fpIntrCall's mirror,
+// cprint.cla:2559-2741 -- every arm below is a direct port of that
+// switch, RTUI_PROP_* constants inlined from rt_ui.h:136-142). Args are
+// unpacked the same a0/a1/a2 way cprint's own fpIntrCall does.
+//
+// Scope (Task 12): every intrinsic bounce.cla's own AST can produce
+// (open/front/state/state-defaults/canvas draws/menu-enable/widget
+// property get-set/cancel) plus the three reverse-waist-only ones
+// (SetCancelFlag/ValueAtPtr/AddrOfGlobal, ir.cla's own explicit ask for
+// "a future cg68k UI port (Task 12) adds its own arm"). NOT covered
+// (deferred, clean fail-closed -- no golden scenario this task gates on
+// reaches any of these): the three str/text-FILLING getters (GetTitle/
+// GetFieldText/GetTextviewText -- need the fpNewTmp-style str/text
+// materialization machinery cgStrBuilderIntoTemp's SStoreStr/SReturn
+// callers already use, not yet wired to a plain value-context intrinsic
+// result) and the five StandardFile/dialog-only ones (Edit/AskOpen/
+// AskSave/AskSaveChanges/FormIsNew -- Task 10's own dialog machinery,
+// paired with the nat_UiSFGetFile/nat_UiSFPutFile stubs above).
+func cgPushIntLit(v: int) {
+    a68Emit(OpMove, 4, AmImm, 0, v, AmPreDec, 7, 0)
+}
+
+const cgRtuiPropCaption: int = 0
+const cgRtuiPropText: int = 1
+const cgRtuiPropEnabled: int = 2
+const cgRtuiPropChecked: int = 3
+const cgRtuiPropSelected: int = 4
+const cgRtuiPropWidth: int = 5
+const cgRtuiPropHeight: int = 6
+
+func cgIntrUi(e: int, nm: string) {
+    var a0: int
+    var a1: int
+    var a2: int
+    var winIdx: int
+    var winName: string
+    var winNameIdx: int
+
+    a0 = irIntrArgsHead(e)
+    a1 = -1
+    a2 = -1
+    if a0 != -1 {
+        a1 = irExprNext(a0)
+    }
+    if a1 != -1 {
+        a2 = irExprNext(a1)
+    }
+    // winName is only meaningful for the handful of intrinsics whose own
+    // `.ty` is hijacked to carry a window name (IUiOpen/IUiFront/
+    // IUiStateDefaults/IUiEdit -- ir.cla's own doc comment on each);
+    // every other intrinsic's `.ty` is its ordinary return type, whose
+    // irtName is -1 (irSimpleType's "no name" convention) -- poolGet(-1)
+    // crashes (the same hazard cgFieldRefAddr's own KErr arm already
+    // guards against), so this is computed defensively, never assumed.
+    winNameIdx = irtName(irExprType(e))
+    winName = ""
+    if winNameIdx != -1 {
+        winName = poolGet(winNameIdx)
+    }
+
+    if nm == "ui_open" {
+        winIdx = cpFindWindowIndex(winName)
+        cgPushIntLit(winIdx)
+        cgJsrByName("rtUiOpen")
+        cgCleanupStack(4)
+        return
+    }
+    if nm == "ui_front" {
+        winIdx = cpFindWindowIndex(winName)
+        cgPushIntLit(winIdx)
+        cgJsrByName("rtUiFront")
+        cgCleanupStack(4)
+        return
+    }
+    if nm == "ui_close" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiClose")
+        cgCleanupStack(4)
+        return
+    }
+    if nm == "ui_quit" {
+        cgJsrByName("rtUiQuit")
+        return
+    }
+    if nm == "ui_state" {
+        // Result (D0) is the window's per-instance state-struct address --
+        // cgFieldRefAddr's own KUiState arm (its base-address-is-the-
+        // value special case, mirroring KOverlay) reads this same value
+        // straight back out of D0 when this intrinsic sits as an
+        // EFieldRef's base (`g.x`); reached here in bare value context
+        // only via that same recursive cgExpr call, so no extra work
+        // needed -- rtUiState's own return value already IS the answer.
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiState")
+        cgCleanupStack(4)
+        return
+    }
+    if nm == "ui_state_defaults" {
+        cgIntrUiStateDefaults(e, a0, winName)
+        return
+    }
+    if nm == "ui_set_title" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExprAddr(a1)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiSetTitle")
+        cgCleanupStack(8)
+        return
+    }
+    if nm == "ui_set_caption" or nm == "ui_set_text" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        if nm == "ui_set_caption" {
+            cgPushIntLit(cgRtuiPropCaption)
+        } else {
+            cgPushIntLit(cgRtuiPropText)
+        }
+        cgExprAddr(a2)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiWidgetSetStr")
+        cgCleanupStack(16)
+        return
+    }
+    if nm == "ui_set_textview_text" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a2)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiWidgetSetText")
+        cgCleanupStack(12)
+        return
+    }
+    if nm == "ui_get_checked" or nm == "ui_get_enabled" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        if nm == "ui_get_checked" {
+            cgPushIntLit(cgRtuiPropChecked)
+        } else {
+            cgPushIntLit(cgRtuiPropEnabled)
+        }
+        cgJsrByName("rtUiWidgetGetBool")
+        cgCleanupStack(12)
+        return
+    }
+    if nm == "ui_set_checked" or nm == "ui_set_enabled" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        if nm == "ui_set_checked" {
+            cgPushIntLit(cgRtuiPropChecked)
+        } else {
+            cgPushIntLit(cgRtuiPropEnabled)
+        }
+        cgExpr(a2)
+        a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiWidgetSetBool")
+        cgCleanupStack(14)
+        return
+    }
+    if nm == "ui_get_width" or nm == "ui_get_height" or nm == "ui_get_selected" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        if nm == "ui_get_width" {
+            cgPushIntLit(cgRtuiPropWidth)
+        } else if nm == "ui_get_height" {
+            cgPushIntLit(cgRtuiPropHeight)
+        } else {
+            cgPushIntLit(cgRtuiPropSelected)
+        }
+        cgJsrByName("rtUiWidgetGetInt")
+        cgCleanupStack(12)
+        return
+    }
+    if nm == "ui_set_selected" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgPushIntLit(cgRtuiPropSelected)
+        cgExpr(a2)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiWidgetSetInt")
+        cgCleanupStack(16)
+        return
+    }
+    if nm == "ui_menu_enable" {
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a1)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgExpr(a2)
+        a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName("rtUiMenuEnable")
+        cgCleanupStack(10)
+        return
+    }
+    if nm == "ui_cancel" {
+        // `cancel` writes 1 through the dispatcher-owned scratch pointer
+        // (cgUiCurCancelOff's own below-A5 cell) IUiSetCancelFlag already
+        // pointed at this window's own cancelFlag: MOVEA.L off(A5),A0
+        // loads the REMEMBERED ADDRESS, then MOVE.L #1,(A0) writes
+        // through it.
+        a68Emit(OpMovea, 4, AmDisp16, 5, cgUiCurCancelOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmImm, 0, 1, AmInd, 0, 0)
+        return
+    }
+    if nm == "ui_canvas_clear" {
+        cgIntrUiForward(e, "rtUiCanvasClear")
+        return
+    }
+    if nm == "ui_canvas_line" {
+        cgIntrUiForward(e, "rtUiCanvasLine")
+        return
+    }
+    if nm == "ui_canvas_rect" {
+        cgIntrUiForward(e, "rtUiCanvasRect")
+        return
+    }
+    if nm == "ui_canvas_circle" {
+        cgIntrUiForward(e, "rtUiCanvasCircle")
+        return
+    }
+    if nm == "ui_canvas_fill_circle" {
+        cgIntrUiForward(e, "rtUiCanvasFillCircle")
+        return
+    }
+    if nm == "ui_canvas_pattern" {
+        cgIntrUiForward(e, "rtUiCanvasPattern")
+        return
+    }
+    if nm == "ui_canvas_draw_text" {
+        cgIntrUiCanvasDrawText(e)
+        return
+    }
+    if nm == "ui_set_cancel_flag" {
+        // Void; one ptr arg -- the synthesized clar_ui_fire_winevent's
+        // RTUI_EV_CLOSEREQUEST arm points clar_ui_cur_cancel-equivalent
+        // storage at the runtime's own cancelFlag before calling into the
+        // user's closeRequest handler; `cancel` (ui_cancel, above) writes
+        // through that same slot.
+        cgExpr(a0)
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 5, cgUiCurCancelOff)
+        return
+    }
+    if nm == "ui_value_at_ptr" {
+        // *(T *)(a0) -- read the by-value KRec/KStr result straight out
+        // of the address a0 evaluates to; only reached in a str/rec
+        // MATERIALIZATION context (cgEmitStoreStr/cgEmitStoreRec's own
+        // ECallFn/EIntr source dispatch would need its own arm for this
+        // -- deferred, same as GetTitle/GetFieldText/GetTextviewText,
+        // above: no golden scenario this task gates on exercises it).
+        log("cg68k: ui_value_at_ptr: str/rec result materialization not wired this task")
+        quit 1
+    }
+    if nm == "ui_addr_of_global" {
+        // LEA d16(A5),D0 -- a0 is always a bare EVarRef(global) (ir.cla's
+        // own doc comment); cgExprAddr already resolves that to the
+        // global's own A5-relative address.
+        cgExprAddr(a0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+        return
+    }
+    if nm == "ui_get_title" or nm == "ui_get_field_text" or nm == "ui_get_textview_text" {
+        log("cg68k: " + nm + ": str/text materialization not wired this task (native-5e Task 12 scope)")
+        quit 1
+    }
+    if nm == "ui_edit" or nm == "ui_ask_open" or nm == "ui_ask_save" or nm == "ui_ask_save_changes" or nm == "ui_form_is_new" {
+        log("cg68k: " + nm + ": dialog/StandardFile intrinsics not wired this task (native-5e Task 12 scope, pairs with nat_UiSFGetFile/nat_UiSFPutFile stubs)")
+        quit 1
+    }
+
+    log("cg68k: cgIntrUi: unsupported UI intrinsic " + nm)
+    quit 1
+}
+
+// cgIntrUiForward is the common shape for every UI canvas-draw intrinsic
+// (Clear/Line/Rect/Circle/FillCircle/Pattern): the intrinsic's own args
+// map 1:1, IN ORDER, onto fnName's own Clarus params (instV, wIdx, then
+// whichever int/bool geometry args) -- an EXACT match with cgPushArgs'
+// own per-type push convention (int/ptr .L, bool .W, matching
+// cgEmitFunc's own param-offset assignment), so no hand-rolled arg
+// marshaling is needed, unlike the PROP-injecting getters/setters above
+// or DrawText's trailing str-by-address arg (cgIntrUiCanvasDrawText,
+// below) -- both of which diverge from a plain 1:1 forward.
+func cgIntrUiForward(e: int, fnName: string) {
+    var total: int
+
+    total = cgPushArgs(irIntrArgsHead(e))
+    cgJsrByName(fnName)
+    cgCleanupStack(total)
+}
+
+// cgIntrUiCanvasDrawText: rtUiCanvasDrawText(instV, wIdx, x, y, s: ptr) --
+// s is pushed BY ADDRESS (cprint's own fpStrAddr(a4)), NOT block-copied
+// by value the way cgPushArgs' generic KStr branch would (that branch
+// exists for an ORDINARY str-by-value Clarus param, which s: ptr is not)
+// -- the one canvas call needing hand-rolled marshaling.
+func cgIntrUiCanvasDrawText(e: int) {
+    var a0: int
+    var a1: int
+    var a2: int
+    var a3: int
+    var a4: int
+
+    a0 = irIntrArgsHead(e)
+    a1 = irExprNext(a0)
+    a2 = irExprNext(a1)
+    a3 = irExprNext(a2)
+    a4 = irExprNext(a3)
+
+    cgExpr(a0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a1)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a2)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExpr(a3)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgExprAddr(a4)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtUiCanvasDrawText")
+    cgCleanupStack(20)
+}
+
+// cgIntrUiStateDefaults ports IUiStateDefaults's own per-field construction
+// (cprint.cla's arm, cpDefaultInit per ctor-needing field) -- for each of
+// winName's state fields that irtNeedsCtor, re-fetch the state base
+// address (a fresh rtUiState(inst) call, deliberately NOT hoisted out of
+// the loop: cheap, and sidesteps cgWalkStashBase's whole A0/A1-drift
+// concern entirely -- a fresh, un-aliased A0 at the start of EVERY
+// cgDefaultInitAt call, never carried across one) and construct that one
+// field via cgDefaultInitAt, the same primitive cgEmitFunc's own record-
+// local prologue and cgRecordCtorAt already use.
+func cgIntrUiStateDefaults(e: int, a0: int, winName: string) {
+    var winIdx: int
+    var f: int
+    var off: int
+    var t: int
+
+    winIdx = cpFindWindowIndex(winName)
+    if winIdx == -1 {
+        log("cg68k: ui_state_defaults: unknown window " + winName)
+        quit 1
+    }
+    f = irWindowDescStateFieldsHead(winIdx)
+    off = 0
+    while f != -1 {
+        t = irFieldSlotType(f)
+        off = cgAlignUp(off, cgAlignOf(t))
+        if irtNeedsCtor(t) {
+            cgExpr(a0)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            cgJsrByName("rtUiState")
+            cgCleanupStack(4)
+            a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+            cgDefaultInitAt(0, off, t, 0, -1)
+        }
+        off = off + cgSlotSizeOf(t)
+        f = irFieldSlotNext(f)
+    }
+}
+
+// cgUiCurCancelOff: the closeRequest scratch pointer's own below-A5
+// displacement (cprint's file-scope `static long *clar_ui_cur_cancel;`,
+// cpEmitUiDescs) -- a 4-byte cell holding the ADDRESS of whichever
+// cancelFlag the currently-firing closeRequest dispatch pointed it at
+// (IUiSetCancelFlag), which `cancel` (IUiCancel) then writes 1 through.
+// Computed once by cgAssignGlobalOffsets (reserved alongside the
+// compiler's ordinary irGlobals block -- see that function's own Task 12
+// doc comment), zeroed for free by the startup zero-loop.
+var cgUiCurCancelOff: int = 0
 
 func cgExpr(e: int) {
     var k: IRExprKind
@@ -5191,9 +5879,24 @@ func cgCallExtReg(e: int, xi: int) {
         // MOVEA/MOVE.L A0,D0 -- bring the ptr result across to satisfy
         // cgExpr's own "value always ends in D0" postcondition.
         a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+    } else if irtKind(retTy) == KWord {
+        // Task 12 (native-5e) fix, found bisecting the Gestalt hang: a
+        // REAL Toolbox register-convention routine's own glue promises
+        // its result in D0, but (per Apple's own OSErr/INTEGER-in-D0
+        // convention, mirrored by classic-68k callers universally reading
+        // only D0's LOW WORD) makes no promise about D0's UPPER word --
+        // EXT.L unconditionally re-derives the full signed 32-bit value
+        // from D0's own low word, discarding whatever was there before,
+        // matching cgCallExtPascal's own retIsWordType arm exactly (same
+        // "Toolbox INTEGER is signed" rule).
+        a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    } else if irtKind(retTy) == KBool or irtKind(retTy) == KChar {
+        // Same reasoning, zero-extend arm (mirrors cgCallExtPascal's own
+        // retIsWord-but-not-word-type arm): mask to the low byte.
+        a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
     }
-    // else: KVoid (nothing to bring back) or int/bool/char -- already in
-    // D0, the REG rule's own "other results from D0" clause.
+    // else: KVoid (nothing to bring back) or plain int -- already in D0,
+    // the REG rule's own "other results from D0" clause.
 }
 
 // cgCallExtPascal implements the locked PASCAL rule: reserve a result
@@ -5255,7 +5958,25 @@ func cgCallExtPascal(e: int, xi: int) {
         if irtKind(t) == KStr or irtKind(t) == KText {
             cgExprAddr(a)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        } else if irtKind(t) == KBool or irtKind(t) == KChar or irtKind(irExternParam(xi, j)) == KWord {
+        } else if irtKind(t) == KBool or irtKind(t) == KChar {
+            // Boolean/Char pascal params are padded to a full word on the
+            // stack, but the callee (a ROM trap, e.g. NewWindow's
+            // goAwayFlag) reads only ONE byte back, at the WORD'S OWN
+            // (lowest) address -- which in 68k big-endian layout is the
+            // word's HIGH-order byte. `MOVE.W D0,-(A7)` puts a 0/1 value
+            // in the LOW-order byte instead (the high byte stays 0), so
+            // the trap always sees 0 (false) regardless of the true
+            // value -- empirically the exact bug behind Task 12's own
+            // "goAwayFlag pushed true, WindowRecord reads false" gate
+            // failure (native-5e task-12 report). Shifting the value into
+            // the high byte before the word push (LSL.W #8) puts it where
+            // the trap actually reads it; the vacated low byte is
+            // "don't care" padding, matching every other already-working
+            // pascal call's own word-padding convention.
+            cgExpr(a)
+            a68Emit(OpLsl, 2, AmImm, 0, 8, AmDn, 0, 0)
+            a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        } else if irtKind(irExternParam(xi, j)) == KWord {
             cgExpr(a)
             a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
         } else {
@@ -5299,6 +6020,18 @@ func cgCallExtDeref(e: int) {
     cgExpr(a0e)
     a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmInd, 0, 0, AmDn, 0, 0)
+}
+
+// cgCallExtA5 implements `= inline a5` (Task 12, native-5e): the running
+// program's own A5 world base, MOVE.L A5,D0 -- checkExternFunc guarantees
+// zero params and a ptr return, so there is nothing to evaluate or clean
+// up. Used by UiCurrentA5 (qd-globals access, e.g. the snap verb's
+// screenBits walk) -- A5 is this backend's own fixed world-pointer
+// register for the whole program's lifetime (cgEmitStartup/cgAssignGlobal
+// Offsets), so simply reading it back out needs no trap, no call, nothing
+// but the one move.
+func cgCallExtA5(e: int) {
+    a68Emit(OpMove, 4, AmAn, 5, 0, AmDn, 0, 0)
 }
 
 // cgCallExtNop implements `= inline nop`: evaluate every arg left to
@@ -5346,14 +6079,59 @@ func cgCallExtNatFallback(e: int) {
     cgCleanupStack(total)
 }
 
-// cgCallExt dispatches an ECallExt node by its extern's registered clause.
+// cgCallExt dispatches an ECallExt node. Task 12 (native-5e) inserts a
+// NAME-based pre-dispatch, ahead of the clause-based switch below, for the
+// UI reverse-waist's own externs -- mirrors cprint.cla's fpCallExt (Task
+// 6/7's "skip = lowUiSynthExternName(...) != -1 or name == UiProgDesc")
+// one level down, at the native backend:
+//   - the 10 program-synthesized dispatchers (lowUiSynthExternName) call
+//     their own synthesized IRFunc directly -- cgCallExtUiSynth.
+//   - UiProgDesc/UiTestScript resolve to a POOL LABEL address (the blob/
+//     events-script bytes cg68k itself poured into the constant pool,
+//     cgEmitPoolsBody) -- cgCallExtUiBlobAddr.
+//   - UiLdefEntry/UiActionEntry resolve to their own glue stub's JT-slot
+//     entry address (LEA jtDisp(A5),A0; MOVE.L A0,D0 -- callable from any
+//     segment, matching cgCallFunc's own cross-segment convention) --
+//     cgCallExtUiGlueAddr.
+// Every other extern (UiCurrentA5/UiTestEmit/UiRtQuit/UiLaunchReal/
+// UiGestalt/... and every non-UI extern in the program) falls through to
+// the ordinary clause dispatch, unchanged.
 func cgCallExt(e: int) {
     var xi: int
     var conv: int
+    var nm: int
+    var synthName: int
 
-    xi = cgExternIdxByName(irCallExtName(e))
+    nm = irCallExtName(e)
+    synthName = lowUiSynthExternName(nm)
+    if synthName != -1 {
+        cgCallExtUiSynth(e, synthName)
+        return
+    }
+    if poolGet(nm) == "UiProgDesc" {
+        cgCallExtUiBlobAddr(cgUiBlobLabel)
+        return
+    }
+    if poolGet(nm) == "UiTestScript" {
+        cgCallExtUiBlobAddr(cgUiEventsLabel)
+        return
+    }
+    if poolGet(nm) == "UiLdefEntry" {
+        cgCallExtUiGlueAddr("clar_ui_glue_ldef")
+        return
+    }
+    if poolGet(nm) == "UiActionEntry" {
+        cgCallExtUiGlueAddr("clar_ui_glue_action")
+        return
+    }
+    if poolGet(nm) == "UiStrAddr" {
+        cgCallExtUiStrAddr(e)
+        return
+    }
+
+    xi = cgExternIdxByName(nm)
     if xi == -1 {
-        log("cg68k: call to unregistered extern " + poolGet(irCallExtName(e)))
+        log("cg68k: call to unregistered extern " + poolGet(nm))
         quit 1
     }
     conv = irExternConv(xi)
@@ -5365,9 +6143,85 @@ func cgCallExt(e: int) {
         cgCallExtDeref(e)
     } else if conv == 4 {
         cgCallExtNop(e)
+    } else if conv == 5 {
+        cgCallExtA5(e)
     } else {
         cgCallExtNatFallback(e)
     }
+}
+
+// cgCallExtUiSynth calls the reverse-waist dispatcher's own synthesized
+// IRFunc (lower.cla's lowSynthUiDispatchers) directly, by name -- both
+// backends compile these as ordinary functions (the plan's own "reverse
+// waist" contract), so this is structurally identical to
+// cgCallExtNatFallback, just resolving through synthName (already the
+// synthesized function's own interned name) instead of a "nat_" prefix.
+func cgCallExtUiSynth(e: int, synthName: int) {
+    var fi: int
+    var total: int
+
+    fi = findIRFuncIdxByName(synthName)
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: UI dispatcher " + poolGet(synthName) + " not found/reachable")
+        quit 1
+    }
+    total = cgPushArgs(irCallExtArgsHead(e))
+    cgCallFunc(fi)
+    cgCleanupStack(total)
+}
+
+// cgCallExtUiBlobAddr resolves UiProgDesc/UiTestScript to a PC-relative
+// LEA of the pool label cgEmitPoolsBody bound the blob's bytes to --
+// LEA lbl(PC),A0; MOVE.L A0,D0 (LEA can only target an address register
+// on real 68k hardware, so the PC-relative address is computed into A0
+// first, then moved to D0 to match every other value-producing call's
+// "result lands in D0" convention -- cgCallExtUiGlueAddr's own identical
+// two-instruction shape just below). lbl is -1 (never bound -- the label was reserved but this
+// program never turned out to be a UI program that emitted a blob at
+// that label) only if this is ever mis-called; that can't happen because
+// cgCallExt only reaches here from an ECallExt to UiProgDesc/UiTestScript,
+// both of which only exist in a UI program's own linked runtime modules.
+func cgCallExtUiBlobAddr(lbl: int) {
+    a68Emit(OpLea, 0, AmPCLabel, 0, lbl, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+}
+
+// cgCallExtUiGlueAddr resolves UiLdefEntry/UiActionEntry to their own
+// glue stub's callable JT-slot address: LEA <jtDisp(slot)>(A5),A0;
+// MOVE.L A0,D0 -- the SAME "jump-table entry is a segment-safe callable
+// address" contract cgJtDisp's own header comment establishes for an
+// ordinary cross-segment BSR, just materialized as a VALUE (handed to the
+// Toolbox as a UPP/ListDefProcPtr) instead of jumped to directly.
+func cgCallExtUiGlueAddr(glueFnName: string) {
+    var fi: int
+
+    fi = findIRFuncIdxByName(intern(glueFnName))
+    if fi == -1 or not shakeReachable(fi) {
+        log("cg68k: UI glue stub " + glueFnName + " not found/reachable")
+        quit 1
+    }
+    a68Emit(OpLea, 0, AmDisp16, 5, cgJtDisp(cgJtSlot(fi)), AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
+}
+
+// cgCallExtUiStrAddr implements UiStrAddr(s: string): ptr NATIVELY as a
+// trivial identity: the address of the caller's OWN str argument --
+// exactly matching the cprint lane's own characterization of
+// rt_ext_UiStrAddr as "a trivial C-level identity function that just
+// returns the address the marshaling already produced" (uiscript.cla's
+// own doc comment on UiStrAddr). This is NOT a call at all (no trap, no
+// JSR): cgExprAddr(argExpr) already leaves that exact address in A0 for
+// ANY of its supported lvalue shapes (EVarRef, EFieldRef, EIndexRef, and
+// -- the one that matters most here -- EStrConst, since every call site
+// in this port passes a string LITERAL, `UiStrAddr("T ")` etc.), so this
+// is simply "compute the address, bring it to D0" -- one MOVE.L past
+// whatever cgExprAddr itself emits.
+func cgCallExtUiStrAddr(e: int) {
+    var a: int
+
+    a = irCallExtArgsHead(e)
+    cgExprAddr(a)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
 }
 
 // ================================================================
@@ -6664,6 +7518,73 @@ func cgEmitPoolsBody() {
 
     cgEmitEnumTables()
     a68Comment("constant pool: serdesc tables (stub -- Task 8+)")
+
+    // Task 12 (native-5e): the UI descriptor blob + `--events` script
+    // bytes -- this is the reserved third-family constant-pool slot the
+    // comment just above marks. -1 (cgReserveUiPoolLabels) for a non-UI
+    // program: nothing to emit, matching every other UI-only emission's
+    // "byte-for-byte unchanged for a UI-free program" contract.
+    if cgUiBlobLabel != -1 {
+        cgEmitUiBlobPool()
+        cgEmitUiEventsPool()
+    }
+}
+
+// cgEmitUiBlobPool pours uiblob.cla's uibBuild() bytes -- the SAME flat,
+// pointer-free UI descriptor blob cprint.cla's cpEmitUiBlob prints as a C
+// array -- into the constant pool at cgUiBlobLabel, byte for byte
+// (uibNativeLane, set for the duration of this one call, routes
+// uibEmitLayout's own record-layout choice to cg68k's own cgRecordSize/
+// cgFieldOffset authority instead of cprint's C-ABI cpCRecordSize/
+// cpCFieldOffset -- see uiblob.cla's own Task 12 doc comment on
+// uibEmitLayout for why the two lanes' bool/char field sizes genuinely
+// differ and must not share one Layout section).
+func cgEmitUiBlobPool() {
+    var bytes: list of int
+    var i: int
+
+    uibNativeLane = true
+    bytes = uibBuild()
+    uibNativeLane = false
+    a68Comment("constant pool: UI descriptor blob (" + numToStr(bytes.count) + " bytes)")
+    a68Bind(cgUiBlobLabel)
+    i = 0
+    while i < bytes.count {
+        a68DcB(bytes[i])
+        i = i + 1
+    }
+    a68Align()
+}
+
+// cgEmitUiEventsPool pours the `--events FILE` bytes (main.cla read them
+// verbatim into cgEventsBytes; empty text for a build with no --events
+// flag) into the pool at cgUiEventsLabel, NUL-terminated -- UiTestScript()
+// resolves here (cgCallExtUiBlobAddr), and rtUiLaunch/rtUiRun's own
+// `peekb(UiTestScript()) != 0` gate (ui.cla/uiscript.cla) is exactly "is
+// the first byte non-NUL", so an absent --events flag (cgEventsBytes
+// empty) correctly degrades to a single 0 byte -- "not a scripted build".
+func cgEmitUiEventsPool() {
+    a68Comment("constant pool: --events script bytes (" + numToStr(cgEventsBytes.length) + " bytes + NUL)")
+    a68Bind(cgUiEventsLabel)
+    a68DcBytes(cgEventsBytes)
+    a68DcB(0)
+    a68Align()
+}
+
+// cgReserveUiPoolLabels allocates (but does not yet bind) the UI blob/
+// events pool labels -- same "reserve early" discipline as
+// cgReserveStrLitLabels, called alongside it (both cg68Measure's throwaway
+// pass and cg68Program's real per-segment pass), so UiProgDesc/
+// UiTestScript call sites reached while walking an earlier function body
+// already have a valid (if not yet bound) label to reference.
+func cgReserveUiPoolLabels() {
+    if irIsUiProgram() {
+        cgUiBlobLabel = a68NewLabel()
+        cgUiEventsLabel = a68NewLabel()
+    } else {
+        cgUiBlobLabel = -1
+        cgUiEventsLabel = -1
+    }
 }
 
 // ================================================================
@@ -6786,6 +7707,7 @@ func cg68Measure(): bool {
     cgAssignGlobalOffsets()
     cgReservePanicMsgs()
     cgReserveStrLitLabels()
+    cgReserveUiPoolLabels()
     cgAssignRcWalkLabels()
     cgReserveEnumTableLabels()
     cgAssignMeasureFuncLabels()
@@ -6981,6 +7903,7 @@ func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
         a68Reset()
         cgAssignSegFuncLabels(s)
         cgReserveStrLitLabels()
+        cgReserveUiPoolLabels()
         cgReserveEnumTableLabels()
         cgAssignRcWalkLabels()
         if cgMul32Used {

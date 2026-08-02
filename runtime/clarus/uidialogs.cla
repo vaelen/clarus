@@ -89,6 +89,38 @@ const rtUiEvCancelled: int = 6
 external func UiSFGetFile(path255Out: ptr): bool
 external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
 
+// nat_UiSFGetFile/nat_UiSFPutFile (Task 12, native-5e): clause-less nat_
+// fallbacks -- discovered empirically, not named in this task's own
+// brief: rtUiAskOpen/rtUiAskSave's own real (non-scripted) halves, below,
+// are reached by EVERY UI program's compiled output regardless of
+// whether that program's own golden scenario ever takes the real-build
+// branch (same whole-function-reachability situation as every other
+// deferred stub in this file/uitext.cla).
+//
+// DEFERRED STUB, not a real port: this file's own doc comment above
+// already states SFGetFile/SFPutFile are "routine-selector Pascal traps"
+// (`M68K_INLINE(0x3F3C, <selector>, 0xA9EA)` -- push a 16-bit Package
+// Manager selector immediate, THEN trap 0xA9EA/_PackDispatch), not a
+// plain trap this language's `= trap` clause can express directly, AND
+// (this doc comment's own words) "Never exercised by any golden scenario
+// -- ported for contract completeness" on the cprint lane either. Same
+// ponytail call as uitext.cla's TEFromScrap/TEToScrap stubs: a real
+// Package-Manager-dispatch port is real, understood-in-outline
+// (selector-then-trap) but unverified-on-hardware work with zero test
+// coverage to prove it right, for a StandardFile dialog no golden
+// scenario this task gates on ever opens -- return `false` (SFReply's own
+// "user cancelled" result), the same safe answer a real cancelled dialog
+// would give the caller, rather than guess at the full Point/UPP/
+// SFTypeList arg marshaling. Upgrade alongside a future task's own
+// native StandardFile-exercising scenario (formedit/bookmarks/opendoc).
+func nat_UiSFGetFile(path255Out: ptr): bool {
+    return false
+}
+
+func nat_UiSFPutFile(suggested255: ptr, path255Out: ptr): bool {
+    return false
+}
+
 // ================================================================
 // rt_ui_field_cap's form-aware narrowing (rt_ui.c:1819-1842) completes
 // uitext.cla's Task 8 stub -- see that file's own rtUiFieldCap, which

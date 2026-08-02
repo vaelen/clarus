@@ -111,12 +111,27 @@ func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int
 func runUIScenarioBuild(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
 	t.Helper()
 	requireMac(t)
-	root := repoRoot(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
 	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
 
 	bin := runBuildMac(t, name, claRel, "--test", "--events", eventsRel)
 	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	return checkUIGoldens(t, scenario, out, exitCode, wantExit)
+}
+
+// checkUIGoldens is runUIScenarioBuild's own golden-compare tail, factored
+// out (Task 12, native-5e) so a native (`clarusc emit68k`) boot lane can
+// share the EXACT same trace/snap comparison the Retro68-ported lane
+// already uses, rather than a second hand-copied implementation drifting
+// out of sync with this one -- parses `out` (parseUIOutput), compares the
+// trace against testdata/ui/<scenario>.trace and every snap against
+// testdata/uisnaps/<scenario>.<name>.pbm byte-exact (or rewrites both
+// under CLARUS_MAC_BLESS=1), and asserts exitCode == wantExit. Returns the
+// decoded snaps (same contract runUIScenarioBuild's own callers already
+// rely on for their own extra per-scenario snap assertions).
+func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wantExit int) []uiSnap {
+	t.Helper()
+	root := repoRoot(t)
 	trace, snaps := parseUIOutput(t, out)
 
 	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")

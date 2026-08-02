@@ -119,6 +119,50 @@ external func UiTextSize(s: word) = trap 0xA88A
 external func UiTEFromScrap(): int
 external func UiTEToScrap(): int
 external func UiTEGetScrapLength(): int
+
+// nat_UiTEFromScrap/nat_UiTEToScrap/nat_UiTEGetScrapLength (Task 12,
+// native-5e): clause-less nat_ fallbacks -- discovered empirically, not
+// named in this task's own brief: rtUiStdEditPaste (below) is reached by
+// EVERY UI program's standard Edit-menu dispatch (rtUiStdEditDispatch,
+// ui.cla), unconditionally, regardless of whether that particular program
+// has any TextEdit widget at all (Clarus has no branch-level dead-code
+// elimination, only whole-function reachability -- the same "must compile
+// even if never exercised this task" situation as the LDEF/action glue
+// stubs above).
+//
+// nat_UiTEGetScrapLength is a REAL, safe port: TEGetScrapLength has no
+// trap word even on classic 68k (this file's own doc comment above,
+// verified against Retro68's multiversal/defs/TextEdit.yaml: a plain
+// `lowmem: TEScrpLength, type: INTEGER, address: 0xAB0` global) -- an
+// unsigned 16-bit read, zero-extended to int, matching the C reference's
+// own `(long)*(unsigned short*)0x0AB0`.
+//
+// nat_UiTEFromScrap/nat_UiTEToScrap are DEFERRED STUBS, not a real port:
+// TEFromScrap/TEToScrap carry NO plain A-line trap word in Retro68's own
+// multiversal source either (multiversal/defs/ScrapMgr.yaml's 0xA9FC/
+// 0xA9FD/0xA9FE are ZeroScrap/GetScrap/PutScrap -- verified directly, NOT
+// the TE-prefixed pair actually needed here); they're built from an
+// "executor" (hand-written glue converting the TE scrap's style-run
+// format to/from the flat Scrap Manager buffer), which this task does not
+// reverse-engineer. ponytail: a real Scrap Manager port is out of Task
+// 12's own scope (no golden scenario this task gates on exercises cut/
+// copy/paste) and risky to hand-wave (a wrong trap word crashes real
+// hardware, CLAUDE.md's own documented A-line/F-line failure class) --
+// no-op (return noErr, touch nothing) rather than guess. Upgrade when a
+// future task's own golden scenario set needs a working native
+// cut/copy/paste (Task 14's full-23 gate includes texteditor/
+// texteditor_bigfile, which may be the first real forcing function).
+func nat_UiTEFromScrap(): int {
+    return 0
+}
+
+func nat_UiTEToScrap(): int {
+    return 0
+}
+
+func nat_UiTEGetScrapLength(): int {
+    return peekw(ptr(0xAB0))
+}
 external func UiZeroScrap(): int = trap 0xA9FC
 external func UiHGetState(h: ptr): int = trap 0xA069 reg
 external func UiHSetState(h: ptr, flag: int) = trap 0xA06A reg

@@ -1784,7 +1784,9 @@ func checkFuncSig(d: int) {
 // builds, so str/text (neither of which has a register slot) trips regBad
 // the same way a 3rd ptr or scalar trips the count. inline deref (conv 3)
 // requires the signature to be exactly one ptr param returning ptr;
-// inline nop (conv 4) requires no return type. Every trap/inline check
+// inline nop (conv 4) requires no return type; inline a5 (conv 5, Task 12,
+// native-5e: `MOVE.L A5,D0`, the running program's own A5 world base)
+// requires zero params and a ptr return. Every trap/inline check
 // runs after, and independently of, the ordinary param/return type checks
 // above -- a param already flagged for its type is not re-flagged here.
 func checkExternFunc(d: int) {
@@ -1849,6 +1851,9 @@ func checkExternFunc(d: int) {
     }
     if conv == 4 and ret != -1 {
         emitDiag(declLine(d), declCol(d), "inline nop requires a void return")
+    }
+    if conv == 5 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
+        emitDiag(declLine(d), declCol(d), "inline a5 requires signature (): ptr")
     }
 }
 

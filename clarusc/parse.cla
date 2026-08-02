@@ -1347,15 +1347,16 @@ func parseExternParam(): int {
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
 // [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" ] | "inline" ( "deref" | "nop"
-// ) ) ]` (Task 3, Ch13: `external func`; trap/inline clause added Task 2,
-// native-5d) -- parseFuncDecl minus the body block, since an external
-// declaration ends at the signature; a following `{` is left for
-// parseTopDecl to reject as an ordinary top-level parse error (there is no
-// external-func body to parse). `trap`/`reg`/`inline`/`deref`/`nop` are all
-// contextual identifiers, matched the same curIsIdentText way `external`
-// itself is (no new tokens) -- the trap word is an ordinary TkInt, decimal
-// or hex (the lexer already handles `0xA122`). trapVal/convFlag default to
-// -1/0 (no clause); the checker (checkExternFunc) validates both.
+// | "a5" ) ) ]` (Task 3, Ch13: `external func`; trap/inline clause added
+// Task 2, native-5d; `inline a5` added Task 12, native-5e) -- parseFuncDecl
+// minus the body block, since an external declaration ends at the
+// signature; a following `{` is left for parseTopDecl to reject as an
+// ordinary top-level parse error (there is no external-func body to
+// parse). `trap`/`reg`/`inline`/`deref`/`nop`/`a5` are all contextual
+// identifiers, matched the same curIsIdentText way `external` itself is
+// (no new tokens) -- the trap word is an ordinary TkInt, decimal or hex
+// (the lexer already handles `0xA122`). trapVal/convFlag default to -1/0
+// (no clause); the checker (checkExternFunc) validates both.
 func parseExternFuncDecl(): int {
     var line: int
     var col: int
@@ -1413,8 +1414,11 @@ func parseExternFuncDecl(): int {
             } else if curIsIdentText("nop") {
                 advance()
                 convFlag = 4
+            } else if curIsIdentText("a5") {
+                advance()
+                convFlag = 5
             } else {
-                parseErrorf(curLine(), curCol(), "expected \"deref\" or \"nop\", found " + tokKindQuoted(curKind()))
+                parseErrorf(curLine(), curCol(), "expected \"deref\", \"nop\", or \"a5\", found " + tokKindQuoted(curKind()))
             }
         } else {
             parseErrorf(curLine(), curCol(), "expected \"trap\" or \"inline\", found " + tokKindQuoted(curKind()))

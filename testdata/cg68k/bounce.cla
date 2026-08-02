@@ -1,0 +1,31 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+window Game {
+    title: "Bounce"
+    size: 200, 200
+    canvas Board { at: 0, 0; fill: both; buffered }
+
+    var x: fixed = 10.0
+    var dx: fixed = 2.0
+}
+
+// Ch11's own listing is a fragment illustrating `every`/`fixed` alone (the
+// window-opening boilerplate is already covered in Ch8) and never opens
+// Game -- fine for the Task 5 compile/link gate, but Task 7 (mac-target-4b)
+// needs this file to actually run as a human-usable demo, so App.launch is
+// added here: without it Game.front is always nil and the every-block below
+// is a permanent no-op.
+on App.launch {
+    open Game
+}
+
+every 1 ticks {
+    var g: Game = Game.front
+    if g != nil {
+        g.x = g.x + g.dx
+        if g.x > 190.0 or g.x < 0.0 { g.dx = -g.dx }
+        g.Board.clear()
+        g.Board.fillCircle(int(g.x), 100, 8)
+    }
+}

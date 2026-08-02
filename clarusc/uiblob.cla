@@ -113,6 +113,16 @@ func uibI32(b: list of int, v: int) {
 // below).
 // ================================================================
 
+// uibNativeLane (Task 12, native-5e): selects uibEmitLayout's own record-
+// layout authority -- false (the default, cprint's own lane) reads
+// cpCRecordSize/cpCFieldOffset (the C-ABI: bool=int32, char=uint8); true
+// (cg68k.cla sets it for the one uibBuild() call that pours the blob into
+// the native constant pool, cgEmitUiBlobPool) reads cg68k's own
+// cgRecordSize/cgFieldOffset (bool/char both 2-byte slots) instead. See
+// uibEmitLayout's own doc comment for why the two lanes' record layouts
+// genuinely differ and a shared blob would corrupt one lane or the other.
+var uibNativeLane: bool = false
+
 var uibHeader: list of int
 var uibWindows: list of int
 var uibWidgets: list of int
@@ -538,10 +548,10 @@ func uibStateSize(winIdx: int): int {
 // cprint bends the C to cg68k, cpUiStateFieldCType), hence the split.
 // cpEmitUiLayoutAsserts turns any future drift into a compile error.
 //
-// TASK 12 (cg68k native lane): when uibBuild starts feeding the NATIVE
-// backend, this section must follow THAT backend's record layout instead
-// -- cg68k's bool/char slots are 2 bytes, so the same blob cannot serve
-// both lanes unmodified. Select the authority off the active backend.
+// TASK 12 (cg68k native lane, DONE): uibNativeLane selects the authority
+// -- cg68k.cla sets it for the one uibBuild() call that pours the blob
+// into the native constant pool (cgEmitUiBlobPool), false (cprint's own
+// lane, cpEmitUiBlob) the rest of the time.
 func uibEmitLayout(recNameIdx: int): int {
     var ri: int
     var f: int
@@ -570,7 +580,11 @@ func uibEmitLayout(recNameIdx: int): int {
     }
 
     off = uibBaseLayouts + uibLayouts.count
-    uibI32(uibLayouts, cpCRecordSize(recNameIdx))
+    if uibNativeLane {
+        uibI32(uibLayouts, cgRecordSize(recNameIdx))
+    } else {
+        uibI32(uibLayouts, cpCRecordSize(recNameIdx))
+    }
     uibI32(uibLayouts, nFields)
 
     f = irRecordLayoutFieldsHead(ri)
@@ -600,7 +614,11 @@ func uibEmitLayout(recNameIdx: int): int {
             }
         }
         uibI32(uibLayouts, uibFieldTypeNum(k))
-        uibI32(uibLayouts, cpCFieldOffset(recNameIdx, irFieldSlotName(f)))
+        if uibNativeLane {
+            uibI32(uibLayouts, cgFieldOffset(recNameIdx, irFieldSlotName(f)))
+        } else {
+            uibI32(uibLayouts, cpCFieldOffset(recNameIdx, irFieldSlotName(f)))
+        }
         uibI32(uibLayouts, strCap)
         uibI32(uibLayouts, enumCount)
         uibI32(uibLayouts, enumLabelsOff)

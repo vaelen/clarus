@@ -1,0 +1,19 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// inline_a5.cla (Task 12, native-5e): pins cgCallExtA5's own encoding
+// (`MOVE.L A5,D0`) for `= inline a5` in isolation -- UiCurrentA5
+// (uiscript.cla), the one real declared user of this clause, has no
+// existing Clarus call site yet (its own doc comment: currently
+// unreferenced -- a future task wires a real qd-globals-access call
+// site), so this fixture is the ONLY listing exercise for the clause
+// until then. A local test-only extern, not UiCurrentA5 itself: this
+// package's own golden harness (TestCg68kGoldens) runs a bare
+// `emit68k --listing`, no `--rtdir`/runtime-module linkage, so it can't
+// reach uiscript.cla's real declaration anyway.
+external func TestA5(): ptr = inline a5
+
+on App.startCLI(args: list of string) {
+    var p: ptr
+    p = TestA5()
+}

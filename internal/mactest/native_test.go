@@ -268,6 +268,54 @@ func buildNative68k(t *testing.T, fixture, binName string) string {
 	return bin
 }
 
+// buildNative68kUI (Task 12, native-5e) is buildNative68k plus `--events`:
+// builds a UI program via `clarusc emit68k --events <eventsRel> <claRel...>`
+// through the same memoized buildNativeClarusc() -- no Retro68/cmake, no
+// C, unlike ui_test.go's own runUIScenarioBuild (which builds the SAME
+// kind of scenario through scripts/build-mac.sh's Retro68 pipeline).
+// eventsRel/claRel are package-dir-relative paths, the SAME convention
+// ui_test.go's own runUIScenarioBuild/eventsRel already use (passed
+// through to clarusc unmodified -- clarusc runs with this package's own
+// working directory, so a relative path resolves the same way either
+// way, and its own runtime-module upward search from cwd already finds
+// runtime/clarus/ from here without an explicit --rtdir, the same
+// precedent buildNative68k's own callers already rely on).
+func buildNative68kUI(t *testing.T, name string, eventsRel string, claRel ...string) string {
+	t.Helper()
+	exe := buildNativeClarusc(t)
+	bin := filepath.Join(t.TempDir(), name+".bin")
+	args := []string{"emit68k", "-o", bin, "--events", eventsRel}
+	args = append(args, claRel...)
+	cmd := exec.Command(exe, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return bin
+}
+
+// TestSmokeBounceOn68k is Task 12's own end gate (native-5e): the FIRST
+// native UI boot -- testdata/valid/bounce.cla (canvas + every + close, no
+// TE/tables/dialogs/AE -- the smallest of the 23 UI golden scenarios),
+// built via `clarusc emit68k --events` (no Retro68/cmake/C at all) and
+// booted on the same emulator harness TestHelloOn68k/etc already use.
+// Reuses ui_test.go's own checkUIGoldens (the SAME trace/testdata/ui and
+// snap/testdata/uisnaps comparison the Retro68-ported lane's
+// TestSmokeBounceUIScenario already passes against) -- byte-identical
+// trace + PBM snaps against the FROZEN goldens is the whole point: this
+// is the same runtime (runtime/clarus/ui*.cla) and the same scripted
+// event source, only the CODE GENERATOR differs (cg68k vs gcc), so any
+// divergence here is native codegen/trap/glue/blob-lane, by construction
+// (this task's own brief).
+func TestSmokeBounceOn68k(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "smoke_bounce.events")
+	claRel := filepath.Join("..", "..", "testdata", "valid", "bounce.cla")
+	bin := buildNative68kUI(t, "smoke_bounce", eventsRel, claRel)
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	checkUIGoldens(t, "smoke_bounce", out, exitCode, 0)
+}
+
 // TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
 // TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
 // via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the
