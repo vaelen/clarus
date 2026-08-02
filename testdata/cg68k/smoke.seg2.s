@@ -3,7 +3,7 @@
         ;   local b : -8(A6)  size 4
         ;   local __store7 : -12(A6)  size 4
 LBL_0:
-        LINK A6,#-604
+        LINK A6,#-2140
         LEA -4(A6),A0
         MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
@@ -50,10 +50,10 @@ LBL_0:
         MOVEA.L (A7)+,A1
         LEA -8(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-560(A6)
+        MOVE.L D0,-2096(A6)
 LBL_175:
         MOVE.L A1,-(A7)
-        MOVE.L -560(A6),D0
+        MOVE.L -2096(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -140,10 +140,10 @@ LBL_180:
         ADDA.W #258,A7
         LEA -12(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-560(A6)
+        MOVE.L D0,-2096(A6)
 LBL_181:
         MOVE.L A1,-(A7)
-        MOVE.L -560(A6),D0
+        MOVE.L -2096(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -152,10 +152,10 @@ LBL_181:
         MOVE.L D0,-12(A6)
         LEA -8(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-560(A6)
+        MOVE.L D0,-2096(A6)
 LBL_182:
         MOVE.L A1,-(A7)
-        MOVE.L -560(A6),D0
+        MOVE.L -2096(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -206,20 +206,20 @@ LBL_184:
         ADDA.W #258,A7
         LEA -4(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-560(A6)
+        MOVE.L D0,-2096(A6)
 LBL_185:
         MOVE.L A1,-(A7)
-        MOVE.L -560(A6),D0
+        MOVE.L -2096(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -8(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-560(A6)
+        MOVE.L D0,-2096(A6)
 LBL_186:
         MOVE.L A1,-(A7)
-        MOVE.L -560(A6),D0
+        MOVE.L -2096(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -231,7 +231,7 @@ LBL_174:
         ;   local l : -4(A6)  size 4
         ;   local __ret4 : -8(A6)  size 4
 LBL_1:
-        LINK A6,#-600
+        LINK A6,#-2136
         LEA -4(A6),A0
         MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
@@ -256,10 +256,10 @@ LBL_1:
         ADDQ.L #8,A7
         LEA -8(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-556(A6)
+        MOVE.L D0,-2092(A6)
 LBL_188:
         MOVE.L A1,-(A7)
-        MOVE.L -556(A6),D0
+        MOVE.L -2092(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -275,10 +275,10 @@ LBL_188:
         MOVEA.L (A7)+,A1
         LEA -4(A6),A0
         MOVE.L 0(A0),D0
-        MOVE.L D0,-556(A6)
+        MOVE.L D0,-2092(A6)
 LBL_189:
         MOVE.L A1,-(A7)
-        MOVE.L -556(A6),D0
+        MOVE.L -2092(A6),D0
         MOVE.L D0,-(A7)
         JSR 218(A5)
         ADDQ.L #4,A7
@@ -299,7 +299,7 @@ LBL_187:
         ;   local __store8 : -788(A6)  size 4
         ;   local __store9 : -792(A6)  size 4
 LBL_2:
-        LINK A6,#-1384
+        LINK A6,#-2920
         LEA -4(A6),A0
         MOVE.L A0,-(A7)
         JSR 98(A5)
@@ -901,7 +901,7 @@ LBL_190:
         ;   local n : -20(A6)  size 4
         ;   local __store10 : -24(A6)  size 4
 LBL_3:
-        LINK A6,#-616
+        LINK A6,#-2152
         LEA -4(A6),A0
         MOVE.L A0,-(A7)
         JSR 98(A5)
@@ -1173,7 +1173,7 @@ LBL_216:
         ;   local __store12 : -200(A6)  size 48
         ;   local __store13 : -248(A6)  size 48
 LBL_4:
-        LINK A6,#-840
+        LINK A6,#-2376
         MOVE.L #3,D0
         MOVE.L D0,-48(A6)
         MOVE.L #4,D0

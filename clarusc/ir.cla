@@ -669,9 +669,17 @@ var irExternParamTys: list of int
 var irExternTrapWords: list of int
 var irExternConvs: list of int
 
+// irExternSels (Task 14, native-5e) is the eighth parallel arena -- the
+// optional `trap WORD sel SELECTOR` clause's selector word (ast.cla's
+// externFuncSel; -1 when the extern has no `sel` clause), for a
+// "Package 7"-style trap shared by several routines (e.g. UiLNew's real
+// 0xA9E7, the List Manager's own single dispatch trap -- see
+// parseExternFuncDecl's own doc comment for the full story).
+var irExternSels: list of int
+
 // irRegisterExtern records one `external func`'s signature (lower.cla's
 // lowExternDecl, phase-1-only -- an extern has no body to lower).
-func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int) {
+func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int, sel: int) {
     var start: int
     var i: int
 
@@ -687,6 +695,7 @@ func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: 
     irExternParamCountArr.add(paramTys.count)
     irExternTrapWords.add(trapVal)
     irExternConvs.add(conv)
+    irExternSels.add(sel)
 }
 
 func irExternCount(): int {
@@ -717,6 +726,12 @@ func irExternTrap(i: int): int {
 
 func irExternConv(i: int): int {
     return irExternConvs[i]
+}
+
+// irExternSel (Task 14, native-5e) reads back extern i's selector clause --
+// see irExternSels above.
+func irExternSel(i: int): int {
+    return irExternSels[i]
 }
 
 // irIsExtern reports whether nameIdx names a registered `external func` --
@@ -873,6 +888,9 @@ func irReset() {
     }
     while irExternConvs.count > 0 {
         irExternConvs.pop()
+    }
+    while irExternSels.count > 0 {
+        irExternSels.pop()
     }
 
     irHasLaunch = false

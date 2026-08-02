@@ -49,23 +49,30 @@
 // verified against toolchain/multiversal/CIncludes/Multiverse.h:9669-9714
 // and Retro68/InterfacesAndLibraries/Interfaces/CIncludes/Lists.h) -- the
 // selector word is an encoding detail the real Toolbox call handles
-// internally; cprint's rt_ext_ wrapper just calls the real C name directly
-// (this module's own header comment doesn't repeat that rationale --
-// see ui.cla's Gestalt comment for the precedent of citing a trap word a
-// plain `= trap` clause can't fully express). Point/Cell by-value params
-// pack v (high 16) / h (low 16) into one `int`, same convention as every
-// other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
-external func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7
-external func UiLDispose(lHandle: ptr) = trap 0xA9E7
-external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7
-external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7
-external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7
-external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7
-external func UiLSize(listWidth: word, listHeight: word, lHandle: ptr) = trap 0xA9E7
-external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7
-external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7
-external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7
-external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9E7
+// internally on the cprint/C lane (rt_ext_ wrapper calls the real C name
+// directly, letting Retro68's own header glue push the selector), but
+// NATIVE cg68k has no such wrapper: Task 14 (native-5e) added a `sel`
+// extern clause (`= trap 0xA9E7 sel 0x0044`, cgCallExtPascal) specifically
+// for this "Package 7"-dispatch shape, and every routine below now
+// carries its own real selector word (verified against the SAME Lists.h
+// THREEWORDINLINE/TWOWORDINLINE lines cited above) -- pre-fix, EVERY List
+// Manager call here pushed NO selector at all, so the trap read whatever
+// garbage happened to be on the stack, crashing "illegal instruction"
+// before popuptable.cla's table widget (built during App.launch, before
+// any window ever shows) finished construction. Point/Cell by-value
+// params pack v (high 16) / h (low 16) into one `int`, same convention as
+// every other by-value Point/Cell this port uses (ui.cla's rt_ext_ui_pt). ----
+external func UiLNew(rView: ptr, dataBounds: ptr, cSize: int, theProc: word, theWindow: ptr, drawIt: bool, hasGrow: bool, scrollHoriz: bool, scrollVert: bool): ptr = trap 0xA9E7 sel 0x0044
+external func UiLDispose(lHandle: ptr) = trap 0xA9E7 sel 0x0028
+external func UiLAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
+external func UiLDelRow(count: word, rowNum: word, lHandle: ptr) = trap 0xA9E7 sel 0x0024
+external func UiLGetSelect(next: bool, theCell: ptr, lHandle: ptr): bool = trap 0xA9E7 sel 0x003C
+external func UiLSetSelect(setIt: bool, theCell: int, lHandle: ptr) = trap 0xA9E7 sel 0x005C
+external func UiLSize(listWidth: word, listHeight: word, lHandle: ptr) = trap 0xA9E7 sel 0x0060
+external func UiLActivate(act: bool, lHandle: ptr) = trap 0xA9E7 sel 0x0000
+external func UiLSetDrawingMode(drawIt: bool, lHandle: ptr) = trap 0xA9E7 sel 0x002C
+external func UiLUpdate(theRgn: ptr, lHandle: ptr) = trap 0xA9E7 sel 0x0064
+external func UiLClick(pt: int, modifiers: word, lHandle: ptr): bool = trap 0xA9E7 sel 0x0018
 
 // ---- Menu Manager additions (SetMenuItemText/GetMenuHandle/PopUpMenuSelect
 // -- ui.cla already declares NewMenu/AppendMenu/AppendMenuStr/InsertMenu/

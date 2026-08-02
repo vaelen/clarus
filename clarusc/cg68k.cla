@@ -469,19 +469,23 @@ var cgEnumTableLabels: list of int
 // container elements).
 const cgTmpSlots: int = 8
 
-// cgBigTmpSlots/cgBigTmpSize (Task 14.7 gap-closure): a SEPARATE, smaller
-// pool sized for a KStr/KRec temp (cgTmpBaseOffs' own slots are a fixed 4
-// bytes, too small for anything past a str(3)/tiny record) -- same
-// per-statement bump-allocated lifetime as the small pool
-// (cgStmtBigTmpNext mirrors cgStmtTmpNext exactly), just reserved and
-// indexed separately since the two never share a slot. 256 = the
-// established max KStr size this file already hard-codes elsewhere
-// (cgStrBuilderIntoTemp's own 256-byte scratch); 2 slots is enough for
-// the deepest nesting this task's corpus needs (e.g. str_cmp(f(), g()) --
-// two independently-materialized results concurrently live within one
-// statement).
-const cgBigTmpSlots: int = 2
-const cgBigTmpSize: int = 256
+// cgBigTmpSlots/cgBigTmpSize (Task 14.7 gap-closure; bumped Task 14,
+// native-5e): a SEPARATE, smaller pool sized for a KStr/KRec temp
+// (cgTmpBaseOffs' own slots are a fixed 4 bytes, too small for anything
+// past a str(3)/tiny record) -- same per-statement bump-allocated
+// lifetime as the small pool (cgStmtBigTmpNext mirrors cgStmtTmpNext
+// exactly), just reserved and indexed separately since the two never
+// share a slot. Originally 256 bytes/2 slots (Task 14.7's own corpus
+// never needed more than a bare Str255); bumped to 512/4 when a REAL UI
+// record (popuptable.cla/formedit.cla/bookmarks.cla's own `record
+// Bookmark { name: string(63); url: string(255); ... }`, ~330 bytes)
+// first exceeded 256, and a texteditor.cla statement first needed more
+// than 2 concurrently-live big temps. Both are literally the upgrade
+// path their own error messages name ("bump cgBigTmpSlots"/the size
+// check) -- not a new mechanism, just headroom for real (not synthetic)
+// UI record shapes.
+const cgBigTmpSlots: int = 4
+const cgBigTmpSize: int = 512
 
 var cgTmpBaseOffs: list of int
 var cgBigTmpBaseOffs: list of int
@@ -3113,6 +3117,18 @@ func cgExprAddr(e: int) {
         cgFieldRefAddr(e)
     } else if k == EIndexRef {
         cgIndexRefAddr(e)
+    } else if k == EIntr and poolGet(irIntrName(e)) == "ui_value_at_ptr" {
+        // Task 14 (native-5e gate, opendoc.cla): `*(T *)(a0)` -- unlike
+        // every OTHER EIntr (a COMPUTED value with no existing storage,
+        // needing the generic materialize-to-temp fallback below), this
+        // one's whole point is a raw pointer dereference: the VALUE's
+        // address IS simply a0's own value, already a real address
+        // (lowSynthLaunchDoc's own synthesized `handler_App_openDocument
+        // (ui_value_at_ptr(path))` glue -- `path` is the launch pre-scan's
+        // own scratch buffer pointer). No copy/materialization needed at
+        // all.
+        cgExpr(irIntrArgsHead(e))
+        a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
     } else {
         // A call/intr/other value-producing result -- task-12-review's
         // Important finding: this USED TO degrade to a deterministic
@@ -5433,8 +5449,61 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
         return
     }
-    if nm == "ui_edit" or nm == "ui_ask_open" or nm == "ui_ask_save" or nm == "ui_ask_save_changes" or nm == "ui_form_is_new" {
-        log("cg68k: " + nm + ": dialog/StandardFile intrinsics not wired this task (native-5e Task 12 scope, pairs with nat_UiSFGetFile/nat_UiSFPutFile stubs)")
+    if nm == "ui_ask_open" or nm == "ui_ask_save" or nm == "ui_ask_save_changes" or nm == "ui_form_is_new" {
+        // Task 14 (native-5e gate, dialogs.cla/texteditor.cla): askOpen/
+        // askSave/askSaveChanges/x.isNew are ALREADY-PORTED plain Clarus
+        // functions (uidialogs.cla's rtUiAskOpen/rtUiAskSave/
+        // rtUiAskSaveChanges/rtUiFormIsNew -- real StandardFile trap
+        // marshaling AND the RT_MAC_TEST scripted answer-queue substitute
+        // both already live there, in Clarus, gated on rtUiTestMode) --
+        // this is a bare forwarding call, the exact cprint.cla arg shape
+        // (fpAddrable's own address-of for an out-param, fpStrAddr's own
+        // address-of for a read-only str), no pascal/trap marshaling of
+        // any kind needed here at all.
+        if nm == "ui_ask_open" {
+            fi = findIRFuncIdxByName(intern("rtUiAskOpen"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiAskOpen not found/reachable")
+                quit 1
+            }
+            cgExprAddr(a0)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(4)
+        } else if nm == "ui_ask_save" {
+            fi = findIRFuncIdxByName(intern("rtUiAskSave"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiAskSave not found/reachable")
+                quit 1
+            }
+            cgExprAddr(a0)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a1)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(8)
+        } else if nm == "ui_ask_save_changes" {
+            fi = findIRFuncIdxByName(intern("rtUiAskSaveChanges"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiAskSaveChanges not found/reachable")
+                quit 1
+            }
+            cgExprAddr(a0)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgCallFunc(fi)
+            cgCleanupStack(4)
+        } else {
+            fi = findIRFuncIdxByName(intern("rtUiFormIsNew"))
+            if fi == -1 or not shakeReachable(fi) {
+                log("cg68k: rtUiFormIsNew not found/reachable")
+                quit 1
+            }
+            cgCallFunc(fi)
+        }
+        return
+    }
+    if nm == "ui_edit" {
+        log("cg68k: ui_edit: form edit statement not wired this task (native-5e Task 12 scope)")
         quit 1
     }
 
@@ -5742,7 +5811,13 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
     if ak == EVarRef or ak == EFieldRef or ak == EIndexRef {
         return true
     }
-    return ak == EStrConst and tk == KStr
+    if ak == EStrConst and tk == KStr {
+        return true
+    }
+    // ui_value_at_ptr (Task 14, native-5e): a raw pointer dereference --
+    // already addressable via cgExprAddr's own dedicated arm, same
+    // reasoning as that arm's own doc comment.
+    return ak == EIntr and poolGet(irIntrName(a)) == "ui_value_at_ptr"
 }
 
 // cgPushArgMaterialized handles a KStr/KRec call argument whose expr is
@@ -6226,6 +6301,24 @@ func cgCallExtPascal(e: int, xi: int) {
         }
         a = irExprNext(a)
         j = j + 1
+    }
+    // Task 14 (native-5e gate, popuptable.cla): a "Package 7"-style
+    // selector-dispatch trap (irExternSel != -1 -- e.g. UiLNew's real
+    // 0xA9E7, the List Manager's ONE shared trap) pushes the selector
+    // WORD as one more `.W` immediate, AFTER every declared arg (closest
+    // to the trap itself) -- mirrors Retro68's own THREEWORDINLINE(0x3F3C,
+    // selector, 0xA9E7) call-site shape exactly (0x3F3C is literally
+    // MOVE.W #selector,-(SP)). No separate cleanup needed: the trap
+    // dispatcher pops it along with every other arg, same "no post-trap
+    // ADDA/ADDQ" discipline this function's own header comment already
+    // documents. Root cause this fixes: EVERY List Manager extern in
+    // uitable.cla was declared plain `trap 0xA9E7` with no selector at
+    // all, so the real trap always read whatever garbage happened to be
+    // on the stack as its selector -- "illegal instruction" before any
+    // window ever drew (popuptable.cla's table widget is built during
+    // App.launch, before ShowWindow).
+    if irExternSel(xi) != -1 {
+        a68Emit(OpMove, 2, AmImm, 0, irExternSel(xi), AmPreDec, 7, 0)
     }
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
     if irtKind(retTy) != KVoid {

@@ -4614,7 +4614,7 @@ func lowExternDecl(d: int) {
     } else {
         ret = irVoidT
     }
-    irRegisterExtern(funcDeclName(d), ret, paramTys, externFuncTrap(d), externFuncConv(d))
+    irRegisterExtern(funcDeclName(d), ret, paramTys, externFuncTrap(d), externFuncConv(d), externFuncSel(d))
 }
 
 // lowAppDecl records the (at most one, checker-validated) `app` section's

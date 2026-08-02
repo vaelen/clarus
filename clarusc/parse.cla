@@ -1346,18 +1346,21 @@ func parseExternParam(): int {
 }
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
-// [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" [ "memerr" ] ] | "inline" (
-// "deref" | "nop" | "a5" ) ) ]` (Task 3, Ch13: `external func`; trap/inline
-// clause added Task 2, native-5d; `inline a5` added Task 12, native-5e;
-// `reg memerr` added Task 14, native-5e) -- parseFuncDecl minus the body
-// block, since an external declaration ends at the signature; a following
-// `{` is left for parseTopDecl to reject as an ordinary top-level parse
-// error (there is no external-func body to parse). `trap`/`reg`/`memerr`/
-// `inline`/`deref`/`nop`/`a5` are all contextual identifiers, matched the
-// same curIsIdentText way `external` itself is (no new tokens) -- the trap
-// word is an ordinary TkInt, decimal or hex (the lexer already handles
-// `0xA122`). trapVal/convFlag default to -1/0 (no clause); the checker
-// (checkExternFunc) validates both.
+// [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "reg" [ "memerr" ] ]
+// | "inline" ( "deref" | "nop" | "a5" ) ) ]` (Task 3, Ch13: `external
+// func`; trap/inline clause added Task 2, native-5d; `inline a5` added
+// Task 12, native-5e; `reg memerr` and `trap ... sel` both added Task 14,
+// native-5e) -- parseFuncDecl minus the body block, since an external
+// declaration ends at the signature; a following `{` is left for
+// parseTopDecl to reject as an ordinary top-level parse error (there is
+// no external-func body to parse). `trap`/`sel`/`reg`/`memerr`/`inline`/
+// `deref`/`nop`/`a5` are all contextual identifiers, matched the same
+// curIsIdentText way `external` itself is (no new tokens) -- the trap/sel
+// words are ordinary TkInt, decimal or hex (the lexer already handles
+// `0xA122`). trapVal/convFlag/selVal default to -1/0/-1 (no clause); the
+// checker (checkExternFunc) validates trapVal/convFlag (selVal has no
+// separate validation -- the grammar itself makes `sel` and `reg`
+// mutually exclusive, and `sel` never changes convFlag away from 1).
 func parseExternFuncDecl(): int {
     var line: int
     var col: int
@@ -1369,6 +1372,8 @@ func parseExternFuncDecl(): int {
     var trapVal: int
     var convFlag: int
     var trapTok: Token
+    var selVal: int
+    var selTok: Token
 
     line = curLine()
     col = curCol()
@@ -1396,6 +1401,7 @@ func parseExternFuncDecl(): int {
     }
     trapVal = -1
     convFlag = 0
+    selVal = -1
     if curKind() == TkAssign {
         advance()
         if curIsIdentText("trap") {
@@ -1403,7 +1409,28 @@ func parseExternFuncDecl(): int {
             trapTok = expect(TkInt)
             trapVal = trapTok.intVal
             convFlag = 1
-            if curIsIdentText("reg") {
+            if curIsIdentText("sel") {
+                // Task 14 (native-5e): `trap 0xA9E7 sel 0x0044` -- a
+                // "Package 7" (List Manager) selector-dispatch trap: ALL
+                // of LNew/LDispose/LAddRow/etc share the ONE trap word
+                // 0xA9E7, distinguished only by a selector WORD the real
+                // Toolbox glue pushes immediately before the trap
+                // (Retro68's own THREEWORDINLINE(0x3F3C, selector,
+                // 0xA9E7) encoding -- 0x3F3C is literally MOVE.W
+                // #selector,-(SP)). A plain `trap` clause has nowhere to
+                // carry that extra word; cgCallExtPascal pushes it as one
+                // more `.W` immediate right before the trap itself, same
+                // callee-pops discipline as every declared arg. See
+                // cgCallExtPascal's own doc comment for the popuptable.cla
+                // gate failure ("illegal instruction", crashing before
+                // any window ever drew) this fixes -- every List Manager
+                // call was dispatching through 0xA9E7 with NO selector
+                // pushed at all, reading whatever garbage happened to be
+                // on the stack as the selector instead.
+                advance()
+                selTok = expect(TkInt)
+                selVal = selTok.intVal
+            } else if curIsIdentText("reg") {
                 advance()
                 convFlag = 2
                 // Task 14 (native-5e): `reg memerr` -- a real Toolbox
@@ -1438,7 +1465,16 @@ func parseExternFuncDecl(): int {
             parseErrorf(curLine(), curCol(), "expected \"trap\" or \"inline\", found " + tokKindQuoted(curKind()))
         }
     }
-    return newExternFuncDecl(name.nameIdx, paramsHead, retType, trapVal, convFlag, line, col)
+    // Pack selVal into trapVal's upper 16 bits (DeclNode's uniform shape
+    // has no spare field for a 4th piece of trap-clause data -- "a few
+    // unused ints per node is irrelevant" is the file's own precedent for
+    // NOT special-casing one decl kind's own struct, so this reuses the
+    // existing `c` slot instead): trap words are always 0xA000..0xAFFF
+    // (fits in the low 16 bits with room to spare) and selVal+1 (0 when
+    // selVal is -1, i.e. no `sel` clause -- a real selector is never
+    // negative) shifted up 16 leaves the low word untouched. externFuncSel
+    // (ast.cla) reverses this.
+    return newExternFuncDecl(name.nameIdx, paramsHead, retType, trapVal | ((selVal + 1) << 16), convFlag, line, col)
 }
 
 // parseIncludeDecl parses `"include" STRING` (contextual: "include" is an

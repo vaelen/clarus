@@ -1364,8 +1364,23 @@ func newExternFuncDecl(nameIdx: int, paramsHead: int, retType: int, trapVal: int
 
 // externFuncTrap returns a DkExternFunc's trap word (0xA000..0xAFFF once
 // checked), or -1 if it has no trap clause (bare, or an inline clause).
+// Masked to the low 16 bits: `c` may also carry a packed selector in its
+// upper 16 bits (externFuncSel, below) -- parseExternFuncDecl's own
+// packing comment explains why there's no separate DeclNode field for it.
 func externFuncTrap(i: int): int {
-    return decls[i].c
+    return decls[i].c & 0xFFFF
+}
+
+// externFuncSel returns a DkExternFunc's `trap WORD sel SELECTOR` clause's
+// selector word (Task 14, native-5e -- a "Package 7" List Manager style
+// selector-dispatch trap, e.g. UiLNew's real `0xA9E7` trap shared by every
+// List Manager routine, distinguished only by this selector; see
+// parseExternFuncDecl's own doc comment), or -1 if the extern has no `sel`
+// clause. Packed into `c`'s upper 16 bits as selVal+1 (0 = none); -1 is
+// never itself a valid selVal+1 encoding here (trapVal is always
+// 0xA000..0xAFFF, i.e. c is never negative), so this is exact.
+func externFuncSel(i: int): int {
+    return (decls[i].c >> 16) - 1
 }
 
 // externFuncConv returns a DkExternFunc's calling-convention flag: 0=none,
