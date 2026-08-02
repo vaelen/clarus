@@ -339,6 +339,112 @@ func TestAboutOn68k(t *testing.T) {
 	checkUIGoldens(t, "about", out, exitCode, 0)
 }
 
+// uiScenario68k is one row of uiScenarios68k (Task 14, native-5e): the
+// native-lane counterpart to ui_test.go's per-scenario Test functions,
+// factored into a table (rather than 21 hand-copied Test funcs) since every
+// row drives the exact same buildNative68kUI + RunMac + checkUIGoldens
+// sequence, differing only in source files / events script / optional extra
+// snap assertion (reusing the checkXxxSnaps helpers ui_test.go's own host
+// lane already factored out for this purpose).
+type uiScenario68k struct {
+	name      string
+	claRel    []string // package-dir-relative, in clarusc's own arg order
+	eventsRel string
+	wantExit  int
+	check     func(t *testing.T, snaps []uiSnap)
+}
+
+// uiScenarios68k is the SAME 23 scenarios/sources/events as ui_test.go's
+// Retro68-ported lane, minus smoke_bounce and about (each already has its
+// own standalone Test*On68k, predating this table -- Task 12/13; kept
+// standalone rather than folded in, recorded here per the brief's "your
+// call").
+var uiScenarios68k = []uiScenario68k{
+	{name: "buttons", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "buttons.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "buttons.events")},
+	{name: "menus", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "menus.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "menus.events")},
+	{name: "winvar", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "winvar.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "winvar.events")},
+	{name: "zoomwin", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "zoomwin.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "zoomwin.events"), check: checkZoomwinSnaps},
+	{name: "canvas", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "canvas.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "canvas.events"), check: checkCanvasSnaps},
+	{name: "pattern", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "pattern.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "pattern.events")},
+	{name: "hdim", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "hdim.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "hdim.events")},
+	{name: "smoke_menudemo", claRel: []string{filepath.Join("..", "..", "examples", "menu-demo.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_menudemo.events")},
+	{name: "smoke_mandel", claRel: []string{filepath.Join("..", "..", "examples", "mandelbrot.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_mandel.events"), check: checkSmokeMandelSnaps},
+	{name: "textwidgets", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "textwidgets.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "textwidgets.events"), check: checkTextwidgetsSnaps},
+	{name: "editmenu", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "editmenu.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "editmenu.events")},
+	{name: "hscroll", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "hscroll.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "hscroll.events"), check: checkHscrollSnaps},
+	{name: "opendoc", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc.events")},
+	{name: "opendoc_empty", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc_empty.events")},
+	{name: "popuptable", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "popuptable.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "popuptable.events"), check: checkPopuptableSnaps},
+	{name: "dialogs", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "dialogs.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "dialogs.events")},
+	{name: "formedit", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "formedit.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "formedit.events"), check: checkFormeditSnaps},
+	{name: "texteditor", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor.events")},
+	{name: "texteditor_quit", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor_quit.events")},
+	{name: "bookmarks", claRel: []string{filepath.Join("..", "..", "examples", "bookmarks.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "bookmarks.events"), check: checkBookmarksSnaps},
+}
+
+// TestUiScenariosOn68k is Task 14's own end gate (native-5e): the SAME 23
+// UI scenarios/events/goldens ui_test.go's Retro68-ported lane already
+// passes, this time built with `clarusc emit68k` (no Retro68/cmake/C) and
+// booted the same way TestSmokeBounceOn68k/TestAboutOn68k already are.
+// texteditor_bigfile is handled by its own subtest below (its host
+// counterpart, TestTexteditorBigfileUIScenario, bypasses checkUIGoldens
+// entirely to strip an alert() line out of the capture first -- not a
+// table row). smoke_bounce and about are NOT repeated here: each already
+// has its own standalone Test*On68k (Task 12/13), and folding them into
+// this table would just rename an existing green test for no benefit.
+//
+// Native NEVER blesses: CLARUS_MAC_BLESS=1 is a hard failure here, even
+// though checkUIGoldens itself would happily rewrite goldens under it (the
+// Retro68 lane's only blessing path) -- this codegen is the one under
+// test; the goldens it must match are frozen, and no native run may ever
+// write them.
+func TestUiScenariosOn68k(t *testing.T) {
+	requireMac(t)
+	if blessUI() {
+		t.Fatal("native UI lane never blesses (CLARUS_MAC_BLESS is set) -- goldens are frozen; bless only via the Retro68 lane (ui_test.go)")
+	}
+	for _, sc := range uiScenarios68k {
+		sc := sc
+		t.Run(sc.name, func(t *testing.T) {
+			start := time.Now()
+			bin := buildNative68kUI(t, sc.name, sc.eventsRel, sc.claRel...)
+			built := time.Now()
+			out, dbgLog, exitCode := RunMac(t, bin, 3*time.Minute)
+			booted := time.Now()
+			t.Logf("%s: build %s, boot %s", sc.name, built.Sub(start), booted.Sub(built))
+			if os.Getenv("CLARUS_DEBUG_UI") != "" {
+				t.Logf("%s: exit=%d\n--- out ---\n%s\n--- log ---\n%s", sc.name, exitCode, out, dbgLog)
+			}
+			snaps := checkUIGoldens(t, sc.name, out, exitCode, sc.wantExit)
+			if sc.check != nil {
+				sc.check(t, snaps)
+			}
+		})
+	}
+}
+
+// TestTexteditorBigfileOn68k is TestTexteditorBigfileUIScenario's native
+// counterpart: same two-source build (examples/texteditor.cla +
+// testdata/ui/texteditor_bigfile_setup.cla), same alert-message-stripping
+// capture handling (alert() text isn't part of the RT_MAC_TEST trace/snap
+// vocabulary -- see the host test's own comment), reused here verbatim
+// rather than hand-copied a second time by delegating the shared tail to
+// checkTexteditorBigfileCapture.
+func TestTexteditorBigfileOn68k(t *testing.T) {
+	requireMac(t)
+	if blessUI() {
+		t.Fatal("native UI lane never blesses (CLARUS_MAC_BLESS is set) -- goldens are frozen; bless only via the Retro68 lane (ui_test.go)")
+	}
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile.events")
+	claRel := []string{
+		filepath.Join("..", "..", "examples", "texteditor.cla"),
+		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
+	}
+	bin := buildNative68kUI(t, "texteditor_bigfile", eventsRel, claRel...)
+	out, _, exitCode := RunMac(t, bin, 10*time.Minute)
+	checkTexteditorBigfileCapture(t, out, exitCode)
+}
+
 // TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
 // TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
 // via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the

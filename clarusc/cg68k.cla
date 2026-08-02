@@ -1532,6 +1532,37 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
 // CAN carry an explicit string default, ir.cla's own IRFieldSlot.
 // DefaultStr) an rtTextStore clamped copy from the literal, same shape
 // cgDefaultInitStrAt's own explicit-default arm already uses for KStr.
+//
+// Task 14 fix (native-5e gate, winvar.cla): `reg` itself -- not just A1 --
+// must survive the rtTextNew() JSR below. This is a SHARPER version of the
+// "SECOND-ORDER BUG" class cgWalkStashBase/cgWalkRestoreBase's own doc
+// comment warns about (this file's Task-12-review fix, above): that fix's
+// remedy (stash the walk's base into A1, save/restore A1 around a risky
+// JSR) protects a value the CALLER still needs AFTER this function
+// returns, but does nothing for a value THIS function itself needs AFTER
+// its OWN internal call -- and `reg` can BE A0 (cgIntrUiStateDefaults' own
+// reg=0 state-defaults walk), which rtTextNew's internal work (its own
+// TextNewPtr/TextNewHandle reg-trap calls, cgCallExtReg's A0/A1 arg
+// marshaling) is free to clobber like any other call under this backend's
+// "no callee-saved registers" convention. An earlier draft of this fix
+// saved/restored A1 around the call and left `cgStoreD0At(reg, off, ...)`
+// unchanged: WRONG -- when reg==0, A1 was never the register that needed
+// protecting, so the store still landed through stale A0 exactly as
+// before, no observable change (confirmed the hard way: identical
+// memWZErr -111 after that first fix). The real fix computes the
+// destination ADDRESS once, up front, and carries it across the call ON
+// THE STACK (survives any call unconditionally, unlike any register) --
+// then stores D0 straight through it. A window-scoped `var log: text`
+// with no initializer, constructed only via the fabricated-opened-handler
+// state-defaults path, was the first native scenario to exercise this:
+// pre-fix, the corrupted store left `log` as uninitialized heap garbage
+// (nonzero, but not a real Handle), which the very first `.append()` then
+// handed to SetHandleSize as a bogus handle, failing with a real memWZErr
+// (-111, "not in this heap zone") -- misread by the ALSO-buggy plain-`reg`
+// TextSetHandleSize declaration as if D0 held a 0/success code (see
+// text.cla's own TextSetHandleSize doc comment for that SEPARATE, also
+// fixed, bug); fixing either alone still panicked, only fixing both
+// cleared the scenario.
 func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
     var newFi: int
     var storeFi: int
@@ -1541,8 +1572,11 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
         log("cg68k: rtTextNew not found/reachable")
         quit 1
     }
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     cgCallFunc(newFi)
-    cgStoreD0At(reg, off, irPtrT)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmInd, 0, 0)
     if strDefaultIdx == -1 {
         return
     }
@@ -1551,14 +1585,15 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
         log("cg68k: rtTextStore not found/reachable")
         quit 1
     }
-    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpMove, 4, AmDisp16, reg, off, AmDn, 0, 0)
+    // D0 still holds the freshly-birthed ptr (the store just above reads
+    // D0 as its SOURCE, never clobbers it) -- reuse it directly as
+    // rtTextStore's first arg, no need to re-read (reg)+off at all (which
+    // would reopen the exact same hazard this fix removes).
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(strDefaultIdx), AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     cgCallFunc(storeFi)
     cgCleanupStack(8)
-    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
 // cgEmitContainerBirthCall mirrors cpDefaultInit's KList/KMap arms:
@@ -1566,7 +1601,10 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
 // (the element/value size THIS backend's own layout authority decided,
 // cgSizeOf(irtElem(t)) -- see the file header's own element-size-
 // consistency note: birth and addressing MUST agree, and both derive from
-// cgSizeOf, never cgSlotSizeOf, for a container element).
+// cgSizeOf, never cgSlotSizeOf, for a container element). Destination
+// address precomputed and carried across the JSR on the stack, same fix
+// (and same reason -- `reg` itself, not just A1, can be clobbered) as
+// cgDefaultInitTextAt's own rtTextNew call just above (Task 14, native-5e).
 func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) {
     var fi: int
 
@@ -1575,10 +1613,18 @@ func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) 
         log("cg68k: " + fnName + " not found/reachable")
         quit 1
     }
+    // Dest address pushed BEFORE the real argument (deeper on the stack,
+    // further from the return address JSR pushes next) so the callee's
+    // own 8(A6) still resolves to sizeArg, not to this stashed address --
+    // cgCleanupStack(4) pops only sizeArg, leaving the address sitting
+    // right where the MOVEA below expects it.
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, sizeArg, AmPreDec, 7, 0)
     cgCallFunc(fi)
     cgCleanupStack(4)
-    cgStoreD0At(reg, off, irPtrT)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmInd, 0, 0)
 }
 
 // cgEmitPtrRcCall loads the 4-byte pointer value at off(reg) into D0,
@@ -5189,7 +5235,15 @@ func cgIntrUi(e: int, nm: string) {
             cgPushIntLit(cgRtuiPropEnabled)
         }
         cgExpr(a2)
-        a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        // bool arg to an ORDINARY Clarus call (rtUiWidgetSetBool), NOT a
+        // pascal trap: cgPushArgs' own byte-push convention applies here
+        // (MOVE.B, not MOVE.W -- see that function's header comment). A
+        // MOVE.W push instead left the pushed value at the slot's HIGH
+        // (later) address while cgLoadVar's param read always looks at the
+        // slot's BASE (lower) address, so the callee always saw 0 for a
+        // `true` argument (Task 14 native-5e gate: buttons scenario's `T
+        // SET Panel.On.checked 1` traced as 0).
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
         cgJsrByName("rtUiWidgetSetBool")
         cgCleanupStack(14)
         return
@@ -5228,7 +5282,9 @@ func cgIntrUi(e: int, nm: string) {
         cgExpr(a1)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a2)
-        a68Emit(OpMove, 2, AmDn, 0, 0, AmPreDec, 7, 0)
+        // Same ordinary-call byte-push fix as ui_set_checked/ui_set_enabled
+        // above (rtUiMenuEnable's bool param) -- MOVE.B, not MOVE.W.
+        a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
         cgJsrByName("rtUiMenuEnable")
         cgCleanupStack(10)
         return
@@ -5828,9 +5884,10 @@ func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of boo
 // ================================================================
 // Task 9: ECallExt -- native trap-call ABI. Dispatches on the extern's
 // OWN registered clause (irExternConv, Task 2's registry: 1=pascal trap,
-// 2=reg trap, 3=inline deref, 4=inline nop, 0=no clause) rather than on
-// anything about the call site -- mirrors cgIntr's own by-NAME dispatch
-// shape, one level removed (by clause instead of by intrinsic name).
+// 2=reg trap, 3=inline deref, 4=inline nop, 5=inline a5 (Task 12), 6=reg
+// memerr (Task 14), 0=no clause) rather than on anything about the call
+// site -- mirrors cgIntr's own by-NAME dispatch shape, one level removed
+// (by clause instead of by intrinsic name).
 // ================================================================
 
 // cgExternIdxByName is irExternCount()'s own linear scan (ir.cla's
@@ -5870,7 +5927,16 @@ func cgExternIdxByName(nameIdx: int): int {
 // risk arg 2's own cgExpr clobbering arg 1's register before the trap
 // ever runs; stack-mediated push-then-pop sidesteps that regardless of
 // how many scratch registers any one arg's subexpression needs.
-func cgCallExtReg(e: int, xi: int) {
+// cgRegPassArgsAndTrap is cgCallExtReg's own arg-marshaling + trap-dispatch
+// half, factored out (Task 14, native-5e) so cgCallExtRegMemErr below can
+// share it verbatim -- both clauses pass args identically (ptr args ->
+// A0,A1; int/bool/char args -> D0,D1) and emit the identical trap; only
+// what happens to the result AFTER the trap differs (cgCallExtReg reads
+// D0/A0 per the callee's declared return type; cgCallExtRegMemErr ignores
+// D0 entirely -- its real Toolbox routine is a `void` Pascal procedure and
+// leaves nothing meaningful there -- and reads the MemErr low-memory
+// global instead).
+func cgRegPassArgsAndTrap(e: int, xi: int) {
     var a: int
     var kinds: list of int
     var regs: list of int
@@ -5878,7 +5944,6 @@ func cgCallExtReg(e: int, xi: int) {
     var scalarSlot: int
     var n: int
     var i: int
-    var retTy: int
 
     kinds = cgFreshIntList()
     regs = cgFreshIntList()
@@ -5911,6 +5976,12 @@ func cgCallExtReg(e: int, xi: int) {
         i = i - 1
     }
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
+}
+
+func cgCallExtReg(e: int, xi: int) {
+    var retTy: int
+
+    cgRegPassArgsAndTrap(e, xi)
     retTy = irExternRet(xi)
     if irtKind(retTy) == KPtr {
         // MOVEA/MOVE.L A0,D0 -- bring the ptr result across to satisfy
@@ -5934,6 +6005,41 @@ func cgCallExtReg(e: int, xi: int) {
     }
     // else: KVoid (nothing to bring back) or plain int -- already in D0,
     // the REG rule's own "other results from D0" clause.
+}
+
+// cgCallExtRegMemErr implements `= trap TRAPWORD reg memerr` (Task 14,
+// native-5e): the SAME reg-convention arg passing + trap dispatch as plain
+// `reg` (cgRegPassArgsAndTrap), for a real Toolbox routine whose Pascal
+// signature is `void` -- SetHandleSize/SetPtrSize/etc, Inside Macintosh's
+// Memory Manager: these are PROCEDURES, not FUNCTIONS, and leave NOTHING
+// meaningful in D0 after the trap. The actual result lives in the
+// well-known low-memory global `MemErr` (absolute address $0220, a signed
+// word: the OSErr from the most recent such call) -- exactly what a real
+// `MemError()` trap call would read (Retro68's own MacMemory.h glues
+// MemError() as a raw two-word read of this same global, not a real A-line
+// trap dispatch at all).
+//
+// Root cause (Task 14's own native gate, winvar.cla): text.cla's
+// TextSetHandleSize was declared plain `reg`, so cgCallExtReg's own "plain
+// int result, already in D0" fallthrough left `err` holding WHATEVER
+// stale value the trap happened to leave in D0 -- not an error code at
+// all. That register is UNDEFINED after a void-Pascal-procedure trap, so
+// rtTextGrow's `if err != 0 { rtPanic("out of memory") }` fired
+// nondeterministically (in practice, reliably, once real window/control
+// allocation upstream left D0 nonzero) on the very FIRST text append of a
+// window-scoped `var log: text` with no initializer -- even though the
+// actual growth (a freshly TextNewHandle(0)'d 0-byte handle growing to a
+// few bytes) had nothing wrong with it at all. list.cla/map.cla's own
+// ListSetHandleSize/MapSetHandleSize share the identical bug shape and are
+// fixed the same way.
+func cgCallExtRegMemErr(e: int, xi: int) {
+    cgRegPassArgsAndTrap(e, xi)
+    // MOVE.W $0220.W,D0 ; EXT.L D0 -- read the low-memory MemErr global
+    // (a signed 16-bit OSErr) and sign-extend it into the full register,
+    // matching cgCallExtReg's own retIsWordType arm exactly (same
+    // "Toolbox INTEGER is signed" rule -- MemErr is that same shape).
+    a68Emit(OpMove, 2, AmAbsW, 0, 0x0220, AmDn, 0, 0)
+    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
 }
 
 // cgCallExtPascal implements the locked PASCAL rule: reserve a result
@@ -5965,18 +6071,14 @@ func cgCallExtReg(e: int, xi: int) {
 // for the full A/B trace.
 //
 // The bool-RETURN pop below (the `retIsWord`-but-not-`retIsWordType` arm)
-// still masks the LOW byte (`AND.L #255`) after popping the result word --
-// a SUSPECTED mirror-image of the same bug (if the ROM also returns
-// Bool/Char in the high byte, this mask reads the wrong one), but NOT
-// fixed here: no currently-passing native test exercises a pascal trap
-// returning a TRUE Bool/Char to safely characterize it against (the
-// obvious candidates -- UiWaitNextEvent/UiGetNextEvent/UiStillDown/
-// UiTrackGoAway/UiPtInRect/UiEqualRect -- are only ever driven through
-// scripted runs that never hit a real pending Toolbox event, so a
-// wrong-byte read is indistinguishable from a correct one there). Ledger
-// carries this open to Task 14 (or whichever task first depends on a TRUE
-// boolean pascal return) -- root-cause via the same A/B log()-instrumentation
-// technique before touching the mask.
+// FIXED in Task 14 (native-5e): confirmed the mirror-image of the
+// argument-side bug -- winvar.cla's snap showed a window frame with NO
+// controls/text ever painted despite a fully correct trace, root-caused
+// to UiGetNextEvent's Boolean result being read from the popped word's
+// LOW byte (via `AND.L #255`) while the ROM places it in the HIGH byte,
+// so rtUiPumpPassive's event-drain loop never believed a pending updateEvt
+// existed. Now LSR.L #8 instead of AND.L #255 (see the arm's own doc
+// comment for the exact byte math).
 //
 // The trap dispatcher's OWN glue pops the pushed ARGS itself as part of
 // executing a Pascal-convention trap (Apple's Trap Manager docs: "the
@@ -6060,24 +6162,29 @@ func cgCallExtPascal(e: int, xi: int) {
             a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
             a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
         } else if retIsWord {
-            // Zero-extend: CLR.L D0 first (MOVE.W leaves D0's upper 16
-            // bits untouched, cgLoadVar's own bool/char pattern), then
-            // AND.L #255 to keep only the LOW byte of the popped word.
-            // KNOWN SUSPECTED BUG (carried open, not fixed this session):
-            // this function's own ARGUMENT push for Bool/Char was just
-            // corrected to the HIGH byte of the padded word (see this
-            // func's header comment) after empirical A/B proof against
-            // the ported lane -- if the ROM's RETURN convention is the
-            // same high-byte placement (unverified either way), this
-            // mask is keeping the wrong byte. Left as-is: no currently-
-            // passing native test exercises a pascal trap returning a
-            // TRUE Bool/Char (see header comment for the candidate list
-            // and why the scripted-only lanes can't distinguish
-            // right-byte from wrong-byte here). Ledger carries this to
-            // Task 14 -- root-cause via A/B log() instrumentation first.
+            // Task 14 fix (native-5e gate, winvar.cla): CONFIRMED, not
+            // just suspected -- the mirror-image bug this function's own
+            // header comment flagged as open. winvar.cla's snap (S1)
+            // rendered the window frame correctly but with NO controls/
+            // text painted at all, despite the trace showing both clicks
+            // dispatched correctly -- root-caused to UiGetNextEvent
+            // (called by rtUiPumpPassive after every scripted action)
+            // always reporting "no event" even when a real pending
+            // updateEvt existed, because its own Boolean RESULT was read
+            // from the popped word's LOW byte while the ROM (per this
+            // function's own already-fixed ARGUMENT side) places a
+            // Bool/Char result in the word's HIGH byte -- so
+            // rtUiPumpPassive's `while gotEvent` loop never ran even
+            // once, and DrawControls/TEUpdate (rtUiHandleUpdate) never
+            // fired. Fix: CLR.L, pop the word into D0's low 16 bits (same
+            // as before), then LSR.L #8 -- shifts the high byte (bits
+            // 8-15) down into the low byte (bits 0-7) and shifts the
+            // low byte out entirely, the exact mirror of the argument
+            // side's LSL.W #8 (which moves a 0/1 value UP into the high
+            // byte before the word push); AND.L #255 kept the WRONG byte.
             a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
             a68Emit(OpMove, 2, AmPostInc, 7, 0, AmDn, 0, 0)
-            a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
+            a68Emit(OpLsr, 4, AmImm, 0, 8, AmDn, 0, 0)
         } else {
             a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
         }
@@ -6219,6 +6326,8 @@ func cgCallExt(e: int) {
         cgCallExtNop(e)
     } else if conv == 5 {
         cgCallExtA5(e)
+    } else if conv == 6 {
+        cgCallExtRegMemErr(e, xi)
     } else {
         cgCallExtNatFallback(e)
     }

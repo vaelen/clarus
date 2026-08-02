@@ -1346,17 +1346,18 @@ func parseExternParam(): int {
 }
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
-// [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" ] | "inline" ( "deref" | "nop"
-// | "a5" ) ) ]` (Task 3, Ch13: `external func`; trap/inline clause added
-// Task 2, native-5d; `inline a5` added Task 12, native-5e) -- parseFuncDecl
-// minus the body block, since an external declaration ends at the
-// signature; a following `{` is left for parseTopDecl to reject as an
-// ordinary top-level parse error (there is no external-func body to
-// parse). `trap`/`reg`/`inline`/`deref`/`nop`/`a5` are all contextual
-// identifiers, matched the same curIsIdentText way `external` itself is
-// (no new tokens) -- the trap word is an ordinary TkInt, decimal or hex
-// (the lexer already handles `0xA122`). trapVal/convFlag default to -1/0
-// (no clause); the checker (checkExternFunc) validates both.
+// [ ":" type ] [ "=" ( "trap" INTLIT [ "reg" [ "memerr" ] ] | "inline" (
+// "deref" | "nop" | "a5" ) ) ]` (Task 3, Ch13: `external func`; trap/inline
+// clause added Task 2, native-5d; `inline a5` added Task 12, native-5e;
+// `reg memerr` added Task 14, native-5e) -- parseFuncDecl minus the body
+// block, since an external declaration ends at the signature; a following
+// `{` is left for parseTopDecl to reject as an ordinary top-level parse
+// error (there is no external-func body to parse). `trap`/`reg`/`memerr`/
+// `inline`/`deref`/`nop`/`a5` are all contextual identifiers, matched the
+// same curIsIdentText way `external` itself is (no new tokens) -- the trap
+// word is an ordinary TkInt, decimal or hex (the lexer already handles
+// `0xA122`). trapVal/convFlag default to -1/0 (no clause); the checker
+// (checkExternFunc) validates both.
 func parseExternFuncDecl(): int {
     var line: int
     var col: int
@@ -1405,6 +1406,19 @@ func parseExternFuncDecl(): int {
             if curIsIdentText("reg") {
                 advance()
                 convFlag = 2
+                // Task 14 (native-5e): `reg memerr` -- a real Toolbox
+                // register-convention routine whose PASCAL signature is
+                // `void` (SetHandleSize/SetPtrSize/etc, per Inside
+                // Macintosh's Memory Manager) and so leaves NO result in
+                // D0 at all; the result comes from the well-known
+                // low-memory global MemErr ($0220) instead, exactly what
+                // a real MemError() call would read. See
+                // cgCallExtRegMemErr's own doc comment (cg68k.cla) for the
+                // winvar.cla gate failure this fixes.
+                if curIsIdentText("memerr") {
+                    advance()
+                    convFlag = 6
+                }
             }
         } else if curIsIdentText("inline") {
             advance()

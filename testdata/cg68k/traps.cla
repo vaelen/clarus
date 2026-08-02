@@ -29,6 +29,15 @@
 //   TFindWindow      = trap 0xA92C        (real _FindWindow -- Task 4:
 //                                          `word` PASCAL RESULT, sign-
 //                                          extended via EXT.L)
+//   TSetHandleSize   = trap 0xA024 reg memerr (real _SetHandleSize --
+//                                          Task 14, native-5e: a `reg`
+//                                          Toolbox call whose real Pascal
+//                                          signature is `void` -- the
+//                                          result comes from the MemErr
+//                                          low-memory global ($0220)
+//                                          instead of D0; see
+//                                          cgCallExtRegMemErr's own doc
+//                                          comment, cg68k.cla)
 
 external func TNewHandle(n: int): ptr = trap 0xA122 reg
 external func NewPtr(size: int): ptr = trap 0xA11E reg
@@ -39,6 +48,7 @@ external func TRcCheck(box: ptr, rc: int) = inline nop
 external func TCustomOp(x: int): int
 external func TMoveTo(h: word, v: word) = trap 0xA893
 external func TFindWindow(pt: int, wpOut: ptr): word = trap 0xA92C
+external func TSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg memerr
 
 func nat_TCustomOp(x: int): int {
     return x + 1
@@ -77,6 +87,7 @@ on App.launch {
     // stores through the SOURCE address -- native.cla's natItoa digit copy
     // hit exactly this, and it is the only shape that catches it.
     pokeb(buf + 1, peekb(buf))
+    r = TSetHandleSize(h, 128)
     DisposePtr(buf)
 
     return

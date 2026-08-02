@@ -205,7 +205,15 @@ func TestMenusUIScenario(t *testing.T) {
 // walkthrough and why the .events file uses `key 13` rather than an
 // embedded raw CR byte.
 func TestTextwidgetsUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "textwidgets", 0)
+	checkTextwidgetsSnaps(t, runUIScenario(t, "textwidgets", 0))
+}
+
+// checkTextwidgetsSnaps is TestTextwidgetsUIScenario's own snap assertion,
+// factored out (Task 14, native-5e) so the native (`clarusc emit68k`) lane
+// can run the identical check against its own snaps rather than a
+// hand-copied duplicate.
+func checkTextwidgetsSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var ok, trunc []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -230,7 +238,13 @@ func TestTextwidgetsUIScenario(t *testing.T) {
 // so a golden pair blessed identical by accident (e.g. no actual motion)
 // fails loudly rather than silently passing forever after.
 func TestCanvasUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "canvas", 0)
+	checkCanvasSnaps(t, runUIScenario(t, "canvas", 0))
+}
+
+// checkCanvasSnaps is TestCanvasUIScenario's own snap assertion, factored
+// out (Task 14, native-5e) for reuse by the native lane.
+func checkCanvasSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2 []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -253,7 +267,13 @@ func TestCanvasUIScenario(t *testing.T) {
 // restore the exact original geometry (S1 == S3), on top of the golden
 // trace/snap compares (two `resized` fires).
 func TestZoomwinUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "zoomwin", 0)
+	checkZoomwinSnaps(t, runUIScenario(t, "zoomwin", 0))
+}
+
+// checkZoomwinSnaps is TestZoomwinUIScenario's own snap assertion, factored
+// out (Task 14, native-5e) for reuse by the native lane.
+func checkZoomwinSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2, s3 []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -284,7 +304,13 @@ func TestZoomwinUIScenario(t *testing.T) {
 // view's right edge -- TEAutoView must scroll the view to keep it visible
 // (S4 != S3), on top of the golden trace/snap compares.
 func TestHscrollUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "hscroll", 0)
+	checkHscrollSnaps(t, runUIScenario(t, "hscroll", 0))
+}
+
+// checkHscrollSnaps is TestHscrollUIScenario's own snap assertion, factored
+// out (Task 14, native-5e) for reuse by the native lane.
+func checkHscrollSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2, s3, s4 []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -378,7 +404,13 @@ func TestDialogsUIScenario(t *testing.T) {
 // testdata/ui/popuptable.cla's own header comment for the full scripted
 // walkthrough and coordinate derivation.
 func TestPopuptableUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "popuptable", 0)
+	checkPopuptableSnaps(t, runUIScenario(t, "popuptable", 0))
+}
+
+// checkPopuptableSnaps is TestPopuptableUIScenario's own snap assertion,
+// factored out (Task 14, native-5e) for reuse by the native lane.
+func checkPopuptableSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2, s3 []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -412,7 +444,13 @@ func TestPopuptableUIScenario(t *testing.T) {
 // testdata/ui/formedit.cla's own header comment for the coordinate
 // derivation.
 func TestFormeditUIScenario(t *testing.T) {
-	snaps := runUIScenario(t, "formedit", 0)
+	checkFormeditSnaps(t, runUIScenario(t, "formedit", 0))
+}
+
+// checkFormeditSnaps is TestFormeditUIScenario's own snap assertion,
+// factored out (Task 14, native-5e) for reuse by the native lane.
+func checkFormeditSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2, s3, s4 []byte
 	for _, s := range snaps {
 		switch s.name {
@@ -492,7 +530,13 @@ func TestSmokeMenuDemoUIScenario(t *testing.T) {
 // math plus the constant per-tick budget makes all three snaps
 // deterministic.
 func TestSmokeMandelUIScenario(t *testing.T) {
-	snaps := runUIScenarioSrc(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0)
+	checkSmokeMandelSnaps(t, runUIScenarioSrc(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0))
+}
+
+// checkSmokeMandelSnaps is TestSmokeMandelUIScenario's own snap assertion,
+// factored out (Task 14, native-5e) for reuse by the native lane.
+func checkSmokeMandelSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	byName := map[string][]byte{}
 	for _, s := range snaps {
 		byName[s.name] = s.bytes
@@ -600,14 +644,25 @@ const texteditorBigfileAlertMsg = "That file is too large to open (over 32,000 b
 // Body.text.
 func TestTexteditorBigfileUIScenario(t *testing.T) {
 	requireMac(t)
-	root := repoRoot(t)
-	scenario := "texteditor_bigfile"
-
 	bin := runBuildMac(t, "UITexteditorBigfile",
 		filepath.Join("..", "..", "examples", "texteditor.cla"),
 		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
-		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", scenario+".events"))
+		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile.events"))
 	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	checkTexteditorBigfileCapture(t, out, exitCode)
+}
+
+// checkTexteditorBigfileCapture is TestTexteditorBigfileUIScenario's own
+// capture handling, factored out (Task 14, native-5e) so the native lane's
+// TestTexteditorBigfileOn68k can reuse it verbatim instead of a hand-copied
+// duplicate. alert() text is NOT part of the RT_MAC_TEST trace/snap
+// vocabulary (see the caller's own header comment for why): asserts the
+// alert text is present verbatim, strips that one line out, and only then
+// feeds the remainder through the normal trace-golden compare.
+func checkTexteditorBigfileCapture(t *testing.T, out string, exitCode int) {
+	t.Helper()
+	root := repoRoot(t)
+	scenario := "texteditor_bigfile"
 
 	if !strings.Contains(out, texteditorBigfileAlertMsg) {
 		t.Fatalf("%s: expected alert message %q in capture, got: %q", scenario, texteditorBigfileAlertMsg, out)
@@ -674,7 +729,13 @@ func TestTexteditorBigfileUIScenario(t *testing.T) {
 // LaunchAPPL/Finder check, done live in Final Validation step 1, not
 // invented as a test-only reload button in the app itself.
 func TestBookmarksUIScenario(t *testing.T) {
-	snaps := runUIScenarioSrc(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0)
+	checkBookmarksSnaps(t, runUIScenarioSrc(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0))
+}
+
+// checkBookmarksSnaps is TestBookmarksUIScenario's own snap assertion,
+// factored out (Task 14, native-5e) for reuse by the native lane.
+func checkBookmarksSnaps(t *testing.T, snaps []uiSnap) {
+	t.Helper()
 	var s1, s2, s3, s4, s5 []byte
 	for _, s := range snaps {
 		switch s.name {

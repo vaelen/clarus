@@ -103,7 +103,20 @@
 // own message) -- dead code on host (the C shim panics first), live on
 // native. See rtTextNew/rtTextConcat/rtTextConcatSl below.
 external func TextHandleDeref(h: ptr): ptr = inline deref
-external func TextSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
+// `reg memerr` (Task 14, native-5e), not plain `reg`: SetHandleSize is a
+// void Pascal PROCEDURE (Inside Macintosh Memory Manager) -- the real trap
+// leaves no result in D0 at all, unlike NewHandle/NewPtr above. The
+// natively-generated call reads the MemErr low-memory global instead (see
+// cgCallExtRegMemErr's own doc comment, clarusc/cg68k.cla, for the
+// winvar.cla native-gate bug a plain `reg` clause caused here: `err` held
+// whatever stale garbage the trap happened to leave in D0, not an actual
+// error code, so the very first append to a fresh empty text
+// nondeterministically panicked "out of memory"). rt_ext_TextSetHandleSize
+// (rt_ext_mac.inc/rt_ext_host.inc) already does the equivalent
+// SetHandleSize+MemError() two-step in C for the host/ported lane -- this
+// clause only changes what codegen68k emits; cprint ignores it entirely,
+// same as every other trap/inline clause (Task 2's own proof).
+external func TextSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg memerr
 external func TextBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // TextNewPtr/TextDisposePtr (review round 1 fix): the scratch-buffer
 // allocator rtTextConcat/rtTextConcatSl use, mirroring rt_text_concat's own

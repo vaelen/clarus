@@ -51,10 +51,13 @@ LBL_96:
         MOVE.B D0,-26(A5)
         MOVE.L #0,D0
         MOVE.B D0,-28(A5)
+        LEA -32(A5),A0
+        MOVE.L A0,-(A7)
         MOVE.L #256,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-32(A5)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
         MOVE.L #0,D0
         MOVE.L D0,-36(A5)
         LEA -292(A5),A0
@@ -598,6 +601,8 @@ LBL_132:
         MOVE.L (A7)+,D0
         MOVEA.L (A7)+,A0
         DC.W $A024  ; TextSetHandleSize
+        MOVE.W $0220.W,D0
+        EXT.L D0
         MOVE.L D0,-16(A6)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
@@ -1074,6 +1079,8 @@ LBL_157:
         MOVE.L (A7)+,D0
         MOVEA.L (A7)+,A0
         DC.W $A024  ; ListSetHandleSize
+        MOVE.W $0220.W,D0
+        EXT.L D0
         MOVE.L D0,-20(A6)
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
@@ -1916,6 +1923,8 @@ LBL_201:
         MOVE.L (A7)+,D0
         MOVEA.L (A7)+,A0
         DC.W $A024  ; MapSetHandleSize
+        MOVE.W $0220.W,D0
+        EXT.L D0
         MOVE.L D0,-16(A6)
         MOVE.L -16(A6),D0
         MOVE.L D0,-(A7)
@@ -2037,6 +2046,8 @@ LBL_209:
         MOVE.L (A7)+,D0
         MOVEA.L (A7)+,A0
         DC.W $A024  ; MapSetHandleSize
+        MOVE.W $0220.W,D0
+        EXT.L D0
         MOVE.L D0,-20(A6)
         MOVE.L -20(A6),D0
         MOVE.L D0,-(A7)
@@ -3900,10 +3911,13 @@ LBL_276:
         ;   local __ret1 : -4(A6)  size 4
 LBL_50:
         LINK A6,#-596
+        LEA -4(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #256,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-4(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
         LEA -4(A6),A0
         MOVE.L 0(A0),D0
         MOVE.L D0,-552(A6)
@@ -4996,16 +5010,25 @@ LBL_322:
         ;   local t : -12(A6)  size 4
 LBL_63:
         LINK A6,#-604
+        LEA -4(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-4(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
+        LEA -8(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_28
         ADDQ.L #4,A7
-        MOVE.L D0,-8(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
+        LEA -12(A6),A0
+        MOVE.L A0,-(A7)
         BSR.W LBL_7
-        MOVE.L D0,-12(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
         LEA -4(A6),A0
         MOVE.L 0(A0),D0
         MOVE.L D0,-560(A6)
@@ -5079,14 +5102,20 @@ LBL_324:
         ;   local b : -8(A6)  size 4
 LBL_64:
         LINK A6,#-600
+        LEA -4(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-4(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
+        LEA -8(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-8(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         BSR.W LBL_7
@@ -5265,14 +5294,20 @@ LBL_328:
         ;   local x : -12(A6)  size 4
 LBL_65:
         LINK A6,#-604
+        LEA -4(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_13
         ADDQ.L #4,A7
-        MOVE.L D0,-4(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
+        LEA -8(A6),A0
+        MOVE.L A0,-(A7)
         MOVE.L #4,-(A7)
         BSR.W LBL_28
         ADDQ.L #4,A7
-        MOVE.L D0,-8(A6)
+        MOVEA.L (A7)+,A0
+        MOVE.L D0,(A0)
         MOVE.L #0,D0
         MOVE.L D0,-12(A6)
         MOVE.L -4(A6),D0

@@ -134,7 +134,10 @@
 // clause has no such check, so rtMapNew below guards the native path
 // itself too (Task 9 review fix, RESOLVED).
 external func MapHandleDeref(h: ptr): ptr = inline deref
-external func MapSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg
+// `reg memerr`, not plain `reg` -- see text.cla's own TextSetHandleSize
+// doc comment (Task 14, native-5e) for why: SetHandleSize is a void
+// Pascal procedure, no result in D0.
+external func MapSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg memerr
 external func MapBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 // MapNewPtr/MapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
 // rtMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
