@@ -1,0 +1,2 @@
+# seconds; median clarusc emit of testdata/emitui/every.cla; 2026-08-03
+7.6
