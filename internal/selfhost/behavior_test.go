@@ -105,7 +105,20 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 // (fixtures like files.cla touch the filesystem and must not race or
 // litter the source tree, same discipline internal/build/golden_test.go's
 // TestRunGoldens already follows).
-func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []string) (exit int, stdout, stderr []byte) {
+//
+// memCheck, when true, runs the binary under CLARUS_MEM_STRICT=1 +
+// CLARUS_MEM_PARANOID=1 (the same paranoid-allocator combo
+// emit_test.go's TestEmitDifferential used before it became a Go lane) and
+// returns the report's path as memReportPath, for checkMemReport (defined
+// in emit_test.go) to compare against a fixture's .leaks golden -- this is
+// how the memory-safety pin (test-suite-review Task 5b's
+// for_loop_var_alias.leaks) stays enforced in the default, Go-free
+// gauntlet. Callers that don't need it (runerr fixtures abort via
+// rt_panic's non-unwinding exit(3), so a leak count there would just
+// measure call-stack depth at the panic site, not a real leak; and
+// crossgen_test.go's generation comparison doesn't need it either) pass
+// false and ignore the returned path.
+func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []string, memCheck bool) (exit int, stdout, stderr []byte, memReportPath string) {
 	t.Helper()
 	work := t.TempDir()
 	outC := filepath.Join(work, "out.c")
@@ -125,6 +138,10 @@ func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []s
 
 	run := exec.Command(bin, argv...)
 	run.Dir = t.TempDir()
+	if memCheck {
+		memReportPath = filepath.Join(work, "mem.txt")
+		run.Env = append(os.Environ(), "CLARUS_MEM_STRICT=1", "CLARUS_MEM_PARANOID=1", "CLARUS_MEM_REPORT="+memReportPath)
+	}
 	var outBuf, errBuf bytes.Buffer
 	run.Stdout = &outBuf
 	run.Stderr = &errBuf
@@ -136,7 +153,7 @@ func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []s
 		}
 		exit = ee.ExitCode()
 	}
-	return exit, outBuf.Bytes(), errBuf.Bytes()
+	return exit, outBuf.Bytes(), errBuf.Bytes(), memReportPath
 }
 
 // behaviorBlob composes the single-file .behavior golden format: an exit
@@ -223,7 +240,7 @@ func TestBehaviorGoldens(t *testing.T) {
 				}
 			}
 
-			exit, stdout, stderr := runBehaviorFixture(t, exe, root, f, argv)
+			exit, stdout, stderr, memReportPath := runBehaviorFixture(t, exe, root, f, argv, true)
 
 			if exit != wantExit {
 				t.Errorf("exit: got %d want %d (stderr: %s)", exit, wantExit, stderr)
@@ -236,6 +253,7 @@ func TestBehaviorGoldens(t *testing.T) {
 			}
 
 			checkBehaviorGolden(t, base+".behavior", bless, exit, stdout, stderr)
+			checkMemReport(t, memReportPath, base+".leaks")
 		})
 	}
 
@@ -248,7 +266,7 @@ func TestBehaviorGoldens(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			exit, stdout, stderr := runBehaviorFixture(t, exe, root, f, nil)
+			exit, stdout, stderr, _ := runBehaviorFixture(t, exe, root, f, nil, false)
 
 			if exit != 3 {
 				t.Errorf("exit: got %d want 3 (stderr: %s)", exit, stderr)

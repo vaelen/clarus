@@ -98,8 +98,8 @@ func TestCrossGenDifferential(t *testing.T) {
 
 	check := func(t *testing.T, f string, argv []string) {
 		t.Helper()
-		snapExit, snapOut, snapErr := runBehaviorFixture(t, snapExe, root, f, argv)
-		curExit, curOut, curErr := runBehaviorFixture(t, curExe, root, f, argv)
+		snapExit, snapOut, snapErr, _ := runBehaviorFixture(t, snapExe, root, f, argv, false)
+		curExit, curOut, curErr, _ := runBehaviorFixture(t, curExe, root, f, argv, false)
 
 		snapBlob := behaviorBlob(snapExit, snapOut, snapErr)
 		curBlob := behaviorBlob(curExit, curOut, curErr)

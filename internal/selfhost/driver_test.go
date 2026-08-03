@@ -42,6 +42,7 @@ func checkGolden(t *testing.T, claPath string) {
 }
 
 func TestClarusModules(t *testing.T) {
+	requireGoCompiler(t)
 	files, _ := filepath.Glob("../../clarusc/test/*_test.cla")
 	for _, f := range files {
 		f := f

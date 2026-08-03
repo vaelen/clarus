@@ -20,9 +20,17 @@ spec; where any other doc disagrees, the reference wins.
 
 ```sh
 go build -o clarus ./cmd/clarus   # host toolchain: check / build / run
-scripts/test-task.sh              # T1: per-task gate (~40s)
+scripts/clarus-run.sh FILE.cla [-- args...]  # Go-free day-to-day `clarus run`
+scripts/test-task.sh              # T1: per-task gate (~35s)
 scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulator)
 ```
+
+- `scripts/clarus-run.sh` is the Go-free replacement for `clarus run` day
+  to day: it bootstraps clarusc from the committed `clarusc/clarusc.c`
+  snapshot with `cc` alone (cached under `build-run/`, keyed on the
+  snapshot's mtime), emits C for `FILE.cla`, compiles that against the
+  on-disk host runtime (`internal/build/rt`), and execs the result with
+  any args after `--`. No Go compiler involved.
 
 Tiered test gates:
 
@@ -31,10 +39,19 @@ Tiered test gates:
   task touches `runtime/` or `clarusc/`, which additionally runs the two
   native-68k emulator smoke tests (`CLARUS_MAC_TESTS=1`,
   `TestSmokeBounceOn68k` / `TestRealEventLoopTickOn68k` in
-  `internal/mactest`).
+  `internal/mactest`). T1 no longer builds or links the Go compiler for
+  any test it runs (see `CLARUS_GO_DIFF` below) — packages that are pure
+  Go-compiler unit tests (`internal/lexer`, `parser`, `check`, `types`,
+  `lower`, `cprint`, `driver`, `cmd/clarus`) report as passing-with-no-tests
+  by default; `internal/build`'s Go-compiler tests (`build_test.go`,
+  `golden_test.go`, `unsupported_test.go`) skip individually while its rt
+  C-runtime tests (`rtsmoke`, `memtest_c`, `rctest_c`, `sertest_c` — these
+  exercise `rt.c` with `cc`, not the Go compiler, and every lane depends on
+  `rt.c`) keep running unconditionally.
 - `scripts/test-merge.sh` — T2, run before merging to main. T1's body plus
-  `internal/selfhost` (30m-timeout bootstrap suite) plus the full gated
-  `internal/mactest` package (`CLARUS_MAC_TESTS=1`, needs the Retro68
+  `internal/selfhost` (30m-timeout bootstrap suite, run with
+  `CLARUS_GO_DIFF=1` so the Go lanes below are included) plus the full
+  gated `internal/mactest` package (`CLARUS_MAC_TESTS=1`, needs the Retro68
   toolchain + Mini vMac).
 - Both pass `-count=1` to bust the Go test cache. Plain `go test` caches a
   package's result keyed on its `.go` inputs; it does not know about
@@ -46,11 +63,31 @@ Tiered test gates:
   per-package timeout — always pass `-timeout 30m` when running it
   directly, or it can spuriously fail on an otherwise-green tree.
 
+### `CLARUS_GO_DIFF` — Go-compiler lanes are opt-in
+
+`internal/selfhost` and every package that IS the frozen Go compiler
+(`internal/lexer`, `parser`, `check`, `types`, `lower`, `cprint`, `driver`,
+`cmd/clarus`, plus `internal/build`'s `Build()`-calling tests) gate their
+tests behind `CLARUS_GO_DIFF=1`, unset by default. The default `go test
+./...` gauntlet is Go-free — it never builds, links, or runs a Go-compiled
+`clarusc` binary — because Tasks 3-5b of test-suite-review landed Go-free
+oracles that cover the same ground without the Go compiler as a reference:
+`internal/selfhost/behavior_test.go` (snapshot-built clarusc vs. committed
+`.behavior` goldens, including the paranoid-allocator `.leaks` pin),
+`crossgen_test.go` (snapshot generation vs. current-source generation, both
+built without Go), and `snapshot_test.go`'s `TestSnapshotBuilds` /
+`TestSnapshotFixedPoint` (C-snapshot self-consistency). Set
+`CLARUS_GO_DIFF=1` to reinstate the Go differential/bootstrap/coverage
+lanes — for ad hoc debugging (`CLARUS_GO_DIFF=1 go test ./internal/selfhost
+-timeout 30m`) or via `scripts/test-merge.sh`, which exports it for its
+`internal/selfhost` and full runs.
+
 - The Go compiler (`cmd/clarus`, `internal/`) is FROZEN — it is the
   differential-testing reference only. New language features land in the
   reference + `clarusc` (the self-hosted compiler, `clarusc/*.cla`).
 - `clarusc/clarusc.c` is the committed bootstrap snapshot. If
-  `TestSnapshotCurrent` fails, it prints regeneration instructions.
+  `TestSnapshotCurrent` fails (`CLARUS_GO_DIFF=1`; it needs a Go-built
+  clarusc as the freshness oracle), it prints regeneration instructions.
 - Bootstrap from C alone:
   `cc -I internal/build/rt -o clarusc clarusc/clarusc.c internal/build/rt/rt.c`
 

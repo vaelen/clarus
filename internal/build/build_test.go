@@ -18,6 +18,7 @@ func writeFile(t *testing.T, dir, name, content string) string {
 }
 
 func TestBuildHelloAlert(t *testing.T) {
+	requireGoCompiler(t)
 	dir := t.TempDir()
 	src := writeFile(t, dir, "hello.cla", "on App.launch {\n    alert(\"hi\")\n}\n")
 	exe := filepath.Join(dir, "hello")
@@ -43,6 +44,7 @@ func TestBuildHelloAlert(t *testing.T) {
 }
 
 func TestBuildCheckError(t *testing.T) {
+	requireGoCompiler(t)
 	dir := t.TempDir()
 	src := writeFile(t, dir, "bad.cla", "var x: int = \"hi\"\n")
 	exe := filepath.Join(dir, "bad")
@@ -60,6 +62,7 @@ func TestBuildCheckError(t *testing.T) {
 }
 
 func TestBuildUnsupportedWindow(t *testing.T) {
+	requireGoCompiler(t)
 	dir := t.TempDir()
 	src := writeFile(t, dir, "win.cla", "window W {\n    title: \"x\"\n}\n")
 	exe := filepath.Join(dir, "win")

@@ -112,6 +112,7 @@ func producedMessages(t *testing.T) map[string]bool {
 // reproduced by clarusc). Internal-only messages that cannot fire on any input
 // are exempted explicitly.
 func TestInventoryCoverage(t *testing.T) {
+	requireGoCompiler(t)
 	// Messages that cannot be provoked from source: the checker's
 	// "internal:" guards fire only on a malformed AST the parser never
 	// produces. Documented as out-of-reach in inventory.md.

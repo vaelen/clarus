@@ -13,6 +13,7 @@ import (
 // no opinion on these — they're valid Clarus, just not host-buildable) and
 // must fail Build with a diag naming the construct, never a built exe.
 func TestBuildUnsupportedConstructs(t *testing.T) {
+	requireGoCompiler(t)
 	cases := []struct {
 		name string
 		src  string

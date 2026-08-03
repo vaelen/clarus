@@ -70,6 +70,7 @@ func diffFirstDivergence(a, b []byte) string {
 // behavior, and this test reports the first differing line rather than
 // papering over it.
 func TestBootstrapFixedPoint(t *testing.T) {
+	requireGoCompiler(t)
 	// stage1 -> c2 -> stage2 (memoized: this is exactly Task 10's self-build).
 	stage2 := selfBuiltClarusc(t)
 	c2 := selfBuiltClaruscC(t)
@@ -108,6 +109,7 @@ func TestBootstrapFixedPoint(t *testing.T) {
 // the package has already triggered it. Gated behind -short since it's the
 // full ~220-case corpus.
 func TestSelfBuiltDifferential(t *testing.T) {
+	requireGoCompiler(t)
 	if testing.Short() {
 		t.Skip("full corpus differential against self-built clarusc; skipped in -short mode")
 	}

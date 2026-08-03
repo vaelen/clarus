@@ -131,6 +131,7 @@ func corpusFiles(t *testing.T) []string {
 // expansion (parse-phase per-file attribution, check-phase per-decl
 // attribution) on both sides.
 func TestDifferential(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
@@ -148,6 +149,7 @@ func TestDifferential(t *testing.T) {
 // the fence is a clean program, an intentional-error snippet, or a fragment
 // that fails to parse/resolve the same way on both sides.
 func TestDifferentialFences(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
@@ -184,6 +186,7 @@ func TestDifferentialFences(t *testing.T) {
 // source (main.cla plus its includes) must check CLEAN (empty stdout, exit 0)
 // under both the Go front end and clarusc itself.
 func TestClaruscChecksItself(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
@@ -228,6 +231,7 @@ var claruscOnlyExclude = map[int]string{
 // complete top-level declarations are excluded per claruscOnlyExclude above,
 // mirroring how CheckClean documents its own exclusions.
 func TestClaruscOnlyFencesCheck(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)

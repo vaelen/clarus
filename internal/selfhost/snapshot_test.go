@@ -56,6 +56,13 @@ func TestSnapshotBuilds(t *testing.T) {
 // clarusc/main.cla (or any module it includes) has changed, this fails with
 // instructions to regenerate.
 func TestSnapshotCurrent(t *testing.T) {
+	// Unlike TestSnapshotBuilds (cc + goCheck's in-process Go frontend
+	// oracle only), this test's "fresh" side is selfBuiltClaruscC, which
+	// transitively calls buildClarusc -> build.Build -- the Go compiler's
+	// build path, forking cc to produce a Go-built clarusc binary. That
+	// makes it a Go lane despite living in this otherwise Go-free file; see
+	// test-suite-review Task 6.
+	requireGoCompiler(t)
 	committed := readSnapshot(t)
 	fresh := selfBuiltClaruscC(t)
 

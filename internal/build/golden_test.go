@@ -25,6 +25,7 @@ func readOptional(t *testing.T, path string) (string, bool) {
 }
 
 func TestRunGoldens(t *testing.T) {
+	requireGoCompiler(t)
 	files, _ := filepath.Glob("../../testdata/run/*.cla")
 	if len(files) == 0 {
 		t.Fatal("no run goldens")
@@ -94,6 +95,7 @@ func TestRunGoldens(t *testing.T) {
 }
 
 func TestRunErrGoldens(t *testing.T) {
+	requireGoCompiler(t)
 	files, _ := filepath.Glob("../../testdata/runerr/*.cla")
 	for _, f := range files {
 		f := f

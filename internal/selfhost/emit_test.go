@@ -135,6 +135,7 @@ func emitBuild(t *testing.T, exe, claPath string) string {
 // emit), never silently — so this glob is the enforcement that the emit path
 // now covers the full host-subset corpus.
 func TestEmitDifferential(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
@@ -294,6 +295,7 @@ func selfBuiltClaruscC(t *testing.T) []byte {
 // parity against the v1 Go oracle) and as an emitter (it can itself run
 // `emit` and produce a working program).
 func TestEmitSelfCompiles(t *testing.T) {
+	requireGoCompiler(t)
 	bin := selfBuiltClarusc(t)
 	info, err := os.Stat(bin)
 	if err != nil || info.Size() == 0 {
@@ -310,6 +312,7 @@ func TestEmitSelfCompiles(t *testing.T) {
 // proves the emitted compiler's front end behaves identically, not merely
 // that it compiles.
 func TestEmitSelfChecks(t *testing.T) {
+	requireGoCompiler(t)
 	bin := selfBuiltClarusc(t)
 
 	files := []string{
@@ -338,6 +341,7 @@ func TestEmitSelfChecks(t *testing.T) {
 // It emits testdata/run/emit_hello.cla, that C compiles + links against the
 // host runtime, and running it reproduces the golden .out exactly.
 func TestEmitSelfEmits(t *testing.T) {
+	requireGoCompiler(t)
 	bin := selfBuiltClarusc(t)
 
 	prog := emitBuild(t, bin, "../../testdata/run/emit_hello.cla")
@@ -370,6 +374,7 @@ func TestEmitSelfEmits(t *testing.T) {
 // of how correct the program's normal free paths are. A leak count here
 // would measure how deep the call stack was at the panic, not a memory bug.
 func TestEmitRunErr(t *testing.T) {
+	requireGoCompiler(t)
 	exe, err := buildClarusc()
 	if err != nil {
 		t.Fatalf("build clarusc: %v", err)
