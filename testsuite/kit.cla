@@ -79,23 +79,36 @@ func tkIntToStr(n: int): string {
 // summary line, and returns the fail count. This log format is an API:
 // the host harness (internal/testsuite) and, later, the Mac GUI (goal
 // 4's on-disk TestLog.txt) both parse it. Lines go through alert(),
-// which is already the host-stdout / Mac-capture-console channel every
-// existing suite (testdata/suite/test_suite.cla) routes its output
-// through.
+// which is already the host-stdout / Mac-capture-console channel the
+// core suite's own CLI front-end (testsuite/core/cli.cla) routes its
+// output through.
 func tkReport(results: list of TestResult): int {
     var r: TestResult
     var fails: int = 0
     var total: int = 0
+    var line: string
 
     for r in results {
         total = total + 1
         if r.passed {
-            alert("PASS " + r.name)
+            line = "PASS " + r.name
+            alert(line)
         } else {
-            alert("FAIL " + r.name + ": " + r.detail)
+            line = "FAIL " + r.name + ": " + r.detail
+            alert(line)
             fails = fails + 1
         }
     }
-    alert("TOTAL " + tkIntToStr(total) + " PASS " + tkIntToStr(total - fails) + " FAIL " + tkIntToStr(fails))
+    // Built up piecewise into `line` rather than one long chained-`+`
+    // alert() argument: native 68k codegen (cg68k) has a per-statement
+    // string/record temp-slot budget, and this many concatenations (three
+    // tkIntToStr() calls included) in one expression exceeds it ("too many
+    // str/rec temps needed in one statement") -- a real gap Task 8 never
+    // caught since nothing built kit.cla via emit68k before test-suite-
+    // review Task 9's Mac-gate swap.
+    line = "TOTAL " + tkIntToStr(total)
+    line = line + " PASS " + tkIntToStr(total - fails)
+    line = line + " FAIL " + tkIntToStr(fails)
+    alert(line)
     return fails
 }

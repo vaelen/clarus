@@ -151,10 +151,21 @@ func firstDiff(want, got string) string {
 	return ""
 }
 
+// TestSuiteOnMac is the core suite's Mac boot gate (test-suite-review
+// Task 9's Mac-gate swap): it builds and boots the core CLI's case files
+// (coreCLIFiles, the same ones internal/testsuite/core_cli_test.go's
+// buildCoreCLI drives host-side) plus core/cli_mac.cla (coreCLIMacFiles)
+// -- a non-UI print program, exactly what the retired testdata/suite/
+// test_suite.cla was, just via a Mac-safe front end (cli_mac.cla's own
+// doc comment has the full story on why core/cli.cla itself can't boot
+// natively). Host expectation comes from RunCoreCLIHost/BuildCoreCLIHost
+// (suite_host_test.go, the Go-compiler-free snapshot-clarusc oracle,
+// built with cli.cla/coreCLIHostFiles instead), run with `all` -- the
+// same case list cli_mac.cla's own `App.launch` always runs.
 func TestSuiteOnMac(t *testing.T) {
 	requireMac(t)
-	expected := RunSuiteHost(t, BuildSuiteHost(t))
-	bin := BuildMac(t, "TestSuite", true, "../../testdata/suite/test_suite.cla")
+	expected := RunCoreCLIHost(t, BuildCoreCLIHost(t), "all")
+	bin := BuildMac(t, "TestSuite", true, pkgRelFiles(coreCLIMacFiles)...)
 	got, _, exitCode := RunMac(t, bin, 15*time.Minute)
 	if exitCode != 0 {
 		t.Fatalf("suite exit code %d, want 0", exitCode)

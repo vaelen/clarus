@@ -2,21 +2,40 @@
 // SPDX-License-Identifier: MIT
 
 // cli.cla: the core suite's command-line front-end (test-suite-review
-// Task 8; Task 10 adds a GUI front-end that swaps in for this file in
-// the Mac build). Args are case names (as coreCaseName spells them --
-// StrConcatClamp, StrIndexing, SelfCheck), the keyword "all", or empty
-// (defaults to all, the rt_args surface test_suite-era CLI programs use
-// -- Chapter 7's App.startCLI). An unrecognized name is itself a FAIL
-// line -- every other requested case still runs and reports -- and the
-// process exits nonzero.
+// Task 8), for HOST builds only -- Mac/native builds use cli_mac.cla
+// instead (never both in one composition; see cli_mac.cla's own doc
+// comment for why `App.startCLI` is host-only in practice, not just by
+// the language reference's contract). Args are case names (as
+// coreCaseName spells them), the keyword "all", or empty (defaults to
+// all, the rt_args surface test_suite-era CLI programs use -- Chapter 7's
+// App.startCLI). An unrecognized name is itself a FAIL line -- every
+// other requested case still runs and reports -- and the process exits
+// nonzero.
+
+// coreMatchAndAdd looks up a by its coreCaseName spelling among
+// coreAllCases(); on a match it adds the case to sel (a reference-
+// semantic `list of CoreTest`, Ch3 -- the mutation is visible to the
+// caller) and returns true, otherwise it returns false unchanged. A
+// `for t in coreAllCases() { if a == coreCaseName(t) ... }` loop, not a
+// 40-branch if/else-if chain -- see coreAllCases' own doc comment
+// (runner.cla) for why: native 68k codegen's per-statement string/record
+// temp-slot budget can't hold that many coreCaseName() call results live
+// in one chain.
+func coreMatchAndAdd(a: string, sel: list of CoreTest): bool {
+    var t: CoreTest
+    for t in coreAllCases() {
+        if a == coreCaseName(t) {
+            sel.add(t)
+            return true
+        }
+    }
+    return false
+}
 
 on App.startCLI(args: list of string) {
     var a: string
     var sel: list of CoreTest
     var results: list of TestResult
-    var coreResults: list of TestResult
-    var r: TestResult
-    var fails: int
 
     if args.count == 0 {
         sel.add(All)
@@ -24,25 +43,11 @@ on App.startCLI(args: list of string) {
         for a in args {
             if a == "all" {
                 sel.add(All)
-            } else if a == coreCaseName(StrConcatClamp) {
-                sel.add(StrConcatClamp)
-            } else if a == coreCaseName(StrIndexing) {
-                sel.add(StrIndexing)
-            } else if a == coreCaseName(SelfCheck) {
-                sel.add(SelfCheck)
-            } else {
+            } else if not coreMatchAndAdd(a, sel) {
                 results.add(tkFail(a, "unknown test case"))
             }
         }
     }
 
-    coreResults = runCoreTests(sel)
-    for r in coreResults {
-        results.add(r)
-    }
-
-    fails = tkReport(results)
-    if fails > 0 {
-        quit 1
-    }
+    coreCliRunAndReport(sel, results)
 }

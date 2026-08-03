@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 )
@@ -23,7 +22,7 @@ var (
 // bootstrapSnapshotClarusc compiles the committed clarusc/clarusc.c
 // snapshot straight to a binary with `cc` alone -- no Go compiler
 // involved. This is the host-oracle half of test-suite-review Task 5:
-// mactest's HOST comparisons (BuildSuiteHost here, and
+// mactest's HOST comparisons (BuildCoreCLIHost here, and
 // runNativeHostCompareSeglimit's host half in native_test.go) no longer
 // need build.Build, so the Mac gates no longer need the Go compiler.
 // Duplicated from internal/selfhost/behavior_test.go's own
@@ -65,12 +64,17 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 	return snapshotClaruscExe
 }
 
-// buildHostFromFixture emits claPath's C with the snapshot-bootstrapped
-// clarusc and compiles it with `cc` against the on-disk runtime sources
-// (internal/build/rt/rt.c) -- the build-mac.sh step-1 pipeline, run
-// straight to a host binary instead of a Mac one. Shared by BuildSuiteHost
-// here and runNativeHostCompareSeglimit's host half in native_test.go.
-func buildHostFromFixture(t *testing.T, claPath, binName string) string {
+// buildHostFromFixtures emits claPaths' C with the snapshot-bootstrapped
+// clarusc (a multi-file composition, same as any clarusc emit invocation
+// with several files -- kit first by convention, immaterial to the
+// emitted C since clarusc's lowering pre-pass makes cross-file
+// declaration order otherwise immaterial) and compiles it with `cc`
+// against the on-disk runtime sources (internal/build/rt/rt.c) -- the
+// build-mac.sh step-1 pipeline, run straight to a host binary instead of
+// a Mac one. Shared by BuildCoreCLIHost here and
+// runNativeHostCompareSeglimit's host half in native_test.go (via the
+// single-file buildHostFromFixture wrapper).
+func buildHostFromFixtures(t *testing.T, claPaths []string, binName string) string {
 	t.Helper()
 	root := repoRoot(t)
 	claruscExe := bootstrapSnapshotClarusc(t)
@@ -78,69 +82,109 @@ func buildHostFromFixture(t *testing.T, claPath, binName string) string {
 	outC := filepath.Join(work, binName+".c")
 	rtDir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
 
-	emit := exec.Command(claruscExe, "emit", "--rtdir", rtDir, "-o", outC, claPath)
+	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, claPaths...)
+	emit := exec.Command(claruscExe, args...)
 	if out, err := emit.CombinedOutput(); err != nil {
-		t.Fatalf("clarusc emit %s: %v\n%s", claPath, err, out)
+		t.Fatalf("clarusc emit %v: %v\n%s", claPaths, err, out)
 	}
 
 	exe := filepath.Join(work, binName)
 	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
 		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"), "-o", exe)
 	if out, err := cc.CombinedOutput(); err != nil {
-		t.Fatalf("cc compile emitted C for %s: %v\n%s", claPath, err, out)
+		t.Fatalf("cc compile emitted C for %v: %v\n%s", claPaths, err, out)
 	}
 	return exe
 }
 
-// BuildSuiteHost builds testdata/suite/test_suite.cla with the snapshot-
-// bootstrapped clarusc (emit + cc) and returns the executable path.
-func BuildSuiteHost(t *testing.T) string {
+// buildHostFromFixture is buildHostFromFixtures for a single file --
+// native_test.go's runNativeHostCompareSeglimit's own single-fixture case.
+func buildHostFromFixture(t *testing.T, claPath, binName string) string {
 	t.Helper()
-	fixture := filepath.Join(repoRoot(t), "testdata", "suite", "test_suite.cla")
-	return buildHostFromFixture(t, fixture, "suite")
+	return buildHostFromFixtures(t, []string{claPath}, binName)
 }
 
-// RunSuiteHost runs the host suite binary and returns its stdout. This
-// output is the byte-exact expectation for the Mac run (mac_test.go).
-func RunSuiteHost(t *testing.T, exe string) string {
+// coreCLIFiles is the core suite's CLI composition -- kit.cla +
+// core/runner.cla + one core/cases_*.cla per family + a front-end file,
+// the same case-file list internal/testsuite/core_cli_test.go's
+// buildCoreCLI builds host-side (test-suite-review Task 9's Mac-gate
+// swap: the Mac boot lanes exercise this composition instead of the
+// retired testdata/suite/test_suite.cla -- a non-UI print program either
+// way, so the same `clarusc emit`/`emit68k` build path applies
+// unchanged). The front-end file differs by platform -- see
+// testsuite/core/cli_mac.cla's own doc comment for why `core/cli.cla`
+// (host, `App.startCLI`) can't also boot on native: cg68k's non-UI
+// startup stub calls every declared app-level handler unconditionally,
+// including `App.startCLI` with a never-marshaled (garbage) `args` list,
+// which hangs the whole boot. `coreCLIFiles` is the shared case-file
+// prefix; `coreCLIHostFiles`/`coreCLIMacFiles` append the right front
+// end. Paths are repo-root-relative; callers join against repoRoot(t).
+var coreCLIFiles = []string{
+	filepath.Join("testsuite", "kit.cla"),
+	filepath.Join("testsuite", "core", "runner.cla"),
+	filepath.Join("testsuite", "core", "cases_str.cla"),
+	filepath.Join("testsuite", "core", "cases_text.cla"),
+	filepath.Join("testsuite", "core", "cases_list.cla"),
+	filepath.Join("testsuite", "core", "cases_map.cla"),
+	filepath.Join("testsuite", "core", "cases_rec.cla"),
+	filepath.Join("testsuite", "core", "cases_arr.cla"),
+	filepath.Join("testsuite", "core", "cases_enumfix.cla"),
+	filepath.Join("testsuite", "core", "cases_ser.cla"),
+	filepath.Join("testsuite", "core", "cases_misc.cla"),
+}
+
+// coreCLIHostFiles is coreCLIFiles + core/cli.cla (host front-end,
+// `App.startCLI` with real argv).
+var coreCLIHostFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "cli.cla"))
+
+// coreCLIMacFiles is coreCLIFiles + core/cli_mac.cla (Mac/native front
+// end, `App.launch`, always runs the full case list).
+var coreCLIMacFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "cli_mac.cla"))
+
+// absFiles resolves a repo-root-relative file list to absolute paths
+// (the convention buildHostFromFixtures/buildNative68kMulti both expect).
+func absFiles(t *testing.T, files []string) []string {
 	t.Helper()
-	cmd := exec.Command(exe)
-	cmd.Dir = t.TempDir() // suite tests touch relative-path files
+	root := repoRoot(t)
+	abs := make([]string, len(files))
+	for i, f := range files {
+		abs[i] = filepath.Join(root, f)
+	}
+	return abs
+}
+
+// pkgRelFiles resolves a repo-root-relative file list to package-dir-
+// relative paths (the "../../..." convention BuildMac/runBuildMac's
+// scripts/build-mac.sh invocation expects -- same as BuildMac's own
+// claFiles doc comment).
+func pkgRelFiles(files []string) []string {
+	rel := make([]string, len(files))
+	for i, f := range files {
+		rel[i] = filepath.Join("..", "..", f)
+	}
+	return rel
+}
+
+// BuildCoreCLIHost builds the core suite's HOST CLI composition
+// (coreCLIHostFiles, `core/cli.cla` front end) with the snapshot-
+// bootstrapped clarusc (emit + cc) and returns the executable path.
+func BuildCoreCLIHost(t *testing.T) string {
+	t.Helper()
+	return buildHostFromFixtures(t, absFiles(t, coreCLIHostFiles), "core_cli")
+}
+
+// RunCoreCLIHost runs the host core-CLI binary with argv ("all" by
+// convention for the Mac-gate parity comparison) and returns its stdout
+// (the PASS/FAIL/TOTAL log -- kit.cla's tkReport). This output is the
+// byte-exact expectation for the Mac/native runs (mac_test.go,
+// native_test.go).
+func RunCoreCLIHost(t *testing.T, exe string, argv ...string) string {
+	t.Helper()
+	cmd := exec.Command(exe, argv...)
+	cmd.Dir = t.TempDir() // the ser family does real file I/O
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("run suite: %v", err)
+		t.Fatalf("run core CLI: %v", err)
 	}
 	return string(out)
-}
-
-// suiteExcluded names lib files that test_suite.cla deliberately omits:
-// each one's entry func aborts the process by design (rt_panic, exit 3),
-// which is incompatible with the shared-process monolithic suite. They
-// are not dropped from coverage -- they run as standalone apps under the
-// Mac harness (mac_test.go, plan Task 11), checked against their existing
-// pre-abort stdout/panic-message/exit-code goldens individually.
-var suiteExcluded = map[string]bool{
-	"emit_array": true,
-	"emit_enum":  true,
-}
-
-func TestSuiteRunsAllTests(t *testing.T) {
-	out := RunSuiteHost(t, BuildSuiteHost(t))
-	names, _ := filepath.Glob("../../testdata/run/lib/*.cla")
-	if len(names) == 0 {
-		t.Fatal("no lib corpus")
-	}
-	for _, n := range names {
-		name := strings.TrimSuffix(filepath.Base(n), ".cla")
-		if suiteExcluded[name] {
-			continue
-		}
-		delim := "=== " + name + " ==="
-		if !strings.Contains(out, delim) {
-			t.Errorf("suite output missing %q", delim)
-		}
-	}
-	if !strings.Contains(out, "=== suite done ===") {
-		t.Error("missing final delimiter")
-	}
 }

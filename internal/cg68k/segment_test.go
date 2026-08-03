@@ -2,17 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 // segment_test.go: native-5d Task 15's gate for real multi-segment CODE
-// packing. TestSegmentationMultiSegment compiles the monolithic
-// testdata/suite/test_suite.cla via emit68k on the host and asserts it
-// really does produce more than one CODE segment (the whole reason Task
-// 15 exists -- test_suite.cla exceeds the classic 32KB CODE-resource
-// limit as one blob), that every jump-table entry resolves into ITS OWN
-// owning segment's actual code range, that every produced .segN.s/
-// .segN.dat pair round-trips through vasm byte-identically (Task 6/8's
-// own oracle, extended per-segment), and that emitting the same program
-// twice produces a byte-identical .bin (cgPackProgram/cg68Program's own
-// determinism requirement: packing input is declaration order over
-// shaken functions, no size-dependent reordering).
+// packing. TestSegmentationMultiSegment compiles a multi-file program via
+// emit68k on the host and asserts it really does produce more than one
+// CODE segment (the whole reason Task 15 exists), that every jump-table
+// entry resolves into ITS OWN owning segment's actual code range, that
+// every produced .segN.s/.segN.dat pair round-trips through vasm byte-
+// identically (Task 6/8's own oracle, extended per-segment), and that
+// emitting the same program twice produces a byte-identical .bin
+// (cgPackProgram/cg68Program's own determinism requirement: packing input
+// is declaration order over shaken functions, no size-dependent
+// reordering). Fixture: test-suite-review Task 9's core suite CLI
+// composition (testsuite/kit.cla + core/runner.cla + one core/cases_*.cla
+// per family + core/cli_mac.cla, the Mac/native front end -- see that
+// file's own doc comment for why native needs a different front end than
+// the host's core/cli.cla) -- the same multi-file build internal/
+// mactest's TestSuiteOn68k boots, and, like the retired testdata/suite/
+// test_suite.cla before it, big enough to exceed the classic 32KB single-
+// segment limit (confirmed: packs into 3 segments as of this task).
 // TestSegmentationOversizedFunction pins the compile-error (not crash)
 // path for a single function too large to fit even a fresh segment.
 package cg68k
@@ -46,23 +52,49 @@ func discoverSegments(t *testing.T, base string) int {
 	return n
 }
 
+// segmentationFixture is the core suite's CLI composition -- see this
+// file's own header comment for why it replaced testdata/suite/
+// test_suite.cla as the multi-segment fixture.
+func segmentationFixture(root string) []string {
+	rel := []string{
+		filepath.Join("testsuite", "kit.cla"),
+		filepath.Join("testsuite", "core", "runner.cla"),
+		filepath.Join("testsuite", "core", "cases_str.cla"),
+		filepath.Join("testsuite", "core", "cases_text.cla"),
+		filepath.Join("testsuite", "core", "cases_list.cla"),
+		filepath.Join("testsuite", "core", "cases_map.cla"),
+		filepath.Join("testsuite", "core", "cases_rec.cla"),
+		filepath.Join("testsuite", "core", "cases_arr.cla"),
+		filepath.Join("testsuite", "core", "cases_enumfix.cla"),
+		filepath.Join("testsuite", "core", "cases_ser.cla"),
+		filepath.Join("testsuite", "core", "cases_misc.cla"),
+		filepath.Join("testsuite", "core", "cli_mac.cla"),
+	}
+	abs := make([]string, len(rel))
+	for i, f := range rel {
+		abs[i] = filepath.Join(root, f)
+	}
+	return abs
+}
+
 func TestSegmentationMultiSegment(t *testing.T) {
 	root := repoRoot(t)
 	exe := buildClarusc(t)
-	fixture := filepath.Join(root, "testdata", "suite", "test_suite.cla")
+	fixture := segmentationFixture(root)
 
 	runDir := t.TempDir()
 	outBin := filepath.Join(runDir, "out.bin")
-	cmd := exec.Command(exe, "emit68k", "-o", outBin, "--listing", fixture)
+	args := append([]string{"emit68k", "-o", outBin, "--listing"}, fixture...)
+	cmd := exec.Command(exe, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("clarusc emit68k -o %s --listing %s: %v\n%s", outBin, fixture, err, out)
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 
 	base := strings.TrimSuffix(outBin, ".bin")
 	segCount := discoverSegments(t, base)
-	t.Logf("test_suite.cla packed into %d CODE segment(s)", segCount)
+	t.Logf("core CLI composition packed into %d CODE segment(s)", segCount)
 	if segCount <= 1 {
-		t.Fatalf("test_suite.cla produced %d CODE segment(s), want >1 -- this is Task 15's whole reason to exist (the suite exceeds the 32KB single-segment limit)", segCount)
+		t.Fatalf("core CLI composition produced %d CODE segment(s), want >1 -- this is Task 15's whole reason to exist (the fixture exceeds the 32KB single-segment limit)", segCount)
 	}
 
 	// -- every JT entry resolves into its OWN owning segment's code range --
@@ -233,15 +265,17 @@ func TestSegmentationMultiSegment(t *testing.T) {
 	// -- double-emit determinism on the multi-segment image itself --
 	runDir2 := t.TempDir()
 	outBin2 := filepath.Join(runDir2, "out.bin")
-	cmd2 := exec.Command(exe, "emit68k", "-o", outBin2, fixture)
+	args2 := append([]string{"emit68k", "-o", outBin2}, fixture...)
+	cmd2 := exec.Command(exe, args2...)
 	if out, err := cmd2.CombinedOutput(); err != nil {
-		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", outBin2, fixture, err, out)
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args2, " "), err, out)
 	}
 	runDir3 := t.TempDir()
 	outBin3 := filepath.Join(runDir3, "out.bin")
-	cmd3 := exec.Command(exe, "emit68k", "-o", outBin3, fixture)
+	args3 := append([]string{"emit68k", "-o", outBin3}, fixture...)
+	cmd3 := exec.Command(exe, args3...)
 	if out, err := cmd3.CombinedOutput(); err != nil {
-		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", outBin3, fixture, err, out)
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args3, " "), err, out)
 	}
 	img2, err := os.ReadFile(outBin2)
 	if err != nil {
@@ -252,7 +286,7 @@ func TestSegmentationMultiSegment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(img2, img3) {
-		t.Fatalf("emit68k is non-deterministic on a multi-segment build: test_suite.cla's .bin differs across two runs (%d vs %d bytes)", len(img2), len(img3))
+		t.Fatalf("emit68k is non-deterministic on a multi-segment build: fixture's .bin differs across two runs (%d vs %d bytes)", len(img2), len(img3))
 	}
 }
 

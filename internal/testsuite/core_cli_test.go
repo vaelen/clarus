@@ -4,8 +4,8 @@
 // Package testsuite hosts the Go test harnesses driving the Clarus-native
 // testsuite/ suites (test-suite-review Phase D/E). core_cli_test.go builds
 // the core suite's host CLI (testsuite/kit.cla + testsuite/core/runner.cla
-// + testsuite/core/cases_str.cla + testsuite/core/cli.cla) via the
-// snapshot-bootstrapped clarusc -- the same recipe as
+// + testsuite/core/cases_*.cla, one file per family + testsuite/core/
+// cli.cla) via the snapshot-bootstrapped clarusc -- the same recipe as
 // internal/selfhost/behavior_test.go's bootstrapSnapshotClarusc and
 // internal/perfgate's buildClarusc, duplicated locally per those packages'
 // own convention (each Go test package times/drives its own build rather
@@ -83,9 +83,10 @@ func bootstrapClarusc(t *testing.T) string {
 }
 
 // buildCoreCLI composes and compiles the core suite's CLI binary: kit.cla
-// + core/runner.cla + core/cases_str.cla + core/cli.cla (kit first by
-// convention; clarusc's lowering pre-pass makes cross-file declaration
-// order otherwise immaterial -- the plan's normative build composition).
+// + core/runner.cla + core/cases_*.cla (one per family) + core/cli.cla
+// (kit first by convention; clarusc's lowering pre-pass makes cross-file
+// declaration order otherwise immaterial -- the plan's normative build
+// composition).
 func buildCoreCLI(t *testing.T) string {
 	t.Helper()
 	exe := bootstrapClarusc(t)
@@ -98,6 +99,14 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "kit.cla"),
 		filepath.Join(root, "testsuite", "core", "runner.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_str.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_text.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_list.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_map.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_rec.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_arr.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_enumfix.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_ser.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_misc.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -116,10 +125,15 @@ func buildCoreCLI(t *testing.T) string {
 }
 
 // runCoreCLI runs the built binary with argv and returns its exit code
-// and stdout (the PASS/FAIL/TOTAL log -- see kit.cla's tkReport).
+// and stdout (the PASS/FAIL/TOTAL log -- see kit.cla's tkReport). Runs in
+// a fresh temp cwd: the ser family (cases_ser.cla) does real file I/O
+// (file.writeText/readText), and a temp cwd keeps its scratch files out
+// of the repo tree -- same convention test_suite.cla's own header comment
+// documents for its file-touching lib fixtures.
 func runCoreCLI(t *testing.T, bin string, argv ...string) (exit int, stdout string) {
 	t.Helper()
 	cmd := exec.Command(bin, argv...)
+	cmd.Dir = t.TempDir()
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -204,7 +218,18 @@ func TestCoreSuiteCLI(t *testing.T) {
 			t.Fatalf("TOTAL arithmetic: pass %d + fail %d != total %d", pass, fail, total)
 		}
 
-		wantCases := []string{"StrConcatClamp", "StrIndexing", "SelfCheck"}
+		wantCases := []string{
+			"StrConcatClamp", "StrIndexing", "StrCompare", "ErrVarIsolation",
+			"TextAppendStr", "TextWidenAssignability", "TextRealiasLocal", "TextSlicesIndexOfMiss", "TextAssignCompare", "TextAppendPerf",
+			"ListPushCountFirstLast", "ListReassignRelease", "ListGlobalAliasNested", "ListForLoopVarAlias",
+			"MapSetCount", "MapHasRemove", "MapOfListUpsert",
+			"RecCopyIndependence", "RecFieldGlobalAlias",
+			"ArrHolderElementStore",
+			"EnumIntRoundTrip", "EnumSaveChoiceValue", "FixedMathOps", "ConstCaseLabel", "SwitchIntRange", "SwitchIntMultiLabel",
+			"SerBinRoundtrip", "SerFileRoundtrip", "SerFileNameRoundtrip",
+			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
+			"SelfCheck",
+		}
 		if len(lines) != len(wantCases) {
 			t.Fatalf("expected %d cases, got %d: %+v", len(wantCases), len(lines), lines)
 		}

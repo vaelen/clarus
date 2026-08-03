@@ -255,6 +255,24 @@ func buildNative68k(t *testing.T, fixture, binName string) string {
 	return bin
 }
 
+// buildNative68kMulti is buildNative68k generalized to a multi-file
+// composition (`clarusc emit68k -o bin FILE...`) -- test-suite-review
+// Task 9's core-CLI Mac-gate swap (TestSuiteOn68k below) needs this;
+// buildNative68k itself stays single-file since every other caller passes
+// exactly one fixture.
+func buildNative68kMulti(t *testing.T, binName string, fixtures ...string) string {
+	t.Helper()
+	exe := buildNativeClarusc(t)
+	bin := filepath.Join(t.TempDir(), binName+".bin")
+	args := append([]string{"emit68k", "-o", bin}, fixtures...)
+	cmd := exec.Command(exe, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return bin
+}
+
 // buildNative68kUI (Task 12, native-5e) is buildNative68k plus `--events`:
 // builds a UI program via `clarusc emit68k --events <eventsRel> <claRel...>`
 // through the same memoized buildNativeClarusc() -- no Retro68/cmake, no
@@ -454,22 +472,20 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 	}
 }
 
-// TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
-// TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
-// via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the
-// same emulator harness. Host expectation comes from the existing
-// RunSuiteHost/BuildSuiteHost (suite_host_test.go, the Go-compiler-built
-// host binary) -- identical expectation to TestSuiteOnMac's, since
-// test_suite.cla is deliberately Go-compiler-compatible. This is the
-// biggest native boot to date: 4 CODE segments (Task 15), every runtime
-// family, file I/O (host-side only -- native file.save/load has no
-// emulator coverage in 5d, a recorded gate limit; test_suite.cla doesn't
-// exercise them), and panics.
+// TestSuiteOn68k is native-5d Task 16's end gate, rebased by test-suite-
+// review Task 9 onto the core suite's CLI composition (coreCLIMacFiles,
+// the same files TestSuiteOnMac boots -- cli_mac.cla's own doc comment
+// has the full story on why the Mac/native lanes need a different front
+// end than the host's core/cli.cla): built via `clarusc emit68k` (no C,
+// no cmake, no Retro68) and booted on the same emulator harness. Host
+// expectation comes from RunCoreCLIHost/BuildCoreCLIHost (suite_host_
+// test.go, the Go-compiler-free snapshot-clarusc host oracle, built with
+// coreCLIHostFiles/cli.cla instead) -- identical expectation to
+// TestSuiteOnMac's.
 func TestSuiteOn68k(t *testing.T) {
 	requireMac(t)
-	expected := RunSuiteHost(t, BuildSuiteHost(t))
-	fixture := filepath.Join(repoRoot(t), "testdata", "suite", "test_suite.cla")
-	bin := buildNative68k(t, fixture, "suite")
+	expected := RunCoreCLIHost(t, BuildCoreCLIHost(t), "all")
+	bin := buildNative68kMulti(t, "suite", absFiles(t, coreCLIMacFiles)...)
 	got, _, exitCode := RunMac(t, bin, 15*time.Minute)
 	if exitCode != 0 {
 		t.Fatalf("suite exit code %d, want 0", exitCode)

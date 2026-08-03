@@ -7,6 +7,12 @@
 // lifted verbatim from its testdata/run/lib source (same condition, same
 // values), only the reporting is different: the original alert()s
 // "... ok" / "... FAIL" pairs, these return a TestResult.
+//
+// Task 9 additions: StrCompare (testdata/run/lib/strings.cla's concat +
+// index-write + lexicographic compare) and ErrVarIsolation
+// (testdata/run/lib/errvar.cla's ordinary-error-var-untouched-by-
+// truncation check, the errvar.cla sibling of caseStrConcatClamp's
+// emit_record.cla version of the same lastError shape).
 
 // caseStrConcatClamp is testdata/run/lib/emit_record.cla's "lastError
 // code/message after truncation" check: a string+string concat result
@@ -15,17 +21,21 @@
 // Truncation").
 func caseStrConcatClamp(): TestResult {
     var cap3: string(3)
+    var detail: string
 
     cap3 = "ab" + "cdef" // overflows string(3)'s capacity -> sets lastError
 
     if cap3 != "abc" {
-        return tkFail("StrConcatClamp", "store = " + cap3 + ", want abc")
+        detail = "store = " + cap3 + ", want abc"
+        return tkFail("StrConcatClamp", detail)
     }
     if lastError.code != 1 {
-        return tkFail("StrConcatClamp", "lastError.code = " + tkIntToStr(lastError.code) + ", want 1")
+        detail = "lastError.code = " + tkIntToStr(lastError.code) + ", want 1"
+        return tkFail("StrConcatClamp", detail)
     }
     if lastError.message != "string truncated" {
-        return tkFail("StrConcatClamp", "lastError.message = " + lastError.message + ", want string truncated")
+        detail = "lastError.message = " + lastError.message + ", want string truncated"
+        return tkFail("StrConcatClamp", detail)
     }
     return tkPass("StrConcatClamp")
 }
@@ -40,4 +50,47 @@ func caseStrIndexing(): TestResult {
         return tkFail("StrIndexing", "c[0] wrong after write")
     }
     return tkPass("StrIndexing")
+}
+
+// caseStrCompare is testdata/run/lib/strings.cla's "matches" / "a < b"
+// checks: str+str concat, index-write, full-string equality, and a
+// lexicographic comparison branch.
+func caseStrCompare(): TestResult {
+    var a: string = "hello"
+    var b: string = " world"
+    var c: string
+    var detail: string
+
+    c = a + b
+    c[0] = 'H'
+    if c != "Hello world" {
+        detail = "c = " + c + ", want Hello world"
+        return tkFail("StrCompare", detail)
+    }
+    if a < b {
+        return tkFail("StrCompare", "a < b unexpectedly true")
+    }
+    return tkPass("StrCompare")
+}
+
+// caseErrVarIsolation is testdata/run/lib/errvar.cla's check: an ordinary
+// `error` local stays untouched by a capacity-overflow store that sets
+// only the GLOBAL lastError (the errvar.cla sibling of
+// caseStrConcatClamp's emit_record.cla version of this shape).
+func caseErrVarIsolation(): TestResult {
+    var e: error
+    var g: string(3)
+    var detail: string
+
+    g = "ab" + "cdef" // overflows g's capacity -> sets the GLOBAL lastError only
+
+    if e.code != 0 {
+        detail = "ordinary error var e.code = " + tkIntToStr(e.code) + ", want 0"
+        return tkFail("ErrVarIsolation", detail)
+    }
+    if lastError.code != 1 {
+        detail = "lastError.code = " + tkIntToStr(lastError.code) + ", want 1"
+        return tkFail("ErrVarIsolation", detail)
+    }
+    return tkPass("ErrVarIsolation")
 }
