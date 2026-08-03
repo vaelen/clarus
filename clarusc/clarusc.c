@@ -3459,6 +3459,7 @@ static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val);
 static void clar_fn_rtMapGet(void * cv_m, void * cv_key, void * cv_out);
 static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out);
 static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key);
+static void clar_fn_rtMapRemove(void * cv_m, void * cv_key);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 static int32_t clar_fn_intern(clar_str_255 cv_s);
@@ -4344,6 +4345,7 @@ static int32_t clar_fn_lowStmt(int32_t cv_s);
 static int32_t clar_fn_lowEditEmit(int32_t cv_winNameIdx, int32_t cv_kind, int32_t cv_opA, int32_t cv_opB);
 static int32_t clar_fn_lowEditStmt(int32_t cv_s);
 static int32_t clar_fn_lowWhile(int32_t cv_s);
+static void clar_fn_lowExcludeFreeName(int32_t cv_nameIdx);
 static int32_t clar_fn_lowFor(int32_t cv_s);
 static int32_t clar_fn_lowNewReturnTemp(void);
 static int32_t clar_fn_lowEscapeTrackableKind(int32_t cv_k);
@@ -5909,6 +5911,26 @@ static int32_t clar_fn_rtMapGetDv(void * cv_m, void * cv_key, void * cv_out) {
 static int32_t clar_fn_rtMapHas(void * cv_m, void * cv_key) {
     return (clar_fn_mapFind(cv_m, cv_key) >= 0);
     return 0;
+}
+
+static void clar_fn_rtMapRemove(void * cv_m, void * cv_key) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_idx;
+    cv_idx = 0;
+    int32_t cv_tail;
+    cv_tail = 0;
+    cv_idx = clar_fn_mapFind(cv_m, cv_key);
+    if (cv_idx < 0) {
+        return;
+    }
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_tail = (((cv_rm)->cv_count - 1) - cv_idx);
+    if (cv_tail > 0) {
+        rt_ext_MapBlockMoveData(clar_fn_mapKeySlot(cv_m, (cv_idx + 1)), clar_fn_mapKeySlot(cv_m, cv_idx), (cv_tail * 256));
+        rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, (cv_idx + 1)), clar_fn_mapValSlot(cv_m, cv_idx), (cv_tail * (cv_rm)->cv_valsize));
+    }
+    (cv_rm)->cv_count = ((cv_rm)->cv_count - 1);
 }
 
 static int32_t clar_fn_rtMapCount(void * cv_m) {
@@ -20950,6 +20972,41 @@ static int32_t clar_fn_lowWhile(int32_t cv_s) {
     return 0;
 }
 
+static void clar_fn_lowExcludeFreeName(int32_t cv_nameIdx) {
+    clar_str_255 cv_nm;
+    cv_nm = (clar_str_255){0};
+    int32_t cv_i;
+    cv_i = 0;
+    rt_list * cv_kept;
+    cv_kept = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
+    clar_str_255 t1;
+    t1 = clar_fn_poolGet(cv_nameIdx);
+    clar_fn_rtStrStore((void*)&(cv_nm), 255, (void*)(const uint8_t*)&(t1));
+    if (!(clar_fn_rtMapHas((void*)cv_lowFreeTypes, (void*)(const uint8_t*)&(cv_nm)))) {
+            clar_fn_rtListRelease((void*)cv_kept);
+
+        return;
+    }
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < clar_fn_rtListCount((void*)cv_lowFreeNames)))) break;
+        if (clar_fn_rtStrCmp((void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_lowFreeNames, (int32_t)(cv_i)))), (void*)(const uint8_t*)&(cv_nm)) != 0) {
+            clar_str_255 t2;
+            t2 = (*(clar_str_255*)rt_list_at(cv_lowFreeNames, (int32_t)(cv_i)));
+            clar_fn_rtListPush((void*)cv_kept, (void*)&(t2));
+        }
+        cv_i = (cv_i + 1);
+    }
+        clar_fn_rtListRetain((void*)cv_kept);
+
+        clar_fn_rtListRelease((void*)cv_lowFreeNames);
+
+    cv_lowFreeNames = cv_kept;
+    clar_fn_rtMapRemove((void*)cv_lowFreeTypes, (void*)(const uint8_t*)&(cv_nm));
+        clar_fn_rtListRelease((void*)cv_kept);
+
+}
+
 static int32_t clar_fn_lowFor(int32_t cv_s) {
     int32_t cv_seq;
     cv_seq = 0;
@@ -20977,6 +21034,7 @@ static int32_t clar_fn_lowFor(int32_t cv_s) {
         clar_fn_lowPushScope();
         clar_fn_lowAddLocal(clar_fn_forV1(cv_s), clar_fn_lowType(clar_fn_typeElem(cv_seqT)));
         clar_fn_lowDeclareLocal(clar_fn_forV1(cv_s));
+        clar_fn_lowExcludeFreeName(clar_fn_forV1(cv_s));
         cv_body = clar_fn_lowBlock(clar_fn_forBody(cv_s));
         cv_n = clar_fn_newIRForList(clar_fn_forV1(cv_s), cv_seq, cv_body);
         clar_fn_lowPopScope();
@@ -20986,9 +21044,11 @@ static int32_t clar_fn_lowFor(int32_t cv_s) {
             clar_fn_lowPushScope();
             clar_fn_lowAddLocal(clar_fn_forV1(cv_s), clar_fn_irStrType(255));
             clar_fn_lowDeclareLocal(clar_fn_forV1(cv_s));
+            clar_fn_lowExcludeFreeName(clar_fn_forV1(cv_s));
             if (clar_fn_forV2(cv_s) != (-(1))) {
                 clar_fn_lowAddLocal(clar_fn_forV2(cv_s), clar_fn_lowType(clar_fn_typeElem(cv_seqT)));
                 clar_fn_lowDeclareLocal(clar_fn_forV2(cv_s));
+                clar_fn_lowExcludeFreeName(clar_fn_forV2(cv_s));
             }
             cv_body = clar_fn_lowBlock(clar_fn_forBody(cv_s));
             cv_n = clar_fn_newIRForMap(clar_fn_forV1(cv_s), clar_fn_forV2(cv_s), cv_seq, cv_body);

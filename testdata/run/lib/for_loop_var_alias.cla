@@ -1,0 +1,120 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Regression fixture for the task-5b ARC bug: clarusc's self-hosted C
+// emitter over-releases (double-free class) when a `for`-loop's list/map
+// element-bound variable name is ALSO declared with an ordinary `var` in
+// the enclosing function body -- legal Clarus (checkForStmt always opens a
+// fresh nested scope for the loop var(s), so reusing an outer name is just
+// ordinary shadowing, Ch5), and exactly the style testdata/cg68k/smoke.cla's
+// smokeMapText already used (`var k: string; var v: text; ... for k, v in
+// m { found = v }`).
+//
+// Root cause (clarusc/lower.cla, lowFor + lowCollectScopeExitCandidates):
+// lowRunEscapePrepass scans the function body's own top-level `var`
+// declarations ONCE, up front, and schedules every counted-kind (Text/
+// List/Map) name for an unconditional release at scope exit
+// (lowFreeNames). A list/map for-loop's own element/value binding is
+// deliberately EXCLUDED from that schedule (it's a BORROW of the
+// container's own storage, never independently retained -- see
+// lowFor's doc comment) -- but only because lowAddLocal for the loop var
+// "never routes through a `var`-decl AST node". When the loop reuses an
+// outer `var`'s name, that assumption breaks: the outer declaration
+// already added the name to lowFreeNames before the loop is even lowered,
+// and cpEmitFunc (cprint.cla) dedups ALL of a function's hoisted locals by
+// (name, type) into exactly ONE C variable -- so the outer var's owned
+// slot and the loop's borrowed slot become the SAME C storage. Every
+// iteration's unretained rt_map_val_at/rt_list_at overwrite lands in that
+// shared slot, and the scope-exit release meant for the OUTER declaration
+// then releases a reference the container itself still owns -- a release
+// its own teardown walk (rt_map_lastref/rt_list_lastref-gated) hits AGAIN,
+// double-freeing. Reproduces even with an EMPTY loop body -- escaping the
+// loop value to another outer var (`found = v` below) isn't required to
+// trigger the corruption, just to observe it deterministically via a wrong
+// downstream compare.
+//
+// Fix: lowFor now evicts its own forV1/forV2 name(s) from lowFreeNames/
+// lowFreeTypes (lowExcludeFreeName) right after declaring them, for both
+// the list and map branches -- the loop's borrow always wins over
+// whatever an outer same-named `var` declaration scheduled, regardless of
+// which one lowCollectScopeExitCandidates saw first.
+//
+// Three sibling shapes, all confirmed independently buggy pre-fix (see
+// task-5b report): map-of-text value escape (shape 1, the reported bug and
+// smoke.cla's own shape), list-of-text value escape (shape 2), and a
+// nested container value -- map of list of text (shape 3). All three
+// share the identical root cause above; this fixture is a single
+// regression proof for all of them, not three separate bugs.
+//
+// Known pre-existing, SEPARATE (lower severity, leak-only, not
+// over-release) issue this fixture also surfaces and does NOT fix: a
+// list/map for-loop's element-bound variable of a counted kind always
+// gets an unconditional "birth" default-init at its C declaration
+// (cpEmitFunc's declared-locals prologue loop, cprint.cla) even though
+// it's correctly excluded from release -- that initial allocation leaks
+// once per call, whether or not the loop var's name collides with an
+// outer `var` (reproduces even in the idiomatic, non-colliding style, see
+// task-5b report). Tracked via this fixture's own testdata/run/
+// for_loop_var_alias.leaks golden (live=6: shapes 1 and 2 each leak one
+// birthed Text -- its two-malloc header+buffer, rt_ext_host.inc:169/189 --
+// shape 3 leaks one birthed List the same way, rt_ext_host.inc:230/242) --
+// a real, pinned, non-regressing count, not a fixture bug. Fixing the
+// leak itself is future work (needs cpEmitFunc to distinguish a
+// borrow-only for-loop local from a genuine `var`-declared one before
+// deciding whether to birth it at all).
+func runForLoopVarAlias(args: list of string) {
+    var pass: bool
+    var m1: map of text
+    var k1: string
+    var v1: text
+    var found1: text
+    var l2: list of text
+    var x2: text
+    var found2: text
+    var m3: map of list of text
+    var k3: string
+    var v3: list of text
+    var l3a: list of text
+    var l3b: list of text
+    var found3: list of text
+
+    pass = true
+
+    // ---- shape 1: for k, v in <map of text>, k/v predeclared, value
+    // escapes to an outer var (smoke.cla's smokeMapText shape) ----
+    m1["a"] = "apple"
+    m1["b"] = "banana"
+    m1["a"] = "avocado"
+    m1.remove("b")
+    for k1, v1 in m1 {
+        found1 = v1
+    }
+    if found1 != "avocado" { pass = false }
+
+    // ---- shape 2: for x in <list of text>, x predeclared, value escapes
+    // to an outer var ----
+    l2.add("alpha")
+    l2.add("beta")
+    for x2 in l2 {
+        found2 = x2
+    }
+    if found2 != "beta" { pass = false }
+
+    // ---- shape 3: for k, v in <map of list of text>, v predeclared,
+    // nested-container value escapes to an outer var ----
+    l3a.add("one")
+    l3b.add("two")
+    l3b.add("three")
+    m3["a"] = l3a
+    m3["b"] = l3b
+    for k3, v3 in m3 {
+        found3 = v3
+    }
+    if found3.count != 2 { pass = false }
+
+    if pass {
+        alert("ok")
+    } else {
+        alert("FAIL")
+    }
+}

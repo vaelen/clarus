@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // test_suite.cla: monolithic pure-Clarus test suite (Task 6). Includes
-// every logic file under testdata/run/lib/ (53 of 55, alphabetical by file
+// every logic file under testdata/run/lib/ (54 of 56, alphabetical by file
 // name -- emit_array/emit_enum excluded, see below) and calls each one's
 // entry func(s) in a single App.launch handler,
 // alerting a "=== <lib file name> ===" delimiter before each. Multi-entry
@@ -75,6 +75,7 @@ include "../run/lib/enums.cla"
 include "../run/lib/errvar.cla"
 include "../run/lib/files.cla"
 include "../run/lib/fixedmath.cla"
+include "../run/lib/for_loop_var_alias.cla"
 include "../run/lib/hello.cla"
 include "../run/lib/launchorder.cla"
 include "../run/lib/mutrec.cla"
@@ -170,6 +171,8 @@ on App.launch {
     runFiles()
     alert("=== fixedmath ===")
     runFixedmath()
+    alert("=== for_loop_var_alias ===")
+    runForLoopVarAlias(cliArgs)
     alert("=== hello ===")
     runHello()
     alert("=== launchorder ===")

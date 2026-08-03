@@ -9055,13 +9055,6 @@ LBL_661:
         BSR.W LBL_42
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        LEA -264(A6),A0
-        MOVE.L A1,-(A7)
-        MOVE.L 0(A0),D0
-        MOVE.L D0,-(A7)
-        BSR.W LBL_9
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
         LEA -268(A6),A0
         MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0

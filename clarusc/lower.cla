@@ -2263,6 +2263,63 @@ func lowWhile(s: int): int {
 // the unconditional-release candidate collector, only ever walks
 // blockVarsHead's `var` list) -- no explicit skip needed, just documented
 // here so the omission reads as intentional.
+// lowExcludeFreeName evicts nm from lowFreeNames/lowFreeTypes if present.
+// ARC bug fix (task-5b, over-release/double-free class -- regression
+// fixture testdata/run/lib/for_loop_var_alias.cla): a list/map element-
+// bound for-loop variable (forV1's list branch, forV1/forV2's map branch,
+// just below) is a BORROW of the container's own element storage --
+// fpForListStmt/fpForMapStmt (cprint.cla) materialize it as a fresh alias
+// each iteration, NEVER an owned +1 -- and lowCollectScopeExitCandidates'
+// own doc comment says this exclusion "falls out of lowAddLocal here NEVER
+// routing through a `var`-decl AST node", i.e. it assumes a loop variable's
+// name can never also be a scope-exit release candidate.
+//
+// That assumption breaks when the SAME name is ALSO declared with an
+// ordinary `var` in the enclosing function body (legal Clarus: checkForStmt
+// always opens a fresh nested scope for forV1/forV2, so reusing an outer
+// name is just ordinary shadowing) -- lowCollectScopeExitCandidates already
+// added that outer declaration to lowFreeNames by the time lowFor runs (it
+// is called once, up front, by lowRunEscapePrepass, before the body -- and
+// any `for` inside it -- is lowered). cpEmitFunc (cprint.cla) then dedups
+// ALL of a function's hoisted locals by (name, type) into exactly ONE C
+// variable, so the outer var's owned slot and the loop's borrowed slot
+// become the SAME storage: every iteration's unretained rt_map_val_at/
+// rt_list_at overwrite lands in the outer var's owned cv_<name>, and the
+// scope-exit release meant for the OUTER declaration then releases a
+// reference the container itself still owns -- an over-release the
+// container's own teardown walk (cpEmitRelease's rt_map_lastref/
+// rt_list_lastref-gated walk) hits again, double-freeing. Reproduces even
+// with an EMPTY loop body (testdata/cg68k/smoke.cla's smokeMapText -- see
+// task-5b report) -- no value escape (`outer = v`) required; escaping just
+// makes the corruption easier to notice via a wrong compare downstream.
+//
+// The loop-var borrow must always win: evicting here (before the body --
+// and any `return` inside it, which also consults lowFreeNames, see
+// lowReturn -- is lowered) guarantees the shared C variable is NEVER a
+// release candidate, regardless of an outer declaration racing to add it
+// first. Harmless no-op when the name was never a candidate (fresh loop-var
+// name, the common/idiomatic style, or a non-counted-kind type like the
+// map key's fixed string(255)).
+func lowExcludeFreeName(nameIdx: int) {
+    var nm: string
+    var i: int
+    var kept: list of string
+
+    nm = poolGet(nameIdx)
+    if not lowFreeTypes.has(nm) {
+        return
+    }
+    i = 0
+    while i < lowFreeNames.count {
+        if lowFreeNames[i] != nm {
+            kept.add(lowFreeNames[i])
+        }
+        i = i + 1
+    }
+    lowFreeNames = kept
+    lowFreeTypes.remove(nm)
+}
+
 func lowFor(s: int): int {
     var seq: int
     var toExpr: int
@@ -2287,6 +2344,7 @@ func lowFor(s: int): int {
         lowPushScope()
         lowAddLocal(forV1(s), lowType(typeElem(seqT)))
         lowDeclareLocal(forV1(s))
+        lowExcludeFreeName(forV1(s))
         body = lowBlock(forBody(s))
         n = newIRForList(forV1(s), seq, body)
         lowPopScope()
@@ -2295,9 +2353,11 @@ func lowFor(s: int): int {
         lowPushScope()
         lowAddLocal(forV1(s), irStrType(255))
         lowDeclareLocal(forV1(s))
+        lowExcludeFreeName(forV1(s))
         if forV2(s) != -1 {
             lowAddLocal(forV2(s), lowType(typeElem(seqT)))
             lowDeclareLocal(forV2(s))
+            lowExcludeFreeName(forV2(s))
         }
         body = lowBlock(forBody(s))
         n = newIRForMap(forV1(s), forV2(s), seq, body)
