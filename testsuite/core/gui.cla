@@ -1,0 +1,156 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// gui.cla: the core suite's Mac GUI front-end (test-suite-review Task
+// 10) -- swaps in for cli_mac.cla in the Mac GUI build composition
+// (testsuite/kit.cla + core/runner.cla + core/cases_*.cla (all 9) +
+// this file -- internal/mactest's coreGUIFiles, sibling of Task 9's
+// coreCLIMacFiles). A window listing every real case (table, rows =
+// coreAllCases() order -- All excluded, SelfCheck included, the same
+// list runner.cla's own coreAllCases() already defines for cli.cla's arg
+// matching), a Run All / Run Selected button pair, and a status textview
+// appended with one PASS/FAIL line per result plus a final TOTAL line --
+// the same log shape kit.cla's tkReport already emits via alert(). Every
+// result line goes through tkReport (hence alert()) too, so a scripted
+// boot's captured console -- the same `out` internal/mactest's RunMac
+// already captures for every other native UI scenario -- carries the
+// PASS/FAIL/TOTAL text this file's own gated test
+// (internal/mactest/coresuite_test.go's TestCoreSuiteGUIOn68k) parses.
+// Each run also (re)writes TestLog.txt via file.writeText, the same
+// lines LF-joined.
+//
+// Uses `on App.startEmpty` (not `on App.launch`/`App.startCLI`), the
+// same handler testdata/ui/popuptable.cla seeds its own table-bound list
+// from -- this program declares a `window`, so cg68k's UI-program
+// startup path (rtUiLaunch, runtime/clarus/ui.cla) handles it correctly.
+// cli_mac.cla's own doc comment escalates a real cg68k gap (test-suite-
+// review Task 9's report, native-compat gap #4): the NON-UI entry path's
+// App.launch/App.startEmpty/App.startCLI/App.openDocument dispatch fires
+// every declared handler unconditionally with unmarshaled args. That
+// gap is specific to non-UI programs; a UI program (window + widgets +
+// menu, all present here) takes the other, correct startup path and
+// never goes near it.
+//
+// Every widget below uses an explicit, fixed `at:` (no `right`/`next`
+// relative placement) so its screen rect is arithmetic, not something to
+// eyeball: testdata/ui/coresuite.events' own `click` coordinate for the
+// Run All button is derived directly from this file's `at:` values plus
+// rt_ui_open's screen-centering math (ui.cla's rtUiOpen: for a window
+// that fits on-screen, content top-left = ((512 - width) / 2, 44) --
+// confirmed against testdata/ui/buttons.cla's own worked comment, "window
+// opens centered at global (106,44) for its 300x160 size"). This
+// window's size (400, 280) fits without any clamp (44 + 280 + 2 <= 342),
+// so content top-left = ((512-400)/2, 44) = (56, 44). RunAll's local
+// rect is (10,140)-(90,160) (default button size 80x20, ui uiwidgets.cla
+// rtUiButtonW/H) -> global (66,184)-(146,204), center (106,194) --
+// coresuite.events' `click 106 194`.
+
+record CoreCaseRow {
+    name: string(63)
+}
+
+var caseRows: list of CoreCaseRow
+var caseOrder: list of CoreTest
+
+window Suite {
+    title: "Core Suite"
+    size: 400, 280
+
+    table Cases {
+        at: 10, 10
+        rows: caseRows
+        column "Name" shows name width fill
+    }
+    button RunAll      { at: 10, 140;  caption: "Run All" }
+    button RunSelected { at: 100, 140; caption: "Run Selected" }
+    textview Status    { at: 10, 170; fill: both; scrollbar: both }
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+// guiRunAndReport runs sel through runCoreTests, appends every PASS/FAIL
+// line plus a final TOTAL line to w's Status textview AND to
+// TestLog.txt (file.writeText, overwritten whole each run), and funnels
+// the same results through kit.cla's own tkReport so every line ALSO
+// alert()s -- the scripted boot's captured console is what
+// testdata/ui/coresuite.events' gate parses. Built up line-by-line into
+// an intermediate `line: string` var, not one long chained-`+`
+// status.append()/log.append() argument -- native 68k codegen (cg68k)
+// has a per-statement string/record temp-slot budget a long compound
+// concatenation can exceed (kit.cla's own tkReport doc comment hit this
+// first; test-suite-review Task 9's report catalogs the gap). Does NOT
+// quit on a fail (unlike coreCliRunAndReport, the CLI front-ends' shared
+// tail) -- this is an interactive GUI; a fail should show in the status
+// log, not end the session.
+func guiRunAndReport(w: Suite, sel: list of CoreTest) {
+    var results: list of TestResult
+    var r: TestResult
+    var status: text
+    var log: text
+    var fails: int
+    var total: int
+    var line: string
+    var ok: bool
+
+    results = runCoreTests(sel)
+
+    for r in results {
+        if r.passed {
+            line = "PASS " + r.name
+        } else {
+            line = "FAIL " + r.name + ": " + r.detail
+        }
+        status.append(line)
+        status.append("\n")
+        log.append(line)
+        log.append("\n")
+    }
+
+    fails = tkReport(results)
+    total = results.count
+    line = "TOTAL " + tkIntToStr(total)
+    line = line + " PASS " + tkIntToStr(total - fails)
+    line = line + " FAIL " + tkIntToStr(fails)
+    status.append(line)
+    log.append(line)
+
+    w.Status.text = status
+    ok = file.writeText("TestLog.txt", log)
+}
+
+on App.startEmpty {
+    var t: CoreTest
+    var row: CoreCaseRow
+
+    for t in coreAllCases() {
+        row.name = coreCaseName(t)
+        caseRows.add(row)
+        caseOrder.add(t)
+    }
+    open Suite
+}
+
+extend Suite {
+    on RunAll.click {
+        var sel: list of CoreTest
+
+        sel.add(All)
+        guiRunAndReport(window, sel)
+    }
+    on RunSelected.click {
+        var sel: list of CoreTest
+        var idx: int
+
+        idx = Cases.selected
+        if idx >= 0 {
+            sel.add(caseOrder[idx])
+            guiRunAndReport(window, sel)
+        }
+    }
+}
+
+extend File {
+    on Quit.select { quit }
+}
