@@ -1,0 +1,43 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_str.cla: the core suite's string-family test cases
+// (test-suite-review Task 8 seed; Task 9 adds the rest of the string
+// family alongside every other family). Each case's check body is
+// lifted verbatim from its testdata/run/lib source (same condition, same
+// values), only the reporting is different: the original alert()s
+// "... ok" / "... FAIL" pairs, these return a TestResult.
+
+// caseStrConcatClamp is testdata/run/lib/emit_record.cla's "lastError
+// code/message after truncation" check: a string+string concat result
+// wider than the target's string(3) capacity clamps on store and sets
+// lastError (language reference Ch4, "String Concatenation and
+// Truncation").
+func caseStrConcatClamp(): TestResult {
+    var cap3: string(3)
+
+    cap3 = "ab" + "cdef" // overflows string(3)'s capacity -> sets lastError
+
+    if cap3 != "abc" {
+        return tkFail("StrConcatClamp", "store = " + cap3 + ", want abc")
+    }
+    if lastError.code != 1 {
+        return tkFail("StrConcatClamp", "lastError.code = " + tkIntToStr(lastError.code) + ", want 1")
+    }
+    if lastError.message != "string truncated" {
+        return tkFail("StrConcatClamp", "lastError.message = " + lastError.message + ", want string truncated")
+    }
+    return tkPass("StrConcatClamp")
+}
+
+// caseStrIndexing is testdata/run/lib/emit_strings.cla's "index
+// read/set" check: s[i] write, then read back via comparison.
+func caseStrIndexing(): TestResult {
+    var c: string = "hello world"
+
+    c[0] = 'H'
+    if c[0] != 'H' {
+        return tkFail("StrIndexing", "c[0] wrong after write")
+    }
+    return tkPass("StrIndexing")
+}

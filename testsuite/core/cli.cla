@@ -1,0 +1,48 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cli.cla: the core suite's command-line front-end (test-suite-review
+// Task 8; Task 10 adds a GUI front-end that swaps in for this file in
+// the Mac build). Args are case names (as coreCaseName spells them --
+// StrConcatClamp, StrIndexing, SelfCheck), the keyword "all", or empty
+// (defaults to all, the rt_args surface test_suite-era CLI programs use
+// -- Chapter 7's App.startCLI). An unrecognized name is itself a FAIL
+// line -- every other requested case still runs and reports -- and the
+// process exits nonzero.
+
+on App.startCLI(args: list of string) {
+    var a: string
+    var sel: list of CoreTest
+    var results: list of TestResult
+    var coreResults: list of TestResult
+    var r: TestResult
+    var fails: int
+
+    if args.count == 0 {
+        sel.add(All)
+    } else {
+        for a in args {
+            if a == "all" {
+                sel.add(All)
+            } else if a == coreCaseName(StrConcatClamp) {
+                sel.add(StrConcatClamp)
+            } else if a == coreCaseName(StrIndexing) {
+                sel.add(StrIndexing)
+            } else if a == coreCaseName(SelfCheck) {
+                sel.add(SelfCheck)
+            } else {
+                results.add(tkFail(a, "unknown test case"))
+            }
+        }
+    }
+
+    coreResults = runCoreTests(sel)
+    for r in coreResults {
+        results.add(r)
+    }
+
+    fails = tkReport(results)
+    if fails > 0 {
+        quit 1
+    }
+}

@@ -1,0 +1,101 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// kit.cla: shared testsuite kit (test-suite-review Task 8) -- the
+// TestResult record and the PASS/FAIL/TOTAL report formatting every suite
+// (core, and later toolbox) builds on. See the plan's "Normative: the
+// testsuite runner contract" section
+// (docs/superpowers/plans/2026-08-03-test-suite-review.md) for the full
+// contract this implements. Pure ASCII, no lowlevel/extern surface --
+// this file is meant to be shared by every suite, including ones that
+// never touch Ch13.
+
+record TestResult {
+    name:   string(63)
+    passed: bool
+    detail: string(255)
+}
+
+// tkPass builds a passing TestResult (empty detail).
+func tkPass(name: string): TestResult {
+    var r: TestResult
+    r.name = name
+    r.passed = true
+    return r
+}
+
+// tkFail builds a failing TestResult carrying a detail message.
+func tkFail(name: string, detail: string): TestResult {
+    var r: TestResult
+    r.name = name
+    r.passed = false
+    r.detail = detail
+    return r
+}
+
+// tkIntToStr renders n in decimal, negative included. No numeric-
+// formatting builtin is available to ordinary Clarus programs --
+// clarusc's own numToStr is a compiler-internal helper, confirmed
+// unavailable outside clarusc itself (see
+// runtime/clarus/uiscript.cla's rtUiIntToText doc comment, which hits the
+// same gap for the UI runtime) -- so this is the standard divide-by-10
+// decimal conversion, same shape as testdata/run/lib/strings.cla's
+// stringsShow: digits collected into a scratch buffer, then appended
+// back-to-front.
+func tkIntToStr(n: int): string {
+    var digits: char[12]
+    var count: int = 0
+    var v: int = n
+    var neg: bool = false
+    var s: string
+    var i: int
+
+    if v < 0 {
+        neg = true
+        v = -v
+    }
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    if neg {
+        s = "-"
+    }
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    return s
+}
+
+// tkReport prints one line per result -- `PASS <name>` or
+// `FAIL <name>: <detail>` -- then a `TOTAL <n> PASS <p> FAIL <f>`
+// summary line, and returns the fail count. This log format is an API:
+// the host harness (internal/testsuite) and, later, the Mac GUI (goal
+// 4's on-disk TestLog.txt) both parse it. Lines go through alert(),
+// which is already the host-stdout / Mac-capture-console channel every
+// existing suite (testdata/suite/test_suite.cla) routes its output
+// through.
+func tkReport(results: list of TestResult): int {
+    var r: TestResult
+    var fails: int = 0
+    var total: int = 0
+
+    for r in results {
+        total = total + 1
+        if r.passed {
+            alert("PASS " + r.name)
+        } else {
+            alert("FAIL " + r.name + ": " + r.detail)
+            fails = fails + 1
+        }
+    }
+    alert("TOTAL " + tkIntToStr(total) + " PASS " + tkIntToStr(total - fails) + " FAIL " + tkIntToStr(fails))
+    return fails
+}

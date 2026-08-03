@@ -1,0 +1,99 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// runner.cla: the core suite's enum, dispatch, and self-check
+// (test-suite-review Task 8). Seeded with two real string cases migrated
+// verbatim (case bodies unchanged, wrapped to return TestResult instead
+// of alerting) from testdata/run/lib/emit_record.cla ("lastError
+// code/message after truncation") and testdata/run/lib/emit_strings.cla
+// ("index read/set") -- see cases_str.cla. Task 9 grows the enum to all
+// 39 test_suite.cla checks; this file's shape (All first, dedupe +
+// All-collapse, wantAll + per-case branches, SelfCheck last) does not
+// change.
+
+enum CoreTest {
+    All
+    StrConcatClamp
+    StrIndexing
+    SelfCheck
+}
+
+// nCoreCases is CoreTest's member count minus All: StrConcatClamp,
+// StrIndexing, and SelfCheck itself. SelfCheck's own branch does not
+// increment casesRun for itself (it is checking that the OTHER branches
+// ran) -- so on a clean run, casesRun has reached nCoreCases - 1 by the
+// time SelfCheck's own check runs. A forgotten branch leaves casesRun
+// short and SelfCheck fails, instead of the suite silently shrinking.
+const nCoreCases: int = 3
+
+// coreCaseName maps a CoreTest member to its programmatic name, used
+// both for CLI arg matching (cli.cla) and as a TestResult's name.
+func coreCaseName(t: CoreTest): string {
+    switch t {
+    case All {
+        return "All"
+    }
+    case StrConcatClamp {
+        return "StrConcatClamp"
+    }
+    case StrIndexing {
+        return "StrIndexing"
+    }
+    case SelfCheck {
+        return "SelfCheck"
+    }
+    }
+    return "?"
+}
+
+// coreHas reports whether l contains want.
+func coreHas(l: list of CoreTest, want: CoreTest): bool {
+    var t: CoreTest
+    for t in l {
+        if t == want {
+            return true
+        }
+    }
+    return false
+}
+
+// runCoreTests dedupes sel (order-preserving, nested-loop membership
+// test), then runs every selected case's branch. If the deduped
+// selection contains All, every case runs (the "collapse to [All]" rule
+// -- expressed here as a wantAll flag rather than literally truncating
+// the list, since nothing downstream inspects the deduped list itself,
+// only case membership). Branch shape is `wantAll or coreHas(deduped,
+// CoreTest.X)` per the runner contract. The last result is always
+// SelfCheck's own meta-case.
+func runCoreTests(sel: list of CoreTest): list of TestResult {
+    var deduped: list of CoreTest
+    var t: CoreTest
+    var results: list of TestResult
+    var wantAll: bool
+    var casesRun: int = 0
+
+    for t in sel {
+        if not coreHas(deduped, t) {
+            deduped.add(t)
+        }
+    }
+    wantAll = coreHas(deduped, All)
+
+    if wantAll or coreHas(deduped, StrConcatClamp) {
+        results.add(caseStrConcatClamp())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, StrIndexing) {
+        results.add(caseStrIndexing())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SelfCheck) {
+        if casesRun == nCoreCases - 1 {
+            results.add(tkPass(coreCaseName(SelfCheck)))
+        } else {
+            results.add(tkFail(coreCaseName(SelfCheck), "casesRun " + tkIntToStr(casesRun) + " != " + tkIntToStr(nCoreCases - 1)))
+        }
+    }
+
+    return results
+}
