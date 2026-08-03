@@ -10,14 +10,21 @@ spec). Slotted before 5f, after the Toolbox integration phase (ROADMAP,
 
 The 30x is NOT ARC retain/release call volume, NOT `clar_str_255` by-value
 copies, and NOT container (list/map) access patterns — the three suspects
-the test-suite-review phase named going in. It is a single mechanical bug
-in the HOST-ONLY paranoid memory shim, `internal/build/rt/rt_mem_host.inc`:
+the test-suite-review phase named going in (confirmed below: measured
+`rt_text`/`rt_list`/`rt_map` retain/release call counts are literally
+ZERO for this workload on both lanes). It is a single mechanical bug in
+the HOST-ONLY paranoid memory shim, `internal/build/rt/rt_mem_host.inc`:
 `DisposePtr(Ptr p)` recovers the owning `rt_mem_block` record by linear-
 scanning `rt_mem_blocks`, a list that holds every allocation the process
 has EVER made (dead records are deliberately kept forever, "to catch
 double-dispose" per the file's own comment — a freed slot is never
-reused). Every `rt_text`/`rt_list`/`rt_map` struct header is a Ptr
-allocation, so every text/list/map release pays this scan.
+reused). Every Ptr-backed allocation pays this scan on dispose — for this
+workload that's almost entirely `text.cla`'s own manual scratch-buffer
+allocator (`rt_ext_TextNewPtr`/`rt_ext_TextDisposePtr`, used by
+`rtTextConcat`/`rtTextConcatSl` for string building), called directly by
+Clarus runtime-library source, NOT the compiler-inserted automatic
+`rt_text_retain`/`rt_text_release` ARC wrapper pair (see "Why the Go lane
+escapes" below).
 
 **Evidence chain** (3 runs each; scratch dir, not committed — reproducible
 from this spec's numbers plus the report's exact patches):
@@ -61,6 +68,51 @@ algorithmic complexity. The other named suspects were not confirmed
 material at this workload scale; they may still be worth a smaller look
 once the dominant term is gone (non-goal below).
 
+### Why the Go lane escapes (measured, not assumed)
+
+Both lanes link the IDENTICAL `rt_mem_host.inc` — the Go-built binary does
+not structurally avoid the O(n) `DisposePtr` bug, it just triggers far
+less of it. Call/scan counters (same technique as the diagnostic
+instrumentation above, added temporarily to the real tree's
+`rt_mem_host.inc`/`rt_core.inc`, reverted before commit) on the
+`every.cla` workload, one run each:
+
+| counter | clarusc-snap | clarusc-goc | ratio |
+|---|---|---|---|
+| `rt_text_retain`/`release`, `rt_list_*`, `rt_map_*` calls | 0 / 0 / 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 / 0 / 0 | — |
+| `is_ptr` allocations (`NewPtr`) | 393,514 | 241,777 | 1.63x |
+| `DisposePtr` calls | 321,489 | 65,391 | **4.92x** |
+
+Two findings, one confirming and one correcting the phase's going-in
+suspicion:
+
+- **Corrected**: the automatic ARC wrapper functions (`rt_text_retain`/
+  `rt_text_release`/etc., the compiler-inserted retain/release pair the
+  test-suite-review phase suspected) are called ZERO times by either
+  lane on this workload. The Ptr churn driving `DisposePtr` is
+  `text.cla`'s own manual scratch-buffer allocator (string-concatenation
+  primitives calling `NewPtr`/`DisposePtr` directly, bypassing the RC
+  wrapper) — the SAME Clarus runtime library, linked into both lanes.
+  "Naive ARC counted stores" was not the mechanism; it was misdiagnosed
+  going in.
+- **Confirmed, with a correction to WHY**: the Go lane does see
+  meaningfully less Ptr churn — 1.63x fewer allocations, and, more
+  tellingly, 4.92x fewer `DisposePtr` calls (it disposes only ~27% of
+  what it allocates within the timed process vs. clarusc-snap's ~82%,
+  i.e. clarusc-snap's C emission is the MORE eagerly-freeing of the two,
+  ironically the "more correct" memory behavior). This volume gap is
+  real but **not the 30x driver**: Experiment 3 fixes ONLY the scan
+  algorithm, leaves clarusc-snap's higher allocation/dispose volume
+  completely unchanged, and STILL collapses the gap to Go-built parity.
+  A volume difference that would itself explain at most a small
+  constant-factor gap (malloc/free of ~150K extra pointer pairs is tens
+  of milliseconds, not seconds) is not what produced 9-11s vs 0.26s —
+  the O(n) scan is. The volume gap between the two C emitters may be
+  worth a smaller follow-up look (why does clarusc's self-hosted emitter
+  materialize ~1.6x more scratch-buffer temporaries for equivalent
+  Clarus source?), but it is out of THIS phase's scope (non-goals,
+  below).
+
 ## Standing timing inputs (context for scoping, measured 2026-08-03)
 
 - Single UI-fixture emit (`testdata/emitui/every.cla`): 8-9s snapshot-
@@ -81,13 +133,26 @@ scheme. Candidates (plan's call, not decided here):
 
 - **Embedded self-pointer header** (what Experiment 3 does): simplest,
   proven correct on two workloads in this phase's scratch testing, but a
-  scratch hack — needs a real review pass before landing (guard-byte
-  layout interaction, `rt_mem_retire_raw`'s scramble-length precision
-  since the header sits before the front guard, `CLARUS_MEM_STRICT`
-  leak-report interaction, double-dispose error message wording changed
-  under the header scheme since an already-disposed block's header still
-  resolves — must re-check `b->live` after recovery, which Experiment 3
-  already does).
+  scratch hack — needs a real review pass before landing:
+  - guard-byte layout interaction, `rt_mem_retire_raw`'s scramble-length
+    precision since the header sits before the front guard;
+  - `CLARUS_MEM_STRICT` leak-report interaction;
+  - double-dispose error message wording changed under the header scheme
+    since an already-disposed block's header still resolves — must
+    re-check `b->live` after recovery, which Experiment 3 already does;
+  - **unrecognized-pointer diagnostic preserved under O(1) recovery**:
+    Experiment 3's `DisposePtr` dereferences 8 bytes immediately before
+    ANY pointer it's handed and trusts what it finds there as a
+    `rt_mem_block*` — for a bad/foreign pointer (one never returned by
+    `NewPtr`) that's an unchecked read through garbage, not the shim's
+    current clean `abort()` with "DisposePtr of unrecognized pointer"
+    (`rt_mem_host.inc:353-356` today). This is exactly the class of bug
+    the shim exists to catch, so a real fix must NOT regress it: validate
+    before trusting the header (e.g. a magic tag byte/word written
+    alongside the self-pointer, checked before dereferencing further) and
+    fall back to a clean `abort()` — or, for a pointer that fails the
+    magic check, the old O(n) scan as a slow-but-safe diagnostic path —
+    rather than trusting arbitrary memory.
 - **Hash table keyed by pointer** instead of a header: avoids touching the
   allocation layout at all; more code, same asymptotic win.
 - Do NOT touch `rt_mem_blocks` (the full historical list) — it backs the
@@ -119,7 +184,12 @@ baseline (test-suite-review phase, T1) against the fixed compiler.
   target.
 - Any change to Mac-target runtime code (`rt_mac.c` / the 68k-emitted
   runtime) — this finding and fix are host-only (`rt_mem_host.inc`, the
-  cprint/snapshot-bootstrap pipeline's memory shim).
+  cprint/snapshot-bootstrap pipeline's memory shim). Implication worth
+  stating plainly: because the bug is host-only, it never threatened 5f's
+  Mac-resident compiler in the first place — 5f's own memory management
+  (the real Toolbox Memory Manager, `rt_mac.c`) never went through this
+  shim or its O(n) scan; this phase is entirely about host build/test
+  wall-clock, not about de-risking 5f.
 - Touching `rt_mem_blocks` or the leak-report/`CLARUS_MEM_STRICT` path
   beyond what the is_ptr lookup change requires.
 - Re-running the full historical-scan-vs-live-list Experiment 1 as a
