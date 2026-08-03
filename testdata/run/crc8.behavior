@@ -1,0 +1,4 @@
+exit=0
+--- stdout ---
+CRC-8 = 244
+--- stderr ---

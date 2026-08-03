@@ -1,0 +1,4 @@
+exit=3
+--- stdout ---
+--- stderr ---
+runtime error: map key not found

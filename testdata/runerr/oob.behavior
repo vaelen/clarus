@@ -1,0 +1,4 @@
+exit=3
+--- stdout ---
+--- stderr ---
+runtime error: array index out of range

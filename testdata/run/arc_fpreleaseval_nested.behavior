@@ -1,0 +1,7 @@
+exit=0
+--- stdout ---
+map-of-list-upsert-ok
+map-of-list-remove-ok
+list-of-list-set-ok
+list-of-list-remove-ok
+--- stderr ---

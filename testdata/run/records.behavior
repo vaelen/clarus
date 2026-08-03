@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+default age = 18
+default status = 5
+default home.zip = 0
+Original
+p.age = 18
+p.home.zip = 90210
+Copy
+q.age = 99
+q.home.zip = 11111
+--- stderr ---

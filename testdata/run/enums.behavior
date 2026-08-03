@@ -1,0 +1,8 @@
+exit=0
+--- stdout ---
+int(Gopher) = 1
+int(HTTP) = 80
+int(Telnet) = 23
+int(Protocol(0x50)) = 80
+round trip ok
+--- stderr ---

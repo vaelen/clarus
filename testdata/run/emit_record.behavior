@@ -1,0 +1,16 @@
+exit=0
+--- stdout ---
+default scalar field ok
+default enum field (non-zero first member) ok
+default nested record ok
+field write/read ok
+copy independence (p unchanged) ok
+copy independence (q changed) ok
+global record default ok
+global record write ok
+text global from string literal ok
+error/lastError code before ok
+ordinary error var untouched by truncation ok
+lastError code/message after truncation ok
+lastError materialized into ordinary error var ok
+--- stderr ---

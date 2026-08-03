@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+line one
+line two
+doc.txt
+--- stderr ---

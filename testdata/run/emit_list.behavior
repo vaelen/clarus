@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+push/count/first/last ok
+unshift ok
+pop ok
+shift ok
+index read ok
+index write ok
+remove ok
+for-list ok
+list string coerce ok
+--- stderr ---

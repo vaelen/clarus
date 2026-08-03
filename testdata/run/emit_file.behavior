@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+write ok
+round-trip ok
+file.name ok
+--- stderr ---

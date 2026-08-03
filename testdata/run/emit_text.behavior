@@ -1,0 +1,14 @@
+exit=0
+--- stdout ---
+append str ok
+append char ok
+append text ok
+text.toBytes/string.fromBytes ok
+string.toBytes/text.fromBytes ok
+text/str cmp ok
+text/text cmp ok
+text index read ok
+text set-index ok
+text length ok
+text slice ok
+--- stderr ---

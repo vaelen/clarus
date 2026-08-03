@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+set+count ok
+get ok
+get-default ok
+has ok
+remove ok
+a
+c
+for-map ok
+map string coerce ok
+--- stderr ---

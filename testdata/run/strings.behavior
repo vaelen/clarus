@@ -1,0 +1,11 @@
+exit=0
+--- stdout ---
+hello world
+first char is H
+length = 11
+matches
+a >= b
+hi!
+copied = 8
+ABCzEFGH
+--- stderr ---

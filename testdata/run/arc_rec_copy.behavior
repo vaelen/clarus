@@ -1,0 +1,10 @@
+exit=0
+--- stdout ---
+chain: alpha
+selfassign: alpha
+passreturn: alpha
+overwrite: uno
+pop: two
+pushed-d: orig
+done
+--- stderr ---

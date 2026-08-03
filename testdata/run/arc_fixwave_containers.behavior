@@ -1,0 +1,8 @@
+exit=0
+--- stdout ---
+list-reassign-ok
+map-reassign-ok
+discard-call-ok
+global-reassign-ok
+discard-pop-item-ok
+--- stderr ---

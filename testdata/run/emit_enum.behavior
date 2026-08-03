@@ -1,0 +1,9 @@
+exit=3
+--- stdout ---
+auto-numbered enum ok
+explicit-value + auto-continuation enum ok
+enum to int ok
+checked int-to-enum valid ok
+before invalid conversion
+--- stderr ---
+runtime error: no enum member with value

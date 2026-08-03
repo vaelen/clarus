@@ -1,0 +1,28 @@
+exit=0
+--- stdout ---
+count after 3 pushes = 3
+first = 10
+last = 30
+count after unshift = 4
+first after unshift = 5
+popped = 30
+count after pop = 3
+shifted = 5
+count after shift = 2
+list item = 10
+list item = 20
+map count = 3
+get a = 1
+get missing dv = 99
+has a
+m[a] = 1
+map count after remove = 2
+no b
+a
+  value = 1
+c
+  value = 3
+range i = 1
+range i = 2
+range i = 3
+--- stderr ---

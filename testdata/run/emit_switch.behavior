@@ -1,0 +1,11 @@
+exit=0
+--- stdout ---
+int multi-label ok
+int single-label ok
+int else ok
+char multi-label ok
+string multi-label ok
+string no-match ok
+break binds loop ok
+continue binds loop ok
+--- stderr ---

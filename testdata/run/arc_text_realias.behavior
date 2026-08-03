@@ -1,0 +1,9 @@
+exit=0
+--- stdout ---
+seg-kept
+seg-kept
+seg-kept
+seg-kept
+local-realias-ok
+elem-realias-ok
+--- stderr ---

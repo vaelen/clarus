@@ -1,0 +1,12 @@
+exit=0
+--- stdout ---
+global
+hi
+hello
+hello world
+xy
+goodbye
+Goodbye
+str-lt-text
+text-ge-str
+--- stderr ---

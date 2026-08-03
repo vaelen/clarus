@@ -1,0 +1,4 @@
+exit=0
+--- stdout ---
+p3 done
+--- stderr ---

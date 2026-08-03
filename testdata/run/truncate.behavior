@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+abc
+string truncated
+string truncated
+--- stderr ---
