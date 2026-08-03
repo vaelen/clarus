@@ -172,6 +172,24 @@ func checkBehaviorGolden(t *testing.T, path string, bless bool, exit int, stdout
 	}
 }
 
+// runnableFixtures globs the runnable corpus (testdata/run, testdata/runerr
+// -- the two directories actually EXECUTED, as opposed to
+// testdata/{valid,errors,include,diag}). Factored out of
+// TestBehaviorGoldens so crossgen_test.go's TestCrossGenDifferential
+// (test-suite-review Task 4) can reuse the same enumeration.
+func runnableFixtures(t *testing.T) (runFiles, runerrFiles []string) {
+	t.Helper()
+	runFiles, _ = filepath.Glob("../../testdata/run/*.cla")
+	runerrFiles, _ = filepath.Glob("../../testdata/runerr/*.cla")
+	if len(runFiles) == 0 {
+		t.Fatal("no testdata/run fixtures found")
+	}
+	if len(runerrFiles) == 0 {
+		t.Fatal("no testdata/runerr fixtures found")
+	}
+	return runFiles, runerrFiles
+}
+
 // TestBehaviorGoldens is the Go-free drift arbiter: for every fixture in
 // the runnable corpus (testdata/run, testdata/runerr), the snapshot-
 // bootstrapped clarusc emits + compiles + runs it, and the captured
@@ -186,14 +204,7 @@ func TestBehaviorGoldens(t *testing.T) {
 	root := repoRootBehavior(t)
 	bless := os.Getenv("CLARUS_BLESS_BEHAVIOR") == "1"
 
-	runFiles, _ := filepath.Glob("../../testdata/run/*.cla")
-	runerrFiles, _ := filepath.Glob("../../testdata/runerr/*.cla")
-	if len(runFiles) == 0 {
-		t.Fatal("no testdata/run fixtures found")
-	}
-	if len(runerrFiles) == 0 {
-		t.Fatal("no testdata/runerr fixtures found")
-	}
+	runFiles, runerrFiles := runnableFixtures(t)
 
 	for _, f := range runFiles {
 		f := f
