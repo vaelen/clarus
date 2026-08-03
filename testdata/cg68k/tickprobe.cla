@@ -1,0 +1,65 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// tickprobe.cla: regression fixture for the REAL (non---events) native
+// event loop -- the one lane no scripted golden can reach, because
+// `--events` builds route time through gVirtualTicks and menu keys
+// through the script engine, so rtUiRun/rtUiEveryPump's real
+// UiTickCount scheduling never executes under any scripted scenario.
+//
+// Found 2026-08-03 (TickProbe debugging session): UiTickCount was
+// declared `= trap 0xA975 reg`, but _TickCount is a stack-result pascal
+// Toolbox trap -- the reg call read a stale D0, `now - due >= 0` was
+// never true, and `every` blocks silently never fired on a real native
+// boot (native Mandelbrot opened its window and answered menus but never
+// rendered a single block). UiMenuKey had the sibling bug (`ch: char`
+// marshals into the padded word's HIGH byte, but MenuKey's real ABI is
+// CharParameter -- a numeric short, char code in the LOW byte -- so
+// cmd-key shortcuts never matched); that one has no self-driving
+// regression lane (a real cmd-key press needs real hardware input) and
+// is pinned only by the re-blessed cg68k listing goldens.
+//
+// The probe: count real ticks in `every 1 ticks` and quit at 60. A
+// working timer path quits within a second or two of launch (exit 0,
+// clean ##CLARUS-EXIT## capture); a regressed one never fires the every
+// block, the app sits in rtUiRun forever, and the boot times out --
+// which is the test failure.
+
+app TickProbe {
+    name: "TickProbe"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Real-event-loop timer regression probe."
+    id: "TPRB"
+}
+
+window Probe {
+    title: "TickProbe"
+    size: 300, 120
+
+    canvas Pad { at: 0, 0; fill: both }
+
+    var n: int = 0
+}
+
+on App.launch {
+    open Probe
+}
+
+extend Probe {
+    on opened {
+        var p: Probe = window
+        p.Pad.fillRect(0, 0, 20, 20)
+    }
+}
+
+every 1 ticks {
+    var p: Probe = Probe.front
+    if p != nil {
+        p.n = p.n + 1
+        p.Pad.fillRect((p.n * 4) mod 280, 40, 4, 20)
+        if p.n >= 60 {
+            quit
+        }
+    }
+}

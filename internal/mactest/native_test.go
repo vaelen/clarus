@@ -445,6 +445,28 @@ func TestTexteditorBigfileOn68k(t *testing.T) {
 	checkTexteditorBigfileCapture(t, out, exitCode)
 }
 
+// TestRealEventLoopTickOn68k boots testdata/cg68k/tickprobe.cla with NO
+// --events script -- the ONLY test in either lane that exercises rtUiRun's
+// real WaitNextEvent loop and rtUiEveryPump's real UiTickCount scheduling
+// (every scripted scenario runs on gVirtualTicks via rtUiRunScripted
+// instead; ui.cla's own rtUiRun comment has always flagged this path as
+// otherwise unverified). Regression pin for the UiTickCount
+// pascal-vs-reg convention bug (2026-08-03): the fixture's `every 1
+// ticks` block counts to 60 and quits, so a working timer path exits 0
+// within seconds, while a regressed one never fires the every block and
+// the boot times out -- the timeout IS the failure signal (see the
+// fixture's own header comment for the full story, including the sibling
+// UiMenuKey CharParameter fix, which has no self-driving lane).
+func TestRealEventLoopTickOn68k(t *testing.T) {
+	requireMac(t)
+	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", "tickprobe.cla")
+	bin := buildNative68k(t, fixture, "tickprobe")
+	_, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("tickprobe exit code %d, want 0", exitCode)
+	}
+}
+
 // TestSuiteOn68k is native-5d Task 16's end gate: the SAME test_suite.cla
 // TestSuiteOnMac (mac_test.go, Retro68 path) already runs, built instead
 // via `clarusc emit68k` (no C, no cmake, no Retro68) and booted on the

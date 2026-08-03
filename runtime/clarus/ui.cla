@@ -240,7 +240,15 @@ external func UiCountMItems(theMenu: ptr): word = trap 0xA950
 external func UiGetMenuItemText(theMenu: ptr, item: word, itemString: ptr) = trap 0xA946
 external func UiAppendResMenu(theMenu: ptr, theType: int) = trap 0xA94D
 external func UiMenuSelect(startPt: int): int = trap 0xA93D
-external func UiMenuKey(ch: char): int = trap 0xA93E
+// ch is `word`, not `char`: MenuKey's real ABI is CharParameter (a
+// numeric 16-bit short, char code in the word's LOW byte -- Menus.h),
+// same as UiTEKey below in uitext.cla. A `char` param would go through
+// cgCallExtPascal's byte-in-HIGH-byte pascal-Boolean/Char push, so the
+// ROM would read char 0 and no cmd-key shortcut would ever match --
+// scripted goldens dispatch menu keys through the script engine, never
+// this trap, so only a real native boot shows it (found with TickProbe,
+// 2026-08-03, alongside the UiTickCount convention fix above).
+external func UiMenuKey(ch: word): int = trap 0xA93E
 
 // ---- Event Manager ----
 // rt_ui_run's real event loop (:4467-4530, WaitNextEvent), rt_ui_run_
@@ -266,8 +274,14 @@ external func UiSysBeep(duration: word) = trap 0xA9C8
 // (Ch12 dialogs, a later task's rt_ui.c:2429-2482 -- not in this slice's
 // line ranges). UiTickCount backs rt_ui_every_pump/rt_ui_startup's
 // TickCount-vs-gVirtualTicks scheduling (:3674-3816) and rt_ui_script_tick
-// (:4295-4314).
-external func UiTickCount(): int = trap 0xA975 reg
+// (:4295-4314). PASCAL convention, not `reg`: _TickCount (0xA975) is an
+// ordinary stack-result Toolbox trap (Events.h: pascal UInt32), and a
+// `reg` call here reads a stale D0 -- every scripted golden runs on
+// gVirtualTicks so no scripted scenario ever executes this trap; the bug
+// only shows on a real (non---events) native boot, where `every` blocks
+// silently never fire (found via TickProbe, 2026-08-03; regression pin:
+// internal/mactest TestRealEventLoopTickOn68k).
+external func UiTickCount(): int = trap 0xA975
 // UiGestalt's own calling convention (Task 12, native-5e review fix, FIRST
 // NATIVE UI BOOT root-cause): `reg`, NOT plain pascal -- Gestalt is one of
 // the classic Mac Toolbox's few REGISTER-based traps (verified directly
@@ -2300,7 +2314,7 @@ func rtUiHandleKey(ev: ptr) {
     ch = peekb(ev + 5)
     modifiers = peekw(ev + 14)
     if (modifiers & 0x100) != 0 {
-        rtUiMenuDispatch(UiMenuKey(char(ch)))
+        rtUiMenuDispatch(UiMenuKey(ch))
         return
     }
     wp = UiFrontWindow()
