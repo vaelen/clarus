@@ -1,0 +1,109 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_draw.cla: CanvasChecksum (test-suite-review Task 11) -- draws a
+// fixed pattern into gui.cla's Board canvas via real QuickDraw calls
+// (Board is declared WITHOUT `buffered`, so `fillRect` draws straight to
+// the screen framebuffer, visible immediately -- no offscreen blit to
+// wait a tick for), then reads the drawn region straight back out of the
+// real screen framebuffer and checksums it. This is the one seed case
+// that verifies pixels actually landed on real hardware, not just that a
+// Toolbox call returned a plausible value.
+//
+// tbCanvasX0/tbCanvasY0 are gui.cla's Board canvas's GLOBAL screen
+// top-left, hard-coded here rather than derived at runtime -- windows
+// only ever CENTER (there is no window `at:` position property; Chapter
+// 8), so for gui.cla's fixed `size: 440, 280` (which fits the 512x342
+// screen without any clamp, same as testsuite/core/gui.cla's own verified
+// case) the content top-left is always ((512-440)/2, 44) = (36, 44)
+// (ui.cla's rtUiOpen; see testsuite/core/gui.cla's header comment for the
+// worked derivation this one reuses). Board's own `at: 12, 170` was
+// chosen SPECIFICALLY so 36+12 = 48 is a multiple of 8 -- the 32x32
+// checksummed region then starts and ends on a byte boundary (48/8 = 6,
+// (48+32)/8 = 10), so the region is exactly 4 bytes/row x 32 rows = 128
+// bytes with no partial-byte spill at either edge.
+const tbCanvasX0: int = 48
+const tbCanvasY0: int = 214
+const tbChecksumSize: int = 32
+
+// tbCanvasChecksumExpected: the sum of the 128 framebuffer bytes covering
+// the drawn 32x32 region, recorded from a real verified boot (`pattern(4)`
+// is a fixed 50%-gray ordered dither tiled to the WINDOW, not the filled
+// rect -- Chapter 8 -- so this sum is fully deterministic for this fixed
+// window/canvas position and never needs re-deriving unless the layout
+// above changes).
+//
+// RE-RECORD PROCEDURE (only needed if gui.cla's layout, or this pattern
+// level/rect, ever changes): build+boot once with this constant left at
+// any wrong value -- the case FAILs and its detail line reads
+// "checksum N != <this constant>"; copy N in as the new constant. The
+// easiest capture is the gated harness's own captured console output
+// (TestToolboxSuiteOn68k parses exactly this FAIL line), or an
+// interactive boot's Status textview after clicking Run All.
+const tbCanvasChecksumExpected: int = 16320
+
+// tbRowBytes: the screen's QuickDraw rowBytes -- the byte stride between
+// scanlines. There is no low-memory global for this (unlike ScrnBase):
+// it lives in the QuickDraw globals' screenBits.rowBytes field, reachable
+// only through the A5 world via the runtime's own internal
+// nat_UiScreenBits (runtime/clarus/native.cla:937), which is NOT callable
+// from ordinary user code -- clarusc checks a program's OWN files
+// standalone, before the runtime module splice ever makes runtime-
+// internal helpers visible (main.cla's emit path: "the user program
+// must check CLEAN STANDALONE"), so a case file can only call externs it
+// declares itself, same as TbTickCount/TbMenuKey above. Hard-coded
+// instead: this suite always runs on the one fixed target CLAUDE.md's
+// toolchain section pins (Mini vMac + System 6.0.8, a Mac Plus's fixed
+// 512x342 1-bit-deep screen), so rowBytes is always 512/8 = 64 --
+// confirmed by nat_UiScreenBits's own doc comment ("harmless for this
+// port's own screen (rowBytes==64...)"). Ceiling: this constant would
+// need revisiting only if this suite ever ran against a different
+// screen depth/width, which nothing in this repo's test infra does.
+const tbRowBytes: int = 64
+
+func caseCanvasChecksum(): TestResult {
+    var w: Suite
+    var base: ptr
+    var sum: int
+    var row: int
+    var col: int
+    var rowAddr: ptr
+    var detail: string
+
+    w = Suite.front
+    if w == nil {
+        return tkFail("CanvasChecksum", "no Suite window open")
+    }
+
+    w.Board.pattern(4)
+    w.Board.fillRect(0, 0, tbChecksumSize, tbChecksumSize)
+
+    // ScrnBase ($824, a fixed low-memory global) is the current screen
+    // buffer's base address -- read directly via peekl, no extern needed.
+    // Checksumming right after the draw, in this same handler-call chain,
+    // means no interleaved `every`/update can touch the framebuffer
+    // between draw and read.
+    base = ptr(peekl(ptr(0x824)))
+
+    sum = 0
+    row = 0
+    while row < tbChecksumSize {
+        rowAddr = base + (tbCanvasY0 + row) * tbRowBytes + tbCanvasX0 / 8
+        col = 0
+        while col < tbChecksumSize / 8 {
+            sum = sum + peekb(rowAddr + col)
+            col = col + 1
+        }
+        row = row + 1
+    }
+
+    if sum == tbCanvasChecksumExpected {
+        return tkPass("CanvasChecksum")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as kit.cla's own tkReport doc
+    // comment (a call argument can't be a raw concatenation expression).
+    detail = "checksum " + tkIntToStr(sum)
+    detail = detail + " != " + tkIntToStr(tbCanvasChecksumExpected)
+    return tkFail("CanvasChecksum", detail)
+}

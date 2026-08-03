@@ -1,0 +1,148 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// gui.cla: the toolbox suite's Mac GUI front-end, and its ONLY front-end
+// (test-suite-review Task 11) -- unlike the core suite, there is no CLI:
+// every real case here needs a live window (MenuKeyMatches needs the
+// installed File menu; CanvasChecksum needs the Board canvas), so a
+// front-end without a window makes no sense for this suite. Mirrors
+// testsuite/core/gui.cla's own shape (table of case names, Run All / Run
+// Selected buttons, status textview, tkReport-funneled log, TestLog.txt)
+// with `tb`-prefixed identifiers, plus one extra widget core's gui.cla
+// doesn't need: the Board canvas CanvasChecksum draws into.
+//
+// Every widget uses an explicit, fixed `at:` (no `right`/`next` relative
+// placement), same convention and same derivation as
+// testsuite/core/gui.cla's own header comment: for a window that fits on
+// screen without any clamp (44 + 280 + 2 <= 342, true here), content
+// top-left = ((512 - width) / 2, 44) (ui.cla's rtUiOpen). This window's
+// `size: 440, 280` -> content top-left ((512-440)/2, 44) = (36, 44).
+//
+//   table Cases  local (10,10)-(310,130)  [default 300x120]
+//   button RunAll        local (10,140)-(90,160)
+//   button RunSelected   local (100,140)-(180,160)
+//   canvas Board local (12,170)-(212,270) [default 200x100]
+//   textview Status      local (222,170)-(422,270) [default 200x100]
+//
+// -> global:
+//   RunAll      (46,184)-(126,204), center (86,194)  -- toolboxsuite.events' `click 86 194`
+//   RunSelected (136,184)-(216,204), center (176,194)
+//   Board       (48,214)-(248,314) -- cases_draw.cla's tbCanvasX0/tbCanvasY0
+//     hard-codes Board's top-left (48,214); Board's own local `at: 12,
+//     170` was chosen so 36+12=48 is a multiple of 8 (see cases_draw.cla's
+//     header comment for why that matters to the checksum).
+//   Status      (258,214)-(458,314)
+//
+// Nothing overlaps: Board and Status sit side by side with a 10px gap
+// (212 to 222 locally), and both sit well below the table+buttons and
+// well clear of the window's own title bar / the screen's menu bar (both
+// entirely outside the content area this math describes) -- so
+// CanvasChecksum's read-back region can never be clobbered by any other
+// widget's own drawing.
+
+record TbCaseRow {
+    name: string(63)
+}
+
+var caseRows: list of TbCaseRow
+var caseOrder: list of ToolboxTest
+
+window Suite {
+    title: "Toolbox Suite"
+    size: 440, 280
+
+    table Cases {
+        at: 10, 10
+        rows: caseRows
+        column "Name" shows name width fill
+    }
+    button RunAll      { at: 10, 140;  caption: "Run All" }
+    button RunSelected { at: 100, 140; caption: "Run Selected" }
+    canvas Board       { at: 12, 170 }
+    textview Status    { at: 222, 170; scrollbar: both }
+}
+
+menu File {
+    item Quit "Quit" key "Q"
+}
+
+// tbRunAndReport: same shape as testsuite/core/gui.cla's own
+// guiRunAndReport -- runs sel through runToolboxTests, appends every
+// PASS/FAIL line plus a final TOTAL line to w's Status textview AND to
+// TestLog.txt, and funnels the same results through kit.cla's tkReport
+// so every line ALSO alert()s (the scripted boot's captured console,
+// which testdata/ui/toolboxsuite.events' gate parses). Built up
+// line-by-line into an intermediate `line: string` var for the same
+// native-68k per-statement str/rec temp-slot budget reason
+// guiRunAndReport's own doc comment gives. Does NOT quit on a fail --
+// interactive GUI, a fail should show in the log, not end the session.
+func tbRunAndReport(w: Suite, sel: list of ToolboxTest) {
+    var results: list of TestResult
+    var r: TestResult
+    var status: text
+    var log: text
+    var fails: int
+    var total: int
+    var line: string
+    var ok: bool
+
+    results = runToolboxTests(sel)
+
+    for r in results {
+        if r.passed {
+            line = "PASS " + r.name
+        } else {
+            line = "FAIL " + r.name + ": " + r.detail
+        }
+        status.append(line)
+        status.append("\n")
+        log.append(line)
+        log.append("\n")
+    }
+
+    fails = tkReport(results)
+    total = results.count
+    line = "TOTAL " + tkIntToStr(total)
+    line = line + " PASS " + tkIntToStr(total - fails)
+    line = line + " FAIL " + tkIntToStr(fails)
+    status.append(line)
+    log.append(line)
+
+    w.Status.text = status
+    ok = file.writeText("TestLog.txt", log)
+}
+
+on App.startEmpty {
+    var t: ToolboxTest
+    var row: TbCaseRow
+
+    for t in tbAllCases() {
+        row.name = tbCaseName(t)
+        caseRows.add(row)
+        caseOrder.add(t)
+    }
+    open Suite
+}
+
+extend Suite {
+    on RunAll.click {
+        var sel: list of ToolboxTest
+
+        sel.add(All)
+        tbRunAndReport(window, sel)
+    }
+    on RunSelected.click {
+        var sel: list of ToolboxTest
+        var idx: int
+
+        idx = Cases.selected
+        if idx >= 0 {
+            sel.add(caseOrder[idx])
+            tbRunAndReport(window, sel)
+        }
+    }
+}
+
+extend File {
+    on Quit.select { quit }
+}

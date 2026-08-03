@@ -1,0 +1,97 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_events.cla: TickCountAdvances and MenuKeyMatches (test-suite-
+// review Task 11) -- the two seed cases that exercise real Toolbox event
+// machinery no scripted golden reaches. Both Ch13 externs are declared
+// LOCALLY, right here, rather than reused from the runtime's own
+// UiTickCount/UiMenuKey (runtime/clarus/ui.cla) -- user-code externs are
+// the proven pattern (testdata/cg68k/tickprobe.cla declares its own
+// TickCount trap rather than importing the runtime's), and the whole
+// point of these two cases is proving the user-authored extern path
+// itself dispatches correctly against real ROM, independent of whatever
+// the runtime's own internal callers already exercise.
+
+// TbTickCount: _TickCount (0xA975), a stack-result Pascal trap (plain
+// `trap`, no `reg`) returning the current tick count as a long. The
+// 5faaa6c-era bug shape -- declaring this `= trap 0xA975 reg` instead --
+// reads a stale D0 after the trap, so `now` would never differ from
+// `start` below and this case would spin its full bound and FAIL, never
+// hang (the bound is what makes the bug observable as a clean FAIL
+// instead of a frozen boot). See ui.cla's own UiTickCount doc comment
+// (the fixed, correct declaration this one mirrors) for the full story.
+external func TbTickCount(): int = trap 0xA975
+
+// TbMenuKey: _MenuKey (0xA93E), `ch: word` (not `char`) -- MenuKey's real
+// ABI is CharParameter, a plain 16-bit INTEGER with the char code in the
+// LOW byte, not the `bool`/`char` extern shape's padded-high-byte word.
+// The 5faaa6c-era bug shape declared this as `ch: char`, which marshals
+// into the word's HIGH byte, so a real cmd-key char code (low byte) never
+// matched any menu's key equivalent and MenuKey always returned 0.
+external func TbMenuKey(ch: word): int = trap 0xA93E
+
+// caseTickCountAdvances: read TbTickCount, then re-read it in a loop
+// bounded to ~50k iterations (the reg-bug shape above would burn the
+// whole bound and never see `now` differ from `start`). PASS iff the
+// tick count advanced by at least 1 (a working timer) and by less than
+// 600 -- a 10-second sanity ceiling ruling out a garbage/corrupted read,
+// not a real expectation this loop takes anywhere near that long.
+func caseTickCountAdvances(): TestResult {
+    var start: int
+    var now: int
+    var delta: int
+    var i: int
+    var detail: string
+
+    start = TbTickCount()
+    now = start
+    i = 0
+    while i < 50000 and now == start {
+        now = TbTickCount()
+        i = i + 1
+    }
+    delta = now - start
+
+    if delta >= 1 and delta < 600 {
+        return tkPass("TickCountAdvances")
+    }
+    // Bound into `detail` first, not passed inline -- native 68k codegen
+    // (cg68k) cannot materialize a concatenation expression directly as a
+    // call argument ("unaddressable, unmaterializable KStr ... bind it to
+    // a variable first"); kit.cla's own tkReport doc comment and every
+    // core case's own detail line hit this same gap first.
+    detail = "delta " + tkIntToStr(delta)
+    return tkFail("TickCountAdvances", detail)
+}
+
+// caseMenuKeyMatches: calls TbMenuKey(int('Q')) against the GUI's own
+// installed `menu File { item Quit "Quit" key "Q" }` (gui.cla) and checks
+// the packed result (menuID in the high word, 1-based item number in the
+// low word -- real MenuKey ABI, same packing ui.cla's own
+// rtUiHiWord/rtUiLoWord unpack after UiMenuKey). File has exactly one
+// item (Quit, no separators before it) -- Quit's item number is 1
+// (Mac Toolbox item numbers are 1-based; runtime/clarus/ui.cla's own
+// menu dispatch computes itemIdx = itemNum - 1 on this same convention).
+// The 5faaa6c char-marshaling bug shape (TbMenuKey declared `ch: char`)
+// returns 0 -- caught here by requiring both a nonzero menuID AND the
+// exact expected item number, not just "nonzero".
+func caseMenuKeyMatches(): TestResult {
+    var result: int
+    var menuID: int
+    var item: int
+    var detail: string
+
+    result = TbMenuKey(int('Q'))
+    menuID = (result >> 16) & 0xFFFF
+    item = result & 0xFFFF
+
+    if result != 0 and menuID != 0 and item == 1 {
+        return tkPass("MenuKeyMatches")
+    }
+    // Built up piecewise into `detail`, same native-68k temp-slot-budget
+    // reason as caseTickCountAdvances' own comment above.
+    detail = "result " + tkIntToStr(result)
+    detail = detail + " menuID " + tkIntToStr(menuID)
+    detail = detail + " item " + tkIntToStr(item)
+    return tkFail("MenuKeyMatches", detail)
+}

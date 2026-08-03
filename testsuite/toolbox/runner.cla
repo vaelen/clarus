@@ -1,0 +1,127 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// runner.cla: the toolbox suite's enum, dispatch, and self-check
+// (test-suite-review Task 11) -- the Mac-only sibling of
+// testsuite/core/runner.cla, seeded with the audit's first three real
+// Ch13 cases: TickCountAdvances (cases_events.cla), MenuKeyMatches
+// (cases_events.cla), CanvasChecksum (cases_draw.cla). Every real case
+// runs SYNCHRONOUSLY, in-process, exercising a REAL Toolbox trap or a
+// REAL QuickDraw framebuffer read -- the paths no scripted golden
+// reaches (a scripted `--events` build routes time through
+// gVirtualTicks and menu keys through the script engine, never through
+// the real UiTickCount/UiMenuKey trap dispatch -- see
+// testdata/cg68k/tickprobe.cla's own header comment for the regression
+// this suite's TickCountAdvances/MenuKeyMatches cases pin). Shape
+// (enum/tbCaseName/tbAllCases/tbHas/dedupe+wantAll dispatch/SelfCheck
+// last) mirrors testsuite/core/runner.cla's own CoreTest shape exactly,
+// `tb`-prefixed (house style: the runtime extern-prefix convention,
+// applied here so this suite's identifiers never collide with core's if
+// the two suites are ever composed together, even though nothing does
+// that today).
+
+enum ToolboxTest {
+    All
+    TickCountAdvances
+    MenuKeyMatches
+    CanvasChecksum
+    SelfCheck
+}
+
+// nTbCases is ToolboxTest's member count minus All: the 3 real cases plus
+// SelfCheck itself. Same "SelfCheck's own branch does not increment
+// casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
+// a forgotten branch leaves casesRun short and SelfCheck fails instead of
+// the suite silently shrinking.
+const nTbCases: int = 4
+
+// tbCaseName maps a ToolboxTest member to its programmatic name, used as
+// both the GUI's table row label and a TestResult's name.
+func tbCaseName(t: ToolboxTest): string {
+    switch t {
+    case All {
+        return "All"
+    }
+    case TickCountAdvances {
+        return "TickCountAdvances"
+    }
+    case MenuKeyMatches {
+        return "MenuKeyMatches"
+    }
+    case CanvasChecksum {
+        return "CanvasChecksum"
+    }
+    case SelfCheck {
+        return "SelfCheck"
+    }
+    }
+    return "?"
+}
+
+// tbAllCases lists every real case (All excluded; SelfCheck included) --
+// the GUI's table row order (gui.cla's App.startEmpty).
+func tbAllCases(): list of ToolboxTest {
+    var l: list of ToolboxTest
+    l.add(TickCountAdvances)
+    l.add(MenuKeyMatches)
+    l.add(CanvasChecksum)
+    l.add(SelfCheck)
+    return l
+}
+
+// tbHas reports whether l contains want.
+func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
+    var t: ToolboxTest
+    for t in l {
+        if t == want {
+            return true
+        }
+    }
+    return false
+}
+
+// runToolboxTests dedupes sel, then runs every selected case's branch --
+// same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
+// runCoreTests (only 3 real cases here, so a plain branch chain never
+// approaches the native 68k per-statement str/rec temp-slot budget that
+// forced core's cli.cla arg-matching loop; see coreMatchAndAdd's own doc
+// comment in testsuite/core/cli.cla for that gap -- not reachable at this
+// suite's size, and moot besides: this suite has no CLI front end).
+func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
+    var deduped: list of ToolboxTest
+    var t: ToolboxTest
+    var results: list of TestResult
+    var wantAll: bool
+    var casesRun: int = 0
+    var selfDetail: string
+
+    for t in sel {
+        if not tbHas(deduped, t) {
+            deduped.add(t)
+        }
+    }
+    wantAll = tbHas(deduped, All)
+
+    if wantAll or tbHas(deduped, TickCountAdvances) {
+        results.add(caseTickCountAdvances())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, MenuKeyMatches) {
+        results.add(caseMenuKeyMatches())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, CanvasChecksum) {
+        results.add(caseCanvasChecksum())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, SelfCheck) {
+        if casesRun == nTbCases - 1 {
+            results.add(tkPass(tbCaseName(SelfCheck)))
+        } else {
+            selfDetail = "casesRun " + tkIntToStr(casesRun) + " != " + tkIntToStr(nTbCases - 1)
+            results.add(tkFail(tbCaseName(SelfCheck), selfDetail))
+        }
+    }
+
+    return results
+}
