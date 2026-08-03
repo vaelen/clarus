@@ -972,6 +972,41 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      Go-test-cache staleness gotcha (`.cla` runtime files are invisible to
      the cache key — a cached mactest PASS proved nothing until
      `-count=1`).
+
+     **In scope (decided 2026-08-03, Andrew): Go-compiler retirement,
+     demote-now-delete-deliberately.** The Go compiler's four remaining
+     jobs and their replacements: (a) independent semantic anchor for the
+     frozen subset (the bootstrap fixed point proves self-consistency,
+     NOT correctness — the differential sweep is what catches drift) →
+     replaced by committed behavior goldens over the corpus (drift becomes
+     a reviewable git diff) PLUS a cross-generation differential against
+     the committed C snapshot (the previous generation's compiler, in
+     frozen bytes; honest caveat recorded: same lineage, so a
+     pre-self-hosting bug common to both generations escapes it — the
+     normative reference + goldens is the real truth anchor, and the
+     cprint-vs-emit68k backend byte-compare already catches what a second
+     frontend never could); (b) host-run oracle for the Mac gates
+     (`BuildSuiteHost`/`runNativeHostCompare` build expectations via
+     `build.Build` today) → snapshot-bootstrapped clarusc → cprint → cc,
+     the exact pipeline `build-mac.sh` step 1 already uses; (c) bootstrap
+     origin → already replaced by the committed C snapshot (nothing to
+     do); (d) the `clarus check/build/run` CLI → a `clarusc run`
+     subcommand or wrapper script (emit → cc → exec). THIS PHASE does the
+     demote: oracle swap, golden conversion, snapshot-differential, and an
+     env gate (`CLARUS_GO_DIFF=1`-style) so the Go lanes stop running in
+     the default gauntlet. The Toolbox phase then soaks on the new
+     machinery with Go parked as the parachute; **deletion (cmd/clarus +
+     the Go frontend/IR/printer packages + the differential harness's Go
+     half) is a deliberate commit at the END of the Toolbox phase** if the
+     parachute went unused — before 5f, which wants a single-frontend
+     world anyway (the Mac-resident compiler is clarusc; Go was never
+     going to run there). NOT deletion targets, ever: `internal/build/rt`
+     (the shared C runtime — the snapshot bootstrap and cprint lane need
+     it forever) and `clarusc/clarusc.c` + its snapshot tests. Expected
+     payoff: kills the per-task selfhost differential cost and the
+     `ClaruscOnly` fence/corpus-fork complexity (which otherwise grows
+     with every Toolbox-phase feature), and ends the freeze-exception
+     ceremony (two named exceptions ratified to date).
   2. **Toolbox integration phase** — the three features, each landing
      reference-first then clarusc + cg68k with a native gate:
      (a) **named-register trap clause** (e.g. `= trap 0xA1AD reg(d0:
