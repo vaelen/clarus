@@ -89,7 +89,7 @@ extern short rt_ext_UiCountMItems(void *);
 extern void rt_ext_UiGetMenuItemText(void *, short, void *);
 extern void rt_ext_UiAppendResMenu(void *, int32_t);
 extern int32_t rt_ext_UiMenuSelect(int32_t);
-extern int32_t rt_ext_UiMenuKey(uint8_t);
+extern int32_t rt_ext_UiMenuKey(short);
 extern int32_t rt_ext_UiWaitNextEvent(short, void *, int32_t, void *);
 extern int32_t rt_ext_UiGetNextEvent(short, void *);
 extern void rt_ext_UiFlushEvents(short, short);
@@ -3713,7 +3713,7 @@ static void clar_fn_rtUiHandleKey(void * cv_ev) {
     cv_ch = rt_peekb((void *)((char *)(cv_ev) + (5)));
     cv_modifiers = rt_peekw((void *)((char *)(cv_ev) + (14)));
     if ((cv_modifiers & 256) != 0) {
-        clar_fn_rtUiMenuDispatch(rt_ext_UiMenuKey(((uint8_t)(cv_ch))));
+        clar_fn_rtUiMenuDispatch(rt_ext_UiMenuKey(cv_ch));
         return;
     }
     cv_wp = rt_ext_UiFrontWindow();
