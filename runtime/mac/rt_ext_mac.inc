@@ -763,4 +763,17 @@ void rt_ext_UiLaunchReal(void) {
     }
 }
 
+/* ---- test-suite-review Task 12: testsuite/toolbox/cases_events.cla's own
+ * externs (Tb prefix, NOT part of the runtime/clarus/ waist) -- cprint
+ * always renders an `external func ... = trap ...` as rt_ext_NAME
+ * regardless of which module declared it (fpCallExt's own doc comment),
+ * so the Retro68/cprint lane needs a glue entry here even though
+ * emit68k's `= trap` compiles straight to the TRAP instruction with no
+ * glue required. Same trap words/bodies as rt_ext_UiTickCount/
+ * rt_ext_UiMenuKey above -- these are deliberately the SAME real Toolbox
+ * calls, just reachable under the testsuite's own extern names so
+ * cases_events.cla can declare them without reaching into ui.cla. */
+int32_t rt_ext_TbTickCount(void) { return (int32_t)TickCount(); }
+int32_t rt_ext_TbMenuKey(uint8_t ch) { return (int32_t)MenuKey((CharParameter)ch); }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

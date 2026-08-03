@@ -51,7 +51,36 @@ func TestCoreSuiteGUIOn68k(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("coresuite GUI exit code %d, want 0\ncapture:\n%s", exitCode, out)
 	}
+	checkCoreSuiteCapture(t, out)
+}
 
+// TestCoreSuiteGUIOnMac (Task 12) is TestCoreSuiteGUIOn68k's Retro68/cprint-
+// lane twin: same coreGUIFiles composition, same coresuite.events script,
+// same result-log contract (checkCoreSuiteCapture, factored out below so
+// both lanes share one assertion body instead of two copies drifting
+// apart) -- but built through scripts/build-mac.sh's Retro68/cmake/gcc
+// pipeline (runBuildMac) rather than clarusc emit68k directly. This is the
+// "both lanes" assurance the legacy 23-scenario lane already gives every
+// OTHER UI fixture, now extended to the suites.
+func TestCoreSuiteGUIOnMac(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "coresuite.events")
+	args := append(pkgRelFiles(coreGUIFiles), "--test", "--events", eventsRel)
+	bin := runBuildMac(t, "coresuite_gui_mac", args...)
+	out, _, exitCode := RunMac(t, bin, 5*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("coresuite GUI (Retro68) exit code %d, want 0\ncapture:\n%s", exitCode, out)
+	}
+	checkCoreSuiteCapture(t, out)
+}
+
+// checkCoreSuiteCapture is TestCoreSuiteGUIOn68k/TestCoreSuiteGUIOnMac's
+// shared result-log assertion (Task 12 factor-out): parses the PASS/FAIL/
+// TOTAL lines kit.cla's tkReport funnels every case through, requiring
+// all 40 real CoreTest cases (39 + SelfCheck) PASS and the matching TOTAL
+// line, regardless of which lane produced the capture.
+func checkCoreSuiteCapture(t *testing.T, out string) {
+	t.Helper()
 	var passes, fails int
 	var total string
 	for _, line := range strings.Split(out, "\n") {
@@ -122,7 +151,34 @@ func TestToolboxSuiteOn68k(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("toolbox suite exit code %d, want 0\ncapture:\n%s", exitCode, out)
 	}
+	checkToolboxSuiteCapture(t, out)
+}
 
+// TestToolboxSuiteOnMac (Task 12) is TestToolboxSuiteOn68k's Retro68/
+// cprint-lane twin -- same toolboxFiles composition, same
+// toolboxsuite.events script, same per-case result assertion
+// (checkToolboxSuiteCapture below), built via runBuildMac instead of
+// buildNative68kUI. See TestCoreSuiteGUIOnMac's doc comment for why this
+// pairing exists.
+func TestToolboxSuiteOnMac(t *testing.T) {
+	requireMac(t)
+	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
+	args := append(pkgRelFiles(toolboxFiles), "--test", "--events", eventsRel)
+	bin := runBuildMac(t, "toolboxsuite_gui_mac", args...)
+	out, _, exitCode := RunMac(t, bin, 5*time.Minute)
+	if exitCode != 0 {
+		t.Fatalf("toolbox suite (Retro68) exit code %d, want 0\ncapture:\n%s", exitCode, out)
+	}
+	checkToolboxSuiteCapture(t, out)
+}
+
+// checkToolboxSuiteCapture is TestToolboxSuiteOn68k/TestToolboxSuiteOnMac's
+// shared result-log assertion (Task 12 factor-out): parses each of the 4
+// result lines (3 real cases + SelfCheck) into its own t.Run subtest --
+// per-case CI reporting -- plus the aggregate TOTAL line, regardless of
+// which lane produced the capture.
+func checkToolboxSuiteCapture(t *testing.T, out string) {
+	t.Helper()
 	type caseResult struct {
 		name   string
 		passed bool
