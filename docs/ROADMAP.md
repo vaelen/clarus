@@ -932,6 +932,86 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   ("Outcomes" section); plan:
   `docs/superpowers/plans/2026-08-01-native-5e-ui-runtime.md`.
 
+- **Real-event-loop trap-convention fixes (main, `5faaa6c`, 2026-08-03):**
+  the first real (non-`--events`) native boots exposed two `ui.cla` extern
+  declarations with the wrong calling convention — `UiTickCount` declared
+  `reg` (stale D0; `every` blocks never fired on a real boot) and
+  `UiMenuKey(ch: char)` (high-byte pascal push where MenuKey's ABI is
+  CharParameter, a low-byte numeric word; cmd-key shortcuts never matched).
+  Invisible to all 23 scripted goldens by construction: the scripted lane
+  runs on `gVirtualTicks` and script-engine menu verbs, so neither trap
+  ever executes under `--events`. Regression pin:
+  `testdata/cg68k/tickprobe.cla` + `TestRealEventLoopTickOn68k`
+  (`internal/mactest`) — the only test in either lane on `rtUiRun`'s real
+  WaitNextEvent/`rtUiEveryPump` path; its `every` block counts 60 real
+  ticks and quits, so timeout IS the failure signal (verified failing
+  under the re-introduced bug). **Standing lesson for the test-review
+  phase below: scripted-golden green says nothing about real-mode trap
+  conventions — an extern clause is only proven by a lane that actually
+  executes it.**
+
+- **Decided sequencing 2026-08-03 (discussion with Andrew): three phases
+  land BEFORE 5f (Mac-resident clarusc / Retro68 retirement).** Agreed end
+  state motivating the middle phase: a Clarus programmer opens Inside
+  Macintosh, writes one `external func` declaration from the IM page +
+  trap table, and calls it as ordinary Clarus code — no hand-written
+  wrapper layer required. The mechanism already covers the large
+  plain-pascal-trap + `sel`-package subset (proved in USER code: the
+  TickProbe session declared `= trap 0xA975` itself and it ran); the
+  remaining gaps and their fixes were ranked in the 2026-08-03 discussion.
+  Order:
+
+  1. **Test-suite review/velocity phase (FIRST, explicitly before any
+     feature work — Andrew's call):** review and improve the test suite so
+     the feature phases can move fast. Own brainstorm/spec to come. Standing
+     inputs: the full `go test ./...` gauntlet's wall-clock (selfhost
+     ~250-590s/run; gated mactest 777.6s for the full double-lane run —
+     both paid repeatedly per task under SDD); the `5faaa6c` lesson above
+     (where else does coverage LOOK green while exercising nothing? — the
+     real-event-loop path went 23-for-23 green with dead timers); and the
+     Go-test-cache staleness gotcha (`.cla` runtime files are invisible to
+     the cache key — a cached mactest PASS proved nothing until
+     `-count=1`).
+  2. **Toolbox integration phase** — the three features, each landing
+     reference-first then clarusc + cg68k with a native gate:
+     (a) **named-register trap clause** (e.g. `= trap 0xA1AD reg(d0:
+     selector, a1: response) ret d0`) — replaces the positional
+     A0/A1+D0/D1 rule's hard 2+2 limit for quirky OS traps and retires the
+     `cgCallExtGestalt` by-name special case (cg68k.cla:7068);
+     (b) **`extern record`** with Mac 68k packed layout (2-byte-aligned,
+     1-byte Booleans — deliberately NOT the unified Clarus record ABI's
+     4-byte bool/char slots) so IM struct definitions transcribe
+     field-for-field and trap calls take `ptr`-to-record instead of
+     hand-computed peek/poke offsets (the EventRecord/SFReply idiom
+     today, and where this session's offset bugs lived);
+     (c) **callback declarations** (a `pascal func`/`callback` form whose
+     address can be taken) — generalizes the hand-rolled LDEF/action-proc
+     glue (`cgEmitLdefGlue`) into user-facing surface, unlocking the
+     ProcPtr territory of IM (ModalDialog filters, TrackControl action
+     procs, SF dlgHooks, defprocs). Interrupt-time completion routines
+     stay an explicit non-goal (A5/allocation restrictions the language
+     cannot make safe).
+  3. **Docs cookbook (AFTER the features land — Andrew's call):** Ch13
+     gains the IM→Clarus mapping table (CHAR→`word` CharParameter,
+     Boolean→`bool`, Point-by-value→packed `int` or the new extern-record
+     story, VAR→`ptr`, Str255→`str`, plus the trap-table reading guide)
+     and worked IM examples. A curated `toolbox/` extern catalog (per-IM-
+     manager `.cla` declaration files shipping with the compiler) is the
+     candidate follow-on — it needs the extern-dedup story
+     (`irRegisterExtern` currently rejects duplicate names outright)
+     decided in this phase.
+
+  **The native Standard File (_Pack3) port is DEFERRED until after the
+  Toolbox phase** (Andrew, 2026-08-03; spec already committed at
+  `docs/superpowers/specs/2026-08-03-native-standardfile-pack3-design.md`,
+  `f3546bb`). It stands to benefit directly: SFReply becomes an `extern
+  record` instead of a 74-byte peek-offset scratch, and a dlgHook becomes
+  expressible if callbacks land first. The spec is written against
+  today's surface; revise at implementation time if the new features
+  offer a cleaner shape. Then **5f** (Mac-resident clarusc, Retro68
+  retirement, compilation cache, peephole/regalloc buy-back — inventory
+  in the 5e entry above).
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
