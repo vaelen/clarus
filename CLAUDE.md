@@ -20,12 +20,31 @@ spec; where any other doc disagrees, the reference wins.
 
 ```sh
 go build -o clarus ./cmd/clarus   # host toolchain: check / build / run
-go test ./... -timeout 30m        # full suite, incl. bootstrap + snapshot tests
+scripts/test-task.sh              # T1: per-task gate (~40s)
+scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulator)
 ```
 
+Tiered test gates:
+
+- `scripts/test-task.sh` — T1, run after every task. Every package except
+  `internal/selfhost`, with `-count=1` (see below). Add `--smoke` when a
+  task touches `runtime/` or `clarusc/`, which additionally runs the two
+  native-68k emulator smoke tests (`CLARUS_MAC_TESTS=1`,
+  `TestSmokeBounceOn68k` / `TestRealEventLoopTickOn68k` in
+  `internal/mactest`).
+- `scripts/test-merge.sh` — T2, run before merging to main. T1's body plus
+  `internal/selfhost` (30m-timeout bootstrap suite) plus the full gated
+  `internal/mactest` package (`CLARUS_MAC_TESTS=1`, needs the Retro68
+  toolchain + Mini vMac).
+- Both pass `-count=1` to bust the Go test cache. Plain `go test` caches a
+  package's result keyed on its `.go` inputs; it does not know about
+  `.cla` fixtures a test reads at runtime (e.g. emitui-style
+  golden/snapshot tests), so an edited `.cla` with unchanged `.go` can
+  silently replay a stale PASS. `-count=1` forces a real re-run every
+  time, closing that silent-red hole.
 - `internal/selfhost` has outgrown `go test`'s default 10-minute
-  per-package timeout — always pass `-timeout 30m` on a full `go test ./...`
-  run, or that package can spuriously fail on an otherwise-green tree.
+  per-package timeout — always pass `-timeout 30m` when running it
+  directly, or it can spuriously fail on an otherwise-green tree.
 
 - The Go compiler (`cmd/clarus`, `internal/`) is FROZEN — it is the
   differential-testing reference only. New language features land in the
