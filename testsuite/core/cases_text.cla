@@ -1,0 +1,158 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_text.cla: the core suite's text-family test cases (test-suite-
+// review Task 9). Each case's check body is lifted verbatim (or with a
+// direct-comparison equivalent -- see caseTextRealiasLocal) from its
+// testdata/run/lib source; the source lib fixture and its goldens are
+// untouched and stay in the run corpus. Case -> source:
+//   TextAppendStr          <- emit_text.cla (append str/char)
+//   TextWidenAssignability <- widen_text.cla (string->text widening, every
+//                              assignability position)
+//   TextRealiasLocal       <- arc_text_realias.cla ("local-realias-ok")
+//   TextSlicesIndexOfMiss  <- slices.cla (string/text indexOf miss + slice)
+//   TextAssignCompare      <- textassign.cla (str<text / text<str compare)
+//   TextAppendPerf         <- appendperf.cla (2000x text.append growth)
+
+func caseTextAppendStr(): TestResult {
+    var t: text = "hello"
+
+    t.append(" world")
+    if t != "hello world" {
+        return tkFail("TextAppendStr", "append str mismatch")
+    }
+    t.append('!')
+    if t != "hello world!" {
+        return tkFail("TextAppendStr", "append char mismatch")
+    }
+    return tkPass("TextAppendStr")
+}
+
+// caseTextWidenAcceptText/-MakeText/-GetStr are widen_text.cla's own
+// helper funcs, carried over so the call-argument/return-value/non-
+// addressable-call-arg widening shapes stay exercised.
+func caseTextWidenAcceptText(t: text): text {
+    t.append("!")
+    return t
+}
+
+func caseTextWidenMakeText(s: string): text {
+    return s
+}
+
+func caseTextWidenGetStr(): string {
+    return "delta"
+}
+
+func caseTextWidenAssignability(): TestResult {
+    var s: string
+    var t1: text
+    var t2: text
+    var lst: list of text
+    var m: map of text
+    var dv: text
+
+    s = "hello"
+    t1 = caseTextWidenAcceptText(s)
+    if s != "hello" {
+        return tkFail("TextWidenAssignability", "call-arg fresh-copy guarantee broken")
+    }
+    if t1 != "hello!" {
+        return tkFail("TextWidenAssignability", "call-arg widen wrong")
+    }
+
+    t2 = caseTextWidenMakeText("world")
+    if t2 != "world" {
+        return tkFail("TextWidenAssignability", "return-value widen wrong")
+    }
+
+    lst.add("alpha")
+    if lst[0] != "alpha" {
+        return tkFail("TextWidenAssignability", "list element widen wrong")
+    }
+
+    m["k"] = "beta"
+    if m["k"] != "beta" {
+        return tkFail("TextWidenAssignability", "map element widen wrong")
+    }
+
+    dv = m.get("missing", "gamma")
+    if dv != "gamma" {
+        return tkFail("TextWidenAssignability", "map.get default widen wrong")
+    }
+
+    t1 = caseTextWidenAcceptText(caseTextWidenGetStr())
+    if t1 != "delta!" {
+        return tkFail("TextWidenAssignability", "non-addressable call-arg widen wrong")
+    }
+
+    return tkPass("TextWidenAssignability")
+}
+
+func caseTextRealiasLocal(): TestResult {
+    var a: text
+    var b: text
+
+    a = "hello"
+    b = a
+    a = "zz"
+    if b != "hello" {
+        return tkFail("TextRealiasLocal", "b changed when a was reassigned")
+    }
+    if a != "zz" {
+        return tkFail("TextRealiasLocal", "a not updated")
+    }
+    return tkPass("TextRealiasLocal")
+}
+
+func caseTextSlicesIndexOfMiss(): TestResult {
+    var s: string = "hello world"
+    var t: text = "the quick fox"
+
+    if s.indexOf("xyz") != -1 {
+        return tkFail("TextSlicesIndexOfMiss", "string indexOf miss returned a hit")
+    }
+    if t.indexOf("zzz") != -1 {
+        return tkFail("TextSlicesIndexOfMiss", "text indexOf miss returned a hit")
+    }
+    if s[6, 5] != "world" {
+        return tkFail("TextSlicesIndexOfMiss", "string slice wrong")
+    }
+    return tkPass("TextSlicesIndexOfMiss")
+}
+
+func caseTextAssignCompare(): TestResult {
+    var t: text = "Goodbye"
+
+    if not ("Goodbya" < t) {
+        return tkFail("TextAssignCompare", "str < text wrong")
+    }
+    if t < "Goodbya" {
+        return tkFail("TextAssignCompare", "text < str wrong")
+    }
+    return tkPass("TextAssignCompare")
+}
+
+// caseTextAppendPerf is appendperf.cla's 2000x five-byte append growth
+// check (Ch3: Text append is the growth-amortized tool for building large
+// output in a loop).
+func caseTextAppendPerf(): TestResult {
+    var t: text
+
+    for i in 1 to 2000 {
+        t.append("abcde")
+    }
+    if t.length != 10000 {
+        return tkFail("TextAppendPerf", "length wrong")
+    }
+    if t[0] != 'a' {
+        return tkFail("TextAppendPerf", "content[0] wrong")
+    }
+    if t[5000] != 'a' {
+        return tkFail("TextAppendPerf", "content[5000] wrong")
+    }
+    if t[9999] != 'e' {
+        return tkFail("TextAppendPerf", "content[9999] wrong")
+    }
+    return tkPass("TextAppendPerf")
+}

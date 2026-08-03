@@ -1,0 +1,36 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_arr.cla: the core suite's fixed-array-family test cases (test-
+// suite-review Task 9). Case -> source:
+//   ArrHolderElementStore <- arc_fixwave_arrays.cla ("holder-store1-ok" /
+//                             "holder-store2-ok": array-of-record element
+//                             store, then use, then OVERWRITE)
+
+record caseArrItem {
+    name: text
+}
+
+record caseArrHolder {
+    items: caseArrItem[3]
+}
+
+func caseArrMakeItem(n: string): caseArrItem {
+    var it: caseArrItem
+    it.name = n
+    return it
+}
+
+func caseArrHolderElementStore(): TestResult {
+    var h: caseArrHolder
+
+    h.items[0] = caseArrMakeItem("first")
+    if h.items[0].name != "first" {
+        return tkFail("ArrHolderElementStore", "first store wrong")
+    }
+    h.items[0] = caseArrMakeItem("second")
+    if h.items[0].name != "second" {
+        return tkFail("ArrHolderElementStore", "overwrite store wrong")
+    }
+    return tkPass("ArrHolderElementStore")
+}

@@ -1,0 +1,79 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_rec.cla: the core suite's record-family test cases (test-suite-
+// review Task 9). Case -> source:
+//   RecCopyIndependence <- records.cla (copy-by-value: mutating the copy
+//                           must not touch the original, nested field
+//                           included)
+//   RecFieldGlobalAlias <- p8_rec_field.cla (a text value stored into a
+//                           record field reads back correctly; the
+//                           original fixture pins an ARC double-free on
+//                           the GLOBAL case, not independently observable
+//                           in Clarus -- see the field-store assertion
+//                           below, the strongest signal available from
+//                           ordinary Clarus code)
+
+record caseRecAddress {
+    city: string(31)
+    zip:  int
+}
+
+enum caseRecStatus {
+    caseRecActive 5 "Active"
+    caseRecDone   6 "Done"
+}
+
+record caseRecPerson {
+    name:   string(31)
+    age:    int = 18
+    status: caseRecStatus
+    home:   caseRecAddress
+}
+
+func caseRecCopyIndependence(): TestResult {
+    var p: caseRecPerson
+    var q: caseRecPerson
+
+    p.name = "Original"
+    p.home.zip = 90210
+    q = p
+    q.age = 99
+    q.home.zip = 11111
+    q.name = "Copy"
+
+    if p.name != "Original" {
+        return tkFail("RecCopyIndependence", "p.name mutated by copy")
+    }
+    if p.age != 18 {
+        return tkFail("RecCopyIndependence", "p.age mutated by copy")
+    }
+    if p.home.zip != 90210 {
+        return tkFail("RecCopyIndependence", "p.home.zip mutated by copy")
+    }
+    if q.name != "Copy" {
+        return tkFail("RecCopyIndependence", "q.name not updated")
+    }
+    if q.age != 99 {
+        return tkFail("RecCopyIndependence", "q.age not updated")
+    }
+    if q.home.zip != 11111 {
+        return tkFail("RecCopyIndependence", "q.home.zip not updated")
+    }
+    return tkPass("RecCopyIndependence")
+}
+
+record caseRecNote {
+    body: text = "hi"
+}
+
+func caseRecFieldGlobalAlias(): TestResult {
+    var note: caseRecNote
+    var t: text = "keep"
+
+    note.body = t
+    if note.body != "keep" {
+        return tkFail("RecFieldGlobalAlias", "field store wrong")
+    }
+    return tkPass("RecFieldGlobalAlias")
+}

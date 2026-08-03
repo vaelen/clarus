@@ -1,0 +1,122 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_list.cla: the core suite's list-family test cases (test-suite-
+// review Task 9). Case -> source:
+//   ListPushCountFirstLast <- emit_list.cla ("push/count/first/last ok")
+//   ListReassignRelease    <- arc_fixwave_containers.cla ("list-reassign-ok")
+//   ListGlobalAliasNested  <- arc_global_alias.cla ("nested-list-ok")
+//   ListForLoopVarAlias    <- for_loop_var_alias.cla (task-5b regression:
+//                              a for-loop element var name that ALIASES an
+//                              outer `var` must not double-release; all
+//                              three sibling shapes -- map-of-text,
+//                              list-of-text, map-of-list-of-text -- ported
+//                              as one aggregate pass/fail, same shape as
+//                              the source fixture's own `pass` flag)
+
+func caseListPushCountFirstLast(): TestResult {
+    var l: list of int
+
+    l.push(10)
+    l.push(20)
+    l.push(30)
+    if l.count != 3 {
+        return tkFail("ListPushCountFirstLast", "count wrong")
+    }
+    if l.first() != 10 {
+        return tkFail("ListPushCountFirstLast", "first wrong")
+    }
+    if l.last() != 30 {
+        return tkFail("ListPushCountFirstLast", "last wrong")
+    }
+    return tkPass("ListPushCountFirstLast")
+}
+
+func caseListReassignMakeList(): list of text {
+    var l: list of text
+    l.push("fresh")
+    return l
+}
+
+func caseListReassignRelease(): TestResult {
+    var a: list of text
+
+    a.push("old1")
+    a.push("old2")
+    a = caseListReassignMakeList()
+    if a.count != 1 {
+        return tkFail("ListReassignRelease", "reassigned count wrong")
+    }
+    if a.first() != "fresh" {
+        return tkFail("ListReassignRelease", "reassigned content wrong")
+    }
+    return tkPass("ListReassignRelease")
+}
+
+func caseListGlobalAliasNested(): TestResult {
+    var inner: list of text
+    var outer: list of list of text
+
+    inner.add("nested")
+    outer.add(inner)
+    if outer.count != 1 {
+        return tkFail("ListGlobalAliasNested", "outer count wrong")
+    }
+    if outer[0].count != 1 {
+        return tkFail("ListGlobalAliasNested", "inner count wrong")
+    }
+    if outer[0][0] != "nested" {
+        return tkFail("ListGlobalAliasNested", "inner content wrong")
+    }
+    return tkPass("ListGlobalAliasNested")
+}
+
+func caseListForLoopVarAlias(): TestResult {
+    var m1: map of text
+    var k1: string
+    var v1: text
+    var found1: text
+    var l2: list of text
+    var x2: text
+    var found2: text
+    var m3: map of list of text
+    var k3: string
+    var v3: list of text
+    var l3a: list of text
+    var l3b: list of text
+    var found3: list of text
+
+    m1["a"] = "apple"
+    m1["b"] = "banana"
+    m1["a"] = "avocado"
+    m1.remove("b")
+    for k1, v1 in m1 {
+        found1 = v1
+    }
+    if found1 != "avocado" {
+        return tkFail("ListForLoopVarAlias", "map-of-text shape wrong")
+    }
+
+    l2.add("alpha")
+    l2.add("beta")
+    for x2 in l2 {
+        found2 = x2
+    }
+    if found2 != "beta" {
+        return tkFail("ListForLoopVarAlias", "list-of-text shape wrong")
+    }
+
+    l3a.add("one")
+    l3b.add("two")
+    l3b.add("three")
+    m3["a"] = l3a
+    m3["b"] = l3b
+    for k3, v3 in m3 {
+        found3 = v3
+    }
+    if found3.count != 2 {
+        return tkFail("ListForLoopVarAlias", "nested-container shape wrong")
+    }
+
+    return tkPass("ListForLoopVarAlias")
+}

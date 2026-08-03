@@ -1,0 +1,119 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_enumfix.cla: the core suite's enum/fixed/switch-family test cases
+// (test-suite-review Task 9). Case -> source:
+//   EnumIntRoundTrip    <- enums.cla (int(Protocol) -> Protocol(int) round trip)
+//   EnumSaveChoiceValue <- savechoice.cla (built-in saveChoice enum -> int)
+//   FixedMathOps        <- fixedmath.cla (fixed mul/div/add, same int()
+//                           truncation convention emit_arith.cla uses)
+//   ConstCaseLabel      <- constants.cla (a const used as a switch case label)
+//   SwitchIntRange       <- switch.cla (int-subject multi-label case)
+//   SwitchIntMultiLabel  <- emit_switch.cla ("int multi-label ok")
+
+enum caseEnumProtocol {
+    caseEnumGopher 0x01 "Gopher"
+    caseEnumHTTP   0x50 "Web (HTTP)"
+    caseEnumTelnet 0x17 "Telnet"
+}
+
+func caseEnumIntRoundTrip(): TestResult {
+    var back: caseEnumProtocol
+
+    back = caseEnumProtocol(0x50)
+    if back != caseEnumHTTP {
+        return tkFail("EnumIntRoundTrip", "round trip wrong")
+    }
+    return tkPass("EnumIntRoundTrip")
+}
+
+func caseEnumSaveChoiceValue(): TestResult {
+    var c: saveChoice = saveChoice(1)
+
+    if int(c) != 1 {
+        return tkFail("EnumSaveChoiceValue", "int conversion wrong")
+    }
+    return tkPass("EnumSaveChoiceValue")
+}
+
+func caseFixedMathOps(): TestResult {
+    var a: fixed = 1.5
+    var b: fixed = 2.0
+    var c: fixed = a * b
+    var d: fixed = 9.0 / 2.0
+    var e: fixed = fixed(3) + 0.25
+
+    if int(c) != 3 {
+        return tkFail("FixedMathOps", "fixed mul wrong")
+    }
+    if int(d) != 4 {
+        return tkFail("FixedMathOps", "fixed div wrong")
+    }
+    if int(e) != 3 {
+        return tkFail("FixedMathOps", "fixed add wrong")
+    }
+    return tkPass("FixedMathOps")
+}
+
+const caseConstMaxHits: int = 3
+
+func caseConstCaseLabel(): TestResult {
+    var count: int
+
+    count = 0
+    for i in 0 to 5 {
+        switch i {
+        case caseConstMaxHits {
+            count = count + 1
+        }
+        }
+    }
+    if count != 1 {
+        return tkFail("ConstCaseLabel", "const-as-case-label count wrong")
+    }
+    return tkPass("ConstCaseLabel")
+}
+
+func caseSwitchIntRange(): TestResult {
+    var i: int = 2
+    var branch: string
+    var detail: string
+
+    switch i {
+    case 0, 1 {
+        branch = "low"
+    }
+    case 2 {
+        branch = "mid"
+    }
+    else {
+        branch = "high"
+    }
+    }
+    if branch != "mid" {
+        detail = "branch = " + branch + ", want mid"
+        return tkFail("SwitchIntRange", detail)
+    }
+    return tkPass("SwitchIntRange")
+}
+
+func caseSwitchIntMultiLabel(): TestResult {
+    var n: int = 1
+    var ok: bool
+
+    switch n {
+    case 0, 1 {
+        ok = true
+    }
+    case 2 {
+        ok = false
+    }
+    else {
+        ok = false
+    }
+    }
+    if not ok {
+        return tkFail("SwitchIntMultiLabel", "multi-label case did not match")
+    }
+    return tkPass("SwitchIntMultiLabel")
+}

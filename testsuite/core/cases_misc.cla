@@ -1,0 +1,193 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_misc.cla: the core suite's catch-all family -- arithmetic, control
+// flow, user functions, and the remaining ARC probes that don't fit the
+// other families (test-suite-review Task 9). Case -> source:
+//   MiscArithBasic          <- arith.cla
+//   MiscBreakContWhile      <- breakcont.cla (while: break)
+//   MiscCrc8Smbus           <- crc8.cla (CRC-8/SMBUS of "123456789" == 244)
+//   MiscEmitArithAddMul     <- emit_arith.cla ("int add/mul ok" / "int sub ok")
+//   MiscEmitControlForRange <- emit_control.cla ("for range accumulate ok")
+//   MiscEmitFuncRecursion   <- emit_func.cla ("recursion ok", fact(5))
+//   MiscMutRecEvenOdd       <- mutrec.cla (mutual recursion, isEven/isOdd)
+//   MiscWhileCondText       <- p9_while_cond.cla (while-condition temp-
+//                              release fixture; the loop ran and mutated
+//                              its text is the strongest signal available
+//                              from ordinary Clarus code -- the fix itself
+//                              is a leak count, not independently
+//                              observable here)
+//   MiscWideProtoSumBoxMetrics <- emit_wideproto.cla (18-param prototype,
+//                              sums all args)
+//   MiscLongCondChain       <- emit_longline.cla (long and-chain / long
+//                              arith chain; shortened -- the ORIGINAL
+//                              41/60-term one-line chains stress clarusc's
+//                              own C-emitter line-wrapping, still pinned
+//                              by the untouched lib fixture in the run
+//                              corpus, not by this functional case)
+
+func caseMiscArithBasic(): TestResult {
+    if 3 + 4*5 != 23 {
+        return tkFail("MiscArithBasic", "add/mul wrong")
+    }
+    if (0xFF & 0x0F) != 15 {
+        return tkFail("MiscArithBasic", "and wrong")
+    }
+    if (1 << 10) != 1024 {
+        return tkFail("MiscArithBasic", "shl wrong")
+    }
+    if int('A') != 65 {
+        return tkFail("MiscArithBasic", "char-to-int wrong")
+    }
+    return tkPass("MiscArithBasic")
+}
+
+func caseMiscBreakContWhile(): TestResult {
+    var i: int
+    var sum: int
+
+    i = 0
+    sum = 0
+    while i < 10 {
+        if i == 5 { break }
+        sum = sum + i
+        i = i + 1
+    }
+    if sum != 10 {
+        return tkFail("MiscBreakContWhile", "sum wrong")
+    }
+    if i != 5 {
+        return tkFail("MiscBreakContWhile", "i wrong")
+    }
+    return tkPass("MiscBreakContWhile")
+}
+
+// caseMiscCrc8 is crc8.cla's own crc8() func, ported verbatim: CRC-8/SMBUS,
+// polynomial 0x07, init 0, no reflection, no xorout.
+func caseMiscCrc8(s: string): int {
+    var crc: int
+    var i: int
+    var j: int
+    var b: int
+
+    crc = 0
+    i = 0
+    while i < s.length {
+        b = int(s[i])
+        crc = crc ^ b
+        j = 0
+        while j < 8 {
+            if crc & 0x80 != 0 {
+                crc = (crc << 1) ^ 0x07
+            } else {
+                crc = crc << 1
+            }
+            crc = crc & 0xFF
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return crc
+}
+
+func caseMiscCrc8Smbus(): TestResult {
+    if caseMiscCrc8("123456789") != 244 {
+        return tkFail("MiscCrc8Smbus", "crc8 wrong")
+    }
+    return tkPass("MiscCrc8Smbus")
+}
+
+func caseMiscEmitArithAddMul(): TestResult {
+    if 3 + 4 * 5 != 23 {
+        return tkFail("MiscEmitArithAddMul", "add/mul wrong")
+    }
+    if 23 - 8 != 15 {
+        return tkFail("MiscEmitArithAddMul", "sub wrong")
+    }
+    return tkPass("MiscEmitArithAddMul")
+}
+
+func caseMiscEmitControlForRange(): TestResult {
+    var sum: int
+
+    sum = 0
+    for x in 0 to 4 {
+        sum = sum + x
+    }
+    if sum != 10 {
+        return tkFail("MiscEmitControlForRange", "for-range accumulate wrong")
+    }
+    return tkPass("MiscEmitControlForRange")
+}
+
+func caseMiscEmitFuncFact(n: int): int {
+    if n <= 1 { return 1 }
+    return n * caseMiscEmitFuncFact(n - 1)
+}
+
+func caseMiscEmitFuncRecursion(): TestResult {
+    if caseMiscEmitFuncFact(5) != 120 {
+        return tkFail("MiscEmitFuncRecursion", "recursion wrong")
+    }
+    return tkPass("MiscEmitFuncRecursion")
+}
+
+func caseMiscMutRecIsEven(n: int): bool {
+    if n == 0 { return true }
+    return caseMiscMutRecIsOdd(n - 1)
+}
+func caseMiscMutRecIsOdd(n: int): bool {
+    if n == 0 { return false }
+    return caseMiscMutRecIsEven(n - 1)
+}
+
+func caseMiscMutRecEvenOdd(): TestResult {
+    if not caseMiscMutRecIsEven(10) {
+        return tkFail("MiscMutRecEvenOdd", "isEven(10) wrong")
+    }
+    if not caseMiscMutRecIsOdd(7) {
+        return tkFail("MiscMutRecEvenOdd", "isOdd(7) wrong")
+    }
+    if caseMiscMutRecIsEven(7) {
+        return tkFail("MiscMutRecEvenOdd", "isEven(7) wrong")
+    }
+    return tkPass("MiscMutRecEvenOdd")
+}
+
+func caseMiscWhileCondText(): TestResult {
+    var p9T: text = "a"
+    var p9N: int = 0
+
+    while p9T + "b" == "ab" {
+        p9N = p9N + 1
+        if p9N > 0 { p9T.append("x") }
+    }
+    if p9N == 0 {
+        return tkFail("MiscWhileCondText", "loop never ran")
+    }
+    if p9T == "a" {
+        return tkFail("MiscWhileCondText", "text never appended")
+    }
+    return tkPass("MiscWhileCondText")
+}
+
+func caseMiscWideProtoSum(widthInPixels: int, heightInPixels: int, marginTopValue: int, marginBottomValue: int, marginLeftValue: int, marginRightValue: int, paddingTopValue: int, paddingBottomValue: int, paddingLeftValue: int, paddingRightValue: int, borderWidthValue: int, cornerRadiusValue: int, shadowOffsetXValue: int, shadowOffsetYValue: int, shadowBlurRadiusValue: int, opacityPercentValue: int, rotationDegreeValue: int, scaleFactorValue: int): int {
+    return widthInPixels + heightInPixels + marginTopValue + marginBottomValue + marginLeftValue + marginRightValue + paddingTopValue + paddingBottomValue + paddingLeftValue + paddingRightValue + borderWidthValue + cornerRadiusValue + shadowOffsetXValue + shadowOffsetYValue + shadowBlurRadiusValue + opacityPercentValue + rotationDegreeValue + scaleFactorValue
+}
+
+func caseMiscWideProtoSumBoxMetrics(): TestResult {
+    if caseMiscWideProtoSum(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18) != 171 {
+        return tkFail("MiscWideProtoSumBoxMetrics", "sum wrong")
+    }
+    return tkPass("MiscWideProtoSumBoxMetrics")
+}
+
+func caseMiscLongCondChain(): TestResult {
+    if not (1 < 2 and 2 < 3 and 3 < 4 and 4 < 5 and 5 < 6 and 6 < 7 and 7 < 8 and 8 < 9 and 9 < 10) {
+        return tkFail("MiscLongCondChain", "long and-chain wrong")
+    }
+    if (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) != 10 {
+        return tkFail("MiscLongCondChain", "long arith chain wrong")
+    }
+    return tkPass("MiscLongCondChain")
+}

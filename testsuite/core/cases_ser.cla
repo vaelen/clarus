@@ -1,0 +1,113 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_ser.cla: the core suite's file/serialization-family test cases
+// (test-suite-review Task 9). These do real file I/O (file.writeText/
+// readText) -- fine host-side and on the Mac boot volume, same as the
+// source fixtures. Each uses its own filename to avoid clobbering another
+// case (or the still-standalone lib fixture) running in the same cwd.
+// Case -> source:
+//   SerBinRoundtrip    <- binroundtrip.cla (binary-faithful byte round trip:
+//                          control byte 0, CR, high byte 255)
+//   SerFileRoundtrip   <- emit_file.cla ("round-trip ok")
+//   SerFileNameRoundtrip <- files.cla (round-trip content + file.name()
+//                          path-basename extraction)
+
+func caseSerBinRoundtrip(): TestResult {
+    var t: text
+    var t2: text
+    var ok: bool
+
+    t.append('A')
+    t.append(char(0))
+    t.append(char(13))
+    t.append(char(255))
+    t.append('B')
+
+    ok = file.writeText("core_bin_roundtrip.dat", t)
+    if not ok {
+        return tkFail("SerBinRoundtrip", "write failed")
+    }
+    ok = file.readText("core_bin_roundtrip.dat", t2)
+    if not ok {
+        return tkFail("SerBinRoundtrip", "read failed")
+    }
+    if t2.length != 5 {
+        return tkFail("SerBinRoundtrip", "length mismatch")
+    }
+    if t2[0] != 'A' {
+        return tkFail("SerBinRoundtrip", "byte 0 mismatch")
+    }
+    if t2[1] != char(0) {
+        return tkFail("SerBinRoundtrip", "byte 1 (control) mismatch")
+    }
+    if t2[2] != char(13) {
+        return tkFail("SerBinRoundtrip", "byte 2 (CR) mismatch")
+    }
+    if t2[3] != char(255) {
+        return tkFail("SerBinRoundtrip", "byte 3 (high) mismatch")
+    }
+    if t2[4] != 'B' {
+        return tkFail("SerBinRoundtrip", "byte 4 mismatch")
+    }
+    return tkPass("SerBinRoundtrip")
+}
+
+func caseSerFileRoundtrip(): TestResult {
+    var t: text
+    var t2: text
+    var buf: char[64]
+    var n: int
+    var s: string
+    var ok: bool
+
+    s = "line one\nline two"
+    n = s.toBytes(buf)
+    t.fromBytes(buf, n)
+
+    ok = file.writeText("core_ser_roundtrip.txt", t)
+    if not ok {
+        return tkFail("SerFileRoundtrip", "write failed")
+    }
+    ok = file.readText("core_ser_roundtrip.txt", t2)
+    if not ok {
+        return tkFail("SerFileRoundtrip", "read failed")
+    }
+    n = t2.toBytes(buf)
+    s.fromBytes(buf, n)
+    if s != "line one\nline two" {
+        return tkFail("SerFileRoundtrip", "round-trip content wrong")
+    }
+    return tkPass("SerFileRoundtrip")
+}
+
+func caseSerFileNameRoundtrip(): TestResult {
+    var t: text
+    var t2: text
+    var buf: char[64]
+    var n: int
+    var s: string
+    var ok: bool
+
+    s = "abc"
+    n = s.toBytes(buf)
+    t.fromBytes(buf, n)
+
+    ok = file.writeText("core_ser_name.txt", t)
+    if not ok {
+        return tkFail("SerFileNameRoundtrip", "write failed")
+    }
+    ok = file.readText("core_ser_name.txt", t2)
+    if not ok {
+        return tkFail("SerFileNameRoundtrip", "read failed")
+    }
+    n = t2.toBytes(buf)
+    s.fromBytes(buf, n)
+    if s != "abc" {
+        return tkFail("SerFileNameRoundtrip", "content wrong")
+    }
+    if file.name("some/path/doc.txt") != "doc.txt" {
+        return tkFail("SerFileNameRoundtrip", "file.name wrong")
+    }
+    return tkPass("SerFileNameRoundtrip")
+}

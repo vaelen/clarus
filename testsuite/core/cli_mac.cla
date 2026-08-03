@@ -1,0 +1,43 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cli_mac.cla: the core suite's Mac/native front-end (test-suite-review
+// Task 9's Mac-gate swap) -- swaps in for cli.cla in the Mac/native
+// build; never both in one composition. Runs the full case list via
+// `on App.launch` and reports, then quits -- same output cli.cla's own
+// empty-args/`all` path produces, the Mac-gate parity internal/mactest's
+// TestSuiteOnMac/TestSuiteOn68k depend on (host expectation via cli.cla's
+// `all`, Mac/native expectation via this file).
+//
+// Why `App.launch`, not `App.startCLI`/`App.startEmpty` (both tried and
+// discarded during this task): cg68k.cla's non-UI program startup
+// (cg68Program's entry-handler dispatch, its own comment: "entry-handler
+// dispatch stub -- no event/arg marshaling yet (Task 11)") calls EVERY
+// declared app-level handler unconditionally on a native boot --
+// `App.launch`, `App.startEmpty`, `App.startCLI`, `App.openDocument`, all
+// of them, whichever are present -- with no real platform-exclusivity
+// logic (unlike the UI-program startup path a few lines above it in the
+// same function, which correctly never calls `handler_App_startCLI` at
+// all, matching Ch7's "startCLI never fires on the Macintosh"). Worse,
+// `App.startCLI`'s own `args: list of string` parameter is never
+// marshaled into a valid (even if empty) list on this path -- confirmed
+// by direct probe: `args.count` read back as uninitialized garbage
+// (1114067400 in one run), which corrupted a `for a in args` iteration
+// downstream and hung the whole native boot with zero captured output
+// (no crash, no exit -- just stuck). This is a real, pre-existing cg68k
+// gap (a documented stub, not something this task's migration
+// introduced) -- fixing it is a clarusc source change, out of this
+// plan's scope (CLAUDE.md: "No clarusc source changes anywhere in this
+// plan... STOP and escalate" -- flagged in the task report instead).
+// `App.launch` sidesteps it entirely: it takes no parameters (nothing to
+// marshal), and both the UI and non-UI cg68k startup paths call it
+// exactly once, unconditionally, before anything else -- the same
+// handler the now-retired testdata/suite/test_suite.cla used exclusively
+// and the only one confirmed safe on this native harness.
+on App.launch {
+    var sel: list of CoreTest
+    var results: list of TestResult
+
+    sel.add(All)
+    coreCliRunAndReport(sel, results)
+}
