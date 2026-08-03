@@ -40,7 +40,9 @@ Tiered test gates:
   native-68k emulator smoke tests (`CLARUS_MAC_TESTS=1`,
   `TestSmokeBounceOn68k` / `TestRealEventLoopTickOn68k` in
   `internal/mactest`). T1 no longer builds or links the Go compiler for
-  any test it runs (see `CLARUS_GO_DIFF` below) — packages that are pure
+  the Go compiler's OWN tests (see `CLARUS_GO_DIFF` below for that gate,
+  and its caveat below for five other packages that still build clarusc
+  via the Go compiler as a plain build vehicle) — packages that are pure
   Go-compiler unit tests (`internal/lexer`, `parser`, `check`, `types`,
   `lower`, `cprint`, `driver`, `cmd/clarus`) report as passing-with-no-tests
   by default; `internal/build`'s Go-compiler tests (`build_test.go`,
@@ -69,18 +71,33 @@ Tiered test gates:
 (`internal/lexer`, `parser`, `check`, `types`, `lower`, `cprint`, `driver`,
 `cmd/clarus`, plus `internal/build`'s `Build()`-calling tests) gate their
 tests behind `CLARUS_GO_DIFF=1`, unset by default. The default `go test
-./...` gauntlet is Go-free — it never builds, links, or runs a Go-compiled
-`clarusc` binary — because Tasks 3-5b of test-suite-review landed Go-free
-oracles that cover the same ground without the Go compiler as a reference:
-`internal/selfhost/behavior_test.go` (snapshot-built clarusc vs. committed
-`.behavior` goldens, including the paranoid-allocator `.leaks` pin),
-`crossgen_test.go` (snapshot generation vs. current-source generation, both
-built without Go), and `snapshot_test.go`'s `TestSnapshotBuilds` /
-`TestSnapshotFixedPoint` (C-snapshot self-consistency). Set
-`CLARUS_GO_DIFF=1` to reinstate the Go differential/bootstrap/coverage
-lanes — for ad hoc debugging (`CLARUS_GO_DIFF=1 go test ./internal/selfhost
--timeout 30m`) or via `scripts/test-merge.sh`, which exports it for its
-`internal/selfhost` and full runs.
+./...` gauntlet gates the Go compiler's OWN differential/bootstrap/
+unit-test lanes behind this flag — Tasks 3-5b of test-suite-review landed
+Go-free oracles that cover the same ground without the Go compiler as a
+reference: `internal/selfhost/behavior_test.go` (snapshot-built clarusc
+vs. committed `.behavior` goldens, including the paranoid-allocator
+`.leaks` pin), `crossgen_test.go` (snapshot generation vs. current-source
+generation, both built without Go), and `snapshot_test.go`'s
+`TestSnapshotBuilds` / `TestSnapshotFixedPoint` (C-snapshot
+self-consistency). Set `CLARUS_GO_DIFF=1` to reinstate the Go
+differential/bootstrap/coverage lanes — for ad hoc debugging
+(`CLARUS_GO_DIFF=1 go test ./internal/selfhost -timeout 30m`) or via
+`scripts/test-merge.sh`, which exports it for its `internal/selfhost` and
+full runs.
+
+**Caveat: the default gauntlet is NOT fully Go-free.** Six harnesses still
+build clarusc via `internal/build.Build` (the frozen Go frontend) as a
+plain build vehicle, not an oracle — on every default `go test ./...`:
+`internal/asm68k/vasm_test.go`, `internal/cg68k/golden_test.go`,
+`internal/emitui/emitui_test.go`, `internal/lowlevel/lowlevel_test.go`,
+`internal/sertest/sertest_test.go` (each via a local `buildClarusc`
+helper), plus `internal/mactest`'s gated `buildNativeClarusc`
+(`CLARUS_MAC_TESTS=1` only). This is deliberate, not an oversight: the
+snapshot-bootstrapped clarusc pipeline is the slow lineage until the
+compiler-performance phase removes the 30x emit-time tax (see ROADMAP) —
+swapping these to it today would import that tax into T1. All six call
+sites swap together, post-perf-phase, immediately pre-Go-deletion (see
+ROADMAP's checklist).
 
 - The Go compiler (`cmd/clarus`, `internal/`) is FROZEN — it is the
   differential-testing reference only. New language features land in the
@@ -115,6 +132,10 @@ enum + runner, not one boot per case.
   cc -O1 -I internal/build/rt -o /tmp/core_cli /tmp/core_cli.c internal/build/rt/rt.c
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
+  `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
+  design: it asserts all 39 other cases ran in the same invocation
+  (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
+  `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
   `coreCLIHostFiles`/`coreCLIFiles`.) `toolbox` has no host CLI by design
   (Toolbox/hardware-only) — it only runs via a Mac/native boot.

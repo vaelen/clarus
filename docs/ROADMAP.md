@@ -1095,14 +1095,19 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   package with `.cla`-aware cache busting and an optional native smoke
   boot; T2 (`scripts/test-merge.sh`) is the full double-lane gated
   mactest + selfhost + Go-differential merge gate, rehearsed green at
-  2428s (Task 12). Go-compiler demotion executed in full: default
-  gauntlet is Go-free (`CLARUS_GO_DIFF=1` gate, `internal/selfhost` 14
-  SKIP/0 FAIL by default), Mac-gate host oracles swapped to
-  snapshot-bootstrapped clarusc, corpus agreement is now committed
-  `.behavior` goldens + a cross-generation snapshot differential, and
-  `scripts/clarus-run.sh` replaces day-to-day `clarus run` — `cmd/clarus`
-  + the Go frontend itself stay parked as the deliberate deletion-at-
-  end-of-Toolbox-phase parachute, per the original plan. The 30x
+  2428s (Task 12). Go-compiler demotion executed for the oracle/reference
+  lanes: the Go compiler's own differential/bootstrap/unit-test lanes are
+  gated (`CLARUS_GO_DIFF=1`, `internal/selfhost` 14 SKIP/0 FAIL by
+  default), Mac-gate host oracles swapped to snapshot-bootstrapped
+  clarusc, corpus agreement is now committed `.behavior` goldens + a
+  cross-generation snapshot differential, and `scripts/clarus-run.sh`
+  replaces day-to-day `clarus run` — `cmd/clarus` + the Go frontend
+  itself stay parked as the deliberate deletion-at-end-of-Toolbox-phase
+  parachute, per the original plan. **The default gauntlet is NOT fully
+  Go-free** (final review F1, 2026-08-04 correction): six harnesses still
+  build clarusc via `internal/build.Build` as a build vehicle rather than
+  an oracle — see the pre-deletion checklist below for all six call
+  sites and the swap-after-compiler-perf-phase sequencing. The 30x
   compiler-performance finding was attributed (not fixed, by design) to
   an O(n) `DisposePtr` host-shim scan, ARC exonerated; follow-up spec
   committed (`docs/superpowers/specs/2026-08-03-compiler-performance-
@@ -1151,15 +1156,33 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     golden is `live=6` (not 0), by design, so the leak can't regress
     further without tripping the golden. Fix belongs with a future ARC/
     borrow-checker pass, not this phase.
-  - **`buildNativeClarusc` still calls `build.Build`:** `internal/
-    mactest/native_test.go:43`'s `buildNativeClarusc` (the emit68k-lane
-    compiler build every native-lane gated test depends on) still goes
-    through the Go frontend (`internal/build.Build`), not the
-    snapshot-bootstrapped clarusc pipeline the rest of this phase moved
-    to. Gated-lane-only, out of Task 5's brief when the oracle swap
-    landed — **must swap to the snapshot pipeline before the Go-compiler
-    deletion at the end of the Toolbox phase**, or that deletion breaks
-    every native-lane gated test outright.
+  - **Six `build.Build` call sites still build the Go compiler as a
+    clarusc build vehicle (final review F1, 2026-08-04) — ALL SIX must
+    swap to the snapshot-bootstrapped clarusc pipeline before the
+    Go-compiler deletion at the end of the Toolbox phase**, or deletion
+    breaks every one of them outright:
+    1. `internal/mactest/native_test.go:43`'s `buildNativeClarusc` (the
+       emit68k-lane compiler build every native-lane gated test depends
+       on) — gated-lane-only (`CLARUS_MAC_TESTS=1`), out of Task 5's brief
+       when the oracle swap landed.
+    2. `internal/asm68k/vasm_test.go:119` (`TestVasmRoundTrip`'s
+       `buildClarusc`, also builds `exercise.cla` via `build.Build`).
+    3. `internal/cg68k/golden_test.go:54` (`buildClarusc`).
+    4. `internal/emitui/emitui_test.go:66` (`buildClarusc`).
+    5. `internal/lowlevel/lowlevel_test.go:71` (`buildClarusc`).
+    6. `internal/sertest/sertest_test.go:58` (`buildClarusc`).
+
+    #2-6 run UNGATED, in the default `go test ./...` gauntlet, on every
+    T1 — they're compiler-tooling packages, not Go-compiler-own tests, so
+    Task 6's `CLARUS_GO_DIFF` gate never covered them (their file list
+    only named `internal/selfhost` + the compiler unit packages; these
+    five were structurally invisible to that task's scope). **Sequencing,
+    deliberate:** do NOT swap any of these before the compiler-performance
+    phase lands — the snapshot-bootstrapped pipeline is the slow lineage
+    until that phase removes the 30x `DisposePtr` O(n)-scan tax (Task 7
+    attribution); emitui/cg68k in particular emit large fixtures, so an
+    early swap would import that tax straight into T1. Swap all six
+    together, post-compiler-perf-phase, immediately pre-Go-deletion.
   - **Deferred minors** (low-priority, recorded rather than fixed this
     phase): `internal/selfhost/crossgen_test.go`'s header lacks a
     "standalone run needs `-timeout` override (~8min bootstrap)" note
@@ -1168,7 +1191,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     `file.writeText` call binds `ok` but never checks it — a silent
     log-write failure is possible (Task 10); the stray untracked `clarus`
     binary at repo root — cleaned up as part of this wrap task (added to
-    `.gitignore`, `git status` was already clean otherwise).
+    `.gitignore`, `git status` was already clean otherwise);
+    `testsuite/core`'s CLI (`cli.cla`/`runner.cla`) treats `SelfCheck` as
+    a lone explicit arg as an always-FAIL by contract design (it asserts
+    all 39 other cases ran together, `casesRun == nCoreCases - 1`) — doc
+    note promised at Task 8, landed at final review (F4, 2026-08-04) in
+    CLAUDE.md's testsuite entry-points subsection.
 
   Full task-by-task detail:
   `.superpowers/sdd/2026-08-03-test-suite-review/task-{1..14}-report.md`

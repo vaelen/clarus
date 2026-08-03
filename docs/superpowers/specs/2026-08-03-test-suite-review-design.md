@@ -219,13 +219,18 @@ known-unexercised entry in the ROADMAP, so green stops implying covered.
    the GUI and events script both drive.
 4. **Result log produced/parsed by host harness; per-case Go subtests;
    GUI/CLI immediate reporting.** MET. `kit.cla`'s `tkReport` writes the
-   PASS/FAIL/TOTAL log; `internal/mactest`'s `checkCoreSuiteCapture`/
-   `checkToolboxSuiteCapture` parse it and fan out into one `t.Run(caseName,
-   ...)` Go subtest per case (`coresuite_test.go:211`) — per-case red/green
-   in `go test -v` output. CLI/GUI both surface PASS/FAIL/TOTAL the same
-   run (`testsuite/core/cli.cla`, `testsuite/{core,toolbox}/gui.cla`).
+   PASS/FAIL/TOTAL log; `internal/mactest`'s `checkToolboxSuiteCapture`
+   parses it and fans out into one `t.Run(caseName, ...)` Go subtest per
+   case (`coresuite_test.go:211`) — per-case red/green in `go test -v`
+   output. `checkCoreSuiteCapture` (`coresuite_test.go:82-106`) is
+   aggregate-only — PASS/FAIL/TOTAL line counts plus a `t.Errorf` per FAIL
+   line, no per-case subtests (final review F2, 2026-08-04 correction:
+   the two helpers do NOT both fan out — only the toolbox one does). Core
+   per-case redness is still visible by name in that `t.Errorf` output,
+   just not as a named subtest. CLI/GUI both surface PASS/FAIL/TOTAL the
+   same run (`testsuite/core/cli.cla`, `testsuite/{core,toolbox}/gui.cla`).
 5. **Go lanes demoted behind env gate; oracles swapped; goldens +
-   cross-gen differential green; default gauntlet Go-free.** MET. Task 6:
+   cross-gen differential green.** MET, with a scope correction. Task 6:
    `CLARUS_GO_DIFF` gate (`1dac361`), default `go test ./internal/selfhost`
    14 SKIP / 0 FAIL, 1029s vs. 1525s with the Go lanes on
    (task-6-report.md). Go-free oracles: `behavior_test.go` (committed
@@ -235,11 +240,23 @@ known-unexercised entry in the ROADMAP, so green stops implying covered.
    restored the drift guard here). Oracle swap: Mac-gate host builds moved
    to snapshot-bootstrapped clarusc -> cprint -> cc (`buildHostFromFixtures`,
    Task 9); `scripts/clarus-run.sh` replaces day-to-day `clarus run`
-   (Task 6). Caveat carried forward (not a gap): `internal/mactest`'s
-   `buildNativeClarusc` (native_test.go:43) still calls `build.Build` (Go
-   frontend) to build the emit68k-lane compiler binary itself — out of
-   Task 5's brief, gated-lane-only, must swap before Go deletion (recorded
-   in ROADMAP below).
+   (Task 6). **Scope correction (final review F1, 2026-08-04):** what's
+   actually Go-free is the Go compiler's own differential/bootstrap/
+   unit-test LANES, not the default gauntlet as a whole — six harnesses
+   still build clarusc via `internal/build.Build` as a plain build
+   vehicle (not an oracle) on every default run: `internal/mactest`'s
+   `buildNativeClarusc` (native_test.go:43, gated-lane-only, already
+   recorded) plus five ungated compiler-tooling packages found by final
+   review — `internal/asm68k/vasm_test.go:119`,
+   `internal/cg68k/golden_test.go:54`, `internal/emitui/emitui_test.go:66`,
+   `internal/lowlevel/lowlevel_test.go:71`,
+   `internal/sertest/sertest_test.go:58` (each a local `buildClarusc` ->
+   `build.Build`). Deliberately NOT swapped now: the snapshot-bootstrap
+   pipeline is the slow lineage until the compiler-performance phase
+   removes the 30x `DisposePtr` O(n)-scan tax (Task 7) — emitui/cg68k
+   especially emit large fixtures, so swapping today would import that
+   tax into T1. See ROADMAP's expanded six-call-site pre-deletion
+   checklist for the swap-after-compiler-perf-phase sequencing.
 6. **Attribution memo + follow-up spec committed; perf tripwire armed.**
    MET. Task 7: 30x attributed to the O(n) `DisposePtr` host-only-shim
    ledger scan in `rt_mem_host.inc` (>=95% of the slowdown; ARC exonerated

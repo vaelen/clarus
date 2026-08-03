@@ -196,9 +196,10 @@ func coreCaseName(t: CoreTest): string {
     return "?"
 }
 
-// coreAllCases lists every real case (All and SelfCheck excluded --
-// SelfCheck is still addressable by name through this list; All is the
-// "run everything" keyword, handled separately by its caller). Used by
+// coreAllCases lists every real case (All excluded -- it's the "run
+// everything" keyword, handled separately by its caller; SelfCheck IS
+// included, so it stays addressable by name through this list same as
+// every other case -- see :250). Used by
 // cli.cla's arg parser: a `for t in coreAllCases() { if a ==
 // coreCaseName(t) ... }` loop, one small comparison per iteration,
 // instead of one giant 40-branch if/else-if chain -- native 68k codegen
