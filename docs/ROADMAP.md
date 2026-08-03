@@ -1036,6 +1036,14 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      (`irRegisterExtern` currently rejects duplicate names outright)
      decided in this phase.
 
+  **Compiler-performance phase (after Toolbox integration, before 5f):**
+  the test-suite-review phase's Task 7 attributed the 30x
+  clarusc-emitted-C-vs-Go-emitted-C slowdown to a single O(n) linear
+  scan in the host-only memory shim's `DisposePtr` (not ARC volume, not
+  `clar_str_255` copies, not container access — a scratch O(1) patch
+  collapsed `every.cla`'s emit from 7-11s to Go-built parity, ~0.26s);
+  spec: `docs/superpowers/specs/2026-08-03-compiler-performance-design.md`.
+
   **The native Standard File (_Pack3) port is DEFERRED until after the
   Toolbox phase** (Andrew, 2026-08-03; spec already committed at
   `docs/superpowers/specs/2026-08-03-native-standardfile-pack3-design.md`,
