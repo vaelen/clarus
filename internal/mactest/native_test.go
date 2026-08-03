@@ -106,12 +106,12 @@ func TestHelloOn68k(t *testing.T) {
 
 // TestNativeSmoke is native-5d Task 12's first native boot test to cover
 // records/enums: builds testdata/cg68k/smoke.cla BOTH ways -- the host
-// expectation via build.Build (the Go compiler, same as
-// suite_host_test.go's BuildSuiteHost/RunSuiteHost -- smoke.cla is
-// deliberately Go-compiler-compatible Clarus, no Ch13 surface, precisely
-// so this comparison is possible), and the native image via `clarusc
-// emit68k` -- then requires the emulator's captured `out` to be
-// byte-identical to the host's stdout, and both exit codes to be 0.
+// expectation via the snapshot-bootstrapped clarusc (buildHostFromFixture,
+// same as suite_host_test.go's BuildSuiteHost -- smoke.cla is deliberately
+// Go-compiler-compatible Clarus, no Ch13 surface, precisely so this
+// comparison is possible), and the native image via `clarusc emit68k` --
+// then requires the emulator's captured `out` to be byte-identical to the
+// host's stdout, and both exit codes to be 0.
 func TestNativeSmoke(t *testing.T) {
 	runNativeHostCompare(t, "smoke.cla")
 }
@@ -163,12 +163,12 @@ func TestNativeSmokeForcedMultiSegment(t *testing.T) {
 }
 
 // runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
-// host expectation via build.Build (the Go compiler, same as
-// suite_host_test.go's BuildSuiteHost/RunSuiteHost -- these fixtures are
-// deliberately Go-compiler-compatible Clarus, no Ch13 surface, precisely
-// so this comparison is possible), and the native image via `clarusc
-// emit68k` -- then requires the emulator's captured `out` to be
-// byte-identical to the host's stdout, and both exit codes to be 0.
+// host expectation via the snapshot-bootstrapped clarusc
+// (buildHostFromFixture, same as suite_host_test.go's BuildSuiteHost --
+// these fixtures are deliberately Go-compiler-compatible Clarus, no Ch13
+// surface, precisely so this comparison is possible), and the native image
+// via `clarusc emit68k` -- then requires the emulator's captured `out` to
+// be byte-identical to the host's stdout, and both exit codes to be 0.
 func runNativeHostCompare(t *testing.T, fixtureName string) {
 	runNativeHostCompareSeglimit(t, fixtureName, 0)
 }
@@ -184,20 +184,7 @@ func runNativeHostCompareSeglimit(t *testing.T, fixtureName string, segLimit int
 	requireMac(t)
 	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", fixtureName)
 
-	hostExe := filepath.Join(t.TempDir(), "host")
-	diags, err := build.Build([]string{fixture}, hostExe)
-	if err != nil {
-		t.Fatalf("build host %s: %v", fixtureName, err)
-	}
-	if len(diags) > 0 {
-		var b strings.Builder
-		b.WriteString("host build produced diagnostics:")
-		for _, d := range diags {
-			b.WriteString("\n  ")
-			b.WriteString(d.String())
-		}
-		t.Fatal(b.String())
-	}
+	hostExe := buildHostFromFixture(t, fixture, "host")
 	hostCmd := exec.Command(hostExe)
 	hostCmd.Dir = t.TempDir()
 	hostOut, err := hostCmd.Output()
