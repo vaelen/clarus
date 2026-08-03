@@ -162,11 +162,92 @@ static void test_blockmove(void)
     CHECK(b[0] == 'a', "BlockMoveData copies src-first into dst");
 }
 
+/* 9: bulk Ptr churn -- exercises DisposePtr block-record recovery across
+   index growth, probe collisions, and recycled payload addresses (the
+   quarantine caps at 64 blocks / 1 MiB, so a mass dispose forces real
+   free()s and near-certain address reuse by later NewPtr calls). */
+static void test_ptr_churn(void)
+{
+    enum { CHURN_N = 5000 };
+    static Ptr ps[CHURN_N];
+    int i;
+    long before;
+
+    before = rt_mem_live_count();
+    for (i = 0; i < CHURN_N; i++) {
+        ps[i] = NewPtr(32);
+        CHECK(ps[i] != NULL, "churn NewPtr non-NULL");
+        ps[i][0] = (char)(i & 0x7F);
+    }
+    /* dispose evens first, then odds, so recovery sees interleaved holes */
+    for (i = 0; i < CHURN_N; i += 2) DisposePtr(ps[i]);
+    for (i = 1; i < CHURN_N; i += 2) {
+        CHECK(ps[i][0] == (char)(i & 0x7F), "odd survivor intact after even mass-dispose");
+        DisposePtr(ps[i]);
+    }
+    CHECK(rt_mem_live_count() == before, "all churn blocks disposed");
+    /* fresh Ptrs after the mass dispose recycle freed payload addresses:
+       dispose must resolve each to its NEW (live) record, not a dead one */
+    for (i = 0; i < 128; i++) {
+        Ptr q;
+
+        q = NewPtr(32);
+        CHECK(q != NULL, "recycle NewPtr non-NULL");
+        q[0] = 'q';
+        DisposePtr(q);
+    }
+    CHECK(rt_mem_live_count() == before, "recycled-address dispose resolved to the live record");
+}
+
+/* 10 + 11: the two DisposePtr diagnostics must still abort (the paranoid
+   shim's whole reason to exist). Run in re-exec'd children, parent
+   expects nonzero exit.
+
+   The inner "2>/dev/null" only silences the child's own stderr (its
+   abort() diagnostic). On a shell that reports signal deaths (macOS
+   /bin/sh does, for any command it runs, interactive or not), the shell
+   ITSELF writes a "Abort trap: 6" notification to its own stderr once
+   the child dies -- unaffected by a redirect scoped to the child. That
+   notification is only suppressable by redirecting the reporting
+   shell's stderr from outside it, so this nests one more "sh -c" layer
+   and redirects that whole layer's stderr too, keeping the parent's
+   final stdout ("OK\n") the only output on a passing run. */
+static void expect_child_abort(const char *argv0, const char *mode)
+{
+    char cmd[1024];
+    int rc;
+
+    if (argv0[0] == '/') {
+        snprintf(cmd, sizeof cmd, "sh -c '%s %s 2>/dev/null' 2>/dev/null", argv0, mode);
+    } else {
+        snprintf(cmd, sizeof cmd, "sh -c './%s %s 2>/dev/null' 2>/dev/null", argv0, mode);
+    }
+    rc = system(cmd);
+    if (rc == 0) {
+        fprintf(stderr, "FAIL: %s child exited 0, expected abort\n", mode);
+        failed = 1;
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "paranoid") == 0) {
         test_paranoid();
         return failed ? 1 : 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "doubledispose") == 0) {
+        Ptr p;
+
+        p = NewPtr(8);
+        DisposePtr(p);
+        DisposePtr(p); /* must abort: double dispose */
+        return 0;
+    }
+    if (argc > 1 && strcmp(argv[1], "unrecognized") == 0) {
+        char stackbuf[8];
+
+        DisposePtr((Ptr)stackbuf); /* must abort: never allocated */
+        return 0;
     }
 
     test_new_handle_and_resize();
@@ -189,6 +270,9 @@ int main(int argc, char **argv)
     test_ptr_never_moves();
     test_note();
     test_blockmove();
+    test_ptr_churn();
+    expect_child_abort(argv[0], "doubledispose");
+    expect_child_abort(argv[0], "unrecognized");
 
     if (failed) {
         fprintf(stderr, "FAILED\n");

@@ -14,6 +14,7 @@
 #ifndef CLARUS_RT_MEM_HOST_INC
 #define CLARUS_RT_MEM_HOST_INC
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,97 @@ static int rt_mem_atexit_done = 0;
 extern void rt_run_cleanup(void);
 
 static void rt_mem_exit_check(void);
+
+/* Ptr-identity index (compiler-performance phase, 2026-08-04):
+   DisposePtr used to recover the owning rt_mem_block by linear-scanning
+   rt_mem_blocks -- a ledger that keeps every record forever -- making
+   teardown of bootstrap-scale runs effectively O(allocations^2): a
+   measured 30x emit-time slowdown, 97%+ of samples inside DisposePtr
+   (docs/superpowers/specs/2026-08-03-compiler-performance-design.md).
+   Open-addressing, linear-probe hash table keyed on the payload address
+   b->p, is_ptr blocks only (a Handle recovers its record by direct cast
+   from the Handle itself). Entries are never removed, mirroring the
+   ledger and keeping double-dispose detection: a dead block's entry
+   still resolves, and DisposePtr's existing b->live check fires. When
+   malloc recycles a freed payload address, insert REPLACES the dead
+   record's entry -- the same answer the old newest-first list scan gave.
+   The ledger itself is untouched (leak report / CLARUS_MEM_STRICT). */
+static rt_mem_block **rt_mem_ptr_index = NULL;
+static size_t rt_mem_ptr_index_cap = 0; /* always 0 or a power of two */
+static size_t rt_mem_ptr_index_count = 0;
+
+static void rt_mem_ptr_index_insert(rt_mem_block *nb);
+
+static size_t rt_mem_ptr_hash(Ptr p, size_t cap)
+{
+    /* Fibonacci multiplicative hash. Every payload address is raw+8
+       (RT_MEM_GUARD_LEN) off a malloc'd block, and malloc aligns to at
+       least 16 bytes, so p mod 16 == 8 always -- the LOW bits of p (and
+       of p*K) are constant, not usable as a hash. Take the well-mixed
+       HIGH bits instead: shift right 32 first (cap never approaches
+       2^32 here, so this always leaves cap's bits inside the mask),
+       then mask down to cap, a power of two. */
+    return (size_t)((((uintptr_t)p * (uintptr_t)0x9E3779B97F4A7C15ULL) >> 32) & (uintptr_t)(cap - 1));
+}
+
+static void rt_mem_ptr_index_grow(void)
+{
+    rt_mem_block **old;
+    size_t oldcap;
+    size_t i;
+
+    old = rt_mem_ptr_index;
+    oldcap = rt_mem_ptr_index_cap;
+    rt_mem_ptr_index_cap = (oldcap == 0) ? 1024 : oldcap * 2;
+    rt_mem_ptr_index = calloc(rt_mem_ptr_index_cap, sizeof(rt_mem_block *));
+    if (rt_mem_ptr_index == NULL) {
+        /* ponytail: the shim's other allocation failures surface as
+           memFullErr, but a half-grown index would corrupt lookups; the
+           paranoid shim aborts loudly instead. */
+        fprintf(stderr, "rt_mem: out of memory growing ptr index\n");
+        abort();
+    }
+    rt_mem_ptr_index_count = 0;
+    for (i = 0; i < oldcap; i++) {
+        if (old[i] != NULL) rt_mem_ptr_index_insert(old[i]);
+    }
+    free(old);
+}
+
+static void rt_mem_ptr_index_insert(rt_mem_block *nb)
+{
+    size_t i;
+
+    if (rt_mem_ptr_index_count * 4 >= rt_mem_ptr_index_cap * 3) {
+        rt_mem_ptr_index_grow();
+    }
+    i = rt_mem_ptr_hash(nb->p, rt_mem_ptr_index_cap);
+    while (rt_mem_ptr_index[i] != NULL) {
+        if (rt_mem_ptr_index[i]->p == nb->p) {
+            /* Recycled payload address. The displaced record is
+               necessarily dead (a live is_ptr block's raw is never
+               freed, so malloc cannot hand its address out again). */
+            rt_mem_ptr_index[i] = nb;
+            return;
+        }
+        i = (i + 1) & (rt_mem_ptr_index_cap - 1);
+    }
+    rt_mem_ptr_index[i] = nb;
+    rt_mem_ptr_index_count++;
+}
+
+static rt_mem_block *rt_mem_ptr_index_find(Ptr p)
+{
+    size_t i;
+
+    if (rt_mem_ptr_index_cap == 0) return NULL;
+    i = rt_mem_ptr_hash(p, rt_mem_ptr_index_cap);
+    while (rt_mem_ptr_index[i] != NULL) {
+        if (rt_mem_ptr_index[i]->p == p) return rt_mem_ptr_index[i];
+        i = (i + 1) & (rt_mem_ptr_index_cap - 1);
+    }
+    return NULL;
+}
 
 static void rt_mem_fill_guards(unsigned char *raw, Size size)
 {
@@ -216,6 +308,7 @@ static rt_mem_block *rt_mem_alloc_block(Size n, int clear, const char *tag, int 
     b->tag = tag;
     b->next = rt_mem_blocks;
     rt_mem_blocks = b;
+    if (is_ptr) rt_mem_ptr_index_insert(b);
 
     if (!rt_mem_atexit_done) {
         rt_mem_atexit_done = 1;
@@ -347,9 +440,7 @@ void DisposePtr(Ptr p)
     unsigned char *raw;
 
     if (p == NULL) return;
-    for (b = rt_mem_blocks; b != NULL; b = b->next) {
-        if (b->is_ptr && b->p == p) break;
-    }
+    b = rt_mem_ptr_index_find(p);
     if (b == NULL) {
         fprintf(stderr, "rt_mem: DisposePtr of unrecognized pointer\n");
         abort();
