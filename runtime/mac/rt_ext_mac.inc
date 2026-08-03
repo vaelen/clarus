@@ -323,7 +323,7 @@ short rt_ext_UiCountMItems(void *theMenu) { return (short)CountMItems((MenuRef)t
 void rt_ext_UiGetMenuItemText(void *theMenu, short item, void *itemString) { GetMenuItemText((MenuRef)theMenu, item, (unsigned char *)itemString); }
 void rt_ext_UiAppendResMenu(void *theMenu, int32_t theType) { AppendResMenu((MenuRef)theMenu, (ResType)theType); }
 int32_t rt_ext_UiMenuSelect(int32_t startPt) { return (int32_t)MenuSelect(rt_ext_ui_pt(startPt)); }
-int32_t rt_ext_UiMenuKey(uint8_t ch) { return (int32_t)MenuKey((CharParameter)ch); }
+int32_t rt_ext_UiMenuKey(short ch) { return (int32_t)MenuKey((CharParameter)ch); }
 
 int32_t rt_ext_UiWaitNextEvent(short eventMask, void *theEvent, int32_t sleep, void *mouseRgn) {
     return (int32_t)WaitNextEvent((EventMask)eventMask, (EventRecord *)theEvent, (UInt32)sleep, (RgnHandle)mouseRgn);
@@ -774,6 +774,6 @@ void rt_ext_UiLaunchReal(void) {
  * calls, just reachable under the testsuite's own extern names so
  * cases_events.cla can declare them without reaching into ui.cla. */
 int32_t rt_ext_TbTickCount(void) { return (int32_t)TickCount(); }
-int32_t rt_ext_TbMenuKey(uint8_t ch) { return (int32_t)MenuKey((CharParameter)ch); }
+int32_t rt_ext_TbMenuKey(short ch) { return (int32_t)MenuKey((CharParameter)ch); }
 
 #endif /* CLARUS_RT_EXT_MAC_INC */
