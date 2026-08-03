@@ -534,6 +534,18 @@ void *rt_ext_UiStrAddr(const uint8_t *s) { return (void *)s; }
  * "UiCurrentA5 (cprint shim only this task)" as required. */
 void *rt_ext_UiCurrentA5(void) { return (void *)SetCurrentA5(); }
 
+/* rt_ext_TbCurrentA5 (test-suite-review Task 13): testsuite/toolbox/
+ * cases_a5.cla's own locally-declared `TbCurrentA5` extern (same
+ * `= inline a5` clause as UiCurrentA5 above, distinct name to avoid
+ * colliding with uiscript.cla's own declaration once the runtime module
+ * splices in -- same precedent as cases_events.cla's TbTickCount/
+ * TbMenuKey). The native (cg68k) lane resolves `inline a5` directly to a
+ * `MOVE.L A5,D0` with no C shim at all; cprint ignores the clause
+ * entirely (irExternConv is a native-only concern) and falls back to an
+ * ordinary named rt_ext_ shim instead, same as every other bare glue
+ * extern -- identical body to rt_ext_UiCurrentA5 above. */
+void *rt_ext_TbCurrentA5(void) { return (void *)SetCurrentA5(); }
+
 /* rt_ext_UiTestEmit: no-ops unless RT_MAC_TEST (mirrors rt_mac.c's own
  * pattern -- this task's own brief). `s` is a `ptr` to a fresh rt_text*
  * (text.cla's own box layout: `{ int32_t rc; Handle h; int32_t len;

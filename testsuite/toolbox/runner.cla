@@ -5,7 +5,9 @@
 // (test-suite-review Task 11) -- the Mac-only sibling of
 // testsuite/core/runner.cla, seeded with the audit's first three real
 // Ch13 cases: TickCountAdvances (cases_events.cla), MenuKeyMatches
-// (cases_events.cla), CanvasChecksum (cases_draw.cla). Every real case
+// (cases_events.cla), CanvasChecksum (cases_draw.cla), plus a fourth
+// added by Task 13's own coverage-honesty audit: A5Live (cases_a5.cla).
+// Every real case
 // runs SYNCHRONOUSLY, in-process, exercising a REAL Toolbox trap or a
 // REAL QuickDraw framebuffer read -- the paths no scripted golden
 // reaches (a scripted `--events` build routes time through
@@ -25,15 +27,16 @@ enum ToolboxTest {
     TickCountAdvances
     MenuKeyMatches
     CanvasChecksum
+    A5Live
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 3 real cases plus
+// nTbCases is ToolboxTest's member count minus All: the 4 real cases plus
 // SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 4
+const nTbCases: int = 5
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -51,6 +54,9 @@ func tbCaseName(t: ToolboxTest): string {
     case CanvasChecksum {
         return "CanvasChecksum"
     }
+    case A5Live {
+        return "A5Live"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -65,6 +71,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(TickCountAdvances)
     l.add(MenuKeyMatches)
     l.add(CanvasChecksum)
+    l.add(A5Live)
     l.add(SelfCheck)
     return l
 }
@@ -82,7 +89,7 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 
 // runToolboxTests dedupes sel, then runs every selected case's branch --
 // same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
-// runCoreTests (only 3 real cases here, so a plain branch chain never
+// runCoreTests (only 4 real cases here, so a plain branch chain never
 // approaches the native 68k per-statement str/rec temp-slot budget that
 // forced core's cli.cla arg-matching loop; see coreMatchAndAdd's own doc
 // comment in testsuite/core/cli.cla for that gap -- not reachable at this
@@ -112,6 +119,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, CanvasChecksum) {
         results.add(caseCanvasChecksum())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, A5Live) {
+        results.add(caseA5Live())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_a5.cla: A5Live (test-suite-review Task 13's own audit closure)
+// -- exercises cg68k's `= inline a5` extern-clause codegen (cgCallExtA5,
+// a bare `MOVE.L A5,D0`) inside a REAL booted program, the one thing
+// testdata/cg68k/inline_a5.cla's own listing-diff test cannot do (that
+// fixture pins the emitted bytes only -- it never runs, per its own doc
+// comment: "UiCurrentA5 ... has no existing Clarus call site yet"). The
+// runtime's own UiCurrentA5 (uiscript.cla) is declared but genuinely
+// unreferenced from any Clarus call site (Task 13's `external func`
+// sweep found it, alongside UiNewMenuStr, as the only two zero-call-site
+// externs in runtime/clarus) -- this suite declares its OWN local extern
+// against the same clause instead of wiring a real call site into
+// uiscript.cla (out of this audit task's scope), same "user-code externs
+// are the proven pattern" precedent cases_events.cla's own header comment
+// already established for TbTickCount/TbMenuKey.
+//
+// A5 is fixed for a whole 68k application's run (the Mac app model's own
+// "current A5" world-pointer register, restored by the OS around every
+// event-loop callback) -- so the only real assertion available without
+// tearing into QuickDraw-globals arithmetic is "nonzero and stable
+// across two calls", which is still a genuine regression pin: a broken
+// `cgCallExtA5` emission (wrong register, a stray push/pop unbalancing
+// the two call sites' stack, garbage left in D0) would show up as either
+// a null read or two calls disagreeing.
+external func TbCurrentA5(): ptr = inline a5
+
+func caseA5Live(): TestResult {
+    var a: ptr
+    var b: ptr
+    var detail: string
+
+    a = TbCurrentA5()
+    b = TbCurrentA5()
+
+    if a != ptr(0) and a == b {
+        return tkPass("A5Live")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_events.cla's own cases.
+    detail = "a " + tkIntToStr(int(a))
+    detail = detail + " b " + tkIntToStr(int(b))
+    return tkFail("A5Live", detail)
+}
