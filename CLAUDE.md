@@ -91,6 +91,43 @@ lanes — for ad hoc debugging (`CLARUS_GO_DIFF=1 go test ./internal/selfhost
 - Bootstrap from C alone:
   `cc -I internal/build/rt -o clarusc clarusc/clarusc.c internal/build/rt/rt.c`
 
+### `core`/`toolbox` test suites (`testsuite/`)
+
+Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
+Clarus functions returning pass/fail, run in-process by a hand-maintained
+enum + runner, not one boot per case.
+
+- `testsuite/core/` (40 `CoreTest` cases: 39 real + `SelfCheck`) runs on
+  host and natively; `testsuite/toolbox/` (5 `ToolboxTest` cases) needs
+  the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
+  `tkReport` result log) plus `cases_*.cla` families; `core` additionally
+  has a host CLI (`cli.cla`, real argv) and a Mac/native front end
+  (`cli_mac.cla` — `cli.cla` can't boot natively, see its own doc comment:
+  cg68k's non-UI startup stub fires `App.startCLI` with a never-marshaled
+  `args` list). Both suites also have a scriptable GUI front end
+  (`gui.cla`, driven by `--events` the same way the legacy UI goldens are).
+- **Run `core` on host** (compose recipe — no single-file entry point,
+  `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
+  ```sh
+  cc -O1 -I internal/build/rt -o build-run/clarusc clarusc/clarusc.c internal/build/rt/rt.c   # once
+  build-run/clarusc emit --rtdir runtime/clarus/ -o /tmp/core_cli.c \
+      testsuite/kit.cla testsuite/core/runner.cla testsuite/core/cases_*.cla testsuite/core/cli.cla
+  cc -O1 -I internal/build/rt -o /tmp/core_cli /tmp/core_cli.c internal/build/rt/rt.c
+  /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
+  ```
+  (Exact file list: `internal/mactest/suite_host_test.go`'s
+  `coreCLIHostFiles`/`coreCLIFiles`.) `toolbox` has no host CLI by design
+  (Toolbox/hardware-only) — it only runs via a Mac/native boot.
+- **The four gated suite-boot tests** (`CLARUS_MAC_TESTS=1 go test
+  ./internal/mactest`, `internal/mactest/coresuite_test.go`), one boot
+  each, both platform lanes: `TestCoreSuiteGUIOn68k`/`TestCoreSuiteGUIOnMac`
+  (native `emit68k` / Retro68-cprint twins, `core/gui.cla` + `--events`)
+  and `TestToolboxSuiteOn68k`/`TestToolboxSuiteOnMac` (same, `toolbox/
+  gui.cla`). Each parses the captured `tkReport` log and fans it out into
+  one Go subtest per case (`t.Run(caseName, ...)`) for per-case red/green.
+  These are part of T2 (`scripts/test-merge.sh`'s ungated `internal/
+  mactest` run); not part of T1.
+
 ## Retro68 / Mac toolchain (symlinks, not in git)
 
 - `Retro68/` → Retro68 source; Universal Interfaces in

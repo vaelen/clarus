@@ -192,3 +192,79 @@ known-unexercised entry in the ROADMAP, so green stops implying covered.
 6. Attribution memo + follow-up phase spec committed; perf tripwire
    armed with a recorded baseline.
 7. T2 documented and green on this phase's own merge.
+
+## Outcomes (2026-08-04, Task 14 wrap)
+
+1. **T1 <= 3 min, sweeps every ungated package, busts cache.** MET.
+   `scripts/test-task.sh --smoke` (T1 + the runtime/clarusc-touching smoke
+   boots) — PASS in 49s, this task's own rerun (HEAD `cb3cd47`). Task 6's
+   baseline sweep: 33-41s both directions. `-count=1` on every leg
+   (cache-busting) landed Task 1; 19-package coverage (no `-run` filter)
+   unchanged since.
+2. **`core` suite: 39-case parity, methods+runner+CLI+GUI, green on host
+   CLI AND one native boot.** MET. Task 9: 39 real cases + `SelfCheck` = 40
+   `CoreTest` members (`testsuite/core/runner.cla`), host CLI
+   (`testsuite/core/cli.cla`, `internal/testsuite` `TestCoreSuiteCLI`) and
+   Mac/native front end (`cli_mac.cla`) both green; Task 10 added the GUI
+   front end (`testsuite/core/gui.cla`). One-boot evidence:
+   `TestCoreSuiteGUIOn68k` 7.06s, `TestCoreSuiteGUIOnMac` 16.54s
+   (task-12-report.md).
+3. **`toolbox` suite v1: runner+GUI+logging in ONE boot, audit-seeded,
+   singly/combo/Run-All, scripted+interactive.** MET. Task 11 landed
+   4 cases (TickCountAdvances/MenuKeyMatches/CanvasChecksum/SelfCheck),
+   one boot ~6.7s, 4/4; Task 13's coverage-honesty audit added a 5th
+   (`A5Live`, `cases_a5.cla`) — `TestToolboxSuiteOn68k`/`OnMac` both 5/5
+   (task-13-report.md verification). Single-case/combo/Run-All all go
+   through the same `runToolboxTests(list of ToolboxTest)` entry point
+   the GUI and events script both drive.
+4. **Result log produced/parsed by host harness; per-case Go subtests;
+   GUI/CLI immediate reporting.** MET. `kit.cla`'s `tkReport` writes the
+   PASS/FAIL/TOTAL log; `internal/mactest`'s `checkCoreSuiteCapture`/
+   `checkToolboxSuiteCapture` parse it and fan out into one `t.Run(caseName,
+   ...)` Go subtest per case (`coresuite_test.go:211`) — per-case red/green
+   in `go test -v` output. CLI/GUI both surface PASS/FAIL/TOTAL the same
+   run (`testsuite/core/cli.cla`, `testsuite/{core,toolbox}/gui.cla`).
+5. **Go lanes demoted behind env gate; oracles swapped; goldens +
+   cross-gen differential green; default gauntlet Go-free.** MET. Task 6:
+   `CLARUS_GO_DIFF` gate (`1dac361`), default `go test ./internal/selfhost`
+   14 SKIP / 0 FAIL, 1029s vs. 1525s with the Go lanes on
+   (task-6-report.md). Go-free oracles: `behavior_test.go` (committed
+   `.behavior` goldens, Task 3), `crossgen_test.go` (cross-gen differential
+   against the committed snapshot, Task 4), `TestSnapshotFixedPoint`
+   (gen1==gen2==committed-snapshot bytes.Equal check, Task 6's fix-round
+   restored the drift guard here). Oracle swap: Mac-gate host builds moved
+   to snapshot-bootstrapped clarusc -> cprint -> cc (`buildHostFromFixtures`,
+   Task 9); `scripts/clarus-run.sh` replaces day-to-day `clarus run`
+   (Task 6). Caveat carried forward (not a gap): `internal/mactest`'s
+   `buildNativeClarusc` (native_test.go:43) still calls `build.Build` (Go
+   frontend) to build the emit68k-lane compiler binary itself — out of
+   Task 5's brief, gated-lane-only, must swap before Go deletion (recorded
+   in ROADMAP below).
+6. **Attribution memo + follow-up spec committed; perf tripwire armed.**
+   MET. Task 7: 30x attributed to the O(n) `DisposePtr` host-only-shim
+   ledger scan in `rt_mem_host.inc` (>=95% of the slowdown; ARC exonerated
+   for this workload); follow-up spec committed at
+   `docs/superpowers/specs/2026-08-03-compiler-performance-design.md` and
+   slotted into `docs/ROADMAP.md` ("Compiler-performance phase", after
+   Toolbox integration, before 5f). Tripwire: Task 2, `internal/perfgate`,
+   baseline 7.6s (measured median), fails >2x regression
+   (`internal/perfgate/baseline.txt`).
+7. **T2 documented and green on this phase's own merge.** MET, by
+   citation rather than a full re-run this task (controller-directed —
+   Task 12 already ran T2 end-to-end on a tree differing from this task's
+   HEAD by only a 2-line shim type fix + an audit-only commit + a
+   docs-only commit, none of which touch anything T2 exercises in a way
+   the intervening gated reruns didn't already re-verify). Task 12's own
+   T2 rehearsal (`./scripts/test-merge.sh`, defd3b9..87aba3f tree):
+   **PASS, 2428s total** — T1 body 46s, `internal/selfhost` 1663s,
+   `internal/mactest` (gated, both lanes, no `-run` filter) 719s
+   (task-12-report.md). This task's HEAD differs from that tree by: the
+   MenuKey `short ch` shim fix (`87aba3f`, both toolbox-gate reruns green
+   5/5 post-fix per task-12-report.md's own post-review section), the
+   A5Live case + `TbCurrentA5` shim (`3001ab3`, both toolbox gates re-run
+   green 5/5 per task-13-report.md), and a docs-only sweep-count-fix
+   commit (`cb3cd47`, no code changed). This task independently re-ran
+   `scripts/test-task.sh --smoke` fresh (T1 + smoke boots) — PASS, 49s —
+   as the live rehearsal of the parts that changed since Task 12's T2 run;
+   `scripts/test-merge.sh` itself is documented (CLAUDE.md, `## Build and
+   test`) and unchanged in shape since Task 12 finalized it to spec.

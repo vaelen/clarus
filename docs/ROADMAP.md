@@ -1083,6 +1083,100 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | `UiNewMenuStr` (`ui.cla`, `string`-typed `NewMenu` overload) | unexercised, recorded (dead code) | Zero-call-site dead declaration found by the same sweep — `UiNewMenu` (the `ptr`-typed sibling) is the one actually used for real menu creation (`ui.cla:1029,1099`, exercised by every menu-bearing golden). No coverage gap to close, just an unused declaration; not touched (out of scope to delete dead runtime surface in a test-review task). |
   | `nat_CorePanic`, `nat_CoreSetLastErr`, `nat_SerFileWriteData`/`nat_SerFileReadTextInto`, `nat_UiTestEmit`, `nat_UiRtQuit`, `nat_UiMacInitToolbox`, `nat_UiScreenBounds`, `nat_UiScreenBits` | closed, listed for completeness | All confirmed exercised on the native/Mac lane by existing infrastructure: `TestRunErrOn68k` (panic), `TestSuiteOn68k`'s ser roundtrip cases (file I/O), every native UI boot (TestEmit/RtQuit/MacInitToolbox/ScreenBounds), and the `snap` scripted command — used across a dozen+ `testdata/ui/*.events` goldens — for `ScreenBits`. `rtSetLastErr`'s truncation path is pinned by name in `core.cla`'s own header comment (`TestTextwidgetsUIScenario`'s `trunc32001` snap, one of the 23 frozen golden scenarios). |
 
+- **Test-suite review phase (landed on branch `test-review`, 2026-08-04):
+  DONE.** All 7 success criteria met (full walk:
+  `docs/superpowers/specs/2026-08-03-test-suite-review-design.md`'s
+  "Outcomes" section). Two Clarus-native test suites landed
+  (`testsuite/core` — 40 cases, host CLI + native/Mac GUI, one boot;
+  `testsuite/toolbox` — 5 cases, one boot, both lanes), replacing the
+  monolithic `testdata/suite/test_suite.cla`; per-case results parsed
+  into Go subtests. Gate tiers landed as designed: T1
+  (`scripts/test-task.sh`, 33-49s, target <=3min) sweeps every ungated
+  package with `.cla`-aware cache busting and an optional native smoke
+  boot; T2 (`scripts/test-merge.sh`) is the full double-lane gated
+  mactest + selfhost + Go-differential merge gate, rehearsed green at
+  2428s (Task 12). Go-compiler demotion executed in full: default
+  gauntlet is Go-free (`CLARUS_GO_DIFF=1` gate, `internal/selfhost` 14
+  SKIP/0 FAIL by default), Mac-gate host oracles swapped to
+  snapshot-bootstrapped clarusc, corpus agreement is now committed
+  `.behavior` goldens + a cross-generation snapshot differential, and
+  `scripts/clarus-run.sh` replaces day-to-day `clarus run` — `cmd/clarus`
+  + the Go frontend itself stay parked as the deliberate deletion-at-
+  end-of-Toolbox-phase parachute, per the original plan. The 30x
+  compiler-performance finding was attributed (not fixed, by design) to
+  an O(n) `DisposePtr` host-shim scan, ARC exonerated; follow-up spec
+  committed (`docs/superpowers/specs/2026-08-03-compiler-performance-
+  design.md`) and slotted into this ROADMAP above ("Compiler-performance
+  phase"); a perf tripwire is armed at a 7.6s baseline (`internal/
+  perfgate`, 2x-regression gate) — **re-baseline note:** once the
+  DisposePtr fix lands, `internal/perfgate/baseline.txt` should drop by
+  roughly the same order of magnitude, or the tripwire is silently
+  toothless from then on. The coverage-honesty audit (Task 13, table
+  above) seeded/closed what was cheap and recorded the rest.
+
+  **Two pre-existing compiler bugs fixed mid-phase, both Andrew-
+  authorized departures from the plan's own no-clarusc-changes
+  constraint** (in addition to the already-landed, pre-phase `5faaa6c`
+  MenuKey/TickCount real-mode trap-convention fix referenced above, which
+  this phase's Task 12 gave fresh Mac-lane C-shim glue, not a re-fix):
+  (1) **5b, for-loop variable aliasing / ARC over-release**
+  (`clarusc-emitted` map-of-text/list/nested for-loop element var
+  colliding with an outer var of the same name, scheduling the outer var
+  for an extra release) — root-caused to `lowFor`/
+  `lowCollectScopeExitCandidates` in `clarusc/lower.cla`, fixed via
+  `lowExcludeFreeName` at the three loop-var declaration sites
+  (`50ffeb9..247755d`); (2) two Mac-lane cprint C-shim additions for
+  testsuite-local trap externs that had never had Retro68 glue before
+  (`rt_ext_TbTickCount`/`rt_ext_TbMenuKey`, Task 12; `rt_ext_TbCurrentA5`,
+  Task 13) plus a parameter-type fix
+  (`rt_ext_TbMenuKey`/`rt_ext_UiMenuKey`'s `CharParameter` marshaling —
+  cprint emits `short` for a `word` param, the shim had declared
+  `uint8_t`, silently masked by m68k's calling convention) — all in
+  `runtime/mac/rt_ext_mac.inc`, not `clarusc` sources, but recorded here
+  since they're the same "a trap-convention gap only a real-mode/real-
+  shim lane can expose" class as `5faaa6c`.
+
+  **Escalations and follow-ups for whoever touches this surface next:**
+  - **Known-broken, not just unexercised:** native non-UI `App.startCLI`
+    dispatch — see the audit table's own "known-broken" row above (Task
+    9's discovery: `cg68Program`'s entry-handler dispatch fires every
+    declared app-level handler unconditionally, with `App.startCLI`'s
+    `args` never marshaled, hanging the boot). Worked around
+    (`testsuite/core/cli_mac.cla` uses `App.launch` instead), not fixed.
+    Live hazard for any future native non-UI program declaring
+    `App.startCLI`/`App.startEmpty`.
+  - **Borrow-var leak, pinned not fixed:** Task 5b's ARC fix left a known
+    residual — a borrow-only for-loop element var gets an unfreed birth
+    allocation. Pinned, not silent: `for_loop_var_alias`'s `.leaks`
+    golden is `live=6` (not 0), by design, so the leak can't regress
+    further without tripping the golden. Fix belongs with a future ARC/
+    borrow-checker pass, not this phase.
+  - **`buildNativeClarusc` still calls `build.Build`:** `internal/
+    mactest/native_test.go:43`'s `buildNativeClarusc` (the emit68k-lane
+    compiler build every native-lane gated test depends on) still goes
+    through the Go frontend (`internal/build.Build`), not the
+    snapshot-bootstrapped clarusc pipeline the rest of this phase moved
+    to. Gated-lane-only, out of Task 5's brief when the oracle swap
+    landed — **must swap to the snapshot pipeline before the Go-compiler
+    deletion at the end of the Toolbox phase**, or that deletion breaks
+    every native-lane gated test outright.
+  - **Deferred minors** (low-priority, recorded rather than fixed this
+    phase): `internal/selfhost/crossgen_test.go`'s header lacks a
+    "standalone run needs `-timeout` override (~8min bootstrap)" note
+    (Task 4); `internal/lowlevel/lowlevel_test.go` fails `gofmt -l`,
+    pre-existing and untouched (Task 6); `testsuite/core/gui.cla:229`'s
+    `file.writeText` call binds `ok` but never checks it — a silent
+    log-write failure is possible (Task 10); the stray untracked `clarus`
+    binary at repo root — cleaned up as part of this wrap task (added to
+    `.gitignore`, `git status` was already clean otherwise).
+
+  Full task-by-task detail:
+  `.superpowers/sdd/2026-08-03-test-suite-review/task-{1..14}-report.md`
+  (progress ledger: same directory's `progress.md`); design:
+  `docs/superpowers/specs/2026-08-03-test-suite-review-design.md`
+  ("Outcomes" section); plan:
+  `docs/superpowers/plans/2026-08-03-test-suite-review.md`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
