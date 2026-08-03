@@ -195,3 +195,41 @@ baseline (test-suite-review phase, T1) against the fixed compiler.
 - Re-running the full historical-scan-vs-live-list Experiment 1 as a
   candidate fix — Experiment 3's O(1) result supersedes it; kept in the
   report only as an intermediate data point.
+
+## Outcome (2026-08-04)
+
+Candidate chosen: **the hash-table index** (Experiment 3's shape, this
+doc's own top candidate) — a ptr-keyed open-addressing hash index over
+`rt_mem_blocks`, added to `internal/build/rt/rt_mem_host.inc`. Why: no
+layout change to `rt_mem_block` or `rt_mem_blocks` itself, no reads of
+unowned memory (the index only ever stores/reads pointers this shim
+already allocated), and the unrecognized-pointer diagnostic stays a clean
+table-miss abort — no weakened error path, no silent corruption risk. The
+ledger (`rt_mem_blocks`, the full historical list backing the leak
+report) is untouched; entries are never removed from the index.
+
+Measured results (Task 1 + Task 2 of
+`docs/superpowers/plans/2026-08-04-compiler-performance.md`):
+
+- `testdata/emitui/every.cla` emit: 11.65s pre-fix (Task 1; the spec's
+  own earlier "Measured success target" section had estimated 7-11s) →
+  0.269s post-fix median (Task 2's tripwire re-measurement) — well
+  inside the 3x (~0.8s) target, in fact ~1x parity with Go-built emit.
+- `clarusc/main.cla` self-emission: 631.43s pre-fix → ~2.07s post-fix
+  median (Task 2, ~305x).
+- `internal/perfgate/baseline.txt` re-baselined 7.6s → 0.3s (median
+  measured 0.269s, rounded up to one decimal); the tripwire's 2x gate
+  falls from 15.2s to 0.6s and still passes.
+- Byte-identical pre-/post-fix output verified by this doc's own
+  experiments and Task 1's re-verification, both a direct `cmp` of
+  pre-/post-fix emitted C on `every.cla`. Separately (a build-
+  reproducibility check, not a pre/post comparison), Task 2 confirmed
+  `clarusc/main.cla` self-emission is byte-identical between the Task-1
+  scratch binary and a fresh rebuild from the committed source. The
+  broader no-behavior-change proof is the full Go-free
+  `internal/selfhost` suite (`TestBehavior*` — including the `.leaks`
+  paranoid-allocator pin, which exercises the leak-report path this fix
+  must not disturb — plus `TestCrossGen*`, `TestSnapshotBuilds`,
+  `TestSnapshotFixedPoint`), all green post-fix.
+
+Plan: `docs/superpowers/plans/2026-08-04-compiler-performance.md`.

@@ -1,2 +1,5 @@
-# seconds; median clarusc emit of testdata/emitui/every.cla; 2026-08-03
-7.6
+# seconds; median clarusc emit of testdata/emitui/every.cla; 2026-08-04
+# re-baselined after the O(1) DisposePtr fix (compiler-perf phase) --
+# ROADMAP's re-baseline note: without this drop the 2x tripwire would
+# have stayed armed at the old 7.6s and been silently toothless.
+0.3

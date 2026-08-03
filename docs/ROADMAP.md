@@ -1036,13 +1036,29 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      (`irRegisterExtern` currently rejects duplicate names outright)
      decided in this phase.
 
-  **Compiler-performance phase (after Toolbox integration, before 5f):**
-  the test-suite-review phase's Task 7 attributed the 30x
-  clarusc-emitted-C-vs-Go-emitted-C slowdown to a single O(n) linear
-  scan in the host-only memory shim's `DisposePtr` (not ARC volume, not
-  `clar_str_255` copies, not container access — a scratch O(1) patch
-  collapsed `every.cla`'s emit from 7-11s to Go-built parity, ~0.26s);
-  spec: `docs/superpowers/specs/2026-08-03-compiler-performance-design.md`.
+  **Compiler-performance phase (originally slotted after Toolbox
+  integration, before 5f; ran BEFORE Toolbox integration instead, at
+  Andrew's direction, 2026-08-04): DONE.** the test-suite-review phase's
+  Task 7 attributed the 30x clarusc-emitted-C-vs-Go-emitted-C slowdown to
+  a single O(n) linear scan in the host-only memory shim's `DisposePtr`
+  (not ARC volume, not `clar_str_255` copies, not container access). The
+  fix (2026-08-04): a ptr-keyed open-addressing hash index over
+  `rt_mem_blocks` in `internal/build/rt/rt_mem_host.inc`, giving
+  `DisposePtr` O(1) block-record recovery; the ledger itself
+  (`rt_mem_blocks`) is untouched, entries are never removed from the
+  index. Measured: `every.cla` emit median 11.65s pre-fix (Task 1) →
+  0.269s post-fix (Task 2's tripwire re-measurement); `clarusc/main.cla`
+  self-emission 631.43s → ~2.07s (Task 2, ~305x).
+  Byte-identical output proven both ways: a direct `cmp` of pre-/post-fix
+  emitted C, and the Go-free `internal/selfhost` lanes (`TestBehavior*`
+  including the `.leaks` paranoid-allocator pin, `TestCrossGen*`,
+  `TestSnapshotBuilds`, `TestSnapshotFixedPoint`) all green post-fix.
+  `internal/perfgate/baseline.txt` was re-baselined per this ROADMAP's
+  own re-baseline note below (7.6s → 0.3s, the tripwire's 2x gate
+  falling from 15.2s to 0.6s); spec:
+  `docs/superpowers/specs/2026-08-03-compiler-performance-design.md`
+  (see its "Outcome (2026-08-04)" section), plan:
+  `docs/superpowers/plans/2026-08-04-compiler-performance.md`.
 
   **The native Standard File (_Pack3) port is DEFERRED until after the
   Toolbox phase** (Andrew, 2026-08-03; spec already committed at
@@ -1116,8 +1132,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   perfgate`, 2x-regression gate) — **re-baseline note:** once the
   DisposePtr fix lands, `internal/perfgate/baseline.txt` should drop by
   roughly the same order of magnitude, or the tripwire is silently
-  toothless from then on. The coverage-honesty audit (Task 13, table
-  above) seeded/closed what was cheap and recorded the rest.
+  toothless from then on (done, compiler-perf phase, 2026-08-04). The
+  coverage-honesty audit (Task 13, table above) seeded/closed what was
+  cheap and recorded the rest.
 
   **Two pre-existing compiler bugs fixed mid-phase, both Andrew-
   authorized departures from the plan's own no-clarusc-changes
