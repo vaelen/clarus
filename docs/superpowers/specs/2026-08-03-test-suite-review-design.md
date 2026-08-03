@@ -52,12 +52,17 @@ a real Mac. `toolbox` tests everything needing the real Toolbox/hardware
    the plan's call; they are ordinary Clarus functions returning
    pass/fail + a detail message).
 2. **A runner library** — includes the suite's test files, defines
-   `enum TestCase` (the registry of every case), and exposes a run
-   entry point taking a `list of` enum values (one, several, or all)
-   and executing exactly those, accumulating results. The enum -> call
-   mapping is ONE hand-maintained dispatch function; a runner self-check
-   asserts the enum member count equals the dispatch arm count, so a
-   forgotten registration is a test FAILURE, not silence.
+   `enum TestCase` (the registry of every case) whose FIRST member is
+   `All`, and exposes a run entry point taking a `list of` enum values
+   and executing the selection, accumulating results. Input handling
+   (decided: Andrew, 2026-08-03): the runner DEDUPES the input list
+   before running anything, and if the deduped list contains `All`,
+   `All` becomes its only entry. Execution branches are of the
+   `test == All or test == ThisTestCase` shape, so a single `All` entry
+   runs every case. The enum -> execution mapping is ONE hand-maintained
+   run function; a runner self-check asserts every non-`All` member has
+   exactly one execution branch (member count minus one equals branch
+   count), so a forgotten registration is a test FAILURE, not silence.
 3. **A scriptable GUI front-end** — a Clarus app (dogfooding the UI
    runtime): "Run All", a test picker (select one/some, run), live
    per-test status, failure summary. Scriptable via the existing
