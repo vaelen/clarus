@@ -1514,7 +1514,7 @@ A `bool` or `char` parameter or result under the plain `trap` clause still occup
 
 Appending `reg` selects the register calling convention some traps use instead, in either of two forms. The POSITIONAL form (below) assigns registers by declaration order; a NAMED form (further below) binds each register to a parameter explicitly.
 
-At most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
+At most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char`/`word` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
 
 ```rust
 external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg

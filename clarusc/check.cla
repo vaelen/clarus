@@ -2464,6 +2464,17 @@ func checkCallbackFunc(d: int) {
 // checkExternFunc's own clause resolution complete for each) before this
 // runs -- checkExternFunc's own tail is the only caller, once b's (the
 // later decl's) own resolution has just finished.
+//
+// Param comparison uses typesEqual, not raw arena-index ==: strT(n)
+// (types.cla) allocates a fresh arena entry per resolveType call, so two
+// byte-identical `str` params would spuriously conflict under == despite
+// being the same type (typesEqual's own doc comment names this exact
+// case). Return-type comparison stays raw == on purpose -- checkExternFunc
+// restricts extern returns to int/ptr/bool/char (never str/text, the only
+// kind with per-call fresh arena entries), and those four are
+// module-level singletons (IntT/PtrT/BoolT/CharT), so == is exact there;
+// typesEqual would also need to special-case funcSigRet's -1 (void)
+// sentinel, which is not a valid type-arena index.
 func externClauseMatches(a: int, b: int): bool {
     var sigA: int
     var sigB: int
@@ -2500,7 +2511,7 @@ func externClauseMatches(a: int, b: int): bool {
     pb = funcDeclParamsHead(b)
     i = 0
     while i < n {
-        if funcSigParam(sigA, i) != funcSigParam(sigB, i) {
+        if not typesEqual(funcSigParam(sigA, i), funcSigParam(sigB, i)) {
             return false
         }
         if paramRegBind(pa) != paramRegBind(pb) {

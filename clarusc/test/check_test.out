@@ -256,3 +256,10 @@ check_test.cla:2:5: expression is not a statement
 check_test.cla:4:1: redeclaration of doubleIt
 === callback-vs-extern-name-collision ===
 check_test.cla:2:1: redeclaration of doubleIt
+=== extern-dedup-str-param-clean ===
+clean
+=== extern-dedup-word-param-clean ===
+clean
+=== extern-dedup-str-param-width-conflict ===
+check_test.cla:1:1: conflicting extern declaration for 'UiStrAddr2' (also declared at 2:1)
+check_test.cla:2:1: conflicting extern declaration for 'UiStrAddr2' (also declared at 1:1)

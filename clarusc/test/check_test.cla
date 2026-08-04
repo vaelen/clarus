@@ -1601,4 +1601,31 @@ on App.startEmpty {
     ln(src, "    return a * 2")
     ln(src, "}")
     runCase("callback-vs-extern-name-collision", src)
+
+    // Case 127 (final-review fix wave): two byte-identical `external func`
+    // decls with a `string` param -- strT(n) (types.cla) allocates a FRESH
+    // arena entry per resolveType call, so the raw arena-index comparison
+    // externClauseMatches used to use spuriously treated these as
+    // conflicting despite being the same type. Must merge clean.
+    src = ""
+    ln(src, "external func UiStrAddr(s: string): ptr")
+    ln(src, "external func UiStrAddr(s: string): ptr")
+    runCase("extern-dedup-str-param-clean", src)
+
+    // Case 128: same as above but with a `word` param -- the other
+    // extern-param kind whose resolveType call could plausibly allocate a
+    // non-singleton arena entry per call. Must also merge clean.
+    src = ""
+    ln(src, "external func UiWordAddr(w: word): ptr")
+    ln(src, "external func UiWordAddr(w: word): ptr")
+    runCase("extern-dedup-word-param-clean", src)
+
+    // Case 129: two `string`-param externs differing in DECLARED WIDTH
+    // (string(63) vs. bare `string`, i.e. string(255)) -- typesEqual
+    // compares TyStr by typeN (width) too, so this must still CONFLICT,
+    // proving the Case 127 fix didn't overcorrect into ignoring width.
+    src = ""
+    ln(src, "external func UiStrAddr2(s: string(63)): ptr")
+    ln(src, "external func UiStrAddr2(s: string): ptr")
+    runCase("extern-dedup-str-param-width-conflict", src)
 }

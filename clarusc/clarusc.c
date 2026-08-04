@@ -14688,7 +14688,7 @@ static int32_t clar_fn_externClauseMatches(int32_t cv_a, int32_t cv_b) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < cv_n))) break;
-        if (clar_fn_funcSigParam(cv_sigA, cv_i) != clar_fn_funcSigParam(cv_sigB, cv_i)) {
+        if (!(clar_fn_typesEqual(clar_fn_funcSigParam(cv_sigA, cv_i), clar_fn_funcSigParam(cv_sigB, cv_i)))) {
             return 0;
         }
         if (clar_fn_paramRegBind(cv_pa) != clar_fn_paramRegBind(cv_pb)) {
