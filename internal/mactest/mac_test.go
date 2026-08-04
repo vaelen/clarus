@@ -159,8 +159,9 @@ func firstDiff(want, got string) string {
 // test_suite.cla was, just via a Mac-safe front end (cli_mac.cla's own
 // doc comment has the full story on why core/cli.cla itself can't boot
 // natively). Host expectation comes from RunCoreCLIHost/BuildCoreCLIHost
-// (suite_host_test.go, the Go-compiler-free snapshot-clarusc oracle,
-// built with cli.cla/coreCLIHostFiles instead), run with `all` -- the
+// (suite_host_test.go, the current-source clarusc host oracle via
+// claruscboot's shared Go-free bootstrap, built with
+// cli.cla/coreCLIHostFiles instead), run with `all` -- the
 // same case list cli_mac.cla's own `App.launch` always runs.
 func TestSuiteOnMac(t *testing.T) {
 	requireMac(t)
