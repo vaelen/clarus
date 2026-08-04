@@ -36,15 +36,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-)
 
-var (
-	snapshotClaruscOnce sync.Once
-	snapshotClaruscExe  string
-	snapshotClaruscErr  error
-	snapshotClaruscSkip string
+	"clarus/internal/claruscboot"
 )
 
 // repoRootBehavior returns the repo root computed from this package's
@@ -60,42 +54,13 @@ func repoRootBehavior(t *testing.T) string {
 	return filepath.Join(wd, "..", "..")
 }
 
-// bootstrapSnapshotClarusc compiles the committed clarusc/clarusc.c
-// snapshot straight to a binary with `cc` alone -- no Go, no
-// build.RuntimeC()-style embedded copies, no prior Clarus binary. Mirrors
-// perfgate's buildClarusc (including its LookPath("cc") skip), memoized
-// with sync.Once since every fixture in the corpus reuses the same exe.
+// bootstrapSnapshotClarusc returns the snapshot-lineage clarusc (stage 1
+// of the shared bootstrap). Behavior goldens and the crossgen/fixed-point
+// comparisons are ABOUT the snapshot lineage, so this is deliberately NOT
+// CurrentExe -- the one place in the tree that wants SnapshotExe.
 func bootstrapSnapshotClarusc(t *testing.T) string {
 	t.Helper()
-	snapshotClaruscOnce.Do(func() {
-		if _, err := exec.LookPath("cc"); err != nil {
-			snapshotClaruscSkip = "cc not found on PATH, skipping Go-free behavior goldens"
-			return
-		}
-		root := repoRootBehavior(t)
-		dir, err := os.MkdirTemp("", "clarusc-snapshot-*")
-		if err != nil {
-			snapshotClaruscErr = err
-			return
-		}
-		exe := filepath.Join(dir, "clarusc")
-		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-			"-o", exe,
-			filepath.Join(root, "clarusc", "clarusc.c"),
-			filepath.Join(root, "internal", "build", "rt", "rt.c"))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			snapshotClaruscErr = fmt.Errorf("bootstrap clarusc from snapshot: %v\n%s", err, out)
-			return
-		}
-		snapshotClaruscExe = exe
-	})
-	if snapshotClaruscSkip != "" {
-		t.Skip(snapshotClaruscSkip)
-	}
-	if snapshotClaruscErr != nil {
-		t.Fatal(snapshotClaruscErr)
-	}
-	return snapshotClaruscExe
+	return claruscboot.SnapshotExe(t)
 }
 
 // runBehaviorFixture emits claPath's C with the snapshot-bootstrapped

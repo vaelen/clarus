@@ -65,7 +65,7 @@ Then commit the updated clarusc/clarusc.c.
 %s`, len(committed), len(gen1), diffFirstDivergence(committed, gen1))
 	}
 
-	curExe := bootstrapCurrentClarusc(t, snapExe, root)
+	curExe := bootstrapCurrentClarusc(t)
 	gen2 := emitC(t, curExe, mainCla)
 
 	if !bytes.Equal(gen1, gen2) {

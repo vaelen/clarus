@@ -32,56 +32,19 @@
 package selfhost
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
+
+	"clarus/internal/claruscboot"
 )
 
-var (
-	currentClaruscOnce sync.Once
-	currentClaruscExe  string
-	currentClaruscErr  error
-)
-
-// bootstrapCurrentClarusc builds "current-source clarusc": the
-// snapshot-bootstrapped compiler (snapshotExe, from bootstrapSnapshotClarusc)
-// emits C for clarusc/main.cla -- the compiler's own current source --
-// which cc then compiles into generation N+1. Memoized since every fixture
-// in the corpus reuses the same exe.
-func bootstrapCurrentClarusc(t *testing.T, snapshotExe, root string) string {
+// bootstrapCurrentClarusc returns current-source clarusc (generation N+1,
+// built BY the snapshot generation) via the shared bootstrap.
+func bootstrapCurrentClarusc(t *testing.T) string {
 	t.Helper()
-	currentClaruscOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "clarusc-current-*")
-		if err != nil {
-			currentClaruscErr = err
-			return
-		}
-		curC := filepath.Join(dir, "cur.c")
-		rtDir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
-		emit := exec.Command(snapshotExe, "emit", "--rtdir", rtDir, "-o", curC,
-			filepath.Join(root, "clarusc", "main.cla"))
-		if out, err := emit.CombinedOutput(); err != nil {
-			currentClaruscErr = fmt.Errorf("snapshot clarusc emit current source: %v\n%s", err, out)
-			return
-		}
-
-		exe := filepath.Join(dir, "clarusc")
-		cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-			"-o", exe, curC, filepath.Join(root, "internal", "build", "rt", "rt.c"))
-		if out, err := cc.CombinedOutput(); err != nil {
-			currentClaruscErr = fmt.Errorf("cc compile current-gen clarusc: %v\n%s", err, out)
-			return
-		}
-		currentClaruscExe = exe
-	})
-	if currentClaruscErr != nil {
-		t.Fatal(currentClaruscErr)
-	}
-	return currentClaruscExe
+	return claruscboot.CurrentExe(t)
 }
 
 // TestCrossGenDifferential is the second Go-free oracle: for every fixture
@@ -92,7 +55,7 @@ func bootstrapCurrentClarusc(t *testing.T, snapshotExe, root string) string {
 func TestCrossGenDifferential(t *testing.T) {
 	snapExe := bootstrapSnapshotClarusc(t)
 	root := repoRootBehavior(t)
-	curExe := bootstrapCurrentClarusc(t, snapExe, root)
+	curExe := bootstrapCurrentClarusc(t)
 
 	runFiles, runerrFiles := runnableFixtures(t)
 
