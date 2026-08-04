@@ -157,6 +157,15 @@
 //                DeclNode slot is left); its optional `ret REG` lives in
 //                the decl-keyed externRetRegByDecl map (astExternRetReg)
 //                for the same reason.
+//   DkCallbackFunc (Task 7, toolbox-integration Feature C: `callback
+//                func`) nameIdx=name; a=params list head (DkParam chain,
+//                -1 if none); b=return type (-1 if a procedure); c=body
+//                StBlock -- IDENTICAL a/b/c layout to DkFunc (unlike
+//                DkExternFunc, a callback has a real body), so
+//                funcDeclName/ParamsHead/RetType/Body all work on it
+//                unchanged; check.cla's checkCallbackFunc (not
+//                checkFuncSig alone) additionally restricts the
+//                param/return palette to bool/char/word/int/ptr.
 //
 // ---- TypeExprKind (typeExprs arena) ----
 //   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
@@ -226,6 +235,17 @@ enum DeclKind {
     DkMenuEntry
     DkApp
     DkExternFunc
+
+    // DkCallbackFunc (Task 7, toolbox-integration Feature C: `callback
+    // func`) -- SAME a/b/c slot layout as DkFunc (params list head /
+    // return type / body StBlock): unlike DkExternFunc, a callback DOES
+    // have a real body (an ordinary Clarus function, callable directly),
+    // so funcDeclName/ParamsHead/RetType/Body all work on it unchanged,
+    // same reuse DkExternFunc's own doc comment describes for itself.
+    // Built only by parseCallbackFuncDecl, itself reachable only from
+    // parseTopDecl -- top-level only, structurally (no statement-level
+    // parser path ever recognizes `callback`).
+    DkCallbackFunc
 }
 
 enum TypeExprKind {
@@ -1511,6 +1531,25 @@ func funcDeclRetType(i: int): int {
 
 func funcDeclBody(i: int): int {
     return decls[i].c
+}
+
+// newCallbackFuncDecl builds a DkCallbackFunc node (Task 7, toolbox-
+// integration Feature C: `callback func`) -- identical a/b/c layout to
+// newFuncDecl above (params head / return type / body), so the
+// funcDeclName/ParamsHead/RetType/Body accessors work on it unchanged.
+func newCallbackFuncDecl(nameIdx: int, paramsHead: int, retType: int, body: int, line: int, col: int): int {
+    var n: DeclNode
+
+    n.kind = DkCallbackFunc
+    n.nameIdx = nameIdx
+    n.a = paramsHead
+    n.b = retType
+    n.c = body
+    n.next = -1
+    n.line = line
+    n.col = col
+    decls.add(n)
+    return decls.count - 1
 }
 
 func newAppDecl(nameIdx: int, propsHead: int, pathIdx: int, line: int, col: int): int {

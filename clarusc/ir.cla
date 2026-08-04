@@ -219,6 +219,23 @@ enum IRExprKind {
     // expression, structurally no different from an EVarRef-of-a-ptr-local
     // in that argument slot.
     EXRecAddr
+
+    // ECbAddr (Task 7, toolbox-integration Feature C: `callback func`)
+    // yields the address of a `callback func`'s generated pascal glue
+    // wrapper (cprint.cla's clar_cb_<name>) -- name=the callback's own
+    // Name (interned); ty=irPtrT (the node's own value IS an address,
+    // same convention as EXRecAddr). Built ONLY by lower.cla's
+    // lowCallArgs, at the ONE position checkArgsCall proves legal on a
+    // checker-clean program (an extern call's ptr-typed argument, a bare
+    // callback name) -- see newIRCbAddr's own doc comment for why building
+    // one also registers into irCbGlueNames, cprint's own "which callbacks
+    // need a wrapper at all" list. shake.cla's own ECbAddr arm marks name
+    // reachable exactly like ECallFn does, so the callback's BODY
+    // (clar_fn_<name>, which the glue wrapper calls) is never skipped as
+    // dead while its glue survives -- unlike ECallFn, taking a callback's
+    // address is not itself a CALL, so without this arm the callback's own
+    // body would never be discovered through the ordinary call-graph walk.
+    ECbAddr
 }
 
 // IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191), plus
@@ -969,6 +986,9 @@ func irReset() {
     while irFuncs.count > 0 {
         irFuncs.pop()
     }
+    while irCbGlueNames.count > 0 {
+        irCbGlueNames.pop()
+    }
     while irGlobals.count > 0 {
         irGlobals.pop()
     }
@@ -1494,6 +1514,62 @@ func newIRXRecAddr(name: int, isGlobal: bool, byteOffset: int, ty: int): int {
 }
 
 func irXRecAddrName(i: int): int {
+    return irExprs[i].name
+}
+
+// irCbGlueNames (Task 7, toolbox-integration Feature C) collects the
+// interned name of every `callback func` newIRCbAddr has ever been called
+// for, in first-decay order, deduped by linear scan (tiny -- one entry per
+// DISTINCT decayed callback in the whole program, not per decay call
+// site). cprint.cla's cpEmitCallbackGlue is the sole reader: it emits a
+// clar_cb_<name> wrapper for exactly these names (further gated on
+// shakeReachable, since a decay embedded in dead code should get neither
+// the glue nor the body) -- a callback with NO entry here (no ECbAddr
+// anywhere in the program) gets no wrapper at all, the tree-shake proof
+// this task's brief calls for. A plain list, not a map: iteration order
+// must be deterministic (byte-identical emitted-C goldens), which a `map
+// of bool`'s own iteration order is not guaranteed to be.
+var irCbGlueNames: list of int
+
+// irMarkCbGlueNeeded is newIRCbAddr's own helper (below) -- see
+// irCbGlueNames' own doc comment.
+func irMarkCbGlueNeeded(nameIdx: int) {
+    var i: int
+
+    i = 0
+    while i < irCbGlueNames.count {
+        if irCbGlueNames[i] == nameIdx {
+            return
+        }
+        i = i + 1
+    }
+    irCbGlueNames.add(nameIdx)
+}
+
+func irCbGlueNeededCount(): int {
+    return irCbGlueNames.count
+}
+
+func irCbGlueNeededName(i: int): int {
+    return irCbGlueNames[i]
+}
+
+// newIRCbAddr builds an ECbAddr node (Task 7, toolbox-integration Feature
+// C) -- see IRExprKind's own ECbAddr doc comment for the field layout and
+// why this also calls irMarkCbGlueNeeded.
+func newIRCbAddr(name: int): int {
+    var n: IRExpr
+
+    n.kind = ECbAddr
+    n.name = name
+    n.ty = irPtrT
+    n.next = -1
+    irExprs.add(n)
+    irMarkCbGlueNeeded(name)
+    return irExprs.count - 1
+}
+
+func irCbAddrName(i: int): int {
     return irExprs[i].name
 }
 

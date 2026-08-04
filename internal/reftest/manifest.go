@@ -77,9 +77,13 @@ package reftest
 // Feature B: `extern record`) added three more fences (Point/EventRecord/
 // SFReply declarations; a waitClick usage example; a commented
 // whole-value-restrictions example) right after Overlay Records, ahead of
-// Trap and Inline Clauses, shifting them a final time to 79/80 -- see
-// ClaruscOnly below, whose fences are inserted right after the existing
-// Chapter 13 ones, ahead of Appendix C in document order.
+// Trap and Inline Clauses, shifting them to 79/80; Task 7 (toolbox-
+// integration Feature C: `callback func`) added two more fences (a
+// declaration + decay + direct-call worked example; a commented
+// decay-misuse/direct-call restrictions example) right after `extern
+// record`, ahead of Trap and Inline Clauses, shifting them a final time to
+// 81/82 -- see ClaruscOnly below, whose fences are inserted right after
+// the existing Chapter 13 ones, ahead of Appendix C in document order.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -87,8 +91,8 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	79, // Appendix C bookmark manager
-	80, // Appendix C text editor
+	81, // Appendix C bookmark manager
+	82, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
@@ -111,16 +115,18 @@ var CheckClean = []int{
 // 66 (line 1398): Chapter 13 extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
 // 67 (line 1447): Chapter 13 extern record — waitClick usage example (Task 4, toolbox-integration Feature B)
 // 68 (line 1457): Chapter 13 extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
-// 69 (line 1477): Chapter 13 trap/inline clauses — trap pascal (TickCount)
-// 70 (line 1487): Chapter 13 trap/inline clauses — trap reg (BlockMove)
-// 71 (line 1493): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 72 (line 1499): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
-// 73 (line 1508): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
-// 74 (line 1514): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
-// 75 (line 1520): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
-// 76 (line 1526): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 77 (line 1532): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
-// 78 (line 1550): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+// 69 (line 1467): Chapter 13 callback func — declaration + decay + direct-call worked example (Task 7, toolbox-integration Feature C)
+// 70 (line 1484): Chapter 13 callback func restrictions (decay-misuse/direct-call, commented) (Task 7, toolbox-integration Feature C)
+// 71 (line 1503): Chapter 13 trap/inline clauses — trap pascal (TickCount)
+// 72 (line 1513): Chapter 13 trap/inline clauses — trap reg (BlockMove)
+// 73 (line 1519): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
+// 74 (line 1525): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
+// 75 (line 1534): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
+// 76 (line 1540): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
+// 77 (line 1546): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
+// 78 (line 1552): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
+// 79 (line 1558): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
+// 80 (line 1576): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
 }

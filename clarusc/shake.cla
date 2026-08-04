@@ -376,6 +376,19 @@ func shakeWalkExpr(x: int) {
     } else if k == EIntr {
         shakeWalkIntr(x)
         shakeWalkExprList(irIntrArgsHead(x))
+    } else if k == ECbAddr {
+        // Task 7 (toolbox-integration Feature C): taking a callback's
+        // address is not itself a CALL (unlike ECallFn), so without this
+        // arm the callback's own body would never be discovered through
+        // the ordinary call-graph walk -- the edge that replaces
+        // yesterday's hand-rooting (shakeAddRoot) for the LDEF/scrollbar
+        // glue this feature is meant to subsume. A callback whose address
+        // is never taken and which is never called directly (no ECallFn
+        // to it either) simply never reaches this arm, so it -- and its
+        // never-emitted glue (cprint.cla's cpEmitCallbackGlue, gated on
+        // irCbGlueNames, populated independently by newIRCbAddr) -- shakes
+        // away entirely.
+        shakeMarkAndEnqueue(irCbAddrName(x))
     }
 }
 

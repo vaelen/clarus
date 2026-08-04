@@ -90,6 +90,19 @@ enum TypeKind {
     // guards). Appended after TyOverlay; ordering among the other kinds is
     // not load-bearing.
     TyXRec
+
+    // TyCallback (Task 7, toolbox-integration Feature C: `callback func`)
+    // is a checker-only pseudo-type, like TyWidget/TyMenuItem above: the
+    // TRANSIENT result of resolving a bare `callback func` NAME as a value
+    // (checkIdent's own isCallback branch), never a declared variable/
+    // param/field type and never constructed with any payload (a single
+    // CallbackT singleton, below, covers every callback -- lower.cla
+    // recovers WHICH callback from the identifier itself, not from this
+    // type). checkArgsCall is the ONE place a TyCallback value is legal
+    // (an extern call's ptr-typed argument -- the decay position); every
+    // other position checkIdent reaches for a callback name is diagnosed
+    // right there, before this type ever reaches compatible()/assignable.
+    TyCallback
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -144,6 +157,13 @@ var AddressT: int
 var PtrT: int
 var ErrTIndex: int
 var SaveChoiceT: int
+// CallbackT (Task 7, toolbox-integration Feature C) is the single
+// TyCallback singleton -- see its own TypeKind doc comment; unlike
+// TyWidget/TyMenuItem (built fresh per Select expression, since they carry
+// a widget kind/nothing meaningful respectively), every callback name
+// resolves to this SAME arena entry -- lower.cla never reads anything off
+// the type itself, only off the AST identifier that produced it.
+var CallbackT: int
 
 func typeKind(i: int): TypeKind {
     return typeArena[i].kind
@@ -350,6 +370,7 @@ func typesInit() {
     AddressT = pushSimple(TyAddress)
     PtrT = pushSimple(TyPtr)
     ErrTIndex = pushSimple(TyErrorType)
+    CallbackT = pushSimple(TyCallback)
     SaveChoiceT = seedSaveChoice()
 }
 
@@ -545,6 +566,15 @@ record Symbol {
     // leaves it unset, which is already correct (false) without touching
     // any of them.
     isExtern: bool
+    // isCallback (Task 7, toolbox-integration Feature C) marks a
+    // DkCallbackFunc symbol -- checkIdent's own isFunc branch reads this
+    // to tell a `callback func` name from an ordinary function name, so it
+    // can defer to the decay/misuse rule (checkArgsCall, via
+    // checkInExternPtrArgCtx) instead of the blanket "cannot use function
+    // X as a value" ban every other func gets. Zero-value default false,
+    // same "every other symbol construction site leaves it unset"
+    // reasoning as isExtern's own comment above.
+    isCallback: bool
 }
 
 var symbols: list of Symbol

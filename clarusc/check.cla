@@ -64,6 +64,18 @@ var curScope: int
 var curFuncRet: int
 var curWindow: int
 
+// checkInExternPtrArgCtx (Task 7, toolbox-integration Feature C: `callback
+// func`) is true only while checkArgsCall's own per-argument checkExpr
+// call is checking an argument against an EXTERN call's ptr-typed
+// parameter -- the one legal position a bare callback name may appear.
+// checkIdent consults it to tell that ONE context from every other place
+// a bare identifier can be checked (var init, return, a non-extern call
+// arg, an extern call's non-ptr arg, a container element, ...); saved and
+// restored around the one checkExpr call site that sets it true
+// (checkArgsCall), so a nested call's own arguments (if any) never
+// inherit an outer call's context.
+var checkInExternPtrArgCtx: bool
+
 // ---- record field layout ----
 // types.cla's TyRec carries only nameIdx (the named-type identity); the
 // field list itself is this module's own side table, keyed by that name --
@@ -2096,6 +2108,9 @@ func checkFuncSig(d: int) {
     // decay/coercion rules read this back to tell an extern call site from
     // an ordinary one.
     sym.isExtern = declKind(d) == DkExternFunc
+    // Task 7 (toolbox-integration Feature C): checkIdent reads this back
+    // to tell a `callback func` name from an ordinary function name.
+    sym.isCallback = declKind(d) == DkCallbackFunc
     if declKind(d) == DkExternFunc {
         // Task 3 (Ch13 dedup): a second `external func` sharing a name
         // already registered by an EARLIER extern decl THIS checkProgram
@@ -2385,6 +2400,58 @@ func checkExternFunc(d: int) {
     if mergeCandidate != -1 {
         if not externClauseMatches(mergeCandidate, d) {
             emitConflictingExtern(mergeCandidate, d)
+        }
+    }
+}
+
+// checkCallbackFunc checks a DkCallbackFunc decl (Task 7, toolbox-
+// integration Feature C: `callback func`). checkFuncSig works unchanged
+// (same a/b/c slot layout as DkFunc -- including a real body, checked in
+// phase 2 by checkFuncBody like any DkFunc, since checkProgram's own
+// phase-2 dispatch treats the two kinds alike); this function adds the
+// ONE extra rule DkFunc doesn't need: every parameter and the return type
+// is restricted to bool/char/word/int/ptr -- what the compiler's
+// generated pascal glue (cprint.cla's clar_cb_<name> wrapper) can marshal
+// across the Toolbox boundary (Ch13's callback-func section, the same
+// high-byte marshaling paragraph `external func` already documents).
+// `word` folds to plain int in the checked type system exactly like an
+// extern func's `word` does (TxWord's own doc comment, types.cla) -- the
+// checker cannot and need not tell a `word` param from a plain `int` one,
+// so the `k != TyInt` check below already covers word for free. No
+// dedup/merge logic is needed here (unlike checkExternFunc) -- checkFuncSig's
+// own dispatch already routes anything that isn't DkExternFunc through the
+// ordinary scopeDeclare-or-redeclaration-error path, and a callback (which
+// HAS a body) is never eligible for the identical-signature merge Task 3's
+// dedup rule reserves for signature-only externs -- so two `callback func`
+// decls sharing a name, or a callback colliding with an existing extern
+// func's name (or vice versa), always redeclaration-errors for free.
+func checkCallbackFunc(d: int) {
+    var sigIdx: int
+    var p: int
+    var i: int
+    var k: TypeKind
+    var ret: int
+
+    checkFuncSig(d)
+    sigIdx = funcSigByDecl.get(numToStr(d), -1)
+    if sigIdx == -1 {
+        return
+    }
+    p = funcDeclParamsHead(d)
+    i = 0
+    while p != -1 {
+        k = typeKind(funcSigParam(sigIdx, i))
+        if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
+            emitDiag(declLine(p), declCol(p), "callback parameter and return types must be bool, char, word, int, or ptr")
+        }
+        p = declNext(p)
+        i = i + 1
+    }
+    ret = funcSigRet(sigIdx)
+    if ret != -1 {
+        k = typeKind(ret)
+        if k != TyInt and k != TyPtr and k != TyBool and k != TyChar {
+            emitDiag(declLine(d), declCol(d), "callback parameter and return types must be bool, char, word, int, or ptr")
         }
     }
 }
@@ -3951,6 +4018,25 @@ func checkIdent(e: int, expected: int): int {
     symIdx = scopeLookup(curScope, nameIdx)
     if symIdx != -1 {
         if symbols[symIdx].isFunc {
+            if symbols[symIdx].isCallback {
+                // Task 7 (toolbox-integration Feature C): a bare `callback
+                // func` name is legal ONLY as an extern call's ptr-typed
+                // argument (checkArgsCall sets checkInExternPtrArgCtx
+                // around exactly that one checkExpr call) -- return the
+                // TyCallback pseudo-type there with no diagnostic, so
+                // checkArgsCall's own TyCallback branch can confirm the
+                // decay and lower.cla's lowCallArgs can build an ECbAddr.
+                // Every OTHER position (var init, return, a non-extern
+                // call arg, an extern call's non-ptr arg, a container
+                // element, ...) reaches this same branch with the context
+                // flag false, so it gets the SAME pinned diagnostic
+                // regardless of which higher-level construct got here.
+                if checkInExternPtrArgCtx {
+                    return CallbackT
+                }
+                emitDiag(exprLine(e), exprCol(e), "callback function name can only be passed to an external function ptr parameter")
+                return InvalidT
+            }
             emitDiag(exprLine(e), exprCol(e), "cannot use function " + name + " as a value")
             return InvalidT
         }
@@ -4501,6 +4587,7 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
     var pt: int
     var at: int
     var ret: int
+    var savedCbCtx: bool
 
     wantCount = funcSigParamCount(sigIdx)
     haveCount = exprListCount(argsHead)
@@ -4511,7 +4598,17 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
         i = 0
         while a != -1 {
             pt = funcSigParam(sigIdx, i)
+            // Task 7 (toolbox-integration Feature C): the ONE legal
+            // position for a bare `callback func` name is an extern
+            // call's ptr-typed argument -- set checkInExternPtrArgCtx
+            // around exactly this one checkExpr call so checkIdent can
+            // tell it apart from every other position (save/restore, not
+            // a bare reset, in case some future expression shape ever
+            // nests a call inside this argument).
+            savedCbCtx = checkInExternPtrArgCtx
+            checkInExternPtrArgCtx = isExtern and typeKind(pt) == TyPtr
             at = checkExpr(a, pt)
+            checkInExternPtrArgCtx = savedCbCtx
             if at != InvalidT and typeKind(at) == TyXRec {
                 if isExtern and typeKind(pt) == TyPtr {
                     // Ptr decay: the extern-record variable/nested-field's
@@ -4527,6 +4624,13 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
                 } else {
                     emitDiag(exprLine(a), exprCol(a), "cannot use " + typeName(at) + " where " + typeName(pt) + " is expected")
                 }
+            } else if at != InvalidT and typeKind(at) == TyCallback {
+                // Task 7: legal decay already verified by
+                // checkInExternPtrArgCtx inside checkIdent (isExtern and
+                // pt is ptr -- the only context that returns TyCallback
+                // without diagnosing) -- nothing further to check here;
+                // lower.cla's lowCallArgs detects TyCallback via
+                // exprTypeGet and builds an ECbAddr in its place.
             } else if at != InvalidT and not compatible(at, pt) {
                 emitDiag(exprLine(a), exprCol(a), "cannot use " + typeName(at) + " where " + typeName(pt) + " is expected")
             }
@@ -4769,6 +4873,9 @@ func checkTopDeclPhase1(d: int) {
     case DkExternFunc {
         checkExternFunc(d)
     }
+    case DkCallbackFunc {
+        checkCallbackFunc(d)
+    }
     }
 }
 
@@ -4809,7 +4916,7 @@ func checkProgram(declHead: int) {
     d = declHead
     while d != -1 {
         setCheckPath(d)
-        if declKind(d) == DkFunc {
+        if declKind(d) == DkFunc or declKind(d) == DkCallbackFunc {
             checkFuncBody(d)
         } else if declKind(d) == DkExtend {
             checkExtendDecl(d)

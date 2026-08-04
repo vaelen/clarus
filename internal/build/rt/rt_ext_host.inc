@@ -293,4 +293,30 @@ void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
  * "thin C ABI wrapper" convention as every other rt_ext_* in this file. */
 void *rt_ext_XRecAddr(void *p) { return p; }
 
+/* rt_ext_CbInvoke (Task 7, toolbox-integration Feature C: `callback
+ * func`): invokes a callback's decayed glue address (a plain C function
+ * pointer on this lane -- see cprint.cla's ECbAddr rendering, `((void*)
+ * &clar_cb_<name>)`) using the exact host-lane wire shape cprint's own
+ * cpEmitExternProtos generates for `external func CbInvoke(fn: ptr, a:
+ * int, b: ptr): int` (int32_t, void pointer, int32_t -> int32_t, cpCType's
+ * ordinary mapping) -- the seam testdata/lowlevel/callback_host.cla calls
+ * through to prove decay end-to-end on host: a real function-pointer call
+ * through a value the compiler produced, not a hand exercised code path.
+ *
+ * Deviates from the task brief's literal draft signature (`static long
+ * rt_ext_CbInvoke(void *fn, long a, void *b)`): every OTHER rt_ext_* in
+ * this file has external linkage (no `static`), matching
+ * cpEmitExternProtos's own `extern` forward declaration -- a `static`
+ * definition here would conflict with that extern (linkage mismatch, a
+ * hard C error) the moment a program actually declares `external func
+ * CbInvoke`. `long` is also wrong on an LP64 host (8 bytes here, vs. the
+ * 4-byte int32_t cpCType actually emits for Clarus `int`) -- int32_t/
+ * void* matches the real generated prototype exactly. See the task-7
+ * report for the full reasoning (same "brief draft adjusted to the file's
+ * established idiom" precedent as Task 2's own `ptrOf` deviation).
+ */
+int32_t rt_ext_CbInvoke(void *fn, int32_t a, void *b) {
+    return ((int32_t (*)(int32_t, void *))fn)(a, b);
+}
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

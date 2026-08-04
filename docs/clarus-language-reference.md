@@ -1460,6 +1460,38 @@ Like `overlay record`, an `extern record` rejects the same handful of whole-valu
 // var xs: list of EventRecord       // build-time error: extern records cannot be container elements
 ```
 
+### `callback func`
+
+A `callback func` declares an ordinary Clarus function the Toolbox itself calls back through, via compiler-generated pascal-convention glue — a List Manager LDEF, a control's action procedure, a dialog filter, or any other Inside Macintosh entry point that expects a raw function pointer. `callback` is contextual, recognized only immediately before `func`; elsewhere it is an ordinary identifier. A `callback func` is a top-level declaration only — one may not be nested inside another function.
+
+```rust
+external func UiTrackControl(ctl: ptr, startPt: int, action: ptr): word
+
+callback func myAction(ctl: ptr, part: word) {
+    var offset: int = part
+}
+
+func track(ctl: ptr, startPt: int) {
+    UiTrackControl(ctl, startPt, myAction)
+    myAction(ctl, 1)
+}
+```
+
+A callback's parameter and return types are restricted to `bool`, `char`, `word`, `int`, and `ptr` — the same by-value scalars a pascal-convention `external func` already marshals (no `str`/`text`, records, or containers; no defaults). The compiler generates the glue that reads each argument at its fixed pascal-convention stack offset and writes the result back the same way, following the marshaling rule the trap clause above already documents: a `word` sign-extends, and `bool`/`char` occupy a full word but live in its high byte. A callback's own BODY is ordinary Clarus code with no awareness of that boundary at all — the glue is entirely compiler-generated, never hand-written.
+
+The bare name of a callback decays to its glue's address only where an `external func` parameter is declared `ptr` — `myAction` passed to `UiTrackControl`'s `action` parameter, above. A callback name used anywhere else — a variable initializer, a non-`ptr` or non-extern argument, a return value, a container element — is a build-time error. A callback may also be called directly, like any ordinary function (`myAction(ctl, 1)`, above); a direct call bypasses the glue entirely and runs the body straight, since underneath a callback's body is nothing but an ordinary Clarus function.
+
+```rust
+// var f: ptr = myAction                  // build-time error: callback function name can only be passed to an external function ptr parameter
+// track(myAction, 0)                     // build-time error: same rule -- track's own params are ptr/int, not an external func
+// UiTrackControl(ctl, startPt, myAction) // ok -- action is an external func's ptr parameter: decays to the glue's address
+// myAction(ctl, 1)                       // ok -- ordinary direct call, bypasses the glue
+```
+
+A callback whose address is never taken (no decay anywhere in the program) and which is never called directly is unreachable, and the compiler drops it entirely — glue and body both — the same tree-shaking every other unused function already gets.
+
+Interrupt-time completion routines (VBL tasks, asynchronous completion procedures, Time Manager tasks) are out of scope: the A5-world and allocation restrictions those contexts impose are not something this language can make safe yet. A `callback func` should only be handed to a Toolbox routine that invokes it at ordinary application-level call time (an LDEF, an action procedure, a dialog filter, and the like), never one that fires from an interrupt.
+
 ### Trap and Inline Clauses
 
 An `external func` declaration may end with a clause tying it to a specific Toolbox entry point, instead of leaving name resolution to the toolchain:

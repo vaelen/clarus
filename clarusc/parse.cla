@@ -1687,6 +1687,55 @@ func parseExternFuncDecl(): int {
     return d
 }
 
+// parseCallbackFuncDecl parses `"callback" "func" IDENT "(" [ params ] ")"
+// [ ":" type ] block` (Task 7, toolbox-integration Feature C: `callback
+// func`) -- same shape as parseFuncDecl (a callback DOES have a body,
+// unlike `external func`), except params/return go through
+// parseExternParam/parseExternType exactly like parseExternFuncDecl does,
+// so `word` is recognized in a callback signature too (Ch13's palette:
+// bool/char/word/int/ptr). parseExternType itself accepts ANY type name
+// (it only special-cases `word`, falling through to parseType()
+// otherwise) -- check.cla's checkCallbackFunc is what actually restricts
+// the palette, the same "parser accepts, checker restricts" split
+// parseExternFuncDecl/checkExternFunc already use for `str`/`text`.
+func parseCallbackFuncDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var paramsHead: int
+    var paramsTail: int
+    var pIdx: int
+    var retType: int
+    var body: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'callback'
+    expect(TkFunc)
+    name = expect(TkIdent)
+    expect(TkLParen)
+    paramsHead = -1
+    paramsTail = -1
+    if curKind() != TkRParen {
+        pIdx = parseExternParam()
+        paramsHead = pIdx
+        paramsTail = declListAppend(paramsTail, pIdx)
+        while curKind() == TkComma and not parseAborted {
+            advance()
+            pIdx = parseExternParam()
+            paramsTail = declListAppend(paramsTail, pIdx)
+        }
+    }
+    expect(TkRParen)
+    retType = -1
+    if curKind() == TkColon {
+        advance()
+        retType = parseExternType()
+    }
+    body = parseBodyBlock()
+    return newCallbackFuncDecl(name.nameIdx, paramsHead, retType, body, line, col)
+}
+
 // parseIncludeDecl parses `"include" STRING` (contextual: "include" is an
 // IDENT recognized by text at top-level statement start). Must be the
 // leading top-level declaration in the file; parseTopDecl enforces that.
@@ -1726,6 +1775,18 @@ func parseTopDecl(): int {
         // contextual-before-"record" pattern exactly.
         advance()
         return parseRecordDeclXRec()
+    }
+    if curIsIdentText("callback") and peekKind() == TkFunc {
+        // Task 7 (toolbox-integration Feature C): `callback func` -- a
+        // THIRD contextual-before-"func" keyword alongside "external"
+        // above, same discipline: an ordinary identifier everywhere else
+        // (curIsIdentText + peekKind, no new token), top-level only since
+        // this is the only call site that ever recognizes it -- a
+        // statement-level `callback func` inside a function body falls
+        // through to the ordinary expression-statement parser instead,
+        // which has no idea what to do with a bare `func` token next and
+        // reports its own natural parse error.
+        return parseCallbackFuncDecl()
     }
     if curKind() == TkVar { return parseVarDecl() }
     if curKind() == TkFunc { return parseFuncDecl() }

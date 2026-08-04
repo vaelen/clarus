@@ -236,3 +236,23 @@ check_test.cla:6:5: extern records cannot be assigned
 check_test.cla:6:5: extern records cannot be assigned
 === extern-xrec-pad-len-too-small ===
 check_test.cla:2:5: pad length must be at least 1
+=== callback-decay-and-direct-call-clean ===
+clean
+=== callback-param-type-not-in-palette ===
+check_test.cla:1:17: callback parameter and return types must be bool, char, word, int, or ptr
+=== callback-return-type-not-in-palette ===
+check_test.cla:1:1: callback parameter and return types must be bool, char, word, int, or ptr
+=== callback-name-as-var-init ===
+check_test.cla:5:18: callback function name can only be passed to an external function ptr parameter
+=== callback-name-as-return-value ===
+check_test.cla:5:12: callback function name can only be passed to an external function ptr parameter
+=== callback-name-as-non-extern-call-arg ===
+check_test.cla:7:10: callback function name can only be passed to an external function ptr parameter
+=== callback-name-as-extern-nonptr-arg ===
+check_test.cla:6:29: callback function name can only be passed to an external function ptr parameter
+=== callback-nested-parse-error ===
+check_test.cla:2:5: expression is not a statement
+=== callback-vs-callback-redeclaration ===
+check_test.cla:4:1: redeclaration of doubleIt
+=== callback-vs-extern-name-collision ===
+check_test.cla:2:1: redeclaration of doubleIt

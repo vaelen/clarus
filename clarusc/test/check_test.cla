@@ -1489,4 +1489,116 @@ on App.startEmpty {
     ln(src, "    pad[0]")
     ln(src, "}")
     runCase("extern-xrec-pad-len-too-small", src)
+
+    // ---- Task 7 (toolbox-integration Feature C: `callback func`) ----
+
+    // Case 117: clean -- declare a callback, decay it to an extern func's
+    // ptr parameter, and call it directly (both legal per Ch13).
+    src = ""
+    ln(src, "external func CbInvoke(fn: ptr, a: int): int")
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "func F(): int {")
+    ln(src, "    var r: int = CbInvoke(doubleIt, 21)")
+    ln(src, "    return r + doubleIt(1)")
+    ln(src, "}")
+    runCase("callback-decay-and-direct-call-clean", src)
+
+    // Case 118: a callback PARAMETER type outside the palette (`text` --
+    // not bool/char/word/int/ptr).
+    src = ""
+    ln(src, "callback func F(a: text): int {")
+    ln(src, "    return 1")
+    ln(src, "}")
+    runCase("callback-param-type-not-in-palette", src)
+
+    // Case 119: a callback RETURN type outside the palette (`string`).
+    src = ""
+    ln(src, "callback func F(a: int): string {")
+    ln(src, "    return \"x\"")
+    ln(src, "}")
+    runCase("callback-return-type-not-in-palette", src)
+
+    // Case 120: a callback name used as a variable initializer -- the
+    // decay rule's misuse diagnostic, since the one legal position is an
+    // extern call's ptr argument, not a `var` initializer.
+    src = ""
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var f: ptr = doubleIt")
+    ln(src, "}")
+    runCase("callback-name-as-var-init", src)
+
+    // Case 121: a callback name used as a function's return value.
+    src = ""
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "func G(): ptr {")
+    ln(src, "    return doubleIt")
+    ln(src, "}")
+    runCase("callback-name-as-return-value", src)
+
+    // Case 122: a callback name passed as an argument to an ORDINARY
+    // (non-extern) function -- decay is legal only at an extern call.
+    src = ""
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "func Take(p: ptr) {")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    Take(doubleIt)")
+    ln(src, "}")
+    runCase("callback-name-as-non-extern-call-arg", src)
+
+    // Case 123: a callback name passed to an extern call's NON-ptr
+    // parameter (int here) -- decay is legal only at a ptr parameter.
+    src = ""
+    ln(src, "external func CbInvoke(fn: ptr, a: int): int")
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "func F(): int {")
+    ln(src, "    return CbInvoke(ptr(0), doubleIt)")
+    ln(src, "}")
+    runCase("callback-name-as-extern-nonptr-arg", src)
+
+    // Case 124: a NESTED `callback func` (inside a function body) -- top
+    // level only; the statement parser has no idea what to do with a bare
+    // `func` token after an ordinary identifier-led expression statement.
+    src = ""
+    ln(src, "func F() {")
+    ln(src, "    callback func G(a: int): int {")
+    ln(src, "        return a")
+    ln(src, "    }")
+    ln(src, "}")
+    runCase("callback-nested-parse-error", src)
+
+    // Case 125: callback-vs-callback redeclaration -- callbacks have
+    // bodies and are never eligible for Task 3's identical-signature
+    // extern merge, so a repeated name is an ordinary redeclaration error
+    // even when the two decls are byte-for-byte identical otherwise.
+    src = ""
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 3")
+    ln(src, "}")
+    runCase("callback-vs-callback-redeclaration", src)
+
+    // Case 126: callback-vs-extern-func name collision -- a callback
+    // sharing a name with an existing `external func` redeclaration-errors
+    // too (the dedup rule Task 3 added is signature-only-extern-vs-extern,
+    // never extern-vs-callback).
+    src = ""
+    ln(src, "external func doubleIt(a: int): int")
+    ln(src, "callback func doubleIt(a: int): int {")
+    ln(src, "    return a * 2")
+    ln(src, "}")
+    runCase("callback-vs-extern-name-collision", src)
 }

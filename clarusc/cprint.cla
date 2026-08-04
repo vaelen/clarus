@@ -965,6 +965,9 @@ func fpExpr(e: int): text {
     case EXRecAddr {
         return fpXRecAddr(e)
     }
+    case ECbAddr {
+        return fpCbAddr(e)
+    }
     case ENewRec {
         return toText("clar_new_" + poolGet(irNewRecName(e)) + "()")
     }
@@ -1177,6 +1180,16 @@ func fpFieldRef(e: int): text {
 // shape exactly.
 func fpXRecAddr(e: int): text {
     return "((void*)((uint8_t*)&cv_" + poolGet(irXRecAddrName(e)) + " + " + numToStr(irXRecAddrOffset(e)) + "))"
+}
+
+// fpCbAddr prints an ECbAddr node (Task 7, toolbox-integration Feature C:
+// `callback func` -- see ir.cla's own ECbAddr doc comment for the full
+// contract): the address of the callback's generated pascal glue wrapper,
+// cpEmitCallbackGlue's own `clar_cb_<name>` -- a plain C function, so its
+// address is just `&` of it, cast to `void*` matching every other `ptr`
+// expression this printer emits.
+func fpCbAddr(e: int): text {
+    return "((void*)&clar_cb_" + poolGet(irCbAddrName(e)) + ")"
 }
 
 // fpIndexRef implements the ir.IndexRef printer contract for Arr (a
@@ -4050,6 +4063,220 @@ func cpEmitFuncs() {
     }
 }
 
+// cpCbWireType renders the C type a `callback func`'s generated pascal
+// glue wrapper (cpCbGlueWrapper, below) uses for one bool/char/word/int/
+// ptr parameter or a non-void return -- Task 7's own palette (Ch13's
+// callback-func section), the SAME 5 kinds checkCallbackFunc enforces.
+// Deliberately narrower than cpCTypeName's ordinary mapping for KBool
+// (uint8_t here, int32_t there): a pascal-convention parameter/result
+// occupies exactly its own byte width on the wire (rt_ext_mac.inc's
+// hand-written `Boolean lSelect`/`short lMessage` pascal wrappers are the
+// precedent -- Universal Interfaces' `Boolean` IS `unsigned char`
+// underneath, so `uint8_t` here compiles to the identical parameter type
+// the Mac lane's own compiler-driven pascal-ABI marshaling already
+// handles correctly, with no Mac-only type name needed -- this table is
+// deliberately valid, unchanged, on BOTH lanes). KWord already renders as
+// "short" everywhere (cpCTypeName's own mapping) -- no widening/narrowing
+// needed there at all, wrapper and clar_fn_<name> share the identical
+// type. KChar is likewise already "uint8_t" both places. Only KBool
+// differs from its ordinary cpCTypeName mapping (int32_t) -- see
+// cpCbGlueWrapper's own explicit narrowing cast at the call/return site.
+func cpCbWireType(t: int): string {
+    switch irtKind(t) {
+    case KBool {
+        return "uint8_t"
+    }
+    case KChar {
+        return "uint8_t"
+    }
+    case KWord {
+        return "short"
+    }
+    case KInt {
+        return "int32_t"
+    }
+    case KPtr {
+        return "void *"
+    }
+    }
+    log("cprint: unhandled callback wire kind " + numToStr(int(irtKind(t))))
+    quit 1
+    return ""
+}
+
+// cpCbRetWireType is cpCbWireType plus KVoid, for a procedure-shaped
+// callback's return type only (never legal on a param).
+func cpCbRetWireType(t: int): string {
+    if irtKind(t) == KVoid {
+        return "void"
+    }
+    return cpCbWireType(t)
+}
+
+// cpCbSignature renders one `callback func`'s glue wrapper signature --
+// "RET clar_cb_<name>(P1 a1, ...)", no `static`/`CLAR_PASCAL`/body -- the
+// text cpCbGlueProto and cpCbGlueWrapper (below) both build on, so the
+// forward-declared prototype and the real definition can never drift
+// apart. Every param/return uses cpCbWireType/cpCbRetWireType's narrow
+// wire type -- a KBool param widens to int32_t (`(int32_t)a1`) calling
+// into clar_fn_<name>'s own ordinary int32_t-for-bool parameter
+// (cpCTypeName) -- every other kind's wire type already matches
+// clar_fn_<name>'s own parameter type exactly (KChar/KWord: identical
+// both places; KInt/KPtr: identical both places), so no cast is needed
+// there. argsOut receives the matching clar_fn_<name>(...) call argument
+// list (with that same KBool widening cast); paramsOut/argsOut are
+// caller-owned single-element `list of string` boxes (Clarus has no
+// multi-return), mutated in place.
+func cpCbSignature(fIdx: int, paramsOut: list of string, argsOut: list of string): string {
+    var params: string
+    var args: string
+    var first: bool
+    var p: int
+    var pname: string
+
+    params = ""
+    args = ""
+    first = true
+    p = irFuncParamsHead(fIdx)
+    while p != -1 {
+        if not first {
+            params = params + ", "
+            args = args + ", "
+        }
+        first = false
+        pname = "cv_" + poolGet(irLocalName(p))
+        params = params + cpCbWireType(irLocalType(p)) + " " + pname
+        if irtKind(irLocalType(p)) == KBool {
+            args = args + "(int32_t)" + pname
+        } else {
+            args = args + pname
+        }
+        p = irLocalNext(p)
+    }
+    if first {
+        params = "void"
+    }
+    paramsOut[0] = params
+    argsOut[0] = args
+    return cpCbRetWireType(irFuncRet(fIdx)) + " clar_cb_" + poolGet(irFuncName(fIdx)) + "(" + params + ")"
+}
+
+// cpCbGlueProto renders one callback's glue wrapper FORWARD DECLARATION
+// (Task 7) -- emitted early (cpEmitCallbackGlueProtos, before
+// cpEmitFuncs' own body pass) so any OTHER function's body -- an extern
+// call site decaying this callback -- can reference clar_cb_<name>
+// however early in the program it's called, C's own declare-before-use
+// rule.
+func cpCbGlueProto(fIdx: int): text {
+    var params: list of string
+    var args: list of string
+
+    params.add("")
+    args.add("")
+    return toText("static CLAR_PASCAL " + cpCbSignature(fIdx, params, args) + ";")
+}
+
+// cpCbGlueWrapper renders one `callback func`'s generated pascal glue
+// wrapper DEFINITION (Task 7, toolbox-integration Feature C):
+//   static CLAR_PASCAL RET clar_cb_<name>(P1 a1, ...) { return clar_fn_<name>(a1, ...); }
+// -- CLAR_PASCAL is `pascal` on the Mac/Retro68 m68k lane, empty on host
+// (cpEmitCallbackGlueProtos defines the macro, guarded so a callback-free
+// program's emitted C is untouched). A KBool RETURN narrows
+// (`(uint8_t)clar_fn_<name>(...)`), mirroring cpCbSignature's own KBool
+// param-widening in reverse. A void return omits `return` entirely
+// (fIdx's own procedure shape).
+func cpCbGlueWrapper(fIdx: int): text {
+    var params: list of string
+    var args: list of string
+    var sig: string
+    var retT: int
+    var fnName: string
+    var body: string
+
+    params.add("")
+    args.add("")
+    sig = cpCbSignature(fIdx, params, args)
+    retT = irFuncRet(fIdx)
+    fnName = poolGet(irFuncName(fIdx))
+    body = "static CLAR_PASCAL " + sig + " { "
+    if irtKind(retT) == KVoid {
+        body = body + "clar_fn_" + fnName + "(" + args[0] + "); }"
+    } else if irtKind(retT) == KBool {
+        body = body + "return (uint8_t)clar_fn_" + fnName + "(" + args[0] + "); }"
+    } else {
+        body = body + "return clar_fn_" + fnName + "(" + args[0] + "); }"
+    }
+    return toText(body)
+}
+
+// cpEmitCallbackGlueProtos emits the CLAR_PASCAL macro (`pascal` on the
+// Mac/Retro68 m68k lane -- see cpCbGlueWrapper's own doc comment -- empty
+// on host) plus one FORWARD-DECLARED prototype per callback in
+// irCbGlueNames (ir.cla's own doc comment: every `callback func` an
+// ECbAddr decay was ever built for, first-decay order) that is ALSO
+// shake-reachable -- a decay embedded in otherwise-dead code should get
+// neither the glue nor the body, matching shake.cla's own ECbAddr arm
+// (which is what makes the callback's body reachable at all whenever a
+// live decay exists). A program with no callbacks at all (irCbGlueNames
+// empty) emits nothing here, at all -- a callback-free program's
+// generated C is byte-for-byte unchanged from before this task. Runs
+// BEFORE cpEmitFuncs (emitProgram's own call order): a decay can appear
+// in ANY function's body, including one cpEmitFuncs itself is about to
+// print, so the prototype must already be visible before ANY body
+// prints, not merely before the WRAPPER's own definition (see the task-7
+// report for the `clar_cb_double_it` used-before-declared bug this fixes
+// -- placing the whole glue block after cpEmitFuncs, prototype and body
+// together, compiled clean on a callback-only program but failed the
+// moment a decay call site's own enclosing function printed first).
+func cpEmitCallbackGlueProtos() {
+    var i: int
+    var nameIdx: int
+    var fIdx: int
+
+    if irCbGlueNeededCount() == 0 {
+        return
+    }
+    cpRestBuf.add(toText(""))
+    cpRestBuf.add(toText("#if defined(__m68k__)"))
+    cpRestBuf.add(toText("#define CLAR_PASCAL pascal"))
+    cpRestBuf.add(toText("#else"))
+    cpRestBuf.add(toText("#define CLAR_PASCAL"))
+    cpRestBuf.add(toText("#endif"))
+    i = 0
+    while i < irCbGlueNeededCount() {
+        nameIdx = irCbGlueNeededName(i)
+        fIdx = findIRFuncIdxByName(nameIdx)
+        if fIdx != -1 and shakeReachable(fIdx) {
+            cpRestBuf.add(cpCbGlueProto(fIdx))
+        }
+        i = i + 1
+    }
+    cpRestBuf.add(toText(""))
+}
+
+// cpEmitCallbackGlueBodies emits the actual glue wrapper DEFINITIONS,
+// same needed-and-reachable set cpEmitCallbackGlueProtos already forward-
+// declared (recomputed identically, both walk irCbGlueNames+shakeReachable
+// the same way -- no separate bookkeeping to keep in sync). Runs AFTER
+// cpEmitFuncs, so every callback's own clar_fn_<name> prototype (printed
+// by cpEmitFuncs' own up-front proto loop) is already visible when a
+// wrapper body calls it.
+func cpEmitCallbackGlueBodies() {
+    var i: int
+    var nameIdx: int
+    var fIdx: int
+
+    i = 0
+    while i < irCbGlueNeededCount() {
+        nameIdx = irCbGlueNeededName(i)
+        fIdx = findIRFuncIdxByName(nameIdx)
+        if fIdx != -1 and shakeReachable(fIdx) {
+            cpRestBuf.add(cpCbGlueWrapper(fIdx))
+        }
+        i = i + 1
+    }
+}
+
 // cpEmitDefaultInitFnProtos (Plan 5b Task 9 fix) forward-declares, into
 // cpTypeBuf (the FIRST section of the final output -- emitProgram's
 // cpAppendTextList call order), the small closed set of ported clar_fn_
@@ -5319,7 +5546,9 @@ func emitProgram(): text {
     cpEmitAppInfo()
     cpEmitGlobalsInit()
     cpEmitExternProtos()
+    cpEmitCallbackGlueProtos()
     cpEmitFuncs()
+    cpEmitCallbackGlueBodies()
     cpEmitMain()
     // ARC Task 7: cpEmitRcWalks must run AFTER cpEmitFuncs()/
     // cpEmitGlobalsInit() -- see its own doc comment. It still populates

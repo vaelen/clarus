@@ -719,6 +719,16 @@ func lowCallArgs(argsHead: int, sig: int): int {
             } else {
                 le = lowXRecAddr(a)
             }
+        } else if typeKind(exprTypeGet(a)) == TyCallback {
+            // Task 7 (toolbox-integration Feature C): checkArgsCall has
+            // already proven, on a checker-clean program, that a
+            // TyCallback-typed argument reaches lowCallArgs ONLY at an
+            // extern call's ptr param (checkIdent's own
+            // checkInExternPtrArgCtx-gated branch is the sole producer of
+            // TyCallback) -- `a` is therefore always the bare ExIdent
+            // naming the callback, so its own identName is the callback's
+            // Name.
+            le = newIRCbAddr(identName(a))
         } else {
             le = lowExpr(a)
             if i < funcSigParamCount(sig) {
@@ -4899,6 +4909,19 @@ func lowDecl(d: int) {
     } else if k == DkVar {
         lowGlobalVarDecl(d)
     } else if k == DkFunc {
+        lowFuncDecl(d)
+    } else if k == DkCallbackFunc {
+        // Task 7 (toolbox-integration Feature C): a `callback func` is an
+        // ordinary Clarus function with a restricted signature palette
+        // (checkCallbackFunc, check.cla) -- its BODY lowers exactly like
+        // any DkFunc's (lowFuncDecl reads paramType(p) straight off the
+        // AST via lowResolveType, so a `word` param already lowers to the
+        // precise KWord IR type here, independent of the checker's own
+        // word-folds-to-int simplification -- see lowResolveType's TxWord
+        // case). The generated pascal glue wrapper (cprint.cla) is a
+        // SEPARATE emission driven by irCbGlueNames, not by this decl
+        // kind at all -- a callback with no ECbAddr anywhere gets an
+        // ordinary irFuncs entry here and nothing else.
         lowFuncDecl(d)
     } else if k == DkWindow {
         lowWindowDecl(d)

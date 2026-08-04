@@ -1,0 +1,56 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// callback_host.cla: `callback func` decay/invoke host behavior proof
+// (Task 7, toolbox-integration Feature C). CbInvoke is the host-lane test
+// seam (rt_ext_CbInvoke, internal/build/rt/rt_ext_host.inc): it casts its
+// `fn` argument to a host-convention (int32_t, void*) -> int32_t function
+// pointer and calls through it -- exactly the shape cprint.cla's ECbAddr
+// decay produces (`((void*)&clar_cb_double_it)`), so a real function-
+// pointer call through a compiler-produced value is what's under test
+// here, not a hand-exercised code path.
+//
+// Deviates from the task brief's draft (`ptrOf(out)` -- `ptrOf` doesn't
+// exist, same caveat Task 2's own report already flagged for its own
+// fixture): rather than inventing an address-of for an ordinary `var out:
+// int` (Clarus has no such operator), this reuses peekpoke.cla's own
+// idiom -- a NewPtr scratch buffer serves as both write target (the
+// callback pokes into it) and read-back check (peekl reads it back),
+// sidestepping the need for any "address of a local" trick entirely.
+external func NewPtr(size: int): ptr
+external func DisposePtr(p: ptr)
+external func CbInvoke(fn: ptr, a: int, b: ptr): int
+
+callback func double_it(a: int, b: ptr): int {
+    pokel(b, a)
+    return a * 2
+}
+
+on App.startCLI(args: list of string) {
+    var scratch: ptr
+    var r: int
+
+    scratch = NewPtr(4)
+    r = CbInvoke(double_it, 21, scratch)
+
+    if r == 42 {
+        alert("callback-ret-ok")
+    } else {
+        alert("callback-ret-FAIL")
+    }
+    if peekl(scratch) == 21 {
+        alert("callback-write-ok")
+    } else {
+        alert("callback-write-FAIL")
+    }
+
+    // double_it is also an ordinary Clarus function -- a direct call
+    // bypasses the glue entirely (Ch13: "direct calls bypass the glue").
+    if double_it(10, scratch) == 20 {
+        alert("callback-direct-call-ok")
+    } else {
+        alert("callback-direct-call-FAIL")
+    }
+
+    DisposePtr(scratch)
+}
