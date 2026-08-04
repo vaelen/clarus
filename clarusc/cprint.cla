@@ -962,6 +962,9 @@ func fpExpr(e: int): text {
     case EFieldRef {
         return fpFieldRef(e)
     }
+    case EXRecAddr {
+        return fpXRecAddr(e)
+    }
     case ENewRec {
         return toText("clar_new_" + poolGet(irNewRecName(e)) + "()")
     }
@@ -1152,6 +1155,28 @@ func fpFieldRef(e: int): text {
         return "(" + fpExpr(irFieldRefX(e)) + ")->cv_" + poolGet(irFieldRefName(e))
     }
     return "(" + fpExpr(irFieldRefX(e)) + ").cv_" + poolGet(irFieldRefName(e))
+}
+
+// fpXRecAddr prints an EXRecAddr node (Task 4's own doc comment on
+// EXRecAddr, ir.cla, has the full contract): the address of an xrec
+// variable's storage, plus a literal byte offset. An xrec local/global's
+// storage is the SAME `clar_arr_char_N` byte-array wrapper struct
+// (lowType's TyXRec case, cpCTypeName's KArr case) any other `T[n]`
+// variable already gets -- Task 5's own typedef-vs-char-array call: a
+// dedicated `clar_xrec_<Name>` typedef (the spec's literal wording) would
+// be structurally identical to the array wrapper already emitted (both are
+// a single `uint8_t` array member, no padding, address == &e[0]), so this
+// reuses the EXISTING array path rather than emitting a second, redundant
+// typedef -- one fewer typedef family, same byte layout, same zero-init
+// (cpDefaultInit's KArr arm already zero-loops it) for free. `name`
+// resolves to `cv_<name>` exactly like EVarRef (irXRecAddrGlobal needs no
+// separate branch here -- C's own lexical scoping already picks the right
+// `cv_<name>` symbol, local or global, the same way EVarRef's single-line
+// case does); casting its address to `uint8_t*` and adding the literal
+// offset matches the spec's own `((void*)((uint8_t*)&var + OFFSET))`
+// shape exactly.
+func fpXRecAddr(e: int): text {
+    return "((void*)((uint8_t*)&cv_" + poolGet(irXRecAddrName(e)) + " + " + numToStr(irXRecAddrOffset(e)) + "))"
 }
 
 // fpIndexRef implements the ir.IndexRef printer contract for Arr (a
@@ -1370,9 +1395,25 @@ func fpConv(e: int): text {
         return "((clar_rec_" + poolGet(irtName(irExprType(e))) + " *)(" + x + "))"
     } else if op == CvOverlayToPtr {
         return "((void *)(" + x + "))"
+    } else if op == CvSExt16 {
+        // Ch13 Field Palette: a `word` field reads sign-extended, but
+        // peekw's own contract (rt_peekw, rt.h) zero-extends its raw
+        // uint16_t into an int32_t -- this op corrects that, the same
+        // "reinterpret the low 16 bits as signed, then widen" trick a
+        // `word` result-width rule elsewhere in Ch3 already uses: cast to
+        // int16_t (reinterpreting the zero-extended value's low 16 bits as
+        // two's-complement signed) then back to int32_t (sign-extends).
+        return "((int32_t)(int16_t)(" + x + "))"
+    } else if op == CvIntNonZero {
+        // Ch13 Field Palette: a `bool` field reads as a real Toolbox
+        // Boolean byte, not guaranteed exactly 0/1 -- normalize any
+        // nonzero byte (peekb's own zero-extend already gives a plain
+        // int32_t) to exactly 1, matching Clarus bool's own C
+        // representation (int32_t 0/1).
+        return "((int32_t)((" + x + ") != 0))"
     }
-    // Task 4 review fix (Important 3): CvSExt16/CvIntNonZero (until Tasks
-    // 5-6 add their cases) -- see cpFatal's own doc comment.
+    // Task 4 review fix (Important 3): a real unhandled IRConvOp -- see
+    // cpFatal's own doc comment.
     return cpFatal("conv op " + numToStr(int(op)))
 }
 
@@ -1662,6 +1703,40 @@ func fpIntrCall(x: int): text {
         return toText("")
     } else if nm == IPokeL() {
         fpEmit("rt_pokel(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        return toText("")
+
+    // ---- extern record str[N] field access (Task 4/5, Ch13 Field
+    // Palette) -- both intrinsics take (fieldAddr: EXRecAddr, N: int
+    // const, ...); see ir.cla's IXRecStrRead/IXRecStrWrite doc comment for
+    // why this is a dedicated pair rather than reusing SStoreStr's own
+    // "&dst is a plain lvalue" printer contract, which an EXRecAddr (its
+    // own C rendering is already an address) doesn't fit. Both route
+    // through the same clamped rt_str_store/clar_fn_rtStrStore primitive
+    // fpStoreStr/IStrCoerce already use elsewhere in this file: a0's C
+    // rendering (fpExpr, an EXRecAddr) is already the raw address rt_str_
+    // store's dst/src `uint8_t *` params want, no extra `&`. ----
+    } else if nm == IXRecStrRead() {
+        // READ is the intrinsic's own result: materialize a fresh temp at
+        // x's own (already-checked) strT(N) capacity, same "fresh temp,
+        // clamped store" shape IStrCoerce's arm above uses.
+        t = fpNewTmp(cpCType(irExprType(x)))
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrStore((void*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", (void*)(" + fpExpr(a0) + "));")
+        } else {
+            fpEmit("rt_str_store((uint8_t*)&" + t + ", " + numToStr(irtN(irExprType(x))) + ", (const uint8_t*)(" + fpExpr(a0) + "));")
+        }
+        return t
+    } else if nm == IXRecStrWrite() {
+        // WRITE is an ExprStmt (void): clamp-copy a2 (the source string)
+        // into the field address a0, at the field's own declared capacity
+        // a1 -- mirrors fpStoreStr's dst/cap/src argument order exactly,
+        // save for dst already being an address.
+        s0 = fpStrAddr(a2)
+        if cpStrPorted {
+            fpEmit("clar_fn_rtStrStore((void*)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "), (void*)" + s0 + ");")
+        } else {
+            fpEmit("rt_str_store((uint8_t*)(" + fpExpr(a0) + "), (int32_t)(" + fpExpr(a1) + "), " + s0 + ");")
+        }
         return toText("")
     } else if nm == IQuit() {
         fpEmit("rt_quit((int32_t)(" + fpExpr(a0) + "));")
@@ -4114,6 +4189,22 @@ func cpEmitRecords() {
 
     i = 0
     while i < irRecords.count {
+        if irRecordLayoutIsXRec(i) {
+            // Task 5 (cprint lane): an xrec's storage is the plain
+            // zero-initialized byte array lowType's TyXRec case already
+            // gives every xrec-typed local/global/field slot
+            // (irArrType(irCharT, irXRecSize(...)), cpCTypeName's KArr
+            // case) -- it needs no `clar_rec_<Name>` struct typedef at
+            // all (an xrec is never constructed, compared, or passed by
+            // value; see check.cla's own whole-xrec bans). This
+            // IRRecordLayout entry exists purely as ir.cla's field-offset
+            // LAYOUT AUTHORITY (irXRecFieldOffset/irXRecSize) for
+            // lower.cla to consult -- emitting a struct for it here would
+            // both be unused AND fail to compile (a nested-xrec field
+            // slot's own type is KXRec, which cpCType has no case for).
+            i = i + 1
+            continue
+        }
         f = irRecordLayoutFieldsHead(i)
         while f != -1 {
             cpEnsureType(irFieldSlotType(f))

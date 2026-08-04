@@ -285,4 +285,12 @@ void *rt_ext_MapNewPtr(int32_t size) {
 }
 void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_XRecAddr (Task 5, toolbox-integration Feature B: `extern
+ * record`): identity shim lets a testdata/lowlevel fixture recover the raw
+ * address an extern-record decay (EXRecAddr) produced, so pure-Clarus
+ * peek/poke can cross-check the checker/lower.cla packed-offset layout
+ * against the ACTUAL bytes cprint/rt.h emit -- no logic of its own, same
+ * "thin C ABI wrapper" convention as every other rt_ext_* in this file. */
+void *rt_ext_XRecAddr(void *p) { return p; }
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

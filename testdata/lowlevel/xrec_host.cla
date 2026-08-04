@@ -1,0 +1,114 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// xrec_host.cla: extern-record storage/decay host behavior proof (Task 5,
+// toolbox-integration Feature B). Writes every field of a nested
+// EventRecord/Point pair through ordinary field-access syntax (exercising
+// cprint's new EXRecAddr/CvSExt16/CvIntNonZero cases + lower.cla's packed
+// offsets), then cross-checks the packed layout two independent ways: (1)
+// raw peekb/peekw/peekl over `XRecAddr(ev) + literal-offset` addresses --
+// bytes-on-the-wire, the SAME external-func decay path a real Toolbox call
+// (e.g. UiWaitNextEvent(ev)) would take; (2) ordinary field reads
+// (`ev.what`, `ev.where.v`), which run back through CvSExt16 -- confirming
+// round-trip correctness end to end. Same compare-and-alert ok/FAIL idiom
+// every other testdata/lowlevel fixture uses (Clarus has no built-in
+// int-to-string conversion, so there is no literal "print the number" form
+// to crib from that corpus -- see peekpoke.cla/extmem.cla's own comments).
+//
+// IMPORTANT deviation from the task brief's draft (hand-verified, see the
+// task-5 report's arithmetic): the brief's draft compared the raw
+// `peekw(...)` BUILTIN's result directly against a SIGNED expectation
+// (`-2`, `-300`), assuming peekw sign-extends. It doesn't: `rt_peekw`
+// (rt.h) reads a `uint16_t` and zero-extends into `int32_t` -- ONLY an
+// xrec WORD FIELD READ (`ev.what`, `ev.where.v`) gets the palette's
+// sign-extend correction, via the new CvSExt16 conv op this task adds to
+// cprint. So the two raw-peekw comparisons below check against the
+// UNSIGNED 16-bit pattern (65534 for -2, 65236 for -300); the two
+// FIELD-READ comparisons near the end check the SIGNED value, proving
+// CvSExt16 actually fires. This is a strictly more thorough proof than the
+// brief's draft: it exercises both peekw's true (zero-extend) contract AND
+// the field path's (sign-extend) correction, distinctly.
+extern record Point {
+    v: word
+    h: word
+}
+
+extern record EventRecord {
+    what: word
+    message: int
+    when: int
+    where: Point
+    modifiers: word
+}
+
+external func XRecAddr(p: ptr): ptr
+
+on App.startCLI(args: list of string) {
+    var ev: EventRecord
+    var base: ptr
+
+    ev.what = -2
+    ev.message = 16909060
+    ev.when = 99
+    ev.where.v = -300
+    ev.where.h = 40
+    ev.modifiers = 384
+
+    base = XRecAddr(ev)
+
+    // Packed offsets (checker/ir.cla's layout authority, cross-checked
+    // against Task 4's own anchors): what@0(2) message@2(4) when@6(4)
+    // where@10(4: v@0,h@2 relative -> v@10,h@12 absolute) modifiers@14(2),
+    // total size 16.
+    if peekw(base + 0) == 65534 {
+        alert("raw-what-ok")
+    } else {
+        alert("raw-what-FAIL")
+    }
+    if peekl(base + 2) == 16909060 {
+        alert("raw-message-ok")
+    } else {
+        alert("raw-message-FAIL")
+    }
+    if peekl(base + 6) == 99 {
+        alert("raw-when-ok")
+    } else {
+        alert("raw-when-FAIL")
+    }
+    if peekw(base + 10) == 65236 {
+        alert("raw-where-v-ok")
+    } else {
+        alert("raw-where-v-FAIL")
+    }
+    if peekw(base + 12) == 40 {
+        alert("raw-where-h-ok")
+    } else {
+        alert("raw-where-h-FAIL")
+    }
+
+    // Nested-field decay: XRecAddr(ev.where) collapses to the SAME address
+    // as base+10 (lowXRecAddr's flat single-EXRecAddr contract) -- a
+    // 4-byte peekl spanning where.v's low-endian 2 bytes (-300 as an
+    // unsigned 16-bit pattern: 65236 = 0xFED4, stored LE as bytes D4 FE)
+    // then where.h's low-endian 2 bytes (40 = 0x0028, stored LE as bytes
+    // 28 00). Read together as ONE little-endian int32: bytes
+    // [D4 FE 28 00] = 0x0028FED4 = 2686676.
+    if peekl(XRecAddr(ev.where)) == 2686676 {
+        alert("nested-decay-ok")
+    } else {
+        alert("nested-decay-FAIL")
+    }
+
+    // Field-read round trip (CvSExt16 fires here): the SIGNED values, not
+    // the unsigned bit patterns the raw peekw checks above used.
+    if ev.what == -2 {
+        alert("field-what-ok")
+    } else {
+        alert("field-what-FAIL")
+    }
+    if ev.where.v == -300 {
+        alert("field-where-v-ok")
+    } else {
+        alert("field-where-v-FAIL")
+    }
+}
