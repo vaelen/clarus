@@ -80,7 +80,7 @@ static size_t rt_mem_ptr_hash(Ptr p, size_t cap)
        HIGH bits instead: shift right 32 first (cap never approaches
        2^32 here, so this always leaves cap's bits inside the mask),
        then mask down to cap, a power of two. */
-    return (size_t)((((uintptr_t)p * (uintptr_t)0x9E3779B97F4A7C15ULL) >> 32) & (uintptr_t)(cap - 1));
+    return (size_t)((((uintptr_t)p * 0x9E3779B97F4A7C15ULL) >> 32) & (uintptr_t)(cap - 1));
 }
 
 static void rt_mem_ptr_index_grow(void)

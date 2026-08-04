@@ -508,3 +508,16 @@ git commit -m "perf: re-baseline emit tripwire post-DisposePtr fix; phase docs"
 - Type consistency: `rt_mem_ptr_index_insert(rt_mem_block *)` /
   `rt_mem_ptr_index_find(Ptr)` names match across Task 1's steps; Task 2
   touches no code.
+
+## Post-plan amendments
+
+- Task 1's review replaced this plan's embedded low-bits hash (`& (cap-1)`
+  on the raw product) with the high-bits version now in
+  `rt_mem_host.inc` (`>> 32` then mask): payload addresses are ≡ 8 mod 16,
+  so the product's low 4 bits are frozen and the low-bits form collapsed
+  buckets ~16x. Supersedes Step 4's embedded code.
+- Final review's UB refinement: the hash's multiply constant no longer
+  gets a `(uintptr_t)` cast (the `ULL` literal alone forces a ≥64-bit
+  product), since casting the constant on a 32-bit-`uintptr_t` host would
+  truncate it and make the subsequent `>> 32` undefined behavior. Zero
+  behavior change on today's 64-bit hosts.
