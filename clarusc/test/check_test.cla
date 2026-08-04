@@ -1078,4 +1078,30 @@ on App.startEmpty {
     src = ""
     ln(src, "external func F(s: string) = trap 0xA000 reg(a0: s)")
     runCase("extern-reg-named-str-param", src)
+
+    // Case 85 (task review fix): the SAME parameter bound to two
+    // DIFFERENT registers -- regUsed alone only catches a register reused
+    // across params, not a param claimed twice, so this used to compile
+    // clean (Task 1's `d0: a` bind landed, then `d1: a` silently
+    // overwrote it). Exactly one diagnostic, naming the param.
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000 reg(d0: a, d1: a) ret d0")
+    runCase("extern-reg-named-param-bound-twice", src)
+
+    // Case 86 (task review fix): a void extern with BOTH `memerr` and
+    // `ret` used to trip "ret clause requires a return type" AND "memerr
+    // and ret are mutually exclusive" together -- two diagnostics for one
+    // malformed clause. Only the mutual-exclusion message should fire;
+    // it already covers the void case (memerr's own result source makes
+    // a declared return type moot either way).
+    src = ""
+    ln(src, "external func F() = trap 0xA000 reg memerr ret d0")
+    runCase("extern-reg-memerr-ret-void", src)
+
+    // Case 87 (task review fix): `ret` with a bad register spelling --
+    // parseRegName covers the `ret REG` half exactly the same way it
+    // covers a regBind's REG half (Case 83's sibling).
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000 reg(d0: a) ret d3")
+    runCase("extern-reg-ret-bad-register", src)
 }

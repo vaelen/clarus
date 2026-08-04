@@ -167,3 +167,9 @@ check_test.cla:1:1: memerr and ret are mutually exclusive
 check_test.cla:1:43: unknown register 'a5' in reg clause
 === extern-reg-named-str-param ===
 check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters
+=== extern-reg-named-param-bound-twice ===
+check_test.cla:1:1: parameter 'a' bound twice
+=== extern-reg-memerr-ret-void ===
+check_test.cla:1:1: memerr and ret are mutually exclusive
+=== extern-reg-ret-bad-register ===
+check_test.cla:1:59: unknown register 'd3' in reg clause

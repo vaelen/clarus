@@ -1893,6 +1893,19 @@ func checkExternFunc(d: int) {
             regUsed.add(false)
             j = j + 1
         }
+        // Reset every param's paramRegBind before resolving: main.cla's
+        // emit pipeline runs checkProgram TWICE over the same decls (once
+        // pre-runtime-splice, once post-splice, before lowering), so
+        // checkExternFunc runs twice per extern -- without this reset the
+        // second pass finds its own first pass's setParamRegBind side
+        // effect still in place and misreports "bound twice" on a
+        // perfectly valid clause. check_test.cla's runCase only ever
+        // calls checkProgram once, so this never surfaced there.
+        p = funcDeclParamsHead(d)
+        while p != -1 {
+            setParamRegBind(p, -1)
+            p = declNext(p)
+        }
         namedBindsBad = false
         bindCount = astExternRegBindRawCount(d)
         j = 0
@@ -1921,6 +1934,15 @@ func checkExternFunc(d: int) {
                     // indexing regUsed with garbage left behind by an
                     // aborted parseRegBind.
                     namedBindsBad = true
+                } else if paramRegBind(foundP) != -1 {
+                    // Task review fix: the SAME parameter named twice
+                    // (possibly with two DIFFERENT registers, which
+                    // regUsed alone wouldn't catch -- reg(d0: a, d1: a)
+                    // was silently landing a's binding on whichever bind
+                    // parsed last). "Every declared parameter is bound
+                    // exactly once" per the spec.
+                    emitDiag(declLine(d), declCol(d), "parameter '" + poolGet(bindNameIdx) + "' bound twice")
+                    namedBindsBad = true
                 } else if regUsed[bindCode] {
                     emitDiag(declLine(d), declCol(d), "register " + regNameForCode(bindCode) + " bound twice")
                     namedBindsBad = true
@@ -1948,7 +1970,13 @@ func checkExternFunc(d: int) {
     // (bare or named) alike, per the regClause grammar -- independent of
     // the conv-7/8-only block above.
     retRegCode = astExternRetReg(d)
-    if retRegCode != -1 and ret == -1 {
+    // Task review fix: a void extern with BOTH `memerr` and `ret` used to
+    // trip this rule AND the mutual-exclusion one below -- two
+    // diagnostics for one malformed clause, unlike every other rule in
+    // this function. Gate this one on the memerr+ret conflict NOT also
+    // applying; the mutual-exclusion message below already covers that
+    // combination on its own.
+    if retRegCode != -1 and ret == -1 and not (conv == 6 or conv == 8) {
         emitDiag(declLine(d), declCol(d), "ret clause requires a return type")
     }
     if (conv == 6 or conv == 8) and retRegCode != -1 {
