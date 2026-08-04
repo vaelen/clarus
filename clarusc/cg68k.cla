@@ -153,6 +153,19 @@ var cgJtSlots: list of int
 // the stream -- can already resolve it), or -1 if i is unreachable.
 var cgFuncLabels: list of int
 
+// cgCbGlueFuncIdx[i]/cgCbGlueBodyFuncIdx[i] (Task 8, toolbox-integration
+// Feature C: `callback func`) are parallel lists pairing each
+// cg68SynthCbGlue-synthesized "clar_cb_<name>" glue IRFunc (its own
+// irFuncs index) with the REAL `callback func` body IRFunc it wraps --
+// cgCbGlueBodyFor's own lookup table, consulted by cgEmitFunc's by-name
+// dispatch to route a glue func to cgEmitCallbackGlue instead of the
+// ordinary LINK+cgStmts+UNLK body. Rebuilt fresh by every
+// cg68SynthCbGlue call (this file's own irFuncs-index-parallel-array
+// convention -- cgJtSlots/cgFuncLabels above never survive across
+// compiles either).
+var cgCbGlueFuncIdx: list of int
+var cgCbGlueBodyFuncIdx: list of int
+
 // cgGlobalOffsets[i] is irGlobals index i's negative A5 offset.
 var cgGlobalOffsets: list of int
 
@@ -704,6 +717,81 @@ func cg68SynthUiGlue() {
     shakeAddRoot(intern("clar_ui_glue_action"))
 }
 
+// cg68SynthCbGlue (Task 8, toolbox-integration Feature C: `callback
+// func`) synthesizes one "clar_cb_<name>" glue IRFunc (EMPTY-bodied
+// placeholder, exactly cg68SynthUiGlue's own LDEF/action shape --
+// cgEmitFunc's by-name/by-table dispatch below recognizes it via
+// cgCbGlueBodyFor and emits cgEmitCallbackGlue's hand-built pascal-frame
+// body instead of LINK+cgStmts+UNLK) per callback name in irCbGlueNames
+// (ir.cla: every `callback func` an ECbAddr decay was EVER built for,
+// anywhere in the program, dead code included -- lowering doesn't do
+// dead-code elimination). Called from main.cla at the SAME injection
+// point as cg68SynthUiGlue (after lowerProgram, before shakeProgram) --
+// shakeAddRoot's own doc comment (shake.cla): a pending root is only
+// consumed by the NEXT shakeProgram call, and this compile only ever
+// calls shakeProgram once, so there is no later point at which a root
+// could still be registered.
+//
+// Reachability is deliberately COARSER than cprint.cla's own fine-grained
+// gate (cpEmitCallbackGlueProtos/Bodies: irCbGlueNames membership AND
+// shakeReachable(bodyFi), so a decay embedded in dead code gets neither
+// glue nor body on the C lane) -- this single-pass native backend cannot
+// replicate that: by the time shakeProgram has run far enough to prove a
+// given body's true reachability, it is too late to still register a
+// root for its glue (see the shakeAddRoot doc comment above). Every name
+// here gets BOTH its glue and its body unconditionally rooted, matching
+// this file's own established precedent for the identical tradeoff
+// (cg68SynthUiGlue's LDEF/action stubs, rooted for any irIsUiProgram()
+// regardless of whether that specific program actually builds a
+// table/scrollbar widget) -- shake.cla's own header comment blesses this
+// direction explicitly: "Over-approximation is always safe here (a few
+// extra functions emitted); under-approximation is a C link error." The
+// ONE case this task's own listing golden actually tests -- a callback
+// NEVER decayed anywhere, so irCbGlueNames has no entry for it at all --
+// still gets zero trace either way: it never reaches this loop.
+func cg68SynthCbGlue() {
+    var i: int
+    var nameIdx: int
+    var bodyFi: int
+    var glueName: int
+    var glueFi: int
+
+    cgCbGlueFuncIdx = cgFreshIntList()
+    cgCbGlueBodyFuncIdx = cgFreshIntList()
+    i = 0
+    while i < irCbGlueNeededCount() {
+        nameIdx = irCbGlueNeededName(i)
+        bodyFi = findIRFuncIdxByName(nameIdx)
+        if bodyFi == -1 {
+            log("cg68k: callback " + poolGet(nameIdx) + " has no matching irFuncs entry")
+            quit 1
+        }
+        glueName = intern("clar_cb_" + poolGet(nameIdx))
+        glueFi = newIRFunc(glueName, -1, irVoidT, -1, -1)
+        shakeAddRoot(glueName)
+        shakeAddRoot(nameIdx)
+        cgCbGlueFuncIdx.add(glueFi)
+        cgCbGlueBodyFuncIdx.add(bodyFi)
+        i = i + 1
+    }
+}
+
+// cgCbGlueBodyFor returns the `callback func` body's own irFuncs index
+// for f (a glue func's irFuncs index, cg68SynthCbGlue's own
+// cgCbGlueFuncIdx entry), or -1 if f is not a synthesized callback glue.
+func cgCbGlueBodyFor(f: int): int {
+    var i: int
+
+    i = 0
+    while i < cgCbGlueFuncIdx.count {
+        if cgCbGlueFuncIdx[i] == f {
+            return cgCbGlueBodyFuncIdx[i]
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // ================================================================
 // Small local copies of cprint.cla helpers this file also needs -- kept
 // local rather than depending on cprint.cla (see the file header: the two
@@ -752,12 +840,36 @@ func cgSizeOf(t: int): int {
         return 1
     }
     case KWord {
-        // Task 4 (native-5e): KWord never appears as a real variable/
-        // field/array-element type (see IRKind's own doc comment) -- this
-        // case exists only so cgSizeOf stays exhaustive/fail-closed
-        // rather than falling through to the generic `return 4` default
-        // below if some future caller ever does hand it a KWord.
-        return 2
+        // Task 4 (native-5e) originally documented this as dead/
+        // defensive ("KWord never appears as a real variable/field/local's
+        // type" -- IRKind's own doc comment) -- Task 8 (toolbox-
+        // integration Feature C) makes it real: a `callback func`'s own
+        // `word`-typed param/return keeps genuine KWord in its irFuncs/
+        // IRLocal entry (lower.cla's DkCallbackFunc arm calls lowFuncBody,
+        // whose param loop is `newIRLocal(paramName(p),
+        // lowResolveType(paramType(p)))` -- lowResolveType, NOT the
+        // checker's own word-folds-to-int resolveType). BUT every ordinary
+        // EXPRESSION referencing that same param (lowIdent's `ty =
+        // lowMustType(e)`, the CHECKER's own resolved type) is
+        // indistinguishable from a plain `int` one, exactly as
+        // checkCallbackFunc's own doc comment says ("the checker cannot
+        // and need not tell a `word` param from a plain `int` one") --
+        // cgLoadVar/cgStoreScalarVar/cgPushArgs all key off an
+        // EXPRESSION's irExprType, so EVERY read/write/re-push of a word
+        // param already assumes a full 4-byte slot, regardless of what
+        // this function returns. Returning 2 here (the pascal WIRE width,
+        // not the Clarus frame width) left cgEmitFunc's own param-offset
+        // loop (cgSlotSizeOf(irLocalType(params[i]))) reserving only 2
+        // bytes for that slot while every expression-level access read/
+        // wrote 4 -- a real adjacent-slot-corruption bug, caught by this
+        // task's own callback.cla golden (`n: word` at 8(A6) size 2
+        // reading via a bare 4-byte MOVE.L, bleeding into the next
+        // param's own 2-byte slot). Returning 4 makes the frame
+        // RESERVATION match what every consumer already assumes -- the
+        // pascal glue's own wire-width table (cgCbPascalWidth, cg68k.cla)
+        // is intentionally independent of cgSizeOf/cgSlotSizeOf and keeps
+        // the true 2-byte wire width for the marshaling boundary itself.
+        return 4
     }
     case KStr {
         return cgAlignUp(irtN(t) + 1, 2)
@@ -2946,6 +3058,15 @@ func cgEmitFunc(f: int) {
         cgEmitActionGlue(f)
         return
     }
+    // Task 8 (toolbox-integration Feature C): cg68SynthCbGlue's own
+    // "clar_cb_<name>" synthetic glue funcs, recognized by lookup table
+    // rather than a name-prefix string check (cgCbGlueBodyFor) since the
+    // whole point of this generator is to be signature-driven, not
+    // name-driven.
+    if cgCbGlueBodyFor(f) != -1 {
+        cgEmitCallbackGlue(f, cgCbGlueBodyFor(f))
+        return
+    }
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
@@ -3286,6 +3407,180 @@ func cgEmitActionGlue(f: int) {
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
     cgCleanupStack(6) // the pascal caller's own 6 arg bytes
+    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
+}
+
+// cgCbPascalWidth is the pascal-convention stack-slot width (in bytes) of
+// one `callback func` param/return kind -- checkCallbackFunc's own closed
+// palette (bool/char/word/int/ptr) is the only input this ever sees.
+// bool/char/word all pad to a full stack WORD on the wire (Inside
+// Macintosh's own convention, cgEmitLdefGlue/cgCallExtPascal's own header
+// comments); int/ptr are a plain LONG. This happens to be numerically
+// IDENTICAL to cgSlotSizeOf for this exact palette (see
+// cgEmitCallbackGlue's own doc comment for why that coincidence matters),
+// but is kept as its own named function: pascal width is a wire-protocol
+// fact, cgSlotSizeOf a Clarus-frame-layout fact, and the two are
+// unrelated in general (cgEmitLdefGlue/cgEmitActionGlue's own `int`-typed
+// targets are the counterexample -- a pascal `short` there marshals into
+// a 4-byte Clarus `int` slot, not a 2-byte one).
+func cgCbPascalWidth(t: int): int {
+    switch irtKind(t) {
+    case KBool, KChar, KWord {
+        return 2
+    }
+    case KInt, KPtr {
+        return 4
+    }
+    }
+    log("cg68k: cgCbPascalWidth: unhandled callback kind " + numToStr(int(irtKind(t))))
+    quit 1
+    return 0
+}
+
+// cgEmitCallbackGlue (Task 8, toolbox-integration Feature C: `callback
+// func`) is the signature-driven generalization of cgEmitLdefGlue/
+// cgEmitActionGlue above: one glue per cg68SynthCbGlue-synthesized
+// "clar_cb_<name>" IRFunc (glueFi), built from bodyFi's REAL declared
+// signature (checkCallbackFunc's palette: bool/char/word/int/ptr) rather
+// than a hand-copied pascal prototype. Per-param/return marshaling table:
+//   kind        pascal    Clarus    pascal read (into D0)     Clarus push        result write
+//               bytes     bytes
+//   bool/char   2         2         CLR.L;MOVE.B (zero-ext,   MOVE.B D0,-(A7)    MOVE.B D0,slot
+//                                    high/base byte of the                      (high/base byte)
+//                                    padded word)
+//   word        2         4         MOVE.W;EXT.L (sign-ext)   MOVE.L D0,-(A7)    MOVE.W D0,slot
+//   int/ptr     4         4         MOVE.L                    MOVE.L D0,-(A7)    MOVE.L D0,slot
+//
+// The pascal/Clarus byte columns are IDENTICAL for bool/char/int/ptr but
+// DIVERGE for word (cgCbPascalWidth vs. cgSlotSizeOf) -- this is the one
+// non-obvious wrinkle a naive generalization of cgEmitLdefGlue/
+// cgEmitActionGlue misses. Those two hand-rolled emitters marshal a
+// pascal `short` into a plain `int`-typed Clarus PARAMETER
+// (rtUiLdefDraw/rtUiScrollbarAction predate `callback func` and were
+// never declared with a real `word` Clarus type), so pushing the
+// sign-extended value as a full .L "just happens" to match their
+// target's own 4-byte int slot. A genuine `callback func` body's own
+// `word`-typed param/return DOES keep real KWord in its own irFuncs/
+// IRLocal entry (lower.cla's DkCallbackFunc doc comment: lowFuncBody's
+// param loop calls `lowResolveType(paramType(p))` directly off the AST,
+// not the checker's own word-folds-to-int `resolveType`) -- but every
+// ORDINARY EXPRESSION referencing that same param inside the body (a
+// bare `n` in `return n`, lowIdent's `ty = lowMustType(e)`) IS the
+// checker's folded int type, exactly as checkCallbackFunc's own doc
+// comment says ("the checker cannot and need not tell a `word` param
+// from a plain `int` one"). Since cgLoadVar/cgStoreScalarVar/cgPushArgs
+// all key off an EXPRESSION's irExprType, every read/write/re-push of a
+// word param inside ordinary Clarus code already assumes a full 4-byte
+// slot -- so cgSizeOf's own KWord case (this task) now returns 4, not 2,
+// making cgEmitFunc's param-offset reservation (cgSlotSizeOf) match what
+// every consumer already assumes. This glue's own re-push must match
+// THAT 4-byte slot for word (a plain MOVE.L, after the sign-extending
+// EXT.L already widened D0), not the pascal wire's 2-byte width --
+// cgCbPascalWidth (the wire fact) and cgSlotSizeOf (the Clarus-frame
+// fact) are kept as two separate named tables for exactly this reason.
+//
+// Offsets: params collect in declaration order, then get PASCAL offsets
+// assigned in REVERSE (last-declared nearest the frame, 8(A6) -- same
+// "pushed last lands lowest" shape cgEmitFunc's own worked example and
+// cgEmitLdefGlue/cgEmitActionGlue's own hand-computed offsets already
+// establish), using cgCbPascalWidth. The pascal RESULT slot -- present
+// only when bodyFi's return isn't void -- sits ABOVE every arg, at
+// 8+pascalTotalBytes: the mirror image of cgCallExtPascal's own
+// caller-side "reserve a result slot FIRST, push args after" protocol (a
+// PreDec push landing FIRST ends up at the HIGHEST address once every
+// later push has also landed), which is exactly the role the Toolbox
+// plays calling INTO this glue. clarusTotalBytes (cgSlotSizeOf-summed,
+// tracked separately) is what actually gets cleaned up after cgCallFunc
+// -- the bytes THIS glue itself pushed to call bodyFi, Clarus convention.
+func cgEmitCallbackGlue(glueFi: int, bodyFi: int) {
+    var params: list of int
+    var pascalWidths: list of int
+    var offsets: list of int
+    var i: int
+    var p: int
+    var offset: int
+    var pascalTotalBytes: int
+    var clarusTotalBytes: int
+    var resultOffset: int
+    var retTy: int
+    var retKind: IRKind
+    var pk: IRKind
+
+    a68Comment("func " + poolGet(irFuncName(glueFi)) + " (JT slot " + numToStr(cgJtSlot(glueFi)) + ") -- pascal callback glue for " + poolGet(irFuncName(bodyFi)))
+    a68Bind(cgFuncLabels[glueFi])
+    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
+
+    if not shakeReachable(bodyFi) {
+        log("cg68k: callback body " + poolGet(irFuncName(bodyFi)) + " not reachable (clar_cb_" + poolGet(irFuncName(bodyFi)) + ")")
+        quit 1
+    }
+
+    params = cgFreshIntList()
+    p = irFuncParamsHead(bodyFi)
+    while p != -1 {
+        params.add(p)
+        p = irLocalNext(p)
+    }
+    pascalWidths = cgFreshIntList()
+    offsets = cgFreshIntList()
+    i = 0
+    while i < params.count {
+        pascalWidths.add(cgCbPascalWidth(irLocalType(params[i])))
+        offsets.add(0)
+        i = i + 1
+    }
+    offset = 8
+    i = params.count - 1
+    while i >= 0 {
+        offsets[i] = offset
+        offset = offset + pascalWidths[i]
+        i = i - 1
+    }
+    pascalTotalBytes = offset - 8
+    resultOffset = 8 + pascalTotalBytes
+
+    // ---- read each pascal arg at its fixed A6 offset, re-push Clarus-
+    // convention, left to right ----
+    clarusTotalBytes = 0
+    i = 0
+    while i < params.count {
+        pk = irtKind(irLocalType(params[i]))
+        a68Comment("  " + poolGet(irLocalName(params[i])) + " : " + numToStr(offsets[i]) + "(A6)  pascal size " + numToStr(pascalWidths[i]))
+        if pk == KBool or pk == KChar {
+            a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
+            a68Emit(OpMove, 1, AmDisp16, 6, offsets[i], AmDn, 0, 0)
+            a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
+            clarusTotalBytes = clarusTotalBytes + 2
+        } else if pk == KWord {
+            a68Emit(OpMove, 2, AmDisp16, 6, offsets[i], AmDn, 0, 0)
+            a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            clarusTotalBytes = clarusTotalBytes + 4
+        } else {
+            a68Emit(OpMove, 4, AmDisp16, 6, offsets[i], AmPreDec, 7, 0)
+            clarusTotalBytes = clarusTotalBytes + 4
+        }
+        i = i + 1
+    }
+
+    cgCallFunc(bodyFi)
+    cgCleanupStack(clarusTotalBytes) // the Clarus-convention args just pushed
+
+    retTy = irFuncRet(bodyFi)
+    retKind = irtKind(retTy)
+    if retKind != KVoid {
+        if retKind == KBool or retKind == KChar {
+            a68Emit(OpMove, 1, AmDn, 0, 0, AmDisp16, 6, resultOffset)
+        } else if retKind == KWord {
+            a68Emit(OpMove, 2, AmDn, 0, 0, AmDisp16, 6, resultOffset)
+        } else {
+            a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, resultOffset)
+        }
+    }
+
+    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
+    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
+    cgCleanupStack(pascalTotalBytes) // the pascal caller's own arg bytes
     a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
 }
 
@@ -6349,6 +6644,18 @@ func cgExpr(e: int) {
         cgIntr(e)
     } else if k == ECallExt {
         cgCallExt(e)
+    } else if k == ECbAddr {
+        // Task 8 (toolbox-integration Feature C): an ECbAddr's own VALUE
+        // is its glue's callable JT-slot address -- reuses
+        // cgCallExtUiGlueAddr wholesale (the SAME "LEA jtDisp(A5),A0;
+        // MOVE.L A0,D0" shape UiLdefEntry/UiActionEntry already resolve
+        // to), just aimed at "clar_cb_<name>" instead of a hand-named UI
+        // glue stub. Only ever reached at a checker-legal decay position
+        // (an extern call's ptr-typed argument, a bare callback name --
+        // lower.cla's lowCallArgs) -- a ptr-typed call argument always
+        // routes through cgExpr, never cgExprAddr (task-7-report's own
+        // probe already confirmed this).
+        cgCallExtUiGlueAddr("clar_cb_" + poolGet(irCbAddrName(e)))
     } else {
         // EStrConst (str value in a scalar context), ENewRec (constructed
         // directly into its destination by cgEmitStoreRec/cgEmitReturnRec,

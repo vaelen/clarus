@@ -817,6 +817,11 @@ on App.startCLI(args: list of string) {
             // is the one safe injection point (after lowerProgram, before
             // shakeProgram/cgAssignFinalJtSlots).
             cg68SynthUiGlue()
+            // Task 8 (toolbox-integration Feature C): synthesize/root
+            // one pascal glue IRFunc per `callback func` an ECbAddr decay
+            // was ever built for -- see cg68SynthCbGlue's own doc comment
+            // (cg68k.cla) for why this must run at this exact point too.
+            cg68SynthCbGlue()
             shakeProgram()
             if haveEvents {
                 eventsBytes = ""

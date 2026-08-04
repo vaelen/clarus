@@ -1,0 +1,41 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// callback.cla: toolbox-integration Task 8 cg68k golden fixture --
+// signature-driven `callback func` glue emission (cgEmitCallbackGlue)
+// and ECbAddr's JT-entry-address decay (cgCallExtUiGlueAddr, reused).
+//
+//   cbHandler(sel: bool, n: word): int -- the ONE referenced callback,
+//     pinning the bool zero-extend/high-byte pascal-arg read AND the
+//     word sign-extend pascal-arg read, plus the int MOVE.L
+//     result-slot write on the return side. Decayed at InstallHandler's
+//     own `proc: ptr` argument (the ONE decay call this golden needs).
+//   cbUnused(x: int) -- a SECOND callback, declared but never decayed
+//     and never called anywhere: proves the tree-shake gap this task's
+//     own brief calls out (Task 7's shake-proof deferred here) -- zero
+//     trace of it anywhere in the emitted listing.
+//
+// InstallHandler's own trap word (0xA9EE) is SYNTHETIC -- picked only to
+// exercise a ptr-typed pascal argument receiving a callback's glue
+// address, not a faithful reproduction of any real Inside Macintosh trap
+// (same "synthetic signature" caveat traps.cla's own FixtureMixedTrap
+// documents).
+
+callback func cbHandler(sel: bool, n: word): int {
+    if sel {
+        return n
+    }
+    return 0
+}
+
+callback func cbUnused(x: int) {
+}
+
+external func InstallHandler(proc: ptr): int = trap 0xA9EE
+
+on App.launch {
+    var r: int
+
+    r = InstallHandler(cbHandler)
+    return
+}
