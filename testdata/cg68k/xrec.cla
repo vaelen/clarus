@@ -1,0 +1,80 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// xrec.cla: native-5d/toolbox-integration Task 6 cg68k listing golden --
+// extern-record native storage/decay (EXRecAddr, CvSExt16 -- the palette's
+// two backend-only ops per Task 4's own EXRecAddr encoding contract).
+// Trimmed from Task 5's own testdata/lowlevel/xrec_host.cla host-behavior
+// fixture (see that file's header comment for the full packing-table
+// derivation and cross-check math): same EventRecord/Point declarations,
+// field writes/reads, and ONE decay call (`base = XRecAddr(ev)`), just a
+// LOCAL var + ONE global (`gev`, for the "global xrec addressing" self-
+// review item -- Task 5 already proved this on the host lane, this pins
+// the SAME shape on the native listing) instead of the host fixture's own
+// wider raw-peek/nested-decay cross-check matrix (that's Task 5's own
+// runtime proof; this is a native LISTING/eyeball proof of the same
+// EXRecAddr/CvSExt16 codegen, not a second runtime oracle).
+//
+// XRecAddr's own extern declaration is clause-less (no real Toolbox trap
+// backs "the address of my own argument" -- Task 5's rt_ext_XRecAddr
+// identity shim is the host-lane sibling), so the native lane needs the
+// SAME "clause-less extern -> nat_<Name> fallback" convention
+// testdata/cg68k/traps.cla's own TCustomOp/nat_TCustomOp pair already
+// exercises (cgCallExtNatFallback, cg68k.cla) -- nat_XRecAddr's body is a
+// literal identity, `return p`, matching rt_ext_XRecAddr's own C shim
+// exactly.
+//
+// Eyeball checklist (task-6-brief.md Step 1): `ev`'s 16-byte frame
+// reservation (EventRecord's packed size, Task 4's own verified anchor --
+// NOT the old 32-byte slot-padded size a char[16] array would have taken
+// pre-Task-6, see cgArrElemStride's own doc comment, cg68k.cla); MOVE.W at
+// `ev.what`/`ev.where.v`/`ev.where.h`/`ev.modifiers`'s own literal (folded
+// LEA-displacement) offsets, MOVE.L at `ev.message`/`ev.when`'s; one LEA
+// for `XRecAddr(ev)`'s own decay (folds `ev`'s frame offset + the field's
+// literal byte offset into a single instruction, per EXRecAddr's own "flat"
+// contract); EXT.L immediately after `ev.what`'s peekw-then-sign-extend
+// field read (CvSExt16).
+extern record Point {
+    v: word
+    h: word
+}
+
+extern record EventRecord {
+    what: word
+    message: int
+    when: int
+    where: Point
+    modifiers: word
+}
+
+var gev: EventRecord
+
+external func XRecAddr(p: ptr): ptr
+
+func nat_XRecAddr(p: ptr): ptr {
+    return p
+}
+
+on App.startCLI(args: list of string) {
+    var ev: EventRecord
+    var base: ptr
+    var w: int
+
+    ev.what = -2
+    ev.message = 16909060
+    ev.when = 99
+    ev.where.v = -300
+    ev.where.h = 40
+    ev.modifiers = 384
+
+    base = XRecAddr(ev)
+
+    // Field read round trip -- CvSExt16 fires here (the SIGNED value, not
+    // peekw's own raw zero-extended bit pattern; see Task 5's own "brief
+    // deviation" note for the distinction).
+    w = ev.what
+
+    // Global xrec addressing (self-review item): same field-write shape,
+    // against A5-relative storage instead of A6-relative.
+    gev.what = 7
+}

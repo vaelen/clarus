@@ -802,4 +802,20 @@ void *rt_ext_TbNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
 void rt_ext_TbDisposePtr(void *p) { DisposePtr((Ptr)p); }
 short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
 
+/* ---- Task 6 (toolbox-integration Feature B):
+ * testsuite/toolbox/cases_event.cla's own externs -- same "cprint always
+ * renders rt_ext_NAME regardless of clause" precedent as the two blocks
+ * just above. rt_ext_TbOSEventAvail is the real OS Event Manager trap
+ * (Inside Macintosh: `FUNCTION OSEventAvail (eventMask: INTEGER; VAR
+ * theEvent: EventRecord): BOOLEAN;`) -- the clause (`= trap 0xA030`) is
+ * invisible here exactly like TbGestalt's own named-reg clause above;
+ * cases_event.cla's own header comment has the full trap-word evidence.
+ * rt_ext_TbXRecAddr mirrors Task 5's own rt_ext_XRecAddr host-lane
+ * identity shim (internal/build/rt/rt_ext_host.inc) -- "the address of my
+ * own argument" has no real Toolbox call behind it on ANY backend, so
+ * every lane (host rt_ext_, this Mac rt_ext_, and cg68k's nat_ fallback)
+ * resolves it as a plain identity. */
+int32_t rt_ext_TbOSEventAvail(short mask, void *ev) { return (int32_t)OSEventAvail((EventMask)mask, (EventRecord *)ev); }
+void *rt_ext_TbXRecAddr(void *p) { return p; }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

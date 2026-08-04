@@ -763,7 +763,7 @@ func cgSizeOf(t: int): int {
         return cgAlignUp(irtN(t) + 1, 2)
     }
     case KArr {
-        return irtN(t) * cgSlotSizeOf(irtElem(t))
+        return irtN(t) * cgArrElemStride(irtElem(t))
     }
     case KRec {
         return cgRecordSize(irtName(t))
@@ -820,6 +820,35 @@ func cgSlotSizeOf(t: int): int {
         return 2
     }
     return sz
+}
+
+// cgArrElemStride (Task 6, toolbox-integration Feature B) is a KArr's own
+// per-element byte spacing -- identical to cgSlotSizeOf EXCEPT for a char
+// element, which packs at exactly 1 byte, no padding. A char array needs
+// BYTE-CONTIGUOUS storage with no gaps between elements: lower.cla's TyXRec
+// case builds an extern record's whole storage as exactly
+// `irArrType(irCharT, N)` (ir.cla/lower.cla, Task 4), and an EXRecAddr's own
+// literal field offsets (irXRecFieldOffset, the SAME packing-table authority
+// the spec's field-offset table anchors against) assume that storage is
+// EXACTLY N contiguous bytes, matching cprint's own C-lane `clar_arr_char_N`
+// byte layout (`uint8_t e[N]`, no padding) byte-for-byte. cgSlotSizeOf's
+// general "occupies 2 in any aggregate or stack slot" rule (bool/char
+// scalars, record fields with their own separate cgRecFieldSizeOf
+// authority) does not apply here: a char ARRAY's element-to-element spacing
+// has no stack-push/word-alignment need the way a scalar local/param slot
+// does. cgSizeOf(KArr)/cgArrElemAddr/cgArrDefaultAt all read this ONE
+// authority so the array's total size, per-element indexing, and zero-init
+// stride can never drift out of sync with each other. A pre-existing plain
+// `char[N]` fixed array (testdata/cg68k/arr_whole_assign.cla's own `c`/`d`)
+// is affected too -- was slot-padded (2 bytes/char, e.g. char[3] took 6
+// bytes) before this task, now packs at N bytes exactly; that fixture never
+// read a byte before writing it, so behavior is unchanged, only the emitted
+// listing golden (re-blessed this task).
+func cgArrElemStride(elemT: int): int {
+    if irtKind(elemT) == KChar {
+        return 1
+    }
+    return cgSlotSizeOf(elemT)
 }
 
 // cgRecFieldSizeOf/cgRecFieldAlignOf (Task 14 fix-round, native-5e): the
@@ -1530,14 +1559,21 @@ func cgWalkRestoreBase(reg: int) {
 }
 
 // cgArrDefaultAt default-inits a KArr slot at off(reg): N copies of the
-// element type, each at its own cgSlotSizeOf-spaced offset -- UNROLLED at
+// element type, each at its own cgArrElemStride-spaced offset -- UNROLLED at
 // compile time (N is always a compile-time constant, ir.cla's own KArr.n)
 // rather than a runtime loop, so every recursive call below stays within
 // this same simple (reg, constant-offset) addressing shape (mirrors
 // lowNullValueAppend's own "unrolled at LOWER time" precedent for the
 // identical per-index recursion, ARC fix-wave Task 2). An array element
 // never carries its own named default (cpDefaultInit's KArr arm always
-// recurses with scalarDefault=0/strDefault=-1) -- neither does this.
+// recurses with scalarDefault=0/strDefault=-1) -- neither does this. A char
+// element's stride is 1 (cgArrElemStride, Task 6), so this loop's N
+// single-byte zero writes land at contiguous offsets off+0..off+N-1 -- no
+// even-N precondition needed (unlike a word-oriented block zero), which
+// matters for extern-record storage: an EXRecAddr field read/write
+// addresses this SAME region via literal, unpadded byte offsets
+// (irXRecFieldOffset), so every byte in that contiguous range must actually
+// be zeroed, not just every other one.
 func cgArrDefaultAt(reg: int, off: int, t: int) {
     var et: int
     var n: int
@@ -1546,7 +1582,7 @@ func cgArrDefaultAt(reg: int, off: int, t: int) {
 
     et = irtElem(t)
     n = irtN(t)
-    esz = cgSlotSizeOf(et)
+    esz = cgArrElemStride(et)
     cgWalkStashBase(reg)
     i = 0
     while i < n {
@@ -3296,6 +3332,42 @@ func cgVarOff(e: int): int {
     return off
 }
 
+// cgXRecAddrReg/cgXRecAddrDisp (Task 6, toolbox-integration Feature B)
+// resolve an EXRecAddr node to its base register and displacement -- the
+// exact cgVarReg/cgVarOff pair just above, plus EXRecAddr's own extra
+// literal byte offset folded straight into the displacement (a single LEA
+// then needs no second instruction to add it -- see EXRecAddr's own "flat"
+// contract, ir.cla's doc comment: an arbitrarily nested `ev.a.b.c` already
+// collapsed to ONE summed offset at lower time, never a chain of
+// EXRecAddr/EFieldRef nodes cg68k would otherwise have to walk). Both
+// cgExprAddr's and cgExpr's own EXRecAddr arms share this pair, since an
+// EXRecAddr's "address" and "value" are the identical computed address --
+// there is no separate storage location holding a pointer to dereference,
+// unlike a plain ptr-typed EVarRef.
+func cgXRecAddrReg(e: int): int {
+    if irXRecAddrGlobal(e) {
+        return 5
+    }
+    return 6
+}
+
+func cgXRecAddrDisp(e: int): int {
+    var nm: string
+    var off: int
+
+    nm = poolGet(irXRecAddrName(e))
+    if irXRecAddrGlobal(e) {
+        off = cgFindGlobalOffset(nm)
+    } else {
+        off = cgFindFrameOffset(nm)
+    }
+    if off == cgUnresolved {
+        log("cg68k: unresolved xrec variable " + nm)
+        quit 1
+    }
+    return off + irXRecAddrOffset(e)
+}
+
 // cgIsScalarKind reports whether t is a plain <=4-byte value this
 // backend moves through D0/a MOVE.<B|L> pair -- everything except the
 // three aggregate/deferred kinds (Str's clamped-copy semantics, Rec/Arr's
@@ -3394,6 +3466,12 @@ func cgExprAddr(e: int) {
         cgFieldRefAddr(e)
     } else if k == EIndexRef {
         cgIndexRefAddr(e)
+    } else if k == EXRecAddr {
+        // Task 6 (toolbox-integration Feature B): a single LEA, base
+        // register + folded displacement (cgXRecAddrReg/cgXRecAddrDisp) --
+        // see EXRecAddr's own IRExprKind doc comment (ir.cla) for why this
+        // is always exactly one instruction, never a chain.
+        a68Emit(OpLea, 0, AmDisp16, cgXRecAddrReg(e), cgXRecAddrDisp(e), AmAn, 0, 0)
     } else if k == EIntr and poolGet(irIntrName(e)) == "ui_value_at_ptr" {
         // Task 14 (native-5e gate, opendoc.cla): `*(T *)(a0)` -- unlike
         // every OTHER EIntr (a COMPUTED value with no existing storage,
@@ -3568,11 +3646,11 @@ func cgIndexRefAddr(e: int) {
 // rtArrCheck (mirrors fpIndexRef's own cpCorePorted redirect -- Arr, UNLIKE
 // List, already calls the ported wrapper even at this addressing site;
 // list.cla's own module header comment is explicit that only List's four
-// sites stay bare), then scaled by cgSlotSizeOf(elem) -- an Arr element
-// lives at the SAME slot-padded spacing cgArrDefaultAt/cgSizeOf(KArr)
-// already establish (the file header's own "LAYOUT AUTHORITY" rule, NOT
-// List's own cgSizeOf-only convention -- see cgListElemAddr's own doc
-// comment for why List differs).
+// sites stay bare), then scaled by cgArrElemStride(elem) -- an Arr element
+// lives at the SAME stride cgArrDefaultAt/cgSizeOf(KArr) already establish
+// (the file header's own "LAYOUT AUTHORITY" rule, NOT List's own
+// cgSizeOf-only convention -- see cgListElemAddr's own doc comment for why
+// List differs).
 func cgArrElemAddr(e: int, xt: int) {
     var elemT: int
     var args: list of int
@@ -3591,7 +3669,7 @@ func cgArrElemAddr(e: int, xt: int) {
         quit 1
     }
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
-    a68Emit(OpMove, 4, AmImm, 0, cgSlotSizeOf(elemT), AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmImm, 0, cgArrElemStride(elemT), AmDn, 0, 0)
     a68EmitBr(OpBsr, 0, cgMul32Label())
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
     a68Emit(OpAdda, 4, AmDn, 0, 0, AmAn, 1, 0)
@@ -4114,14 +4192,33 @@ func cgConv(e: int) {
         // (identity bit-moves, KPtr/KOverlay both 4-byte pointer-shaped) are
         // all genuine no-ops on top of the cgExpr(x) above -- D0 already
         // holds the right bit pattern.
+    } else if op == CvSExt16 {
+        // Task 6 (toolbox-integration Feature B), Ch13 Field Palette: a
+        // `word` field reads sign-extended, but peekw's own contract
+        // (cgIntrPeek) zero-extends its raw 16-bit read into D0 -- D0's low
+        // 16 bits already hold the correct bit pattern, so a plain EXT.L
+        // re-derives the full signed 32-bit value from them, matching
+        // cprint's own `(int32_t)(int16_t)(x)` cast exactly (and the same
+        // EXT.L idiom cgCallExtReg/cgCallExtPascal's own KWord result arms
+        // already use for the identical "Toolbox INTEGER is signed" rule).
+        a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
+    } else if op == CvIntNonZero {
+        // Task 6, Ch13 Field Palette: a `bool` field reads as a real
+        // Toolbox Boolean byte, not guaranteed exactly 0/1 -- normalize any
+        // nonzero byte (peekb's own zero-extend already left a plain D0
+        // value) to exactly 1, matching Clarus bool's own 0/1 representation.
+        // TST sets the condition codes off D0 itself; Scc NE (cgCcFor's own
+        // "!=" code, 6) writes the whole byte $00/$FF; AND.L #1 masks that
+        // down to a clean 0/1 -- the identical CMP-less tail cgCompare's own
+        // Scc+AND idiom already uses for every "produce a real Clarus bool"
+        // result in this file.
+        a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+        a68Emit(OpScc, 1, AmNone, 0, 0, AmDn, 0, 6)
+        a68Emit(OpAndInsn, 4, AmImm, 0, 1, AmDn, 0, 0)
     } else {
-        // Task 4 review fix (Important 3): CvSExt16/CvIntNonZero (until
-        // Tasks 5-6 add their cases) used to fall through into the "no-op"
-        // comment above -- silently WRONG (leaves D0 holding peekw's raw
-        // zero-extended value / peekb's raw byte, never sign-extended or
-        // normalized), not merely unhandled. Explicit no-op list above +
-        // hard-fail default here, matching Task 14.7's own "no silent-zero
-        // degrade" rule elsewhere in this file.
+        // Task 4 review fix (Important 3): every OTHER IRConvOp is covered
+        // above -- hard-fail default here, matching Task 14.7's own "no
+        // silent-zero degrade" rule elsewhere in this file.
         log("cg68k: cgConv: conv op " + numToStr(int(op)) + " unsupported")
         quit 1
     }
@@ -5234,6 +5331,33 @@ func cgIntr(e: int) {
         cgIntrPoke(e, nm)
         return
     }
+    if nm == "xrec_str_write" {
+        // Task 6 (toolbox-integration Feature B): `ev.fName = s` -- an
+        // extern-record str[N] field WRITE, an ExprStmt (ir.cla's
+        // IXRecStrWrite doc comment), reached here via cgStmt's SExprStmt
+        // arm. Args (fieldAddr, N, srcStringExpr) map directly onto
+        // rtStrStore(dst: ptr, dstcap: int, src: ptr)'s own (dst, dstcap,
+        // src) -- fieldAddr is an EXRecAddr (its "address" and "value" are
+        // the same LEA, cgXRecAddrReg/Disp), N is already an int-const IR
+        // node (lower.cla's own newIRIntConst), srcStringExpr is whatever
+        // ordinary str-typed expr the RHS lowered to (cgExprAddr's own
+        // materialize fallback covers anything not already addressable,
+        // same as cgEmitStoreStr's identical generic tail).
+        a0e = irIntrArgsHead(e)
+        a1e = irExprNext(a0e)
+        args = cgFreshIntList()
+        args.add(a0e)
+        args.add(a1e)
+        args.add(irExprNext(a1e))
+        addrs = cgFreshBoolList()
+        addrs.add(true)
+        addrs.add(false)
+        addrs.add(true)
+        if not cgCallRuntime("rtStrStore", args, addrs) {
+            quit 1
+        }
+        return
+    }
     // Task 12.5 (lastError storage-inversion fix): "lasterr_code" is the
     // only lastError-family intrinsic that returns a scalar (int) and so
     // is reachable from THIS (value-context) dispatch -- a zero-arg
@@ -6177,6 +6301,19 @@ func cgExpr(e: int) {
             log("cg68k: cgExpr: EIndexRef non-scalar (str/rec) element reached in value context -- bind/store it instead of reading its value directly")
             quit 1
         }
+    } else if k == EXRecAddr {
+        // Task 6 (toolbox-integration Feature B): an EXRecAddr's own VALUE
+        // is the address it computes -- the identical LEA cgExprAddr's own
+        // EXRecAddr arm emits, just brought across to D0 (this backend's
+        // universal "value lives in D0" contract) instead of left in A0.
+        // Reached for: peek*/poke*'s own address argument (cgIntrPeek/
+        // cgIntrPoke both cgExpr their a0), IXRecStrRead/Write's fieldAddr
+        // argument, and whole-record decay at an extern call site
+        // (lowCallArgs' own EXRecAddr-as-ptr-arg, marshaled by the SAME
+        // generic cgExpr(arg) every other ECallExt ptr argument already
+        // goes through).
+        a68Emit(OpLea, 0, AmDisp16, cgXRecAddrReg(e), cgXRecAddrDisp(e), AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
     } else if k == EBin {
         cgBin(e)
     } else if k == EUn {
@@ -6222,9 +6359,12 @@ func cgCleanupStack(n: int) {
 
 // cgBlockCopy copies size bytes from (A0) to (A1), both advancing --
 // unrolled MOVE.W for a small (<=16 byte) copy, else a MOVE.W/DBRA loop
-// (clobbers D0). size is always even here (cgSizeOf(KStr)/cgSlotSizeOf
-// round every type up to an even size), so a plain word loop suffices --
-// no odd trailing byte to special-case.
+// (clobbers D0), plus a single trailing MOVE.B when size is odd. size was
+// always even for every caller before Task 6 (cgSizeOf(KStr)/cgSlotSizeOf
+// round every type up to an even size) -- a packed char array/extern-record
+// (cgArrElemStride, Task 6: a char element's stride is 1, no padding) can
+// now be an odd cgSizeOf (e.g. a plain `char[3]` local), so the trailing
+// byte can no longer be assumed away.
 func cgBlockCopy(size: int) {
     var words: int
     var i: int
@@ -6243,6 +6383,9 @@ func cgBlockCopy(size: int) {
         a68Bind(loopLbl)
         a68Emit(OpMove, 2, AmPostInc, 0, 0, AmPostInc, 1, 0)
         a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, loopLbl)
+    }
+    if size mod 2 == 1 {
+        a68Emit(OpMove, 1, AmPostInc, 0, 0, AmPostInc, 1, 0)
     }
 }
 
@@ -7374,6 +7517,29 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs.add(false)
             cgStrBuilderIntoTemp("rtTextSlice", args, addrs)
             cgFlushA1TempToDst(dst)
+            return
+        }
+        if nm == "xrec_str_read" {
+            // Task 6 (toolbox-integration Feature B): `s = ev.fName` -- an
+            // extern-record str[N] field READ (`IXRecStrRead`, a KStr-
+            // producing EIntr, reached here exactly like str_concat/etc
+            // above). Args (fieldAddr, N): fills dst IN PLACE via a clamped
+            // rtStrStore(dst, dst's own declared capacity, fieldAddr) --
+            // the SAME generic dst/cap/src shape this function's own tail
+            // (below) already uses for a plain EVarRef/EStrConst source,
+            // just with src replaced by the field's raw address.
+            a0e = irIntrArgsHead(src)
+            args = cgFreshIntList()
+            args.add(dst)
+            args.add(newIRIntConst(irtN(irExprType(dst)), irIntT))
+            args.add(a0e)
+            addrs = cgFreshBoolList()
+            addrs.add(true)
+            addrs.add(false)
+            addrs.add(true)
+            if not cgCallRuntime("rtStrStore", args, addrs) {
+                quit 1
+            }
             return
         }
         if nm == "lasterr_msg" {

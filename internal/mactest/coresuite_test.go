@@ -109,14 +109,17 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // (test-suite-review Task 11): testsuite/kit.cla (shared TestResult/
 // tkPass/tkFail/tkReport contract, reused as-is from the core suite) +
 // testsuite/toolbox/runner.cla + cases_events.cla + cases_draw.cla +
-// cases_a5.cla + cases_gestalt.cla + gui.cla. cases_a5.cla (A5Live) was
-// added by Task 13's own coverage-honesty audit -- see that file's
-// header comment. cases_gestalt.cla (GestaltNamed) was added by Task 2
-// (toolbox-integration) -- the generalized named-register trap clause's
-// native gate. Unlike the core suite, gui.cla is this suite's ONLY front
-// end -- there is no toolbox CLI (MenuKeyMatches needs the GUI's own
-// installed File menu, CanvasChecksum needs the GUI's own Board canvas),
-// so there is no toolboxCLIFiles/toolboxCLIMacFiles pair to mirror.
+// cases_a5.cla + cases_gestalt.cla + cases_event.cla + gui.cla.
+// cases_a5.cla (A5Live) was added by Task 13's own coverage-honesty audit
+// -- see that file's header comment. cases_gestalt.cla (GestaltNamed) was
+// added by Task 2 (toolbox-integration) -- the generalized named-register
+// trap clause's native gate. cases_event.cla (EventXRec) was added by
+// Task 6 (toolbox-integration Feature B) -- `extern record` native
+// storage/decay against a real OSEventAvail trap. Unlike the core suite,
+// gui.cla is this suite's ONLY front end -- there is no toolbox CLI
+// (MenuKeyMatches needs the GUI's own installed File menu, CanvasChecksum
+// needs the GUI's own Board canvas), so there is no toolboxCLIFiles/
+// toolboxCLIMacFiles pair to mirror.
 var toolboxFiles = []string{
 	filepath.Join("testsuite", "kit.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
@@ -124,6 +127,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_a5.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_gestalt.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_event.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -144,7 +148,7 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 6 result lines (5 real cases +
+// this test also parses each of the 7 result lines (6 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
@@ -181,9 +185,10 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // checkToolboxSuiteCapture is TestToolboxSuiteOn68k/TestToolboxSuiteOnMac's
 // shared result-log assertion (Task 12 factor-out; case count bumped to 5
 // by Task 13's A5Live addition, then to 6 by Task 2's (toolbox-
-// integration) GestaltNamed addition): parses each of the 6 result lines
-// (5 real cases + SelfCheck) into its own t.Run subtest -- per-case CI
-// reporting -- plus the aggregate TOTAL line, regardless of which lane
+// integration) GestaltNamed addition, then to 7 by Task 6's (toolbox-
+// integration Feature B) EventXRec addition): parses each of the 7 result
+// lines (6 real cases + SelfCheck) into its own t.Run subtest -- per-case
+// CI reporting -- plus the aggregate TOTAL line, regardless of which lane
 // produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
@@ -207,8 +212,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 6 {
-		t.Errorf("result lines: got %d, want 6\ncapture:\n%s", len(results), out)
+	if len(results) != 7 {
+		t.Errorf("result lines: got %d, want 7\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -218,7 +223,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 6 PASS 6 FAIL 0"; total != want {
+	if want := "TOTAL 7 PASS 7 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

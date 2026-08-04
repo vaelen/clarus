@@ -22,7 +22,9 @@
 // the two suites are ever composed together, even though nothing does
 // that today). GestaltNamed (cases_gestalt.cla) is Task 2's own addition
 // (toolbox-integration): the generalized named-register trap clause's
-// native gate.
+// native gate. EventXRec (cases_event.cla) is Task 6's own addition
+// (toolbox-integration Feature B): `extern record` native storage/decay
+// against a real OSEventAvail trap.
 
 enum ToolboxTest {
     All
@@ -31,15 +33,16 @@ enum ToolboxTest {
     CanvasChecksum
     A5Live
     GestaltNamed
+    EventXRec
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 5 real cases plus
+// nTbCases is ToolboxTest's member count minus All: the 6 real cases plus
 // SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 6
+const nTbCases: int = 7
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -63,6 +66,9 @@ func tbCaseName(t: ToolboxTest): string {
     case GestaltNamed {
         return "GestaltNamed"
     }
+    case EventXRec {
+        return "EventXRec"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -79,6 +85,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(CanvasChecksum)
     l.add(A5Live)
     l.add(GestaltNamed)
+    l.add(EventXRec)
     l.add(SelfCheck)
     return l
 }
@@ -134,6 +141,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, GestaltNamed) {
         results.add(caseGestaltNamed())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, EventXRec) {
+        results.add(caseEventXRec())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
