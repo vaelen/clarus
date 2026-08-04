@@ -179,6 +179,23 @@ func toText(s: string): text {
     return t
 }
 
+// cpFatal (Task 4 review fix, Important 3 -- "silent-zero placeholders
+// must be hard errors", the same 5d lesson lowUnsupported's own doc
+// comment states) reports an unhandled IR shape and aborts. Every
+// text-returning dispatcher below (fpExpr/fpConv/fpIntrCall) used to fall
+// through an unmatched case to a bare `return toText("")` -- a genuinely
+// unhandled node kind then printed as EMPTY C text instead of failing
+// loudly: `clarusc emit` exited 0 while producing C that doesn't compile
+// (confirmed empirically during Task 4's own development: an EXRecAddr
+// argument printed as nothing, `rt_pokew(, 5)`). Mirrors lowUnsupported's
+// own log+quit shape; called only from a dispatcher's unmatched-case tail,
+// so it never fires on any construct these printers already handle.
+func cpFatal(what: string): text {
+    log("cprint: unhandled " + what)
+    quit 1
+    return toText("")
+}
+
 // toStr (ARC Task 7) narrows a `text` back down to a `string` -- the
 // reverse direction toText bridges, needed because cpEmitRetain/
 // cpEmitRelease's cexpr parameter is (deliberately, matching every one of
@@ -955,7 +972,10 @@ func fpExpr(e: int): text {
         return fpCallExt(e)
     }
     }
-    return toText("")
+    // Task 4 review fix (Important 3): a real unhandled IRExprKind (e.g.
+    // EXRecAddr, until Tasks 5-6 add its case) -- see cpFatal's own doc
+    // comment for why this replaces the old silent `return toText("")`.
+    return cpFatal("expr kind " + numToStr(int(irExprKind(e))))
 }
 
 // fpIsHandleType reports whether t is a reference-semantics (handle-backed)
@@ -1351,7 +1371,9 @@ func fpConv(e: int): text {
     } else if op == CvOverlayToPtr {
         return "((void *)(" + x + "))"
     }
-    return toText("")
+    // Task 4 review fix (Important 3): CvSExt16/CvIntNonZero (until Tasks
+    // 5-6 add their cases) -- see cpFatal's own doc comment.
+    return cpFatal("conv op " + numToStr(int(op)))
 }
 
 // cpEnumCount returns the member count of the enum named nameIdx (an
@@ -2739,7 +2761,10 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
     }
-    return toText("")
+    // Task 4 review fix (Important 3): a real unhandled intrinsic name
+    // (e.g. xrec_str_read/xrec_str_write, until Tasks 5-6 add their
+    // cases) -- see cpFatal's own doc comment.
+    return cpFatal("intrinsic " + poolGet(nm))
 }
 
 // fpUiEditStmt prints one `edit F, target` / `edit F, new T` call (Ch10;
@@ -2959,6 +2984,14 @@ func fpStmt(s: int) {
         terminal = true
         fpFreeStmtTmps()
         fpEmit(toText("continue;"))
+    } else {
+        // Task 4 review fix (Important 3): every CURRENT IRStmtKind is
+        // covered above (this arm is unreachable today, verified against
+        // the full fixture corpora) -- kept as a hard-fail guard against a
+        // future stmt kind added here without a matching case, instead of
+        // the "silently emit nothing" shape this if-chain would otherwise
+        // have; see cpFatal's own doc comment.
+        cpFatal("stmt kind " + numToStr(int(irStmtKind(s))))
     }
 
     if not terminal {

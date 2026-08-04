@@ -1412,4 +1412,81 @@ on App.startEmpty {
     ln(src, "    return r.a + r.b")
     ln(src, "}")
     runCase("extern-xrec-pad-bare-clean", src)
+
+    // ---- Task 4 task-review fix round: 1 Critical + 2 Important + 2
+    // Minor findings, each pinned by its own case below ----
+
+    // Case 112 (Critical 1): whole-record COMPARISON -- Ch13 explicitly
+    // bans this alongside assignment ("no whole-record operations ...
+    // no comparison"), but checkComparison had no TyXRec branch and
+    // assignable's own TyXRec case (added for typesEqual/exhaustive-switch
+    // parity, never meant to reach a real comparison) made two same-named
+    // xrec operands look "compatible" -- `a == b` checked clean and would
+    // have emitted broken C.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F(): bool {")
+    ln(src, "    var a: R")
+    ln(src, "    var b: R")
+    ln(src, "    return a == b")
+    ln(src, "}")
+    runCase("extern-xrec-compare-banned", src)
+
+    // Case 113 (Minor 5): whole-assign ban, RHS direction, into an
+    // UNRELATED type (`ptr`) -- pins the "xrec as RHS into anything" half
+    // of the both-directions rule with a real corpus case (previously
+    // only probe-verified, not corpus-locked).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var a: R")
+    ln(src, "    var p: ptr")
+    ln(src, "    p = a")
+    ln(src, "}")
+    runCase("extern-xrec-assign-rhs-into-ptr", src)
+
+    // Case 114 (Minor 5): whole-assign ban via a `var` initializer, RHS
+    // direction, into an unrelated type (`int`) -- the checkVarDecl
+    // counterpart to Case 113's checkAssignStmt case.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var a: R")
+    ln(src, "    var n: int = a")
+    ln(src, "}")
+    runCase("extern-xrec-var-init-rhs-into-int", src)
+
+    // Case 115 (Critical 1 follow-up): the SAME whole-assign leak Case 113/
+    // 114 pin for checkVarDecl/checkAssignStmt also existed in
+    // checkWindowVar (a window's per-instance `var` is a separate DeclNode
+    // path, not checkVarDecl) -- `var ev: R = otherEv` inside a window
+    // body silently passed compatible()'s same-name-xrec case with no
+    // guard of its own. (A window var's own initializer can't reference a
+    // SIBLING window var by bare name -- checkWindowVar doesn't chain
+    // window vars into scope incrementally as they're declared, a
+    // pre-existing, unrelated characteristic -- so this reaches an xrec
+    // value via a GLOBAL instead.)
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "var g: R")
+    ln(src, "window W {")
+    ln(src, "    var b: R = g")
+    ln(src, "}")
+    runCase("extern-xrec-window-var-whole-assign", src)
+
+    // Case 116 (Minor 4): `pad[0]` -- below Ch13's documented `pad[N]
+    // (N >= 1)` minimum.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    pad[0]")
+    ln(src, "}")
+    runCase("extern-xrec-pad-len-too-small", src)
 }

@@ -201,6 +201,11 @@ func xrecFieldsMatch(declA: int, declB: int): bool {
 record XRecFieldCheck {
     ok: bool
     badStrLen: bool
+    // badPadLen (Task 4 review fix, Minor 4): distinguishes a `pad[N]`
+    // with N < 1 (Ch13's own "pad[N] (N >= 1)" table entry) from every
+    // other illegal shape, same badStrLen/catch-all split str[N] already
+    // gets.
+    badPadLen: bool
     readType: int
     size: int
     align: int
@@ -240,9 +245,15 @@ func checkXRecFieldType(te: int): XRecFieldCheck {
         return r
     }
     if k == TxPad {
+        n = padTypeN(te)
+        if n < 1 {
+            r.ok = false
+            r.badPadLen = true
+            return r
+        }
         r.ok = true
         r.readType = InvalidT
-        r.size = padTypeN(te)
+        r.size = n
         r.align = 1
         return r
     }
@@ -1707,6 +1718,8 @@ func checkRecordDecl(d: int) {
             if not xr.ok {
                 if xr.badStrLen {
                     emitDiag(declLine(f), declCol(f), "str field length must be 1..255")
+                } else if xr.badPadLen {
+                    emitDiag(declLine(f), declCol(f), "pad length must be at least 1")
                 } else {
                     emitDiag(declLine(f), declCol(f), "extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record")
                 }
@@ -2720,7 +2733,16 @@ func checkWindowVar(v: int): int {
     t = resolveType(varDeclType(v))
     if varDeclInit(v) != -1 {
         it = checkExpr(varDeclInit(v), t)
-        if it != InvalidT and not compatible(it, t) {
+        // Task 4 review fix (Critical 1): same whole-assign ban
+        // checkVarDecl's own top-level/local `var` path applies -- a
+        // window's per-instance `var` is a separate DeclNode path
+        // (checkWindowVar, not checkVarDecl), so it needed its own copy
+        // of this guard; without it, `var ev: EventRecord = otherEv`
+        // inside a window body silently passed compatible()'s new
+        // same-name-xrec case.
+        if it != InvalidT and (typeKind(t) == TyXRec or typeKind(it) == TyXRec) {
+            emitDiag(declLine(v), declCol(v), "extern records cannot be assigned")
+        } else if it != InvalidT and not compatible(it, t) {
             emitDiag(declLine(v), declCol(v), "cannot assign " + typeName(it) + " to " + typeName(t))
         }
     }
@@ -4144,6 +4166,18 @@ func checkComparison(e: int, allowEnum: bool): int {
     if typeKind(lt) == typeKind(rt) {
         if typeKind(lt) == TyRec {
             emitDiag(exprLine(e), exprCol(e), "records cannot be compared")
+            return InvalidT
+        }
+        if typeKind(lt) == TyXRec {
+            // Task 4 review fix (Critical 1): no whole-record operations
+            // exist for an extern record (Ch13), comparison included --
+            // assignable's own TyXRec case (same-name xrecs "assignable")
+            // exists only for typesEqual's/exhaustive-switch parity, never
+            // meant to let a whole xrec value reach `==`/`<`/etc; this
+            // must be checked BEFORE the generic compatible() fallback
+            // below, which would otherwise silently pass two same-named
+            // xrec operands through as comparable.
+            emitDiag(exprLine(e), exprCol(e), "extern records cannot be compared")
             return InvalidT
         }
         if typeKind(lt) == TyList {

@@ -4108,12 +4108,23 @@ func cgConv(e: int) {
         a68Emit(OpAndInsn, 4, AmImm, 0, 0xFF, AmDn, 0, 0)
     } else if op == CvIntToEnum {
         cgEmitEnumConv(irConvEnumName(e))
+    } else if op == CvCharToInt or op == CvEnumToInt or op == CvIntToPtr or op == CvPtrToInt or op == CvPtrToOverlay or op == CvOverlayToPtr {
+        // CvCharToInt/CvEnumToInt (already zero-extended/already 4-byte int
+        // rep in D0) and CvIntToPtr/CvPtrToInt/CvPtrToOverlay/CvOverlayToPtr
+        // (identity bit-moves, KPtr/KOverlay both 4-byte pointer-shaped) are
+        // all genuine no-ops on top of the cgExpr(x) above -- D0 already
+        // holds the right bit pattern.
+    } else {
+        // Task 4 review fix (Important 3): CvSExt16/CvIntNonZero (until
+        // Tasks 5-6 add their cases) used to fall through into the "no-op"
+        // comment above -- silently WRONG (leaves D0 holding peekw's raw
+        // zero-extended value / peekb's raw byte, never sign-extended or
+        // normalized), not merely unhandled. Explicit no-op list above +
+        // hard-fail default here, matching Task 14.7's own "no silent-zero
+        // degrade" rule elsewhere in this file.
+        log("cg68k: cgConv: conv op " + numToStr(int(op)) + " unsupported")
+        quit 1
     }
-    // CvCharToInt/CvEnumToInt (already zero-extended/already 4-byte int
-    // rep in D0) and CvIntToPtr/CvPtrToInt/CvPtrToOverlay/CvOverlayToPtr
-    // (identity bit-moves, KPtr/KOverlay both 4-byte pointer-shaped) are
-    // all no-ops on top of the cgExpr(x) above -- D0 already holds the
-    // right bit pattern.
 }
 
 // cgIntrPeekPokeSize maps a peek*/poke* intrinsic name to its access width
@@ -8237,6 +8248,15 @@ func cgStmt(s: int) {
         cgBreakStmt()
     } else if k == SContinue {
         cgContinueStmt()
+    } else {
+        // Task 4 review fix (Important 3): every CURRENT IRStmtKind is
+        // covered above (this arm is unreachable today, verified against
+        // the full fixture corpora) -- same fail-closed rule (Task 14.7's
+        // own lesson, cited throughout this file) applied to the one
+        // dispatcher in cg68k.cla that didn't already have a hard-fail
+        // fallback of its own.
+        log("cg68k: cgStmt: stmt kind " + numToStr(int(k)) + " unsupported")
+        quit 1
     }
 
     if k != SReturn and k != SBreak and k != SContinue {

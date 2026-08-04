@@ -226,3 +226,13 @@ check_test.cla:1:8: conflicting extern declaration for 'R' (also declared at 4:8
 check_test.cla:4:8: conflicting extern declaration for 'R' (also declared at 1:8)
 === extern-xrec-pad-bare-clean ===
 clean
+=== extern-xrec-compare-banned ===
+check_test.cla:7:14: extern records cannot be compared
+=== extern-xrec-assign-rhs-into-ptr ===
+check_test.cla:7:5: extern records cannot be assigned
+=== extern-xrec-var-init-rhs-into-int ===
+check_test.cla:6:5: extern records cannot be assigned
+=== extern-xrec-window-var-whole-assign ===
+check_test.cla:6:5: extern records cannot be assigned
+=== extern-xrec-pad-len-too-small ===
+check_test.cla:2:5: pad length must be at least 1
