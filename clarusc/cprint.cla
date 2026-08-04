@@ -4237,7 +4237,7 @@ func cpEmitCallbackGlueProtos() {
         return
     }
     cpRestBuf.add(toText(""))
-    cpRestBuf.add(toText("#if defined(__m68k__)"))
+    cpRestBuf.add(toText("#if defined(__m68k__) || defined(macintosh)"))
     cpRestBuf.add(toText("#define CLAR_PASCAL pascal"))
     cpRestBuf.add(toText("#else"))
     cpRestBuf.add(toText("#define CLAR_PASCAL"))
