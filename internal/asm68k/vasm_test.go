@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"clarus/internal/build"
+	"clarus/internal/claruscboot"
 )
 
 func repoRoot(t *testing.T) string {
@@ -102,8 +103,9 @@ func hexWindow(data []byte, off int) string {
 	return b.String()
 }
 
-// TestVasmRoundTrip builds internal/asm68k/exercise.cla with the frozen Go
-// compiler, runs it to get asm68k.cla's own listing (exer.s) and its own
+// TestVasmRoundTrip builds internal/asm68k/exercise.cla with the
+// current-source clarusc (claruscboot), runs it to get asm68k.cla's own
+// listing (exer.s) and its own
 // encoded bytes (exer.dat) for the SAME exerciser stream
 // (a68SelfExercise()), assembles exer.s with vasm, and requires the result
 // to be byte-identical to exer.dat. A divergence means the table is wrong
@@ -116,9 +118,19 @@ func TestVasmRoundTrip(t *testing.T) {
 
 	runDir := t.TempDir()
 	exe := filepath.Join(runDir, "exercise")
-	diags, err := build.Build([]string{filepath.Join(root, "internal", "asm68k", "exercise.cla")}, exe)
-	if err != nil || len(diags) > 0 {
-		t.Fatalf("build exercise.cla: err=%v diags=%v", err, diags)
+	clarusc := claruscboot.CurrentExe(t)
+	exerC := filepath.Join(runDir, "exercise.c")
+	rtdir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
+	emit := exec.Command(clarusc, "emit", "--rtdir", rtdir, "-o", exerC,
+		filepath.Join(root, "internal", "asm68k", "exercise.cla"))
+	if out, err := emit.CombinedOutput(); err != nil {
+		t.Fatalf("clarusc emit exercise.cla: %v\n%s", err, out)
+	}
+	rtInc := filepath.Join(root, "internal", "build", "rt")
+	ccCmd := exec.Command(build.CCPath(), "-O1", "-I", rtInc, "-o", exe,
+		exerC, filepath.Join(rtInc, "rt.c"))
+	if out, err := ccCmd.CombinedOutput(); err != nil {
+		t.Fatalf("cc exercise.c: %v\n%s", err, out)
 	}
 
 	cmd := exec.Command(exe)

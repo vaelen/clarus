@@ -1,8 +1,10 @@
 package reftest
 
 import (
-	"clarus/internal/driver"
+	"bytes"
+	"clarus/internal/claruscboot"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,13 +20,14 @@ func TestFencesExtract(t *testing.T) {
 	}
 }
 
-// Every fence listed in CheckClean must pass `clarus check` standalone.
+// Every fence listed in CheckClean must check clean under clarusc standalone.
 func TestCheckCleanFences(t *testing.T) {
 	fences, err := ExtractFences("../../docs/clarus-language-reference.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	exe := claruscboot.CurrentExe(t)
 	for _, idx := range CheckClean {
 		if idx >= len(fences) {
 			t.Fatalf("manifest index %d out of range (%d fences)", idx, len(fences))
@@ -33,12 +36,10 @@ func TestCheckCleanFences(t *testing.T) {
 		if err := os.WriteFile(p, []byte(fences[idx].Code), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		diags, err := driver.Check([]string{p})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(diags) != 0 {
-			t.Errorf("fence %d (md line %d): %v", idx, fences[idx].Line, diags[0])
+		out, err := exec.Command(exe, p).CombinedOutput()
+		if err != nil || len(bytes.TrimSpace(out)) != 0 {
+			t.Errorf("fence %d (md line %d): clarusc check not clean (err=%v):\n%s",
+				idx, fences[idx].Line, err, out)
 		}
 	}
 }
