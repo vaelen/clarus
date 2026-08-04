@@ -6,9 +6,8 @@
 // hardware through `clarusc emit68k`, no C/Retro68/cmake step at all
 // (unlike mac_test.go's TestSuiteOnMac/etc, which build via
 // scripts/build-mac.sh's Retro68 pipeline over clarusc's own C emit).
-// clarusc is built via the memoized buildClarusc() pattern (mirrors
-// internal/cg68k/golden_test.go's own buildClarusc, itself mirroring
-// internal/selfhost/differential_test.go's), then invoked directly with
+// clarusc comes from claruscboot.CurrentExe (Go-compiler-deletion phase --
+// was the Go compiler's build.Build), then invoked directly with
 // `emit68k -o hello.bin testdata/cg68k/hello.cla`, and the resulting
 // .bin is run the same way mac_test.go's own RunMac/parseCapture already
 // do for the Retro68 path -- the capture protocol (runtime/clarus/
@@ -23,58 +22,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"clarus/internal/build"
+	"clarus/internal/claruscboot"
 )
 
-var (
-	nativeClaruscOnce sync.Once
-	nativeClaruscExe  string
-	nativeClaruscErr  error
-)
-
-// buildNativeClarusc builds clarusc once per `go test` invocation (same
-// memoization discipline as cg68k.golden_test.go's own buildClarusc --
-// duplicated locally rather than exported cross-package for one caller,
-// same call this repo's other near-duplicate helpers already made).
+// buildNativeClarusc returns the current-source clarusc used to emit68k
+// every native-lane build (Go-compiler-deletion phase; was build.Build).
 func buildNativeClarusc(t *testing.T) string {
 	t.Helper()
-	nativeClaruscOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "clarusc-native-*")
-		if err != nil {
-			nativeClaruscErr = err
-			return
-		}
-		exe := filepath.Join(dir, "clarusc")
-		diags, err := build.Build([]string{filepath.Join(repoRoot(t), "clarusc", "main.cla")}, exe)
-		if err != nil {
-			nativeClaruscErr = err
-			return
-		}
-		if len(diags) > 0 {
-			var b strings.Builder
-			b.WriteString("clarusc build produced diagnostics:")
-			for _, d := range diags {
-				b.WriteString("\n  ")
-				b.WriteString(d.String())
-			}
-			nativeClaruscErr = errString(b.String())
-			return
-		}
-		nativeClaruscExe = exe
-	})
-	if nativeClaruscErr != nil {
-		t.Fatal(nativeClaruscErr)
-	}
-	return nativeClaruscExe
+	return claruscboot.CurrentExe(t)
 }
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
 
 // TestHelloOn68k builds testdata/cg68k/hello.cla with `clarusc emit68k`
 // and boots the result in the emulator -- the walking-skeleton milestone
@@ -233,7 +192,7 @@ func runNativeHostCompareSeglimit(t *testing.T, fixtureName string, segLimit int
 // buildNative68k invokes `clarusc emit68k -o <dir>/<binName>.bin fixture`
 // via the memoized buildNativeClarusc(), the same in-test emit pattern
 // every other native_test.go boot test already uses (buildNativeClarusc
-// builds clarusc through the host Go toolchain via build.Build, then this
+// returns claruscboot.CurrentExe's current-source clarusc, then this
 // runs the resulting exe directly -- no subprocess snapshot-bootstrap, no
 // script indirection). scripts/build-68k.sh exists and works standalone
 // (mirrors build-mac.sh's step-1 snapshot-bootstrap caching, then `emit68k

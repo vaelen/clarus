@@ -4,64 +4,22 @@
 package mactest
 
 import (
-	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"testing"
+
+	"clarus/internal/claruscboot"
 )
 
-var (
-	snapshotClaruscOnce sync.Once
-	snapshotClaruscExe  string
-	snapshotClaruscErr  error
-	snapshotClaruscSkip string
-)
-
-// bootstrapSnapshotClarusc compiles the committed clarusc/clarusc.c
-// snapshot straight to a binary with `cc` alone -- no Go compiler
-// involved. This is the host-oracle half of test-suite-review Task 5:
-// mactest's HOST comparisons (BuildCoreCLIHost here, and
-// runNativeHostCompareSeglimit's host half in native_test.go) no longer
-// need build.Build, so the Mac gates no longer need the Go compiler.
-// Duplicated from internal/selfhost/behavior_test.go's own
-// bootstrapSnapshotClarusc/internal/perfgate's buildClarusc (mactest
-// cannot import either -- see buildNativeClarusc's comment in
-// native_test.go:39-42 doing exactly this same duplication). Memoized:
-// one bootstrap per `go test` invocation, reused by every host build in
-// this package.
-func bootstrapSnapshotClarusc(t *testing.T) string {
+// hostOracleClarusc returns the compiler the HOST-oracle builds use.
+// Formerly bootstrapSnapshotClarusc (raw committed snapshot); now the
+// shared current-source bootstrap, so host oracles exercise just-edited
+// compiler code even when the snapshot is stale (spec: mactest host
+// oracles mirror build-mac.sh's pipeline shape but exist to test current
+// code).
+func hostOracleClarusc(t *testing.T) string {
 	t.Helper()
-	snapshotClaruscOnce.Do(func() {
-		if _, err := exec.LookPath("cc"); err != nil {
-			snapshotClaruscSkip = "cc not found on PATH, skipping Go-free host oracle"
-			return
-		}
-		root := repoRoot(t)
-		dir, err := os.MkdirTemp("", "clarusc-snapshot-*")
-		if err != nil {
-			snapshotClaruscErr = err
-			return
-		}
-		exe := filepath.Join(dir, "clarusc")
-		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-			"-o", exe,
-			filepath.Join(root, "clarusc", "clarusc.c"),
-			filepath.Join(root, "internal", "build", "rt", "rt.c"))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			snapshotClaruscErr = fmt.Errorf("bootstrap clarusc from snapshot: %v\n%s", err, out)
-			return
-		}
-		snapshotClaruscExe = exe
-	})
-	if snapshotClaruscSkip != "" {
-		t.Skip(snapshotClaruscSkip)
-	}
-	if snapshotClaruscErr != nil {
-		t.Fatal(snapshotClaruscErr)
-	}
-	return snapshotClaruscExe
+	return claruscboot.CurrentExe(t)
 }
 
 // buildHostFromFixtures emits claPaths' C with the snapshot-bootstrapped
@@ -77,7 +35,7 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 func buildHostFromFixtures(t *testing.T, claPaths []string, binName string) string {
 	t.Helper()
 	root := repoRoot(t)
-	claruscExe := bootstrapSnapshotClarusc(t)
+	claruscExe := hostOracleClarusc(t)
 	work := t.TempDir()
 	outC := filepath.Join(work, binName+".c")
 	rtDir := filepath.Join(root, "runtime", "clarus") + string(filepath.Separator)
