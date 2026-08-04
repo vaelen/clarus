@@ -203,11 +203,10 @@ func TestClaruscChecksItself(t *testing.T) {
 }
 
 // claruscOnlyExclude documents, per reftest.ClaruscOnly index, why that
-// fence is not run through clarusc's own CHECK mode below. The other four
-// ClaruscOnly fences (ptr basics, the commented container-restriction
-// fence, external func, and the fully-commented overlay restrictions
-// fence) are exactly var/func/external-func top-level declarations (or
-// all-comment) and check clean as extracted, with no wrapping needed.
+// fence is not run through clarusc's own CHECK mode below. Every other
+// ClaruscOnly fence is a self-contained var/func/external-func/extern-record
+// top-level declaration (or all-comment), and checks clean as extracted,
+// with no wrapping needed.
 var claruscOnlyExclude = map[int]string{
 	// Bare pokeb/pokel call statements after the var decls -- not a valid
 	// top-level form (same bare-statement-fragment class as CheckClean's
@@ -221,6 +220,11 @@ var claruscOnlyExclude = map[int]string{
 	// Reordering the example to check clean is a content change out of
 	// this task's prose-only Ch13 scope.
 	64: "func f's body interleaves var decls with statements -- violates declare-at-top-of-body, not fixable without changing example content",
+	// waitClick calls UiWaitNextEvent/nilPtr/handleAt, none declared in the
+	// fence itself -- same "references a name declared only in surrounding
+	// prose" class as several CheckClean exclusions (e.g. indices 12-15,
+	// 20, 28, 29, 38, 39, 41, 48, 49, 51, 53, 55).
+	67: "waitClick references UiWaitNextEvent/nilPtr/handleAt from surrounding prose, not declared in the fence itself",
 }
 
 // TestClaruscOnlyFencesCheck completes TestDifferentialFences' coverage: it

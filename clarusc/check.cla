@@ -105,6 +105,201 @@ func setRecordFields(nameIdx: int, head: int) {
     recFieldsHeadByName[poolGet(nameIdx)] = head
 }
 
+// ---- extern-record layout (Task 4, toolbox-integration Feature B) ----
+// xrecSizeByName holds each declared `extern record`'s TOTAL packed size
+// (Ch13's packing table, rounded up to even) -- the checker's OWN
+// self-contained computation, not a read of ir.cla's irXRecSize authority:
+// check.cla runs before lower.cla ever builds the IR record arenas (see
+// main.cla's checkProgram-then-lower pipeline), so no such authority
+// exists yet at check time. This is needed for exactly one checker rule
+// ("only a 4-byte extern record can pass as int" -- checkArgsCall below);
+// it implements the SAME packing algorithm ir.cla's irXRecFieldOffset/
+// irXRecSize independently re-implement for lowering's own purposes (see
+// that pair's own doc comment) -- keep the two in lockstep if the Ch13
+// packing table ever changes. Plain name-keyed map, same no-namespacing
+// convention as recFieldsHeadByName above (see its own doc comment for
+// why that's safe).
+var xrecSizeByName: map of int
+
+func xrecSize(t: int): int {
+    return xrecSizeByName.get(poolGet(typeNameIdx(t)), -1)
+}
+
+// xrecFirstDeclByName (Task 4 dedup) mirrors externFirstDeclByName's own
+// progGen-namespaced, name-keyed "first occurrence" registry exactly (see
+// its doc comment) -- the same field-for-field merge rule Ch13's Extern
+// dedup section states for `extern record`.
+var xrecFirstDeclByName: map of int
+
+// xrecFieldTypeMatches compares two extern-record fields' TypeExprs
+// structurally (Task 4 dedup): same TypeExprKind, and for the kinds that
+// carry a payload (str[N]/pad[N]'s N, or a nested type's own name) that
+// payload must match too. TxWord/TxByte carry no payload (kind equality
+// alone suffices, same as TxWord's own doc comment). TxString/TxList/
+// TxMap/TxArray never legally reach here (checkXRecFieldType already
+// rejects them as an illegal field type on ANY xrec decl), so the
+// catch-all `false` is unreachable on a check-clean pair, not a real gap.
+func xrecFieldTypeMatches(a: int, b: int): bool {
+    var ka: TypeExprKind
+    var kb: TypeExprKind
+
+    ka = typeExprKind(a)
+    kb = typeExprKind(b)
+    if ka != kb {
+        return false
+    }
+    if ka == TxWord or ka == TxByte {
+        return true
+    }
+    if ka == TxXStr {
+        return xstrTypeN(a) == xstrTypeN(b)
+    }
+    if ka == TxPad {
+        return padTypeN(a) == padTypeN(b)
+    }
+    if ka == TxNamed {
+        return poolGet(namedTypeName(a)) == poolGet(namedTypeName(b))
+    }
+    return false
+}
+
+// xrecFieldsMatch compares two `extern record` DECLS' own field lists
+// field-for-field (Task 4 dedup): same count, and at each position the
+// same field NAME (a bare `pad[N]` field's nameIdx is -1 on both sides,
+// so two pad runs at the same position compare by size alone, via
+// xrecFieldTypeMatches) and the same field TYPE, in the same order.
+// Unlike external func's dedup rule, field NAMES must match too -- see
+// the Extern dedup section's own "unlike func-param name exemption" note.
+func xrecFieldsMatch(declA: int, declB: int): bool {
+    var fa: int
+    var fb: int
+
+    fa = recordDeclFieldsHead(declA)
+    fb = recordDeclFieldsHead(declB)
+    while fa != -1 and fb != -1 {
+        if fieldName(fa) != fieldName(fb) {
+            return false
+        }
+        if not xrecFieldTypeMatches(fieldType(fa), fieldType(fb)) {
+            return false
+        }
+        fa = declNext(fa)
+        fb = declNext(fb)
+    }
+    return fa == -1 and fb == -1
+}
+
+// XRecFieldCheck is checkXRecFieldType's return shape: ok reports whether
+// te is a legal Ch13 field-palette type; badStrLen distinguishes the
+// str[N]-out-of-range case (its own diagnostic) from every other illegal
+// shape (the catch-all "field type must be..." diagnostic) so the two
+// never both fire for one field. readType is the field's CHECKED type
+// (what `ev.field` evaluates to -- IntT for byte/word/int alike, BoolT,
+// PtrT, or a strT(N)); meaningless when !ok. size/align are the field's
+// own packed byte size and alignment (1 or 2, Ch13's table); meaningless
+// when !ok.
+record XRecFieldCheck {
+    ok: bool
+    badStrLen: bool
+    readType: int
+    size: int
+    align: int
+}
+
+// checkXRecFieldType validates one `extern record` field's TypeExpr (te)
+// against Ch13's field palette and reports its checked read type + packed
+// size/alignment -- the single place that decision is made, called once
+// per field by checkRecordDecl's isXRec branch below (which walks the
+// running byte OFFSET itself, applying `align` the same classic MPW 68k
+// packing rule ir.cla's irXRecFieldOffset/irXRecSize apply -- see the
+// worked sanity-check arithmetic in that pair's own doc comment).
+// `pad[N]` (TxPad) is included here even though it has no readType (a pad
+// field is never named/selectable, checkRecordDecl never adds a FieldInfo
+// entry keyed by a real name for it) purely so its size/align contribute
+// to the running total the same way every other field's does.
+func checkXRecFieldType(te: int): XRecFieldCheck {
+    var r: XRecFieldCheck
+    var k: TypeExprKind
+    var name: string
+    var symIdx: int
+    var n: int
+
+    k = typeExprKind(te)
+    if k == TxWord {
+        r.ok = true
+        r.readType = IntT
+        r.size = 2
+        r.align = 2
+        return r
+    }
+    if k == TxByte {
+        r.ok = true
+        r.readType = IntT
+        r.size = 1
+        r.align = 1
+        return r
+    }
+    if k == TxPad {
+        r.ok = true
+        r.readType = InvalidT
+        r.size = padTypeN(te)
+        r.align = 1
+        return r
+    }
+    if k == TxXStr {
+        n = xstrTypeN(te)
+        if n < 1 or n > 255 {
+            r.ok = false
+            r.badStrLen = true
+            return r
+        }
+        r.ok = true
+        r.readType = strT(n)
+        r.size = n + 1
+        r.align = 1
+        return r
+    }
+    if k == TxNamed {
+        name = poolGet(namedTypeName(te))
+        if name == "bool" {
+            r.ok = true
+            r.readType = BoolT
+            r.size = 1
+            r.align = 1
+            return r
+        }
+        if name == "int" {
+            r.ok = true
+            r.readType = IntT
+            r.size = 4
+            r.align = 2
+            return r
+        }
+        if name == "ptr" {
+            r.ok = true
+            r.readType = PtrT
+            r.size = 4
+            r.align = 2
+            return r
+        }
+        symIdx = scopeLookup(curScope, namedTypeName(te))
+        if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyXRec {
+            r.ok = true
+            r.readType = symbols[symIdx].typeIdx
+            r.size = xrecSize(symbols[symIdx].typeIdx)
+            r.align = 2
+            return r
+        }
+        r.ok = false
+        return r
+    }
+    // TxString/TxList/TxMap/TxArray (e.g. `text`, `fixed`, `char`, `string`,
+    // a plain `record`/`overlay record` name, or an array/list/map form) --
+    // none of these is in the Ch13 palette.
+    r.ok = false
+    return r
+}
+
 // ---- built-in method/function parameter specs (builtins.go's paramSpec) ----
 // Exactly one match mode applies per ParamSpec: a plain expected type (t,
 // the zero mode), AnyCharArray, AnyRecordish, or a fixed small OneOfKinds
@@ -740,6 +935,9 @@ func typeName(t: int): string {
         return poolGet(typeNameIdx(t))
     }
     case TyOverlay {
+        return poolGet(typeNameIdx(t))
+    }
+    case TyXRec {
         return poolGet(typeNameIdx(t))
     }
     case TyWindowRef {
@@ -1409,6 +1607,10 @@ func resolveType(te: int): int {
             emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
             return listT(InvalidT)
         }
+        if et != InvalidT and typeKind(et) == TyXRec {
+            emitDiag(typeExprLine(te), typeExprCol(te), "extern records cannot be container elements")
+            return listT(InvalidT)
+        }
         return listT(et)
     }
     case TxMap {
@@ -1421,6 +1623,10 @@ func resolveType(te: int): int {
             emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
             return mapT(InvalidT)
         }
+        if et != InvalidT and typeKind(et) == TyXRec {
+            emitDiag(typeExprLine(te), typeExprCol(te), "extern records cannot be container elements")
+            return mapT(InvalidT)
+        }
         return mapT(et)
     }
     case TxArray {
@@ -1431,6 +1637,10 @@ func resolveType(te: int): int {
         }
         if et != InvalidT and typeKind(et) == TyOverlay {
             emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
+            return arrT(InvalidT, arrayTypeN(te))
+        }
+        if et != InvalidT and typeKind(et) == TyXRec {
+            emitDiag(typeExprLine(te), typeExprCol(te), "extern records cannot be container elements")
             return arrT(InvalidT, arrayTypeN(te))
         }
         return arrT(et, arrayTypeN(te))
@@ -1459,51 +1669,132 @@ func checkRecordDecl(d: int) {
     var t: int
     var sym: Symbol
     var isOverlay: bool
+    var isXRec: bool
+    var xr: XRecFieldCheck
+    var totalSize: int
+    var xrecKey: string
+    var xrecMergeCandidate: int
 
     nameIdx = recordDeclName(d)
     isOverlay = recordDeclIsOverlay(d)
+    isXRec = recordDeclIsXRec(d)
     fiHead = -1
     fiTail = -1
-    f = recordDeclFieldsHead(d)
-    while f != -1 {
-        ft = resolveType(fieldType(f))
-        if isOverlay {
-            if ft != InvalidT and typeKind(ft) != TyInt and typeKind(ft) != TyBool and typeKind(ft) != TyChar and typeKind(ft) != TyFixed and typeKind(ft) != TyPtr {
-                emitDiag(declLine(f), declCol(f), "overlay fields must be int, bool, char, fixed, or ptr")
-                ft = InvalidT
-            }
-        } else if ft != InvalidT and typeKind(ft) == TyOverlay {
-            emitDiag(declLine(f), declCol(f), "overlay records cannot be record fields")
-            ft = InvalidT
-        }
-        fi = newFieldInfo(fieldName(f), ft)
-        if fiHead == -1 {
-            fiHead = fi
-        }
-        fiTail = fieldInfoAppend(fiTail, fi)
-        f = declNext(f)
+    totalSize = 0
+    xrecKey = ""
+    xrecMergeCandidate = -1
+    if isXRec {
+        // Task 4 dedup (mirrors Task 3's extern-func merge, per the spec's
+        // "same rule covers duplicate extern record declarations" --
+        // field-for-field: names, types, order, UNLIKE extern func's
+        // param-name exemption): looked up now, but not acted on until the
+        // field walk below has fully resolved/validated THIS decl's own
+        // fields (same "resolve d's own signature regardless" order Task
+        // 3's checkFuncSig/checkExternFunc split uses).
+        xrecKey = numToStr(progGen) + "|" + poolGet(nameIdx)
+        xrecMergeCandidate = xrecFirstDeclByName.get(xrecKey, -1)
     }
-    setRecordFields(nameIdx, fiHead)
-
     f = recordDeclFieldsHead(d)
-    fi = fiHead
     while f != -1 {
-        if fieldDefault(f) != -1 {
-            if isOverlay {
-                emitDiag(declLine(f), declCol(f), "overlay fields cannot have defaults")
+        if isXRec {
+            // Task 4 (toolbox-integration Feature B): field types + the
+            // running packed-size total both come from checkXRecFieldType,
+            // never resolveType -- byte/word/pad/str[N] are not ordinary
+            // checked types, and pad fields (fieldName(f) == -1, see
+            // parseXRecFieldDecl) contribute to the size total but get no
+            // FieldInfo entry (unnamed, never selectable via `ev.field`).
+            xr = checkXRecFieldType(fieldType(f))
+            if not xr.ok {
+                if xr.badStrLen {
+                    emitDiag(declLine(f), declCol(f), "str field length must be 1..255")
+                } else {
+                    emitDiag(declLine(f), declCol(f), "extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record")
+                }
             } else {
-                dt = checkExpr(fieldDefault(f), fieldInfos[fi].typeIdx)
-                if dt != InvalidT and not compatible(dt, fieldInfos[fi].typeIdx) {
-                    emitDiag(declLine(f), declCol(f), "cannot assign " + typeName(dt) + " to field " + poolGet(fieldName(f)) + " of type " + typeName(fieldInfos[fi].typeIdx))
+                // Classic MPW 68k packing: a 2-aligned field needs one pad
+                // byte first if the running offset is currently odd (a
+                // 1-aligned field never does) -- see ir.cla's
+                // irXRecFieldOffset/irXRecSize for the identical algorithm
+                // and its worked EventRecord/SFReply sanity check.
+                if xr.align == 2 and totalSize mod 2 != 0 {
+                    totalSize = totalSize + 1
+                }
+                totalSize = totalSize + xr.size
+                if fieldName(f) != -1 {
+                    fi = newFieldInfo(fieldName(f), xr.readType)
+                    if fiHead == -1 {
+                        fiHead = fi
+                    }
+                    fiTail = fieldInfoAppend(fiTail, fi)
                 }
             }
+        } else {
+            ft = resolveType(fieldType(f))
+            if isOverlay {
+                if ft != InvalidT and typeKind(ft) != TyInt and typeKind(ft) != TyBool and typeKind(ft) != TyChar and typeKind(ft) != TyFixed and typeKind(ft) != TyPtr {
+                    emitDiag(declLine(f), declCol(f), "overlay fields must be int, bool, char, fixed, or ptr")
+                    ft = InvalidT
+                }
+            } else if ft != InvalidT and typeKind(ft) == TyOverlay {
+                emitDiag(declLine(f), declCol(f), "overlay records cannot be record fields")
+                ft = InvalidT
+            } else if ft != InvalidT and typeKind(ft) == TyXRec {
+                emitDiag(declLine(f), declCol(f), "extern records cannot be record fields")
+                ft = InvalidT
+            }
+            fi = newFieldInfo(fieldName(f), ft)
+            if fiHead == -1 {
+                fiHead = fi
+            }
+            fiTail = fieldInfoAppend(fiTail, fi)
         }
         f = declNext(f)
-        fi = fieldInfos[fi].next
+    }
+
+    if isXRec and xrecMergeCandidate != -1 {
+        // A second-plus `extern record NAME`: the FIRST decl's
+        // setRecordFields/xrecSizeByName/scope symbol stay authoritative
+        // (this decl gets no scope entry of its own, same "first
+        // registration wins" shape Task 3's checkFuncSig uses) -- the only
+        // remaining question is whether d's own (already fully validated,
+        // above) field list matches the first decl's field-for-field.
+        if not xrecFieldsMatch(xrecMergeCandidate, d) {
+            emitConflictingExtern(xrecMergeCandidate, d)
+        }
+        return
+    }
+
+    setRecordFields(nameIdx, fiHead)
+
+    if not isXRec {
+        f = recordDeclFieldsHead(d)
+        fi = fiHead
+        while f != -1 {
+            if fieldDefault(f) != -1 {
+                if isOverlay {
+                    emitDiag(declLine(f), declCol(f), "overlay fields cannot have defaults")
+                } else {
+                    dt = checkExpr(fieldDefault(f), fieldInfos[fi].typeIdx)
+                    if dt != InvalidT and not compatible(dt, fieldInfos[fi].typeIdx) {
+                        emitDiag(declLine(f), declCol(f), "cannot assign " + typeName(dt) + " to field " + poolGet(fieldName(f)) + " of type " + typeName(fieldInfos[fi].typeIdx))
+                    }
+                }
+            }
+            f = declNext(f)
+            fi = fieldInfos[fi].next
+        }
     }
 
     if isOverlay {
         t = overlayT(nameIdx)
+    } else if isXRec {
+        t = xrecT(nameIdx)
+        // Ch13's packing table: total record size rounds up to even.
+        if totalSize mod 2 != 0 {
+            totalSize = totalSize + 1
+        }
+        xrecSizeByName[poolGet(nameIdx)] = totalSize
+        xrecFirstDeclByName[xrecKey] = d
     } else {
         t = recT(nameIdx)
     }
@@ -1612,7 +1903,13 @@ func checkVarDecl(d: int) {
     t = resolveType(varDeclType(d))
     if varDeclInit(d) != -1 {
         it = checkExpr(varDeclInit(d), t)
-        if it != InvalidT and not compatible(it, t) {
+        // Task 4 (toolbox-integration Feature B): a `var` declaration's
+        // initializer is a store too -- same whole-record ban and same
+        // both-directions rule as checkAssignStmt's own (an xrec-typed
+        // declared type OR an xrec-typed init expression).
+        if it != InvalidT and (typeKind(t) == TyXRec or typeKind(it) == TyXRec) {
+            emitDiag(declLine(d), declCol(d), "extern records cannot be assigned")
+        } else if it != InvalidT and not compatible(it, t) {
             emitDiag(declLine(d), declCol(d), "cannot assign " + typeName(it) + " to " + typeName(t))
         }
     }
@@ -1748,11 +2045,24 @@ func checkFuncSig(d: int) {
     p = funcDeclParamsHead(d)
     while p != -1 {
         pt = resolveType(paramType(p))
+        // Task 4 (toolbox-integration Feature B): "extern records cannot
+        // be function parameters or results" -- ordinary funcs only.
+        // checkExternFunc (below, always called right after this for a
+        // DkExternFunc decl) already rejects an xrec param/return with its
+        // own generic "external parameters/functions may only use ..."
+        // message; gating on declKind here avoids double-diagnosing the
+        // same extern decl with two different messages.
+        if declKind(d) == DkFunc and pt != InvalidT and typeKind(pt) == TyXRec {
+            emitDiag(declLine(p), declCol(p), "extern records cannot be function parameters or results")
+        }
         params.add(pt)
         p = declNext(p)
     }
     if funcDeclRetType(d) != -1 {
         ret = resolveType(funcDeclRetType(d))
+        if declKind(d) == DkFunc and ret != InvalidT and typeKind(ret) == TyXRec {
+            emitDiag(declLine(d), declCol(d), "extern records cannot be function parameters or results")
+        }
     } else {
         ret = -1
     }
@@ -1769,6 +2079,10 @@ func checkFuncSig(d: int) {
     sym.constInt = 0
     sym.constStrIdx = -1
     sym.isMenu = false
+    // Task 4 (toolbox-integration Feature B): checkArgsCall's xrec
+    // decay/coercion rules read this back to tell an extern call site from
+    // an ordinary one.
+    sym.isExtern = declKind(d) == DkExternFunc
     if declKind(d) == DkExternFunc {
         // Task 3 (Ch13 dedup): a second `external func` sharing a name
         // already registered by an EARLIER extern decl THIS checkProgram
@@ -3117,6 +3431,16 @@ func checkAssignStmt(s: int) {
     if lt == InvalidT or rt == InvalidT {
         return
     }
+    // Task 4 (toolbox-integration Feature B): no whole-record extern-record
+    // operations -- covers BOTH directions (`ev2 = ev`, an xrec LHS, and
+    // an xrec RHS flowing into anything else, e.g. `var p: ptr; p = ev`
+    // reaching here as an assignment) with the ONE normative message,
+    // ahead of the generic compatible() check below (which would otherwise
+    // report a same-kind-mismatch or a generic "cannot assign" instead).
+    if typeKind(lt) == TyXRec or typeKind(rt) == TyXRec {
+        emitDiag(stmtLine(s), stmtCol(s), "extern records cannot be assigned")
+        return
+    }
     if exprKind(lhs) == ExSelect {
         propName = readOnlyPropName(lhs)
         if propName != "" {
@@ -4003,6 +4327,24 @@ func checkSelect(e: int): int {
             fh = fieldInfos[fh].next
         }
     }
+    case TyXRec {
+        // Task 4 (toolbox-integration Feature B): a plain field select,
+        // same shape as TyOverlay's above -- `ev.what` (a scalar leaf) and
+        // `ev.where` (a nested extern record, valid only as a decay
+        // argument -- lower.cla's own job to enforce the "address can only
+        // be passed to an external function" placement) both resolve here
+        // identically; a pad field is never in this list at all (no
+        // FieldInfo entry, see checkRecordDecl's isXRec branch), so
+        // selecting one falls through to the generic "undefined: X" below,
+        // same as any other undeclared field name.
+        fh = recordFieldsHead(typeNameIdx(xt))
+        while fh != -1 {
+            if poolGet(fieldInfos[fh].nameIdx) == name {
+                return fieldInfos[fh].typeIdx
+            }
+            fh = fieldInfos[fh].next
+        }
+    }
     case TyErrorType {
         if name == "code" {
             return IntT
@@ -4111,8 +4453,13 @@ func checkConversion(e: int, target: int, name: string): int {
 
 // checkArgsCall type-checks a fixed-arity call's arguments against a
 // FuncSig (bidirectionally, so bare enum members and nil resolve) and
-// returns its return type, or VoidT for a procedure.
-func checkArgsCall(e: int, argsHead: int, sigIdx: int): int {
+// returns its return type, or VoidT for a procedure. isExtern (Task 4,
+// toolbox-integration Feature B) is the ONE place extern-record decay/
+// Point-int coercion is legal -- checked ahead of the generic compatible()
+// rule so an xrec-typed argument gets one of the two Ch13-normative
+// messages (or a clean pass, on a genuine decay/coercion) instead of a
+// same-kind-mismatch complaint compatible() would otherwise produce.
+func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
     var wantCount: int
     var haveCount: int
     var a: int
@@ -4131,7 +4478,22 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int): int {
         while a != -1 {
             pt = funcSigParam(sigIdx, i)
             at = checkExpr(a, pt)
-            if at != InvalidT and not compatible(at, pt) {
+            if at != InvalidT and typeKind(at) == TyXRec {
+                if isExtern and typeKind(pt) == TyPtr {
+                    // Ptr decay: the extern-record variable/nested-field's
+                    // own address passes cleanly -- no diagnostic.
+                } else if isExtern and typeKind(pt) == TyInt {
+                    if xrecSize(at) != 4 {
+                        emitDiag(exprLine(a), exprCol(a), "only a 4-byte extern record can pass as int")
+                    }
+                } else if typeKind(pt) == TyPtr {
+                    // A ptr-typed param, but NOT an extern call -- decay is
+                    // legal only at an `external func` call site.
+                    emitDiag(exprLine(a), exprCol(a), "extern record address can only be passed to an external function")
+                } else {
+                    emitDiag(exprLine(a), exprCol(a), "cannot use " + typeName(at) + " where " + typeName(pt) + " is expected")
+                }
+            } else if at != InvalidT and not compatible(at, pt) {
                 emitDiag(exprLine(a), exprCol(a), "cannot use " + typeName(at) + " where " + typeName(pt) + " is expected")
             }
             a = exprNext(a)
@@ -4178,7 +4540,7 @@ func checkIdentCall(e: int, fn: int): int {
         return InvalidT
     }
     if symbols[symIdx].isFunc {
-        return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx)
+        return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx, symbols[symIdx].isExtern)
     }
     emitDiag(exprLine(e), exprCol(e), name + " is not callable")
     return InvalidT

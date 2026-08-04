@@ -73,9 +73,13 @@ package reftest
 // them to 75/76; Task 3 (toolbox-integration: identical-signature extern
 // dedup, the `TickCount` repeated-declaration example) added one more
 // fence right after `inline a5`/CurrentA5, ahead of the `word` extern
-// type section, shifting them a final time to 76/77 -- see ClaruscOnly
-// below, whose fences are inserted right after the existing Chapter 13
-// ones, ahead of Appendix C in document order.
+// type section, shifting them to 76/77; Task 4 (toolbox-integration
+// Feature B: `extern record`) added three more fences (Point/EventRecord/
+// SFReply declarations; a waitClick usage example; a commented
+// whole-value-restrictions example) right after Overlay Records, ahead of
+// Trap and Inline Clauses, shifting them a final time to 79/80 -- see
+// ClaruscOnly below, whose fences are inserted right after the existing
+// Chapter 13 ones, ahead of Appendix C in document order.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -83,8 +87,8 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	76, // Appendix C bookmark manager
-	77, // Appendix C text editor
+	79, // Appendix C bookmark manager
+	80, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
@@ -104,16 +108,19 @@ var CheckClean = []int{
 // 63 (line 1346): Chapter 13 external func
 // 64 (line 1363): Chapter 13 overlay records — declaration, conversions, field get/set
 // 65 (line 1387): Chapter 13 overlay records restrictions (container/field, commented)
-// 66 (line 1408): Chapter 13 trap/inline clauses — trap pascal (TickCount)
-// 67 (line 1418): Chapter 13 trap/inline clauses — trap reg (BlockMove)
-// 68 (line 1424): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 69 (line 1430): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
-// 70 (line 1439): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
-// 71 (line 1445): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
-// 72 (line 1451): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
-// 73 (line 1457): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 74 (line 1463): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
-// 75 (line 1481): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+// 66 (line 1398): Chapter 13 extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
+// 67 (line 1447): Chapter 13 extern record — waitClick usage example (Task 4, toolbox-integration Feature B)
+// 68 (line 1457): Chapter 13 extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
+// 69 (line 1477): Chapter 13 trap/inline clauses — trap pascal (TickCount)
+// 70 (line 1487): Chapter 13 trap/inline clauses — trap reg (BlockMove)
+// 71 (line 1493): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
+// 72 (line 1499): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
+// 73 (line 1508): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
+// 74 (line 1514): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
+// 75 (line 1520): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
+// 76 (line 1526): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
+// 77 (line 1532): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
+// 78 (line 1550): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
 }

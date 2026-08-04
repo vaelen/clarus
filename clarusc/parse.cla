@@ -1065,6 +1065,113 @@ func parseRecordDeclOverlay(): int {
     return i
 }
 
+// parseRecordDeclXRec parses `"record" IDENT "{" { xrecFieldDecl } "}"` for
+// an `extern record` (Task 4, toolbox-integration Feature B) -- the
+// "extern" token itself is already consumed by parseTopDecl's dispatch,
+// which leaves the current token at "record". Unlike parseRecordDeclOverlay
+// (a thin wrapper: overlay fields are ordinary parseType results, only
+// restricted at check time), extern-record fields have a genuinely
+// different grammar (str[N]/pad[N]/byte, a bare pad[N] field line with no
+// name at all) -- this is its own loop, not a wrapper around
+// parseRecordDecl.
+func parseRecordDeclXRec(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var fieldsHead: int
+    var fieldsTail: int
+    var fIdx: int
+    var i: int
+
+    line = curLine()
+    col = curCol()
+    advance() // 'record'
+    name = expect(TkIdent)
+    expect(TkLBrace)
+    fieldsHead = -1
+    fieldsTail = -1
+    skipNewlines()
+    while curKind() != TkRBrace and not parseAborted {
+        fIdx = parseXRecFieldDecl()
+        if fieldsHead == -1 { fieldsHead = fIdx }
+        fieldsTail = declListAppend(fieldsTail, fIdx)
+        skipNewlines()
+    }
+    advance() // consume '}'
+    i = newRecordDecl(name.nameIdx, fieldsHead, line, col)
+    recordDeclSetXRec(i)
+    return i
+}
+
+// parseXRecFieldDecl parses one extern-record field line: either a bare
+// `pad[N]` (no name -- pad occupies layout only, Ch13's field palette), or
+// `IDENT ":" xrecFieldType`. No default: extern-record fields are
+// zero-initialized storage, never per-declaration-defaulted (unlike an
+// ordinary record's fieldDecl). "pad" is recognized here ONLY as the very
+// first token of a field line, immediately followed by "[" -- `name:
+// pad[N]` does NOT hit this branch; see parseXRecFieldType's own doc
+// comment for that (documented) corner case.
+func parseXRecFieldDecl(): int {
+    var line: int
+    var col: int
+    var name: Token
+    var typ: int
+    var n: Token
+
+    line = curLine()
+    col = curCol()
+    if curIsIdentText("pad") and peekKind() == TkLBracket {
+        advance() // 'pad'
+        advance() // '['
+        n = expect(TkInt)
+        expect(TkRBracket)
+        return newField(-1, newPadType(n.intVal, line, col), -1, line, col)
+    }
+    name = expect(TkIdent)
+    expect(TkColon)
+    typ = parseXRecFieldType()
+    return newField(name.nameIdx, typ, -1, line, col)
+}
+
+// parseXRecFieldType parses one extern-record field's type -- Ch13's field
+// palette: `word`/`byte` (contextual, like `word` in an extern func
+// signature), `str[N]`, or (falling back to ordinary parseType) `bool`,
+// `int`, `ptr`, or a nested extern record's name. Anything else that
+// parseType accepts (`text`, `fixed`, `char`, `string`, a plain
+// `record`/`overlay record` name, a list/map/array form, ...) parses fine
+// here too -- the checker rejects it against the palette, not the parser.
+// This is also why `name: pad[N]` does NOT declare a pad run: "pad" isn't
+// special-cased here (only the bare-field-line shape in
+// parseXRecFieldDecl is), so it falls through to plain parseType, which
+// resolves "pad" as an ordinary (here always undefined) type name.
+func parseXRecFieldType(): int {
+    var tok: Token
+    var line: int
+    var col: int
+    var n: Token
+
+    if curIsIdentText("word") {
+        tok = curTok()
+        advance()
+        return newWordType(tok.line, tok.col)
+    }
+    if curIsIdentText("byte") {
+        tok = curTok()
+        advance()
+        return newByteType(tok.line, tok.col)
+    }
+    if curIsIdentText("str") and peekKind() == TkLBracket {
+        line = curLine()
+        col = curCol()
+        advance() // 'str'
+        advance() // '['
+        n = expect(TkInt)
+        expect(TkRBracket)
+        return newXStrType(n.intVal, line, col)
+    }
+    return parseType()
+}
+
 // parseFieldDecl parses `IDENT ":" type [ "=" ( literal | IDENT ) ]`.
 func parseFieldDecl(): int {
     var line: int
@@ -1610,6 +1717,15 @@ func parseTopDecl(): int {
     if curIsIdentText("overlay") and peekKind() == TkRecord {
         advance()
         return parseRecordDeclOverlay()
+    }
+    if curIsIdentText("extern") and peekKind() == TkRecord {
+        // Task 4 (toolbox-integration Feature B): `extern record` -- a
+        // DIFFERENT contextual keyword from `external func`'s "external"
+        // (the spec's own worked examples use the short form here; see
+        // Ch13's own extern-record section), matching "overlay"'s own
+        // contextual-before-"record" pattern exactly.
+        advance()
+        return parseRecordDeclXRec()
     }
     if curKind() == TkVar { return parseVarDecl() }
     if curKind() == TkFunc { return parseFuncDecl() }

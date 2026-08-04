@@ -76,6 +76,20 @@ enum TypeKind {
     // checkRecordDecl's guard). Appended after TyPtr; ordering among the
     // other kinds is not load-bearing.
     TyOverlay
+
+    // TyXRec (Task 4, toolbox-integration Feature B: `extern record`) is a
+    // Mac-packed-layout struct STORAGE kind -- like TyRec/TyOverlay it
+    // carries only nameIdx (the named-type identity, via xrecT below), but
+    // unlike either, a value of this kind is never copied, compared, or
+    // converted from/to a `ptr` at all: it names a fixed byte layout at
+    // whatever address the variable/field itself lives at. No whole-value
+    // operation exists for it (checkAssignStmt/checkVarDecl's own
+    // "extern records cannot be assigned" guard); never a container
+    // element, ordinary record field, or function parameter/result (each
+    // guarded at its own check.cla call site, mirroring TyOverlay's own
+    // guards). Appended after TyOverlay; ordering among the other kinds is
+    // not load-bearing.
+    TyXRec
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -250,6 +264,20 @@ func overlayT(nameIdx: int): int {
     return typeArena.count - 1
 }
 
+// xrecT constructs a fresh named extern-record type (Task 4, toolbox-
+// integration Feature B) -- one call per declared `extern record`,
+// mirroring overlayT above; nameIdx alone carries the named-type identity.
+func xrecT(nameIdx: int): int {
+    var t: TypeInfo
+
+    t.kind = TyXRec
+    t.n = 0
+    t.elem = -1
+    t.nameIdx = nameIdx
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
 func windowRefT(nameIdx: int): int {
     var t: TypeInfo
 
@@ -372,6 +400,14 @@ func assignable(src: int, dst: int): bool {
     case TyOverlay {
         return typeNameIdx(src) == typeNameIdx(dst)
     }
+    case TyXRec {
+        // check.cla's whole-assignment ban (checkAssignStmt/checkVarDecl)
+        // reports "extern records cannot be assigned" before this is ever
+        // reached on a real program; kept for the same exhaustive-switch
+        // completeness overlay/rec's own cases have, not because any live
+        // call site depends on it.
+        return typeNameIdx(src) == typeNameIdx(dst)
+    }
     case TyWindowRef {
         return typeNameIdx(src) == typeNameIdx(dst)
     }
@@ -417,6 +453,9 @@ func typesEqual(a: int, b: int): bool {
         return typeNameIdx(a) == typeNameIdx(b)
     }
     case TyOverlay {
+        return typeNameIdx(a) == typeNameIdx(b)
+    }
+    case TyXRec {
         return typeNameIdx(a) == typeNameIdx(b)
     }
     case TyWindowRef {
@@ -497,6 +536,15 @@ record Symbol {
     constInt: int
     constStrIdx: int
     isMenu: bool
+    // isExtern (Task 4, toolbox-integration Feature B) marks a DkExternFunc
+    // symbol -- checkArgsCall's own xrec decay/coercion rules are legal only
+    // at an extern call site, and this is the one place that distinguishes
+    // an extern-func symbol from an ordinary DkFunc one (both set isFunc).
+    // Zero-value default false: every OTHER symbol construction site in
+    // check.cla (ordinary funcs, params, types, consts, menus, builtins)
+    // leaves it unset, which is already correct (false) without touching
+    // any of them.
+    isExtern: bool
 }
 
 var symbols: list of Symbol

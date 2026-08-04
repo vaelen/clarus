@@ -1162,4 +1162,254 @@ on App.startEmpty {
     ln(src, "external func F(a: int): int = trap 0xA000")
     ln(src, "func F(a: int): int { return a }")
     runCase("extern-dedup-extern-then-func-generic", src)
+
+    // ---- Task 4 (toolbox-integration Feature B): `extern record` ----
+    //
+    // xrec_accept.cla (this directory) is the standalone check-only accept
+    // fixture proper (Point/EventRecord/SFReply -- the spec's own worked
+    // example -- plus field reads/writes and a decay-less field-arithmetic
+    // sanity). Cases 94-111 below exercise the same declaration/field/
+    // usage surface, plus every required error diagnostic, inside this
+    // harness.
+
+    // Case 94: a light clean case -- word/int/ptr/nested-xrec/str[N] fields,
+    // a plain field read/write, arithmetic on a field read, and a nested
+    // field read/write -- the same happy path xrec_accept.cla proves at
+    // greater length.
+    src = ""
+    ln(src, "extern record Point {")
+    ln(src, "    v: word")
+    ln(src, "    h: word")
+    ln(src, "}")
+    ln(src, "extern record EventRecord {")
+    ln(src, "    what: word")
+    ln(src, "    where: Point")
+    ln(src, "}")
+    ln(src, "func F(): int {")
+    ln(src, "    var ev: EventRecord")
+    ln(src, "    var n: int")
+    ln(src, "    ev.what = 5")
+    ln(src, "    n = ev.what + 1")
+    ln(src, "    ev.where.v = 10")
+    ln(src, "    n = ev.where.v")
+    ln(src, "    return n")
+    ln(src, "}")
+    runCase("extern-xrec-clean", src)
+
+    // Case 95: a field type outside the Ch13 palette (`text` -- also not
+    // bool/byte/word/int/ptr/str[N]/pad[N]/a nested extern record).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: text")
+    ln(src, "}")
+    runCase("extern-xrec-bad-field-type", src)
+
+    // Case 96: whole-record assignment -- no whole-record operations
+    // exist for an extern record (Ch13).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var a: R")
+    ln(src, "    var b: R")
+    ln(src, "    a = b")
+    ln(src, "}")
+    runCase("extern-xrec-whole-assign", src)
+
+    // Case 97: an extern record used as an ordinary record's field.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "record Wrapper {")
+    ln(src, "    r: R")
+    ln(src, "}")
+    runCase("extern-xrec-as-record-field", src)
+
+    // Case 98: an extern record used as a container element.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var xs: list of R")
+    ln(src, "}")
+    runCase("extern-xrec-as-container-element", src)
+
+    // Case 99: an extern record used as an ordinary func's parameter.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F(a: R) {")
+    ln(src, "}")
+    runCase("extern-xrec-as-func-param", src)
+
+    // Case 100: an extern record used as an ordinary func's RETURN type
+    // (the func-param/result ban's other half).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func F(): R {")
+    ln(src, "    var r: R")
+    ln(src, "    return r")
+    ln(src, "}")
+    runCase("extern-xrec-as-func-return", src)
+
+    // Case 101: decay attempted OUTSIDE an extern call -- a `ptr` param on
+    // an ORDINARY (non-extern) func, per Ch13: "the one way to take an
+    // extern record's address is decay at an external func call site".
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func G(p: ptr) {")
+    ln(src, "}")
+    ln(src, "func F() {")
+    ln(src, "    var a: R")
+    ln(src, "    G(a)")
+    ln(src, "}")
+    runCase("extern-xrec-decay-outside-extern", src)
+
+    // Case 102: a NON-4-byte extern record (two int fields, 8 bytes)
+    // passed where an extern parameter is declared `int` -- only a
+    // 4-byte extern record may use the Point-by-value coercion.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "    y: int")
+    ln(src, "}")
+    ln(src, "external func G(n: int) = trap 0xA000 reg")
+    ln(src, "func F() {")
+    ln(src, "    var a: R")
+    ln(src, "    G(a)")
+    ln(src, "}")
+    runCase("extern-xrec-int-coercion-wrong-size", src)
+
+    // Case 103: str[0] -- below the 1..255 range.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: str[0]")
+    ln(src, "}")
+    runCase("extern-xrec-str-len-too-small", src)
+
+    // Case 104: str[256] -- above the 1..255 range.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: str[256]")
+    ln(src, "}")
+    runCase("extern-xrec-str-len-too-large", src)
+
+    // Case 105: a NAMED `pad` field (`x: pad[4]`) -- Ch13's grammar
+    // forbids naming a pad run at all; "pad" is recognized ONLY as a bare
+    // field line's own leading token (parseXRecFieldDecl), never after a
+    // `name:`. `name: pad[4]` instead falls through to plain parseType,
+    // which builds an ARRAY-of-named-type("pad") TypeExpr (parseType's own
+    // ordinary `[N]` array-length sugar) -- not itself in the palette, so
+    // this lands on the SAME catch-all "field type must be..." message
+    // every other non-palette shape gets (not a one-off "undefined: pad"),
+    // per Ch13's own extern-record section note on this corner case.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: pad[4]")
+    ln(src, "}")
+    runCase("extern-xrec-named-pad-field", src)
+
+    // Case 106: decay through a NESTED xrec field lvalue (`ev.where`),
+    // clean -- the ptr-decay half of Ch13's "extern-record variable, or a
+    // nested extern-record field lvalue" rule.
+    src = ""
+    ln(src, "extern record Point {")
+    ln(src, "    v: word")
+    ln(src, "    h: word")
+    ln(src, "}")
+    ln(src, "extern record EventRecord {")
+    ln(src, "    what: word")
+    ln(src, "    where: Point")
+    ln(src, "}")
+    ln(src, "external func F(p: ptr) = trap 0xA000 reg")
+    ln(src, "func G() {")
+    ln(src, "    var ev: EventRecord")
+    ln(src, "    F(ev.where)")
+    ln(src, "}")
+    runCase("extern-xrec-nested-decay-clean", src)
+
+    // Case 107: Point-by-value coercion through a NESTED xrec field
+    // lvalue (`ev.where`, a 4-byte Point), clean -- the IM FindWindow
+    // idiom this rule exists for.
+    src = ""
+    ln(src, "extern record Point {")
+    ln(src, "    v: word")
+    ln(src, "    h: word")
+    ln(src, "}")
+    ln(src, "extern record EventRecord {")
+    ln(src, "    what: word")
+    ln(src, "    where: Point")
+    ln(src, "}")
+    ln(src, "external func F(n: int) = trap 0xA000 reg")
+    ln(src, "func G() {")
+    ln(src, "    var ev: EventRecord")
+    ln(src, "    F(ev.where)")
+    ln(src, "}")
+    runCase("extern-xrec-nested-int-coercion-clean", src)
+
+    // ---- Task 4 dedup: identical-signature merge (Extern dedup section's
+    // "same rule covers duplicate extern record declarations") ----
+
+    // Case 108: two byte-identical `extern record` decls -- the merge's
+    // happy path. Second decl gets no scope entry of its own; no
+    // diagnostic either.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "    y: word")
+    ln(src, "}")
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "    y: word")
+    ln(src, "}")
+    runCase("extern-xrec-dedup-identical-clean", src)
+
+    // Case 109: same field NAMES, DIFFERENT field TYPE at one position --
+    // only the identity check between the two decls catches this.
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "extern record R {")
+    ln(src, "    x: ptr")
+    ln(src, "}")
+    runCase("extern-xrec-dedup-conflicting-field-type", src)
+
+    // Case 110: same field TYPES/order, DIFFERENT field NAME -- unlike
+    // extern func's param-name exemption, an xrec's field names must
+    // match too (Extern dedup section's own "unlike func-param name
+    // exemption" note).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "extern record R {")
+    ln(src, "    y: int")
+    ln(src, "}")
+    runCase("extern-xrec-dedup-conflicting-field-name", src)
+
+    // Case 111: `byte` fields plus a bare `pad[N]` field (no name, layout
+    // only) alongside ordinary int fields -- clean, with a field
+    // read/write on the `byte` field (reads/writes as `int`, Ch13).
+    src = ""
+    ln(src, "extern record R {")
+    ln(src, "    a: byte")
+    ln(src, "    pad[3]")
+    ln(src, "    b: int")
+    ln(src, "}")
+    ln(src, "func F(): int {")
+    ln(src, "    var r: R")
+    ln(src, "    r.a = 5")
+    ln(src, "    r.b = 100")
+    ln(src, "    return r.a + r.b")
+    ln(src, "}")
+    runCase("extern-xrec-pad-bare-clean", src)
 }

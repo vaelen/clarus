@@ -233,6 +233,19 @@ func lowType(t: int): int {
     case TyEnum { return irEnumType(typeNameIdx(t)) }
     case TyRec { return irRecType(typeNameIdx(t)) }
     case TyOverlay { return irOverlayType(typeNameIdx(t)) }
+    case TyXRec {
+        // Task 4 (toolbox-integration Feature B): an xrec VARIABLE's own
+        // storage is a plain byte buffer (Ch13: "reserves the record's
+        // packed size in bytes, zero-initialized") -- reusing the SAME
+        // fixed T[n] contiguous-storage shape a `char[N]` local/global
+        // already gets (both backends' existing declare/zero-init path,
+        // and irtNeedsCtor's own KArr-of-KChar case, which is already
+        // correctly ARC-exempt) rather than inventing a second one, per
+        // the brief's own instruction. EXRecAddr (lowXRecAddr) computes
+        // this variable's address directly by name -- it never reads this
+        // array type back.
+        return irArrType(irCharT, irXRecSize(irFindRecordLayoutByName(typeNameIdx(t))))
+    }
     case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
     case TyList { return irListType(lowType(typeElem(t))) }
     case TyMap { return irMapType(lowType(typeElem(t))) }
@@ -672,21 +685,45 @@ func lowArgs(argsHead: int): int {
 // registered before any body -- so forward/mutual/self calls all resolve) so a
 // `string(n)` param called with a wider-string arg clamps at the boundary --
 // expr.go's lowerIdentCall user path.
+//
+// Task 4 (toolbox-integration Feature B) adds extern-record decay/Point-int
+// coercion here, the ONE place both are legal (checkArgsCall's own rule):
+// an xrec-typed argument passes its ADDRESS (lowXRecAddr, not lowExpr --
+// there is no scalar "value" to read for a whole xrec) directly for a ptr
+// param, or a peekl of that same address for an int param. checkArgsCall
+// has already proven, on a checker-clean program, that an xrec-typed
+// argument reaches lowCallArgs ONLY at an extern call (decay/coercion are
+// both extern-only) and ONLY against a ptr or int param (any other
+// pairing is a checker error) -- so no isExtern flag is needed here, and
+// the `pt` checks below are exhaustive for this arg shape.
 func lowCallArgs(argsHead: int, sig: int): int {
     var head: int
     var tail: int
     var a: int
     var i: int
     var le: int
+    var pt: int
 
     head = -1
     tail = -1
     a = argsHead
     i = 0
     while a != -1 {
-        le = lowExpr(a)
-        if i < funcSigParamCount(sig) {
-            le = lowCoerceStr(lowType(funcSigParam(sig, i)), le)
+        if typeKind(exprTypeGet(a)) == TyXRec {
+            pt = -1
+            if i < funcSigParamCount(sig) {
+                pt = funcSigParam(sig, i)
+            }
+            if pt != -1 and typeKind(pt) == TyInt {
+                le = newIRIntr(IPeekL(), lowXRecAddr(a), irIntT)
+            } else {
+                le = lowXRecAddr(a)
+            }
+        } else {
+            le = lowExpr(a)
+            if i < funcSigParamCount(sig) {
+                le = lowCoerceStr(lowType(funcSigParam(sig, i)), le)
+            }
         }
         if head == -1 {
             head = le
@@ -1260,6 +1297,121 @@ func lowRecHasLiteralField(recType: int, fieldName: string): bool {
     return false
 }
 
+// lowXRecAddr returns an EXRecAddr IR node for the address of e (Task 4,
+// toolbox-integration Feature B) -- e is an xrec-typed lvalue: either a
+// bare variable (ExIdent) or a nested field select (ExSelect) whose OWN
+// receiver (selectX(e)) is itself xrec-typed. Recurses down to the base
+// variable, then adds each level's own field offset on the way back up --
+// an arbitrarily deep `ev.a.b.c` collapses into exactly ONE EXRecAddr with
+// ONE summed literal offset (never a chain of them), per EXRecAddr's own
+// "flat" contract (see IRExprKind's doc comment). Every offset comes from
+// irXRecFieldOffsetByName (ir.cla) -- the SAME shared layout authority
+// irXRecSize/irXRecFieldOffset implement, so a nested nested field's
+// address always agrees with what irXRecSize/irXRecFieldOffset would say
+// about the same position computed a different way.
+func lowXRecAddr(e: int): int {
+    var baseAddr: int
+    var recIdx: int
+    var off: int
+
+    if exprKind(e) == ExIdent {
+        return newIRXRecAddr(identName(e), not lowIsLocal(identName(e)), 0, irPtrT)
+    }
+    baseAddr = lowXRecAddr(selectX(e))
+    recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(selectX(e))))
+    off = irXRecFieldOffsetByName(recIdx, selectName(e))
+    return newIRXRecAddr(irXRecAddrName(baseAddr), irXRecAddrGlobal(baseAddr), irXRecAddrOffset(baseAddr) + off, irPtrT)
+}
+
+// lowXRecFieldRead lowers a scalar extern-record field READ (`ev.what`,
+// `ev.where.v`, `sfr.fName`) -- Task 4's own field palette: byte/int/ptr
+// read through the existing peekb/peekl intrinsics unchanged (their
+// existing zero-extend-8/full-32-bits contract already matches the
+// palette exactly); word needs an EXPLICIT sign-extend after peekw's own
+// zero-extend (peekw's contract doesn't match the palette's word-field
+// rule -- see peekw's own reference-doc contrast and CvSExt16's doc
+// comment); bool needs peekb's zero-extend PLUS an explicit nonzero->1
+// normalize (CvIntNonZero); str[N] goes through the two dedicated
+// IXRecStrRead/Write intrinsics (see their own doc comment for why, not
+// SStoreStr).
+func lowXRecFieldRead(e: int): int {
+    var xExpr: int
+    var recIdx: int
+    var slot: int
+    var xk: int
+    var addr: int
+    var ty: int
+    var raw: int
+    var head: int
+    var tail: int
+
+    xExpr = selectX(e)
+    ty = lowMustType(e)
+    recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(xExpr)))
+    slot = irXRecFieldSlotByName(recIdx, selectName(e))
+    xk = irFieldSlotXKind(slot)
+    addr = lowXRecAddr(e)
+    if xk == XFStr {
+        head = addr
+        tail = irExprListAppend(head, newIRIntConst(irFieldSlotXN(slot), irIntT))
+        return newIRIntr(IXRecStrRead(), head, ty)
+    }
+    if xk == XFByte {
+        return newIRIntr(IPeekB(), addr, irIntT)
+    }
+    if xk == XFBool {
+        raw = newIRIntr(IPeekB(), addr, irIntT)
+        return newIRConv(CvIntNonZero, raw, -1, irBoolT)
+    }
+    if xk == XFWord {
+        raw = newIRIntr(IPeekW(), addr, irIntT)
+        return newIRConv(CvSExt16, raw, -1, irIntT)
+    }
+    // XFInt / XFPtr
+    return newIRIntr(IPeekL(), addr, ty)
+}
+
+// lowXRecFieldWrite lowers a scalar extern-record field WRITE (`ev.what =
+// x`, an assignment statement's target) -- the palette's write half:
+// bool/byte through pokeb, word through pokew, int/ptr through pokel, all
+// unextended (a poke intrinsic already truncates to its own width, Ch13's
+// peek/poke section); str[N] through IXRecStrWrite (truncates at N, fixes
+// the length byte -- rtStrStore's own contract). srcExpr is the already-
+// lowered RHS IR expr (lowAssign's own caller has NOT yet coerced it --
+// str fields need the raw string value, not lowCoerceStr's capacity-only
+// clamp, since IXRecStrWrite's OWN runtime call does the N-byte clamp).
+func lowXRecFieldWrite(target: int, srcExpr: int): int {
+    var xExpr: int
+    var recIdx: int
+    var slot: int
+    var xk: int
+    var addr: int
+    var head: int
+    var tail: int
+
+    xExpr = selectX(target)
+    recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(xExpr)))
+    slot = irXRecFieldSlotByName(recIdx, selectName(target))
+    xk = irFieldSlotXKind(slot)
+    addr = lowXRecAddr(target)
+    if xk == XFStr {
+        head = addr
+        tail = irExprListAppend(head, newIRIntConst(irFieldSlotXN(slot), irIntT))
+        tail = irExprListAppend(tail, srcExpr)
+        return newIRExprStmt(newIRIntr(IXRecStrWrite(), head, irVoidT))
+    }
+    head = addr
+    tail = irExprListAppend(head, srcExpr)
+    if xk == XFBool or xk == XFByte {
+        return newIRExprStmt(newIRIntr(IPokeB(), head, irVoidT))
+    }
+    if xk == XFWord {
+        return newIRExprStmt(newIRIntr(IPokeW(), head, irVoidT))
+    }
+    // XFInt / XFPtr
+    return newIRExprStmt(newIRIntr(IPokeL(), head, irVoidT))
+}
+
 // lowSelect lowers a bare `a.b` -- a record field, or a no-argument
 // property (.length/.count, lastError's .code/.message) -- a port of
 // expr.go's lowerSelect. Method calls go through lowMethodCall instead,
@@ -1319,6 +1471,20 @@ func lowSelect(e: int): int {
         // FieldRef; fpFieldRef (cprint.cla) prints it `->cv_` since the
         // receiver is a real C pointer, not a by-value struct.
         return newIRFieldRef(lowExpr(xExpr), selectName(e), ty)
+    } else if xk == TyXRec {
+        // Task 4 (toolbox-integration Feature B): xExpr (`ev`, or a nested
+        // `ev.where`) is itself extern-record-typed. Two shapes reach
+        // here, distinguished by e's OWN checked type (not xk, which
+        // always describes xExpr): a NESTED xrec select (`ev.where`,
+        // exprTypeGet(e) itself TyXRec) is valid only as a decay/coercion
+        // call argument (checker-enforced) -- lowering it means computing
+        // its ADDRESS, exactly like the base-variable case lowXRecAddr's
+        // own ExIdent branch handles, just one level deeper; a scalar leaf
+        // (`ev.what`, `ev.where.v`) is an ordinary field READ.
+        if typeKind(exprTypeGet(e)) == TyXRec {
+            return lowXRecAddr(e)
+        }
+        return lowXRecFieldRead(e)
     } else if xk == TyErrorType {
         // `lastError.code`/`.message` read the runtime's rt_lasterr_*
         // globals directly (see lowIdent's doc comment). Every OTHER
@@ -2957,6 +3123,14 @@ func lowAssign(s: int): int {
     if exprKind(lhs) == ExIndex {
         return lowIndexAssign(lhs, assignRHS(s))
     }
+    if exprKind(lhs) == ExSelect and typeKind(exprTypeGet(selectX(lhs))) == TyXRec {
+        // Task 4 (toolbox-integration Feature B): a scalar extern-record
+        // field write (`ev.what = x`) -- a whole-record assign (`ev2 =
+        // ev`, lhs itself TyXRec) never reaches lowAssign at all, banned
+        // at check time ("extern records cannot be assigned"), so lhs here
+        // is always a scalar leaf.
+        return lowXRecFieldWrite(lhs, lowExpr(assignRHS(s)))
+    }
     if isMenuItemEnabledSelect(lhs) {
         return lowMenuEnableAssign(lhs, assignRHS(s))
     }
@@ -3538,6 +3712,18 @@ func lowRecordDecl(d: int) {
     var defaultStr: int
     var slot: int
 
+    if recordDeclIsXRec(d) {
+        // Task 4 (toolbox-integration Feature B): an `extern record`'s
+        // fields have no counterpart in check.cla's fieldInfos byte/word
+        // distinction (both read back as plain IntT there -- see
+        // checkXRecFieldType's own doc comment), so this walks the AST
+        // field chain directly instead of fieldInfos, and builds a
+        // completely different IRRecordLayout shape (xkind/xn-carrying
+        // field slots, no defaults, isXRec not isOverlay).
+        lowXRecDecl(d)
+        return
+    }
+
     fieldsHead = -1
     fieldsTail = -1
     f = recordDeclFieldsHead(d)
@@ -3567,6 +3753,87 @@ func lowRecordDecl(d: int) {
         fi = fieldInfos[fi].next
     }
     newIRRecordLayout(recordDeclName(d), fieldsHead, recordDeclIsOverlay(d))
+}
+
+// lowXRecDecl builds an `extern record`'s IRRecordLayout (Task 4,
+// toolbox-integration Feature B) -- lowRecordDecl's dedicated xrec path.
+// Walks the AST field chain directly (never fieldInfos -- see
+// lowRecordDecl's own doc comment on why), deriving each field's xkind/xn
+// straight from its TypeExprKind: this is the ONE place that mapping is
+// made, read back later by irXRecFieldSize/irXRecFieldAlign (ir.cla).
+// Lookup-before-append guard (mirrors irRegisterExtern's own, Task 3):
+// Ch13's dedup rule lets an identical `extern record NAME` redeclare
+// clean, and lowDecl's main walk still visits BOTH AST decl nodes (never
+// pruned -- same "don't share/prune nodes across merged decls" invariant
+// Task 3's own forward note states for extern funcs), so without this
+// guard a merged duplicate would grow irRecords to two entries for one
+// name; checkRecordDecl has already proven, by the time lowering runs,
+// that two same-name xrecs are either field-for-field identical or a
+// build error, so a bare name lookup here is safe.
+func lowXRecDecl(d: int) {
+    var f: int
+    var fieldsHead: int
+    var fieldsTail: int
+    var k: TypeExprKind
+    var name: string
+    var nameIdx: int
+    var xkind: int
+    var xn: int
+    var t: int
+    var slot: int
+
+    nameIdx = recordDeclName(d)
+    if irFindRecordLayoutByName(nameIdx) != -1 {
+        return
+    }
+    fieldsHead = -1
+    fieldsTail = -1
+    f = recordDeclFieldsHead(d)
+    while f != -1 {
+        k = typeExprKind(fieldType(f))
+        xn = 0
+        if k == TxWord {
+            xkind = XFWord
+            t = irIntT
+        } else if k == TxByte {
+            xkind = XFByte
+            t = irIntT
+        } else if k == TxXStr {
+            xkind = XFStr
+            xn = xstrTypeN(fieldType(f))
+            t = irStrType(xn)
+        } else if k == TxPad {
+            xkind = XFPad
+            xn = padTypeN(fieldType(f))
+            t = irVoidT
+        } else {
+            // TxNamed: bool/int/ptr, or a nested extern record -- the only
+            // shapes checkXRecFieldType accepts for TxNamed (a
+            // checker-clean program never reaches lowering with any
+            // other TxNamed spelling here).
+            name = poolGet(namedTypeName(fieldType(f)))
+            if name == "bool" {
+                xkind = XFBool
+                t = irBoolT
+            } else if name == "int" {
+                xkind = XFInt
+                t = irIntT
+            } else if name == "ptr" {
+                xkind = XFPtr
+                t = irPtrT
+            } else {
+                xkind = XFRec
+                t = irXRecType(namedTypeName(fieldType(f)))
+            }
+        }
+        slot = newIRXRecFieldSlot(fieldName(f), t, xkind, xn)
+        if fieldsHead == -1 {
+            fieldsHead = slot
+        }
+        fieldsTail = irFieldSlotListAppend(fieldsTail, slot)
+        f = declNext(f)
+    }
+    newIRRecordLayoutXRec(nameIdx, fieldsHead)
 }
 
 // lowEnumDecl builds the enum's IREnumLayout, replicating checkEnumDecl's

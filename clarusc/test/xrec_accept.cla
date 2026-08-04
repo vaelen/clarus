@@ -1,0 +1,120 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// xrec_accept.cla: toolbox-integration Task 4 (Feature B: `extern record`)
+// accept fixture -- CHECK-ONLY (per the brief: Task 5's own host fixture is
+// the run/`.behavior` proof; this task's GREEN is check-clean accept
+// fixtures + exact error fixtures). Declares the spec's own worked example
+// (Point/EventRecord/SFReply, docs/superpowers/specs/2026-08-04-toolbox-
+// integration-design.md's Feature B section) and exercises field reads/
+// writes across every Ch13 field-palette kind, plus a decay-less
+// field-arithmetic sanity (no external func involved at all -- ordinary
+// scalar expressions built from field reads). Not named `*_test.cla`, so
+// driver_test.go's TestClarusModules glob doesn't sweep it (same
+// deliberate non-naming regnamed_decl.cla, this directory's Task 1
+// precedent, uses) -- exercised ad hoc via the current-source crossgen
+// recipe: `clarusc clarusc/test/xrec_accept.cla` must exit 0 with no
+// output.
+//
+// Not run through `clarusc emit`: cg68k.cla/cprint.cla don't yet know how
+// to print EXRecAddr, the CvSExt16/CvIntNonZero conversions, or the
+// IXRecStrRead/IXRecStrWrite intrinsics this task's lower.cla introduces
+// (Tasks 5-6's job, per the brief's own sequencing) -- `clarusc emit`
+// against this file today produces C that fails to COMPILE (confirmed
+// during development: empty EXRecAddr operands, e.g. `rt_pokew(, 5)`),
+// even though clarusc's own emit pass itself exits 0 (cprint.cla silently
+// drops the unhandled node kinds rather than erroring loudly -- worth
+// Tasks 5-6 knowing, not a lower.cla bug: lower.cla's own IR is
+// structurally correct, confirmed by the correctly-sized zero-initialized
+// byte-array local storage and the correctly-threaded field VALUE
+// arguments in that same malformed output).
+
+extern record Point {
+    v: word
+    h: word
+}
+
+extern record EventRecord {
+    what: word
+    message: int
+    when: int
+    where: Point
+    modifiers: word
+}
+
+extern record SFReply {
+    good: bool
+    copy: bool
+    fType: int
+    vRefNum: word
+    version: word
+    fName: str[63]
+}
+
+// fieldReadWrite exercises every Ch13 field-palette kind's read/write
+// (word, int, ptr via SFReply's fType-adjacent shapes covered above,
+// bool, str[N]) plus a nested-record field read/write (EventRecord.where,
+// an xrec-typed Point).
+func fieldReadWrite(): int {
+    var ev: EventRecord
+    var sf: SFReply
+    var p: ptr
+    var s: string
+    var total: int
+
+    ev.what = 1
+    ev.message = 2
+    ev.when = 3
+    ev.modifiers = 4
+    ev.where.v = 5
+    ev.where.h = 6
+
+    sf.good = true
+    sf.copy = false
+    sf.fType = 7
+    sf.vRefNum = 8
+    sf.version = 9
+    sf.fName = "report.txt"
+
+    p = ptr(ev.message)
+    s = sf.fName
+
+    // Decay-less field-arithmetic sanity: ordinary scalar expressions
+    // built purely from field reads, no `external func` call and no
+    // ptr/int decay/coercion anywhere in this expression at all.
+    total = ev.what + ev.message + ev.when + ev.modifiers + ev.where.v + ev.where.h
+    total = total + sf.fType + sf.vRefNum + sf.version
+    if sf.good {
+        total = total + 1
+    }
+    if not sf.copy {
+        total = total + 1
+    }
+    if s.length > 0 {
+        total = total + 1
+    }
+    if int(p) > 0 {
+        total = total + 1
+    }
+    return total
+}
+
+// nestedPointRecordFields exercises `byte`/`pad[N]` alongside a nested
+// extern record and a bare pad run, rounding out the palette entries
+// fieldReadWrite doesn't otherwise touch.
+extern record ByteAndPad {
+    origin: Point
+    flags: byte
+    pad[3]
+    tag: int
+}
+
+func byteAndPadReadWrite(): int {
+    var b: ByteAndPad
+
+    b.origin.v = 1
+    b.origin.h = 2
+    b.flags = 255
+    b.tag = 100
+    return b.origin.v + b.origin.h + b.flags + b.tag
+}

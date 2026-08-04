@@ -188,3 +188,41 @@ check_test.cla:2:1: conflicting extern declaration for 'F' (also declared at 1:1
 check_test.cla:2:1: redeclaration of F
 === extern-dedup-extern-then-func-generic ===
 check_test.cla:2:1: redeclaration of F
+=== extern-xrec-clean ===
+clean
+=== extern-xrec-bad-field-type ===
+check_test.cla:2:5: extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record
+=== extern-xrec-whole-assign ===
+check_test.cla:7:5: extern records cannot be assigned
+=== extern-xrec-as-record-field ===
+check_test.cla:5:5: extern records cannot be record fields
+=== extern-xrec-as-container-element ===
+check_test.cla:5:13: extern records cannot be container elements
+=== extern-xrec-as-func-param ===
+check_test.cla:4:8: extern records cannot be function parameters or results
+=== extern-xrec-as-func-return ===
+check_test.cla:4:1: extern records cannot be function parameters or results
+=== extern-xrec-decay-outside-extern ===
+check_test.cla:8:7: extern record address can only be passed to an external function
+=== extern-xrec-int-coercion-wrong-size ===
+check_test.cla:8:7: only a 4-byte extern record can pass as int
+=== extern-xrec-str-len-too-small ===
+check_test.cla:2:5: str field length must be 1..255
+=== extern-xrec-str-len-too-large ===
+check_test.cla:2:5: str field length must be 1..255
+=== extern-xrec-named-pad-field ===
+check_test.cla:2:5: extern record field type must be bool, byte, word, int, ptr, str[N], pad[N], or an extern record
+=== extern-xrec-nested-decay-clean ===
+clean
+=== extern-xrec-nested-int-coercion-clean ===
+clean
+=== extern-xrec-dedup-identical-clean ===
+clean
+=== extern-xrec-dedup-conflicting-field-type ===
+check_test.cla:1:8: conflicting extern declaration for 'R' (also declared at 4:8)
+check_test.cla:4:8: conflicting extern declaration for 'R' (also declared at 1:8)
+=== extern-xrec-dedup-conflicting-field-name ===
+check_test.cla:1:8: conflicting extern declaration for 'R' (also declared at 4:8)
+check_test.cla:4:8: conflicting extern declaration for 'R' (also declared at 1:8)
+=== extern-xrec-pad-bare-clean ===
+clean

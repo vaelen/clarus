@@ -152,6 +152,21 @@ enum IRKind {
     // wire width) and cprint.cla's extern-shim C emission (short) ever
     // read a KWord back out of the extern registry.
     KWord
+
+    // KXRec (Task 4, toolbox-integration Feature B: `extern record`) marks
+    // a NESTED extern-record FIELD's declared type inside an IRFieldSlot's
+    // own `t` (`name`, same slot KRec/KOverlay/KEnum use, carries the
+    // nested record's interned name -- irFindRecordLayoutByName resolves
+    // it back to an irRecords index). Deliberately NEVER the type of a
+    // real variable/local/global: an xrec's own STORAGE is represented as
+    // a plain KArr of KChar (lowType's TyXRec case) -- the same fixed-
+    // byte-buffer shape a `char[N]` local/global already gets, reusing
+    // that storage/zero-init path wholesale per the spec's own
+    // instruction, rather than inventing a second one. KXRec exists
+    // purely so irXRecFieldSize/irXRecFieldAlign's own XFRec case can find
+    // a nested field's packed size (irXRecSize, recursively) from its
+    // slot's `t` alone.
+    KXRec
 }
 
 enum IRStmtKind {
@@ -181,6 +196,29 @@ enum IRExprKind {
     ECallExt
     EIntr
     ENewRec
+
+    // EXRecAddr (Task 4, toolbox-integration Feature B: `extern record`)
+    // yields the address of an xrec variable or a nested field within one
+    // -- name=base var's Name (interned), global=base var's Global (EXACT
+    // same two fields EVarRef itself uses -- an EXRecAddr IS conceptually
+    // "EVarRef's address, plus a literal byte offset", never a pointer
+    // indirection: extern-record storage is always a flat local/global
+    // buffer, per Ch13, so this pair alone identifies which buffer);
+    // intVal=byteOffset (a literal, already fully resolved by lower.cla's
+    // own recursive field-chain walk -- an arbitrarily nested `ev.a.b.c`
+    // collapses to ONE EXRecAddr with ONE summed offset, never a chain of
+    // them); ty=irPtrT (the node's own value IS an address). Both
+    // backends' job (Tasks 5-6): resolve (name, global) into the SAME
+    // address computation EVarRef already knows how to make (a frame
+    // offset for a local, a symbol for a global), then add intVal bytes --
+    // conceptually identical to EIndexRef's "base address + index*elemSize"
+    // (see lower.cla's lowXRecAddr), just with a byte-granular literal
+    // instead of an index*width multiply. Peek/poke's existing intrinsics
+    // (IPeekB/W/L, IPokeB/W/L) take an EXRecAddr as their address argument
+    // completely unchanged -- an EXRecAddr is just one more `ptr`-typed
+    // expression, structurally no different from an EVarRef-of-a-ptr-local
+    // in that argument slot.
+    EXRecAddr
 }
 
 // IRConvOp: the 6 checked/unchecked scalar conversions (ir.go:182-191), plus
@@ -190,6 +228,19 @@ enum IRExprKind {
 // frozen Go reference has no ptr/overlay types. CvIntToEnum is CHECKED
 // (panics on no member); the rest, including all four ptr/overlay
 // conversions, are unchecked reinterpretations.
+//
+// CvSExt16/CvIntNonZero (Task 4, toolbox-integration Feature B) are the
+// extern-record field READ extension ops Ch13's field palette requires,
+// unrelated to any checked-type conversion a program can write: a `word`
+// field's raw peekw result is zero-extended (peekw's own existing
+// contract), but the field itself must read back SIGN-extended (the same
+// rule an extern call's own `word` RESULT already follows, Feature A) --
+// CvSExt16 makes that correction explicit as its own IR node rather than
+// silently baking it into a backend's peekw case, so both backends apply
+// it identically. CvIntNonZero normalizes a `bool` field's raw peekb
+// result (0..255, a real Toolbox Boolean is not guaranteed exactly 0/1)
+// to canonical 0/1. Neither is reachable from ordinary Clarus source --
+// only lower.cla's xrec field-read lowering ever constructs one.
 enum IRConvOp {
     CvIntToFixed
     CvFixedToInt
@@ -201,6 +252,8 @@ enum IRConvOp {
     CvPtrToInt
     CvPtrToOverlay
     CvOverlayToPtr
+    CvSExt16
+    CvIntNonZero
 }
 
 record IRType {
@@ -266,13 +319,42 @@ record IRGlobal {
 // IRFieldSlot ports ir.go's FieldSlot: default is the scalar/enum/char/
 // bool/fixed-raw default; defaultStr is -1, or an irStrLits index for a
 // string default.
+// xkind/xn (Task 4, toolbox-integration Feature B) carry an `extern
+// record`'s own per-field storage kind (an XFxxx code, below) and its
+// str[N]/pad[N] length -- meaningless (left at their zero value, XFNone/0)
+// on every OTHER IRFieldSlot use (a plain/overlay record's fields, a
+// window's per-instance state fields). lowXRecDecl (lower.cla) is the only
+// writer; irXRecFieldSize/irXRecFieldAlign (below) are the only readers.
+// t still carries the field's ordinary Clarus read type (IntT/BoolT/PtrT/a
+// strT(N)'s IR shape, or -- XFRec only -- the nested record's own KXRec
+// IRType) for lowering's field-read/write codegen; it is NOT the layout
+// authority (xkind/xn/t-for-XFRec are).
 record IRFieldSlot {
     name: int
     t: int
     default: int
     defaultStr: int
     next: int
+    xkind: int
+    xn: int
 }
+
+// XRecFieldKind: the Ch13 field-palette storage kinds an IRFieldSlot's
+// xkind carries for an `extern record` (Task 4). Plain int codes, not a
+// Clarus enum, so check.cla (which independently re-derives the exact same
+// per-field kind from the AST for its OWN total-size computation -- see
+// its own doc comment on why it can't just read this arena, which doesn't
+// exist yet at check time) never needs to `include "ir.cla"` to agree with
+// it; the two are kept in lockstep by doc comment, not by a shared type.
+const XFNone: int = 0
+const XFBool: int = 1
+const XFByte: int = 2
+const XFWord: int = 3
+const XFInt: int = 4
+const XFPtr: int = 5
+const XFRec: int = 6
+const XFStr: int = 7
+const XFPad: int = 8
 
 record IRRecordLayout {
     name: int
@@ -283,6 +365,15 @@ record IRRecordLayout {
     // is) but skips the clar_new_NAME constructor for it (an overlay is
     // never constructed, only cast onto existing memory).
     isOverlay: bool
+    // isXRec (Task 4, toolbox-integration Feature B) tags this layout as
+    // an `extern record` -- mutually exclusive with isOverlay. Consulted
+    // by lower.cla's own irXRecFieldOffset/irXRecSize authority below;
+    // cpEmitRecords/cg68k's own record emission never construct a C
+    // struct/asm layout for one at all (an xrec's storage is a plain byte
+    // buffer, not a typedef -- see lowType's TyXRec case), so this flag's
+    // only reader today is the layout authority itself, unlike isOverlay's
+    // two backend readers.
+    isXRec: bool
 }
 
 // IREnumMember mirrors ir.go's EnumLayout's parallel Members/Values/Labels
@@ -1386,6 +1477,34 @@ func irVarRefGlobal(i: int): bool {
     return irExprs[i].global
 }
 
+// newIRXRecAddr builds an EXRecAddr node (Task 4, toolbox-integration
+// Feature B) -- see IRExprKind's own EXRecAddr doc comment for the field
+// layout (identical to EVarRef's name/global, plus a literal byteOffset).
+func newIRXRecAddr(name: int, isGlobal: bool, byteOffset: int, ty: int): int {
+    var n: IRExpr
+
+    n.kind = EXRecAddr
+    n.name = name
+    n.global = isGlobal
+    n.intVal = byteOffset
+    n.ty = ty
+    n.next = -1
+    irExprs.add(n)
+    return irExprs.count - 1
+}
+
+func irXRecAddrName(i: int): int {
+    return irExprs[i].name
+}
+
+func irXRecAddrGlobal(i: int): bool {
+    return irExprs[i].global
+}
+
+func irXRecAddrOffset(i: int): int {
+    return irExprs[i].intVal
+}
+
 func newIRFieldRef(x: int, name: int, ty: int): int {
     var n: IRExpr
 
@@ -1765,12 +1884,54 @@ func irFieldSlotNext(i: int): int {
     return irFieldSlots[i].next
 }
 
+// newIRXRecFieldSlot builds an `extern record` field slot (Task 4,
+// toolbox-integration Feature B) -- lowXRecDecl's own constructor,
+// carrying the palette storage KIND (xkind, an XFxxx code) and its
+// str[N]/pad[N] length (xn) alongside the ordinary read TYPE t
+// (newIRFieldSlot's own two fields, default/defaultStr, are always 0/-1:
+// an xrec field is never defaulted, Ch13).
+func newIRXRecFieldSlot(name: int, t: int, xkind: int, xn: int): int {
+    var n: IRFieldSlot
+
+    n.name = name
+    n.t = t
+    n.default = 0
+    n.defaultStr = -1
+    n.next = -1
+    n.xkind = xkind
+    n.xn = xn
+    irFieldSlots.add(n)
+    return irFieldSlots.count - 1
+}
+
+func irFieldSlotXKind(i: int): int {
+    return irFieldSlots[i].xkind
+}
+
+func irFieldSlotXN(i: int): int {
+    return irFieldSlots[i].xn
+}
+
 func newIRRecordLayout(name: int, fieldsHead: int, isOverlay: bool): int {
     var n: IRRecordLayout
 
     n.name = name
     n.fieldsHead = fieldsHead
     n.isOverlay = isOverlay
+    irRecords.add(n)
+    return irRecords.count - 1
+}
+
+// newIRRecordLayoutXRec builds an `extern record`'s IRRecordLayout (Task 4)
+// -- mirrors newIRRecordLayout, but sets isXRec instead of isOverlay (the
+// two are mutually exclusive; isOverlay's zero-value default, false, is
+// always correct here without touching it).
+func newIRRecordLayoutXRec(name: int, fieldsHead: int): int {
+    var n: IRRecordLayout
+
+    n.name = name
+    n.fieldsHead = fieldsHead
+    n.isXRec = true
     irRecords.add(n)
     return irRecords.count - 1
 }
@@ -1785,6 +1946,170 @@ func irRecordLayoutFieldsHead(i: int): int {
 
 func irRecordLayoutIsOverlay(i: int): bool {
     return irRecords[i].isOverlay
+}
+
+func irRecordLayoutIsXRec(i: int): bool {
+    return irRecords[i].isXRec
+}
+
+// irFindRecordLayoutByName (Task 4) returns nameIdx's irRecords index, or
+// -1 -- a plain linear scan (record counts are small; no name->index map
+// exists yet for this arena, matching irRecords' own no-lookup-table
+// precedent elsewhere in this file). Used by lowXRecDecl (a nested xrec
+// field's own layout) and irXRecFieldSize's XFRec case (recursing into a
+// nested field's size).
+func irFindRecordLayoutByName(nameIdx: int): int {
+    var i: int
+
+    i = 0
+    while i < irRecords.count {
+        if irRecords[i].name == nameIdx {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// irXRecType builds a KXRec IRType (Task 4) -- see IRKind's own KXRec doc
+// comment for why this exists (a nested extern-record FIELD's own type
+// marker, never a real variable's storage type).
+func irXRecType(name: int): int {
+    return newIRType(KXRec, 0, -1, name)
+}
+
+// irXRecFieldAlign/irXRecFieldSize (Task 4) are irXRecFieldOffset/
+// irXRecSize's own per-field primitives -- Ch13's field palette table,
+// read off an irFieldSlots entry's xkind/xn (never t, except XFRec's
+// recursive irXRecSize call, which needs t's KXRec-carried name to find
+// the nested record's OWN irRecords entry).
+func irXRecFieldAlign(f: int): int {
+    var xk: int
+
+    xk = irFieldSlotXKind(f)
+    if xk == XFWord or xk == XFInt or xk == XFPtr or xk == XFRec {
+        return 2
+    }
+    return 1
+}
+
+func irXRecFieldSize(f: int): int {
+    var xk: int
+
+    xk = irFieldSlotXKind(f)
+    if xk == XFBool or xk == XFByte {
+        return 1
+    }
+    if xk == XFWord {
+        return 2
+    }
+    if xk == XFInt or xk == XFPtr {
+        return 4
+    }
+    if xk == XFStr {
+        return irFieldSlotXN(f) + 1
+    }
+    if xk == XFPad {
+        return irFieldSlotXN(f)
+    }
+    // XFRec: irtName(t) is the nested record's own interned name
+    // (irXRecType's `name` slot).
+    return irXRecSize(irFindRecordLayoutByName(irtName(irFieldSlotType(f))))
+}
+
+// irXRecFieldOffset returns fieldIdx's (0-based, declaration-order)
+// packed byte offset within recIdx's own layout -- THE shared layout
+// authority (Ch13's field palette packing table: each field aligned per
+// its own kind, no other padding), consulted ONLY by lower.cla (see
+// EXRecAddr's own doc comment) -- cg68k.cla/cprint.cla never call this
+// directly, they only ever consume the already-resolved literal offset an
+// EXRecAddr node carries. Verified during development (Task 4) against
+// both sanity anchors the brief names: EventRecord (word,int,int,Point,
+// word) puts `where` at offset 10, size 16; SFReply (bool,bool,int,word,
+// word,str[63]) puts `fName` at offset 10, size 74 (checked.cla's own
+// xrecSizeByName implements the identical algorithm independently, see
+// its doc comment for why it can't just call this).
+func irXRecFieldOffset(recIdx: int, fieldIdx: int): int {
+    var f: int
+    var i: int
+    var offset: int
+
+    offset = 0
+    f = irRecordLayoutFieldsHead(recIdx)
+    i = 0
+    while f != -1 {
+        if irXRecFieldAlign(f) == 2 and offset mod 2 != 0 {
+            offset = offset + 1
+        }
+        if i == fieldIdx {
+            return offset
+        }
+        offset = offset + irXRecFieldSize(f)
+        f = irFieldSlotNext(f)
+        i = i + 1
+    }
+    return -1
+}
+
+// irXRecSize returns recIdx's total packed size, rounded up to even
+// (Ch13's packing table) -- the layout authority's other half; see
+// irXRecFieldOffset's own doc comment.
+func irXRecSize(recIdx: int): int {
+    var f: int
+    var offset: int
+
+    offset = 0
+    f = irRecordLayoutFieldsHead(recIdx)
+    while f != -1 {
+        if irXRecFieldAlign(f) == 2 and offset mod 2 != 0 {
+            offset = offset + 1
+        }
+        offset = offset + irXRecFieldSize(f)
+        f = irFieldSlotNext(f)
+    }
+    if offset mod 2 != 0 {
+        offset = offset + 1
+    }
+    return offset
+}
+
+// irXRecFieldSlotByName/irXRecFieldOffsetByName (Task 4) are lower.cla's
+// own name-keyed convenience over irXRecFieldOffset's exact same walk --
+// Ch13 field access always starts from a NAME (`ev.what`), never a
+// position -- built on the SAME irXRecFieldAlign/irXRecFieldSize
+// primitives, so they can never disagree with irXRecFieldOffset/
+// irXRecSize. NOT part of the layout authority's own two-function
+// signature; lower.cla is their only caller.
+func irXRecFieldSlotByName(recIdx: int, nameIdx: int): int {
+    var f: int
+
+    f = irRecordLayoutFieldsHead(recIdx)
+    while f != -1 {
+        if irFieldSlotName(f) == nameIdx {
+            return f
+        }
+        f = irFieldSlotNext(f)
+    }
+    return -1
+}
+
+func irXRecFieldOffsetByName(recIdx: int, nameIdx: int): int {
+    var f: int
+    var offset: int
+
+    offset = 0
+    f = irRecordLayoutFieldsHead(recIdx)
+    while f != -1 {
+        if irXRecFieldAlign(f) == 2 and offset mod 2 != 0 {
+            offset = offset + 1
+        }
+        if irFieldSlotName(f) == nameIdx {
+            return offset
+        }
+        offset = offset + irXRecFieldSize(f)
+        f = irFieldSlotNext(f)
+    }
+    return -1
 }
 
 // ================================================================
@@ -2768,6 +3093,34 @@ func IPokeW(): int {
 
 func IPokeL(): int {
     return intern("pokel")
+}
+
+// IXRecStrRead/IXRecStrWrite (Task 4, toolbox-integration Feature B) copy
+// between an extern record's str[N] field and an ordinary Clarus `string`
+// value -- the Ch13 field palette's "reads as string (copy out), assigns
+// from string (truncating at N, length byte updated)" rule, implemented
+// with runtime/clarus/str.cla's rtStrStore(dst: ptr, dstcap: int, src: ptr)
+// (a clamped Pascal-string-buffer copy -- exactly the shape a raw xrec
+// field address and an ordinary Str255-representation Clarus string both
+// already are, Ch3: "Strings are length-prefixed Pascal strings"). Args
+// (both intrinsics): (fieldAddr: EXRecAddr, N: int const, ...) -- READ
+// takes just those two, is the intrinsic's own RESULT (a fresh strT(N)
+// value -- Tasks 5-6 realize this the same way cprint.cla's other
+// string-producing expressions already materialize a temp, e.g. string
+// concatenation/slicing's own scratch-temp printing); WRITE additionally
+// takes a third arg (the source string expression) and is an ExprStmt
+// (void), mirroring ITextStore's statement-position shape. Deliberately
+// NOT SStoreStr/newIRStoreStr: that statement's `dst` is printed as a
+// plain C lvalue (fpStoreStr takes `&dst`), but an EXRecAddr's own C
+// rendering IS ALREADY an address -- reusing SStoreStr would need a
+// dst-kind special case in every backend's printer for one field kind;
+// two dedicated intrinsics keep the existing StoreStr contract untouched.
+func IXRecStrRead(): int {
+    return intern("xrec_str_read")
+}
+
+func IXRecStrWrite(): int {
+    return intern("xrec_str_write")
 }
 
 func ILastErrCode(): int {

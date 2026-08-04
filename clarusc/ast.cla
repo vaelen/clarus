@@ -244,6 +244,23 @@ enum TypeExprKind {
     // fields: like TxNamed's builtin scalar names, a TxWord node carries no
     // payload beyond its own kind.
     TxWord
+
+    // TxByte/TxXStr/TxPad (Task 4, toolbox-integration Feature B: `extern
+    // record`) are built ONLY by parseXRecFieldType/parseXRecFieldDecl,
+    // inside an `extern record` body -- the same "contextual, nowhere else"
+    // discipline TxWord's own doc comment describes. TxByte carries no
+    // payload (like TxWord). TxXStr is `str[N]` (a Pascal string buffer
+    // field; intVal=N, the declared length -- unrelated to TxString's own
+    // `string(N)` grammar, a completely different field spelling). TxPad is
+    // a bare `pad[N]` field LINE (intVal=N, the byte count) -- built by
+    // parseXRecFieldDecl directly (not parseXRecFieldType), since a pad
+    // field has no preceding `name:` at all; `name: pad[N]` does NOT build
+    // a TxPad (see parseXRecFieldType's own doc comment) -- it falls
+    // through to plain parseType, producing a TxNamed("pad") that fails
+    // resolution as an ordinary undefined type name.
+    TxByte
+    TxXStr
+    TxPad
 }
 
 record ExprNode {
@@ -1209,14 +1226,27 @@ func recordDeclFieldsHead(i: int): int {
 }
 
 // recordDeclIsOverlay/recordDeclSetOverlay carry the `overlay record` flag
-// (Task 1, Ch13: Overlay Records) in DkRecord's intVal slot; zero-value
-// default is 0/false, so a plain `record` never needs to set it.
+// (Task 1, Ch13: Overlay Records) in DkRecord's intVal slot: 0 = plain
+// `record` (the zero-value default, never needs setting), 1 = `overlay
+// record`. recordDeclIsXRec/recordDeclSetXRec (Task 4, toolbox-integration
+// Feature B: `extern record`) add a third state, 2, in the SAME slot --
+// exactly one of Is Overlay/IsXRec is ever true for a given decl, so
+// recordDeclIsOverlay checks `== 1` specifically (not a bare nonzero test,
+// which would also true for an xrec's `intVal == 2`).
 func recordDeclIsOverlay(i: int): bool {
-    return intToBool(decls[i].intVal)
+    return decls[i].intVal == 1
 }
 
 func recordDeclSetOverlay(i: int) {
     decls[i].intVal = 1
+}
+
+func recordDeclIsXRec(i: int): bool {
+    return decls[i].intVal == 2
+}
+
+func recordDeclSetXRec(i: int) {
+    decls[i].intVal = 2
 }
 
 func newEnumMember(nameIdx: int, value: int, hasValue: bool, labelIdx: int, line: int, col: int): int {
@@ -1881,6 +1911,57 @@ func newStringType(n: int, line: int, col: int): int {
     te.col = col
     typeExprs.add(te)
     return typeExprs.count - 1
+}
+
+// newByteType builds a TxByte node (Task 4, toolbox-integration Feature B:
+// `extern record`'s `byte` field type) -- see TypeExprKind's own doc
+// comment.
+func newByteType(line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxByte
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
+}
+
+// newXStrType builds a TxXStr node (Task 4: `str[N]`, an extern-record
+// Pascal-string-buffer field). n is the declared length N (1..255,
+// validated by the checker, not here).
+func newXStrType(n: int, line: int, col: int): int {
+    var te: TypeExpr
+
+    te.kind = TxXStr
+    te.intVal = n
+    te.next = -1
+    te.line = line
+    te.col = col
+    typeExprs.add(te)
+    return typeExprs.count - 1
+}
+
+func xstrTypeN(i: int): int {
+    return typeExprs[i].intVal
+}
+
+// newPadType builds a TxPad node (Task 4: a bare `pad[N]` field line -- N
+// reserved/unused bytes, no field name).
+func newPadType(n: int, line: int, col: int): int {
+    var te: TypeExpr
+
+    te.kind = TxPad
+    te.intVal = n
+    te.next = -1
+    te.line = line
+    te.col = col
+    typeExprs.add(te)
+    return typeExprs.count - 1
+}
+
+func padTypeN(i: int): int {
+    return typeExprs[i].intVal
 }
 
 func stringTypeN(i: int): int {

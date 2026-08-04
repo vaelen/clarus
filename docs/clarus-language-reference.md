@@ -1391,6 +1391,75 @@ An overlay type may be used as a variable, function parameter, function return t
 
 Like `ptr`, an overlay value is copied by value, its zero value is a plain null address, and it is never retained or released — an overlay is a view, not an owner, of whatever it points to.
 
+### `extern record`
+
+An `extern record` declares a Mac-packed-layout struct transcribed straight from an Inside Macintosh struct diagram — `EventRecord`, `Point`, `SFReply`, and the like. `extern` is contextual, recognized only immediately before `record`; elsewhere it is an ordinary identifier:
+
+```rust
+extern record Point {
+    v: word
+    h: word
+}
+
+extern record EventRecord {
+    what: word
+    message: int
+    when: int
+    where: Point
+    modifiers: word
+}
+
+extern record SFReply {
+    good: bool
+    copy: bool
+    fType: int
+    vRefNum: word
+    version: word
+    fName: str[63]
+}
+```
+
+Unlike `overlay record` (a named VIEW over memory some other pointer owns), an `extern record` is a **storage kind** of its own, like `int` or `char[N]`: declaring one as a local or global `var` reserves the record's packed size in bytes, directly, zero-initialized — there is no address to convert from or to, and no `Name(p)` conversion exists for it.
+
+Field access (`ev.what`, `ev.where.v`) reads and writes at the record's packed byte offsets, as ordinary scalar expressions and assignment targets. There are no whole-record operations: no assignment (`ev2 = ev`), no comparison, and an extern record is never a function parameter or return type, an ordinary `record` field, or a container element — any of these can be added later if a real Inside Macintosh use case demands it, but none does today.
+
+The one way to take an extern record's address is **decay at an `external func` call site**: passing an extern-record variable, or a nested extern-record field lvalue (`ev.where`), where the callee's parameter is declared `ptr` passes that field's address. No general address-of operator exists in the language. A **4-byte** extern record (variable or field) may additionally pass where an extern parameter is declared `int` — the classic Inside Macintosh Point-by-value idiom (`FindWindow(where, ...)`, `where: Point`, passed as a `long`); any other size in an `int` position is an error.
+
+### Field Palette
+
+| Clarus field type | bytes | alignment | notes |
+|---|---|---|---|
+| `bool` | 1 | 1 | Pascal `Boolean` |
+| `byte` | 1 | 1 | new contextual field-type name, unsigned byte (`SignedByte`/`Byte`); reads/writes as `int`, zero-extended |
+| `word` | 2 | 2 | `INTEGER`; reads back sign-extended (same as extern `word`) |
+| `int` | 4 | 2 | `LONGINT`/`OSType`/`Fixed` — 68k packs longs at 2 |
+| `ptr` | 4 | 2 | `Ptr`/`Handle`/`ProcPtr` fields |
+| nested `extern record` | its size | 2 | `Point` in `EventRecord`; nesting depth unbounded |
+| `str[N]` (1 ≤ N ≤ 255) | N+1 | 1 | Pascal string buffer (`Str63` = `str[63]`): length byte + N bytes. Reads as `string` (copy out), assigns from `string` (truncating at N, length byte updated) |
+| `pad[N]` (N ≥ 1) | N | 1 | reserved/unused byte runs (`ParamBlockRec` filler); not readable or writable, occupies layout only, needs no field name — `pad[4]` alone is a complete field line |
+
+Total record size rounds up to even. Field offsets follow the classic MPW 68k packing rule exactly: each field aligned per the table above, no other padding inserted. `byte` and `pad` are contextual field-type names recognized ONLY inside an `extern record` body, the same way `word` is contextual only in an `external func` signature — elsewhere (a `var` declaration, an ordinary `record` field) they are ordinary identifiers. `pad` additionally has no named form: a field written `name: pad[N]` does NOT declare a pad run — it is parsed as an ordinary nested-type reference to a type named `pad`, which (having no such declared type) fails with the same "undefined: pad" a reference to any other undeclared type would. `fixed`-typed fields are not supported in this phase (add on demand — `Fixed` transcribes as `int` and converts via the existing fixed conversions).
+
+Multi-byte fields read and write in the machine's native byte order — the same `peekw`/`peekl`/`pokew`/`pokel` contract Chapter 13's `peek`/`poke` section already documents: big-endian on the 68k target, host-endian on a host build. An `extern record` is all-scalar storage, structurally outside automatic reference counting — never retained or released, the same as an overlay record or a plain `ptr`.
+
+A field read/write, and the decay/coercion at an `external func` call site, in context (`UiWaitNextEvent` is a Toolbox trap and `handleAt` an ordinary function, both declared elsewhere in the program):
+
+```rust
+func waitClick() {
+    var ev: EventRecord
+    while UiWaitNextEvent(0xFFFF, ev, 10, nilPtr()) == 0 { }
+    handleAt(ev.where.v, ev.where.h)
+}
+```
+
+Like `overlay record`, an `extern record` rejects the same handful of whole-value uses:
+
+```rust
+// var e2: EventRecord = ev          // build-time error: extern records cannot be assigned
+// record Wrapper { e: EventRecord } // build-time error: extern records cannot be record fields
+// var xs: list of EventRecord       // build-time error: extern records cannot be container elements
+```
+
 ### Trap and Inline Clauses
 
 An `external func` declaration may end with a clause tying it to a specific Toolbox entry point, instead of leaving name resolution to the toolchain:
