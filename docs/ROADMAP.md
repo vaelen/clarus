@@ -1006,7 +1006,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      payoff: kills the per-task selfhost differential cost and the
      `ClaruscOnly` fence/corpus-fork complexity (which otherwise grows
      with every Toolbox-phase feature), and ends the freeze-exception
-     ceremony (two named exceptions ratified to date).
+     ceremony (two named exceptions ratified to date). (Deletion executed
+     2026-08-05, see the Go-compiler-deletion phase entry.)
   2. **Toolbox integration phase (branch `toolbox-integration`, 2026-08-04):
      DONE.** — the three features, each landing
      reference-first then clarusc + cg68k with a native gate:
@@ -1269,6 +1270,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     attribution); emitui/cg68k in particular emit large fixtures, so an
     early swap would import that tax straight into T1. Swap all six
     together, post-compiler-perf-phase, immediately pre-Go-deletion.
+    **Resolved (Go-compiler-deletion phase, 2026-08-05):** all six sites
+    swapped onto shared `internal/claruscboot` before the Go compiler was
+    deleted — see the Go-compiler-deletion Done entry below.
   - **Deferred minors** (low-priority, recorded rather than fixed this
     phase): `internal/selfhost/crossgen_test.go`'s header lacks a
     "standalone run needs `-timeout` override (~8min bootstrap)" note
@@ -1290,6 +1294,30 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `docs/superpowers/specs/2026-08-03-test-suite-review-design.md`
   ("Outcomes" section); plan:
   `docs/superpowers/plans/2026-08-03-test-suite-review.md`.
+
+  **Go-compiler-deletion phase (branch `go-deletion`, 2026-08-05): DONE.**
+  Two stages. Stage 1 swapped every remaining Go-compiler-as-build-vehicle
+  call site onto a new shared `internal/claruscboot` package (`CurrentExe` —
+  current-source two-stage bootstrap; `SnapshotExe` — the snapshot lineage
+  used by `internal/selfhost`'s generation tests; both cached to disk under
+  `build-run/`, flock-serialized): the ROADMAP's six `build.Build` call
+  sites (escalation above) PLUS a seventh found during design,
+  `internal/reftest`'s `driver.Check`; three pre-existing duplicated
+  bootstrap helpers were consolidated into it. Parachute-removal gate: a
+  final both-worlds T2 run PASSed at 750s (commit `ee5b1e0`), tagged
+  `go-compiler-final`. Stage 2 then deleted the frozen Go compiler outright:
+  `cmd/clarus` + `internal/{lexer,parser,check,types,lower,cprint,driver,
+  ir,ast,token,source}` + `internal/build`'s Go half (`cc.go`/`embed.go`/
+  `runtime.go` survive — `CCPath` and the embedded rt sources
+  `internal/selfhost`'s `compileCDir` still consumes) + `internal/
+  selfhost`'s five Go-lane files + every `CLARUS_GO_DIFF` gate;
+  `TestSnapshotBuilds` re-oracled onto `CurrentExe`; `gogate_test.go`
+  renamed to `fixedpoint_test.go` with a four-line Go-free regeneration
+  recipe. Post-deletion T1 PASSed at 17s. **NOT deleted, ever:**
+  `internal/build/rt/`, `clarusc/clarusc.c` + its snapshot tests. Design:
+  `docs/superpowers/specs/2026-08-04-go-compiler-deletion-design.md`; plan:
+  `docs/superpowers/plans/2026-08-05-go-compiler-deletion.md`; ledger:
+  `.superpowers/sdd/2026-08-05-go-compiler-deletion/progress.md`.
 
 ## Small open items (not yet scheduled)
 

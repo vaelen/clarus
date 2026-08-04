@@ -8,7 +8,7 @@
 # build-68k.sh's own step 1) emits C for FILE.cla, `cc` compiles that
 # against the on-disk host runtime (internal/build/rt), and the resulting
 # binary runs with any args passed after `--`. No Go compiler anywhere in
-# this path -- see CLAUDE.md's CLARUS_GO_DIFF.
+# this path -- the Go compiler is deleted; clarusc is the only compiler.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 

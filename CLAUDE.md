@@ -19,7 +19,6 @@ spec; where any other doc disagrees, the reference wins.
 ## Build and test
 
 ```sh
-go build -o clarus ./cmd/clarus   # host toolchain: check / build / run
 scripts/clarus-run.sh FILE.cla [-- args...]  # Go-free day-to-day `clarus run`
 scripts/test-task.sh              # T1: per-task gate (~35s)
 scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulator)
@@ -39,20 +38,11 @@ Tiered test gates:
   task touches `runtime/` or `clarusc/`, which additionally runs the two
   native-68k emulator smoke tests (`CLARUS_MAC_TESTS=1`,
   `TestSmokeBounceOn68k` / `TestRealEventLoopTickOn68k` in
-  `internal/mactest`). T1 no longer builds or links the Go compiler for
-  the Go compiler's OWN tests (see `CLARUS_GO_DIFF` below for that gate,
-  and its caveat below for five other packages that still build clarusc
-  via the Go compiler as a plain build vehicle) — packages that are pure
-  Go-compiler unit tests (`internal/lexer`, `parser`, `check`, `types`,
-  `lower`, `cprint`, `driver`, `cmd/clarus`) report as passing-with-no-tests
-  by default; `internal/build`'s Go-compiler tests (`build_test.go`,
-  `golden_test.go`, `unsupported_test.go`) skip individually while its rt
-  C-runtime tests (`rtsmoke`, `memtest_c`, `rctest_c`, `sertest_c` — these
-  exercise `rt.c` with `cc`, not the Go compiler, and every lane depends on
-  `rt.c`) keep running unconditionally.
+  `internal/mactest`). The Go compiler was deleted in the Go-compiler-deletion
+  phase (tag `go-compiler-final`); the gauntlet is all-harness, no
+  compiler-unit packages remain.
 - `scripts/test-merge.sh` — T2, run before merging to main. T1's body plus
-  `internal/selfhost` (30m-timeout bootstrap suite, run with
-  `CLARUS_GO_DIFF=1` so the Go lanes below are included) plus the full
+  `internal/selfhost` (30m-timeout bootstrap suite) plus the full
   gated `internal/mactest` package (`CLARUS_MAC_TESTS=1`, needs the Retro68
   toolchain + Mini vMac).
 - Both pass `-count=1` to bust the Go test cache. Plain `go test` caches a
@@ -65,46 +55,12 @@ Tiered test gates:
   per-package timeout — always pass `-timeout 30m` when running it
   directly, or it can spuriously fail on an otherwise-green tree.
 
-### `CLARUS_GO_DIFF` — Go-compiler lanes are opt-in
-
-`internal/selfhost` and every package that IS the frozen Go compiler
-(`internal/lexer`, `parser`, `check`, `types`, `lower`, `cprint`, `driver`,
-`cmd/clarus`, plus `internal/build`'s `Build()`-calling tests) gate their
-tests behind `CLARUS_GO_DIFF=1`, unset by default. The default `go test
-./...` gauntlet gates the Go compiler's OWN differential/bootstrap/
-unit-test lanes behind this flag — Tasks 3-5b of test-suite-review landed
-Go-free oracles that cover the same ground without the Go compiler as a
-reference: `internal/selfhost/behavior_test.go` (snapshot-built clarusc
-vs. committed `.behavior` goldens, including the paranoid-allocator
-`.leaks` pin), `crossgen_test.go` (snapshot generation vs. current-source
-generation, both built without Go), and `snapshot_test.go`'s
-`TestSnapshotBuilds` / `TestSnapshotFixedPoint` (C-snapshot
-self-consistency). Set `CLARUS_GO_DIFF=1` to reinstate the Go
-differential/bootstrap/coverage lanes — for ad hoc debugging
-(`CLARUS_GO_DIFF=1 go test ./internal/selfhost -timeout 30m`) or via
-`scripts/test-merge.sh`, which exports it for its `internal/selfhost` and
-full runs.
-
-**Caveat: the default gauntlet is NOT fully Go-free.** Six harnesses still
-build clarusc via `internal/build.Build` (the frozen Go frontend) as a
-plain build vehicle, not an oracle — on every default `go test ./...`:
-`internal/asm68k/vasm_test.go`, `internal/cg68k/golden_test.go`,
-`internal/emitui/emitui_test.go`, `internal/lowlevel/lowlevel_test.go`,
-`internal/sertest/sertest_test.go` (each via a local `buildClarusc`
-helper), plus `internal/mactest`'s gated `buildNativeClarusc`
-(`CLARUS_MAC_TESTS=1` only). This is deliberate, not an oversight: the
-snapshot-bootstrapped clarusc pipeline is the slow lineage until the
-compiler-performance phase removes the 30x emit-time tax (see ROADMAP) —
-swapping these to it today would import that tax into T1. All six call
-sites swap together, post-perf-phase, immediately pre-Go-deletion (see
-ROADMAP's checklist).
-
-- The Go compiler (`cmd/clarus`, `internal/`) is FROZEN — it is the
-  differential-testing reference only. New language features land in the
-  reference + `clarusc` (the self-hosted compiler, `clarusc/*.cla`).
+- The Go compiler is DELETED (tag `go-compiler-final`). clarusc
+  (`clarusc/*.cla`) is the only compiler; new language features land in the
+  reference + clarusc.
 - `clarusc/clarusc.c` is the committed bootstrap snapshot. If
-  `TestSnapshotCurrent` fails (`CLARUS_GO_DIFF=1`; it needs a Go-built
-  clarusc as the freshness oracle), it prints regeneration instructions.
+  `TestSnapshotFixedPoint` (`internal/selfhost`) fails, it prints the
+  Go-free regeneration instructions.
 - Bootstrap from C alone:
   `cc -I internal/build/rt -o clarusc clarusc/clarusc.c internal/build/rt/rt.c`
 
