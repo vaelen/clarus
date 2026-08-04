@@ -805,17 +805,30 @@ short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt
 /* ---- Task 6 (toolbox-integration Feature B):
  * testsuite/toolbox/cases_event.cla's own externs -- same "cprint always
  * renders rt_ext_NAME regardless of clause" precedent as the two blocks
- * just above. rt_ext_TbOSEventAvail is the real OS Event Manager trap
- * (Inside Macintosh: `FUNCTION OSEventAvail (eventMask: INTEGER; VAR
- * theEvent: EventRecord): BOOLEAN;`) -- the clause (`= trap 0xA030`) is
- * invisible here exactly like TbGestalt's own named-reg clause above;
- * cases_event.cla's own header comment has the full trap-word evidence.
+ * just above. rt_ext_TbEventAvail is the real Toolbox Event Manager trap
+ * (task-6-review Critical 1: `_OSEventAvail`, 0xA030, is bit-11-clear --
+ * an OS/register-convention trap -- so cases_event.cla declares its
+ * Pascal-convention Toolbox sibling `_EventAvail`, 0xA971, instead; same
+ * check-without-removing-from-the-queue semantics, see that file's own
+ * header comment for the full trap-word bit-11 evidence). The clause
+ * (`= trap 0xA971`) is invisible here exactly like TbGestalt's own
+ * named-reg clause above -- cprint calls by NAME only.
  * rt_ext_TbXRecAddr mirrors Task 5's own rt_ext_XRecAddr host-lane
  * identity shim (internal/build/rt/rt_ext_host.inc) -- "the address of my
  * own argument" has no real Toolbox call behind it on ANY backend, so
  * every lane (host rt_ext_, this Mac rt_ext_, and cg68k's nat_ fallback)
  * resolves it as a plain identity. */
-int32_t rt_ext_TbOSEventAvail(short mask, void *ev) { return (int32_t)OSEventAvail((EventMask)mask, (EventRecord *)ev); }
+int32_t rt_ext_TbEventAvail(short mask, void *ev) { return (int32_t)EventAvail((EventMask)mask, (EventRecord *)ev); }
 void *rt_ext_TbXRecAddr(void *p) { return p; }
+
+/* rt_ext_XRecAddr (task-6-review Important 3): testsuite/core/
+ * cases_xrec.cla's own extern -- the UNPREFIXED sibling of
+ * rt_ext_TbXRecAddr just above, same plain identity, needed here for the
+ * SAME reason (cprint always renders rt_ext_NAME regardless of clause) --
+ * core suite fixtures reuse Task 5's own `XRecAddr` name directly (no
+ * `Tb` prefix -- that convention is toolbox-suite-local) since the host
+ * lane's rt_ext_XRecAddr (internal/build/rt/rt_ext_host.inc) already
+ * exists under this exact name. */
+void *rt_ext_XRecAddr(void *p) { return p; }
 
 #endif /* CLARUS_RT_EXT_MAC_INC */

@@ -107,6 +107,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_enumfix.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_ser.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_misc.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_xrec.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -228,6 +229,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"EnumIntRoundTrip", "EnumSaveChoiceValue", "FixedMathOps", "ConstCaseLabel", "SwitchIntRange", "SwitchIntMultiLabel",
 			"SerBinRoundtrip", "SerFileRoundtrip", "SerFileNameRoundtrip",
 			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
+			"XRecFieldsRoundtrip",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

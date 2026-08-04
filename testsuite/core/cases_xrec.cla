@@ -1,0 +1,117 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_xrec.cla: XRecFieldsRoundtrip (task-6-review Important 3) -- the
+// committed native runtime proof for `extern record`'s bool-field
+// (CvIntNonZero) and str[N]-field (IXRecStrRead/IXRecStrWrite) native
+// codegen that testsuite/toolbox/cases_event.cla's own EventRecord
+// fixture can't reach (EventRecord has neither field kind). Lives in the
+// CORE suite, not toolbox: no real Toolbox trap is needed (peek/poke are
+// pure memory ops, and `XRecAddr` -- the address-of-my-own-argument
+// decay -- has no trap behind it either), so this case rides the
+// existing core boots (TestCoreSuiteGUIOn68k/OnMac, the host CLI) for
+// free instead of needing its own dedicated gate.
+//
+// `XRSFReply` mirrors Task 4/5's own SFReply worked example exactly (2
+// bools, an int, 2 words, a str[63]) -- packed offsets (classic MPW 68k
+// rule, Task 4's own verified anchor): good@0(1) copy@1(1) fType@2(4)
+// vRefNum@6(2) version@8(2) fName@10(64), total 74.
+//
+// `XRecAddr`: clause-less extern -> `nat_XRecAddr` fallback (native lane,
+// cgCallExtNatFallback/cg68k.cla) -- reuses Task 5's own EXACT name and
+// host-lane glue (`rt_ext_XRecAddr`, internal/build/rt/rt_ext_host.inc)
+// for free on the host CLI lane; the Mac/Retro68 lane needs its own
+// `rt_ext_XRecAddr` too (runtime/mac/rt_ext_mac.inc, added this task --
+// same "cprint always renders rt_ext_NAME regardless of clause" gap
+// task-6's own cases_event.cla already hit).
+external func XRecAddr(p: ptr): ptr
+
+func nat_XRecAddr(p: ptr): ptr {
+    return p
+}
+
+extern record XRSFReply {
+    good: bool
+    copy: bool
+    fType: int
+    vRefNum: word
+    version: word
+    fName: str[63]
+}
+
+// caseXRecFieldsRoundtrip:
+//  1. Plain bool field writes (`sf.good = true; sf.copy = false`) --
+//     baseline round trip.
+//  2. THE REAL CvIntNonZero PROOF: an ordinary field WRITE always stores
+//     exactly 0/1 (poke's own truncating contract), so reading straight
+//     back after a normal write can't distinguish "CvIntNonZero
+//     normalizes correctly" from "the conversion is a silent no-op" --
+//     both would read back 0/1 either way. Instead, `pokeb` writes a
+//     non-canonical "true" byte (0xFF, a real Toolbox Boolean
+//     representation Apple's own APIs use interchangeably with 1) DIRECTLY
+//     to `copy`'s own raw address, bypassing the field-write path
+//     entirely; `sf.copy` (a FIELD READ, routed through CvIntNonZero) must
+//     then normalize it to exactly `true`/1, not some other nonzero value
+//     Clarus bool's own 0/1 representation would misbehave on.
+//  3. str[N] round trip (`sf.fName = "hello.txt"; s = sf.fName`) plus a
+//     70-char over-capacity store, proving IXRecStrWrite's clamp to the
+//     field's own 63-char capacity (not 70) and the length-byte fix-up,
+//     cross-checked independently via a raw `peekb` of the packed Pascal
+//     length byte at fName's own offset (10) -- same shape Task 5's own
+//     testdata/lowlevel/xrec_str_host.cla already proved on the host
+//     lane, now proved natively too.
+func caseXRecFieldsRoundtrip(): TestResult {
+    var sf: XRSFReply
+    var base: ptr
+    var rawCopy: int
+    var s: string(63)
+    var long70: string
+    var detail: string
+
+    sf.good = true
+    sf.copy = false
+    if not sf.good or sf.copy {
+        detail = "baseline bool mismatch"
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+
+    base = XRecAddr(sf)
+    pokeb(base + 1, 0xFF)
+    rawCopy = peekb(base + 1)
+    if rawCopy != 255 {
+        detail = "raw poke lost: rawCopy " + tkIntToStr(rawCopy)
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+    if not sf.copy {
+        detail = "CvIntNonZero did not normalize 0xFF to true"
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+
+    sf.fName = "hello.txt"
+    s = sf.fName
+    if s != "hello.txt" or s.length != 9 {
+        detail = "str roundtrip mismatch: s=" + s + " len " + tkIntToStr(s.length)
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+    if peekb(base + 10) != 9 {
+        detail = "str length byte mismatch: " + tkIntToStr(peekb(base + 10))
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+
+    // 70 chars -- over str[63]'s own 63-byte capacity (same literal shape
+    // as Task 5's own testdata/lowlevel/xrec_str_host.cla truncation
+    // check).
+    long70 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    sf.fName = long70
+    s = sf.fName
+    if s.length != 63 {
+        detail = "truncated length mismatch: " + tkIntToStr(s.length)
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+    if peekb(base + 10) != 63 {
+        detail = "truncated length byte mismatch: " + tkIntToStr(peekb(base + 10))
+        return tkFail("XRecFieldsRoundtrip", detail)
+    }
+
+    return tkPass("XRecFieldsRoundtrip")
+}

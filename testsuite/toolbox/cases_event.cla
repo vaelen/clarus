@@ -11,25 +11,40 @@
 // establish. Point/EventRecord are declared LOCALLY (not reused from
 // runtime/clarus/ui.cla) for the identical reason.
 //
-// OSEventAvail convention (verified against Inside Macintosh, NOT the
-// brief's own draft -- see below): the OS Event Manager's trap-word
-// sequence is contiguous and ALL Pascal-convention on this ROM --
-// _PostEvent=0xA02F, _OSEventAvail=0xA030, _GetOSEvent=0xA031,
-// _FlushEvents=0xA032. runtime/clarus/ui.cla ALREADY declares
-// UiFlushEvents (0xA032, OSEventAvail's own next-door neighbor in this
-// same OS Event Manager trap family) as a plain `= trap 0xA032` (Pascal,
-// no `reg`) -- and every other real event trap that file declares
-// (UiWaitNextEvent = trap 0xA860, UiGetNextEvent = trap 0xA970) is
-// likewise plain Pascal, never `reg`. OSEventAvail's real Pascal
-// signature (Inside Macintosh, Event Manager) is
+// Trap-word convention (task-6-review Critical 1 fix -- the FIRST version
+// of this file declared `TbOSEventAvail = trap 0xA030` as plain Pascal,
+// which is WRONG): the trap word's own bit 11 (0x0800) is Apple's own
+// OS-vs-Toolbox dispatch-convention flag -- CLEAR means an OS trap using
+// REGISTER convention (args in D0/A0, result in D0, NO stack involvement:
+// the caller pushes nothing and the trap dispatcher pops nothing); SET
+// means a Toolbox trap using PASCAL convention (args pushed by the
+// caller, popped by the trap dispatcher before it returns). This is the
+// trap-table reading rule: `trapWord & 0x0800` -- zero is OS/register,
+// nonzero is Toolbox/Pascal.
+//
+// `_OSEventAvail` is 0xA030 -- `0xA030 & 0x0800 == 0` -- an OS trap,
+// REGISTER convention, despite Inside Macintosh listing a Pascal-looking
 // `FUNCTION OSEventAvail (eventMask: INTEGER; VAR theEvent: EventRecord):
-// BOOLEAN;` -- an INTEGER (word) value param, a VAR (pointer) param, a
-// BOOLEAN result, the EXACT shape UiGetNextEvent already declares
-// (`eventMask: word, theEvent: ptr): bool = trap 0xA970`, no `reg`). The
-// brief's own draft clause (`reg(d0: mask, a0: ev) ret d0`) does NOT match
-// this trap family on this ROM -- declared here as plain Pascal instead,
-// matching its own neighbors.
-external func TbOSEventAvail(mask: word, ev: ptr): bool = trap 0xA030
+// BOOLEAN;` signature: that signature describes the LANGUAGE-level call
+// shape a Pascal/C glue function generates around the raw trap, not the
+// raw trap-dispatch convention itself -- the two differ for OS traps
+// specifically (`_FlushEvents`, 0xA032, right next to it in the same OS
+// Event Manager family, is bit-11-clear too; `runtime/clarus/ui.cla`'s own
+// `UiFlushEvents = trap 0xA032` plain-Pascal declaration is the SAME
+// latent mis-declaration this file's first draft copied -- OUT of this
+// task's scope, ledgered as a follow-up, not fixed here).
+//
+// Fixed by using the real Toolbox EVENT MANAGER sibling instead:
+// `_EventAvail`, 0xA971 -- one trap word after `_GetNextEvent`'s own
+// 0xA970 -- `0xA971 & 0x0800 != 0` (bit 11 SET), a genuine Pascal-
+// convention trap, matching `ui.cla`'s own already-correct
+// `UiGetNextEvent = trap 0xA970` / `UiWaitNextEvent = trap 0xA860`
+// (both also bit-11-SET). EventAvail's signature and semantics are the
+// SAME check-without-removing-from-the-queue query OSEventAvail performs
+// (Inside Macintosh, Event Manager) -- only the calling convention
+// differs, and this is the one this file's plain `= trap` clause (no
+// `reg`) actually matches.
+external func TbEventAvail(mask: word, ev: ptr): bool = trap 0xA971
 
 // TbXRecAddr: clause-less extern -> nat_TbXRecAddr fallback (verified
 // against testdata/cg68k/traps.cla's own TCustomOp/nat_TCustomOp pair,
@@ -59,25 +74,40 @@ extern record EventRecord {
 
 // caseEventXRec: fills ev with a nonzero sentinel (so a marshaling bug
 // that leaves ev untouched fails closed, not a false pass from an
-// already-zero record), calls the real OSEventAvail trap (an empty
-// scripted boot has no pending application event, so `what` should come
-// back 0 -- nullEvent), then cross-checks TWO independent read paths of
-// the SAME resulting bytes: a raw peek through TbXRecAddr(ev)'s own
-// computed address (offsets 0/2/6/10 -- what/message/when/where.v, Task
-// 4's own verified packing anchors) against the corresponding ordinary
-// field read (`ev.what`/`ev.message`/`ev.when`/`ev.where.v`, which routes
-// through CvSExt16 for the two word fields). message/when are full
-// 32-bit fields (peekl and a field read are numerically identical,
-// sign irrelevant); what/where.v are word fields but both expected values
-// stay well under the 16-bit sign boundary here (what == 0 for a null
-// event; where.v is the screen's own V coordinate, 0-342, never near
-// 32768) so a raw zero-extending peekw and a sign-extending field read
-// agree numerically either way. A wrong TbXRecAddr/EXRecAddr offset
-// computation would read from the wrong address and almost certainly
-// disagree with the field read of the SAME logical field.
+// already-zero record), calls the real EventAvail trap, then cross-checks
+// TWO independent read paths of the SAME resulting bytes: a raw peek
+// through TbXRecAddr(ev)'s own computed address (offsets 0/2/6/10 --
+// what/message/when/where.v, Task 4's own verified packing anchors)
+// against the corresponding ordinary field read (`ev.what`/`ev.message`/
+// `ev.when`/`ev.where.v`, which routes through CvSExt16 for the two word
+// fields). message/when are full 32-bit fields (peekl and a field read
+// are numerically identical, sign irrelevant); what/where.v are word
+// fields but both expected values stay well under the 16-bit sign
+// boundary in practice (mouse coordinates, small event codes) so a raw
+// zero-extending peekw and a sign-extending field read agree numerically
+// either way. A wrong TbXRecAddr/EXRecAddr offset computation would read
+// from the wrong address and almost certainly disagree with the field
+// read of the SAME logical field.
+//
+// NOT asserted: "no event is pending" (`ev.what == 0`). This suite's own
+// GUI just opened a window and fired a real button click before this
+// case runs (testdata/ui/toolboxsuite.events) -- the OS genuinely queues
+// a real event (an activateEvt, code 8, observed) across that, so
+// EventAvail correctly reports TRUE with a nonzero `what` here; asserting
+// "always false" would be asserting a specific idle OS queue state this
+// suite's own scripted interaction doesn't provide, not testing the
+// extern-record codegen. Instead: `got == (ev.what != 0)` is EventAvail's
+// own documented contract (Inside Macintosh: returns TRUE exactly when
+// theEvent's `what` comes back nonzero) -- environment-independent, and
+// still the convention gate Critical 1 wants: a register-vs-pascal
+// mismatch leaves the stack unbalanced and `got` holding whatever garbage
+// the mismatched pop left in D0, which will not coincidentally satisfy
+// this exact self-consistency relation (nor agree with the four
+// independent peek/field cross-checks) across BOTH native lanes.
 func caseEventXRec(): TestResult {
     var ev: EventRecord
     var got: bool
+    var wantGot: bool
     var base: ptr
     var w0: int
     var l2: int
@@ -92,7 +122,8 @@ func caseEventXRec(): TestResult {
     ev.where.h = -1
     ev.modifiers = -1
 
-    got = TbOSEventAvail(0xFFFF, ev)
+    got = TbEventAvail(0xFFFF, ev)
+    wantGot = ev.what != 0
 
     base = TbXRecAddr(ev)
     w0 = peekw(base + 0)
@@ -100,7 +131,7 @@ func caseEventXRec(): TestResult {
     l6 = peekl(base + 6)
     w10 = peekw(base + 10)
 
-    if ev.what == 0 and w0 == ev.what and l2 == ev.message and l6 == ev.when and w10 == ev.where.v {
+    if got == wantGot and w0 == ev.what and l2 == ev.message and l6 == ev.when and w10 == ev.where.v {
         return tkPass("EventXRec")
     }
     // Built up piecewise into `detail`, same native-68k temp-slot-budget

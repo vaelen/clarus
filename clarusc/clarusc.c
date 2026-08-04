@@ -45344,8 +45344,8 @@ static int32_t clar_fn_cgSlotSizeOf(int32_t cv_t) {
     int32_t cv_sz;
     cv_sz = 0;
     cv_sz = clar_fn_cgSizeOf(cv_t);
-    if (cv_sz == 1) {
-        return 2;
+    if ((cv_sz % 2) == 1) {
+        return (cv_sz + 1);
     }
     return cv_sz;
     return 0;
@@ -46238,7 +46238,7 @@ static void clar_fn_cgRetainAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t) {
                             while (1) {
                                 if (!((cv_i < cv_n))) break;
                                 clar_fn_cgWalkRestoreBase(cv_reg);
-                                clar_fn_cgRetainAt(cv_reg, (cv_off + (cv_i * clar_fn_cgSlotSizeOf(cv_et))), cv_et);
+                                clar_fn_cgRetainAt(cv_reg, (cv_off + (cv_i * clar_fn_cgArrElemStride(cv_et))), cv_et);
                                 cv_i = (cv_i + 1);
                             }
                         }
@@ -46280,7 +46280,7 @@ static void clar_fn_cgReleaseAt(int32_t cv_reg, int32_t cv_off, int32_t cv_t) {
                             while (1) {
                                 if (!((cv_i < cv_n))) break;
                                 clar_fn_cgWalkRestoreBase(cv_reg);
-                                clar_fn_cgReleaseAt(cv_reg, (cv_off + (cv_i * clar_fn_cgSlotSizeOf(cv_et))), cv_et);
+                                clar_fn_cgReleaseAt(cv_reg, (cv_off + (cv_i * clar_fn_cgArrElemStride(cv_et))), cv_et);
                                 cv_i = (cv_i + 1);
                             }
                         }

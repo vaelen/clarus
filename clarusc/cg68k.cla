@@ -805,45 +805,68 @@ func cgAlignOf(t: int): int {
 }
 
 // cgSlotSizeOf is the padded size a type occupies as a frame local, frame
-// param, array element, or window-state slot (cgUiStateFieldOffset/
+// param, GLOBAL, or window-state slot (cgUiStateFieldOffset/
 // cgIntrUiStateDefaults's own walk -- a window's per-instance vars are
 // never an irRecords entry, so they are NOT record fields; see
 // cgRecFieldSizeOf below for the actual record-field authority) --
-// identical to cgSizeOf except a bare 1-byte bool/char is rounded up to 2
-// (the file header's "occupying 2 in any aggregate or stack slot" rule).
-// Every other kind's cgSizeOf is already even, so this is a no-op for them.
+// identical to cgSizeOf except ANY odd size rounds up to even (task-6-
+// review Critical 2 fix: was only a bare 1-byte bool/char special case,
+// "occupying 2 in any aggregate or stack slot" -- too narrow once
+// cgArrElemStride made a packed char array's own cgSizeOf odd-capable,
+// e.g. char[3]/an odd-sized extern-record storage array). This is
+// ALLOCATION granularity ONLY -- cgAssignFrameOffsets (~2991) and
+// cgAssignGlobalOffsets (~1188) both build their running offset as a SUM
+// of cgSlotSizeOf contributions, so rounding every contribution to even
+// keeps every later slot's own base even too (frame LINK size and
+// cgGlobalsBelowA5Size, both sums of the same contributions, stay even
+// for free -- cgEmitStartup's word-oriented CLR.W zero loop, ~1294-1300,
+// needs exactly that). cgSizeOf/cgArrElemStride themselves stay packed
+// (byte-exact, no rounding) -- EXRecAddr's own literal field offsets,
+// array indexing, zero-init byte counts, and cprint's byte-for-byte
+// `clar_arr_char_N` parity all still want the TRUE unpadded size; only
+// the outer RESERVATION width needs the even floor a 68000 address bus
+// requires (an odd-based word/long access is a real address error on
+// real hardware, masked -- not fixed -- by an emulator or by whatever
+// happened to sit at the next byte on the host lane).
 func cgSlotSizeOf(t: int): int {
     var sz: int
 
     sz = cgSizeOf(t)
-    if sz == 1 {
-        return 2
+    if sz mod 2 == 1 {
+        return sz + 1
     }
     return sz
 }
 
 // cgArrElemStride (Task 6, toolbox-integration Feature B) is a KArr's own
 // per-element byte spacing -- identical to cgSlotSizeOf EXCEPT for a char
-// element, which packs at exactly 1 byte, no padding. A char array needs
-// BYTE-CONTIGUOUS storage with no gaps between elements: lower.cla's TyXRec
-// case builds an extern record's whole storage as exactly
-// `irArrType(irCharT, N)` (ir.cla/lower.cla, Task 4), and an EXRecAddr's own
-// literal field offsets (irXRecFieldOffset, the SAME packing-table authority
-// the spec's field-offset table anchors against) assume that storage is
-// EXACTLY N contiguous bytes, matching cprint's own C-lane `clar_arr_char_N`
-// byte layout (`uint8_t e[N]`, no padding) byte-for-byte. cgSlotSizeOf's
-// general "occupies 2 in any aggregate or stack slot" rule (bool/char
-// scalars, record fields with their own separate cgRecFieldSizeOf
-// authority) does not apply here: a char ARRAY's element-to-element spacing
-// has no stack-push/word-alignment need the way a scalar local/param slot
-// does. cgSizeOf(KArr)/cgArrElemAddr/cgArrDefaultAt all read this ONE
-// authority so the array's total size, per-element indexing, and zero-init
-// stride can never drift out of sync with each other. A pre-existing plain
-// `char[N]` fixed array (testdata/cg68k/arr_whole_assign.cla's own `c`/`d`)
-// is affected too -- was slot-padded (2 bytes/char, e.g. char[3] took 6
-// bytes) before this task, now packs at N bytes exactly; that fixture never
-// read a byte before writing it, so behavior is unchanged, only the emitted
-// listing golden (re-blessed this task).
+// element, which packs at exactly 1 byte, no padding, so cgSizeOf(KArr)/
+// cgArrElemAddr/cgArrDefaultAt (the array's total size, per-element
+// indexing, and zero-init stride, respectively) never drift out of sync.
+//
+// The bug this fixes: before this task, all three read cgSlotSizeOf(elem)
+// -- 2 bytes for a char element, the same padding a scalar local/param
+// char gets. For an ordinary `char[N]` array that's merely wasteful (N*2
+// bytes reserved, only the N even-offset bytes ever touched by c[i]
+// indexing, which used the SAME padded stride consistently). For extern-
+// record storage it was actively WRONG: lower.cla's TyXRec case builds a
+// record's whole storage as exactly `irArrType(irCharT, N)` (Task 4), and
+// EXRecAddr's own literal field offsets (irXRecFieldOffset, the packing-
+// table authority the spec's field-offset table anchors against) are
+// computed assuming N TRULY CONTIGUOUS bytes -- matching cprint's C-lane
+// `clar_arr_char_N` (`uint8_t e[N]`, no padding) byte-for-byte. Against
+// the OLD padded scheme, a 16-byte EventRecord would have reserved 32
+// bytes, and the zero-init loop (stride 2) would have zeroed only the 16
+// EVEN-offset bytes of that 32-byte span -- every ODD real-record offset
+// (the low byte of `what`, the low bytes of `message`/`when`, `where.h`'s
+// low byte, ...) stayed uninitialized stack/BSS garbage, while EXRecAddr
+// still addressed the record as if it were the true packed 16 bytes.
+// cgSlotSizeOf itself is untouched by element spacing -- a bool/char
+// SCALAR local/param still gets its own 2-byte slot; cgSlotSizeOf's own
+// general odd-rounding (task-6-review Critical 2) separately keeps every
+// ALLOCATION (frame/global slot width) even regardless of element kind,
+// orthogonal to this function's job of keeping array-internal spacing
+// packed.
 func cgArrElemStride(elemT: int): int {
     if irtKind(elemT) == KChar {
         return 1
@@ -1897,7 +1920,7 @@ func cgRetainAt(reg: int, off: int, t: int) {
             i = 0
             while i < n {
                 cgWalkRestoreBase(reg)
-                cgRetainAt(reg, off + i * cgSlotSizeOf(et), et)
+                cgRetainAt(reg, off + i * cgArrElemStride(et), et)
                 i = i + 1
             }
         }
@@ -1932,7 +1955,7 @@ func cgReleaseAt(reg: int, off: int, t: int) {
             i = 0
             while i < n {
                 cgWalkRestoreBase(reg)
-                cgReleaseAt(reg, off + i * cgSlotSizeOf(et), et)
+                cgReleaseAt(reg, off + i * cgArrElemStride(et), et)
                 i = i + 1
             }
         }

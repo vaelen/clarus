@@ -131,6 +131,7 @@ var coreCLIFiles = []string{
 	filepath.Join("testsuite", "core", "cases_enumfix.cla"),
 	filepath.Join("testsuite", "core", "cases_ser.cla"),
 	filepath.Join("testsuite", "core", "cases_misc.cla"),
+	filepath.Join("testsuite", "core", "cases_xrec.cla"),
 }
 
 // coreCLIHostFiles is coreCLIFiles + core/cli.cla (host front-end,
