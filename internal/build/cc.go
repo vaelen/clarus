@@ -1,5 +1,7 @@
-// Package build will host the `clarus build`/`clarus run` pipeline (Task 9+).
-// For now it just exports the C compiler lookup other packages' tests need.
+// Package build is the home of the shared C runtime (rt/) and the C
+// compiler lookup its tests and other packages' harnesses use. The Go
+// compiler that used to live here was deleted in the Go-compiler-deletion
+// phase (tag go-compiler-final marks its last commit).
 package build
 
 import "os"
