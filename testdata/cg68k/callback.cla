@@ -5,15 +5,33 @@
 // signature-driven `callback func` glue emission (cgEmitCallbackGlue)
 // and ECbAddr's JT-entry-address decay (cgCallExtUiGlueAddr, reused).
 //
-//   cbHandler(sel: bool, n: word): int -- the ONE referenced callback,
-//     pinning the bool zero-extend/high-byte pascal-arg read AND the
-//     word sign-extend pascal-arg read, plus the int MOVE.L
-//     result-slot write on the return side. Decayed at InstallHandler's
-//     own `proc: ptr` argument (the ONE decay call this golden needs).
-//   cbUnused(x: int) -- a SECOND callback, declared but never decayed
-//     and never called anywhere: proves the tree-shake gap this task's
-//     own brief calls out (Task 7's shake-proof deferred here) -- zero
-//     trace of it anywhere in the emitted listing.
+//   cbHandler(sel: bool, n: word): int -- pins the bool zero-extend/
+//     high-byte pascal-arg read AND the word sign-extend pascal-arg
+//     read, plus the int MOVE.L result-slot write on the return side.
+//   cbBool(sel: bool): bool -- pins the bool RESULT write: MOVE.B to the
+//     HIGH (base) byte of the result slot, same convention as an
+//     incoming bool arg. Layout: one bool param (pascal width 2) at
+//     8(A6); resultOffset = 8+2 = 10(A6) -- expect `MOVE.B D0,10(A6)`.
+//   cbWord(n: word): word -- pins the word RESULT write: a plain MOVE.W
+//     to the result slot (no sign/zero-extend needed on the way out).
+//     Layout: one word param (pascal width 2) at 8(A6); resultOffset =
+//     8+2 = 10(A6) -- expect `MOVE.W D0,10(A6)`. Also proves the
+//     arg-byte cleanup counts (both the Clarus-convention post-call
+//     ADDQ and the final pascal-caller ADDQ) are driven by the PARAM
+//     list only, unaffected by the return type: identical single-word-
+//     param shape to cbBool above, same cleanup amounts on both.
+//   cbUnused(x: int) -- declared, never decayed, never called anywhere:
+//     proves the tree-shake gap this task's own brief calls out (Task
+//     7's shake-proof deferred here) -- zero trace anywhere in the
+//     emitted listing.
+//
+// bool/word RESULT-slot writes are pinned at the EMISSION-SHAPE level
+// only here (correct instruction/offset, listing-golden proof) -- no
+// real Toolbox trap in this program's own runtime actually reads one
+// back yet. Runtime proof (a real ROM trap reading the high byte back)
+// awaits the first genuine bool-returning callback consumer: the
+// deferred _Pack3 dlgHook filter proc (ModalDialog's own Boolean-
+// returning ModalFilterProcPtr).
 //
 // InstallHandler's own trap word (0xA9EE) is SYNTHETIC -- picked only to
 // exercise a ptr-typed pascal argument receiving a callback's glue
@@ -28,6 +46,14 @@ callback func cbHandler(sel: bool, n: word): int {
     return 0
 }
 
+callback func cbBool(sel: bool): bool {
+    return sel
+}
+
+callback func cbWord(n: word): word {
+    return n
+}
+
 callback func cbUnused(x: int) {
 }
 
@@ -37,5 +63,7 @@ on App.launch {
     var r: int
 
     r = InstallHandler(cbHandler)
+    r = InstallHandler(cbBool)
+    r = InstallHandler(cbWord)
     return
 }
