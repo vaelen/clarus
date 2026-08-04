@@ -1026,6 +1026,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      procs, SF dlgHooks, defprocs). Interrupt-time completion routines
      stay an explicit non-goal (A5/allocation restrictions the language
      cannot make safe).
+  2b. **Character/byte-type surface review (Andrew, 2026-08-04: AFTER
+     Go-compiler deletion, BEFORE the Docs cookbook):** revisit `byte`,
+     `char`, `bool`, and `text` as a set. Context: the Toolbox
+     integration spec adds `byte` as an extern-record field-type name
+     (1-byte unsigned, reads/writes as `int` — the 8-bit sibling of the
+     `word` boundary type) rather than reusing `char`, because `char` is
+     a character type (numeric flag fields would need `int(...)`
+     ceremony) and `char` already has a width asterisk (4-byte slot
+     inside ordinary records — the Task-14/RT_FT descriptor rule — vs
+     2-byte slots elsewhere). Andrew accepted `byte` provisionally and
+     wants a deliberate pass over the whole small-scalar/text surface
+     once the single-frontend world has settled, before the cookbook
+     freezes the IM→Clarus mapping table's wording. Outcome may be:
+     keep all four as-is, fold/rename, or widen `char`'s extern-record
+     role — decide then, with the Toolbox phase's real usage as
+     evidence.
   3. **Docs cookbook (AFTER the features land — Andrew's call):** Ch13
      gains the IM→Clarus mapping table (CHAR→`word` CharParameter,
      Boolean→`bool`, Point-by-value→packed `int` or the new extern-record
