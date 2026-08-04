@@ -67,9 +67,12 @@ package reftest
 // native-5e: the `word` extern type example) then shifted them again, to
 // 71/72; Task 15 (native-5e, Ch13 doc pass: `reg memerr`, `trap ... sel`,
 // `inline a5`) added three more fences interleaved among the existing
-// trap/inline ones, shifting them a final time to 74/75 -- see
-// ClaruscOnly below, whose fences are inserted right after the existing
-// Chapter 13 ones, ahead of Appendix C in document order.
+// trap/inline ones, shifting them to 74/75; Task 1 (toolbox-integration
+// Feature A: named `reg(...)` clause, the `UiGestalt` worked example)
+// added one more fence right after the `reg memerr` example, shifting
+// them a final time to 75/76 -- see ClaruscOnly below, whose fences are
+// inserted right after the existing Chapter 13 ones, ahead of Appendix C
+// in document order.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -77,8 +80,8 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	74, // Appendix C bookmark manager
-	75, // Appendix C text editor
+	75, // Appendix C bookmark manager
+	76, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
@@ -98,14 +101,15 @@ var CheckClean = []int{
 // 63 (line 1346): Chapter 13 external func
 // 64 (line 1363): Chapter 13 overlay records — declaration, conversions, field get/set
 // 65 (line 1387): Chapter 13 overlay records restrictions (container/field, commented)
-// 66 (line 1406): Chapter 13 trap/inline clauses — trap pascal (TickCount)
-// 67 (line 1414): Chapter 13 trap/inline clauses — trap reg (BlockMove)
-// 68 (line 1420): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 69 (line 1426): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
-// 70 (line 1432): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
-// 71 (line 1438): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
-// 72 (line 1444): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 73 (line 1461): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+// 66 (line 1408): Chapter 13 trap/inline clauses — trap pascal (TickCount)
+// 67 (line 1418): Chapter 13 trap/inline clauses — trap reg (BlockMove)
+// 68 (line 1424): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
+// 69 (line 1430): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
+// 70 (line 1439): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
+// 71 (line 1445): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
+// 72 (line 1451): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
+// 73 (line 1457): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
+// 74 (line 1474): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73,
+	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74,
 }

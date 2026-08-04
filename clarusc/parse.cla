@@ -1345,22 +1345,75 @@ func parseExternParam(): int {
     return newParam(name.nameIdx, typ, line, col)
 }
 
+// parseRegName parses one REG token for a named `reg(...)` clause's
+// regBind or a `ret REG` clause (Task 1, Feature A) -- the closed,
+// lowercase-only set { d0, d1, d2, a0, a1 } (ast.cla's regCodeForName),
+// matched the same curIsIdentText way every other contextual clause
+// keyword is. Anything else (`D0`, `d3`, `a5`, ...) is a parse error,
+// exactly like an unrecognized `inline` sub-keyword just below --
+// register-name validity is a token-shape question the parser answers
+// outright, unlike a regBind's PARAM name (deferred to checkExternFunc,
+// see ast.cla's externRegBindRawCodes/Names doc comment for why).
+func parseRegName(): int {
+    var text: string
+    var code: int
+
+    if curKind() != TkIdent {
+        parseErrorf(curLine(), curCol(), "expected register name, found " + tokKindQuoted(curKind()))
+        return -1
+    }
+    text = poolGet(curTok().nameIdx)
+    code = regCodeForName(text)
+    if code == -1 {
+        parseErrorf(curLine(), curCol(), "unknown register '" + text + "' in reg clause")
+        return -1
+    }
+    advance()
+    return code
+}
+
+// parseRegBind parses one `regBind = REG ":" IDENT` (Task 1, Feature A)
+// and appends the resolved register code plus the raw param-name
+// identifier's pool index onto codes/names, two caller-owned parallel
+// lists parseExternFuncDecl buffers a whole `reg(...)` clause's binds
+// into before handing them to ast.cla's astAddExternRegBinds.
+func parseRegBind(codes: list of int, names: list of int) {
+    var code: int
+    var pname: Token
+
+    code = parseRegName()
+    expect(TkColon)
+    pname = expect(TkIdent)
+    codes.add(code)
+    names.add(pname.nameIdx)
+}
+
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
-// [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "reg" [ "memerr" ] ]
-// | "inline" ( "deref" | "nop" | "a5" ) ) ]` (Task 3, Ch13: `external
+// [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | regClause ]
+// | "inline" ( "deref" | "nop" | "a5" ) ) ]` where
+// `regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ]
+// [ "ret" REG ]` and `regBind = REG ":" IDENT` (Task 3, Ch13: `external
 // func`; trap/inline clause added Task 2, native-5d; `inline a5` added
 // Task 12, native-5e; `reg memerr` and `trap ... sel` both added Task 14,
-// native-5e) -- parseFuncDecl minus the body block, since an external
-// declaration ends at the signature; a following `{` is left for
-// parseTopDecl to reject as an ordinary top-level parse error (there is
-// no external-func body to parse). `trap`/`sel`/`reg`/`memerr`/`inline`/
-// `deref`/`nop`/`a5` are all contextual identifiers, matched the same
-// curIsIdentText way `external` itself is (no new tokens) -- the trap/sel
-// words are ordinary TkInt, decimal or hex (the lexer already handles
-// `0xA122`). trapVal/convFlag/selVal default to -1/0/-1 (no clause); the
-// checker (checkExternFunc) validates trapVal/convFlag (selVal has no
-// separate validation -- the grammar itself makes `sel` and `reg`
-// mutually exclusive, and `sel` never changes convFlag away from 1).
+// native-5e; regClause's named form -- the parenthesized regBind list and
+// `ret REG` -- added Task 1, toolbox-integration Feature A) -- parseFuncDecl
+// minus the body block, since an external declaration ends at the
+// signature; a following `{` is left for parseTopDecl to reject as an
+// ordinary top-level parse error (there is no external-func body to
+// parse). `trap`/`sel`/`reg`/`memerr`/`ret`/`inline`/`deref`/`nop`/`a5`
+// are all contextual identifiers, matched the same curIsIdentText way
+// `external` itself is (no new tokens), and REG (d0/d1/d2/a0/a1) is too
+// (parseRegName) -- the trap/sel words are ordinary TkInt, decimal or hex
+// (the lexer already handles `0xA122`). trapVal/convFlag/selVal/
+// retRegCode default to -1/0/-1/-1 (no clause); the checker
+// (checkExternFunc) validates trapVal/convFlag/the regClause's own rules
+// (selVal has no separate validation -- the grammar itself makes `sel`
+// and `reg` mutually exclusive, and `sel` never changes convFlag away
+// from 1). A regBind's REGISTER half is validated here (parseRegName,
+// same "unknown X" idiom as the inline sub-keyword check below); its
+// PARAM half is only captured raw (ast.cla's astAddExternRegBinds) --
+// resolving it against the decl's own declared parameters needs the full
+// param list checkExternFunc already walks, so that's check.cla's job.
 func parseExternFuncDecl(): int {
     var line: int
     var col: int
@@ -1374,6 +1427,12 @@ func parseExternFuncDecl(): int {
     var trapTok: Token
     var selVal: int
     var selTok: Token
+    var regBindCodes: list of int
+    var regBindNames: list of int
+    var retRegCode: int
+    var hasNamed: bool
+    var hasMemerr: bool
+    var d: int
 
     line = curLine()
     col = curCol()
@@ -1402,6 +1461,7 @@ func parseExternFuncDecl(): int {
     trapVal = -1
     convFlag = 0
     selVal = -1
+    retRegCode = -1
     if curKind() == TkAssign {
         advance()
         if curIsIdentText("trap") {
@@ -1433,6 +1493,23 @@ func parseExternFuncDecl(): int {
             } else if curIsIdentText("reg") {
                 advance()
                 convFlag = 2
+                hasNamed = false
+                // Task 1 (toolbox-integration Feature A): `reg( REG:
+                // paramName, ... )` -- a NAMED alternative to the
+                // positional assignment below, explicitly binding each
+                // register to one declared parameter. See ast.cla's
+                // externRegBindRawCodes/Names doc comment for why the
+                // param-name half is only captured here, not resolved.
+                if curKind() == TkLParen {
+                    hasNamed = true
+                    advance()
+                    parseRegBind(regBindCodes, regBindNames)
+                    while curKind() == TkComma and not parseAborted {
+                        advance()
+                        parseRegBind(regBindCodes, regBindNames)
+                    }
+                    expect(TkRParen)
+                }
                 // Task 14 (native-5e): `reg memerr` -- a real Toolbox
                 // register-convention routine whose PASCAL signature is
                 // `void` (SetHandleSize/SetPtrSize/etc, per Inside
@@ -1441,9 +1518,28 @@ func parseExternFuncDecl(): int {
                 // low-memory global MemErr ($0220) instead, exactly what
                 // a real MemError() call would read. See
                 // cgCallExtRegMemErr's own doc comment (cg68k.cla) for the
-                // winvar.cla gate failure this fixes.
+                // winvar.cla gate failure this fixes. Composes with the
+                // named form exactly the same way (Task 1).
+                hasMemerr = false
                 if curIsIdentText("memerr") {
                     advance()
+                    hasMemerr = true
+                }
+                // Task 1: `ret REG` -- optionally names the result
+                // register, for either form of `reg`. checkExternFunc
+                // validates the void-return and memerr mutual-exclusion
+                // rules; -1 (unset) means "use the conv's own default
+                // rule" (A0 for a ptr result, D0 otherwise).
+                if curIsIdentText("ret") {
+                    advance()
+                    retRegCode = parseRegName()
+                }
+                if hasNamed {
+                    convFlag = 7
+                    if hasMemerr {
+                        convFlag = 8
+                    }
+                } else if hasMemerr {
                     convFlag = 6
                 }
             }
@@ -1474,7 +1570,14 @@ func parseExternFuncDecl(): int {
     // selVal is -1, i.e. no `sel` clause -- a real selector is never
     // negative) shifted up 16 leaves the low word untouched. externFuncSel
     // (ast.cla) reverses this.
-    return newExternFuncDecl(name.nameIdx, paramsHead, retType, trapVal | ((selVal + 1) << 16), convFlag, line, col)
+    d = newExternFuncDecl(name.nameIdx, paramsHead, retType, trapVal | ((selVal + 1) << 16), convFlag, line, col)
+    // Task 1 (toolbox-integration Feature A): stash the named clause's raw
+    // bind list and the `ret REG` clause's resolved code now that d
+    // exists -- both are no-ops (empty list / -1) for every conv but 7/8
+    // and for a `ret`-less clause respectively.
+    astAddExternRegBinds(d, regBindCodes, regBindNames)
+    astSetExternRetReg(d, retRegCode)
+    return d
 }
 
 // parseIncludeDecl parses `"include" STRING` (contextual: "include" is an

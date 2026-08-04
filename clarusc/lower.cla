@@ -4658,15 +4658,21 @@ func lowDecl(d: int) {
 // (native-5d) passes the decl's already-checked trap/inline clause
 // (ast.cla's externFuncTrap/externFuncConv) straight through to
 // irRegisterExtern -- lowering does no validation of its own, that's all
-// checkExternFunc's job.
+// checkExternFunc's job. Task 1 (toolbox-integration Feature A) adds each
+// param's resolved register code (paramRegBind, read directly off the
+// param handle already in hand -- ast.cla's astExternRegBind wrapper is
+// for callers without one) and the extern's own `ret REG` code
+// (astExternRetReg), same already-checked passthrough.
 func lowExternDecl(d: int) {
     var paramTys: list of int
+    var paramRegs: list of int
     var p: int
     var ret: int
 
     p = funcDeclParamsHead(d)
     while p != -1 {
         paramTys.add(lowResolveType(paramType(p)))
+        paramRegs.add(paramRegBind(p))
         p = declNext(p)
     }
     if funcDeclRetType(d) != -1 {
@@ -4674,7 +4680,7 @@ func lowExternDecl(d: int) {
     } else {
         ret = irVoidT
     }
-    irRegisterExtern(funcDeclName(d), ret, paramTys, externFuncTrap(d), externFuncConv(d), externFuncSel(d))
+    irRegisterExtern(funcDeclName(d), ret, paramTys, externFuncTrap(d), externFuncConv(d), externFuncSel(d), paramRegs, astExternRetReg(d))
 }
 
 // lowAppDecl records the (at most one, checker-validated) `app` section's

@@ -151,3 +151,19 @@ check_test.cla:1:8: undefined: word
 check_test.cla:1:11: undefined: word
 === word-as-ordinary-identifier ===
 clean
+=== extern-reg-named-clean ===
+clean
+=== extern-reg-named-unknown-param ===
+check_test.cla:1:1: reg binding names unknown parameter 'x'
+=== extern-reg-named-dup-register ===
+check_test.cla:1:1: register d0 bound twice
+=== extern-reg-named-unbound-param ===
+check_test.cla:1:32: parameter 'response' has no register binding
+=== extern-reg-ret-requires-return-type ===
+check_test.cla:1:1: ret clause requires a return type
+=== extern-reg-memerr-ret-exclusive ===
+check_test.cla:1:1: memerr and ret are mutually exclusive
+=== extern-reg-named-bad-register ===
+check_test.cla:1:43: unknown register 'a5' in reg clause
+=== extern-reg-named-str-param ===
+check_test.cla:1:1: reg traps allow at most 2 ptr and 2 int/bool/char parameters

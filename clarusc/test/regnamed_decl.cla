@@ -1,0 +1,20 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// regnamed_decl.cla: toolbox-integration Task 1 (Feature A) accept
+// fixture -- a named `reg(...)` clause parses and checks clean. Not swept
+// by driver_test.go's TestClarusModules glob (`*_test.cla` only, this
+// file deliberately isn't named that way), so it's exercised ad hoc via
+// scripts/clarus-run.sh / a crossgen-style current-source build (see the
+// Task 1 report) rather than any automated Go test -- Step 3 of the brief
+// uses it as the RED check (today's compiler fails to parse `reg(`) and
+// Step 5 as the GREEN check (current-source clarusc parses, checks, and
+// runs it). Declaration-only: TbGestalt is never called here (calls land
+// in Task 2's own goldens, once cg68k grows named-clause codegen), so
+// this only exercises parse.cla/ast.cla/ir.cla/check.cla, not cg68k.cla.
+external func TbGestalt(selector: int, response: ptr): word =
+    trap 0xA1AD reg(d0: selector, a1: response) ret d0
+
+on App.startCLI(args: list of string) {
+    alert("ok")
+}

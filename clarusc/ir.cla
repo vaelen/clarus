@@ -677,9 +677,29 @@ var irExternConvs: list of int
 // parseExternFuncDecl's own doc comment for the full story).
 var irExternSels: list of int
 
+// irExternParamRegs (Task 1, toolbox-integration Feature A) is the ninth
+// parallel arena, flat and parallel to irExternParamTys exactly the same
+// way (extern i's param j's register code lives at
+// irExternParamRegs[irExternParamStart[i] + j]) -- the resolved register
+// code (ast.cla's astExternRegBind/paramRegBind; Global Constraints'
+// encoding: d0..d2 = 0..2, a0 = 8, a1 = 9) each param binds to under a
+// named `reg(...)` clause (conv 7/8). -1 for every param under any other
+// conv, which has no per-param register story of its own.
+var irExternParamRegs: list of int
+
+// irExternRetRegs (Task 1, Feature A) is the tenth parallel arena -- one
+// slot per extern, same "extern index" as the rest -- carrying the `ret
+// REG` clause's resolved register code (ast.cla's astExternRetReg), or -1
+// when the extern has no explicit `ret` (the conv's own default-result
+// rule applies instead: A0 for a ptr result, D0 otherwise).
+var irExternRetRegs: list of int
+
 // irRegisterExtern records one `external func`'s signature (lower.cla's
 // lowExternDecl, phase-1-only -- an extern has no body to lower).
-func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int, sel: int) {
+// paramRegs is parallel to paramTys (one register code per param, -1 =
+// none); retReg is the extern's own `ret REG` code (-1 = default rule) --
+// both Task 1, Feature A.
+func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int, sel: int, paramRegs: list of int, retReg: int) {
     var start: int
     var i: int
 
@@ -687,6 +707,7 @@ func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: 
     i = 0
     while i < paramTys.count {
         irExternParamTys.add(paramTys[i])
+        irExternParamRegs.add(paramRegs[i])
         i = i + 1
     }
     irExternNames.add(nameIdx)
@@ -696,6 +717,7 @@ func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: 
     irExternTrapWords.add(trapVal)
     irExternConvs.add(conv)
     irExternSels.add(sel)
+    irExternRetRegs.add(retReg)
 }
 
 func irExternCount(): int {
@@ -732,6 +754,17 @@ func irExternConv(i: int): int {
 // see irExternSels above.
 func irExternSel(i: int): int {
     return irExternSels[i]
+}
+
+// irExternParamReg/irExternRetReg (Task 1, Feature A) read back extern i's
+// named-clause register assignments -- see irExternParamRegs/
+// irExternRetRegs above.
+func irExternParamReg(i: int, j: int): int {
+    return irExternParamRegs[irExternParamStart[i] + j]
+}
+
+func irExternRetReg(i: int): int {
+    return irExternRetRegs[i]
 }
 
 // irIsExtern reports whether nameIdx names a registered `external func` --
@@ -891,6 +924,12 @@ func irReset() {
     }
     while irExternSels.count > 0 {
         irExternSels.pop()
+    }
+    while irExternParamRegs.count > 0 {
+        irExternParamRegs.pop()
+    }
+    while irExternRetRegs.count > 0 {
+        irExternRetRegs.pop()
     }
 
     irHasLaunch = false

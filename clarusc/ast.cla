@@ -116,7 +116,9 @@
 // -- auxiliary structural nodes (helper structs in ast.go; live in the
 //    decls arena because they need the same kind+child-slot shape) --
 //   DkField      nameIdx=name; a=type; b=default expr (-1 if none)
-//   DkParam      nameIdx=name; a=type
+//   DkParam      nameIdx=name; a=type; b=named `reg(...)` clause's
+//                resolved register code (Task 1, Feature A -- -1 default,
+//                see paramRegBind below; unused by any other DkParam)
 //   DkEnumMember nameIdx=name; intVal=value; b=hasValue flag (0/1);
 //                c=label (interned, -1 if unlabeled)
 //   DkProperty   nameIdx=property name; a=values list head (exprs arena,
@@ -139,14 +141,22 @@
 //                if no result); c=trap word for a trap clause, -1
 //                otherwise -- no clause, or an inline clause, which has no
 //                trap word to store (Task 2, native-5d); intVal=convention
-//                flag (0=none, 1=pascal trap, 2=reg trap, 3=inline deref,
-//                4=inline nop) -- intVal is what distinguishes the two
-//                inline forms, since c is -1 for both. Same a/b slot
-//                layout as DkFunc so funcDeclName/ParamsHead/RetType and
-//                checkFuncSig work unchanged on it; c/intVal replace
-//                DkFunc's unused body
+//                flag (0=none, 1=pascal trap, 2=reg trap [positional],
+//                3=inline deref, 4=inline nop, 5=inline a5, 6=reg trap
+//                [positional] memerr, 7=reg trap [named], 8=reg trap
+//                [named] memerr -- 5/6 Task 12/14 native-5e, 7/8 Task 1
+//                toolbox-integration Feature A) -- intVal is what
+//                distinguishes the inline/reg sub-forms, since c is -1 for
+//                all of them. Same a/b slot layout as DkFunc so
+//                funcDeclName/ParamsHead/RetType and checkFuncSig work
+//                unchanged on it; c/intVal replace DkFunc's unused body
 //                slot (an external has no body) and are read back by
-//                externFuncTrap/externFuncConv below.
+//                externFuncTrap/externFuncConv below. A conv-7/8 extern's
+//                per-param register bindings live on its OWN params (see
+//                DkParam's b slot / paramRegBind below, not here -- no
+//                DeclNode slot is left); its optional `ret REG` lives in
+//                the decl-keyed externRetRegByDecl map (astExternRetReg)
+//                for the same reason.
 //
 // ---- TypeExprKind (typeExprs arena) ----
 //   TxNamed      nameIdx=type name ("int", "bool", ..., or a user
@@ -1267,6 +1277,7 @@ func newParam(nameIdx: int, typeIdx: int, line: int, col: int): int {
     n.kind = DkParam
     n.nameIdx = nameIdx
     n.a = typeIdx
+    n.b = -1
     n.next = -1
     n.line = line
     n.col = col
@@ -1280,6 +1291,165 @@ func paramName(i: int): int {
 
 func paramType(i: int): int {
     return decls[i].a
+}
+
+// paramRegBind/setParamRegBind (Task 1, Feature A: named-register trap
+// clause) store a `reg(REG: paramName, ...)` clause's resolved register
+// code directly on a DkParam node's otherwise-unused `b` slot (DkParam
+// only ever reads nameIdx/a -- see the DeclKind doc comment above) rather
+// than a separate side array: -1 (newParam's default) means "no named
+// binding" -- true for every ordinary function param and for a positional
+// (bare or `memerr`) `reg` extern's params alike, since only
+// checkExternFunc's conv-7/8 path (check.cla) ever calls
+// setParamRegBind. Register codes are Global Constraints' encoding:
+// d0..d2 = 0..2, a0 = 8, a1 = 9 (bit 3 = address-register flag).
+func paramRegBind(p: int): int {
+    return decls[p].b
+}
+
+func setParamRegBind(p: int, code: int) {
+    decls[p].b = code
+}
+
+// astExternRegBind is the by-position reader Task 2 (native codegen) reads
+// an extern's named-clause register assignments through: walks declIdx's
+// param chain to the paramIdx'th param and returns its resolved register
+// code (paramRegBind above), or -1 if paramIdx is out of range. Callers
+// that already hold a param's own decl index (e.g. lower.cla's
+// lowExternDecl, which walks the chain itself) should call paramRegBind
+// directly instead -- this wrapper exists for callers that only have
+// (declIdx, paramIdx), per the Task 1 brief's interface contract.
+func astExternRegBind(declIdx: int, paramIdx: int): int {
+    var p: int
+    var i: int
+
+    p = funcDeclParamsHead(declIdx)
+    i = 0
+    while p != -1 and i < paramIdx {
+        p = declNext(p)
+        i = i + 1
+    }
+    if p == -1 {
+        return -1
+    }
+    return paramRegBind(p)
+}
+
+// externRetRegByDecl (Task 1, Feature A) holds a DkExternFunc's `ret REG`
+// clause's already-resolved register code, keyed by the decl's own arena
+// index (numToStr(declIdx), the same map-keyed-by-decl-index idiom
+// check.cla's funcScopeByDecl/funcRetByDecl use) -- DkExternFunc has no
+// spare DeclNode slot left (a/b/c/intVal are all taken, see the doc
+// comment above), unlike DkParam. -1 (the map's default) means no `ret`
+// clause -- callers use the conv's own default-result-register rule
+// instead (A0 for a ptr result, D0 otherwise).
+var externRetRegByDecl: map of int
+
+func astSetExternRetReg(declIdx: int, code: int) {
+    externRetRegByDecl[numToStr(declIdx)] = code
+}
+
+func astExternRetReg(declIdx: int): int {
+    return externRetRegByDecl.get(numToStr(declIdx), -1)
+}
+
+// regCodeForName/regNameForCode (Task 1, Feature A) are the register-name
+// <-> code table for a named `reg(...)` clause's REG tokens and `ret
+// REG`: the closed set { d0, d1, d2, a0, a1 }, lowercase only (Global
+// Constraints' encoding: d0..d2 = 0..2, a0 = 8, a1 = 9). `a5`/`a6`/`a7`
+// (globals base, frame, stack) and anything else are never valid --
+// regCodeForName returns -1 for those, which parse.cla's parseRegName
+// turns into a parse error. regNameForCode is the reverse, for
+// checkExternFunc's own diagnostics (e.g. "register d0 bound twice").
+func regCodeForName(s: string): int {
+    if s == "d0" {
+        return 0
+    }
+    if s == "d1" {
+        return 1
+    }
+    if s == "d2" {
+        return 2
+    }
+    if s == "a0" {
+        return 8
+    }
+    if s == "a1" {
+        return 9
+    }
+    return -1
+}
+
+func regNameForCode(code: int): string {
+    if code == 0 {
+        return "d0"
+    }
+    if code == 1 {
+        return "d1"
+    }
+    if code == 2 {
+        return "d2"
+    }
+    if code == 8 {
+        return "a0"
+    }
+    if code == 9 {
+        return "a1"
+    }
+    return "?"
+}
+
+// externRegBindRawCodes/Names + externRegBindStart/Count (Task 1, Feature
+// A) hold a named `reg(...)` clause's RAW bind list -- (register code,
+// raw param-name pool idx) pairs, in source order, back-to-back across
+// every decl (start/count keyed by decl index, same flat-arena +
+// start/count idiom as ir.cla's irExternParamStart/CountArr). Raw because
+// resolving a bind's param-name text against the decl's actual declared
+// parameters is check.cla's job (checkExternFunc, Task 1 brief Step 4),
+// not parse.cla's -- the parser (parseRegBind) only validates that the
+// REGISTER half is one of the closed set (regCodeForName), not that the
+// PARAM half names a real parameter. checkExternFunc resolves each pair
+// and, on success, calls setParamRegBind to write the resolved code onto
+// that specific param -- paramRegBind/astExternRegBind above are the
+// POST-resolution story Task 2 relies on; nothing outside check.cla
+// should read these raw arrays.
+var externRegBindRawCodes: list of int
+var externRegBindRawNames: list of int
+var externRegBindStart: map of int
+var externRegBindCount: map of int
+
+// astAddExternRegBinds records declIdx's named `reg(...)` clause's raw
+// bind list (parseExternFuncDecl calls this once, right after
+// newExternFuncDecl returns declIdx -- the decl doesn't exist yet while
+// the clause itself is being parsed, so the parser buffers codes/names
+// into its own local lists first).
+func astAddExternRegBinds(declIdx: int, codes: list of int, names: list of int) {
+    var key: string
+    var start: int
+    var i: int
+
+    key = numToStr(declIdx)
+    start = externRegBindRawCodes.count
+    i = 0
+    while i < codes.count {
+        externRegBindRawCodes.add(codes[i])
+        externRegBindRawNames.add(names[i])
+        i = i + 1
+    }
+    externRegBindStart[key] = start
+    externRegBindCount[key] = codes.count
+}
+
+func astExternRegBindRawCount(declIdx: int): int {
+    return externRegBindCount.get(numToStr(declIdx), 0)
+}
+
+func astExternRegBindRawCode(declIdx: int, j: int): int {
+    return externRegBindRawCodes[externRegBindStart.get(numToStr(declIdx), 0) + j]
+}
+
+func astExternRegBindRawName(declIdx: int, j: int): int {
+    return externRegBindRawNames[externRegBindStart.get(numToStr(declIdx), 0) + j]
 }
 
 func newFuncDecl(nameIdx: int, paramsHead: int, retType: int, body: int, line: int, col: int): int {
@@ -1393,7 +1563,9 @@ func externFuncSel(i: int): int {
 }
 
 // externFuncConv returns a DkExternFunc's calling-convention flag: 0=none,
-// 1=pascal trap, 2=reg trap, 3=inline deref, 4=inline nop.
+// 1=pascal trap, 2=reg trap (positional), 3=inline deref, 4=inline nop,
+// 5=inline a5, 6=reg trap (positional) memerr, 7=reg trap (named), 8=reg
+// trap (named) memerr.
 func externFuncConv(i: int): int {
     return decls[i].intVal
 }

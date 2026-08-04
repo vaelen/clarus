@@ -1012,4 +1012,70 @@ on App.startEmpty {
     ln(src, "    return word")
     ln(src, "}")
     runCase("word-as-ordinary-identifier", src)
+
+    // ---- Task 1 (toolbox-integration Feature A): named reg(...) clause ----
+    //
+    // regnamed_decl.cla (this directory) is the accept fixture proper --
+    // a standalone declaration-only program run via scripts/clarus-run.sh
+    // (Step 3/5 of the brief), since it needs a real App.startCLI handler
+    // clarus-run.sh can execute. Case 77 below is a lighter clean case
+    // exercising the SAME named-clause resolution path inside this
+    // harness, alongside its error siblings.
+
+    // Case 77: a named reg(...) clause with two binds (one D-register, one
+    // A-register) plus an explicit `ret` -- proves the happy path: every
+    // param bound exactly once, no register reused, a declared return
+    // type satisfies `ret`.
+    src = ""
+    ln(src, "external func F(a: int, b: ptr): int = trap 0xA000 reg(d0: a, a0: b) ret d0")
+    runCase("extern-reg-named-clean", src)
+
+    // Case 78: a regBind names an identifier that isn't a declared
+    // parameter at all.
+    src = ""
+    ln(src, "external func F(response: ptr) = trap 0xA000 reg(a1: x)")
+    runCase("extern-reg-named-unknown-param", src)
+
+    // Case 79: two regBinds claim the same register -- the named form's
+    // dup-register rule (no positional 2+2 count limit applies here, but
+    // no register may serve two masters either).
+    src = ""
+    ln(src, "external func F(a: int, b: int) = trap 0xA000 reg(d0: a, d0: b)")
+    runCase("extern-reg-named-dup-register", src)
+
+    // Case 80: a declared parameter with no regBind at all -- every param
+    // must be bound exactly once under the named form.
+    src = ""
+    ln(src, "external func F(selector: int, response: ptr) = trap 0xA000 reg(d0: selector)")
+    runCase("extern-reg-named-unbound-param", src)
+
+    // Case 81: `ret` on a void extern (no declared return type) -- `ret`
+    // only names WHERE a result lives, it can't conjure one.
+    src = ""
+    ln(src, "external func F(a: int) = trap 0xA000 reg(d0: a) ret d0")
+    runCase("extern-reg-ret-requires-return-type", src)
+
+    // Case 82: `memerr` and `ret` are mutually exclusive -- `memerr`
+    // already names the result's source (the MemErr global, not a
+    // register), so naming a result register too is a contradiction.
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000 reg(d0: a) memerr ret d0")
+    runCase("extern-reg-memerr-ret-exclusive", src)
+
+    // Case 83: an unrecognized register spelling (`a5` -- the globals-base
+    // register, never valid here) is a PARSE error, not a checker one --
+    // parseRegName rejects it the same way an unrecognized `inline`
+    // sub-keyword is rejected, before any param-name resolution happens.
+    src = ""
+    ln(src, "external func F(x: int) = trap 0xA000 reg(a5: x)")
+    runCase("extern-reg-named-bad-register", src)
+
+    // Case 84: a `str` parameter under the named form is rejected with the
+    // SAME diagnostic the positional form's regBad path already gives
+    // (Case 70's sibling) -- str/text still have no register slot,
+    // regardless of which form of `reg` is used, and the named form
+    // doesn't get a second message for the same underlying rule.
+    src = ""
+    ln(src, "external func F(s: string) = trap 0xA000 reg(a0: s)")
+    runCase("extern-reg-named-str-param", src)
 }

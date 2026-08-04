@@ -1397,8 +1397,10 @@ An `external func` declaration may end with a clause tying it to a specific Tool
 
 ```
 externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
-             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "reg" [ "memerr" ] ]
+             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | regClause ]
                    | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
+regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ] [ "ret" REG ] ;
+regBind   = REG ":" IDENT ;   // REG in { d0, d1, d2, a0, a1 }, lowercase
 ```
 
 `= trap NNNN` names the Toolbox trap word — an unsigned 16-bit A-line value, always in `0xA000`–`0xAFFF` — the runtime dispatches to using the ordinary Pascal calling convention (arguments pushed left to right, result returned in the caller-reserved stack slot the call pops after the trap — the same slot a real Pascal trap always writes its result to; D0 is not the calling convention's result location, it is only where the compiled code lands the value after popping that slot):
@@ -1409,7 +1411,9 @@ external func TickCount(): int = trap 0xA975
 
 A `bool` or `char` parameter or result under the plain `trap` clause still occupies a full 16-bit stack word — Pascal never packs sub-word arguments — but the value itself lives in that word's HIGH-order byte (the word's own, lowest, address), not its low byte: pushing a `bool`/`char` argument shifts the value up 8 bits before the word push, and reading a `bool`/`char` result shifts the popped word down 8 bits before use. This is normative and empirically verified (native-5e Task 12, against a real ROM trap and a real Toolbox struct field on Mini vMac hardware) — an earlier (5d-era) low-byte claim for this same convention was wrong and is superseded by this paragraph. `word` (below) parameters and results are unaffected: a `word` is a genuine 16-bit value, not a narrower value padded into a word, so it always occupies the word's full span with no shift.
 
-Appending `reg` selects the register calling convention some traps use instead: at most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
+Appending `reg` selects the register calling convention some traps use instead, in either of two forms. The POSITIONAL form (below) assigns registers by declaration order; a NAMED form (further below) binds each register to a parameter explicitly.
+
+At most two `ptr` parameters, passed in A0 then A1 (declaration order), and at most two `int`/`bool`/`char` parameters, passed in D0 then D1 (declaration order) — a third parameter of either kind, or any `str`/`text` parameter, is an error, since none of those has a register slot under `reg`:
 
 ```rust
 external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
@@ -1420,6 +1424,15 @@ external func BlockMove(src: ptr, dst: ptr, count: int) = trap 0xA02E reg
 ```rust
 external func SetHandleSize(h: ptr, newSize: int): int = trap 0xA024 reg memerr
 ```
+
+`reg` also accepts a NAMED form, `reg( REG: paramName, ... )`, binding each register explicitly to one declared parameter by name instead of assigning by position. Register names are contextual identifiers (like `reg` itself), lowercase only, drawn from the closed set `d0 d1 d2 a0 a1` — matching the listing printer's own lowercase spelling; any other spelling, including `d3` or `a5`, is an error (`a5`/`a6`/`a7` are the globals base, frame, and stack registers, never available here). Every declared parameter must be bound exactly once, every bound name must name a real parameter, and no register may be bound twice; unlike the positional form above, the named form has no 2+2 count limit — it is bounded only by the register table itself. Parameter types are the same set the positional form accepts (`int`, `bool`, `char`, `word`, `ptr`; `str`/`text` remain rejected):
+
+```rust
+external func UiGestalt(selector: int, response: ptr): word =
+    trap 0xA1AD reg(d0: selector, a1: response) ret d0
+```
+
+An optional trailing `ret REG` names the result register, for either form of `reg`; omitted, the default is today's rule — `A0` for a `ptr` result, `D0` otherwise. `ret` on a `void` extern (no declared return type) is an error, and `ret` is mutually exclusive with `memerr` (which already names the result's source — the low-memory global, not a register). Reading the result from whichever register, named or defaulted: an `int` or `ptr` result uses its full 32 bits; a `word` result reads its low 16 bits, SIGN-extended (Toolbox `INTEGER`/`OSErr`); a `bool` or `char` result reads its low byte, zero-extended — see the `word` correction just below.
 
 Some Toolbox packages share a single trap word across many routines, distinguished by a selector word the caller pushes immediately before the trap — the List Manager's `LNew`/`LDispose`/`LAddRow`/etc. all dispatch through the one trap `0xA9E7` this way. `trap NNNN sel SELECTOR` names that shape: `SELECTOR` (an unsigned 16-bit value, decimal or hex) is pushed as one more Pascal-convention stack word, closest to the trap itself, after every declared argument — the trap dispatcher pops it along with the rest, so no separate caller cleanup is needed. `sel` and `reg` are mutually exclusive — a selector-dispatch trap is always Pascal-convention:
 
@@ -1469,7 +1482,9 @@ func openAt(pt: int, wpOut: ptr): int {
 }
 ```
 
-The distinction matters only at the trap boundary itself. A `word` argument pushes as a single 16-bit stack word rather than `int`'s 32-bit long — the Pascal calling convention's own `bool`/`char` push shape, one stack word per argument regardless of width. A `word` result is popped back off its reserved stack slot and SIGN-extended to fill the full 32-bit value the rest of Clarus code sees — Toolbox `INTEGER` is signed (a coordinate, a row number, an index that can carry a negative sentinel), unlike the zero-extended `bool`/`char` result. Under the `reg` calling convention, `word` has no separate marshaling of its own: a `word` parameter or result occupies a full D-register slot exactly like `int`, since `reg` never narrows to a stack word in the first place.
+The distinction matters only at the trap boundary itself. A `word` argument pushes as a single 16-bit stack word rather than `int`'s 32-bit long — the Pascal calling convention's own `bool`/`char` push shape, one stack word per argument regardless of width. A `word` result is popped back off its reserved stack slot and SIGN-extended to fill the full 32-bit value the rest of Clarus code sees — Toolbox `INTEGER` is signed (a coordinate, a row number, an index that can carry a negative sentinel), unlike the zero-extended `bool`/`char` result.
+
+Under EITHER form of the `reg` calling convention (positional or named, above), a `word` PARAMETER has no separate marshaling of its own: it occupies a full D-register slot exactly like `int`, since `reg` never narrows to a stack word in the first place. A `word` RESULT is different — this corrects an earlier revision of this paragraph, which said a `word` result also occupies a full register slot like `int`: it does not. A `word` result under `reg` reads back from its result register's low 16 bits, SIGN-extended — the same `INTEGER`/`OSErr` signedness rule as a `word` result under the plain `trap` convention above, just sourced from a register instead of a popped stack slot. The one real call site that returns a `word` under `reg`, `UiGestalt` (`runtime/clarus/ui.cla`), already sign-extends its result this way; this correction makes the written rule match it.
 
 ## Appendix A: Grammar (EBNF)
 

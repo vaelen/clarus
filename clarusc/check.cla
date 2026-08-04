@@ -1806,6 +1806,15 @@ func checkExternFunc(d: int) {
     var ptrCount: int
     var scalarCount: int
     var regBad: bool
+    var namedBindsBad: bool
+    var regUsed: list of bool
+    var bindCount: int
+    var j: int
+    var bindCode: int
+    var bindNameIdx: int
+    var foundP: int
+    var unboundReported: bool
+    var retRegCode: int
 
     checkFuncSig(d)
     symIdx = scopeLookup(curScope, funcDeclName(d))
@@ -1843,12 +1852,20 @@ func checkExternFunc(d: int) {
 
     conv = externFuncConv(d)
     trapVal = externFuncTrap(d)
-    if conv == 1 or conv == 2 or conv == 6 {
+    if conv == 1 or conv == 2 or conv == 6 or conv == 7 or conv == 8 {
         if trapVal < 0xA000 or trapVal > 0xAFFF {
             emitDiag(declLine(d), declCol(d), "trap word must be in 0xA000..0xAFFF")
         }
     }
     if (conv == 2 or conv == 6) and (regBad or ptrCount > 2 or scalarCount > 2) {
+        emitDiag(declLine(d), declCol(d), "reg traps allow at most 2 ptr and 2 int/bool/char parameters")
+    } else if (conv == 7 or conv == 8) and regBad {
+        // Task 1 (toolbox-integration Feature A): a named reg(...) clause
+        // has NO count limit (unlike positional reg's 2+2 above), but the
+        // PARAM TYPE restriction is identical -- str/text still have no
+        // register slot -- so this reuses positional reg's own diagnostic
+        // wording rather than inventing a second message for the same
+        // underlying rule.
         emitDiag(declLine(d), declCol(d), "reg traps allow at most 2 ptr and 2 int/bool/char parameters")
     }
     if conv == 3 and (i != 1 or ptrCount != 1 or ret == -1 or typeKind(ret) != TyPtr) {
@@ -1859,6 +1876,83 @@ func checkExternFunc(d: int) {
     }
     if conv == 5 and (i != 0 or ret == -1 or typeKind(ret) != TyPtr) {
         emitDiag(declLine(d), declCol(d), "inline a5 requires signature (): ptr")
+    }
+
+    // Task 1 (toolbox-integration Feature A): a named reg(...) clause's
+    // bind list -- resolve each raw (register code, raw param-name pool
+    // idx) pair (ast.cla's astExternRegBindRaw*, parsed but not resolved
+    // by parse.cla, see its own doc comment) against d's OWN declared
+    // params, tracking register reuse; on success write the resolved code
+    // onto that param (setParamRegBind), the paramRegBind/astExternRegBind
+    // story Task 2's codegen reads. Stops re-diagnosing (namedBindsBad)
+    // after the first bad bind so a single malformed clause produces
+    // exactly one diagnostic, matching every other rule in this function.
+    if conv == 7 or conv == 8 {
+        j = 0
+        while j < 10 {
+            regUsed.add(false)
+            j = j + 1
+        }
+        namedBindsBad = false
+        bindCount = astExternRegBindRawCount(d)
+        j = 0
+        while j < bindCount {
+            if not namedBindsBad {
+                bindCode = astExternRegBindRawCode(d, j)
+                bindNameIdx = astExternRegBindRawName(d, j)
+                p = funcDeclParamsHead(d)
+                foundP = -1
+                while p != -1 {
+                    if paramName(p) == bindNameIdx {
+                        foundP = p
+                    }
+                    p = declNext(p)
+                }
+                if foundP == -1 {
+                    emitDiag(declLine(d), declCol(d), "reg binding names unknown parameter '" + poolGet(bindNameIdx) + "'")
+                    namedBindsBad = true
+                } else if bindCode < 0 or bindCode >= 10 {
+                    // Defensive only: parseRegName rejects any register
+                    // spelling outside the closed set at parse time, so a
+                    // successfully-parsed program never reaches here with
+                    // an out-of-range code. Guards main.cla's pipeline,
+                    // which runs checkProgram even after a parse error
+                    // (unlike check_test.cla's runCase) -- against
+                    // indexing regUsed with garbage left behind by an
+                    // aborted parseRegBind.
+                    namedBindsBad = true
+                } else if regUsed[bindCode] {
+                    emitDiag(declLine(d), declCol(d), "register " + regNameForCode(bindCode) + " bound twice")
+                    namedBindsBad = true
+                } else {
+                    regUsed[bindCode] = true
+                    setParamRegBind(foundP, bindCode)
+                }
+            }
+            j = j + 1
+        }
+        if not namedBindsBad {
+            p = funcDeclParamsHead(d)
+            unboundReported = false
+            while p != -1 {
+                if paramRegBind(p) == -1 and not unboundReported {
+                    emitDiag(declLine(p), declCol(p), "parameter '" + poolGet(paramName(p)) + "' has no register binding")
+                    unboundReported = true
+                }
+                p = declNext(p)
+            }
+        }
+    }
+
+    // Task 1: the `ret REG` clause's rules apply to EITHER form of reg
+    // (bare or named) alike, per the regClause grammar -- independent of
+    // the conv-7/8-only block above.
+    retRegCode = astExternRetReg(d)
+    if retRegCode != -1 and ret == -1 {
+        emitDiag(declLine(d), declCol(d), "ret clause requires a return type")
+    }
+    if (conv == 6 or conv == 8) and retRegCode != -1 {
+        emitDiag(declLine(d), declCol(d), "memerr and ret are mutually exclusive")
     }
 }
 
