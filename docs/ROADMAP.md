@@ -1007,7 +1007,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      `ClaruscOnly` fence/corpus-fork complexity (which otherwise grows
      with every Toolbox-phase feature), and ends the freeze-exception
      ceremony (two named exceptions ratified to date).
-  2. **Toolbox integration phase** — the three features, each landing
+  2. **Toolbox integration phase (branch `toolbox-integration`, 2026-08-04):
+     DONE.** — the three features, each landing
      reference-first then clarusc + cg68k with a native gate:
      (a) **named-register trap clause** (e.g. `= trap 0xA1AD reg(d0:
      selector, a1: response) ret d0`) — replaces the positional
@@ -1026,6 +1027,58 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      procs, SF dlgHooks, defprocs). Interrupt-time completion routines
      stay an explicit non-goal (A5/allocation restrictions the language
      cannot make safe).
+
+     **Outcome:** all three features plus the cross-cutting extern-dedup
+     rule landed, reference-first, each with a native gate against a real
+     Toolbox trap/callback. (A) named-register trap clause: `reg(REG:
+     param, ...)` binding + `ret REG`; the `word`-result sign-extension
+     rule unified across both `reg` forms (a Ch13 correction — the prior
+     text said `word` occupied a full register slot like `int`, which
+     contradicted the one shipping call site); `cgCallExtGestalt` and its
+     by-name dispatch hook (cg68k.cla:7068) deleted — `UiGestalt` now
+     declares the clause directly. Extern dedup: identical-signature merge
+     for both `external func` and `extern record`, the C-header model,
+     unblocking user IM transcription over runtime-declared traps. (B)
+     `extern record`: a Mac-packed-layout storage kind with ONE shared
+     offset/size authority consumed by both backends (cg68k + cprint), a
+     byte-array C emission on the C lane. (C) `callback func`: compiler-
+     generated pascal-convention glue with tree-shake auto-rooting on
+     address decay; the runtime's own `rtUiLdefDraw`/
+     `rtUiScrollbarAction` migrated to it, and `cgEmitLdefGlue`,
+     `cgEmitActionGlue`, their hand-listed `shakeAddRoot` calls, and the
+     `UiLdefEntry`/`UiActionEntry` by-name specials are all deleted (zero
+     grep hits left in `clarusc/`) — the generated glue verified
+     instruction-identical to the deleted hand glue at the listing level,
+     and the 23 frozen UI goldens (`testdata/uisnaps`) stayed
+     byte-identical through the migration (zero diffs), the feature's own
+     acceptance proof. Evidence at HEAD: `testsuite/toolbox` 7/7 both
+     lanes (grew from test-suite-review's 5 cases: +`GestaltNamed`
+     (Feature A's native gate), +`EventXRec` (Feature B's, a real
+     `OSEventAvail` trap filling an `extern record EventRecord`,
+     cross-checked byte-for-byte against manual `peek`)); `testsuite/core`
+     41/41 (40 real + `SelfCheck`, up from 40 total pre-phase — Task 6
+     added the `XRecFieldsRoundtrip` case); snapshot green, all 9 tasks'
+     reviews closed clean. Spec:
+     `docs/superpowers/specs/2026-08-04-toolbox-integration-design.md`
+     (see its "Outcome (2026-08-04)" section); plan:
+     `docs/superpowers/plans/2026-08-04-toolbox-integration.md`; ledger:
+     `.superpowers/sdd/2026-08-04-toolbox-integration/progress.md`.
+
+     **Filed during the phase, for later:**
+     1. `runtime/clarus/ui.cla:263`'s `UiFlushEvents = trap 0xA032` is
+        mis-declared pascal-convention for what bit 11 (clear) marks as
+        an OS-dispatch/register trap — the same bug shape Task 6's review
+        caught on `TbOSEventAvail`/`0xA030`. Latent hazard; fix
+        deliberately deferred (out of this phase's scope — `UiFlushEvents`
+        was not touched by any Toolbox-phase feature).
+     2. The bit-11 trap-table reading rule, worth recording as cookbook-
+        phase (item 3, below) input: `trap & 0x0800` — set means
+        Toolbox/pascal convention, clear means OS/register convention.
+     3. Hard-won lesson from Task 6: Mini vMac does not model 68000
+        address errors. A native-gate PASS does not prove alignment
+        correctness — goldens must be eyeballed for odd `.W`/`.L` bases
+        (the packed byte-array-of-bool/char shape that motivated
+        `cgSlotSizeOf`'s even-rounding fix).
   2b. **Character/byte-type surface review (Andrew, 2026-08-04: AFTER
      Go-compiler deletion, BEFORE the Docs cookbook):** revisit `byte`,
      `char`, `bool`, and `text` as a set. Context: the Toolbox

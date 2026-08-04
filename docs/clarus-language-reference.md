@@ -1447,7 +1447,7 @@ A field read/write, and the decay/coercion at an `external func` call site, in c
 ```rust
 func waitClick() {
     var ev: EventRecord
-    while UiWaitNextEvent(0xFFFF, ev, 10, nilPtr()) == 0 { }
+    while UiWaitNextEvent(0xFFFF, ev, 10, ptr(0)) == 0 { }
     handleAt(ev.where.v, ev.where.h)
 }
 ```
@@ -1559,7 +1559,7 @@ external func DebugBreak() = inline nop
 external func CurrentA5(): ptr = inline a5
 ```
 
-Two `external func` declarations sharing a name are legal if and only if they are IDENTICAL: the same parameter list (types and order; parameter names may differ), the same return type, and the same trap/inline clause in full — trap word, `sel`, calling convention, every register binding, and `ret`. The checker merges an identical repeat into the first declaration; every call site resolves to that one entry, and no diagnostic is raised. Any other kind of same-name mismatch is a compile error naming both declaration sites. This is the same accommodation a C header gives a repeated `extern` prototype: a program can redeclare a trap the runtime already declares — transcribed independently from the same Inside Macintosh page — without a spurious redeclaration error:
+Two `external func` declarations sharing a name are legal if and only if they are IDENTICAL: the same parameter list (types and order; parameter names may differ), the same return type, and the same trap/inline clause in full — trap word, `sel`, calling convention, every register binding, `memerr`, and `ret`. The checker merges an identical repeat into the first declaration; every call site resolves to that one entry, and no diagnostic is raised. Any other kind of same-name mismatch is a compile error naming both declaration sites. This is the same accommodation a C header gives a repeated `extern` prototype: a program can redeclare a trap the runtime already declares — transcribed independently from the same Inside Macintosh page — without a spurious redeclaration error:
 
 ```rust
 external func TickCount(): int = trap 0xA975
@@ -1622,8 +1622,9 @@ type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
 varDecl     = "var" IDENT ":" type [ "=" expr ] ;
 funcDecl    = "func" IDENT "(" [ params ] ")" [ ":" type ] block ;
 externDecl  = "external" "func" IDENT "(" [ params ] ")" [ ":" ( type | "word" ) ]
-            [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "reg" [ "memerr" ] ]
+            [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | regClause ]
                   | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
+            // regClause: see "Trap and Inline Clauses" (Chapter 13) for the full production
 params      = param { "," param } ;
 param       = IDENT ":" ( type | "word" ) ;
 

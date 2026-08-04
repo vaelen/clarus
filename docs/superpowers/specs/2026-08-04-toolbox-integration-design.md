@@ -385,3 +385,107 @@ the riskiest new-syntax work.
 - Interrupt-time callbacks; storable function values (`procptr`).
 - Any Go-compiler change (frozen; new syntax is clarusc-only).
 - Go deletion / harness swaps (separate follow-up plan).
+
+## Outcome (2026-08-04)
+
+All three features plus extern dedup landed as designed, 9 tasks, each
+review clean after at most one fix round. As-built deviations from this
+spec, task by task, with a one-line why each:
+
+- **Task 1 (checker groundwork):** the self-hosted checker's own fixture
+  corpus lives at `clarusc/test/check_test.cla`/`.out` (Cases 66-72), NOT
+  `testdata/diag` (the Go-shared location) — `clarusc/test/` is
+  genuinely clarusc-only, matching this phase's `ClaruscOnly`-fence
+  intent even though its driver name doesn't match the `*_test.cla`
+  sweep pattern.
+- **Task 2 (Feature A):** `UiGestalt`'s migration to the named clause and
+  `cgCallExtGestalt`'s deletion landed clean; deferred a stale header
+  comment in `ui.cla` (still named the deleted special case) to Task 9's
+  own touch of that file, per the ledger's forward note.
+- **Task 6 (Feature B native gate) — real trap-convention bug found and
+  fixed:** the gate's own `TbOSEventAvail` declaration used the WRONG
+  calling convention. `OSEventAvail` (`0xA030`) is bit-11-CLEAR
+  (OS-dispatch/register convention), but was declared plain Pascal —
+  the same bug shape as the pre-existing `5faaa6c` MenuKey/TickCount
+  lesson, this time caught before merge instead of after. Fixed by
+  switching to the real Pascal sibling `_EventAvail` (`0xA971`, bit 11
+  SET) instead, with the gate's assertion loosened to
+  `got == (ev.what != 0)` — a documented assertion-limit (crash-class
+  convention bugs are still caught; a coincidental-pass on the exact
+  boolean value is not claimed as fully eliminated by construction).
+  Same task fixed `cgSlotSizeOf`'s even-rounding for packed bool/char
+  byte arrays — an allocation-only fix; Mini vMac does not model 68000
+  address errors, so this was caught by eyeballing goldens for odd
+  `.W`/`.L` bases, not by a native-gate failure (see the ROADMAP's own
+  filed lesson).
+- **Task 5 (Feature B, `str[N]` field storage):** the field's C-lane
+  storage rides the EXISTING `clar_arr_char_N` typedef/array-of-char
+  emission (`cpCTypeName`'s `KArr` case) rather than a new dedicated
+  typedef — a second typedef would duplicate the size/zero-init/
+  stable-address guarantees the array emission already provides for
+  free; an authorized escape hatch from the original one-new-typedef
+  framing, evidenced by a committed `xrec_str_host.cla` SFReply/fName
+  runtime fixture (including 70→63 truncation).
+- **Task 7 (Feature C prep, callback registry) — `CLAR_PASCAL` gate
+  widened:** the pascal-qualifier macro that marks generated callback
+  glue was initially gated `__m68k__`-only; fixed to the codebase's own
+  established dual-macro idiom (`__m68k__ || macintosh`) — inert on
+  today's single target, but would silently break a future PPC lane
+  otherwise.
+- **Task 8 (Feature C glue emission) — `KWord` `cgSizeOf` root fix:** a
+  `word`-typed callback parameter's frame-slot size computation
+  (`cgSizeOf`'s `KWord` case) returned 2, not 4 — provably unreachable
+  for every EXISTING `cgSizeOf` caller (a `word` local/param always
+  resolves through `KInt` in practice) but a real latent bug for the
+  callback glue's own reservation math; fixed at the `cgSizeOf` root
+  rather than patched around at the one new call site, since any future
+  caller would have hit the same wrong answer.
+- **Task 9 (Feature C runtime migration):**
+  - **`UiCbAddr` identity-extern bridge, not named in this spec's own
+    surface:** the checker's decay rule requires an extern-call `ptr`
+    argument site; the LDEF installation call (`SetListDefProc`-style,
+    via `pokel`) has no such site for a bare callback name to decay
+    through. Bridged with a new clause-less extern,
+    `external func UiCbAddr(cb: ptr): ptr`, whose host/Mac-lane bodies
+    are a one-line identity (`return cb`) — the existing `UiStrAddr`
+    precedent (an identity bridge for a different address-taking
+    shape), not a new by-name special case.
+  - **`cprint.cla` string→text accumulator fix, a real bug in
+    already-landed Task 7/8 code:** `cpCbSignature`/`cpCbGlueProto`/
+    `cpCbGlueWrapper`'s text-accumulator locals used `string` (an
+    implicit, 255-byte-BOUNDED `str 255`) instead of `text`
+    (unbounded) — every other text-accumulation helper in `cprint.cla`
+    already uses `text` for this reason. `rtUiLdefDraw`'s 7-parameter
+    glue body was the first callback signature large enough to hit the
+    255-byte cap, silently truncating mid-identifier
+    (`cv_dataOffset`→`cv_d`) and producing malformed C. Root-caused and
+    fixed (retyped to `text` throughout, matching the file's own
+    convention) rather than worked around, since Task 9's migration was
+    exactly the trigger that would keep re-tripping it.
+  - Generated glue verified instruction-identical to the deleted hand
+    glue at the listing level; the 23 frozen UI goldens
+    (`testdata/uisnaps`) stayed byte-identical (zero diffs) through the
+    migration — the feature's own acceptance proof.
+
+Deferred minors (recorded, not fixed — each independently low-risk):
+`clarusc/cprint.cla`'s `cpCbWireType`/`cpCbRetWireType` remain
+string-typed rather than a proper enum (bounded, safe in practice);
+stale-but-harmless `cpFuncProto` allowlist entries left over from the
+functions Task 9 migrated to `callback func`; `cgEmitFunc` calls
+`cgCbGlueBodyFor` twice per callback (negligible, double work not double
+output). The one deferred item this spec's own drafting had flagged —
+Ch13's dedup prose not naming `memerr` explicitly among the clause
+fields that must match for a duplicate extern to merge — was fixed at
+phase wrap (Task 10), not left deferred.
+
+Evidence: `testsuite/toolbox` 7/7 both lanes (native gates:
+`GestaltNamed` for Feature A, `EventXRec` for Feature B — a real
+`OSEventAvail`-sibling trap filling an `extern record EventRecord`,
+cross-checked byte-for-byte against manual `peek`; Feature C's gate is
+the existing frozen UI goldens, exercised for real on every scripted
+table boot); `testsuite/core` 41/41; snapshot green at HEAD; deleted
+machinery (`cgCallExtGestalt`, `cgEmitLdefGlue`/`cgEmitActionGlue`,
+`UiLdefEntry`/`UiActionEntry` specials, all hand-listed `shakeAddRoot`
+calls for them) — zero grep hits left in `clarusc/`. Full task-by-task
+detail: `.superpowers/sdd/2026-08-04-toolbox-integration/task-{1..9}-
+report.md`; ledger: same directory's `progress.md`.

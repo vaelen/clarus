@@ -114,8 +114,9 @@ Clarus-native test suites (test-suite-review phase, Tasks 8-13) — ordinary
 Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
-- `testsuite/core/` (40 `CoreTest` cases: 39 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (5 `ToolboxTest` cases) needs
+- `testsuite/core/` (41 `CoreTest` cases: 40 real + `SelfCheck`) runs on
+  host and natively; `testsuite/toolbox/` (7 `ToolboxTest` cases: 6 real +
+  `SelfCheck`) needs
   the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -133,7 +134,7 @@ enum + runner, not one boot per case.
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract
-  design: it asserts all 39 other cases ran in the same invocation
+  design: it asserts all 40 other cases ran in the same invocation
   (`casesRun == nCoreCases - 1`), so pass it alongside other names (or use
   `all`), never alone.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
