@@ -72,10 +72,10 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 // TestRunGoldens already follows).
 //
 // memCheck, when true, runs the binary under CLARUS_MEM_STRICT=1 +
-// CLARUS_MEM_PARANOID=1 (the same paranoid-allocator combo
+// CLARUS_MEM_PARANOID=1 (the same paranoid-allocator combo the now-deleted
 // emit_test.go's TestEmitDifferential used before it became a Go lane) and
-// returns the report's path as memReportPath, for checkMemReport (defined
-// in emit_test.go) to compare against a fixture's .leaks golden -- this is
+// returns the report's path as memReportPath, for checkMemReport (below)
+// to compare against a fixture's .leaks golden -- this is
 // how the memory-safety pin (test-suite-review Task 5b's
 // for_loop_var_alias.leaks) stays enforced in the default, Go-free
 // gauntlet. Callers that don't need it (runerr fixtures abort via
@@ -119,6 +119,38 @@ func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []s
 		exit = ee.ExitCode()
 	}
 	return exit, outBuf.Bytes(), errBuf.Bytes(), memReportPath
+}
+
+// checkMemReport reads the rt_mem strict-mode leak report written by the
+// just-run binary (see rt_mem_host.inc's rt_mem_exit_check for the exact
+// "##CLARUS-MEM## live=<N>" + per-block "rt_mem: leak <tag> (<size> bytes)"
+// format) and compares the live count against leaksPath's expected integer
+// (0 if leaksPath doesn't exist -- most programs should free everything).
+// On mismatch it fails with the full report, whose per-block tag lines say
+// exactly what leaked and where it was allocated.
+func checkMemReport(t *testing.T, reportPath, leaksPath string) {
+	t.Helper()
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("runtime wrote no mem report — is STRICT plumbed? (%v)", err)
+	}
+
+	wantLeaks := 0
+	if s, err := os.ReadFile(leaksPath); err == nil {
+		wantLeaks, err = strconv.Atoi(strings.TrimSpace(string(s)))
+		if err != nil {
+			t.Fatalf("bad .leaks: %v", err)
+		}
+	}
+
+	firstLine, _, _ := strings.Cut(string(report), "\n")
+	var gotLeaks int
+	if _, err := fmt.Sscanf(firstLine, "##CLARUS-MEM## live=%d", &gotLeaks); err != nil {
+		t.Fatalf("mem report missing ##CLARUS-MEM## header: %q", string(report))
+	}
+	if gotLeaks != wantLeaks {
+		t.Errorf("live leaks: got %d want %d\n--- mem report ---\n%s", gotLeaks, wantLeaks, string(report))
+	}
 }
 
 // behaviorBlob composes the single-file .behavior golden format: an exit
