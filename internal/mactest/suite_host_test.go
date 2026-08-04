@@ -22,11 +22,12 @@ func hostOracleClarusc(t *testing.T) string {
 	return claruscboot.CurrentExe(t)
 }
 
-// buildHostFromFixtures emits claPaths' C with the snapshot-bootstrapped
-// clarusc (a multi-file composition, same as any clarusc emit invocation
-// with several files -- kit first by convention, immaterial to the
-// emitted C since clarusc's lowering pre-pass makes cross-file
-// declaration order otherwise immaterial) and compiles it with `cc`
+// buildHostFromFixtures emits claPaths' C with the current-source clarusc
+// (claruscboot's shared Go-free bootstrap; a multi-file composition, same
+// as any clarusc emit invocation with several files -- kit first by
+// convention, immaterial to the emitted C since clarusc's lowering
+// pre-pass makes cross-file declaration order otherwise immaterial) and
+// compiles it with `cc`
 // against the on-disk runtime sources (internal/build/rt/rt.c) -- the
 // build-mac.sh step-1 pipeline, run straight to a host binary instead of
 // a Mac one. Shared by BuildCoreCLIHost here and
@@ -125,8 +126,9 @@ func pkgRelFiles(files []string) []string {
 }
 
 // BuildCoreCLIHost builds the core suite's HOST CLI composition
-// (coreCLIHostFiles, `core/cli.cla` front end) with the snapshot-
-// bootstrapped clarusc (emit + cc) and returns the executable path.
+// (coreCLIHostFiles, `core/cli.cla` front end) with the current-source
+// clarusc (claruscboot's shared Go-free bootstrap; emit + cc) and returns
+// the executable path.
 func BuildCoreCLIHost(t *testing.T) string {
 	t.Helper()
 	return buildHostFromFixtures(t, absFiles(t, coreCLIHostFiles), "core_cli")

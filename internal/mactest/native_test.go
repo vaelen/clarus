@@ -65,12 +65,13 @@ func TestHelloOn68k(t *testing.T) {
 
 // TestNativeSmoke is native-5d Task 12's first native boot test to cover
 // records/enums: builds testdata/cg68k/smoke.cla BOTH ways -- the host
-// expectation via the snapshot-bootstrapped clarusc (buildHostFromFixture,
-// same as suite_host_test.go's BuildSuiteHost -- smoke.cla is deliberately
-// Go-compiler-compatible Clarus, no Ch13 surface, precisely so this
-// comparison is possible), and the native image via `clarusc emit68k` --
-// then requires the emulator's captured `out` to be byte-identical to the
-// host's stdout, and both exit codes to be 0.
+// expectation via the current-source clarusc (claruscboot's shared
+// Go-free bootstrap; buildHostFromFixture, same as suite_host_test.go's
+// BuildSuiteHost -- smoke.cla is deliberately Go-compiler-compatible
+// Clarus, no Ch13 surface, precisely so this comparison is possible), and
+// the native image via `clarusc emit68k` -- then requires the emulator's
+// captured `out` to be byte-identical to the host's stdout, and both exit
+// codes to be 0.
 func TestNativeSmoke(t *testing.T) {
 	runNativeHostCompare(t, "smoke.cla")
 }
@@ -122,12 +123,13 @@ func TestNativeSmokeForcedMultiSegment(t *testing.T) {
 }
 
 // runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
-// host expectation via the snapshot-bootstrapped clarusc
-// (buildHostFromFixture, same as suite_host_test.go's BuildSuiteHost --
-// these fixtures are deliberately Go-compiler-compatible Clarus, no Ch13
-// surface, precisely so this comparison is possible), and the native image
-// via `clarusc emit68k` -- then requires the emulator's captured `out` to
-// be byte-identical to the host's stdout, and both exit codes to be 0.
+// host expectation via the current-source clarusc (claruscboot's shared
+// Go-free bootstrap; buildHostFromFixture, same as suite_host_test.go's
+// BuildSuiteHost -- these fixtures are deliberately Go-compiler-compatible
+// Clarus, no Ch13 surface, precisely so this comparison is possible), and
+// the native image via `clarusc emit68k` -- then requires the emulator's
+// captured `out` to be byte-identical to the host's stdout, and both exit
+// codes to be 0.
 func runNativeHostCompare(t *testing.T, fixtureName string) {
 	runNativeHostCompareSeglimit(t, fixtureName, 0)
 }
@@ -438,9 +440,9 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 // end than the host's core/cli.cla): built via `clarusc emit68k` (no C,
 // no cmake, no Retro68) and booted on the same emulator harness. Host
 // expectation comes from RunCoreCLIHost/BuildCoreCLIHost (suite_host_
-// test.go, the Go-compiler-free snapshot-clarusc host oracle, built with
-// coreCLIHostFiles/cli.cla instead) -- identical expectation to
-// TestSuiteOnMac's.
+// test.go, the current-source clarusc host oracle via claruscboot's
+// shared Go-free bootstrap, built with coreCLIHostFiles/cli.cla instead)
+// -- identical expectation to TestSuiteOnMac's.
 func TestSuiteOn68k(t *testing.T) {
 	requireMac(t)
 	expected := RunCoreCLIHost(t, BuildCoreCLIHost(t), "all")
