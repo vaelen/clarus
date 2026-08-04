@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// externdedup.cla: identical-signature extern dedup (toolbox-integration
+// Task 3, Ch13's `external func` section) -- duplicate `external func`
+// declarations are legal iff their ENTIRE clause matches (param types+
+// order, return type, conv, trap word, sel, register bindings, ret
+// register; param NAMES exempt). NewHandle/DisposeHandle/GetHandleSize
+// prove the merge end to end on a REAL, host-callable extern (declared
+// twice, called once each) -- extmem.cla's own trio, same host shims.
+//
+// UiTickCount is declared twice, byte-for-byte identical to the runtime's
+// own clause (runtime/clarus/ui.cla), to prove the dedup rule ALSO covers
+// a genuine `trap` clause (pascal convention, no `reg`) rather than only
+// the plain no-clause externs above -- but it is deliberately never
+// CALLED: internal/build/rt/rt_ext_host.inc's closed host-shim table has
+// no rt_ext_UiTickCount entry (only runtime/mac/rt_ext_mac.inc, built
+// only for the cross-compiled Mac target, provides one), so calling it
+// here would fail at LINK time -- a gap in the host shim table, unrelated
+// to dedup itself. An unreferenced `extern` prototype needs no host
+// symbol to resolve, so leaving it uncalled still proves the checker (no
+// "conflicting extern declaration" diagnostic) and the emitted C (a
+// single deduped rt_ext_UiTickCount prototype, not two) both handle a
+// real runtime clause correctly.
+external func NewHandle(size: int): ptr
+external func DisposeHandle(h: ptr)
+external func GetHandleSize(h: ptr): int
+external func NewHandle(size: int): ptr
+external func DisposeHandle(h: ptr)
+external func GetHandleSize(h: ptr): int
+
+external func UiTickCount(): int = trap 0xA975
+external func UiTickCount(): int = trap 0xA975
+
+on App.startCLI(args: list of string) {
+    var h: ptr
+
+    h = NewHandle(16)
+    if GetHandleSize(h) == 16 {
+        alert("dedup-ok")
+    } else {
+        alert("dedup-FAIL")
+    }
+    DisposeHandle(h)
+}

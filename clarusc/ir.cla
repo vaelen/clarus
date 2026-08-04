@@ -698,11 +698,25 @@ var irExternRetRegs: list of int
 // lowExternDecl, phase-1-only -- an extern has no body to lower).
 // paramRegs is parallel to paramTys (one register code per param, -1 =
 // none); retReg is the extern's own `ret REG` code (-1 = default rule) --
-// both Task 1, Feature A.
+// both Task 1, Feature A. Task 3 (Ch13 dedup): lookup-before-append -- a
+// SECOND `external func` sharing a name already in the registry is a
+// no-op here. Safe unconditionally: check.cla's checker has already
+// proven, before lowering ever runs, that any two same-name extern decls
+// declare an IDENTICAL clause (checkExternFunc's externClauseMatches),
+// diagnosing anything else as a build error -- so by the time
+// lowExternDecl's pre-pass (lower.cla) walks a program's decls calling
+// this once per DkExternFunc node, a second call for an already-known
+// name is always redundant, never a conflicting one. Keeps the registry's
+// "one entry" contract (spec: docs/superpowers/specs/2026-08-04-toolbox-
+// integration-design.md's Extern dedup section) at the IR layer too, not
+// just the checker's scope.
 func irRegisterExtern(nameIdx: int, retTy: int, paramTys: list of int, trapVal: int, conv: int, sel: int, paramRegs: list of int, retReg: int) {
     var start: int
     var i: int
 
+    if irExternLookup(nameIdx) != -1 {
+        return
+    }
     start = irExternParamTys.count
     i = 0
     while i < paramTys.count {
@@ -767,10 +781,11 @@ func irExternRetReg(i: int): int {
     return irExternRetRegs[i]
 }
 
-// irIsExtern reports whether nameIdx names a registered `external func` --
-// lowCall's routing test (ECallExt vs the ordinary ECallFn) between the
-// user-function fallback.
-func irIsExtern(nameIdx: int): bool {
+// irExternLookup returns the extern registry index already holding
+// nameIdx, or -1 if none -- the lookup-before-append irRegisterExtern
+// needs (Task 3, Ch13 dedup) so a second identical `external func NAME`
+// never grows the registry past its documented "one entry" contract.
+func irExternLookup(nameIdx: int): int {
     var name: string
     var i: int
 
@@ -778,11 +793,18 @@ func irIsExtern(nameIdx: int): bool {
     i = 0
     while i < irExternNames.count {
         if poolGet(irExternNames[i]) == name {
-            return true
+            return i
         }
         i = i + 1
     }
-    return false
+    return -1
+}
+
+// irIsExtern reports whether nameIdx names a registered `external func` --
+// lowCall's routing test (ECallExt vs the ordinary ECallFn) between the
+// user-function fallback.
+func irIsExtern(nameIdx: int): bool {
+    return irExternLookup(nameIdx) != -1
 }
 
 // irRecHasHandleField (ARC Task 7) reports whether the record type named

@@ -173,3 +173,18 @@ check_test.cla:1:1: parameter 'a' bound twice
 check_test.cla:1:1: memerr and ret are mutually exclusive
 === extern-reg-ret-bad-register ===
 check_test.cla:1:59: unknown register 'd3' in reg clause
+=== extern-dedup-identical-clean ===
+clean
+=== extern-dedup-conflicting-trap ===
+check_test.cla:1:1: conflicting extern declaration for 'F' (also declared at 2:1)
+check_test.cla:2:1: conflicting extern declaration for 'F' (also declared at 1:1)
+=== extern-dedup-conflicting-param-type ===
+check_test.cla:1:1: conflicting extern declaration for 'F' (also declared at 2:1)
+check_test.cla:2:1: conflicting extern declaration for 'F' (also declared at 1:1)
+=== extern-dedup-conflicting-ret-reg ===
+check_test.cla:1:1: conflicting extern declaration for 'F' (also declared at 2:1)
+check_test.cla:2:1: conflicting extern declaration for 'F' (also declared at 1:1)
+=== extern-dedup-func-then-extern-generic ===
+check_test.cla:2:1: redeclaration of F
+=== extern-dedup-extern-then-func-generic ===
+check_test.cla:2:1: redeclaration of F

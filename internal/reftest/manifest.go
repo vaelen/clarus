@@ -70,9 +70,12 @@ package reftest
 // trap/inline ones, shifting them to 74/75; Task 1 (toolbox-integration
 // Feature A: named `reg(...)` clause, the `UiGestalt` worked example)
 // added one more fence right after the `reg memerr` example, shifting
-// them a final time to 75/76 -- see ClaruscOnly below, whose fences are
-// inserted right after the existing Chapter 13 ones, ahead of Appendix C
-// in document order.
+// them to 75/76; Task 3 (toolbox-integration: identical-signature extern
+// dedup, the `TickCount` repeated-declaration example) added one more
+// fence right after `inline a5`/CurrentA5, ahead of the `word` extern
+// type section, shifting them a final time to 76/77 -- see ClaruscOnly
+// below, whose fences are inserted right after the existing Chapter 13
+// ones, ahead of Appendix C in document order.
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -80,8 +83,8 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
-	75, // Appendix C bookmark manager
-	76, // Appendix C text editor
+	76, // Appendix C bookmark manager
+	77, // Appendix C text editor
 }
 
 // ClaruscOnly lists fence indices (same numbering as CheckClean) that use
@@ -109,7 +112,8 @@ var CheckClean = []int{
 // 71 (line 1445): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
 // 72 (line 1451): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
 // 73 (line 1457): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 74 (line 1474): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
+// 74 (line 1463): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
+// 75 (line 1481): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74,
+	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
 }

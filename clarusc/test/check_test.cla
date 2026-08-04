@@ -1104,4 +1104,62 @@ on App.startEmpty {
     src = ""
     ln(src, "external func F(a: int): int = trap 0xA000 reg(d0: a) ret d3")
     runCase("extern-reg-ret-bad-register", src)
+
+    // ---- Task 3 (toolbox-integration): identical-signature extern dedup ----
+    //
+    // testdata/lowlevel/externdedup.cla is the accept fixture proper (a
+    // standalone runnable program, host-built+run under the strict/
+    // paranoid leak gate by internal/lowlevel's TestLowlevel). Cases 88-93
+    // below exercise the checker's merge/conflict decision directly.
+
+    // Case 88: two byte-identical `external func` decls -- the merge's
+    // happy path. Second decl gets no scope entry of its own; no
+    // diagnostic either.
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000")
+    ln(src, "external func F(a: int): int = trap 0xA000")
+    runCase("extern-dedup-identical-clean", src)
+
+    // Case 89: same name, same param/return types, DIFFERENT trap word --
+    // the clause comparison's trap-word dimension catches it. Both
+    // diagnostics cite the other decl's line:col (lib.cla's Diag carries
+    // one position, so "both source positions" means two diagnostics).
+    src = ""
+    ln(src, "external func F(): int = trap 0xA000")
+    ln(src, "external func F(): int = trap 0xA001")
+    runCase("extern-dedup-conflicting-trap", src)
+
+    // Case 90: same name+trap, DIFFERENT param type (int vs. ptr, both
+    // independently legal extern-param types -- only the identity check
+    // between the two decls catches this, not the ordinary per-param
+    // type-legality rule).
+    src = ""
+    ln(src, "external func F(a: int) = trap 0xA000")
+    ln(src, "external func F(a: ptr) = trap 0xA000")
+    runCase("extern-dedup-conflicting-param-type", src)
+
+    // Case 91 (self-review probe): same name/types/trap/conv, DIFFERENT
+    // `ret` register -- proves the merge compares the ret-register
+    // dimension too, not just param/return types and trap/conv/sel.
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000 reg ret d0")
+    ln(src, "external func F(a: int): int = trap 0xA000 reg ret d1")
+    runCase("extern-dedup-conflicting-ret-reg", src)
+
+    // Case 92 (self-review): an ORDINARY func declared first, then an
+    // extern of the same name -- the dedup merge path never engages (it
+    // only ever compares extern against extern), so this stays the
+    // ordinary generic "redeclaration of X", not the new conflicting-
+    // extern message.
+    src = ""
+    ln(src, "func F(a: int): int { return a }")
+    ln(src, "external func F(a: int): int = trap 0xA000")
+    runCase("extern-dedup-func-then-extern-generic", src)
+
+    // Case 93 (self-review): the reverse order -- extern first, ordinary
+    // func second -- same generic message.
+    src = ""
+    ln(src, "external func F(a: int): int = trap 0xA000")
+    ln(src, "func F(a: int): int { return a }")
+    runCase("extern-dedup-extern-then-func-generic", src)
 }

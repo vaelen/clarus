@@ -312,18 +312,53 @@ func cvZero(): CVal {
 // by the later lowering pass, not by any diagnostic this task's driver
 // checks.
 //
-// None of these seven maps is ever bulk-cleared between programs (map has
-// no bulk-clear primitive): every key used within a checkProgram call is
-// always freshly written in THAT SAME call before anything in that call
-// reads it (a func's decl index is registered in phase 1 before phase 2
-// reads it; an Ident's resolved value is read back only by the very same
-// Ident occurrence that wrote it; an expr's type is read back only by
-// code that runs after that same expr was checked), so a stale entry
-// surviving from a previous program, under a decl/expr index a later
-// program happens to reuse, is never consulted before being overwritten.
-// checkReset relies on this and does not attempt to clear them.
+// None of these seven maps (nor funcSigByDecl, joining the family just
+// below, keyed the same decl-indexed way) is ever bulk-cleared between
+// programs (map has no bulk-clear primitive): every key used within a
+// checkProgram call is always freshly written in THAT SAME call before
+// anything in that call reads it (a func's decl index is registered in
+// phase 1 before phase 2 reads it; an Ident's resolved value is read back
+// only by the very same Ident occurrence that wrote it; an expr's type is
+// read back only by code that runs after that same expr was checked), so
+// a stale entry surviving from a previous program, under a decl/expr
+// index a later program happens to reuse, is never consulted before being
+// overwritten. checkReset relies on this and does not attempt to clear
+// them. externFirstDeclByName below is a DIFFERENT idiom (name-keyed, not
+// decl-indexed) and needs the progGen-namespacing menuKey already uses,
+// for exactly the reason menuKey's own comment gives -- see its own
+// comment just below.
 var funcScopeByDecl: map of int
 var funcRetByDecl: map of int
+
+// funcSigByDecl (Task 3, Ch13 dedup) is an eighth decl-indexed side table,
+// same family/idiom as the two above: keyed by a DkFunc/DkExternFunc
+// decl's own arena index, it always holds THAT decl's own resolved
+// FuncSig (checkFuncSig sets it unconditionally, whether or not
+// scopeDeclare actually admitted the symbol into scope). checkExternFunc
+// reads its OWN decl's sig through here rather than via scopeLookup, so a
+// merge-candidate extern (Task 3: its scopeDeclare is skipped -- see
+// checkFuncSig below) still gets its OWN param/return types checked
+// against its OWN declared params, not the earlier decl's it's being
+// compared against.
+var funcSigByDecl: map of int
+
+// externFirstDeclByName/externMergeCandidate (Task 3, Ch13: `external
+// func` dedup -- duplicate extern declarations are legal iff identical,
+// see checkFuncSig's DkExternFunc arm and checkExternFunc's tail).
+// externFirstDeclByName maps a program's first-seen extern name to that
+// decl's own arena index, namespaced by progGen (menuKey's own idiom,
+// below) so it never needs an explicit reset across repeated checkProgram
+// calls in the same process (maps have no bulk-clear primitive). A
+// non-extern decl (ordinary func) never touches this map, so a func-vs-
+// extern name collision always falls through to the ordinary
+// scopeDeclare/"redeclaration of X" path, unaffected by any of this.
+// externMergeCandidate is scratch state: checkFuncSig sets it (to -1, or
+// to the FIRST decl's index on a same-name repeat) every time it runs for
+// a DkExternFunc decl; checkExternFunc reads it back immediately after
+// its own checkFuncSig(d) call -- safe because nothing reenters
+// checkFuncSig in between (single-threaded, no recursion here).
+var externFirstDeclByName: map of int
+var externMergeCandidate: int
 var enumConstOf: map of int
 var constUseIsStr: map of int
 var constUseInt: map of int
@@ -1708,6 +1743,7 @@ func checkFuncSig(d: int) {
     var psym: Symbol
     var key: string
     var i: int
+    var externKey: string
 
     p = funcDeclParamsHead(d)
     while p != -1 {
@@ -1721,6 +1757,8 @@ func checkFuncSig(d: int) {
         ret = -1
     }
     sigIdx = newFuncSig(params, ret)
+    key = numToStr(d)
+    funcSigByDecl[key] = sigIdx
     sym.nameIdx = funcDeclName(d)
     sym.typeIdx = -1
     sym.isFunc = true
@@ -1731,8 +1769,28 @@ func checkFuncSig(d: int) {
     sym.constInt = 0
     sym.constStrIdx = -1
     sym.isMenu = false
-    if not scopeDeclare(curScope, sym) {
-        emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+    if declKind(d) == DkExternFunc {
+        // Task 3 (Ch13 dedup): a second `external func` sharing a name
+        // already registered by an EARLIER extern decl THIS checkProgram
+        // call doesn't get its own scope entry at all -- call sites keep
+        // resolving through the first decl's symbol ("first registration
+        // wins", Task 1's re-review forward note). Whether that's actually
+        // legal (identical clause) or a real conflict is decided in
+        // checkExternFunc, once ITS OWN trap/conv/reg-bind resolution
+        // (which runs after this call returns) has completed -- see
+        // externMergeCandidate's own comment above.
+        externKey = numToStr(progGen) + "|" + poolGet(sym.nameIdx)
+        externMergeCandidate = externFirstDeclByName.get(externKey, -1)
+        if externMergeCandidate == -1 {
+            externFirstDeclByName[externKey] = d
+            if not scopeDeclare(curScope, sym) {
+                emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+            }
+        }
+    } else {
+        if not scopeDeclare(curScope, sym) {
+            emitDiag(declLine(d), declCol(d), "redeclaration of " + poolGet(sym.nameIdx))
+        }
     }
 
     fnScope = scopeNew(curScope)
@@ -1756,7 +1814,6 @@ func checkFuncSig(d: int) {
         i = i + 1
     }
 
-    key = numToStr(d)
     funcScopeByDecl[key] = fnScope
     funcRetByDecl[key] = ret
 }
@@ -1795,7 +1852,6 @@ func checkFuncSig(d: int) {
 // checks above -- a param already flagged for its type is not re-flagged
 // here.
 func checkExternFunc(d: int) {
-    var symIdx: int
     var sigIdx: int
     var p: int
     var i: int
@@ -1815,13 +1871,24 @@ func checkExternFunc(d: int) {
     var foundP: int
     var unboundReported: bool
     var retRegCode: int
+    var mergeCandidate: int
 
     checkFuncSig(d)
-    symIdx = scopeLookup(curScope, funcDeclName(d))
-    if symIdx == -1 {
+    // Task 3 (Ch13 dedup): mergeCandidate captures checkFuncSig's verdict
+    // right away (see externMergeCandidate's own comment, above
+    // checkFuncSig) -- -1 for an ordinary first-seen extern, or the
+    // earlier same-name decl's index for a possible merge. sigIdx comes
+    // from funcSigByDecl, THIS decl's own resolved signature, rather than
+    // scopeLookup -- a merge candidate's scopeDeclare was skipped, so
+    // scopeLookup(curScope, funcDeclName(d)) would find the EARLIER
+    // decl's symbol instead of d's own, and every check below (param
+    // type legality, reg-trap counts, ...) needs to validate what d
+    // itself actually declared.
+    mergeCandidate = externMergeCandidate
+    sigIdx = funcSigByDecl.get(numToStr(d), -1)
+    if sigIdx == -1 {
         return
     }
-    sigIdx = symbols[symIdx].sigIdx
     p = funcDeclParamsHead(d)
     i = 0
     ptrCount = 0
@@ -1982,6 +2049,87 @@ func checkExternFunc(d: int) {
     if (conv == 6 or conv == 8) and retRegCode != -1 {
         emitDiag(declLine(d), declCol(d), "memerr and ret are mutually exclusive")
     }
+
+    // Task 3 (Ch13 dedup) tail: d's own clause is now fully resolved
+    // (trap/conv/sel above, every param's paramRegBind and d's own `ret`
+    // register just above) -- if checkFuncSig flagged d as sharing a name
+    // with an earlier extern THIS program, decide merge vs. conflict now,
+    // the one point where both decls' full clauses are available.
+    if mergeCandidate != -1 {
+        if not externClauseMatches(mergeCandidate, d) {
+            emitConflictingExtern(mergeCandidate, d)
+        }
+    }
+}
+
+// externClauseMatches reports whether extern decls a and b (Task 3, Ch13
+// dedup) declare byte-for-byte identical signatures: param types in
+// order (names exempt), return type, and the entire trap/inline clause --
+// conv, trap word, sel, every param's register binding, and the ret
+// register. Both decls must already be fully checked (checkFuncSig +
+// checkExternFunc's own clause resolution complete for each) before this
+// runs -- checkExternFunc's own tail is the only caller, once b's (the
+// later decl's) own resolution has just finished.
+func externClauseMatches(a: int, b: int): bool {
+    var sigA: int
+    var sigB: int
+    var pa: int
+    var pb: int
+    var i: int
+    var n: int
+
+    sigA = funcSigByDecl.get(numToStr(a), -1)
+    sigB = funcSigByDecl.get(numToStr(b), -1)
+    if sigA == -1 or sigB == -1 {
+        return false
+    }
+    n = funcSigParamCount(sigA)
+    if n != funcSigParamCount(sigB) {
+        return false
+    }
+    if funcSigRet(sigA) != funcSigRet(sigB) {
+        return false
+    }
+    if externFuncConv(a) != externFuncConv(b) {
+        return false
+    }
+    if externFuncTrap(a) != externFuncTrap(b) {
+        return false
+    }
+    if externFuncSel(a) != externFuncSel(b) {
+        return false
+    }
+    if astExternRetReg(a) != astExternRetReg(b) {
+        return false
+    }
+    pa = funcDeclParamsHead(a)
+    pb = funcDeclParamsHead(b)
+    i = 0
+    while i < n {
+        if funcSigParam(sigA, i) != funcSigParam(sigB, i) {
+            return false
+        }
+        if paramRegBind(pa) != paramRegBind(pb) {
+            return false
+        }
+        pa = declNext(pa)
+        pb = declNext(pb)
+        i = i + 1
+    }
+    return true
+}
+
+// emitConflictingExtern (Task 3, Ch13 dedup) diagnoses two extern decls
+// sharing a name whose clauses do NOT match: one diagnostic at each
+// site, each citing the OTHER's line:col -- lib.cla's Diag carries a
+// single position, so "both source positions" (the brief's own wording)
+// means two diagnostics here, not one.
+func emitConflictingExtern(a: int, b: int) {
+    var nameStr: string
+
+    nameStr = poolGet(funcDeclName(a))
+    emitDiag(declLine(a), declCol(a), "conflicting extern declaration for '" + nameStr + "' (also declared at " + numToStr(declLine(b)) + ":" + numToStr(declCol(b)) + ")")
+    emitDiag(declLine(b), declCol(b), "conflicting extern declaration for '" + nameStr + "' (also declared at " + numToStr(declLine(a)) + ":" + numToStr(declCol(a)) + ")")
 }
 
 // checkFuncBody checks a function's body against the fnScope/ret
