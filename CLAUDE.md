@@ -20,7 +20,7 @@ spec; where any other doc disagrees, the reference wins.
 
 ```sh
 scripts/clarus-run.sh FILE.cla [-- args...]  # Go-free day-to-day `clarus run`
-scripts/test-task.sh              # T1: per-task gate (~35s)
+scripts/test-task.sh              # T1: per-task gate (~15s)
 scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulator)
 ```
 

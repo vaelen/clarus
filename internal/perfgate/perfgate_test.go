@@ -4,9 +4,10 @@
 // Package perfgate is an emit-time tripwire (test-suite-review Task 2): it
 // bootstraps clarusc via the shared Go-free bootstrap (claruscboot.CurrentExe
 // -- Go-compiler-deletion phase; was a locally duplicated `cc -O1` snapshot
-// build, deliberately avoiding internal/build's Go-native build.Build,
-// because the whole point is to time the ACTUAL bootstrap path a Go-less
-// contributor would use) -- then times `clarusc emit` of
+// build, which deliberately avoided the (now-deleted) Go compiler's
+// build.Build, because the whole point was -- and still is -- to time the
+// ACTUAL bootstrap path a Go-less contributor would use) -- then times
+// `clarusc emit` of
 // testdata/emitui/every.cla (median of 3 runs) and fails if that median
 // exceeds 2x the recorded baseline.txt. Ungated: runs in every `go test
 // ./...` sweep (Task 1's T1), so a future 30x emit-time regression (the kind

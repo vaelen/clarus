@@ -5,10 +5,10 @@
 // the 2026-07-24 mac-target-4b plan: clarusc's window/menu descriptor + UI
 // intrinsic lowering (Task 4), then `extend`/`every` handler/dispatch
 // lowering (Task 5). For each testdata/emitui/<fixture>.cla, it builds
-// clarusc via the Go compiler (same pattern as internal/selfhost's
-// buildClarusc/emitCDir: build.Build on clarusc/main.cla, then run that
-// exe's own `emit` subcommand -- clarusc is never built from its own
-// snapshot here), compares the emitted C to a committed <fixture>.c.golden
+// clarusc via the shared Go-free bootstrap (claruscboot.CurrentExe --
+// Go-compiler-deletion phase; current-source two-stage bootstrap, cached
+// to disk under build-run/), then runs that exe's own `emit` subcommand,
+// compares the emitted C to a committed <fixture>.c.golden
 // byte-for-byte, then compile-checks the GOLDEN against rt_ui.h with the
 // m68k toolchain (compile only, no link -- this package verifies LOWERING,
 // fixture by fixture; the full compile-AND-LINK gate is a real program,

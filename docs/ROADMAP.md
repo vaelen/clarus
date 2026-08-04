@@ -231,6 +231,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 
 ## clarusc / self-hosting strategy (agreed in discussion, 2026-07-22)
 
+**Superseded 2026-08-05 — the Go compiler is deleted (tag
+`go-compiler-final`); see the Go-compiler-deletion Done entry below.**
+
 - **The Go compiler is now FROZEN at the bootstrap-subset level (decided
   2026-07-23, clarusc v2 complete).** It served as the bootstrap + reference
   implementation through self-hosting; that job is done. It is kept ONLY as
@@ -1319,6 +1322,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `docs/superpowers/plans/2026-08-05-go-compiler-deletion.md`; ledger:
   `.superpowers/sdd/2026-08-05-go-compiler-deletion/progress.md`.
 
+  **Follow-up (deferred):** `testdata/include/` and the unsampled majority
+  of `testdata/diag/` are currently unreferenced by any Go test (the final
+  review's F4 audit) — retire-or-cover decision deferred.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
@@ -1333,7 +1340,10 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   after the first at an offset). Land BOTH together with a triggering fixture,
   since adding the fixture before the fix turns the differential red. Both
   compilers currently agree via `'\q'` (char literal); the double-quoted-string
-  shape is corpus-untriggered. See internal/selfhost/inventory.md.
+  shape is corpus-untriggered. (Formerly documented in
+  internal/selfhost/inventory.md, deleted as orphaned in the
+  Go-compiler-deletion final-review wave, 2026-08-05; recoverable from tag
+  `go-compiler-final`.)
 - `text + char` concatenation does not exist (append accepts char; `+` does
   not). Deliberate for now; revisit if it keeps surprising. (`char + string`
   and `string + text` WERE added 2026-07-23 — see the reference Ch4.)

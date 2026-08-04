@@ -2,9 +2,10 @@ package reftest
 
 // CheckClean lists the indices (into ExtractFences' result, document order)
 // of ```rust fences from docs/clarus-language-reference.md that check clean
-// standalone with driver.Check. Built by running driver.Check over every
-// fence and keeping every index that passed as-is; see
-// internal/reftest/reftest_test.go's TestCheckCleanFences.
+// standalone under clarusc. Built by running clarusc's check mode over
+// every fence and keeping every index that passed as-is; see
+// internal/reftest/reftest_test.go's TestCheckCleanFences, which is the
+// single fence-cleanliness gate covering this whole manifest.
 //
 // Most fences are fragments lifted mid-explanation — bare statements with no
 // enclosing declaration, or references to a record/window/menu/enum/func
@@ -62,6 +63,25 @@ package reftest
 // 53 (line 1013): undefined: EditForm (window extend block)
 // 55 (line 1046): undefined: Main (window extend block)
 //
+// Excluded, Chapter 13 fences that are fragments rather than complete
+// top-level declarations (same fragment/prose-reference classes as above,
+// just from the ptr/peek-poke/overlay-record/extern-record section added
+// after the fence set below was first drafted):
+// 62 (line 1330): peek/poke — bare pokeb/pokel call statements after the
+// var decls, not a valid top-level form (same bare-statement-fragment
+// class as indices 4/5/8/16/19/21 above).
+// 64 (line 1363): overlay records — func f's body interleaves var decls
+// with statements (var n; h.rc = 5; h.data = p; var back; var same) for
+// expository clarity, genuinely violating "local variables ... are
+// declared at the top of the body before any statement" (see the
+// reference's variable-scoping prose) — a real check-time error, not a
+// missing-context fragment. Reordering the example to check clean is a
+// content change out of scope here.
+// 67 (line 1447): extern record — waitClick usage example calls
+// UiWaitNextEvent/nilPtr/handleAt, none declared in the fence itself
+// (same "references a name declared only in surrounding prose" class as
+// 12-15, 20, 28, 29, 38, 39, 41, 48, 49, 51, 53, 55 above).
+//
 // Indices 66-69 (Task 2, native-5d: trap/inline clause examples) shifted
 // the two Appendix C programs from 66/67 to 70/71; index 70 (Task 4,
 // native-5e: the `word` extern type example) then shifted them again, to
@@ -82,8 +102,36 @@ package reftest
 // declaration + decay + direct-call worked example; a commented
 // decay-misuse/direct-call restrictions example) right after `extern
 // record`, ahead of Trap and Inline Clauses, shifting them a final time to
-// 81/82 -- see ClaruscOnly below, whose fences are inserted right after
-// the existing Chapter 13 ones, ahead of Appendix C in document order.
+// 81/82 -- see the Chapter 13 block below (60-80), inserted right after
+// the existing Chapter 13 CheckClean entries, ahead of Appendix C in
+// document order.
+//
+// Chapter 13 (ptr type, peek/poke builtins, external func declarations
+// including trap/inline clauses, overlay record declarations, extern
+// record, callback func, the word extern type): these fences post-date the
+// deleted Go compiler, which could not parse this syntax at all -- they
+// were tracked separately as ClaruscOnly until the Go-compiler-deletion
+// phase (2026-08-05) removed the only reason for a second manifest, and
+// were merged into CheckClean here (all indices except 62/64/67 above,
+// which are excluded for the fragment/prose reasons documented there).
+// 60 (line 1300): ptr basics — conversion, arithmetic, comparison
+// 61 (line 1310): ptr container restriction (list of ptr, commented)
+// 63 (line 1346): external func
+// 65 (line 1387): overlay records restrictions (container/field, commented)
+// 66 (line 1398): extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
+// 68 (line 1457): extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
+// 69 (line 1467): callback func — declaration + decay + direct-call worked example (Task 7, toolbox-integration Feature C)
+// 70 (line 1484): callback func restrictions (decay-misuse/direct-call, commented) (Task 7, toolbox-integration Feature C)
+// 71 (line 1503): trap/inline clauses — trap pascal (TickCount)
+// 72 (line 1513): trap/inline clauses — trap reg (BlockMove)
+// 73 (line 1519): trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
+// 74 (line 1525): trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
+// 75 (line 1534): trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
+// 76 (line 1540): trap/inline clauses — inline deref (HandleToPtr)
+// 77 (line 1546): trap/inline clauses — inline nop (DebugBreak)
+// 78 (line 1552): trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
+// 79 (line 1558): extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
+// 80 (line 1576): word extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
 var CheckClean = []int{
 	0, 2, 3, 6, 7, 9, 10, 11, 17, 18,
 	33, 34, // Ch5 quit-code / App.startCLI + log example
@@ -91,42 +139,13 @@ var CheckClean = []int{
 	42, 43, 44, 45, 46, 47,
 	56, // Chapter 11 bounce example
 	57, 58, 59,
+	60, 61, // Chapter 13 ptr basics / container restriction
+	63,             // Chapter 13 external func
+	65,             // Chapter 13 overlay records restrictions
+	66, 68, 69, 70, // Chapter 13 extern record / callback func
+	71, 72, 73, 74, 75, 76, 77, 78, // Chapter 13 trap/inline clauses
+	79, // Chapter 13 extern dedup
+	80, // Chapter 13 word extern type
 	81, // Appendix C bookmark manager
 	82, // Appendix C text editor
-}
-
-// ClaruscOnly lists fence indices (same numbering as CheckClean) that use
-// syntax the frozen Go compiler cannot parse at all — the `ptr` type,
-// peek/poke builtins, `external func` declarations, `overlay record`
-// declarations, `external func` trap/inline clauses, and the `word` extern
-// type, all from Chapter 13. These are reference fences added after the Go
-// front end was frozen (docs/ROADMAP.md); every Go-side fence sweep over
-// ALL fences (e.g. internal/selfhost's TestDifferentialFences) must skip
-// them rather than fail on a syntax the Go compiler predates. They are
-// deliberately absent from CheckClean, which is driver.Check'd through the
-// same frozen Go front end.
-//
-// 60 (line 1300): Chapter 13 ptr basics — conversion, arithmetic, comparison
-// 61 (line 1310): Chapter 13 ptr container restriction (list of ptr, commented)
-// 62 (line 1330): Chapter 13 peek/poke
-// 63 (line 1346): Chapter 13 external func
-// 64 (line 1363): Chapter 13 overlay records — declaration, conversions, field get/set
-// 65 (line 1387): Chapter 13 overlay records restrictions (container/field, commented)
-// 66 (line 1398): Chapter 13 extern record — Point/EventRecord/SFReply declarations (Task 4, toolbox-integration Feature B)
-// 67 (line 1447): Chapter 13 extern record — waitClick usage example (Task 4, toolbox-integration Feature B)
-// 68 (line 1457): Chapter 13 extern record restrictions (assign/field/container, commented) (Task 4, toolbox-integration Feature B)
-// 69 (line 1467): Chapter 13 callback func — declaration + decay + direct-call worked example (Task 7, toolbox-integration Feature C)
-// 70 (line 1484): Chapter 13 callback func restrictions (decay-misuse/direct-call, commented) (Task 7, toolbox-integration Feature C)
-// 71 (line 1503): Chapter 13 trap/inline clauses — trap pascal (TickCount)
-// 72 (line 1513): Chapter 13 trap/inline clauses — trap reg (BlockMove)
-// 73 (line 1519): Chapter 13 trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 74 (line 1525): Chapter 13 trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
-// 75 (line 1534): Chapter 13 trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
-// 76 (line 1540): Chapter 13 trap/inline clauses — inline deref (HandleToPtr)
-// 77 (line 1546): Chapter 13 trap/inline clauses — inline nop (DebugBreak)
-// 78 (line 1552): Chapter 13 trap/inline clauses — inline a5 (CurrentA5) (Task 15, native-5e)
-// 79 (line 1558): Chapter 13 extern dedup — repeated identical TickCount declaration (Task 3, toolbox-integration)
-// 80 (line 1576): Chapter 13 `word` extern type — UiMoveTo/UiFindWindow (Task 4, native-5e)
-var ClaruscOnly = []int{
-	60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
 }

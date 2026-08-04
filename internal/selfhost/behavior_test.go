@@ -2,30 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 // behavior_test.go: test-suite-review Task 3's Go-free behavior oracle.
-// TestBehaviorGoldens bootstraps clarusc from the committed C snapshot
-// (clarusc/clarusc.c, compiled with `cc` alone -- the exact recipe
-// internal/perfgate/perfgate_test.go's buildClarusc and
-// scripts/build-68k.sh:45-48 already use, duplicated locally per this
-// repo's cross-package-helper convention rather than imported), then for
-// every fixture in the runnable corpus (testdata/run, testdata/runerr --
-// the two directories that are actually EXECUTED, as opposed to
-// testdata/{valid,errors,include,diag}, which internal/selfhost's own
-// TestDifferential/TestDifferentialFences only check/diagnose) emits C via
+// TestBehaviorGoldens bootstraps clarusc from the committed C snapshot via
+// claruscboot.SnapshotExe (the shared Go-free bootstrap's stage 1 --
+// Go-compiler-deletion phase; was a locally duplicated `cc -O1` snapshot
+// build), then for every fixture in the runnable corpus (testdata/run,
+// testdata/runerr -- the two directories that are actually EXECUTED, as
+// opposed to testdata/{valid,errors,include,diag}, which this package's
+// now-deleted Go-differential lanes used to check/diagnose) emits C via
 // `clarusc emit`, compiles it with `cc` against the on-disk runtime
 // sources, and runs the result. No package under internal/ that implements
-// the Clarus front end (lexer/parser/check/types/lower/cprint/build/...)
-// is imported or invoked anywhere in this file.
+// a Clarus front end is imported or invoked anywhere in this file --
+// clarusc IS the front end now, there is no other one.
 //
 // Each fixture's captured (exit, stdout, stderr) is compared against a
-// committed <fixture-base>.behavior golden -- a parallel, clarusc-owned
-// record, distinct from the Go-compiler-owned testdata/run/*.out (and
-// friends) goldens internal/build/golden_test.go's TestRunGoldens and
-// internal/selfhost/emit_test.go's TestEmitDifferential already hold the
-// Go-built pipeline to. Where a fixture already has a .out/.exit/.log/.err
-// golden, this test ALSO asserts the snapshot-built run agrees with it (a
-// free consistency check between the two independently-built compilers).
-// CLARUS_BLESS_BEHAVIOR=1 (re)writes the .behavior goldens instead of
-// comparing against them.
+// committed <fixture-base>.behavior golden. Where a fixture already has a
+// .out/.exit/.log/.err golden (left over from the deleted Go-compiler
+// suites but still meaningful as a second, independent expectation), this
+// test ALSO asserts the snapshot-built run agrees with it. CLARUS_BLESS_
+// BEHAVIOR=1 (re)writes the .behavior goldens instead of comparing against
+// them.
 package selfhost
 
 import (

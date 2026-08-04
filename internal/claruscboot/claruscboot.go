@@ -130,12 +130,15 @@ func currentInputs(root string) ([]string, error) {
 	return inputs, nil
 }
 
-// stampFor renders the cache key: one "path mtime_ns size" line per input,
-// sorted, so any content or set change misses the cache.
+// stampFor renders the cache key: a leading "cc <CCPath()>" line (so
+// changing $CC invalidates the cache instead of silently reusing a binary
+// built by a different compiler) followed by one "path mtime_ns size" line
+// per input, sorted, so any content or set change misses the cache.
 func stampFor(inputs []string) (string, error) {
 	sorted := append([]string(nil), inputs...)
 	sort.Strings(sorted)
 	var b strings.Builder
+	fmt.Fprintf(&b, "cc %s\n", build.CCPath())
 	for _, p := range sorted {
 		fi, err := os.Stat(p)
 		if err != nil {
