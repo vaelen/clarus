@@ -975,9 +975,9 @@ func fpExpr(e: int): text {
         return fpCallExt(e)
     }
     }
-    // Task 4 review fix (Important 3): a real unhandled IRExprKind (e.g.
-    // EXRecAddr, until Tasks 5-6 add its case) -- see cpFatal's own doc
-    // comment for why this replaces the old silent `return toText("")`.
+    // Task 4 review fix (Important 3): a real unhandled IRExprKind -- see
+    // cpFatal's own doc comment for why this replaces the old silent
+    // `return toText("")`.
     return cpFatal("expr kind " + numToStr(int(irExprKind(e))))
 }
 
@@ -2836,9 +2836,8 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
     }
-    // Task 4 review fix (Important 3): a real unhandled intrinsic name
-    // (e.g. xrec_str_read/xrec_str_write, until Tasks 5-6 add their
-    // cases) -- see cpFatal's own doc comment.
+    // Task 4 review fix (Important 3): a real unhandled intrinsic name --
+    // see cpFatal's own doc comment.
     return cpFatal("intrinsic " + poolGet(nm))
 }
 

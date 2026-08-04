@@ -1,0 +1,75 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// xrec_str_host.cla: extern-record str[N] field host behavior proof (Task 5
+// fix round -- toolbox-integration Feature B). xrec_host.cla's own
+// Point/EventRecord have no str fields, so it never ran IXRecStrRead/
+// IXRecStrWrite; xrec_accept.cla (clarusc/test) DOES declare SFReply's
+// fName: str[63], but it's check-only (no App entry point), so tree-shake
+// drops every function touching it before cprint ever sees an
+// IXRecStrRead/IXRecStrWrite node -- neither proves the str[N] path
+// actually runs. This fixture does: SFReply (the spec's own worked
+// example), a short-string store/read-back round trip, a peekb cross-check
+// of the Pascal length byte at its packed offset (10, per Task 4's own
+// verified anchor: SFReply.fName@10), and an over-capacity store proving
+// rtStrStore's clamp (63 chars, not 70) plus the length-byte fix-up.
+extern record SFReply {
+    good: bool
+    copy: bool
+    fType: int
+    vRefNum: word
+    version: word
+    fName: str[63]
+}
+
+external func XRecAddr(p: ptr): ptr
+
+on App.startCLI(args: list of string) {
+    var sf: SFReply
+    var base: ptr
+    var s: string
+    var long70: string
+
+    sf.good = true
+    sf.copy = false
+    sf.fType = 1
+    sf.vRefNum = 2
+    sf.version = 3
+
+    // ---- short string: round trip + length + packed length-byte ----
+    sf.fName = "hello.txt"
+    s = sf.fName
+    if s == "hello.txt" {
+        alert("str-roundtrip-ok")
+    } else {
+        alert("str-roundtrip-FAIL")
+    }
+    if s.length == 9 {
+        alert("str-len-ok")
+    } else {
+        alert("str-len-FAIL")
+    }
+
+    base = XRecAddr(sf)
+    if peekb(base + 10) == 9 {
+        alert("str-lenbyte-ok")
+    } else {
+        alert("str-lenbyte-FAIL")
+    }
+
+    // ---- over-capacity store: clamps to 63 chars (str[63]'s own
+    // capacity), not the 70-char source; length byte fixed up to match. ----
+    long70 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    sf.fName = long70
+    s = sf.fName
+    if s.length == 63 {
+        alert("str-trunc-len-ok")
+    } else {
+        alert("str-trunc-len-FAIL")
+    }
+    if peekb(base + 10) == 63 {
+        alert("str-trunc-lenbyte-ok")
+    } else {
+        alert("str-trunc-lenbyte-FAIL")
+    }
+}
