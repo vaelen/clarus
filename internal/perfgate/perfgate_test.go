@@ -2,15 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 // Package perfgate is an emit-time tripwire (test-suite-review Task 2): it
-// bootstraps clarusc from the committed C snapshot -- the exact
-// scripts/build-68k.sh:45-48 recipe (`cc -O1` on clarusc/clarusc.c +
-// internal/build/rt/rt.c), duplicated locally rather than run via
-// internal/build's Go-native build.Build, because the whole point is to
-// time the ACTUAL bootstrap path a Go-less contributor would use -- then
-// times `clarusc emit` of testdata/emitui/every.cla (median of 3 runs) and
-// fails if that median exceeds 2x the recorded baseline.txt. Ungated: runs
-// in every `go test ./...` sweep (Task 1's T1), so a future 30x emit-time
-// regression (the kind this package exists to catch) cannot land silently.
+// bootstraps clarusc via the shared Go-free bootstrap (claruscboot.CurrentExe
+// -- Go-compiler-deletion phase; was a locally duplicated `cc -O1` snapshot
+// build, deliberately avoiding internal/build's Go-native build.Build,
+// because the whole point is to time the ACTUAL bootstrap path a Go-less
+// contributor would use) -- then times `clarusc emit` of
+// testdata/emitui/every.cla (median of 3 runs) and fails if that median
+// exceeds 2x the recorded baseline.txt. Ungated: runs in every `go test
+// ./...` sweep (Task 1's T1), so a future 30x emit-time regression (the kind
+// this package exists to catch) cannot land silently. No baseline change:
+// the tripwire times `clarusc emit`, not the bootstrap, and build time is
+// excluded from the timed section.
 package perfgate
 
 import (
@@ -20,16 +22,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
-)
 
-var (
-	claruscOnce sync.Once
-	claruscExe  string
-	claruscErr  error
-	claruscSkip string
+	"clarus/internal/claruscboot"
 )
 
 // repoRoot returns the repo root, computed from the package directory (go
@@ -45,41 +41,14 @@ func repoRoot(t *testing.T) string {
 	return filepath.Join(wd, "..", "..")
 }
 
-// buildClarusc bootstraps clarusc from the committed C snapshot. Memoized
-// with sync.Once (one build per `go test` invocation, mirrors
-// internal/mactest/native_test.go's buildNativeClarusc) using a
-// testing.T-managed temp dir -- fine since this package has a single test.
+// buildClarusc returns the current-source clarusc via the shared Go-free
+// bootstrap (Go-compiler-deletion phase; was a locally duplicated
+// snapshot-only `cc -O1` build). Kept as a local name so call sites are
+// untouched.
 func buildClarusc(t *testing.T) string {
 	t.Helper()
-	claruscOnce.Do(func() {
-		if _, err := exec.LookPath("cc"); err != nil {
-			claruscSkip = "cc not found on PATH, skipping emit-time tripwire"
-			return
-		}
-		root := repoRoot(t)
-		exe := filepath.Join(t.TempDir(), "clarusc")
-		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-			"-o", exe,
-			filepath.Join(root, "clarusc", "clarusc.c"),
-			filepath.Join(root, "internal", "build", "rt", "rt.c"))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			claruscErr = errString(err.Error() + "\n" + strings.TrimSpace(string(out)))
-			return
-		}
-		claruscExe = exe
-	})
-	if claruscSkip != "" {
-		t.Skip(claruscSkip)
-	}
-	if claruscErr != nil {
-		t.Fatal(claruscErr)
-	}
-	return claruscExe
+	return claruscboot.CurrentExe(t)
 }
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
 
 // readBaseline parses baseline.txt: leading `#`-comment lines are skipped,
 // the first non-comment, non-blank line is the baseline in seconds.

@@ -19,11 +19,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"clarus/internal/build"
-	"clarus/internal/source"
+	"clarus/internal/claruscboot"
 )
 
 // repoRoot returns the repo root, computed from the package directory (go
@@ -38,50 +37,13 @@ func repoRoot(t *testing.T) string {
 	return filepath.Join(wd, "..", "..")
 }
 
-// clarusc is built once per `go test` invocation and reused across every
-// fixture (mirrors internal/emitui/emitui_test.go's buildClarusc).
-var (
-	claruscOnce sync.Once
-	claruscExe  string
-	claruscErr  error
-)
-
+// buildClarusc returns the current-source clarusc via the shared Go-free
+// bootstrap (Go-compiler-deletion phase; was build.Build on
+// clarusc/main.cla). Kept as a local name so fixture call sites are
+// untouched.
 func buildClarusc(t *testing.T) string {
 	t.Helper()
-	claruscOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "clarusc-sertest-*")
-		if err != nil {
-			claruscErr = err
-			return
-		}
-		exe := filepath.Join(dir, "clarusc")
-		diags, err := build.Build([]string{filepath.Join(repoRoot(t), "clarusc", "main.cla")}, exe)
-		if err != nil {
-			claruscErr = err
-			return
-		}
-		if len(diags) > 0 {
-			claruscErr = &diagError{diags: diags}
-			return
-		}
-		claruscExe = exe
-	})
-	if claruscErr != nil {
-		t.Fatal(claruscErr)
-	}
-	return claruscExe
-}
-
-type diagError struct{ diags []source.Diag }
-
-func (e *diagError) Error() string {
-	var b strings.Builder
-	b.WriteString("clarusc build produced diagnostics:")
-	for _, d := range e.diags {
-		b.WriteString("\n  ")
-		b.WriteString(d.String())
-	}
-	return b.String()
+	return claruscboot.CurrentExe(t)
 }
 
 // emitFixture runs `clarusc emit -o outC fixture`, failing the test loudly

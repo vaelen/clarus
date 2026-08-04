@@ -6,8 +6,9 @@
 //
 // WHY THIS IS GOLDEN-BASED, NOT A GO-COMPILER-VS-CLARUSC DIFF: the plan's
 // original design called for building each save-capable fixture BOTH with
-// the Go compiler (build.Build) and with clarusc emit+cc, then diffing the
-// two. That is impossible: internal/build's host backend permanently
+// the Go compiler (build.Build) and with clarusc emit+cc (clarusc itself
+// now built via the shared Go-free bootstrap, claruscboot), then diffing
+// the two. That is impossible: internal/build's host backend permanently
 // refuses to build any program calling file.save/file.load
 // (internal/lower/expr.go's lowerFileCall emits "host build does not
 // support file.save/file.load yet" unconditionally -- pinned by
@@ -30,7 +31,8 @@
 // baseline is the same proof the plan wanted, just anchored to a pinned
 // snapshot instead of a live Go-compiler build.
 //
-// Do not "fix" this back to comparing against build.Build -- see above.
+// Do not "fix" this back to comparing against a live Go-compiler build
+// (build.Build) -- see above.
 package sertest
 
 import (
