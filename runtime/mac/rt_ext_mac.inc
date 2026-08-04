@@ -788,4 +788,18 @@ void rt_ext_UiLaunchReal(void) {
 int32_t rt_ext_TbTickCount(void) { return (int32_t)TickCount(); }
 int32_t rt_ext_TbMenuKey(short ch) { return (int32_t)MenuKey((CharParameter)ch); }
 
+/* ---- Task 2 (toolbox-integration): testsuite/toolbox/cases_gestalt.cla's
+ * own externs (Tb prefix, same "cprint always renders rt_ext_NAME, needs a
+ * glue entry regardless of clause" precedent as the Task 12 block just
+ * above) -- same real Toolbox calls as rt_ext_UiNewPtr/rt_ext_UiDisposePtr/
+ * rt_ext_UiGestalt above, reachable under the suite's own extern names so
+ * cases_gestalt.cla can declare its named-reg clause without reaching into
+ * ui.cla. GestaltNamed's whole point is proving the NAMED reg(...) clause
+ * dispatches correctly on the native (cg68k) lane; the clause is invisible
+ * here exactly as the design spec requires (cprint ignores irExternConv
+ * entirely, positional or named alike). */
+void *rt_ext_TbNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
+void rt_ext_TbDisposePtr(void *p) { DisposePtr((Ptr)p); }
+short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

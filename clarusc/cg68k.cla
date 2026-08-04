@@ -6573,11 +6573,15 @@ func cgExternIdxByName(nameIdx: int): int {
 }
 
 // cgCallExtReg implements the locked REG rule (plan doc, 2026-07-30,
-// "Design decisions locked during planning"): ptr args -> A0,A1 in
-// declaration order; int/bool/char args -> D0,D1 in declaration order; a
-// ptr result reads back from A0, any other (non-void) result from D0.
-// checkExternFunc guarantees at most 2 ptr + 2 int/bool/char args and no
-// str/text for a `reg` clause, so there is never a 3rd slot to assign.
+// "Design decisions locked during planning") for POSITIONAL `reg` (conv
+// 2/6): ptr args -> A0,A1 in declaration order; int/bool/char args ->
+// D0,D1 in declaration order. checkExternFunc guarantees at most 2 ptr +
+// 2 int/bool/char args and no str/text for a positional `reg` clause, so
+// there is never a 3rd slot to assign. Task 2 (toolbox-integration)
+// generalizes this to also drive NAMED `reg(...)` (conv 7/8): each arg's
+// register comes straight from irExternParamReg(xi, j) instead of the
+// positional bucket-and-count scheme -- checkExternFunc already resolved
+// and validated every binding, so cg68k just reads it back.
 //
 // Every arg is evaluated to the STACK first (a plain 4-byte push, left to
 // right -- ptr is already 4 bytes and cgExpr's own int/bool/char values
@@ -6589,50 +6593,60 @@ func cgExternIdxByName(nameIdx: int): int {
 // loading arg 1 into its final register and THEN evaluating arg 2 would
 // risk arg 2's own cgExpr clobbering arg 1's register before the trap
 // ever runs; stack-mediated push-then-pop sidesteps that regardless of
-// how many scratch registers any one arg's subexpression needs.
+// how many scratch registers any one arg's subexpression needs. Register
+// codes follow ast.cla's regCodeForName table (d0..d2 = 0..2, a0 = 8,
+// a1 = 9) for both forms -- >= 8 means an address register (An = code -
+// 8), MOVEA required for the pop; a positional ptr slot 0/1 is encoded
+// the same way (8/9) so both forms share one pop loop.
+//
 // cgRegPassArgsAndTrap is cgCallExtReg's own arg-marshaling + trap-dispatch
 // half, factored out (Task 14, native-5e) so cgCallExtRegMemErr below can
-// share it verbatim -- both clauses pass args identically (ptr args ->
-// A0,A1; int/bool/char args -> D0,D1) and emit the identical trap; only
-// what happens to the result AFTER the trap differs (cgCallExtReg reads
-// D0/A0 per the callee's declared return type; cgCallExtRegMemErr ignores
-// D0 entirely -- its real Toolbox routine is a `void` Pascal procedure and
-// leaves nothing meaningful there -- and reads the MemErr low-memory
-// global instead).
+// share it verbatim -- every `reg` form passes args identically and emits
+// the identical trap; only what happens to the result AFTER the trap
+// differs (cgCallExtReg reads the declared/defaulted result register per
+// the callee's declared return type; cgCallExtRegMemErr ignores the
+// result register entirely -- its real Toolbox routine is a `void`
+// Pascal procedure and leaves nothing meaningful there -- and reads the
+// MemErr low-memory global instead).
 func cgRegPassArgsAndTrap(e: int, xi: int) {
     var a: int
-    var kinds: list of int
     var regs: list of int
+    var conv: int
     var ptrSlot: int
     var scalarSlot: int
+    var rc: int
     var n: int
     var i: int
+    var j: int
 
-    kinds = cgFreshIntList()
+    conv = irExternConv(xi)
     regs = cgFreshIntList()
     ptrSlot = 0
     scalarSlot = 0
     n = 0
+    j = 0
     a = irCallExtArgsHead(e)
     while a != -1 {
         cgExpr(a)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        if irtKind(irExprType(a)) == KPtr {
-            kinds.add(1)
-            regs.add(ptrSlot)
+        if conv == 7 or conv == 8 {
+            rc = irExternParamReg(xi, j)
+        } else if irtKind(irExprType(a)) == KPtr {
+            rc = 8 + ptrSlot
             ptrSlot = ptrSlot + 1
         } else {
-            kinds.add(0)
-            regs.add(scalarSlot)
+            rc = scalarSlot
             scalarSlot = scalarSlot + 1
         }
+        regs.add(rc)
         n = n + 1
         a = irExprNext(a)
+        j = j + 1
     }
     i = n - 1
     while i >= 0 {
-        if kinds[i] == 1 {
-            a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, regs[i], 0)
+        if regs[i] >= 8 {
+            a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, regs[i] - 8, 0)
         } else {
             a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, regs[i], 0)
         }
@@ -6641,25 +6655,52 @@ func cgRegPassArgsAndTrap(e: int, xi: int) {
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
 }
 
+// cgCallExtReg reads the trap's result (positional conv 2 or named conv
+// 7) per the design spec's unified result-width rule: int/ptr = the full
+// 32 bits of the result register; word = low 16 bits, sign-extended
+// (Toolbox INTEGER/OSErr); bool/char = low byte, zero-extended. The
+// result REGISTER is irExternRetReg(xi) for the named form (-1 means
+// "use the default", same as positional) or always -1/default for
+// positional -- default is today's rule, A0 for a ptr result, D0
+// otherwise. Any non-D0 result register is first moved into D0 (MOVE.L,
+// MOVEA-sourced when it's an address register) to satisfy cgExpr's own
+// "value always ends in D0" postcondition; D0 itself needs no move.
 func cgCallExtReg(e: int, xi: int) {
     var retTy: int
+    var retReg: int
 
     cgRegPassArgsAndTrap(e, xi)
     retTy = irExternRet(xi)
-    if irtKind(retTy) == KPtr {
-        // MOVEA/MOVE.L A0,D0 -- bring the ptr result across to satisfy
-        // cgExpr's own "value always ends in D0" postcondition.
-        a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
-    } else if irtKind(retTy) == KWord {
+    retReg = -1
+    if irExternConv(xi) == 7 or irExternConv(xi) == 8 {
+        retReg = irExternRetReg(xi)
+    }
+    if retReg == -1 {
+        if irtKind(retTy) == KPtr {
+            retReg = 8
+        } else {
+            retReg = 0
+        }
+    }
+    if retReg >= 8 {
+        a68Emit(OpMove, 4, AmAn, retReg - 8, 0, AmDn, 0, 0)
+    } else if retReg != 0 {
+        a68Emit(OpMove, 4, AmDn, retReg, 0, AmDn, 0, 0)
+    }
+    if irtKind(retTy) == KWord {
         // Task 12 (native-5e) fix, found bisecting the Gestalt hang: a
         // REAL Toolbox register-convention routine's own glue promises
-        // its result in D0, but (per Apple's own OSErr/INTEGER-in-D0
-        // convention, mirrored by classic-68k callers universally reading
-        // only D0's LOW WORD) makes no promise about D0's UPPER word --
-        // EXT.L unconditionally re-derives the full signed 32-bit value
-        // from D0's own low word, discarding whatever was there before,
-        // matching cgCallExtPascal's own retIsSigned arm exactly (same
-        // "Toolbox INTEGER is signed" rule).
+        // its result in its result register, but (per Apple's own
+        // OSErr/INTEGER convention, mirrored by classic-68k callers
+        // universally reading only the low WORD) makes no promise about
+        // the upper word -- EXT.L unconditionally re-derives the full
+        // signed 32-bit value from D0's own low word (now that the raw
+        // result has been brought across to D0 above), discarding
+        // whatever was there before, matching cgCallExtPascal's own
+        // retIsSigned arm exactly (same "Toolbox INTEGER is signed"
+        // rule). Task 2 (toolbox-integration) unifies this across BOTH
+        // `reg` forms -- previously only UiGestalt's own dedicated
+        // by-name special case did this for the named form.
         a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
     } else if irtKind(retTy) == KBool or irtKind(retTy) == KChar {
         // NOT the same shift cgCallExtPascal's retIsShortSlot arm needs
@@ -6674,8 +6715,9 @@ func cgCallExtReg(e: int, xi: int) {
         // shifting here would mask the WRONG byte.
         a68Emit(OpAndInsn, 4, AmImm, 0, 255, AmDn, 0, 0)
     }
-    // else: KVoid (nothing to bring back) or plain int -- already in D0,
-    // the REG rule's own "other results from D0" clause.
+    // else: KVoid (nothing to bring back) or plain int/ptr -- already in
+    // D0 after the move above, the REG rule's own "other results from
+    // D0" clause.
 }
 
 // cgCallExtRegMemErr implements `= trap TRAPWORD reg memerr` (Task 14,
@@ -7006,10 +7048,6 @@ func cgCallExt(e: int) {
         cgCallExtUiStrAddr(e)
         return
     }
-    if poolGet(nm) == "UiGestalt" {
-        cgCallExtGestalt(e)
-        return
-    }
 
     xi = cgExternIdxByName(nm)
     if xi == -1 {
@@ -7017,7 +7055,7 @@ func cgCallExt(e: int) {
         quit 1
     }
     conv = irExternConv(xi)
-    if conv == 2 {
+    if conv == 2 or conv == 7 {
         cgCallExtReg(e, xi)
     } else if conv == 1 {
         cgCallExtPascal(e, xi)
@@ -7027,7 +7065,7 @@ func cgCallExt(e: int) {
         cgCallExtNop(e)
     } else if conv == 5 {
         cgCallExtA5(e)
-    } else if conv == 6 {
+    } else if conv == 6 or conv == 8 {
         cgCallExtRegMemErr(e, xi)
     } else {
         cgCallExtNatFallback(e)
@@ -7065,65 +7103,6 @@ func cgCallExtUiSynth(e: int, synthName: int) {
 // that label) only if this is ever mis-called; that can't happen because
 // cgCallExt only reaches here from an ECallExt to UiProgDesc/UiTestScript,
 // both of which only exist in a UI program's own linked runtime modules.
-// cgCallExtGestalt implements UiGestalt's REAL 68k register calling
-// convention (Task 14 fix, native-5e gate, formedit.cla): `selector` in
-// D0, `response` (the OUT ptr) in A1 -- NOT the generic `reg` clause's own
-// "ptr args fill A0, then A1, in declaration order" scheme, which puts
-// Gestalt's ONE ptr arg in A0 instead. ui.cla's own header comment already
-// flagged this exact gap by name ("Clarus's own `reg` clause has no way to
-// express 'the one ptr param goes in A1, not A0'... there is no clean way
-// to express Gestalt's actual calling convention as a `reg` extern
-// either... [the native lane] is still genuinely unverified") -- this is
-// that verification, and the fix: since `UiGestalt` has exactly ONE call
-// site in the whole runtime (rtUiStartup) and exactly one shape, a
-// dedicated name-special-case (mirroring UiProgDesc/UiTestScript/
-// UiLdefEntry/UiActionEntry/UiStrAddr just above -- same "this ONE extern
-// needs bespoke codegen" precedent) is simpler than teaching the general
-// `reg` clause a per-argument register override for a single caller.
-//
-// Root cause this fixes: with response landed in A0 (the generic `reg`
-// scheme), the REAL Gestalt trap (reading its response-out address from
-// A1, per Gestalt.h's own `#pragma parameter __D0 Gestalt(__D0, __A1)`)
-// wrote its answer through WHATEVER STALE ADDRESS happened to be sitting
-// in A1 -- never touching the caller's own freshly-`UiNewPtr`'d
-// `respSlot` at all, which is why `err` (D0, correctly 0/noErr) looked
-// fine while `resp` (read back from `respSlot`, never written) was
-// uninitialized heap garbage almost always >= 0x0700 -- `rtUiSys7`
-// resolved true (misread as "System 7") on EVERY native boot, selecting
-// `rtUiProcMovableDBox` for every form window regardless of the real
-// System 6.0.8 target, whose ROM does not paint that WDEF's title-bar
-// chrome correctly (frame/buttons/fields still drew fine -- those are
-// this program's own drawing, unaffected -- only the Window-Manager-owned
-// title strip came out blank, letting whatever window was already drawn
-// underneath show through). formedit.cla's S1 snap (the first `edit`'s
-// own EditForm window) is the first scenario with a real form window,
-// hence the first to expose this.
-func cgCallExtGestalt(e: int) {
-    var a0e: int
-    var a1e: int
-    var xi: int
-
-    a0e = irCallExtArgsHead(e)
-    a1e = irExprNext(a0e)
-    xi = cgExternIdxByName(irCallExtName(e))
-    if xi == -1 {
-        log("cg68k: call to unregistered extern UiGestalt")
-        quit 1
-    }
-
-    cgExpr(a0e)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgExpr(a1e)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    // Pop in reverse: response (last pushed) into A1, selector into D0.
-    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
-    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
-    a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
-    // Result: OSErr (signed word) in D0 -- sign-extend, same
-    // "Toolbox INTEGER is signed" rule cgCallExtReg's own KWord arm uses.
-    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-}
-
 func cgCallExtUiBlobAddr(lbl: int) {
     a68Emit(OpLea, 0, AmPCLabel, 0, lbl, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)

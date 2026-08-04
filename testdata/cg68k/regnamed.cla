@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// regnamed.cla: Task 2 (toolbox-integration) cg68k golden fixture --
+// named-register trap clause (conv 7) emission: push-all args, pop in
+// reverse into their NAMED registers (MOVEA for A-register targets), the
+// trap word, and the word-result sign-extension (now unified across both
+// `reg` forms -- see cg68k.cla's cgCallExtReg doc comment). TbGestalt
+// mirrors UiGestalt's own real shape (selector in D0, response ptr in
+// A1, `ret d0`, `word` result); TbSwapD2 exercises a D2 register target
+// (untouched by the positional rule, which only ever uses D0/D1/A0/A1)
+// and a named, non-default `ret d2` result register on a plain `int`
+// result (no sign-extension, full 32 bits straight from D2).
+//
+// resp (the `ptr` argument) is produced via a NewPtr-shaped `reg` trap
+// (matches traps.cla's own NewPtr idiom, real trap 0xA11E) rather than a
+// `ptrOf`-style address-of builtin -- this backend has no such builtin;
+// the golden's subject is the named-reg call sequence, not how the ptr
+// argument was obtained.
+
+external func TbNewPtr(size: int): ptr = trap 0xA11E reg
+external func TbGestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+external func TbSwapD2(v: int): int = trap 0xA123 reg(d2: v) ret d2
+
+func probe(): int {
+    var resp: ptr
+    var err: int
+
+    resp = TbNewPtr(4)
+    err = TbGestalt(0x71642020, resp)
+    return err + TbSwapD2(7)
+}
+
+on App.launch {
+    var r: int
+    r = probe()
+    return
+}

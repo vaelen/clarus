@@ -1,0 +1,61 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_gestalt.cla: GestaltNamed (Task 2, toolbox-integration) --
+// exercises cg68k's generalized named-register trap clause (conv 7,
+// cgRegPassArgsAndTrap/cgCallExtReg) against a REAL Gestalt call, inside
+// a booted program -- the one thing testdata/cg68k/regnamed.cla's own
+// listing-diff test cannot do (that fixture pins the emitted bytes
+// only, never runs). TbGestalt is declared LOCALLY, same "user-code
+// externs are the proven pattern" precedent as cases_events.cla's own
+// TbTickCount/TbMenuKey and cases_a5.cla's own TbCurrentA5 -- proving
+// the user-authored named-reg path dispatches correctly against real
+// ROM, independent of the runtime's own UiGestalt (ui.cla), which now
+// uses the identical clause shape.
+//
+// TbNewPtr/TbDisposePtr supply the `ptr` response slot (real
+// _NewPtr/_DisposePtr, matches ui.cla's own UiNewPtr/UiDisposePtr pair)
+// -- Gestalt itself never allocates, it only writes through the
+// caller's own address.
+
+external func TbNewPtr(size: int): ptr = trap 0xA11E reg
+external func TbDisposePtr(p: ptr) = trap 0xA01F reg
+external func TbGestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+
+// caseGestaltNamed: selector 'sysv' = gestaltSystemVersion = 0x73797376
+// (Gestalt.h) -- the SAME selector rtUiStartup's own UiGestalt call
+// already uses on every UI program boot (ui.cla), proven to answer
+// reliably in this exact emulator/ROM/system-image environment (empty
+// System 6.0.8 responds with a small nonzero BCD version, e.g. 0x0608).
+// Selector choice is incidental to this case's real purpose -- proving
+// the user-authored NAMED-reg path (d0/a1/ret d0) marshals correctly,
+// not testing any one selector's support -- so reusing the one already
+// known-good in this environment avoids conflating a register-marshaling
+// regression with an unrelated selector-support question. A working
+// named-reg call comes back err == 0 with a nonzero response. A broken
+// register assignment (response landing in the wrong register -- e.g.
+// the retired cgCallExtGestalt special case's own A1 routing regressing,
+// or the generic positional `reg` clause's "ptr args fill A0" scheme
+// misrouting it here) reproduces exactly UiGestalt's own historical bug:
+// `err` reads back clean (0) while `response` is never actually written
+// -- so this case requires BOTH conditions, not just err == 0.
+func caseGestaltNamed(): TestResult {
+    var respSlot: ptr
+    var resp: int
+    var err: int
+    var detail: string
+
+    respSlot = TbNewPtr(4)
+    err = TbGestalt(0x73797376, respSlot)
+    resp = peekl(respSlot)
+    TbDisposePtr(respSlot)
+
+    if err == 0 and resp != 0 {
+        return tkPass("GestaltNamed")
+    }
+    // Built up piecewise into `detail`, same native-68k temp-slot-budget
+    // reason as cases_events.cla's own cases.
+    detail = "err " + tkIntToStr(err)
+    detail = detail + " resp " + tkIntToStr(resp)
+    return tkFail("GestaltNamed", detail)
+}

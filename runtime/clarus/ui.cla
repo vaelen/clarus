@@ -300,7 +300,7 @@ external func UiTickCount(): int = trap 0xA975
 // hang (Mini vMac stuck on its own boot-time gray test-pattern screen,
 // bisected via UiRtQuit(N) checkpoints -- exit 79 reached right before
 // this call, no exit 80 ever written after it).
-external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD reg
+external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
 external func UiHideCursor() = trap 0xA852
 external func UiOpenDeskAcc(deskAccName: ptr): word = trap 0xA9B6
 external func UiParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B

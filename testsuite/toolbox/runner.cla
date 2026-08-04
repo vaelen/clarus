@@ -20,7 +20,9 @@
 // `tb`-prefixed (house style: the runtime extern-prefix convention,
 // applied here so this suite's identifiers never collide with core's if
 // the two suites are ever composed together, even though nothing does
-// that today).
+// that today). GestaltNamed (cases_gestalt.cla) is Task 2's own addition
+// (toolbox-integration): the generalized named-register trap clause's
+// native gate.
 
 enum ToolboxTest {
     All
@@ -28,15 +30,16 @@ enum ToolboxTest {
     MenuKeyMatches
     CanvasChecksum
     A5Live
+    GestaltNamed
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 4 real cases plus
+// nTbCases is ToolboxTest's member count minus All: the 5 real cases plus
 // SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 5
+const nTbCases: int = 6
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -57,6 +60,9 @@ func tbCaseName(t: ToolboxTest): string {
     case A5Live {
         return "A5Live"
     }
+    case GestaltNamed {
+        return "GestaltNamed"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -72,6 +78,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(MenuKeyMatches)
     l.add(CanvasChecksum)
     l.add(A5Live)
+    l.add(GestaltNamed)
     l.add(SelfCheck)
     return l
 }
@@ -123,6 +130,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, A5Live) {
         results.add(caseA5Live())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, GestaltNamed) {
+        results.add(caseGestaltNamed())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
