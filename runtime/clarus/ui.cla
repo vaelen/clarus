@@ -1392,9 +1392,10 @@ func rtUiStartup() {
     // shipped classic Mac System never approach 0x1000. Bounding `resp`
     // above (not just below, the ORIGINAL `>= 0x0700` check's own job)
     // guards against exactly the failure mode this session's own
-    // `cgCallExtGestalt` fix (cg68k.cla, native record: Gestalt's real
-    // 68k convention is D0=selector/A1=response, not the generic `reg`
-    // clause's own "A0 for the one ptr arg" scheme -- fixed there) was
+    // `cgCallExtReg`/`cgRegPassArgsAndTrap` KWord-result fix (cg68k.cla,
+    // native record: Gestalt's real 68k convention is D0=selector/A1=
+    // response, not the generic `reg` clause's own "A0 for the one ptr
+    // arg" scheme -- fixed there) was
     // ALSO needed for but did not fully resolve on this ROM/system-image
     // combination: `err` (D0, OSErr) still comes back a clean 0/noErr even
     // though the trap dispatch never actually reaches a real Gestalt
@@ -1405,7 +1406,7 @@ func rtUiStartup() {
     // Gestalt" as "System 7", selecting `rtUiProcMovableDBox` for every
     // form window regardless of the real System 6.0.8 target, whose title
     // bar chrome that WDEF does not paint correctly here (see
-    // cgCallExtGestalt's own doc comment for the full symptom). Bounding
+    // cgCallExtReg's own doc comment for the full symptom). Bounding
     // to a plausible BCD range is strictly SAFE for a genuine Gestalt
     // response too (cprint's own already-correct 0x0608 result satisfies
     // neither bound and was never affected either way).

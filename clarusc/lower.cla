@@ -5702,9 +5702,9 @@ func lowSynthUiDispatchers() {
 // consult. Returns -1 for any other extern name, including UiProgDesc
 // (resolved separately -- see ir.cla's own doc comment on why it isn't one
 // of these 8 synthesized functions) and every per-backend glue extern in
-// the reverse-waist section's second half (UiLdefEntry/UiAeEntry/
-// UiActionEntry/UiCurrentA5/UiTestEmit/UiTestScript), none of which this
-// task touches.
+// the reverse-waist section's second half (UiCurrentA5/UiTestEmit/
+// UiTestScript, plus uitable.cla's own decay-only UiCbAddr, Task 9), none
+// of which this task touches.
 func lowUiSynthExternName(externNameIdx: int): int {
     var nm: string
 
@@ -5828,14 +5828,13 @@ func lowUiPortAddRoots() {
     shakeAddRoot(intern("rtUiAskSaveChanges"))
     shakeAddRoot(intern("rtUiEdit"))
     shakeAddRoot(intern("rtUiFormIsNew"))
-    // Task 9: rtUiLdefDraw (uitable.cla) is a DIFFERENT flavor of the same
-    // underlying problem this whole function solves -- not an intrinsic
-    // redirect string, but the LDEF pascal wrapper in rt_ext_mac.inc
-    // (rt_ext_ui_ldef, gated CLARUS_UIPORT) calling it by FIXED NAME
-    // (`clar_fn_rtUiLdefDraw`) from a genuinely different translation
-    // unit -- confirmed by a real link failure before this root existed
-    // (undefined reference to `clar_fn_rtUiLdefDraw` from rt_mac.c). No
-    // ordinary Clarus call site reaches it either way, so it needs the
-    // same shakeAddRoot treatment.
-    shakeAddRoot(intern("rtUiLdefDraw"))
+    // Task 9 (toolbox-integration Feature C): rtUiLdefDraw (uitable.cla)
+    // used to need the same hand-rooting treatment as the names above --
+    // the OLD hand-written LDEF pascal wrapper in rt_ext_mac.inc called it
+    // by FIXED NAME from a genuinely different translation unit, no
+    // ordinary Clarus call site reaching it at all. Now that rtUiLdefDraw
+    // is a `callback func`, decayed at its one real call site
+    // (rtUiMakeLdefStub, uitable.cla), shake.cla's own ECbAddr edge
+    // discovers it through the ordinary reachability walk -- no explicit
+    // root needed here anymore (removed).
 }

@@ -3386,18 +3386,23 @@ func cpFuncProto(f: int): text {
     // its `static` definition, so needs no external linkage). Every other
     // Clarus function stays `static` (unchanged, no name collisions across
     // separately-compiled programs). Task 8: rtUiScrollbarAction (uitext.cla)
-    // joins this same allowlist for the identical reason -- rt_ext_mac.inc's
-    // pascal action-proc wrapper (rt_ext_ui_scrollbar_action, gated
-    // CLARUS_UIPORT) calls it by FIXED NAME (`clar_fn_rtUiScrollbarAction`)
-    // from rt_mac.c, the same cross-TU shape as clar_ui_fire_launchdoc/
-    // _startempty just above -- this is an ordinary user-visible Clarus
-    // function name (not a synthesized dispatcher), so it is matched
-    // literally rather than via the `clar_ui_fire_*` synthesized-name
-    // pattern those two use. Task 9: rtUiLdefDraw (uitable.cla) joins the
-    // same allowlist for the identical reason -- rt_ext_mac.inc's pascal
-    // LDEF wrapper (rt_ext_ui_ldef, gated CLARUS_UIPORT) calls it by FIXED
-    // NAME (`clar_fn_rtUiLdefDraw`) from rt_mac.c, same cross-TU shape as
-    // rtUiScrollbarAction just above.
+    // joined this same allowlist for the identical reason -- rt_ext_mac.inc's
+    // OLD hand-written pascal action-proc wrapper called it by FIXED NAME
+    // (`clar_fn_rtUiScrollbarAction`) from rt_mac.c, the same cross-TU shape
+    // as clar_ui_fire_launchdoc/_startempty just above -- this is an
+    // ordinary user-visible Clarus function name (not a synthesized
+    // dispatcher), so it is matched literally rather than via the
+    // `clar_ui_fire_*` synthesized-name pattern those two use. Task 9:
+    // rtUiLdefDraw (uitable.cla) joined the same allowlist for the
+    // identical reason -- rt_ext_mac.inc's OLD hand-written pascal LDEF
+    // wrapper called it by FIXED NAME (`clar_fn_rtUiLdefDraw`) from
+    // rt_mac.c, same cross-TU shape as rtUiScrollbarAction just above. Both
+    // OLD wrappers are gone (Task 9, toolbox-integration Feature C:
+    // rtUiScrollbarAction/rtUiLdefDraw are `callback func` now, reached
+    // through cprint's own generated clar_cb_<name> glue instead) but the
+    // non-static linkage stays harmless and unchanged here -- neither
+    // symbol is called cross-TU anymore, but nothing requires reverting it
+    // to `static` either.
     linkage = "static "
     if poolGet(irFuncName(f)) == "clar_ui_fire_launchdoc" or poolGet(irFuncName(f)) == "clar_ui_fire_startempty" or poolGet(irFuncName(f)) == "rtUiScrollbarAction" or poolGet(irFuncName(f)) == "rtUiLdefDraw" {
         linkage = ""
@@ -4125,11 +4130,18 @@ func cpCbRetWireType(t: int): string {
 // both places; KInt/KPtr: identical both places), so no cast is needed
 // there. argsOut receives the matching clar_fn_<name>(...) call argument
 // list (with that same KBool widening cast); paramsOut/argsOut are
-// caller-owned single-element `list of string` boxes (Clarus has no
-// multi-return), mutated in place.
-func cpCbSignature(fIdx: int, paramsOut: list of string, argsOut: list of string): string {
-    var params: string
-    var args: string
+// caller-owned single-element `list of text` boxes (Clarus has no
+// multi-return), mutated in place. `text` (not `string`/`str 255`, this
+// function's ORIGINAL Task 7 type, fixed by Task 9): a real-world
+// `callback func` signature -- rtUiLdefDraw's own 7 params, long C wire
+// type names -- comfortably exceeds Str255's 255-byte cap, which
+// silently TRUNCATES on overflow (str's own documented semantics) rather
+// than erroring; caught by internal/emitui's own TestUiBlobGolden going
+// from a clean compile to "too few arguments" the moment this migration
+// exercised a callback body long enough to hit the cap.
+func cpCbSignature(fIdx: int, paramsOut: list of text, argsOut: list of text): text {
+    var params: text
+    var args: text
     var first: bool
     var p: int
     var pname: string
@@ -4168,12 +4180,12 @@ func cpCbSignature(fIdx: int, paramsOut: list of string, argsOut: list of string
 // however early in the program it's called, C's own declare-before-use
 // rule.
 func cpCbGlueProto(fIdx: int): text {
-    var params: list of string
-    var args: list of string
+    var params: list of text
+    var args: list of text
 
     params.add("")
     args.add("")
-    return toText("static CLAR_PASCAL " + cpCbSignature(fIdx, params, args) + ";")
+    return "static CLAR_PASCAL " + cpCbSignature(fIdx, params, args) + ";"
 }
 
 // cpCbGlueWrapper renders one `callback func`'s generated pascal glue
@@ -4186,12 +4198,12 @@ func cpCbGlueProto(fIdx: int): text {
 // param-widening in reverse. A void return omits `return` entirely
 // (fIdx's own procedure shape).
 func cpCbGlueWrapper(fIdx: int): text {
-    var params: list of string
-    var args: list of string
-    var sig: string
+    var params: list of text
+    var args: list of text
+    var sig: text
     var retT: int
     var fnName: string
-    var body: string
+    var body: text
 
     params.add("")
     args.add("")
@@ -4206,7 +4218,7 @@ func cpCbGlueWrapper(fIdx: int): text {
     } else {
         body = body + "return clar_fn_" + fnName + "(" + args[0] + "); }"
     }
-    return toText(body)
+    return body
 }
 
 // cpEmitCallbackGlueProtos emits the CLAR_PASCAL macro (`pascal` on the

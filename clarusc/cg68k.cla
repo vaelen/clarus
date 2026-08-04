@@ -688,49 +688,18 @@ func cg68AddRoots() {
     shakeAddRoot(intern("rtEnumCheck"))
 }
 
-// cg68SynthUiGlue (Task 12, native-5e) synthesizes the two pascal-entry
-// glue stubs as ordinary (EMPTY-bodied) IRFuncs, exactly the way
-// lower.cla's lowSynthUiDispatchers synthesizes the reverse-waist
-// dispatchers -- reusing newIRFunc/shakeAddRoot gets them a real irFuncs
-// slot, and hence (for free, via the SAME cgAssignFinalJtSlots pass every
-// ordinary function already goes through) a real JT slot, with zero new
-// segment/JT bookkeeping. The body is a placeholder (-1, "no statements")
-// -- never walked: cgEmitFunc's own name check (below) recognizes these
-// two names and emits a hand-built pascal-frame-unwinding body instead of
-// LINK+cgStmts+UNLK. Called from main.cla, AFTER lowerProgram but BEFORE
-// shakeProgram -- the same safe injection point cg68AddRoots already
-// uses for native-only roots (lowerProgram itself stays backend-neutral;
-// cprint never references these two names, so they simply stay
-// unreached/shaken-away dead code on that lane -- no cprint golden churn).
-//
-// Gated on irIsUiProgram(): a non-UI native program never links
-// uitable.cla/uitext.cla (main.cla's own isUiProg manifest gate), so
-// UiLdefEntry/UiActionEntry don't exist as externs to resolve for one,
-// and these two stubs would just be permanently-dead weight.
-func cg68SynthUiGlue() {
-    if not irIsUiProgram() {
-        return
-    }
-    newIRFunc(intern("clar_ui_glue_ldef"), -1, irVoidT, -1, -1)
-    shakeAddRoot(intern("clar_ui_glue_ldef"))
-    newIRFunc(intern("clar_ui_glue_action"), -1, irVoidT, -1, -1)
-    shakeAddRoot(intern("clar_ui_glue_action"))
-}
-
 // cg68SynthCbGlue (Task 8, toolbox-integration Feature C: `callback
 // func`) synthesizes one "clar_cb_<name>" glue IRFunc (EMPTY-bodied
-// placeholder, exactly cg68SynthUiGlue's own LDEF/action shape --
-// cgEmitFunc's by-name/by-table dispatch below recognizes it via
-// cgCbGlueBodyFor and emits cgEmitCallbackGlue's hand-built pascal-frame
-// body instead of LINK+cgStmts+UNLK) per callback name in irCbGlueNames
-// (ir.cla: every `callback func` an ECbAddr decay was EVER built for,
-// anywhere in the program, dead code included -- lowering doesn't do
-// dead-code elimination). Called from main.cla at the SAME injection
-// point as cg68SynthUiGlue (after lowerProgram, before shakeProgram) --
-// shakeAddRoot's own doc comment (shake.cla): a pending root is only
-// consumed by the NEXT shakeProgram call, and this compile only ever
-// calls shakeProgram once, so there is no later point at which a root
-// could still be registered.
+// placeholder -- cgEmitFunc's by-name/by-table dispatch below recognizes
+// it via cgCbGlueBodyFor and emits cgEmitCallbackGlue's hand-built
+// pascal-frame body instead of LINK+cgStmts+UNLK) per callback name in
+// irCbGlueNames (ir.cla: every `callback func` an ECbAddr decay was EVER
+// built for, anywhere in the program, dead code included -- lowering
+// doesn't do dead-code elimination). Called from main.cla, after
+// lowerProgram but before shakeProgram -- shakeAddRoot's own doc comment
+// (shake.cla): a pending root is only consumed by the NEXT shakeProgram
+// call, and this compile only ever calls shakeProgram once, so there is
+// no later point at which a root could still be registered.
 //
 // Reachability is deliberately COARSER than cprint.cla's own fine-grained
 // gate (cpEmitCallbackGlueProtos/Bodies: irCbGlueNames membership AND
@@ -739,16 +708,13 @@ func cg68SynthUiGlue() {
 // replicate that: by the time shakeProgram has run far enough to prove a
 // given body's true reachability, it is too late to still register a
 // root for its glue (see the shakeAddRoot doc comment above). Every name
-// here gets BOTH its glue and its body unconditionally rooted, matching
-// this file's own established precedent for the identical tradeoff
-// (cg68SynthUiGlue's LDEF/action stubs, rooted for any irIsUiProgram()
-// regardless of whether that specific program actually builds a
-// table/scrollbar widget) -- shake.cla's own header comment blesses this
-// direction explicitly: "Over-approximation is always safe here (a few
-// extra functions emitted); under-approximation is a C link error." The
-// ONE case this task's own listing golden actually tests -- a callback
-// NEVER decayed anywhere, so irCbGlueNames has no entry for it at all --
-// still gets zero trace either way: it never reaches this loop.
+// here gets BOTH its glue and its body unconditionally rooted -- shake.cla's
+// own header comment blesses this direction explicitly:
+// "Over-approximation is always safe here (a few extra functions
+// emitted); under-approximation is a C link error." The ONE case this
+// task's own listing golden actually tests -- a callback NEVER decayed
+// anywhere, so irCbGlueNames has no entry for it at all -- still gets
+// zero trace either way: it never reaches this loop.
 func cg68SynthCbGlue() {
     var i: int
     var nameIdx: int
@@ -3040,24 +3006,15 @@ func cgEmitFunc(f: int) {
     var recLocalTypes: list of int
     var tmpOffs: list of int
     var bigTmpOffs: list of int
-    var fname: string
 
-    // Task 12 (native-5e): the two pascal-entry glue stubs cg68SynthUiGlue
-    // synthesizes as empty-bodied placeholders -- recognized here BY NAME
-    // (the same "no per-node IR shape, dispatch on the synthesized
-    // function's own fixed name" convention cgCallExtUiSynth/
-    // cgCallExtUiGlueAddr already use) and given a hand-built
-    // pascal-frame-unwinding body instead of the ordinary LINK+cgStmts+
-    // UNLK below -- see cgEmitLdefGlue/cgEmitActionGlue's own doc comments.
-    fname = poolGet(irFuncName(f))
-    if fname == "clar_ui_glue_ldef" {
-        cgEmitLdefGlue(f)
-        return
-    }
-    if fname == "clar_ui_glue_action" {
-        cgEmitActionGlue(f)
-        return
-    }
+    // Task 9 (toolbox-integration Feature C): the hand-built LDEF/
+    // scrollbar-action pascal glue stubs this by-name block used to
+    // dispatch to (two empty-bodied synthesized-IRFunc placeholders, one
+    // hand-built emitter each) are gone -- rtUiLdefDraw/
+    // rtUiScrollbarAction migrated onto `callback func`, so their glue
+    // now flows through the signature-driven cgCbGlueBodyFor/
+    // cgEmitCallbackGlue path just below, same as every other callback.
+    //
     // Task 8 (toolbox-integration Feature C): cg68SynthCbGlue's own
     // "clar_cb_<name>" synthetic glue funcs, recognized by lookup table
     // rather than a name-prefix string check (cgCbGlueBodyFor) since the
@@ -3237,192 +3194,19 @@ func cgEmitFunc(f: int) {
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
 
-// ================================================================
-// Task 12 (native-5e): pascal-entry glue stubs -- LDEF (List Manager
-// callback) and the scrollbar control-action proc. Both are called BY THE
-// TOOLBOX with args pushed PASCAL convention (left to right -- the
-// FIRST-declared param ends up at the HIGHEST stack address, the LAST at
-// the lowest, closest to the return address JSR pushed; a byte/word-sized
-// value -- Boolean/short -- still occupies a full stack WORD). REVISED
-// (Task 12 continuation): a Boolean value in that padded word lives in
-// the word's HIGH-order byte -- its OWN (lowest) address -- not the low
-// one; see cgCallExtPascal's own header comment for the empirical A/B
-// proof this was corrected against. `cgEmitLdefGlue`'s own `lSelect`
-// read below is fixed to match (24(A6), not 25(A6)) -- NOT the LINK-based
-// positive-A6-offset convention cgEmitFunc's own ordinary functions use
-// for their OWN declared params (which happens to assign offsets in the
-// same left-to-right/highest-first order, by coincidence of both
-// conventions pushing left to right, but at different slot WIDTHS:
-// Clarus always pushes int/ptr as a full .L and bool/char as a full .W,
-// matching pascal convention's own word-padding for byte-sized values,
-// but a pascal `short` is only 2 bytes on the wire where a Clarus `int`
-// argument would need 4 -- hence RE-READING and RE-PUSHING every argument
-// here, never just forwarding raw stack bytes).
-//
-// Each glue LINKs its own zero-size A6 frame (clean fixed offsets for the
-// incoming pascal args, immune to its own outgoing pushes moving A7),
-// unwinds/converts every pascal arg into the callee's OWN Clarus calling
-// convention, JSRs the real ported function via cgCallFunc (a JT-slot
-// jump if that function landed in a different segment, exactly like any
-// other cross-segment call), then returns PASCAL style: this backend's
-// 68000 target has no RTD instruction (68010+ only), so the standard
-// no-RTD callee-pop sequence applies -- UNLK (restores A7 to right after
-// the ORIGINAL return address), pop that return address into a scratch
-// address register, ADDA the pascal arg bytes off A7 (deallocating the
-// caller's own pushed args -- pascal callee-pop convention), then JMP
-// through the scratch register.
-//
-// UNVERIFIED ON REAL HARDWARE this task: neither glue is CALLED AT RUNTIME
-// by Task 12's own gate (smoke_bounce has no table/scrollbar widget to
-// actually invoke them from Toolbox code), but BOTH compile into the
-// binary and get a real JT slot -- rtUiMakeWidgets (uiwidgets.cla),
-// reachable for any window with any widget, contains the table/scrollbar
-// creation branches UNCONDITIONALLY (Clarus has no branch-level
-// dead-code elimination, only whole-function reachability), and those
-// branches call UiLNew/scrollbar setup, which read UiLdefEntry()/
-// UiActionEntry(). Correction (review round 1): an earlier draft of this
-// task's own report claimed these were "shaken away as unreachable" for
-// bounce.cla because `grep clar_ui_glue_ldef` found nothing in
-// bounce.s -- that grep only ever inspected CODE segment 1's own listing;
-// the glue stubs actually land in segments 3/4 (cgPackProgram's own
-// packing decision), which the listing golden/vasm round-trip did not
-// cover until this review round extended both to every emitted segment
-// (internal/cg68k). First RUNTIME hardware exercise (a table or
-// scrollbar boot on native, actually calling through the JT slot) is
-// still Task 14's job.
-
-// cgEmitLdefGlue: pascal void LDEF(short lMessage, Boolean lSelect,
-// Rect *lRect, Cell lCell, short lDataOffset, short lDataLen,
-// ListHandle lHandle) -- Lists.h's ListDefProcPtr, EXACTLY (Task 9's own
-// port comment, uitable.cla). Pascal arg bytes, left to right: lMessage
-// (2), lSelect (2), lRect (4), lCell (4), lDataOffset (2), lDataLen (2),
-// lHandle (4) = 20 total; after this glue's own LINK A6,#0, the LAST-
-// pushed (lHandle) sits at 8(A6), the FIRST-pushed (lMessage) at 26(A6)
-// (cgEmitFunc's own reverse-offset-assignment rule, applied by hand).
-// `lCell` (a Point -- two packed shorts) is read as a single 4-byte
-// value: its raw big-endian in-memory bytes ARE exactly the packed int32
-// rtUiLdefDraw's own `cellPacked: int` parameter wants, no shift/OR
-// needed. Target: rtUiLdefDraw(msg: int, select: bool, rectPtr: ptr,
-// cellPacked: int, dataOffset: int, dataLen: int, lh: ptr) -- uitable.cla.
-func cgEmitLdefGlue(f: int) {
-    var fi: int
-
-    a68Comment("func clar_ui_glue_ldef (JT slot " + numToStr(cgJtSlot(f)) + ") -- pascal LDEF entry")
-    a68Bind(cgFuncLabels[f])
-    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
-
-    fi = findIRFuncIdxByName(intern("rtUiLdefDraw"))
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtUiLdefDraw not found/reachable (clar_ui_glue_ldef)")
-        quit 1
-    }
-
-    // msg: short @26(A6) -> sign-extend -> push .L
-    a68Emit(OpMove, 2, AmDisp16, 6, 26, AmDn, 0, 0)
-    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    // select: Boolean word @24(A6), value in the HIGH byte @24(A6) itself
-    // (the padded word's own address -- see cgCallExtPascal's header
-    // comment for the empirical A/B proof) -> zero-extend into D0's low
-    // byte.
-    //
-    // Task 14 fix (native-5e gate, popuptable.cla): the OUTGOING push below
-    // was `MOVE.W D0,-(A7)` -- this glue calls rtUiLdefDraw as an ORDINARY
-    // (non-pascal) Clarus function, whose `select: bool` PARAM slot is read
-    // back by the callee's own cgLoadVar at the slot's BASE (lower)
-    // address -- exactly the "ordinary-call bool-arg" convention this
-    // task's own buttons.cla fix (ui_set_checked/ui_set_enabled/
-    // ui_menu_enable, cgIntrUi* dispatch) already established: MOVE.W
-    // writes the value to the padded slot's HIGH address (big-endian),
-    // leaving the base address -- what cgLoadVar reads -- always 0. This
-    // hand-rolled glue predates and was never touched by that fix (it does
-    // not route through cgPushArgs), so it silently kept the wrong
-    // convention: `select` was ALWAYS read back false inside
-    // rtUiLdefDraw's lDrawMsg branch regardless of the real Cell's
-    // selection state (confirmed via instrumented trace: `select=0` even
-    // immediately after a UiLSetSelect(true, ...) hilite toggle on the
-    // very same cell mid-redraw) -- popuptable's own row-highlight-not-
-    // repainted bug. Fixed: MOVE.B, matching cgPushArgs' own convention
-    // exactly.
-    a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 1, AmDisp16, 6, 24, AmDn, 0, 0)
-    a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
-    // rectPtr: ptr @20(A6) -> push .L directly (already the right shape).
-    a68Emit(OpMove, 4, AmDisp16, 6, 20, AmPreDec, 7, 0)
-    // cellPacked: the 4-byte Cell @16(A6), read as one raw int32 -> push .L.
-    // (audited against the corrected Boolean high-byte convention above:
-    // a Cell/Point is a genuine 4-byte packed pair, not a byte-sized
-    // value padded into a word, so there is no byte-position ambiguity
-    // here -- the full 4 bytes at 16(A6) are read as-is, unchanged.)
-    a68Emit(OpMove, 4, AmDisp16, 6, 16, AmPreDec, 7, 0)
-    // dataOffset: short @14(A6) -> sign-extend -> push .L.
-    a68Emit(OpMove, 2, AmDisp16, 6, 14, AmDn, 0, 0)
-    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    // dataLen: short @12(A6) -> sign-extend -> push .L.
-    a68Emit(OpMove, 2, AmDisp16, 6, 12, AmDn, 0, 0)
-    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    // lh: ptr @8(A6) -> push .L directly.
-    a68Emit(OpMove, 4, AmDisp16, 6, 8, AmPreDec, 7, 0)
-
-    cgCallFunc(fi)
-    cgCleanupStack(26) // 4+2+4+4+4+4+4
-
-    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
-    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
-    cgCleanupStack(20) // the pascal caller's own 20 arg bytes
-    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
-}
-
-// cgEmitActionGlue: pascal void ControlActionProc(ControlHandle theControl,
-// short partCode) -- Controls.h's ControlActionUPP, matching
-// rt_ext_mac.inc's own rt_ext_ui_scrollbar_action wrapper exactly. Pascal
-// arg bytes: ctrl (4), part (2) = 6 total; after LINK A6,#0, part (last
-// pushed) sits at 8(A6), ctrl (first pushed) at 10(A6). Target:
-// rtUiScrollbarAction(ctrl: ptr, part: int) -- uitext.cla.
-func cgEmitActionGlue(f: int) {
-    var fi: int
-
-    a68Comment("func clar_ui_glue_action (JT slot " + numToStr(cgJtSlot(f)) + ") -- pascal control-action entry")
-    a68Bind(cgFuncLabels[f])
-    a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
-
-    fi = findIRFuncIdxByName(intern("rtUiScrollbarAction"))
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtUiScrollbarAction not found/reachable (clar_ui_glue_action)")
-        quit 1
-    }
-
-    // ctrl: ptr @10(A6) -> push .L directly.
-    a68Emit(OpMove, 4, AmDisp16, 6, 10, AmPreDec, 7, 0)
-    // part: short @8(A6) -> sign-extend -> push .L.
-    a68Emit(OpMove, 2, AmDisp16, 6, 8, AmDn, 0, 0)
-    a68Emit(OpExt, 4, AmNone, 0, 0, AmDn, 0, 0)
-    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-
-    cgCallFunc(fi)
-    cgCleanupStack(8) // 4+4
-
-    a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
-    a68Emit(OpMove, 4, AmPostInc, 7, 0, AmAn, 0, 0)
-    cgCleanupStack(6) // the pascal caller's own 6 arg bytes
-    a68Emit(OpJmp, 0, AmNone, 0, 0, AmInd, 0, 0)
-}
-
 // cgCbPascalWidth is the pascal-convention stack-slot width (in bytes) of
 // one `callback func` param/return kind -- checkCallbackFunc's own closed
 // palette (bool/char/word/int/ptr) is the only input this ever sees.
 // bool/char/word all pad to a full stack WORD on the wire (Inside
-// Macintosh's own convention, cgEmitLdefGlue/cgCallExtPascal's own header
-// comments); int/ptr are a plain LONG. This happens to be numerically
-// IDENTICAL to cgSlotSizeOf for this exact palette (see
-// cgEmitCallbackGlue's own doc comment for why that coincidence matters),
-// but is kept as its own named function: pascal width is a wire-protocol
-// fact, cgSlotSizeOf a Clarus-frame-layout fact, and the two are
-// unrelated in general (cgEmitLdefGlue/cgEmitActionGlue's own `int`-typed
-// targets are the counterexample -- a pascal `short` there marshals into
-// a 4-byte Clarus `int` slot, not a 2-byte one).
+// Macintosh's own convention, cgCallExtPascal's own header comments);
+// int/ptr are a plain LONG. This happens to be numerically IDENTICAL to
+// cgSlotSizeOf for this exact palette (see cgEmitCallbackGlue's own doc
+// comment for why that coincidence matters), but is kept as its own named
+// function: pascal width is a wire-protocol fact, cgSlotSizeOf a
+// Clarus-frame-layout fact, and the two are unrelated in general (see
+// cgEmitCallbackGlue's own doc comment for the `word` counterexample,
+// where a pascal `short` marshals into a 4-byte Clarus slot, not a
+// 2-byte one).
 func cgCbPascalWidth(t: int): int {
     switch irtKind(t) {
     case KBool, KChar, KWord {
@@ -3438,11 +3222,12 @@ func cgCbPascalWidth(t: int): int {
 }
 
 // cgEmitCallbackGlue (Task 8, toolbox-integration Feature C: `callback
-// func`) is the signature-driven generalization of cgEmitLdefGlue/
-// cgEmitActionGlue above: one glue per cg68SynthCbGlue-synthesized
-// "clar_cb_<name>" IRFunc (glueFi), built from bodyFi's REAL declared
-// signature (checkCallbackFunc's palette: bool/char/word/int/ptr) rather
-// than a hand-copied pascal prototype. Per-param/return marshaling table:
+// func`) is the signature-driven glue emitter: one glue per
+// cg68SynthCbGlue-synthesized "clar_cb_<name>" IRFunc (glueFi), built from
+// bodyFi's REAL declared signature (checkCallbackFunc's palette:
+// bool/char/word/int/ptr) rather than a hand-copied pascal prototype --
+// this is what Task 9 migrated the OLD hand-rolled LDEF/scrollbar-action
+// glue emitters (deleted) onto. Per-param/return marshaling table:
 //   kind        pascal    Clarus    pascal read (into D0)     Clarus push        result write
 //               bytes     bytes
 //   bool/char   2         2         CLR.L;MOVE.B (zero-ext,   MOVE.B D0,-(A7)    MOVE.B D0,slot
@@ -3453,37 +3238,30 @@ func cgCbPascalWidth(t: int): int {
 //
 // The pascal/Clarus byte columns are IDENTICAL for bool/char/int/ptr but
 // DIVERGE for word (cgCbPascalWidth vs. cgSlotSizeOf) -- this is the one
-// non-obvious wrinkle a naive generalization of cgEmitLdefGlue/
-// cgEmitActionGlue misses. Those two hand-rolled emitters marshal a
-// pascal `short` into a plain `int`-typed Clarus PARAMETER
-// (rtUiLdefDraw/rtUiScrollbarAction predate `callback func` and were
-// never declared with a real `word` Clarus type), so pushing the
-// sign-extended value as a full .L "just happens" to match their
-// target's own 4-byte int slot. A genuine `callback func` body's own
-// `word`-typed param/return DOES keep real KWord in its own irFuncs/
-// IRLocal entry (lower.cla's DkCallbackFunc doc comment: lowFuncBody's
-// param loop calls `lowResolveType(paramType(p))` directly off the AST,
-// not the checker's own word-folds-to-int `resolveType`) -- but every
-// ORDINARY EXPRESSION referencing that same param inside the body (a
-// bare `n` in `return n`, lowIdent's `ty = lowMustType(e)`) IS the
+// non-obvious wrinkle a naive read of the marshaling misses. A `callback
+// func`'s own `word`-typed param/return DOES keep real KWord in its own
+// irFuncs/IRLocal entry (lower.cla's DkCallbackFunc doc comment:
+// lowFuncBody's param loop calls `lowResolveType(paramType(p))` directly
+// off the AST, not the checker's own word-folds-to-int `resolveType`) --
+// but every ORDINARY EXPRESSION referencing that same param inside the
+// body (a bare `n` in `return n`, lowIdent's `ty = lowMustType(e)`) IS the
 // checker's folded int type, exactly as checkCallbackFunc's own doc
 // comment says ("the checker cannot and need not tell a `word` param
 // from a plain `int` one"). Since cgLoadVar/cgStoreScalarVar/cgPushArgs
 // all key off an EXPRESSION's irExprType, every read/write/re-push of a
 // word param inside ordinary Clarus code already assumes a full 4-byte
-// slot -- so cgSizeOf's own KWord case (this task) now returns 4, not 2,
-// making cgEmitFunc's param-offset reservation (cgSlotSizeOf) match what
-// every consumer already assumes. This glue's own re-push must match
-// THAT 4-byte slot for word (a plain MOVE.L, after the sign-extending
-// EXT.L already widened D0), not the pascal wire's 2-byte width --
+// slot -- so cgSizeOf's own KWord case (Task 8) returns 4, not 2, making
+// cgEmitFunc's param-offset reservation (cgSlotSizeOf) match what every
+// consumer already assumes. This glue's own re-push must match THAT
+// 4-byte slot for word (a plain MOVE.L, after the sign-extending EXT.L
+// already widened D0), not the pascal wire's 2-byte width --
 // cgCbPascalWidth (the wire fact) and cgSlotSizeOf (the Clarus-frame
 // fact) are kept as two separate named tables for exactly this reason.
 //
 // Offsets: params collect in declaration order, then get PASCAL offsets
 // assigned in REVERSE (last-declared nearest the frame, 8(A6) -- same
-// "pushed last lands lowest" shape cgEmitFunc's own worked example and
-// cgEmitLdefGlue/cgEmitActionGlue's own hand-computed offsets already
-// establish), using cgCbPascalWidth. The pascal RESULT slot -- present
+// "pushed last lands lowest" shape cgEmitFunc's own worked example
+// establishes), using cgCbPascalWidth. The pascal RESULT slot -- present
 // only when bodyFi's return isn't void -- sits ABOVE every arg, at
 // 8+pascalTotalBytes: the mirror image of cgCallExtPascal's own
 // caller-side "reserve a result slot FIRST, push args after" protocol (a
@@ -6646,15 +6424,13 @@ func cgExpr(e: int) {
         cgCallExt(e)
     } else if k == ECbAddr {
         // Task 8 (toolbox-integration Feature C): an ECbAddr's own VALUE
-        // is its glue's callable JT-slot address -- reuses
-        // cgCallExtUiGlueAddr wholesale (the SAME "LEA jtDisp(A5),A0;
-        // MOVE.L A0,D0" shape UiLdefEntry/UiActionEntry already resolve
-        // to), just aimed at "clar_cb_<name>" instead of a hand-named UI
-        // glue stub. Only ever reached at a checker-legal decay position
-        // (an extern call's ptr-typed argument, a bare callback name --
-        // lower.cla's lowCallArgs) -- a ptr-typed call argument always
-        // routes through cgExpr, never cgExprAddr (task-7-report's own
-        // probe already confirmed this).
+        // is its glue's callable JT-slot address -- cgCallExtUiGlueAddr's
+        // generic "LEA jtDisp(A5),A0; MOVE.L A0,D0" shape, aimed at
+        // "clar_cb_<name>". Only ever reached at a checker-legal decay
+        // position (an extern call's ptr-typed argument, a bare callback
+        // name -- lower.cla's lowCallArgs) -- a ptr-typed call argument
+        // always routes through cgExpr, never cgExprAddr (task-7-report's
+        // own probe already confirmed this).
         cgCallExtUiGlueAddr("clar_cb_" + poolGet(irCbAddrName(e)))
     } else {
         // EStrConst (str value in a scalar context), ENewRec (constructed
@@ -7493,13 +7269,19 @@ func cgCallExtNatFallback(e: int) {
 //   - UiProgDesc/UiTestScript resolve to a POOL LABEL address (the blob/
 //     events-script bytes cg68k itself poured into the constant pool,
 //     cgEmitPoolsBody) -- cgCallExtUiBlobAddr.
-//   - UiLdefEntry/UiActionEntry resolve to their own glue stub's JT-slot
-//     entry address (LEA jtDisp(A5),A0; MOVE.L A0,D0 -- callable from any
-//     segment, matching cgCallFunc's own cross-segment convention) --
-//     cgCallExtUiGlueAddr.
 // Every other extern (UiCurrentA5/UiTestEmit/UiRtQuit/UiLaunchReal/
-// UiGestalt/... and every non-UI extern in the program) falls through to
-// the ordinary clause dispatch, unchanged.
+// UiGestalt/UiCbAddr/... and every non-UI extern in the program) falls
+// through to the ordinary clause dispatch, unchanged -- Task 9
+// (toolbox-integration Feature C) removed the LDEF/scrollbar-action
+// by-name pair this block used to carry (two zero-arg externs, each
+// resolving to a hand-written glue stub's own JT-slot address via
+// cgCallExtUiGlueAddr): rtUiLdefDraw/rtUiScrollbarAction are `callback
+// func` now, reached through the ECbAddr arm (cgExpr, above) instead,
+// and UiCbAddr (uitable.cla's own decay-only identity extern) is clause-
+// less, falling all the way through to cgCallExtNatFallback like any
+// other. cgCallExtUiGlueAddr itself survives -- the ECbAddr arm still
+// calls it directly (not through this by-name block) to materialize a
+// callback glue's own JT-slot address.
 func cgCallExt(e: int) {
     var xi: int
     var conv: int
@@ -7518,14 +7300,6 @@ func cgCallExt(e: int) {
     }
     if poolGet(nm) == "UiTestScript" {
         cgCallExtUiBlobAddr(cgUiEventsLabel)
-        return
-    }
-    if poolGet(nm) == "UiLdefEntry" {
-        cgCallExtUiGlueAddr("clar_ui_glue_ldef")
-        return
-    }
-    if poolGet(nm) == "UiActionEntry" {
-        cgCallExtUiGlueAddr("clar_ui_glue_action")
         return
     }
     if poolGet(nm) == "UiStrAddr" {
@@ -7592,12 +7366,14 @@ func cgCallExtUiBlobAddr(lbl: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
 }
 
-// cgCallExtUiGlueAddr resolves UiLdefEntry/UiActionEntry to their own
-// glue stub's callable JT-slot address: LEA <jtDisp(slot)>(A5),A0;
-// MOVE.L A0,D0 -- the SAME "jump-table entry is a segment-safe callable
-// address" contract cgJtDisp's own header comment establishes for an
-// ordinary cross-segment BSR, just materialized as a VALUE (handed to the
-// Toolbox as a UPP/ListDefProcPtr) instead of jumped to directly.
+// cgCallExtUiGlueAddr resolves a named glue stub (glueFnName -- Task 9:
+// today only ECbAddr's cgExpr arm calls this, aiming it at a `callback
+// func`'s own "clar_cb_<name>" glue) to that glue's callable JT-slot
+// address: LEA <jtDisp(slot)>(A5),A0; MOVE.L A0,D0 -- the SAME
+// "jump-table entry is a segment-safe callable address" contract
+// cgJtDisp's own header comment establishes for an ordinary cross-segment
+// BSR, just materialized as a VALUE (handed to the Toolbox as a
+// UPP/ListDefProcPtr) instead of jumped to directly.
 func cgCallExtUiGlueAddr(glueFnName: string) {
     var fi: int
 

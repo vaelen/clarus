@@ -140,13 +140,24 @@ external func UiNumToString(theNum: int, theString: ptr) = trap 0xA9EE reg
 // e.g. a fresh `list of` value; this port never observes that case in a
 // golden scenario, but the re-read discipline is unconditional regardless).
 external func UiTableRows(rowsIdx: int): ptr
-// UiLdefEntry: pascal-convention code address the List Manager calls back
-// into for every LDEF message (lInitMsg/lDrawMsg/lHiliteMsg/lCloseMsg).
-// cprint: the C pascal wrapper in rt_ext_mac.inc (gated CLARUS_UIPORT,
-// Task 8's rtUiScrollbarAction/UiActionEntry precedent) unpacks Cell into
-// one packed `int` and calls rtUiLdefDraw (below) by fixed name; native
-// (cg68k) JT-slot glue is Task 12's problem, same as UiActionEntry/UiAeEntry.
-external func UiLdefEntry(): ptr
+// UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`
+// migration): a trivial identity extern, ptr in, same ptr out. Its ONLY
+// job is to satisfy checkCallbackFunc's decay rule (check.cla: a bare
+// `callback func` name is legal ONLY as an extern call's ptr-typed
+// argument) so rtUiMakeLdefStub below can turn rtUiLdefDraw's own glue
+// address into a plain `ptr` value it can int()-convert and poke into the
+// LDEF JMP-stub Handle. Resolves via the ordinary clause-less/nat_
+// fallback on native (nat_UiCbAddr, this file) and rt_ext_UiCbAddr on the
+// Mac C lane (rt_ext_mac.inc) -- no by-name special-casing anywhere,
+// unlike the two OLD zero-arg glue-entry externs this replaces (deleted:
+// each resolved to a HAND-WRITTEN pascal wrapper's own JT-slot address;
+// the pascal marshaling now lives entirely in cprint's generated
+// clar_cb_rtUiLdefDraw wrapper, Task 7/8's `callback func` glue).
+external func UiCbAddr(cb: ptr): ptr
+
+func nat_UiCbAddr(cb: ptr): ptr {
+    return cb
+}
 
 // ================================================================
 // rt_ui.h's RTUI_* constants this slice's code needs (mirrored here, same
@@ -464,16 +475,18 @@ func rtUiTableHeaderH(): int {
 
 // rtUiMakeLdefStub (rt_ui.c:1155-1173): the 6-byte JMP-stub Handle
 // installed as a table's `listDefProc` -- 0x4EF9 (JMP absolute long)
-// followed by UiLdefEntry()'s own flat code address, as two more 16-bit
-// words. Locked forever (HLock, never unlocked): List Manager calls
-// through this Handle as CODE for the table's entire lifetime. Freed
-// explicitly by ui.cla's rtUiTeardownWindow (captured before UiLDispose,
-// which frees the ListRec it lives in) -- List Manager only owns/frees a
-// RESOURCE-backed LDEF (the one UiLNew(theProc=0) initially installs,
-// which this immediately replaces and never touches again), never a
-// caller-supplied Handle like this one. ponytail: no FlushCodeCache -- the
-// 68000 target has no instruction cache to flush (same note the C
-// reference's own comment makes).
+// followed by rtUiLdefDraw's own callback glue address (Task 9,
+// toolbox-integration Feature C: cprint's generated clar_cb_rtUiLdefDraw
+// wrapper -- decayed here via UiCbAddr's identity extern, above), as two
+// more 16-bit words. Locked forever (HLock, never unlocked): List Manager
+// calls through this Handle as CODE for the table's entire lifetime.
+// Freed explicitly by ui.cla's rtUiTeardownWindow (captured before
+// UiLDispose, which frees the ListRec it lives in) -- List Manager only
+// owns/frees a RESOURCE-backed LDEF (the one UiLNew(theProc=0) initially
+// installs, which this immediately replaces and never touches again),
+// never a caller-supplied Handle like this one. ponytail: no
+// FlushCodeCache -- the 68000 target has no instruction cache to flush
+// (same note the C reference's own comment makes).
 func rtUiMakeLdefStub(): ptr {
     var h: ptr
     var mp: ptr
@@ -486,30 +499,37 @@ func rtUiMakeLdefStub(): ptr {
     UiHLock(h)
     mp = UiHandleDeref(h)
     pokew(mp + 0, 0x4EF9)
-    addr = int(UiLdefEntry())
+    addr = int(UiCbAddr(rtUiLdefDraw))
     pokew(mp + 2, rtUiHiWord(addr))
     pokew(mp + 4, rtUiLoWord(addr))
     return h
 }
 
-// rtUiLdefDraw (rt_ui.c:978-1037) -> the LDEF itself, called by the C
-// pascal wrapper (rt_ext_mac.inc, gated CLARUS_UIPORT) via
-// clar_fn_rtUiLdefDraw -- added to cpFuncProto's non-static-linkage
-// allowlist (cprint.cla) so that separate TU can call it by fixed name,
-// same shape as Task 8's rtUiScrollbarAction. `cellPacked` is Cell (a
-// Point) packed the same v-high/h-low convention as every other by-value
-// Point/Cell this port uses; only its v half (the ROW index) is ever read
-// -- lCell.h is always 0 (this table's single LM column spans the whole
-// row, see the file header comment). `dataOffset`/`dataLen` (meaningful
-// only for LM's OWN cell-data storage, which this table never uses) are
-// unused, matching the C reference's own `(void)` casts.
+// rtUiLdefDraw (rt_ui.c:978-1037) -> the LDEF itself. Task 9
+// (toolbox-integration Feature C): a `callback func` -- List Manager
+// calls it through cprint's generated pascal glue (clar_cb_rtUiLdefDraw,
+// CLAR_PASCAL-qualified) on the Mac lane, and through cg68k's own
+// signature-driven glue (cgEmitCallbackGlue) natively; the OLD
+// hand-written rt_ext_ui_ldef pascal wrapper this replaces is gone.
+// `msg`/`dataOffset`/`dataLen` are `word` (not `int`): Lists.h's
+// ListDefProcPtr declares them pascal `short`, and `word` is the one
+// callback-palette type that reproduces a pascal short's sign-extending
+// marshal (cgCbPascalWidth/cpCbWireType) -- `cellPacked` stays `int`
+// (Cell's 4 raw bytes copy through unchanged, no sign-extension, exactly
+// like `rectPtr`/`lh`). `cellPacked` is Cell (a Point) packed the same
+// v-high/h-low convention as every other by-value Point/Cell this port
+// uses; only its v half (the ROW index) is ever read -- lCell.h is always
+// 0 (this table's single LM column spans the whole row, see the file
+// header comment). `dataOffset`/`dataLen` (meaningful only for LM's OWN
+// cell-data storage, which this table never uses) are unused, matching
+// the C reference's own `(void)` casts.
 //
 // The list's own `refCon` (rtUiListRefCon) holds the widget's Table-section
 // blob offset -- everything this LDEF needs (rowsIdx/layout/cols) hangs
 // off that one int, so it never needs to find its owning RtUiWinst/widget
 // index at all (same design the C reference's own header comment states
 // for `wd->extra`).
-func rtUiLdefDraw(msg: int, select: bool, rectPtr: ptr, cellPacked: int, dataOffset: int, dataLen: int, lh: ptr) {
+callback func rtUiLdefDraw(msg: word, select: bool, rectPtr: ptr, cellPacked: int, dataOffset: word, dataLen: word, lh: ptr) {
     var lhMp: ptr
     var tableOff: int
     var rowsIdx: int

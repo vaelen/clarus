@@ -470,52 +470,21 @@ void rt_ext_UiGetFontInfo(void *info) { GetFontInfo((FontInfo *)info); }
 void rt_ext_UiLocalToGlobal(void *pt) { LocalToGlobal((Point *)pt); }
 void rt_ext_UiNumToString(int32_t theNum, void *theString) { NumToString((long)theNum, (unsigned char *)theString); }
 
-/* rt_ext_UiActionEntry: the scrollbar action-proc glue-entry extern,
- * calling the ported action function. Retro68's classic-68k (non-CFM) build defines
- * `NewControlActionUPP(proc)` as the plain identity macro `(proc)` (Controls.h)
- * -- ControlActionUPP IS a raw pascal function pointer on this target, so
- * this wrapper's own address, unwrapped, is a valid actionProc.
- *
- * `weak`: this whole file is compiled into EVERY program's link now (Task
- * 11 -- rt_mac.c always #includes it), but clar_fn_rtUiScrollbarAction
- * only EXISTS in a UI program's own clarusc-emitted C (ui.cla's own
- * splice). A non-UI program (no window/menu/every) never calls
- * rt_ext_UiActionEntry at all -- nothing in its own emitted C references
- * it, since it has no scrollbar-bearing widget -- so the symbol only
- * needs to LINK, never actually run, for that program; `weak` resolves an
- * undefined reference to a harmless null address instead of a link
- * error. A UI program's own strong definition overrides this exactly as
- * rt_ui_test_script's weak default does (below). */
-extern void clar_fn_rtUiScrollbarAction(void *ctrl, int32_t part) __attribute__((weak));
-static pascal void rt_ext_ui_scrollbar_action(ControlHandle ctrl, short part) {
-    clar_fn_rtUiScrollbarAction((void *)ctrl, (int32_t)part);
-}
-void *rt_ext_UiActionEntry(void) { return (void *)NewControlActionUPP(rt_ext_ui_scrollbar_action); }
-
-/* rt_ext_UiLdefEntry (Task 9): the LDEF glue-entry extern. Signature
- * EXACTLY Lists.h's ListDefProcPtr (pascal void (short lMessage, Boolean
- * lSelect, Rect *lRect, Cell lCell, short lDataOffset, short lDataLen,
- * ListHandle lHandle)) -- List Manager calls through the JMP-stub Handle
- * uitable.cla's own rtUiMakeLdefStub builds with this exact signature.
- * Unlike rt_ext_UiActionEntry above, this needs no UPP wrapping: the
- * hand-built JMP stub calls this wrapper's own flat code address directly
- * (rtUiMakeLdefStub pokes it in as a raw `unsigned long`, mirroring
- * rt_ui_make_ldef_stub's own `(unsigned long)rt_ui_ldef` exactly) -- no
- * ControlActionUPP-style indirection is involved anywhere in the LDEF
- * call path. Cell arrives BY VALUE here (matching the real ListDefProcPtr
- * prototype, unlike LGetSelect/LSetSelect's own Cell-by-pointer/by-value
- * split above) -- packed the same v-high/h-low convention as every other
- * by-value Point/Cell this port uses before handing off to the ported
- * rtUiLdefDraw, added to cpFuncProto's non-static-linkage allowlist
- * (cprint.cla) so this cross-TU call resolves. `weak`: same reasoning as
- * clar_fn_rtUiScrollbarAction above -- only exists in a UI program's own
- * emitted C; a non-UI program never calls rt_ext_UiLdefEntry at all. */
-extern void clar_fn_rtUiLdefDraw(int32_t msg, int32_t select, void *rectPtr, int32_t cellPacked, int32_t dataOffset, int32_t dataLen, void *lh) __attribute__((weak));
-static pascal void rt_ext_ui_ldef(short lMessage, Boolean lSelect, Rect *lRect, Cell lCell, short lDataOffset, short lDataLen, ListHandle lHandle) {
-    int32_t packed = ((int32_t)lCell.v << 16) | (uint16_t)lCell.h;
-    clar_fn_rtUiLdefDraw((int32_t)lMessage, (int32_t)lSelect, (void *)lRect, packed, (int32_t)lDataOffset, (int32_t)lDataLen, (void *)lHandle);
-}
-void *rt_ext_UiLdefEntry(void) { return (void *)rt_ext_ui_ldef; }
+/* rt_ext_UiCbAddr (Task 9, toolbox-integration Feature C: `callback func`
+ * migration): the trivial identity extern uitable.cla's own UiCbAddr
+ * declares -- ptr in, same ptr out. Its ONLY job is to satisfy
+ * checkCallbackFunc's decay rule (a bare `callback func` name is legal
+ * only as an extern call's ptr-typed argument) so uitable.cla's own
+ * rtUiMakeLdefStub can turn rtUiLdefDraw's own glue address into a plain
+ * `ptr` value it can int()-convert and poke into the LDEF JMP-stub
+ * Handle. This REPLACES the two hand-written pascal wrappers (and the
+ * two zero-arg externs they backed) that used to live here: the real
+ * pascal marshaling for rtUiScrollbarAction/rtUiLdefDraw now lives entirely in
+ * cprint's generated clar_cb_<name> glue (CLAR_PASCAL-qualified,
+ * emitted per Task 7/8's `callback func` machinery) -- rtUiScrollbarAction
+ * itself decays directly into UiTrackControl's own actionProc argument
+ * (uitext.cla), needing no wrapper here at all. */
+void *rt_ext_UiCbAddr(void *cb) { return cb; }
 
 /* ==================== Task 7 (native-5e UI port) glue ==================== */
 #include <AppleEvents.h>

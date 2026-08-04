@@ -181,7 +181,6 @@ extern int32_t rt_ext_UiHGetState(void *);
 extern void rt_ext_UiHSetState(void *, int32_t);
 extern short rt_ext_UiGetControlMaximum(void *);
 extern void rt_ext_UiSetControlMaximum(void *, short);
-extern void * rt_ext_UiActionEntry(void);
 extern void * rt_ext_UiLNew(void *, void *, int32_t, short, void *, int32_t, int32_t, int32_t, int32_t);
 extern void rt_ext_UiLDispose(void *);
 extern short rt_ext_UiLAddRow(short, short, void *);
@@ -201,7 +200,7 @@ extern void rt_ext_UiDrawText(void *, short, short);
 extern void rt_ext_UiGetFontInfo(void *);
 extern void rt_ext_UiLocalToGlobal(void *);
 extern void rt_ext_UiNumToString(int32_t, void *);
-extern void * rt_ext_UiLdefEntry(void);
+extern void * rt_ext_UiCbAddr(void *);
 extern void * rt_ext_UiStrAddr(const uint8_t *);
 extern void rt_ext_UiTestEmit(void *);
 extern void * rt_ext_UiCurrentA5(void);
@@ -549,6 +548,15 @@ static void cl_free_globals(void) {
 
 }
 
+
+#if defined(__m68k__) || defined(macintosh)
+#define CLAR_PASCAL pascal
+#else
+#define CLAR_PASCAL
+#endif
+static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part);
+static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh);
+
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg);
 static void clar_fn_rtPanic(clar_str_255 cv_msg);
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
@@ -777,7 +785,7 @@ static void clar_fn_rtUiTeMutated(void * cv_inst, int32_t cv_wIdx, int32_t cv_us
 static void clar_fn_rtUiTeRelayout(void * cv_inst, int32_t cv_i);
 static void clar_fn_rtUiTeSetFocus(void * cv_inst, int32_t cv_newIdx);
 static int32_t clar_fn_rtUiTeHit(void * cv_inst, int32_t cv_localPt, void * cv_outIdx);
-void clar_fn_rtUiScrollbarAction(void * cv_ctrl, int32_t cv_part);
+void clar_fn_rtUiScrollbarAction(void * cv_ctrl, short cv_part);
 static void clar_fn_rtUiHandleScrollbarClick(void * cv_inst, void * cv_ctrl, int32_t cv_wIdx, int32_t cv_cpart, int32_t cv_wherePt);
 static void clar_fn_rtUiTeIdleFront(void);
 static void clar_fn_rtUiStdEditPaste(void * cv_inst, void * cv_te);
@@ -794,7 +802,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
 static int32_t clar_fn_rtUiTableRowH(void);
 static int32_t clar_fn_rtUiTableHeaderH(void);
 static void * clar_fn_rtUiMakeLdefStub(void);
-void clar_fn_rtUiLdefDraw(int32_t cv_msg, int32_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, int32_t cv_dataOffset, int32_t cv_dataLen, void * cv_lh);
+void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh);
 static void clar_fn_rtUiTableRelayout(void * cv_inst, int32_t cv_i);
 static int32_t clar_fn_rtUiTableGetSelected(void * cv_lh);
 static void clar_fn_rtUiTableSelectExclusive(void * cv_lh, int32_t cv_row);
@@ -5501,7 +5509,7 @@ static int32_t clar_fn_rtUiTeHit(void * cv_inst, int32_t cv_localPt, void * cv_o
     return 0;
 }
 
-void clar_fn_rtUiScrollbarAction(void * cv_ctrl, int32_t cv_part) {
+void clar_fn_rtUiScrollbarAction(void * cv_ctrl, short cv_part) {
     void * cv_ctrlMp;
     cv_ctrlMp = 0;
     void * cv_wp;
@@ -5649,7 +5657,7 @@ static void clar_fn_rtUiHandleScrollbarClick(void * cv_inst, void * cv_ctrl, int
             }
         }
     } else {
-        rt_ext_UiTrackControl(cv_ctrl, cv_wherePt, rt_ext_UiActionEntry());
+        rt_ext_UiTrackControl(cv_ctrl, cv_wherePt, ((void*)&clar_cb_rtUiScrollbarAction));
     }
 }
 
@@ -5951,14 +5959,14 @@ static void * clar_fn_rtUiMakeLdefStub(void) {
     rt_ext_UiHLock(cv_h);
     cv_mp = rt_ext_UiHandleDeref(cv_h);
     rt_pokew((void *)((char *)(cv_mp) + (0)), 20217);
-    cv_addr = ((int32_t)(intptr_t)(rt_ext_UiLdefEntry()));
+    cv_addr = ((int32_t)(intptr_t)(rt_ext_UiCbAddr(((void*)&clar_cb_rtUiLdefDraw))));
     rt_pokew((void *)((char *)(cv_mp) + (2)), clar_fn_rtUiHiWord(cv_addr));
     rt_pokew((void *)((char *)(cv_mp) + (4)), clar_fn_rtUiLoWord(cv_addr));
     return cv_h;
     return 0;
 }
 
-void clar_fn_rtUiLdefDraw(int32_t cv_msg, int32_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, int32_t cv_dataOffset, int32_t cv_dataLen, void * cv_lh) {
+void clar_fn_rtUiLdefDraw(short cv_msg, int32_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh) {
     void * cv_lhMp;
     cv_lhMp = 0;
     int32_t cv_tableOff;
@@ -8400,6 +8408,8 @@ void clar_fn_clar_ui_fire_startempty(void) {
     clar_fn_handler_App_startEmpty();
 }
 
+static CLAR_PASCAL void clar_cb_rtUiScrollbarAction(void * cv_ctrl, short cv_part) { clar_fn_rtUiScrollbarAction(cv_ctrl, cv_part); }
+static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, void * cv_rectPtr, int32_t cv_cellPacked, short cv_dataOffset, short cv_dataLen, void * cv_lh) { clar_fn_rtUiLdefDraw(cv_msg, (int32_t)cv_select, cv_rectPtr, cv_cellPacked, cv_dataOffset, cv_dataLen, cv_lh); }
 int main(int argc, char **argv) {
     clar_init_globals();
     rt_register_cleanup(cl_free_globals);

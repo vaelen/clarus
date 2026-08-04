@@ -5,7 +5,9 @@
 // B). Port target: rt_ui.c:1634-2114 (the whole TE section: widest-line,
 // scroll-sync, clamp, field-cap, mutation funnel, relayout, focus, hit,
 // scrollbar action+click, idle), plus the scrollbar action-proc glue
-// (UiActionEntry). Creation (rt_ui.c:1211-1247) lives in uiwidgets.cla's
+// (rtUiScrollbarAction, a `callback func` decayed directly into
+// UiTrackControl's own actionProc argument -- Task 9). Creation
+// (rt_ui.c:1211-1247) lives in uiwidgets.cla's
 // rtUiMakeWidgets, alongside the other widget kinds; layout dispatch lives
 // in uiwidgets.cla's rtUiLayout; property get/set (rt_ui.c:5364-5454) lives
 // in uiwidgets.cla's rtUiWidget{Get,Set}{Str,Text}; std-edit dispatch
@@ -168,13 +170,6 @@ external func UiHGetState(h: ptr): int = trap 0xA069 reg
 external func UiHSetState(h: ptr, flag: int) = trap 0xA06A reg
 external func UiGetControlMaximum(theControl: ptr): word = trap 0xA962
 external func UiSetControlMaximum(theControl: ptr, newMaximum: word) = trap 0xA965
-// UiActionEntry (the plan's reverse-waist glue-entry table): pascal-
-// convention code address the Toolbox calls back into while tracking a
-// scrollbar's arrow/page parts (TrackControl's actionProc). cprint: a C
-// `pascal` wrapper in rt_ext_mac.inc calling rtUiScrollbarAction (below);
-// native glue (a JT-slot stub) is Task 12's problem, same as
-// UiLdefEntry/UiAeEntry.
-external func UiActionEntry(): ptr
 
 // ================================================================
 // rt_ui_te_widest_line (rt_ui.c:1660-1715) -> rtUiTeWidestLine. Widest
@@ -625,10 +620,18 @@ func rtUiTeHit(inst: ptr, localPt: int, outIdx: ptr): bool {
 // Continuous scroll-button/page-button tracking (TrackControl's
 // actionProc, called repeatedly while the mouse stays down over an
 // arrow/page part -- never called for inThumb, which TrackControl tracks
-// live on its own). Reached from the Toolbox via UiActionEntry's C pascal
-// wrapper (rt_ext_mac.inc), NOT called directly by any other Clarus
-// function in this port.
-func rtUiScrollbarAction(ctrl: ptr, part: int) {
+// live on its own). Task 9 (toolbox-integration Feature C): a `callback
+// func` -- decayed directly as UiTrackControl's own actionProc argument
+// below (rtUiHandleScrollbarClick), reached from the Toolbox through
+// cprint's generated pascal glue (clar_cb_rtUiScrollbarAction) on the Mac
+// lane and cg68k's own signature-driven glue natively; the OLD
+// hand-written rt_ext_ui_scrollbar_action pascal wrapper this replaces is
+// gone. `part` is `word` (not `int`): ControlActionUPP declares it pascal
+// `short`, and `word` is the one callback-palette type that reproduces a
+// pascal short's sign-extending marshal (cgCbPascalWidth/cpCbWireType).
+// Also called DIRECTLY (an ordinary Clarus call, not a decay) by
+// rtUiHandleScrollbarClick's own scripted-click branch below.
+callback func rtUiScrollbarAction(ctrl: ptr, part: word) {
     var ctrlMp: ptr
     var wp: ptr
     var inst: ptr
@@ -755,7 +758,7 @@ func rtUiHandleScrollbarClick(inst: ptr, ctrl: ptr, wIdx: int, cpart: int, where
             }
         }
     } else {
-        UiTrackControl(ctrl, wherePt, UiActionEntry())
+        UiTrackControl(ctrl, wherePt, rtUiScrollbarAction)
     }
 }
 
