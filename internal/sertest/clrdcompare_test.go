@@ -43,7 +43,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"clarus/internal/build"
+	"clarus/internal/claruscboot"
 )
 
 // clrdFixtures maps each save-capable sertest fixture (relative to
@@ -70,9 +70,9 @@ func buildAndRunFixture(t *testing.T, exe, root, fixture string, datFiles []stri
 	emitFixture(t, exe, outC, filepath.Join(root, "testdata", "sertest", fixture))
 
 	binExe := filepath.Join(buildDir, "prog")
-	ccCmd := exec.Command(build.CCPath(),
-		"-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"),
+	ccCmd := exec.Command(claruscboot.CCPath(),
+		"-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"),
 		"-o", binExe)
 	if out, err := ccCmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)

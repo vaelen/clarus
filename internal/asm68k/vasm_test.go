@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"clarus/internal/build"
 	"clarus/internal/claruscboot"
 )
 
@@ -126,8 +125,8 @@ func TestVasmRoundTrip(t *testing.T) {
 	if out, err := emit.CombinedOutput(); err != nil {
 		t.Fatalf("clarusc emit exercise.cla: %v\n%s", err, out)
 	}
-	rtInc := filepath.Join(root, "internal", "build", "rt")
-	ccCmd := exec.Command(build.CCPath(), "-O1", "-I", rtInc, "-o", exe,
+	rtInc := filepath.Join(root, "runtime", "host")
+	ccCmd := exec.Command(claruscboot.CCPath(), "-O1", "-I", rtInc, "-o", exe,
 		exerC, filepath.Join(rtInc, "rt.c"))
 	if out, err := ccCmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc exercise.c: %v\n%s", err, out)

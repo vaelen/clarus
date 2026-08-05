@@ -60,7 +60,7 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 
 // runBehaviorFixture emits claPath's C with the snapshot-bootstrapped
 // clarusc, compiles it with `cc` against the on-disk runtime sources
-// (internal/build/rt/rt.c -- not the Go-embedded build.RuntimeC() copies),
+// (runtime/host/rt.c -- not a Go-embedded copy),
 // and runs the resulting binary with argv. cwd is a fresh temp dir per run
 // (fixtures like files.cla touch the filesystem and must not race or
 // litter the source tree, same discipline internal/build/golden_test.go's
@@ -90,8 +90,8 @@ func runBehaviorFixture(t *testing.T, claruscExe, root, claPath string, argv []s
 	}
 
 	bin := filepath.Join(work, "prog")
-	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"), "-o", bin)
+	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"), "-o", bin)
 	if out, err := cc.CombinedOutput(); err != nil {
 		t.Fatalf("cc compile emitted C for %s: %v\n%s", claPath, err, out)
 	}

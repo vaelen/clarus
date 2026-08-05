@@ -8,7 +8,7 @@
 // clarusc via the Go compiler (same buildClarusc pattern as
 // internal/emitui/emitui_test.go and internal/selfhost's
 // differential_test.go), emits testdata/sertest/roundtrip.cla, compiles the
-// result with the HOST cc against internal/build/rt/rt.c, and actually RUNS
+// result with the HOST cc against runtime/host/rt.c, and actually RUNS
 // it in a temp cwd -- proving the emitted rt_field_desc/rt_layout_desc
 // tables agree with rt_ser.inc at runtime, not just at compile time.
 package sertest
@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"clarus/internal/build"
 	"clarus/internal/claruscboot"
 )
 
@@ -76,9 +75,9 @@ func TestRoundtrip(t *testing.T) {
 	emitFixture(t, exe, outC, filepath.Join(root, "testdata", "sertest", "roundtrip.cla"))
 
 	binExe := filepath.Join(buildDir, "roundtrip")
-	ccCmd := exec.Command(build.CCPath(),
-		"-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"),
+	ccCmd := exec.Command(claruscboot.CCPath(),
+		"-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"),
 		"-o", binExe)
 	if out, err := ccCmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)

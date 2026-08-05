@@ -43,8 +43,8 @@ func buildModuleDriver(t *testing.T, root, claPath string) string {
 	}
 
 	bin := filepath.Join(work, "drv")
-	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"), "-o", bin)
+	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"), "-o", bin)
 	if out, err := cc.CombinedOutput(); err != nil {
 		t.Fatalf("cc compile emitted C for %s: %v\n%s", claPath, err, out)
 	}

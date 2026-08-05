@@ -33,9 +33,16 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-
-	"clarus/internal/build"
 )
+
+// CCPath returns the C compiler to invoke for host builds: $CC if set,
+// otherwise "cc". (Moved from the dissolved internal/build package.)
+func CCPath() string {
+	if c := os.Getenv("CC"); c != "" {
+		return c
+	}
+	return "cc"
+}
 
 var (
 	snapOnce sync.Once
@@ -75,8 +82,8 @@ func CurrentExe(t *testing.T) string {
 
 func requireCC(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath(build.CCPath()); err != nil {
-		t.Skipf("%s not found on PATH, skipping clarusc bootstrap: %v", build.CCPath(), err)
+	if _, err := exec.LookPath(CCPath()); err != nil {
+		t.Skipf("%s not found on PATH, skipping clarusc bootstrap: %v", CCPath(), err)
 	}
 }
 
@@ -102,7 +109,7 @@ func repoRoot() (string, error) {
 // plus the whole C runtime directory (rt.c #includes the .inc files).
 func snapshotInputs(root string) ([]string, error) {
 	inputs := []string{filepath.Join(root, "clarusc", "clarusc.c")}
-	rtFiles, err := filepath.Glob(filepath.Join(root, "internal", "build", "rt", "*"))
+	rtFiles, err := filepath.Glob(filepath.Join(root, "runtime", "host", "*"))
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +145,7 @@ func stampFor(inputs []string) (string, error) {
 	sorted := append([]string(nil), inputs...)
 	sort.Strings(sorted)
 	var b strings.Builder
-	fmt.Fprintf(&b, "cc %s\n", build.CCPath())
+	fmt.Fprintf(&b, "cc %s\n", CCPath())
 	for _, p := range sorted {
 		fi, err := os.Stat(p)
 		if err != nil {
@@ -207,8 +214,8 @@ func ensure(name string, inputsFn func(root string) ([]string, error),
 }
 
 func ccSnapshot(root, outExe, cPath string) error {
-	rtDir := filepath.Join(root, "internal", "build", "rt")
-	cmd := exec.Command(build.CCPath(), "-O1", "-I", rtDir, "-o", outExe,
+	rtDir := filepath.Join(root, "runtime", "host")
+	cmd := exec.Command(CCPath(), "-O1", "-I", rtDir, "-o", outExe,
 		cPath, filepath.Join(rtDir, "rt.c"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("claruscboot: cc %s: %v\n%s", cPath, err, out)

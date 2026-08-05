@@ -1,5 +1,5 @@
 // internal/build/sertest_c_test.go
-package build
+package hostrt
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestSerC compiles internal/build/rt/rt_ser_test.c against rt/rt.c (the
+// TestSerC compiles runtime/host/rt_ser_test.c against runtime/host/rt.c (the
 // host runtime) and runs the resulting binary in a temp cwd, so its
 // relative-path file.save/load round trips (rec.dat, list.dat, map.dat,
 // the corrupted-file failure-mode fixtures) don't touch the repo. Exercises
@@ -28,7 +28,7 @@ var serLiveRE = regexp.MustCompile(`##CLARUS-MEM## live=(\d+)`)
 func TestSerC(t *testing.T) {
 	dir := t.TempDir()
 	exe := dir + "/sertest"
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", "rt/rt_ser_test.c", "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", "../../runtime/host/rt_ser_test.c", "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}

@@ -1,5 +1,5 @@
-// internal/build/rtsmoke_test.go
-package build
+// internal/hostrt/rtsmoke_test.go
+package hostrt
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"clarus/internal/claruscboot"
 )
 
 const smokeMain = `
@@ -102,7 +104,7 @@ func TestRuntimeSmokeCollections(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -115,7 +117,7 @@ func TestRuntimeSmokeCollections(t *testing.T) {
 	}
 }
 
-func cc() string { return CCPath() }
+func cc() string { return claruscboot.CCPath() }
 
 const smokeSliceIndexAppendMain = `
 #include "rt.h"
@@ -191,7 +193,7 @@ func TestRuntimeSmokeSliceIndexAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -223,7 +225,7 @@ int main(void) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -261,7 +263,7 @@ int main(void) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -297,7 +299,7 @@ func TestRuntimeSmokeLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -343,7 +345,7 @@ func TestRuntimeSmokeArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -377,7 +379,7 @@ int main(void) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}
@@ -401,7 +403,7 @@ func TestRuntimeSmokeStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(dir, "smoke")
-	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "rt", main, "rt/rt.c", "-o", exe)
+	cmd := exec.Command(cc(), "-std=c99", "-Wall", "-Werror", "-I", "../../runtime/host", main, "../../runtime/host/rt.c", "-o", exe)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cc: %v\n%s", err, out)
 	}

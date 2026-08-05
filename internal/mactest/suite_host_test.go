@@ -28,7 +28,7 @@ func hostOracleClarusc(t *testing.T) string {
 // convention, immaterial to the emitted C since clarusc's lowering
 // pre-pass makes cross-file declaration order otherwise immaterial) and
 // compiles it with `cc`
-// against the on-disk runtime sources (internal/build/rt/rt.c) -- the
+// against the on-disk runtime sources (runtime/host/rt.c) -- the
 // build-mac.sh step-1 pipeline, run straight to a host binary instead of
 // a Mac one. Shared by BuildCoreCLIHost here and
 // runNativeHostCompareSeglimit's host half in native_test.go (via the
@@ -48,8 +48,8 @@ func buildHostFromFixtures(t *testing.T, claPaths []string, binName string) stri
 	}
 
 	exe := filepath.Join(work, binName)
-	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"), "-o", exe)
+	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"), "-o", exe)
 	if out, err := cc.CombinedOutput(); err != nil {
 		t.Fatalf("cc compile emitted C for %v: %v\n%s", claPaths, err, out)
 	}

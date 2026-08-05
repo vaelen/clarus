@@ -127,9 +127,9 @@ func TestSnapshotFixedPoint(t *testing.T) {
 The committed snapshot must always match what clarusc currently emits for
 its own source. To regenerate it (Go-free, from the old snapshot):
 
-  cc -O1 -I internal/build/rt -o /tmp/boot clarusc/clarusc.c internal/build/rt/rt.c
+  cc -O1 -I runtime/host -o /tmp/boot clarusc/clarusc.c runtime/host/rt.c
   /tmp/boot emit --rtdir runtime/clarus/ -o /tmp/cur.c clarusc/main.cla
-  cc -O1 -I internal/build/rt -o /tmp/cur /tmp/cur.c internal/build/rt/rt.c
+  cc -O1 -I runtime/host -o /tmp/cur /tmp/cur.c runtime/host/rt.c
   /tmp/cur emit --rtdir runtime/clarus/ -o clarusc/clarusc.c clarusc/main.cla
 
 Then commit the updated clarusc/clarusc.c.

@@ -63,10 +63,10 @@ func bootstrapClarusc(t *testing.T) string {
 			return
 		}
 		exe := filepath.Join(dir, "clarusc")
-		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
+		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
 			"-o", exe,
 			filepath.Join(root, "clarusc", "clarusc.c"),
-			filepath.Join(root, "internal", "build", "rt", "rt.c"))
+			filepath.Join(root, "runtime", "host", "rt.c"))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			claruscErr = fmt.Errorf("bootstrap clarusc from snapshot: %v\n%s", err, out)
 			return
@@ -117,8 +117,8 @@ func buildCoreCLI(t *testing.T) string {
 	}
 
 	bin := filepath.Join(work, "core_cli")
-	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "internal", "build", "rt"),
-		outC, filepath.Join(root, "internal", "build", "rt", "rt.c"), "-o", bin)
+	cc := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
+		outC, filepath.Join(root, "runtime", "host", "rt.c"), "-o", bin)
 	if out, err := cc.CombinedOutput(); err != nil {
 		t.Fatalf("cc compile core CLI: %v\n%s", err, out)
 	}

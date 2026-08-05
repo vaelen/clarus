@@ -127,7 +127,7 @@ func TestEmitUiGoldens(t *testing.T) {
 			// step had never actually compiled anything since Task 4).
 			obj := filepath.Join(t.TempDir(), "out.o")
 			ccCmd := exec.Command(gcc, "-x", "c", "-c",
-				"-I"+filepath.Join(root, "internal", "build", "rt"),
+				"-I"+filepath.Join(root, "runtime", "host"),
 				"-I"+filepath.Join(root, "runtime", "mac"),
 				golden, "-o", obj)
 			var ccOut bytes.Buffer
@@ -329,7 +329,7 @@ func TestUiBlobGolden(t *testing.T) {
 	gcc := m68kGCC(t)
 	obj := filepath.Join(t.TempDir(), "out.o")
 	ccCmd := exec.Command(gcc, "-x", "c", "-c",
-		"-I"+filepath.Join(root, "internal", "build", "rt"),
+		"-I"+filepath.Join(root, "runtime", "host"),
 		"-I"+filepath.Join(root, "runtime", "mac"),
 		outC, "-o", obj)
 	var ccOut bytes.Buffer

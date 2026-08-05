@@ -7,7 +7,7 @@
 // clarusc via the Go compiler (same buildClarusc pattern as
 // internal/sertest/sertest_test.go), emits each testdata/lowlevel/*.cla
 // fixture to C, compiles the result with the HOST cc against
-// internal/build/rt/rt.c, and actually RUNS it under the strict/paranoid
+// runtime/host/rt.c, and actually RUNS it under the strict/paranoid
 // leak gate (CLARUS_MEM_STRICT/CLARUS_MEM_PARANOID) -- proving an
 // `external func` call really reaches the instrumented rt_ext_* host shim
 // (rt_mem_host.inc's ledger), not just that clarusc-emitted C compiles.
@@ -25,7 +25,6 @@ import (
 	"strings"
 	"testing"
 
-	"clarus/internal/build"
 	"clarus/internal/claruscboot"
 )
 
@@ -89,7 +88,7 @@ func checkMemReport(t *testing.T, reportPath string) {
 func TestLowlevel(t *testing.T) {
 	root := repoRoot(t)
 	exe := buildClarusc(t)
-	rtDir := filepath.Join(root, "internal", "build", "rt")
+	rtDir := filepath.Join(root, "runtime", "host")
 
 	files, err := filepath.Glob(filepath.Join(root, "testdata", "lowlevel", "*.cla"))
 	if err != nil {
@@ -112,7 +111,7 @@ func TestLowlevel(t *testing.T) {
 			emitFixture(t, exe, outC, fixture)
 
 			bin := filepath.Join(buildDir, "prog")
-			ccCmd := exec.Command(build.CCPath(),
+			ccCmd := exec.Command(claruscboot.CCPath(),
 				"-std=c99", "-O1",
 				"-I", rtDir,
 				outC, filepath.Join(rtDir, "rt.c"),
