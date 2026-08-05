@@ -2018,16 +2018,16 @@ static clar_rec_FuncSig clar_new_FuncSig(void) {
 typedef struct {
     int32_t cv_nameIdx;
     int32_t cv_typeIdx;
-    int32_t cv_isFunc;
+    uint8_t cv_isFunc;
     int32_t cv_sigIdx;
-    int32_t cv_isType;
-    int32_t cv_isConst;
-    int32_t cv_constIsStr;
+    uint8_t cv_isType;
+    uint8_t cv_isConst;
+    uint8_t cv_constIsStr;
     int32_t cv_constInt;
     int32_t cv_constStrIdx;
-    int32_t cv_isMenu;
-    int32_t cv_isExtern;
-    int32_t cv_isCallback;
+    uint8_t cv_isMenu;
+    uint8_t cv_isExtern;
+    uint8_t cv_isCallback;
 } clar_rec_Symbol;
 static clar_rec_Symbol clar_new_Symbol(void) {
     clar_rec_Symbol r;
@@ -2071,9 +2071,9 @@ static clar_rec_FieldInfo clar_new_FieldInfo(void) {
 }
 
 typedef struct {
-    int32_t cv_ok;
-    int32_t cv_badStrLen;
-    int32_t cv_badPadLen;
+    uint8_t cv_ok;
+    uint8_t cv_badStrLen;
+    uint8_t cv_badPadLen;
     int32_t cv_readType;
     int32_t cv_size;
     int32_t cv_align;
@@ -2091,8 +2091,8 @@ static clar_rec_XRecFieldCheck clar_new_XRecFieldCheck(void) {
 
 typedef struct {
     int32_t cv_t;
-    int32_t cv_anyCharArray;
-    int32_t cv_anyRecordish;
+    uint8_t cv_anyCharArray;
+    uint8_t cv_anyRecordish;
     int32_t cv_kindCount;
     int32_t cv_kind1;
     int32_t cv_kind2;
@@ -2126,7 +2126,7 @@ static clar_rec_MethodSig clar_new_MethodSig(void) {
 }
 
 typedef struct {
-    int32_t cv_isStr;
+    uint8_t cv_isStr;
     int32_t cv_intVal;
     int32_t cv_strIdx;
 } clar_rec_CVal;
@@ -2219,7 +2219,7 @@ typedef struct {
     int32_t cv_b;
     int32_t cv_name;
     int32_t cv_intVal;
-    int32_t cv_global;
+    uint8_t cv_global;
     int32_t cv_convOp;
     int32_t cv_ty;
     int32_t cv_next;
@@ -2272,7 +2272,7 @@ typedef struct {
     int32_t cv_name;
     int32_t cv_t;
     int32_t cv_init;
-    int32_t cv_initBirth;
+    uint8_t cv_initBirth;
 } clar_rec_IRGlobal;
 static clar_rec_IRGlobal clar_new_IRGlobal(void) {
     clar_rec_IRGlobal r;
@@ -2307,8 +2307,8 @@ static clar_rec_IRFieldSlot clar_new_IRFieldSlot(void) {
 typedef struct {
     int32_t cv_name;
     int32_t cv_fieldsHead;
-    int32_t cv_isOverlay;
-    int32_t cv_isXRec;
+    uint8_t cv_isOverlay;
+    uint8_t cv_isXRec;
 } clar_rec_IRRecordLayout;
 static clar_rec_IRRecordLayout clar_new_IRRecordLayout(void) {
     clar_rec_IRRecordLayout r;
@@ -2351,16 +2351,16 @@ typedef struct {
     int32_t cv_captionIdx;
     int32_t cv_atKind;
     int32_t cv_x;
-    int32_t cv_yIsBottom;
+    uint8_t cv_yIsBottom;
     int32_t cv_y;
-    int32_t cv_widthIsFill;
+    uint8_t cv_widthIsFill;
     int32_t cv_width;
-    int32_t cv_fillBoth;
-    int32_t cv_isDefault;
-    int32_t cv_isCancel;
-    int32_t cv_isBuffered;
-    int32_t cv_isScrollV;
-    int32_t cv_isScrollH;
+    uint8_t cv_fillBoth;
+    uint8_t cv_isDefault;
+    uint8_t cv_isCancel;
+    uint8_t cv_isBuffered;
+    uint8_t cv_isScrollV;
+    uint8_t cv_isScrollH;
     int32_t cv_bindsIdx;
     int32_t cv_rowsGlobalIdx;
     int32_t cv_columnsHead;
@@ -2394,7 +2394,7 @@ typedef struct {
     int32_t cv_headerIdx;
     int32_t cv_fieldIndex;
     int32_t cv_widthPx;
-    int32_t cv_widthFill;
+    uint8_t cv_widthFill;
     int32_t cv_next;
 } clar_rec_IRColumnDesc;
 static clar_rec_IRColumnDesc clar_new_IRColumnDesc(void) {
@@ -2425,7 +2425,7 @@ typedef struct {
     int32_t cv_titleIdx;
     int32_t cv_w;
     int32_t cv_h;
-    int32_t cv_resizable;
+    uint8_t cv_resizable;
     int32_t cv_minW;
     int32_t cv_minH;
     int32_t cv_widgetsHead;
@@ -2453,7 +2453,7 @@ typedef struct {
     int32_t cv_nameIdx;
     int32_t cv_captionIdx;
     int32_t cv_keyIdx;
-    int32_t cv_isSeparator;
+    uint8_t cv_isSeparator;
     int32_t cv_next;
 } clar_rec_IRMenuItemDesc;
 static clar_rec_IRMenuItemDesc clar_new_IRMenuItemDesc(void) {
@@ -2470,7 +2470,7 @@ typedef struct {
     int32_t cv_nameIdx;
     int32_t cv_titleIdx;
     int32_t cv_itemsHead;
-    int32_t cv_isStandardEdit;
+    uint8_t cv_isStandardEdit;
 } clar_rec_IRMenuDesc;
 static clar_rec_IRMenuDesc clar_new_IRMenuDesc(void) {
     clar_rec_IRMenuDesc r;
@@ -4744,6 +4744,8 @@ static void clar_fn_fpHandoff(rt_text * cv_cexpr);
 static void clar_fn_fpEmitTmpRelease(int32_t cv_i);
 static void clar_fn_fpFreeStmtTmps(void);
 static clar_str_255 clar_fn_cpCTypeName(int32_t cv_t);
+static clar_str_255 clar_fn_cpRecFieldCType(int32_t cv_t);
+static clar_str_255 clar_fn_cpArrElemCTypeName(int32_t cv_t);
 static int32_t clar_fn_cpCSizeOfField(int32_t cv_t);
 static int32_t clar_fn_cpCAlignOfField(int32_t cv_t);
 static int32_t clar_fn_cpCFieldOffset(int32_t cv_recName, int32_t cv_fieldName);
@@ -30648,11 +30650,27 @@ static clar_str_255 clar_fn_cpCTypeName(int32_t cv_t) {
     return (clar_str_255){0};
 }
 
+static clar_str_255 clar_fn_cpRecFieldCType(int32_t cv_t) {
+    if (clar_fn_irtKind(cv_t) == 2) {
+        return clar_lit_1040;
+    }
+    return clar_fn_cpCType(cv_t);
+    return (clar_str_255){0};
+}
+
+static clar_str_255 clar_fn_cpArrElemCTypeName(int32_t cv_t) {
+    if (clar_fn_irtKind(cv_t) == 2) {
+        return clar_lit_1040;
+    }
+    return clar_fn_cpCTypeName(cv_t);
+    return (clar_str_255){0};
+}
+
 static int32_t clar_fn_cpCSizeOfField(int32_t cv_t) {
     int32_t cv_k;
     cv_k = 0;
     cv_k = clar_fn_irtKind(cv_t);
-    if (cv_k == 4) {
+    if ((cv_k == 4) || (cv_k == 2)) {
         return 1;
     }
     if (cv_k == 5) {
@@ -30666,7 +30684,7 @@ static int32_t clar_fn_cpCAlignOfField(int32_t cv_t) {
     int32_t cv_k;
     cv_k = 0;
     cv_k = clar_fn_irtKind(cv_t);
-    if ((cv_k == 4) || (cv_k == 5)) {
+    if (((cv_k == 4) || (cv_k == 2)) || (cv_k == 5)) {
         return 1;
     }
     return 2;
@@ -30881,7 +30899,7 @@ static clar_str_255 clar_fn_cpEnsureArr(int32_t cv_t) {
     clar_fn_rtMapSet((void*)cv_cpArrEmitted, (void*)(const uint8_t*)&(cv_name), (void*)&(t2));
     clar_fn_cpEnsureType(clar_fn_irtElem(cv_t));
     clar_str_255 t3;
-    t3 = clar_fn_cpCTypeName(clar_fn_irtElem(cv_t));
+    t3 = clar_fn_cpArrElemCTypeName(clar_fn_irtElem(cv_t));
     clar_str_255 t4;
     clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(clar_lit_1048), (void*)(const uint8_t*)&(t3));
     clar_str_255 t5;
@@ -44002,7 +44020,7 @@ static void clar_fn_cpEmitRecords(void) {
         while (1) {
             if (!((cv_f != (-(1))))) break;
             clar_str_255 t5;
-            t5 = clar_fn_cpCType(clar_fn_irFieldSlotType(cv_f));
+            t5 = clar_fn_cpRecFieldCType(clar_fn_irFieldSlotType(cv_f));
             clar_str_255 t6;
             clar_fn_rtStrConcat((void*)&t6, (void*)(const uint8_t*)&(clar_lit_1006), (void*)(const uint8_t*)&(t5));
             clar_str_255 t7;
@@ -46177,7 +46195,10 @@ static int32_t clar_fn_cgSlotSizeOf(int32_t cv_t) {
 }
 
 static int32_t clar_fn_cgArrElemStride(int32_t cv_elemT) {
-    if (clar_fn_irtKind(cv_elemT) == 4) {
+    int32_t cv_k;
+    cv_k = 0;
+    cv_k = clar_fn_irtKind(cv_elemT);
+    if ((cv_k == 4) || (cv_k == 2)) {
         return 1;
     }
     return clar_fn_cgSlotSizeOf(cv_elemT);
@@ -46189,7 +46210,7 @@ static int32_t clar_fn_cgRecFieldSizeOf(int32_t cv_t) {
     cv_k = 0;
     cv_k = clar_fn_irtKind(cv_t);
     if ((cv_k == 2) || (cv_k == 4)) {
-        return 4;
+        return 1;
     }
     return clar_fn_cgSlotSizeOf(cv_t);
     return 0;
@@ -46200,7 +46221,7 @@ static int32_t clar_fn_cgRecFieldAlignOf(int32_t cv_t) {
     cv_k = 0;
     cv_k = clar_fn_irtKind(cv_t);
     if ((cv_k == 2) || (cv_k == 4)) {
-        return 2;
+        return 1;
     }
     return clar_fn_cgAlignOf(cv_t);
     return 0;
@@ -46851,8 +46872,6 @@ static void clar_fn_cgRecordCtorAt(int32_t cv_reg, int32_t cv_off, int32_t cv_re
     cv_cur = 0;
     int32_t cv_ft;
     cv_ft = 0;
-    int32_t cv_ftk;
-    cv_ftk = 0;
     cv_ri = clar_fn_cgFindRecordByName(cv_recNameIdx);
     if (cv_ri == (-(1))) {
         clar_str_255 t1;
@@ -46870,10 +46889,6 @@ static void clar_fn_cgRecordCtorAt(int32_t cv_reg, int32_t cv_off, int32_t cv_re
         cv_ft = clar_fn_irFieldSlotType(cv_f);
         cv_cur = clar_fn_cgAlignUp(cv_cur, clar_fn_cgRecFieldAlignOf(cv_ft));
         clar_fn_cgWalkRestoreBase(cv_reg);
-        cv_ftk = clar_fn_irtKind(cv_ft);
-        if ((cv_ftk == 2) || (cv_ftk == 4)) {
-            clar_fn_a68Emit(35, 4, 0, 0, 0, 6, cv_reg, (cv_off + cv_cur));
-        }
         clar_fn_cgDefaultInitAt(cv_reg, (cv_off + cv_cur), cv_ft, clar_fn_irFieldSlotDefault(cv_f), clar_fn_irFieldSlotDefaultStr(cv_f));
         cv_cur = (cv_cur + clar_fn_cgRecFieldSizeOf(cv_ft));
         cv_f = clar_fn_irFieldSlotNext(cv_f);
