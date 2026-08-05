@@ -105,3 +105,185 @@ extend PatBoard {
         Canvas.rect(88, 32, 16, 16)
     }
 }
+
+// ButtonsPanel (Task 5, ui-scenario-retirement batch): byte-safe
+// transcription of the retired testdata/ui/buttons.cla's Panel window --
+// same widgets, same `Go.click`/`key` handler bodies -- plus
+// INSTRUMENTATION-ONLY additions (the global `tbButtonsLog` string this
+// file's tail declares below, appended to from here and from the
+// closeRequest/closed handlers cases_buttons.cla's own header comment
+// explains) needed because the retired scenario's assertion was an
+// external trace log (`T FIRE Panel.Go.click` etc.), and nothing in the
+// `UiTest*` surface can read that log back from inside a running program
+// -- a case has to build its own record of what fired, in what order,
+// instead. closeRequest/closed are ADDED here (the original buttons.cla
+// declares neither) purely to log "close cascade reached here"; declaring
+// them changes no observable behavior (neither calls `cancel`, so the
+// close proceeds exactly as it would with no handler at all -- Ch5's own
+// `cancel`-is-the-only-way-to-alter-a-closeRequest's-outcome rule).
+// size: 300, 160 -> content top-left ((512-300)/2, 44) = (106, 44), same
+// derivation as tbPokeCenterX/tbPokeCenterY above. Go/Status's own
+// geometry constants live in cases_buttons.cla (same file split as
+// PatBoard's own tb-prefixed constants in cases_pattern.cla, per this
+// file's own header comment). Status's own SET assertion (the retired
+// trace's "T SET Panel.Status.text Clicked" line) is read back via a
+// UiTestChecksum before/after inequality, not a direct `Status.text`
+// read: clarusc's own `lowWidgetPropGet` (clarusc/lower.cla) has no
+// get_str path for `label` yet ("read of label.text (not yet
+// implemented)", confirmed by trying it) -- only field.text/
+// textview.text reads are wired up so far.
+window ButtonsPanel {
+    title: "Panel"
+    size: 300, 160
+    resizable: min(220, 120)
+
+    button Go    { at: 20, 20; caption: "Go"; width: 80 }
+    check On     { at: right, 22; caption: "On" }
+    label Status { at: next, bottom; text: "Off" }
+}
+
+extend ButtonsPanel {
+    on Go.click {
+        On.checked = true
+        Status.text = "Clicked"
+        tbButtonsLog = tbButtonsLog + "G"
+    }
+    on key(k: char) {
+        title = "Typed"
+        tbButtonsLog = tbButtonsLog + "K"
+    }
+    on resized {
+        tbButtonsLog = tbButtonsLog + "R"
+    }
+    on closeRequest {
+        tbButtonsLog = tbButtonsLog + "Q"
+    }
+    on closed {
+        tbButtonsLog = tbButtonsLog + "D"
+    }
+}
+
+// LogWin (Task 5, ui-scenario-retirement batch): byte-safe transcription
+// of the retired testdata/ui/winvar.cla -- SAME window-scope `var log:
+// text` with no initializer and, critically, NO `on opened` handler at
+// all (the whole point of the retired scenario: `log`'s rt_text handle is
+// constructed solely by clarusc's fabricated `opened` glue, not the
+// explicit-`on opened` path -- see winvar.cla's own retired header
+// comment for the full pre-fix NULL-dereference regression this pins).
+// Nothing added here beyond the original fixture's own two widgets/one
+// handler -- no instrumentation needed, since caseWinvar's own assertion
+// (cases_winvar.cla) reads Body.text and a framebuffer checksum directly,
+// both already reachable from outside the window without extra logging.
+// size: 300, 200 -> content top-left (106, 44), same derivation as
+// ButtonsPanel above (same window width).
+window LogWin {
+    title: "Log"
+    size: 300, 200
+
+    button Add    { at: 20, 20; caption: "Add"; width: 80 }
+    textview Body { at: 20, bottom; fill: both }
+
+    var log: text
+}
+
+extend LogWin {
+    on Add.click {
+        log.append("clicked")
+        Body.text = log
+    }
+}
+
+// TextWin (Task 5, ui-scenario-retirement batch): byte-safe transcription
+// of the retired testdata/ui/textwidgets.cla -- same four widgets, same
+// four original handler bodies (Name.change/Name.enter/Body.change/
+// Fill32000.click/Fill32001.click, all UNCHANGED), plus two
+// INSTRUMENTATION-ONLY counters (`nameChanges`/`bodyChanges`, same
+// rationale as ButtonsPanel's `tbButtonsLog` above) since the retired
+// scenario's golden trace asserted an EXACT fire count for
+// Name.change (5, one per typed letter of "Hello") and Body.change (9:
+// 8 typed letters of "Hi there" plus one CR insertion), and nothing in
+// the `UiTest*` surface can read a fire count back other than a
+// case-added counter. size: 400, 280 -> content top-left
+// ((512-400)/2, 44) = (56, 44).
+window TextWin {
+    title: "Text"
+    size: 400, 280
+
+    field Name       { label: "Name:"; at: 20, 20; width: 140 }
+    button Fill32000 { at: right, 20; caption: "32000" }
+    button Fill32001 { at: right, 20; caption: "32001" }
+    textview Body    { at: 20, bottom; fill: both; scrollbar: vertical }
+
+    var nameStr: string
+    var bodyText: text
+    var nameChanges: int = 0
+    var bodyChanges: int = 0
+}
+
+extend TextWin {
+    on Name.change {
+        nameStr = Name.text
+        nameChanges = nameChanges + 1
+    }
+    on Name.enter {
+        Name.text = nameStr
+        title = "Entered"
+    }
+    on Body.change {
+        bodyText = Body.text
+        bodyChanges = bodyChanges + 1
+    }
+    on Fill32000.click {
+        var t: text
+        var got: text
+        var i: int
+
+        // A space every 8th byte, not one giant 32,000-byte word: classic
+        // TextEdit's line-wrap hunts backward for a break point, and a
+        // single pathologically long word (no whitespace at all) makes
+        // that hunt effectively quadratic -- observed hanging TECalText
+        // for minutes on real m68k hardware during this task's own
+        // development. The byte count (what the clamp test cares about)
+        // is unaffected by content shape.
+        i = 0
+        while i < 32000 {
+            if i mod 8 == 7 {
+                t.append(' ')
+            } else {
+                t.append('x')
+            }
+            i = i + 1
+        }
+        Body.text = t
+        got = Body.text
+        if got.length == 32000 and lastError.code == 0 {
+            title = "ok:32000"
+        } else {
+            title = "FAIL:32000"
+        }
+    }
+    on Fill32001.click {
+        var t: text
+        var got: text
+        var i: int
+
+        // Same spaced-content shape as Fill32000.click above (see its
+        // comment) -- one byte over the clamp.
+        i = 0
+        while i < 32001 {
+            if i mod 8 == 7 {
+                t.append(' ')
+            } else {
+                t.append('x')
+            }
+            i = i + 1
+        }
+        Body.text = t
+        got = Body.text
+        if got.length == 32000 and lastError.code != 0 {
+            title = lastError.message
+        } else {
+            title = "FAIL:32001"
+        }
+    }
+}

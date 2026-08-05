@@ -32,7 +32,13 @@
 // pilot migration): the retired testdata/ui/pattern.cla golden UI
 // scenario, migrated to five UiTestChecksum region assertions against
 // harness.cla's PatBoard window -- see cases_pattern.cla's own header
-// comment for the full retirement mapping.
+// comment for the full retirement mapping. Buttons/Winvar/Textwidgets
+// (cases_buttons.cla/cases_winvar.cla/cases_textwidgets.cla) are Task 5's
+// own addition (ui-scenario-retirement batch migration): the retired
+// testdata/ui/buttons.cla, winvar.cla, and textwidgets.cla golden UI
+// scenarios, migrated to ButtonsPanel/LogWin/TextWin cases against
+// harness.cla's own windows of the same names -- see each case file's own
+// header comment for its full retirement mapping.
 
 enum ToolboxTest {
     All
@@ -45,15 +51,18 @@ enum ToolboxTest {
     UiTestVerbSmoke
     PostEventClick
     Pattern
+    Buttons
+    Winvar
+    Textwidgets
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 9 real cases plus
-// SelfCheck itself. Same "SelfCheck's own branch does not increment
+// nTbCases is ToolboxTest's member count minus All: the 12 real cases
+// plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 10
+const nTbCases: int = 13
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -89,6 +98,15 @@ func tbCaseName(t: ToolboxTest): string {
     case Pattern {
         return "Pattern"
     }
+    case Buttons {
+        return "Buttons"
+    }
+    case Winvar {
+        return "Winvar"
+    }
+    case Textwidgets {
+        return "Textwidgets"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -109,6 +127,9 @@ func tbAllCases(): list of ToolboxTest {
     l.add(UiTestVerbSmoke)
     l.add(PostEventClick)
     l.add(Pattern)
+    l.add(Buttons)
+    l.add(Winvar)
+    l.add(Textwidgets)
     l.add(SelfCheck)
     return l
 }
@@ -180,6 +201,18 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Pattern) {
         results.add(casePattern())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Buttons) {
+        results.add(caseButtons())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Winvar) {
+        results.add(caseWinvar())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Textwidgets) {
+        results.add(caseTextwidgets())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

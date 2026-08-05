@@ -1,0 +1,109 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_winvar.cla: Winvar (Task 5, ui-scenario-retirement batch) -- the
+// migrated replacement for the retired testdata/ui/winvar.cla golden UI
+// scenario, execution-level coverage for the window-var construction fix
+// (clarusc-ui-gaps Task 3b): LogWin's window-scope `var log: text` has no
+// initializer and LogWin declares no `on opened` handler at all, so
+// `log`'s rt_text handle is constructed solely by clarusc's fabricated
+// `opened` glue -- pre-fix, that glue never constructed it, and
+// Add.click's in-place `log.append(...)` dereferenced a NULL rt_text*.
+// See harness.cla's own LogWin comment; `w = open LogWin` below exercises
+// the exact same fresh-window construction path `on App.launch { open
+// LogWin }` did.
+//
+// The retired scenario's own assertion was "snap-is-the-assertion" (no
+// Go-side invariant beyond the golden PBM showing "clickedclicked" in
+// Body after two Add clicks) -- same shape as the pilot's retired
+// pattern.cla. Per this batch's own binding spec, that becomes a
+// UiTestChecksum region pinned via FAIL-then-copy (see
+// tbWinvarBodyExpected below), PLUS a direct Body.text read (stronger
+// than the checksum alone: the checksum only proves SOME rendering
+// happened, the .text read proves the accumulated STRING content is
+// exactly right, catching e.g. "only one append landed" in a way a
+// checksum collision could theoretically mask).
+//
+// tbWinvarAddX/tbWinvarAddY: Add's GLOBAL screen center. Same math as
+// cases_buttons.cla's tbButtonsGoX/tbButtonsGoY -- LogWin's `size: 300,
+// 200` gives the same content top-left (106, 44), and Add is declared at
+// the identical `at: 20, 20; width: 80` as buttons.cla's own Go button,
+// so the same (166, 74) center applies (a coincidence of both fixtures
+// sharing that button geometry, not a shared constant).
+const tbWinvarAddX: int = 166
+const tbWinvarAddY: int = 74
+
+// tbWinvarBodyX0/Y0/W/H: an 8px-aligned box inside Body's rendered text
+// area. Body is `at: 20, bottom; fill: both` below Add (LOCAL rect
+// (20,20)-(100,40)) -- rtUiLayout (uiwidgets.cla) puts Body at LOCAL y =
+// prevBottom + rtUiGap = 40 + 8 = 48, x = 20 (explicit), width = contentW
+// - x - rtUiGap = 300 - 20 - 8 = 272, height = contentH - y - rtUiGap =
+// 200 - 48 - 8 = 144 -> LOCAL (20,48)-(292,192) -> GLOBAL (126,92)-
+// (398,236) (content top-left (106,44), same as tbWinvarAddX/Y above). A
+// textview's own text draws inset `rtUiTeFrameInset` (3px, uiwidgets.cla)
+// from that rect, so the first glyph starts near GLOBAL (129,95). The
+// checksummed box starts one 8px byte-column into that inset (128, safely
+// left of the first glyph) and one row above the text top (92, safely
+// above the first glyph's ascender), sized generously (128x24) to cover
+// "clickedclicked" (14 chars) on its one rendered line without spilling
+// into a second line or off Body's right/bottom edge.
+const tbWinvarBodyX0: int = 128
+const tbWinvarBodyY0: int = 92
+const tbWinvarBodyW: int = 128
+const tbWinvarBodyH: int = 24
+
+// tbWinvarBodyExpected: recorded via the documented FAIL-then-copy
+// procedure (CLAUDE.md's toolbox-suite section / cases_pattern.cla's own
+// header comment) -- built+booted once with this constant left at 0, the
+// case FAILed with "bodyLen 14 checksum 11853 != 0" (bodyLen 14 already
+// confirming "clickedclicked".length independently), 11853 copied in as
+// the real constant -- see task-5-report.md for the full transcript.
+// NEVER computed by hand.
+const tbWinvarBodyExpected: int = 11853
+
+func caseWinvar(): TestResult {
+    var w: LogWin
+    var clicked1: bool
+    var clicked2: bool
+    var bodyTextVal: text
+    var cs: int
+    var ok: bool
+    var detail: string
+
+    w = open LogWin
+    clicked1 = UiTestClick(tbWinvarAddX, tbWinvarAddY)
+    clicked2 = UiTestClick(tbWinvarAddX, tbWinvarAddY)
+    bodyTextVal = w.Body.text
+    cs = UiTestChecksum(tbWinvarBodyX0, tbWinvarBodyY0, tbWinvarBodyW, tbWinvarBodyH)
+    close w
+
+    ok = clicked1 and clicked2
+    ok = ok and bodyTextVal == "clickedclicked"
+    ok = ok and cs == tbWinvarBodyExpected
+
+    if ok {
+        return tkPass("Winvar")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "clicked1 "
+    if clicked1 {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " clicked2 "
+    if clicked2 {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    // bodyTextVal is `text`; Ch3's Str<->Text coercion runs Str->Text
+    // only, not back (winvar.cla's own retired header comment hit this
+    // exact gap trying `title = log`), so only its length -- not its
+    // content -- can fold into a `string` detail.
+    detail = detail + " bodyLen " + tkIntToStr(bodyTextVal.length)
+    detail = detail + " checksum " + tkIntToStr(cs)
+    detail = detail + " != " + tkIntToStr(tbWinvarBodyExpected)
+    return tkFail("Winvar", detail)
+}

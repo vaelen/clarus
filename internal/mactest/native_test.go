@@ -330,15 +330,12 @@ type uiScenario68k struct {
 // fixed count: this table shrinks task by task through that phase, so no
 // scenario-count number is hard-coded here or in the comments below.
 var uiScenarios68k = []uiScenario68k{
-	{name: "buttons", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "buttons.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "buttons.events")},
 	{name: "menus", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "menus.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "menus.events")},
-	{name: "winvar", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "winvar.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "winvar.events")},
 	{name: "zoomwin", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "zoomwin.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "zoomwin.events"), check: checkZoomwinSnaps},
 	{name: "canvas", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "canvas.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "canvas.events"), check: checkCanvasSnaps},
 	{name: "hdim", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "hdim.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "hdim.events")},
 	{name: "smoke_menudemo", claRel: []string{filepath.Join("..", "..", "examples", "menu-demo.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_menudemo.events")},
 	{name: "smoke_mandel", claRel: []string{filepath.Join("..", "..", "examples", "mandelbrot.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_mandel.events"), check: checkSmokeMandelSnaps},
-	{name: "textwidgets", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "textwidgets.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "textwidgets.events"), check: checkTextwidgetsSnaps},
 	{name: "editmenu", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "editmenu.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "editmenu.events")},
 	{name: "hscroll", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "hscroll.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "hscroll.events"), check: checkHscrollSnaps},
 	{name: "opendoc", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc.events")},

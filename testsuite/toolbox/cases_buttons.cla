@@ -1,0 +1,141 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_buttons.cla: Buttons (Task 5, ui-scenario-retirement batch) --
+// the migrated replacement for the retired testdata/ui/buttons.cla golden
+// UI scenario. That scenario was trace-only (no snaps): a button click, a
+// window `key`, a resize, and the close-box path, asserted purely by the
+// EXACT ORDER of "T FIRE ..." lines a byte-exact golden trace compared
+// against. See harness.cla's own ButtonsPanel comment for why this needs
+// its own instrumentation (`tbButtonsLog`, declared below) rather than
+// reading anything back off the widgets themselves: closeRequest/closed
+// fire as the window is torn down, and per the language reference
+// ("its per-instance state is about to be freed"), a window-scoped var
+// read from the CASE after UiTestClose() returns is not safe to trust --
+// so tbButtonsLog is a GLOBAL, outliving the window it was recorded
+// against.
+//
+// tbButtonsGoX/tbButtonsGoY: Go's GLOBAL screen center. ButtonsPanel's
+// `size: 300, 160` -> content top-left ((512-300)/2, 44) = (106, 44)
+// (same derivation as harness.cla's own tbPokeCenterX/tbPokeCenterY).
+// Go's `at: 20, 20; width: 80` with the default button height
+// (rtUiButtonH = 20, runtime/clarus/uiwidgets.cla) gives LOCAL rect
+// (20,20)-(100,40) -> GLOBAL (126,64)-(206,84), center (166,74). (The
+// retired scenario's own buttons.events clicked (156,74) -- any point
+// inside the same rect; this case clicks the rect's own center instead,
+// same "click widget centers" convention harness.cla's UiProbe/Poke
+// already established.)
+const tbButtonsGoX: int = 166
+const tbButtonsGoY: int = 74
+
+// tbButtonsStatusX0/Y0/W/H: an 8px-aligned box inside Status's rendered
+// rect, used for a before/after checksum INEQUALITY (not a pinned
+// constant -- see harness.cla's own comment on why Status.text can't be
+// read back directly). Layout (rtUiLayout, uiwidgets.cla), widget
+// declaration order Go/On/Status: Go -> LOCAL (20,20)-(100,40) (explicit
+// `at:`, default button height 20). On is `at: right, 22` -> x =
+// prevRight(100) + rtUiGap(8) = 108, y = 22 (explicit, not `bottom`),
+// default check size 90x16 (rtUiCheckW/H) -> LOCAL (108,22)-(198,38).
+// Status is `at: next, bottom` -> x = prevLeft(108) (On's own left edge,
+// the `next` rule), y = prevBottom(38) + rtUiGap(8) = 46, default label
+// size 150x16 (rtUiLabelW/H) -> LOCAL (108,46)-(258,62) -> GLOBAL
+// (214,90)-(364,106) (content top-left (106,44), same as tbButtonsGoX/Y
+// above). The checksummed box (216,88)-(344,112) sits inside that rect
+// with margin on every side.
+const tbButtonsStatusX0: int = 216
+const tbButtonsStatusY0: int = 88
+const tbButtonsStatusW: int = 128
+const tbButtonsStatusH: int = 24
+
+// tbButtonsLog: see this file's own header comment for why this is a
+// GLOBAL rather than a ButtonsPanel window-scope var. Declared here
+// (rather than harness.cla) alongside caseButtons, its only reader --
+// referenced from harness.cla's ButtonsPanel `extend` block regardless of
+// file order (a handler body sees every top-level declaration in the
+// whole program, Chapter 1's declare-before-use rules).
+var tbButtonsLog: string
+
+func caseButtons(): TestResult {
+    var w: ButtonsPanel
+    var clickedGo: bool
+    var keyedX: bool
+    var resizedOk: bool
+    var closedOk: bool
+    var checkedVal: bool
+    var statusBefore: int
+    var statusAfter: int
+    var titleVal: string
+    var ok: bool
+    var detail: string
+
+    tbButtonsLog = ""
+
+    w = open ButtonsPanel
+    statusBefore = UiTestChecksum(tbButtonsStatusX0, tbButtonsStatusY0, tbButtonsStatusW, tbButtonsStatusH)
+
+    clickedGo = UiTestClick(tbButtonsGoX, tbButtonsGoY)
+    // Read right after the click, mirroring the golden trace's own order:
+    // Go.click's SET On.checked/SET Status.text lines (trace lines 4-5)
+    // land before Panel.key (line 6).
+    checkedVal = w.On.checked
+    statusAfter = UiTestChecksum(tbButtonsStatusX0, tbButtonsStatusY0, tbButtonsStatusW, tbButtonsStatusH)
+
+    keyedX = UiTestKey("x")
+    titleVal = w.title
+
+    resizedOk = UiTestResize(340, 180)
+
+    // UiTestClose() drives the FULL close-box cascade (closeRequest, the
+    // actual close, then closed) in one call -- the window is fully torn
+    // down by the time this returns, so this is the case's only close
+    // call on every path (no separate `close w` needed or safe
+    // afterward).
+    closedOk = UiTestClose()
+
+    ok = clickedGo and keyedX and resizedOk and closedOk
+    ok = ok and checkedVal
+    ok = ok and statusBefore != statusAfter
+    ok = ok and titleVal == "Typed"
+    ok = ok and tbButtonsLog == "GKRQD"
+
+    if ok {
+        return tkPass("Buttons")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "clickedGo "
+    if clickedGo {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " keyedX "
+    if keyedX {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " resizedOk "
+    if resizedOk {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " closedOk "
+    if closedOk {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " checkedVal "
+    if checkedVal {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " statusBefore " + tkIntToStr(statusBefore)
+    detail = detail + " statusAfter " + tkIntToStr(statusAfter)
+    detail = detail + " titleVal " + titleVal
+    detail = detail + " log " + tbButtonsLog
+    return tkFail("Buttons", detail)
+}

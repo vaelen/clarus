@@ -1,0 +1,140 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_textwidgets.cla: Textwidgets (Task 5, ui-scenario-retirement
+// batch) -- the migrated replacement for the retired
+// testdata/ui/textwidgets.cla golden UI scenario: field/textview widgets
+// end to end (field.change/enter, textview.change, field.text/
+// textview.text read+write), and the RTUI_TE_MAX (32,000-byte) clamp
+// boundary on textview.text set, both sides independently observable
+// (exactly at the clamp: no truncation, no lastError; one byte over:
+// truncated to 32,000 + lastError set). See harness.cla's own TextWin
+// comment for the two ADDED counters (nameChanges/bodyChanges) this case
+// reads to subsume the retired golden trace's exact fire counts.
+//
+// Click coordinates are reused VERBATIM from the retired
+// testdata/ui/textwidgets.events rather than re-derived, since they are
+// already proven-correct against this exact widget layout by that
+// scenario's own passing history, and Body's flush-scrollbar geometry
+// (rtUiLayout's flushR branch, uiwidgets.cla) is materially more
+// complex to re-derive by hand than a plain fixed `at:` rect. Fill32000/
+// Fill32001's centers were independently re-derived below and happen to
+// land on the exact same points the retired .events already used --
+// cross-checking the re-derivation.
+//
+//   tbTwNameClickXY (181,74): inside Name's edit box (label lane excluded).
+//   tbTwBodyClickXY (254,214): inside Body's text area, clear of its
+//     right-edge vertical scrollbar.
+//
+// Fill32000/Fill32001 centers, independently derived: TextWin's `size:
+// 400, 280` -> content top-left ((512-400)/2, 44) = (56, 44). Name is
+// `at: 20, 20; width: 140` with a `label:`, so its LOCAL rect is (20,20)-
+// (230,40) (rtUiFieldLabelW=70 label lane + 140 edit box, uiwidgets.cla).
+// Fill32000 is `at: right, 20` (no explicit width, so the default
+// rtUiButtonW=80 applies): x = prevRight(230) + rtUiGap(8) = 238, y = 20
+// (explicit, not `bottom`) -> LOCAL (238,20)-(318,40) -> GLOBAL
+// (294,64)-(374,84), center (334,74). Fill32001, same rule: x =
+// prevRight(318) + 8 = 326 -> LOCAL (326,20)-(406,40) -> GLOBAL
+// (382,64)-(462,84), center (422,74).
+const tbTwNameClickX: int = 181
+const tbTwNameClickY: int = 74
+const tbTwBodyClickX: int = 254
+const tbTwBodyClickY: int = 214
+const tbTwFill32000X: int = 334
+const tbTwFill32000Y: int = 74
+const tbTwFill32001X: int = 422
+const tbTwFill32001Y: int = 74
+
+// tbTwTitleBarX0/Y0/W/H: a checksum band over the WHOLE title bar strip,
+// not Body's own content. The two clicks' Body content is BYTE-IDENTICAL
+// (Fill32000 builds exactly 32,000 bytes and Fill32001 builds 32,001 with
+// the identical `i mod 8` space/x rule for i=0..31999, so truncating
+// Fill32001's buffer to the same rtUiTeMax=32,000 bytes drops only its
+// very last byte -- the visible first page renders the same either way),
+// so the retired scenario's own snap-inequality guard (checkTextwidgets-
+// Snaps: ok32000 != trunc32001, a WHOLE-SCREEN byte compare) was actually
+// riding on the TITLE BAR text ("ok:32000" vs "string truncated"), not
+// Body's content. rtUiOpen (ui.cla) pins EVERY window's content top at
+// GLOBAL y=44 unconditionally, and the title bar sits directly above that
+// at a fixed height (rtUiTitlebarH=19, ui.cla) regardless of which window
+// or how wide it is, so a checksum need not know TextWin's own left edge:
+// a full-width band (x=0, w=512, both multiples of 8) at y=25..44 covers
+// the title text for any window over the whole run, with the surrounding
+// desktop pattern (unchanged between the two checksums) contributing the
+// same byte sum to both sides.
+const tbTwTitleBarX0: int = 0
+const tbTwTitleBarY0: int = 25
+const tbTwTitleBarW: int = 512
+const tbTwTitleBarH: int = 19
+
+func caseTextwidgets(): TestResult {
+    var w: TextWin
+    var nameVal: string
+    var title1: string
+    var title2: string
+    var got1: text
+    var got2: text
+    var len1: int
+    var len2: int
+    var cs1: int
+    var cs2: int
+    var nameChangesVal: int
+    var bodyChangesVal: int
+    var ok: bool
+    var detail: string
+
+    w = open TextWin
+
+    UiTestClick(tbTwNameClickX, tbTwNameClickY)
+    UiTestType("Hello")
+    UiTestKey("13")
+    nameVal = w.Name.text
+
+    UiTestClick(tbTwBodyClickX, tbTwBodyClickY)
+    UiTestType("Hi there")
+    UiTestKey("13")
+
+    UiTestClick(tbTwFill32000X, tbTwFill32000Y)
+    title1 = w.title
+    got1 = w.Body.text
+    len1 = got1.length
+    cs1 = UiTestChecksum(tbTwTitleBarX0, tbTwTitleBarY0, tbTwTitleBarW, tbTwTitleBarH)
+
+    UiTestClick(tbTwFill32001X, tbTwFill32001Y)
+    title2 = w.title
+    got2 = w.Body.text
+    len2 = got2.length
+    cs2 = UiTestChecksum(tbTwTitleBarX0, tbTwTitleBarY0, tbTwTitleBarW, tbTwTitleBarH)
+
+    // Captured BEFORE close: a window-scope var read from the CASE after
+    // the window has closed is not safe to trust (same reasoning as
+    // cases_buttons.cla's own tbButtonsLog header comment).
+    nameChangesVal = w.nameChanges
+    bodyChangesVal = w.bodyChanges
+    close w
+
+    ok = nameChangesVal == 5
+    ok = ok and bodyChangesVal == 9
+    ok = ok and nameVal == "Hello"
+    ok = ok and title1 == "ok:32000"
+    ok = ok and len1 == 32000
+    ok = ok and title2 == "string truncated"
+    ok = ok and len2 == 32000
+    ok = ok and cs1 != cs2
+
+    if ok {
+        return tkPass("Textwidgets")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "nameChanges " + tkIntToStr(nameChangesVal)
+    detail = detail + " bodyChanges " + tkIntToStr(bodyChangesVal)
+    detail = detail + " name [" + nameVal + "]"
+    detail = detail + " title1 [" + title1 + "]"
+    detail = detail + " len1 " + tkIntToStr(len1)
+    detail = detail + " title2 [" + title2 + "]"
+    detail = detail + " len2 " + tkIntToStr(len2)
+    detail = detail + " cs1 " + tkIntToStr(cs1)
+    detail = detail + " cs2 " + tkIntToStr(cs2)
+    return tkFail("Textwidgets", detail)
+}

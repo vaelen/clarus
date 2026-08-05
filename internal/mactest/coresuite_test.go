@@ -126,7 +126,12 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // cases_pattern.cla (Pattern) was added by Task 4 (ui-scenario-retirement
 // pilot migration) -- the retired testdata/ui/pattern.cla golden UI
 // scenario, migrated to five UiTestChecksum region assertions against
-// harness.cla's PatBoard window (also added by Task 4).
+// harness.cla's PatBoard window (also added by Task 4). cases_buttons.cla/
+// cases_winvar.cla/cases_textwidgets.cla (Buttons/Winvar/Textwidgets) were
+// added by Task 5 (ui-scenario-retirement batch migration) -- the retired
+// testdata/ui/buttons.cla, winvar.cla, and textwidgets.cla golden UI
+// scenarios, migrated to the ButtonsPanel/LogWin/TextWin windows Task 5
+// also added to harness.cla.
 // Unlike the core suite, gui.cla is this suite's ONLY front end -- there
 // is no toolbox CLI (MenuKeyMatches needs the GUI's own installed File
 // menu, CanvasChecksum needs the GUI's own Board canvas), so there is no
@@ -142,6 +147,9 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "harness.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_uitest.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_pattern.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_buttons.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_winvar.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_textwidgets.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -162,7 +170,7 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 9 result lines (8 real cases +
+// this test also parses each of the 13 result lines (12 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
@@ -220,10 +228,11 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // integration Feature B) EventXRec addition, then to 9 by Task 3's
 // (ui-scenario-retirement) UiTestVerbSmoke/PostEventClick addition, then
 // to 10 by Task 4's (ui-scenario-retirement pilot migration) Pattern
-// addition): parses each of the 10 result lines (9 real cases +
-// SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
-// the aggregate TOTAL line, regardless of which lane produced the
-// capture.
+// addition, then to 13 by Task 5's (ui-scenario-retirement batch
+// migration) Buttons/Winvar/Textwidgets addition): parses each of the 13
+// result lines (12 real cases + SelfCheck) into its own t.Run subtest --
+// per-case CI reporting -- plus the aggregate TOTAL line, regardless of
+// which lane produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -246,8 +255,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 10 {
-		t.Errorf("result lines: got %d, want 10\ncapture:\n%s", len(results), out)
+	if len(results) != 13 {
+		t.Errorf("result lines: got %d, want 13\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -257,7 +266,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 10 PASS 10 FAIL 0"; total != want {
+	if want := "TOTAL 13 PASS 13 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

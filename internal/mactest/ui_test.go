@@ -176,59 +176,10 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestButtonsUIScenario: window with button/check/label, no menus, no
-// canvas -- click/key/resize/close-box dispatch, no snaps.
-func TestButtonsUIScenario(t *testing.T) {
-	runUIScenario(t, "buttons", 0)
-}
-
 // TestMenusUIScenario: two window types, app-scope + window-scoped menu
 // items, dimming transitions on open/close of the scoped window.
 func TestMenusUIScenario(t *testing.T) {
 	runUIScenario(t, "menus", 0)
-}
-
-// TestTextwidgetsUIScenario (mac-target-4c Task 2): field/textview widgets
-// end to end -- field.change/enter and textview.change dispatch, field.text/
-// textview.text read+write, and the CARRIED review requirement from Task 1:
-// the RTUI_TE_MAX (32,000-byte) clamp boundary on textview.text set, BOTH
-// sides independently snapped (exactly at the clamp: no truncation, no
-// lastError, snap "ok32000"; one byte over: truncated to 32,000 + lastError
-// set, snap "trunc32001") so an off-by-one clamp regression in either
-// direction fails a specific golden rather than being masked by the other
-// click's title/content overwrite -- each outcome is round-tripped into the
-// window title and verified via its own snap's title bar (rt_ui_set_title
-// has no RT_MAC_TEST trace line of its own). The two snaps asserted
-// different here guards against both being blessed identical by accident
-// (same non-accidental-golden guard TestCanvasUIScenario uses). See
-// testdata/ui/textwidgets.cla's own header comment for the full scripted
-// walkthrough and why the .events file uses `key 13` rather than an
-// embedded raw CR byte.
-func TestTextwidgetsUIScenario(t *testing.T) {
-	checkTextwidgetsSnaps(t, runUIScenario(t, "textwidgets", 0))
-}
-
-// checkTextwidgetsSnaps is TestTextwidgetsUIScenario's own snap assertion,
-// factored out (Task 14, native-5e) so the native (`clarusc emit68k`) lane
-// can run the identical check against its own snaps rather than a
-// hand-copied duplicate.
-func checkTextwidgetsSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var ok, trunc []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "ok32000":
-			ok = s.bytes
-		case "trunc32001":
-			trunc = s.bytes
-		}
-	}
-	if ok == nil || trunc == nil {
-		t.Fatalf("textwidgets: expected snaps ok32000 and trunc32001, got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(ok, trunc) {
-		t.Fatalf("textwidgets: snap ok32000 == trunc32001 -- the clamp/lastError outcome did not actually change the title between the two clicks")
-	}
 }
 
 // TestCanvasUIScenario: buffered canvas animated by an every-block; two
@@ -346,20 +297,6 @@ func checkHscrollSnaps(t *testing.T, snaps []uiSnap) {
 // ui-scenario-retirement).
 func TestHdimUIScenario(t *testing.T) {
 	runUIScenario(t, "hdim", 0)
-}
-
-// TestWinvarUIScenario (clarusc-ui-gaps Task 3b): execution-level proof for
-// the window-var construction fix -- LogWin's window-scope `var log: text`
-// has no initializer and LogWin declares no `on opened` handler at all, so
-// the handle is constructed solely by clarusc's fabricated opened glue.
-// Pre-fix, that glue never constructed it, and Add.click's in-place
-// `log.append(...)` dereferenced a NULL rt_text*. Two clicks before the
-// single snap: the golden PBM showing "clickedclicked" in Body is the
-// assertion (rt_ui_widget_set_text has no RT_MAC_TEST trace line of its
-// own, so there is nothing for the trace golden to add beyond the two
-// Add.click fires -- see winvar.cla's own header comment).
-func TestWinvarUIScenario(t *testing.T) {
-	runUIScenario(t, "winvar", 0)
 }
 
 // TestEditMenuUIScenario (Task 3, mac-target-4c): `menu Edit { standard
