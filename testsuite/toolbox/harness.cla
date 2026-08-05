@@ -287,3 +287,108 @@ extend TextWin {
         }
     }
 }
+
+// MenuMain/MenuAux/Ops (Task 6, ui-scenario-retirement batch): transcribed
+// from the retired testdata/ui/menus.cla -- Main/Aux renamed MenuMain/
+// MenuAux (every window/menu name in this suite's ONE compiled program
+// must be globally unique, Ch1's declare-before-use rule; "Main"/"Aux"
+// were free in that scenario's own standalone build but collide with
+// nothing here only because they're renamed). Ops's three real items
+// (NewAux/Toggle/Scoped) are unchanged. Two deliberate DROPS from the
+// retired fixture, both disclosed in task-6-report.md:
+//   - The Quit item (`item Quit "Quit" key "Q"`) and its `on Quit.select
+//     { quit }` handler: firing a real `quit` STATEMENT mid-case would
+//     tear down the whole toolbox suite process before later cases and
+//     the final report run -- UiTestVerb only rejects the literal script
+//     control-verb string "quit" (uitest.cla's own header comment), not
+//     an app handler that happens to execute one when dispatched via
+//     `menu`. The retired fixture's own cancel-then-succeed quit-cascade
+//     semantics stay covered forever by testdata/ui/texteditor_quit.cla
+//     (docs/superpowers/plans/2026-08-05-ui-scenario-retirement.md's own
+//     "kept forever" list), so nothing is left unverified.
+//   - Toggle's own widget mutation (Main.On.checked/Main.Status.text):
+//     ButtonsPanel/cases_buttons.cla already cover check/label mutation
+//     end to end; this window's job is purely menu dispatch + scope
+//     dimming (cases_menus.cla's own global counters below).
+// No widgets, so no geometry constants -- cases_menus.cla asserts purely
+// through UiTestMenu's own return value and the dispatch counters.
+window MenuMain {
+    title: "MenuMain"
+    size: 200, 100
+}
+
+window MenuAux {
+    title: "MenuAux"
+    size: 200, 100
+}
+
+// Ops is declared here (harness.cla), the file list's own position
+// (internal/mactest/coresuite_test.go's toolboxFiles) BEFORE gui.cla's
+// `menu File` -- rt_ui_build_menus (ui.cla) inserts every declared menu
+// into the real bar in whole-program declaration order, so Ops lands at
+// bar position 2 (Apple is always 1), Edit (below) at 3, File at 4 --
+// see cases_menus.cla's own header comment for the full derivation and
+// why Quit's key equivalent had to be dropped above to avoid colliding
+// with File's own `key "Q"` under cases_events.cla's real-hardware
+// TbMenuKey probe.
+menu Ops {
+    item NewAux "New Aux" key "N"
+    item Toggle "Toggle"  key "T"
+    item Scoped "Scoped"  key "S"
+}
+
+extend Ops {
+    on NewAux.select {
+        open MenuAux
+        tbMenuNewAuxCount = tbMenuNewAuxCount + 1
+    }
+    on Toggle.select {
+        tbMenuToggleCount = tbMenuToggleCount + 1
+    }
+}
+
+extend MenuAux {
+    extend Ops {
+        on Scoped.select {
+            tbMenuScopedCount = tbMenuScopedCount + 1
+        }
+    }
+}
+
+// EditMain/Edit (Task 6, ui-scenario-retirement batch): transcribed from
+// the retired testdata/ui/editmenu.cla -- Main renamed EditMain (same
+// global-uniqueness reason as MenuMain/MenuAux above), same two
+// textviews (A above B), same `menu Edit { standard edit }`. `size: 300,
+// 260` is UNCHANGED from the retired fixture's own standalone build, so
+// its content top-left stays ((512-300)/2, 44) = (106, 44) -- rt_ui_open
+// centers purely on a window's own width, independent of whatever else
+// is compiled alongside it -- meaning editmenu.events' own click/drag
+// coordinates carry over VERBATIM into cases_editmenu.cla with no
+// re-derivation. aChanges/bChanges are ADDED instrumentation (same
+// nameChanges/bodyChanges convention as TextWin above): the retired
+// scenario's assertion needs both an exact fire count (typing "Hello
+// World" fires A.change 11 times) and a NO-fire pin (Copy must not
+// increment either counter), neither observable any other way.
+window EditMain {
+    title: "Edit Demo"
+    size: 300, 260
+
+    textview A { at: 20, 20 }
+    textview B { at: 20, bottom }
+
+    var aChanges: int = 0
+    var bChanges: int = 0
+}
+
+menu Edit {
+    standard edit
+}
+
+extend EditMain {
+    on A.change {
+        aChanges = aChanges + 1
+    }
+    on B.change {
+        bChanges = bChanges + 1
+    }
+}

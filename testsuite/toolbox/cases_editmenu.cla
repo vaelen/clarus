@@ -1,0 +1,228 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_editmenu.cla: Editmenu (Task 6, ui-scenario-retirement batch) --
+// the migrated replacement for the retired testdata/ui/editmenu.cla
+// golden UI scenario: `menu Edit { standard edit }` end to end -- cut
+// from textview A, paste into B, Copy's no-mutation pin, Undo's
+// permanent unreachability, and the Cut/Copy/Paste/Clear dim/undim
+// transitions tied to "does the front window have a focused field/
+// textview". See harness.cla's own EditMain comment for the window
+// transcription.
+//
+// IMPORTANT CORRECTION vs. the retired fixture's own header comment (and
+// this task's own first draft): a window's FIRST field/textview-kind
+// widget auto-focuses the moment the window opens -- ui.cla's own
+// rt_ui_open doc comment ("Auto-focus the FIRST field/textview-kind
+// widget", Task 8) -- no click needed. So EditMain's own A is ALREADY
+// focused (Cut/Copy/Paste/Clear already undimmed) the instant `open
+// EditMain` returns; there is no reachable "EditMain is front but no TE
+// is focused" moment to probe Cut against inside this window's own
+// lifecycle. Worse, this suite's own Suite window (gui.cla) has a
+// textview (Status) too, so IT auto-focuses on boot and stays
+// permanently undimmed as long as it's front -- meaning the retired
+// fixture's own final "close the only window -> nothing left -> re-dim
+// to 0" transition is UNREACHABLE here as well (Suite is always waiting
+// underneath, undimmed, per the task brief's own "Suite is open
+// throughout" note). Both real dim/undim transitions are instead proven
+// against harness.cla's UiProbe window (Task 3) -- a window with NO
+// field/textview widget at all, so its own focusIdx never leaves -1 and
+// Cut/Copy/Paste/Clear are genuinely (and safely -- nothing there to
+// mutate) dimmed the whole time it's front. See caseEditmenu's own
+// inline comments for exactly where each probe sits.
+//
+// tbEditBar: Edit's real menu-bar position -- see cases_menus.cla's own
+// tbMenuOpsBar comment for the whole-program declaration-order
+// derivation (Ops=2, Edit=3, File=4; the retired fixture's own
+// editmenu.events used "menu 2 ..." because Edit was the ONLY menu in
+// that scenario's standalone build). tbEditUndo/Cut/Copy/Paste are the
+// FIXED std-edit item numbers rt_ui_build_menus always appends in this
+// order (1=Undo, 2=separator, 3=Cut, 4=Copy, 5=Paste, 6=Clear) --
+// unrelated to declaration order, so these four are unchanged from the
+// retired fixture's own header comment.
+const tbEditBar: int = 3
+const tbEditUndo: int = 1
+const tbEditCut: int = 3
+const tbEditCopy: int = 4
+const tbEditPaste: int = 5
+
+// Click/drag coordinates reused VERBATIM from the retired
+// testdata/ui/editmenu.events -- EditMain's `size: 300, 260` is
+// unchanged from that scenario's own standalone build, so its content
+// top-left stays (106, 44) (rt_ui_open centers on a window's own width
+// alone) and every one of these global-screen points still lands exactly
+// where the retired fixture's own header comment derived them: 5px
+// inside each textview's first text line. tbEditADragX/tbEditBDragX are
+// the second click each row uses (real Toolbox double-click timing turns
+// it into a word-select anchor, not a fresh caret -- harmless, see the
+// retired fixture's own comment) before the drag extends the selection.
+const tbEditAX: int = 200
+const tbEditAY: int = 72
+const tbEditADragX: int = 133
+const tbEditDragToX: int = 190
+const tbEditBX: int = 200
+const tbEditBY: int = 180
+const tbEditBDragX: int = 133
+
+func caseEditmenu(): TestResult {
+    var probe1: UiProbe
+    var preDimCutDispatched: bool
+    var probe1Closed: bool
+
+    var w: EditMain
+    var aChangesAtOpen: int
+    var bChangesAtOpen: int
+
+    var cutDispatched: bool
+    var aTextAfterCut: text
+    var aChangesAfterCut: int
+    var bChangesAfterCut: int
+
+    var pasteDispatched: bool
+    var bTextAfterPaste: text
+    var bChangesAfterPaste: int
+    var aChangesAfterPaste: int
+
+    var copyDispatched: bool
+    var bTextAfterCopy: text
+    var bChangesAfterCopy: int
+
+    var undoDispatched: bool
+    var aTextAfterUndo: text
+    var bTextAfterUndo: text
+    var aChangesAfterUndo: int
+    var bChangesAfterUndo: int
+
+    var closedOk: bool
+
+    var probe2: UiProbe
+    var postDimCutDispatched: bool
+    var probe2Closed: bool
+
+    var ok: bool
+    var detail: string
+    var verbLine: string
+
+    // Probe 1: UiProbe has no field/textview widget at all, so its own
+    // focusIdx never leaves -1 -- rt_ui_std_edit_dispatch's own focus
+    // gate (ui.cla) no-ops Cut here even though this is a scripted call
+    // that bypasses the native DisableItem bit entirely. Safe: nothing
+    // in UiProbe for a wrongly-dispatched Cut to mutate.
+    probe1 = open UiProbe
+    preDimCutDispatched = UiTestMenu(tbEditBar, tbEditCut)
+    probe1Closed = UiTestClose()
+
+    // EditMain's own A auto-focuses the instant it opens (see this
+    // file's own header comment) -- Cut/Copy/Paste/Clear are already
+    // undimmed here, no click needed.
+    w = open EditMain
+    aChangesAtOpen = w.aChanges
+    bChangesAtOpen = w.bChanges
+
+    UiTestClick(tbEditAX, tbEditAY)
+    UiTestType("Hello World")
+    UiTestClick(tbEditADragX, tbEditAY)
+    // Bound into `verbLine` first, not passed inline -- native 68k
+    // codegen (cg68k) cannot materialize a concatenation expression
+    // directly as a call argument, same gap caseTickCountAdvances'
+    // (cases_events.cla) own detail-building comment hits.
+    verbLine = "drag " + tkIntToStr(tbEditDragToX)
+    verbLine = verbLine + " " + tkIntToStr(tbEditAY)
+    UiTestVerb(verbLine)
+
+    // Cut acts on A (the currently focused TE) ONLY: removes "Hello Wor"
+    // from A (leaving "ld"), scraps it -- fires one more A.change on top
+    // of the 11 from typing (12 total) -- and must NOT touch B at all
+    // (bChanges stays 0), the scoped-to-focus counterpart to
+    // cases_menus.cla's own scoped-item counter-must-not-advance check.
+    cutDispatched = UiTestMenu(tbEditBar, tbEditCut)
+    aTextAfterCut = w.A.text
+    aChangesAfterCut = w.aChanges
+    bChangesAfterCut = w.bChanges
+
+    UiTestClick(tbEditBX, tbEditBY)
+
+    // Paste: TEFromScrap+TEPaste "Hello Wor" into B -- fires B.change,
+    // and now that focus has moved to B, must NOT touch A (aChanges
+    // stays at its post-Cut value) -- same "acts on focus only" pin,
+    // the other direction.
+    pasteDispatched = UiTestMenu(tbEditBar, tbEditPaste)
+    bTextAfterPaste = w.B.text
+    bChangesAfterPaste = w.bChanges
+    aChangesAfterPaste = w.aChanges
+
+    UiTestClick(tbEditBDragX, tbEditBY)
+    verbLine = "drag " + tkIntToStr(tbEditDragToX)
+    verbLine = verbLine + " " + tkIntToStr(tbEditBY)
+    UiTestVerb(verbLine)
+
+    // Copy: scraps the selection but MUST NOT mutate/fire a change event
+    // -- the pin. B's text and change counter must be byte-identical to
+    // right after Paste.
+    copyDispatched = UiTestMenu(tbEditBar, tbEditCopy)
+    bTextAfterCopy = w.B.text
+    bChangesAfterCopy = w.bChanges
+
+    // Undo: permanently disabled (rt_ui_std_edit_dispatch's own itemIdx <
+    // 2 gate fires before it ever looks at focus/scrap) -- must produce
+    // no mutation and no change event on either textview.
+    undoDispatched = UiTestMenu(tbEditBar, tbEditUndo)
+    aTextAfterUndo = w.A.text
+    bTextAfterUndo = w.B.text
+    aChangesAfterUndo = w.aChanges
+    bChangesAfterUndo = w.bChanges
+
+    // UiTestClose() closes the frontmost window (EditMain) via the real
+    // close-box/goAway cascade -- not the retired fixture's own `quit`
+    // (a real `quit` statement would tear down the whole suite process;
+    // see harness.cla's own MenuMain/MenuAux/Ops comment for the same
+    // reasoning applied to cases_menus.cla).
+    closedOk = UiTestClose()
+
+    // Probe 2: same as Probe 1, run again AFTER EditMain has existed and
+    // closed -- proves the runtime's per-window focus tracking is a
+    // genuinely per-INSTANCE thing, not somehow left "stuck enabled" by
+    // EditMain's own prior A/B focus history. This is the batch's
+    // "re-dim" half of the transition (the retired fixture's own final
+    // dim-to-0 line, reproduced here against a fresh no-TE window rather
+    // than "zero windows open at all" -- see this file's own header
+    // comment for why the latter is unreachable inside this suite).
+    probe2 = open UiProbe
+    postDimCutDispatched = UiTestMenu(tbEditBar, tbEditCut)
+    probe2Closed = UiTestClose()
+
+    ok = preDimCutDispatched and probe1Closed and cutDispatched and pasteDispatched
+    ok = ok and copyDispatched and undoDispatched and closedOk
+    ok = ok and postDimCutDispatched and probe2Closed
+    ok = ok and aChangesAtOpen == 0 and bChangesAtOpen == 0
+    ok = ok and aTextAfterCut == "ld" and aChangesAfterCut == 12 and bChangesAfterCut == 0
+    ok = ok and bTextAfterPaste == "Hello Wor" and bChangesAfterPaste == 1
+    ok = ok and aChangesAfterPaste == aChangesAfterCut
+    ok = ok and bTextAfterCopy == "Hello Wor" and bChangesAfterCopy == bChangesAfterPaste
+    ok = ok and aTextAfterUndo == "ld" and bTextAfterUndo == "Hello Wor"
+    ok = ok and aChangesAfterUndo == aChangesAfterCut and bChangesAfterUndo == bChangesAfterCopy
+
+    if ok {
+        return tkPass("Editmenu")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    // aTextAfterCut/bTextAfterPaste/bTextAfterCopy are `text`, not
+    // `string` -- Ch3's Str<->Text coercion runs Str->Text only, not
+    // back (cases_winvar.cla's own header comment hit this exact gap),
+    // so only their LENGTH -- not their content -- folds into a
+    // `string` detail.
+    detail = "aAtOpen " + tkIntToStr(aChangesAtOpen)
+    detail = detail + " bAtOpen " + tkIntToStr(bChangesAtOpen)
+    detail = detail + " aAfterCut " + tkIntToStr(aChangesAfterCut)
+    detail = detail + " bAfterCut " + tkIntToStr(bChangesAfterCut)
+    detail = detail + " bAfterPaste " + tkIntToStr(bChangesAfterPaste)
+    detail = detail + " aAfterPaste " + tkIntToStr(aChangesAfterPaste)
+    detail = detail + " bAfterCopy " + tkIntToStr(bChangesAfterCopy)
+    detail = detail + " aAfterUndo " + tkIntToStr(aChangesAfterUndo)
+    detail = detail + " bAfterUndo " + tkIntToStr(bChangesAfterUndo)
+    detail = detail + " aTextAfterCutLen " + tkIntToStr(aTextAfterCut.length)
+    detail = detail + " bTextAfterPasteLen " + tkIntToStr(bTextAfterPaste.length)
+    detail = detail + " bTextAfterCopyLen " + tkIntToStr(bTextAfterCopy.length)
+    return tkFail("Editmenu", detail)
+}

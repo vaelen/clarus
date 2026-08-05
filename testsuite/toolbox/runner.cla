@@ -38,7 +38,13 @@
 // testdata/ui/buttons.cla, winvar.cla, and textwidgets.cla golden UI
 // scenarios, migrated to ButtonsPanel/LogWin/TextWin cases against
 // harness.cla's own windows of the same names -- see each case file's own
-// header comment for its full retirement mapping.
+// header comment for its full retirement mapping. Menus/Editmenu
+// (cases_menus.cla/cases_editmenu.cla) are Task 6's own addition
+// (ui-scenario-retirement batch migration): the retired
+// testdata/ui/menus.cla and editmenu.cla golden UI scenarios, migrated to
+// MenuMain/MenuAux/Ops and EditMain/Edit cases against harness.cla's own
+// windows/menus of the same names -- see each case file's own header
+// comment for its full retirement mapping.
 
 enum ToolboxTest {
     All
@@ -54,15 +60,17 @@ enum ToolboxTest {
     Buttons
     Winvar
     Textwidgets
+    Menus
+    Editmenu
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 12 real cases
+// nTbCases is ToolboxTest's member count minus All: the 14 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 13
+const nTbCases: int = 15
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -107,6 +115,12 @@ func tbCaseName(t: ToolboxTest): string {
     case Textwidgets {
         return "Textwidgets"
     }
+    case Menus {
+        return "Menus"
+    }
+    case Editmenu {
+        return "Editmenu"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -130,6 +144,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Buttons)
     l.add(Winvar)
     l.add(Textwidgets)
+    l.add(Menus)
+    l.add(Editmenu)
     l.add(SelfCheck)
     return l
 }
@@ -213,6 +229,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Textwidgets) {
         results.add(caseTextwidgets())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Menus) {
+        results.add(caseMenus())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Editmenu) {
+        results.add(caseEditmenu())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

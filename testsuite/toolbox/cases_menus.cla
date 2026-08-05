@@ -1,0 +1,111 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_menus.cla: Menus (Task 6, ui-scenario-retirement batch) -- the
+// migrated replacement for the retired testdata/ui/menus.cla golden UI
+// scenario (trace-only, no snaps). See harness.cla's own MenuMain/
+// MenuAux/Ops comment for the transcription (two window types, three
+// real items, the Quit item and Toggle's own widget mutation both
+// deliberately dropped and disclosed there).
+//
+// tbMenuOpsBar: Ops's real menu-bar position. rt_ui_build_menus (ui.cla)
+// inserts every declared `menu` into the bar in WHOLE-PROGRAM declaration
+// order (bar position = 0-based declaration index + 2, Apple always
+// being 1) -- harness.cla declares Ops first (index 0 -> bar 2), then
+// Edit (index 1 -> bar 3, cases_editmenu.cla's own tbEditBar), then
+// gui.cla declares File last (index 2 -> bar 4). The retired fixture's
+// own menus.events used "menu 2 ..." because Ops was the ONLY menu in
+// that scenario's standalone build (index 0 there too, by coincidence of
+// being alone) -- this suite's combined build needs the real derived
+// value, not a copy of that number.
+const tbMenuOpsBar: int = 2
+const tbMenuNewAuxItem: int = 1
+const tbMenuToggleItem: int = 2
+const tbMenuScopedItem: int = 3
+
+// tbMenuNewAuxCount/tbMenuToggleCount/tbMenuScopedCount: GLOBAL dispatch
+// counters, not MenuMain/MenuAux window-scope vars -- NewAux/Toggle are
+// APP-SCOPE handlers (harness.cla's own `extend Ops { ... }`, no window
+// instance in scope to hang a var off), and Scoped's own window-scoped
+// handler (`extend MenuAux { extend Ops { ... } }`) is kept as a global
+// too for symmetry and so this case can read it after MenuAux has
+// already closed (same "read a global, not a torn-down window's own var"
+// convention as cases_buttons.cla's own tbButtonsLog).
+var tbMenuNewAuxCount: int
+var tbMenuToggleCount: int
+var tbMenuScopedCount: int
+
+func caseMenus(): TestResult {
+    var mm: MenuMain
+    var toggleDispatched: bool
+    var scopedAttempt1: bool
+    var newAuxDispatched: bool
+    var scopedAttempt2: bool
+    var auxClosed: bool
+    var scopedAttempt3: bool
+    var mainClosed: bool
+    var ok: bool
+    var detail: string
+
+    tbMenuNewAuxCount = 0
+    tbMenuToggleCount = 0
+    tbMenuScopedCount = 0
+
+    mm = open MenuMain
+
+    // Toggle: app-scope (scopeWinIdx == -1 in rt_ui_menu_dispatch, ui.cla)
+    // -- fires regardless of which window is front.
+    toggleDispatched = UiTestMenu(tbMenuOpsBar, tbMenuToggleItem)
+
+    // Scoped is window-scoped to MenuAux, never opened yet: rt_ui_menu_
+    // dispatch's own scope gate (`front = rtUiFront(scopeWinIdx); if
+    // front == ptr(0) { skip = true }`) skips the fire outright, even
+    // though this is a scripted call bypassing the native DisableItem
+    // bit entirely -- the counter must NOT advance. This is the scripted-
+    // `menu`-verb-level equivalent of "the item is dimmed" (UiTestMenu's
+    // own bool return only reports "the verb line was recognized", not
+    // whether the underlying handler fired -- see
+    // runtime/clarus/uiscript.cla's rtUiScriptDispatchLine, which returns
+    // true for `menu` unconditionally; the counter is the real signal).
+    scopedAttempt1 = UiTestMenu(tbMenuOpsBar, tbMenuScopedItem)
+
+    // NewAux: app-scope, opens MenuAux -- MenuAux becomes frontmost.
+    newAuxDispatched = UiTestMenu(tbMenuOpsBar, tbMenuNewAuxItem)
+
+    // MenuAux is now front: Scoped's scope gate passes -- fires for real.
+    scopedAttempt2 = UiTestMenu(tbMenuOpsBar, tbMenuScopedItem)
+
+    // Close MenuAux (the "close" verb closes the FRONTMOST window, the
+    // real close-box/goAway path -- same mechanism the retired fixture's
+    // own `close` line used). MenuMain becomes front again.
+    auxClosed = UiTestClose()
+
+    // Scoped a third time: MenuAux is gone, so the scope gate skips it
+    // again -- the "undim then re-dim" half of the transition.
+    scopedAttempt3 = UiTestMenu(tbMenuOpsBar, tbMenuScopedItem)
+
+    // Close MenuMain (the only window left) -- close on all paths.
+    mainClosed = UiTestClose()
+
+    ok = toggleDispatched and scopedAttempt1 and newAuxDispatched
+    ok = ok and scopedAttempt2 and auxClosed and scopedAttempt3 and mainClosed
+    ok = ok and tbMenuToggleCount == 1
+    ok = ok and tbMenuNewAuxCount == 1
+    ok = ok and tbMenuScopedCount == 1
+
+    if ok {
+        return tkPass("Menus")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "toggleCount " + tkIntToStr(tbMenuToggleCount)
+    detail = detail + " newAuxCount " + tkIntToStr(tbMenuNewAuxCount)
+    detail = detail + " scopedCount " + tkIntToStr(tbMenuScopedCount)
+    detail = detail + " dispatched "
+    if toggleDispatched and scopedAttempt1 and newAuxDispatched and scopedAttempt2 and auxClosed and scopedAttempt3 and mainClosed {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    return tkFail("Menus", detail)
+}

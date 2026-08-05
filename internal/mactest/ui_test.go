@@ -176,12 +176,6 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestMenusUIScenario: two window types, app-scope + window-scoped menu
-// items, dimming transitions on open/close of the scoped window.
-func TestMenusUIScenario(t *testing.T) {
-	runUIScenario(t, "menus", 0)
-}
-
 // TestCanvasUIScenario: buffered canvas animated by an every-block; two
 // snaps (S1, S2) taken after different amounts of virtual-tick animation
 // must differ (the moving square's position proves it) -- checked here
@@ -297,17 +291,6 @@ func checkHscrollSnaps(t *testing.T, snaps []uiSnap) {
 // ui-scenario-retirement).
 func TestHdimUIScenario(t *testing.T) {
 	runUIScenario(t, "hdim", 0)
-}
-
-// TestEditMenuUIScenario (Task 3, mac-target-4c): `menu Edit { standard
-// edit }` end to end -- cut from textview A, paste into B (the snap proves
-// the text moved), Copy's no-change-event pin, Undo's unreachable dispatch
-// (asserted by the golden trace having no line for it at all), and the
-// Cut/Copy/Paste/Clear dim transitions on focus-gain and on the window
-// closing again. See testdata/ui/editmenu.cla's own header comment for the
-// full scripted walkthrough.
-func TestEditMenuUIScenario(t *testing.T) {
-	runUIScenario(t, "editmenu", 0)
 }
 
 // TestDialogsUIScenario (Task 4, mac-target-4c): askOpen/askSave/
