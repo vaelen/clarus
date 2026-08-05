@@ -217,7 +217,7 @@ func coreCaseName(t: CoreTest): string {
 // every other case -- see :250). Used by
 // cli.cla's arg parser: a `for t in coreAllCases() { if a ==
 // coreCaseName(t) ... }` loop, one small comparison per iteration,
-// instead of one giant 40-branch if/else-if chain -- native 68k codegen
+// instead of one giant all-cases if/else-if chain -- native 68k codegen
 // (cg68k) has a per-statement string/record temp-slot budget that a
 // single chain that long exceeds ("too many str/rec temps needed in one
 // statement"); a loop's per-iteration temps don't accumulate the same

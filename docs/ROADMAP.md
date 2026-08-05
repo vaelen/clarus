@@ -1084,7 +1084,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
         (the packed byte-array-of-bool/char shape that motivated
         `cgSlotSizeOf`'s even-rounding fix).
   2b. **Character/byte-type surface review (Andrew, 2026-08-04: AFTER
-     Go-compiler deletion, BEFORE the Docs cookbook):** revisit `byte`,
+     Go-compiler deletion, BEFORE the Docs cookbook): DONE (2026-08-05,
+     small-scalar-width phase).** Revisit `byte`,
      `char`, `bool`, and `text` as a set. Context: the Toolbox
      integration spec adds `byte` as an extern-record field-type name
      (1-byte unsigned, reads/writes as `int` — the 8-bit sibling of the
@@ -1095,10 +1096,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      2-byte slots elsewhere). Andrew accepted `byte` provisionally and
      wants a deliberate pass over the whole small-scalar/text surface
      once the single-frontend world has settled, before the cookbook
-     freezes the IM→Clarus mapping table's wording. Outcome may be:
-     keep all four as-is, fold/rename, or widen `char`'s extern-record
-     role — decide then, with the Toolbox phase's real usage as
-     evidence.
+     freezes the IM→Clarus mapping table's wording.
+
+     **Outcome:** kept all four types — no fold, rename, or widening.
+     `bool`/`char` = 1 byte in every aggregate (ordinary records, arrays,
+     extern records) on both lanes now, closing the width asterisk that
+     motivated this review (previously 4 bytes inside an ordinary record,
+     the Task-14/RT_FT descriptor workaround); a standalone local,
+     parameter, or global still gets its own 2-byte slot, and Ch13's trap-
+     marshaling rules are unchanged. `byte` stays extern-record-
+     contextual, as provisionally accepted. `text` is documented as the
+     heap-backed binary buffer type, distinct from `char`'s inline scalar
+     role. Scope grew during implementation to cover `runtime/mac/
+     rt_ui.c`'s three `RT_FT_BOOL` descriptor sites, which needed the same
+     1-byte read/write fix for the new record layout to hold. Spec:
+     `docs/superpowers/specs/2026-08-05-small-scalar-width-design.md`;
+     plan: `docs/superpowers/plans/2026-08-05-small-scalar-width.md`.
   3. **Docs cookbook (AFTER the features land — Andrew's call):** Ch13
      gains the IM→Clarus mapping table (CHAR→`word` CharParameter,
      Boolean→`bool`, Point-by-value→packed `int` or the new extern-record
@@ -1108,6 +1121,17 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      candidate follow-on — it needs the extern-dedup story
      (`irRegisterExtern` currently rejects duplicate names outright)
      decided in this phase.
+
+     **Settled mapping inputs (small-scalar-width phase, 2026-08-05):**
+     Boolean→`bool` (1 byte, in every aggregate as of that phase);
+     SignedByte/Byte→`byte`; CharParameter→`word`, never `char` — the
+     MenuKey lesson (`testsuite/toolbox/cases_events.cla`'s `TbMenuKey`:
+     IM's CHAR parameter is a plain 16-bit INTEGER with the char code in
+     the low byte, not Clarus's `bool`/`char` extern shape, which pads
+     into the word's high byte instead — declaring it `char` silently
+     broke every key-equivalent match); and the bit-11 trap-table rule
+     already noted above: `trap & 0x0800` — set means Toolbox/pascal
+     convention, clear means OS/register convention.
 
   **Compiler-performance phase (originally slotted after Toolbox
   integration, before 5f; ran BEFORE Toolbox integration instead, at
