@@ -71,9 +71,42 @@ routing through the existing `uiscript.cla` verb dispatcher:
   mode (CI boots driven by `--events`), pumps the real event loop with
   real TickCount waits otherwise (a human running the suite on real
   hardware) — cases behave identically in both worlds.
-- Ships via the implicit-inclusion manifest (`--rtdir` machinery) keyed
-  on usage, like every runtime module — programs that never call
-  `UiTest*` never link it.
+- Ships ONLY under the new `--testapi` flag (Component 1b) — never via
+  the ordinary usage manifest. Programs built without the flag cannot
+  name it, or any other runtime function.
+
+## Component 1b: the `--testapi` flag (the one clarusc change this phase makes)
+
+Discovered constraint (2026-08-05, during planning): clarusc requires
+user files to check CLEAN STANDALONE before any runtime module is
+consulted (`clarusc/main.cla` emit gate) — user code cannot name a
+runtime function, by design. That encapsulation is deliberate and stays:
+the runtime remains sealed for ordinary programs (this is why
+CanvasChecksum reads `ScrnBase` raw instead of calling `UiScreenBits`).
+
+Resolution (Andrew, 2026-08-05 — chosen over unconditional early splice
+and over PostEvent-only driving): an opt-in flag.
+
+- `clarusc emit --testapi` / `clarusc emit68k --testapi`: for a UI
+  program (`isUiProg`, parse-computable), the UI runtime module set
+  (uidesc/ui/uiwidgets/uitext/uitable/uiscript/uidialogs) PLUS
+  `uitest.cla` splices BEFORE the check, and the combined program is
+  checked once. Runtime names (including `UiTest*`) resolve for that
+  build only. `ser.cla`'s post-check usage-flag splice is untouched.
+- Without the flag: behavior byte-identical to today (the emitui goldens
+  and frozen UI scenario goldens are the proof — they must not change).
+- `--testapi` on a non-UI program is a no-op (flag accepted, nothing
+  spliced early).
+- Check-only mode (`clarusc FILE...`, no subcommand) is untouched — it
+  still never consults runtime modules, so `--testapi` source files fail
+  a bare check; suites are emit-built, and this is documented.
+- This is a clarusc change: snapshot regeneration + fixed-point green are
+  part of landing it. Language surface is unchanged (no reference edit;
+  the flag is toolchain surface, documented in CLAUDE.md and the usage
+  strings). Under `--testapi`, `rt*`/`Ui*` runtime names occupy the
+  program's namespace (collisions are ordinary redeclaration
+  diagnostics).
+- Only the suite build recipes pass `--testapi`; nothing else does.
 
 Fidelity statement (recorded, honest): `UiTestVerb` drives the same
 dispatch layer the retiring scenarios drove (`uiscript.cla`); migrated
@@ -178,7 +211,7 @@ In the SAME task that lands a scenario's replacement case(s):
 3. The 2b character/byte-type surface review remains queued after this
    work (roadmap order amended by Andrew's request to run this phase
    now).
-4. No `clarusc` compiler changes are expected. If a migration surfaces a
-   compiler gap, it escalates per the standing freeze-era convention
-   (Andrew authorizes explicitly; this phase does not amend the compiler
-   silently).
+4. Compiler scope is EXACTLY the `--testapi` flag (Component 1b) —
+   ratified by Andrew 2026-08-05, with snapshot regen. Any further
+   compiler gap a migration surfaces escalates for explicit approval;
+   this phase does not amend the compiler beyond that silently.
