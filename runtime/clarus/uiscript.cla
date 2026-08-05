@@ -1255,65 +1255,77 @@ func rtUiRunScripted() {
             return
         }
         rtUiScriptTokenize()
-
-        if rtUiStrEq(rtUiVerbBuf, UiStrAddr("click")) {
-            rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), false)
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("dblclick")) {
-            rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), true)
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("drag")) {
-            rtUiScriptDrag(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("key")) {
-            rtUiScriptKey(rtUiScriptKeyArg(rtUiArg1Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("type")) {
-            rtUiScriptType()
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("menu")) {
-            rtUiScriptMenu(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("close")) {
-            rtUiScriptClose()
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("resize")) {
-            rtUiScriptResize(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("zoom")) {
-            rtUiScriptZoom()
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("tick")) {
-            rtUiScriptTick(rtUiAtoi(rtUiArg1Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {
-            rtUiTestSnap(rtUiArg1Buf)
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("quit")) {
-            rtUiQuit()
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) {
-            // no-op: consumed once, up front, by rtUiLaunch's own
-            // pre-scan -- must not fire a second time here.
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-popup")) {
-            // `answer-popup N` (rt_ui.c:4447-4454): queues the 0-based item
-            // index a scripted popup click picks next -- arg1 is already a
-            // plain numeric token (no embedded spaces, unlike `type`/
-            // `answer-open`'s rest-of-line parsing), so rtUiScriptTokenize's
-            // own whitespace split already isolated it.
-            rtUiAnswerPushVal(rtUiAnsPopup, rtUiAtoi(rtUiArg1Buf))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-open")) {
-            // `answer-open <rest-of-line path>` (Task 10, rt_ui.c:4421-4429):
-            // a path can contain spaces, so it's read past the verb and one
-            // separating space, not via rtUiArg1Buf's own whitespace-split
-            // token. strlen("answer-open") == 11.
-            rtUiAnswerPushPath(rtUiAnsOpen, rtUiScriptRestOfLine(11))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-save")) {
-            // strlen("answer-save") == 11.
-            rtUiAnswerPushPath(rtUiAnsSave, rtUiScriptRestOfLine(11))
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-changes")) {
-            rtUiScriptAnswerChanges()
-        } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-cancel")) {
-            // Queues a cancel for whichever of askOpen/askSave consumes it
-            // next -- rtUiAskOpen/rtUiAskSave both recognize
-            // rtUiAnsCancel; rtUiAskSaveChanges does not (its own
-            // three-way cancel is `answer-changes cancel` instead).
-            rtUiAnswerPushVal(rtUiAnsCancel, 0)
-        } else if peekb(rtUiVerbBuf) == 0 {
-            // blank/whitespace-only line (sscanf found no tokens in the
-            // C reference): nothing to dispatch.
-        } else {
+        if not rtUiScriptDispatchLine() {
             log("uiport: unknown or unsupported scripted verb")
             quit 1
         }
         rtUiPumpPassive()
     }
+}
+
+// rtUiScriptDispatchLine dispatches the already-tokenized verb buffers
+// (rtUiVerbBuf/rtUiArg1Buf/rtUiArg2Buf, plus rest-of-line reads for
+// path-bearing verbs) for one scripted-event line. Returns false for an
+// unknown verb; true otherwise (including blank lines and the launchdoc
+// no-op). Does no line-reading, no pumping, and no quit-on-unknown --
+// those stay with the caller.
+func rtUiScriptDispatchLine(): bool {
+    if rtUiStrEq(rtUiVerbBuf, UiStrAddr("click")) {
+        rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), false)
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("dblclick")) {
+        rtUiScriptClick(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf), true)
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("drag")) {
+        rtUiScriptDrag(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("key")) {
+        rtUiScriptKey(rtUiScriptKeyArg(rtUiArg1Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("type")) {
+        rtUiScriptType()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("menu")) {
+        rtUiScriptMenu(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("close")) {
+        rtUiScriptClose()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("resize")) {
+        rtUiScriptResize(rtUiAtoi(rtUiArg1Buf), rtUiAtoi(rtUiArg2Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("zoom")) {
+        rtUiScriptZoom()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("tick")) {
+        rtUiScriptTick(rtUiAtoi(rtUiArg1Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {
+        rtUiTestSnap(rtUiArg1Buf)
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("quit")) {
+        rtUiQuit()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) {
+        // no-op: consumed once, up front, by rtUiLaunch's own
+        // pre-scan -- must not fire a second time here.
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-popup")) {
+        // `answer-popup N` (rt_ui.c:4447-4454): queues the 0-based item
+        // index a scripted popup click picks next -- arg1 is already a
+        // plain numeric token (no embedded spaces, unlike `type`/
+        // `answer-open`'s rest-of-line parsing), so rtUiScriptTokenize's
+        // own whitespace split already isolated it.
+        rtUiAnswerPushVal(rtUiAnsPopup, rtUiAtoi(rtUiArg1Buf))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-open")) {
+        // `answer-open <rest-of-line path>` (Task 10, rt_ui.c:4421-4429):
+        // a path can contain spaces, so it's read past the verb and one
+        // separating space, not via rtUiArg1Buf's own whitespace-split
+        // token. strlen("answer-open") == 11.
+        rtUiAnswerPushPath(rtUiAnsOpen, rtUiScriptRestOfLine(11))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-save")) {
+        // strlen("answer-save") == 11.
+        rtUiAnswerPushPath(rtUiAnsSave, rtUiScriptRestOfLine(11))
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-changes")) {
+        rtUiScriptAnswerChanges()
+    } else if rtUiStrEq(rtUiVerbBuf, UiStrAddr("answer-cancel")) {
+        // Queues a cancel for whichever of askOpen/askSave consumes it
+        // next -- rtUiAskOpen/rtUiAskSave both recognize
+        // rtUiAnsCancel; rtUiAskSaveChanges does not (its own
+        // three-way cancel is `answer-changes cancel` instead).
+        rtUiAnswerPushVal(rtUiAnsCancel, 0)
+    } else if peekb(rtUiVerbBuf) == 0 {
+        // blank/whitespace-only line (sscanf found no tokens in the
+        // C reference): nothing to dispatch.
+    } else {
+        return false
+    }
+    return true
 }
