@@ -365,7 +365,7 @@ static const rt_ui_window_desc kPopupProbeWindow = {
  * PopupProbe's own precedent. */
 
 typedef struct { unsigned char name[21]; /* 1 len + 20 data bytes (strCap 20) */
-                 int32_t qty; int32_t done; } TableRow;
+                 int32_t qty; uint8_t done; } TableRow;
 
 static rt_list *gTableRows = NULL;
 
@@ -480,7 +480,7 @@ static const rt_ui_window_desc kTableProbeWindow = {
  * RTUI_EV_ACCEPTED/CANCELLED only ever hand it FormProbe's own inst. */
 
 typedef struct { unsigned char name[21]; /* 1 len + 20 data bytes (strCap 20) */
-                 int32_t qty; int32_t active; int32_t color;
+                 int32_t qty; uint8_t active; int32_t color;
                  int32_t price; /* RT_FT_FIXED, 16.16 -- Fix round 1 coverage
                                     for rt_ui_parse_fixed's whole-number bug */
 } FormRec;

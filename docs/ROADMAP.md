@@ -788,7 +788,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   record-field sizing from local/param/array sizing (`cgRecFieldSizeOf`/
   `cgRecFieldAlignOf`, used only inside `cgFieldOffset`/`cgRecordSize`/
   `cgRecordCtorAt`/`cgEmitOneRcWalk`) so a record's `bool`/`char` field
-  gets the full 4-byte slot the shared runtime already assumes, without
+  gets the full 4-byte slot the shared runtime already assumes (since
+  narrowed to 1 byte — small-scalar-width phase, 2026-08-05), without
   touching a bare local/param's 2-byte sizing anywhere else. The ruling
   (recorded in the ledger, carried into both fixes): record-field ABI is
   decided per lane, deliberately, never inherited by copy-paste from the
@@ -1577,6 +1578,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   a codegen heuristic (e.g. deepest static call chain × worst-case frame
   size) could pick the reserve automatically, with the `app` setting as
   the manual override.
+- **Cross-lane `string(n)` record-field alignment divergence (found during
+  small-scalar-width Task 4, 2026-08-05):** cg68k's `cgRecFieldAlignOf`
+  gives a `string(n)` record field 2-byte alignment; cprint's
+  `cpCAlignOfField` gives the same field 1-byte alignment. Per-lane record
+  layouts are never cross-used (host and native each lay out their own
+  records independently), so this is latent, not a live bug — but it
+  should be resolved (pick one alignment and match it) or explicitly
+  documented as intended divergence before the Ch13 cookbook freezes
+  wording that could imply a single cross-lane layout.
 
 ## Process conventions that worked (for future sessions)
 
