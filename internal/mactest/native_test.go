@@ -262,7 +262,7 @@ func buildNative68kUI(t *testing.T, name string, eventsRel string, claRel ...str
 
 // TestSmokeBounceOn68k is Task 12's own end gate (native-5e): the FIRST
 // native UI boot -- testdata/valid/bounce.cla (canvas + every + close, no
-// TE/tables/dialogs/AE -- the smallest of the 23 UI golden scenarios),
+// TE/tables/dialogs/AE -- the smallest of the UI golden scenarios),
 // built via `clarusc emit68k --events` (no Retro68/cmake/C at all) and
 // booted on the same emulator harness TestHelloOn68k/etc already use.
 // Reuses ui_test.go's own checkUIGoldens (the SAME trace/testdata/ui and
@@ -320,11 +320,15 @@ type uiScenario68k struct {
 	check     func(t *testing.T, snaps []uiSnap)
 }
 
-// uiScenarios68k is the SAME 23 scenarios/sources/events as ui_test.go's
+// uiScenarios68k is the SAME scenarios/sources/events as ui_test.go's
 // Retro68-ported lane, minus smoke_bounce and about (each already has its
 // own standalone Test*On68k, predating this table -- Task 12/13; kept
 // standalone rather than folded in, recorded here per the brief's "your
-// call").
+// call") -- and, as of ui-scenario-retirement, minus whichever scenarios
+// have been migrated to testsuite/toolbox cases and retired (Task 4
+// retired pattern; see that task's own report for the migration). Not a
+// fixed count: this table shrinks task by task through that phase, so no
+// scenario-count number is hard-coded here or in the comments below.
 var uiScenarios68k = []uiScenario68k{
 	{name: "buttons", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "buttons.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "buttons.events")},
 	{name: "menus", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "menus.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "menus.events")},
@@ -347,9 +351,10 @@ var uiScenarios68k = []uiScenario68k{
 	{name: "bookmarks", claRel: []string{filepath.Join("..", "..", "examples", "bookmarks.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "bookmarks.events"), check: checkBookmarksSnaps},
 }
 
-// TestUiScenariosOn68k is Task 14's own end gate (native-5e): the SAME 23
+// TestUiScenariosOn68k is Task 14's own end gate (native-5e): the SAME
 // UI scenarios/events/goldens ui_test.go's Retro68-ported lane already
-// passes, this time built with `clarusc emit68k` (no Retro68/cmake/C) and
+// passes (see uiScenarios68k's own comment above for why no fixed count
+// is quoted here), this time built with `clarusc emit68k` (no Retro68/cmake/C) and
 // booted the same way TestSmokeBounceOn68k/TestAboutOn68k already are.
 // texteditor_bigfile is handled by its own subtest below (its host
 // counterpart, TestTexteditorBigfileUIScenario, bypasses checkUIGoldens

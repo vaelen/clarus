@@ -14,10 +14,17 @@
 // This case reproduces the exact same five visual features against
 // harness.cla's PatBoard window (see PatBoard's own comment for the
 // re-laid-out geometry and its 8px-alignment derivation), replacing the
-// single whole-window pixel-exact snap with five independent
-// UiTestChecksum regions, one per feature -- the task-4-report.md
-// assertion-mapping table lines these up 1:1 against what the retired
-// golden PBM pinned.
+// single whole-window pixel-exact snap with 13 independent UiTestChecksum
+// regions (one per dither LEVEL, not one merged region over the whole
+// ramp, plus one each for the two clamp swatches, the oval, and the
+// frame) -- the task-4-report.md assertion-mapping table lines these up
+// 1:1 against what the retired golden PBM pinned. Per-level splitting
+// (post-review fix) matters because UiTestChecksum is a plain additive
+// byte sum in raster order (runtime/clarus/uitest.cla:263-294) and is
+// therefore fully position-invariant: a single merged region over the
+// ramp cannot tell "right bytes, wrong band" apart from "right bytes,
+// right band" -- see tbPatL0X0's own comment below for the full
+// reasoning.
 //
 // Every tbPatXxxExpected constant below was recorded via the documented
 // FAIL-then-copy procedure (CLAUDE.md's toolbox-suite section): build
@@ -32,18 +39,48 @@ const tbPatBoardX0: int = 144
 const tbPatBoardY0: int = 44
 
 // Ramp: the 9-level dither swatch row, bounding box (8,8)-(216,24) in
-// PatBoard-local coordinates -> GLOBAL (152,52)-(360,68) -- one checksum
-// over the WHOLE row rather than nine separate ones (each swatch's fixed
-// 8x8 tile pattern already makes the row-wide sum fully deterministic and
-// level-sensitive; a changed level anywhere in the ramp changes this
-// sum). x/w are literals, not `tbPatBoardX0 + 8`/etc -- Clarus `const`
-// initializers are restricted to a literal or a bare IDENT (language
-// reference's constDecl grammar), no constant-folded arithmetic.
-const tbPatRampX0: int = 152
+// PatBoard-local coordinates -> GLOBAL y 52, one 16x16 checksum PER
+// level (x = 152 + lvl*24, lvl=0..8) rather than one merged region over
+// the whole row. UiTestChecksum is a plain additive byte sum in raster
+// order (runtime/clarus/uitest.cla:263-294) -- fully position-invariant,
+// so a merged region cannot distinguish "right bytes, wrong band" from
+// "right bytes, right band" (a loop off-by-one or a transposed x
+// computation reshuffling which level lands where would pass silently;
+// levels 3, 4, and 5 additionally happen to share the same measured 4080
+// checksum at this region size despite visibly different tile patterns --
+// see tbPatL3Expected/tbPatL4Expected/tbPatL5Expected below -- an exact
+// collision reachable by accident, not just adversarially). Splitting
+// into 9 per-level regions makes each level's own POSITION load-bearing
+// even where content alone can't distinguish neighboring levels.
+// x/w are literals, not `tbPatBoardX0 + 8`/etc --
+// Clarus `const` initializers are restricted to a literal or a bare
+// IDENT (language reference's constDecl grammar), no constant-folded
+// arithmetic.
 const tbPatRampY0: int = 52
-const tbPatRampW: int = 208
-const tbPatRampH: int = 16
-const tbPatRampExpected: int = 36720
+const tbPatSwatchW: int = 16
+const tbPatSwatchH: int = 16
+
+const tbPatL0X0: int = 152
+const tbPatL1X0: int = 176
+const tbPatL2X0: int = 200
+const tbPatL3X0: int = 224
+const tbPatL4X0: int = 248
+const tbPatL5X0: int = 272
+const tbPatL6X0: int = 296
+const tbPatL7X0: int = 320
+const tbPatL8X0: int = 344
+
+// Recorded via FAIL-then-copy against a real boot, see task-4-report.md's
+// fix transcript. NEVER computed by hand.
+const tbPatL0Expected: int = 0
+const tbPatL1Expected: int = 1360
+const tbPatL2Expected: int = 2720
+const tbPatL3Expected: int = 4080
+const tbPatL4Expected: int = 4080
+const tbPatL5Expected: int = 4080
+const tbPatL6Expected: int = 5440
+const tbPatL7Expected: int = 6800
+const tbPatL8Expected: int = 8160
 
 // tbPatRow2Y0/tbPatRow2W/tbPatRow2H: the second row's shared 16x16
 // swatch size and GLOBAL y (44 + 32 local = 76) -- ClampLow, ClampHigh,
@@ -76,7 +113,15 @@ const tbPatFrameExpected: int = 2826
 
 func casePattern(): TestResult {
     var w: PatBoard
-    var rampSum: int
+    var l0: int
+    var l1: int
+    var l2: int
+    var l3: int
+    var l4: int
+    var l5: int
+    var l6: int
+    var l7: int
+    var l8: int
     var clampLowSum: int
     var clampHighSum: int
     var ovalSum: int
@@ -87,13 +132,29 @@ func casePattern(): TestResult {
     w = open PatBoard
     UiTestTick(1)
 
-    rampSum = UiTestChecksum(tbPatRampX0, tbPatRampY0, tbPatRampW, tbPatRampH)
+    l0 = UiTestChecksum(tbPatL0X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l1 = UiTestChecksum(tbPatL1X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l2 = UiTestChecksum(tbPatL2X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l3 = UiTestChecksum(tbPatL3X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l4 = UiTestChecksum(tbPatL4X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l5 = UiTestChecksum(tbPatL5X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l6 = UiTestChecksum(tbPatL6X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l7 = UiTestChecksum(tbPatL7X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
+    l8 = UiTestChecksum(tbPatL8X0, tbPatRampY0, tbPatSwatchW, tbPatSwatchH)
     clampLowSum = UiTestChecksum(tbPatClampLowX0, tbPatRow2Y0, tbPatRow2W, tbPatRow2H)
     clampHighSum = UiTestChecksum(tbPatClampHighX0, tbPatRow2Y0, tbPatRow2W, tbPatRow2H)
     ovalSum = UiTestChecksum(tbPatOvalX0, tbPatRow2Y0, tbPatRow2W, tbPatRow2H)
     frameSum = UiTestChecksum(tbPatFrameX0, tbPatRow2Y0, tbPatRow2W, tbPatRow2H)
 
-    ok = rampSum == tbPatRampExpected
+    ok = l0 == tbPatL0Expected
+    ok = ok and l1 == tbPatL1Expected
+    ok = ok and l2 == tbPatL2Expected
+    ok = ok and l3 == tbPatL3Expected
+    ok = ok and l4 == tbPatL4Expected
+    ok = ok and l5 == tbPatL5Expected
+    ok = ok and l6 == tbPatL6Expected
+    ok = ok and l7 == tbPatL7Expected
+    ok = ok and l8 == tbPatL8Expected
     ok = ok and clampLowSum == tbPatClampLowExpected
     ok = ok and clampHighSum == tbPatClampHighExpected
     ok = ok and ovalSum == tbPatOvalExpected
@@ -106,8 +167,24 @@ func casePattern(): TestResult {
     }
     // Built up piecewise into `detail`, same native-68k per-statement
     // str/rec temp-slot budget reason as cases_draw.cla's own case.
-    detail = "ramp " + tkIntToStr(rampSum)
-    detail = detail + " != " + tkIntToStr(tbPatRampExpected)
+    detail = "l0 " + tkIntToStr(l0)
+    detail = detail + " != " + tkIntToStr(tbPatL0Expected)
+    detail = detail + "; l1 " + tkIntToStr(l1)
+    detail = detail + " != " + tkIntToStr(tbPatL1Expected)
+    detail = detail + "; l2 " + tkIntToStr(l2)
+    detail = detail + " != " + tkIntToStr(tbPatL2Expected)
+    detail = detail + "; l3 " + tkIntToStr(l3)
+    detail = detail + " != " + tkIntToStr(tbPatL3Expected)
+    detail = detail + "; l4 " + tkIntToStr(l4)
+    detail = detail + " != " + tkIntToStr(tbPatL4Expected)
+    detail = detail + "; l5 " + tkIntToStr(l5)
+    detail = detail + " != " + tkIntToStr(tbPatL5Expected)
+    detail = detail + "; l6 " + tkIntToStr(l6)
+    detail = detail + " != " + tkIntToStr(tbPatL6Expected)
+    detail = detail + "; l7 " + tkIntToStr(l7)
+    detail = detail + " != " + tkIntToStr(tbPatL7Expected)
+    detail = detail + "; l8 " + tkIntToStr(l8)
+    detail = detail + " != " + tkIntToStr(tbPatL8Expected)
     detail = detail + "; clampLow " + tkIntToStr(clampLowSum)
     detail = detail + " != " + tkIntToStr(tbPatClampLowExpected)
     detail = detail + "; clampHigh " + tkIntToStr(clampHighSum)
