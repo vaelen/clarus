@@ -1,0 +1,294 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// uitest.cla (ui-scenario-retirement Task 2): a `UiTest*` function-call
+// surface a UI program's OWN handlers can use to drive itself the same way
+// a `.events` scripted-verb file already does, so a later task can replace
+// the retired `.events`/golden-trace UI scenarios with ordinary
+// CoreTest/ToolboxTest-style Clarus test cases (testsuite/core,
+// testsuite/toolbox) that assert against real widget/pixel state instead
+// of a byte-exact trace log.
+//
+// --testapi-only inclusion: this file is never part of the ordinary
+// runtime-module manifest (clarusc/main.cla's isUiProg-gated splice) --
+// it is spliced in ONLY when clarusc emit/emit68k is invoked with the
+// `--testapi` flag on a UI program (window/menu/every declared), alongside
+// the same uidesc/ui/uiwidgets/uitext/uitable/uiscript/uidialogs set every
+// UI program already gets. Without `--testapi`, a program calling any
+// `UiTest*` name fails to check (undefined name) exactly as it would for
+// any other unspliced identifier -- see main.cla's own doc comment on the
+// early-splice mechanics.
+//
+// UiTestVerb is the funnel every wrapper below goes through: it injects
+// the caller's own line straight into the scripted interpreter's line
+// buffer (rtUiScriptSetLine, uiscript.cla) as if it had been read from a
+// compiled-in `.events` script, tokenizes it (rtUiScriptTokenize), and
+// dispatches it through the EXACT SAME rtUiScriptDispatchLine (Task 1's
+// own extraction out of rtUiRunScripted) a real scripted boot uses --
+// same widget/menu/dialog code paths, no separate "test-mode" logic to
+// drift out of sync with the real interpreter. On a successful dispatch it
+// also drains queued update/activate events (rtUiPumpPassive), same as the
+// scripted loop does after every line, so a click's redraw is already on
+// screen by the time the caller's own handler code goes on to assert
+// against it (e.g. via UiTestChecksum, below).
+//
+// Control-verb rejection: `quit`, `launchdoc`, and `snap` are REJECTED by
+// UiTestVerb (returns false, no dispatch at all) -- these three verbs
+// control the scripted-interpreter's own outer loop and trace/snap
+// machinery (rtUiRunScripted, rtUiTestSnap), not ordinary widget/dialog
+// interaction; a test case driving itself has no business quitting its own
+// process or asking for a raw framebuffer hex dump mid-assertion. Every
+// other verb dispatches normally.
+//
+// UiTestChecksum's alignment/size contract: `x` and `w` MUST be multiples
+// of 8 (screen bytes are 8 pixels wide; a non-aligned region would need
+// partial-byte masking this helper does not do) -- on violation it returns
+// -1 rather than a real sum. Callers are responsible for keeping the
+// summed region small: this helper does not itself clamp `h`/`w`, so a
+// caller-side contract (not an enforced runtime check) caps the total
+// summed byte count at 8192 (h * w/8 <= 8192) -- comfortably inside any
+// single checksummed widget/canvas region a real test case needs, and
+// small enough that a real sum can never coincide with -1's sentinel
+// value. Piecewise-string-building convention (native 68k codegen's
+// per-statement str/rec temp-slot budget, kit.cla's own tkReport doc
+// comment) applies throughout this file: every wrapper below builds its
+// verb line in small single-concatenation steps, never one long chained
+// expression.
+//
+// UiTestTick's scripted-vs-real split: under a scripted boot (rtUiScripted
+// true -- CI/golden-trace boots, `UiTestScript()` non-empty), it forwards
+// to the `tick` verb like every other wrapper, advancing the interpreter's
+// own VIRTUAL tick counter (rtUiScriptTick, uiscript.cla) -- real
+// TickCount is never consulted there. Under a REAL boot (interactive or a
+// real-time smoke test), there is no virtual counter to advance: this
+// waits for `n` real ticks to actually elapse (UiTickCount, ui.cla) one at
+// a time, running the SAME per-tick idle work rtUiRun's own real event
+// loop runs after every event (rtUiEveryPump/rtUiTeIdleFront/
+// rtUiFlushAllBuffered/rtUiTablesSync, all reused as-is, not duplicated)
+// so `every` handlers, caret blink, and buffered redraws all advance
+// exactly as they would between two real WaitNextEvent calls.
+
+// rtUiTestIntToStr: decimal (optionally negative) int-to-string
+// conversion for building verb lines -- `numToStr` is clarusc's own
+// compiler-internal helper (uiscript.cla's own rtUiIntToText doc comment),
+// unavailable to an ordinary runtime module, and rtUiIntToText builds a
+// `text` (heap handle), not the plain `string` a verb line needs; same
+// digit-buffer-then-append-in-order shape as testsuite/kit.cla's
+// tkIntToStr (a proven native-68k-tested pattern), ported here rather than
+// shared since kit.cla lives in a different splice (testsuite-only).
+func rtUiTestIntToStr(n: int): string {
+    var digits: char[12]
+    var count: int
+    var v: int
+    var neg: bool
+    var s: string
+    var i: int
+
+    count = 0
+    v = n
+    neg = false
+    if v < 0 {
+        neg = true
+        v = -v
+    }
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    if neg {
+        s = "-"
+    }
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    return s
+}
+
+// UiTestVerb: see this file's own header comment for the full contract.
+func UiTestVerb(line: string): bool {
+    var handled: bool
+
+    rtUiScriptSetLine(line)
+    rtUiScriptTokenize()
+    if rtUiStrEq(rtUiVerbBuf, UiStrAddr("quit")) or rtUiStrEq(rtUiVerbBuf, UiStrAddr("launchdoc")) or rtUiStrEq(rtUiVerbBuf, UiStrAddr("snap")) {
+        return false
+    }
+    handled = rtUiScriptDispatchLine()
+    if handled {
+        rtUiPumpPassive()
+    }
+    return handled
+}
+
+func UiTestClick(x: int, y: int): bool {
+    var verbLine: string
+
+    verbLine = "click "
+    verbLine = verbLine + rtUiTestIntToStr(x)
+    verbLine = verbLine + " "
+    verbLine = verbLine + rtUiTestIntToStr(y)
+    return UiTestVerb(verbLine)
+}
+
+func UiTestDblClick(x: int, y: int): bool {
+    var verbLine: string
+
+    verbLine = "dblclick "
+    verbLine = verbLine + rtUiTestIntToStr(x)
+    verbLine = verbLine + " "
+    verbLine = verbLine + rtUiTestIntToStr(y)
+    return UiTestVerb(verbLine)
+}
+
+func UiTestKey(k: string): bool {
+    var verbLine: string
+
+    verbLine = "key "
+    verbLine = verbLine + k
+    return UiTestVerb(verbLine)
+}
+
+func UiTestType(s: string): bool {
+    var verbLine: string
+
+    verbLine = "type "
+    verbLine = verbLine + s
+    return UiTestVerb(verbLine)
+}
+
+func UiTestMenu(m: int, i: int): bool {
+    var verbLine: string
+
+    verbLine = "menu "
+    verbLine = verbLine + rtUiTestIntToStr(m)
+    verbLine = verbLine + " "
+    verbLine = verbLine + rtUiTestIntToStr(i)
+    return UiTestVerb(verbLine)
+}
+
+func UiTestClose(): bool {
+    return UiTestVerb("close")
+}
+
+func UiTestResize(w: int, h: int): bool {
+    var verbLine: string
+
+    verbLine = "resize "
+    verbLine = verbLine + rtUiTestIntToStr(w)
+    verbLine = verbLine + " "
+    verbLine = verbLine + rtUiTestIntToStr(h)
+    return UiTestVerb(verbLine)
+}
+
+func UiTestZoom(): bool {
+    return UiTestVerb("zoom")
+}
+
+func UiTestAnswerOpen(path: string): bool {
+    var verbLine: string
+
+    verbLine = "answer-open "
+    verbLine = verbLine + path
+    return UiTestVerb(verbLine)
+}
+
+func UiTestAnswerSave(path: string): bool {
+    var verbLine: string
+
+    verbLine = "answer-save "
+    verbLine = verbLine + path
+    return UiTestVerb(verbLine)
+}
+
+func UiTestAnswerChanges(choice: string): bool {
+    var verbLine: string
+
+    verbLine = "answer-changes "
+    verbLine = verbLine + choice
+    return UiTestVerb(verbLine)
+}
+
+func UiTestAnswerCancel(): bool {
+    return UiTestVerb("answer-cancel")
+}
+
+func UiTestAnswerPopup(n: int): bool {
+    var verbLine: string
+
+    verbLine = "answer-popup "
+    verbLine = verbLine + rtUiTestIntToStr(n)
+    return UiTestVerb(verbLine)
+}
+
+// UiTestTick: see this file's own header comment for the scripted-vs-real
+// split's full rationale.
+func UiTestTick(n: int): bool {
+    var verbLine: string
+    var i: int
+    var start: int
+    var cur: int
+
+    if rtUiScripted {
+        verbLine = "tick "
+        verbLine = verbLine + rtUiTestIntToStr(n)
+        return UiTestVerb(verbLine)
+    }
+    i = 0
+    while i < n {
+        start = UiTickCount()
+        cur = start
+        while cur == start {
+            cur = UiTickCount()
+        }
+        rtUiEveryPump()
+        rtUiTeIdleFront()
+        rtUiFlushAllBuffered()
+        rtUiTablesSync()
+        i = i + 1
+    }
+    return true
+}
+
+// UiTestChecksum: see this file's own header comment for the
+// alignment/size contract. Generalizes testsuite/toolbox/cases_draw.cla's
+// own CanvasChecksum (a hard-coded region) to an arbitrary caller-supplied
+// rectangle.
+func UiTestChecksum(x: int, y: int, w: int, h: int): int {
+    var base: ptr
+    var sum: int
+    var row: int
+    var col: int
+    var rowAddr: ptr
+    var xByte: int
+    var wByte: int
+
+    if x mod 8 != 0 or w mod 8 != 0 {
+        return -1
+    }
+    xByte = x / 8
+    wByte = w / 8
+    // ScrnBase ($824, a fixed low-memory global) is the current screen
+    // buffer's base address -- read directly via peekl, same as
+    // cases_draw.cla's own caseCanvasChecksum. rowBytes is hard-coded to
+    // 64 (512/8), same fixed-target reasoning as tbRowBytes there.
+    base = ptr(peekl(ptr(0x824)))
+    sum = 0
+    row = 0
+    while row < h {
+        rowAddr = base + (y + row) * 64 + xByte
+        col = 0
+        while col < wByte {
+            sum = sum + peekb(rowAddr + col)
+            col = col + 1
+        }
+        row = row + 1
+    }
+    return sum
+}

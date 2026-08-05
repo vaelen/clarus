@@ -812,6 +812,36 @@ func rtUiScriptNextLine(): bool {
     return false
 }
 
+// rtUiScriptSetLine (ui-scenario-retirement Task 2): injects a line
+// straight into the script line buffer, bypassing rtUiScriptNextLine's own
+// script-cursor read -- uitest.cla's UiTestVerb uses this to feed a
+// runtime-built verb line through the same tokenize/dispatch path a
+// compiled-in `.events` script line takes. Lazily allocates
+// rtUiScriptLineBuf the same way rtUiScriptNextLine does (a caller may
+// inject a line before ever calling rtUiScriptNextLine), clamped to the
+// same 255-byte buffer capacity. rtUiScriptTokenize and
+// rtUiScriptRestOfLine both read rtUiScriptLineBuf/rtUiScriptLineLen only,
+// so they work unmodified on an injected line.
+func rtUiScriptSetLine(line: string) {
+    var n: int
+    var i: int
+
+    if rtUiScriptLineBuf == ptr(0) {
+        rtUiScriptLineBuf = UiNewPtr(256)
+    }
+    n = line.length
+    if n > 255 {
+        n = 255
+    }
+    i = 0
+    while i < n {
+        pokeb(rtUiScriptLineBuf + i, int(line[i]))
+        i = i + 1
+    }
+    pokeb(rtUiScriptLineBuf + n, 0)
+    rtUiScriptLineLen = n
+}
+
 func rtUiSkipSpaces(p: int): int {
     var q: int
 

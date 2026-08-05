@@ -245,6 +245,12 @@ on App.startCLI(args: list of string) {
     var rtDir: string
     var haveRtDir: bool
     var isUiProg: bool
+    var testApiFlag: bool
+    var earlySpliceDone: bool
+    var earlyIsUiProg: bool
+    var earlyMods: list of string
+    var earlyRtHeads: list of int
+    var earlyTail: int
     var neededMods: list of string
     var rtHeads: list of int
     var combined2: int
@@ -272,7 +278,7 @@ on App.startCLI(args: list of string) {
     // to IR, builds the C translation unit, and writes it to OUT.c via
     // file.writeText (byte-faithful, no per-line length cap -- unlike stdout
     // via alert, which is capped at a string's 255 bytes per line).
-    // `clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...` (native-5d
+    // `clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...` (native-5d
     // Task 7) runs the SAME check + runtime-manifest pipeline as emit, then
     // roots the native-only entry points (cg68AddRoots), shakes, and hands
     // off to cg68Program (cg68k.cla) instead of emitProgram -- see
@@ -323,7 +329,7 @@ on App.startCLI(args: list of string) {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
                 } else {
                     log("usage: clarusc emit -o OUT.c FILE...")
                 }
@@ -335,9 +341,9 @@ on App.startCLI(args: list of string) {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
-                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+                    log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
                 } else {
-                    log("usage: clarusc emit -o OUT.c [--rtdir DIR] FILE...")
+                    log("usage: clarusc emit -o OUT.c [--rtdir DIR] [--testapi] FILE...")
                 }
                 quit 2
             }
@@ -346,6 +352,13 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
+        } else if (emitMode or emitMode68k) and args[i] == "--testapi" {
+            // ui-scenario-retirement Task 2: opts a UI program into an
+            // early splice of the UI runtime set + uitest.cla (below, "Early
+            // --testapi splice"), ahead of the ordinary "must check clean
+            // standalone" gate, so `UiTest*` names resolve. A bare flag
+            // like --listing -- no following argument.
+            testApiFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
         } else if emitMode68k and args[i] == "--seglimit" {
@@ -358,7 +371,7 @@ on App.startCLI(args: list of string) {
             // comment.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] [--seglimit N] FILE...")
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] FILE...")
                 quit 2
             }
             segLimitFlag = cgParseDecimal(args[i])
@@ -373,7 +386,7 @@ on App.startCLI(args: list of string) {
             // escaping needed since nothing re-parses it as source.
             i = i + 1
             if i >= args.count {
-                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] [--seglimit N] [--events FILE] FILE...")
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] FILE...")
                 quit 2
             }
             eventsPath = args[i]
@@ -388,7 +401,7 @@ on App.startCLI(args: list of string) {
         quit 2
     }
     if emitMode68k and not haveOutPath {
-        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--listing] FILE...")
+        log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
         quit 2
     }
     if fileArgs.count == 0 {
@@ -424,6 +437,139 @@ on App.startCLI(args: list of string) {
             tail = lastDecl(h)
         }
         i = i + 1
+    }
+
+    // Early --testapi splice (ui-scenario-retirement Task 2, Component 1b):
+    // a program calling any `UiTest*` name (uitest.cla) would otherwise
+    // fail the ordinary "clean standalone" gate just below outright --
+    // UiTestClick and friends are ordinary top-level funcs, declared only
+    // in uitest.cla, not built-in language surface, so the checker has
+    // nowhere to resolve them without the splice. `--testapi` opts a UI
+    // program into splicing the SAME runtime-module set the ordinary
+    // post-check manifest below would eventually add (core/str/text/list/
+    // map, UNCONDITIONAL, plus uidesc/ui/uiwidgets/uitext/uitable/
+    // uiscript/uidialogs, isUiProg-gated) PLUS uitest.cla, in BEFORE this
+    // first checkProgram call -- so the ONE call just below both replaces
+    // the "clean standalone" gate and resolves every UiTest* name at once,
+    // rather than needing a second, separate check pass the way the
+    // ordinary post-check manifest splice does. isUiProg is computed here
+    // from the PARSED decl list (the exact same parse-level window/menu/
+    // every scan the ordinary post-check block repeats below, at its own
+    // "isUiProg reports whether..." comment) -- duplicated rather than
+    // hoisted into a shared call so the untouched no-flag path is provably
+    // unaffected by this addition; available before check since window/
+    // menu/every detection needs no type info. A non-UI program is
+    // unaffected either way: earlyIsUiProg stays false, nothing is
+    // spliced, and the ordinary "clean standalone" check below runs
+    // exactly as it always has.
+    //
+    // ser.cla's own usage-flag splice is deliberately NOT part of this
+    // early set and stays untouched, gated on usesFileSaveLoad in the
+    // ordinary post-check block below exactly as before: no ui*.cla module
+    // calls rtFileSave/rtFileLoad, so ser.cla needs no early presence, and
+    // usesFileSaveLoad itself is only known as a side effect of a
+    // checkProgram pass over the user's own calls -- unknowable before any
+    // check has run. native.cla is likewise never part of this early set:
+    // it resolves purely by name at codegen time (cgCallExtNatFallback),
+    // never by declare-before-use, so it needs no check-time presence,
+    // early or otherwise.
+    earlySpliceDone = false
+    if testApiFlag and combined != -1 {
+        earlyIsUiProg = false
+        d = combined
+        while d != -1 {
+            if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
+                earlyIsUiProg = true
+            }
+            d = declNext(d)
+        }
+        if earlyIsUiProg {
+            earlyMods.add("core.cla")
+            earlyMods.add("str.cla")
+            earlyMods.add("text.cla")
+            earlyMods.add("list.cla")
+            earlyMods.add("map.cla")
+            earlyMods.add("uidesc.cla")
+            earlyMods.add("ui.cla")
+            earlyMods.add("uiwidgets.cla")
+            earlyMods.add("uitext.cla")
+            earlyMods.add("uitable.cla")
+            earlyMods.add("uiscript.cla")
+            earlyMods.add("uidialogs.cla")
+            earlyMods.add("uitest.cla")
+            // Same "set the flag true directly, right alongside the
+            // manifest decision" convention the ordinary post-check block
+            // uses for these same eight flags -- true here regardless of
+            // whether that block's own (now-guarded, `not earlySpliceDone`)
+            // copy of this same assignment would otherwise run.
+            cpCorePorted = true
+            cpStrPorted = true
+            cpTextPorted = true
+            cpTextArcPorted = true
+            cpListPorted = true
+            cpListArcPorted = true
+            cpMapPorted = true
+            cpMapArcPorted = true
+
+            if not haveRtDir {
+                rtDir = findRtDir(earlyMods[0])
+            }
+            i = 0
+            while i < earlyMods.count {
+                rtPath = joinPath(rtDir, earlyMods[i])
+                rtProbe = ""
+                rtReadable = file.readText(rtPath, rtProbe)
+                if not rtReadable {
+                    if haveRtDir {
+                        log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
+                    } else {
+                        log("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+                    }
+                    quit 1
+                }
+                // Same whole-range capture as the ordinary post-check
+                // splice loop below -- a multi-file runtime module (one
+                // that itself `include`s another) pushes more than one
+                // asmHeads entry per expand call.
+                beforeCount = asmHeads.count
+                expand(rtPath, true)
+                j = beforeCount
+                while j < asmHeads.count {
+                    if asmHeads[j] != -1 {
+                        earlyRtHeads.add(asmHeads[j])
+                    }
+                    j = j + 1
+                }
+                i = i + 1
+            }
+
+            // Rebuild `combined` with the early runtime-module heads FIRST
+            // (declare-before-use), followed by the original user-program
+            // chain -- same rebuild shape the ordinary post-check splice
+            // uses for combined2 below, just landing in `combined` itself
+            // so the single checkProgram call just below sees the whole
+            // thing.
+            earlyTail = -1
+            combined2 = -1
+            i = 0
+            while i < earlyRtHeads.count {
+                h = earlyRtHeads[i]
+                if combined2 == -1 {
+                    combined2 = h
+                } else {
+                    earlyTail = declListAppend(earlyTail, h)
+                }
+                earlyTail = lastDecl(h)
+                i = i + 1
+            }
+            if combined2 == -1 {
+                combined2 = combined
+            } else {
+                earlyTail = declListAppend(earlyTail, combined)
+            }
+            combined = combined2
+            earlySpliceDone = true
+        }
     }
 
     // Phase B: one checker pass over the whole program, collecting all
@@ -569,6 +715,20 @@ on App.startCLI(args: list of string) {
         // (every emitted program needs it transitively through those),
         // same "set the flag true directly, right alongside the manifest
         // decision" convention every other unconditional module uses.
+        //
+        // ui-scenario-retirement Task 2: this whole block -- the core/str/
+        // text/list/map UNCONDITIONAL splice through the isUiProg-gated
+        // UI-set splice just below -- is guarded by `not earlySpliceDone`
+        // (interior left at its original indent, not re-indented under the
+        // new guard, to keep this diff a pure wrap): when --testapi's
+        // early splice (above, before the first checkProgram call) already
+        // spliced this exact module set into `combined`, re-adding it here
+        // would double-declare every one of its functions/types and fail
+        // the second checkProgram call below. ser.cla's own usage-flag
+        // splice and native.cla's own emit68k-only splice (further down)
+        // are OUTSIDE this guard -- neither is ever part of the early
+        // splice, so both always run exactly as before.
+        if not earlySpliceDone {
         cpCorePorted = true
         neededMods.add("core.cla")
         // Task 8: str.cla is the first UNCONDITIONAL entry -- every program
@@ -679,6 +839,7 @@ on App.startCLI(args: list of string) {
             // references resolve fine regardless of splice position).
             neededMods.add("uidialogs.cla")
         }
+        } // end `if not earlySpliceDone` (ui-scenario-retirement Task 2)
         // The manifest: Task 4 (Plan 5b) shipped exactly this one usage-
         // flag/file pair (ser.cla) plus the machinery; Task 7 repointed
         // "ser.cla" at the real serialization module (rtFileSave/

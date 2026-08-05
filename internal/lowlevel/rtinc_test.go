@@ -96,3 +96,111 @@ func TestRtInc(t *testing.T) {
 		}
 	})
 }
+
+// uiTestApiFixture is a small UI program (window + button + a handler
+// calling UiTestClick/UiTestChecksum) that only checks clean if the
+// UiTest* runtime surface (uitest.cla, spliced only under --testapi) is
+// already visible at check time -- see main.cla's own doc comment on why
+// the ordinary "clean standalone" gate would otherwise reject it outright.
+const uiTestApiFixture = `window Panel {
+    title: "Panel"
+    size: 300, 160
+
+    button Go { at: 20, 20; caption: "Go"; width: 80 }
+}
+
+on App.launch {
+    open Panel
+}
+
+extend Panel {
+    on Go.click {
+        UiTestClick(10, 10)
+        UiTestChecksum(0, 0, 8, 8)
+    }
+}
+`
+
+// uiTestApiNonUiFixture is windowless (no window/menu/every decl) --
+// isUiProg is false, so --testapi must be a no-op for it regardless.
+const uiTestApiNonUiFixture = `on App.startCLI(args: list of string) {
+    alert("hi")
+}
+`
+
+// TestTestApiFlag drives clarusc emit's --testapi opt-in early splice
+// (ui-scenario-retirement Task 2): a UI program calling UiTest* names
+// resolves with the flag, fails without it, and a non-UI program is
+// unaffected either way.
+func TestTestApiFlag(t *testing.T) {
+	root := repoRoot(t)
+	exe := buildClarusc(t)
+	rtDir := filepath.Join(root, "runtime", "clarus")
+
+	t.Run("WithFlagResolves", func(t *testing.T) {
+		dir := t.TempDir()
+		fixture := filepath.Join(dir, "uiprog.cla")
+		if err := os.WriteFile(fixture, []byte(uiTestApiFixture), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		outC := filepath.Join(dir, "main.c")
+		cmd := exec.Command(exe, "emit", "--testapi", "--rtdir", rtDir, "-o", outC, fixture)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("clarusc emit --testapi --rtdir %s %s: %v\nstdout: %s\nstderr: %s", rtDir, fixture, err, stdout.String(), stderr.String())
+		}
+		c, err := os.ReadFile(outC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(c), "clar_fn_UiTestVerb") {
+			t.Fatalf("emitted C missing clar_fn_UiTestVerb (uitest.cla not spliced):\n%s", string(c))
+		}
+	})
+
+	t.Run("WithoutFlagRejected", func(t *testing.T) {
+		dir := t.TempDir()
+		fixture := filepath.Join(dir, "uiprog.cla")
+		if err := os.WriteFile(fixture, []byte(uiTestApiFixture), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		outC := filepath.Join(dir, "main.c")
+		cmd := exec.Command(exe, "emit", "--rtdir", rtDir, "-o", outC, fixture)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Fatalf("expected nonzero exit (UiTestClick undefined without --testapi), got success\nstdout: %s", stdout.String())
+		}
+		combined := stdout.String() + stderr.String()
+		if !strings.Contains(combined, "UiTestClick") {
+			t.Fatalf("diagnostic missing %q: stdout: %s\nstderr: %s", "UiTestClick", stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("NonUiNoop", func(t *testing.T) {
+		dir := t.TempDir()
+		fixture := filepath.Join(dir, "nonui.cla")
+		if err := os.WriteFile(fixture, []byte(uiTestApiNonUiFixture), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		outC := filepath.Join(dir, "main.c")
+		cmd := exec.Command(exe, "emit", "--testapi", "--rtdir", rtDir, "-o", outC, fixture)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("clarusc emit --testapi --rtdir %s %s: %v\nstdout: %s\nstderr: %s", rtDir, fixture, err, stdout.String(), stderr.String())
+		}
+		c, err := os.ReadFile(outC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(c), "clar_fn_UiTestVerb") {
+			t.Fatalf("emitted C unexpectedly contains clar_fn_UiTestVerb for a non-UI program:\n%s", string(c))
+		}
+	})
+}
