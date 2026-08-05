@@ -63,6 +63,19 @@ Tiered test gates:
   Go-free regeneration instructions.
 - Bootstrap from C alone:
   `cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c`
+- `--testapi` (`clarusc emit`/`emit68k`/`appinfo`, ui-scenario-retirement
+  phase): for a UI program, splices the UI runtime modules PLUS
+  `runtime/clarus/uitest.cla` (`UiTestVerb` + wrappers +
+  `UiTestChecksum`) in early, before the ordinary clean-standalone check,
+  so the program can name runtime/`UiTest*` functions. Without the flag,
+  ordinary programs cannot name runtime functions at all (clarusc
+  enforces user code checks standalone before any runtime module is
+  consulted) and behavior is byte-identical to no-flag builds — the
+  emitui/frozen-scenario goldens are the proof. A no-op on non-UI
+  programs; ignored by check-only mode (bare `clarusc FILE...`). Only the
+  suites' GUI (`gui.cla`, `--events`-driven) builds pass it — `core`'s
+  non-UI host CLI (`cli.cla`) doesn't need it; nothing outside the two
+  suites does.
 
 ### `core`/`toolbox` test suites (`testsuite/`)
 
@@ -71,8 +84,10 @@ Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
 - `testsuite/core/` (41 `CoreTest` cases: 40 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (7 `ToolboxTest` cases: 6 real +
-  `SelfCheck`) needs
+  host and natively; `testsuite/toolbox/` (21 `ToolboxTest` cases: 20 real +
+  `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
+  legacy `testdata/ui` scenarios migrated in as cases, plus two new
+  machinery cases, `UiTestVerbSmoke` and `PostEventClick`) needs
   the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -147,7 +162,14 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   PBM framebuffer snaps) under `testdata/uisnaps` — the snaps are viewable
   PBMs. `CLARUS_MAC_BLESS=1` regenerates both. `scripts/build-mac.sh` takes
   `--events FILE` to compile a scripted event sequence into a test build for
-  deterministic UI driving (no real input needed).
+  deterministic UI driving (no real input needed). The ui-scenario-retirement
+  phase (2026-08-05) migrated 12 of the original 23 scenarios into
+  `testsuite/toolbox` cases and retired their `testdata/ui`/`testdata/uisnaps`
+  fixtures; 11 survive in the scripted lane (`about`, `smoke_bounce`,
+  `smoke_menudemo`, `smoke_mandel`, `opendoc`, `opendoc_empty`, `texteditor`,
+  `texteditor_quit`, `texteditor_bigfile`, `bookmarks`, `formedit` — the last
+  temporarily, pending a native-68k codegen fix for a form `accepted(rec)`
+  event silently reverting a trailing `bool` field to `false`).
 - This sandboxed display has a short (well under a minute of zero real HID
   activity) idle-lock; a naive long `sleep` with no synthetic input during
   manual real-input testing can look identical to a frozen app — nudge with

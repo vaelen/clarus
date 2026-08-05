@@ -1333,6 +1333,55 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   them). Every remaining script/doc/comment pointer at the old path
   repointed. Plan: `.superpowers/sdd/2026-08-05-runtime-host-move/`.
 
+  **ui-scenario-retirement (branch `ui-scenario-retirement`, 2026-08-05):
+  DONE.** Migrated 12 of the 23 legacy `testdata/ui` scripted-boot
+  scenarios (pattern, buttons, winvar, textwidgets, menus, editmenu,
+  canvas, zoomwin, hscroll, popuptable, dialogs, hdim) into
+  `testsuite/toolbox` cases — one process, in-process pass/fail, instead
+  of one emulator boot per scenario — and deleted their `testdata/ui`/
+  `testdata/uisnaps` fixtures in the same commits. `testsuite/toolbox`
+  grew 7 → 21 `ToolboxTest` cases (20 real + `SelfCheck`), including two
+  new machinery cases beyond the migrations themselves
+  (`UiTestVerbSmoke`, `PostEventClick`). The scripted lane now keeps 11
+  scenarios: `about` (`UIAbout`), `smoke_bounce`, `smoke_menudemo`,
+  `smoke_mandel`, `opendoc`, `opendoc_empty`, `texteditor`,
+  `texteditor_quit`, `texteditor_bigfile`, `bookmarks`, and `formedit`.
+
+  **`formedit` was NOT migrated** — deferred (Andrew, 2026-08-05) after
+  the migration surfaced a real native-68k codegen bug: a form's
+  `accepted(rec)` event silently reverts a bound trailing `bool` field to
+  `false`. `formedit` stays in the scripted lane temporarily until that
+  fix lands and the scenario can migrate too (see Small open items,
+  below).
+
+  One clarusc change, explicitly approved: the `--testapi` flag on
+  `emit`/`emit68k`/`appinfo` (Component 1b) — for a UI program, splices
+  the UI runtime modules plus a new `runtime/clarus/uitest.cla`
+  (`UiTestVerb` + wrappers + `UiTestChecksum`, visible ONLY under the
+  flag) in before the clean-standalone check, so suite GUI builds can
+  name runtime/`UiTest*` functions; byte-identical to no-flag builds
+  otherwise. Also `cgStartupStackReserve` 32768 → 131072 (128K native
+  stack) — a real fix, not a tuning knob: the old 32K reserve gave
+  roughly a 15-call ceiling against ~2128-byte fixed frames and was
+  causing genuine native stack-exhaustion crashes. Snapshot regenerated;
+  ~20 cg68k `.s` goldens re-blessed; emitui/cg68k goldens regenerated
+  once (Task 1, mechanical churn from the uiscript extraction).
+
+  T2: full `scripts/test-merge.sh` PASS in 715s; gated `internal/mactest`
+  (both lanes) 614s, UP from the 534s pre-phase reference despite ~24
+  fewer emulator boots — the in-process case work + bigger suite builds
+  the migration added apparently outweighs the removed boot overhead;
+  not investigated further this phase (correctness is green). Follow-ups
+  recorded (see Small open items): the `accepted(rec)`
+  trailing-bool codegen bug and `formedit`'s deferred migration;
+  `rtUiBuildEvery`'s every-block due-time seeding in composed scripted
+  builds; `label.text` READ unimplemented; PostEvent extern glue's
+  register-clobber list unverified. Spec:
+  `docs/superpowers/specs/2026-08-05-ui-scenario-retirement-design.md`
+  (see its "Outcome" section); plan:
+  `docs/superpowers/plans/2026-08-05-ui-scenario-retirement.md`; ledger:
+  `.superpowers/sdd/2026-08-05-ui-scenario-retirement/progress.md`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
@@ -1459,6 +1508,35 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   selection panics the app. Since the example is normative and shipped
   verbatim, fix reference-side (guard in the appendix example) in a future
   docs pass rather than papering over it in the acceptance app.
+- **`accepted(rec)` trailing-bool codegen bug (found during
+  ui-scenario-retirement, 2026-08-05):** a form's `accepted(rec)` event
+  silently reverts a bound trailing `bool` field to `false` on native
+  68k, the reason `formedit` was NOT migrated to `testsuite/toolbox` this
+  phase (it stays a scripted-lane scenario, temporarily, until this is
+  fixed). Migrate `formedit` once the underlying codegen bug is found and
+  fixed.
+- **Launch-an-application-from-Clarus (deferred, ui-scenario-retirement
+  spec Out-of-scope 1, Andrew 2026-08-05):** a function to launch another
+  app from inside Clarus so an on-Mac suite could exercise the example
+  apps (mandelbrot, texteditor, …) directly. System 6's `_Launch`
+  REPLACES the running application (no MultiFinder supervision), so this
+  needs its own design (sub-launch conventions, result handoff via file,
+  relaunch-the-suite chaining, or System 7/MultiFinder gating). The
+  remaining 11 scripted-lane scenarios' eventual fate rides on this.
+- **`rtUiBuildEvery` virtual-tick seeding (found during
+  ui-scenario-retirement, 2026-08-05):** seeds every-block due times from
+  real `TickCount` instead of virtual tick 0 in composed scripted builds
+  (worked around in `testsuite/toolbox/cases_canvas.cla` with a warm-up
+  tick). Reviewer also suggests checking for stale per-segment
+  constant-pool duplicates while in there (`clarusc/cg68k.cla:395-403`).
+- **`label.text` READ unimplemented (found during ui-scenario-retirement,
+  2026-08-05):** a `lowWidgetPropGet` gap; two migrated cases worked
+  around it rather than exercising the real read path.
+- **PostEvent extern glue clobber list unverified (found during
+  ui-scenario-retirement, 2026-08-05):** `runtime/mac/rt_ext_mac.inc`'s
+  PostEvent glue declares a d1/a1 register-clobber list that is
+  conservative but has not been independently verified against Inside
+  Macintosh/real trap behavior.
 
 ## Process conventions that worked (for future sessions)
 

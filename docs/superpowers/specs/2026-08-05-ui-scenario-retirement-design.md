@@ -215,3 +215,81 @@ In the SAME task that lands a scenario's replacement case(s):
    ratified by Andrew 2026-08-05, with snapshot regen. Any further
    compiler gap a migration surfaces escalates for explicit approval;
    this phase does not amend the compiler beyond that silently.
+
+## Outcome (2026-08-05)
+
+**Migrated: 12 of the 13 scenarios this design targeted** — pattern,
+buttons, winvar, textwidgets, menus, editmenu, canvas, zoomwin, hscroll,
+popuptable, dialogs, hdim — each retired in the same commit as its
+migration (fixtures/goldens/harness entries deleted together, per
+Component 4). `testsuite/toolbox` grew from 7 `ToolboxTest` cases (6
+real + `SelfCheck`) to 21 (20 real + `SelfCheck`): the 12 migrations plus
+two new machinery cases landed ahead of the migrations
+(`UiTestVerbSmoke`, `PostEventClick`).
+
+**`formedit` (the 13th, planned) was NOT migrated** — deferred, Andrew,
+2026-08-05. The migration attempt surfaced a real native-68k codegen
+bug: a form's `accepted(rec)` event silently reverts a bound trailing
+`bool` field to `false` (investigation recorded in the phase's task
+records under `.superpowers/sdd/2026-08-05-ui-scenario-retirement/`).
+Rather than land a migrated case that can't actually exercise the
+trailing-bool path, `formedit` stays in the scripted lane until the
+codegen bug is fixed, then migrates. This changes the Goal section's
+projected end state: the scripted lane keeps **11** scenarios, not 10 —
+`about` (`UIAbout`), `smoke_bounce`, `smoke_menudemo`, `smoke_mandel`,
+`opendoc`, `opendoc_empty`, `texteditor`, `texteditor_quit`,
+`texteditor_bigfile`, `bookmarks`, and `formedit` itself (temporary).
+
+**Compiler changes (both explicitly approved, both landed as amendments
+to Component 1b's stated scope):**
+
+- `--testapi` on `emit`/`emit68k`/`appinfo` (Component 1b as designed):
+  for a UI program, splices the UI runtime modules plus a new
+  `runtime/clarus/uitest.cla` (`UiTestVerb` + wrappers +
+  `UiTestChecksum`) in before the clean-standalone check. Visible ONLY
+  under the flag; byte-identical to no-flag builds otherwise (snapshot
+  regenerated, emitui/cg68k goldens regenerated once in Task 1 as
+  mechanical churn from the uiscript extraction).
+- `cgStartupStackReserve` 32768 → 131072 (128K native stack, Task 3 fix
+  round 1): NOT originally scoped by Component 1b. A real bug fix, not a
+  tuning knob — the old 32K reserve gave roughly a 15-call ceiling
+  against ~2128-byte fixed native call frames and was causing genuine
+  stack-exhaustion crashes on the native lane once migrated cases nested
+  deeper than the legacy scripted scenarios did. ~20 cg68k `.s` goldens
+  re-blessed as a result.
+
+**Runtime/codegen bugs discovered, not fixed this phase** (recorded in
+ROADMAP's Small open items):
+
+1. The `accepted(rec)` trailing-bool codegen bug above (blocks
+   `formedit`'s migration).
+2. `rtUiBuildEvery` seeds every-block due times from real `TickCount`
+   instead of virtual tick 0 in composed scripted builds (worked around
+   in `testsuite/toolbox/cases_canvas.cla` with a warm-up tick; reviewer
+   also flagged checking for stale per-segment constant-pool duplicates,
+   `clarusc/cg68k.cla:395-403`).
+3. `label.text` READ is unimplemented (a `lowWidgetPropGet` gap); two
+   migrated cases worked around it.
+4. `runtime/mac/rt_ext_mac.inc`'s PostEvent extern glue declares a d1/a1
+   register-clobber list that is conservative but unverified against
+   real trap behavior.
+
+**Boot-count reduction:** the scenario lane was ~46 of gated mactest's
+~60 boots pre-phase (23 scenarios × 2 lanes); migrating 12 (not the
+planned 13, `formedit` staying scripted) removes ~24 boots rather than
+the projected ~26.
+
+**T2 timing:** full `scripts/test-merge.sh` PASS in 715s (T1 body 15s +
+`internal/selfhost` 86s + gated `internal/mactest`, both lanes, 614s).
+Pre-phase reference for the gated-mactest figure was 534s — this run
+came in at 614s, **80s (~15%) slower, not faster**, despite retiring 12
+scenario boots (~24 fewer emulator boots). Not investigated further this
+task (T2 is green, no regression in correctness); the likely explanation
+is that the toolbox suite's `gui.cla` boot (already part of gated
+mactest pre-phase) now runs 12 more cases' worth of real work in-process
+per boot, on both lanes, plus a bigger source tree to build per test —
+so the per-boot fixed overhead removed by retiring 24 boots was smaller
+than the added in-process case work and larger builds. Recorded as a
+concern for whoever next tunes T2 wall-clock; raw numbers and command
+output in
+`.superpowers/sdd/2026-08-05-ui-scenario-retirement/task-10-report.md`.
