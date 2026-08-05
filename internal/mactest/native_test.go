@@ -331,7 +331,6 @@ var uiScenarios68k = []uiScenario68k{
 	{name: "winvar", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "winvar.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "winvar.events")},
 	{name: "zoomwin", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "zoomwin.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "zoomwin.events"), check: checkZoomwinSnaps},
 	{name: "canvas", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "canvas.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "canvas.events"), check: checkCanvasSnaps},
-	{name: "pattern", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "pattern.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "pattern.events")},
 	{name: "hdim", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "hdim.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "hdim.events")},
 	{name: "smoke_menudemo", claRel: []string{filepath.Join("..", "..", "examples", "menu-demo.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_menudemo.events")},
 	{name: "smoke_mandel", claRel: []string{filepath.Join("..", "..", "examples", "mandelbrot.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_mandel.events"), check: checkSmokeMandelSnaps},

@@ -123,6 +123,10 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // surface (uitest.cla) end to end plus a real PostEvent-queued click;
 // this build now needs `--testapi` (below) for UiTestClick/UiTestVerb to
 // resolve at all (see runtime/clarus/uitest.cla's own header comment).
+// cases_pattern.cla (Pattern) was added by Task 4 (ui-scenario-retirement
+// pilot migration) -- the retired testdata/ui/pattern.cla golden UI
+// scenario, migrated to five UiTestChecksum region assertions against
+// harness.cla's PatBoard window (also added by Task 4).
 // Unlike the core suite, gui.cla is this suite's ONLY front end -- there
 // is no toolbox CLI (MenuKeyMatches needs the GUI's own installed File
 // menu, CanvasChecksum needs the GUI's own Board canvas), so there is no
@@ -137,6 +141,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_event.cla"),
 	filepath.Join("testsuite", "toolbox", "harness.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_uitest.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_pattern.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -213,10 +218,12 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // by Task 13's A5Live addition, then to 6 by Task 2's (toolbox-
 // integration) GestaltNamed addition, then to 7 by Task 6's (toolbox-
 // integration Feature B) EventXRec addition, then to 9 by Task 3's
-// (ui-scenario-retirement) UiTestVerbSmoke/PostEventClick addition):
-// parses each of the 9 result lines (8 real cases + SelfCheck) into its
-// own t.Run subtest -- per-case CI reporting -- plus the aggregate TOTAL
-// line, regardless of which lane produced the capture.
+// (ui-scenario-retirement) UiTestVerbSmoke/PostEventClick addition, then
+// to 10 by Task 4's (ui-scenario-retirement pilot migration) Pattern
+// addition): parses each of the 10 result lines (9 real cases +
+// SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
+// the aggregate TOTAL line, regardless of which lane produced the
+// capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -239,8 +246,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 9 {
-		t.Errorf("result lines: got %d, want 9\ncapture:\n%s", len(results), out)
+	if len(results) != 10 {
+		t.Errorf("result lines: got %d, want 10\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -250,7 +257,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 9 PASS 9 FAIL 0"; total != want {
+	if want := "TOTAL 10 PASS 10 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

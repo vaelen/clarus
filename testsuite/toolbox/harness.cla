@@ -7,7 +7,15 @@
 // (runtime/clarus/uitest.cla, Task 2) and a REAL PostEvent-delivered
 // click against a real widget inside a booted program -- the same "real
 // Toolbox trap or real framebuffer read" bar every other case in this
-// suite already clears (runner.cla's own header comment).
+// suite already clears (runner.cla's own header comment). PatBoard
+// (Task 4, ui-scenario-retirement pilot) is this file's second window: a
+// transcription of the retired testdata/ui/pattern.cla fixture's canvas +
+// `on opened` drawing, re-laid-out so every checksummed region (cases_
+// pattern.cla) sits on an 8px-aligned local x/width -- see PatBoard's own
+// comment below for the geometry derivation. Its own tb-prefixed
+// geometry/expected-checksum constants live in cases_pattern.cla, same
+// split as cases_draw.cla's tbCanvasX0/tbCanvasY0 (gui.cla's Board is
+// declared with no case-owned constants of its own either).
 //
 // tbPokeCenterX/tbPokeCenterY: Poke's GLOBAL screen center, worked the
 // same way testsuite/toolbox/gui.cla's own header comment derives
@@ -41,5 +49,59 @@ extend UiProbe {
         // -- see testdata/emitui/handlers.cla's own header comment for
         // this exact gap.
         pokes = pokes + 1
+    }
+}
+
+// PatBoard (Task 4, ui-scenario-retirement pilot): transcribed from the
+// retired testdata/ui/pattern.cla, same buffered-canvas-painted-once-
+// from-`opened` shape, re-laid-out on an 8px grid so cases_pattern.cla's
+// checksummed regions land byte-aligned (UiTestChecksum's x/w-multiple-
+// of-8 contract) WITHOUT any partial-byte masking. `size: 224, 64` ->
+// content top-left ((512-224)/2, 44) = (144, 44) (ui.cla's rtUiOpen, same
+// derivation as tbPokeCenterX/tbPokeCenterY above) -- 144 is itself a
+// multiple of 8, so every LOCAL x below (already a multiple of 8) stays
+// aligned once translated to GLOBAL screen coordinates, with no further
+// arithmetic needed at the call site.
+//
+// Local layout (Canvas is `at: 0, 0; fill: both`, so local == content
+// coordinates):
+//   ramp:       9 levels (0..8), each a 16x16 swatch at x = 8 + lvl*24,
+//               y = 8 -- bounding box (8,8)-(216,24), width 208 (8 + 8
+//               swatches * 24 spacing + 16 swatch width - 8 start = 208).
+//   clampLow:   pattern(-3) (clamps to 0, matching ramp level 0) filled
+//               at (8,32)-(24,48).
+//   clampHigh:  pattern(99) (clamps to 8, matching ramp level 8) filled
+//               at (32,32)-(48,48).
+//   oval:       pattern(4) (mid-gray) fillCircle centered (72,40) radius
+//               8 -- bounding box (64,32)-(80,48) (UiFillOval path).
+//   frame:       rect (frame, not fill) at (88,32)-(104,48) -- UiFrameRect
+//               ignores the current fill pattern entirely (rtUiCanvasRect,
+//               runtime/clarus/uiwidgets.cla), proving frames stay a
+//               plain black outline regardless of `pattern`.
+// None of the five regions overlap; each sits in its own 24px (ramp) or
+// 24px (row two) column.
+window PatBoard {
+    title: "PatBoard"
+    size: 224, 64
+
+    canvas Canvas { at: 0, 0; fill: both; buffered }
+}
+
+extend PatBoard {
+    on opened {
+        var lvl: int
+        lvl = 0
+        while lvl <= 8 {
+            Canvas.pattern(lvl)
+            Canvas.fillRect(8 + lvl * 24, 8, 16, 16)
+            lvl = lvl + 1
+        }
+        Canvas.pattern(-3)
+        Canvas.fillRect(8, 32, 16, 16)
+        Canvas.pattern(99)
+        Canvas.fillRect(32, 32, 16, 16)
+        Canvas.pattern(4)
+        Canvas.fillCircle(72, 40, 8)
+        Canvas.rect(88, 32, 16, 16)
     }
 }

@@ -335,20 +335,15 @@ func checkHscrollSnaps(t *testing.T, snaps []uiSnap) {
 	}
 }
 
-// TestPatternUIScenario: the canvas `pattern` method (Ch11) -- one snap
-// showing the 9-level dither ramp, clamped out-of-range levels, the
-// FillOval path, and a frame op unaffected by the fill pattern.
-func TestPatternUIScenario(t *testing.T) {
-	runUIScenario(t, "pattern", 0)
-}
-
 // TestHdimUIScenario (fix-hbar): an empty `scrollbar: both` textview --
 // both bars must render thumbless ("dimmed when not needed"). The V bar's
 // maxScroll has always been 0 for empty content; this scenario is the H
 // bar's own regression guard now that its range tracks content instead of
 // a fixed no-wrap width. One snap; the golden PBM itself is the assertion
-// (both bars' thumbless rendering), same as TestPatternUIScenario's dither
-// ramp above.
+// (both bars' thumbless rendering) -- same "snap-is-the-assertion" shape
+// as the retired pattern scenario's own dither ramp (migrated to
+// testsuite/toolbox/cases_pattern.cla's Pattern case, Task 4,
+// ui-scenario-retirement).
 func TestHdimUIScenario(t *testing.T) {
 	runUIScenario(t, "hdim", 0)
 }

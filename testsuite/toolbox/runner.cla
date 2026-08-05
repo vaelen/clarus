@@ -27,7 +27,12 @@
 // against a real OSEventAvail trap. UiTestVerbSmoke/PostEventClick
 // (cases_uitest.cla) are Task 3's own addition (ui-scenario-retirement):
 // the `UiTest*` driver surface (uitest.cla) end to end, plus a REAL
-// PostEvent-queued click against harness.cla's UiProbe window.
+// PostEvent-queued click against harness.cla's UiProbe window. Pattern
+// (cases_pattern.cla) is Task 4's own addition (ui-scenario-retirement
+// pilot migration): the retired testdata/ui/pattern.cla golden UI
+// scenario, migrated to five UiTestChecksum region assertions against
+// harness.cla's PatBoard window -- see cases_pattern.cla's own header
+// comment for the full retirement mapping.
 
 enum ToolboxTest {
     All
@@ -39,15 +44,16 @@ enum ToolboxTest {
     EventXRec
     UiTestVerbSmoke
     PostEventClick
+    Pattern
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 8 real cases plus
+// nTbCases is ToolboxTest's member count minus All: the 9 real cases plus
 // SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 9
+const nTbCases: int = 10
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -80,6 +86,9 @@ func tbCaseName(t: ToolboxTest): string {
     case PostEventClick {
         return "PostEventClick"
     }
+    case Pattern {
+        return "Pattern"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -99,6 +108,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(EventXRec)
     l.add(UiTestVerbSmoke)
     l.add(PostEventClick)
+    l.add(Pattern)
     l.add(SelfCheck)
     return l
 }
@@ -166,6 +176,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, PostEventClick) {
         results.add(casePostEventClick())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Pattern) {
+        results.add(casePattern())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
