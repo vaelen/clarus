@@ -24,7 +24,10 @@
 // (toolbox-integration): the generalized named-register trap clause's
 // native gate. EventXRec (cases_event.cla) is Task 6's own addition
 // (toolbox-integration Feature B): `extern record` native storage/decay
-// against a real OSEventAvail trap.
+// against a real OSEventAvail trap. UiTestVerbSmoke/PostEventClick
+// (cases_uitest.cla) are Task 3's own addition (ui-scenario-retirement):
+// the `UiTest*` driver surface (uitest.cla) end to end, plus a REAL
+// PostEvent-queued click against harness.cla's UiProbe window.
 
 enum ToolboxTest {
     All
@@ -34,15 +37,17 @@ enum ToolboxTest {
     A5Live
     GestaltNamed
     EventXRec
+    UiTestVerbSmoke
+    PostEventClick
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 6 real cases plus
+// nTbCases is ToolboxTest's member count minus All: the 8 real cases plus
 // SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 7
+const nTbCases: int = 9
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -69,6 +74,12 @@ func tbCaseName(t: ToolboxTest): string {
     case EventXRec {
         return "EventXRec"
     }
+    case UiTestVerbSmoke {
+        return "UiTestVerbSmoke"
+    }
+    case PostEventClick {
+        return "PostEventClick"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -86,6 +97,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(A5Live)
     l.add(GestaltNamed)
     l.add(EventXRec)
+    l.add(UiTestVerbSmoke)
+    l.add(PostEventClick)
     l.add(SelfCheck)
     return l
 }
@@ -145,6 +158,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, EventXRec) {
         results.add(caseEventXRec())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, UiTestVerbSmoke) {
+        results.add(caseUiTestVerbSmoke())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, PostEventClick) {
+        results.add(casePostEventClick())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

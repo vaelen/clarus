@@ -352,12 +352,20 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
-        } else if (emitMode or emitMode68k) and args[i] == "--testapi" {
+        } else if (emitMode or emitMode68k or appinfoMode) and args[i] == "--testapi" {
             // ui-scenario-retirement Task 2: opts a UI program into an
             // early splice of the UI runtime set + uitest.cla (below, "Early
             // --testapi splice"), ahead of the ordinary "must check clean
             // standalone" gate, so `UiTest*` names resolve. A bare flag
-            // like --listing -- no following argument.
+            // like --listing -- no following argument. appinfoMode accepts
+            // it too (ui-scenario-retirement Task 3 fix round 1, ratified
+            // 2026-08-05): `clarusc appinfo` runs the SAME unconditional
+            // checkProgram pass every mode does (below), so a --testapi
+            // program's own appinfo call needs the identical early splice
+            // or it fails the clean-standalone gate before ever reaching
+            // the appinfoMode print block -- the early-splice block itself
+            // (below) is already mode-agnostic (gated on testApiFlag alone,
+            // never on emitMode/emitMode68k), so no other change is needed.
             testApiFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true

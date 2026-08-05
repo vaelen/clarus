@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// harness.cla: UiProbe (Task 3, ui-scenario-retirement) -- a minimal
+// probe window cases_uitest.cla's own UiTestVerbSmoke/PostEventClick
+// cases open, click, and close, exercising the `UiTest*` driver surface
+// (runtime/clarus/uitest.cla, Task 2) and a REAL PostEvent-delivered
+// click against a real widget inside a booted program -- the same "real
+// Toolbox trap or real framebuffer read" bar every other case in this
+// suite already clears (runner.cla's own header comment).
+//
+// tbPokeCenterX/tbPokeCenterY: Poke's GLOBAL screen center, worked the
+// same way testsuite/toolbox/gui.cla's own header comment derives
+// RunAll's (46,184)-(126,204), center (86,194): windows only ever CENTER
+// (no window `at:` position property; Chapter 8), so for this window's
+// fixed `size: 300, 120` the content top-left is ((512-300)/2, 44) =
+// (106, 44) (ui.cla's rtUiOpen). Poke's own `at: 10, 10` with the button
+// widget's default size (rtUiButtonW/H = 80x20,
+// runtime/clarus/uiwidgets.cla) gives a LOCAL rect (10,10)-(90,30) ->
+// GLOBAL (116,54)-(196,74), center (156,64).
+const tbPokeCenterX: int = 156
+const tbPokeCenterY: int = 64
+
+window UiProbe {
+    title: "UiProbe"
+    size: 300, 120
+
+    button Poke { at: 10, 10; caption: "Poke" }
+
+    var pokes: int = 0
+}
+
+extend UiProbe {
+    on Poke.click {
+        // Bare name, not `window.pokes = ...` -- a per-instance var's
+        // ONLY assignable form inside `extend` is the bare (implicit)
+        // name (Ch8: "bare names resolve first against the firing
+        // instance's properties, fields, and widgets"); `window` itself
+        // is its own expression kind (ExWindowSelf, parse.cla's own
+        // isLvalue doc comment), readable but never an assignment target
+        // -- see testdata/emitui/handlers.cla's own header comment for
+        // this exact gap.
+        pokes = pokes + 1
+    }
+}

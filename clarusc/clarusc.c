@@ -46706,7 +46706,7 @@ static void clar_fn_cgEmitStartup(int32_t cv_startupLbl, int32_t cv_initGlobalsL
         clar_fn_a68Comment(clar_lit_1558);
     }
     clar_fn_a68Emit(1, 4, 9, 0, 304, 2, 0, 0);
-    clar_fn_a68Emit(5, 4, 8, 0, (0 - 32768), 2, 0, 0);
+    clar_fn_a68Emit(5, 4, 8, 0, (0 - 131072), 2, 0, 0);
     clar_str_63 t1;
     clar_fn_rtStrStore((void*)&t1, 63, (void*)(const uint8_t*)&(clar_lit_1559));
     clar_fn_a68EmitTrap(41005, t1);
@@ -57007,7 +57007,7 @@ static void clar_fn_handler_App_startCLI(rt_list * cv_args) {
                 }
                 cv_haveRtDir = 1;
             } else {
-                if ((cv_emitMode || cv_emitMode68k) && (clar_fn_rtStrCmp((void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_args, (int32_t)(cv_i)))), (void*)(const uint8_t*)&(clar_lit_1734)) == 0)) {
+                if (((cv_emitMode || cv_emitMode68k) || cv_appinfoMode) && (clar_fn_rtStrCmp((void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_args, (int32_t)(cv_i)))), (void*)(const uint8_t*)&(clar_lit_1734)) == 0)) {
                     cv_testApiFlag = 1;
                 } else {
                     if (cv_emitMode68k && (clar_fn_rtStrCmp((void*)(const uint8_t*)&((*(clar_str_255*)rt_list_at(cv_args, (int32_t)(cv_i)))), (void*)(const uint8_t*)&(clar_lit_1735)) == 0)) {

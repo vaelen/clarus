@@ -800,4 +800,36 @@ void *rt_ext_TbXRecAddr(void *p) { return p; }
  * exists under this exact name. */
 void *rt_ext_XRecAddr(void *p) { return p; }
 
+/* rt_ext_TbPostEvent (ui-scenario-retirement Task 3, fix round 1):
+ * testsuite/toolbox/cases_uitest.cla's own extern -- same "cprint always
+ * renders rt_ext_NAME regardless of clause" precedent as every block
+ * above, but the FIRST one of these that cannot just call a real
+ * Toolbox C function: PostEvent (trap 0xA02F) has no Universal-
+ * Interfaces prototype anywhere in Retro68's InterfacesAndLibraries
+ * (confirmed by grep -- it is genuinely absent, unlike TickCount/
+ * MenuKey/Gestalt/NewPtr/DisposePtr/EventAvail/SetCurrentA5 above, which
+ * all have one). So this is hand-written raw register-trap glue instead:
+ * eventNum in A0 (low word), eventMsg in D0, `trap 0xA02F` (bit 11
+ * clear -- OS/register convention, cases_event.cla's own header comment
+ * works out this exact rule), result read back from D0 -- the identical
+ * register assignment cases_uitest.cla's own `= trap 0xA02F reg(a0:
+ * eventNum, d0: eventMsg) ret d0` clause already gives cg68k's native
+ * lane (that lane needs no glue at all -- the clause compiles straight
+ * to the TRAP instruction). Conservative clobber list (d1/a1 alongside
+ * cc/memory): PostEvent's real register-usage contract beyond D0/A0 is
+ * undocumented, and every other trap glue in this file gets to lean on
+ * a real C prototype someone else already got right; this one doesn't
+ * have that safety net. */
+short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
+    register int32_t d0 asm("d0") = eventMsg;
+    register int32_t a0 asm("a0") = (int32_t)(uint16_t)eventNum;
+    asm volatile (
+        ".word 0xA02F"
+        : "+r" (d0)
+        : "r" (a0)
+        : "d1", "a1", "cc", "memory"
+    );
+    return (short)d0;
+}
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

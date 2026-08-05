@@ -1353,11 +1353,27 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
 // cgStartupStackReserve (Task 14, native-5e) is the extra headroom
 // cgEmitStartup reserves for the stack via SetApplLimit before
 // MaxApplZone -- see that function's own doc comment for the "stack
-// collision with heap" bug this fixes. 32KB is generous relative to this
-// backend's own worst observed frame depth (naive codegen, no peephole/
-// regalloc yet -- every str temp alone is 256 bytes) without meaningfully
-// starving the heap on a real partition.
-const cgStartupStackReserve: int = 32768
+// collision with heap" bug this fixes. Raised 32KB -> 128KB
+// (ui-scenario-retirement Task 3 fix round 1, ratified by Andrew
+// 2026-08-05): every Clarus function frame costs >=2128 bytes
+// unconditionally (cgTmpSlots + cgBigTmpSlots*cgBigTmpSize +
+// cgDeepLevels, reserved in every prologue whether or not the function
+// ever materializes a str/rec temp), so 32KB was only ~15 frames of call
+// depth program-wide. The toolbox suite's real click-dispatch chain
+// (scripted click -> ... -> a case -> `open`) is 14 frames deep before
+// even entering rtUiOpen, which itself needs ~5 more incl. its trace
+// tail -- ~38KB against the old 32KB budget, overflowing the stack
+// through ApplLimit into the heap (a real "coprocessor not installed"
+// system error on real hardware/the emulator, not a hang -- see
+// docs/superpowers/sdd/2026-08-05-ui-scenario-retirement/
+// blocker2-investigation.md for the full probe trail). 128KB buys ~60
+// frames, ~4x the old ceiling, with room for a UiTest*-driven case's own
+// re-entrant dispatch tower (UiTestClick -> rtUiScriptDispatchLine ->
+// rtUiScriptClick -> rtUiHandleMouseDown -> ... stacks the ENTIRE
+// dispatch chain a second time on top of an already-deep case). Cost:
+// 128KB less heap; nil in practice on every lane this repo gates (single-
+// app Finder under Mini vMac, not a shared MultiFinder partition).
+const cgStartupStackReserve: int = 131072
 
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
 // first function in the stream. See the file header for the full shape;

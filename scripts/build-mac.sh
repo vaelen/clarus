@@ -29,11 +29,19 @@ case "$1" in
 esac
 TESTDEF=""
 EVENTS=""
+TESTAPI=""
 FILES=()
 while [ $# -gt 0 ]; do
     case "$1" in
     --test) TESTDEF="-DRT_MAC_TEST=1" ;;
     --events) shift; EVENTS="$1" ;;
+    # --testapi (ui-scenario-retirement Task 3, fix round 1): forwarded to
+    # BOTH the `clarusc appinfo` and `clarusc emit` calls below -- appinfo
+    # mode now understands the flag too (main.cla, ratified 2026-08-05),
+    # since `clarusc appinfo` runs the same unconditional clean-standalone
+    # check emit does, and a --testapi program fails that check without the
+    # same early splice.
+    --testapi) TESTAPI="--testapi" ;;
     *) FILES+=("$1") ;;
     esac
     shift
@@ -48,7 +56,7 @@ if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
 fi
 
 # 1b. app info (always runs; drives naming, About resources, CREATOR)
-APPINFO="$("$CLARUSC" appinfo "${FILES[@]}")"
+APPINFO="$("$CLARUSC" appinfo $TESTAPI "${FILES[@]}")"
 RAWNAME=$(printf '%s\n' "$APPINFO" | sed -n 's/^name=//p')
 HASAPP=$(printf '%s\n' "$APPINFO" | sed -n 's/^app=//p')
 VERSION=$(printf '%s\n' "$APPINFO" | sed -n 's/^version=//p')
@@ -61,7 +69,7 @@ fi
 # 2. emit
 OUT="$ROOT/build-mac/$NAME"
 mkdir -p "$OUT"
-"$CLARUSC" emit -o "$OUT/$NAME.c" "${FILES[@]}"
+"$CLARUSC" emit -o "$OUT/$NAME.c" $TESTAPI "${FILES[@]}"
 # 2b. optional compiled-in event script
 EXTRA_SRC=""
 if [ -n "$EVENTS" ]; then

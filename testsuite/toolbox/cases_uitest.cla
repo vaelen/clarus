@@ -1,0 +1,182 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_uitest.cla: UiTestVerbSmoke + PostEventClick (Task 3, ui-
+// scenario-retirement) -- the toolbox suite's first two cases against
+// harness.cla's UiProbe window (which see for the tbPokeCenterX/
+// tbPokeCenterY derivation). Both cases open their own UiProbe instance
+// and close it on EVERY path before returning, this suite's binding
+// window-hygiene convention.
+//
+// UiTestVerbSmoke exercises the `UiTest*` driver surface (Task 2,
+// runtime/clarus/uitest.cla) end to end: UiTestClick dispatches the SAME
+// synthetic-mouseDown path (rtUiScriptClick/rtUiHandleMouseDown,
+// uiscript.cla/ui.cla) a scripted `.events` `click` verb already uses --
+// proven by every OTHER button click in this suite's own gui.cla
+// (RunAll/RunSelected) -- plus UiTestVerb's own control-verb rejection
+// contract (an unrecognized verb, "bogusverb", dispatches false, same
+// shape as the quit/launchdoc/snap rejection uitest.cla's own header
+// comment documents).
+//
+// PostEventClick is this phase's Component 3: a REAL PostEvent-queued
+// click, not a synthetic one built in-process by rtUiScriptClick. Local
+// extern per this suite's proven "user-code externs are the proven
+// pattern" precedent (cases_events.cla/cases_gestalt.cla/cases_a5.cla/
+// cases_event.cla): PostEvent is trap 0xA02F -- 0xA02F & 0x0800 == 0, bit
+// 11 CLEAR, an OS trap using REGISTER convention (cases_event.cla's own
+// header comment works out this exact bit-11 rule). IM Event Manager:
+// A0 = event number (1 = mouseDown, 2 = mouseUp), D0 = message, result
+// D0 (OSErr). PostEvent itself fills in `where` from the CURRENT mouse
+// location and `when` from TickCount() -- neither is a parameter -- so
+// the mouse-position low-memory globals are poked FIRST. THREE Points
+// need poking, not two: `MTemp` ($828) and `RawMouse` ($82C) are the
+// obvious "mouse location" globals (both LowMem.h-documented,
+// LMGetMouseTemp/LMGetRawMouseLocation), but empirically (fix round 1,
+// instrumented probe against a real boot) PostEvent's own `where` tracks
+// neither of them -- it tracks `Mouse` ($830, LMGetMouseLocation,
+// LowMem.h), the THIRD mouse-location global, one word pair past
+// RawMouse, that this file's first draft never poked (that draft's
+// posted event landed at whatever `Mouse` already held -- the
+// environment's real, unmoved startup cursor position -- reliably
+// missing Poke and leaving `w.pokes` unchanged; instrumenting the case to
+// print each drained event's `what`/`where` pinned this down directly,
+// no further guessing needed). All three are poked here anyway: MTemp/
+// RawMouse are the ones every other low-level mouse reference in Inside
+// Macintosh names, and leaving them stale while only `Mouse` is correct
+// invites exactly this bug for the next caller. CrsrNew ($8CE, a byte
+// flag) is set to 1 too, the documented "the mouse moved" signal.
+//
+// Real-queue delivery needs the REAL loop path, not UiTestTick: this
+// suite's two gates (TestToolboxSuiteOn68k/OnMac) both boot with
+// `--events`, so `rtUiScripted` (uiscript.cla) is true for the whole
+// run, and UiTestTick's own scripted branch only forwards to the `tick`
+// verb (rtUiScriptTick), which advances the scripted interpreter's
+// VIRTUAL tick counter and never calls GetNextEvent -- a real posted
+// event would sit in the OS queue undelivered forever (confirmed by a
+// first attempt at the plain UiTestTick(1)-only shape, which left
+// w.pokes unchanged). So this case drives the real loop explicitly
+// instead, the same shape as ui.cla's own rtUiRun: UiGetNextEvent/
+// rtUiHandleMouseDown -- the SAME handler a real click OR a scripted
+// `click` verb both funnel through -- are already visible here (ui.cla
+// is unconditionally spliced for any UI program, window/menu/every-
+// gated, --testapi or not), as are the four idle-pump calls UiTestTick's
+// own real-boot branch already uses (uitest.cla). UiNewPtr/UiDisposePtr
+// (ui.cla) are called directly rather than through a local Tb-alias
+// (unlike TbPostEvent above): this case is not proving THEIR extern
+// path, only using them as scratch-buffer scaffolding for the real
+// GetNextEvent loop. The drain loop pulls 3 events, not 1: opening
+// UiProbe (this case's own `open`, moments earlier) leaves the Window
+// Manager's synthesized activate/deactivate pair still pending ahead of
+// anything posted afterward -- observed directly (instrumented probe):
+// two `what==8` (activateEvt) entries drain before the posted mouseDown
+// (`what==1`) ever surfaces; the posted mouseUp is left undrained
+// (harmless -- Poke's click already fired on the mouseDown alone, the
+// same "TrackControl doesn't need a sustained press" behavior
+// rtUiScriptClick's own synthetic single-event `click` verb already
+// relies on).
+//
+// On the Retro68/cprint (OnMac) lane, PostEvent needs hand-written glue
+// (runtime/mac/rt_ext_mac.inc's rt_ext_TbPostEvent, raw inline asm) --
+// unlike every other Tb* extern in this suite, PostEvent has no
+// Universal-Interfaces C prototype anywhere in Retro68's
+// InterfacesAndLibraries for cprint's usual `rt_ext_NAME` glue to just
+// call; see that function's own doc comment for the full reasoning. The
+// native (cg68k) lane needs no glue -- the `= trap ... reg(...)` clause
+// compiles straight to the TRAP instruction there.
+external func TbPostEvent(eventNum: word, eventMsg: int): word = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
+
+// caseUiTestVerbSmoke: opens UiProbe, clicks Poke via UiTestClick at its
+// derived global center, and separately confirms UiTestVerb rejects an
+// unrecognized verb -- pass iff the click dispatched (true), the button
+// actually fired exactly once (w.pokes == 1), and the bogus verb did NOT
+// dispatch (false).
+func caseUiTestVerbSmoke(): TestResult {
+    var w: UiProbe
+    var clicked: bool
+    var bogus: bool
+    var detail: string
+
+    w = open UiProbe
+    clicked = UiTestClick(tbPokeCenterX, tbPokeCenterY)
+    bogus = UiTestVerb("bogusverb")
+
+    if clicked and w.pokes == 1 and not bogus {
+        close w
+        return tkPass("UiTestVerbSmoke")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_events.cla's own cases.
+    detail = "clicked "
+    if clicked {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    detail = detail + " pokes " + tkIntToStr(w.pokes)
+    detail = detail + " bogus "
+    if bogus {
+        detail = detail + "true"
+    } else {
+        detail = detail + "false"
+    }
+    close w
+    return tkFail("UiTestVerbSmoke", detail)
+}
+
+// casePostEventClick: see this file's own header comment for the full
+// PostEvent/low-mem-global/real-loop derivation. Pass iff w.pokes
+// increments by exactly one across the posted mouseDown/mouseUp pair.
+func casePostEventClick(): TestResult {
+    var w: UiProbe
+    var before: int
+    var errDown: int
+    var errUp: int
+    var evBuf: ptr
+    var got: bool
+    var what: int
+    var i: int
+    var detail: string
+
+    w = open UiProbe
+    before = w.pokes
+
+    pokew(ptr(0x828), tbPokeCenterY) // MTemp.v
+    pokew(ptr(0x82A), tbPokeCenterX) // MTemp.h
+    pokew(ptr(0x82C), tbPokeCenterY) // RawMouse.v
+    pokew(ptr(0x82E), tbPokeCenterX) // RawMouse.h
+    pokew(ptr(0x830), tbPokeCenterY) // Mouse.v (LMGetMouseLocation) -- the one PostEvent's `where` actually tracks
+    pokew(ptr(0x832), tbPokeCenterX) // Mouse.h
+    pokeb(ptr(0x8CE), 1)             // CrsrNew
+
+    errDown = TbPostEvent(1, 0)
+    errUp = TbPostEvent(2, 0)
+
+    evBuf = UiNewPtr(16)
+    i = 0
+    while i < 3 {
+        got = UiGetNextEvent(0xFFFF, evBuf)
+        what = peekw(evBuf + 0)
+        if got and what == 1 {
+            rtUiHandleMouseDown(evBuf)
+        }
+        i = i + 1
+    }
+    UiDisposePtr(evBuf)
+    rtUiEveryPump()
+    rtUiTeIdleFront()
+    rtUiFlushAllBuffered()
+    rtUiTablesSync()
+
+    if w.pokes == before + 1 {
+        close w
+        return tkPass("PostEventClick")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_events.cla's own cases.
+    detail = "before " + tkIntToStr(before)
+    detail = detail + " after " + tkIntToStr(w.pokes)
+    detail = detail + " errDown " + tkIntToStr(errDown)
+    detail = detail + " errUp " + tkIntToStr(errUp)
+    close w
+    return tkFail("PostEventClick", detail)
+}

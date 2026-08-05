@@ -110,17 +110,23 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // (test-suite-review Task 11): testsuite/kit.cla (shared TestResult/
 // tkPass/tkFail/tkReport contract, reused as-is from the core suite) +
 // testsuite/toolbox/runner.cla + cases_events.cla + cases_draw.cla +
-// cases_a5.cla + cases_gestalt.cla + cases_event.cla + gui.cla.
+// cases_a5.cla + cases_gestalt.cla + cases_event.cla + harness.cla +
+// cases_uitest.cla + gui.cla.
 // cases_a5.cla (A5Live) was added by Task 13's own coverage-honesty audit
 // -- see that file's header comment. cases_gestalt.cla (GestaltNamed) was
 // added by Task 2 (toolbox-integration) -- the generalized named-register
 // trap clause's native gate. cases_event.cla (EventXRec) was added by
 // Task 6 (toolbox-integration Feature B) -- `extern record` native
-// storage/decay against a real OSEventAvail trap. Unlike the core suite,
-// gui.cla is this suite's ONLY front end -- there is no toolbox CLI
-// (MenuKeyMatches needs the GUI's own installed File menu, CanvasChecksum
-// needs the GUI's own Board canvas), so there is no toolboxCLIFiles/
-// toolboxCLIMacFiles pair to mirror.
+// storage/decay against a real OSEventAvail trap. harness.cla (the
+// UiProbe window) + cases_uitest.cla (UiTestVerbSmoke/PostEventClick)
+// were added by Task 3 (ui-scenario-retirement) -- the `UiTest*` driver
+// surface (uitest.cla) end to end plus a real PostEvent-queued click;
+// this build now needs `--testapi` (below) for UiTestClick/UiTestVerb to
+// resolve at all (see runtime/clarus/uitest.cla's own header comment).
+// Unlike the core suite, gui.cla is this suite's ONLY front end -- there
+// is no toolbox CLI (MenuKeyMatches needs the GUI's own installed File
+// menu, CanvasChecksum needs the GUI's own Board canvas), so there is no
+// toolboxCLIFiles/toolboxCLIMacFiles pair to mirror.
 var toolboxFiles = []string{
 	filepath.Join("testsuite", "kit.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
@@ -129,6 +135,8 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_a5.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_gestalt.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_event.cla"),
+	filepath.Join("testsuite", "toolbox", "harness.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_uitest.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -149,15 +157,26 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 7 result lines (6 real cases +
+// this test also parses each of the 9 result lines (8 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
 // a generic aggregate failure.
+//
+// `--testapi` (Task 3, ui-scenario-retirement) is prepended to the
+// positional file list rather than added as a fixed buildNative68kUI
+// parameter: clarusc's own arg loop recognizes `--testapi` at ANY
+// position among its args (main.cla's while loop scans every arg,
+// diverting known flags out regardless of where they land), so this is
+// the smallest diff that gets the flag to clarusc without touching
+// buildNative68kUI's shared signature (every OTHER caller -- smoke/about/
+// coresuite -- must stay byte-identical, per this phase's own byte-
+// identity gate).
 func TestToolboxSuiteOn68k(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
-	bin := buildNative68kUI(t, "toolboxsuite_gui", eventsRel, pkgRelFiles(toolboxFiles)...)
+	toolboxArgs := append([]string{"--testapi"}, pkgRelFiles(toolboxFiles)...)
+	bin := buildNative68kUI(t, "toolboxsuite_gui", eventsRel, toolboxArgs...)
 	out, _, exitCode := RunMac(t, bin, 5*time.Minute)
 	if exitCode != 0 {
 		t.Fatalf("toolbox suite exit code %d, want 0\ncapture:\n%s", exitCode, out)
@@ -174,7 +193,13 @@ func TestToolboxSuiteOn68k(t *testing.T) {
 func TestToolboxSuiteOnMac(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
-	args := append(pkgRelFiles(toolboxFiles), "--test", "--events", eventsRel)
+	// --testapi (Task 3, ui-scenario-retirement): build-mac.sh's own arg
+	// loop needs a dedicated `--testapi` case (see that script) since,
+	// unlike clarusc's own arg parser, its loop otherwise treats any
+	// unrecognized flag as a positional .cla file -- which would then
+	// also reach the script's `clarusc appinfo` call (wrong: appinfo mode
+	// never parses --testapi and would try to open it as a file).
+	args := append(pkgRelFiles(toolboxFiles), "--test", "--events", eventsRel, "--testapi")
 	bin := runBuildMac(t, "toolboxsuite_gui_mac", args...)
 	out, _, exitCode := RunMac(t, bin, 5*time.Minute)
 	if exitCode != 0 {
@@ -187,10 +212,11 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // shared result-log assertion (Task 12 factor-out; case count bumped to 5
 // by Task 13's A5Live addition, then to 6 by Task 2's (toolbox-
 // integration) GestaltNamed addition, then to 7 by Task 6's (toolbox-
-// integration Feature B) EventXRec addition): parses each of the 7 result
-// lines (6 real cases + SelfCheck) into its own t.Run subtest -- per-case
-// CI reporting -- plus the aggregate TOTAL line, regardless of which lane
-// produced the capture.
+// integration Feature B) EventXRec addition, then to 9 by Task 3's
+// (ui-scenario-retirement) UiTestVerbSmoke/PostEventClick addition):
+// parses each of the 9 result lines (8 real cases + SelfCheck) into its
+// own t.Run subtest -- per-case CI reporting -- plus the aggregate TOTAL
+// line, regardless of which lane produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -213,8 +239,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 7 {
-		t.Errorf("result lines: got %d, want 7\ncapture:\n%s", len(results), out)
+	if len(results) != 9 {
+		t.Errorf("result lines: got %d, want 9\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -224,7 +250,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 7 PASS 7 FAIL 0"; total != want {
+	if want := "TOTAL 9 PASS 9 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
