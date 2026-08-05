@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_rc_test.c -- hand-written C harness for the counted
+/* runtime/host/rt_rc_test.c -- hand-written C harness for the counted
  * text/list/map boxes (ARC Task 1: rc field + retain/release API,
  * rt_*_free aliased to rt_*_release). Standalone: includes rt.h, rt_mem.h,
  * rt_mem_host.inc, then rt_core.inc directly (no rt.c link), and supplies

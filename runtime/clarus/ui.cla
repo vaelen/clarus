@@ -8,7 +8,7 @@
 // ported rt_core.inc -- but UI has no host/console equivalent (there is no
 // text-mode window/menu/event system), so this module is Mac-ONLY: its
 // externs get a matching rt_ext_Ui* wrapper in runtime/mac/rt_ext_mac.inc
-// ONLY, never in internal/build/rt/rt_ext_host.inc (contrast text.cla,
+// ONLY, never in runtime/host/rt_ext_host.inc (contrast text.cla,
 // whose externs get a wrapper on BOTH sides).
 //
 // Scope (Task 7 brief's slice A, union of rt_ui.c line ranges): 334-926,

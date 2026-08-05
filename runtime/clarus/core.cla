@@ -4,7 +4,7 @@
 // core.cla: the ported runtime "core leaves" (Plan native-5d Task 3) --
 // lastError state, the panic seam, the array bounds check, the enum
 // bounds check, and 16.16 fixed-point mul/div. Replaces
-// internal/build/rt/rt_core.inc:16-19 (rt_set_lasterr + the
+// runtime/host/rt_core.inc:16-19 (rt_set_lasterr + the
 // rt_lasterr_code/rt_lasterr_msg globals), :176-197 (rt_fix_mul/
 // rt_fix_div/rt_arr_check), and the panic/check surface rt_enum_from_int
 // (:199) shares with them (rt_enum_from_int's own linear scan stays C --

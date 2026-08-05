@@ -702,7 +702,7 @@ on App.startCLI(args: list of string) {
         // Task 11: native.cla is the manifest's LAST entry, emit68k-only
         // (never emit's C target -- the C target's own console/quit/
         // panic/args resolution is runtime/mac/rt_mac.c or
-        // internal/build/rt/rt.c, linked at the C build step, not spliced
+        // runtime/host/rt.c, linked at the C build step, not spliced
         // Clarus source). Every earlier module's CorePanic call
         // (core.cla's rtPanic, transitively reachable from every program
         // via rtTextGrow's OOM path) resolves to native.cla's

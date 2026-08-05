@@ -1,4 +1,4 @@
-/* internal/build/rt/rt.c — host implementation of the Clarus runtime layer.
+/* runtime/host/rt.c — host implementation of the Clarus runtime layer.
  * Host stand-in for the future Mac Toolbox runtime; free to use libc.
  *
  * String layout: a strN value is {uint8_t len; uint8_t b[N];}. Every

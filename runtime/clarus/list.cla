@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // list.cla: the ported List family (Plan 5b "Stage B/D" Task 10, runtime-
-// migration-wave1). Replaces internal/build/rt/rt_core.inc's rt_list_*
+// migration-wave1). Replaces runtime/host/rt_core.inc's rt_list_*
 // functions (struct rt_list ~:483-489, functions ~:491-577, growth policy
 // shared with text via rt_core_grow ~:246-255) for every emitted program --
 // like str.cla (Task 8) and text.cla (Task 9), this module is
@@ -90,7 +90,7 @@
 // (checkFuncSig -> scopeDeclare keys purely on name, no signature
 // comparison), and the same fix: distinct List-prefixed names sidestep it.
 // Each is backed by an rt_ext_List* wrapper in BOTH
-// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// runtime/host/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/Str/Text
 // wrappers already call. (ListNewRaw, the one-time "whole rt_list_new
 // delegation" birth-allocation wrapper, is gone as of Plan 5c wave2a Task

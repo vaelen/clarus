@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // str.cla: the ported Str255 family (Plan 5b "Stage B" Task 8, runtime-
-// migration-wave1). Replaces internal/build/rt/rt_core.inc's rt_str_*
+// migration-wave1). Replaces runtime/host/rt_core.inc's rt_str_*
 // functions (lines 31-171) for every emitted program -- unlike ser.cla
 // (Task 7), this module is UNCONDITIONAL: clarusc/main.cla's manifest
 // always includes it (every program uses strings), and cpStrPorted

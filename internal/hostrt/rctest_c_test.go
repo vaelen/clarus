@@ -1,4 +1,4 @@
-// internal/build/rctest_c_test.go
+// internal/hostrt/rctest_c_test.go
 package hostrt
 
 import (

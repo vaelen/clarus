@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_ser.inc -- shared-source big-endian record
+/* runtime/host/rt_ser.inc -- shared-source big-endian record
  * serializer (Task 1, mac-target-4d). #included at the BOTTOM of both
  * runtimes' .c files (host rt.c; Mac rt_mac.c) -- never a separate
  * translation unit. Uses ONLY the public rt.h API (rt_text_*, rt_list_*,

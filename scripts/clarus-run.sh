@@ -6,7 +6,7 @@
 # clarusc/clarusc.c with `cc` alone, cached under build-run/, same recipe
 # as internal/selfhost/behavior_test.go's bootstrapSnapshotClarusc and
 # build-68k.sh's own step 1) emits C for FILE.cla, `cc` compiles that
-# against the on-disk host runtime (internal/build/rt), and the resulting
+# against the on-disk host runtime (runtime/host), and the resulting
 # binary runs with any args passed after `--`. No Go compiler anywhere in
 # this path -- the Go compiler is deleted; clarusc is the only compiler.
 set -e
@@ -29,8 +29,8 @@ fi
 mkdir -p "$ROOT/build-run"
 CLARUSC="$ROOT/build-run/clarusc"
 if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
-    cc -O1 -I"$ROOT/internal/build/rt" -o "$CLARUSC" \
-        "$ROOT/clarusc/clarusc.c" "$ROOT/internal/build/rt/rt.c"
+    cc -O1 -I"$ROOT/runtime/host" -o "$CLARUSC" \
+        "$ROOT/clarusc/clarusc.c" "$ROOT/runtime/host/rt.c"
 fi
 
 WORK=$(mktemp -d)
@@ -40,7 +40,7 @@ trap 'rm -rf "$WORK"' EXIT
 "$CLARUSC" emit --rtdir "$ROOT/runtime/clarus/" -o "$WORK/main.c" "$FILE"
 
 # 3. compile against the host runtime.
-cc -O1 -I"$ROOT/internal/build/rt" -o "$WORK/prog" "$WORK/main.c" "$ROOT/internal/build/rt/rt.c"
+cc -O1 -I"$ROOT/runtime/host" -o "$WORK/prog" "$WORK/main.c" "$ROOT/runtime/host/rt.c"
 
 # 4. run.
 exec "$WORK/prog" "${ARGS[@]}"

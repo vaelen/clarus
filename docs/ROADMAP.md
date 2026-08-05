@@ -1326,6 +1326,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   of `testdata/diag/` are currently unreferenced by any Go test (the final
   review's F4 audit) — retire-or-cover decision deferred.
 
+  **runtime-host-move (branch `runtime-host-move`, 2026-08-05): DONE.**
+  Host C runtime moved `internal/build/rt` → `runtime/host`; `internal/build`
+  dissolved (C tests → `internal/hostrt`, `CCPath` → `claruscboot`,
+  `internal/selfhost` reads the rt sources from disk instead of embedding
+  them). Every remaining script/doc/comment pointer at the old path
+  repointed. Plan: `.superpowers/sdd/2026-08-05-runtime-host-move/`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

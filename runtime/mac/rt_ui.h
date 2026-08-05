@@ -209,7 +209,7 @@ typedef struct rt_ui_app_desc {
 extern const rt_ui_app_desc rt_ui_app_info;
 
 /* Opaque forward declaration ONLY -- textview's `text` runtime property is
-   an rt_text* (internal/build/rt/rt.h's growable byte buffer), but this
+   an rt_text* (runtime/host/rt.h's growable byte buffer), but this
    header must never #include rt.h (rt_ui.c includes both directly; see its
    own file header). rt_ui_widget_get_text/set_text below are the only
    entry points that touch it, both by pointer, so the incomplete type is
@@ -217,7 +217,7 @@ extern const rt_ui_app_desc rt_ui_app_info;
 typedef struct rt_text rt_text;
 
 /* Opaque forward declaration ONLY, same convention as rt_text above --
-   rt_layout_desc/rt_field_desc are internal/build/rt/rt.h's record-layout
+   rt_layout_desc/rt_field_desc are runtime/host/rt.h's record-layout
    descriptors (mac-target-4d Task 1); this header must never #include
    rt.h, so a popup's form binding below refers to it only by pointer.
    rt_ui.c (and any hand-written caller, e.g. uiprobe) sees the full struct
@@ -238,7 +238,7 @@ typedef struct rt_ui_form_desc { const rt_layout_desc *layout;
                                  short nBinds; const rt_ui_bind_desc *binds; } rt_ui_form_desc;
 
 /* Opaque forward declarations ONLY, same convention as rt_text/rt_layout_desc
-   above -- rt_list is internal/build/rt/rt.h's growable-array type (a
+   above -- rt_list is runtime/host/rt.h's growable-array type (a
    table's rows); rt_map is forward-declared alongside it for the same
    future-proofing reason as rt_text (no widget needs it yet, but this
    header must never #include rt.h to find out later). rt_ui.c and any

@@ -15,9 +15,9 @@ import (
 // hostRTDir is the repo-relative on-disk host C runtime this package
 // copies from for its hermetic compiles (rt.c #includes the other
 // non-test files here as siblings, so a dir-list copy preserves that
-// layout without hand-naming each one -- embed.go's //go:embed can't
-// reach outside internal/build's own package dir, which is why this
-// package now reads runtime/host/ from disk instead).
+// layout without hand-naming each one -- //go:embed can't reach outside
+// its own package dir, which is why this package reads runtime/host/
+// from disk instead of embedding it).
 const hostRTDir = "../../runtime/host"
 
 // snapshotPath is the committed ground-floor bootstrap artifact: the C that

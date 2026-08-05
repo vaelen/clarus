@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // text.cla: the ported Text family (Plan 5b "Stage B/D" Task 9, runtime-
-// migration-wave1). Replaces internal/build/rt/rt_core.inc's rt_text_*
+// migration-wave1). Replaces runtime/host/rt_core.inc's rt_text_*
 // functions (struct rt_text ~:259, functions ~:266-479) for every emitted
 // program -- like str.cla (Task 8), this module is UNCONDITIONAL: main.cla's
 // manifest always includes it, spliced AFTER str.cla (head-splice order:
@@ -75,7 +75,7 @@
 // (checkFuncSig -> scopeDeclare keys purely on name, no signature
 // comparison), and the same fix: distinct Text-prefixed names sidestep it.
 // Each is backed by an rt_ext_Text* wrapper in BOTH
-// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// runtime/host/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/Str/Ser
 // wrappers already call. TextSetLastErr/TextPanic, text.cla's own former
 // externs for this same reason, are gone as of Plan native-5d Task 3: text
@@ -93,7 +93,7 @@
 // A1/D0 fast-call convention), hence `reg`, never `pascal`.
 //
 // RESOLVED (Task 9 review fix): rt_ext_TextNewPtr/rt_ext_TextNewHandle
-// (internal/build/rt/rt_ext_host.inc) OOM-panic on a NULL result INSIDE
+// (runtime/host/rt_ext_host.inc) OOM-panic on a NULL result INSIDE
 // the C wrapper, before ever returning to this Clarus caller -- a raw
 // `reg` trap clause has no such check, so a native build's TextNewPtr/
 // TextNewHandle calls could otherwise silently propagate NULL on

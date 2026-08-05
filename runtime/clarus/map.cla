@@ -3,7 +3,7 @@
 
 // map.cla: the ported Map family (Plan 5b "Stage B/D" Task 11, runtime-
 // migration-wave1, the LAST family port of the wave). Replaces
-// internal/build/rt/rt_core.inc's rt_map_* functions (struct rt_map
+// runtime/host/rt_core.inc's rt_map_* functions (struct rt_map
 // ~:582-590, map_lower_bound/map_find ~:608-643, functions through ~:760)
 // for every emitted program -- like str.cla (Task 8), text.cla (Task 9),
 // and list.cla (Task 10), this module is UNCONDITIONAL: main.cla's manifest
@@ -118,7 +118,7 @@
 // document (checkFuncSig -> scopeDeclare keys purely on name, no signature
 // comparison), and the same fix: distinct Map-prefixed names sidestep it.
 // Each is backed by an rt_ext_Map* wrapper in BOTH
-// internal/build/rt/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
+// runtime/host/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc,
 // delegating to the same underlying primitives the generic/List wrappers
 // already call. (MapNewRaw, the one-time "whole rt_map_new delegation"
 // birth-allocation wrapper, is gone as of Plan 5c wave2a Task 4 -- birth

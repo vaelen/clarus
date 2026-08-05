@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_mem_host.inc -- host implementation of rt_mem.h's
+/* runtime/host/rt_mem_host.inc -- host implementation of rt_mem.h's
  * memory seam: a paranoid host-only Memory Manager shim. Real double
  * indirection (a Handle IS the address of a block record's first field,
  * so it survives relocation and even dispose), relocation-on-resize,

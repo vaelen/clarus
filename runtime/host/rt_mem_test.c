@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_mem_test.c -- hand-written C harness for the host
+/* runtime/host/rt_mem_test.c -- hand-written C harness for the host
  * paranoid Memory Manager shim (rt_mem.h + rt_mem_host.inc). Standalone:
  * includes rt_mem.h then rt_mem_host.inc directly (no rt.c link) and
  * supplies its own no-op rt_run_cleanup stub (the real one lands in

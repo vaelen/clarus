@@ -28,7 +28,7 @@ scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulato
   to day: it bootstraps clarusc from the committed `clarusc/clarusc.c`
   snapshot with `cc` alone (cached under `build-run/`, keyed on the
   snapshot's mtime), emits C for `FILE.cla`, compiles that against the
-  on-disk host runtime (`internal/build/rt`), and execs the result with
+  on-disk host runtime (`runtime/host`), and execs the result with
   any args after `--`. No Go compiler involved.
 
 Tiered test gates:
@@ -62,7 +62,7 @@ Tiered test gates:
   `TestSnapshotFixedPoint` (`internal/selfhost`) fails, it prints the
   Go-free regeneration instructions.
 - Bootstrap from C alone:
-  `cc -I internal/build/rt -o clarusc clarusc/clarusc.c internal/build/rt/rt.c`
+  `cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c`
 
 ### `core`/`toolbox` test suites (`testsuite/`)
 
@@ -83,10 +83,10 @@ enum + runner, not one boot per case.
 - **Run `core` on host** (compose recipe — no single-file entry point,
   `clarusc emit`/`emit68k` both take multiple `.cla` files positionally):
   ```sh
-  cc -O1 -I internal/build/rt -o build-run/clarusc clarusc/clarusc.c internal/build/rt/rt.c   # once
+  cc -O1 -I runtime/host -o build-run/clarusc clarusc/clarusc.c runtime/host/rt.c   # once
   build-run/clarusc emit --rtdir runtime/clarus/ -o /tmp/core_cli.c \
       testsuite/kit.cla testsuite/core/runner.cla testsuite/core/cases_*.cla testsuite/core/cli.cla
-  cc -O1 -I internal/build/rt -o /tmp/core_cli /tmp/core_cli.c internal/build/rt/rt.c
+  cc -O1 -I runtime/host -o /tmp/core_cli /tmp/core_cli.c runtime/host/rt.c
   /tmp/core_cli all   # or one/some case names by `CoreTest` enum name; nonzero exit on any FAIL
   ```
   `SelfCheck` as the CLI's lone explicit arg always FAILs, by contract

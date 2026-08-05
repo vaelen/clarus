@@ -1,4 +1,4 @@
-// internal/build/sertest_c_test.go
+// internal/hostrt/sertest_c_test.go
 package hostrt
 
 import (

@@ -89,7 +89,7 @@ func runArcFixwaveStandaloneArr() {
 // Critical-2 fixed: if arr[0] didn't retain its own reference when stored,
 // t's reassignment frees the box arr[0] still points at) -- is
 // deliberately NOT exercised here: this file is part of the SHARED
-// testdata/run corpus, which internal/build.TestRunGoldens also runs
+// testdata/run corpus, which the since-removed TestRunGoldens also ran
 // through the FROZEN Go reference compiler (internal/lower.go --
 // untouched by any ARC/fix-wave task; a fixed-array element store there
 // never retained/released at all, the same pre-ARC state arc_rec_copy.cla's

@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_ser_test.c -- hand-written C harness for the
+/* runtime/host/rt_ser_test.c -- hand-written C harness for the
  * record serializer (Task 1, mac-target-4d): rt_file_save/load, REC/LIST/
  * MAP containers, and the documented failure modes (short read, bad magic,
  * bad enum value). Compiled + run host-side by sertest_c_test.go in a temp

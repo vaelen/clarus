@@ -9,8 +9,8 @@
 // generation N+1 is "current-source clarusc" -- generation N used to
 // `emit` C for clarusc/main.cla (the compiler's own current source), which
 // `cc` then builds into a binary. This is generation N+1 built BY
-// generation N -- NOT internal/build.Build, and NOT the frozen Go
-// compiler.
+// generation N -- not via Go's own build tooling, and not the frozen Go
+// compiler (both long gone).
 //
 // For every fixture in the runnable corpus (testdata/run, testdata/runerr,
 // via runnableFixtures -- shared with behavior_test.go's

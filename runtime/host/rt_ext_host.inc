@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_ext_host.inc: host implementations of `external
+/* runtime/host/rt_ext_host.inc: host implementations of `external
  * func` symbols (Task 3, Ch13: Low-Level Memory Access -- the narrow-waist
  * seam, Plan 5a). Each rt_ext_* delegates to the host Memory Manager shim
  * (rt_mem.h/rt_mem_host.inc) rather than bare malloc/free, so the strict-

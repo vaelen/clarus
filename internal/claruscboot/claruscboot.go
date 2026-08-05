@@ -36,7 +36,8 @@ import (
 )
 
 // CCPath returns the C compiler to invoke for host builds: $CC if set,
-// otherwise "cc". (Moved from the dissolved internal/build package.)
+// otherwise "cc". (Moved from the now-dissolved host-build package; see
+// docs/ROADMAP.md.)
 func CCPath() string {
 	if c := os.Getenv("CC"); c != "" {
 		return c

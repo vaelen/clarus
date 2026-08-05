@@ -1,6 +1,6 @@
 /* runtime/mac/rt_ext_mac.inc: Mac Toolbox implementations of `external
  * func` symbols (Plan 5b Task 3: waist widening). Mirrors
- * internal/build/rt/rt_ext_host.inc's function set exactly (same rt_ext_*
+ * runtime/host/rt_ext_host.inc's function set exactly (same rt_ext_*
  * names, same C signatures) so a program built either target sees an
  * identical extern surface; the bodies differ only in that rt_mem.h's Mac
  * branch (`#if defined(__m68k__) || defined(macintosh)`) maps
@@ -57,7 +57,7 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
 int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
 /* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix, mirroring
- * internal/build/rt/rt_ext_host.inc's block exactly -- ser.cla's remaining
+ * runtime/host/rt_ext_host.inc's block exactly -- ser.cla's remaining
  * externs were still unprefixed and collided with a user program's own
  * `external func NewPtr`/etc. (the documented Ch13 escape hatch) the
  * moment that program also called file.save/file.load. Thin aliases of the
@@ -102,7 +102,7 @@ void rt_ext_Panic(const uint8_t *msg) {
 }
 
 /* rt_ext_CorePanic: core.cla's own extern name (Plan native-5d Task 3),
- * mirroring internal/build/rt/rt_ext_host.inc's own rt_ext_CorePanic
+ * mirroring runtime/host/rt_ext_host.inc's own rt_ext_CorePanic
  * exactly -- core.cla is now spliced FIRST (unconditional, ahead of every
  * other runtime module), so its rtPanic -> CorePanic call must not share a
  * name with the generic rt_ext_Panic a user program might also declare. */
@@ -117,7 +117,7 @@ void rt_ext_CorePanic(const uint8_t *msg) {
 /* rt_ext_CoreSetLastErr: core.cla's own extern name (Plan native-5d Task
  * 12.5, lastError storage-inversion fix) -- same "own prefixed name" and
  * str255-to-NUL-terminated-C-string conversion shape as rt_ext_CorePanic
- * just above (mirrors internal/build/rt/rt_ext_host.inc exactly); core.cla's
+ * just above (mirrors runtime/host/rt_ext_host.inc exactly); core.cla's
  * rtSetLastErr forwards here so lastError storage is platform-owned again
  * (rt_lasterr_code/rt_lasterr_msg, rt_core.inc), not a separate Clarus-side
  * global pair -- this is what makes runtime/mac/rt_ui.c's TextEdit >32k
@@ -170,7 +170,7 @@ void rt_ext_TextDisposePtr(void *p) { DisposePtr((Ptr)p); }
 /* rt_ext_TextNewHandle/TextDisposeHandle/TextRcCheck (Plan 5c Task 1: ARC
  * waist externs; live as of Task 2, which ports rtTextNew/rtTextRetain/
  * rtTextRelease into text.cla against exactly these three): mirrors
- * internal/build/rt/rt_ext_host.inc's block exactly, except
+ * runtime/host/rt_ext_host.inc's block exactly, except
  * rt_ext_TextRcCheck's body is a no-op -- no ledger on Mac, and the real
  * Memory Manager has no equivalent lookup (same "Mac: no-op" rule
  * rt_rc_check itself uses, rt_core.inc:765-766). */
@@ -184,7 +184,7 @@ void rt_ext_TextRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
 
 /* rt_ext_ListHandleDeref/ListSetHandleSize/ListBlockMoveData: list.cla's
  * own extern names (Plan 5b Task 10), mirroring
- * internal/build/rt/rt_ext_host.inc's List block exactly -- same reasoning
+ * runtime/host/rt_ext_host.inc's List block exactly -- same reasoning
  * as the Text family above. (rt_ext_ListNewRaw, the one-time "whole
  * rt_list_new delegation" birth-allocation wrapper, is gone as of Plan 5c
  * wave2a Task 3 -- birth moved into list.cla itself, built from
@@ -198,7 +198,7 @@ void rt_ext_ListBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((
 /* rt_ext_ListNewHandle/ListDisposeHandle/ListRcCheck/ListNewPtr/
  * ListDisposePtr (Plan 5c Task 1: ARC waist externs; live as of Task 3,
  * which ports rtListNew/rtListRetain/rtListRelease into list.cla against
- * exactly these five): mirrors internal/build/rt/rt_ext_host.inc's block
+ * exactly these five): mirrors runtime/host/rt_ext_host.inc's block
  * exactly, except rt_ext_ListRcCheck's body is a no-op -- no ledger on
  * Mac, and the real Memory Manager has no equivalent lookup (same "Mac:
  * no-op" rule rt_rc_check itself uses, rt_core.inc:765-766). */
@@ -218,7 +218,7 @@ void rt_ext_ListDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 /* rt_ext_MapHandleDeref/MapSetHandleSize/MapBlockMoveData: map.cla's own
  * extern names (Plan 5b Task 11), mirroring
- * internal/build/rt/rt_ext_host.inc's Map block exactly -- same reasoning
+ * runtime/host/rt_ext_host.inc's Map block exactly -- same reasoning
  * as the Text/List families above. (rt_ext_MapNewRaw is gone as of Plan 5c
  * wave2a Task 4 -- see that .inc file's own header comment. rt_ext_MapPanic,
  * map.cla's own former Panic alias, is gone as of Plan native-5d Task 3 --
@@ -229,7 +229,7 @@ void rt_ext_MapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((P
 
 /* rt_ext_MapNewHandle/MapDisposeHandle/MapRcCheck/MapNewPtr/MapDisposePtr
  * (Plan 5c Task 1: ARC waist externs): mirrors
- * internal/build/rt/rt_ext_host.inc's block exactly, except
+ * runtime/host/rt_ext_host.inc's block exactly, except
  * rt_ext_MapRcCheck's body is a no-op, same reasoning as the List family
  * above. */
 void *rt_ext_MapNewHandle(int32_t n) {
@@ -249,7 +249,7 @@ void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 /* ---- native-5e Task 7 Step 1: ui.cla/uiwidgets.cla Toolbox extern block ----
  * One rt_ext_Ui<Name> wrapper per `external func Ui<Name>` declared in
  * runtime/clarus/ui.cla and runtime/clarus/uiwidgets.cla -- Mac-ONLY (no
- * internal/build/rt/rt_ext_host.inc counterpart: there is no host/console
+ * runtime/host/rt_ext_host.inc counterpart: there is no host/console
  * UI). Each is a thin one-line cast-and-call of the real Toolbox routine,
  * mirroring the two files' own doc comments for exactly which rt_ui.c call
  * site(s) need it; no logic beyond the cast (Step 1 adds no behavior).
@@ -783,7 +783,7 @@ short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt
  * (`= trap 0xA971`) is invisible here exactly like TbGestalt's own
  * named-reg clause above -- cprint calls by NAME only.
  * rt_ext_TbXRecAddr mirrors Task 5's own rt_ext_XRecAddr host-lane
- * identity shim (internal/build/rt/rt_ext_host.inc) -- "the address of my
+ * identity shim (runtime/host/rt_ext_host.inc) -- "the address of my
  * own argument" has no real Toolbox call behind it on ANY backend, so
  * every lane (host rt_ext_, this Mac rt_ext_, and cg68k's nat_ fallback)
  * resolves it as a plain identity. */
@@ -796,7 +796,7 @@ void *rt_ext_TbXRecAddr(void *p) { return p; }
  * SAME reason (cprint always renders rt_ext_NAME regardless of clause) --
  * core suite fixtures reuse Task 5's own `XRecAddr` name directly (no
  * `Tb` prefix -- that convention is toolbox-suite-local) since the host
- * lane's rt_ext_XRecAddr (internal/build/rt/rt_ext_host.inc) already
+ * lane's rt_ext_XRecAddr (runtime/host/rt_ext_host.inc) already
  * exists under this exact name. */
 void *rt_ext_XRecAddr(void *p) { return p; }
 

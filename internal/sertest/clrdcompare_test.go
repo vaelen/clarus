@@ -8,15 +8,16 @@
 // original design called for building each save-capable fixture BOTH with
 // the Go compiler (build.Build) and with clarusc emit+cc (clarusc itself
 // now built via the shared Go-free bootstrap, claruscboot), then diffing
-// the two. That is impossible: internal/build's host backend permanently
-// refuses to build any program calling file.save/file.load
-// (internal/lower/expr.go's lowerFileCall emits "host build does not
-// support file.save/file.load yet" unconditionally -- pinned by
-// internal/build/unsupported_test.go's TestBuildUnsupportedConstructs, and
-// deliberate/enforced per docs/superpowers/plans/2026-07-22-clarus-backend-
-// host.md's host-build scope). Extending the frozen Go compiler to lower
-// file.save/load would fix this, but CLAUDE.md declares internal/ frozen,
-// so that's out of scope here (and out of scope for this plan generally).
+// the two. That is impossible: the Go compiler's host backend permanently
+// refused to build any program calling file.save/file.load
+// (lowerFileCall emitted "host build does not support file.save/file.load
+// yet" unconditionally -- pinned by that backend's own
+// TestBuildUnsupportedConstructs, and deliberate/enforced per
+// docs/superpowers/plans/2026-07-22-clarus-backend-host.md's host-build
+// scope). Extending the (since-deleted) frozen Go compiler to lower
+// file.save/load would have fixed this, but CLAUDE.md declared it frozen,
+// so that was out of scope for this plan (and the Go compiler is gone now
+// regardless).
 //
 // Instead, the oracle is a golden baseline captured from TODAY's clarusc
 // (which still redirects file.save/load to the C rt_ser.inc serializer,

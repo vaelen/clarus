@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.9)
 project(UIProbe C)
 set(CLARUS_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
-add_definitions(-I${CLARUS_ROOT}/runtime/mac -I${CLARUS_ROOT}/internal/build/rt)
+add_definitions(-I${CLARUS_ROOT}/runtime/mac -I${CLARUS_ROOT}/runtime/host)
 
 # Task 3 (mac-target-4b): -DRT_MAC_TEST=1 builds the capture-stream/trace/
 # scripted-event variant of this same probe app; -DUI_EVENTS=<path/to/foo.c>

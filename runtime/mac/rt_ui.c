@@ -117,7 +117,7 @@ extern void rt_test_emit(const char *line);
 /* rt_ui_quit (below) is the real quit cascade: closeRequest to every open
    window front-to-back, any cancel aborts the whole quit, otherwise
    rt_quit(0) -- the plain process-exit primitive every non-UI `quit`
-   statement already compiles to (internal/build/rt/rt.h). The scripted
+   statement already compiles to (runtime/host/rt.h). The scripted
    `quit` command and script exhaustion (Task 3) call rt_ui_quit() too, not
    rt_quit() directly: "same path as the quit statement" (the design doc's
    pinned contract) means literally the same function, cascade included. */

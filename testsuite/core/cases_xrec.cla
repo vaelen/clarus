@@ -19,7 +19,7 @@
 //
 // `XRecAddr`: clause-less extern -> `nat_XRecAddr` fallback (native lane,
 // cgCallExtNatFallback/cg68k.cla) -- reuses Task 5's own EXACT name and
-// host-lane glue (`rt_ext_XRecAddr`, internal/build/rt/rt_ext_host.inc)
+// host-lane glue (`rt_ext_XRecAddr`, runtime/host/rt_ext_host.inc)
 // for free on the host CLI lane; the Mac/Retro68 lane needs its own
 // `rt_ext_XRecAddr` too (runtime/mac/rt_ext_mac.inc, added this task --
 // same "cprint always renders rt_ext_NAME regardless of clause" gap

@@ -27,7 +27,7 @@
 // present at exit crashed anyway: the first release site walked and freed
 // the element, the second site walked the SAME (already-freed) element
 // again. Fixed by gating the element walk on rt_list_lastref/
-// rt_map_lastref (internal/build/rt/rt_core.inc) -- a NULL-safe "is this
+// rt_map_lastref (runtime/host/rt_core.inc) -- a NULL-safe "is this
 // the box's only live reference" (rc==1) check read BEFORE either site's
 // own release call decrements it. gaL1/gaL2 below now push an element and
 // leave it in place at exit (round 2's version popped it back out first,

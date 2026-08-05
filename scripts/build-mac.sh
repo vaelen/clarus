@@ -43,8 +43,8 @@ mkdir -p "$ROOT/build-mac"
 # 1. bootstrap clarusc from the committed snapshot (cached)
 CLARUSC="$ROOT/build-mac/clarusc"
 if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
-    cc -O1 -I"$ROOT/internal/build/rt" -o "$CLARUSC" \
-        "$ROOT/clarusc/clarusc.c" "$ROOT/internal/build/rt/rt.c"
+    cc -O1 -I"$ROOT/runtime/host" -o "$CLARUSC" \
+        "$ROOT/clarusc/clarusc.c" "$ROOT/runtime/host/rt.c"
 fi
 
 # 1b. app info (always runs; drives naming, About resources, CREATOR)
@@ -247,7 +247,7 @@ fi
 cat > "$OUT/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.9)
 project($NAME C)
-add_definitions(-I$ROOT/internal/build/rt -I$ROOT/runtime/mac $TESTDEF)
+add_definitions(-I$ROOT/runtime/host -I$ROOT/runtime/mac $TESTDEF)
 add_application($NAME $EXTRA_APP_ARGS $NAME.c $ROOT/runtime/mac/rt_mac.c $ROOT/runtime/mac/alert.r $APPRES $EXTRA_SRC)
 EOF
 cmake -S "$OUT" -B "$OUT/build" \

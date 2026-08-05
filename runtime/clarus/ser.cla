@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // ser.cla: the ported record serializer (Plan 5b "Stage B" Task 7, runtime-
-// migration-wave1). Replaces internal/build/rt/rt_ser.inc's rt_file_save/
+// migration-wave1). Replaces runtime/host/rt_ser.inc's rt_file_save/
 // rt_file_load for any program that calls file.save/file.load -- clarusc's
 // cprint.cla redirects IFileSave/IFileLoad to rtFileSave/rtFileLoad here
 // once this module is included (main.cla always includes it when
@@ -69,7 +69,7 @@
 // Task 9 (native-5d): trap clauses on the three raw waist primitives below
 // (see text.cla's own header comment for the trap-word verification
 // table) -- unlike Text/List/Map's NewPtr, rt_ext_SerNewPtr
-// (internal/build/rt/rt_ext_host.inc) has NO OOM check of its own to lose,
+// (runtime/host/rt_ext_host.inc) has NO OOM check of its own to lose,
 // so no concern to flag here. SerFileWriteData/SerFileReadTextInto get NO
 // clause -- still-C file I/O, native fallback (nat_ prefix) is a later
 // task.

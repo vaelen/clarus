@@ -1,4 +1,4 @@
-// internal/build/memtest_c_test.go
+// internal/hostrt/memtest_c_test.go
 package hostrt
 
 import (

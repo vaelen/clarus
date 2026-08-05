@@ -63,8 +63,8 @@ func bootstrapSnapshotClarusc(t *testing.T) string {
 // (runtime/host/rt.c -- not a Go-embedded copy),
 // and runs the resulting binary with argv. cwd is a fresh temp dir per run
 // (fixtures like files.cla touch the filesystem and must not race or
-// litter the source tree, same discipline internal/build/golden_test.go's
-// TestRunGoldens already follows).
+// litter the source tree, same discipline the now-deleted golden_test.go's
+// TestRunGoldens once followed).
 //
 // memCheck, when true, runs the binary under CLARUS_MEM_STRICT=1 +
 // CLARUS_MEM_PARANOID=1 (the same paranoid-allocator combo the now-deleted

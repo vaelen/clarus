@@ -3,7 +3,7 @@
 
 // callback_host.cla: `callback func` decay/invoke host behavior proof
 // (Task 7, toolbox-integration Feature C). CbInvoke is the host-lane test
-// seam (rt_ext_CbInvoke, internal/build/rt/rt_ext_host.inc): it casts its
+// seam (rt_ext_CbInvoke, runtime/host/rt_ext_host.inc): it casts its
 // `fn` argument to a host-convention (int32_t, void*) -> int32_t function
 // pointer and calls through it -- exactly the shape cprint.cla's ECbAddr
 // decay produces (`((void*)&clar_cb_double_it)`), so a real function-

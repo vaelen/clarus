@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_mem.h -- the memory seam. On the Mac this IS the
+/* runtime/host/rt_mem.h -- the memory seam. On the Mac this IS the
    Toolbox Memory Manager; on the host, rt_mem_host.inc implements the same
    subset with deliberate hostility (relocation, scramble, ledger) so Handle
    discipline is proven in host tests before code ever runs on a Mac. */

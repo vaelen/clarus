@@ -57,7 +57,7 @@ go build -o clarus ./cmd/clarus
 To bootstrap `clarusc` from the committed snapshot with no Go at all:
 
 ```sh
-cc -I internal/build/rt -o clarusc clarusc/clarusc.c internal/build/rt/rt.c
+cc -I runtime/host -o clarusc clarusc/clarusc.c runtime/host/rt.c
 ./clarusc [emit -o OUT.c] FILE...
 ```
 

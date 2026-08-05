@@ -1,4 +1,4 @@
-/* internal/build/rt/rt_core.inc -- shared text/list/map core, ported
+/* runtime/host/rt_core.inc -- shared text/list/map core, ported
  * verbatim from runtime/mac/rt_mac.c's Handle-backed implementations
  * (Task 4e memory audit: the Mac runtime's Handle-native code becomes the
  * single shared implementation for both the host and the Mac target).

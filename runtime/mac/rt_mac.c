@@ -1,11 +1,11 @@
 /* runtime/mac/rt_mac.c -- Toolbox-native implementation of the Clarus
-   runtime ABI (internal/build/rt/rt.h). Handles + BlockMoveData + Str255;
+   runtime ABI (runtime/host/rt.h). Handles + BlockMoveData + Str255;
    no malloc, no console library. RT_MAC_TEST redirects alert/log/quit/panic
    for the corpus harness (Task 10).
 
    String layout matches Str255 exactly: a strN value is
    {uint8_t len; uint8_t b[N];}. The byte-logic functions below are ports
-   of internal/build/rt/rt.c with IDENTICAL observable semantics (same
+   of runtime/host/rt.c with IDENTICAL observable semantics (same
    clamping, same lastError codes/messages, same panic messages) --
    memmove is replaced with BlockMoveData (same argument order as memmove:
    BlockMoveData(src, dst, count)); memcmp/strlen stay as they are pure
@@ -90,7 +90,7 @@ void rt_panic(const char *msg)
  *
  *   - rt_alert appends its bytes live: CR->LF (Mac newline rendered as
  *     the host's LF) plus a trailing LF, byte-identical to host
- *     rt_alert's stdout stream (internal/build/rt/rt.c).
+ *     rt_alert's stdout stream (runtime/host/rt.c).
  *   - rt_log instead buffers (same CR->LF + trailing LF, matching host
  *     rt_log's stderr stream) into an in-memory rt_text; it is NOT
  *     written to `out` during the run.
@@ -156,7 +156,7 @@ static void rt_test_write(const uint8_t *buf, long n)
    so there is no Pascal-string count byte to strip here); a trailing '\n'
    is appended, matching the LF-terminated trace-line contract. Declared
    `extern` directly in rt_ui.c (same convention as rt_mac_init_toolbox
-   just below) rather than added to the frozen internal/build/rt/rt.h. */
+   just below) rather than added to the frozen runtime/host/rt.h. */
 void rt_test_emit(const char *line)
 {
     char buf[512];
@@ -287,7 +287,7 @@ static void rt_test_flush_log(void)
 #endif
 
 /* ==================== files ====================
- * File Manager port of internal/build/rt/rt.c's files (Task 13): same
+ * File Manager port of runtime/host/rt.c's files (Task 13): same
  * lastError codes/messages on failure, same rt_file_name basename
  * semantics (byte scan for '/', identical to the host -- this is a pure
  * string algorithm, not an OS path convention, so it is ported as-is

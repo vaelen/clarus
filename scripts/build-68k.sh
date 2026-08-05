@@ -43,8 +43,8 @@ mkdir -p "$ROOT/build-68k"
 # 1. bootstrap clarusc from the committed snapshot (cached)
 CLARUSC="$ROOT/build-68k/clarusc"
 if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
-    cc -O1 -I"$ROOT/internal/build/rt" -o "$CLARUSC" \
-        "$ROOT/clarusc/clarusc.c" "$ROOT/internal/build/rt/rt.c"
+    cc -O1 -I"$ROOT/runtime/host" -o "$CLARUSC" \
+        "$ROOT/clarusc/clarusc.c" "$ROOT/runtime/host/rt.c"
 fi
 
 # 1b. derive NAME when omitted (appinfo's name= line, or its filename

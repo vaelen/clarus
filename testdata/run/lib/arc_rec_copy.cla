@@ -21,7 +21,7 @@
 // by value, then mutate the LOCAL's own field -- the container's
 // independently-retained copy must stay unaffected) is DELIBERATELY NOT
 // exercised here: this file is part of the SHARED testdata/run corpus,
-// which internal/build.TestRunGoldens also runs through the FROZEN Go
+// which the since-removed TestRunGoldens also ran through the FROZEN Go
 // reference compiler (internal/lower.go, internal/cprint.go -- untouched
 // by any ARC task, records never ARC'd there at all). That compiler's own
 // record-field-store still releases the old value unconditionally (same
