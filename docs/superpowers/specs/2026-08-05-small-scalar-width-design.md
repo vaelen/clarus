@@ -106,8 +106,10 @@ the "never cross-use" guard remains as belt-and-suspenders.
   `uidialogs.cla:454,497`) become 1-byte reads/writes. Together with the
   compiler-comment rewrites this deletes the "bool is a full int32" contract
   from all six restatement sites.
-- Serializer format: `bool` fields serialize as 1 byte. Breaks `.clrs`
-  compatibility; format is pre-1.0, nothing to migrate.
+- Serializer disk format: UNCHANGED. Both serializers already canonicalize
+  a bool to one disk byte (`rt_ser.inc:70-79`, `ser.cla:136-142`); only the
+  in-memory read/write width changes. `internal/sertest`'s byte-compare
+  staying green without re-blessing is the proof.
 
 ### Bootstrap
 
