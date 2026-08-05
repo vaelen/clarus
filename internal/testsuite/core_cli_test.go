@@ -5,33 +5,24 @@
 // testsuite/ suites (test-suite-review Phase D/E). core_cli_test.go builds
 // the core suite's host CLI (testsuite/kit.cla + testsuite/core/runner.cla
 // + testsuite/core/cases_*.cla, one file per family + testsuite/core/
-// cli.cla) via the snapshot-bootstrapped clarusc -- the same recipe as
-// internal/selfhost/behavior_test.go's bootstrapSnapshotClarusc and
-// internal/perfgate's buildClarusc, duplicated locally per those packages'
-// own convention (each Go test package times/drives its own build rather
-// than sharing a harness package) -- then runs it and parses the
-// PASS/FAIL/TOTAL log format the plan's "Normative: the testsuite runner
-// contract" section specifies
+// cli.cla) via the shared Go-free bootstrap (claruscboot.CurrentExe --
+// current-source two-stage build, disk-cached under build-run/, the same
+// helper internal/emitui/emitui_test.go and others use), then runs it and
+// parses the PASS/FAIL/TOTAL log format the plan's "Normative: the
+// testsuite runner contract" section specifies
 // (docs/superpowers/plans/2026-08-03-test-suite-review.md).
 package testsuite
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-)
 
-var (
-	claruscOnce sync.Once
-	claruscExe  string
-	claruscErr  error
-	claruscSkip string
+	"clarus/internal/claruscboot"
 )
 
 // repoRoot returns the repo root, computed from the package directory (go
@@ -45,41 +36,12 @@ func repoRoot(t *testing.T) string {
 	return filepath.Join(wd, "..", "..")
 }
 
-// bootstrapClarusc compiles the committed clarusc/clarusc.c snapshot
-// straight to a binary with `cc` alone -- no Go, no prior Clarus binary.
-// Memoized with sync.Once since every subtest in this file reuses the
-// same exe.
+// bootstrapClarusc returns the current-source clarusc via the shared
+// Go-free bootstrap. Kept as a local name so call sites below are
+// untouched.
 func bootstrapClarusc(t *testing.T) string {
 	t.Helper()
-	claruscOnce.Do(func() {
-		if _, err := exec.LookPath("cc"); err != nil {
-			claruscSkip = "cc not found on PATH, skipping core CLI suite"
-			return
-		}
-		root := repoRoot(t)
-		dir, err := os.MkdirTemp("", "clarusc-snapshot-*")
-		if err != nil {
-			claruscErr = err
-			return
-		}
-		exe := filepath.Join(dir, "clarusc")
-		cmd := exec.Command("cc", "-O1", "-I", filepath.Join(root, "runtime", "host"),
-			"-o", exe,
-			filepath.Join(root, "clarusc", "clarusc.c"),
-			filepath.Join(root, "runtime", "host", "rt.c"))
-		if out, err := cmd.CombinedOutput(); err != nil {
-			claruscErr = fmt.Errorf("bootstrap clarusc from snapshot: %v\n%s", err, out)
-			return
-		}
-		claruscExe = exe
-	})
-	if claruscSkip != "" {
-		t.Skip(claruscSkip)
-	}
-	if claruscErr != nil {
-		t.Fatal(claruscErr)
-	}
-	return claruscExe
+	return claruscboot.CurrentExe(t)
 }
 
 // buildCoreCLI composes and compiles the core suite's CLI binary: kit.cla
