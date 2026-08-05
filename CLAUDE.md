@@ -72,10 +72,14 @@ Tiered test gates:
   enforces user code checks standalone before any runtime module is
   consulted) and behavior is byte-identical to no-flag builds — the
   emitui/frozen-scenario goldens are the proof. A no-op on non-UI
-  programs; ignored by check-only mode (bare `clarusc FILE...`). Only the
-  suites' GUI (`gui.cla`, `--events`-driven) builds pass it — `core`'s
-  non-UI host CLI (`cli.cla`) doesn't need it; nothing outside the two
-  suites does.
+  programs. Check-only mode (bare `clarusc FILE...`) doesn't recognize
+  the flag at all — it's only matched under `emitMode`/`emitMode68k`/
+  `appinfoMode` (`clarusc/main.cla`); in check-only mode it falls into
+  the generic positional-file-args branch and is treated as a bogus
+  entry filename (`clarusc --testapi FILE.cla` fails `cannot open entry
+  file`, exit 1). Only the suites' GUI (`gui.cla`, `--events`-driven)
+  builds pass it — `core`'s non-UI host CLI (`cli.cla`) doesn't need it;
+  nothing outside the two suites does.
 
 ### `core`/`toolbox` test suites (`testsuite/`)
 

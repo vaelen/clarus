@@ -8,10 +8,14 @@
 # CLARUS_MAC_TESTS=1). No `-run` filter on mactest, so this is
 # unconditionally BOTH lanes' worth of everything the package contains:
 # the 4 suite boots (core+toolbox GUI result-log suites x native-68k +
-# Retro68/cprint lanes, test-suite-review Tasks 10-12), the legacy
-# 23-scenario scripted trace+PBM lane x2 lanes (fidelity backstop until
-# scenarios retire one by one into toolbox, per the design doc's
-# migration strategy -- NOT yet retired), the crash-fixture boots
+# Retro68/cprint lanes, test-suite-review Tasks 10-12; toolbox grew
+# 7->21 ToolboxTest cases in the ui-scenario-retirement phase, 2026-08-05,
+# which migrated 12 of the 23 legacy scenarios in as cases), the
+# 11-scenario scripted trace+PBM lane x2 lanes (fidelity backstop for the
+# scenarios still not retired -- about, smoke_bounce, smoke_menudemo,
+# smoke_mandel, opendoc, opendoc_empty, texteditor, texteditor_quit,
+# texteditor_bigfile, bookmarks, formedit; the other 12 widget scenarios
+# now live as toolbox-suite cases instead), the crash-fixture boots
 # (6 runerr + 2 abort, each lane), and the native-lane host-compare/
 # regression boots. Slow (~15m+, dominated by mactest) -- run before
 # merging to main, not per-task.
