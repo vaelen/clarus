@@ -1,0 +1,205 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_dialogs.cla: Dialogs (Task 9, ui-scenario-retirement batch) --
+// the migrated replacement for the retired testdata/ui/dialogs.cla golden
+// UI scenario: askOpen/askSave/askSaveChanges end to end via the
+// RT_MAC_TEST answer queue (UiTestAnswerSave/UiTestAnswerOpen/
+// UiTestAnswerCancel/UiTestAnswerChanges), plus a REAL file round-trip
+// through the boot volume. See harness.cla's own DialogsWin comment for
+// the window transcription (Status changed from `label` to `field` so
+// its text is directly readable) and the reused click coordinates.
+//
+// Sequencing mirrors the retired testdata/ui/dialogs.events line for
+// line: every `answer-*` verb is armed BEFORE the menu/click that
+// consumes it (rtUiAskOpen/rtUiAskSave/rtUiAskSaveChanges each pop
+// exactly one queued answer per call, uidialogs.cla) -- arming out of
+// order would hand the wrong dialog its answer and panic
+// ("askOpen/askSave/askSaveChanges: scripted answer kind mismatch").
+// `rtUiScripted` (the gate that routes askOpen/askSave/askSaveChanges
+// through the test-only answer queue at all, instead of a REAL
+// StandardFile/Alert dialog that would hang this boot waiting for input)
+// is already true by the time any case runs: the toolbox suite always
+// boots under `--events testdata/ui/toolboxsuite.events` (one click on
+// Run All), which enters rtUiRunScripted -- setting rtUiScripted -- before
+// RunAll.click ever fires (runner.cla's own header comment,
+// uidialogs.cla's own rtUiAskOpen/rtUiAskSave/rtUiAskSaveChanges header
+// comment).
+//
+// Assertion-mapping table (retired dialogs.events step -> this case):
+//   click <Body>, type "Hello file"      -> UiTestClick/UiTestType
+//   answer-save DialogsTest.txt; click <SaveBtn>
+//     -> titleVal ("saved-title" snap's title-bar half) == "DialogsTest.txt"
+//     -> statusSaved (the snap's Status-label half) == "saved: DialogsTest.txt"
+//     -> direct file.readText("DialogsTest.txt") == "Hello file" (file
+//        really exists with the right content -- independent of the
+//        window's own state, the strongest form of the retired snap's
+//        "the write really landed on disk" claim)
+//   click <ClearBtn>                     -> statusAfterClear (Body.text == "")
+//   answer-open DialogsTest.txt; click <OpenBtn>
+//     -> bodyRoundtrip ("roundtrip" snap's meaning) == "Hello file",
+//        direct equality (STRONGER than the old snap's mere byte compare)
+//     -> statusOpened == "opened"
+//   answer-cancel; click <OpenBtn>       -> statusOpenCancel == "open-cancel",
+//        bodyAfterOpenCancel unchanged (still "Hello file", proving
+//        Cancel really left path/Body untouched)
+//   answer-cancel; click <SaveBtn>       -> statusSaveCancel == "save-cancel",
+//        titleAfterSaveCancel unchanged (still "DialogsTest.txt", proving
+//        Cancel wrote no file and set no title)
+//   answer-changes save; click <AskBtn>       -> statusChangesSave == "changes-save"
+//   answer-changes discard; click <AskBtn>    -> statusChangesDiscard == "changes-discard"
+//   answer-changes cancel; click <AskBtn>     -> statusChangesCancel == "changes-cancel"
+//
+// DialogsTest.txt is a DISTINCT filename from the suite's own tkReport
+// log (gui.cla's TestLog.txt) -- this round trip can never collide with
+// it, and file.writeText's own overwrite-whole-file semantics (same as
+// TestLog.txt's own, gui.cla's header comment) make a rerun deterministic
+// with no separate cleanup step needed.
+
+// Reused VERBATIM from the retired testdata/ui/dialogs.events -- see
+// harness.cla's own DialogsWin comment for the re-derivation confirming
+// these still land correctly against the `field`-Status layout.
+const tbDlgBodyX: int = 100
+const tbDlgBodyY: int = 150
+const tbDlgOpenX: int = 116
+const tbDlgOpenY: int = 74
+const tbDlgSaveX: int = 204
+const tbDlgSaveY: int = 74
+const tbDlgAskX: int = 292
+const tbDlgAskY: int = 74
+const tbDlgClearX: int = 380
+const tbDlgClearY: int = 74
+
+func caseDialogs(): TestResult {
+    var w: DialogsWin
+    var dispatchOk: bool
+
+    var titleVal: string
+    var statusSaved: string
+    var fileOk: bool
+    var direct: text
+
+    var statusAfterClear: text
+
+    var bodyRoundtrip: text
+    var statusOpened: string
+
+    var statusOpenCancel: string
+    var bodyAfterOpenCancel: text
+
+    var statusSaveCancel: string
+    var titleAfterSaveCancel: string
+
+    var statusChangesSave: string
+    var statusChangesDiscard: string
+    var statusChangesCancel: string
+
+    var closedOk: bool
+    var ok: bool
+    var detail: string
+
+    w = open DialogsWin
+    dispatchOk = true
+
+    dispatchOk = dispatchOk and UiTestClick(tbDlgBodyX, tbDlgBodyY)
+    dispatchOk = dispatchOk and UiTestType("Hello file")
+
+    // Save: arm BEFORE the click that consumes the answer.
+    dispatchOk = dispatchOk and UiTestAnswerSave("DialogsTest.txt")
+    dispatchOk = dispatchOk and UiTestClick(tbDlgSaveX, tbDlgSaveY)
+    titleVal = w.title
+    statusSaved = w.Status.text
+    fileOk = file.readText("DialogsTest.txt", direct)
+
+    dispatchOk = dispatchOk and UiTestClick(tbDlgClearX, tbDlgClearY)
+    statusAfterClear = w.Body.text
+
+    // Open the SAME path: refills Body from disk, not from memory.
+    dispatchOk = dispatchOk and UiTestAnswerOpen("DialogsTest.txt")
+    dispatchOk = dispatchOk and UiTestClick(tbDlgOpenX, tbDlgOpenY)
+    bodyRoundtrip = w.Body.text
+    statusOpened = w.Status.text
+
+    // Open, cancelled: path/Body stay exactly as the roundtrip left them.
+    dispatchOk = dispatchOk and UiTestAnswerCancel()
+    dispatchOk = dispatchOk and UiTestClick(tbDlgOpenX, tbDlgOpenY)
+    statusOpenCancel = w.Status.text
+    bodyAfterOpenCancel = w.Body.text
+
+    // Save, cancelled: no write, no title change.
+    dispatchOk = dispatchOk and UiTestAnswerCancel()
+    dispatchOk = dispatchOk and UiTestClick(tbDlgSaveX, tbDlgSaveY)
+    statusSaveCancel = w.Status.text
+    titleAfterSaveCancel = w.title
+
+    // All three askSaveChanges branches.
+    dispatchOk = dispatchOk and UiTestAnswerChanges("save")
+    dispatchOk = dispatchOk and UiTestClick(tbDlgAskX, tbDlgAskY)
+    statusChangesSave = w.Status.text
+
+    dispatchOk = dispatchOk and UiTestAnswerChanges("discard")
+    dispatchOk = dispatchOk and UiTestClick(tbDlgAskX, tbDlgAskY)
+    statusChangesDiscard = w.Status.text
+
+    dispatchOk = dispatchOk and UiTestAnswerChanges("cancel")
+    dispatchOk = dispatchOk and UiTestClick(tbDlgAskX, tbDlgAskY)
+    statusChangesCancel = w.Status.text
+
+    closedOk = UiTestClose()
+
+    ok = dispatchOk and closedOk and fileOk
+    ok = ok and titleVal == "DialogsTest.txt"
+    ok = ok and statusSaved == "saved: DialogsTest.txt"
+    ok = ok and direct == "Hello file"
+    ok = ok and statusAfterClear == ""
+    ok = ok and bodyRoundtrip == "Hello file"
+    ok = ok and statusOpened == "opened"
+    ok = ok and statusOpenCancel == "open-cancel"
+    ok = ok and bodyAfterOpenCancel == "Hello file"
+    ok = ok and statusSaveCancel == "save-cancel"
+    ok = ok and titleAfterSaveCancel == "DialogsTest.txt"
+    ok = ok and statusChangesSave == "changes-save"
+    ok = ok and statusChangesDiscard == "changes-discard"
+    ok = ok and statusChangesCancel == "changes-cancel"
+
+    if ok {
+        return tkPass("Dialogs")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    // direct/statusAfterClear/bodyRoundtrip/bodyAfterOpenCancel are
+    // `text` (textview.text / file.readText's own out-param, Ch3/Ch12);
+    // `+` on a text operand always yields `text` ("cannot assign text to
+    // string"), so each is sliced to a `string` first (Ch3: `t[0,
+    // t.length]`, safe here -- every real value in this case is well
+    // under the 255-byte slice-length limit).
+    detail = "titleVal [" + titleVal + "]"
+    detail = detail + " statusSaved [" + statusSaved + "]"
+    detail = detail + " direct [" + direct[0, direct.length] + "]"
+    detail = detail + " statusAfterClear [" + statusAfterClear[0, statusAfterClear.length] + "]"
+    detail = detail + " bodyRoundtrip [" + bodyRoundtrip[0, bodyRoundtrip.length] + "]"
+    detail = detail + " statusOpened [" + statusOpened + "]"
+    detail = detail + " statusOpenCancel [" + statusOpenCancel + "]"
+    detail = detail + " bodyAfterOpenCancel [" + bodyAfterOpenCancel[0, bodyAfterOpenCancel.length] + "]"
+    detail = detail + " statusSaveCancel [" + statusSaveCancel + "]"
+    detail = detail + " titleAfterSaveCancel [" + titleAfterSaveCancel + "]"
+    detail = detail + " statusChangesSave [" + statusChangesSave + "]"
+    detail = detail + " statusChangesDiscard [" + statusChangesDiscard + "]"
+    detail = detail + " statusChangesCancel [" + statusChangesCancel + "]"
+    if fileOk {
+        detail = detail + " fileOk true"
+    } else {
+        detail = detail + " fileOk false"
+    }
+    if dispatchOk {
+        detail = detail + " dispatchOk true"
+    } else {
+        detail = detail + " dispatchOk false"
+    }
+    if closedOk {
+        detail = detail + " closedOk true"
+    } else {
+        detail = detail + " closedOk false"
+    }
+    return tkFail("Dialogs", detail)
+}

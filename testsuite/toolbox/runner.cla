@@ -64,6 +64,12 @@
 // task-8-report.md for the full investigation. testdata/ui/formedit.cla
 // stays an unretired golden scenario (internal/mactest/ui_test.go's
 // TestFormeditUIScenario) until the underlying compiler bug is fixed.
+// Dialogs/Hdim (cases_dialogs.cla/cases_hdim.cla) are Task 9's own
+// addition (ui-scenario-retirement batch migration): the retired
+// testdata/ui/dialogs.cla and hdim.cla golden UI scenarios, migrated to
+// the DialogsWin and DimWin windows Task 9 also added to harness.cla --
+// see each case file's own header comment for its full retirement
+// mapping.
 
 enum ToolboxTest {
     All
@@ -85,15 +91,17 @@ enum ToolboxTest {
     Zoomwin
     Hscroll
     Popuptable
+    Dialogs
+    Hdim
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 18 real cases
+// nTbCases is ToolboxTest's member count minus All: the 20 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 19
+const nTbCases: int = 21
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -156,6 +164,12 @@ func tbCaseName(t: ToolboxTest): string {
     case Popuptable {
         return "Popuptable"
     }
+    case Dialogs {
+        return "Dialogs"
+    }
+    case Hdim {
+        return "Hdim"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -185,6 +199,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Zoomwin)
     l.add(Hscroll)
     l.add(Popuptable)
+    l.add(Dialogs)
+    l.add(Hdim)
     l.add(SelfCheck)
     return l
 }
@@ -292,6 +308,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Popuptable) {
         results.add(casePopuptable())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Dialogs) {
+        results.add(caseDialogs())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Hdim) {
+        results.add(caseHdim())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

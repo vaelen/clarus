@@ -176,32 +176,6 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestHdimUIScenario (fix-hbar): an empty `scrollbar: both` textview --
-// both bars must render thumbless ("dimmed when not needed"). The V bar's
-// maxScroll has always been 0 for empty content; this scenario is the H
-// bar's own regression guard now that its range tracks content instead of
-// a fixed no-wrap width. One snap; the golden PBM itself is the assertion
-// (both bars' thumbless rendering) -- same "snap-is-the-assertion" shape
-// as the retired pattern scenario's own dither ramp (migrated to
-// testsuite/toolbox/cases_pattern.cla's Pattern case, Task 4,
-// ui-scenario-retirement).
-func TestHdimUIScenario(t *testing.T) {
-	runUIScenario(t, "hdim", 0)
-}
-
-// TestDialogsUIScenario (Task 4, mac-target-4c): askOpen/askSave/
-// askSaveChanges end to end via the RT_MAC_TEST answer queue -- both
-// dialogs' fill+true path, both dialogs' Cancel (false, path untouched)
-// path, and all three saveChoice branches -- plus a REAL file round-trip
-// through the boot volume (askSave writes DialogsTest.txt, the textview is
-// cleared, then askOpen the SAME path + file.readText refill it), proven
-// by the "roundtrip" snap showing the content came back from disk rather
-// than surviving in memory. See testdata/ui/dialogs.cla's own header
-// comment for the full scripted walkthrough.
-func TestDialogsUIScenario(t *testing.T) {
-	runUIScenario(t, "dialogs", 0)
-}
-
 // TestFormeditUIScenario (mac-target-4d Task 7): form windows/binds/edit/
 // accepted/cancelled end to end -- Add opens EditForm on `new Bookmark`
 // (all four bound widget kinds: field(str)/field(int)/popup(enum)/

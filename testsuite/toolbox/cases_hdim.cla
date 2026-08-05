@@ -1,0 +1,124 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_hdim.cla: Hdim (Task 9, ui-scenario-retirement batch) -- the
+// migrated replacement for the retired testdata/ui/hdim.cla golden UI
+// scenario (fix-hbar): an empty `scrollbar: both` textview must render
+// BOTH scrollbars thumbless (the standard scrollbar CDEF's inactive
+// state, maxScroll == minScroll == 0) -- see harness.cla's own DimWin
+// comment for the window transcription. Snap-is-the-assertion, same shape
+// as the retired pattern scenario's own dither ramp (cases_pattern.cla)
+// and hscroll's own thumbless-when-fits sub-test (cases_hscroll.cla) --
+// here it IS the whole case, not one sub-test among several: two pinned
+// UiTestChecksum constants, one per scrollbar lane, obtained by
+// FAIL-then-copy against a real boot (transcript in task-9-report.md).
+//
+// Geometry: DimWin's `size: 300, 200` and Body's `at: 10, 10; fill: both;
+// scrollbar: both` are BYTE-IDENTICAL to Task 7's own HScrollWin/HFitWin
+// (harness.cla's own HScrollWin comment), so content top-left is
+// ((512-300)/2, 44) = (106, 44), and the SAME rtUiLayout/rtUiTeRelayout
+// derivation cases_hscroll.cla's own header comment already walked
+// applies verbatim: Body's box is LOCAL (10,10)-(301,201) (fillBoth +
+// flushR + flushB, both scrollbar edges IN the window frame). Read
+// directly from rtUiTeRelayout (runtime/clarus/uitext.cla): vW = hH =
+// rtUiScrollbarW(15) + 1 = 16 (the flush bonus pixel). The V bar's own
+// MoveControl/SizeControl land it at LOCAL (285,10)-(301,185) (vTop=
+// boxTop=10, sbBottom=boxBottom(201)-hH(16)=185); the H bar lands at
+// LOCAL (10,185)-(285,201) (hLeft=boxLeft=10, sbRight=boxRight(301)-
+// vW(16)=285) -- this second box matches cases_hscroll.cla's own header
+// comment's independently-derived H-bar box exactly, cross-checking both
+// derivations.
+//
+// V-bar checksum region: GLOBAL x = 106+285=391 through 106+301=407 (bar
+// width 16), y = 44+10=54 through 44+185=229 (bar height 175). A classic
+// scrollbar's own up/down arrow glyphs occupy a square box (side ==
+// breadth == 16) at each end of the track, so the arrow-free middle runs
+// roughly LOCAL y 26..169 -> GLOBAL 70..213. tbHdimVX0/W (392,8) sit
+// 1px inside the bar's own left edge (391) with 7px of margin on the
+// right (407); tbHdimVY0/H (90,80) sit well inside the arrow-free middle
+// (70..213) with 20px/43px of margin top/bottom.
+//
+// H-bar checksum region: GLOBAL x = 106+10=116 through 106+285=391 (bar
+// width 275), y = 44+185=229 through 44+201=245 (bar height 16). Same
+// arrow-square reasoning gives an arrow-free middle of roughly LOCAL x
+// 26..269 -> GLOBAL 132..375; tbHdimHX0/W (144,216) sit inside that with
+// 12px/15px of margin. tbHdimHY0/H (229,16) span the bar's own full
+// height -- y/h need no 8px alignment, so no margin is needed there.
+//
+// A `UiTestMenu(0, 0)` pump right after `open` (a well-defined no-op
+// MenuSelect) settles the window's own first update event before either
+// checksum reads the screen -- same "don't race the first paint" reason
+// as cases_zoomwin.cla's/cases_hscroll.cla's own header comments (and the
+// retired hdim.events' own `menu 0 0` prime line, kept here for the exact
+// same reason).
+const tbHdimVX0: int = 392
+const tbHdimVY0: int = 90
+const tbHdimVW: int = 8
+const tbHdimVH: int = 80
+
+const tbHdimHX0: int = 144
+const tbHdimHY0: int = 229
+const tbHdimHW: int = 216
+const tbHdimHH: int = 16
+
+// tbHdimVWant/tbHdimHWant: pinned via FAIL-then-copy against a real boot
+// (task-9-report.md has the transcript). tbHdimVX0/Y0/W/H sits clear of
+// the V bar control's own top/bottom/left/right 1px border on every side
+// (the arrow-free-middle margin above), so its region is genuinely blank
+// -- checksum 0. tbHdimHX0/Y0/W/H spans the H bar's own FULL height
+// (16px, no y/h alignment need), so it can NOT avoid that control's own
+// top+bottom 1px border rows the way the V region avoids its
+// left/right ones -- a real boot's own per-8px-column checksum there is
+// a CONSTANT 510 (confirmed by bisecting the whole bar's width one 8px
+// slice at a time -- every slice between the two arrow glyphs reads
+// exactly 510, only the two end slices differ), so the pinned constant
+// for tbHdimHW(216)/8 = 27 such columns is 27*510 = 13770, not 0 --
+// still a single deterministic constant (the point: the region is
+// UNIFORM across its own width, i.e. no thumb sitting at any particular
+// offset), just not a blank one.
+const tbHdimVWant: int = 0
+const tbHdimHWant: int = 13770
+
+func caseHdim(): TestResult {
+    var w: DimWin
+    var pumped: bool
+    var vCk: int
+    var hCk: int
+    var closedOk: bool
+    var ok: bool
+    var detail: string
+
+    w = open DimWin
+    pumped = UiTestMenu(0, 0)
+
+    vCk = UiTestChecksum(tbHdimVX0, tbHdimVY0, tbHdimVW, tbHdimVH)
+    hCk = UiTestChecksum(tbHdimHX0, tbHdimHY0, tbHdimHW, tbHdimHH)
+
+    closedOk = UiTestClose()
+
+    ok = pumped and closedOk
+    ok = ok and vCk == tbHdimVWant
+    ok = ok and hCk == tbHdimHWant
+
+    if ok {
+        return tkPass("Hdim")
+    }
+    // Piecewise -- one concatenation per statement (native 68k codegen's
+    // per-statement str/rec temp-slot budget, kit.cla's own tkReport doc
+    // comment).
+    detail = "vCk " + tkIntToStr(vCk)
+    detail = detail + " want " + tkIntToStr(tbHdimVWant)
+    detail = detail + " hCk " + tkIntToStr(hCk)
+    detail = detail + " want " + tkIntToStr(tbHdimHWant)
+    if pumped {
+        detail = detail + " pumped true"
+    } else {
+        detail = detail + " pumped false"
+    }
+    if closedOk {
+        detail = detail + " closedOk true"
+    } else {
+        detail = detail + " closedOk false"
+    }
+    return tkFail("Hdim", detail)
+}

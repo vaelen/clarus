@@ -625,3 +625,119 @@ extend PopupTableWin {
         }
     }
 }
+
+// DialogsWin (Task 9, ui-scenario-retirement batch): byte-safe
+// transcription of the retired testdata/ui/dialogs.cla -- Doc renamed
+// DialogsWin (same global-uniqueness reason as MenuMain/EditMain/
+// PopupTableWin above), same four buttons + Body textview + `path`
+// per-instance var, same OpenBtn.click/SaveBtn.click/AskBtn.click/
+// ClearBtn.click bodies verbatim (askOpen/askSave/askSaveChanges end to
+// end; SaveBtn.click's `title = path` then bare `title` READ-back is the
+// retired fixture's own "Task 4b breadcrumb" -- see its header comment --
+// kept unchanged here). ONE deliberate departure, disclosed here: `Status`
+// is a `field`, not the retired fixture's own `label` -- same
+// `lowWidgetPropGet` gap PopupTableWin's own Result field already
+// disclosed (Task 8, this file's own PopupTableWin comment above): no
+// get_str path for `label`, only `field`/`textview`. Status cycles
+// through SEVEN distinct strings across this scenario's own walkthrough
+// (below) -- a `field`'s directly-readable `.text` lets cases_dialogs.cla
+// assert each one by exact equality instead of Task 5's own
+// checksum-inequality workaround (cases_buttons.cla's tbButtonsStatus
+// pattern), which only proves SOMETHING changed, not which of seven
+// possible strings landed.
+//
+// Unlike the retired fixture (`on App.launch { open Doc }`, opened once
+// at boot), DialogsWin is opened MID-CASE by caseDialogs -- same
+// "opened on demand, not at App.launch" convention as every other
+// harness.cla window (CanvasWin's own comment above). `size: 400, 260`
+// and every widget's `at:` are UNCHANGED from the retired fixture, so
+// OpenBtn/SaveBtn/AskBtn/ClearBtn's global click centers (already proven
+// correct by that fixture's own passing history: (116,74)/(204,74)/
+// (292,74)/(380,74)) carry over verbatim into cases_dialogs.cla. Body's
+// own click point (100,150) also carries over: Status's +4px height
+// (field's rtUiFieldH=20 vs label's rtUiLabelH=16, uiwidgets.cla) shifts
+// Body's own top edge down by the same 4px (GLOBAL (76,120)-(448,296)
+// instead of (76,116)-(448,296)), but (100,150) sits comfortably inside
+// either box, so the retired click point still lands inside Body's own
+// text area unchanged -- see cases_dialogs.cla's own header comment for
+// the full assertion-mapping table.
+window DialogsWin {
+    title: "Dialogs"
+    size: 400, 260
+
+    button OpenBtn  { at: 20, 20; caption: "Open" }
+    button SaveBtn  { at: right, 20; caption: "Save" }
+    button AskBtn   { at: right, 20; caption: "Ask" }
+    button ClearBtn { at: right, 20; caption: "Clear" }
+    field Status    { at: 20, bottom }
+    textview Body   { at: 20, bottom; fill: both }
+
+    var path: string(255)
+}
+
+extend DialogsWin {
+    on OpenBtn.click {
+        var t: text
+        if askOpen(path) {
+            file.readText(path, t)
+            Body.text = t
+            Status.text = "opened"
+        } else {
+            Status.text = "open-cancel"
+        }
+    }
+    on SaveBtn.click {
+        if askSave(path, "untitled.txt") {
+            file.writeText(path, Body.text)
+            title = path
+            // Task 4b breadcrumb, kept verbatim from the retired fixture:
+            // bare `title` READ right after the write above, through a
+            // REAL GetWTitle call (rt_ui_get_title), not a cached copy.
+            Status.text = "saved: " + title
+        } else {
+            Status.text = "save-cancel"
+        }
+    }
+    on AskBtn.click {
+        var c: saveChoice
+        c = askSaveChanges("Doc")
+        if c == Save {
+            Status.text = "changes-save"
+        } else if c == Discard {
+            Status.text = "changes-discard"
+        } else {
+            Status.text = "changes-cancel"
+        }
+    }
+    on ClearBtn.click {
+        Body.text = ""
+    }
+}
+
+// DimWin (Task 9, ui-scenario-retirement batch): byte-safe transcription
+// of the retired testdata/ui/hdim.cla (fix-hbar) -- no rename needed (no
+// existing DimWin in this file). Same single `textview Body { at: 10,
+// 10; fill: both; scrollbar: both }`, same deliberately-empty
+// `on opened { }` -- an empty textview's V bar has always had maxScroll
+// 0 (nothing to scroll); the H bar now matches it (content-based range,
+// rt_ui_te_widest_line returns 0 for an empty TE), so BOTH bars must
+// render thumbless (the standard scrollbar CDEF's inactive state,
+// maxScroll == minScroll == 0) -- this scenario asserts exactly that
+// rendering, not a behavior change. DimWin's `size: 300, 200` plus
+// Body's own `at:`/`fill:`/`scrollbar:` triple are BYTE-IDENTICAL to
+// Task 7's own HScrollWin (this file's own HScrollWin/HFitWin comment
+// above), so its content top-left ((512-300)/2, 44) = (106, 44)) and its
+// scrollbar-lane geometry (rtUiTeRelayout, runtime/clarus/uitext.cla)
+// are the SAME already-derived numbers -- see cases_hdim.cla's own
+// header comment for the reused derivation and the pinned checksum
+// constants.
+window DimWin {
+    title: "Dim"
+    size: 300, 200
+
+    textview Body { at: 10, 10; fill: both; scrollbar: both }
+}
+
+extend DimWin {
+    on opened { }
+}
