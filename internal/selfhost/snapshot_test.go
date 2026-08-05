@@ -72,8 +72,8 @@ func compileCDir(cBytes []byte, dir string) (string, error) {
 	return bin, nil
 }
 
-// compileC writes cBytes alongside the embedded host runtime into a temp dir
-// and compiles them, returning the built binary's path.
+// compileC writes cBytes plus a copy of the on-disk host runtime (runtime/host/*)
+// into a temp dir and compiles them, returning the built binary's path.
 func compileC(t *testing.T, cBytes []byte) string {
 	t.Helper()
 	bin, err := compileCDir(cBytes, t.TempDir())
