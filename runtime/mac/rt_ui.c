@@ -1069,9 +1069,9 @@ static void rt_ui_fixed_to_str(int32_t v, unsigned char *out255)
 
 /* Renders one field's value into colRect (already ClipRect'd by the
    caller) by rt_field_desc.ftype -- mirrors rt_ser.inc's own ser_put_field
-   byte layout exactly (same file this codebase's record serializer uses),
-   including its one documented gotcha: BOOL's emitted C field is a full
-   int32_t (cprint.cla), never a raw byte at the field's base address. */
+   byte layout exactly (same file this codebase's record serializer uses):
+   BOOL's emitted C field is uint8_t (small-scalar-width phase,
+   2026-08-05), one byte at the field's base address, same as CHAR. */
 static void rt_ui_table_draw_field(const void *rec, const rt_field_desc *fd, const Rect *colRect)
 {
     const unsigned char *base;
@@ -1097,7 +1097,7 @@ static void rt_ui_table_draw_field(const void *rec, const rt_field_desc *fd, con
         DrawText(numbuf + 1, 0, numbuf[0]);
         break;
     case RT_FT_BOOL:
-        v = *(const int32_t *)base; /* int32_t, not a raw byte -- see rt_ser.inc's own comment on this exact gotcha */
+        v = *base != 0; /* bool: 1 byte at base, both lanes */
         if (v != 0) {
             ch = 0xC3; /* MacRoman check mark ('\xC3' -- literal byte, source stays ASCII) */
             DrawText(&ch, 0, 1);
@@ -5094,7 +5094,7 @@ static void rt_ui_form_fill(rt_ui_winst *inst)
             TESetText(text + 1, text[0], inst->tes[wIdx]);
             TECalText(inst->tes[wIdx]);
         } else if (wd->kind == RTUI_CHECK && inst->ctrls[wIdx]) {
-            int32_t v = *(const int32_t *)base; /* bool: full int32_t, not a raw byte -- Task 1 fix */
+            int32_t v = *base != 0; /* bool: 1 byte at base, both lanes */
             SetControlValue(inst->ctrls[wIdx], (short)(v != 0 ? 1 : 0));
         } else if (wd->kind == RTUI_POPUP) {
             int32_t v = *(const int32_t *)base;
@@ -5172,7 +5172,7 @@ static void rt_ui_form_accept(rt_ui_winst *inst)
             break;
         }
         case RT_FT_BOOL:
-            *(int32_t *)base = (inst->ctrls[wIdx] && GetControlValue(inst->ctrls[wIdx])) ? 1 : 0;
+            *base = (inst->ctrls[wIdx] && GetControlValue(inst->ctrls[wIdx])) ? 1 : 0;
             break;
         case RT_FT_CHAR: {
             Str255 text;
