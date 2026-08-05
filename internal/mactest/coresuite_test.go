@@ -235,11 +235,11 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
 	// --testapi (Task 3, ui-scenario-retirement): build-mac.sh's own arg
-	// loop needs a dedicated `--testapi` case (see that script) since,
-	// unlike clarusc's own arg parser, its loop otherwise treats any
-	// unrecognized flag as a positional .cla file -- which would then
-	// also reach the script's `clarusc appinfo` call (wrong: appinfo mode
-	// never parses --testapi and would try to open it as a file).
+	// loop needs a dedicated `--testapi` case (see that script) to handle
+	// the flag explicitly, rather than relying on clarusc to parse it out
+	// of the positional list (its loop treats unrecognized flags as .cla
+	// files, which would be wrong). The dedicated case keeps the logic
+	// clear in build-mac.sh itself.
 	args := append(pkgRelFiles(toolboxFiles), "--test", "--events", eventsRel, "--testapi")
 	bin := runBuildMac(t, "toolboxsuite_gui_mac", args...)
 	out, _, exitCode := RunMac(t, bin, 5*time.Minute)

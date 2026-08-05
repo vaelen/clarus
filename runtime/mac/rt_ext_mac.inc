@@ -820,6 +820,8 @@ void *rt_ext_XRecAddr(void *p) { return p; }
  * undocumented, and every other trap glue in this file gets to lean on
  * a real C prototype someone else already got right; this one doesn't
  * have that safety net. */
+/* Non-static: links into every Retro68 Mac build (dead code in no-flag
+ * builds; harmless). */
 short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
     register int32_t d0 asm("d0") = eventMsg;
     register int32_t a0 asm("a0") = (int32_t)(uint16_t)eventNum;

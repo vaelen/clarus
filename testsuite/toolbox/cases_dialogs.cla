@@ -35,7 +35,7 @@
 //        really exists with the right content -- independent of the
 //        window's own state, the strongest form of the retired snap's
 //        "the write really landed on disk" claim)
-//   click <ClearBtn>                     -> statusAfterClear (Body.text == "")
+//   click <ClearBtn>                     -> bodyAfterClear (Body.text == "")
 //   answer-open DialogsTest.txt; click <OpenBtn>
 //     -> bodyRoundtrip ("roundtrip" snap's meaning) == "Hello file",
 //        direct equality (STRONGER than the old snap's mere byte compare)
@@ -79,7 +79,7 @@ func caseDialogs(): TestResult {
     var fileOk: bool
     var direct: text
 
-    var statusAfterClear: text
+    var bodyAfterClear: text
 
     var bodyRoundtrip: text
     var statusOpened: string
@@ -112,7 +112,7 @@ func caseDialogs(): TestResult {
     fileOk = file.readText("DialogsTest.txt", direct)
 
     dispatchOk = dispatchOk and UiTestClick(tbDlgClearX, tbDlgClearY)
-    statusAfterClear = w.Body.text
+    bodyAfterClear = w.Body.text
 
     // Open the SAME path: refills Body from disk, not from memory.
     dispatchOk = dispatchOk and UiTestAnswerOpen("DialogsTest.txt")
@@ -151,7 +151,7 @@ func caseDialogs(): TestResult {
     ok = ok and titleVal == "DialogsTest.txt"
     ok = ok and statusSaved == "saved: DialogsTest.txt"
     ok = ok and direct == "Hello file"
-    ok = ok and statusAfterClear == ""
+    ok = ok and bodyAfterClear == ""
     ok = ok and bodyRoundtrip == "Hello file"
     ok = ok and statusOpened == "opened"
     ok = ok and statusOpenCancel == "open-cancel"
@@ -167,7 +167,7 @@ func caseDialogs(): TestResult {
     }
     // Built up piecewise into `detail`, same native-68k per-statement
     // str/rec temp-slot budget reason as cases_pattern.cla's own case.
-    // direct/statusAfterClear/bodyRoundtrip/bodyAfterOpenCancel are
+    // direct/bodyAfterClear/bodyRoundtrip/bodyAfterOpenCancel are
     // `text` (textview.text / file.readText's own out-param, Ch3/Ch12);
     // `+` on a text operand always yields `text` ("cannot assign text to
     // string"), so each is sliced to a `string` first (Ch3: `t[0,
@@ -176,7 +176,7 @@ func caseDialogs(): TestResult {
     detail = "titleVal [" + titleVal + "]"
     detail = detail + " statusSaved [" + statusSaved + "]"
     detail = detail + " direct [" + direct[0, direct.length] + "]"
-    detail = detail + " statusAfterClear [" + statusAfterClear[0, statusAfterClear.length] + "]"
+    detail = detail + " bodyAfterClear [" + bodyAfterClear[0, bodyAfterClear.length] + "]"
     detail = detail + " bodyRoundtrip [" + bodyRoundtrip[0, bodyRoundtrip.length] + "]"
     detail = detail + " statusOpened [" + statusOpened + "]"
     detail = detail + " statusOpenCancel [" + statusOpenCancel + "]"
