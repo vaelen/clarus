@@ -141,6 +141,14 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // -- the retired testdata/ui/canvas.cla, zoomwin.cla, and hscroll.cla
 // golden UI scenarios, migrated to the CanvasWin, ZoomWin, and
 // HScrollWin/HFitWin windows Task 7 also added to harness.cla.
+// cases_popuptable.cla (Popuptable) was added by Task 8 (ui-scenario-
+// retirement batch migration) -- the retired testdata/ui/popuptable.cla
+// golden UI scenario, migrated to the PopupTableWin window Task 8 also
+// added to harness.cla. Task 8's own formedit batch-mate is NOT migrated
+// here (a real native-68k `accepted(rec: T)` bool-field marshaling bug
+// was found instead, see runner.cla's own doc comment and
+// task-8-report.md) -- testdata/ui/formedit.cla stays an unretired golden
+// scenario.
 // Unlike the core suite, gui.cla is this suite's ONLY front end -- there
 // is no toolbox CLI (MenuKeyMatches needs the GUI's own installed File
 // menu, CanvasChecksum needs the GUI's own Board canvas), so there is no
@@ -164,6 +172,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_canvas.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_zoomwin.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_hscroll.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_popuptable.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -184,7 +193,7 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 18 result lines (17 real cases +
+// this test also parses each of the 19 result lines (18 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
@@ -246,10 +255,12 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // migration) Buttons/Winvar/Textwidgets addition, then to 15 by Task 6's
 // (ui-scenario-retirement batch migration) Menus/Editmenu addition, then
 // to 18 by Task 7's (ui-scenario-retirement batch migration) Canvas/
-// Zoomwin/Hscroll addition): parses each of the 18 result lines (17 real
-// cases + SelfCheck) into its own t.Run subtest -- per-case CI
-// reporting -- plus the aggregate TOTAL line, regardless of which lane
-// produced the capture.
+// Zoomwin/Hscroll addition, then to 19 by Task 8's (ui-scenario-
+// retirement batch migration) Popuptable addition -- Task 8's own
+// formedit batch-mate is NOT included, see toolboxFiles' own doc comment
+// above): parses each of the 19 result lines (18 real cases + SelfCheck)
+// into its own t.Run subtest -- per-case CI reporting -- plus the
+// aggregate TOTAL line, regardless of which lane produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -272,8 +283,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 18 {
-		t.Errorf("result lines: got %d, want 18\ncapture:\n%s", len(results), out)
+	if len(results) != 19 {
+		t.Errorf("result lines: got %d, want 19\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -283,7 +294,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 18 PASS 18 FAIL 0"; total != want {
+	if want := "TOTAL 19 PASS 19 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

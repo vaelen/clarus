@@ -51,6 +51,19 @@
 // scenarios, migrated to CanvasWin, ZoomWin, and HScrollWin/HFitWin cases
 // against harness.cla's own windows of the same names -- see each case
 // file's own header comment for its full retirement mapping.
+// Popuptable (cases_popuptable.cla) is Task 8's own addition
+// (ui-scenario-retirement batch migration): the retired
+// testdata/ui/popuptable.cla golden UI scenario, migrated to the
+// PopupTableWin window Task 8 also added to harness.cla -- see that case
+// file's own header comment for its full retirement mapping. Task 8's own
+// OTHER scenario, formedit, is NOT migrated here: the migration attempt
+// uncovered a real native-68k (cg68k) codegen bug in a form's
+// `accepted(rec: T)` event marshaling (a bound `bool` field silently
+// reverts to `false` even when the live control reads `true` at every
+// point up to and including inside the accepted handler itself) -- see
+// task-8-report.md for the full investigation. testdata/ui/formedit.cla
+// stays an unretired golden scenario (internal/mactest/ui_test.go's
+// TestFormeditUIScenario) until the underlying compiler bug is fixed.
 
 enum ToolboxTest {
     All
@@ -71,15 +84,16 @@ enum ToolboxTest {
     Canvas
     Zoomwin
     Hscroll
+    Popuptable
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 17 real cases
+// nTbCases is ToolboxTest's member count minus All: the 18 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 18
+const nTbCases: int = 19
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -139,6 +153,9 @@ func tbCaseName(t: ToolboxTest): string {
     case Hscroll {
         return "Hscroll"
     }
+    case Popuptable {
+        return "Popuptable"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -167,6 +184,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Canvas)
     l.add(Zoomwin)
     l.add(Hscroll)
+    l.add(Popuptable)
     l.add(SelfCheck)
     return l
 }
@@ -270,6 +288,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Hscroll) {
         results.add(caseHscroll())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Popuptable) {
+        results.add(casePopuptable())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

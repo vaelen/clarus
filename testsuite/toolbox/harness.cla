@@ -508,3 +508,120 @@ extend HFitWin {
         Body.text = "Fits."
     }
 }
+
+// PopupTableWin (Task 8, ui-scenario-retirement batch): byte-safe
+// transcription of the retired testdata/ui/popuptable.cla's Main window --
+// Main renamed PopupTableWin (same global-uniqueness reason as MenuMain/
+// EditMain above), same table/four buttons, same Marks.select/
+// doubleClick/Add.click/Remove.click/SetSel.click/ReadSel.click bodies.
+// ONE deliberate departure, disclosed here: `Result` is a `field`, not the
+// retired fixture's own `label` -- clarusc's lowWidgetPropGet (Task 5's
+// own cases_buttons.cla comment, still true) has no get_str path for
+// `label`, only `field`/`textview`; a `field`'s own text is directly
+// readable (IUiGetFieldText), letting cases_popuptable.cla assert the
+// EXACT bookmark name a click resolved to instead of a mere checksum
+// inequality (weaker: would only prove SOMETHING changed, not that the
+// right row was picked). `tbPtLog` (cases_popuptable.cla's own global, not
+// a window-scope var -- same "read after the window that recorded it may
+// already be gone" reasoning as cases_buttons.cla's tbButtonsLog) is
+// INSTRUMENTATION ONLY, appended to from Marks.select/doubleClick so the
+// case can prove select-then-doubleClick ordering (and SetSel's own
+// silent-write contract) the same way GKRQD proved Buttons' full handler
+// order.
+//
+// `size: 420, 290` and `table Marks { at: 10, 10; ... }` are UNCHANGED
+// from the retired fixture -- rt_ui_open's screen-centering depends only
+// on a window's own size (ui.cla's rtUiOpen: `left = (screenW-reqW)/2`,
+// `top` is the FIXED constant 44, never height-dependent -- confirmed by
+// reading rtUiOpen directly), so PopupTableWin's content top-left is
+// ((512-420)/2, 44) = (46, 44), and the table's own natural (no `size:`
+// given) 300x120 box sits at LOCAL (10,10)-(310,130) -> GLOBAL
+// (56,54)-(356,174) -- byte-identical to the retired popuptable.cla's own
+// geometry. That means every row-click coordinate the retired
+// popuptable.events already proved correct (row i's click center =
+// tableGlobalTop(54) + headerH(20) + i*rowH(16) + rowH/2(8) = 82 + i*16 --
+// row0=82, row1=98, row3=130) carries over verbatim into
+// cases_popuptable.cla with no re-derivation, same reuse precedent as
+// formedit.cla's own retired header comment already established for its
+// own Main. Add/Remove/SetSel/ReadSel are given fresh EXPLICIT `at:`
+// coordinates (unlike the retired fixture's own `at: 10, bottom`/`at:
+// next, bottom` auto-layout chain) so every button click below is
+// arithmetic from known constants, not a re-derivation of that chain's
+// own semantics -- see cases_popuptable.cla's own header comment for the
+// button-center math.
+//
+// TbPtBookmark/tbPtBookmarks (the record/global list `table Marks` binds
+// to) MUST be declared here, ahead of the window -- `rows:` is a
+// type-layout position (Ch1's declare-before-use: "a top-level
+// variable's declared type ... may only name types declared textually
+// before them" extends to a table's own row-type binding), unlike an
+// ordinary handler-body reference like tbPtLog below (cases_popuptable.
+// cla), which is body-scope and whole-program-visible regardless of file
+// order. Same shape as the retired fixture's own record/var, renamed to
+// this suite's `tb`-prefixed convention.
+record TbPtBookmark {
+    name:     string(63)
+    url:      string(255)
+    favorite: bool
+}
+
+var tbPtBookmarks: list of TbPtBookmark
+
+window PopupTableWin {
+    title: "PopupTable"
+    size: 420, 290
+
+    table Marks {
+        at: 10, 10
+        rows: tbPtBookmarks
+        column "Name" shows name     width 140
+        column "URL"  shows url      width fill
+        column "Fav"  shows favorite width 30
+    }
+    button Add     { at: 10, 145;  caption: "Add" }
+    button Remove  { at: 98, 145;  caption: "Remove" }
+    button SetSel  { at: 186, 145; caption: "SetSel" }
+    button ReadSel { at: 274, 145; caption: "ReadSel" }
+    field Result   { at: 10, 175; label: "Result:"; width: 200 }
+}
+
+extend PopupTableWin {
+    on Marks.select(i: int) {
+        tbPtLog = tbPtLog + "s"
+        Result.text = tbPtBookmarks[i].name
+    }
+    on Marks.doubleClick(i: int) {
+        tbPtLog = tbPtLog + "d"
+        Result.text = "dbl:" + tbPtBookmarks[i].name
+    }
+    on Add.click {
+        var b: TbPtBookmark
+
+        b.name = "Delta"
+        b.url = "delta.com"
+        b.favorite = true
+        tbPtBookmarks.add(b)
+    }
+    on Remove.click {
+        tbPtBookmarks.remove(Marks.selected)
+    }
+    on SetSel.click {
+        Marks.selected = 1
+    }
+    on ReadSel.click {
+        var s: int
+
+        s = Marks.selected
+        if s == 0 {
+            title = "sel0"
+        } else if s == 1 {
+            title = "sel1"
+        } else if s == 2 {
+            title = "sel2"
+        } else if s == 3 {
+            title = "sel3"
+        } else {
+            title = "selNone"
+        }
+    }
+}

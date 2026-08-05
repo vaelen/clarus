@@ -1,0 +1,181 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_popuptable.cla: Popuptable (Task 8, ui-scenario-retirement batch)
+// -- the migrated replacement for the retired testdata/ui/popuptable.cla
+// golden UI scenario. See harness.cla's own PopupTableWin comment for the
+// window transcription (Result changed from `label` to `field` so its
+// text is directly readable -- clarusc's label.text get gap is still
+// open), the row-click-coordinate reuse, and the record/global list
+// (TbPtBookmark/tbPtBookmarks) declared THERE rather than here -- `rows:`
+// is a type-layout position (Ch1 declare-before-use), so the record/list
+// must precede PopupTableWin in file order.
+//
+// tbPtLog: INSTRUMENTATION ONLY (harness.cla's own PopupTableWin comment)
+// -- "s"/"d" appended by Marks.select/doubleClick, read back by this
+// file's own case to prove select-then-doubleClick fires in that exact
+// order (reset right before the one dblclick call this case makes, so its
+// own two-char content is the whole proof -- same reset-then-assert-exact-
+// string idiom as cases_buttons.cla's tbButtonsLog, narrowed to a single
+// operation instead of the whole case).
+var tbPtLog: string
+
+// Row click coordinates: reused VERBATIM from the retired
+// testdata/ui/popuptable.events -- see harness.cla's own PopupTableWin
+// comment for the full geometry derivation (unchanged window/table
+// geometry). Row3 (Delta, pushed by Add) uses the SAME formula
+// (82 + 3*16 = 130) one row further down than the two rows the retired
+// fixture's own events already exercised.
+const tbPtRow0X: int = 106
+const tbPtRow0Y: int = 82
+const tbPtRow1X: int = 106
+const tbPtRow1Y: int = 98
+const tbPtRow3X: int = 106
+const tbPtRow3Y: int = 130
+
+// Button centers: PopupTableWin's own EXPLICIT `at:` layout (harness.cla)
+// -- Add local (10,145)-(90,165), Remove (98,145)-(178,165), SetSel
+// (186,145)-(266,165), ReadSel (274,145)-(354,165) (default button size
+// 80x20, rtUiButtonW/H, spaced by rtUiGap=8: 10+80+8=98, 98+80+8=186,
+// 186+80+8=274) -> GLOBAL centers add content top-left (46,44) plus half
+// the 80x20 box (40,10).
+const tbPtAddX: int = 96
+const tbPtAddY: int = 199
+const tbPtRemoveX: int = 184
+const tbPtRemoveY: int = 199
+const tbPtSetSelX: int = 272
+const tbPtSetSelY: int = 199
+const tbPtReadSelX: int = 360
+const tbPtReadSelY: int = 199
+
+// tbPtRow3X0/Y0/W/H: an 8px-aligned band over row3's own table cell area
+// (GLOBAL (56,122)-(192,138), inside the Name column's own (56,54)-
+// (196,174) box) -- checksummed BLANK (no row3 yet) before Add, non-blank
+// right after Add, blank again right after Remove (c1 != c2, c1 == c3),
+// same three-checksum pattern as Task 7's ZoomWin (c1/c2/c3). Row3's own
+// vertical band is centered on tbPtRow3Y (130): 130-8=122, height 16.
+const tbPtRow3X0: int = 56
+const tbPtRow3Y0: int = 122
+const tbPtRow3W: int = 136
+const tbPtRow3H: int = 16
+
+func casePopuptable(): TestResult {
+    var b: TbPtBookmark
+    var w: PopupTableWin
+    var dispatchOk: bool
+    var selBeta: string
+    var selAlpha: string
+    var selDbl: string
+    var dblLog: string
+    var c1: int
+    var c2: int
+    var c3: int
+    var selDelta: string
+    var setSelVal: int
+    var logAfterSetSel: string
+    var titleVal: string
+    var closedOk: bool
+    var ok: bool
+    var detail: string
+
+    b.name = "Alpha"
+    b.url = "alpha.com"
+    b.favorite = false
+    tbPtBookmarks.add(b)
+
+    b.name = "Beta"
+    b.url = "beta.com"
+    b.favorite = true
+    tbPtBookmarks.add(b)
+
+    b.name = "Gamma"
+    b.url = "gamma.com"
+    b.favorite = false
+    tbPtBookmarks.add(b)
+
+    w = open PopupTableWin
+    dispatchOk = true
+
+    // Two different rows, proving the runtime hands back the CORRECT row
+    // index -- not just that SOME select fired -- via a direct `field`
+    // read (harness.cla's own comment on why Result is a field, not a
+    // label).
+    dispatchOk = dispatchOk and UiTestClick(tbPtRow1X, tbPtRow1Y)
+    selBeta = w.Result.text
+    dispatchOk = dispatchOk and UiTestClick(tbPtRow0X, tbPtRow0Y)
+    selAlpha = w.Result.text
+
+    // select-then-doubleClick ordering (this file's own tbPtLog comment).
+    tbPtLog = ""
+    dispatchOk = dispatchOk and UiTestDblClick(tbPtRow0X, tbPtRow0Y)
+    selDbl = w.Result.text
+    dblLog = tbPtLog
+
+    // Add/Remove: row3's own band goes blank -> non-blank -> blank again
+    // (this file's own tbPtRow3X0 comment).
+    c1 = UiTestChecksum(tbPtRow3X0, tbPtRow3Y0, tbPtRow3W, tbPtRow3H)
+    dispatchOk = dispatchOk and UiTestClick(tbPtAddX, tbPtAddY)
+    c2 = UiTestChecksum(tbPtRow3X0, tbPtRow3Y0, tbPtRow3W, tbPtRow3H)
+
+    dispatchOk = dispatchOk and UiTestClick(tbPtRow3X, tbPtRow3Y)
+    selDelta = w.Result.text
+
+    dispatchOk = dispatchOk and UiTestClick(tbPtRemoveX, tbPtRemoveY)
+    c3 = UiTestChecksum(tbPtRow3X0, tbPtRow3Y0, tbPtRow3W, tbPtRow3H)
+
+    // SetSel writes `selected` programmatically -- silent (no select/
+    // doubleClick event, per every other runtime-property setter's
+    // "programmatic writes are silent" rule): reset tbPtLog right before
+    // this ONE click (same isolate-the-single-operation idiom as the
+    // dblclick check above) so logAfterSetSel's own emptiness is the
+    // whole proof -- nothing appended at all. Read back via
+    // `table.selected` directly (a supported get, unlike label.text)
+    // rather than trusting ReadSel's own title write alone.
+    tbPtLog = ""
+    dispatchOk = dispatchOk and UiTestClick(tbPtSetSelX, tbPtSetSelY)
+    setSelVal = w.Marks.selected
+    logAfterSetSel = tbPtLog
+
+    dispatchOk = dispatchOk and UiTestClick(tbPtReadSelX, tbPtReadSelY)
+    titleVal = w.title
+
+    // Close on all paths -- the window's own close-box cascade, the
+    // case's only close call (UiTestClose() drives it fully).
+    closedOk = UiTestClose()
+
+    ok = dispatchOk and closedOk
+    ok = ok and selBeta == "Beta" and selAlpha == "Alpha"
+    ok = ok and selDbl == "dbl:Alpha" and dblLog == "sd"
+    ok = ok and c1 != c2 and c1 == c3
+    ok = ok and selDelta == "Delta"
+    ok = ok and setSelVal == 1 and logAfterSetSel == ""
+    ok = ok and titleVal == "sel1"
+
+    if ok {
+        return tkPass("Popuptable")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "selBeta " + selBeta
+    detail = detail + " selAlpha " + selAlpha
+    detail = detail + " selDbl " + selDbl
+    detail = detail + " dblLog " + dblLog
+    detail = detail + " selDelta " + selDelta
+    detail = detail + " setSelVal " + tkIntToStr(setSelVal)
+    detail = detail + " logAfterSetSel " + logAfterSetSel
+    detail = detail + " titleVal " + titleVal
+    detail = detail + " c1 " + tkIntToStr(c1)
+    detail = detail + " c2 " + tkIntToStr(c2)
+    detail = detail + " c3 " + tkIntToStr(c3)
+    if dispatchOk {
+        detail = detail + " dispatchOk true"
+    } else {
+        detail = detail + " dispatchOk false"
+    }
+    if closedOk {
+        detail = detail + " closedOk true"
+    } else {
+        detail = detail + " closedOk false"
+    }
+    return tkFail("Popuptable", detail)
+}

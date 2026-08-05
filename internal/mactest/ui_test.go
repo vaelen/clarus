@@ -202,48 +202,6 @@ func TestDialogsUIScenario(t *testing.T) {
 	runUIScenario(t, "dialogs", 0)
 }
 
-// TestPopuptableUIScenario (mac-target-4d Task 5): the table widget end to
-// end -- `rows:` bound to a global list, real click resolving to the
-// correct row (Result.text proves the row index, not just that select
-// fired), scripted `dblclick` firing select THEN doubleClick for the SAME
-// row, `Add`'s handler pushing a 4th record with no table-specific call
-// (S1: 4 rows), a subsequent click resolving to that new tail row followed
-// by `Remove` (S2: back to 3 rows), and both directions of `selected` --
-// `SetSel` writes it programmatically (asserted by the golden trace's `T
-// SET` line, no change event) and `ReadSel` reads it back into the title
-// (S3, since title has no trace line of its own). See
-// testdata/ui/popuptable.cla's own header comment for the full scripted
-// walkthrough and coordinate derivation.
-func TestPopuptableUIScenario(t *testing.T) {
-	checkPopuptableSnaps(t, runUIScenario(t, "popuptable", 0))
-}
-
-// checkPopuptableSnaps is TestPopuptableUIScenario's own snap assertion,
-// factored out (Task 14, native-5e) for reuse by the native lane.
-func checkPopuptableSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var s1, s2, s3 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		case "S3":
-			s3 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil || s3 == nil {
-		t.Fatalf("popuptable: expected snaps S1, S2, and S3, got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("popuptable: snap S1 == S2 -- Add/Remove did not actually change the table's row count")
-	}
-	if bytes.Equal(s2, s3) {
-		t.Fatalf("popuptable: snap S2 == S3 -- ReadSel's title write did not change the window between snaps")
-	}
-}
-
 // TestFormeditUIScenario (mac-target-4d Task 7): form windows/binds/edit/
 // accepted/cancelled end to end -- Add opens EditForm on `new Bookmark`
 // (all four bound widget kinds: field(str)/field(int)/popup(enum)/
@@ -254,6 +212,23 @@ func checkPopuptableSnaps(t *testing.T, snaps []uiSnap) {
 // byte-identical to S3 -- cancelling truly changed nothing). See
 // testdata/ui/formedit.cla's own header comment for the coordinate
 // derivation.
+//
+// NOT retired by ui-scenario-retirement Task 8 (unlike popuptable, its own
+// batch-mate): the migration attempt (testsuite/toolbox/cases_formedit.cla,
+// investigated then reverted) uncovered a real, previously-undetected
+// native-68k (cg68k) codegen bug -- a form's `accepted(rec: T)` event
+// marshals `rec`'s bound `bool` field back as `false` even when the live
+// checkbox control reads `true` at every point up to and including inside
+// the accepted handler itself (confirmed via temporary runtime
+// instrumentation: the buffer byte at the bool field's own offset is
+// correctly `1` immediately before `UiFireWinEvent` fires; the handler's
+// own `b.favorite` parameter is `false` moments later, in the same
+// synchronous call). This retired golden's own snap-diff assertions never
+// exercised `favorite`'s value at all (S1..S4 are pure screen-pixel
+// diffs), so the bug was invisible to it -- kept here, UNRETIRED, until
+// the underlying compiler bug is fixed and a case-based replacement can
+// honestly assert the bound value. See ui-scenario-retirement's
+// task-8-report.md for the full investigation.
 func TestFormeditUIScenario(t *testing.T) {
 	checkFormeditSnaps(t, runUIScenario(t, "formedit", 0))
 }
