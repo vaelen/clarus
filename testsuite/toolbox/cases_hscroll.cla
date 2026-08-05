@@ -1,0 +1,162 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_hscroll.cla: Hscroll (Task 7, ui-scenario-retirement batch) --
+// the migrated replacement for the retired testdata/ui/hscroll.cla golden
+// UI scenario: `scrollbar: both` end to end -- no word wrap (Chapter 8:
+// "scrollbar: both turns word wrap off"), a horizontal page-right click,
+// and (fix-hbar) caret-driven autoscroll. See harness.cla's own
+// HScrollWin/HFitWin comment for the window transcription.
+//
+// Three sub-tests, matching the task brief's Component 2 spec exactly:
+//   1. page-right click on the H bar's track -> visible text shifts
+//      (checksum pair differs).
+//   2. click into the text, then a run of right-arrow keys -> TEAutoView
+//      scrolls the view to keep the caret visible (checksum pair
+//      differs).
+//   3. thumbless-when-fits: a SECOND window with short content (nothing
+//      to scroll) -- the same page-right click point is a genuine no-op
+//      (checksum pair is EQUAL before/after).
+// Each sub-test opens its OWN fresh window instance rather than sharing
+// one across sub-tests, so sub-test 2's caret-click coordinates don't
+// have to account for sub-test 1's own leftover scroll offset.
+//
+// Dropped from the retired fixture, disclosed here: the `resize 340 220`
+// step. The retired Go-side assertion (internal/mactest/ui_test.go's own
+// checkHscrollSnaps) never independently asserted anything about the
+// resize itself -- only "S1 != S2" (the page-right test) and "S3 != S4"
+// (the autoscroll test, S3 being merely the POST-RESIZE baseline for
+// S4). The resize step existed only to give the caret run more room; it
+// is not itself part of either sub-assertion, and TEAutoView's own
+// autoscroll works identically on the un-resized 300x200 window (the
+// text still vastly overflows a 269px-wide view either way), so this
+// case never resizes at all.
+//
+// UiTestKey's own arg (uitest.cla's own header comment / uiscript.cla's
+// rtUiScriptKeyArg): an ALL-DIGIT string is a decimal byte CODE, anything
+// else sends only its own literal FIRST character -- there is no named
+// "right"/"left" key. `UiTestKey("29")` (byte 29, the right-arrow code)
+// is the only correct spelling, matching the retired testdata/ui/
+// hscroll.events' own literal `key 29` lines exactly.
+
+
+
+// tbHScrollPageX/Y: the H bar's own track, right of the thumb -- reused
+// VERBATIM from the retired testdata/ui/hscroll.cla's own header comment
+// derivation (unchanged window shape/size: `size: 300, 200`, Body `at:
+// 10,10; fill: both; scrollbar: both` -> content top-left (106,44), box
+// LOCAL (10,10)-(301,201), H bar LOCAL (10,185)-(285,201)). LOCAL
+// (200,193) -> GLOBAL (306,237) lands in the H track right of the
+// (near-left, since the line is ~700px wide vs. a 269px view) thumb.
+const tbHScrollPageX: int = 306
+const tbHScrollPageY: int = 237
+
+// tbHScrollClickX/Y: a click near the RIGHT edge of the TE viewRect
+// (LOCAL (13,13)-(282,182), same box/relayout derivation as
+// tbHScrollPageX/Y above) -- LOCAL (270,20) -> GLOBAL (376,64) -- places
+// the caret near the last character the unscrolled view already shows,
+// so only a handful of the subsequent right-arrows are needed to push it
+// past the view's own right edge and trigger TEAutoView.
+const tbHScrollClickX: int = 376
+const tbHScrollClickY: int = 64
+
+// tbHScrollTextX0/Y0/W/H: an 8px-aligned checksum region spanning almost
+// the whole width of the TE viewRect's own text line. Content top-left is
+// (106,44); 106 mod 8 == 2, so LOCAL x must be == 6 mod 8 for the GLOBAL
+// x to land on a byte boundary -- LOCAL x=14 (106+14=120, a multiple of
+// 8) through LOCAL x=270 (120+256=376, width 256, a multiple of 8) sits
+// inside the viewRect's own LOCAL (13,13)-(282,182), one line tall
+// (GLOBAL y = 44+13 = 57, h=16). Reused for all three sub-tests -- each
+// asserts against this same "does the visible text content change"
+// region (HFitWin below shares HScrollWin's exact window shape/size, so
+// the same region derivation applies to it unchanged).
+const tbHScrollTextX0: int = 120
+const tbHScrollTextY0: int = 57
+const tbHScrollTextW: int = 256
+const tbHScrollTextH: int = 16
+
+func caseHscroll(): TestResult {
+    var wPage: HScrollWin
+    var pageC1: int
+    var pageClicked: bool
+    var pageC2: int
+
+    var wCaret: HScrollWin
+    var caretClicked: bool
+    var caretC1: int
+    var i: int
+    var keyed: bool
+    var caretC2: int
+
+    var wFit: HFitWin
+    var fitC1: int
+    var fitClicked: bool
+    var fitC2: int
+
+    var ok: bool
+    var detail: string
+
+    // Sub-test 1: page-right click shifts the visible (unscrolled, since
+    // the line vastly overflows the 269px view) text. `UiTestMenu(0, 0)`
+    // (a well-defined no-op MenuSelect, same prime zoomwin.cla's own
+    // `menu 0 0` and cases_zoomwin.cla's own header comment document)
+    // pumps the window's own first update event before pageC1 reads the
+    // screen -- without it, pageC1 can race that first paint and read
+    // back 0 (blank), which would make the pageC1 != pageC2 assertion
+    // below trivially true for the WRONG reason (content merely finished
+    // drawing, not that the click actually paged anything).
+    wPage = open HScrollWin
+    UiTestMenu(0, 0)
+    pageC1 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    pageClicked = UiTestClick(tbHScrollPageX, tbHScrollPageY)
+    pageC2 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    close wPage
+
+    // Sub-test 2: click near the view's right edge, then walk the caret
+    // right with the arrow key until TEAutoView scrolls the view to keep
+    // it visible. 40 arrow presses, same count the retired fixture's own
+    // hscroll.events used before its own S4 snap.
+    wCaret = open HScrollWin
+    caretClicked = UiTestClick(tbHScrollClickX, tbHScrollClickY)
+    caretC1 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    i = 0
+    keyed = true
+    while i < 40 {
+        keyed = keyed and UiTestKey("29")
+        i = i + 1
+    }
+    caretC2 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    close wCaret
+
+    // Sub-test 3: thumbless-when-fits -- HFitWin's short content leaves
+    // nothing to page; the same track click is a genuine no-op. Same
+    // pump-before-first-read reasoning as sub-test 1 above -- without it,
+    // fitC1 reads 0 (blank, pre-first-paint) and fitC2 reads the real
+    // drawn content, making fitC1 == fitC2 FAIL for the wrong reason (a
+    // spurious difference from the initial paint, not a real page-right
+    // mutation).
+    wFit = open HFitWin
+    UiTestMenu(0, 0)
+    fitC1 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    fitClicked = UiTestClick(tbHScrollPageX, tbHScrollPageY)
+    fitC2 = UiTestChecksum(tbHScrollTextX0, tbHScrollTextY0, tbHScrollTextW, tbHScrollTextH)
+    close wFit
+
+    ok = pageClicked and caretClicked and keyed and fitClicked
+    ok = ok and pageC1 != pageC2
+    ok = ok and caretC1 != caretC2
+    ok = ok and fitC1 == fitC2
+
+    if ok {
+        return tkPass("Hscroll")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "pageC1 " + tkIntToStr(pageC1)
+    detail = detail + " pageC2 " + tkIntToStr(pageC2)
+    detail = detail + " caretC1 " + tkIntToStr(caretC1)
+    detail = detail + " caretC2 " + tkIntToStr(caretC2)
+    detail = detail + " fitC1 " + tkIntToStr(fitC1)
+    detail = detail + " fitC2 " + tkIntToStr(fitC2)
+    return tkFail("Hscroll", detail)
+}

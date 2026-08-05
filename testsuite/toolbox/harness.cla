@@ -392,3 +392,119 @@ extend EditMain {
         bChanges = bChanges + 1
     }
 }
+
+// CanvasWin (Task 7, ui-scenario-retirement batch): byte-safe
+// transcription of the retired testdata/ui/canvas.cla -- Anim renamed
+// CanvasWin (same global-uniqueness reason as MenuMain/EditMain above),
+// same buffered canvas, same `every 4 ticks` step (dx=3), same bounce
+// clamp at either edge (unreachable by cases_canvas.cla's own case, which
+// never ticks far enough to reach it, but kept unchanged from the retired
+// fixture rather than trimmed). Unlike the retired fixture (`on
+// App.launch { open Anim }`, opened once at boot), CanvasWin is opened
+// MID-CASE by caseCanvas -- see cases_canvas.cla's own header comment for
+// why the every-block still fires correctly regardless of when the window
+// opens or which window is actually frontmost on screen.
+window CanvasWin {
+    title: "Canvas"
+    size: 160, 160
+
+    canvas Board { at: 0, 0; fill: both; buffered }
+
+    var x: int
+    var dx: int
+}
+
+extend CanvasWin {
+    on opened {
+        x = 10
+        dx = 3
+    }
+}
+
+every 4 ticks {
+    var g: CanvasWin = CanvasWin.front
+    if g != nil {
+        g.x = g.x + g.dx
+        if g.x < 0 {
+            g.x = 0
+            g.dx = -g.dx
+        } else if g.x + 20 > g.Board.width {
+            g.x = g.Board.width - 20
+            g.dx = -g.dx
+        }
+        g.Board.clear()
+        g.Board.fillRect(g.x, 60, 20, 20)
+    }
+}
+
+// ZoomWin (Task 7, ui-scenario-retirement batch): transcription of the
+// retired testdata/ui/zoomwin.cla -- Panel renamed ZoomWin (same
+// global-uniqueness reason as above), same single `textview Body { ...
+// scrollbar: vertical }`. ONE deliberate departure from a byte-safe
+// transcription, disclosed here: the retired fixture left Body's text
+// empty (its own S1!=S2/S1==S3 assertion came from a whole-window pixel
+// snap, sensitive to ANY geometry change, however small). This case's own
+// checksum needs a substantial, reliably-placed region -- an EMPTY
+// textview's vertical scrollbar renders "thumbless" (confirmed against a
+// real interactive boot + screenshot before writing this: the track is
+// flat white, only the two tiny arrow glyphs are non-blank), which is too
+// sparse a signal for a robust checksum region. `on opened` here sets a
+// multi-sentence paragraph instead, so word wrap (Chapter 8: `scrollbar:
+// vertical` wraps at the view's width) reflows completely differently
+// between the narrow (300px) and zoomed-out (near full screen) widths --
+// see cases_zoomwin.cla's own header comment for the checksum-region
+// derivation against this text.
+window ZoomWin {
+    title: "Zoom"
+    size: 300, 200
+    resizable: min(200, 120)
+
+    textview Body { at: 10, 10; fill: both; scrollbar: vertical }
+}
+
+extend ZoomWin {
+    on opened {
+        Body.text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump. The five boxing wizards jump quickly."
+    }
+}
+
+// HScrollWin/HFitWin (Task 7, ui-scenario-retirement batch): HScrollWin is
+// a byte-safe transcription of the retired testdata/ui/hscroll.cla --
+// HWin renamed HScrollWin (same global-uniqueness reason as above), same
+// `textview Body { ... scrollbar: both }` (Chapter 8: `scrollbar: both`
+// turns word wrap off), same `opened` literal (unchanged, no longer needs
+// routing through a handler-local `text` var -- see the retired fixture's
+// own header comment on the two clarusc-ui-gaps this literal assignment
+// pins, both fixed before this branch). HFitWin is a NEW second window
+// (not a transcription of anything retired), added per the task brief's
+// own "thumbless-when-fits" sub-assertion -- same shape as HScrollWin, but
+// `opened` sets a short line that fits entirely inside the view with
+// nothing to scroll. See cases_hscroll.cla's own header comment for the
+// full three-sub-test assertion mapping.
+window HScrollWin {
+    title: "HScroll"
+    size: 300, 200
+    resizable: min(200, 120)
+
+    textview Body { at: 10, 10; fill: both; scrollbar: both }
+}
+
+extend HScrollWin {
+    on opened {
+        Body.text = "The quick brown fox jumps over the lazy dog and keeps running well past the right edge of the view rectangle"
+    }
+}
+
+window HFitWin {
+    title: "HFit"
+    size: 300, 200
+    resizable: min(200, 120)
+
+    textview Body { at: 10, 10; fill: both; scrollbar: both }
+}
+
+extend HFitWin {
+    on opened {
+        Body.text = "Fits."
+    }
+}

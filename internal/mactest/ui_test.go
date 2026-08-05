@@ -176,110 +176,6 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestCanvasUIScenario: buffered canvas animated by an every-block; two
-// snaps (S1, S2) taken after different amounts of virtual-tick animation
-// must differ (the moving square's position proves it) -- checked here
-// directly, in addition to each snap's own byte-exact PBM golden compare,
-// so a golden pair blessed identical by accident (e.g. no actual motion)
-// fails loudly rather than silently passing forever after.
-func TestCanvasUIScenario(t *testing.T) {
-	checkCanvasSnaps(t, runUIScenario(t, "canvas", 0))
-}
-
-// checkCanvasSnaps is TestCanvasUIScenario's own snap assertion, factored
-// out (Task 14, native-5e) for reuse by the native lane.
-func checkCanvasSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var s1, s2 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil {
-		t.Fatalf("canvas: expected snaps S1 and S2, got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("canvas: snap S1 == S2 -- animation did not move the square between snaps")
-	}
-}
-
-// TestZoomwinUIScenario (window-zoom-hscroll Task 1): the zoom box end to
-// end -- zoom out must change the screen (S1 != S2) and zoom back in must
-// restore the exact original geometry (S1 == S3), on top of the golden
-// trace/snap compares (two `resized` fires).
-func TestZoomwinUIScenario(t *testing.T) {
-	checkZoomwinSnaps(t, runUIScenario(t, "zoomwin", 0))
-}
-
-// checkZoomwinSnaps is TestZoomwinUIScenario's own snap assertion, factored
-// out (Task 14, native-5e) for reuse by the native lane.
-func checkZoomwinSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var s1, s2, s3 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		case "S3":
-			s3 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil || s3 == nil {
-		t.Fatalf("zoomwin: expected snaps S1, S2, S3; got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("zoom out changed nothing (S1 == S2)")
-	}
-	if !bytes.Equal(s1, s3) {
-		t.Fatalf("zoom in did not restore the original geometry (S1 != S3)")
-	}
-}
-
-// TestHscrollUIScenario (window-zoom-hscroll Task 2; fix-hbar): `scrollbar:
-// both` on a textview end to end -- no word wrap (a click below page-rights
-// the unwrapped long line, S1 != S2), a grow through the same relayout
-// funnel with both bars present (S3), and (fix-hbar) a click into the text
-// followed by a run of right-arrow keys that pushes the caret past the
-// view's right edge -- TEAutoView must scroll the view to keep it visible
-// (S4 != S3), on top of the golden trace/snap compares.
-func TestHscrollUIScenario(t *testing.T) {
-	checkHscrollSnaps(t, runUIScenario(t, "hscroll", 0))
-}
-
-// checkHscrollSnaps is TestHscrollUIScenario's own snap assertion, factored
-// out (Task 14, native-5e) for reuse by the native lane.
-func checkHscrollSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var s1, s2, s3, s4 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		case "S3":
-			s3 = s.bytes
-		case "S4":
-			s4 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil || s3 == nil || s4 == nil {
-		t.Fatalf("hscroll: expected snaps S1, S2, S3, S4; got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("horizontal page-right changed nothing (S1 == S2)")
-	}
-	if bytes.Equal(s3, s4) {
-		t.Fatalf("caret autoscroll changed nothing (S3 == S4)")
-	}
-}
-
 // TestHdimUIScenario (fix-hbar): an empty `scrollbar: both` textview --
 // both bars must render thumbless ("dimmed when not needed"). The V bar's
 // maxScroll has always been 0 for empty content; this scenario is the H
@@ -405,7 +301,9 @@ func TestUIAbout(t *testing.T) { runUIScenario(t, "about", 0) }
 // testdata/valid/bounce.cla ITSELF (not a copy under testdata/ui/), scripts
 // its `every 1 ticks` bounce with smoke_bounce.events, and asserts the two
 // snaps taken after different amounts of ticking differ -- the ball moved,
-// same non-accidental-golden guard TestCanvasUIScenario uses.
+// the same non-accidental-golden guard testsuite/toolbox/cases_canvas.cla's
+// own Canvas case uses now that the retired canvas UI scenario has been
+// migrated there (ui-scenario-retirement Task 7).
 func TestSmokeBounceUIScenario(t *testing.T) {
 	snaps := runUIScenarioSrc(t, "smoke_bounce", filepath.Join("..", "..", "testdata", "valid", "bounce.cla"), 0)
 	var s1, s2 []byte

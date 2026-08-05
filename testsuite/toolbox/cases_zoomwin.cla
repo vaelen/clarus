@@ -1,0 +1,112 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_zoomwin.cla: Zoomwin (Task 7, ui-scenario-retirement batch) --
+// the migrated replacement for the retired testdata/ui/zoomwin.cla golden
+// UI scenario: the zoom box end to end -- zoom out changes the screen,
+// zoom back in restores the original geometry exactly. See harness.cla's
+// own ZoomWin comment for the window transcription (`size: 300, 200`, one
+// `textview Body { ... scrollbar: vertical }`, PLUS a departure from a
+// byte-safe transcription -- a multi-sentence `on opened` paragraph,
+// disclosed in full over there -- needed because an EMPTY textview's
+// vertical scrollbar renders "thumbless" (confirmed via a real
+// interactive boot + screenshot before writing this case: flat white
+// track, only two tiny arrow glyphs are non-blank), too sparse a signal
+// for a robust checksum region).
+//
+// UiTestZoom() zooms the FRONT window (forwards to the "zoom" verb,
+// rtUiScriptDispatchLine -> rtUiApplyZoom, uiscript.cla) -- ZoomWin is
+// front here because it is the most recently opened window (this suite's
+// own Suite window, gui.cla, opened first and stays behind it).
+//
+// A pump BEFORE the first checksum: `UiTestMenu(0, 0)` right after `open`
+// (a well-defined no-op MenuSelect -- menuID 0 means "nothing selected",
+// rt_ui_menu_dispatch returns immediately -- but UiTestVerb still calls
+// rtUiPumpPassive() afterward since the verb line itself was recognized).
+// Without this, the FIRST checksum can race the window's very first
+// update event and read stale/blank screen content -- the exact hazard
+// the retired zoomwin.events' own header comment documents (it primes
+// with a literal `menu 0 0` before its own first `snap`, for the same
+// reason: unlike `tick`, `menu 0 0` pumps passive events without also
+// calling TEIdle, so it doesn't touch Body's caret blink phase either).
+//
+// Checksum region: a broad, multi-line band of the wrapped paragraph
+// itself, NOT the scrollbar (see this file's own header comment above for
+// why the scrollbar track carries no signal here). Word wrap (Chapter 8:
+// `scrollbar: vertical` wraps at the view's own width) reflows the SAME
+// paragraph completely differently at ZoomWin's two widths: c1 (300px
+// window, ~269px view) and c2 (zoomed to the standard state -- rtUiScript
+// Zoom's own std rect, uiscript.cla: `UiSetRect(std, 4, menubar+titlebar,
+// screenW-margin, screenH-margin)` -- a MUCH wider view) wrap the text at
+// entirely different points, so c1 != c2 by construction (confirmed
+// against a real boot, not assumed -- see this case's own development
+// history: an early version instead checksummed the V-scrollbar's own
+// track and reliably read c1==c2==0, both empty/thumbless, which is what
+// led to adding real text content here). Zoomed back in, ZoomWindow's own
+// saved userState (the ORIGINAL rect) is restored exactly (the retired
+// fixture's own S1==S3 golden already proved this round-trips), so the
+// SAME width reflows the SAME wrapped lines byte-identically -- c1 == c3.
+//
+// Deliberately does NOT call UiTestTick anywhere in this case: a `tick`
+// verb calls TEIdle (blinking the focused Body's caret), and zoomwin.
+// events' own header comment documents that a tick-forced blink toggle
+// competes unpredictably with the blink toggling ZoomWindow's own real-
+// time animation may independently cause, risking a false S1 != S3 --
+// avoided here the same way the retired fixture avoided it (no `tick`
+// before its own first snap; `UiTestMenu(0, 0)` above is the pump
+// substitute, same reasoning as that file's own `menu 0 0` prime line).
+
+// tbZoomCkX0/Y0/W/H: an 8px-aligned band covering most of the TE
+// viewRect's own width, five text lines tall. ZoomWin's content top-left
+// is (106,44); 106 mod 8 == 2, so LOCAL x must be == 6 mod 8 for the
+// GLOBAL x to land on a byte boundary. Body (`at: 10,10; fill: both;
+// scrollbar: vertical`) lays out to LOCAL box (10,10)-(301,192)
+// (rtUiLayout, uiwidgets.cla: fillBoth+flushR (a V scrollbar on a filled
+// edge) gives width 300-10+1=291; no H bar, so height stays the
+// "floating" 200-10-8=182); rtUiTeRelayout insets by rtUiTeFrameInset(3)
+// on every side, giving TE viewRect LOCAL (13,13)-(282,189). LOCAL x=14
+// (106+14=120, a multiple of 8) through LOCAL x=270 (120+256=376, width
+// 256, a multiple of 8) sits inside that viewRect with margin on both
+// sides; GLOBAL y=44+13=57, height 80 (roughly five wrapped lines at this
+// paragraph's font size).
+const tbZoomCkX0: int = 120
+const tbZoomCkY0: int = 57
+const tbZoomCkW: int = 256
+const tbZoomCkH: int = 80
+
+func caseZoomwin(): TestResult {
+    var w: ZoomWin
+    var c1: int
+    var c2: int
+    var c3: int
+    var zoomedOut: bool
+    var zoomedIn: bool
+    var ok: bool
+    var detail: string
+
+    w = open ZoomWin
+    UiTestMenu(0, 0)
+    c1 = UiTestChecksum(tbZoomCkX0, tbZoomCkY0, tbZoomCkW, tbZoomCkH)
+
+    zoomedOut = UiTestZoom()
+    c2 = UiTestChecksum(tbZoomCkX0, tbZoomCkY0, tbZoomCkW, tbZoomCkH)
+
+    zoomedIn = UiTestZoom()
+    c3 = UiTestChecksum(tbZoomCkX0, tbZoomCkY0, tbZoomCkW, tbZoomCkH)
+
+    close w
+
+    ok = zoomedOut and zoomedIn
+    ok = ok and c1 != c2
+    ok = ok and c1 == c3
+
+    if ok {
+        return tkPass("Zoomwin")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "c1 " + tkIntToStr(c1)
+    detail = detail + " c2 " + tkIntToStr(c2)
+    detail = detail + " c3 " + tkIntToStr(c3)
+    return tkFail("Zoomwin", detail)
+}

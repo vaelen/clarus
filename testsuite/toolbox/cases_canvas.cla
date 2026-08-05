@@ -1,0 +1,131 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_canvas.cla: Canvas (Task 7, ui-scenario-retirement batch) -- the
+// migrated replacement for the retired testdata/ui/canvas.cla golden UI
+// scenario: a buffered canvas animated by a top-level `every 4 ticks`
+// block (a 20x20 filled square sliding right), asserted by the retired
+// suite purely as "two snaps taken after different amounts of ticking
+// differ" (internal/mactest/ui_test.go's own checkCanvasSnaps, no other
+// Go-side invariant, confirmed before writing this case). See harness.
+// cla's own CanvasWin comment for the window/every-block transcription
+// (unchanged cadence: `every 4 ticks`, same dx=3 step).
+//
+// UiTestTick(n)'s scripted-mode path forwards to the SAME "tick n" verb
+// (rtUiScriptDispatchLine -> rtUiScriptTick, uiscript.cla) a `.events`
+// script line would dispatch -- there is no separate "test-mode" every-
+// pump logic, so a window opened MID-CASE (this case runs inside
+// RunAll's own dispatch, not at App.launch like the retired fixture's own
+// `on App.launch { open Anim }`) still gets its `every` block pumped
+// correctly: rtUiScriptEveryPump (uiscript.cla) iterates the global
+// rtUiEveryDueArr and fires whatever's due purely by elapsed virtual-tick
+// count, with no dependency on which window is frontmost or when it was
+// opened. `CanvasWin.front` (the every-block's own guard) is "the
+// frontmost OPEN INSTANCE of type CanvasWin" (language reference: "Doc.
+// front is the frontmost open instance of type Doc"), not "the frontmost
+// window overall" -- so it resolves correctly even while this suite's own
+// Suite window is the actual frontmost window on screen throughout.
+//
+// DISCOVERED RUNTIME QUIRK (pre-existing, not introduced by this task;
+// see task-7-report.md's own "concerns" section for the full escalation):
+// `rtUiBuildEvery` (ui.cla, called once from `rtUiStartup`, itself called
+// by the compiler-generated entry sequence BEFORE `App.launch`/`App.
+// startEmpty` or the scripted event loop ever run) seeds every every-
+// block's INITIAL `due` tick as `now + interval`, where `now` is supposed
+// to be `0` for any `--events`-compiled build (`peekb(UiTestScript()) !=
+// 0`) so the schedule is virtual-tick-based throughout. Empirically
+// (peekl(rtUiEveryDueArr) read directly from this case, before this case
+// does anything else), THIS suite's own composed build measured an
+// initial due of 50, not 4 -- consistent with `now` having actually been
+// a REAL `UiTickCount()` value (~46, plausible for how long this SUITE's
+// own larger startup -- many more windows/menus than the retired
+// standalone canvas.cla fixture ever built -- takes before reaching that
+// point) rather than 0, even though `UiTestTick`'s OWN (later-executing)
+// `if rtUiScripted` gate correctly detects and uses the virtual-tick path
+// (confirmed: this case's own tick calls advance rtUiVirtualTicks in
+// lockstep, exactly `+4` per call, with no drift). The retired standalone
+// fixture never surfaced this because its own real boot-time tick count
+// at that early point was apparently small enough to fall within its own
+// script's tick budget (8 x `tick 4` = 32) by coincidence -- a byte-exact
+// blessed golden just captures whatever really happened, bug or not, and
+// nothing about mac-target-4b's own review ever isolated the every-
+// block's OWN initial-due arithmetic to notice.
+//
+// Workaround (NOT a fake -- it drives the exact same real mechanism,
+// through the same public UiTestTick API, all the way to a state where it
+// behaves exactly as documented): a single generously-oversized warm-up
+// UiTestTick call, BEFORE the real measured cadence, guarantees crossing
+// ANY plausible real-boot-tick-seeded due (scripted ticks cost no real
+// wall-clock time at all, so a big n is free) and fires the block once
+// (a harmless, discarded x+=dx bump); rtUiScriptEveryPump's own reschedule
+// after that fire (`due = rtUiVirtualTicks + interval`) is unconditionally
+// virtual-tick-based, so every firing from then on behaves exactly as
+// designed -- confirmed empirically (see task-7-report.md).
+//
+// A tick's every-pump fires each due entry AT MOST ONCE per UiTestTick
+// call, regardless of the `n` passed (same "at most once per tick N
+// script line" contract canvas.events' own header comment documents) --
+// so, after the warm-up, this case calls UiTestTick(4) three times (not
+// UiTestTick(12) once) to get three firings before the first checksum,
+// mirroring canvas.events' own "tick 4" x3 cadence exactly, then five
+// more calls before the second checksum (canvas.events' own "tick 4" x5).
+
+// tbCanvasWarmupTicks: see this file's own header comment on the
+// discovered runtime quirk -- large enough to clear any plausible real
+// boot-time tick count (a few hundred ticks is several real seconds; this
+// suite's own measured value was ~46) with a wide safety margin, and free
+// (no real wall-clock cost) since it is entirely virtual-tick arithmetic
+// under a scripted boot.
+const tbCanvasWarmupTicks: int = 2000
+
+// tbCanvasCkX0/Y0/W/H: an 8px-aligned checksum region that fully contains
+// the sliding square at BOTH sampled positions. CanvasWin's `size: 160,
+// 160` -> content top-left ((512-160)/2, 44) = (176, 44) (already a
+// multiple of 8, no local-offset adjustment needed). The square is a
+// 20x20 fill at LOCAL (x, 60); x is 19 after 3 firings past the warm-up's
+// own one bump (10 + 3*3) and 34 after 8 firings past it (19 + 3*5) --
+// see this file's own header comment. LOCAL x=16 (176+16=192, a multiple
+// of 8) through LOCAL x=56 (176+56=232, a multiple of 8, width 40) fully
+// contains both squares' bounding boxes (19..39 and 34..54, both inside
+// [16,56]) with margin on every side.
+const tbCanvasCkX0: int = 192
+const tbCanvasCkY0: int = 104
+const tbCanvasCkW: int = 40
+const tbCanvasCkH: int = 20
+
+func caseCanvas(): TestResult {
+    var w: CanvasWin
+    var i: int
+    var s1: int
+    var s2: int
+    var detail: string
+
+    w = open CanvasWin
+
+    // Warm-up: see this file's own header comment. Discards its own
+    // (harmless) one-time effect on x -- only the s1/s2 DIFFERENCE below
+    // is asserted, not any absolute x value.
+    UiTestTick(tbCanvasWarmupTicks)
+
+    i = 0
+    while i < 3 {
+        UiTestTick(4)
+        i = i + 1
+    }
+    s1 = UiTestChecksum(tbCanvasCkX0, tbCanvasCkY0, tbCanvasCkW, tbCanvasCkH)
+
+    i = 0
+    while i < 5 {
+        UiTestTick(4)
+        i = i + 1
+    }
+    s2 = UiTestChecksum(tbCanvasCkX0, tbCanvasCkY0, tbCanvasCkW, tbCanvasCkH)
+
+    close w
+
+    if s1 != s2 {
+        return tkPass("Canvas")
+    }
+    detail = "s1 " + tkIntToStr(s1) + " == s2 " + tkIntToStr(s2)
+    return tkFail("Canvas", detail)
+}

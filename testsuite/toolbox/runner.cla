@@ -44,7 +44,13 @@
 // testdata/ui/menus.cla and editmenu.cla golden UI scenarios, migrated to
 // MenuMain/MenuAux/Ops and EditMain/Edit cases against harness.cla's own
 // windows/menus of the same names -- see each case file's own header
-// comment for its full retirement mapping.
+// comment for its full retirement mapping. Canvas/Zoomwin/Hscroll
+// (cases_canvas.cla/cases_zoomwin.cla/cases_hscroll.cla) are Task 7's own
+// addition (ui-scenario-retirement batch migration): the retired
+// testdata/ui/canvas.cla, zoomwin.cla, and hscroll.cla golden UI
+// scenarios, migrated to CanvasWin, ZoomWin, and HScrollWin/HFitWin cases
+// against harness.cla's own windows of the same names -- see each case
+// file's own header comment for its full retirement mapping.
 
 enum ToolboxTest {
     All
@@ -62,15 +68,18 @@ enum ToolboxTest {
     Textwidgets
     Menus
     Editmenu
+    Canvas
+    Zoomwin
+    Hscroll
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 14 real cases
+// nTbCases is ToolboxTest's member count minus All: the 17 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 15
+const nTbCases: int = 18
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -121,6 +130,15 @@ func tbCaseName(t: ToolboxTest): string {
     case Editmenu {
         return "Editmenu"
     }
+    case Canvas {
+        return "Canvas"
+    }
+    case Zoomwin {
+        return "Zoomwin"
+    }
+    case Hscroll {
+        return "Hscroll"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -146,6 +164,9 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Textwidgets)
     l.add(Menus)
     l.add(Editmenu)
+    l.add(Canvas)
+    l.add(Zoomwin)
+    l.add(Hscroll)
     l.add(SelfCheck)
     return l
 }
@@ -237,6 +258,18 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Editmenu) {
         results.add(caseEditmenu())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Canvas) {
+        results.add(caseCanvas())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Zoomwin) {
+        results.add(caseZoomwin())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Hscroll) {
+        results.add(caseHscroll())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
