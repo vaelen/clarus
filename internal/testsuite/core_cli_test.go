@@ -189,7 +189,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"RecCopyIndependence", "RecFieldGlobalAlias",
 			"ArrHolderElementStore",
 			"EnumIntRoundTrip", "EnumSaveChoiceValue", "FixedMathOps", "ConstCaseLabel", "SwitchIntRange", "SwitchIntMultiLabel",
-			"SerBinRoundtrip", "SerFileRoundtrip", "SerFileNameRoundtrip",
+			"SerBinRoundtrip", "SerFileRoundtrip", "SerFileNameRoundtrip", "SerMixedScalarRec",
 			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
 			"XRecFieldsRoundtrip",
 			"SelfCheck",

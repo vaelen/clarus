@@ -12,6 +12,10 @@
 //   SerFileRoundtrip   <- emit_file.cla ("round-trip ok")
 //   SerFileNameRoundtrip <- files.cla (round-trip content + file.name()
 //                          path-basename extraction)
+//   SerMixedScalarRec    <- new for small-scalar-width phase, no legacy
+//                          fixture (interleaved char/bool/int/string/fixed
+//                          record round trip, pinning today's field-layout
+//                          behavior ahead of the ABI flip)
 
 func caseSerBinRoundtrip(): TestResult {
     var t: text
@@ -110,4 +114,58 @@ func caseSerFileNameRoundtrip(): TestResult {
         return tkFail("SerFileNameRoundtrip", "file.name wrong")
     }
     return tkPass("SerFileNameRoundtrip")
+}
+
+record MixedScalarRec {
+    a: char
+    b: bool
+    c: int
+    d: char
+    e: string(5)
+    f: bool
+    g: fixed
+}
+
+func caseSerMixedScalarRec(): TestResult {
+    var r: MixedScalarRec
+    var r2: MixedScalarRec
+    var ok: bool
+
+    r.a = char(7)
+    r.b = true
+    r.c = -123456
+    r.d = char(255)
+    r.e = "hey"
+    r.f = false
+    r.g = 2.5
+    ok = file.save("core_mixed_scalar.dat", r)
+    if not ok {
+        return tkFail("SerMixedScalarRec", "save failed")
+    }
+    ok = file.load("core_mixed_scalar.dat", r2)
+    if not ok {
+        return tkFail("SerMixedScalarRec", "load failed")
+    }
+    if r2.a != char(7) {
+        return tkFail("SerMixedScalarRec", "a (char) wrong")
+    }
+    if not r2.b {
+        return tkFail("SerMixedScalarRec", "b (bool true) wrong")
+    }
+    if r2.c != -123456 {
+        return tkFail("SerMixedScalarRec", "c (int) wrong")
+    }
+    if r2.d != char(255) {
+        return tkFail("SerMixedScalarRec", "d (char 255) wrong")
+    }
+    if r2.e != "hey" {
+        return tkFail("SerMixedScalarRec", "e (str) wrong")
+    }
+    if r2.f {
+        return tkFail("SerMixedScalarRec", "f (bool false) wrong")
+    }
+    if r2.g != 2.5 {
+        return tkFail("SerMixedScalarRec", "g (fixed) wrong")
+    }
+    return tkPass("SerMixedScalarRec")
 }
