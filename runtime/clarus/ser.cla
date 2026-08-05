@@ -29,11 +29,11 @@
 //
 // File format, byte-exact with rt_ser.inc: 'C' 'L' 'R' 'S', version byte 1,
 // container byte (0 REC / 1 LIST / 2 MAP), then the payload -- REC: fields
-// in descriptor order (INT/FIXED/ENUM 4 bytes BE; BOOL/CHAR 1 byte, BOOL
-// canonicalized 0/1 even though its in-memory field is a 4-byte int32; STR:
-// 1 length byte + strCap data bytes zero-padded). LIST: 4-byte BE count
-// then that many records. MAP: 4-byte BE count then (1 length byte + key
-// bytes + record) entries.
+// in descriptor order (INT/FIXED/ENUM 4 bytes BE; BOOL/CHAR 1 byte,
+// canonicalized 0/1 -- BOOL's in-memory field is 1 byte too, small-scalar-
+// width phase, but the disk byte was always canonicalized regardless).
+// LIST: 4-byte BE count then that many records. MAP: 4-byte BE count then
+// (1 length byte + key bytes + record) entries.
 
 // Every extern below is ser.cla's OWN, Ser-prefixed name, distinct from the
 // public unprefixed externals a user program may declare for itself (Ch13's
@@ -120,10 +120,9 @@ func rtSerPutI32(out: text, v: int) {
 }
 
 // rtSerPutField writes one field's disk bytes, reading the in-memory value
-// via peekl/peekb at rec+foffset. BOOL's in-memory field is a 4-byte int32
-// (cprint.cla emits bool as int32_t) -- read the full word and canonicalize
-// to one disk byte, never just the byte at the field's base address (that's
-// endian-dependent).
+// via peekl/peekb at rec+foffset. BOOL's in-memory field is 1 byte at the
+// field's base address on both lanes -- endian-neutral; disk byte
+// unchanged (small-scalar-width phase, 2026-08-05).
 func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
     var p: ptr
     var v: int
@@ -134,7 +133,7 @@ func rtSerPutField(out: text, rec: ptr, foffset: int, ftype: int, strCap: int) {
     if ftype == RtFtInt or ftype == RtFtFixed or ftype == RtFtEnum {
         rtSerPutI32(out, peekl(p))
     } else if ftype == RtFtBool {
-        v = peekl(p)
+        v = peekb(p)
         if v != 0 {
             out.append(char(1))
         } else {
@@ -336,8 +335,8 @@ func rtSerZeroPtr(p: ptr, n: int) {
 // rtSerGetField reads one field's disk bytes at descriptor block fp (see
 // the header comment for its shape) into rec+offset. ENUM validates
 // membership against the block's inline ordinal values before writing;
-// BOOL/INT/FIXED always write back a full 4-byte int32 (never a single
-// raw byte at the field's base address -- see rtSerPutField).
+// INT/FIXED/ENUM write back a full 4-byte int32, BOOL a single byte at the
+// field's base address (small-scalar-width phase -- see rtSerPutField).
 func rtSerGetField(t: text, rec: ptr, fp: ptr) {
     var ftype: int
     var strCap: int
@@ -382,9 +381,9 @@ func rtSerGetField(t: text, rec: ptr, fp: ptr) {
         b = rtSerGetByte(t)
         if not rtSerBad {
             if int(b) != 0 {
-                pokel(p, 1)
+                pokeb(p, 1)
             } else {
-                pokel(p, 0)
+                pokeb(p, 0)
             }
         }
     } else if ftype == RtFtChar {

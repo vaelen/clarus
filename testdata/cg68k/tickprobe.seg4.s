@@ -1215,7 +1215,8 @@ LBL_236:
         BEQ.W LBL_237
         MOVE.L -48(A6),D0
         MOVEA.L D0,A0
-        MOVE.L (A0),D0
+        CLR.L D0
+        MOVE.B (A0),D0
         MOVE.L D0,-72(A6)
         MOVE.L -72(A6),D0
         MOVE.L D0,-(A7)
@@ -1750,14 +1751,14 @@ LBL_263:
         MOVE.L D0,-(A7)
         MOVE.L #1,D0
         MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        MOVE.B D0,(A0)
         BRA.W LBL_265
 LBL_264:
         MOVE.L -52(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L #0,D0
         MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        MOVE.B D0,(A0)
 LBL_265:
         BRA.W LBL_261
 LBL_260:

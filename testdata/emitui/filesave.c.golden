@@ -107,7 +107,7 @@ typedef struct {
 typedef struct {
     clar_str_63 cv_name;
     int32_t cv_port;
-    int32_t cv_enabled;
+    uint8_t cv_enabled;
     uint8_t cv_kind;
     int32_t cv_weight;
     int32_t cv_protocol;
@@ -824,7 +824,7 @@ static void clar_fn_rtSerPutField(rt_text * cv_out, void * cv_rec, int32_t cv_fo
         clar_fn_rtSerPutI32(cv_out, rt_peekl(cv_p));
     } else {
         if (cv_ftype == 2) {
-            cv_v = rt_peekl(cv_p);
+            cv_v = rt_peekb(cv_p);
             if (cv_v != 0) {
                 clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(1))));
             } else {
@@ -1072,9 +1072,9 @@ static void clar_fn_rtSerGetField(rt_text * cv_t, void * cv_rec, void * cv_fp) {
                 cv_b = clar_fn_rtSerGetByte(cv_t);
                 if (!(cv_rtSerBad)) {
                     if (((int32_t)(cv_b)) != 0) {
-                        rt_pokel(cv_p, 1);
+                        rt_pokeb(cv_p, 1);
                     } else {
-                        rt_pokel(cv_p, 0);
+                        rt_pokeb(cv_p, 0);
                     }
                 }
             } else {

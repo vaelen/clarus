@@ -30,9 +30,9 @@
 // Table row values are drawn straight from the bound record's own memory
 // (ftype/offset/strCap/enumCount/enumLabels/enumValues, all read via
 // uidesc.cla's Layout/EnumArrays accessors) -- mirrors rt_ser.inc's own
-// ser_put_field byte layout exactly, including its one documented gotcha:
-// a bool field's C representation is a full int32 (peekl), never a raw
-// byte (rt_ui.c:1100, cprint.cla). rtUiFtInt/Fixed/Bool/Char/Str/Enum
+// ser_put_field byte layout exactly: a bool field is 1 byte at its base
+// address (small-scalar-width phase, 2026-08-05), same as char.
+// rtUiFtInt/Fixed/Bool/Char/Str/Enum
 // (below) mirror ser.cla's own RtFtInt/Fixed/Bool/Char/Str/Enum numbering
 // exactly (both read the SAME uibFieldTypeNum-numbered blob/serialized
 // bytes, clarusc/uiblob.cla:269-291) but are this file's OWN constants,
@@ -380,7 +380,7 @@ func rtUiFixedToStr(v: int, out255: ptr) {
 // rtUiTableDrawField (rt_ui.c:1075-1122): renders one field's value into
 // colRect (already ClipRect'd by the caller) by ftype -- mirrors
 // rt_ser.inc's own ser_put_field byte layout exactly, including RtFtBool's
-// one documented gotcha (a full int32 field, never a raw byte). Unknown
+// 1-byte field at its base address (small-scalar-width phase). Unknown
 // enum value draws '?' (rt_ui.h's defensive "draw something, never crash"
 // contract).
 func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
@@ -415,7 +415,7 @@ func rtUiTableDrawField(rec: ptr, layoutOff: int, fieldIdx: int, colRect: ptr) {
         UiDrawText(numbuf + 1, 0, peekb(numbuf))
         UiDisposePtr(numbuf)
     } else if ftype == rtUiFtBool {
-        v = peekl(base) // int32, not a raw byte -- see rt_ser.inc's own comment on this exact gotcha
+        v = peekb(base) // bool: 1 byte at base, both lanes
         if v != 0 {
             chBuf = UiNewPtr(1)
             pokeb(chBuf, 0xC3) // MacRoman check mark

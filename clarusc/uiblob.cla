@@ -115,18 +115,16 @@ func uibI32(b: list of int, v: int) {
 
 // uibNativeLane (Task 12, native-5e): selects uibEmitLayout's own record-
 // layout authority -- false (the default, cprint's own lane) reads
-// cpCRecordSize/cpCFieldOffset (the C-ABI: bool=int32 4-byte slot,
-// char=uint8 1-byte slot); true (cg68k.cla sets it for the one uibBuild()
-// call that pours the blob into the native constant pool,
-// cgEmitUiBlobPool) reads cg68k's own cgRecordSize/cgFieldOffset instead
-// (Task 14 fix-round: bool AND char both get a full 4-byte slot inside a
-// record -- cgRecFieldSizeOf's own doc comment -- so bool's slot width now
-// MATCHES the C lane; char's still doesn't, but char is never read wider
-// than its own base byte by either lane's runtime, so the mismatch is
-// layout-only, not a correctness risk). See uibEmitLayout's own doc
-// comment for why the two lanes' record layouts still can't share one
-// blob even so (offsets themselves still differ, only bool's WIDTH lines
-// up).
+// cpCRecordSize/cpCFieldOffset (the C-ABI: bool=uint8 1-byte slot,
+// char=uint8 1-byte slot, small-scalar-width phase, 2026-08-05); true
+// (cg68k.cla sets it for the one uibBuild() call that pours the blob into
+// the native constant pool, cgEmitUiBlobPool) reads cg68k's own
+// cgRecordSize/cgFieldOffset instead (bool AND char both pack at 1 byte
+// inside a record -- cgRecFieldSizeOf's own doc comment -- so both kinds'
+// WIDTHS now match the C lane). See uibEmitLayout's own doc comment for
+// why the two lanes' record layouts still can't share one blob even so
+// (int/fixed/ptr/enum field alignment and offsets are still independently
+// computed per lane; only bool/char's per-field WIDTH is now identical).
 var uibNativeLane: bool = false
 
 var uibHeader: list of int
@@ -550,19 +548,21 @@ func uibStateSize(winIdx: int): int {
 //
 // recSize/offsets come from cprint.cla's cpCRecordSize/cpCFieldOffset --
 // the C-ABI layout authority -- NOT from cg68k.cla's cgRecordSize/
-// cgFieldOffset the way uibStateSize's own doc comment describes. The two
-// still differ (cg68k gives EVERY sub-word record field -- `bool` and
-// `char` alike -- a full 4-byte slot, Task 14 fix-round; the emitted C
-// struct gives `bool` a 4-byte int32_t but `char` only a 1-byte uint8_t,
-// so cg68k's own `char` field offsets no longer match the C struct's),
-// and for a FORM/TABLE row record the C struct wins: rt.h's descriptor ABI
-// freezes
-// `clar_rec_<T>`'s field types (see cpCSizeOfField's own comment), the
-// blob's Layout is what ui.cla's ported rtUiFormFill/rtUiFormAccept peek
-// and poke through, and a `list of T`'s elements are sizeof(clar_rec_T)
-// apart. A window's clar_uistate_<Win> struct is the opposite case (there
-// cprint bends the C to cg68k, cpUiStateFieldCType), hence the split.
-// cpEmitUiLayoutAsserts turns any future drift into a compile error.
+// cgFieldOffset the way uibStateSize's own doc comment describes. As of
+// the small-scalar-width phase (2026-08-05) the two authorities AGREE on
+// every bool/char record field's WIDTH (both pack at 1 byte -- cg68k's
+// cgRecFieldSizeOf, cprint's cpCSizeOfField), but they remain two
+// independently-computed layout walks (int/fixed/ptr/enum field alignment
+// and offsets can still differ between an m68k-GCC-decided C struct and
+// cg68k's own frame/record rules), so this split stays: for a FORM/TABLE
+// row record the C struct wins regardless, because rt.h's descriptor ABI
+// freezes `clar_rec_<T>`'s field types (see cpCSizeOfField's own comment),
+// the blob's Layout is what ui.cla's ported rtUiFormFill/rtUiFormAccept
+// peek and poke through, and a `list of T`'s elements are sizeof(clar_rec_
+// T) apart. A window's clar_uistate_<Win> struct is the opposite case
+// (there cprint bends the C to cg68k, cpUiStateFieldCType), hence the
+// split. cpEmitUiLayoutAsserts turns any future drift into a compile
+// error.
 //
 // TASK 12 (cg68k native lane, DONE): uibNativeLane selects the authority
 // -- cg68k.cla sets it for the one uibBuild() call that pours the blob

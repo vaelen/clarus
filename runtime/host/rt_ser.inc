@@ -13,9 +13,9 @@
  *   'C' 'L' 'R' 'S', version byte 1, container byte, then the payload.
  *   REC:  fields in layout order --
  *         INT/FIXED/ENUM: 4 bytes big-endian; BOOL/CHAR: 1 byte (BOOL's
- *         emitted C field is a 4-byte int32_t -- canonicalized to a single
- *         0/1 byte on disk, read back into a full 0/1 int32_t, never a
- *         raw byte at the field's base address, which is endian-dependent);
+ *         emitted C field is uint8_t, small-scalar-width phase, 2026-08-05
+ *         -- one byte at the field's base address, endian-neutral, both on
+ *         disk and in memory);
  *         STR: 1 length byte + strCap data bytes (zero-padded).
  *   LIST: 4-byte BE count, then that many records.
  *   MAP:  4-byte BE count, then (1 length byte + key bytes + record)
@@ -67,16 +67,11 @@ static void ser_put_field(rt_text *out, const uint8_t *rec, const rt_field_desc 
         ser_put_i32(out, v);
         break;
     }
-    case RT_FT_BOOL: {
-        /* bool's emitted C type is int32_t (cprint.cla), not uint8_t -- read
-           the full word and canonicalize to one byte, never just the byte
-           at the field's base address (that's the LSB on a little-endian
-           host but the MSB on the big-endian 68k Mac). */
-        int32_t v;
-        v = *(const int32_t *)p;
-        rt_text_append_char(out, (uint8_t)(v != 0 ? 1 : 0));
+    case RT_FT_BOOL:
+        /* bool's emitted C field type is uint8_t (small-scalar-width phase)
+           -- one byte at the field's base address, endian-neutral. */
+        rt_text_append_char(out, (uint8_t)(*p != 0 ? 1 : 0));
         break;
-    }
     case RT_FT_CHAR:
         rt_text_append_char(out, *p);
         break;
@@ -211,16 +206,9 @@ static void ser_get_field(ser_reader *r, uint8_t *rec, const rt_field_desc *fd)
         break;
     }
     case RT_FT_BOOL: {
-        /* Full int32 write-back (0 or 1), same reasoning as the save side:
-           writing just one byte at p would leave 3 stale/uninitialized
-           high-order bytes behind on a 4-byte-wide bool field. */
         uint8_t b;
-        int32_t v;
         b = ser_get_byte(r);
-        if (!r->bad) {
-            v = b != 0 ? 1 : 0;
-            memmove(p, &v, sizeof(int32_t));
-        }
+        if (!r->bad) *p = (uint8_t)(b != 0 ? 1 : 0);
         break;
     }
     case RT_FT_CHAR: {

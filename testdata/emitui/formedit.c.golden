@@ -403,7 +403,7 @@ typedef struct {
     clar_str_255 cv_url;
     int32_t cv_port;
     int32_t cv_protocol;
-    int32_t cv_favorite;
+    uint8_t cv_favorite;
 } clar_rec_Bookmark;
 static clar_rec_Bookmark clar_new_Bookmark(void) {
     clar_rec_Bookmark r;
@@ -435,7 +435,7 @@ static const int32_t clar_serdesc_Bookmark[] = {
     RT_FT_BOOL, 0, (int32_t)offsetof(clar_rec_Bookmark, cv_favorite), 0,
 };
 
-typedef char clar_ui_layoutassert_Bookmark[(sizeof(clar_rec_Bookmark) == 332 && offsetof(clar_rec_Bookmark, cv_name) == 0 && offsetof(clar_rec_Bookmark, cv_url) == 64 && offsetof(clar_rec_Bookmark, cv_port) == 320 && offsetof(clar_rec_Bookmark, cv_protocol) == 324 && offsetof(clar_rec_Bookmark, cv_favorite) == 328) ? 1 : -1];
+typedef char clar_ui_layoutassert_Bookmark[(sizeof(clar_rec_Bookmark) == 330 && offsetof(clar_rec_Bookmark, cv_name) == 0 && offsetof(clar_rec_Bookmark, cv_url) == 64 && offsetof(clar_rec_Bookmark, cv_port) == 320 && offsetof(clar_rec_Bookmark, cv_protocol) == 324 && offsetof(clar_rec_Bookmark, cv_favorite) == 328) ? 1 : -1];
 
 typedef struct { char clar_ui_unused; } clar_uistate_Main;
 
@@ -487,13 +487,13 @@ static const unsigned char clar_ui_blob[] = {
     0, 0, 3, 112, 0, 0, 0, 3, 0, 0, 3, 64, 0, 0, 4, 179, 0, 0, 0, 140,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 184, 0, 0, 0, 0, 0, 0, 0, 1,
     0, 0, 0, 1, 0, 0, 4, 188, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 4,
-    0, 0, 1, 76, 0, 0, 0, 5, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63,
+    0, 0, 1, 74, 0, 0, 0, 5, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 63,
     0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 0, 0, 0, 64,
     0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0,
     0, 0, 1, 64, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
     0, 0, 0, 5, 0, 0, 1, 68, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 4, 112,
     0, 0, 4, 124, 0, 0, 0, 2, 0, 0, 1, 72, 0, 0, 0, 0, 0, 0, 0, 0,
-    255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 1, 76, 0, 0, 0, 5, 0, 0, 0, 4,
+    255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 1, 74, 0, 0, 0, 5, 0, 0, 0, 4,
     0, 0, 0, 0, 0, 0, 0, 63, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
     0, 0, 0, 4, 0, 0, 0, 64, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 255,
     255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 1, 64, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -6109,7 +6109,7 @@ static void clar_fn_rtUiTableDrawField(void * cv_rec, int32_t cv_layoutOff, int3
                 rt_ext_UiDisposePtr(cv_numbuf);
             } else {
                 if (cv_ftype == 2) {
-                    cv_v = rt_peekl(cv_base);
+                    cv_v = rt_peekb(cv_base);
                     if (cv_v != 0) {
                         cv_chBuf = rt_ext_UiNewPtr(1);
                         rt_pokeb(cv_chBuf, 195);
@@ -8048,7 +8048,7 @@ static void clar_fn_rtUiFormFill(void * cv_inst) {
             rt_ext_UiTECalText(cv_te);
         } else {
             if ((cv_kind == 1) && (cv_ctrl != (void *)(intptr_t)(0))) {
-                cv_v = rt_peekl(cv_base);
+                cv_v = rt_peekb(cv_base);
                 if (cv_v != 0) {
                     rt_ext_UiSetControlValue(cv_ctrl, 1);
                 } else {
@@ -8178,9 +8178,9 @@ static void clar_fn_rtUiFormAccept(void * cv_inst) {
                     if (cv_ftype == 2) {
                         cv_ctrl = clar_fn_rtUiCtrlAt(cv_w, cv_wIdx);
                         if ((cv_ctrl != (void *)(intptr_t)(0)) && (rt_ext_UiGetControlValue(cv_ctrl) != 0)) {
-                            rt_pokel(cv_base, 1);
+                            rt_pokeb(cv_base, 1);
                         } else {
-                            rt_pokel(cv_base, 0);
+                            rt_pokeb(cv_base, 0);
                         }
                     } else {
                         if (cv_ftype == 3) {

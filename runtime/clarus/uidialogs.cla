@@ -451,7 +451,7 @@ func rtUiFormFill(inst: ptr) {
             UiTESetText(text + 1, peekb(text), te)
             UiTECalText(te)
         } else if kind == rtUiKindCheck and ctrl != ptr(0) {
-            v = peekl(base) // bool: full int32, not a raw byte
+            v = peekb(base) // bool: 1 byte at base, both lanes
             if v != 0 {
                 UiSetControlValue(ctrl, 1)
             } else {
@@ -494,10 +494,13 @@ func rtUiFormFill(inst: ptr) {
 //
 // Every offset this loop pokes through (and rtUiModalBuf's own size)
 // comes from the blob's Layout section, which MUST describe the record
-// layout the emitted C actually uses -- a bool field is a full int32_t
-// there, not cg68k's 2-byte slot. It once didn't: a form with 2+ binds
-// including a CHECK poked 4 bytes into the last 2 bytes of the
-// recSize-sized scratch Handle and corrupted the heap, hanging the later
+// layout the emitted C actually uses -- as of the small-scalar-width
+// phase (2026-08-05) a bool field is 1 byte there, matching cg68k's own
+// record-field packing (cgRecFieldSizeOf) for the first time; the two
+// layout authorities used to diverge for bool (cprint's C struct gave it
+// a full int32_t, cg68k reserved only 2), which is what made a form with
+// 2+ binds including a CHECK poke 4 bytes into the last 2 bytes of the
+// recSize-sized scratch Handle and corrupt the heap, hanging the later
 // DisposeWindow. Fixed in cprint.cla's cpC* layout authority (sourced by
 // uiblob.cla's uibEmitLayout) and guarded by the per-record
 // clar_ui_layoutassert_<R> compile-time asserts, so a recurrence is a
@@ -579,9 +582,9 @@ func rtUiFormAccept(inst: ptr) {
         } else if ftype == rtUiFtBool {
             ctrl = rtUiCtrlAt(w, wIdx)
             if ctrl != ptr(0) and UiGetControlValue(ctrl) != 0 {
-                pokel(base, 1)
+                pokeb(base, 1)
             } else {
-                pokel(base, 0)
+                pokeb(base, 0)
             }
         } else if ftype == rtUiFtChar {
             rtUiWidgetGetStr(inst, wIdx, rtUiPropText, text)

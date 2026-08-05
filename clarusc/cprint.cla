@@ -724,6 +724,26 @@ func cpCTypeName(t: int): string {
     return "void"
 }
 
+// cpRecFieldCType: the C type of a clar_rec_<T> STRUCT FIELD. Identical to
+// cpCType except bool, which is uint8_t as a record field (small-scalar-
+// width phase: 1 byte in every aggregate, both lanes) while staying
+// int32_t as a local/param/global.
+func cpRecFieldCType(t: int): string {
+    if irtKind(t) == KBool {
+        return "uint8_t"
+    }
+    return cpCType(t)
+}
+
+// cpArrElemCTypeName: array-element C type -- bool packs as uint8_t
+// (matching cg68k's 1-byte stride), everything else is cpCTypeName.
+func cpArrElemCTypeName(t: int): string {
+    if irtKind(t) == KBool {
+        return "uint8_t"
+    }
+    return cpCTypeName(t)
+}
+
 // ---------------------------------------------------------------
 // C-ABI record layout (the cprint lane's own LAYOUT AUTHORITY)
 // ---------------------------------------------------------------
@@ -735,20 +755,31 @@ func cpCTypeName(t: int): string {
 // uses -- unlike a window's `clar_uistate_<Win>` struct, whose C field
 // types cprint is free to bend to match cg68k (cpUiStateFieldCType's
 // int16_t bool), a user record's C layout is FROZEN by rt.h's descriptor
-// ABI: rt_ui.c/rt.c's RT_FT_BOOL arms dereference `*(int32_t *)(rec +
-// off)` (rt_ui.c:1100 "BOOL is a full int32_t"), and cpEmitLayouts/
-// cpEmitSerDescs hand those runtimes offsetof/sizeof of this very struct.
-// cg68k's native rules (cgSlotSizeOf: bool/char occupy 2) therefore do
-// NOT describe it -- a `bool` field is 4 bytes here, a `char` field 1 --
-// which is exactly the mismatch that made a modal form's accept path
-// poke 4 bytes into the last 2 bytes of a recSize-sized scratch Handle
-// and corrupt the Mac heap (see the Task 10 report's root cause).
+// ABI: every RT_FT_BOOL reader (rt_ser.inc's save/load arms, this repo's
+// other descriptor-driven readers) dereferences the field's OWN base byte
+// width, and cpEmitLayouts/cpEmitSerDescs hand those runtimes offsetof/
+// sizeof of this very struct.
+//
+// SMALL-SCALAR-WIDTH PHASE (2026-08-05): a `bool` field is `uint8_t`, 1
+// byte, exactly like `char` -- cpRecFieldCType's own doc comment. The rt.h
+// descriptor ABI's RT_FT_BOOL arm now reads/writes 1 byte, matching. cg68k's
+// native rules (cgRecFieldSizeOf: bool/char occupy 1 in a record field) now
+// AGREE with this struct's field-for-field layout for these two kinds
+// (still independently computed -- see cg68k.cla's own file-header note).
+//
+// Historical note: before this phase, `bool` was `int32_t` (4 bytes) here
+// while cg68k's OWN (pre-Task-14) record layout only reserved 2 -- the
+// mismatch that made a modal form's accept path poke 4 bytes into the last
+// 2 bytes of a recSize-sized scratch Handle and corrupt the Mac heap (the
+// Task 10 report's root cause). Task 14 patched cg68k to also reserve 4;
+// this phase instead narrows the true field width to 1 everywhere, closing
+// the gap from the other direction.
 //
 // Only the six kinds uibFieldTypeNum accepts can reach here (it fails
-// closed on anything else), so the rules are short: int/fixed/bool/enum
-// are `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
+// closed on anything else), so the rules are short: int/fixed/enum are
+// `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
 // BIGGEST_ALIGNMENT is 16 bits, the same convention cpUiStateFieldCType's
-// own comment cites); `char` is `uint8_t` (1 byte); `string(n)` is
+// own comment cites); `char`/`bool` are `uint8_t` (1 byte); `string(n)` is
 // `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }` (n+1 bytes,
 // 1-byte aligned). A struct's own alignment is its widest member's, so
 // the total is rounded up to 2 iff any 4-byte field is present.
@@ -756,7 +787,7 @@ func cpCSizeOfField(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KChar {
+    if k == KChar or k == KBool {
         return 1
     }
     if k == KStr {
@@ -769,7 +800,7 @@ func cpCAlignOfField(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KChar or k == KStr {
+    if k == KChar or k == KBool or k == KStr {
         return 1
     }
     return 2
@@ -900,7 +931,7 @@ func cpEnsureArr(t: int): string {
     }
     cpArrEmitted[name] = 1
     cpEnsureType(irtElem(t))
-    cpRecBuf.add(toText("typedef struct { " + cpCTypeName(irtElem(t)) + " e[" + numToStr(irtN(t)) + "]; } " + name + ";"))
+    cpRecBuf.add(toText("typedef struct { " + cpArrElemCTypeName(irtElem(t)) + " e[" + numToStr(irtN(t)) + "]; } " + name + ";"))
     return name
 }
 
@@ -4454,7 +4485,7 @@ func cpEmitRecords() {
         cpRecBuf.add(toText("typedef struct {"))
         f = irRecordLayoutFieldsHead(i)
         while f != -1 {
-            cpRecBuf.add(toText("    " + cpCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
+            cpRecBuf.add(toText("    " + cpRecFieldCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
             f = irFieldSlotNext(f)
         }
         cpRecBuf.add(toText("} " + ctype + ";"))

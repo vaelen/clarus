@@ -56,33 +56,35 @@
 // total function over all 17 IRKinds rather than a partial one no caller
 // can safely invoke.
 //
-// THIS LAYOUT DIVERGES FROM cprint.cla's C STRUCT LAYOUT ON PURPOSE, AND
-// THE TWO MUST NEVER BE CROSS-USED. C lays a `char[N]` field out UNPADDED
-// (str/arr elements sit at their raw byte size, no slot-rounding) and a C
-// struct's own alignment/padding rules are the C COMPILER's, not this
-// file's -- cprint.cla emits `typedef struct { ... } clar_rec_Name` and
-// lets the m68k C compiler decide field offsets. cg68k.cla's layout is a
-// DIFFERENT, self-contained scheme (every bool/char slot padded to 2,
-// every field/element aligned by cgAlignOf) that this backend alone
-// defines and controls -- there is no requirement, and no attempt, to
-// keep native offsets numerically identical to cprint's C offsets for the
-// same record. Practical consequence for later tasks: when Task 8+ builds
-// the native serdesc tables (file save/load field-offset descriptors for
-// the m68k path), those offsets MUST come from cgFieldOffset -- reusing
-// cprint.cla's C struct offsets (or assuming they match) would silently
-// corrupt any record containing a bool/char field, since C packs it at 1
-// byte where cg68k.cla's own frame/record layout reserves 2.
+// SMALL-SCALAR-WIDTH PHASE (2026-08-05): bool/char occupy exactly 1 byte in
+// every AGGREGATE -- ordinary record field, array element, extern record
+// field -- on BOTH lanes. cgRecFieldSizeOf/cgRecFieldAlignOf remain the
+// record-field-layout authority (cgRecordSize/cgFieldOffset/cgRecordCtorAt/
+// cgEmitOneRcWalk all route through them, never cgSlotSizeOf directly for a
+// field), but they no longer diverge from the packed (1-byte) size for
+// bool/char -- see their own doc comment. cgArrElemStride packs bool
+// alongside char for the identical reason. A bare LOCAL, PARAM, or GLOBAL
+// scalar is unaffected by any of this: it still gets cgSlotSizeOf's
+// ordinary 2-byte-padded slot (68000 alignment for locals/params is
+// non-negotiable; see the FRAME MODEL section below). Historical note: an
+// earlier rule (Task 14, native-5e fix-round) gave a bool/char RECORD FIELD
+// a full 4-byte slot to match a since-fixed C runtime bug (a raw
+// `*(int32_t *)` read over what was really a 1-byte field, the popuptable
+// regression); that widened-field rule is gone as of this phase -- see
+// `docs/superpowers/specs/2026-08-05-small-scalar-width-design.md` for the
+// full rationale and survey.
 //
-// TASK 14 EXCEPTION (native-5e, fix-round): a bool/char field specifically
-// INSIDE A RECORD is the one place cgSlotSizeOf's plain 2-byte padding is
-// NOT the answer -- cgRecordSize/cgFieldOffset give it a full 4-byte slot
-// instead (cgRecFieldSizeOf/cgRecFieldAlignOf), matching the C ABI's own
-// `bool` width (rt_ui.c/rt_ser.inc's shared runtime, compiled for m68k
-// too, reads a record's bool field as a real `*(int32_t *)`, never a raw
-// byte -- see cgRecFieldSizeOf's own doc comment for the popuptable bug
-// this fixes). Every OTHER bool/char use -- a bare local, a param, a
-// global, an array element -- keeps the ordinary 2-byte cgSlotSizeOf slot
-// this section describes; only a record FIELD gets the wider one.
+// cprint.cla's C struct layout now largely AGREES with this scheme for
+// bool/char (both pack at 1 byte in a record field or array element), but
+// the two lanes remain independently computed -- cg68k.cla's own
+// cgFieldOffset/cgRecordSize walk is still the ONLY layout authority this
+// backend consults, and there is no requirement (or attempt) to keep every
+// native offset numerically identical to cprint's C offsets for
+// int/ptr/fixed fields, whose alignment/padding is decided by cg68k's own
+// cgAlignOf here and by the m68k C compiler's own struct rules there. When
+// Task 8+ builds the native serdesc tables (file save/load field-offset
+// descriptors for the m68k path), those offsets MUST still come from
+// cgFieldOffset, not assumed to match cprint's.
 //
 // FRAME MODEL, WORKED EXAMPLE. Params are pushed by the CALLER,
 // left-to-right (a, then b, then c) before the JSR. Because the stack
@@ -916,70 +918,78 @@ func cgSlotSizeOf(t: int): int {
     return sz
 }
 
-// cgArrElemStride (Task 6, toolbox-integration Feature B) is a KArr's own
-// per-element byte spacing -- identical to cgSlotSizeOf EXCEPT for a char
+// cgArrElemStride (Task 6, toolbox-integration Feature B; joined by KBool
+// in the small-scalar-width phase, 2026-08-05) is a KArr's own per-element
+// byte spacing -- identical to cgSlotSizeOf EXCEPT for a char or bool
 // element, which packs at exactly 1 byte, no padding, so cgSizeOf(KArr)/
 // cgArrElemAddr/cgArrDefaultAt (the array's total size, per-element
 // indexing, and zero-init stride, respectively) never drift out of sync.
 //
-// The bug this fixes: before this task, all three read cgSlotSizeOf(elem)
-// -- 2 bytes for a char element, the same padding a scalar local/param
-// char gets. For an ordinary `char[N]` array that's merely wasteful (N*2
-// bytes reserved, only the N even-offset bytes ever touched by c[i]
-// indexing, which used the SAME padded stride consistently). For extern-
-// record storage it was actively WRONG: lower.cla's TyXRec case builds a
-// record's whole storage as exactly `irArrType(irCharT, N)` (Task 4), and
-// EXRecAddr's own literal field offsets (irXRecFieldOffset, the packing-
-// table authority the spec's field-offset table anchors against) are
-// computed assuming N TRULY CONTIGUOUS bytes -- matching cprint's C-lane
-// `clar_arr_char_N` (`uint8_t e[N]`, no padding) byte-for-byte. Against
-// the OLD padded scheme, a 16-byte EventRecord would have reserved 32
-// bytes, and the zero-init loop (stride 2) would have zeroed only the 16
-// EVEN-offset bytes of that 32-byte span -- every ODD real-record offset
-// (the low byte of `what`, the low bytes of `message`/`when`, `where.h`'s
-// low byte, ...) stayed uninitialized stack/BSS garbage, while EXRecAddr
-// still addressed the record as if it were the true packed 16 bytes.
-// cgSlotSizeOf itself is untouched by element spacing -- a bool/char
-// SCALAR local/param still gets its own 2-byte slot; cgSlotSizeOf's own
-// general odd-rounding (task-6-review Critical 2) separately keeps every
-// ALLOCATION (frame/global slot width) even regardless of element kind,
-// orthogonal to this function's job of keeping array-internal spacing
-// packed.
+// The bug Task 6 fixed (char only, at the time): before that task, all
+// three read cgSlotSizeOf(elem) -- 2 bytes for a char element, the same
+// padding a scalar local/param char gets. For an ordinary `char[N]` array
+// that's merely wasteful (N*2 bytes reserved, only the N even-offset bytes
+// ever touched by c[i] indexing, which used the SAME padded stride
+// consistently). For extern-record storage it was actively WRONG: lower.
+// cla's TyXRec case builds a record's whole storage as exactly
+// `irArrType(irCharT, N)` (Task 4), and EXRecAddr's own literal field
+// offsets (irXRecFieldOffset, the packing-table authority the spec's
+// field-offset table anchors against) are computed assuming N TRULY
+// CONTIGUOUS bytes -- matching cprint's C-lane `clar_arr_char_N`
+// (`uint8_t e[N]`, no padding) byte-for-byte. Against the OLD padded
+// scheme, a 16-byte EventRecord would have reserved 32 bytes, and the
+// zero-init loop (stride 2) would have zeroed only the 16 EVEN-offset
+// bytes of that 32-byte span -- every ODD real-record offset (the low byte
+// of `what`, the low bytes of `message`/`when`, `where.h`'s low byte, ...)
+// stayed uninitialized stack/BSS garbage, while EXRecAddr still addressed
+// the record as if it were the true packed 16 bytes. bool joined the
+// packed branch later (small-scalar-width phase) for the same reason,
+// generalized: every aggregate -- record field OR array element -- now
+// packs bool/char at 1 byte. cgSlotSizeOf itself is untouched by element
+// spacing -- a bool/char SCALAR local/param still gets its own 2-byte
+// slot; cgSlotSizeOf's own general odd-rounding (task-6-review Critical 2)
+// separately keeps every ALLOCATION (frame/global slot width) even
+// regardless of element kind, orthogonal to this function's job of keeping
+// array-internal spacing packed.
 func cgArrElemStride(elemT: int): int {
-    if irtKind(elemT) == KChar {
+    var k: IRKind
+
+    k = irtKind(elemT)
+    if k == KChar or k == KBool {
         return 1
     }
     return cgSlotSizeOf(elemT)
 }
 
-// cgRecFieldSizeOf/cgRecFieldAlignOf (Task 14 fix-round, native-5e): the
-// record-field-ONLY layout authority for bool/char -- everywhere else
-// (locals, params, array elements: cgSlotSizeOf) a bool/char scalar gets a
-// 2-byte slot, but a bool/char RECORD FIELD gets a full 4-byte slot,
-// matching the C convention the shared runtime is written against
-// (rt_ui.c:1100's "BOOL is a full int32_t, not a raw byte" contract,
-// rt_ser.inc's identical comment on its own bool read/write). Popuptable's
-// own bug (a `favorite: bool` table column reading CHECKED for every row)
-// was exactly this mismatch: rt_ui.c's RT_FT_BOOL arm does
-// `*(int32_t *)(rec + off)`, a 4-byte read, but cg68k's own cgFieldOffset/
-// cgRecordSize (pre-fix) only reserved 2 bytes at that offset -- the read
-// overran into the next field's own bytes, garbage the emitted code never
-// wrote as part of THIS field. `char` is included for the same "one rule,
-// not two special cases" reason (the file header's own "unifying" framing)
-// even though RT_FT_CHAR reads only its field's OWN single base byte (no
-// overrun risk either way) -- see cgRecordCtorAt's own doc comment for why
-// no char-specific write-path change was needed even so.
+// cgRecFieldSizeOf/cgRecFieldAlignOf: the record-field-ONLY layout
+// authority for bool/char. As of the small-scalar-width phase
+// (2026-08-05) a bool/char RECORD FIELD packs at exactly 1 byte/1-byte
+// align -- no wider than cgArrElemStride's own array-element packing, and
+// no longer diverging from it. A plain local/global/param/array-element
+// bool/char is untouched by this pair and keeps cgSlotSizeOf/cgAlignOf's
+// ordinary 2-byte-padded slot.
+//
+// Historical note: an earlier rule (Task 14 fix-round, native-5e) gave a
+// bool/char record field a full 4-byte slot instead, to match a since-
+// fixed C runtime bug -- rt_ui.c's RT_FT_BOOL descriptor arm did a raw
+// `*(int32_t *)(rec + off)` read over what cg68k's OWN pre-fix layout only
+// reserved 2 bytes for, so the read overran into the next field's bytes
+// (the popuptable `favorite: bool` table-column regression). That runtime
+// arm now reads/writes exactly 1 byte (rt_ui.c/rt_ser.inc, both lanes),
+// so the widened-field workaround is gone; see
+// `docs/superpowers/specs/2026-08-05-small-scalar-width-design.md` for
+// the full rationale.
 //
 // ONLY cgFieldOffset/cgRecordSize (and every walk that must stay in lock-
 // step with them: cgRecordCtorAt, cgEmitOneRcWalk) call these -- a plain
 // local/global/param/array-element bool/char keeps cgSlotSizeOf/cgAlignOf
-// unchanged, per the controller ruling's explicit scope.
+// unchanged.
 func cgRecFieldSizeOf(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
     if k == KBool or k == KChar {
-        return 4
+        return 1
     }
     return cgSlotSizeOf(t)
 }
@@ -989,7 +999,7 @@ func cgRecFieldAlignOf(t: int): int {
 
     k = irtKind(t)
     if k == KBool or k == KChar {
-        return 2
+        return 1
     }
     return cgAlignOf(t)
 }
@@ -1027,8 +1037,8 @@ func cgFindRecordByName(nameIdx: int): int {
 
 // cgFieldOffset walks recName's field chain in declaration order, each
 // field starting at its own cgRecFieldAlignOf-rounded offset and occupying
-// cgRecFieldSizeOf bytes (the record-field authority -- bool/char get a
-// full 4-byte slot here, unlike a bare local/param/array-element's
+// cgRecFieldSizeOf bytes (the record-field authority -- bool/char pack at
+// 1 byte here, same as an array element, unlike a bare local/param's
 // cgSlotSizeOf-padded 2 bytes; see cgRecFieldSizeOf's own doc comment),
 // returning fieldName's offset (or -1 if either name is unknown). Works
 // identically for a plain record or an overlay record -- see the file
@@ -1722,25 +1732,15 @@ func cgArrDefaultAt(reg: int, off: int, t: int) {
 // KRec arm (`clar_new_<Name>()`, whose C body is this same per-field
 // default walk).
 //
-// A bool/char field's 4-byte slot gets an explicit CLR.L (full slot, all 4
-// bytes) BEFORE cgDefaultInitAt's own narrow (1-byte) write -- construction
-// is the ONLY place this is needed: cgDefaultInitAt's cgStoreImmAt always
-// writes exactly 1 byte at the slot's BASE address (never the other 3), and
-// every LATER assignment to this same field (cgEmitStoreScalarAny, an
-// ordinary SAssign) writes the identical single base byte the same way --
-// so zeroing the slot once, here, keeps the other 3 bytes 0 forever, which
-// is all rt_ui.c's `*(int32_t *)(rec+off)` BOOL read (and rt_ser.inc's
-// identical read) needs. `char` needs no such zeroing (RT_FT_CHAR/
-// ser_put_field's CHAR arm only ever read the field's own base byte, never
-// the other 3 -- see cgRecFieldSizeOf's own doc comment for why char still
-// gets the wider slot anyway), but the CLR.L costs nothing extra to include
-// uniformly rather than special-casing bool alone.
+// A bool/char field's slot is exactly 1 byte (small-scalar-width phase,
+// 2026-08-05) -- cgDefaultInitAt's own write (cgStoreImmAt) covers the
+// whole slot, so no separate zeroing pass is needed here the way the old
+// 4-byte-slot CLR.L was: there are no other bytes left to keep zero.
 func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
     var ri: int
     var f: int
     var cur: int
     var ft: int
-    var ftk: IRKind
 
     ri = cgFindRecordByName(recNameIdx)
     if ri == -1 {
@@ -1754,10 +1754,6 @@ func cgRecordCtorAt(reg: int, off: int, recNameIdx: int) {
         ft = irFieldSlotType(f)
         cur = cgAlignUp(cur, cgRecFieldAlignOf(ft))
         cgWalkRestoreBase(reg)
-        ftk = irtKind(ft)
-        if ftk == KBool or ftk == KChar {
-            a68Emit(OpClr, 4, AmNone, 0, 0, AmDisp16, reg, off + cur)
-        }
         cgDefaultInitAt(reg, off + cur, ft, irFieldSlotDefault(f), irFieldSlotDefaultStr(f))
         cur = cur + cgRecFieldSizeOf(ft)
         f = irFieldSlotNext(f)
