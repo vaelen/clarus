@@ -1544,6 +1544,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (swapped on activate), which needs its own design. Current behavior: a
   composed suite program shows all app-scope menus, in declaration order,
   for the whole run.
+- **Configurable native stack reserve (Andrew, 2026-08-05):**
+  `cgStartupStackReserve` (`clarusc/cg68k.cla:1376`) was bumped 32KB→128KB
+  during ui-scenario-retirement Task 3 to fit the composed toolbox suite —
+  a one-size-fits-all compile-time constant every native app now pays for.
+  Make it a declaration in the `app` section instead: default back to a
+  smaller reserve, let the programmer raise it when needed. Better still,
+  a codegen heuristic (e.g. deepest static call chain × worst-case frame
+  size) could pick the reserve automatically, with the `app` setting as
+  the manual override.
 
 ## Process conventions that worked (for future sessions)
 
