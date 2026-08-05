@@ -756,6 +756,11 @@ void rt_ext_UiLaunchReal(void) {
  * cases_events.cla can declare them without reaching into ui.cla. */
 int32_t rt_ext_TbTickCount(void) { return (int32_t)TickCount(); }
 int32_t rt_ext_TbMenuKey(short ch) { return (int32_t)MenuKey((CharParameter)ch); }
+/* rt_ext_TbHiliteMenu: same real Toolbox call as rt_ext_UiHiliteMenu
+ * above (menuKeyMatches-fix, 2026-08-05) -- caseMenuKeyMatches calls the
+ * raw MenuKey trap directly and must unhilite the matched menu title
+ * itself afterward, same as rtUiMenuDispatch does for real dispatch. */
+void rt_ext_TbHiliteMenu(short menuId) { HiliteMenu(menuId); }
 
 /* ---- Task 2 (toolbox-integration): testsuite/toolbox/cases_gestalt.cla's
  * own externs (Tb prefix, same "cprint always renders rt_ext_NAME, needs a

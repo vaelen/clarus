@@ -30,6 +30,15 @@ external func TbTickCount(): int = trap 0xA975
 // matched any menu's key equivalent and MenuKey always returned 0.
 external func TbMenuKey(ch: word): int = trap 0xA93E
 
+// TbHiliteMenu: _HiliteMenu (0xA938), same signature as the runtime's own
+// UiHiliteMenu (ui.cla:236). Real MenuKey hilites the matched menu's title
+// (Toolbox contract: the app must unhilite after processing); this case
+// calls the raw trap directly and never dispatches through
+// rtUiMenuDispatch (which calls UiHiliteMenu(0) first), so without this
+// local call the File title would stay inverted for the rest of the suite
+// run.
+external func TbHiliteMenu(menuId: word) = trap 0xA938
+
 // caseTickCountAdvances: read TbTickCount, then re-read it in a loop
 // bounded to ~50k iterations (the reg-bug shape above would burn the
 // whole bound and never see `now` differ from `start`). PASS iff the
@@ -82,6 +91,9 @@ func caseMenuKeyMatches(): TestResult {
     var detail: string
 
     result = TbMenuKey(int('Q'))
+    // MenuKey hilited the File title; unhilite now so it doesn't stay
+    // inverted for the rest of the suite run (see TbHiliteMenu above).
+    TbHiliteMenu(0)
     menuID = (result >> 16) & 0xFFFF
     item = result & 0xFFFF
 

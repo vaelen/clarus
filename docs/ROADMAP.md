@@ -1537,6 +1537,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   PostEvent glue declares a d1/a1 register-clobber list that is
   conservative but has not been independently verified against Inside
   Macintosh/real trap behavior.
+- **Menu-bar cleanup / per-window menu bars (found post-ui-scenario-
+  retirement, Andrew 2026-08-05):** toolbox-suite cases (and harness
+  windows generally) install menus they never tear down; more broadly, a
+  multi-window application may want its own menu-bar set per window
+  (swapped on activate), which needs its own design. Current behavior: a
+  composed suite program shows all app-scope menus, in declaration order,
+  for the whole run.
 
 ## Process conventions that worked (for future sessions)
 
