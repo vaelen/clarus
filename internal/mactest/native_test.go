@@ -282,28 +282,19 @@ func TestSmokeBounceOn68k(t *testing.T) {
 	checkUIGoldens(t, "smoke_bounce", out, exitCode, 0)
 }
 
-// TestAboutOn68k is Task 13's (native-5e resource parity) own spot-boot:
-// the `about` scenario natively -- an `app` section with all four
-// About-relevant properties set (testdata/ui/about.cla), no icon. This is
-// the first native boot to exercise the Apple-menu build
-// (rtUiBuildAppleMenu, runtime/clarus/ui.cla) and its About item dispatch
-// (rtUiAppleSelect -> rtUiTraceAbout) on real hardware. Note: the ported
-// runtime's rtUiAppleSelect ALWAYS traces the About fields instead of
-// drawing the real ParamText+Alert(129) dialog (ui.cla's own doc comment
-// on rtUiAppleSelect -- a deliberate, pre-existing simplification, not
-// something this task changed) -- so this boot does NOT actually exercise
-// Alert(129)/the ALRT 129 resource's Toolbox draw path; it exercises the
-// Apple-menu build/dispatch plumbing and confirms TestApp68kResourceParity's
-// ALRT/DITL 129 bytes sit in a resource fork that boots and runs cleanly
-// either way.
-func TestAboutOn68k(t *testing.T) {
-	requireMac(t)
-	eventsRel := filepath.Join("..", "..", "testdata", "ui", "about.events")
-	claRel := filepath.Join("..", "..", "testdata", "ui", "about.cla")
-	bin := buildNative68kUI(t, "about", eventsRel, claRel)
-	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
-	checkUIGoldens(t, "about", out, exitCode, 0)
-}
+// TestAboutOn68k (Task 13, native-5e resource parity) was retired by
+// test-consolidation Task 5 -- audit row N8, MERGE->N10: the About-box
+// open/verify/close sequence now lives inside smoke_mandel's own events
+// script (a `menu 1 1` line appended just before the final Quit), since
+// examples/mandelbrot.cla's own `app` section already populates all four
+// About-relevant properties (name/version/author/about) -- a merge target
+// the audit confirmed viable (docs/superpowers/specs/2026-08-06-test-
+// consolidation-audit.md, claim 4). testdata/ui/about.cla itself is NOT
+// deleted: internal/mactest/resparity_test.go's TestApp68kResourceParity
+// depends on it independently (its own "no declared icon" probe fixture,
+// unrelated to this UI-scenario coverage) -- only about.events/about.trace
+// (this scenario's own event script + golden, with no other consumer)
+// were retired alongside this test.
 
 // uiScenario68k is one row of uiScenarios68k (Task 14, native-5e): the
 // native-lane counterpart to ui_test.go's per-scenario Test functions,
@@ -329,13 +320,24 @@ type uiScenario68k struct {
 // retired pattern; see that task's own report for the migration). Not a
 // fixed count: this table shrinks task by task through that phase, so no
 // scenario-count number is hard-coded here or in the comments below.
+//
+// test-consolidation Task 5 retired 3 more rows and merged 2 more into
+// `texteditor`'s own row: smoke_menudemo (audit row N9, DELETE -- already
+// covered by testsuite/toolbox/cases_menus.cla + cases_events.cla's
+// MenuKeyMatches); opendoc/opendoc_empty (rows N11/N12, MERGE->N14/DELETE
+// -- opendoc's GetAppFiles-launch dispatch, including the space-containing
+// path, folded into texteditor.events via `launchdoc` lines against a new
+// companion source, testdata/ui/texteditor_opendoc_setup.cla, which writes
+// both real fixture files `on App.launch` so the real `file.readText`
+// openPath performs actually succeeds -- opendoc_empty's own no-launchdoc
+// startEmpty-fallback coverage needed no change, texteditor.events already
+// exercised it); texteditor_quit (row N15, MERGE->N14 -- its multi-window
+// quit-cascade, save-then-close then cancel-aborts-the-whole-quit, folded
+// onto texteditor.events' own tail, reusing its post-roundtrip windows
+// instead of two fresh ones).
 var uiScenarios68k = []uiScenario68k{
-	{name: "smoke_menudemo", claRel: []string{filepath.Join("..", "..", "examples", "menu-demo.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_menudemo.events")},
 	{name: "smoke_mandel", claRel: []string{filepath.Join("..", "..", "examples", "mandelbrot.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_mandel.events"), check: checkSmokeMandelSnaps},
-	{name: "opendoc", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc.events")},
-	{name: "opendoc_empty", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc_empty.events")},
-	{name: "texteditor", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor.events")},
-	{name: "texteditor_quit", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor_quit.events")},
+	{name: "texteditor", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla"), filepath.Join("..", "..", "testdata", "ui", "texteditor_opendoc_setup.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor.events")},
 	{name: "bookmarks", claRel: []string{filepath.Join("..", "..", "examples", "bookmarks.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "bookmarks.events"), check: checkBookmarksSnaps},
 }
 
@@ -343,10 +345,14 @@ var uiScenarios68k = []uiScenario68k{
 // UI scenarios/events/goldens ui_test.go's Retro68-ported lane already
 // passes (see uiScenarios68k's own comment above for why no fixed count
 // is quoted here), this time built with `clarusc emit68k` (no Retro68/cmake/C) and
-// booted the same way TestSmokeBounceOn68k/TestAboutOn68k already are.
-// smoke_bounce and about are NOT repeated here: each already
-// has its own standalone Test*On68k (Task 12/13), and folding them into
-// this table would just rename an existing green test for no benefit.
+// booted the same way TestSmokeBounceOn68k already is.
+// smoke_bounce is NOT repeated here: it already has its own standalone
+// Test*On68k (Task 12), and folding it into this table would just rename
+// an existing green test for no benefit. about (Task 13's own former
+// standalone Test*On68k) was retired outright by test-consolidation
+// Task 5 -- its coverage now lives inside smoke_mandel's own row above
+// (audit row N8, MERGE->N10; see TestAboutOn68k's own retirement comment
+// further up this file).
 //
 // Native NEVER blesses: CLARUS_MAC_BLESS=1 is a hard failure here, even
 // though checkUIGoldens itself would happily rewrite goldens under it (the

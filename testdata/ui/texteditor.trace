@@ -1,3 +1,4 @@
+T OPENDOC Report.txt
 T OPEN Doc 1
 T DIM File.Save 1
 T DIM File.SaveAs 1
@@ -6,6 +7,31 @@ T DIM Edit.Copy 1
 T DIM Edit.Paste 1
 T DIM Edit.Clear 1
 T FRONT Doc 1
+T OPENDOC My Notes.txt
+T OPEN Doc 2
+T FRONT Doc 2
+T FIRE Doc.closeRequest
+T CLOSE Doc 2
+T FRONT Doc 1
+T FIRE Doc.closed
+T FIRE Doc.closeRequest
+T CLOSE Doc 1
+T DIM File.Save 0
+T DIM File.SaveAs 0
+T DIM Edit.Cut 0
+T DIM Edit.Copy 0
+T DIM Edit.Paste 0
+T DIM Edit.Clear 0
+T FIRE Doc.closed
+T FIRE File.New.select
+T OPEN Doc 3
+T DIM File.Save 1
+T DIM File.SaveAs 1
+T DIM Edit.Cut 1
+T DIM Edit.Copy 1
+T DIM Edit.Paste 1
+T DIM Edit.Clear 1
+T FRONT Doc 3
 T FIRE Doc.Body.change
 T FIRE Doc.Body.change
 T FIRE Doc.Body.change
@@ -23,7 +49,7 @@ T FIRE Doc.Body.change
 T FIRE File.Save.select
 T ASKSAVE texteditor-roundtrip.txt
 T FIRE Doc.closeRequest
-T CLOSE Doc 1
+T CLOSE Doc 3
 T DIM File.Save 0
 T DIM File.SaveAs 0
 T DIM Edit.Cut 0
@@ -33,16 +59,52 @@ T DIM Edit.Clear 0
 T FIRE Doc.closed
 T FIRE File.Open.select
 T ASKOPEN texteditor-roundtrip.txt
-T OPEN Doc 2
+T OPEN Doc 4
 T DIM File.Save 1
 T DIM File.SaveAs 1
 T DIM Edit.Cut 1
 T DIM Edit.Copy 1
 T DIM Edit.Paste 1
 T DIM Edit.Clear 1
-T FRONT Doc 2
+T FRONT Doc 4
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE File.New.select
+T OPEN Doc 5
+T FRONT Doc 5
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
+T FIRE Doc.Body.change
 T FIRE Doc.closeRequest
-T CLOSE Doc 2
+T ASKCHANGES save
+T ASKSAVE texteditor-quit-1.txt
+T CLOSE Doc 5
+T FRONT Doc 4
+T FIRE Doc.closed
+T FIRE Doc.closeRequest
+T ASKCHANGES cancel
+T FIRE Doc.closeRequest
+T ASKCHANGES discard
+T CLOSE Doc 4
 T DIM File.Save 0
 T DIM File.SaveAs 0
 T DIM Edit.Cut 0

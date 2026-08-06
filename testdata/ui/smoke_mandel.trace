@@ -44,6 +44,7 @@ T FIRE File.New.select
 T FIRE every.0
 T FIRE every.0
 T FIRE every.0
+T ABOUT Mandelbrot|1.0|Andrew C. Young <andrew@vaelen.org>|An example Clarus application that displays the Mandelbrot set in a window.
 T FIRE File.Quit.select
 T FIRE Fractal.closeRequest
 T CLOSE Fractal 1

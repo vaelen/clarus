@@ -1,3 +1,9 @@
+launchdoc Report.txt
+launchdoc My Notes.txt
+snap docs
+close
+close
+menu 2 1
 click 200 60
 type Hello, Clarus!
 answer-save texteditor-roundtrip.txt
@@ -6,4 +12,14 @@ close
 answer-open texteditor-roundtrip.txt
 menu 2 2
 snap roundtrip
+click 200 60
+type more text
+menu 2 1
+click 200 60
+type Second document
+answer-changes save
+answer-save texteditor-quit-1.txt
+answer-changes cancel
+quit
+answer-changes discard
 quit

@@ -1,6 +1,0 @@
-T OPEN Main 1
-T FRONT Main 1
-T ABOUT AboutProbe|9.9|Probe Author|Probe about text.
-T FIRE Main.closeRequest
-T CLOSE Main 1
-T FIRE Main.closed

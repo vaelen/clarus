@@ -82,23 +82,17 @@ func pbmBytes(raw []byte) []byte {
 	return append([]byte("P4\n512 342\n"), raw...)
 }
 
-// runUIScenario builds testdata/ui/<scenario>.cla with its .events script
-// (scripts/build-mac.sh --test --events), runs it via the 4a LaunchAPPL
-// plumbing, and checks the trace against testdata/ui/<scenario>.trace and
-// every snap against testdata/uisnaps/<scenario>.<name>.pbm -- byte-exact,
-// unless CLARUS_MAC_BLESS=1, in which case both are (re)written instead
-// (snap size and exit code are still asserted even while blessing).
-func runUIScenario(t *testing.T, scenario string, wantExit int) []uiSnap {
-	t.Helper()
-	return runUIScenarioSrc(t, scenario, filepath.Join("..", "..", "testdata", "ui", scenario+".cla"), wantExit)
-}
-
-// runUIScenarioSrc is runUIScenario with an explicit source .cla path
-// (package-dir-relative) instead of the default testdata/ui/<scenario>.cla
-// convention -- Task 7 (mac-target-4b)'s acceptance-example smokes build
-// the EXAMPLES THEMSELVES (testdata/valid/bounce.cla, examples/menu-demo.cla)
-// directly, with only the .events script (and the trace/snap goldens) living
-// under testdata/ui/ per the usual convention.
+// runUIScenarioSrc builds claRel (a package-dir-relative source path) with
+// scenario's own .events script (scripts/build-mac.sh --test --events),
+// runs it via the 4a LaunchAPPL plumbing, and checks the trace against
+// testdata/ui/<scenario>.trace and every snap against testdata/uisnaps/
+// <scenario>.<name>.pbm -- byte-exact, unless CLARUS_MAC_BLESS=1, in which
+// case both are (re)written instead (snap size and exit code are still
+// asserted even while blessing). Its own default-path convenience wrapper,
+// runUIScenario (testdata/ui/<scenario>.cla), was retired by test-
+// consolidation Task 5 alongside its last caller (`about`) -- every
+// remaining scenario builds an example/testdata fixture under its own,
+// non-default path instead (Task 7's own precedent, mac-target-4b).
 func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
 	t.Helper()
 	return runUIScenarioBuild(t, scenario, claRel, wantExit)
@@ -176,12 +170,16 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestUIAbout: an `app` section with all four About-relevant properties set
-// -- the Apple menu's About item becomes "About AboutProbe..." and selecting
-// it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT
-// trace line (rt_ui_trace_about) instead of the name-only NoteAlert path a
-// program with no `app` section takes. No snaps.
-func TestUIAbout(t *testing.T) { runUIScenario(t, "about", 0) }
+// TestUIAbout was retired by test-consolidation Task 5 (audit row R2,
+// DELETE -- gap accepted per the audit's Decision 2: no suite GUI declares
+// an `app` section or clicks the Apple menu, so About-item dispatch has no
+// Retro68/real-Toolbox replacement and becomes native-lane-only, via
+// TestAboutOn68k's own retirement into smoke_mandel's row, audit row N8
+// MERGE->N10). testdata/ui/about.cla itself is NOT deleted:
+// TestApp68kResourceParity (resparity_test.go) depends on it independently
+// as its own "no declared icon" probe fixture, unrelated to this UI-
+// scenario coverage -- only about.events/about.trace (this scenario's own
+// event script + golden) were retired alongside this test.
 
 // TestSmokeBounceUIScenario is the gated-forever counterpart to Task 7's
 // real-input verification of the Ch11 bounce acceptance example: builds
@@ -210,25 +208,31 @@ func TestSmokeBounceUIScenario(t *testing.T) {
 	}
 }
 
-// TestSmokeMenuDemoUIScenario is the gated-forever counterpart to Task 7's
-// real-input verification of the menu-demo acceptance example: builds
-// examples/menu-demo.cla ITSELF, scripts a menu selection (Toggle),
-// opening the scoped window (New Aux, undimming Aux Only), selecting the
-// now-enabled window-scoped item, closing it again (re-dimming), and a
-// snap, then quits via the menu -- covering menu select, the dim/undim
-// transition pair, and a snap in one gated scenario.
-func TestSmokeMenuDemoUIScenario(t *testing.T) {
-	runUIScenarioSrc(t, "smoke_menudemo", filepath.Join("..", "..", "examples", "menu-demo.cla"), 0)
-}
+// TestSmokeMenuDemoUIScenario was retired by test-consolidation Task 5
+// (audit row R4, DELETE -- already covered by testsuite/toolbox/
+// cases_menus.cla's app-scope + window-scoped menu items with dim/undim,
+// plus cases_events.cla:87's MenuKeyMatches for shortcut dispatch; see
+// audit claim 3 -- smoke_menudemo.events itself never actually pressed a
+// keyboard shortcut, only `menu` verb lines, so its own name overclaimed
+// coverage it never tested). examples/menu-demo.cla itself is untouched
+// (still the toolbox suite's own GUI-menu vocabulary example); only
+// smoke_menudemo.events/.trace and its testdata/uisnaps/smoke_menudemo.
+// S1.pbm snap (this scenario's own fixtures, no other consumer) were
+// retired alongside this test.
 
 // TestSmokeMandelUIScenario builds examples/mandelbrot.cla ITSELF (the
 // canvas-pattern acceptance app) and scripts its progressive render: S1
 // after 10 ticks (a rough 16px band), S2 after 40 (first pass complete,
 // second underway) -- must differ (refinement actually progressed); then
 // File > New resets, S3 after 3 more ticks must differ from S2 (the New
-// clear + fresh coarse samples), and File > Quit exits 0. Fixed-point
-// math plus the constant per-tick budget makes all three snaps
-// deterministic.
+// clear + fresh coarse samples). test-consolidation Task 5 (audit row N8,
+// MERGE->N10) then folds in the retired `about` scenario's own coverage:
+// right after S3, `menu 1 1` (Apple menu, item 1 -- About Mandelbrot...)
+// emits the ABOUT trace line against examples/mandelbrot.cla's own `app`
+// section (name/version/author/about all populated, unlike about.cla's
+// values but the same four-field shape), and File > Quit exits 0.
+// Fixed-point math plus the constant per-tick budget makes all three
+// snaps deterministic.
 func TestSmokeMandelUIScenario(t *testing.T) {
 	checkSmokeMandelSnaps(t, runUIScenarioSrc(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0))
 }
@@ -252,56 +256,70 @@ func checkSmokeMandelSnaps(t *testing.T, snaps []uiSnap) {
 	}
 }
 
-// TestOpenDocUIScenario (mac-target-4c Task 5) drives testdata/ui/
-// opendoc.cla under the "opendoc" scenario name -- its own opendoc.events
-// lists two `launchdoc` lines (the second path containing a space),
-// consumed by rt_ui_launch's pre-scan (runtime/mac/rt_ui.c) before
-// rt_ui_run's per-event loop starts. Each line opens its own Reader
-// window and labels it with the exact path received; the trace's two `T
-// OPENDOC <path>` lines plus the "docs" snap of the frontmost (second,
-// space-containing) document's window are the two independent proofs
-// both documents arrived intact.
-func TestOpenDocUIScenario(t *testing.T) {
-	runUIScenarioSrc(t, "opendoc", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0)
-}
-
-// TestOpenDocEmptyUIScenario (mac-target-4c Task 5) drives the SAME
-// testdata/ui/opendoc.cla under the "opendoc_empty" scenario name --
-// opendoc_empty.events names no `launchdoc` line at all, so rt_ui_launch's
-// pre-scan finds nothing and falls back to App.startEmpty, same as a real
-// System 6/7 launch with zero documents (CountAppFiles/AppleEvents alike).
-func TestOpenDocEmptyUIScenario(t *testing.T) {
-	runUIScenarioSrc(t, "opendoc_empty", filepath.Join("..", "..", "testdata", "ui", "opendoc.cla"), 0)
-}
+// TestOpenDocUIScenario/TestOpenDocEmptyUIScenario were retired by
+// test-consolidation Task 5 (audit rows R6/R7, DELETE -- gap accepted per
+// the audit's Decision 2: no suite GUI exercises App.openDocument/
+// GetAppFiles, so doc-launch coverage has no Retro68/real-Toolbox
+// replacement and becomes native-lane-only). Both scenarios' own unique
+// proofs live on natively: opendoc's GetAppFiles-launch dispatch
+// (including the space-containing path) folded into texteditor's own
+// row, audit row N11 MERGE->N14 (see TestTexteditorUIScenario below);
+// opendoc_empty's App.startEmpty fallback needed no fold at all --
+// texteditor.events already exercises that path whenever no launchdoc
+// line is queued ahead of it (audit row N12, DELETE, redundant).
+// testdata/ui/opendoc.cla (shared by both retired scenarios, no other
+// consumer) and both scenarios' own events/trace/snap goldens were
+// deleted alongside these tests.
 
 // TestTexteditorUIScenario (Task 6, mac-target-4c) drives examples/
-// texteditor.cla ITSELF -- the 4c acceptance app -- through a real save/
-// reopen round trip: type into the startEmpty document, File > Save
-// (askSave fills the path, file.writeText writes it for real), a clean
-// `close` (dirty was reset by the successful save, so no askSaveChanges
-// prompt), then File > Open the SAME path (askOpen fills it again,
-// file.readText reads the real bytes back via openPath -- the identical
-// function App.openDocument would call) and a snap proving the reopened
-// window shows the same content. See texteditor.events for the full
-// script.
+// texteditor.cla PLUS a test-consolidation-Task-5-added companion source,
+// testdata/ui/texteditor_opendoc_setup.cla (`on App.launch`, writes two
+// small real fixture files -- see that file's own header comment for why
+// launch, not startEmpty) -- through texteditor.events' now-merged script:
+//
+//  1. `launchdoc Report.txt` / `launchdoc My Notes.txt` (the second path
+//     containing a space) dispatch two real App.openDocument calls before
+//     the ordinary script begins -- rt_ui_launch's pre-scan trace (`T
+//     OPENDOC <path>`) plus a "docs" snap of the frontmost (second,
+//     space-containing) document prove both documents arrived intact and
+//     were actually read (examples/texteditor.cla's openPath, a REAL
+//     file.readText -- stronger than the retired opendoc.cla's simplified
+//     echo). Audit row N11, MERGE->N14. Both launched windows are then
+//     closed, returning to zero open Docs.
+//  2. File > New opens a fresh Doc; the ORIGINAL 4c round-trip proof
+//     follows unchanged: type, File > Save (askSave fills the path,
+//     file.writeText writes it for real), a clean `close` (not dirty, no
+//     askSaveChanges prompt), then File > Open the SAME path (askOpen
+//     fills it again, file.readText reads the real bytes back) and a
+//     snap proving the reopened window shows the same content.
+//  3. The retired texteditor_quit scenario's own multi-window quit-cascade
+//     proof (audit row N15, MERGE->N14) folds onto the tail: the just-
+//     reopened doc gets a further edit (dirty), a second File > New doc
+//     gets its own edit (dirty, frontmost). The first `quit` cascades
+//     front-to-back (rt_ui_quit, runtime/mac/rt_ui.c): the frontmost doc
+//     answers Save (+ askSave's own path prompt) and closes for real; the
+//     other answers Cancel, aborting the WHOLE quit where it stands --
+//     already-closed stays closed, not-yet-visited stays open. The second
+//     `quit` then finds only that one doc still open and discards it
+//     (answer-changes discard), exiting 0.
+//
+// See texteditor.events for the exact merged script.
 func TestTexteditorUIScenario(t *testing.T) {
-	runUIScenarioSrc(t, "texteditor", filepath.Join("..", "..", "examples", "texteditor.cla"), 0)
+	requireMac(t)
+	bin := runBuildMac(t, "UITexteditor",
+		filepath.Join("..", "..", "examples", "texteditor.cla"),
+		filepath.Join("..", "..", "testdata", "ui", "texteditor_opendoc_setup.cla"),
+		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", "texteditor.events"))
+	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
+	checkUIGoldens(t, "texteditor", out, exitCode, 0)
 }
 
-// TestTexteditorQuitUIScenario (Task 6, mac-target-4c) is the 4b
-// carry-over multi-window quit-cascade fixture: two dirty documents (Doc1
-// from App.startEmpty, Doc2 from File > New, frontmost). The first `quit`
-// cascades front-to-back (rt_ui_quit, runtime/mac/rt_ui.c): Doc2 answers
-// Save (+ askSave's own path prompt) and closes for real; Doc1 answers
-// Cancel, aborting the WHOLE quit where it stands. Per the quit-cascade
-// contract (Ch7 "Quit Semantics"), Doc2 -- already closed before the
-// cancel -- stays closed, and Doc1 -- not yet visited -- stays open; the
-// trace must show exactly one CLOSE before the abort and none after. The
-// second `quit` then finds only Doc1 still open and discards it, exiting
-// 0.
-func TestTexteditorQuitUIScenario(t *testing.T) {
-	runUIScenarioSrc(t, "texteditor_quit", filepath.Join("..", "..", "examples", "texteditor.cla"), 0)
-}
+// TestTexteditorQuitUIScenario was retired by test-consolidation Task 5
+// (audit row R9, DELETE -- its multi-window quit-cascade proof folded
+// onto TestTexteditorUIScenario's own tail instead, audit row N15
+// MERGE->N14; see that test's own header comment). texteditor_quit.events/
+// .trace (this scenario's own fixtures, no other consumer) were deleted
+// alongside this test.
 
 // TestTexteditorBigfileUIScenario/checkTexteditorBigfileCapture (Task 6,
 // mac-target-4c) were retired by test-consolidation Task 4: the
@@ -310,8 +328,9 @@ func TestTexteditorQuitUIScenario(t *testing.T) {
 // (testsuite/toolbox/cases_bigtext.cla) -- see that file's header comment
 // for the full assertion mapping and for what stays native-only (this
 // guard's own alert-message/close-cascade business logic, still covered by
-// examples/texteditor.cla staying in the `texteditor`/`texteditor_quit`
-// acceptance boots, audit rows N14/N15).
+// examples/texteditor.cla staying in the `texteditor` acceptance boot,
+// audit rows N14/N15 -- N15 (texteditor_quit) itself merged into that same
+// boot's own tail by test-consolidation Task 5).
 
 // TestBookmarksUIScenario (mac-target-4d Task 9) drives examples/
 // bookmarks.cla ITSELF -- the 4d acceptance app, Appendix C's Bookmark

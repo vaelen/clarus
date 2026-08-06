@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// texteditor_opendoc_setup.cla: gated-UI-scenario-ONLY companion, compiled
+// TOGETHER with examples/texteditor.cla (test-consolidation Task 5, audit
+// rows N11/R6 MERGE->N14/[texteditor]) -- never part of the acceptance app
+// itself. Its sole job is to self-write two small real fixture files,
+// entirely within the same boot texteditor.events then `launchdoc`s them
+// in, so `App.openDocument`'s real `file.readText` (examples/
+// texteditor.cla's `openPath`) SUCCEEDS instead of falling into its
+// couldn't-open `alert()` branch.
+//
+// That success matters mechanically, not just semantically: alert() text
+// is NOT part of the RT_MAC_TEST trace/snap vocabulary (rt_mac.c's
+// RT_MAC_TEST rt_alert / this port's nat_UiTestEmit both append straight
+// into the SAME capture stream parseUIOutput reads, as a bare line with
+// no "T " prefix), so an unhandled alert() firing mid-script would hit
+// parseUIOutput's "unexpected capture line" fatal. testdata/ui/
+// texteditor_bigfile_setup.cla (retired, test-consolidation Task 4) hit
+// this exact alert() deliberately, on purpose, and needed a bespoke
+// capture-stripping helper to cope; this fixture keeps both launchdoc'd
+// reads inside the textview's ordinary size range precisely to avoid
+// needing that machinery here.
+//
+// Hooked to `on App.launch` rather than `App.startEmpty`: per Ch7's
+// Launch Order, `launch` always fires first, but `startEmpty` and
+// `openDocument` are mutually exclusive -- and this scenario's whole
+// point is for BOTH launchdoc'd paths to dispatch openDocument, so the
+// write must happen on the one event that still runs on that branch.
+//
+// The second path ("My Notes.txt") deliberately contains a space --
+// the retired testdata/ui/opendoc.cla scenario's own proof that
+// rt_ui_launch's launchdoc pre-scan reads the REST OF THE LINE (not a
+// whitespace-split token) for a doc path; this file preserves that same
+// shape for texteditor.events' own launchdoc lines.
+on App.launch {
+    var t1: text
+    var t2: text
+
+    t1.append("Quarterly report draft.")
+    file.writeText("Report.txt", t1)
+
+    t2.append("Meeting notes for today.")
+    file.writeText("My Notes.txt", t2)
+}

@@ -1,6 +1,0 @@
-T OPEN Reader 1
-T FRONT Reader 1
-T SET Reader.Path.text (empty launch)
-T FIRE Reader.closeRequest
-T CLOSE Reader 1
-T FIRE Reader.closed
