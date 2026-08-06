@@ -31,7 +31,7 @@ Transcribing that into Clarus takes four steps:
 1. **Read off the name and parameters**, matching each Inside Macintosh type
    against the reference's own transcription table (Ch13). `CHAR` here is a
    `CharParameter`, which the table calls out specially: it maps to `word`,
-   **never** `char` — more on why in §3.
+   **never** `char` — more on why in §2.
 2. **Find the routine's trap word.** It is not in the Pascal signature above;
    it lives in Inside Macintosh's trap-word appendix (the "Trap Macros and
    Function Codes" tables), or, more conveniently for this codebase, in
@@ -52,7 +52,7 @@ Transcribing that into Clarus takes four steps:
    to `word`, per the table; only `LONGINT`/`OSType`/`Fixed` become `int`.
    Getting this step wrong is the single most common way a transcription
    compiles clean and then fails silently at runtime — the whole subject of
-   §3 below.
+   §2 below.
 
 ### Bit 11 is a real trap, not a pedantic rule
 
@@ -214,9 +214,10 @@ Retro68's own `Gestalt.h` (`#pragma parameter __D0 Gestalt(__D0, __A1)`), is
 `reg`'s NAMED form exists for exactly this: `reg(REG: paramName, ...)` binds
 each register explicitly instead of assigning by position, and an optional
 trailing `ret REG` names the result register (default is A0 for a `ptr`
-result, D0 otherwise — `Gestalt` returns a `word`, so it needs `ret d0`
-spelled out only because the positional default for a non-`ptr` result is
-already D0, but naming it here documents the real convention explicitly):
+result, D0 otherwise — `Gestalt` returns a `word`, so its default result
+register is already D0, and `ret d0` here is redundant with that default;
+it's spelled out anyway to document the real convention explicitly, not
+because the declaration needs it):
 
 ```rust
 external func Gestalt(selector: int, response: ptr): word =
@@ -419,7 +420,7 @@ UiTrackControl(ctrl, wherePt, rtUiScrollbarAction)
 `part` is declared `word`, not `int`: `ControlActionUPP` declares it pascal
 `short`, and `word` is the one callback-palette type that reproduces a pascal
 short's sign-extending marshal at the boundary — the same reasoning as
-`MenuKey`'s `ch` parameter in §3, just on the callback side of the
+`MenuKey`'s `ch` parameter in §2, just on the callback side of the
 convention instead of the `external func` side. The same file also calls
 `rtUiScrollbarAction` **directly**, as an ordinary function call, from its
 scripted-click test path — proof that a callback's body is a real,
@@ -616,19 +617,23 @@ ordinary top-level declarations with no special build-graph requirement.
 
 The one thing worth understanding before composing a catalog file alongside
 your own declarations, or alongside the runtime's own `Ui`-prefixed
-originals: the reference's dedup rule (Ch13, `external func`). Two `external
-func` declarations sharing a name are legal **if and only if they are
-identical** — same parameter list (types and order), same return type, same
-trap/inline clause in full (trap word, `sel`, calling convention, every
-register binding, `memerr`, and `ret`). The checker silently merges an
-identical repeat into the first declaration; every call site resolves to
-that one entry. This is exactly what lets `testsuite/toolbox/cases_event.cla`
-compose the catalog's `Point`/`EventRecord` alongside its own locally
-declared `Tb`-prefixed externs without collision — its own header comment
-notes it used to declare `Point`/`EventRecord` locally and now gets them from
-`toolbox/events.cla` instead, because (per that same comment) extern records
-have no dedup rule at all: keeping a second local copy would collide outright
-rather than merge.
+originals: the reference's dedup rule (Ch13, `external func`) — and, just as
+important, what it does **not** cover. Two `external func` declarations
+sharing a name are legal **if and only if they are identical** — same
+parameter list (types and order), same return type, same trap/inline clause
+in full (trap word, `sel`, calling convention, every register binding,
+`memerr`, and `ret`). The checker silently merges an identical repeat into
+the first declaration; every call site resolves to that one entry. The
+reference's own `TickCount` example (Ch13) shows the same trap declared
+twice, verbatim, merging cleanly. That rule is scoped to `external func`
+only — `extern record` has no dedup rule at all, identical or not, so two
+same-named record declarations simply collide. That is exactly why
+`testsuite/toolbox/cases_event.cla` no longer declares its own local
+`Point`/`EventRecord`: its own header comment notes it used to, and now gets
+them from `toolbox/events.cla` instead, because a second local copy would
+collide outright rather than merge. Its locally declared `Tb`-prefixed
+externs (the `external func` half) compose alongside the catalog's without
+collision precisely because the dedup rule above covers those.
 
 **When a redeclaration differs**, even in one small way — a different
 parameter type, a missing `memerr`, a `reg` clause where the other

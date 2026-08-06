@@ -1142,8 +1142,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      documented honestly rather than papered over (`osutils.cla`); a T1
      check test (`internal/testsuite/catalog_test.go`) pins it. (2) The
      `testsuite/toolbox` `Catalog` case wires the catalog into a real
-     suite build (22→23 real cases, 24 total incl. `SelfCheck`), sharing
-     `cases_event.cla`'s local `Point`/`EventRecord` types. (3) Rider 1:
+     suite build (22→23 real cases, 24 total incl. `SelfCheck`);
+     `cases_event.cla`'s local `Point`/`EventRecord` types were deleted in
+     favor of the catalog's copies from `toolbox/events.cla`. (3) Rider 1:
      `UiFlushEvents` (`0xA032`)'s mis-declared pascal-vs-OS/register
      convention (filed under item 2, above) fixed via the bit-11 rule; 14
      `emitui` + 5 `cg68k` goldens regenerated and verified byte-
