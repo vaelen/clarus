@@ -5,24 +5,75 @@
 // Macintosh I, "The Toolbox Event Manager"; PostEvent from II's OS Event
 // Manager). Pascal convention except PostEvent (bit 11 clear -> OS/reg).
 //
-// Provenance: Point/EventRecord field layout verified against Retro68
-// multiversal/defs/MacTypes.yaml (Point: v, h both INTEGER, size 4) and
-// defs/EventMgr.yaml (EventRecord: what INTEGER, message LONGINT, when
-// LONGINT, where Point, modifiers INTEGER, size 16) -- matches
-// word/int/int/Point/word below exactly. GetNextEvent/StillDown/GetMouse
-// proven verbatim against runtime/clarus/ui.cla's UiGetNextEvent
-// (0xA970)/UiStillDown (0xA973)/UiGetMouse (0xA972). EventAvail proven
-// verbatim against testsuite/toolbox/cases_event.cla's TbEventAvail
-// (0xA971). PostEvent proven verbatim (including the a0/d0 register
-// binding) against testsuite/toolbox/cases_uitest.cla:86's TbPostEvent
-// (0xA02F), empirically verified there by the PostEventClick case.
-// TickCount proven verbatim against testsuite/toolbox/cases_events.cla's
-// TbTickCount (0xA975). Button (0xA974) verified against Retro68
-// multiversal/defs/ToolboxEvent.yaml. Event-code/mask/modifier const
-// values verified against Retro68 multiversal/defs/EventMgr.yaml
-// (nullEvent..activateEvt, everyEvent = -1 i.e. 0xFFFF as a word,
-// activeFlag/btnState/cmdKey/shiftKey/alphaLock/optionKey/controlKey,
-// charCodeMask/keyCodeMask) and defs/OSEvent.yaml (osEvt = 15).
+// Provenance: Point/EventRecord field layout originally verified against
+// Retro68 multiversal/defs/MacTypes.yaml (Point) and defs/EventMgr.yaml
+// (EventRecord). GetNextEvent/StillDown/GetMouse proven verbatim against
+// runtime/clarus/ui.cla's UiGetNextEvent (0xA970)/UiStillDown
+// (0xA973)/UiGetMouse (0xA972). EventAvail proven verbatim against
+// testsuite/toolbox/cases_event.cla's TbEventAvail (0xA971). PostEvent
+// proven verbatim (including the a0/d0 register binding) against
+// testsuite/toolbox/cases_uitest.cla:86's TbPostEvent (0xA02F),
+// empirically verified there by the PostEventClick case, and separately
+// against CIncludes/Events.h's own `#pragma parameter __D0
+// PostEvent(__A0, __D0)`. TickCount proven verbatim against
+// testsuite/toolbox/cases_events.cla's TbTickCount (0xA975). Button
+// (0xA974) and the event-code/mask/modifier consts were originally
+// checked only against Retro68 multiversal/defs/ToolboxEvent.yaml,
+// defs/EventMgr.yaml, and defs/OSEvent.yaml.
+//
+// Apple-interfaces re-verification (toolbox-cookbook phase, 2026-08-07):
+// multiversal/defs/*.yaml is a third-party reconstruction and UNTRUSTED
+// WHEN CITED ALONE -- it already got a Toolbox response register wrong
+// once (Gestalt's `responsep`: yaml says A0, real 68k hardware wants A1;
+// see toolbox/osutils.cla). Every declaration below is now confirmed
+// directly against Apple's own Universal Interfaces 3.4
+// (Retro68/InterfacesAndLibraries/Interfaces); multiversal citations
+// above are secondary corroboration only, superseded here.
+//
+//   GetNextEvent  AIncludes/Events.a:457 `_GetNextEvent: OPWORD $A970`,
+//                 CIncludes/Events.h:454 `pascal Boolean
+//                 GetNextEvent(EventMask eventMask, EventRecord
+//                 *theEvent)` -- no register pragma, bit 11 set
+//                 (0xA970 & 0x0800 != 0), so plain pascal, no `reg`:
+//                 matches.
+//   EventAvail    AIncludes/Events.a:493 OPWORD $A971, same pascal shape
+//                 as GetNextEvent (bit 11 set): matches.
+//   PostEvent     AIncludes/Events.a:516 OPWORD $A02F; CIncludes/
+//                 Events.h:560 `#pragma parameter __D0 PostEvent(__A0,
+//                 __D0)` -- eventNum in A0, eventMsg in D0, OSErr result
+//                 in D0: matches `reg(a0: eventNum, d0: eventMsg) ret d0`
+//                 exactly.
+//   TickCount     CIncludes/OSUtils.h:602 `TickCount(void)
+//                 ONEWORDINLINE(0xA975)` -- no register pragma, bit 11
+//                 set: plain pascal, no `reg`, matches.
+//   Button        AIncludes/Events.a:199 OPWORD $A974, `pascal Boolean
+//                 Button(void)` -- no register pragma, bit 11 set:
+//                 matches.
+//   StillDown     AIncludes/Events.a:217 OPWORD $A973, same shape:
+//                 matches.
+//   GetMouse      AIncludes/Events.a:181 OPWORD $A972, `pascal void
+//                 GetMouse(Point *mouseLoc)` -- no register pragma, bit
+//                 11 set: matches.
+//   Point         AIncludes/MacTypes.a:483 `Point RECORD 0 / v ds.w 1
+//                 offset $0 / h ds.w 1 offset $2 / sizeof $4` -- matches
+//                 `v: word` then `h: word` exactly.
+//   EventRecord   AIncludes/Events.a:131 `EventRecord RECORD 0 / what
+//                 ds.w 1 offset $0 / message ds.l 1 offset $2 / when
+//                 ds.l 1 offset $6 / where ds Point offset $A / modifiers
+//                 ds.w 1 offset $E / sizeof $10` -- matches word/int/
+//                 int/Point/word below, in order, exactly.
+//   Event codes   CIncludes/Events.h:64-73 enum: nullEvent=0,
+//                 mouseDown=1, mouseUp=2, keyDown=3, keyUp=4, autoKey=5,
+//                 updateEvt=6, diskEvt=7, activateEvt=8, osEvt=15 --
+//                 matches. everyEvent=0xFFFF (Events.h:88): matches.
+//   Modifiers     CIncludes/Events.h:123-142: activeFlagBit=0 ->
+//                 activeFlag=0x0001, btnStateBit=7 -> btnState=0x0080,
+//                 cmdKeyBit=8 -> cmdKey=0x0100, shiftKeyBit=9 ->
+//                 shiftKey=0x0200, alphaLockBit=10 -> alphaLock=0x0400,
+//                 optionKeyBit=11 -> optionKey=0x0800, controlKeyBit=12
+//                 -> controlKey=0x1000 -- matches.
+//   Message masks CIncludes/Events.h:92-93: charCodeMask=0x000000FF,
+//                 keyCodeMask=0x0000FF00 -- matches.
 //
 // Per-mask event masks (mDownMask etc.) are deliberately omitted --
 // everyEvent covers the curated use cases; add on demand.

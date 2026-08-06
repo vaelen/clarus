@@ -15,15 +15,75 @@
 // cases_gestalt.cla's TbNewPtr/TbDisposePtr, both already-shipped `reg`
 // declarations with the same trap words. HLock/HUnlock (0xA029/0xA02A)
 // proven verbatim against runtime/clarus/native.cla's NatHLock/
-// NatHUnlock. GetHandleSize (0xA025) verified against Retro68
-// multiversal/defs/MemoryMgr.yaml: `h` register A0 in, return register
-// D0 -- an OS/reg trap, matching the `reg` binding below. MoreMasters
-// (0xA036) verified against the same MemoryMgr.yaml (trap 0xA036, no
-// args) and proven trap-word-identical to runtime/clarus/native.cla's
-// NatMoreMasters (declared there as plain pascal, harmless for a
-// zero-arg void trap where reg/pascal calling convention is
-// indistinguishable at the call site); this catalog uses `reg` per the
-// bit-11 rule.
+// NatHUnlock. GetHandleSize (0xA025) and MoreMasters (0xA036) were
+// originally checked only against Retro68 multiversal/defs/MemoryMgr.yaml.
+//
+// Apple-interfaces re-verification (toolbox-cookbook phase, 2026-08-07):
+// every trap word and register binding below is now confirmed directly
+// against Apple's own Universal Interfaces 3.4
+// (Retro68/InterfacesAndLibraries/Interfaces), the authoritative source --
+// multiversal/defs/*.yaml is a third-party reconstruction of those same
+// tables and is UNTRUSTED WHEN CITED ALONE: it already got one Memory
+// Manager sibling wrong once (Gestalt's response register -- yaml says
+// A0, real 68k hardware wants A1; see toolbox/osutils.cla). Any
+// multiversal citation above should be read as secondary corroboration
+// only, superseded by the citations below.
+//
+//   NewPtr        CIncludes/MacMemory.h:547 `#pragma parameter __A0
+//                 NewPtr(__D0)`; AIncludes/MacMemory.a:515 `_NewPtr:
+//                 OPWORD $A11E`. byteCount in D0, ptr result in A0 --
+//                 matches `reg` (no explicit ret: default result
+//                 register for a ptr return is A0).
+//   DisposePtr    CIncludes/MacMemory.h:1066 `#pragma parameter
+//                 DisposePtr(__A0)`; AIncludes/MacMemory.a:1209 OPWORD
+//                 $A01F. p in A0, void result.
+//   NewHandle     CIncludes/MacMemory.h:433 `#pragma parameter __A0
+//                 NewHandle(__D0)`; AIncludes/MacMemory.a:355 OPWORD
+//                 $A122. byteCount in D0, ptr result in A0.
+//   DisposeHandle CIncludes/MacMemory.h:1110 `#pragma parameter
+//                 DisposeHandle(__A0)`; AIncludes/MacMemory.a:1270 OPWORD
+//                 $A023. h in A0, void result.
+//   GetHandleSize CIncludes/MacMemory.h:1162 `#pragma parameter __D0
+//                 InlineGetHandleSize(__A0)`; AIncludes/MacMemory.a:1342
+//                 OPWORD $A025 (Apple's real GetHandleSize is a full CFM
+//                 call; InlineGetHandleSize is its 68k-direct inline
+//                 twin, same trap word). h in A0, result in D0 -- matches
+//                 `reg` exactly; the multiversal-only citation above is
+//                 now redundant, not wrong.
+//   SetHandleSize CIncludes/MacMemory.h:1125 `#pragma parameter
+//                 SetHandleSize(__A0, __D0)`; AIncludes/MacMemory.a:1291
+//                 OPWORD $A024. h in A0, newSize in D0, matches `reg`
+//                 positionally. The `memerr` clause is independently
+//                 confirmed by AIncludes/Memory.a:402's own MemError():
+//                 `TWOWORDINLINE(0x3EB8, 0x0220)` is literally `MOVE.W
+//                 $0220,D0` -- MemError is nothing but a direct read of
+//                 the low-memory MemErr global at $0220, exactly the
+//                 mechanism `reg memerr` models. CIncludes/MacMemory.h's
+//                 own comment above SetHandleSize/GetHandleSize confirms
+//                 the shape too: "the traps actually return an error
+//                 code in D0 ... the glue sets D0 to 0 if an error
+//                 occurred" for the reads; SetHandleSize itself is a true
+//                 void PROCEDURE trap (no result register at all in its
+//                 pragma) whose real error status is MemErr-only, per
+//                 Inside Macintosh's own Memory Manager chapter.
+//   HLock         CIncludes/MacMemory.h:709 `#pragma parameter
+//                 HLock(__A0)`; AIncludes/MacMemory.a:731 OPWORD $A029.
+//   HUnlock       CIncludes/MacMemory.h:724 `#pragma parameter
+//                 HUnlock(__A0)`; AIncludes/MacMemory.a:751 OPWORD $A02A.
+//   BlockMoveData CIncludes/MacMemory.h:1408 `#pragma parameter
+//                 BlockMoveData(__A0, __A1, __D0)`; AIncludes/
+//                 MacMemory.a:1658 OPWORD $A22E. srcPtr/destPtr/
+//                 byteCount in A0/A1/D0 -- matches `reg`'s positional
+//                 rule (two ptr params get A0 then A1 in declaration
+//                 order, the one int param gets D0) exactly.
+//   MoreMasters   CIncludes/MacMemory.h:1515 `MoreMasters(void)
+//                 ONEWORDINLINE(0xA036)` (no register pragma -- zero
+//                 args, void result); AIncludes/MacMemory.a:1781 OPWORD
+//                 $A036.
+//
+// All ten trap words above are bit-11-clear (`trap & 0x0800 == 0`, per
+// the Ch13 reading rule), confirming the `reg` convention this whole
+// file uses.
 
 external func NewPtr(byteCount: int): ptr = trap 0xA11E reg
 external func DisposePtr(p: ptr) = trap 0xA01F reg

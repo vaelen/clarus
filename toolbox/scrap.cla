@@ -10,19 +10,27 @@
 // TE-prefixed entries in Retro68 multiversal/defs/ScrapMgr.yaml either.
 //
 // Provenance: ZeroScrap proven verbatim against runtime/clarus/ui.cla's
-// UiZeroScrap (0xA9FC). PutScrap (0xA9FE) and GetScrap (0xA9FD) already
-// verified against multiversal defs/ScrapMgr.yaml per
-// runtime/clarus/uitext.cla:144-145's comment; re-confirmed directly
-// here against the same defs/ScrapMgr.yaml. InfoScrap (0xA9F9),
-// LoadScrap (0xA9FB), UnloadScrap (0xA9FA) verified against defs/
-// ScrapMgr.yaml's own `function:` entries (trap words as listed). The
-// ScrapStuff peek-offset table below is verified against defs/
-// ScrapMgr.yaml's `struct: ScrapStuff` (members scrapSize: LONGINT,
-// scrapHandle: Handle, scrapCount: INTEGER, scrapState: INTEGER,
-// scrapName: StringPtr, size: 16), matching the lowmem globals
-// ScrapSize/ScrapHandle/ScrapCount/ScrapState/ScrapName at
-// 0x960/0x964/0x968/0x96A/0x96C in the same file (consecutive offsets
-// confirm the field order/sizes below).
+// UiZeroScrap (0xA9FC). PutScrap (0xA9FE) and GetScrap (0xA9FD) were
+// originally verified against multiversal defs/ScrapMgr.yaml per
+// runtime/clarus/uitext.cla:144-145's comment. InfoScrap (0xA9F9),
+// LoadScrap (0xA9FB), UnloadScrap (0xA9FA), and the ScrapStuff
+// peek-offset table below were likewise originally checked only against
+// defs/ScrapMgr.yaml's own `function:`/`struct: ScrapStuff` entries.
+//
+// Apple-interfaces re-verification (toolbox-cookbook phase, 2026-08-07):
+// multiversal/defs/*.yaml is a third-party reconstruction and UNTRUSTED
+// WHEN CITED ALONE -- it already got a Toolbox response register wrong
+// once (Gestalt's `responsep`: yaml says A0, real 68k hardware wants A1;
+// see toolbox/osutils.cla). Every trap word and the ScrapStuff layout
+// below are now confirmed directly against Apple's own Universal
+// Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces): AIncludes/
+// Scrap.a confirms ZeroScrap $A9FC / GetScrap $A9FD / PutScrap $A9FE /
+// InfoScrap $A9F9 / LoadScrap $A9FB / UnloadScrap $A9FA, and CIncludes/
+// Scrap.h:125-131's `struct ScrapStuff` (scrapSize: SInt32, scrapHandle:
+// Handle, scrapCount: SInt16, scrapState: SInt16, scrapName: StringPtr,
+// declared in that order) lays out to the same sequential offsets/sizes
+// 0/4/8/$A/$C, size $10, listed below -- multiversal citations above are
+// secondary corroboration only, superseded by this direct check.
 //
 // InfoScrap returns a pointer to the ScrapStuff record; read it with
 // peek at these offsets (no extern-record conversion exists for a

@@ -34,13 +34,66 @@ Transcribing that into Clarus takes four steps:
    **never** `char` — more on why in §2.
 2. **Find the routine's trap word.** It is not in the Pascal signature above;
    it lives in Inside Macintosh's trap-word appendix (the "Trap Macros and
-   Function Codes" tables), or, more conveniently for this codebase, in
-   Retro68's own machine-readable transcription of those tables under
-   `Retro68/InterfacesAndLibraries` (the CIncludes headers, which `#define`
-   the trap constants) and `multiversal/defs/*.yaml` (a structured per-call
-   listing of trap word, register bindings, and result location this repo's
-   catalog work leans on heavily — see the provenance comments atop
-   `toolbox/*.cla`). `MenuKey`'s trap word is `0xA93E`.
+   Function Codes" tables). The authoritative machine-readable source for
+   this repo is Apple's own Universal Interfaces 3.4, checked out at
+   `Retro68/InterfacesAndLibraries/Interfaces`:
+
+   - **`AIncludes/*.a`** — the assembly-language interfaces. Each routine's
+     `OPWORD $Axxx` line is the trap word itself, verbatim, plus `RECORD`
+     blocks giving struct field offsets (e.g. `AIncludes/Events.a`'s
+     `EventRecord RECORD 0` block, or `AIncludes/Scrap.a`'s `ScrapStuff`).
+     This is the ground truth for "what is the trap word."
+   - **`CIncludes/*.h`** — the C interfaces. A `#pragma parameter __D0
+     Name(__A0, __D0)`-style line just above a routine's declaration gives
+     its exact register convention (which argument goes in which register,
+     and where the result comes back); a bare declaration with no such
+     pragma is the plain Pascal/stack convention. `ONEWORDINLINE`/
+     `TWOWORDINLINE`/`THREEWORDINLINE` macros give the trap word (first
+     word) plus any compiler-generated glue instructions that run
+     immediately after it (see the Delay walkthrough in
+     `toolbox/osutils.cla`'s own header comment for why that glue matters:
+     it can hide a second parameter that never touches the raw trap).
+   - **`PInterfaces/*.p`** — the Pascal interfaces, with `INLINE` clauses
+     giving the same trap words in Pascal's own compiler-inline syntax, a
+     third independent cross-check when the first two are ambiguous.
+
+   **A file-handling gotcha worth knowing up front:** these three
+   directories are ISO-8859 text with CR (`\r`) line terminators and
+   occasional high bytes (comment-box art, mostly) — a plain recursive
+   `grep -r` silently returns nothing, because every file looks like one
+   giant line with no `\n` in it. Read them with the line terminator
+   translated first:
+
+   ```sh
+   LC_ALL=C tr '\r' '\n' < AIncludes/Events.a | LC_ALL=C grep -n 'OPWORD'
+   ```
+
+   (or pipe through `sed -n` afterwards for a range). `LC_ALL=C` keeps the
+   high bytes from being treated as invalid multibyte sequences and
+   silently dropped or erroring out.
+
+   Retro68 also ships its own machine-readable *reconstruction* of these
+   same tables under `multiversal/defs/*.yaml` (trap word, register
+   bindings, result location, one file per Manager) — this repo's earlier
+   catalog work leaned on it heavily, and older provenance comments in
+   `toolbox/*.cla` cite it. **Treat multiversal as untrusted when cited
+   alone.** It has already been wrong once, for a routine in this exact
+   catalog: `multiversal/defs/Gestalt.yaml` claims Gestalt's `responsep`
+   parameter is `register: Out<A0>`; the real 68k convention — confirmed
+   both by `CIncludes/Gestalt.h`'s own `#pragma parameter __D0
+   Gestalt(__D0, __A1)` and by a real hang on a native Mini vMac boot when
+   the wrong register was trusted (`runtime/clarus/ui.cla`'s `UiGestalt`
+   comment tells that story in full) — is **A1**, not A0. multiversal is
+   still useful as a quick index and a second opinion, but any trap word
+   or register binding it reports should be re-checked against the
+   AIncludes/CIncludes/PInterfaces sources above before being trusted on
+   its own, and the FINAL word belongs to empirical boot verification (a
+   real native `emit68k` boot on Mini vMac, or one of the gated
+   `internal/mactest` suites) whenever the two disagree or the stakes are
+   high enough to warrant it — a static header, however authoritative,
+   still can't catch a ROM behaving differently than documented.
+
+   `MenuKey`'s trap word is `0xA93E`.
 3. **Decide pascal vs. `reg` with the bit-11 test.** This is the reference's
    own normative rule (Ch13, "Transcribing Inside Macintosh Declarations"):
    a trap word's bit 11 (`trap & 0x0800`) says which calling convention a

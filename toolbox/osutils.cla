@@ -19,13 +19,49 @@
 // machine on a real native boot -- fixed by switching to `reg(d0:
 // selector, a1: response)`, i.e. A1, which is what this catalog uses and
 // what the empirical boot (not the multiversal defs) confirms is
-// correct. SysBeep proven verbatim
-// against runtime/clarus/ui.cla's UiSysBeep (0xA9C8). Delay (0xA03B)
-// verified against Retro68 multiversal/defs/OSUtil.yaml: `n` register
-// A0 in, `ftp` (final tick count) register `Out<D0>` -- i.e. the trap
-// takes one input register (A0) and returns its result via D0, matching
-// `reg(a0: numTicks) ret d0` below exactly (no correction needed from
-// the brief's provisional binding).
+// correct. This is the reason multiversal is treated as UNTRUSTED WHEN
+// CITED ALONE file-wide in this catalog (see below): it already produced
+// one wrong register binding, so every other multiversal-only citation
+// here has since been re-checked directly against Apple's own Universal
+// Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces), the
+// authoritative source, and is superseded by that re-check.
+//
+//   Gestalt  Directly re-confirmed (toolbox-cookbook phase, 2026-08-07)
+//            against CIncludes/Gestalt.h:64 `#pragma parameter __D0
+//            Gestalt(__D0, __A1)` and AIncludes/Gestalt.a:43 `_Gestalt:
+//            OPWORD $A1AD` -- selector in D0, response in A1, OSErr
+//            result in D0: matches `reg(d0: selector, a1: response) ret
+//            d0` exactly, and directly refutes multiversal's `Out<A0>`.
+//
+// SysBeep proven verbatim against runtime/clarus/ui.cla's UiSysBeep
+// (0xA9C8); re-confirmed directly against CIncludes/Sound.h:1487
+// `SysBeep(short duration) ONEWORDINLINE(0xA9C8)` (SysBeep moved out of
+// OSUtils.h into Sound.h in this SDK revision, per that header's own
+// comment) and AIncludes/Sound.a:1156 OPWORD $A9C8 -- no register
+// pragma, bit 11 set (0xA9C8 & 0x0800 != 0): plain pascal, no `reg`,
+// matches.
+//
+// Delay (0xA03B) was originally checked only against Retro68
+// multiversal/defs/OSUtil.yaml (`n` register A0 in, `ftp` register
+// `Out<D0>`). Directly re-confirmed against CIncludes/OSUtils.h:352-358
+// and AIncludes/OSUtils.a:320, with one correction to the story
+// multiversal told: Apple's real signature is TWO parameters, `Delay
+// (unsigned long numTicks, unsigned long *finalTicks)`, pragma
+// `Delay(__A0, __A1)` (note: no leading `__D0` -- the Pascal-level call
+// is a void PROCEDURE, not a function), glued as `TWOWORDINLINE(0xA03B,
+// 0x2280)`. Decoding that second word: `0x2280` is the raw 68k
+// instruction `MOVE.L D0,(A1)` -- ordinary compiler-emitted glue that
+// runs AFTER the trap returns, storing D0 through the caller-supplied
+// `finalTicks` pointer in A1. That proves the raw ROM trap itself, before
+// this glue instruction executes, already leaves the final tick count in
+// D0 and never reads A1 -- A1/finalTicks exists only to satisfy the
+// Pascal VAR-parameter ABI at the call site, not the trap's own
+// contract. This catalog's declaration below (one parameter, `ret d0`,
+// no A1 binding at all) is therefore a faithful, if reduced,
+// transcription: it reads the exact same D0 value Apple's glue would
+// also copy into `*finalTicks`, just without bothering to also write it
+// through a second pointer this codebase never needed. numTicks-in-A0
+// matches on both accounts.
 
 const gestaltSystemVersion: int = 0x73797376
 

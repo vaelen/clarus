@@ -143,7 +143,15 @@ external func UiTEGetScrapLength(): int
 // desk-scrap bridge for the monostyled TE records this runtime uses.
 // TEScrpHandle ($0AB4) / TEScrpLength ($0AB0) are the documented TE
 // low-memory scrap globals (nat_UiTEGetScrapLength below already reads
-// $0AB0). 'TEXT' == 0x54455854. TE scrap length is a 16-bit global:
+// $0AB0). Apple-interfaces re-verification (toolbox-cookbook phase,
+// 2026-08-07): directly confirmed against Apple's own Universal
+// Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces) --
+// AIncludes/LowMemEqu.a:530-531 `TEScrpLength EQU $AB0` / `TEScrpHandle
+// EQU $AB4`, and CIncludes/LowMem.h's own LMGetTEScrpLength/
+// LMGetTEScrpHandle inlines (`TWOWORDINLINE(0x3EB8, 0x0AB0)` /
+// `TWOWORDINLINE(0x2EB8, 0x0AB4)`, both plain direct reads of those
+// addresses) confirm the same two globals independent of multiversal's
+// TextEdit.yaml. 'TEXT' == 0x54455854. TE scrap length is a 16-bit global:
 // clamp an oversized desk scrap at 32767 -- rtUiStdEditPaste's own
 // overflow guard re-checks against the textview limit downstream. This
 // supersedes the prior no-op DEFERRED STUBS (Task 12): real TEFromScrap/
