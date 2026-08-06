@@ -1578,15 +1578,29 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   a codegen heuristic (e.g. deepest static call chain × worst-case frame
   size) could pick the reserve automatically, with the `app` setting as
   the manual override.
-- **Cross-lane `string(n)` record-field alignment divergence (found during
-  small-scalar-width Task 4, 2026-08-05):** cg68k's `cgRecFieldAlignOf`
-  gives a `string(n)` record field 2-byte alignment; cprint's
-  `cpCAlignOfField` gives the same field 1-byte alignment. Per-lane record
-  layouts are never cross-used (host and native each lay out their own
-  records independently), so this is latent, not a live bug — but it
-  should be resolved (pick one alignment and match it) or explicitly
-  documented as intended divergence before the Ch13 cookbook freezes
-  wording that could imply a single cross-lane layout.
+- **Cross-lane `string(n)` record-field alignment divergence: DONE** —
+  fixed on branch `strn-field-alignment` (2026-08-06): the cprint lane now
+  gives a `string(n)` record field 2-byte alignment and even-rounded size
+  (even-padded `clar_str_n` typedef + explicit `clar_pad` struct members),
+  matching cg68k, so str-bearing record offsets coincide across the two
+  Mac lanes. Spec:
+  `docs/superpowers/specs/2026-08-06-strn-field-alignment-design.md`.
+- **Remaining odd-C-size record-layout divergences (filed 2026-08-06,
+  strn-field-alignment spec Out-of-scope):** the same divergence family
+  the `string(n)` fix closed still exists for the other odd-C-sized field
+  kinds — `char[n]`/`bool[n]` array fields with odd n (cg68k even-rounds
+  the field slot, `char[3]` occupies 4 with 2-byte alignment; C packs at
+  exact size, natural alignment 1), the degenerate `char[1]`/`bool[1]`
+  case (where cg68k's even-rounded 2-byte slot arguably contradicts the
+  reference's "packs at 1-byte alignment, same as a bare bool/char field"
+  sentence — decide reference wording vs `cgSlotSizeOf` before fixing),
+  and all-byte records (odd C `sizeof`, unrounded, struct alignment 1 —
+  diverging from cg68k's even-rounded `cgRecordSize` in total size,
+  nested-record field offset, and array-of-record stride). Same root
+  cause, rarer shapes, offsets never consumed cross-lane (latent). Note
+  the `string(n)` fix's pad walk already converges a `string(n)` field
+  that FOLLOWS one of these shapes; only non-str fields after them, and
+  the totals themselves, still diverge.
 
 ## Process conventions that worked (for future sessions)
 
