@@ -157,18 +157,31 @@ external func UiTEGetScrapLength(): int
 //
 // GetScrap's VAR offset out-param: this task's own brief called for an
 // `extern record` local decaying to a ptr at the call site (the
-// language's only address-of). Verified while implementing (the brief's
-// own instruction) -- that decay path crashes clarusc's native emit68k
-// backend ("runtime error: list index out of range", reproduced in
-// isolation: the SAME call compiles clean when the argument is a plain
-// `ptr` instead of a decayed extern-record var). No other file in this
-// tree exercises extern-record decay at a call site, so this is a
-// previously-latent cg68k bug, not a regression from this task; clarusc/
-// *.cla is off-limits to this task's own scope (CLAUDE.md), so the
-// workaround below -- a real UiNewPtr(4)/UiDisposePtr scratch slot, the
-// exact allocator pattern rtUiScriptClick (uiscript.cla) already uses
-// for a throwaway fixed-size buffer -- sidesteps the decay path
-// entirely rather than fixing the compiler.
+// language's only address-of). Extern-record decay at a call site is NOT
+// novel by itself -- testsuite/toolbox/cases_event.cla's own
+// caseEventXRec already does exactly this against a real trap
+// (TbEventAvail(0xFFFF, ev), ev: EventRecord) and passes on the native
+// lane today. But `clarusc emit68k` genuinely crashed twice, directly
+// observed ("runtime error: list index out of range", nonzero exit,
+// confirmed not a piping artifact), while first landing THIS file's own
+// decay-based nat_UiTEFromScrap. Extensive follow-up isolation (single-
+// vs multi-field record, standalone vs full runtime-module splice
+// context, the exact original failing file composition rebuilt and
+// re-run 28 times) could not reproduce it again -- see
+// .superpowers/sdd/2026-08-06-toolbox-cookbook/repro-decay-crash/
+// for the full attempt. Likely a rare, environment-sensitive clarusc bug
+// (an out-of-bounds read on one of clarusc's own dynamic-array-backed
+// tables would fit "list index out of range" and would plausibly depend
+// on the compiling PROCESS's own heap layout, not the source being
+// compiled) rather than a clean, isolable "decay in a runtime module"
+// bug -- NOT a hard rule "decay never works here" (cases_event.cla is
+// living proof it does). clarusc/*.cla is off-limits to this task's own
+// scope (CLAUDE.md) either way, so the workaround below -- a real
+// UiNewPtr(4)/UiDisposePtr scratch slot, the exact allocator pattern
+// rtUiScriptClick (uiscript.cla) already uses for a throwaway fixed-size
+// buffer -- sidesteps decay entirely rather than fixing or re-diagnosing
+// the compiler further: it is proven correct (24/24 both lanes,
+// repeatedly) and costs two extra lines.
 func nat_UiTEFromScrap(): int {
     var th: ptr
     var offSlot: ptr
