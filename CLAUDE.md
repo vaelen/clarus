@@ -4,6 +4,8 @@ Clarus is a compiled, event-driven language for System 6/7 68k Macs.
 Read `docs/ROADMAP.md` first — it is the authoritative record of sequencing
 and strategy. `docs/clarus-language-reference.md` is the normative language
 spec; where any other doc disagrees, the reference wins.
+`docs/clarus-toolbox-cookbook.md` is a how-to companion for transcribing
+Inside Macintosh declarations into Clarus `extern`/`callback` forms.
 
 ## Working conventions
 
@@ -88,12 +90,14 @@ Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
 - `testsuite/core/` (42 `CoreTest` cases: 41 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (23 `ToolboxTest` cases: 22 real +
+  host and natively; `testsuite/toolbox/` (24 `ToolboxTest` cases: 23 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
   by the test-consolidation phase, which migrated `formedit`/
-  `texteditor_bigfile` in as `FormEdit`/`BigText`) needs
+  `texteditor_bigfile` in as `FormEdit`/`BigText` — then to 23 real by the
+  toolbox-cookbook phase's `Catalog` case, which hardware-proves the
+  `toolbox/` catalog below) needs
   the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end
@@ -126,6 +130,11 @@ enum + runner, not one boot per case.
   one Go subtest per case (`t.Run(caseName, ...)`) for per-case red/green.
   These are part of T2 (`scripts/test-merge.sh`'s ungated `internal/
   mactest` run); not part of T1.
+- `toolbox/{memory,events,osutils,scrap}.cla` (toolbox-cookbook phase) is a
+  curated extern catalog of real Inside Macintosh trap declarations,
+  ready to `import`/consult for new UI code instead of hand-declaring
+  traps; `internal/testsuite/catalog_test.go` is its T1 check. See
+  `docs/clarus-toolbox-cookbook.md` for worked transcription examples.
 
 ## Retro68 / Mac toolchain (symlinks, not in git)
 

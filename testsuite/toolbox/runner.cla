@@ -251,7 +251,7 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 // runToolboxTests dedupes sel, then runs every selected case's branch --
 // same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
 // runCoreTests. Each dispatch arm is its own statement, so the per-statement
-// temp-slot budget holds regardless of case count -- 22 real cases here,
+// temp-slot budget holds regardless of case count -- 23 real cases here,
 // and this dispatch never approaches the budget. (Unlike core's cli.cla
 // arg-matching loop, which needs careful iteration to stay within budget;
 // see coreMatchAndAdd's doc comment in testsuite/core/cli.cla. Moot here

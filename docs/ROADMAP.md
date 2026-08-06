@@ -1113,7 +1113,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      1-byte read/write fix for the new record layout to hold. Spec:
      `docs/superpowers/specs/2026-08-05-small-scalar-width-design.md`;
      plan: `docs/superpowers/plans/2026-08-05-small-scalar-width.md`.
-  3. **Docs cookbook (AFTER the features land — Andrew's call):** Ch13
+  3. **Docs cookbook (branch `toolbox-cookbook`, 2026-08-06): DONE.** Ch13
      gains the IM→Clarus mapping table (CHAR→`word` CharParameter,
      Boolean→`bool`, Point-by-value→packed `int` or the new extern-record
      story, VAR→`ptr`, Str255→`str`, plus the trap-table reading guide)
@@ -1133,6 +1133,46 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      broke every key-equivalent match); and the bit-11 trap-table rule
      already noted above: `trap & 0x0800` — set means Toolbox/pascal
      convention, clear means OS/register convention.
+
+     **Outcome:** all six tasks landed, reference-first. (1) A curated
+     `toolbox/{memory,events,osutils,scrap}.cla` extern catalog — real IM
+     names, every trap word hand-verified against Retro68's multiversal
+     Universal Interfaces defs, the Gestalt A0-vs-A1 register discrepancy
+     documented honestly rather than papered over (`osutils.cla`); a T1
+     check test (`internal/testsuite/catalog_test.go`) pins it. (2) The
+     `testsuite/toolbox` `Catalog` case wires the catalog into a real
+     suite build (22→23 real cases, 24 total incl. `SelfCheck`), sharing
+     `cases_event.cla`'s local `Point`/`EventRecord` types. (3) Rider 1:
+     `UiFlushEvents` (`0xA032`)'s mis-declared pascal-vs-OS/register
+     convention (filed under item 2, above) fixed via the bit-11 rule; 14
+     `emitui` + 5 `cg68k` goldens regenerated and verified byte-
+     reproducible, all four frozen scenario goldens diff-free. (4) Rider
+     2: a real native TE↔desk-scrap bridge
+     (`nat_UiTEFromScrap`/`nat_UiTEToScrap`, via `TEScrpHandle`/
+     `TEScrpLength` + `UiGetScrap`/`UiPutScrap`) makes inter-app
+     clipboard real on the native lane; `Catalog` grew a TE↔desk
+     roundtrip case (both lanes 24/24). (5) Ch13's "Transcribing Inside
+     Macintosh Declarations" subsection — the normative IM→Clarus
+     mapping table + bit-11 rule, placed before `callback func`. (6)
+     `docs/clarus-toolbox-cookbook.md`, a 10-part how-to companion to the
+     reference. Plan-stage corrections: `ScrapStuff` shipped as
+     peek-offset documentation, not an `extern record` (its returned
+     pointer has no `Name(p)` conversion, and the overlay lacks word
+     fields); no snapshot regen was needed (the snapshot embeds only
+     compiler source, verified before Task 1). **Two new bugs filed, not
+     fixed (see Small open items):** a cg68k size/shape-sensitive
+     silent-corruption bug found during Task 4 (repro archived), and a
+     transient `emit68k` extern-record-decay crash (0/28
+     re-reproductions, recorded unconfirmed/environment-sensitive).
+     **Recorded follow-on, not scheduled:** sunset the runtime's `Ui*`
+     1:1 trap externs onto catalog names — see the spec's "Recorded
+     follow-on" section for the costs (runtime-wide rename,
+     emitui/frozen-scenario re-blessing, a snapshot regen, and a
+     reserved-vocabulary language-surface decision) that keep it out of
+     this phase. Spec:
+     `docs/superpowers/specs/2026-08-06-toolbox-cookbook-design.md`;
+     plan: `docs/superpowers/plans/2026-08-06-toolbox-cookbook.md`;
+     ledger: `.superpowers/sdd/2026-08-06-toolbox-cookbook/progress.md`.
 
   **Compiler-performance phase (originally slotted after Toolbox
   integration, before 5f; ran BEFORE Toolbox integration instead, at
@@ -1690,6 +1730,32 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   the `string(n)` fix's pad walk already converges a `string(n)` field
   that FOLLOWS one of these shapes; only non-str fields after them, and
   the totals themselves, still diverge.
+- **cg68k size/shape-sensitive silent-corruption bug (found during
+  toolbox-cookbook Task 4, 2026-08-06):** a branch-per-step rewrite of
+  `testsuite/toolbox/cases_catalog.cla`'s `caseCatalog` TE section (one
+  `if not stepOk { ... }` per driven step, ~7 branches) corrupts an
+  unrelated, textually-earlier Gestalt check in the same function, on the
+  native (`emit68k`) lane only — `caseCatalog`'s own Gestalt check comes
+  back `n == 0` once the branch-heavy TE section is appended below it.
+  Reproduced 2/2 (`FAIL Catalog: gestalt err 0`,
+  `TestToolboxSuiteOn68k`). Doesn't stop `emit68k` from producing a
+  binary; corrupts the booted program's own runtime behavior instead.
+  Worked around in the shipped `caseCatalog` by avoiding the
+  branch-per-step shape. Repro fixture archived at
+  `.superpowers/sdd/2026-08-06-toolbox-cookbook/repro-shape-corruption/`
+  (`cases_catalog.branch-per-step.cla` + README). Not root-caused; needs
+  its own investigation.
+- **Transient `emit68k` extern-record-decay crash (found during
+  toolbox-cookbook Task 4, 2026-08-06; unconfirmed/environment-
+  sensitive):** a single observed `emit68k` crash (`runtime error: list
+  index out of range`) compiling an `extern record` decayed to a pointer
+  at a real trap call site. A 5-rung minimal-pair ladder (single-file
+  standalone shapes up through the exact original crashing composition,
+  rebuilt fresh from the untouched `clarusc/clarusc.c`) failed to
+  reproduce it, 0/28 attempts including 28 runs of the exact original
+  composition. Recorded as unconfirmed rather than fixed or dismissed.
+  Repro ladder archived at
+  `.superpowers/sdd/2026-08-06-toolbox-cookbook/repro-decay-crash/`.
 
 ## Process conventions that worked (for future sessions)
 
