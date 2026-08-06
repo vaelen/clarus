@@ -27,6 +27,18 @@
 // formedit.cla scenario used to, but as an ordinary suite case instead of
 // a one-off scripted golden.
 //
+// This case ALSO carries over the retired scenario's other two
+// documented behaviors, not just the bool pin: the Port `field/int`
+// overflow/re-fix dance (an out-of-int32-range value fails OK validation,
+// beeps, refocuses with the whole field selected, then a corrected retype
+// accepts -- see caseFormEdit's own inline comment) and the prefilled-
+// non-default-int re-render `UiNumToString` exercise docs/ROADMAP.md:1194
+// documents (see caseFormEdit's own cancel-path comment). Neither was
+// separately called out in this file's own original header -- both are
+// exercised by caseFormEdit below, not split into sibling cases, since
+// they're all part of the same `edit`/`accepted`/`cancelled` round trip
+// this one case already drives.
+//
 // Click-coordinate derivation: FormEditWin (harness.cla) reuses
 // formedit.cla's own EditForm `size: 300, 200` and every widget's own
 // `at:`/`width:` BYTE-IDENTICAL, so its content top-left is the same
@@ -53,14 +65,11 @@
 //   Cancel{ at: 110, 150; cancel }                          -> local
 //     x 110..190, y 150..170 -> global x 216..296, y 194..214, click
 //     (256, 204) (the box's own center) inside.
-// Port { at: 10, 60; width: 120 } is DELIBERATELY never clicked -- see
-// caseFormEdit's own comment on why the accept path leaves it at its
-// declared default (80) rather than retyping into an already-populated
-// field (a real single click places a caret, it does not select-all, so
-// typing into a pre-filled numeric field would interleave rather than
-// replace -- reproducing formedit.events' own overflow/re-fix dance would
-// need that extra care and isn't needed to keep N13/R1's own claim -- the
-// trailing BOOL round trip -- alive).
+//   Port  { at: 10, 60;  width: 120; label: "Port:" }      -> local box
+//     x 10+70..10+190=200, y 60..80 -> global x 186..306, y 104..124,
+//     click (206, 114) inside -- reused VERBATIM from formedit.events'
+//     own click (the retired scenario's overflow/re-fix step), not
+//     recomputed as a fresh center.
 const tbFeNameX:  int = 226
 const tbFeNameY:  int = 64
 const tbFeUrlX:   int = 226
@@ -69,26 +78,26 @@ const tbFeProtoX: int = 246
 const tbFeProtoY: int = 139
 const tbFeFavX:   int = 136
 const tbFeFavY:   int = 162
+const tbFePortX:  int = 206
+const tbFePortY:  int = 114
 const tbFeOkX:    int = 136
 const tbFeOkY:    int = 204
-const tbFeCancelX: int = 256
-const tbFeCancelY: int = 204
 
 func caseFormEdit(): TestResult {
     var orig: TbFeBookmark
     var editOk: bool
+    var overflowRejected: bool
     var acceptedOk: bool
     var acceptedIsNew: bool
     var ok: bool
     var detail: string
 
     // --- Accept path: `edit FormEditWin, new TbFeBookmark` -- every
-    // bound widget kind touched (field/string x2, popup/enum, check/bool
-    // -- Port's int field left at its declared default, see this file's
-    // own header comment), then OK. `favorite` is FormEditWin's own
-    // LAST-declared bound field (harness.cla) -- this is exactly the
-    // shape task-2-report.md's own tbool.cla repro pinned (autosave
-    // FALSE under the pre-8278ae7 bug, TRUE once fixed).
+    // bound widget kind touched (field/string x2, popup/enum, check/bool,
+    // field/int), then OK. `favorite` is FormEditWin's own LAST-declared
+    // bound field (harness.cla) -- this is exactly the shape
+    // task-2-report.md's own tbool.cla repro pinned (autosave FALSE under
+    // the pre-8278ae7 bug, TRUE once fixed).
     tbFeAcceptedFired = false
     tbFeCancelledFired = false
     editOk = true
@@ -102,6 +111,28 @@ func caseFormEdit(): TestResult {
     editOk = editOk and UiTestAnswerPopup(2)
     editOk = editOk and UiTestClick(tbFeProtoX, tbFeProtoY)
     editOk = editOk and UiTestClick(tbFeFavX, tbFeFavY)
+
+    // Port overflow/re-fix dance -- formedit.events' own sequence
+    // (`click 206 114` / `type 99999999999` / `click <OK>` / `type 8080` /
+    // `click <OK>`), the retired scenario's OWN documented reason this
+    // form has a `field/int` widget at all: RTUI_FIELD_INT's real-time
+    // digit-only filter accepts any digit string as you type, so the only
+    // way to make it invalid is an OVERFLOW past int32 range at OK time,
+    // not a stray letter (formedit.cla's own header comment). Confirmed
+    // against runtime/clarus/uidialogs.cla's own rtUiFormInvalid doc
+    // comment (beep, refocus, `UiTESetSelect(0, 32767, ...)` -- the WHOLE
+    // field is selected on refocus) and formedit.trace's own captured
+    // `T FIRE EditForm.invalid.Port` line (no `accepted` there): the OK
+    // click below is expected to be REJECTED (tbFeAcceptedFired stays
+    // false, form stays open) -- then, because refocus selects the entire
+    // invalid string, the very next `type` REPLACES "99999999999"
+    // wholesale rather than appending to it, exactly as formedit.events'
+    // own un-clicked-in-between `type 8080` relied on.
+    editOk = editOk and UiTestClick(tbFePortX, tbFePortY)
+    editOk = editOk and UiTestType("99999999999")
+    editOk = editOk and UiTestClick(tbFeOkX, tbFeOkY)
+    overflowRejected = not tbFeAcceptedFired
+    editOk = editOk and UiTestType("8080")
     editOk = editOk and UiTestClick(tbFeOkX, tbFeOkY)
 
     acceptedOk = tbFeAcceptedFired
@@ -113,7 +144,19 @@ func caseFormEdit(): TestResult {
     // byte-for-byte untouched -- formedit.cla's own retired scenario's
     // final dblclick+Escape step, same intent, against a bare lvalue
     // rather than a table row (this case owns no table -- see harness.cla's
-    // own FormEditWin comment).
+    // own FormEditWin comment). `orig.port = 1234` is deliberately a
+    // non-default value: opening this form pre-fills Port's own displayed
+    // text from it via `UiNumToString` (runtime/clarus/uitable.cla) --
+    // docs/ROADMAP.md:1194 documents formedit.events' own second `edit`
+    // session (a prefilled, non-default int field, `kind=2`) as
+    // `UiNumToString`'s first real exercise of the fixed register-
+    // marshaling shape; this `edit FormEditWin, orig` call is that same
+    // shape's permanent home now that the scripted golden is retired. (No
+    // `UiTest*` wrapper reads a live widget's displayed text back out of
+    // an open modal -- see runtime/clarus/uitest.cla's own function list
+    // -- so this is a re-render exercise, not a re-assert-the-text one;
+    // Escape below still proves the form opened and ran to a real
+    // `cancelled` dispatch either way.)
     orig.name = "Keep"
     orig.url = "keep.com"
     orig.port = 1234
@@ -127,9 +170,9 @@ func caseFormEdit(): TestResult {
 
     editOk = editOk and UiTestKey("27")
 
-    ok = editOk and acceptedOk and acceptedIsNew
+    ok = editOk and overflowRejected and acceptedOk and acceptedIsNew
     ok = ok and tbFeAccepted.name == "MyPlace" and tbFeAccepted.url == "http://x.com"
-    ok = ok and tbFeAccepted.port == 80 and tbFeAccepted.protocol == TbFeTelnet
+    ok = ok and tbFeAccepted.port == 8080 and tbFeAccepted.protocol == TbFeTelnet
     ok = ok and tbFeAccepted.favorite == true
     ok = ok and tbFeCancelledFired and not tbFeAcceptedFired
     ok = ok and orig.name == "Keep" and orig.url == "keep.com"
@@ -155,6 +198,11 @@ func caseFormEdit(): TestResult {
         detail = detail + " orig.favorite true"
     } else {
         detail = detail + " orig.favorite false"
+    }
+    if overflowRejected {
+        detail = detail + " overflowRejected true"
+    } else {
+        detail = detail + " overflowRejected false"
     }
     if acceptedOk {
         detail = detail + " acceptedOk true"

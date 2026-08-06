@@ -56,14 +56,13 @@
 // testdata/ui/popuptable.cla golden UI scenario, migrated to the
 // PopupTableWin window Task 8 also added to harness.cla -- see that case
 // file's own header comment for its full retirement mapping. Task 8's own
-// OTHER scenario, formedit, is NOT migrated here: the migration attempt
-// uncovered a real native-68k (cg68k) codegen bug in a form's
+// OTHER scenario, formedit, was NOT migrated at the time: the migration
+// attempt uncovered a real native-68k (cg68k) codegen bug in a form's
 // `accepted(rec: T)` event marshaling (a bound `bool` field silently
 // reverts to `false` even when the live control reads `true` at every
 // point up to and including inside the accepted handler itself) -- see
-// task-8-report.md for the full investigation. testdata/ui/formedit.cla
-// stays an unretired golden scenario (internal/mactest/ui_test.go's
-// TestFormeditUIScenario) until the underlying compiler bug is fixed.
+// task-8-report.md for the full investigation. See the FormEdit paragraph
+// below for its eventual migration once that bug was fixed.
 // Dialogs/Hdim (cases_dialogs.cla/cases_hdim.cla) are Task 9's own
 // addition (ui-scenario-retirement batch migration): the retired
 // testdata/ui/dialogs.cla and hdim.cla golden UI scenarios, migrated to
