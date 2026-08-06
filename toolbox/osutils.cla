@@ -7,12 +7,19 @@
 // Provenance: Gestalt proven verbatim (including the d0/a1 register
 // binding) against runtime/clarus/ui.cla's UiGestalt and
 // testsuite/toolbox/cases_gestalt.cla's TbGestalt, both real
-// (0xA1AD, reg(d0: selector, a1: response) ret d0) traps -- also
-// cross-checked against Retro68 multiversal/defs/Gestalt.yaml, whose
-// `responsep` arg is `register: Out<A0>` (an OUTPUT, at the hardware
-// level the trap returns the response value via A0 on exit, which the
-// repo's proven declarations already model as the `a1`-bound ptr
-// argument the caller supplies to be filled in). SysBeep proven verbatim
+// (0xA1AD, reg(d0: selector, a1: response) ret d0) traps. NOTE a real
+// discrepancy, not agreement: Retro68 multiversal/defs/Gestalt.yaml
+// claims `responsep` is `register: Out<A0>`, but that is WRONG for
+// actual 68k hardware -- Gestalt.h's own `#pragma parameter __D0
+// Gestalt(__D0, __A1)` (A1, not A0) is the real convention, and
+// ui.cla:285-300 documents the concrete failure this caused: declaring
+// Gestalt as plain pascal (pre-Task-12) left cg68k pushing args on the
+// stack instead of loading D0/A1, so the register-based trap read a
+// garbage selector and wrote through a wild A0 pointer, hanging the
+// machine on a real native boot -- fixed by switching to `reg(d0:
+// selector, a1: response)`, i.e. A1, which is what this catalog uses and
+// what the empirical boot (not the multiversal defs) confirms is
+// correct. SysBeep proven verbatim
 // against runtime/clarus/ui.cla's UiSysBeep (0xA9C8). Delay (0xA03B)
 // verified against Retro68 multiversal/defs/OSUtil.yaml: `n` register
 // A0 in, `ftp` (final tick count) register `Out<D0>` -- i.e. the trap
