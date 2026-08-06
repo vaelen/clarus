@@ -20,7 +20,6 @@ System 6/7 applications on 68k Macintosh computers.
 11. Drawing and Timers
 12. Networking, Files, and Errors
 13. Low-Level Memory Access
-    - Transcribing Inside Macintosh Declarations
 Appendix A. Grammar (EBNF)
 Appendix B. Event Handler Quick Reference
 Appendix C. Worked Examples
@@ -1447,6 +1446,24 @@ Total record size rounds up to even. Field offsets follow the classic MPW 68k pa
 
 Multi-byte fields read and write in the machine's native byte order — the same `peekw`/`peekl`/`pokew`/`pokel` contract Chapter 13's `peek`/`poke` section already documents: big-endian on the 68k target, host-endian on a host build. An `extern record` is all-scalar storage, structurally outside automatic reference counting — never retained or released, the same as an overlay record or a plain `ptr`.
 
+A field read/write, and the decay/coercion at an `external func` call site, in context (`UiWaitNextEvent` is a Toolbox trap and `handleAt` an ordinary function, both declared elsewhere in the program):
+
+```rust
+func waitClick() {
+    var ev: EventRecord
+    while UiWaitNextEvent(0xFFFF, ev, 10, ptr(0)) == 0 { }
+    handleAt(ev.where.v, ev.where.h)
+}
+```
+
+Like `overlay record`, an `extern record` rejects the same handful of whole-value uses:
+
+```rust
+// var e2: EventRecord = ev          // build-time error: extern records cannot be assigned
+// record Wrapper { e: EventRecord } // build-time error: extern records cannot be record fields
+// var xs: list of EventRecord       // build-time error: extern records cannot be container elements
+```
+
 ### Transcribing Inside Macintosh Declarations
 
 This is the normative mapping from Inside Macintosh's own type vocabulary to the Clarus types used above to transcribe a Toolbox or OS declaration as `extern record`, `external func`, and `callback func`. Where a row's mechanics are documented elsewhere in this chapter, the row cross-references that section instead of restating it.
@@ -1465,24 +1482,6 @@ This is the normative mapping from Inside Macintosh's own type vocabulary to the
 | a `ProcPtr` parameter you implement (an LDEF, action procedure, filter, or other Toolbox callback) | `callback func` (below) |
 
 A trap word's bit 11 (`trap & 0x0800`) is the normative test for which calling convention a `= trap` clause must declare: set means the Toolbox/Pascal convention (plain `trap NNNN`, or `trap NNNN sel SELECTOR` for a selector-dispatched routine); clear means the OS/register convention (`trap NNNN reg ...`, below). `TickCount`'s trap word is `0xA975`; bit 11 is set (`0xA975 & 0x0800 == 0x0800`), so it takes the plain convention, `trap 0xA975`, with no `reg` clause. `BlockMoveData`'s trap word is `0xA22E`; bit 11 is clear (`0xA22E & 0x0800 == 0`), so it takes the register convention, `trap 0xA22E reg`. An Inside Macintosh trap listing's own hex trap word settles the convention without relying on the surrounding prose.
-
-A field read/write, and the decay/coercion at an `external func` call site, in context (`UiWaitNextEvent` is a Toolbox trap and `handleAt` an ordinary function, both declared elsewhere in the program):
-
-```rust
-func waitClick() {
-    var ev: EventRecord
-    while UiWaitNextEvent(0xFFFF, ev, 10, ptr(0)) == 0 { }
-    handleAt(ev.where.v, ev.where.h)
-}
-```
-
-Like `overlay record`, an `extern record` rejects the same handful of whole-value uses:
-
-```rust
-// var e2: EventRecord = ev          // build-time error: extern records cannot be assigned
-// record Wrapper { e: EventRecord } // build-time error: extern records cannot be record fields
-// var xs: list of EventRecord       // build-time error: extern records cannot be container elements
-```
 
 ### `callback func`
 
