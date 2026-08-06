@@ -1121,7 +1121,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      manager `.cla` declaration files shipping with the compiler) is the
      candidate follow-on — it needs the extern-dedup story
      (`irRegisterExtern` currently rejects duplicate names outright)
-     decided in this phase.
+     decided (by the toolbox-integration phase, 2026-08-04 — see the
+     Outcome below).
 
      **Settled mapping inputs (small-scalar-width phase, 2026-08-05):**
      Boolean→`bool` (1 byte, in every aggregate as of that phase);

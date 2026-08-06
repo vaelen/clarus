@@ -132,8 +132,9 @@ enum + runner, not one boot per case.
   mactest` run); not part of T1.
 - `toolbox/{memory,events,osutils,scrap}.cla` (toolbox-cookbook phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
-  ready to `import`/consult for new UI code instead of hand-declaring
-  traps; `internal/testsuite/catalog_test.go` is its T1 check. See
+  ready to compose into a build (positionally or via `include`) for new
+  UI code instead of hand-declaring traps; `internal/testsuite/
+  catalog_test.go` is its T1 check. See
   `docs/clarus-toolbox-cookbook.md` for worked transcription examples.
 
 ## Retro68 / Mac toolchain (symlinks, not in git)
