@@ -68,7 +68,8 @@ ending at the Clarus one:
    word, so they cannot be declared `= trap NNNN` — they are reached
    through the runtime's existing `UiTEToScrap`/`UiTEFromScrap` externs.
    (Clarus programs get cut/copy/paste for free via the standard-edit
-   runtime path — this walkthrough is about transcription, not a gap.)
+   runtime path — this walkthrough is about transcription, not a gap;
+   the native lane's desk-scrap bridge is made real by rider 2, below.)
 
 Hard-won-lesson sections:
 
@@ -121,14 +122,42 @@ inventory stays at 16):
    PutScrap → GetScrap roundtrip. Hardware-proves the catalog on both
    existing suite boots (`TestToolboxSuiteOn68k` / `TestToolboxSuiteOnMac`).
 
-## 5. Rider
+## 5. Riders
 
-Fix `runtime/clarus/ui.cla:263`'s `UiFlushEvents = trap 0xA032`
-pascal-convention misdeclaration (bit 11 clear → OS/register
-convention), filed during the toolbox-integration phase. Included
-because shipping a doc that teaches the bit-11 rule while the runtime
-violates it invites a copied bug. One-declaration fix; pulls in a
-bootstrap-snapshot regeneration.
+1. **`UiFlushEvents` bit-11 fix.** `runtime/clarus/ui.cla:263`'s
+   `UiFlushEvents = trap 0xA032` pascal-convention misdeclaration
+   (bit 11 clear → OS/register convention), filed during the
+   toolbox-integration phase. Included because shipping a doc that
+   teaches the bit-11 rule while the runtime violates it invites a
+   copied bug. One-declaration fix.
+2. **Real native desk-scrap bridge (Andrew, 2026-08-06).** Replace the
+   `nat_UiTEFromScrap`/`nat_UiTEToScrap` deferred no-op stubs
+   (`runtime/clarus/uitext.cla:157-163`) with a real port. For the
+   monostyled TE records the runtime uses, no style-run "executor" glue
+   is needed: `TEToScrap` ≈ `ZeroScrap` + `PutScrap('TEXT', …)` from
+   `TEScrpHandle`'s contents, `TEFromScrap` ≈ `GetScrap('TEXT')` into
+   the TE scrap + updating `TEScrpLength` — exactly the traps
+   `toolbox/scrap.cla` declares, plus the `TEScrpHandle` ($0AB4) /
+   `TEScrpLength` ($0AB0) low-memory globals. Closes the native lane's
+   in-app-only cut/copy/paste gap (inter-app clipboard starts working),
+   and dogfoods the new catalog. Verified by the `Catalog` suite case
+   growing a TE↔desk-scrap roundtrip check (native lane included).
+
+Both riders pull in one shared bootstrap-snapshot regeneration.
+
+## Recorded follow-on: sunset the `Ui*` 1:1 trap externs
+
+Once the catalog exists, the runtime's faithful 1:1 IM transcriptions
+(`UiTECut`, `UiZeroScrap`, …) can be renamed to their real IM names and
+eventually sourced from `toolbox/*.cla` directly — the dedup rule makes
+runtime, catalog, and user declarations merge when identical, giving
+the C-header redeclaration model. Costs a runtime-wide rename
+(`rt_ext_*` wrappers and `nat_*` fallbacks included), emitui/frozen-
+scenario re-blessing, a snapshot regen, and a deliberate
+language-surface decision (bare IM names become reserved vocabulary in
+every UI program — a non-identical user redeclaration turns into a
+compile error). Deliberately NOT in this phase; the catalog landing
+first is what defines the canonical shapes the sunset adopts.
 
 ## Out of scope
 
@@ -136,4 +165,5 @@ bootstrap-snapshot regeneration.
   (`ListNewPtr`/`MapNewPtr`/`SerNewPtr`/…) onto catalog names.
 - Any broader per-manager catalog expansion (Windows, Menus, Dialogs,
   QuickDraw, …) — follow-on, now unblocked, driven by demand.
-- Any compiler, code-generator, or (rider aside) runtime changes.
+- Any compiler, code-generator, or (riders aside) runtime changes.
+- The `Ui*` extern sunset (recorded follow-on, above).
