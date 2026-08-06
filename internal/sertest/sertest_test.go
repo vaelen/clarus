@@ -112,6 +112,18 @@ func TestRoundtrip(t *testing.T) {
 	if !bytes.Equal(gotBytes, wantBytes) {
 		t.Errorf("rec.dat bytes mismatch\ngot:  % x\nwant: % x", gotBytes, wantBytes)
 	}
+
+	gotPad, err := os.ReadFile(filepath.Join(runDir, "pad.dat"))
+	if err != nil {
+		t.Fatalf("read pad.dat: %v", err)
+	}
+	wantPad, err := os.ReadFile(filepath.Join(root, "testdata", "sertest", "padprobe.bytes.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotPad, wantPad) {
+		t.Errorf("pad.dat bytes mismatch\ngot:  % x\nwant: % x", gotPad, wantPad)
+	}
 }
 
 // TestBadFieldRejected asserts that a record with a `text` field reaching

@@ -36,6 +36,26 @@ func bookmarksEqual(a: Bookmark, b: Bookmark): bool {
     return ok
 }
 
+// PadProbe: the odd-parity shape from the 2026-08-06 strn-field-alignment
+// spec -- a string(n) field after an odd bool run, and a bool after the
+// odd-sized (pre-padding) string. Pins that struct-internal pad bytes
+// never leak into the on-disk format (padprobe.bytes.golden) and that the
+// emitted rt_field_desc offsets agree with the padded struct at runtime.
+record PadProbe {
+    pre:  bool
+    s:    string(2)
+    post: bool
+}
+
+func padProbesEqual(a: PadProbe, b: PadProbe): bool {
+    var ok: bool
+
+    ok = a.pre == b.pre
+    ok = ok and a.s == b.s
+    ok = ok and a.post == b.post
+    return ok
+}
+
 on App.startCLI(args: list of string) {
     var rec1: Bookmark
     var rec2: Bookmark
@@ -45,6 +65,8 @@ on App.startCLI(args: list of string) {
     var map2: map of Bookmark
     var ok: bool
     var second: Bookmark
+    var probe1: PadProbe
+    var probe2: PadProbe
 
     // ---- bare record: rec.dat is the byte-exact golden ----
     rec1.name = "Example"
@@ -109,6 +131,25 @@ on App.startCLI(args: list of string) {
         alert("map roundtrip ok")
     } else {
         alert("map roundtrip FAIL")
+    }
+
+    // ---- odd-parity record: pad.dat is the second byte-exact golden ----
+    probe1.pre = true
+    probe1.s = "AB"
+    probe1.post = true
+
+    ok = file.save("pad.dat", probe1)
+    if ok {
+        alert("pad save ok")
+    } else {
+        alert("pad save FAIL")
+    }
+
+    ok = file.load("pad.dat", probe2)
+    if ok and padProbesEqual(probe1, probe2) {
+        alert("pad roundtrip ok")
+    } else {
+        alert("pad roundtrip FAIL")
     }
 
     // ---- load failure: a path that was never written ----
