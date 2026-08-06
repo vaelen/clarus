@@ -176,68 +176,6 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 	return snaps
 }
 
-// TestFormeditUIScenario (mac-target-4d Task 7): form windows/binds/edit/
-// accepted/cancelled end to end -- Add opens EditForm on `new Bookmark`
-// (all four bound widget kinds: field(str)/field(int)/popup(enum)/
-// check(bool)), an overflowing Port value beeps and re-focuses (S1), a fix
-// + OK fires `accepted` and adds the row (S2: table shows it), a
-// dblclick-edit round renames it and re-accepts, writing back (S3: table
-// redraws), and a second edit on the same row is cancelled via Escape (S4:
-// byte-identical to S3 -- cancelling truly changed nothing). See
-// testdata/ui/formedit.cla's own header comment for the coordinate
-// derivation.
-//
-// NOT retired by ui-scenario-retirement Task 8 (unlike popuptable, its own
-// batch-mate): the migration attempt (testsuite/toolbox/cases_formedit.cla,
-// investigated then reverted) uncovered a real, previously-undetected
-// native-68k (cg68k) codegen bug -- a form's `accepted(rec: T)` event
-// marshals `rec`'s bound `bool` field back as `false` even when the live
-// checkbox control reads `true` at every point up to and including inside
-// the accepted handler itself (confirmed via temporary runtime
-// instrumentation: the buffer byte at the bool field's own offset is
-// correctly `1` immediately before `UiFireWinEvent` fires; the handler's
-// own `b.favorite` parameter is `false` moments later, in the same
-// synchronous call). This retired golden's own snap-diff assertions never
-// exercised `favorite`'s value at all (S1..S4 are pure screen-pixel
-// diffs), so the bug was invisible to it -- kept here, UNRETIRED, until
-// the underlying compiler bug is fixed and a case-based replacement can
-// honestly assert the bound value. See ui-scenario-retirement's
-// task-8-report.md for the full investigation.
-func TestFormeditUIScenario(t *testing.T) {
-	checkFormeditSnaps(t, runUIScenario(t, "formedit", 0))
-}
-
-// checkFormeditSnaps is TestFormeditUIScenario's own snap assertion,
-// factored out (Task 14, native-5e) for reuse by the native lane.
-func checkFormeditSnaps(t *testing.T, snaps []uiSnap) {
-	t.Helper()
-	var s1, s2, s3, s4 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		case "S3":
-			s3 = s.bytes
-		case "S4":
-			s4 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil || s3 == nil || s4 == nil {
-		t.Fatalf("formedit: expected snaps S1, S2, S3, and S4, got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("formedit: snap S1 == S2 -- accepting the new bookmark did not add a row to the table")
-	}
-	if bytes.Equal(s2, s3) {
-		t.Fatalf("formedit: snap S2 == S3 -- the lvalue-edit round did not change the table's row")
-	}
-	if !bytes.Equal(s3, s4) {
-		t.Fatalf("formedit: snap S3 != S4 -- cancelling the second edit changed the table anyway")
-	}
-}
-
 // TestUIAbout: an `app` section with all four About-relevant properties set
 // -- the Apple menu's About item becomes "About AboutProbe..." and selecting
 // it (menu 1 1: Apple is always bar position/native ID 1) emits the ABOUT

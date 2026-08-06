@@ -334,7 +334,6 @@ var uiScenarios68k = []uiScenario68k{
 	{name: "smoke_mandel", claRel: []string{filepath.Join("..", "..", "examples", "mandelbrot.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "smoke_mandel.events"), check: checkSmokeMandelSnaps},
 	{name: "opendoc", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc.events")},
 	{name: "opendoc_empty", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "opendoc.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "opendoc_empty.events")},
-	{name: "formedit", claRel: []string{filepath.Join("..", "..", "testdata", "ui", "formedit.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "formedit.events"), check: checkFormeditSnaps},
 	{name: "texteditor", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor.events")},
 	{name: "texteditor_quit", claRel: []string{filepath.Join("..", "..", "examples", "texteditor.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "texteditor_quit.events")},
 	{name: "bookmarks", claRel: []string{filepath.Join("..", "..", "examples", "bookmarks.cla")}, eventsRel: filepath.Join("..", "..", "testdata", "ui", "bookmarks.events"), check: checkBookmarksSnaps},

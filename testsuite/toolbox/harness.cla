@@ -741,3 +741,91 @@ window DimWin {
 extend DimWin {
     on opened { }
 }
+
+// FormEditWin (Task 3, test-consolidation): the migrated replacement for
+// the retired testdata/ui/formedit.cla golden UI scenario -- form
+// windows, `binds:`, and the `edit`/`accepted(rec)` round trip end to
+// end, all five bound-widget kinds a form supports (field/string,
+// field/int, popup/enum, check/bool). Only formedit.cla's OWN EditForm
+// window is transcribed here (title/size/every widget's `at:` BYTE-
+// IDENTICAL, see cases_formedit.cla's own header comment for the reused
+// click-coordinate derivation) -- its sibling Main (a table + Add button
+// driving `edit EditForm, new Bookmark` / `edit EditForm, bookmarks[i]`
+// from two different handlers) is deliberately NOT ported: table/list
+// widget mechanics (select, doubleClick, add, remove) already have
+// dedicated, thorough coverage in this suite's own PopupTableWin/
+// casePopuptable (Task 8, above) -- porting a second table here would
+// duplicate that coverage, not add to it. cases_formedit.cla drives
+// FormEditWin directly via `edit FormEditWin, new TbFeBookmark` and `edit
+// FormEditWin, <local var>` calls made straight from its own case
+// function (same "edit/open callable from an ordinary function, not only
+// from an `on` handler" precedent casePopuptable's own `w = open
+// PopupTableWin` already established for `open`).
+//
+// TbFeProtocol/TbFeBookmark: renamed from formedit.cla's own
+// Protocol/Bookmark -- enum members share this whole composed program's
+// global namespace (testsuite/core/cases_enumfix.cla's own
+// caseEnumGopher/caseEnumHTTP/caseEnumTelnet already establish the
+// "enum members need the file's own tb/case prefix, not just the enum
+// type name" convention), so bare Gopher/HTTP/Telnet would risk a
+// same-suite collision even though nothing collides with them today.
+// TbFeBookmark's own `favorite: bool` is declared LAST, unchanged from
+// formedit.cla's own field order -- this is the trailing-bool field the
+// audit's N13/R1 rows exist to keep pinned (see cases_formedit.cla's own
+// header comment for the full bug history).
+//
+// `tbFeAccepted*`/`tbFeCancelled*`: instrumentation-only globals (same
+// "read after the window that recorded it may already be gone" reasoning
+// as cases_popuptable.cla's own tbPtLog comment) -- a form window closes
+// ITSELF immediately after `accepted`/`cancelled` fires (confirmed by
+// task-2-report.md's own capture: `FIRE Editor.accepted` / `CLOSE Editor
+// 1` back to back, no separate close call), so the case function cannot
+// read anything back through a `w = edit ...` handle (edit is a
+// statement, not an expression -- Ch5's own grammar has no assignment
+// form) once the modal returns; these globals are the only way
+// cases_formedit.cla's own case function observes what the two handlers
+// below saw.
+enum TbFeProtocol {
+    TbFeGopher
+    TbFeHttp
+    TbFeTelnet
+}
+
+record TbFeBookmark {
+    name:     string(63)
+    url:      string(255)
+    port:     int = 80
+    protocol: TbFeProtocol
+    favorite: bool
+}
+
+var tbFeAccepted: TbFeBookmark
+var tbFeAcceptedFired: bool
+var tbFeAcceptedIsNew: bool
+var tbFeCancelledFired: bool
+
+window FormEditWin {
+    title: "Edit Bookmark"
+    size: 300, 200
+    form for TbFeBookmark
+
+    field Name  { binds: name;     label: "Name:";     at: 10, 10; width: 180 }
+    field Url   { binds: url;      label: "URL:";      at: 10, 35; width: 180 }
+    field Port  { binds: port;     label: "Port:";      at: 10, 60; width: 120 }
+    popup Proto { binds: protocol; label: "Protocol:";  at: 10, 85 }
+    check Fav   { binds: favorite; caption: "Favorite"; at: 10, 110 }
+
+    button OK     { at: 10, 150;  default }
+    button Cancel { at: 110, 150; cancel }
+}
+
+extend FormEditWin {
+    on accepted(b: TbFeBookmark) {
+        tbFeAccepted = b
+        tbFeAcceptedIsNew = b.isNew
+        tbFeAcceptedFired = true
+    }
+    on cancelled {
+        tbFeCancelledFired = true
+    }
+}

@@ -1,0 +1,180 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_formedit.cla: FormEdit (Task 3, test-consolidation) -- the
+// migrated replacement for the retired testdata/ui/formedit.cla golden UI
+// scenario. See harness.cla's own FormEditWin comment for the window
+// transcription, why formedit.cla's own Main (table + Add) is NOT ported
+// (PopupTableWin/casePopuptable already owns table/list coverage), and
+// the tbFeAccepted*/tbFeCancelledFired instrumentation globals this case
+// reads back through.
+//
+// This case exists to keep audit rows N13/R1
+// (docs/superpowers/specs/2026-08-06-test-consolidation-audit.md) alive
+// after testdata/ui/formedit.cla and its scripted boot(s) are deleted: "Form
+// windows/binds/accepted(rec) round trip; currently pins the still-open
+// accepted(rec) trailing-bool codegen bug." That bug (a form's `bool`
+// writeback used a 4-byte big-endian `pokel` regardless of the field's
+// real packed width, so a TRAILING bool field's own first byte got
+// zeroed by the store's low 3 padding bytes -- see task-2-report.md's
+// full root-cause writeup) was fixed by commit 8278ae7 ("feat: bool/char
+// occupy 1 byte in all aggregates, both lanes", runtime/clarus/
+// uidialogs.cla's rtUiFormAccept, `pokel`->`pokeb`) BEFORE this task
+// started -- Task 2 confirmed the fix already landed and is not
+// re-fixing anything here. This case's own job is to keep that exact
+// shape (a form's LAST-declared bound field is `bool`, its accept path
+// asserted `== true`) under permanent test, the way the retired
+// formedit.cla scenario used to, but as an ordinary suite case instead of
+// a one-off scripted golden.
+//
+// Click-coordinate derivation: FormEditWin (harness.cla) reuses
+// formedit.cla's own EditForm `size: 300, 200` and every widget's own
+// `at:`/`width:` BYTE-IDENTICAL, so its content top-left is the same
+// ((512-300)/2, 44) = (106, 44) rt_ui_open centering task-2-report.md's
+// own "repro fixture as built" section already derived for a 300-wide
+// form, and every click coordinate formedit.events proved correct against
+// this exact widget layout carries over verbatim (re-verified against
+// each widget's own local rect below, not just copied blind):
+//   Name  { at: 10, 10;  width: 180; label: "Name:" }     -> local box
+//     x 10+70..10+250 (RTUI_FIELD_LABEL_W=70), y 10..30 ->
+//     global x 186..366, y 54..74, click (226, 64) inside both.
+//   Url   { at: 10, 35;  width: 180; label: "URL:" }      -> local box
+//     y 35..55 -> global y 79..99, click (226, 89) inside.
+//   Proto { at: 10, 85;  label: "Protocol:" }              -> popup box
+//     (rt_ui_popup_box: label lane trimmed off the LEFT only) local
+//     x 10+70..10+200=210, y 85..105 -> global x 186..316, y 129..149,
+//     click (246, 139) inside.
+//   Fav   { at: 10, 110; caption: "Favorite" }              -> check box
+//     (RTUI_CHECK_W/H = 90x16) local x 10..100, y 110..126 -> global
+//     x 116..206, y 154..170, click (136, 162) inside.
+//   OK    { at: 10, 150;  default }                         -> button box
+//     (RTUI_BUTTON_W/H = 80x20) local x 10..90, y 150..170 -> global
+//     x 116..196, y 194..214, click (136, 204) inside.
+//   Cancel{ at: 110, 150; cancel }                          -> local
+//     x 110..190, y 150..170 -> global x 216..296, y 194..214, click
+//     (256, 204) (the box's own center) inside.
+// Port { at: 10, 60; width: 120 } is DELIBERATELY never clicked -- see
+// caseFormEdit's own comment on why the accept path leaves it at its
+// declared default (80) rather than retyping into an already-populated
+// field (a real single click places a caret, it does not select-all, so
+// typing into a pre-filled numeric field would interleave rather than
+// replace -- reproducing formedit.events' own overflow/re-fix dance would
+// need that extra care and isn't needed to keep N13/R1's own claim -- the
+// trailing BOOL round trip -- alive).
+const tbFeNameX:  int = 226
+const tbFeNameY:  int = 64
+const tbFeUrlX:   int = 226
+const tbFeUrlY:   int = 89
+const tbFeProtoX: int = 246
+const tbFeProtoY: int = 139
+const tbFeFavX:   int = 136
+const tbFeFavY:   int = 162
+const tbFeOkX:    int = 136
+const tbFeOkY:    int = 204
+const tbFeCancelX: int = 256
+const tbFeCancelY: int = 204
+
+func caseFormEdit(): TestResult {
+    var orig: TbFeBookmark
+    var editOk: bool
+    var acceptedOk: bool
+    var acceptedIsNew: bool
+    var ok: bool
+    var detail: string
+
+    // --- Accept path: `edit FormEditWin, new TbFeBookmark` -- every
+    // bound widget kind touched (field/string x2, popup/enum, check/bool
+    // -- Port's int field left at its declared default, see this file's
+    // own header comment), then OK. `favorite` is FormEditWin's own
+    // LAST-declared bound field (harness.cla) -- this is exactly the
+    // shape task-2-report.md's own tbool.cla repro pinned (autosave
+    // FALSE under the pre-8278ae7 bug, TRUE once fixed).
+    tbFeAcceptedFired = false
+    tbFeCancelledFired = false
+    editOk = true
+
+    edit FormEditWin, new TbFeBookmark
+
+    editOk = editOk and UiTestClick(tbFeNameX, tbFeNameY)
+    editOk = editOk and UiTestType("MyPlace")
+    editOk = editOk and UiTestClick(tbFeUrlX, tbFeUrlY)
+    editOk = editOk and UiTestType("http://x.com")
+    editOk = editOk and UiTestAnswerPopup(2)
+    editOk = editOk and UiTestClick(tbFeProtoX, tbFeProtoY)
+    editOk = editOk and UiTestClick(tbFeFavX, tbFeFavY)
+    editOk = editOk and UiTestClick(tbFeOkX, tbFeOkY)
+
+    acceptedOk = tbFeAcceptedFired
+    acceptedIsNew = tbFeAcceptedIsNew
+
+    // --- Cancel path: an LVALUE target (`orig`), Cancel/Escape discards
+    // the buffer before any widget is touched, proving (a) `cancelled`
+    // fires instead of `accepted` and (b) the original record is left
+    // byte-for-byte untouched -- formedit.cla's own retired scenario's
+    // final dblclick+Escape step, same intent, against a bare lvalue
+    // rather than a table row (this case owns no table -- see harness.cla's
+    // own FormEditWin comment).
+    orig.name = "Keep"
+    orig.url = "keep.com"
+    orig.port = 1234
+    orig.protocol = TbFeTelnet
+    orig.favorite = true
+
+    tbFeAcceptedFired = false
+    tbFeCancelledFired = false
+
+    edit FormEditWin, orig
+
+    editOk = editOk and UiTestKey("27")
+
+    ok = editOk and acceptedOk and acceptedIsNew
+    ok = ok and tbFeAccepted.name == "MyPlace" and tbFeAccepted.url == "http://x.com"
+    ok = ok and tbFeAccepted.port == 80 and tbFeAccepted.protocol == TbFeTelnet
+    ok = ok and tbFeAccepted.favorite == true
+    ok = ok and tbFeCancelledFired and not tbFeAcceptedFired
+    ok = ok and orig.name == "Keep" and orig.url == "keep.com"
+    ok = ok and orig.port == 1234 and orig.protocol == TbFeTelnet and orig.favorite == true
+
+    if ok {
+        return tkPass("FormEdit")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "name [" + tbFeAccepted.name + "]"
+    detail = detail + " url [" + tbFeAccepted.url + "]"
+    detail = detail + " port " + tkIntToStr(tbFeAccepted.port)
+    detail = detail + " protocol " + tkIntToStr(int(tbFeAccepted.protocol))
+    detail = detail + " orig.name [" + orig.name + "]"
+    detail = detail + " orig.port " + tkIntToStr(orig.port)
+    if tbFeAccepted.favorite {
+        detail = detail + " favorite true"
+    } else {
+        detail = detail + " favorite false"
+    }
+    if orig.favorite {
+        detail = detail + " orig.favorite true"
+    } else {
+        detail = detail + " orig.favorite false"
+    }
+    if acceptedOk {
+        detail = detail + " acceptedOk true"
+    } else {
+        detail = detail + " acceptedOk false"
+    }
+    if acceptedIsNew {
+        detail = detail + " acceptedIsNew true"
+    } else {
+        detail = detail + " acceptedIsNew false"
+    }
+    if tbFeCancelledFired {
+        detail = detail + " cancelledFired true"
+    } else {
+        detail = detail + " cancelledFired false"
+    }
+    if editOk {
+        detail = detail + " editOk true"
+    } else {
+        detail = detail + " editOk false"
+    }
+    return tkFail("FormEdit", detail)
+}

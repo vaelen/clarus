@@ -69,7 +69,13 @@
 // testdata/ui/dialogs.cla and hdim.cla golden UI scenarios, migrated to
 // the DialogsWin and DimWin windows Task 9 also added to harness.cla --
 // see each case file's own header comment for its full retirement
-// mapping.
+// mapping. FormEdit (cases_formedit.cla) is test-consolidation Task 3's
+// own addition: the previously-unmigrated testdata/ui/formedit.cla golden
+// UI scenario, now that its blocking native-68k codegen bug (a form's
+// trailing `bool` field silently reverting to `false` on `accepted(rec)`
+// writeback) was fixed by small-scalar-width commit 8278ae7 -- see
+// harness.cla's own FormEditWin comment and cases_formedit.cla's own
+// header comment for the full migration mapping and bug history.
 
 enum ToolboxTest {
     All
@@ -93,15 +99,16 @@ enum ToolboxTest {
     Popuptable
     Dialogs
     Hdim
+    FormEdit
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 20 real cases
+// nTbCases is ToolboxTest's member count minus All: the 21 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 21
+const nTbCases: int = 22
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -170,6 +177,9 @@ func tbCaseName(t: ToolboxTest): string {
     case Hdim {
         return "Hdim"
     }
+    case FormEdit {
+        return "FormEdit"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -201,6 +211,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Popuptable)
     l.add(Dialogs)
     l.add(Hdim)
+    l.add(FormEdit)
     l.add(SelfCheck)
     return l
 }
@@ -317,6 +328,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Hdim) {
         results.add(caseHdim())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, FormEdit) {
+        results.add(caseFormEdit())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

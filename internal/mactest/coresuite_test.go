@@ -154,6 +154,13 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // Task 9 (ui-scenario-retirement batch migration) -- the retired
 // testdata/ui/dialogs.cla and hdim.cla golden UI scenarios, migrated to
 // the DialogsWin and DimWin windows Task 9 also added to harness.cla.
+// cases_formedit.cla (FormEdit) was added by test-consolidation Task 3,
+// once the native-68k `accepted(rec: T)` trailing-bool marshaling bug
+// blocking Task 8's own formedit migration was confirmed fixed (commit
+// 8278ae7) -- the retired testdata/ui/formedit.cla golden UI scenario,
+// migrated to the FormEditWin window Task 3 added to harness.cla (its own
+// table-driving Main sibling deliberately not ported -- see harness.cla's
+// FormEditWin comment).
 // Unlike the core suite, gui.cla is this suite's ONLY front end -- there
 // is no toolbox CLI (MenuKeyMatches needs the GUI's own installed File
 // menu, CanvasChecksum needs the GUI's own Board canvas), so there is no
@@ -180,6 +187,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_popuptable.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_dialogs.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_hdim.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_formedit.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -200,7 +208,7 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 21 result lines (20 real cases +
+// this test also parses each of the 22 result lines (21 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
@@ -266,10 +274,11 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // retirement batch migration) Popuptable addition -- Task 8's own
 // formedit batch-mate is NOT included, see toolboxFiles' own doc comment
 // above -- then to 21 by Task 9's (ui-scenario-retirement batch
-// migration) Dialogs/Hdim addition): parses each of the 21 result lines
-// (20 real cases + SelfCheck) into its own t.Run subtest -- per-case CI
-// reporting -- plus the aggregate TOTAL line, regardless of which lane
-// produced the capture.
+// migration) Dialogs/Hdim addition, then to 22 by test-consolidation
+// Task 3's own FormEdit addition (Task 8's formedit gap finally closed):
+// parses each of the 22 result lines (21 real cases + SelfCheck) into its
+// own t.Run subtest -- per-case CI reporting -- plus the aggregate TOTAL
+// line, regardless of which lane produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -292,8 +301,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 21 {
-		t.Errorf("result lines: got %d, want 21\ncapture:\n%s", len(results), out)
+	if len(results) != 22 {
+		t.Errorf("result lines: got %d, want 22\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -303,7 +312,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 21 PASS 21 FAIL 0"; total != want {
+	if want := "TOTAL 22 PASS 22 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
