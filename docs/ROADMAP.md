@@ -1615,13 +1615,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   selection panics the app. Since the example is normative and shipped
   verbatim, fix reference-side (guard in the appendix example) in a future
   docs pass rather than papering over it in the acceptance app.
-- **`accepted(rec)` trailing-bool codegen bug (found during
-  ui-scenario-retirement, 2026-08-05):** a form's `accepted(rec)` event
-  silently reverts a bound trailing `bool` field to `false` on native
-  68k, the reason `formedit` was NOT migrated to `testsuite/toolbox` this
-  phase (it stays a scripted-lane scenario, temporarily, until this is
-  fixed). Migrate `formedit` once the underlying codegen bug is found and
-  fixed.
+- **`accepted(rec)` trailing-bool codegen bug: DONE** — already fixed by
+  small-scalar-width commit `8278ae7` (`rtUiFormAccept` bool writeback
+  `pokel`→`pokeb`, `runtime/clarus/uidialogs.cla`); root-caused and
+  `formedit` migrated to `testsuite/toolbox/cases_formedit.cla` during
+  test-consolidation (2026-08-06), which pins the regression (the case
+  FAILs at the pre-fix commit). Originally found during
+  ui-scenario-retirement, 2026-08-05, when the bug blocked `formedit`'s
+  migration and it stayed a scripted-lane scenario, temporarily, until
+  this fix landed.
 - **Launch-an-application-from-Clarus (deferred, ui-scenario-retirement
   spec Out-of-scope 1, Andrew 2026-08-05; also out of scope for
   test-consolidation, 2026-08-06):** a function to launch another
