@@ -344,10 +344,7 @@ var uiScenarios68k = []uiScenario68k{
 // passes (see uiScenarios68k's own comment above for why no fixed count
 // is quoted here), this time built with `clarusc emit68k` (no Retro68/cmake/C) and
 // booted the same way TestSmokeBounceOn68k/TestAboutOn68k already are.
-// texteditor_bigfile is handled by its own subtest below (its host
-// counterpart, TestTexteditorBigfileUIScenario, bypasses checkUIGoldens
-// entirely to strip an alert() line out of the capture first -- not a
-// table row). smoke_bounce and about are NOT repeated here: each already
+// smoke_bounce and about are NOT repeated here: each already
 // has its own standalone Test*On68k (Task 12/13), and folding them into
 // this table would just rename an existing green test for no benefit.
 //
@@ -381,27 +378,11 @@ func TestUiScenariosOn68k(t *testing.T) {
 	}
 }
 
-// TestTexteditorBigfileOn68k is TestTexteditorBigfileUIScenario's native
-// counterpart: same two-source build (examples/texteditor.cla +
-// testdata/ui/texteditor_bigfile_setup.cla), same alert-message-stripping
-// capture handling (alert() text isn't part of the RT_MAC_TEST trace/snap
-// vocabulary -- see the host test's own comment), reused here verbatim
-// rather than hand-copied a second time by delegating the shared tail to
-// checkTexteditorBigfileCapture.
-func TestTexteditorBigfileOn68k(t *testing.T) {
-	requireMac(t)
-	if blessUI() {
-		t.Fatal("native UI lane never blesses (CLARUS_MAC_BLESS is set) -- goldens are frozen; bless only via the Retro68 lane (ui_test.go)")
-	}
-	eventsRel := filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile.events")
-	claRel := []string{
-		filepath.Join("..", "..", "examples", "texteditor.cla"),
-		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
-	}
-	bin := buildNative68kUI(t, "texteditor_bigfile", eventsRel, claRel...)
-	out, _, exitCode := RunMac(t, bin, 10*time.Minute)
-	checkTexteditorBigfileCapture(t, out, exitCode)
-}
+// TestTexteditorBigfileOn68k (native counterpart of the retired
+// TestTexteditorBigfileUIScenario) was retired by test-consolidation
+// Task 4 -- see ui_test.go's own retirement comment at the same spot for
+// where its coverage now lives (testsuite/toolbox/cases_bigtext.cla's
+// `BigText` case).
 
 // TestRealEventLoopTickOn68k boots testdata/cg68k/tickprobe.cla with NO
 // --events script -- the ONLY test in either lane that exercises rtUiRun's

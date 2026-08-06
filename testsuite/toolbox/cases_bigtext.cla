@@ -1,0 +1,95 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_bigtext.cla: BigText (Task 4, test-consolidation) -- migrates the
+// retired native-only boots `TestTexteditorBigfileOn68k` (audit row N17)
+// and `TestTexteditorBigfileUIScenario` (audit row R10,
+// docs/superpowers/specs/2026-08-06-test-consolidation-audit.md) into a
+// toolbox suite case, per those rows' MIGRATE-contingent-on-headroom
+// verdict.
+//
+// What those two boots actually asserted (checkTexteditorBigfileCapture,
+// internal/mactest/ui_test.go): `examples/texteditor.cla`'s own openPath
+// guard rejects a real >32,000-byte file with an exact alert message,
+// closing the document WITHOUT ever assigning the oversized content to a
+// textview (no `Body.change` in the trace). That guard's own business
+// logic (the alert wording, the immediate `close`) is
+// `examples/texteditor.cla`-specific and stays covered only by that
+// example staying in the native/Retro68 acceptance boots (audit's N14 KEEP
+// row) -- this case does NOT re-assert alert text or a close cascade.
+// What it DOES carry forward, generalized to the suite's own instrumented
+// TextWin window (cases_textwidgets.cla, harness.cla) rather than
+// `examples/texteditor.cla`'s own Doc window: the >32,000-byte SET path
+// itself (a real oversized `text` assigned directly to a `textview.text`
+// property, not through a button click), the resulting 32,000-byte clamp,
+// `lastError` firing, AND -- the one assertion cases_textwidgets.cla's own
+// Textwidgets case does NOT make -- that the RETAINED bytes are
+// byte-exact, not merely 32,000 bytes long. Textwidgets already pins the
+// clamp boundary and `lastError`/title-message behavior via its own
+// Fill32000/Fill32001 button clicks; duplicating that exact click dance
+// here would add a case that proves nothing new. This case instead builds
+// its own oversized `text` directly (no button, no harness.cla change --
+// TextWin's `Body` widget, already declared, is reused verbatim) and reads
+// `w.Body.text` back to check its TAIL content, closing the one real gap.
+//
+// Content generation is ported from the retired
+// testdata/ui/texteditor_bigfile_setup.cla's own fixture (deleted by this
+// task): repeating "lorem ipsum\n" (a real CR, not LF -- Ch2) 3,000 times,
+// same 36,000-byte total that fixture built (whitespace every 5-6 bytes,
+// not one solid word -- TextWin's own Fill32000/Fill32001 header comment
+// already documents why: a single pathologically long word makes classic
+// TextEdit's line-wrap search effectively quadratic).
+//
+// Tail-content derivation: tbBtLine is 12 bytes long, and 32,000 = 2,666 *
+// 12 + 8 -- the clamp's last kept byte (index 31,999) falls 8 bytes into
+// what would have been repetition #2,667, so the retained tail is exactly
+// that repetition's own first 8 bytes, "lorem ip" (the whole line minus
+// its trailing " ipsum\n"). Any off-by-one or byte-shifting bug in the
+// clamp itself (as opposed to a merely-right byte COUNT, which
+// cases_textwidgets.cla's own len1/len2 checks already catch) would flip
+// this exact 8-byte tail to something else.
+const tbBtLine: string = "lorem ipsum\n"
+const tbBtReps: int = 3000
+const tbBtTailWant: string = "lorem ip"
+
+func caseBigText(): TestResult {
+    var w: TextWin
+    var t: text
+    var i: int
+    var got: text
+    var lenGot: int
+    var errCode: int
+    var tail: string
+    var ok: bool
+    var detail: string
+
+    w = open TextWin
+
+    i = 0
+    while i < tbBtReps {
+        t.append(tbBtLine)
+        i = i + 1
+    }
+
+    w.Body.text = t
+    got = w.Body.text
+    lenGot = got.length
+    errCode = lastError.code
+    tail = got[31992, 8]
+
+    close w
+
+    ok = lenGot == 32000
+    ok = ok and errCode != 0
+    ok = ok and tail == tbBtTailWant
+
+    if ok {
+        return tkPass("BigText")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as cases_pattern.cla's own case.
+    detail = "len " + tkIntToStr(lenGot)
+    detail = detail + " errCode " + tkIntToStr(errCode)
+    detail = detail + " tail [" + tail + "]"
+    return tkFail("BigText", detail)
+}

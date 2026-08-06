@@ -169,11 +169,17 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   deterministic UI driving (no real input needed). The ui-scenario-retirement
   phase (2026-08-05) migrated 12 of the original 23 scenarios into
   `testsuite/toolbox` cases and retired their `testdata/ui`/`testdata/uisnaps`
-  fixtures; 11 survive in the scripted lane (`about`, `smoke_bounce`,
-  `smoke_menudemo`, `smoke_mandel`, `opendoc`, `opendoc_empty`, `texteditor`,
-  `texteditor_quit`, `texteditor_bigfile`, `bookmarks`, `formedit` — the last
-  temporarily, pending a native-68k codegen fix for a form `accepted(rec)`
-  event silently reverting a trailing `bool` field to `false`).
+  fixtures; the test-consolidation phase's own Task 4 (2026-08-06) migrated
+  `texteditor_bigfile` (its >32,000-byte clamp/lastError/tail-content shape
+  now lives in the toolbox suite's `BigText` case,
+  testsuite/toolbox/cases_bigtext.cla; its own alert-message/close-cascade
+  business logic stays covered by `examples/texteditor.cla` remaining in the
+  `texteditor`/`texteditor_quit` acceptance boots). 10 survive in the
+  scripted lane (`about`, `smoke_bounce`, `smoke_menudemo`, `smoke_mandel`,
+  `opendoc`, `opendoc_empty`, `texteditor`, `texteditor_quit`, `bookmarks`,
+  `formedit` — the last temporarily, pending a native-68k codegen fix for a
+  form `accepted(rec)` event silently reverting a trailing `bool` field to
+  `false`).
 - This sandboxed display has a short (well under a minute of zero real HID
   activity) idle-lock; a naive long `sleep` with no synthetic input during
   manual real-input testing can look identical to a frozen app — nudge with

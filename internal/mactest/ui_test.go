@@ -303,92 +303,15 @@ func TestTexteditorQuitUIScenario(t *testing.T) {
 	runUIScenarioSrc(t, "texteditor_quit", filepath.Join("..", "..", "examples", "texteditor.cla"), 0)
 }
 
-// texteditorBigfileAlertMsg is the exact string examples/texteditor.cla's
-// openPath guard passes to alert() when a document exceeds the textview's
-// 32,000-byte cap -- kept in sync with that literal by eye (there is no
-// shared constant across a .cla file and a Go test).
-const texteditorBigfileAlertMsg = "That file is too large to open (over 32,000 bytes)."
-
-// TestTexteditorBigfileUIScenario (Task 6, mac-target-4c) exercises the
-// too-large guard added to examples/texteditor.cla's openPath: a real
-// file over 32,000 bytes, opened via `launchdoc`, must be rejected (alert
-// + close) rather than silently truncated by the textview's own clamp.
-//
-// The fixture is entirely self-written, in the SAME boot the guard is
-// tested in -- there is no mechanism in this harness to pre-stage a file
-// onto the ephemeral disk LaunchAPPL builds per run (it boots from the
-// .bin alone; any earlier RunMac's disk is gone with its temp dir), so a
-// genuinely separate "write it in one launch, open it in a later one" is
-// not possible here. testdata/ui/texteditor_bigfile_setup.cla -- compiled
-// alongside examples/texteditor.cla as a second source file for this
-// scenario only -- writes a real 36,000-byte file via `on App.launch`
-// (see that file's own comment for why `launch`, not `startEmpty`);
-// texteditor_bigfile.events then `launchdoc`s that same path, all within
-// one continuous run.
-//
-// alert() text is NOT part of the RT_MAC_TEST trace/snap vocabulary --
-// runtime/mac/rt_mac.c's RT_MAC_TEST rt_alert appends the message as a
-// bare CRLF-translated line straight into the SAME capture stream
-// parseUIOutput reads, and parseUIOutput treats any line that isn't a "T "
-// trace line, a snap block, or blank as a FATAL parse error (by design,
-// to catch capture corruption). Rather than reusing runUIScenarioSrc
-// (which would abort on that line), this test reads the raw capture
-// itself: asserts the alert text is present verbatim, strips that one
-// line out, and only THEN feeds the remainder through the normal
-// trace-golden compare -- so the alert's occurrence is checked (the guard
-// really did fire) even though its literal text isn't part of the trace
-// golden. The trace itself proves the rest of the guard's contract: the
-// document opens (T OPEN) and then closes cleanly (T FIRE closeRequest/
-// closed, T CLOSE) with no Body.change in between -- it was never shown
-// truncated content, per the guard running before any assignment to
-// Body.text.
-func TestTexteditorBigfileUIScenario(t *testing.T) {
-	requireMac(t)
-	bin := runBuildMac(t, "UITexteditorBigfile",
-		filepath.Join("..", "..", "examples", "texteditor.cla"),
-		filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile_setup.cla"),
-		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", "texteditor_bigfile.events"))
-	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
-	checkTexteditorBigfileCapture(t, out, exitCode)
-}
-
-// checkTexteditorBigfileCapture is TestTexteditorBigfileUIScenario's own
-// capture handling, factored out (Task 14, native-5e) so the native lane's
-// TestTexteditorBigfileOn68k can reuse it verbatim instead of a hand-copied
-// duplicate. alert() text is NOT part of the RT_MAC_TEST trace/snap
-// vocabulary (see the caller's own header comment for why): asserts the
-// alert text is present verbatim, strips that one line out, and only then
-// feeds the remainder through the normal trace-golden compare.
-func checkTexteditorBigfileCapture(t *testing.T, out string, exitCode int) {
-	t.Helper()
-	root := repoRoot(t)
-	scenario := "texteditor_bigfile"
-
-	if !strings.Contains(out, texteditorBigfileAlertMsg) {
-		t.Fatalf("%s: expected alert message %q in capture, got: %q", scenario, texteditorBigfileAlertMsg, out)
-	}
-	filtered := strings.Replace(out, texteditorBigfileAlertMsg+"\n", "", 1)
-	trace, _ := parseUIOutput(t, filtered)
-
-	traceGolden := filepath.Join(root, "testdata", "ui", scenario+".trace")
-	if blessUI() {
-		if err := os.WriteFile(traceGolden, []byte(trace), 0o644); err != nil {
-			t.Fatalf("writing trace golden: %v", err)
-		}
-	} else {
-		want, err := os.ReadFile(traceGolden)
-		if err != nil {
-			t.Fatalf("reading trace golden %s: %v", traceGolden, err)
-		}
-		if trace != string(want) {
-			t.Fatalf("%s: trace mismatch:%s", scenario, firstDiff(string(want), trace))
-		}
-	}
-
-	if exitCode != 0 {
-		t.Errorf("%s: exit code: got %d, want 0", scenario, exitCode)
-	}
-}
+// TestTexteditorBigfileUIScenario/checkTexteditorBigfileCapture (Task 6,
+// mac-target-4c) were retired by test-consolidation Task 4: the
+// >32,000-byte open guard's generic clamp/lastError/tail-content shape now
+// lives in the toolbox suite's own `BigText` case
+// (testsuite/toolbox/cases_bigtext.cla) -- see that file's header comment
+// for the full assertion mapping and for what stays native-only (this
+// guard's own alert-message/close-cascade business logic, still covered by
+// examples/texteditor.cla staying in the `texteditor`/`texteditor_quit`
+// acceptance boots, audit rows N14/N15).
 
 // TestBookmarksUIScenario (mac-target-4d Task 9) drives examples/
 // bookmarks.cla ITSELF -- the 4d acceptance app, Appendix C's Bookmark

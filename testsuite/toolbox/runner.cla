@@ -75,6 +75,14 @@
 // writeback) was fixed by small-scalar-width commit 8278ae7 -- see
 // harness.cla's own FormEditWin comment and cases_formedit.cla's own
 // header comment for the full migration mapping and bug history.
+// BigText (cases_bigtext.cla) is test-consolidation Task 4's own
+// addition: migrates the retired native-only `TestTexteditorBigfileOn68k`/
+// `TestTexteditorBigfileUIScenario` boots (audit rows N17/R10) into a
+// >32,000-byte textview SET + clamp + `lastError` + tail-content-exact
+// case against harness.cla's existing TextWin window (no harness.cla
+// change needed) -- see cases_bigtext.cla's own header comment for the
+// full assertion mapping and what stays native-only (the example app's
+// own alert-message/close-cascade guard logic).
 
 enum ToolboxTest {
     All
@@ -99,15 +107,16 @@ enum ToolboxTest {
     Dialogs
     Hdim
     FormEdit
+    BigText
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 21 real cases
+// nTbCases is ToolboxTest's member count minus All: the 22 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 22
+const nTbCases: int = 23
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -179,6 +188,9 @@ func tbCaseName(t: ToolboxTest): string {
     case FormEdit {
         return "FormEdit"
     }
+    case BigText {
+        return "BigText"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -211,6 +223,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Dialogs)
     l.add(Hdim)
     l.add(FormEdit)
+    l.add(BigText)
     l.add(SelfCheck)
     return l
 }
@@ -229,7 +242,7 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 // runToolboxTests dedupes sel, then runs every selected case's branch --
 // same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
 // runCoreTests. Each dispatch arm is its own statement, so the per-statement
-// temp-slot budget holds regardless of case count -- 20 real cases here,
+// temp-slot budget holds regardless of case count -- 22 real cases here,
 // and this dispatch never approaches the budget. (Unlike core's cli.cla
 // arg-matching loop, which needs careful iteration to stay within budget;
 // see coreMatchAndAdd's doc comment in testsuite/core/cli.cla. Moot here
@@ -331,6 +344,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, FormEdit) {
         results.add(caseFormEdit())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, BigText) {
+        results.add(caseBigText())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {
