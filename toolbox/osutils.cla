@@ -1,0 +1,27 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/osutils.cla: curated OS Utilities / Gestalt declarations
+// (Inside Macintosh II "OS Utilities"; Gestalt from IM VI ch3).
+//
+// Provenance: Gestalt proven verbatim (including the d0/a1 register
+// binding) against runtime/clarus/ui.cla's UiGestalt and
+// testsuite/toolbox/cases_gestalt.cla's TbGestalt, both real
+// (0xA1AD, reg(d0: selector, a1: response) ret d0) traps -- also
+// cross-checked against Retro68 multiversal/defs/Gestalt.yaml, whose
+// `responsep` arg is `register: Out<A0>` (an OUTPUT, at the hardware
+// level the trap returns the response value via A0 on exit, which the
+// repo's proven declarations already model as the `a1`-bound ptr
+// argument the caller supplies to be filled in). SysBeep proven verbatim
+// against runtime/clarus/ui.cla's UiSysBeep (0xA9C8). Delay (0xA03B)
+// verified against Retro68 multiversal/defs/OSUtil.yaml: `n` register
+// A0 in, `ftp` (final tick count) register `Out<D0>` -- i.e. the trap
+// takes one input register (A0) and returns its result via D0, matching
+// `reg(a0: numTicks) ret d0` below exactly (no correction needed from
+// the brief's provisional binding).
+
+const gestaltSystemVersion: int = 0x73797376
+
+external func Gestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+external func Delay(numTicks: int): int = trap 0xA03B reg(a0: numTicks) ret d0
+external func SysBeep(duration: word) = trap 0xA9C8

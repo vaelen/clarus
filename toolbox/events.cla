@@ -1,0 +1,77 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/events.cla: curated Event Manager declarations (Inside
+// Macintosh I, "The Toolbox Event Manager"; PostEvent from II's OS Event
+// Manager). Pascal convention except PostEvent (bit 11 clear -> OS/reg).
+//
+// Provenance: Point/EventRecord field layout verified against Retro68
+// multiversal/defs/MacTypes.yaml (Point: v, h both INTEGER, size 4) and
+// defs/EventMgr.yaml (EventRecord: what INTEGER, message LONGINT, when
+// LONGINT, where Point, modifiers INTEGER, size 16) -- matches
+// word/int/int/Point/word below exactly. GetNextEvent/StillDown/GetMouse
+// proven verbatim against runtime/clarus/ui.cla's UiGetNextEvent
+// (0xA970)/UiStillDown (0xA973)/UiGetMouse (0xA972). EventAvail proven
+// verbatim against testsuite/toolbox/cases_event.cla's TbEventAvail
+// (0xA971). PostEvent proven verbatim (including the a0/d0 register
+// binding) against testsuite/toolbox/cases_uitest.cla:86's TbPostEvent
+// (0xA02F), empirically verified there by the PostEventClick case.
+// TickCount proven verbatim against testsuite/toolbox/cases_events.cla's
+// TbTickCount (0xA975). Button (0xA974) verified against Retro68
+// multiversal/defs/ToolboxEvent.yaml. Event-code/mask/modifier const
+// values verified against Retro68 multiversal/defs/EventMgr.yaml
+// (nullEvent..activateEvt, everyEvent = -1 i.e. 0xFFFF as a word,
+// activeFlag/btnState/cmdKey/shiftKey/alphaLock/optionKey/controlKey,
+// charCodeMask/keyCodeMask) and defs/OSEvent.yaml (osEvt = 15).
+//
+// Per-mask event masks (mDownMask etc.) are deliberately omitted --
+// everyEvent covers the curated use cases; add on demand.
+
+extern record Point {
+    v: word
+    h: word
+}
+
+extern record EventRecord {
+    what: word
+    message: int
+    when: int
+    where: Point
+    modifiers: word
+}
+
+// Event codes (EventRecord.what)
+const nullEvent: int = 0
+const mouseDown: int = 1
+const mouseUp: int = 2
+const keyDown: int = 3
+const keyUp: int = 4
+const autoKey: int = 5
+const updateEvt: int = 6
+const diskEvt: int = 7
+const activateEvt: int = 8
+const osEvt: int = 15
+
+// Event masks
+const everyEvent: int = 0xFFFF
+
+// Modifier flags (EventRecord.modifiers)
+const activeFlag: int = 0x0001
+const btnState: int = 0x0080
+const cmdKey: int = 0x0100
+const shiftKey: int = 0x0200
+const alphaLock: int = 0x0400
+const optionKey: int = 0x0800
+const controlKey: int = 0x1000
+
+// Message masks (EventRecord.message, key events)
+const charCodeMask: int = 0x000000FF
+const keyCodeMask: int = 0x0000FF00
+
+external func GetNextEvent(eventMask: word, theEvent: ptr): bool = trap 0xA970
+external func EventAvail(eventMask: word, theEvent: ptr): bool = trap 0xA971
+external func PostEvent(eventNum: word, eventMsg: int): word = trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
+external func TickCount(): int = trap 0xA975
+external func Button(): bool = trap 0xA974
+external func StillDown(): bool = trap 0xA973
+external func GetMouse(mouseLoc: ptr) = trap 0xA972

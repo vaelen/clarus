@@ -1,0 +1,41 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/scrap.cla: curated Scrap Manager (desk scrap) declarations
+// (Inside Macintosh I, "The Scrap Manager"). All pascal-convention
+// (bit 11 set). TEFromScrap/TEToScrap are deliberately ABSENT: they are
+// glue routines with no trap word (see the cookbook's copy/paste
+// walkthrough), not Scrap Manager traps -- also confirmed by
+// runtime/clarus/uitext.cla's own doc comment, which found no
+// TE-prefixed entries in Retro68 multiversal/defs/ScrapMgr.yaml either.
+//
+// Provenance: ZeroScrap proven verbatim against runtime/clarus/ui.cla's
+// UiZeroScrap (0xA9FC). PutScrap (0xA9FE) and GetScrap (0xA9FD) already
+// verified against multiversal defs/ScrapMgr.yaml per
+// runtime/clarus/uitext.cla:144-145's comment; re-confirmed directly
+// here against the same defs/ScrapMgr.yaml. InfoScrap (0xA9F9),
+// LoadScrap (0xA9FB), UnloadScrap (0xA9FA) verified against defs/
+// ScrapMgr.yaml's own `function:` entries (trap words as listed). The
+// ScrapStuff peek-offset table below is verified against defs/
+// ScrapMgr.yaml's `struct: ScrapStuff` (members scrapSize: LONGINT,
+// scrapHandle: Handle, scrapCount: INTEGER, scrapState: INTEGER,
+// scrapName: StringPtr, size: 16), matching the lowmem globals
+// ScrapSize/ScrapHandle/ScrapCount/ScrapState/ScrapName at
+// 0x960/0x964/0x968/0x96A/0x96C in the same file (consecutive offsets
+// confirm the field order/sizes below).
+//
+// InfoScrap returns a pointer to the ScrapStuff record; read it with
+// peek at these offsets (no extern-record conversion exists for a
+// returned ptr):
+//   +0  scrapSize    long   (peekl)
+//   +4  scrapHandle  Handle (peekl)
+//   +8  scrapCount   word   (peekw)
+//   +10 scrapState   word   (peekw)
+//   +12 scrapName    ptr    (peekl)
+
+external func ZeroScrap(): int = trap 0xA9FC
+external func PutScrap(length: int, theType: int, source: ptr): int = trap 0xA9FE
+external func GetScrap(hDest: ptr, theType: int, offset: ptr): int = trap 0xA9FD
+external func InfoScrap(): ptr = trap 0xA9F9
+external func LoadScrap(): int = trap 0xA9FB
+external func UnloadScrap(): int = trap 0xA9FA
