@@ -413,6 +413,7 @@ typedef struct {
     int32_t cv_qty;
     int32_t cv_status;
     uint8_t cv_flag;
+    uint8_t clar_pad0;
 } clar_rec_FormRec;
 static clar_rec_FormRec clar_new_FormRec(void) {
     clar_rec_FormRec r;

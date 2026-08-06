@@ -404,6 +404,7 @@ typedef struct {
     int32_t cv_port;
     int32_t cv_protocol;
     uint8_t cv_favorite;
+    uint8_t clar_pad0;
 } clar_rec_Bookmark;
 static clar_rec_Bookmark clar_new_Bookmark(void) {
     clar_rec_Bookmark r;

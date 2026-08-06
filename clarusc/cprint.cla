@@ -780,9 +780,13 @@ func cpArrElemCTypeName(t: int): string {
 // `int32_t` (4 bytes, 2-byte aligned -- m68k GCC's default
 // BIGGEST_ALIGNMENT is 16 bits, the same convention cpUiStateFieldCType's
 // own comment cites); `char`/`bool` are `uint8_t` (1 byte); `string(n)` is
-// `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }` (n+1 bytes,
-// 1-byte aligned). A struct's own alignment is its widest member's, so
-// the total is rounded up to 2 iff any 4-byte field is present.
+// `clar_str_n` = `struct { uint8_t len; uint8_t b[n]; }`, padded with a
+// trailing byte to even size when n+1 is odd (n+1 rounded up to even
+// bytes, 2-byte aligned via cpEmitRecords' explicit pad members -- the
+// strn-field-alignment phase, 2026-08-06, matching cg68k's
+// cgRecFieldSizeOf/cgRecFieldAlignOf). A struct's own alignment is its
+// widest member's, so the total is rounded up to 2 iff any 4-byte field
+// is present.
 func cpCSizeOfField(t: int): int {
     var k: IRKind
 
@@ -791,7 +795,7 @@ func cpCSizeOfField(t: int): int {
         return 1
     }
     if k == KStr {
-        return irtN(t) + 1
+        return cgAlignUp(irtN(t) + 1, 2)
     }
     return 4
 }
@@ -800,10 +804,76 @@ func cpCAlignOfField(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
-    if k == KChar or k == KBool or k == KStr {
+    if k == KChar or k == KBool {
         return 1
     }
     return 2
+}
+
+// cpFieldCParity: the parity (0 or 1) a field of type t contributes to the
+// emitted clar_rec_ struct's running C byte offset -- cpEmitRecords' pad
+// walk only (strn-field-alignment, 2026-08-06). Exact for every
+// serializable/UI-descriptor kind plus bool/char arrays and all-byte
+// nested records; an array-bearing nested record falls back on
+// cpCRecordSize's approximation (such offsets have no consumer -- see
+// cpCSizeOfField's six-kinds note above).
+func cpFieldCParity(t: int): int {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KBool or k == KChar {
+        return 1
+    }
+    if k == KStr {
+        return 0
+    }
+    if k == KArr {
+        return (irtN(t) * cpFieldCParity(irtElem(t))) mod 2
+    }
+    if k == KRec {
+        return cpCRecordSize(irtName(t)) mod 2
+    }
+    return 0
+}
+
+// cpFieldCAlign1 reports whether a field of type t is a C-align-1 member
+// of the emitted struct (all-uint8_t storage: bool/char, clar_str_N, byte
+// arrays, all-byte nested records). Anything else the C compiler
+// self-aligns at >= 2, which re-evens the running offset on its own.
+func cpFieldCAlign1(t: int): bool {
+    var k: IRKind
+
+    k = irtKind(t)
+    if k == KBool or k == KChar or k == KStr {
+        return true
+    }
+    if k == KArr {
+        return cpFieldCAlign1(irtElem(t))
+    }
+    if k == KRec {
+        return cpRecCAlign1(irtName(t))
+    }
+    return false
+}
+
+// cpRecCAlign1: does clar_rec_<nameIdx> consist solely of C-align-1
+// members (so the struct's own C alignment is 1)?
+func cpRecCAlign1(nameIdx: int): bool {
+    var ri: int
+    var f: int
+
+    ri = cgFindRecordByName(nameIdx)
+    if ri == -1 {
+        return false
+    }
+    f = irRecordLayoutFieldsHead(ri)
+    while f != -1 {
+        if not cpFieldCAlign1(irFieldSlotType(f)) {
+            return false
+        }
+        f = irFieldSlotNext(f)
+    }
+    return true
 }
 
 // cpCFieldOffset returns fieldName's byte offset inside clar_rec_recName
@@ -896,7 +966,17 @@ func cpEnsureStr(n: int) {
         return
     }
     cpStrCapsEmitted[key] = 1
-    cpTypeBuf.add(toText("typedef struct { uint8_t len; uint8_t b[" + key + "]; } clar_str_" + key + ";"))
+    if (n + 1) mod 2 != 0 {
+        // strn-field-alignment (2026-08-06): pad the typedef to even size
+        // so sizeof(clar_str_N) matches cgSlotSizeOf's even-rounded slot --
+        // record-field tails and array-of-string strides then coincide with
+        // the native lane. len/b keep their offsets; nothing consumes
+        // sizeof semantically (runtime str calls pass the cap; rt_ser.inc
+        // writes 1+strCap bytes).
+        cpTypeBuf.add(toText("typedef struct { uint8_t len; uint8_t b[" + key + "]; uint8_t clar_pad; } clar_str_" + key + ";"))
+    } else {
+        cpTypeBuf.add(toText("typedef struct { uint8_t len; uint8_t b[" + key + "]; } clar_str_" + key + ";"))
+    }
 }
 
 // cpEnsureType lazily emits whatever typedef(s) t depends on (types.go's
@@ -4455,6 +4535,10 @@ func cpEmitRecords() {
     var name: string
     var ctype: string
     var j: int
+    var t2: int
+    var parity: int
+    var padN: int
+    var anyAlign2: bool
 
     i = 0
     while i < irRecords.count {
@@ -4482,11 +4566,40 @@ func cpEmitRecords() {
         name = poolGet(irRecordLayoutName(i))
         ctype = "clar_rec_" + name
 
+        // strn-field-alignment (2026-08-06): explicit pad members realize
+        // the documented packing rule (reference Ch13, "Ordinary record
+        // packing") on both m68k GCC and host cc -- a pad byte before a
+        // string(n) field whose running offset is odd, and a trailing pad
+        // when the model total is odd and the model maxAlign is 2,
+        // mirroring cpCFieldOffset/cpCRecordSize exactly so
+        // cpEmitUiLayoutAsserts' model-vs-offsetof pin stays true. Pads
+        // are never IR fields: the ctor loop below, ARC walks, and
+        // descriptor emission all iterate IR fields and skip them.
         cpRecBuf.add(toText("typedef struct {"))
+        parity = 0
+        padN = 0
+        anyAlign2 = false
         f = irRecordLayoutFieldsHead(i)
         while f != -1 {
-            cpRecBuf.add(toText("    " + cpRecFieldCType(irFieldSlotType(f)) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
+            t2 = irFieldSlotType(f)
+            if cpFieldCAlign1(t2) {
+                if irtKind(t2) == KStr and parity != 0 {
+                    cpRecBuf.add(toText("    uint8_t clar_pad" + numToStr(padN) + ";"))
+                    padN = padN + 1
+                    parity = 0
+                }
+                parity = (parity + cpFieldCParity(t2)) mod 2
+            } else {
+                parity = 0
+            }
+            if cpCAlignOfField(t2) >= 2 {
+                anyAlign2 = true
+            }
+            cpRecBuf.add(toText("    " + cpRecFieldCType(t2) + " cv_" + poolGet(irFieldSlotName(f)) + ";"))
             f = irFieldSlotNext(f)
+        }
+        if parity != 0 and anyAlign2 {
+            cpRecBuf.add(toText("    uint8_t clar_pad" + numToStr(padN) + ";"))
         }
         cpRecBuf.add(toText("} " + ctype + ";"))
 

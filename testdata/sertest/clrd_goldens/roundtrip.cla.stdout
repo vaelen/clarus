@@ -4,4 +4,6 @@ list save ok
 list roundtrip ok
 map save ok
 map roundtrip ok
+pad save ok
+pad roundtrip ok
 missing-file load returns false ok
