@@ -312,16 +312,20 @@ var uiScenarios68k = []uiScenario68k{
 // (audit row N8, MERGE->N10; see TestAboutOn68k's own retirement comment
 // further up this file).
 //
-// Native NEVER blesses: CLARUS_MAC_BLESS=1 is a hard failure here, even
-// though checkUIGoldens itself would happily rewrite goldens under it (the
-// Retro68 lane's only blessing path) -- this codegen is the one under
-// test; the goldens it must match are frozen, and no native run may ever
-// write them.
+// Bless ownership: test-consolidation Task 7 retired the Retro68/cprint
+// scenario lane outright (ui_test.go's TestSmokeBounceUIScenario/
+// TestSmokeMandelUIScenario/TestTexteditorUIScenario/TestBookmarksUIScenario
+// -- audit rows R3/R5/R8/R11, all DELETE), so this native lane is now the
+// ONLY place these scenarios boot, and the only place CLARUS_MAC_BLESS=1
+// has any effect. There used to be a hard-fail guard here rejecting
+// CLARUS_MAC_BLESS=1 ("native UI lane never blesses"), on the theory that
+// the codegen under test shouldn't be trusted to write its own goldens
+// while the Retro68 lane stayed the sole trusted writer; with that lane
+// gone there is no other writer left, so the guard is removed --
+// checkUIGoldens below already does the actual (re)write under
+// CLARUS_MAC_BLESS=1, unchanged, and now runs unguarded.
 func TestUiScenariosOn68k(t *testing.T) {
 	requireMac(t)
-	if blessUI() {
-		t.Fatal("native UI lane never blesses (CLARUS_MAC_BLESS is set) -- goldens are frozen; bless only via the Retro68 lane (ui_test.go)")
-	}
 	for _, sc := range uiScenarios68k {
 		sc := sc
 		t.Run(sc.name, func(t *testing.T) {

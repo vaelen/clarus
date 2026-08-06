@@ -30,9 +30,10 @@ func hostOracleClarusc(t *testing.T) string {
 // compiles it with `cc`
 // against the on-disk runtime sources (runtime/host/rt.c) -- the
 // build-mac.sh step-1 pipeline, run straight to a host binary instead of
-// a Mac one. Shared by BuildCoreCLIHost here and
-// runNativeHostCompareSeglimit's host half in native_test.go (via the
-// single-file buildHostFromFixture wrapper).
+// a Mac one. Used by runNativeHostCompareSeglimit's host half in
+// native_test.go (via the single-file buildHostFromFixture wrapper);
+// formerly also by BuildCoreCLIHost here, deleted by test-consolidation
+// Task 7 alongside TestSuiteOnMac (audit row R12, DELETE).
 func buildHostFromFixtures(t *testing.T, claPaths []string, binName string) string {
 	t.Helper()
 	root := repoRoot(t)
@@ -76,8 +77,14 @@ func buildHostFromFixture(t *testing.T, claPath, binName string) string {
 // startup stub calls every declared app-level handler unconditionally,
 // including `App.startCLI` with a never-marshaled (garbage) `args` list,
 // which hangs the whole boot. `coreCLIFiles` is the shared case-file
-// prefix; `coreCLIHostFiles`/`coreCLIMacFiles` append the right front
-// end. Paths are repo-root-relative; callers join against repoRoot(t).
+// prefix; `coreGUIFiles` (coresuite_test.go) appends the surviving GUI
+// front end. (Its host and Mac/native siblings, `coreCLIHostFiles`/
+// `coreCLIMacFiles`, were deleted by test-consolidation Task 7 alongside
+// their last caller, TestSuiteOnMac -- audit row R12, DELETE; core/
+// cli.cla and core/cli_mac.cla themselves stay, still depended on by
+// internal/testsuite/core_cli_test.go and internal/cg68k/segment_test.go
+// respectively.) Paths are repo-root-relative; callers join against
+// repoRoot(t).
 var coreCLIFiles = []string{
 	filepath.Join("testsuite", "kit.cla"),
 	filepath.Join("testsuite", "core", "runner.cla"),
@@ -93,25 +100,14 @@ var coreCLIFiles = []string{
 	filepath.Join("testsuite", "core", "cases_xrec.cla"),
 }
 
-// coreCLIHostFiles is coreCLIFiles + core/cli.cla (host front-end,
-// `App.startCLI` with real argv).
-var coreCLIHostFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "cli.cla"))
-
-// coreCLIMacFiles is coreCLIFiles + core/cli_mac.cla (Mac/native front
-// end, `App.launch`, always runs the full case list).
-var coreCLIMacFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("testsuite", "core", "cli_mac.cla"))
-
-// absFiles resolves a repo-root-relative file list to absolute paths
-// (the convention buildHostFromFixtures/buildNative68kMulti both expect).
-func absFiles(t *testing.T, files []string) []string {
-	t.Helper()
-	root := repoRoot(t)
-	abs := make([]string, len(files))
-	for i, f := range files {
-		abs[i] = filepath.Join(root, f)
-	}
-	return abs
-}
+// coreCLIHostFiles/absFiles/BuildCoreCLIHost/RunCoreCLIHost (coreCLIFiles +
+// core/cli.cla, the host-oracle build/run pair for TestSuiteOnMac's
+// mac/host byte-exact comparison) were deleted by test-consolidation
+// Task 7 alongside their sole caller, TestSuiteOnMac (mac_test.go, audit
+// row R12, DELETE) -- provably reference-free (`command grep -rn
+// 'coreCLIHostFiles\|absFiles(\|BuildCoreCLIHost\|RunCoreCLIHost'
+// internal/ testsuite/ scripts/` after this deletion finds only this
+// comment).
 
 // pkgRelFiles resolves a repo-root-relative file list to package-dir-
 // relative paths (the "../../..." convention BuildMac/runBuildMac's
@@ -123,29 +119,4 @@ func pkgRelFiles(files []string) []string {
 		rel[i] = filepath.Join("..", "..", f)
 	}
 	return rel
-}
-
-// BuildCoreCLIHost builds the core suite's HOST CLI composition
-// (coreCLIHostFiles, `core/cli.cla` front end) with the current-source
-// clarusc (claruscboot's shared Go-free bootstrap; emit + cc) and returns
-// the executable path.
-func BuildCoreCLIHost(t *testing.T) string {
-	t.Helper()
-	return buildHostFromFixtures(t, absFiles(t, coreCLIHostFiles), "core_cli")
-}
-
-// RunCoreCLIHost runs the host core-CLI binary with argv ("all" by
-// convention for the Mac-gate parity comparison) and returns its stdout
-// (the PASS/FAIL/TOTAL log -- kit.cla's tkReport). This output is the
-// byte-exact expectation for the Mac/native runs (mac_test.go,
-// native_test.go).
-func RunCoreCLIHost(t *testing.T, exe string, argv ...string) string {
-	t.Helper()
-	cmd := exec.Command(exe, argv...)
-	cmd.Dir = t.TempDir() // the ser family does real file I/O
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("run core CLI: %v", err)
-	}
-	return string(out)
 }

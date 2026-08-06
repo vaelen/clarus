@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // blessUI reports whether CLARUS_MAC_BLESS=1 is set: golden files are
@@ -82,47 +81,27 @@ func pbmBytes(raw []byte) []byte {
 	return append([]byte("P4\n512 342\n"), raw...)
 }
 
-// runUIScenarioSrc builds claRel (a package-dir-relative source path) with
-// scenario's own .events script (scripts/build-mac.sh --test --events),
-// runs it via the 4a LaunchAPPL plumbing, and checks the trace against
-// testdata/ui/<scenario>.trace and every snap against testdata/uisnaps/
-// <scenario>.<name>.pbm -- byte-exact, unless CLARUS_MAC_BLESS=1, in which
-// case both are (re)written instead (snap size and exit code are still
-// asserted even while blessing). Its own default-path convenience wrapper,
-// runUIScenario (testdata/ui/<scenario>.cla), was retired by test-
-// consolidation Task 5 alongside its last caller (`about`) -- every
-// remaining scenario builds an example/testdata fixture under its own,
-// non-default path instead (Task 7's own precedent, mac-target-4b).
-func runUIScenarioSrc(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
-	t.Helper()
-	return runUIScenarioBuild(t, scenario, claRel, wantExit)
-}
+// runUIScenarioSrc/runUIScenarioBuild (the Retro68/cprint-lane build+run
+// helpers for a single .events-scripted scenario) were retired by test-
+// consolidation Task 7 alongside their last four callers -- audit rows
+// R3/R5/R8/R11, all DELETE (see each retired test's own comment below).
+// The native lane (native_test.go's buildNative68kUI + uiScenarios68k)
+// covers the identical scenarios/fixtures now; only checkUIGoldens (its
+// shared golden-compare tail) survives, reused by that lane.
 
-// runUIScenarioBuild is runUIScenarioSrc with the build step factored out:
-// builds claRel against the ported UI runtime (runtime/clarus/ui*.cla --
-// scripts/build-mac.sh's only path now, rt_ui.c is never linked), then
-// RunMac + trace/snap comparison against testdata/ui/testdata/uisnaps.
-func runUIScenarioBuild(t *testing.T, scenario string, claRel string, wantExit int) []uiSnap {
-	t.Helper()
-	requireMac(t)
-	eventsRel := filepath.Join("..", "..", "testdata", "ui", scenario+".events")
-	name := "UI" + strings.ToUpper(scenario[:1]) + scenario[1:]
-
-	bin := runBuildMac(t, name, claRel, "--test", "--events", eventsRel)
-	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
-	return checkUIGoldens(t, scenario, out, exitCode, wantExit)
-}
-
-// checkUIGoldens is runUIScenarioBuild's own golden-compare tail, factored
-// out (Task 12, native-5e) so a native (`clarusc emit68k`) boot lane can
-// share the EXACT same trace/snap comparison the Retro68-ported lane
-// already uses, rather than a second hand-copied implementation drifting
-// out of sync with this one -- parses `out` (parseUIOutput), compares the
-// trace against testdata/ui/<scenario>.trace and every snap against
-// testdata/uisnaps/<scenario>.<name>.pbm byte-exact (or rewrites both
-// under CLARUS_MAC_BLESS=1), and asserts exitCode == wantExit. Returns the
-// decoded snaps (same contract runUIScenarioBuild's own callers already
-// rely on for their own extra per-scenario snap assertions).
+// checkUIGoldens was originally factored out (Task 12, native-5e) so the
+// native (`clarusc emit68k`) boot lane could share the EXACT same
+// trace/snap comparison the Retro68-ported lane used, rather than a second
+// hand-copied implementation drifting out of sync with this one -- now
+// that test-consolidation Task 7 has retired the Retro68 lane outright
+// (audit rows R3/R5/R8/R11/R12), this IS the only comparison: the native
+// lane (native_test.go) is its sole caller, and CLARUS_MAC_BLESS=1 only
+// ever fires from a native-lane boot. Parses `out` (parseUIOutput),
+// compares the trace against testdata/ui/<scenario>.trace and every snap
+// against testdata/uisnaps/<scenario>.<name>.pbm byte-exact (or rewrites
+// both under CLARUS_MAC_BLESS=1), and asserts exitCode == wantExit.
+// Returns the decoded snaps (callers use them for extra per-scenario snap
+// assertions, e.g. checkSmokeMandelSnaps/checkBookmarksSnaps below).
 func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wantExit int) []uiSnap {
 	t.Helper()
 	root := repoRoot(t)
@@ -181,32 +160,14 @@ func checkUIGoldens(t *testing.T, scenario string, out string, exitCode int, wan
 // scenario coverage -- only about.events/about.trace (this scenario's own
 // event script + golden) were retired alongside this test.
 
-// TestSmokeBounceUIScenario is the gated-forever counterpart to Task 7's
-// real-input verification of the Ch11 bounce acceptance example: builds
-// testdata/valid/bounce.cla ITSELF (not a copy under testdata/ui/), scripts
-// its `every 1 ticks` bounce with smoke_bounce.events, and asserts the two
-// snaps taken after different amounts of ticking differ -- the ball moved,
-// the same non-accidental-golden guard testsuite/toolbox/cases_canvas.cla's
-// own Canvas case uses now that the retired canvas UI scenario has been
-// migrated there (ui-scenario-retirement Task 7).
-func TestSmokeBounceUIScenario(t *testing.T) {
-	snaps := runUIScenarioSrc(t, "smoke_bounce", filepath.Join("..", "..", "testdata", "valid", "bounce.cla"), 0)
-	var s1, s2 []byte
-	for _, s := range snaps {
-		switch s.name {
-		case "S1":
-			s1 = s.bytes
-		case "S2":
-			s2 = s.bytes
-		}
-	}
-	if s1 == nil || s2 == nil {
-		t.Fatalf("smoke_bounce: expected snaps S1 and S2, got %d snap(s)", len(snaps))
-	}
-	if bytes.Equal(s1, s2) {
-		t.Fatalf("smoke_bounce: snap S1 == S2 -- the ball did not move between snaps")
-	}
-}
+// TestSmokeBounceUIScenario (the Retro68/cprint-lane bounce boot) was
+// retired by test-consolidation Task 7 -- audit row R3, DELETE: the
+// ball-moved-between-snaps proof it gave is native-only now, via
+// TestSmokeBounceOn68k (native_test.go), which drives the SAME
+// testdata/valid/bounce.cla + smoke_bounce.events + testdata/uisnaps/
+// smoke_bounce.*.pbm goldens (unchanged, still consumed by that lane); a
+// generic real-Toolbox canvas draw/animate path is separately covered by
+// testsuite/toolbox/cases_canvas.cla, via TestToolboxSuiteOnMac (R22).
 
 // TestSmokeMenuDemoUIScenario was retired by test-consolidation Task 5
 // (audit row R4, DELETE -- already covered by testsuite/toolbox/
@@ -220,22 +181,17 @@ func TestSmokeBounceUIScenario(t *testing.T) {
 // S1.pbm snap (this scenario's own fixtures, no other consumer) were
 // retired alongside this test.
 
-// TestSmokeMandelUIScenario builds examples/mandelbrot.cla ITSELF (the
-// canvas-pattern acceptance app) and scripts its progressive render: S1
-// after 10 ticks (a rough 16px band), S2 after 40 (first pass complete,
-// second underway) -- must differ (refinement actually progressed); then
-// File > New resets, S3 after 3 more ticks must differ from S2 (the New
-// clear + fresh coarse samples). test-consolidation Task 5 (audit row N8,
-// MERGE->N10) then folds in the retired `about` scenario's own coverage:
-// right after S3, `menu 1 1` (Apple menu, item 1 -- About Mandelbrot...)
-// emits the ABOUT trace line against examples/mandelbrot.cla's own `app`
-// section (name/version/author/about all populated, unlike about.cla's
-// values but the same four-field shape), and File > Quit exits 0.
-// Fixed-point math plus the constant per-tick budget makes all three
-// snaps deterministic.
-func TestSmokeMandelUIScenario(t *testing.T) {
-	checkSmokeMandelSnaps(t, runUIScenarioSrc(t, "smoke_mandel", filepath.Join("..", "..", "examples", "mandelbrot.cla"), 0))
-}
+// TestSmokeMandelUIScenario (the Retro68/cprint-lane mandelbrot boot,
+// which folded in the retired `about` scenario's own About-box coverage
+// per test-consolidation Task 5, audit row N8 MERGE->N10) was itself
+// retired by test-consolidation Task 7 -- audit row R5, DELETE: its
+// progressive-render + About-item proof is native-only now, via
+// TestUiScenariosOn68k's "smoke_mandel" row (native_test.go, still using
+// this same checkSmokeMandelSnaps below against the SAME examples/
+// mandelbrot.cla + smoke_mandel.events + testdata/uisnaps/smoke_mandel.*.pbm
+// goldens, unchanged); a generic real-Toolbox canvas path is separately
+// covered by testsuite/toolbox/cases_canvas.cla, via TestToolboxSuiteOnMac
+// (R22).
 
 // checkSmokeMandelSnaps is TestSmokeMandelUIScenario's own snap assertion,
 // factored out (Task 14, native-5e) for reuse by the native lane.
@@ -271,48 +227,19 @@ func checkSmokeMandelSnaps(t *testing.T, snaps []uiSnap) {
 // consumer) and both scenarios' own events/trace/snap goldens were
 // deleted alongside these tests.
 
-// TestTexteditorUIScenario (Task 6, mac-target-4c) drives examples/
-// texteditor.cla PLUS a test-consolidation-Task-5-added companion source,
-// testdata/ui/texteditor_opendoc_setup.cla (`on App.launch`, writes two
-// small real fixture files -- see that file's own header comment for why
-// launch, not startEmpty) -- through texteditor.events' now-merged script:
-//
-//  1. `launchdoc Report.txt` / `launchdoc My Notes.txt` (the second path
-//     containing a space) dispatch two real App.openDocument calls before
-//     the ordinary script begins -- rt_ui_launch's pre-scan trace (`T
-//     OPENDOC <path>`) plus a "docs" snap of the frontmost (second,
-//     space-containing) document prove both documents arrived intact and
-//     were actually read (examples/texteditor.cla's openPath, a REAL
-//     file.readText -- stronger than the retired opendoc.cla's simplified
-//     echo). Audit row N11, MERGE->N14. Both launched windows are then
-//     closed, returning to zero open Docs.
-//  2. File > New opens a fresh Doc; the ORIGINAL 4c round-trip proof
-//     follows unchanged: type, File > Save (askSave fills the path,
-//     file.writeText writes it for real), a clean `close` (not dirty, no
-//     askSaveChanges prompt), then File > Open the SAME path (askOpen
-//     fills it again, file.readText reads the real bytes back) and a
-//     snap proving the reopened window shows the same content.
-//  3. The retired texteditor_quit scenario's own multi-window quit-cascade
-//     proof (audit row N15, MERGE->N14) folds onto the tail: the just-
-//     reopened doc gets a further edit (dirty), a second File > New doc
-//     gets its own edit (dirty, frontmost). The first `quit` cascades
-//     front-to-back (rt_ui_quit, runtime/mac/rt_ui.c): the frontmost doc
-//     answers Save (+ askSave's own path prompt) and closes for real; the
-//     other answers Cancel, aborting the WHOLE quit where it stands --
-//     already-closed stays closed, not-yet-visited stays open. The second
-//     `quit` then finds only that one doc still open and discards it
-//     (answer-changes discard), exiting 0.
-//
-// See texteditor.events for the exact merged script.
-func TestTexteditorUIScenario(t *testing.T) {
-	requireMac(t)
-	bin := runBuildMac(t, "UITexteditor",
-		filepath.Join("..", "..", "examples", "texteditor.cla"),
-		filepath.Join("..", "..", "testdata", "ui", "texteditor_opendoc_setup.cla"),
-		"--test", "--events", filepath.Join("..", "..", "testdata", "ui", "texteditor.events"))
-	out, _, exitCode := RunMac(t, bin, 3*time.Minute)
-	checkUIGoldens(t, "texteditor", out, exitCode, 0)
-}
+// TestTexteditorUIScenario (Task 6, mac-target-4c; grew a launchdoc/
+// opendoc fold via test-consolidation Task 5, audit row N11 MERGE->N14,
+// and a multi-window quit-cascade fold, audit row N15 MERGE->N14) was
+// itself retired by test-consolidation Task 7 -- audit row R8, DELETE:
+// its full round-trip/launch/quit-cascade proof is native-only now, via
+// TestUiScenariosOn68k's "texteditor" row (native_test.go), which drives
+// the SAME examples/texteditor.cla + testdata/ui/
+// texteditor_opendoc_setup.cla + texteditor.events + testdata/uisnaps/
+// texteditor.*.pbm goldens (unchanged, still consumed by that lane, still
+// this file's checkUIGoldens for the compare); generic textview/dialog
+// Toolbox paths are separately covered by testsuite/toolbox/
+// cases_textwidgets.cla + cases_dialogs.cla, via TestToolboxSuiteOnMac
+// (R22).
 
 // TestTexteditorQuitUIScenario was retired by test-consolidation Task 5
 // (audit row R9, DELETE -- its multi-window quit-cascade proof folded
@@ -332,47 +259,18 @@ func TestTexteditorUIScenario(t *testing.T) {
 // audit rows N14/N15 -- N15 (texteditor_quit) itself merged into that same
 // boot's own tail by test-consolidation Task 5).
 
-// TestBookmarksUIScenario (mac-target-4d Task 9) drives examples/
-// bookmarks.cla ITSELF -- the 4d acceptance app, Appendix C's Bookmark
-// Manager verbatim plus an `app` section and file.load/file.save
-// persistence -- through a real add/edit/remove pass: startEmpty loads
-// "Bookmarks Data" (no such file exists yet on a fresh boot disk, so
-// file.load returns false and is silently ignored, per Ch12); Add opens
-// EditForm on `new Bookmark` -- itself a real exercise of this task's own
-// layout-default fix, since neither EditForm's window nor any of its
-// seven widgets declare a `size:`/`at:` at all, unlike every other form
-// fixture in this codebase. First bookmark: Name/URL typed, Telnet picked
-// via `answer-popup`, Favorite checked, and an overflowing Port value
-// (11 digits, blows past int32) beeps and re-selects the field (S1) before
-// a fix + OK fires `accepted`, adds the row, and saves (S2). Second
-// bookmark: Name/URL typed, HTTP picked, OK accepted with Port left at its
-// default 80 (still valid -- the brief's "port-validation failure
-// exercised once" is deliberately a ONE-time thing, not repeated) --
-// table now shows two rows (S3). A dblclick-edit round renames the first
-// row and re-accepts (writeback, S4), then Remove deletes it, leaving only
-// the second (S5).
-//
-// Persistence coverage (why this scenario does NOT also prove a real
-// cross-run reload): LaunchAPPL boots a fresh, disposable disk image every
-// single run (this harness's own plumbing), so there is no way to quit and
-// relaunch the SAME app instance against a data file it just wrote --
-// "relaunch, see the data survive" is not scriptable inside this gated
-// suite at all, by construction, regardless of what the .cla program does.
-// What IS provable here, and is exactly what this scenario proves: the
-// save/load WIRING fires at the right moments (Remove.click and
-// EditForm.accepted both call saveAll(), which calls file.save -- the
-// trace and the table snaps above are the observable proof those handlers
-// ran to completion without panicking on the real Toolbox file calls).
-// The on-disk byte FORMAT file.save/file.load produce is already pinned
-// byte-for-byte by Task 2's own host round-trip test
-// (internal/sertest/roundtrip.cla, gated by nothing -- runs in the normal
-// host suite). The one thing neither of those covers -- an actual
-// quit-then-relaunch on the SAME disk restoring the SAME rows -- is a real
-// LaunchAPPL/Finder check, done live in Final Validation step 1, not
-// invented as a test-only reload button in the app itself.
-func TestBookmarksUIScenario(t *testing.T) {
-	checkBookmarksSnaps(t, runUIScenarioSrc(t, "bookmarks", filepath.Join("..", "..", "examples", "bookmarks.cla"), 0))
-}
+// TestBookmarksUIScenario (mac-target-4d Task 9's Retro68/cprint-lane
+// bookmarks boot -- see git history for the full add/edit/remove/
+// persistence-wiring narrative this test once carried) was retired by
+// test-consolidation Task 7 -- audit row R11, DELETE: its full proof is
+// native-only now, via TestUiScenariosOn68k's "bookmarks" row
+// (native_test.go), which drives the SAME examples/bookmarks.cla +
+// bookmarks.events + testdata/uisnaps/bookmarks.*.pbm goldens (unchanged,
+// still consumed by that lane, still this file's checkBookmarksSnaps
+// below for the extra per-scenario assertions); real file I/O and
+// form-pattern Toolbox paths are separately covered by testsuite/toolbox/
+// cases_dialogs.cla + cases_popuptable.cla, via TestToolboxSuiteOnMac
+// (R22).
 
 // checkBookmarksSnaps is TestBookmarksUIScenario's own snap assertion,
 // factored out (Task 14, native-5e) for reuse by the native lane.

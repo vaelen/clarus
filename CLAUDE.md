@@ -164,22 +164,37 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +
   PBM framebuffer snaps) under `testdata/uisnaps` — the snaps are viewable
-  PBMs. `CLARUS_MAC_BLESS=1` regenerates both. `scripts/build-mac.sh` takes
-  `--events FILE` to compile a scripted event sequence into a test build for
-  deterministic UI driving (no real input needed). The ui-scenario-retirement
-  phase (2026-08-05) migrated 12 of the original 23 scenarios into
-  `testsuite/toolbox` cases and retired their `testdata/ui`/`testdata/uisnaps`
-  fixtures; the test-consolidation phase migrated two more (2026-08-06):
-  Task 3 migrated `formedit` (now `testsuite/toolbox/cases_formedit.cla`'s
-  `FormEdit` case, once the blocking native-68k `accepted(rec)`
-  trailing-`bool` codegen bug was fixed) and Task 4 migrated
-  `texteditor_bigfile` (its >32,000-byte clamp/lastError/tail-content shape
-  now lives in the toolbox suite's `BigText` case,
-  testsuite/toolbox/cases_bigtext.cla; its own alert-message/close-cascade
-  business logic stays covered by `examples/texteditor.cla` remaining in the
-  `texteditor`/`texteditor_quit` acceptance boots). 9 survive in the
-  scripted lane (`about`, `smoke_bounce`, `smoke_menudemo`, `smoke_mandel`,
-  `opendoc`, `opendoc_empty`, `texteditor`, `texteditor_quit`, `bookmarks`).
+  PBMs. `CLARUS_MAC_BLESS=1` regenerates both, via the **native** lane
+  (`internal/mactest/native_test.go`'s `clarusc emit68k` boots) — the
+  test-consolidation phase's Task 7 (2026-08-06) retired the Retro68/cprint
+  scenario lane outright (`ui_test.go`'s per-scenario `TestSmokeBounceUIScenario`/
+  `TestSmokeMandelUIScenario`/`TestTexteditorUIScenario`/`TestBookmarksUIScenario`),
+  so the native lane is now the ONLY lane that boots these scenarios, and
+  the only place `CLARUS_MAC_BLESS=1` has any effect (`checkUIGoldens`,
+  shared by both lanes before Task 7, is now called only from
+  `native_test.go`). `scripts/build-68k.sh`/`clarusc emit68k --events FILE`
+  compile a scripted event sequence into a test build for deterministic UI
+  driving (no real input needed); `scripts/build-mac.sh` still takes
+  `--events FILE` too, for the two untouchable Retro68/cprint suite gates
+  (`TestCoreSuiteGUIOnMac`/`TestToolboxSuiteOnMac`) and any future
+  Retro68-lane build, but no longer for scenario goldens. The
+  ui-scenario-retirement phase (2026-08-05) migrated 12 of the original 23
+  scenarios into `testsuite/toolbox` cases and retired their
+  `testdata/ui`/`testdata/uisnaps` fixtures; the test-consolidation phase
+  migrated two more (2026-08-06): Task 3 migrated `formedit` (now
+  `testsuite/toolbox/cases_formedit.cla`'s `FormEdit` case, once the
+  blocking native-68k `accepted(rec)` trailing-`bool` codegen bug was
+  fixed) and Task 4 migrated `texteditor_bigfile` (its >32,000-byte
+  clamp/lastError/tail-content shape now lives in the toolbox suite's
+  `BigText` case, testsuite/toolbox/cases_bigtext.cla; its own
+  alert-message/close-cascade business logic stays covered by
+  `examples/texteditor.cla` remaining in the `texteditor` acceptance boot).
+  4 survive as frozen golden scenarios (`smoke_bounce`, `smoke_mandel`,
+  `texteditor`, `bookmarks`), each booted ONLY on the native lane now
+  (Task 7); `about`'s own coverage lives inside `smoke_mandel`'s events
+  script, and `texteditor`'s own script has absorbed `opendoc`/
+  `opendoc_empty`/`texteditor_quit`'s coverage — none of those four have
+  their own standalone scenario anymore.
 - This sandboxed display has a short (well under a minute of zero real HID
   activity) idle-lock; a naive long `sleep` with no synthetic input during
   manual real-input testing can look identical to a frozen app — nudge with

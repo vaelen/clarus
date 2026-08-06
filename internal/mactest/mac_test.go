@@ -151,37 +151,33 @@ func firstDiff(want, got string) string {
 	return ""
 }
 
-// TestSuiteOnMac is the core suite's Mac boot gate (test-suite-review
-// Task 9's Mac-gate swap): it builds and boots the core CLI's case files
-// (coreCLIFiles, the same ones internal/testsuite/core_cli_test.go's
-// buildCoreCLI drives host-side) plus core/cli_mac.cla (coreCLIMacFiles)
-// -- a non-UI print program, exactly what the retired testdata/suite/
-// test_suite.cla was, just via a Mac-safe front end (cli_mac.cla's own
-// doc comment has the full story on why core/cli.cla itself can't boot
-// natively). Host expectation comes from RunCoreCLIHost/BuildCoreCLIHost
-// (suite_host_test.go, the current-source clarusc host oracle via
-// claruscboot's shared Go-free bootstrap, built with
-// cli.cla/coreCLIHostFiles instead), run with `all` -- the
-// same case list cli_mac.cla's own `App.launch` always runs.
-func TestSuiteOnMac(t *testing.T) {
-	requireMac(t)
-	expected := RunCoreCLIHost(t, BuildCoreCLIHost(t), "all")
-	bin := BuildMac(t, "TestSuite", true, pkgRelFiles(coreCLIMacFiles)...)
-	got, _, exitCode := RunMac(t, bin, 15*time.Minute)
-	if exitCode != 0 {
-		t.Fatalf("suite exit code %d, want 0", exitCode)
-	}
-	if got != expected {
-		t.Fatalf("mac/host divergence:%s", firstDiff(expected, got))
-	}
-}
+// TestSuiteOnMac (the core suite's Retro68/cprint-lane CLI boot gate,
+// test-suite-review Task 9's Mac-gate swap) was retired by test-
+// consolidation Task 7 -- audit row R12, DELETE: all 41 CoreTest cases
+// already run through this same Retro68/cprint pipeline via
+// TestCoreSuiteGUIOnMac (R21, coresuite_test.go); the only signal lost is
+// byte-exact core-CLI stdout log-formatting parity against the host
+// (Decision 3, not semantic coverage -- mirrors TestSuiteOn68k's own
+// native-lane retirement, test-consolidation Task 6, audit row N19).
+// coreCLIMacFiles (suite_host_test.go) had no other caller and was deleted
+// alongside this test; core/cli_mac.cla itself is NOT deleted --
+// internal/cg68k/segment_test.go depends on it independently (audit
+// claim 7) -- and BuildMac/RunMac survive, still used by
+// TestRunErrOnMac/TestAbortAppsOnMac below.
 
+// TestRunErrOnMac was reduced by test-consolidation Task 7 to the single
+// representative fixture, `oob` (audit row R16, KEEP -- plain array-bounds
+// panic, the simplest real-mode trap shape, mirroring TestRunErrOn68k's own
+// native-lane reduction, test-consolidation Task 6) -- badenum/emptypop/
+// mapmiss/slicerange/strindex (rows R13/R14/R15/R17/R18, all DELETE) are
+// dropped as per-lane boots since their semantic panic coverage is pinned
+// host-side, lane-independently, by internal/selfhost/behavior_test.go
+// against each fixture's own testdata/runerr/*.behavior golden (T1,
+// ungated). The .cla/.err/.behavior files for all 6 fixtures STAY -- the
+// host test still consumes them.
 func TestRunErrOnMac(t *testing.T) {
 	requireMac(t)
-	files, err := filepath.Glob("../../testdata/runerr/*.cla")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no runerr corpus: %v", err)
-	}
+	files := []string{"../../testdata/runerr/oob.cla"}
 	for _, f := range files {
 		f := f
 		t.Run(filepath.Base(f), func(t *testing.T) {
@@ -202,14 +198,22 @@ func TestRunErrOnMac(t *testing.T) {
 	}
 }
 
-// TestAbortAppsOnMac covers the two suite-excluded, abort-by-design run
-// goldens (emit_array, emit_enum): each deliberately panics partway
+// TestAbortAppsOnMac was reduced by test-consolidation Task 7 to the
+// single representative fixture, emit_array (audit row R19, KEEP -- its
+// 7-line pre-panic alert() capture proves the abort-capture shape more
+// strongly than emit_enum's 5, row R20, DELETE, mirroring
+// TestAbortOn68k's own native-lane reduction, test-consolidation Task 6);
+// emit_enum's own semantic coverage (bad-enum-conversion panic) is
+// separately pinned host-side by testdata/runerr/badenum.behavior (T1,
+// ungated). Neither runerr fixture has any pre-panic output, so this
+// abort-app boot is NOT absorbable by TestRunErrOnMac's own representative
+// (audit claim 6) -- it stays, per lane. Each deliberately panics partway
 // through, so it runs standalone (from its wrapper path, exactly like any
 // program) rather than inside test_suite.cla. Expectation is byte-exact
 // out == its .out golden and exit code == its .exit golden.
 func TestAbortAppsOnMac(t *testing.T) {
 	requireMac(t)
-	for _, name := range []string{"emit_array", "emit_enum"} {
+	for _, name := range []string{"emit_array"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			wrapper := "../../testdata/run/" + name + ".cla"
