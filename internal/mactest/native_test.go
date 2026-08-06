@@ -375,15 +375,17 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 }
 
 // TestSuiteOn68k (native-5d Task 16's end gate, rebased by test-suite-
-// review Task 9 onto the core suite's CLI composition, coreCLIMacFiles)
+// review Task 9 onto the core suite's CLI composition, coreCLIMacFiles --
+// since deleted, see mac_test.go's TestSuiteOnMac retirement comment)
 // was retired by test-consolidation Task 6 -- audit row N19, DELETE: all
 // 41 CoreTest cases already run natively via TestCoreSuiteGUIOn68k (N28);
 // the only signal lost is byte-exact core-CLI stdout log-formatting
 // parity against the host (Decision 3, not semantic coverage).
-// coreCLIMacFiles/cli_mac.cla are NOT deleted -- mac_test.go's own
-// TestSuiteOnMac (a separate, still-KEEP row) and
-// internal/cg68k/segment_test.go both depend on cli_mac.cla independently
-// (audit claim 7).
+// cli_mac.cla itself is NOT deleted -- internal/cg68k/segment_test.go
+// depends on it independently (audit claim 7). TestSuiteOnMac
+// (mac_test.go), which at the time of this retirement still depended on
+// cli_mac.cla via coreCLIMacFiles, was itself later retired by test-
+// consolidation Task 7 (audit row R12), which deleted coreCLIMacFiles.
 
 // TestRunErrOn68k mirrors TestRunErrOnMac (mac_test.go): reduced by
 // test-consolidation Task 6 to the single representative fixture, `oob`

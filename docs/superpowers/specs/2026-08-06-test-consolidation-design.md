@@ -152,3 +152,54 @@ standalone native boot and the audit table records why.
 - The launch-an-application-from-Clarus design (ROADMAP open item) — the
   example-app boots keep using per-app LaunchAPPL boots until that exists.
 - Native `App.startCLI` stub repair (de-prioritized per Decision 3).
+
+## Outcome (2026-08-06)
+
+Gated `internal/mactest` boot inventory: **51 → 16** (native `emit68k`
+lane 29 → 12, Retro68/cprint lane 22 → 4) — better than this spec's own
+~13 target, because both contingent migrations (`formedit`,
+`texteditor_bigfile`) landed, collapsing the audit's own worst-case
+projection of 14 native / 5 Retro68 down by one boot each. Evidence base
+for every row: `docs/superpowers/specs/2026-08-06-test-consolidation-
+audit.md` (29 native + 22 Retro68 rows, `N1`-`N29`/`R1`-`R22`).
+
+T2 gated-`internal/mactest` wall clock: 380.7s pre-phase → 246s
+mid-phase (Task 6) → **171s final** (both lanes, 16 boots, all green) —
+roughly 55% faster than the pre-phase baseline despite the toolbox suite
+itself growing by two cases (`FormEdit`, `BigText`).
+
+### Final boot table
+
+**Native (`emit68k`) lane — 12:**
+
+| Test | Audit row | Purpose |
+|---|---|---|
+| `TestNativeSmoke` | N2 | Records/enums/containers/text baseline + file-section edge cases (>32KB chunked read, missing-file `lastError`, `e = lastError` local-copy codegen) — KEEP, contradicts spec |
+| `TestNativeStrContainers` | N3 | `list of string(N)` (>4-byte element) container ops; string-literal slice in expression position; map key from a computed expression — KEEP, contradicts spec |
+| `TestNativeArrWholeAssign` | N5 | Whole fixed-array / record-field-array / array-of-record / nested-array-element assignment, copy independence — KEEP, contradicts spec |
+| `TestSmokeBounceOn68k` | N7 | `bounce.cla` acceptance boot; T1 `--smoke` canary |
+| `TestRealEventLoopTickOn68k` | N18 | Real `WaitNextEvent` loop + real `UiTickCount` scheduling — the only test in either lane not on `gVirtualTicks` |
+| `TestRunErrOn68k/oob` | N23 | Array-bounds panic — the chosen panic-machinery representative |
+| `TestAbortOn68k/emit_array` | N26 | Byte-exact multi-line (7-line) pre-panic capture, abort-partway — KEEP, contradicts spec's "absorbed" framing |
+| `TestCoreSuiteGUIOn68k` | N28 | One-boot native gate for all 42 `CoreTest` cases |
+| `TestToolboxSuiteOn68k` | N29 | One-boot native gate for all 23 `ToolboxTest` cases (real Toolbox traps), grown via the `formedit`/`texteditor_bigfile` migrations |
+| `TestUiScenariosOn68k/smoke_mandel` | N10 | Mandelbrot acceptance boot (fixed-point canvas render); absorbs N8's About-item-dispatch coverage |
+| `TestUiScenariosOn68k/texteditor` | N14 | Texteditor acceptance boot (save/reopen round trip); absorbs N11/N12/N15 (`opendoc`/`opendoc_empty`/`texteditor_quit`) |
+| `TestUiScenariosOn68k/bookmarks` | N16 | Bookmarks acceptance boot (form add/edit/remove + persistence wiring) |
+
+**Retro68/cprint lane — 4:**
+
+| Test | Audit row | Purpose |
+|---|---|---|
+| `TestRunErrOnMac/oob` | R16 | Array-bounds panic — the chosen panic-machinery representative (Retro68/cprint lane) |
+| `TestAbortAppsOnMac/emit_array` | R19 | Byte-exact multi-line (7-line) pre-panic capture (Retro68/cprint lane) — KEEP, contradicts spec's "absorbed" framing |
+| `TestCoreSuiteGUIOnMac` | R21 | One-boot Retro68/cprint gate for all 42 `CoreTest` cases |
+| `TestToolboxSuiteOnMac` | R22 | One-boot Retro68/cprint gate for all 23 `ToolboxTest` cases (real Toolbox traps), grown via the `formedit`/`texteditor_bigfile` migrations |
+
+### Deviations from the target list (each an audit override, not a silent call)
+
+1. **KEEP `TestNativeSmoke`/`TestNativeStrContainers`/`TestNativeArrWholeAssign`** (audit rows N2/N3/N5, claim 2) — the spec's target list tentatively marked all three for deletion; the audit found genuine native-codegen coverage with zero `testsuite/core/cases_*.cla` equivalent in each, so all three survive.
+2. **One abort app per lane kept** (audit rows N26/R19, claim 6) rather than fully absorbed into the single runerr representative as the spec's target end-state assumed — none of the 6 runerr fixtures has any pre-panic output, so `emit_array`'s byte-exact multi-line pre-panic capture has no other home without a fixture edit out of this phase's scope.
+3. **`smoke_menudemo` plain DELETE, not a migration** (audit rows N9/R4, claim 3) — the spec offered only "MIGRATE if not covered" or "KEEP"; the audit found it already fully covered by `cases_menus.cla` + `cases_events.cla`'s `MenuKeyMatches`, so the correct verdict was a plain delete.
+4. **`cli_mac.cla` (the file) retained** (audit claim 7) even though its own boots (`TestSuiteOn68k`/`TestSuiteOnMac`, audit rows N19/R12) were deleted — `internal/cg68k/segment_test.go` depends on it independently, host-side, out of this phase's scope.
+5. **`about` and `opendoc`/`opendoc_empty` Retro68-lane coverage gaps made explicit** (audit rows R2/R6/R7, claim 8) — not a contradiction of Decision 2 (which already anticipated this loss), but the audit names the resulting gaps rather than leaving them implicit: About-item dispatch and `GetAppFiles` doc-launch have zero Retro68/real-Toolbox boot coverage after this phase, native-lane-only. `testdata/ui/about.cla` (the file) is separately retained regardless, since `internal/mactest/resparity_test.go`'s `about_noicon` case depends on it independently of the scenario's own retirement.

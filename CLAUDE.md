@@ -21,7 +21,7 @@ spec; where any other doc disagrees, the reference wins.
 ```sh
 scripts/clarus-run.sh FILE.cla [-- args...]  # Go-free day-to-day `clarus run`
 scripts/test-task.sh              # T1: per-task gate (~15s)
-scripts/test-merge.sh             # T2: per-merge gate (~15m+, needs the emulator)
+scripts/test-merge.sh             # T2: per-merge gate (~5m, needs the emulator)
 ```
 
 - `scripts/clarus-run.sh` is the Go-free replacement for `clarus run` day
@@ -88,10 +88,12 @@ Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
 - `testsuite/core/` (42 `CoreTest` cases: 41 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (21 `ToolboxTest` cases: 20 real +
+  host and natively; `testsuite/toolbox/` (23 `ToolboxTest` cases: 22 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
-  machinery cases, `UiTestVerbSmoke` and `PostEventClick`) needs
+  machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
+  by the test-consolidation phase, which migrated `formedit`/
+  `texteditor_bigfile` in as `FormEdit`/`BigText`) needs
   the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

@@ -1188,7 +1188,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | `UiLaunchReal` (cprint/Mac lane, `rt_ext_mac.inc` real C AE glue: `AEInstallEventHandler` + 4 Pascal handlers) | unexercised, recorded | Still genuinely untested — every Mac-lane (Retro68) test build uses `--events`, and `TestRealEventLoopTickOn68k` only covers the native `emit68k` lane (no `TestRealEventLoopTickOnMac` twin exists). Needs a real Finder double-click launch or a dedicated no-events Mac-lane smoke test; not cheap (out of this task's scope to add a new gated Mac boot lane). |
   | `rtUiAskSaveChanges`'s real `Alert(130)` half (`uidialogs.cla`) | unexercised, recorded | Gated on `rtUiScripted`, which is unconditionally `true` for the run's whole lifetime the instant any test's `rtUiRunScripted` starts (`uiscript.cla:1250`) — no existing test ever takes the real half. NOT cheap per this task's own bar: modal `Alert`, needs real input. Same disposition covers `rtUiAskOpen`/`rtUiAskSave`'s own real halves (`UiSFGetFile`/`UiSFPutFile`, row 1 above). |
   | Real mouse-tracking / `TrackControl` continuation (`ui.cla:2117,2144` scrollbar+button tracking, `uitext.cla:731` textview scrollbar drag, `uitable.cla:758` List Manager `LClick` row tracking, `uitable.cla:950,970` `rtUiPopupClick`'s real `UiPopUpMenuSelect` branch) | unexercised, recorded | All `rtUiScripted`-gated: a scripted `click` synthesizes the discrete effect directly (one nudge, one row pick, one `rtUiAnswerPop`-queued popup choice) rather than invoking the real held-mouse tracking/menu-tracking loop (`UiTrackControl`/`UiLClick`/`UiPopUpMenuSelect`). Needs live/held mouse input — CLAUDE.md's own documented carve-out for this display's interactive-testing gap. |
-  | Native non-UI `App.startCLI` dispatch (`cg68Program`, cg68k.cla) | **known-broken**, not unexercised | Task 9 escalation, still live: entry-handler dispatch calls every declared app-level handler unconditionally (no platform-exclusivity check) and never marshals `App.startCLI`'s `args` parameter (reads back as uninitialized garbage) — hangs the boot with zero captured output. Worked around, not fixed: `testsuite/core/cli_mac.cla` uses `App.launch` instead. Live hazard for any FUTURE native non-UI program declaring `App.startCLI` (task-9-report.md's own "Flagging for Andrew"). |
+  | Native non-UI `App.startCLI` dispatch (`cg68Program`, cg68k.cla) | **known-broken**, not unexercised | Task 9 escalation, still live: entry-handler dispatch calls every declared app-level handler unconditionally (no platform-exclusivity check) and never marshals `App.startCLI`'s `args` parameter (reads back as uninitialized garbage) — hangs the boot with zero captured output. Worked around, not fixed: `testsuite/core/cli_mac.cla` uses `App.launch` instead. Live hazard for any FUTURE native non-UI program declaring `App.startCLI` (task-9-report.md's own "Flagging for Andrew"). De-prioritized, not scheduled (test-consolidation spec Decision 3, Andrew, 2026-08-06): "CLI targets the host; 68k headless apps are a by-product, not a goal" — the same phase dropped both Mac-lane CLI boots (`TestSuiteOn68k`/`TestSuiteOnMac`) entirely rather than routing around this bug, since the host CLI (`cli.cla`) is the CLI story and `App.launch`-based `cli_mac.cla` already covers the native-lane case-running need. |
   | Real (`= trap`) cmd-key `_MenuKey` dispatch | **closed by `MenuKeyMatches`** | This phase (Task 11): a real Toolbox `_MenuKey` (`0xA93E`) call against the GUI's own installed File menu, run synchronously in-process — no longer needs a real hardware key press to exercise the fixed `CharParameter` marshaling (the `5faaa6c`-era bug shape). |
   | Real-mode `every`-timer scheduling, native (cg68k) lane (`rtUiBuildEvery`/`rtUiEveryPump`'s `UiTickCount()` branch, `ui.cla:1328`) | **closed by `TestRealEventLoopTickOn68k`** | `tickprobe.cla`, no `--events` — the only test exercising `rtUiRun`'s real `WaitNextEvent` loop and real tick scheduling (every scripted scenario runs on `gVirtualTicks` instead). Native (`emit68k`) lane only — same cprint/Mac-lane gap as the `UiLaunchReal` row above (no no-events Mac-lane boot exists at all). |
   | `UiNumToString` (Package 7, `0xA9EE reg`, `uitable.cla`) | closed by golden | Empirically green, not newly tested: `testdata/ui/formedit.events`' second `edit` session (prefilled int field, `kind=2`) is `uitable.cla:122-124`'s own documented "first real exercise" of the fixed register-marshaling shape. No new toolbox case landed — would be redundant. |
@@ -1407,6 +1407,88 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `docs/superpowers/plans/2026-08-05-ui-scenario-retirement.md`; ledger:
   `.superpowers/sdd/2026-08-05-ui-scenario-retirement/progress.md`.
 
+  **test-consolidation (branch `test-consolidation`, 2026-08-06): DONE.**
+  An audit-first pass over the WHOLE gated `internal/mactest` boot
+  inventory (sequel to ui-scenario-retirement, same discipline): **51 →
+  16 emulator boots** (native `emit68k` lane 29 → 12: `TestNativeSmoke`,
+  `TestNativeStrContainers`, `TestNativeArrWholeAssign`,
+  `TestSmokeBounceOn68k`, `TestRealEventLoopTickOn68k`,
+  `TestRunErrOn68k/oob`, `TestAbortOn68k/emit_array`,
+  `TestCoreSuiteGUIOn68k`, `TestToolboxSuiteOn68k`, and the 3-scenario
+  `TestUiScenariosOn68k` table [`smoke_mandel`, `texteditor`,
+  `bookmarks`]; Retro68/cprint lane 22 → 4: `TestRunErrOnMac/oob`,
+  `TestAbortAppsOnMac/emit_array`, `TestCoreSuiteGUIOnMac`,
+  `TestToolboxSuiteOnMac`). Evidence base: the committed audit table,
+  `docs/superpowers/specs/2026-08-06-test-consolidation-audit.md` (29+22
+  rows, each cited by its deletion/merge/migrate/keep commit).
+
+  **Verdicts that deviated from the spec's own target list** (each the
+  audit overriding the spec, not a silent call): **KEEP**
+  `TestNativeSmoke`/`TestNativeStrContainers`/`TestNativeArrWholeAssign`
+  (audit claim 2) — each proven to exercise native-codegen shapes
+  (file-section edge cases; `list of string(N)` >4-byte-element ops +
+  expr-position string-literal slice + computed map key;
+  whole-fixed-array/record-field-array/array-of-record/nested-array
+  assignment) with zero equivalent in any `testsuite/core/cases_*.cla`,
+  where the spec had tentatively marked all three for deletion; **one
+  abort app per lane kept** (`emit_array`, audit claim 6) rather than
+  fully absorbed into the single runerr representative as the spec's
+  target end-state assumed — none of the 6 runerr fixtures has any
+  pre-panic output, so the abort apps' byte-exact multi-line
+  pre-panic-capture proof (7 lines) has no other home; **`smoke_menudemo`
+  plain DELETE**, not a migration (audit claim 3) — `cases_menus.cla` +
+  `cases_events.cla`'s `MenuKeyMatches` already cover its custom-menu
+  dim/undim and shortcut-dispatch shapes; **`cli_mac.cla` (the file)
+  retained** (audit claim 7) even though its own boots (`TestSuiteOn68k`/
+  `TestSuiteOnMac`) were deleted — `internal/cg68k/segment_test.go`
+  depends on it independently, host-side, out of this phase's scope; and
+  **`testdata/ui/about.cla` (the file) retained** likewise —
+  `internal/mactest/resparity_test.go`'s `about_noicon` resource-parity
+  case depends on it independently, even though the `about` scripted
+  scenario itself retired (its About-item-dispatch coverage merged into
+  `smoke_mandel`'s events script, audit claim 4).
+
+  The blocking **`accepted(rec)` trailing-`bool` native codegen bug is
+  RESOLVED** (small-scalar-width phase, commit `8278ae7`,
+  `runtime/clarus/uidialogs.cla`'s `rtUiFormAccept` bool writeback:
+  `pokel` → `pokeb` — empirically FALSE at the pre-fix commit `67b2705`,
+  TRUE after): `formedit` migrated into
+  `testsuite/toolbox/cases_formedit.cla`'s `FormEdit` case (Task 3), which
+  itself pins the regression (verified FAILing against the pre-fix
+  commit before the migration landed, tickprobe precedent). `testsuite/
+  toolbox` grew 21 → 23 `ToolboxTest` cases (22 real + `SelfCheck`):
+  `FormEdit` (Task 3) and `BigText` (Task 4, absorbing
+  `texteditor_bigfile`'s >32,000-byte clamp/lastError/tail-content shape;
+  its own alert-message/close-cascade business logic stays covered by
+  `examples/texteditor.cla` in the `texteditor` acceptance boot, an
+  accepted gap — see below). The scripted/frozen-golden lane shrank to
+  **4 survivors, native lane only** (Task 7 retired the Retro68/cprint
+  scenario lane outright and moved `CLARUS_MAC_BLESS=1` bless ownership to
+  the native lane): `smoke_bounce` (standalone) plus the 3-row
+  `TestUiScenariosOn68k` table (`smoke_mandel`, `texteditor`,
+  `bookmarks`).
+
+  **Accepted coverage gaps, recorded rather than silently dropped:**
+  `examples/texteditor.cla`'s own app-specific open-guard alert/cascade
+  business logic is no longer boot-asserted now that `texteditor_bigfile`
+  migrated to the toolbox suite's generic `BigText` case (Task 4); and the
+  Retro68/cprint lane's About-item dispatch and `GetAppFiles` doc-launch
+  coverage retired with the lane (audit rows R2/R6/R7) — accepted per the
+  spec's own Decision 2 (example-app acceptance boots are native-lane-only
+  by design), so these two paths now have native-lane-only coverage.
+
+  T2 timing: pre-phase gated-`internal/mactest` baseline 380.7s (T2 run
+  2026-08-06 17:17, whole T2 485s); Task 6's mid-phase full-gate reading
+  246s; **final (this task): gated `internal/mactest` 171s** (both lanes,
+  16 boots, all green) — T1 body 15s, `internal/selfhost` 85s, whole T2
+  ~271s, roughly **55% faster** than the pre-phase gated-mactest baseline
+  despite the suite builds themselves growing (`FormEdit`/`BigText`).
+  Spec: `docs/superpowers/specs/2026-08-06-test-consolidation-design.md`
+  (see its "Outcome" section); audit:
+  `docs/superpowers/specs/2026-08-06-test-consolidation-audit.md`; plan:
+  `docs/superpowers/plans/2026-08-06-test-consolidation.md`; ledger:
+  `.superpowers/sdd/2026-08-06-test-consolidation/progress.md`.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
@@ -1541,13 +1623,18 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   fixed). Migrate `formedit` once the underlying codegen bug is found and
   fixed.
 - **Launch-an-application-from-Clarus (deferred, ui-scenario-retirement
-  spec Out-of-scope 1, Andrew 2026-08-05):** a function to launch another
+  spec Out-of-scope 1, Andrew 2026-08-05; also out of scope for
+  test-consolidation, 2026-08-06):** a function to launch another
   app from inside Clarus so an on-Mac suite could exercise the example
   apps (mandelbrot, texteditor, …) directly. System 6's `_Launch`
   REPLACES the running application (no MultiFinder supervision), so this
   needs its own design (sub-launch conventions, result handoff via file,
   relaunch-the-suite chaining, or System 7/MultiFinder gating). The
-  remaining 11 scripted-lane scenarios' eventual fate rides on this.
+  remaining 4 scripted-lane scenarios (`smoke_bounce`, `smoke_mandel`,
+  `texteditor`, `bookmarks` — down from 11 after test-consolidation
+  merged/migrated/deleted the rest, native lane only since that phase's
+  Task 7 also retired the Retro68/cprint scenario lane) eventual fate
+  rides on this.
 - **`rtUiBuildEvery` virtual-tick seeding (found during
   ui-scenario-retirement, 2026-08-05):** seeds every-block due times from
   real `TickCount` instead of virtual tick 0 in composed scripted builds

@@ -13,7 +13,9 @@ import (
 // coreGUIFiles is coreCLIFiles (testsuite/kit.cla + core/runner.cla +
 // every core/cases_*.cla) + core/gui.cla -- the Mac GUI build
 // composition (test-suite-review Task 10), a sibling of Task 9's
-// coreCLIMacFiles that swaps gui.cla in for cli_mac.cla. gui.cla
+// coreCLIMacFiles (since deleted by test-consolidation Task 7 alongside
+// its last caller, TestSuiteOnMac -- see suite_host_test.go's
+// coreCLIFiles comment) that swapped gui.cla in for cli_mac.cla. gui.cla
 // declares a `window`, so cg68k's UI-program startup path (rtUiLaunch,
 // runtime/clarus/ui.cla) dispatches App.startEmpty correctly -- unlike
 // the non-UI entry path cli_mac.cla's own doc comment escalates (Task
