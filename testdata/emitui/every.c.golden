@@ -92,7 +92,7 @@ extern int32_t rt_ext_UiMenuSelect(int32_t);
 extern int32_t rt_ext_UiMenuKey(short);
 extern int32_t rt_ext_UiWaitNextEvent(short, void *, int32_t, void *);
 extern int32_t rt_ext_UiGetNextEvent(short, void *);
-extern void rt_ext_UiFlushEvents(short, short);
+extern void rt_ext_UiFlushEvents(int32_t);
 extern int32_t rt_ext_UiStillDown(void);
 extern void rt_ext_UiGetMouse(void *);
 extern void rt_ext_UiGlobalToLocal(void *);
@@ -2878,7 +2878,7 @@ static void clar_fn_rtUiStartup(void) {
     int32_t cv_err;
     cv_err = 0;
     rt_ext_UiMacInitToolbox();
-    rt_ext_UiFlushEvents(65535, 0);
+    rt_ext_UiFlushEvents(65535);
     cv_respSlot = rt_ext_UiNewPtr(4);
     cv_err = rt_ext_UiGestalt(1937339254, cv_respSlot);
     if (cv_err == 0) {

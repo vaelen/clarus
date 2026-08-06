@@ -8829,9 +8829,8 @@ LBL_162:
         MOVE.L D0,-12(A6)
         JSR 2922(A5)
         MOVE.L #65535,D0
-        MOVE.W D0,-(A7)
-        MOVE.L #0,D0
-        MOVE.W D0,-(A7)
+        MOVE.L D0,-(A7)
+        MOVE.L (A7)+,D0
         DC.W $A032  ; UiFlushEvents
         MOVE.L #4,D0
         MOVE.L D0,-(A7)

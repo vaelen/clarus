@@ -260,7 +260,17 @@ external func UiMenuKey(ch: word): int = trap 0xA93E
 // unhandled key).
 external func UiWaitNextEvent(eventMask: word, theEvent: ptr, sleep: int, mouseRgn: ptr): bool = trap 0xA860
 external func UiGetNextEvent(eventMask: word, theEvent: ptr): bool = trap 0xA970
-external func UiFlushEvents(whichMask: word, stopMask: word) = trap 0xA032
+// _FlushEvents is 0xA032 -- `0xA032 & 0x0800 == 0`, bit 11 clear, an OS
+// trap using REGISTER convention, NOT the two-word Pascal-stack shape a
+// plain `= trap` clause assumes (same bit-11 rule cases_event.cla's own
+// comment documents for _OSEventAvail/_FlushEvents; this was that
+// comment's own ledgered follow-up, fixed here). Retro68's multiversal
+// defs confirm the packed layout (Retro68/multiversal/defs/OSEvent.yaml,
+// executor-only FlushEvents clause): `evmask` is `register: D0LowWord`,
+// `stopmask` is `register: D0HighWord` -- both masks share ONE 16-bit-pair
+// register, D0, not two pushed stack words. `masks` packs them: low word
+// (bits 0-15) = whichMask/evmask, high word (bits 16-31) = stopMask.
+external func UiFlushEvents(masks: int) = trap 0xA032 reg
 external func UiStillDown(): bool = trap 0xA973
 external func UiGetMouse(mouseLoc: ptr) = trap 0xA972
 external func UiGlobalToLocal(pt: ptr) = trap 0xA871
@@ -1377,7 +1387,7 @@ func rtUiStartup() {
     var err: int
 
     UiMacInitToolbox()
-    UiFlushEvents(0xFFFF, 0)
+    UiFlushEvents(0x0000FFFF)
     respSlot = UiNewPtr(4)
     err = UiGestalt(0x73797376, respSlot)
     if err == 0 {

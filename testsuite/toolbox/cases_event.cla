@@ -34,9 +34,10 @@
 // raw trap-dispatch convention itself -- the two differ for OS traps
 // specifically (`_FlushEvents`, 0xA032, right next to it in the same OS
 // Event Manager family, is bit-11-clear too; `runtime/clarus/ui.cla`'s own
-// `UiFlushEvents = trap 0xA032` plain-Pascal declaration is the SAME
-// latent mis-declaration this file's first draft copied -- OUT of this
-// task's scope, ledgered as a follow-up, not fixed here).
+// `UiFlushEvents = trap 0xA032` plain-Pascal declaration was the SAME
+// latent mis-declaration this file's first draft copied -- ledgered as a
+// follow-up here, fixed by toolbox-cookbook Task 3: `UiFlushEvents` is now
+// `= trap 0xA032 reg` with the two masks packed into one `int` arg).
 //
 // Fixed by using the real Toolbox EVENT MANAGER sibling instead:
 // `_EventAvail`, 0xA971 -- one trap word after `_GetNextEvent`'s own

@@ -329,7 +329,7 @@ int32_t rt_ext_UiWaitNextEvent(short eventMask, void *theEvent, int32_t sleep, v
     return (int32_t)WaitNextEvent((EventMask)eventMask, (EventRecord *)theEvent, (UInt32)sleep, (RgnHandle)mouseRgn);
 }
 int32_t rt_ext_UiGetNextEvent(short eventMask, void *theEvent) { return (int32_t)GetNextEvent((EventMask)eventMask, (EventRecord *)theEvent); }
-void rt_ext_UiFlushEvents(short whichMask, short stopMask) { FlushEvents((EventMask)whichMask, (EventMask)stopMask); }
+void rt_ext_UiFlushEvents(int32_t masks) { FlushEvents((EventMask)(masks & 0xFFFF), (EventMask)((masks >> 16) & 0xFFFF)); }
 int32_t rt_ext_UiStillDown(void) { return (int32_t)StillDown(); }
 void rt_ext_UiGetMouse(void *mouseLoc) { GetMouse((Point *)mouseLoc); }
 void rt_ext_UiGlobalToLocal(void *pt) { GlobalToLocal((Point *)pt); }
