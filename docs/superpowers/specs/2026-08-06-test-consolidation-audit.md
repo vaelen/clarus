@@ -31,7 +31,10 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
      `testsuite/toolbox/*.cla` + `gui.cla`): **8** `.seg1.s`...`.seg8.s`
      files produced.
    - Core composition (`coreGUIFiles`, `testsuite/core/cases_*.cla` +
-     `gui.cla`): **3** `.seg1.s`...`.seg3.s` files produced.
+     `gui.cla`): **8** `.seg1.s`...`.seg8.s` files produced (re-verified
+     in a clean output dir 2026-08-06 after a reviewer flagged the
+     original run's 3-segment count as stale/wrong — the earlier number
+     came from a `/tmp` dir that wasn't fully cleaned between runs).
    - **Verdict: TRUE, both compositions are naturally multi-segment at
      the real budget.** `TestNativeSmokeForcedMultiSegment` [N6] is
      redundant — `N28`/`N29` already exercise cross-segment BSR/JSR +
@@ -166,8 +169,10 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
      end-state says the one panic-machinery boot per lane should be
      "absorbing the abort apps' abort-partway/byte-exact-capture
      coverage." But `testdata/run/emit_array.cla`/`emit_enum.cla` each
-     print several real `alert()` lines (6 and 4 respectively — verified
-     via their `.out` goldens) BEFORE panicking, proving the capture
+     print several real `alert()` lines (7 and 5 respectively, counting
+     each fixture's own final "before X" marker line — verified via
+     `wc -l testdata/run/emit_array.out testdata/run/emit_enum.out`)
+     BEFORE panicking, proving the capture
      buffer correctly preserves multi-line output up to an abort — while
      **all 6 runerr fixtures panic with ZERO prior output** (verified by
      reading each `.cla`: none call `alert()` before their
@@ -179,8 +184,8 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
      `alert()` lines to `oob.cla` before its panic and re-audit, achieving
      genuine one-boot absorption, or (b) accept a 2-boot panic budget per
      lane.** Absent that edit, the honest verdict today is: **KEEP one
-     abort app per lane** (`emit_array` — 6 pre-panic lines vs
-     `emit_enum`'s 4, the stronger proof; its own semantic coverage,
+     abort app per lane** (`emit_array` — 7 pre-panic lines vs
+     `emit_enum`'s 5, the stronger proof; its own semantic coverage,
      enum-conversion panic, is separately pinned host-side by
      `badenum.behavior`) alongside the runerr representative. This bumps
      the ~13-boot target by +2 (one extra boot per lane) unless a later
@@ -226,7 +231,7 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
 | N3 | `TestNativeStrContainers` | native | `list of string(N)` (>4-byte element) container ops; string-literal slice in expr position; map key from computed expr | None — verified absent from every `testsuite/core/cases_*.cla` | KEEP (contradicts spec) | — |
 | N4 | `TestNativeFixedOps` | native | `fix_mul`/`fix_div` native codegen | `testsuite/core/cases_enumfix.cla:39` `caseFixedMathOps`, native via N28 | DELETE | claim 2 |
 | N5 | `TestNativeArrWholeAssign` | native | Whole fixed-array/record-field-array/array-of-record/nested-array-element assignment (copy independence) | None — `cases_arr.cla` only covers single-element store, never whole-array assign | KEEP (contradicts spec) | — |
-| N6 | `TestNativeSmokeForcedMultiSegment` | native | Forced `--seglimit` cross-segment BSR/JSR + `_LoadSeg` proof | N28/N29 already naturally multi-segment (8 and 3 segments) at the real default budget — verified by build | DELETE | claim 1 |
+| N6 | `TestNativeSmokeForcedMultiSegment` | native | Forced `--seglimit` cross-segment BSR/JSR + `_LoadSeg` proof | N28/N29 already naturally multi-segment (8 and 8 segments) at the real default budget — verified by build | DELETE | claim 1 |
 | N7 | `TestSmokeBounceOn68k` | native | `bounce.cla` acceptance boot; T1 `--smoke` canary | — (untouchable, target end-state + T1 canary) | KEEP | — |
 | N8 | `TestAboutOn68k` | native | Apple-menu About-item dispatch (populated app-info) | `smoke_mandel`'s own app section has all 4 properties (claim 4) — merge target confirmed | MERGE→N10 | task 2/3 |
 | N9 | `TestUiScenariosOn68k/smoke_menudemo` | native | Custom app-scope + window-scoped menu items, dim/undim | `cases_menus.cla` + `cases_events.cla:87` (claim 3) | DELETE | claim 3 |
@@ -246,8 +251,8 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
 | N23 | `TestRunErrOn68k/oob` | native | Array-bounds panic — chosen panic-machinery representative | — (kept as the representative) | KEEP | — |
 | N24 | `TestRunErrOn68k/slicerange` | native | String-slice-out-of-range panic | `testdata/runerr/slicerange.behavior`, host T1 | DELETE | claim 6 |
 | N25 | `TestRunErrOn68k/strindex` | native | String-index-out-of-range panic | `testdata/runerr/strindex.behavior`, host T1 | DELETE | claim 6 |
-| N26 | `TestAbortOn68k/emit_array` | native | Byte-exact multi-line (6-line) pre-panic capture, abort-partway | None of N20-N25/oob has any pre-panic output (claim 6 gap) | KEEP (contradicts spec's "absorbed" framing) | — |
-| N27 | `TestAbortOn68k/emit_enum` | native | Byte-exact multi-line (4-line) pre-panic capture + bad-enum-conversion panic | N26 proves the same capture-fidelity shape more strongly (6 lines vs 4); semantic enum-panic coverage is `testdata/runerr/badenum.behavior`, host T1 | DELETE | claim 6 |
+| N26 | `TestAbortOn68k/emit_array` | native | Byte-exact multi-line (7-line) pre-panic capture, abort-partway | None of N20-N25/oob has any pre-panic output (claim 6 gap) | KEEP (contradicts spec's "absorbed" framing) | — |
+| N27 | `TestAbortOn68k/emit_enum` | native | Byte-exact multi-line (5-line) pre-panic capture + bad-enum-conversion panic | N26 proves the same capture-fidelity shape more strongly (7 lines vs 5); semantic enum-panic coverage is `testdata/runerr/badenum.behavior`, host T1 | DELETE | claim 6 |
 | N28 | `TestCoreSuiteGUIOn68k` | native | One-boot native gate for all 42 CoreTest cases | — (untouchable, target end-state) | KEEP | — |
 | N29 | `TestToolboxSuiteOn68k` | native | One-boot native gate for all 21 ToolboxTest cases (real Toolbox traps) | — (untouchable, target end-state; grows via N13/N17 migrations) | KEEP | — |
 | R1 | `TestFormeditUIScenario` | Retro68 | Form windows/binds/`accepted(rec)` round trip (Retro68/cprint lane) | Pending Task 2 fix, then carried by R22's shared `toolboxFiles` composition | KEEP until fixed, then MIGRATE→R22 | task 2 |
@@ -268,8 +273,8 @@ then `coresuite_test.go`'s two Mac-lane suite gates).
 | R16 | `TestRunErrOnMac/oob` | Retro68 | Array-bounds panic — chosen panic-machinery representative | — (kept as the representative) | KEEP | — |
 | R17 | `TestRunErrOnMac/slicerange` | Retro68 | String-slice-out-of-range panic (Retro68/cprint lane) | `testdata/runerr/slicerange.behavior`, host T1 | DELETE | claim 6 |
 | R18 | `TestRunErrOnMac/strindex` | Retro68 | String-index-out-of-range panic (Retro68/cprint lane) | `testdata/runerr/strindex.behavior`, host T1 | DELETE | claim 6 |
-| R19 | `TestAbortAppsOnMac/emit_array` | Retro68 | Byte-exact multi-line (6-line) pre-panic capture (Retro68/cprint lane) | None of R13-R18/oob has pre-panic output (claim 6 gap) | KEEP (contradicts spec's "absorbed" framing) | — |
-| R20 | `TestAbortAppsOnMac/emit_enum` | Retro68 | Byte-exact multi-line (4-line) pre-panic capture (Retro68/cprint lane) | R19 proves the same shape more strongly; semantic coverage is `badenum.behavior`, host T1 | DELETE | claim 6 |
+| R19 | `TestAbortAppsOnMac/emit_array` | Retro68 | Byte-exact multi-line (7-line) pre-panic capture (Retro68/cprint lane) | None of R13-R18/oob has pre-panic output (claim 6 gap) | KEEP (contradicts spec's "absorbed" framing) | — |
+| R20 | `TestAbortAppsOnMac/emit_enum` | Retro68 | Byte-exact multi-line (5-line) pre-panic capture (Retro68/cprint lane) | R19 proves the same shape more strongly; semantic coverage is `badenum.behavior`, host T1 | DELETE | claim 6 |
 | R21 | `TestCoreSuiteGUIOnMac` | Retro68 | One-boot Retro68/cprint gate for all 42 CoreTest cases | — (untouchable, target end-state) | KEEP | — |
 | R22 | `TestToolboxSuiteOnMac` | Retro68 | One-boot Retro68/cprint gate for all 21 ToolboxTest cases (real Toolbox traps) | — (untouchable, target end-state; grows via R1/R10 migrations) | KEEP | — |
 
