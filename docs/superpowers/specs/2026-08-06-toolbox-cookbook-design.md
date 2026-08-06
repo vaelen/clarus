@@ -95,9 +95,12 @@ volume/chapter.
 - **`toolbox/osutils.cla`** — Gestalt (named-reg, `ret d0`), Delay,
   SysBeep.
 - **`toolbox/scrap.cla`** — ZeroScrap, PutScrap, GetScrap, InfoScrap,
-  LoadScrap, UnloadScrap; `ScrapStuff` extern record (InfoScrap's
-  result shape). Desk-scrap traps only — the TE-side bridge routines
-  are glue, not traps, and stay out (see walkthrough 7).
+  LoadScrap, UnloadScrap. InfoScrap's `ScrapStuff` result is documented
+  as peek offsets in a header comment, NOT an extern record: no
+  `Name(p)` conversion exists to apply an extern record to a returned
+  `ptr`, and `overlay record` lacks `word` fields (plan-stage
+  correction, 2026-08-06). Desk-scrap traps only — the TE-side bridge
+  routines are glue, not traps, and stay out (see walkthrough 7).
 
 **Collision constraint:** any catalog name that can co-occur with a
 runtime declaration under `--testapi` (the suite GUI builds splice
@@ -143,7 +146,11 @@ inventory stays at 16):
    and dogfoods the new catalog. Verified by the `Catalog` suite case
    growing a TE↔desk-scrap roundtrip check (native lane included).
 
-Both riders pull in one shared bootstrap-snapshot regeneration.
+Neither rider needs a bootstrap-snapshot regeneration (plan-stage
+correction, 2026-08-06): `clarusc/clarusc.c` embeds only the compiler's
+own source — runtime `.cla` modules are read from `--rtdir` on disk at
+emit time, and grep confirms the snapshot contains no `UiFlushEvents`/
+`uitext` content. `TestSnapshotFixedPoint` would catch this if wrong.
 
 ## Recorded follow-on: sunset the `Ui*` 1:1 trap externs
 
