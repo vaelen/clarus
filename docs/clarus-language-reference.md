@@ -20,6 +20,7 @@ System 6/7 applications on 68k Macintosh computers.
 11. Drawing and Timers
 12. Networking, Files, and Errors
 13. Low-Level Memory Access
+    - Transcribing Inside Macintosh Declarations
 Appendix A. Grammar (EBNF)
 Appendix B. Event Handler Quick Reference
 Appendix C. Worked Examples
@@ -1445,6 +1446,25 @@ Total record size rounds up to even. Field offsets follow the classic MPW 68k pa
 **Ordinary `record` packing:** the same discipline governs an ordinary `record`'s (Chapter 3) own field layout, independently of the palette above: `bool` and `char` fields pack at 1-byte alignment — their exact 1-byte size, no padding before or after, in an ordinary record or a fixed array alike; `bool` keeps that same 1-byte packing inside an `extern record` too, but `char` is excluded from the extern-record palette entirely (not a legal field type there — an extern record's 1-byte numeric field type is `byte`, above). Every other ordinary-record field kind (`int`, `fixed`, `string(n)`, enum, nested `record`, `T[n]`, `text`, `list of T`, `map of T`, window and resource references) packs at 2-byte alignment (a degenerate 1-byte `T[n]` — `bool[1]`/`char[1]` — packs at 1-byte alignment instead, same as a bare `bool`/`char` field), in declaration order: a 2-byte-aligned field is padded up to the next even offset when the fields before it left an odd running size, and the record's total size is rounded up to even the same way. A `string(n)` field additionally occupies its even-rounded size — n+1 rounded up to even bytes — so the field after it starts on an even offset on every lane. A fixed array's elements follow the identical rule at element granularity — `bool[n]`/`char[n]` elements sit at stride 1, tightly packed with no inter-element padding, while every other element kind keeps its own natural stride. Both code generators (`cg68k` and the host-C `cprint` lane) implement this rule for `bool`/`char` (small-scalar-width phase) and for `string(n)` fields' 2-byte alignment and even-rounded size (strn-field-alignment phase, 2026-08-06 — the C lane realizes it with explicit pad members and an even-padded `clar_str_n` typedef), so the two lanes' record layouts coincide for those kinds; per-lane layouts are still never interchangeable — a native-computed field offset is never valid against a host build's struct, or vice versa, since each lane computes its own independently.
 
 Multi-byte fields read and write in the machine's native byte order — the same `peekw`/`peekl`/`pokew`/`pokel` contract Chapter 13's `peek`/`poke` section already documents: big-endian on the 68k target, host-endian on a host build. An `extern record` is all-scalar storage, structurally outside automatic reference counting — never retained or released, the same as an overlay record or a plain `ptr`.
+
+### Transcribing Inside Macintosh Declarations
+
+This is the normative mapping from Inside Macintosh's own type vocabulary to the Clarus types used above to transcribe a Toolbox or OS declaration as `extern record`, `external func`, and `callback func`. Where a row's mechanics are documented elsewhere in this chapter, the row cross-references that section instead of restating it.
+
+| Inside Macintosh | Clarus |
+|---|---|
+| `INTEGER` / `OSErr` | `word` — `external func` parameter/result (The `word` Extern Type, below) or extern-record field (Field Palette, above) |
+| `LONGINT` / `OSType` / `Fixed` | `int` |
+| `Boolean` | `bool` — 1 byte in every aggregate; word-marshaled into the high byte at the pascal trap boundary (Trap and Inline Clauses, below) |
+| `CHAR` (a CharParameter) | `word` — **never** `char`. A CHAR parameter is a plain 16-bit `INTEGER` with the character code in the low byte; Clarus's `char` extern shape instead pads its value into the word's high byte, the same convention `bool` uses (Trap and Inline Clauses, below). Declaring a CHAR parameter `char` silently reads and writes the wrong byte at the trap boundary — the MenuKey lesson. |
+| `SignedByte` / `Byte` | `byte` — extern-record field only (Field Palette, above) |
+| `Str255` / `StrN` | `str` parameter, the caller's Str255 address borrowed for the call (`external func`, above), or `str[N]` extern-record field (Field Palette, above) |
+| `VAR` parameter | `ptr` — an extern-record variable or field lvalue decays to its address at the call site (`extern record`, above) |
+| `Point` passed by value | a 4-byte extern record passed where the callee declares an `int` parameter (`extern record`, above) |
+| `Ptr` / `Handle` / `ProcPtr` | `ptr` |
+| a `ProcPtr` parameter you implement (an LDEF, action procedure, filter, or other Toolbox callback) | `callback func` (below) |
+
+A trap word's bit 11 (`trap & 0x0800`) is the normative test for which calling convention a `= trap` clause must declare: set means the Toolbox/Pascal convention (plain `trap NNNN`, or `trap NNNN sel SELECTOR` for a selector-dispatched routine); clear means the OS/register convention (`trap NNNN reg ...`, below). `TickCount`'s trap word is `0xA975`; bit 11 is set (`0xA975 & 0x0800 == 0x0800`), so it takes the plain convention, `trap 0xA975`, with no `reg` clause. `BlockMoveData`'s trap word is `0xA22E`; bit 11 is clear (`0xA22E & 0x0800 == 0`), so it takes the register convention, `trap 0xA22E reg`. An Inside Macintosh trap listing's own hex trap word settles the convention without relying on the surrounding prose.
 
 A field read/write, and the decay/coercion at an `external func` call site, in context (`UiWaitNextEvent` is a Toolbox trap and `handleAt` an ordinary function, both declared elsewhere in the program):
 
