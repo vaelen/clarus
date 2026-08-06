@@ -839,4 +839,35 @@ short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
     return (short)d0;
 }
 
+/* ---- toolbox-cookbook Task 2: testsuite/toolbox/cases_catalog.cla's
+ * Catalog case hardware-proves the shipped toolbox/{memory,events,
+ * osutils,scrap}.cla extern catalog (Task 1) against real ROM -- same
+ * "cprint always renders rt_ext_NAME regardless of clause" precedent as
+ * every block above, but the catalog declares its externs under their
+ * PLAIN Toolbox names (NewPtr, DisposePtr, NewHandle, DisposeHandle,
+ * GetHandleSize, SetHandleSize, BlockMoveData, HLock, HUnlock, TickCount,
+ * Gestalt, EventAvail, ZeroScrap, PutScrap, GetScrap, InfoScrap), not a
+ * suite-local Tb-prefixed alias -- so most of them resolve to glue that
+ * already exists elsewhere in this same file: rt_ext_NewPtr/
+ * rt_ext_DisposePtr/rt_ext_NewHandle/rt_ext_DisposeHandle/
+ * rt_ext_GetHandleSize/rt_ext_SetHandleSize/rt_ext_BlockMoveData are the
+ * 5a waist's own definitions at the top of this file -- reused as-is,
+ * not redefined here (a second definition under the same C name would be
+ * a duplicate-symbol build error, not a passing build). Only the names
+ * with no existing plain-named wrapper get one below. */
+void rt_ext_HLock(void *h) { HLock((Handle)h); }
+void rt_ext_HUnlock(void *h) { HUnlock((Handle)h); }
+int32_t rt_ext_TickCount(void) { return (int32_t)TickCount(); }
+short rt_ext_Gestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+int32_t rt_ext_EventAvail(short mask, void *ev) { return (int32_t)EventAvail((EventMask)mask, (EventRecord *)ev); }
+int32_t rt_ext_ZeroScrap(void) { return (int32_t)ZeroScrap(); }
+int32_t rt_ext_PutScrap(int32_t length, int32_t theType, void *source) { return (int32_t)PutScrap((long)length, (ResType)theType, (Ptr)source); }
+int32_t rt_ext_GetScrap(void *hDest, int32_t theType, void *offset) { return (int32_t)GetScrap((Handle)hDest, (ResType)theType, (long *)offset); }
+void *rt_ext_InfoScrap(void) { return (void *)InfoScrap(); }
+/* Uncalled catalog externs -- MoreMasters, Button, StillDown, GetMouse,
+ * PostEvent, GetNextEvent, Delay, SysBeep, LoadScrap, UnloadScrap -- are
+ * tree-shaken from this suite build (cases_catalog.cla never names them)
+ * and need no wrapper yet; add one on demand alongside whichever future
+ * case calls it. */
+
 #endif /* CLARUS_RT_EXT_MAC_INC */

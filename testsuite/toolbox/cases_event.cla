@@ -8,8 +8,12 @@
 // look right; this case proves the SAME codegen dispatches correctly
 // against real ROM, the same "user-code externs are the proven pattern"
 // precedent cases_events.cla/cases_gestalt.cla/cases_a5.cla already
-// establish. Point/EventRecord are declared LOCALLY (not reused from
-// runtime/clarus/ui.cla) for the identical reason.
+// establish. Point/EventRecord used to be declared LOCALLY here (not
+// reused from runtime/clarus/ui.cla) for the identical reason; as of
+// toolbox-cookbook Task 2 they instead come from toolbox/events.cla
+// (that catalog's own copies, composed into this same build) -- extern
+// records have no dedup rule, so keeping a second local copy here would
+// collide with the catalog's.
 //
 // Trap-word convention (task-6-review Critical 1 fix -- the FIRST version
 // of this file declared `TbOSEventAvail = trap 0xA030` as plain Pascal,
@@ -57,19 +61,6 @@ external func TbXRecAddr(p: ptr): ptr
 
 func nat_TbXRecAddr(p: ptr): ptr {
     return p
-}
-
-extern record Point {
-    v: word
-    h: word
-}
-
-extern record EventRecord {
-    what: word
-    message: int
-    when: int
-    where: Point
-    modifiers: word
 }
 
 // caseEventXRec: fills ev with a nonzero sentinel (so a marshaling bug

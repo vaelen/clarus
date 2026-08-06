@@ -82,7 +82,11 @@
 // case against harness.cla's existing TextWin window (no harness.cla
 // change needed) -- see cases_bigtext.cla's own header comment for the
 // full assertion mapping and what stays native-only (the example app's
-// own alert-message/close-cascade guard logic).
+// own alert-message/close-cascade guard logic). Catalog (cases_catalog.cla)
+// is toolbox-cookbook Task 2's own addition: hardware-proves the shipped
+// toolbox/{memory,events,osutils,scrap}.cla extern catalog by calling it
+// against real ROM, in-process -- see cases_catalog.cla's own header
+// comment.
 
 enum ToolboxTest {
     All
@@ -108,15 +112,16 @@ enum ToolboxTest {
     Hdim
     FormEdit
     BigText
+    Catalog
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 22 real cases
+// nTbCases is ToolboxTest's member count minus All: the 23 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 23
+const nTbCases: int = 24
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -191,6 +196,9 @@ func tbCaseName(t: ToolboxTest): string {
     case BigText {
         return "BigText"
     }
+    case Catalog {
+        return "Catalog"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -224,6 +232,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Hdim)
     l.add(FormEdit)
     l.add(BigText)
+    l.add(Catalog)
     l.add(SelfCheck)
     return l
 }
@@ -348,6 +357,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, BigText) {
         results.add(caseBigText())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, Catalog) {
+        results.add(caseCatalog())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

@@ -1,0 +1,134 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_catalog.cla: Catalog (toolbox-cookbook Task 2) -- hardware-proves
+// the shipped toolbox/ extern catalog (memory/events/osutils/scrap) by
+// calling it against real ROM, in-process. Unlike every other case file,
+// the externs here are NOT declared locally: the whole point is that the
+// toolbox/*.cla files in the build supply them. Task 4 extends this case
+// with a TE<->desk-scrap bridge roundtrip (see the section markers).
+
+func caseCatalog(): TestResult {
+    var detail: string
+    var p1: ptr
+    var p2: ptr
+    var h: ptr
+    var off: ptr
+    var mp: ptr
+    var ev: EventRecord
+    var err: int
+    var n: int
+    var i: int
+    var ok: bool
+
+    // -- osutils: Gestalt (named-reg, ret d0), same selector rtUiStartup
+    // proves on every boot.
+    p1 = NewPtr(4)
+    err = Gestalt(gestaltSystemVersion, p1)
+    n = peekl(p1)
+    DisposePtr(p1)
+    if err != 0 or n == 0 {
+        detail = "gestalt err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+
+    // -- memory: NewPtr/BlockMoveData/DisposePtr roundtrip.
+    p1 = NewPtr(16)
+    p2 = NewPtr(16)
+    i = 0
+    while i < 16 {
+        pokeb(p1 + i, 0x40 + i)
+        pokeb(p2 + i, 0)
+        i = i + 1
+    }
+    BlockMoveData(p1, p2, 16)
+    ok = true
+    i = 0
+    while i < 16 {
+        if peekb(p2 + i) != 0x40 + i {
+            ok = false
+        }
+        i = i + 1
+    }
+    DisposePtr(p1)
+    DisposePtr(p2)
+    if not ok {
+        return tkFail("Catalog", "blockmove mismatch")
+    }
+
+    // -- memory: handle sizing.
+    h = NewHandle(8)
+    if GetHandleSize(h) != 8 {
+        DisposeHandle(h)
+        return tkFail("Catalog", "newhandle size")
+    }
+    err = SetHandleSize(h, 32)
+    n = GetHandleSize(h)
+    DisposeHandle(h)
+    if err != 0 or n != 32 {
+        detail = "sethandlesize err " + tkIntToStr(err)
+        detail = detail + " size " + tkIntToStr(n)
+        return tkFail("Catalog", detail)
+    }
+
+    // -- events: EventAvail through the catalog's EventRecord (extern
+    // record decay at the ptr parameter). Result is environment-dependent
+    // (usually no event pending); calling it without crashing and getting
+    // a sane what-code IS the assertion.
+    ok = EventAvail(everyEvent, ev)
+    if ok and (ev.what < nullEvent or ev.what > osEvt) {
+        detail = "eventavail what " + tkIntToStr(ev.what)
+        return tkFail("Catalog", detail)
+    }
+
+    // -- events: TickCount sanity (nonzero on a booted system).
+    if TickCount() == 0 {
+        return tkFail("Catalog", "tickcount zero")
+    }
+
+    // -- scrap: ZeroScrap/PutScrap/GetScrap roundtrip ('TEXT' flavor).
+    err = ZeroScrap()
+    if err != 0 {
+        detail = "zeroscrap err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+    p1 = NewPtr(8)
+    pokeb(p1, 0x43)     // C
+    pokeb(p1 + 1, 0x41) // A
+    pokeb(p1 + 2, 0x54) // T
+    pokeb(p1 + 3, 0x4C) // L
+    pokeb(p1 + 4, 0x47) // G
+    err = PutScrap(5, 0x54455854, p1)
+    DisposePtr(p1)
+    if err != 0 {
+        detail = "putscrap err " + tkIntToStr(err)
+        return tkFail("Catalog", detail)
+    }
+    h = NewHandle(0)
+    off = NewPtr(4)
+    n = GetScrap(h, 0x54455854, off)
+    DisposePtr(off)
+    if n != 5 {
+        DisposeHandle(h)
+        detail = "getscrap len " + tkIntToStr(n)
+        return tkFail("Catalog", detail)
+    }
+    HLock(h)
+    mp = ptr(peekl(h))
+    ok = peekb(mp) == 0x43 and peekb(mp + 4) == 0x47
+    HUnlock(h)
+    DisposeHandle(h)
+    if not ok {
+        return tkFail("Catalog", "getscrap content")
+    }
+
+    // -- scrap: InfoScrap peek-offset read (scrapSize just written).
+    mp = InfoScrap()
+    if mp == ptr(0) or peekl(mp) < 5 {
+        return tkFail("Catalog", "infoscrap")
+    }
+
+    // (Task 4 appends the TE<->desk-scrap bridge section here.)
+
+    return tkPass("Catalog")
+}
