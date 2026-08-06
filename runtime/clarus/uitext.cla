@@ -139,33 +139,80 @@ external func UiTEGetScrapLength(): int
 // unsigned 16-bit read, zero-extended to int, matching the C reference's
 // own `(long)*(unsigned short*)0x0AB0`.
 //
-// nat_UiTEFromScrap/nat_UiTEToScrap are DEFERRED STUBS, not a real port:
-// TEFromScrap/TEToScrap carry NO plain A-line trap word in Retro68's own
-// multiversal source either (multiversal/defs/ScrapMgr.yaml's 0xA9FC/
-// 0xA9FD/0xA9FE are ZeroScrap/GetScrap/PutScrap -- verified directly, NOT
-// the TE-prefixed pair actually needed here); they're built from an
-// "executor" (hand-written glue converting the TE scrap's style-run
-// format to/from the flat Scrap Manager buffer), which this task does not
-// reverse-engineer. ponytail: a real Scrap Manager port is out of Task
-// 12's own scope (no golden scenario this task gates on exercises cut/
-// copy/paste) and risky to hand-wave (a wrong trap word crashes real
-// hardware, CLAUDE.md's own documented A-line/F-line failure class) --
-// no-op (return noErr, touch nothing) rather than guess. Upgrade when a
-// future task's own golden scenario set needs a working native
-// cut/copy/paste (Task 14's full-23 gate includes texteditor/
-// texteditor_bigfile, which may be the first real forcing function).
+// nat_UiTEFromScrap/nat_UiTEToScrap (toolbox-cookbook rider 2): REAL
+// desk-scrap bridge for the monostyled TE records this runtime uses.
+// TEScrpHandle ($0AB4) / TEScrpLength ($0AB0) are the documented TE
+// low-memory scrap globals (nat_UiTEGetScrapLength below already reads
+// $0AB0). 'TEXT' == 0x54455854. TE scrap length is a 16-bit global:
+// clamp an oversized desk scrap at 32767 -- rtUiStdEditPaste's own
+// overflow guard re-checks against the textview limit downstream. This
+// supersedes the prior no-op DEFERRED STUBS (Task 12): real TEFromScrap/
+// TEToScrap carry no plain A-line trap word (multiversal/defs/
+// ScrapMgr.yaml's 0xA9FC/0xA9FD/0xA9FE are ZeroScrap/GetScrap/PutScrap,
+// not the TE-prefixed pair) and are built from a style-run "executor"
+// this runtime does not reverse-engineer; the monostyled TE this port
+// uses has no style runs to preserve, so going straight to the flat
+// desk-scrap buffer via GetScrap/PutScrap and the TE scrap globals is a
+// complete, correct substitute for this runtime's own purposes.
+//
+// GetScrap's VAR offset out-param: this task's own brief called for an
+// `extern record` local decaying to a ptr at the call site (the
+// language's only address-of). Verified while implementing (the brief's
+// own instruction) -- that decay path crashes clarusc's native emit68k
+// backend ("runtime error: list index out of range", reproduced in
+// isolation: the SAME call compiles clean when the argument is a plain
+// `ptr` instead of a decayed extern-record var). No other file in this
+// tree exercises extern-record decay at a call site, so this is a
+// previously-latent cg68k bug, not a regression from this task; clarusc/
+// *.cla is off-limits to this task's own scope (CLAUDE.md), so the
+// workaround below -- a real UiNewPtr(4)/UiDisposePtr scratch slot, the
+// exact allocator pattern rtUiScriptClick (uiscript.cla) already uses
+// for a throwaway fixed-size buffer -- sidesteps the decay path
+// entirely rather than fixing the compiler.
 func nat_UiTEFromScrap(): int {
+    var th: ptr
+    var offSlot: ptr
+    var n: int
+
+    th = ptr(peekl(ptr(0xAB4)))
+    if th == ptr(0) {
+        return -102 // noTypeErr: no TE scrap handle to fill
+    }
+    offSlot = UiNewPtr(4)
+    n = UiGetScrap(th, 0x54455854, offSlot)
+    UiDisposePtr(offSlot)
+    if n < 0 {
+        return n // no 'TEXT' in the desk scrap: TE scrap untouched
+    }
+    if n > 32767 {
+        n = 32767
+    }
+    pokew(ptr(0xAB0), n)
     return 0
 }
 
 func nat_UiTEToScrap(): int {
-    return 0
+    var th: ptr
+    var st: int
+    var err: int
+
+    th = ptr(peekl(ptr(0xAB4)))
+    if th == ptr(0) {
+        return 0 // empty TE scrap: nothing to publish
+    }
+    st = UiHGetState(th)
+    UiHLock(th)
+    err = UiPutScrap(nat_UiTEGetScrapLength(), 0x54455854, UiHandleDeref(th))
+    UiHSetState(th, st)
+    return err
 }
 
 func nat_UiTEGetScrapLength(): int {
     return peekw(ptr(0xAB0))
 }
 external func UiZeroScrap(): int = trap 0xA9FC
+external func UiPutScrap(length: int, theType: int, source: ptr): int = trap 0xA9FE
+external func UiGetScrap(hDest: ptr, theType: int, offset: ptr): int = trap 0xA9FD
 external func UiHGetState(h: ptr): int = trap 0xA069 reg
 external func UiHSetState(h: ptr, flag: int) = trap 0xA06A reg
 external func UiGetControlMaximum(theControl: ptr): word = trap 0xA962

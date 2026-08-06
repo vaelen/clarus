@@ -178,6 +178,8 @@ extern int32_t rt_ext_UiTEFromScrap(void);
 extern int32_t rt_ext_UiTEToScrap(void);
 extern int32_t rt_ext_UiTEGetScrapLength(void);
 extern int32_t rt_ext_UiZeroScrap(void);
+extern int32_t rt_ext_UiPutScrap(int32_t, int32_t, void *);
+extern int32_t rt_ext_UiGetScrap(void *, int32_t, void *);
 extern int32_t rt_ext_UiHGetState(void *);
 extern void rt_ext_UiHSetState(void *, int32_t);
 extern short rt_ext_UiGetControlMaximum(void *);

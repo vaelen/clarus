@@ -436,6 +436,15 @@ int32_t rt_ext_UiTEFromScrap(void) { return (int32_t)TEFromScrap(); }
 int32_t rt_ext_UiTEToScrap(void) { return (int32_t)TEToScrap(); }
 int32_t rt_ext_UiTEGetScrapLength(void) { return (int32_t)TEGetScrapLength(); }
 int32_t rt_ext_UiZeroScrap(void) { return (int32_t)ZeroScrap(); }
+/* rt_ext_UiPutScrap/UiGetScrap (toolbox-cookbook rider 2): wrappers for
+ * uitext.cla's own UiPutScrap/UiGetScrap externs, which back the real
+ * nat_UiTEFromScrap/nat_UiTEToScrap desk-scrap bridge (native lane only
+ * -- see uitext.cla's own doc comment). Same shape as rt_ext_PutScrap/
+ * rt_ext_GetScrap below (toolbox/scrap.cla's own catalog wrappers,
+ * Task 1); kept as separate symbols since the two extern sets are
+ * declared in different Clarus modules. */
+int32_t rt_ext_UiPutScrap(int32_t length, int32_t theType, void *source) { return (int32_t)PutScrap((long)length, (ResType)theType, (Ptr)source); }
+int32_t rt_ext_UiGetScrap(void *hDest, int32_t theType, void *offset) { return (int32_t)GetScrap((Handle)hDest, (ResType)theType, (long *)offset); }
 int32_t rt_ext_UiHGetState(void *h) { return (int32_t)HGetState((Handle)h); }
 void rt_ext_UiHSetState(void *h, int32_t flag) { HSetState((Handle)h, (SignedByte)flag); }
 short rt_ext_UiGetControlMaximum(void *theControl) { return GetControlMaximum((ControlRef)theControl); }

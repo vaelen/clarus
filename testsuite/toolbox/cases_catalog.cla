@@ -8,6 +8,31 @@
 // toolbox/*.cla files in the build supply them. Task 4 extends this case
 // with a TE<->desk-scrap bridge roundtrip (see the section markers).
 
+// tbCatEditBar/tbCatEditCopy/tbCatEditPaste: Edit menu bar position and
+// std-edit item numbers -- same values cases_editmenu.cla's own
+// tbEditBar/tbEditCopy/tbEditPaste derive (see that file's header
+// comment for the whole-program declaration-order/std-edit-item
+// derivation); redeclared here under tbCat* names since consts are
+// file-local and this is a separate module.
+const tbCatEditBar: int = 3
+const tbCatEditCopy: int = 4
+const tbCatEditPaste: int = 5
+
+// tbCatAX/tbCatAY/tbCatADragX/tbCatDragToX: EditMain's field-A click/
+// drag geometry, reused verbatim from cases_editmenu.cla's own
+// tbEditAX/tbEditAY/tbEditADragX/tbEditDragToX -- EditMain's own layout
+// is unchanged, so the same points land the same way: tbCatAX/AY places
+// the caret inside the (empty) field before typing; tbCatADragX is ~the
+// field's own text-start x (proven by cases_editmenu.cla's own Cut
+// result, which selected from there); tbCatDragToX is comfortably past
+// a 6-char word's own pixel width (already proven past a 9-char word's
+// own width in that file), so a click+drag from ADragX to DragToX
+// selects the ENTIRE typed word, not a mid-word slice.
+const tbCatAX: int = 200
+const tbCatAY: int = 72
+const tbCatADragX: int = 133
+const tbCatDragToX: int = 190
+
 func caseCatalog(): TestResult {
     var detail: string
     var p1: ptr
@@ -20,6 +45,37 @@ func caseCatalog(): TestResult {
     var n: int
     var i: int
     var ok: bool
+
+    // TE <-> desk-scrap bridge section's own locals (kept separate from
+    // the plain-catalog vars above, which this section also reuses for
+    // its own NewPtr/NewHandle/GetScrap/PutScrap/ZeroScrap calls). Driven
+    // flat, one combined `ok` assertion at the end (cases_editmenu.cla's
+    // own style), not a branch-per-step early return: an earlier, more
+    // branch-heavy draft of this section reproducibly broke the plain-
+    // catalog Gestalt check above it (unrelated code, earlier in program
+    // order) on the native-68k lane only -- a latent cg68k codegen bug
+    // this task's own scope (clarusc/*.cla is off-limits) cannot fix.
+    // The exact trigger was never fully isolated (even a same-length
+    // comment/string-literal edit flipped pass/fail in testing), so this
+    // section is kept close to the shape verified clean here (matching
+    // cases_editmenu.cla's own flat style) rather than reshuffled again.
+    var w: EditMain
+    var verbLine: string
+    var clickAOk: bool
+    var typeOk: bool
+    var dragClickOk: bool
+    var dragOk: bool
+    var copyOk: bool
+    var getLen: int
+    var b0: int
+    var b5: int
+    var zeroErr: int
+    var putErr: int
+    var dragClick2Ok: bool
+    var drag2Ok: bool
+    var pasteOk: bool
+    var closedOk: bool
+    var aTextAfterPaste: text
 
     // -- osutils: Gestalt (named-reg, ret d0), same selector rtUiStartup
     // proves on every boot.
@@ -128,7 +184,79 @@ func caseCatalog(): TestResult {
         return tkFail("Catalog", "infoscrap")
     }
 
-    // (Task 4 appends the TE<->desk-scrap bridge section here.)
+    // -- TE <-> desk-scrap bridge (toolbox-cookbook rider 2): Copy a real
+    // TE via the std Edit menu, then read the DESK scrap back through the
+    // catalog's own GetScrap -- proves nat_UiTEToScrap publishes (native
+    // lane) / TEToScrap publishes (cprint lane). Then the reverse:
+    // PutScrap fresh text, Paste it into the TE, read the widget back --
+    // proves nat_UiTEFromScrap fills the TE scrap. Drive pattern (open/
+    // click/type/drag-select/menu/readback/close) copied from
+    // cases_editmenu.cla; see this file's own tbCat* const comments above
+    // for the geometry/menu-position derivations reused here.
+    w = open EditMain
+    clickAOk = UiTestClick(tbCatAX, tbCatAY)
+    typeOk = UiTestType("BRIDGE")
+    dragClickOk = UiTestClick(tbCatADragX, tbCatAY)
+    verbLine = "drag " + tkIntToStr(tbCatDragToX)
+    verbLine = verbLine + " " + tkIntToStr(tbCatAY)
+    dragOk = UiTestVerb(verbLine)
+    copyOk = UiTestMenu(tbCatEditBar, tbCatEditCopy)
 
-    return tkPass("Catalog")
+    // GetScrap should now see the 6 bytes of "BRIDGE" that
+    // nat_UiTEToScrap (native) / TEToScrap (cprint) just published. Only
+    // deref the handle's own content when the length actually came back
+    // 6 -- a short/empty scrap still leaves b0/b5 at their 0 default,
+    // which the combined `ok` check below catches same as a content
+    // mismatch would.
+    h = NewHandle(0)
+    off = NewPtr(4)
+    getLen = GetScrap(h, 0x54455854, off)
+    DisposePtr(off)
+    b0 = 0
+    b5 = 0
+    if getLen == 6 {
+        HLock(h)
+        mp = ptr(peekl(h))
+        b0 = peekb(mp)     // 'B' == 0x42
+        b5 = peekb(mp + 5) // 'E' == 0x45
+        HUnlock(h)
+    }
+    DisposeHandle(h)
+
+    // Publish fresh desk-scrap text ("XYZ"), then Paste it into A --
+    // proves nat_UiTEFromScrap (native) / TEFromScrap (cprint) fills the
+    // TE scrap from the desk scrap.
+    zeroErr = ZeroScrap()
+    p1 = NewPtr(3)
+    pokeb(p1, 0x58)     // X
+    pokeb(p1 + 1, 0x59) // Y
+    pokeb(p1 + 2, 0x5A) // Z
+    putErr = PutScrap(3, 0x54455854, p1)
+    DisposePtr(p1)
+
+    dragClick2Ok = UiTestClick(tbCatADragX, tbCatAY)
+    verbLine = "drag " + tkIntToStr(tbCatDragToX)
+    verbLine = verbLine + " " + tkIntToStr(tbCatAY)
+    drag2Ok = UiTestVerb(verbLine)
+    pasteOk = UiTestMenu(tbCatEditBar, tbCatEditPaste)
+
+    aTextAfterPaste = w.A.text
+    closedOk = UiTestClose()
+
+    ok = clickAOk and typeOk and dragClickOk and dragOk and copyOk
+    ok = ok and getLen == 6 and b0 == 0x42 and b5 == 0x45
+    ok = ok and zeroErr == 0 and putErr == 0
+    ok = ok and dragClick2Ok and drag2Ok and pasteOk and closedOk
+    ok = ok and aTextAfterPaste == "XYZ"
+
+    if ok {
+        return tkPass("Catalog")
+    }
+    detail = "te bridge len " + tkIntToStr(getLen)
+    detail = detail + " b0 " + tkIntToStr(b0)
+    detail = detail + " b5 " + tkIntToStr(b5)
+    detail = detail + " zeroErr " + tkIntToStr(zeroErr)
+    detail = detail + " putErr " + tkIntToStr(putErr)
+    detail = detail + " paste " + tkIntToStr(aTextAfterPaste.length)
+    return tkFail("Catalog", detail)
 }
