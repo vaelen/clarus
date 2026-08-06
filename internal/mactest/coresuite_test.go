@@ -44,8 +44,9 @@ var coreGUIFiles = append(append([]string{}, coreCLIFiles...), filepath.Join("te
 // own nCoreCases -- bumped from 41 by the small-scalar-width phase's
 // SerMixedScalarRec pin) PASS in this ONE boot, plus the matching TOTAL line --
 // success criterion 2's native/GUI half (the host/CLI half is
-// internal/testsuite's TestCoreSuiteCLI; the Mac/native CLI half is
-// TestSuiteOn68k in native_test.go).
+// internal/testsuite's TestCoreSuiteCLI; the Mac/native CLI half, once
+// TestSuiteOn68k in native_test.go, was retired by test-consolidation --
+// see that file's own tombstone comment).
 func TestCoreSuiteGUIOn68k(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "coresuite.events")
@@ -62,9 +63,10 @@ func TestCoreSuiteGUIOn68k(t *testing.T) {
 // same result-log contract (checkCoreSuiteCapture, factored out below so
 // both lanes share one assertion body instead of two copies drifting
 // apart) -- but built through scripts/build-mac.sh's Retro68/cmake/gcc
-// pipeline (runBuildMac) rather than clarusc emit68k directly. This is the
-// "both lanes" assurance the legacy 23-scenario lane already gives every
-// OTHER UI fixture, now extended to the suites.
+// pipeline (runBuildMac) rather than clarusc emit68k directly. This gave
+// the suites the same "both lanes" assurance the legacy 23-scenario lane
+// gave every other UI fixture -- that lane has since been retired down to
+// the 4 frozen golden scenarios (test-consolidation, 2026-08-06).
 func TestCoreSuiteGUIOnMac(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "coresuite.events")

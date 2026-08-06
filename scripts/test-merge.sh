@@ -6,19 +6,16 @@
 # point + snapshot + cross-generation-differential suite) and the FULL
 # gated mactest package (needs the Retro68 toolchain + Mini vMac;
 # CLARUS_MAC_TESTS=1). No `-run` filter on mactest, so this is
-# unconditionally BOTH lanes' worth of everything the package contains:
-# the 4 suite boots (core+toolbox GUI result-log suites x native-68k +
-# Retro68/cprint lanes, test-suite-review Tasks 10-12; toolbox grew
-# 7->21 ToolboxTest cases in the ui-scenario-retirement phase, 2026-08-05,
-# which migrated 12 of the 23 legacy scenarios in as cases), the
-# 11-scenario scripted trace+PBM lane x2 lanes (fidelity backstop for the
-# scenarios still not retired -- about, smoke_bounce, smoke_menudemo,
-# smoke_mandel, opendoc, opendoc_empty, texteditor, texteditor_quit,
-# texteditor_bigfile, bookmarks, formedit; the other 12 widget scenarios
-# now live as toolbox-suite cases instead), the crash-fixture boots
-# (6 runerr + 2 abort, each lane), and the native-lane host-compare/
-# regression boots. Slow (~15m+, dominated by mactest) -- run before
-# merging to main, not per-task.
+# unconditionally all 16 gated boots (test-consolidation re-baseline,
+# 2026-08-06): native lane -- 4 frozen golden scenarios (smoke_bounce
+# standalone + smoke_mandel/texteditor/bookmarks table rows), 3 native
+# codegen tests (NativeSmoke/StrContainers/ArrWholeAssign), the real-
+# event-loop tick test, 1 runerr (oob) + 1 abort (emit_array), and the
+# core+toolbox suite GUI boots; Retro68/cprint lane -- the same core+
+# toolbox suite GUI boots plus 1 runerr (oob) + 1 abort (emit_array).
+# core suite = 42 CoreTest cases (41 real + SelfCheck); toolbox suite =
+# 23 ToolboxTest cases (22 real + SelfCheck). Slow (~15m+, dominated by
+# mactest) -- run before merging to main, not per-task.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

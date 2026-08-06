@@ -303,9 +303,9 @@ extend TextWin {
 //     control-verb string "quit" (uitest.cla's own header comment), not
 //     an app handler that happens to execute one when dispatched via
 //     `menu`. The retired fixture's own cancel-then-succeed quit-cascade
-//     semantics stay covered forever by testdata/ui/texteditor_quit.cla
-//     (docs/superpowers/plans/2026-08-05-ui-scenario-retirement.md's own
-//     "kept forever" list), so nothing is left unverified.
+//     semantics stay covered by testdata/ui/texteditor.events' own
+//     quit-cascade tail (audit row N15 MERGE->N14, test-consolidation
+//     2026-08-06), so nothing is left unverified.
 //   - Toggle's own widget mutation (Main.On.checked/Main.Status.text):
 //     ButtonsPanel/cases_buttons.cla already cover check/label mutation
 //     end to end; this window's job is purely menu dispatch + scope

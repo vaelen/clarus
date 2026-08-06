@@ -5,9 +5,11 @@
 // Task 9's Mac-gate swap) -- swaps in for cli.cla in the Mac/native
 // build; never both in one composition. Runs the full case list via
 // `on App.launch` and reports, then quits -- same output cli.cla's own
-// empty-args/`all` path produces, the Mac-gate parity internal/mactest's
-// TestSuiteOnMac/TestSuiteOn68k depend on (host expectation via cli.cla's
-// `all`, Mac/native expectation via this file).
+// empty-args/`all` path produces. Its original Mac-gate boots
+// (TestSuiteOnMac/TestSuiteOn68k) were both retired by test-consolidation;
+// this file's remaining consumer is internal/cg68k/segment_test.go, which
+// is why it was kept rather than deleted alongside those boots
+// (test-consolidation 2026-08-06).
 //
 // Why `App.launch`, not `App.startCLI`/`App.startEmpty` (both tried and
 // discarded during this task): cg68k.cla's non-UI program startup

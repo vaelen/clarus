@@ -4,8 +4,10 @@
 // gui.cla: the core suite's Mac GUI front-end (test-suite-review Task
 // 10) -- swaps in for cli_mac.cla in the Mac GUI build composition
 // (testsuite/kit.cla + core/runner.cla + core/cases_*.cla (all 9) +
-// this file -- internal/mactest's coreGUIFiles, sibling of Task 9's
-// coreCLIMacFiles). A window listing every real case (table, rows =
+// this file -- internal/mactest's coreGUIFiles, built on coreCLIFiles the
+// same way Task 9's coreCLIMacFiles once was; that composition was
+// deleted by test-consolidation, see coresuite_test.go's coreGUIFiles
+// comment). A window listing every real case (table, rows =
 // coreAllCases() order -- All excluded, SelfCheck included, the same
 // list runner.cla's own coreAllCases() already defines for cli.cla's arg
 // matching), a Run All / Run Selected button pair, and a status textview

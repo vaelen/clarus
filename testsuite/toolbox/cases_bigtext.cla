@@ -75,13 +75,17 @@ func caseBigText(): TestResult {
     got = w.Body.text
     lenGot = got.length
     errCode = lastError.code
-    tail = got[31992, 8]
-
-    close w
 
     ok = lenGot == 32000
-    ok = ok and errCode != 0
-    ok = ok and tail == tbBtTailWant
+    if ok {
+        // Guarded: a shorter-than-expected `got` would panic this slice
+        // and abort the whole suite boot instead of just failing this case.
+        tail = got[31992, 8]
+        ok = ok and errCode != 0
+        ok = ok and tail == tbBtTailWant
+    }
+
+    close w
 
     if ok {
         return tkPass("BigText")
