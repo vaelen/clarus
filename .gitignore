@@ -8,3 +8,7 @@
 internal/mactest/probe/build/
 internal/mactest/uiprobe/build/
 /vasm
+
+# Inside Macintosh reference PDFs (local only, never committed)
+/inside-macintosh-v1
+/inside-macintosh-v2
