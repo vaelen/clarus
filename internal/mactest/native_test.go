@@ -1,8 +1,8 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// native_test.go: native-5d Task 11's walking-skeleton milestone --
-// TestHelloOn68k is the FIRST program ever booted on real (emulated) 68k
+// native_test.go: native-5d Task 11's walking-skeleton milestone was
+// TestHelloOn68k -- the FIRST program ever booted on real (emulated) 68k
 // hardware through `clarusc emit68k`, no C/Retro68/cmake step at all
 // (unlike mac_test.go's TestSuiteOnMac/etc, which build via
 // scripts/build-mac.sh's Retro68 pipeline over clarusc's own C emit).
@@ -12,7 +12,11 @@
 // .bin is run the same way mac_test.go's own RunMac/parseCapture already
 // do for the Retro68 path -- the capture protocol (runtime/clarus/
 // native.cla, ported from runtime/mac/rt_mac.c:83-253) is byte-identical
-// either way.
+// either way. TestHelloOn68k itself was retired by test-consolidation
+// Task 6 (audit row N1, DELETE): the capture protocol it alone proved is
+// exercised by every other native boot below, e.g. TestCoreSuiteGUIOn68k
+// (N28); testdata/cg68k/hello.cla/.s were deleted alongside it, having no
+// other consumer.
 package mactest
 
 import (
@@ -35,33 +39,12 @@ func buildNativeClarusc(t *testing.T) string {
 	return claruscboot.CurrentExe(t)
 }
 
-// TestHelloOn68k builds testdata/cg68k/hello.cla with `clarusc emit68k`
-// and boots the result in the emulator -- the walking-skeleton milestone
-// for native-5d's codegen68k wave. Asserts exit 0 and `out` == the
-// natAlert-rendered "hello, 68k\n" (CR->LF + trailing LF over a message
-// with no CR, so just the literal text plus one LF).
-func TestHelloOn68k(t *testing.T) {
-	requireMac(t)
-	exe := buildNativeClarusc(t)
-
-	runDir := t.TempDir()
-	bin := filepath.Join(runDir, "hello.bin")
-	fixture := filepath.Join(repoRoot(t), "testdata", "cg68k", "hello.cla")
-	cmd := exec.Command(exe, "emit68k", "-o", bin, fixture)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", bin, fixture, err, out)
-	}
-
-	got, _, exitCode := RunMac(t, bin, 5*time.Minute)
-	if exitCode != 0 {
-		t.Fatalf("hello.cla exit code %d, want 0", exitCode)
-	}
-	want := "hello, 68k\n"
-	if got != want {
-		t.Fatalf("hello.cla output mismatch:%s", firstDiff(want, got))
-	}
-}
+// TestHelloOn68k (native-5d Task 11's walking-skeleton milestone) was
+// retired by test-consolidation Task 6 -- audit row N1, DELETE: the
+// capture protocol (`##CLARUS-EXIT##`/`##CLARUS-LOG##`) it alone proved
+// is exercised by every other native boot in this file, e.g.
+// TestCoreSuiteGUIOn68k (N28). testdata/cg68k/hello.cla and its committed
+// hello.s listing had no other consumer and were deleted alongside it.
 
 // TestNativeSmoke is native-5d Task 12's first native boot test to cover
 // records/enums: builds testdata/cg68k/smoke.cla BOTH ways -- the host
@@ -86,16 +69,13 @@ func TestNativeStrContainers(t *testing.T) {
 	runNativeHostCompare(t, "strcontainers.cla")
 }
 
-// TestNativeFixedOps is native-5d Task 14.7 review round 2's boot test
-// for fix_mul/fix_div (unimplemented pre-review, silently returning 0) --
-// testdata/cg68k/fixedops.cla, its own file rather than a smoke.cla
-// section because rtFixMul/rtFixDiv (large, 16-bit-half-decomposition
-// functions) overflow smoke.cla's own single-segment displacement
-// ceiling the moment they become reachable (see the fixture's own header
-// comment).
-func TestNativeFixedOps(t *testing.T) {
-	runNativeHostCompare(t, "fixedops.cla")
-}
+// TestNativeFixedOps (native-5d Task 14.7 review round 2's boot test for
+// fix_mul/fix_div) was retired by test-consolidation Task 6 -- audit row
+// N4, DELETE: the same byte-identical operations are covered by
+// testsuite/core/cases_enumfix.cla:39 (caseFixedMathOps), which runs on
+// native 68k via TestCoreSuiteGUIOn68k (N28). testdata/cg68k/fixedops.cla
+// and its committed fixedops.s listing had no other consumer and were
+// deleted alongside it.
 
 // TestNativeArrWholeAssign is native-5e Task 2's (5d final-review C1) boot
 // test for whole-fixed-array assignment (`b = a` / `r.field = arrVar` /
@@ -107,20 +87,16 @@ func TestNativeArrWholeAssign(t *testing.T) {
 	runNativeHostCompare(t, "arr_whole_assign.cla")
 }
 
-// TestNativeSmokeForcedMultiSegment is native-5d Task 15's forced-
-// multi-segment boot proof: the SAME known-good smoke.cla TestNativeSmoke
-// already boots successfully with the default (real, 32760-byte)
-// per-segment budget -- but under that budget smoke.cla still fits in a
-// single CODE segment, so a normal boot alone never exercises a
-// cross-segment BSR/JSR-through-the-jump-table call on real hardware.
-// `--seglimit` (main.cla's undocumented test-only flag, wired straight
-// to cg68Program's own segLimit parameter) forces a small budget instead,
-// splitting smoke.cla into several real segments -- this proves cross-
-// segment calls + the Segment Loader's _LoadSeg path work on real 68k
-// hardware BEFORE Task 16 stakes the whole suite app on it.
-func TestNativeSmokeForcedMultiSegment(t *testing.T) {
-	runNativeHostCompareSeglimit(t, "smoke.cla", 6000)
-}
+// TestNativeSmokeForcedMultiSegment (native-5d Task 15's forced-multi-
+// segment boot proof, forcing a small `--seglimit` to split smoke.cla
+// into several real CODE segments and prove cross-segment BSR/JSR +
+// the Segment Loader's _LoadSeg path) was retired by test-consolidation
+// Task 6 -- audit row N6, DELETE: both suite compositions
+// (TestCoreSuiteGUIOn68k/N28, TestToolboxSuiteOn68k/N29) are naturally
+// multi-segment (8 CODE segments each) at clarusc's real, undecorated
+// default per-segment budget, so every ordinary suite boot already
+// exercises the same cross-segment call + _LoadSeg path a forced
+// `--seglimit` proved standalone.
 
 // runNativeHostCompare builds testdata/cg68k/<fixture> BOTH ways -- the
 // host expectation via the current-source clarusc (claruscboot's shared
@@ -212,24 +188,6 @@ func buildNative68k(t *testing.T, fixture, binName string) string {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("clarusc emit68k -o %s %s: %v\n%s", bin, fixture, err, out)
-	}
-	return bin
-}
-
-// buildNative68kMulti is buildNative68k generalized to a multi-file
-// composition (`clarusc emit68k -o bin FILE...`) -- test-suite-review
-// Task 9's core-CLI Mac-gate swap (TestSuiteOn68k below) needs this;
-// buildNative68k itself stays single-file since every other caller passes
-// exactly one fixture.
-func buildNative68kMulti(t *testing.T, binName string, fixtures ...string) string {
-	t.Helper()
-	exe := buildNativeClarusc(t)
-	bin := filepath.Join(t.TempDir(), binName+".bin")
-	args := append([]string{"emit68k", "-o", bin}, fixtures...)
-	cmd := exec.Command(exe, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("clarusc %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return bin
 }
@@ -412,39 +370,29 @@ func TestRealEventLoopTickOn68k(t *testing.T) {
 	}
 }
 
-// TestSuiteOn68k is native-5d Task 16's end gate, rebased by test-suite-
-// review Task 9 onto the core suite's CLI composition (coreCLIMacFiles,
-// the same files TestSuiteOnMac boots -- cli_mac.cla's own doc comment
-// has the full story on why the Mac/native lanes need a different front
-// end than the host's core/cli.cla): built via `clarusc emit68k` (no C,
-// no cmake, no Retro68) and booted on the same emulator harness. Host
-// expectation comes from RunCoreCLIHost/BuildCoreCLIHost (suite_host_
-// test.go, the current-source clarusc host oracle via claruscboot's
-// shared Go-free bootstrap, built with coreCLIHostFiles/cli.cla instead)
-// -- identical expectation to TestSuiteOnMac's.
-func TestSuiteOn68k(t *testing.T) {
-	requireMac(t)
-	expected := RunCoreCLIHost(t, BuildCoreCLIHost(t), "all")
-	bin := buildNative68kMulti(t, "suite", absFiles(t, coreCLIMacFiles)...)
-	got, _, exitCode := RunMac(t, bin, 15*time.Minute)
-	if exitCode != 0 {
-		t.Fatalf("suite exit code %d, want 0", exitCode)
-	}
-	if got != expected {
-		t.Fatalf("native/host divergence:%s", firstDiff(expected, got))
-	}
-}
+// TestSuiteOn68k (native-5d Task 16's end gate, rebased by test-suite-
+// review Task 9 onto the core suite's CLI composition, coreCLIMacFiles)
+// was retired by test-consolidation Task 6 -- audit row N19, DELETE: all
+// 41 CoreTest cases already run natively via TestCoreSuiteGUIOn68k (N28);
+// the only signal lost is byte-exact core-CLI stdout log-formatting
+// parity against the host (Decision 3, not semantic coverage).
+// coreCLIMacFiles/cli_mac.cla are NOT deleted -- mac_test.go's own
+// TestSuiteOnMac (a separate, still-KEEP row) and
+// internal/cg68k/segment_test.go both depend on cli_mac.cla independently
+// (audit claim 7).
 
-// TestRunErrOn68k mirrors TestRunErrOnMac (mac_test.go): each of the 6
-// testdata/runerr/*.cla fixtures deliberately raises a runtime error
-// (rt_panic, exit 3); the captured log must contain the matching .err
-// golden's message.
+// TestRunErrOn68k mirrors TestRunErrOnMac (mac_test.go): reduced by
+// test-consolidation Task 6 to the single representative fixture, `oob`
+// (audit row N23, KEEP -- plain array-bounds panic, the simplest real-mode
+// trap shape) -- badenum/emptypop/mapmiss/slicerange/strindex (rows
+// N20/N21/N22/N24/N25, all DELETE) are dropped as per-lane boots since
+// their semantic panic coverage is pinned host-side, lane-independently,
+// by internal/selfhost/behavior_test.go against each fixture's own
+// testdata/runerr/*.behavior golden (T1, ungated). The .cla/.err/.behavior
+// files for all 6 fixtures STAY -- the host test still consumes them.
 func TestRunErrOn68k(t *testing.T) {
 	requireMac(t)
-	files, err := filepath.Glob(filepath.Join(repoRoot(t), "testdata", "runerr", "*.cla"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no runerr corpus: %v", err)
-	}
+	files := []string{filepath.Join(repoRoot(t), "testdata", "runerr", "oob.cla")}
 	for _, f := range files {
 		f := f
 		base := strings.TrimSuffix(filepath.Base(f), ".cla")
@@ -465,12 +413,19 @@ func TestRunErrOn68k(t *testing.T) {
 	}
 }
 
-// TestAbortOn68k mirrors TestAbortAppsOnMac (mac_test.go): the two suite-
-// excluded, abort-by-design run goldens (emit_array, emit_enum), each
-// checked standalone against its pre-abort .out/.exit goldens.
+// TestAbortOn68k mirrors TestAbortAppsOnMac (mac_test.go): reduced by
+// test-consolidation Task 6 to the single representative fixture,
+// emit_array (audit row N26, KEEP) -- its 7-line pre-panic alert()
+// capture proves the abort-capture shape more strongly than emit_enum's
+// 5 (row N27, DELETE); emit_enum's own semantic coverage (bad-enum-
+// conversion panic) is separately pinned host-side by
+// testdata/runerr/badenum.behavior (T1, ungated). Neither runerr fixture
+// has any pre-panic output, so this abort-app boot is NOT absorbable by
+// TestRunErrOn68k's own representative (audit claim 6) -- both boots
+// stay, per lane.
 func TestAbortOn68k(t *testing.T) {
 	requireMac(t)
-	for _, name := range []string{"emit_array", "emit_enum"} {
+	for _, name := range []string{"emit_array"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			wrapper := filepath.Join(repoRoot(t), "testdata", "run", name+".cla")
