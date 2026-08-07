@@ -1,0 +1,1 @@
+../../testdata/errors/stack_range.cla:7:5: app stack must be between 4096 and 1048576

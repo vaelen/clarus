@@ -703,6 +703,7 @@ func buildUiTables() {
     appProps["icon"] = 1
     appProps["id"] = 1
     appProps["doctype"] = 1
+    appProps["stack"] = 1
 
     widgetDeclProps["button.caption"] = 1
     widgetDeclProps["button.at"] = 1
@@ -2761,8 +2762,10 @@ func checkWindowDecl(d: int) {
 // list, so it shares unknown-property/redeclaration checking with
 // checkWindowDecl's item loop but skips that function's items-list handling
 // entirely (an app body is nothing but properties). Every declared property
-// must be a bare string literal; `id`, `icon`, and `doctype` get extra
-// validation.
+// must be a bare string literal, EXCEPT `stack` (native-gaps-cleanup Task
+// 4), the one int-literal carve-out -- checked first, before the
+// string-literal rule, so every other property keeps that rule unchanged.
+// `id`, `icon`, `doctype`, and `stack` get extra validation.
 func checkAppDecl(d: int) {
     var item: int
     var pname: string
@@ -2796,7 +2799,13 @@ func checkAppDecl(d: int) {
             } else {
                 declared[pname] = 1
                 vh = propertyValuesHead(item)
-                if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExStringLit {
+                if pname == "stack" {
+                    if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExIntLit {
+                        emitDiag(declLine(item), declCol(item), "app property stack requires an int literal")
+                    } else {
+                        checkAppStack(intLitVal(vh), declLine(item), declCol(item))
+                    }
+                } else if vh == -1 or exprNext(vh) != -1 or exprKind(vh) != ExStringLit {
                     emitDiag(declLine(item), declCol(item), "app property " + pname + " requires a string literal")
                 } else {
                     if pname == "id" {
@@ -2880,6 +2889,16 @@ func checkAppDoctype(v: string, line: int, col: int) {
             return
         }
         i = i + 1
+    }
+}
+
+// checkAppStack validates a `stack: N` value: 4096..1048576 bytes, the
+// native (cg68k) startup's own SetApplLimit reserve (see cg68k.cla's
+// cgStackHeuristic doc comment) -- native-lane semantics only, checked
+// clean everywhere (the host/Mac cprint lanes never read irAppStack).
+func checkAppStack(v: int, line: int, col: int) {
+    if v < 4096 or v > 1048576 {
+        emitDiag(line, col, "app stack must be between 4096 and 1048576")
     }
 }
 

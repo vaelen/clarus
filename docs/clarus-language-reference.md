@@ -818,7 +818,7 @@ app Bookmarks {
 }
 ```
 
-A program has at most one `app` section; a second is an error. Every property is optional, and all seven take a bare string literal — no expressions, no concatenation:
+A program has at most one `app` section; a second is an error. Every property is optional. All but `stack` take a bare string literal — no expressions, no concatenation; `stack` takes a bare int literal:
 
 | Property | Meaning |
 |---|---|
@@ -829,6 +829,7 @@ A program has at most one `app` section; a second is an error. Every property is
 | `icon` | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other. |
 | `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters, not all lowercase (an all-lowercase four-character code is reserved by Apple for system use), and must not contain a `"` or `'` character (the build interpolates it verbatim into generated Rez and CMake source). |
 | `doctype` | The program's default document type code (e.g. `"TEXT"`), used to tag documents the program saves for the Finder. 1 to 4 printable characters, space-padded to four; must not contain a `"` or `'` character. Feeds `app.doctype` (see App Constants, below). Defaults to `"TEXT"` if omitted, or if there is no `app` section at all. |
+| `stack` | The native (68k) build's stack-reserve size in bytes, e.g. `stack: 65536`. An int literal between 4096 and 1048576. Native-lane semantics only — a Mac/host build compiled through the cprint (C) backend ignores this field entirely, though it still checks clean there. If omitted, the native backend computes a reserve itself: the deepest call chain reachable in the program plus fixed Toolbox headroom, floored at 32768 bytes. |
 
 ### App Constants
 

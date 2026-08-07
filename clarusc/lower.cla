@@ -5140,9 +5140,12 @@ func lowExternDecl(d: int) {
 // read (native-gaps-cleanup Task 1, Part A), but for a different
 // consumer: lowAppConst reads irAppDoctype back only to lower
 // `app.doctype` expressions to a padded string literal -- no backend
-// module reads it, unlike id. No validation needed either way,
-// checkAppDecl/checkAppId/checkAppDoctype already rejected everything
-// wrong by the time lowering runs.
+// module reads it, unlike id. stack (native-gaps-cleanup Task 4) is the
+// one non-string property -- its own int literal's VALUE (not a pool
+// index) is read straight into irAppStack; cg68k.cla's cgStackHeuristic is
+// its only consumer. No validation needed either way,
+// checkAppDecl/checkAppId/checkAppDoctype/checkAppStack already rejected
+// everything wrong by the time lowering runs.
 func lowAppDecl(d: int) {
     var item: int
     var pname: string
@@ -5159,6 +5162,7 @@ func lowAppDecl(d: int) {
         if pname == "about" { irAppAbout = stringLitIdx(vh) }
         if pname == "id" { irAppId = stringLitIdx(vh) }
         if pname == "doctype" { irAppDoctype = stringLitIdx(vh) }
+        if pname == "stack" { irAppStack = intLitVal(vh) }
         item = declNext(item)
     }
 }

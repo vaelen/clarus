@@ -413,6 +413,19 @@ var cgFuncSize: list of int
 // (cgPackProgram's own output), valid only when shakeReachable(i).
 var cgFuncSegment: list of int
 
+// cgFuncFrameSizes[i] is irFuncs index i's own LINK frame size in bytes
+// (native-gaps-cleanup Task 4) -- cgEmitFunc's own `frameSize` local,
+// index-assigned there (NOT appended: cgEmitFunc runs twice per function,
+// once during cg68Measure's throwaway pass and once for real, always
+// computing the identical value from the same IR, so a plain index write
+// is idempotent). Pre-sized to irFuncs.count zeros by cg68Measure before
+// either pass runs. 0 for an unreachable function, or a callback-glue
+// function (cgEmitFunc's cgCbGlueBodyFor early-return skips the frameSize
+// computation entirely -- a callback's own dispatch depth is untraceable
+// from the static call graph anyway, see cgStackHeuristic's own doc
+// comment). cgStackHeuristic's only reader.
+var cgFuncFrameSizes: list of int
+
 // cgCurFuncSegment is the segment number of whatever code unit is
 // CURRENTLY being emitted (a packed function, or 1 while emitting
 // startup/cg_init_globals/any duplicated-glue routine) -- cgCallFunc's
@@ -1360,30 +1373,222 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
     cgCallFunc(fi)
 }
 
-// cgStartupStackReserve (Task 14, native-5e) is the extra headroom
-// cgEmitStartup reserves for the stack via SetApplLimit before
-// MaxApplZone -- see that function's own doc comment for the "stack
-// collision with heap" bug this fixes. Raised 32KB -> 128KB
-// (ui-scenario-retirement Task 3 fix round 1, ratified by Andrew
-// 2026-08-05): every Clarus function frame costs >=2128 bytes
-// unconditionally (cgTmpSlots + cgBigTmpSlots*cgBigTmpSize +
-// cgDeepLevels, reserved in every prologue whether or not the function
-// ever materializes a str/rec temp), so 32KB was only ~15 frames of call
-// depth program-wide. The toolbox suite's real click-dispatch chain
-// (scripted click -> ... -> a case -> `open`) is 14 frames deep before
-// even entering rtUiOpen, which itself needs ~5 more incl. its trace
-// tail -- ~38KB against the old 32KB budget, overflowing the stack
-// through ApplLimit into the heap (a real "coprocessor not installed"
-// system error on real hardware/the emulator, not a hang -- see
-// docs/superpowers/sdd/2026-08-05-ui-scenario-retirement/
-// blocker2-investigation.md for the full probe trail). 128KB buys ~60
-// frames, ~4x the old ceiling, with room for a UiTest*-driven case's own
-// re-entrant dispatch tower (UiTestClick -> rtUiScriptDispatchLine ->
-// rtUiScriptClick -> rtUiHandleMouseDown -> ... stacks the ENTIRE
-// dispatch chain a second time on top of an already-deep case). Cost:
-// 128KB less heap; nil in practice on every lane this repo gates (single-
-// app Finder under Mini vMac, not a shared MultiFinder partition).
-const cgStartupStackReserve: int = 131072
+// cgToolboxHeadroom (native-gaps-cleanup Task 4) is the fixed extra
+// reserve cgStackHeuristic adds on top of the deepest TRACED Clarus call
+// chain -- covering what the static call graph cannot trace at all:
+// Toolbox trap dispatch inside the ROM itself, and any callback/
+// function-value indirect call (a `callback func`'s own glue is reached
+// via shake.cla's ECbAddr arm, which roots the callback's body but does
+// NOT record a caller->callee edge INTO it the way an ordinary ECallFn
+// does -- see shakeEdgesFrom/shakeEdgesTo's own doc comment -- so a
+// callback's own callee chain is invisible to cgHeurLongest below).
+const cgToolboxHeadroom: int = 8192
+
+// cgHeurCallOverhead is the fixed per-call frame cost cgStackHeuristic
+// adds on top of each function's own cgFuncFrameSizes weight: 4 bytes
+// return address (the caller's JSR/BSR push) + 4 bytes saved A6 (the
+// callee's own LINK) -- frameSize itself already counts everything
+// BELOW A6 (locals + the fixed cgTmpSlots/cgBigTmpSlots/cgDeepLevels
+// pools), so this is the only per-call cost frameSize doesn't already
+// include.
+const cgHeurCallOverhead: int = 8
+
+// cgHeurState[i]/cgHeurMemo[i] -- memoized-DFS scratch for
+// cgHeurLongest's longest-path walk over the shake-recorded call graph.
+// 0 unvisited, 1 in progress (ON the current DFS stack -- a gray marker,
+// so a back edge closing a cycle is DETECTED rather than recursed into
+// forever), 2 done (cgHeurMemo holds the final answer). Freshly rebuilt
+// by every cgStackHeuristic call.
+var cgHeurState: list of int
+var cgHeurMemo: list of int
+
+// cgHeurLongest(i) returns the longest byte cost of any call chain
+// STARTING at irFuncs index i: i's own weight (cgFuncFrameSizes[i] +
+// cgHeurCallOverhead) plus the best of its callees' own longest chains.
+// Cycle handling (spec: recursion "falls back toward the floor rather
+// than inventing a bound"): a callee still gray (i reaches it via a back
+// edge -- i.e. i is itself on that callee's own in-progress call chain)
+// is skipped rather than recursed into, so a cycle contributes each
+// participant's own frame AT MOST ONCE per path instead of looping
+// forever; the edge is simply not followed, not specially bounded.
+func cgHeurLongest(i: int): int {
+    var best: int
+    var j: int
+    var callee: int
+    var v: int
+
+    if cgHeurState[i] == 2 {
+        return cgHeurMemo[i]
+    }
+    cgHeurState[i] = 1
+    best = 0
+    j = 0
+    while j < shakeEdgeCount() {
+        if shakeEdgeFrom(j) == i {
+            callee = shakeEdgeTo(j)
+            if cgHeurState[callee] != 1 {
+                v = cgHeurLongest(callee)
+                if v > best { best = v }
+            }
+        }
+        j = j + 1
+    }
+    cgHeurState[i] = 2
+    cgHeurMemo[i] = cgFuncFrameSizes[i] + cgHeurCallOverhead + best
+    return cgHeurMemo[i]
+}
+
+// cgHeurOnCycle(start) reports whether irFuncs index start can reach
+// itself again via one or more shake edges -- a plain BFS over start's own
+// successors, looking for start a second time. O(V+E) per call; called
+// once per reachable node by cgStackHeuristic below, so O(V*(V+E))
+// overall -- trivially cheap at this backend's real program sizes (a host
+// compile-time pass, not native code).
+func cgHeurOnCycle(start: int): bool {
+    var visited: list of bool
+    var queue: list of int
+    var i: int
+    var qi: int
+    var cur: int
+    var j: int
+    var callee: int
+
+    visited = cgFreshBoolList()
+    i = 0
+    while i < irFuncs.count {
+        visited.add(false)
+        i = i + 1
+    }
+    queue = cgFreshIntList()
+    j = 0
+    while j < shakeEdgeCount() {
+        if shakeEdgeFrom(j) == start {
+            callee = shakeEdgeTo(j)
+            if not visited[callee] {
+                visited[callee] = true
+                queue.add(callee)
+            }
+        }
+        j = j + 1
+    }
+    qi = 0
+    while qi < queue.count {
+        cur = queue[qi]
+        if cur == start {
+            return true
+        }
+        j = 0
+        while j < shakeEdgeCount() {
+            if shakeEdgeFrom(j) == cur {
+                callee = shakeEdgeTo(j)
+                if not visited[callee] {
+                    visited[callee] = true
+                    queue.add(callee)
+                }
+            }
+            j = j + 1
+        }
+        qi = qi + 1
+    }
+    return false
+}
+
+// cgStackHeuristic (native-gaps-cleanup Task 4) computes the native
+// startup's SetApplLimit stack-reserve immediate. An explicit `stack: N`
+// app field (checker/lower already validated 4096..1048576) wins
+// outright -- no max() against the heuristic. Otherwise: three terms
+// summed, then floored at 32768 and even-rounded:
+//
+//   1. `best` -- the post-shake call graph's deepest acyclic-collapsed
+//      chain of summed frame sizes (cgHeurLongest, over every reachable
+//      function as a possible chain start).
+//   2. `cycleExtra` -- a one-time top-up (cgHeurOnCycle) for any function
+//      that can reach itself again: cgHeurLongest's own cycle handling
+//      (stopping at a back edge rather than looping forever) prices only
+//      ONE pass through a cyclic region, undercounting a program that
+//      genuinely re-enters it before the first pass unwinds. Pricing
+//      every cycle participant's frame one extra flat time (not
+//      per-path) is the cheapest bounded fix. 0 whenever the graph has no
+//      cycle at all -- the toolbox suite composition below has none, so
+//      this term measured 0 there; kept for the next program that does.
+//   3. `cbExtra` -- the deepest reachable `callback func` body's own
+//      cgHeurLongest. A callback body (cg68SynthCbGlue's
+//      cgCbGlueBodyFuncIdx) is rooted via shakeAddRoot, not reached by any
+//      shake EDGE (the Toolbox/ROM invokes it directly -- LDEF redraw,
+//      scrollbar action -- while some ENTIRELY DIFFERENT Clarus chain is
+//      already live on the stack), so `best` alone never adds a
+//      callback's own downstream depth on top of whatever chain was
+//      running when the trap fired; without this term the two are only
+//      ever maxed against each other, never summed. Diagnosed on Task 4's
+//      own Step 3 gate (the toolbox suite composition): `best` alone (a
+//      53546-byte deepest traced chain) + cgToolboxHeadroom undershot the
+//      real native boot's need (hung -- see this task's report for the
+//      bisection: passed at stack:65000, still hung at the heuristic's
+//      pre-fix 61738); rtUiLdefDraw's own reachable chain (10806 bytes)
+//      was the missing piece. cgToolboxHeadroom itself stays a flat
+//      constant for what's IRREDUCIBLY untraceable (ROM-internal trap
+//      dispatch overhead); cbExtra covers the traceable-but-disconnected
+//      part properly instead of folding it into a bigger guessed
+//      headroom constant.
+func cgStackHeuristic(): int {
+    var i: int
+    var best: int
+    var v: int
+    var cycleExtra: int
+    var cbExtra: int
+    var result: int
+
+    if irAppStack != -1 {
+        return irAppStack
+    }
+
+    cgHeurState = cgFreshIntList()
+    cgHeurMemo = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgHeurState.add(0)
+        cgHeurMemo.add(0)
+        i = i + 1
+    }
+
+    best = 0
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) {
+            v = cgHeurLongest(i)
+            if v > best { best = v }
+        }
+        i = i + 1
+    }
+
+    cycleExtra = 0
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) and cgHeurOnCycle(i) {
+            cycleExtra = cycleExtra + cgFuncFrameSizes[i] + cgHeurCallOverhead
+        }
+        i = i + 1
+    }
+
+    cbExtra = 0
+    i = 0
+    while i < cgCbGlueBodyFuncIdx.count {
+        if shakeReachable(cgCbGlueBodyFuncIdx[i]) {
+            v = cgHeurLongest(cgCbGlueBodyFuncIdx[i])
+            if v > cbExtra { cbExtra = v }
+        }
+        i = i + 1
+    }
+
+    result = best + cycleExtra + cbExtra + cgToolboxHeadroom
+    if result mod 2 != 0 {
+        result = result + 1
+    }
+    if result < 32768 {
+        result = 32768
+    }
+    return result
+}
 
 // cgEmitStartup builds the synthesized startup routine -- JT slot 0, the
 // first function in the stream. See the file header for the full shape;
@@ -1434,7 +1639,7 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // low-memory global at absolute address $0130, the SAME "inline glue
     // reads a global, not a real trap dispatch" mechanism MemError uses
     // at $0220 -- Retro68's own MacMemory.h glues both this way), lower
-    // it by cgStartupStackReserve bytes via a real SetApplLimit trap
+    // it by cgStackHeuristic() bytes via a real SetApplLimit trap
     // (0xA02D -- #pragma parameter SetApplLimit(__A0) means the arg goes
     // DIRECTLY in A0, no stack push at all, unlike an ordinary `reg`
     // call), and only THEN grow the heap zone via MaxApplZone -- which,
@@ -1452,9 +1657,14 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // hanging smoke_menudemo/smoke_mandel (bigger, multi-segment real
     // programs; the small single-segment testdata/ui/*.cla fixtures
     // happened to stay shallow enough not to trip it, by luck rather than
-    // by any actual margin).
+    // by any actual margin). Task 14's own fix was a single hardcoded
+    // 128KB constant (cgStartupStackReserve, retired by native-gaps-
+    // cleanup Task 4); cgStackHeuristic replaces it with a per-program
+    // computed value -- an explicit `stack:` app field, else the
+    // post-shake call graph's own deepest chain plus fixed Toolbox
+    // headroom, floored at 32768 -- see that function's own doc comment.
     a68Emit(OpMovea, 4, AmAbsW, 0, 0x0130, AmAn, 0, 0)
-    a68Emit(OpAdda, 4, AmImm, 0, 0 - cgStartupStackReserve, AmAn, 0, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 0 - cgStackHeuristic(), AmAn, 0, 0)
     a68EmitTrap(0xA02D, "_SetApplLimit")
 
     a68EmitTrap(0xA063, "_MaxApplZone")
@@ -3174,6 +3384,7 @@ func cgEmitFunc(f: int) {
 
     runningNeg = cgReserveDeepScratch(runningNeg)
     frameSize = 0 - runningNeg
+    cgFuncFrameSizes[f] = frameSize
     cgStmtTmpOffs = cgFreshIntList()
     cgStmtTmpType = cgFreshIntList()
     cgStmtTmpNext = 0
@@ -9210,6 +9421,23 @@ func cg68Measure(): bool {
     i = 0
     while i < irFuncs.count {
         cgJtSlots.add(0)
+        i = i + 1
+    }
+
+    // cgFuncFrameSizes (Task 4) is pre-sized to all zeros BEFORE
+    // cgEmitStartup's own call below -- cgEmitStartup calls
+    // cgStackHeuristic, which reads this list; during THIS throwaway
+    // measure pass it's still empty of real data (cgEmitFunc hasn't run
+    // yet), so the heuristic falls back to its 32768 floor here, which is
+    // fine: only the ADDA instruction's fixed 6-byte SIZE matters for
+    // measurement, never the immediate's actual value (a real value is
+    // only needed, and available, on the SECOND cgEmitStartup call in
+    // cg68Program's real per-segment pass, which runs after this whole
+    // measure pass -- including the cgEmitFunc loop below -- completes).
+    cgFuncFrameSizes = cgFreshIntList()
+    i = 0
+    while i < irFuncs.count {
+        cgFuncFrameSizes.add(0)
         i = i + 1
     }
 

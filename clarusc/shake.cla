@@ -90,6 +90,25 @@ var shakeWorklist: list of int
 // calls shakeAddRoot for functions the C backend never calls directly.
 var shakePendingRootNames: list of int
 
+// shakeCurFunc (native-gaps-cleanup Task 4) is the irFuncs index of the
+// function whose body the shakeProgram worklist loop is CURRENTLY walking,
+// or -1 when no function body is being walked (root registration, the
+// globals'-init-expression walk) -- shakeMarkAndEnqueue reads it to
+// attribute a caller->callee edge only to a real function body, never to a
+// root.
+var shakeCurFunc: int
+
+// shakeEdgesFrom/shakeEdgesTo (native-gaps-cleanup Task 4) record one
+// caller->callee pair (parallel lists) per shakeMarkAndEnqueue call made
+// while shakeCurFunc is set -- the post-shake call graph cg68k.cla's
+// cgStackHeuristic walks to find the deepest chain of frame sizes. An edge
+// is recorded on EVERY call site, even to an already-marked callee (a
+// second call site, or a cycle's back edge) -- shakeMarks alone only
+// answers "reachable at all", not "from where", and the heuristic needs
+// the graph shape, not just the node set.
+var shakeEdgesFrom: list of int
+var shakeEdgesTo: list of int
+
 // shakeAddRoot registers an extra root by interned name, consulted the next
 // time shakeProgram runs.
 func shakeAddRoot(nameIdx: int) {
@@ -102,16 +121,36 @@ func shakeReachable(f: int): bool {
     return shakeMarks[f]
 }
 
+// shakeEdgeCount/shakeEdgeFrom/shakeEdgeTo (native-gaps-cleanup Task 4)
+// expose shakeEdgesFrom/shakeEdgesTo to cg68k.cla's cgStackHeuristic.
+func shakeEdgeCount(): int {
+    return shakeEdgesFrom.count
+}
+
+func shakeEdgeFrom(i: int): int {
+    return shakeEdgesFrom[i]
+}
+
+func shakeEdgeTo(i: int): int {
+    return shakeEdgesTo[i]
+}
+
 // shakeMarkAndEnqueue marks the function named nameIdx reachable (if it
 // names a real irFuncs entry -- a call to an `external func`/builtin has no
 // matching entry, silently ignored here) and enqueues it for its own body
-// to be walked, unless already marked.
+// to be walked, unless already marked. Also records a shakeCurFunc->idx
+// edge (Task 4) whenever this call happens while a real function body is
+// being walked (shakeCurFunc != -1) -- see shakeEdgesFrom/shakeEdgesTo.
 func shakeMarkAndEnqueue(nameIdx: int) {
     var idx: int
 
     idx = shakeFuncIdxByName.get(poolGet(nameIdx), -1)
     if idx == -1 {
         return
+    }
+    if shakeCurFunc != -1 {
+        shakeEdgesFrom.add(shakeCurFunc)
+        shakeEdgesTo.add(idx)
     }
     if shakeMarks[idx] {
         return
@@ -138,6 +177,9 @@ func shakeProgram() {
 
     shakeMarks = shakeFreshBoolList()
     shakeWorklist = shakeFreshIntList()
+    shakeEdgesFrom = shakeFreshIntList()
+    shakeEdgesTo = shakeFreshIntList()
+    shakeCurFunc = -1
 
     i = 0
     while i < irFuncs.count {
@@ -235,9 +277,11 @@ func shakeProgram() {
     wi = 0
     while wi < shakeWorklist.count {
         fIdx = shakeWorklist[wi]
+        shakeCurFunc = fIdx
         shakeWalkStmts(irFuncBodyHead(fIdx))
         wi = wi + 1
     }
+    shakeCurFunc = -1
 }
 
 // shakeFreshBoolList/shakeFreshIntList hand back a genuinely empty list --

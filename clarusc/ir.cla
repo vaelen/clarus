@@ -713,6 +713,13 @@ var irAppAuthor: int
 var irAppAbout: int
 var irAppId: int
 var irAppDoctype: int
+
+// irAppStack (native-gaps-cleanup Task 4) is the `stack: N` app field's
+// int-literal value in bytes (checker-validated 4096..1048576), or -1
+// when absent -- cg68k.cla's cgStackHeuristic reads it back: an explicit
+// value wins outright over the deepest-call-chain heuristic, no max().
+// Native lane only; the cprint host/Mac lanes never read it.
+var irAppStack: int
 var irHasApp: bool
 
 // irLayoutNeededByName (Task 2, mac-target-4d) marks which record types
@@ -1084,6 +1091,7 @@ func irReset() {
     irAppAbout = -1
     irAppId = -1
     irAppDoctype = -1
+    irAppStack = -1
     irHasApp = false
     irMenuHandlersHead = -1
     irMenuHandlersTail = -1
