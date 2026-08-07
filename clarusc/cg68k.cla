@@ -1443,7 +1443,9 @@ func cgHeurLongest(i: int): int {
 // successors, looking for start a second time. O(V+E) per call; called
 // once per reachable node by cgStackHeuristic below, so O(V*(V+E))
 // overall -- trivially cheap at this backend's real program sizes (a host
-// compile-time pass, not native code).
+// compile-time pass, not native code). ponytail: no edge dedup on this
+// walk; dedupe edges before the walk if the 5f Mac-resident self-compile
+// is slow.
 func cgHeurOnCycle(start: int): bool {
     var visited: list of bool
     var queue: list of int

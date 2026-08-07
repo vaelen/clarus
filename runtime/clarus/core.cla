@@ -111,6 +111,7 @@ func rtPack4CCRange(p: ptr, start: int, len: int): int {
     if len >= 2 { b1 = peekb(p + start + 1) }
     if len >= 3 { b2 = peekb(p + start + 2) }
     if len >= 4 { b3 = peekb(p + start + 3) }
+    // A 4-byte code of four 0xFF bytes also packs to -1, colliding with the len>4 sentinel above; unreachable via literals (checker requires printable chars) -- only a hostile dynamic string could hit it.
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
 

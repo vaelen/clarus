@@ -1877,8 +1877,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   checker range 4096..1048576) wins outright when present; otherwise
   cg68k computes a heuristic over the post-tree-shake static call
   graph — deepest reachable acyclic chain (`frameSize+8` per node) +
-  one-frame-each cost for every on-cycle node reachable from it
-  (`cycleExtra`) + the deepest reachable `callback func` body's own
+  one-frame-each cost for every shake-reachable on-cycle node, not
+  just ones on that deepest chain (`cycleExtra`) + the deepest
+  reachable `callback func` body's own
   chain, added on top rather than maxed (`cbExtra`, covering a Toolbox
   callback firing while an unrelated Clarus chain is already live on
   the stack) + a fixed 8192-byte Toolbox/trap headroom, floored at

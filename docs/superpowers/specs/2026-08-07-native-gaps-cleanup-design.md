@@ -314,9 +314,9 @@ MAC_TESTS=1`), 25/25 both times.
 Shipped per design: `stack: N` app field (checker range
 4096..1048576) wins outright; otherwise a codegen heuristic —
 deepest reachable acyclic chain (`frameSize+8` per node, `cgHeur
-Longest`) + `cycleExtra` (one frame each for every on-cycle node
-reachable from the deepest chain) + a fixed 8192-byte Toolbox
-headroom, floored at 32768, even-rounded.
+Longest`) + `cycleExtra` (one frame each for every shake-reachable
+on-cycle node, not just ones on the deepest chain) + a fixed
+8192-byte Toolbox headroom, floored at 32768, even-rounded.
 
 **Delta beyond the planned formula:** a `cbExtra` term was added after
 the heuristic *undershot* on its first real gate run (the toolbox-suite
