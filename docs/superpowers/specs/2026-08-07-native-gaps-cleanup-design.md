@@ -6,7 +6,104 @@ cluster, minus the three items deferred with their own-design notes
 (menu-bar cleanup / per-window menu bars, launch-from-Clarus, rtUiSys7
 System 7 exercise — all stay ROADMAP items). Six items in three parts.
 
-## Part A — document type/creator: app-block defaults + per-call overrides
+## Part A — document type/creator: mandatory args + app constants
+
+> **REVISED 2026-08-07 (Andrew, brainstorm round 2), superseding the
+> original Part A below-the-line design of app-block defaults +
+> optional trailing args.** Optional/variable arity was rejected to
+> avoid setting a language precedent (no optional-argument machinery
+> exists; three special-cased builtins would masquerade as one).
+> Instead: the arguments are ALWAYS present, and the language makes
+> providing them trivial.
+
+**New signatures (exact arity — a breaking change; every in-repo call
+site is updated in this phase):**
+
+- `file.writeText(path, text, type, creator): bool`
+- `file.save(path, rec, type, creator): bool`
+- `askOpen(path, types): bool`
+
+`type`/`creator`/`types` are `string`. There are NO defaults and NO
+optional forms; the old 2-arg/1-arg spellings become ordinary
+"wrong number of arguments" check errors.
+
+**New `app`-section field (unchanged from the original design):**
+`doctype: "XXXX"` — optional, string literal, 1..4 printable chars
+(space-padded to 4), checker-validated beside `id`; default `"TEXT"`.
+It exists to feed `app.doctype` — the field is the declaration, the
+expression is the access.
+
+**New compile-time app expressions:** `app.doctype` and `app.id` —
+expression-position constants (section-field spellings), resolving at
+COMPILE TIME to the app section's 4-char values, space-padded; in a
+program with no app section (or the field absent): `app.doctype` →
+`"TEXT"`, `app.id` → `"????"`. The canonical call every standard app
+writes: `file.writeText(p, t, app.doctype, app.id)`.
+
+**New predeclared constants (universe scope, like the builtins):**
+`fileTypeText = "TEXT"`, `fileTypeData = "CLRD"`,
+`fileTypePicture = "PICT"`, `fileTypeApplication = "APPL"`. (Andrew
+asked for "an enum of common types"; a literal Clarus `enum` is
+auto-numbered int-backed and cannot carry 4CC values, so this ships as
+a predeclared `const … : string` family — string consts are
+established language surface, reference:375. Explicit-valued enums
+would be their own language feature; not this phase.)
+
+**Reference stance (usage-neutral, per Andrew):** the reference does
+NOT prescribe types per operation. Its examples use `app.doctype` +
+`app.id` for both text and data saves, plus a table of common types
+(the four constants above + PICT/APPL/'ttro' etc. as prose) users can
+pass directly or via the constants; custom 4CCs are just strings.
+`CLRD` remains documented as the serializer's conventional data type,
+recommended when the program wants data files visually/behaviorally
+distinct from documents — but the choice is the programmer's.
+
+**Filter semantics (askOpen `types`):** comma-separated 4-char codes,
+max 4 (SFTypeList capacity; a 5th = check error for literals,
+`lastError` + cancel-return for dynamic strings); `"*"` = all files
+(SFGetFile numTypes -1). The idiomatic single-type call:
+`askOpen(p, app.doctype)`.
+
+**Padding rule (unchanged):** shorter than 4 bytes → space-padded
+right; longer → check error for literals, `lastError` + failed
+operation for dynamic strings. The empty string is NOT special (no
+sentinel — that wart died with the optional-args design); `""` pads to
+four spaces, a (weird but honest) legal 4CC.
+
+**Runtime simplification vs the superseded design:** no fallback
+globals, no runtime default resolution — every call site carries
+concrete values (compile-time literals when `app.*`/constants/literal
+strings are used; runtime pad+validate only for genuinely dynamic
+strings). `rt_app_creator`'s file-stamping role is retired (the arg
+carries the creator); the plan verifies no other consumer needs it
+before removing anything.
+
+**Stamp rule (what the runtime does, both lanes):** stamp exactly what
+the call provides, after padding/validation. `file.writeText` and
+`file.save` are identical in stamping behavior; they differ only in
+payload encoding.
+
+**Hardware proof:** `FInfoStamp` toolbox case writes one file with
+`(…, app.doctype, app.id)` and one with explicit literals
+`("PICT", "RDIT")`, reads both back via `PBGetFInfoSync`, asserts
+exact fdType/fdCreator. askOpen filter behavior remains
+non-auto-drivable (modal); its plumbing is pinned by emission goldens
++ the frozen scenarios staying green with explicit `app.doctype`
+filters.
+
+**Call-site migration (in-repo, this phase):** examples/
+(texteditor, bookmarks), testsuite/ cases using file.save/load or
+askOpen answers, testdata/ fixtures (emitui, behavior corpus,
+lowlevel), and every reference fence. Frozen scenario goldens
+(trace/PBM) must stay byte-identical — the migrated calls are
+behavior-equivalent (`askOpen(p, app.doctype)` ≡ old `askOpen(p)` with
+no app section → TEXT filter). Listing/emitui goldens re-bless as
+usual.
+
+<details>
+<summary>Superseded original Part A (optional trailing args + app-block defaults) — kept for the record</summary>
+
+## (superseded) Part A — document type/creator: app-block defaults + per-call overrides
 
 **The rule (ONE rule, both lanes, replacing today's accidents):**
 
@@ -60,6 +157,8 @@ overrides, `PBGetFInfoSync` both back, assert fdType/fdCreator match
 the table; askOpen filter behavior is NOT auto-drivable (modal — the
 pack3 finding stands) and rides the existing scripted lane + the
 checker/emission tests.
+
+</details>
 
 ## Part B — stack reserve: app field + codegen heuristic
 

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Document type/creator control (app-block `doctype` + per-call overrides + askOpen filter), app-block/heuristic stack reserve, and four mechanical fixes (label.text read, every-seeding, PostEvent clobber verification, lowering panic → diagnostic).
+**Goal:** Document type/creator control (mandatory args + app.doctype/app.id constants + askOpen filter), app-block/heuristic stack reserve, and four mechanical fixes (label.text read, every-seeding, PostEvent clobber verification, lowering panic → diagnostic).
 
-**Architecture:** Spec: `docs/superpowers/specs/2026-08-07-native-gaps-cleanup-design.md`. Front-end work is clarusc-only (app fields, optional trailing args, new intrinsic arities); stamping defaults are runtime globals (`rt_app_creator` exists, `rt_app_doctype` joins it; native lane gets startup-poked equivalents) so dynamic `""` args can fall back at runtime. All lanes implement ONE stamp rule (spec's table).
+**Architecture:** Spec: `docs/superpowers/specs/2026-08-07-native-gaps-cleanup-design.md`. Front-end work is clarusc-only; type/creator/filter args are MANDATORY (no optional-arg machinery -- Andrew, spec revision 2); `app.doctype`/`app.id` + fileType* universe consts make providing them one token, resolved to string literals at compile time. All lanes stamp exactly what the call provides.
 
 **Tech Stack:** Clarus (clarusc self-hosted), Go test harnesses, Mini vMac (gated), Apple Universal Interfaces for citations.
 
@@ -29,64 +29,48 @@ Claude-Session: https://claude.ai/code/session_01XSg1sXXgVkJ4vMAHuTrpzZ
 
 ---
 
-### Task 1: front end — `doctype:` app field, optional trailing args, new intrinsic arities
+### Task 1: front end — `doctype:` field, `app.*` expressions, file-type constants
+
+> **REVISED per spec revision 2 (mandatory args — no optional-arg machinery anywhere).**
 
 **Files:**
-- Modify: `clarusc/check.cla` (appProps ~692-704; checkAppDecl ~2715-2767; new checkAppDoctype beside checkAppId ~2775; builtin sigs ~1179-1180 and file-table sigs ~1243-1263; checkArgsCall ~4586-4606 and checkTableMethod ~1376-1399 arity arms)
-- Modify: `clarusc/lower.cla` (lowAppDecl ~4984-5001; askOpen arm ~787; lowFileCall ~963-995)
-- Modify: `clarusc/ir.cla` (irApp globals ~702-707 + reset ~1072-1077: add `irAppDoctype`)
-- Modify: `docs/clarus-language-reference.md` (app-section field table; file.writeText/file.save/askOpen signatures)
-- Test: `testdata/errors/` new fixtures + existing emitui fixtures (Task 2 re-blesses)
+- Modify: `clarusc/check.cla` (appProps ~692-704 gains "doctype"; new checkAppDoctype beside checkAppId ~2775: 1..4 printable chars, no quotes, NO all-lowercase rule, diagnostic `app doctype must be 1 to 4 printable characters`; universe scope gains four predeclared string consts — model on how existing universe symbols are declared near the builtin sigs ~1179)
+- Modify: `clarusc/parse.cla` (expression-position `app` `.` IDENT → new EAppConst expr node; `app` is contextual at decl position :1801 — expression position is new; FIRST grep the repo for `app` used as an ordinary identifier in expression position and record the result; the two-token lookahead `app` `.` keeps any such use working)
+- Modify: `clarusc/ast.cla` (EAppConst node), `clarusc/ir.cla` (`irAppDoctype` global + reset ~1072), `clarusc/lower.cla` (lowAppDecl stores doctype ~4984; EAppConst lowers to a STRING LITERAL: `app.doctype` → space-padded doctype-or-"TEXT", `app.id` → padded id-or-"????" — after lowering no backend knows the feature exists, zero emission work)
+- Modify: `docs/clarus-language-reference.md` (app-section field table gains `doctype`; new "App constants" subsection for app.doctype/app.id; the four fileType* constants + a common-types table, usage-neutral per the spec)
+- Test: `testdata/errors/doctype_long.cla` + `.expect` (app section with `doctype: "TOOLONG"`)
 - Modify: `clarusc/clarusc.c` (snapshot regen)
 
 **Interfaces:**
-- Consumes: nothing new.
-- Produces (Tasks 2-3 rely on these exactly):
-  - App field `doctype: "XXXX"` — string literal, 1..4 printable chars (space-padded to 4 by the CHECKER's canonicalization at lower time; >4 chars = diagnostic `app doctype must be at most 4 printable characters`). Stored as `irAppDoctype` (pool idx, -1 when absent).
-  - `askOpen(path)` AND `askOpen(path, types: string)` both check; lowering emits `IUiAskOpen` with 2 args always (2nd = the filter string expr, or a synthesized literal from the app default when omitted — see Step 4).
-  - `file.writeText(path, text)` / `(…, type)` / `(…, type, creator)`; `file.save` same. Lowering emits `IFileWriteText`/`IFileSave` with 4/and-existing args always: omitted type/creator become synthesized STRING literal args (`""` = use-default sentinel is NOT used for omitted args — omitted args synthesize the RESOLVED default literal at compile time when the default is knowable (doctype/id are app-section constants), else `""`; explicit `""` literals pass through for runtime fallback).
-  - Arity mechanism: per-builtin min/max arms (NO general optional-param machinery — three call sites get explicit `haveCount < min or haveCount > max` checks with the existing "wrong number of arguments" diagnostic).
+- Produces (Task 2 depends on exactly these): `app.doctype` / `app.id` valid anywhere a string expression is (they ARE string literals after lowering); universe consts `fileTypeText` = "TEXT", `fileTypeData` = "CLRD", `fileTypePicture` = "PICT", `fileTypeApplication` = "APPL" (const … : string — reference:375 precedent); `doctype:` app field validated and stored as `irAppDoctype` (-1 when absent).
 
-- [ ] **Step 1: failing checker fixtures.** Create `testdata/errors/doctype_long.cla` (+ `.expect`) — app section with `doctype: "TOOLONG"`, expect `../../testdata/errors/doctype_long.cla:<L>:<C>: app doctype must be at most 4 printable characters`; `testdata/errors/askopen_arity.cla` — `askOpen(p, "TEXT", "X")` expect `wrong number of arguments`; `testdata/errors/writetext_arity.cla` — 5 args, same. Copy the exact two-line copyright header every `testdata/errors/*.cla` carries (see `mixed.cla`). Determine `<L>:<C>` after implementation (Step 6 pins them); write placeholder positions now.
-- [ ] **Step 2: verify current compiler REJECTS the new syntax** (baseline): `build-run/clarusc <tmp>/doctype_ok.cla` where that file has `app T { name: "T" id: "TSTA" doctype: "PICT" }` — expect `unknown app property` diagnostic today. And a 3-arg `file.writeText` call — expect `wrong number of arguments to writeText`.
-- [ ] **Step 3: implement the app field.** `check.cla`: add `appProps["doctype"] = 1`; add `checkAppDoctype` (length 1..4, printable ASCII 0x20..0x7E, no quotes — model on `checkAppId` at check.cla:2775-2803 but WITHOUT the all-lowercase rule and WITH the ≤4 rule); call it from checkAppDecl where id's hook lives. `ir.cla`: `irAppDoctype` global + reset. `lower.cla` lowAppDecl: store pool idx like id.
-- [ ] **Step 4: implement arities + arg synthesis.** `check.cla`: askOpen accepts 1-2 args (2nd `string`); writeText/save accept base..base+2 (extras `string`). `lower.cla`: askOpen omitted-filter synthesizes a string literal from `irAppDoctype` (pool "TEXT" when -1); writeText omitted type ⇒ doctype-or-"TEXT" literal, omitted creator ⇒ app-id-or-"????" literal (via `irAppId`); file.save omitted type ⇒ "CLRD". All spellings 4-char space-padded AT SYNTHESIS. Explicit args pass through unresolved (runtime resolves, Task 2). Intrinsic arg counts grow accordingly — both backends will hard-fail unhandled arity (established convention) until Task 2 lands, so DO NOT run the emitui/cg68k suites between Steps 4 and Task 2's emission work if you split commits; this task ends check-only-green.
-- [ ] **Step 5: reference updates.** App-section table gains `doctype` (default TEXT, document the stamp-rule table from the spec verbatim); file.writeText/file.save/askOpen signatures with optional args, padding rule, `"*"` filter, max-4-types rule, empty-string-means-default.
-- [ ] **Step 6: snapshot regen + pin fixture positions.**
-```sh
-cc -O1 -I runtime/host -o /tmp/boot clarusc/clarusc.c runtime/host/rt.c
-/tmp/boot emit --rtdir runtime/clarus/ -o /tmp/cur.c clarusc/main.cla
-cc -O1 -I runtime/host -o /tmp/cur /tmp/cur.c runtime/host/rt.c
-/tmp/cur emit --rtdir runtime/clarus/ -o clarusc/clarusc.c clarusc/main.cla
-```
-Run each new errors fixture through the built compiler, paste the exact diagnostic into its `.expect`.
-- [ ] **Step 7: gates.** `go test ./internal/selfhost -run 'TestSnapshotFixedPoint|TestSnapshotBuilds|TestErrorGoldens|TestBehaviorGoldens' -count=1 -timeout 30m` — expected: PASS (the new intrinsic arities aren't emitted by any existing fixture, so no golden churn yet; if churn appears, STOP — synthesis must only fire for programs that CALL the builtins, and existing fixtures do call askOpen/writeText: their synthesized-literal args WILL change emitted C. In that case emitui/cg68k churn belongs to THIS task: run Task 2's re-bless procedure early and eyeball that only the new trailing args appear).
-- [ ] **Step 8: T1 + commit** (`feat(clarusc): doctype app field + per-call type/creator/filter arities`).
+- [ ] **Step 1: failing fixtures/probes.** Write `testdata/errors/doctype_long.cla` (position pinned after impl). Baseline probes with the current compiler: `app.doctype` in expression position = parse/check error today; `fileTypeText` = `undefined` today. Run the `app`-as-identifier grep and record it.
+- [ ] **Step 2: implement** per Files.
+- [ ] **Step 3: snapshot regen (Global Constraints commands) + pin the errors-fixture position into its `.expect`.**
+- [ ] **Step 4: gates.** `go test ./internal/selfhost -run 'TestSnapshotFixedPoint|TestSnapshotBuilds|TestErrorGoldens|TestBehaviorGoldens' -count=1 -timeout 30m` + T1. Expected: NO golden churn (nothing in the corpus uses the new surface yet).
+- [ ] **Step 5: commit** (`feat(clarusc): doctype field, app.doctype/app.id constants, fileType* consts`).
 
-### Task 2: runtime plumbing — stamps and filters on all lanes
+### Task 2: mandatory type/creator/filter args — signatures, emission, runtime, corpus migration (atomic)
 
 **Files:**
-- Modify: `clarusc/cprint.cla` (IFileWriteText ~2720; IFileSave ~2727; IUiAskOpen ~2899)
-- Modify: `clarusc/cg68k.cla` (same intrinsics' native arms; startup app-globals poke in cgEmitStartup ~1414)
-- Modify: `runtime/host/rt.c` (rt_file_write_text ~140, rt_file_write_data ~172 — accept+ignore type/creator)
-- Modify: `runtime/mac/rt_mac.c` (rt_file_write_text ~332/Create :340; rt_file_write_data ~387/Create :392; new `rt_app_doctype` weak global beside rt_app_creator :379)
-- Modify: `clarusc/cprint.cla` cpEmitAppInfo ~5266-5302 (emit strong `rt_app_doctype` like rt_app_creator)
-- Modify: `runtime/clarus/native.cla` (natFileWriteText ~567 + stamp block ~616-621; nat_SerFileWriteData ~850; new natAppDoctype/natAppCreator globals replacing natFileTypeText/natFileCreatorMPS consts ~83-93)
-- Modify: `runtime/clarus/ser.cla` (:76 extern + :286 call — thread type/creator)
-- Modify: `runtime/clarus/uidialogs.cla` (waist externs :89-90 grow filter params; nat_UiSFGetFile builds SFTypeList from the filter string; scripted halves in rtUiAskOpen/rtUiAskSave ~755-799 pass-through unchanged)
-- Modify: `runtime/mac/rt_ext_mac.inc` (rt_ext_UiSFGetFile ~625 takes filter; parse codes; numTypes=-1 for "*")
-- Re-bless: emitui + cg68k goldens.
+- Modify: `clarusc/check.cla` (builtin sigs ~1179-1180: askOpen becomes 2-arg (path, types — both strT(255)); file-table sigs ~1243-1263: writeText/save become 4-arg; the exact-count arity rule is UNTOUCHED — that is the point of this design)
+- Modify: `clarusc/lower.cla` (askOpen arm ~787 lowers 2 args; lowFileCall ~963-995 lowers 4; literal-argument validation: a LITERAL type/creator longer than 4 chars, or a literal filter string with more than 4 comma-separated codes, is a check/lower diagnostic — dynamic strings validate at runtime)
+- Modify: `clarusc/cprint.cla` (IFileWriteText ~2720 / IFileSave ~2727 / IUiAskOpen ~2899 emission carries the new args; cpEmitAppInfo ~5266: grep every consumer of `rt_app_creator` — if file stamping was its only job, retire the emission + the weak global; if the About-box/resource path reads it, leave it and say so in the report)
+- Modify: `clarusc/cg68k.cla` (the same three intrinsics' native emission arms)
+- Modify: `runtime/host/rt.c` (:140 rt_file_write_text / :172 rt_file_write_data — accept and IGNORE type/creator, comment per :170 precedent), `runtime/mac/rt_mac.c` (:332/:340 and :387/:392 — Create() from the padded/validated args; static 4CC helper), `runtime/clarus/core.cla` (new `rtFourCC(s: string): int` — space-pad short, -1 on >4; callers map -1 to lastError + failed op), `runtime/clarus/native.cla` (natFileWriteText ~567 gains type/creator params, stamp block ~616-621 uses them, consts natFileTypeText/natFileCreatorMPS ~83-93 DELETED; nat_SerFileWriteData ~850 threads through), `runtime/clarus/ser.cla` (:76 extern + :286 call thread type/creator), `runtime/clarus/uidialogs.cla` (waist externs :89-90 gain the filter param; nat_UiSFGetFile parses the filter: split on comma, pad each code, max 4 → SFTypeList var; "*" → numTypes -1; a 5th code or >4-char code → lastError + return false WITHOUT opening the dialog; scripted halves ~755-799: filter is ignored, script answers stay authoritative), `runtime/mac/rt_ext_mac.inc` (rt_ext_UiSFGetFile ~625: same filter semantics in C)
+- Modify (corpus migration — every existing call site gains the new args; canonical spelling `app.doctype, app.id` except where a fixture deliberately tests literals): `examples/texteditor.cla`, `examples/bookmarks.cla`, everything `grep -rln 'file.writeText\|file.save\|askOpen' testsuite/ testdata/ docs/` finds (reference + cookbook fences included)
+- Re-bless: emitui `.c.golden` regenerate + cg68k listings re-bless. NOT allowed to change: `.behavior` goldens (runtime output identical), `testdata/ui` traces + `testdata/uisnaps` PBMs (frozen scenarios; `askOpen(p, app.doctype)` in a no-app-section fixture ≡ old TEXT filter).
 
 **Interfaces:**
-- Consumes: Task 1's always-4-arg intrinsics and synthesized-literal defaults.
-- Produces: runtime resolution rule every lane implements identically: a type/creator arg that is `""` (or all spaces) resolves to the corresponding app global (`rt_app_doctype`/`rt_app_creator`, native `natAppDoctype`/`natAppCreator`); any other value is space-padded to 4 bytes and used; >4 bytes ⇒ `lastError` set, operation returns false/cancel (write does NOT proceed). askOpen filter string: split on `,`, each code padded, max 4 codes (5th ⇒ lastError + return false), `"*"` ⇒ numTypes -1.
-- Native app globals: `var natAppDoctype: int` / `natAppCreator: int` in native.cla, default `0x54455854`/`0x3F3F3F3F` ('????'); when `irHasApp`, cgEmitStartup pokes the app values (two `MOVE.L #imm, (abs)` against the globals' A5-world addresses — follow how cgEmitStartup addresses existing runtime globals; if runtime globals aren't directly addressable from startup, the alternative is a `nat_` init function called from startup — implementer picks whichever cgEmitStartup already has precedent for, states which in the report).
+- Consumes: Task 1's expressions and consts.
+- Produces: the runtime rule all lanes implement identically — pad short codes; dynamic >4-char code or >4 filter entries ⇒ lastError + failed operation; "*" ⇒ all files. No defaults, no sentinels: the runtime stamps exactly what arrives.
 
-- [ ] **Step 1: write the 4CC helper once per lane that needs it** (string→packed int with space padding + length guard): Clarus-side `rtFourCC(s: string): int` in `runtime/clarus/core.cla` (returns -1 on >4 — callers map that to lastError), C-side static helper in rt_mac.c. Host rt.c ignores stamps entirely (comment: no type/creator concept on host — existing :170 comment pattern).
-- [ ] **Step 2: thread the args end to end, lane by lane,** per the Files list (cprint emission adds the two string args to rt_file_write_text/_data calls; rt_mac.c Create() uses resolved values; native natFileWriteText gains type/creator params, stamp block uses them; ser.cla threads through SerFileWriteData; askOpen filter reaches SFGetFile's typeList on both lanes). The C prototypes live in `runtime/mac/rt_ui.h`/rt headers — update them wherever the old signatures are declared (grep `rt_file_write_text` across runtime/).
-- [ ] **Step 3: goldens.** Expected churn: emitui `.c.golden`s (new args + rt_app_doctype emission) and cg68k listings. Re-bless per Global Constraints; eyeball: writeText call sites carry two extra pushes; startup carries the two pokes only for app-bearing fixtures.
-- [ ] **Step 4: gates.** T1 --smoke; both native suite gates; selfhost subset (snapshot unchanged this task unless cprint.cla/cg68k.cla edits — they ARE edited: regen + fixed-point again).
-- [ ] **Step 5: commit** (`feat(runtime): one stamp rule — doctype/creator defaults + per-call overrides + askOpen filter`).
+- [ ] **Step 1: inverted-TDD arity fixtures.** `testdata/errors/askopen_arity.cla` (the OLD 1-arg spelling) and `testdata/errors/writetext_arity.cla` (old 2-arg): confirm both CHECK CLEAN today, then after the sig change they must produce `wrong number of arguments` — write `.expect` files at flip time.
+- [ ] **Step 2: sigs + lowering + emission + runtime, all lanes.** Nothing compiles green until every layer lands — this task is atomic BY DESIGN; do not attempt a passing intermediate commit.
+- [ ] **Step 3: corpus migration sweep** (grep-driven; canonical `app.doctype, app.id` spelling; fences included; count the sites in the report).
+- [ ] **Step 4: goldens.** Regenerate emitui, re-bless cg68k. EYEBALL: each migrated call site carries exactly the new argument pushes and nothing else; `git diff testdata/ui testdata/uisnaps` EMPTY; `.behavior` byte-identical.
+- [ ] **Step 5: gates.** Snapshot regen + selfhost subset (TestErrorGoldens sees the flipped fixtures) + T1 --smoke + both native suite gates.
+- [ ] **Step 6: commit** (`feat!(lang): mandatory type/creator/filter args on file.writeText/file.save/askOpen`).
 
 ### Task 3: FInfoStamp hardware-proof case
 
@@ -99,7 +83,7 @@ Run each new errors fixture through the built compiler, paste the exact diagnost
 - Consumes: Task 2's stamp rule; toolbox catalog's `PBGetFInfoSync` + `FileParam` (already shipped, toolbox/files.cla); `tkReport`/`tkFail` kit conventions (see cases_catalog.cla:36 for the TestResult shape).
 - Produces: `caseFInfoStamp(): TestResult`, enum member `FInfoStamp`.
 
-- [ ] **Step 1: write the case.** Body: (a) `file.writeText("stamp1", t)` with default stamps → `PBGetFInfoSync` on a `FileParam` var (ioNamePtr→"stamp1" Pascal str via `UiStrAddr`, ioVRefNum 0, ioFDirIndex 0) → assert fdType==natAppDoctype-resolved value and fdCreator matches the suite's own app id (the suite gui has an app section? CHECK testsuite/toolbox/gui.cla — if it has no app section the expected creator is 0x3F3F3F3F '????'; assert whichever the composition actually declares and comment WHY); (b) `file.writeText("stamp2", t, "PICT", "RDIT")` → assert 0x50494354/0x52444954; (c) cleanup: delete both files if a delete primitive exists, else leave (boot disks are throwaway — note it).
+- [ ] **Step 1: write the case.** Body: (a) `file.writeText("stamp1", t, app.doctype, app.id)` -> `PBGetFInfoSync` on a `FileParam` var (ioNamePtr->"stamp1" Pascal str via `UiStrAddr`, ioVRefNum 0, ioFDirIndex 0) -> assert fdType/fdCreator equal the COMPILE-TIME values app.doctype/app.id resolve to in this composition (check testsuite/toolbox/gui.cla for an app section; absent => "TEXT"/"????" per the spec rule -- assert those and comment why); (b) `file.writeText("stamp2", t, fileTypePicture, "RDIT")` -> assert 0x50494354/0x52444954 (also proves a universe const flows through); (c) cleanup: delete both files if a delete primitive exists, else leave (boot disks are throwaway — note it).
 - [ ] **Step 2: register** (the 5 runner edits + Go file list + count comment).
 - [ ] **Step 3: run the gate**: `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run TestToolboxSuiteOn68k -count=1 -timeout 30m` → 25/25; then the cprint twin via `CLARUS_CPRINT_MAC_TESTS=1 go test ./internal/mactest -run TestToolboxSuiteOnMac -count=1 -timeout 60m` → 25/25 (this is the C-lane's stamp-rule proof — the diagnostic lane run is DELIBERATE this phase, both lanes implement new behavior).
 - [ ] **Step 4: T1 + commit** (`test(toolbox): FInfoStamp case hardware-proves the stamp rule, both lanes`).
@@ -184,5 +168,5 @@ Run each new errors fixture through the built compiler, paste the exact diagnost
 
 - Spec coverage: Part A → Tasks 1-3; Part B → Task 4; Part C items 1-4 → Tasks 5,6,7,8; Verification 1-6 → distributed (V2 Tasks 2/4/5, V3 Task 3, V4 Task 8's twin-test reasoning recorded, V5 Task 6 Step 3, V6 Task 9).
 - Known judgment points left to implementers ON PURPOSE, each with a stop-and-report rule: Task 2's native app-globals poke mechanism (two candidates named); Task 5's label storage location (find SET path first); Task 6's root-cause-before-edit; Task 4 Step 3's undershoot rule.
-- Type consistency: `irAppDoctype`/`irAppStack` (Tasks 1/4), `IUiGetLabelText` (Task 5), `rtFourCC` (Task 2), `natAppDoctype`/`natAppCreator` (Tasks 2/3) — names match across tasks.
-- Corrections vs spec discovered at planning time (spec stands, plan notes them): check.cla has NO optional-arg machinery (askSave is strictly 2-arg — the spec's "precedent" was a design intent, not fact; Task 1 builds per-builtin arms); the checker-panic is actually a LOWERING panic (lower.cla:247) — Task 8 targets the true site; the ROADMAP's const-pool "stale duplicates" suspicion may be the documented whole-pool policy — Task 6 adjudicates.
+- Type consistency: `irAppDoctype`/`irAppStack` (Tasks 1/4), `IUiGetLabelText` (Task 5), `rtFourCC` (Task 2), `EAppConst`/`fileType*` (Tasks 1/2/3) — names match across tasks.
+- REVISED per spec revision 2 (Andrew): NO optional arguments anywhere -- mandatory args + app.doctype/app.id + fileType* consts; Tasks 1/2 re-cut (Task 2 deliberately atomic: sigs, emission, runtime, whole-corpus call-site migration cannot land separately). Still-standing plan-time corrections: the checker-panic is actually a LOWERING panic (lower.cla:247) -- Task 8 targets the true site; the const-pool "stale duplicates" suspicion may be the documented whole-pool policy -- Task 6 adjudicates.
