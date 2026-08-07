@@ -103,14 +103,16 @@ Clarus functions returning pass/fail, run in-process by a hand-maintained
 enum + runner, not one boot per case.
 
 - `testsuite/core/` (42 `CoreTest` cases: 41 real + `SelfCheck`) runs on
-  host and natively; `testsuite/toolbox/` (24 `ToolboxTest` cases: 23 real +
+  host and natively; `testsuite/toolbox/` (25 `ToolboxTest` cases: 24 real +
   `SelfCheck`, grown from 7 by the ui-scenario-retirement phase — 12 of the
   legacy `testdata/ui` scenarios migrated in as cases, plus two new
   machinery cases, `UiTestVerbSmoke` and `PostEventClick` — then to 22 real
   by the test-consolidation phase, which migrated `formedit`/
   `texteditor_bigfile` in as `FormEdit`/`BigText` — then to 23 real by the
   toolbox-cookbook phase's `Catalog` case, which hardware-proves the
-  `toolbox/` catalog below) needs
+  `toolbox/` catalog below — then to 24 real by the native-gaps-cleanup
+  phase's `FInfoStamp` case, which hardware-proves the doctype/creator
+  file-stamp rule on both lanes) needs
   the real Toolbox/emulator. Each has `runner.cla` (the enum + dispatch +
   `tkReport` result log) plus `cases_*.cla` families; `core` additionally
   has a host CLI (`cli.cla`, real argv) and a Mac/native front end

@@ -1276,7 +1276,23 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   creator — so save-blobs are newly VISIBLE to an `SFGetFile('TEXT')`
   filter on the native lane and invisible on the C lane; the two lanes'
   Standard File file lists no longer agree, and unifying the stamp is
-  future work. (b) `rtUiSys7 == true` (`ui.cla:721`) is NEWLY REACHABLE
+  future work. **(a) DONE (native-gaps-cleanup phase, 2026-08-07):**
+  `file.writeText`/`file.save` now take mandatory `type`/`creator`
+  args (no defaults, no optional-arg machinery) and `askOpen` a
+  mandatory `types` filter arg; new `app.doctype`/`app.id` compile-time
+  constants (a new `doctype: "XXXX"` app-section field, default
+  `"TEXT"`) and a `fileType{Text,Data,Picture,Application}` const
+  family make the common case one call
+  (`file.writeText(p, t, app.doctype, app.id)`). Every call site on
+  both lanes now stamps an explicit, caller-chosen value — closing the
+  TEXT/MPS-vs-CLRD/app-creator divergence outright rather than
+  unifying toward one side. `rt_app_creator` (the old C-lane global)
+  is retired. Hardware-proven on both lanes by the new `FInfoStamp`
+  toolbox-suite case (`PBGetFInfoSync` readback asserts exact
+  `fdType`/`fdCreator` for both an `app.doctype`/`app.id` write and an
+  explicit-literal write). Spec:
+  `docs/superpowers/specs/2026-08-07-native-gaps-cleanup-design.md`.
+  (b) `rtUiSys7 == true` (`ui.cla:721`) is NEWLY REACHABLE
   now that Task 5a fixed the Gestalt register binding — pre-fix the
   garbage `resp` always failed the `0x0700..0x1000` bound, so the
   System-7 branch was dead code; no boot has ever taken it (Mini vMac
@@ -1770,20 +1786,84 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   merged/migrated/deleted the rest, native lane only since that phase's
   Task 7 also retired the Retro68/cprint scenario lane) eventual fate
   rides on this.
-- **`rtUiBuildEvery` virtual-tick seeding (found during
-  ui-scenario-retirement, 2026-08-05):** seeds every-block due times from
-  real `TickCount` instead of virtual tick 0 in composed scripted builds
-  (worked around in `testsuite/toolbox/cases_canvas.cla` with a warm-up
-  tick). Reviewer also suggests checking for stale per-segment
-  constant-pool duplicates while in there (`clarusc/cg68k.cla:395-403`).
-- **`label.text` READ unimplemented (found during ui-scenario-retirement,
-  2026-08-05):** a `lowWidgetPropGet` gap; two migrated cases worked
-  around it rather than exercising the real read path.
-- **PostEvent extern glue clobber list unverified (found during
-  ui-scenario-retirement, 2026-08-05):** `runtime/mac/rt_ext_mac.inc`'s
-  PostEvent glue declares a d1/a1 register-clobber list that is
-  conservative but has not been independently verified against Inside
-  Macintosh/real trap behavior.
+- **~~`rtUiBuildEvery` virtual-tick seeding~~ (found during
+  ui-scenario-retirement, 2026-08-05) — RESOLVED as a MISDIAGNOSIS by
+  native-gaps-cleanup Task 6, 2026-08-07. `rtUiBuildEvery` never had a
+  bug.** Verified on real hardware via a revert-before-commit debug
+  probe: `UiTestScript()`'s pool-byte read and `rtUiBuildEvery`'s own
+  `now = 0` seed both check out correct every time. The real bug was
+  `rtUiEveryPump` (`runtime/clarus/ui.cla`) — the one every-array pump
+  that didn't gate on `rtUiScripted` the way every sibling touchpoint
+  does. `testsuite/toolbox/cases_uitest.cla`'s `casePostEventClick`
+  legitimately calls it directly (to replicate a real event-loop idle
+  tick after draining a real `PostEvent`), which reschedules every
+  program-wide every-block's `due` from real `UiTickCount()` (~46 ticks
+  in, this suite's own startup depth) — including Canvas's, whose
+  window isn't even open yet, stomping its virtual-tick-seeded `due =
+  4` to `50` well before Canvas's own case runs. Fixed by gating
+  `rtUiEveryPump` on `rtUiScripted`, forwarding to the already-correct
+  `rtUiScriptEveryPump`; `cases_canvas.cla`'s warm-up-tick workaround
+  deleted, the case now asserts the un-warmed cadence. **Rider (stale
+  per-segment constant-pool duplicates) resolved — policy, not a bug:**
+  verified against `testdata/valid/bounce.cla` (a natural 4-segment
+  fixture at the real 32760-byte segment budget) — every segment
+  carries exactly one full, non-redundant copy of the string-literal
+  pool (120 entries), UI descriptor blob (168 bytes), and `--events`
+  script bytes (91 bytes+NUL), identical counts in all 4 segments;
+  `cgEmitPoolsBody` (`clarusc/cg68k.cla:9081-9094`) does one pass per
+  segment, one label-bound entry per `irStrLits` index, no repeats — no
+  mechanism exists for a stale duplicate beyond the documented
+  one-full-copy-per-segment policy. No fix needed.
+- **~~`label.text` READ unimplemented~~ DONE (native-gaps-cleanup phase,
+  Task 5, 2026-08-07):** `lowWidgetPropGet` gained an `IUiGetLabelText`
+  arm on both lanes, a structural copy of `IUiGetFieldText`'s own
+  emission shape; the runtime's `rtUiWidgetGetStr` gained a
+  `label`/`text` arm reading the SAME per-window-instance `labels[]`
+  Pascal-string slot (`rtUiLabelAt`) the SET path already writes — no
+  new storage needed. `cases_buttons.cla`'s checksum-region-inequality
+  workaround and `cases_popuptable.cla`'s label-as-field workaround
+  were both un-workarounded to read `.text` directly; both now exercise
+  the real read path on the native-68k emulator.
+- **~~PostEvent extern glue clobber list unverified~~ DONE
+  (native-gaps-cleanup phase, Task 7, 2026-08-07):** PostEvent's
+  (`0xA02F`) A0 register is not caller-preserved: Apple's pragma, the
+  `.a` glue comment, and IM II's own on-entry/on-exit table all omit A0
+  from PostEvent's documented outputs, and the sibling trap PPostEvent
+  (`0xA12F`, same low trap byte, one extra flag bit) proves via its own
+  decoded glue word (`0x2288` = `MOVE.L A0,(A1)`) that the underlying
+  Event Manager dispatch code for this trap number does write a live
+  result into A0. The prior glue's `"r"(a0)` (plain input, uninvolved
+  in the clobber list) was therefore a latent under-clobbering risk;
+  fixed to `"+r"(a0)`, keeping the conservative `d1`/`a1`/`cc`/`memory`
+  clobbers since none of the three sources documents those as preserved
+  either. Verified against the cprint/Retro68 lane's real hardware
+  proof: `CLARUS_CPRINT_MAC_TESTS=1 go test ./internal/mactest -run
+  TestToolboxSuiteOnMac` passes all 25 subtests including
+  `PostEventClick`. (Incidentally corrected a false claim in the same
+  comment block: PostEvent DOES have a real `EXTERN_API` prototype in
+  Retro68's Universal Interfaces — harmless to the hand-rolled-glue
+  choice, since that prototype's own inline form has no post-trap glue
+  either.)
+- **~~Unresolved `extern record` forward-reference crashes lowering~~
+  DONE (native-gaps-cleanup phase, Task 8, 2026-08-07):** `var
+  r: SomeXRec` (or any field read/write) naming an `extern record`
+  declared later in source order crashed lowering (`runtime error:
+  list index out of range`, `irFindRecordLayoutByName` returning -1)
+  even though the checker's two-phase declaration pass already accepts
+  the program cleanly (order-independent). Fixed: `clarusc/lower.cla`'s
+  `lowTypeAt` (the position-carrying form of the old `lowType`) and the
+  three field-access sites (`lowXRecAddr`/`lowXRecFieldRead`/
+  `lowXRecFieldWrite`) now guard `recIdx == -1` and emit a real
+  `path:line:col: extern record NAME is not declared before this use`
+  diagnostic instead of panicking, continuing to collect further
+  diagnostics rather than aborting. Pinned by `testdata/errors/
+  xrec_order.cla`. **Known follow-on gap, not itself fixed:** `ir.cla`'s
+  own recursive call inside `irXRecFieldSize`'s `XFRec` case — reachable
+  only for a NESTED xrec field whose element record is itself
+  forward-referenced — is the same panic class and remains unguarded;
+  no current fixture/caller reaches it (out of Task 8's scope, which
+  was "the unknown-TYPE path specifically"). Fix the same way (guard,
+  diagnose) if a future case ever triggers it.
 - **Menu-bar cleanup / per-window menu bars (found post-ui-scenario-
   retirement, Andrew 2026-08-05):** toolbox-suite cases (and harness
   windows generally) install menus they never tear down; more broadly, a
@@ -1791,15 +1871,28 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (swapped on activate), which needs its own design. Current behavior: a
   composed suite program shows all app-scope menus, in declaration order,
   for the whole run.
-- **Configurable native stack reserve (Andrew, 2026-08-05):**
-  `cgStartupStackReserve` (`clarusc/cg68k.cla:1376`) was bumped 32KB→128KB
-  during ui-scenario-retirement Task 3 to fit the composed toolbox suite —
-  a one-size-fits-all compile-time constant every native app now pays for.
-  Make it a declaration in the `app` section instead: default back to a
-  smaller reserve, let the programmer raise it when needed. Better still,
-  a codegen heuristic (e.g. deepest static call chain × worst-case frame
-  size) could pick the reserve automatically, with the `app` setting as
-  the manual override.
+- **~~Configurable native stack reserve~~ DONE (native-gaps-cleanup
+  phase, Task 4, 2026-08-07):** `cgStartupStackReserve`'s flat 131072
+  constant is retired. New `app`-section field `stack: N` (int literal,
+  checker range 4096..1048576) wins outright when present; otherwise
+  cg68k computes a heuristic over the post-tree-shake static call
+  graph — deepest reachable acyclic chain (`frameSize+8` per node) +
+  one-frame-each cost for every on-cycle node reachable from it
+  (`cycleExtra`) + the deepest reachable `callback func` body's own
+  chain, added on top rather than maxed (`cbExtra`, covering a Toolbox
+  callback firing while an unrelated Clarus chain is already live on
+  the stack) + a fixed 8192-byte Toolbox/trap headroom, floored at
+  32768 and even-rounded. The toolbox-suite composition (the original
+  reason for the 128K bump) now computes ADDA **-72544** via the
+  heuristic — about 45% less reserved stack than the old flat 131072 —
+  empirically proven sufficient by booting the same composition
+  natively (`TestToolboxSuiteOn68k`, all 25 cases PASS). `cbExtra`'s
+  known limitation (models at most one live Toolbox callback at a
+  time; a callback whose own body triggers a second, distinct nested
+  callback would still be undercounted) and the shared-memo cycle
+  heuristic's structural-dominance argument (a 3-node-cycle
+  counterexample, `testdata/cg68k/mutrec.cla`) are both documented in
+  `cgStackHeuristic`'s own doc comment.
 - **Cross-lane `string(n)` record-field alignment divergence: DONE** —
   fixed on branch `strn-field-alignment` (2026-08-06): the cprint lane now
   gives a `string(n)` record field 2-byte alignment and even-rounded size

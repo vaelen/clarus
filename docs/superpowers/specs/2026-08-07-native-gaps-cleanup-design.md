@@ -251,3 +251,174 @@ reason to re-hardcode.
   `testdata/errors/`, `testdata/emitui|cg68k` re-bless fallout.
 - `docs/clarus-language-reference.md` (app-section fields, file
   builtins' optional args, askOpen filter), `docs/ROADMAP.md`.
+
+## Outcome (2026-08-07, 9 tasks, branch `native-gaps-cleanup`)
+
+All six items shipped; T2 (`scripts/test-merge.sh`) green end-to-end
+(239s: T1 body 15s, `internal/selfhost` 86s, gated `internal/mactest`
+native lane 138s). `testsuite/toolbox` grew 24 → 25 `ToolboxTest` cases
+(23 → 24 real + `SelfCheck`, the new `FInfoStamp` case).
+
+### Part A — doctype/creator (Tasks 1-3)
+
+Shipped exactly per the REVISED (mandatory-args) design above, no
+deviation: `file.writeText(path, text, type, creator)`,
+`file.save(path, rec, type, creator)`, `askOpen(path, types)`; new
+`doctype: "XXXX"` app field + `app.doctype`/`app.id` compile-time
+constants (`ExAppConst` AST node — named `Ex`-prefixed per the
+codebase's actual `ExprKind` convention, not the brief's literal
+`EAppConst`); `fileType{Text,Data,Picture,Application}` const family.
+41 real call sites migrated across the repo (35 in the brief's grep
+scope + 4 self-hosting sites in `clarusc/*.cla` itself, required for
+the bootstrap dance to work at all + 2 in `internal/asm68k/
+exercise.cla`, missed by the brief's grep scope, caught by
+`TestVasmRoundTrip`). `rt_app_creator` (the old C-lane global default)
+retired outright — one reader, one writer, one override site, no
+other consumer anywhere in the tree.
+
+**Two controller-authorized extras, both found mid-Task-3, both
+required to reach a passing both-lane `FInfoStamp` case:**
+
+1. A real cprint-lane codegen gap: `clarusc/cprint.cla`'s `IPokeL`
+   emission arm forwarded an extern-record `ptr`-field RHS into
+   `rt_pokel`'s `int32_t` parameter with no cast — harmless for every
+   *prior* call site (all wrote the literal `ptr(0)`, which prints as
+   bare `0`) but a real C compile error the moment a genuine non-null
+   pointer expression (`UiStrAddr(...)`, `FInfoStamp`'s own
+   `fp.ioNamePtr = UiStrAddr("stamp1")`) hit the same path. Fixed by
+   gating a `(int32_t)(intptr_t)(...)` cast on the RHS's static type
+   (`KPtr`) in `cprint.cla` only — not `lower.cla`'s shared IR, to
+   avoid forcing the native (cg68k) lane through an unproven codegen
+   path for a shape only the C lane needed. Zero native-lane risk
+   (confirmed: unchanged `TestToolboxSuiteOn68k` result) and zero
+   `.c.golden` churn beyond one new regression fixture
+   (`testdata/emitui/xrec_ptr_field.cla`).
+2. A missing runtime-glue gap: `PBGetFInfoSync` had never had a
+   cprint-lane C wrapper (`runtime/mac/rt_ext_mac.inc`) — every prior
+   caller was native-lane-only. Added
+   `rt_ext_PBGetFInfoSync`, a one-line passthrough matching every
+   sibling `rt_ext_*` wrapper's own shape. (`PBSetFInfoSync`'s own
+   cprint wrapper is still missing — nothing calls it yet; ponytail:
+   add it the same way the moment a case does.)
+
+**Both-lane hardware proof:** the `FInfoStamp` toolbox case writes one
+file via `(app.doctype, app.id)` and one via explicit literals
+(`"PICT"`, `"RDIT"`), reads both back via `PBGetFInfoSync`, and asserts
+the exact packed big-endian 4CC longs (`0x54455854`/`0x3F3F3F3F` and
+`0x50494354`/`0x52444954`). Green on both `TestToolboxSuiteOn68k`
+(native) and `TestToolboxSuiteOnMac` (cprint/Retro68, `CLARUS_CPRINT_
+MAC_TESTS=1`), 25/25 both times.
+
+### Part B — stack reserve (Task 4)
+
+Shipped per design: `stack: N` app field (checker range
+4096..1048576) wins outright; otherwise a codegen heuristic —
+deepest reachable acyclic chain (`frameSize+8` per node, `cgHeur
+Longest`) + `cycleExtra` (one frame each for every on-cycle node
+reachable from the deepest chain) + a fixed 8192-byte Toolbox
+headroom, floored at 32768, even-rounded.
+
+**Delta beyond the planned formula:** a `cbExtra` term was added after
+the heuristic *undershot* on its first real gate run (the toolbox-suite
+composition hung the emulator — `LaunchAPPL` timeout — at the
+un-augmented heuristic's computed ADDA of -61738; bisected true
+threshold `(61738, 65000]`). Root cause: a Toolbox-invoked callback
+body (`cg68SynthCbGlue`'s target, e.g. `rtUiLdefDraw`) is reachable via
+`shakeAddRoot`, not a traced call edge — its own frames stack on top of
+whatever chain was already live when the ROM fired the trap, but the
+`best = max(...)` formula only ever compared chains against each
+other, never summed a live callback onto the chain beneath it.
+`cbExtra` = the deepest reachable callback body's own `cgHeurLongest`,
+added on top of `best` (not maxed). Documented known limitation: models
+at most one live Toolbox callback at a time; a callback whose own body
+triggers a second, distinct nested callback would still be
+undercounted (no such nesting exists in the current runtime/test
+corpus).
+
+**Measured values:**
+- Hand-computed fixture (`testdata/cg68k/arith.cla`): longest chain
+  `handler_App_launch → label → rtStrStore` = 6940; + 0 cycleExtra + 0
+  cbExtra + 8192 headroom = 15132, floored to 32768 (golden `arith.s`
+  line 26: `ADDA.L #-32768,A0`).
+- Mutual-recursion fixture (`testdata/cg68k/mutrec.cla`, added in the
+  review fix round to prove multi-node-cycle handling): `best` = 8560
+  (memoized, happens to equal the true longest simple path for this
+  2-node cycle), `cycleExtra` = 4280 (`mutA`+`mutB`, `frame+8` each);
+  `best + cycleExtra` (12840) structurally dominates the true longest
+  simple path (8560) regardless of memo order — floored to 32768
+  either way.
+- **Toolbox-suite composition (the real deployment case, the original
+  reason for the old flat 131072):** computed ADDA **-72544**
+  (`best`=53546 via `clar_ui_fire_widget`, `cycleExtra`=0, `cbExtra`
+  =10806 via `rtUiLdefDraw`, +8192 headroom) — **about 45% less
+  reserved stack than the old flat 131072**, empirically proven
+  sufficient (`TestToolboxSuiteOn68k`, 25/25 PASS, ~48s boot).
+
+### Part C — the mechanical four (Tasks 5-8)
+
+1. **`label.text` read (Task 5):** the SET path's storage
+   (`rtUiLabelAt`'s per-window-instance `labels[]` Pascal-string slot)
+   turned out to already be the natural GET source — no shadow store,
+   no BLOCKED condition. `IUiGetLabelText` added as a structural copy
+   of `IUiGetFieldText`'s emission shape on both lanes; `cases_buttons.
+   cla`'s checksum-inequality workaround and `cases_popuptable.cla`'s
+   label-as-field workaround both un-workarounded.
+2. **Every-seeding (Task 6) — the plan's `rtUiBuildEvery` hypothesis
+   was DISPROVEN.** Hardware debug probes (`bb=99 bn=0 sb=99 d0=50`)
+   showed `rtUiBuildEvery`'s own virtual-tick-0 seed was correct all
+   along; the real bug was `rtUiEveryPump` (the ONE every-array pump
+   that didn't gate on `rtUiScripted`), unconditionally rescheduling
+   *every* program-wide every-block from real `UiTickCount()` whenever
+   `casePostEventClick`'s legitimate direct call fired — stomping
+   Canvas's virtual-tick-seeded `due` well before Canvas's own window
+   opened. Fixed by gating `rtUiEveryPump` on `rtUiScripted`,
+   forwarding to the already-correct `rtUiScriptEveryPump`. Rider
+   (stale per-segment constant-pool duplicates) investigated and
+   resolved as **policy, not a bug** — `testdata/valid/bounce.cla`'s 4
+   real segments each carry exactly one full, non-redundant copy of the
+   string-literal pool (120 entries), UI blob (168 bytes), and events
+   blob (91 bytes+NUL); `cgEmitPoolsBody` has no mechanism to produce a
+   duplicate beyond the documented one-copy-per-segment design.
+3. **PostEvent clobber list (Task 7):** decoded against Apple's
+   pragma, the `.a` glue comment, IM II's register table, and the
+   sibling trap PPostEvent's own glue word (`0x2288` = `MOVE.L
+   A0,(A1)`, proof the underlying dispatch code writes A0). A0 was a
+   genuine latent under-clobber (`"r"(a0)` plain input, not in the
+   clobber list); fixed to `"+r"(a0)`. Verified against
+   `TestToolboxSuiteOnMac`'s `PostEventClick` subtest.
+4. **Checker/lowering panic → diagnostic (Task 8):** the panic was in
+   `lower.cla`, not `check.cla` as the plan's own prior corrections
+   already suspected — `lowType`'s `TyXRec` arm (plus three sibling
+   field-access sites) panicked on a checker-clean, forward-referenced
+   `extern record`. Fixed with a position-carrying `lowTypeAt` +
+   `recIdx == -1` guards emitting a real diagnostic. Delta beyond the
+   plan: `internal/selfhost/diag_test.go`'s `TestErrorGoldens` had to
+   switch from bare check-only mode to `clarusc emit` mode, because
+   check-only mode never calls `lowerProgram` at all (confirmed by
+   reading `main.cla`) and so could never reach a lowering-phase
+   diagnostic — verified byte-identical output for all 10 pre-existing
+   fixtures under the new mode before adding the 11th. Known follow-on
+   gap, flagged not fixed: `ir.cla`'s `irXRecFieldSize`'s own recursive
+   `XFRec` call is the same panic class for a *nested* forward-
+   referenced xrec field; out of this item's scope ("the unknown-TYPE
+   path specifically"), unexercised by any current fixture.
+
+### Verification checklist (spec's own list, closing the loop)
+
+1. Per-task T1 + snapshot regen: done every clarusc-touching task
+   (1-5, 8).
+2. Golden churn eyeballed, not just diffed: cg68k `ADDA` immediates
+   (Task 4), emitui stamp/filter args (Task 2), `rtUiScripted` guard
+   line (Task 6) — each confirmed to be the ONLY change in its diff.
+3. `FInfoStamp` + the two un-workarounded label.text cases green on
+   both native suite gates: confirmed (25/25 both lanes for
+   `FInfoStamp`; `Buttons`/`Popuptable` re-verified post-un-workaround).
+4. Checker/lowering fixture in the errors lane + a T1-visible twin
+   (`internal/lowlevel/xrecorder_test.go`): both landed, per Task 8's
+   own reasoning for why the errors-lane fixture alone would leave the
+   panic class unguarded at T1.
+5. Behavior goldens unaffected by FInfo stamping (not a byte-goldens
+   concern); askOpen default-filter equivalence held (all 4 frozen
+   scenarios byte-identical throughout, confirmed via `git status`
+   after every native-lane gate run touching UI runtime code).
+6. Full T2 green at phase end (this task): 239s, zero FAIL.
