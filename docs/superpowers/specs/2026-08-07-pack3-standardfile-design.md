@@ -12,13 +12,13 @@ folds in two decisions made at brainstorm time (Andrew, 2026-08-07):
 demote the cprint/Retro68 Mac lane to an opt-in diagnostic, and add
 include-path dedup to clarusc.
 
-## Part 0 — include dedup by normalized path (clarusc)
+## Part A — include dedup by normalized path (clarusc)
 
 clarusc's include-once set (`seenPaths`, `clarusc/main.cla`) keys the
 raw path string, and `joinPath` is naive concatenation — so two
 spellings of the same file (`include "sub/../common.cla"` vs `include
 "common.cla"`, or a positional entry vs an include) load twice, and
-duplicate declarations error out. Part B creates exactly this shape:
+duplicate declarations error out. Part C creates exactly this shape:
 the runtime includes `toolbox/standardfile.cla` as
 `<rtdir>/../../toolbox/standardfile.cla` while a user program may
 compose the same file positionally as `toolbox/standardfile.cla`.
@@ -42,7 +42,7 @@ order-insensitive (caller-before-callee checks clean), so include-once
 retaining whichever copy loads first cannot break the combined
 user+runtime chain.
 
-## Part A — cprint-Mac demotion to diagnostic lane
+## Part B — cprint-Mac demotion to diagnostic lane
 
 Context (Andrew, 2026-08-07): the C printer's 68k role was a stop-gap;
 its real remaining job is host builds (clarusc bootstrap, tools), which
@@ -75,14 +75,14 @@ the deprecation story (cprint-Mac = on-demand diagnostic oracle;
 deletion of the lane, `rt_ext_mac.inc`, and `build-mac.sh` is 5f's
 Retro68-retirement item, not this phase). Nothing is deleted here.
 
-## Part B — the _Pack3 port, catalog-first, native lane only
+## Part C — the _Pack3 port, catalog-first, native lane only
 
 The 08-03 spec's two-stub-bodies scope stands: `nat_UiSFGetFile`/
 `nat_UiSFPutFile` (`runtime/clarus/uidialogs.cla`) become real; the
 waist externs `UiSFGetFile(path255Out: ptr): bool` /
 `UiSFPutFile(suggested255: ptr, path255Out: ptr): bool` keep their
 declarations; the cprint lane keeps resolving them to its existing C
-wrappers, byte-untouched (it is on the Part-A deprecation path — no
+wrappers, byte-untouched (it is on the Part-B deprecation path — no
 unification effort spent on it).
 
 What moves: declarations live in the catalog, per the guiding
@@ -139,13 +139,13 @@ untouched, cancel ≡ today's stub behavior so no caller regresses.
 
 Task-1 verification item: the composed orderings — user program that
 positionally composes `toolbox/standardfile.cla` while the runtime
-includes it (post-Part-0, one copy loads) — check clean through
+includes it (post-Part-A, one copy loads) — check clean through
 `checkProgram`, including `extern record` and const decls, on both
 emit lanes.
 
 ## Verification
 
-1. **Part 0**: include-dedup fixture (same file reached via two
+1. **Part A**: include-dedup fixture (same file reached via two
    spellings; would be a duplicate-decl error today) wherever existing
    include fixtures live; snapshot fixed-point regen; full T1.
 2. **Catalog**: `internal/testsuite/catalog_test.go` grows the two new
@@ -156,7 +156,7 @@ emit lanes.
    encoding before any boot (a wrong selector crashes real hardware).
 4. **Scripted lane frozen**: the four frozen golden scenarios + both
    native suite gates stay green (native never blesses).
-5. **Part A rehearsal**: one T2 run showing the seven demoted tests
+5. **Part B rehearsal**: one T2 run showing the seven demoted tests
    SKIP; one `CLARUS_CPRINT_MAC_TESTS=1` run of the demoted set
    showing they still pass under the diagnostic gate.
 6. **Live-drive acceptance** (the 4c standard, unchanged from 08-03):
