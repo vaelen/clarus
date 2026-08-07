@@ -716,7 +716,7 @@ func logGreeting(p: Person) {
 
 ### Parameter Passing
 
-Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place. User-declared functions cannot fill fixed-size out-parameters — return values instead. Built-in runtime routines are not bound by this rule: dialogs such as `askOpen(p)` and `askSave(path, suggested)` fill the string you pass, using a runtime calling convention not available to user code (Chapter 12).
+Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place. User-declared functions cannot fill fixed-size out-parameters — return values instead. Built-in runtime routines are not bound by this rule: dialogs such as `askOpen(p, types)` and `askSave(path, suggested)` fill the string you pass, using a runtime calling convention not available to user code (Chapter 12).
 
 ### Recursion
 
@@ -1268,8 +1268,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | Function | Signature | Notes |
 |---|---|---|
 | `readText` | `file.readText(path: string, t: text): bool` | fills `t` in place |
-| `writeText` | `file.writeText(path: string, t: text): bool` | writes `t`'s contents to `path` |
-| `save` | `file.save(path: string, data): bool` | `data`: any `record`, `list of` record, or `map of` record |
+| `writeText` | `file.writeText(path: string, t: text, type: string, creator: string): bool` | writes `t`'s contents to `path`, stamped with `type`/`creator` |
+| `save` | `file.save(path: string, data, type: string, creator: string): bool` | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator` |
 | `load` | `file.load(path: string, data): bool` | fills `data` in place |
 | `name` | `file.name(path: string): string` | the file's display name; always succeeds |
 
@@ -1279,14 +1279,14 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 
 **Binary faithfulness:** `readText` and `writeText` transfer content verbatim, byte for byte — no newline translation, and every byte value 0–255 (including 0) round-trips unchanged. Since a `text` is a byte buffer (Chapter 3), these two functions are also the way to read and write binary data.
 
-A document window may declare its document file type for Finder integration (Mac type and creator codes). Double-clicking such a document in the Finder launches the application and fires `App.openDocument` with the document's path (Chapter 7). The declaration syntax is part of the window declaration and is settled alongside the toolchain; the behavior is as described here.
+**`type`/`creator`:** four-character Finder type/creator codes (the App Section's `app.doctype`/`app.id` constants, above, are the idiomatic values — `file.writeText(p, t, app.doctype, app.id)`; the four `fileType*` constants or any other 4-character `string` also work). There are no defaults: every call spells them out. A `string` literal longer than four characters is a build-time error; a shorter one is space-padded on the right. A *non-literal* `string` longer than four characters fails the whole operation instead (`false` + `lastError`) — the same rule `askOpen`'s filter, below, follows. Double-clicking a document saved this way in the Finder launches the application that wrote it and fires `App.openDocument` with the document's path (Chapter 7).
 
 ### Dialogs
 
 Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 notes, these fill the string arguments passed to them using a runtime calling convention available only to built-ins, not to user-declared functions:
 
 - `alert(msg: string)` — shows `msg` in a standard alert with an OK button.
-- `askOpen(path: string): bool` — Standard File "Open" dialog; fills `path` and returns `true`, or returns `false` on Cancel.
+- `askOpen(path: string, types: string): bool` — Standard File "Open" dialog; fills `path` and returns `true`, or returns `false` on Cancel. `types` is a comma-separated list of up to four four-character type codes (`"TEXT,PICT"`), or `"*"` for every file regardless of type — the idiomatic single-type call is `askOpen(p, app.doctype)`. The same padding/length rule as `writeText`'s `type`/`creator` applies to each code; a *literal* filter with more than four entries, or a literal entry longer than four characters, is a build-time error, and a non-literal filter that breaks the same rule fails the call outright (`false` + `lastError`, dialog never opens).
 - `askSave(path: string, suggested: string): bool` — Standard File "Save" dialog, pre-filled with `suggested`; fills `path` and returns `true`, or returns `false` on Cancel.
 - `askSaveChanges(name: string): saveChoice` — the standard three-way "Save changes to “name”?" dialog; returns `Save`, `Discard`, or `Cancel` (Chapter 3).
 
@@ -1883,7 +1883,7 @@ func save(d: Doc): bool {
     if d.path == "" {
         if not askSave(d.path, "Untitled") { return false }   // fills d.path
     }
-    if not file.writeText(d.path, d.Body.text) {
+    if not file.writeText(d.path, d.Body.text, app.doctype, app.id) {
         alert("Couldn't save: " + lastError.message)
         return false
     }
@@ -1906,7 +1906,7 @@ extend File {                      // app-level commands: always enabled
     on Open.select {
         var p: string(255)
 
-        if askOpen(p) { openPath(p) }
+        if askOpen(p, app.doctype) { openPath(p) }
     }
 
     on Quit.select { quit }        // runtime sends closeRequest to every

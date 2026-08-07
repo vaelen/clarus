@@ -1199,7 +1199,12 @@ func registerUniverse(scope: int) {
     declBuiltinType(scope, "saveChoice", SaveChoiceT)
 
     declBuiltinFunc1(scope, "alert", strT(255), -1)
-    declBuiltinFunc1(scope, "askOpen", strT(255), BoolT)
+    // askOpen(path, types) -- native-gaps-cleanup Task 2: `types` is a
+    // mandatory second arg (comma-separated 4-char codes, "*" = all
+    // files); see lowCall's "askOpen" arm (lower.cla) for the literal
+    // filter validation and uidialogs.cla's nat_UiSFGetFile for the
+    // runtime parse/pad/validate rule every lane implements.
+    declBuiltinFunc2(scope, "askOpen", strT(255), strT(255), BoolT)
     declBuiltinFunc2(scope, "askSave", strT(255), strT(255), BoolT)
     declBuiltinFunc1(scope, "askSaveChanges", strT(255), SaveChoiceT)
     declBuiltinFunc1(scope, "log", strT(255), -1)
@@ -1277,14 +1282,27 @@ func buildMethodTables() {
     sigAdd(psPlain(TextT))
     fileFuncs["readText"] = sigEnd(BoolT)
 
+    // file.writeText(path, text, type, creator) -- native-gaps-cleanup
+    // Task 2: type/creator are mandatory (no defaults/sentinels); see
+    // lowFileCall's "writeText" arm for the literal-argument validation
+    // and runtime/clarus/native.cla's natFileWriteText (native lane) /
+    // runtime/mac/rt_mac.c's rt_file_write_text (C lane) for the
+    // pad/validate/stamp rule.
     sigStart()
     sigAdd(psPlain(strT(255)))
     sigAdd(psPlain(TextT))
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
     fileFuncs["writeText"] = sigEnd(BoolT)
 
+    // file.save(path, rec, type, creator) -- same Task 2 rule as
+    // writeText above; file.load stays 2-arg (loading needs no type
+    // info).
     sigStart()
     sigAdd(psPlain(strT(255)))
     sigAdd(psAnyRecordish())
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
     fileFuncs["save"] = sigEnd(BoolT)
 
     sigStart()

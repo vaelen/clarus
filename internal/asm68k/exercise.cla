@@ -17,11 +17,11 @@ on App.startEmpty {
         log("exercise: a68Finish failed (unresolved label)")
         quit 1
     }
-    if not file.writeText("exer.s", a68ListingText()) {
+    if not file.writeText("exer.s", a68ListingText(), fileTypeText, "????") {
         log("exercise: cannot write exer.s: " + lastError.message)
         quit 1
     }
-    if not file.writeText("exer.dat", a68Bytes()) {
+    if not file.writeText("exer.dat", a68Bytes(), fileTypeText, "????") {
         log("exercise: cannot write exer.dat: " + lastError.message)
         quit 1
     }

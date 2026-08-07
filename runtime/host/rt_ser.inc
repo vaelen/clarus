@@ -4,7 +4,8 @@
  * translation unit. Uses ONLY the public rt.h API (rt_text_*, rt_list_*,
  * rt_map_*, rt_file_read_text, rt_set_lasterr) plus one primitive each
  * runtime defines BEFORE this include:
- *   static int rt_file_write_data(const uint8_t *path, const rt_text *t);
+ *   static int rt_file_write_data(const uint8_t *path, const rt_text *t,
+ *                                  const uint8_t *type255, const uint8_t *creator255);
  * Never touches rt_text/rt_list/rt_map struct internals -- those differ
  * (malloc'd pointer vs. Handle) between the two runtimes.
  *
@@ -152,7 +153,19 @@ int rt_file_save(const uint8_t *path, short container, const void *data, const r
         }
     }
 
-    ok = rt_file_write_data(path, out);
+    /* rt_file_save is the legacy raw-C fallback (cpSerPorted's own doc
+     * comment, cprint.cla): unreachable in practice once ser.cla is
+     * spliced in (which it always is, the moment a program calls
+     * file.save/file.load) -- kept compiling for defensive completeness.
+     * It has no per-call type/creator of its own (that's ser.cla's
+     * rtFileSave's job now, native-gaps-cleanup Task 2), so it stamps the
+     * same static 'CLRD'/'????' default this whole path always used
+     * before rt_app_creator was retired. */
+    {
+        static const uint8_t k_type[] = {4, 'C', 'L', 'R', 'D'};
+        static const uint8_t k_creator[] = {4, '?', '?', '?', '?'};
+        ok = rt_file_write_data(path, out, k_type, k_creator);
+    }
     rt_text_free(out);
     return ok;
 }

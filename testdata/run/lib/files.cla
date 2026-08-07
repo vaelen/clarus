@@ -12,7 +12,7 @@ func runFiles() {
     s = "line one\nline two"
     n = s.toBytes(buf)
     t.fromBytes(buf, n)
-    ok = file.writeText("doc.txt", t)
+    ok = file.writeText("doc.txt", t, app.doctype, app.id)
     if not ok {
         alert("write failed")
     }

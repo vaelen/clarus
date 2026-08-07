@@ -138,7 +138,12 @@ int rt_text_cmp(const rt_text *a, const rt_text *b);
    `\n` is CR (Chapter 3) — these copy file contents verbatim, byte for
    byte, with no newline translation; only rt_alert translates CR to LF. */
 int rt_file_read_text(const uint8_t *path, rt_text *t);        /* whole-file read into t; false + lastError on open/read failure */
-int rt_file_write_text(const uint8_t *path, const rt_text *t); /* create/truncate write of t's contents; false + lastError on failure */
+/* create/truncate write of t's contents, stamped with type255/creator255
+   (Str255-shaped, native-gaps-cleanup Task 2's mandatory file.writeText
+   args) -- host lane ignores both (no FInfo concept on this filesystem),
+   Mac lane pads/validates and stamps real FInfo; false + lastError on
+   failure (including an over-4-char type/creator on the Mac lane). */
+int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255);
 void rt_file_name(uint8_t *dst255, const uint8_t *path);       /* basename of path; always succeeds */
 
 /* ---- record serialization (Task 1, mac-target-4d) ----
@@ -177,12 +182,12 @@ int rt_file_load(const uint8_t *path, short container, void *data,       const r
 void rt_list_clear(rt_list *l); /* count = 0; capacity kept, same growth-preserving pattern as pop/remove */
 void rt_map_clear (rt_map *m);  /* count = 0; capacity kept */
 
-/* Mac data-file creator, distinct from the 'TEXT' documents rt_file_write_text
-   produces (files saved via rt_file_save get type 'CLRD'). Weak zero default
-   in rt_mac.c (every Mac link includes rt_mac.c, so CLI-only programs still
-   link); clarusc overrides it with a strong definition when an `app` section
-   declares an id (Task 2) -- same weak/strong precedent as rt_ui_app_info. */
-extern const unsigned long rt_app_creator;
+/* rt_app_creator (Mac data-file creator weak/strong default) is RETIRED as
+   of native-gaps-cleanup Task 2: rt_file_save's own type/creator stamp now
+   comes from the caller's own mandatory args, threaded down to the static
+   rt_file_write_data primitive each platform's own .c file defines (host
+   ignores them; rt_mac.c stamps real FInfo) -- not a program-wide global.
+   Its only reader was rt_mac.c's rt_file_write_data. */
 
 /* Plan 5a: peek/poke helpers. memcpy keeps them alignment- and
    strict-aliasing-safe on host; native byte order by design (see

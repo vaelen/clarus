@@ -35,7 +35,18 @@ void rt_ext_DisposePtr(void *p) { DisposePtr((Ptr)p); }
  * ahead of that include so rt_ext_FileWriteData can call it here.
  */
 void *rt_ext_HandleDeref(void *h) { return *(void **)h; }
-int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t); }
+/* rt_ext_FileWriteData: testdata/lowlevel/exttext.cla's raw low-level
+ * `external func FileWriteData(path: string, t: text): int` escape hatch
+ * -- unrelated to file.save/file.writeText's builtin path, so it carries
+ * no type/creator of its own; native-gaps-cleanup Task 2 gave
+ * rt_file_write_data two new mandatory params, so this wrapper supplies
+ * the same static 'CLRD'/'????' default rt_file_write_data used to get
+ * unconditionally via rt_app_creator before that global was retired --
+ * this specific fixture's own behavior is unchanged either way (the host
+ * lane ignores both regardless). */
+static const uint8_t rt_ext_default_type[] = {4, 'C', 'L', 'R', 'D'};
+static const uint8_t rt_ext_default_creator[] = {4, '?', '?', '?', '?'};
+int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t, rt_ext_default_type, rt_ext_default_creator); }
 int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_file_read_text(path, out); }
 /* rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto: ser.cla's own extern
  * names (Plan 5b Task 7 fix) for the same two primitives above, taking a
@@ -44,8 +55,11 @@ int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_f
  * rt_ext_FileReadTextInto so a user program's own `external func
  * FileWriteData(path: string, ...)` (testdata/lowlevel/exttext.cla's
  * shape) can never collide with ser.cla's `path: ptr` declaration of the
- * same C symbol in one merged translation unit. */
-int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
+ * same C symbol in one merged translation unit. type/creator
+ * (native-gaps-cleanup Task 2) are ser.cla's own real, caller-supplied
+ * values -- threaded straight through, unlike rt_ext_FileWriteData's
+ * static default above. */
+int32_t rt_ext_SerFileWriteData(void *path, rt_text *t, void *type, void *creator) { return rt_file_write_data((const uint8_t *)path, t, (const uint8_t *)type, (const uint8_t *)creator); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
 /* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix -- ser.cla's
  * remaining externs were still unprefixed and collided with a user

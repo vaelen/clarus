@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// native-gaps-cleanup Task 2, Step 1 (inverted TDD): the OLD 2-arg
+// file.writeText(path, text) spelling. Checked clean against the
+// pre-Task-2 compiler; after the signature flips to file.writeText(path,
+// text, type, creator), this becomes an ordinary "wrong number of
+// arguments" check error.
+var ok: bool = file.writeText("foo", "bar")

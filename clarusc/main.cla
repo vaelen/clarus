@@ -1173,10 +1173,23 @@ on App.startCLI(args: list of string) {
 
         irReset()
         lowerProgram(combined2)
+        // native-gaps-cleanup Task 2: lowerProgram can itself emitDiag now
+        // (lowCheckLiteral4CCArg/lowCheckLiteralFilter, lower.cla) --
+        // print+quit exactly like the two checkProgram gates above, so a
+        // literal type/creator/filter diagnostic actually surfaces instead
+        // of silently falling through to emission.
+        i = 0
+        while i < diags.count {
+            alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
+            i = i + 1
+        }
+        if diags.count > 0 {
+            quit 1
+        }
         if emitMode {
             shakeProgram()
             cSrc = emitProgram()
-            wrote = file.writeText(outPath, cSrc)
+            wrote = file.writeText(outPath, cSrc, app.doctype, app.id)
             if not wrote {
                 log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
                 quit 1

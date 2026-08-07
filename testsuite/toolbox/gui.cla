@@ -109,7 +109,7 @@ func tbRunAndReport(w: Suite, sel: list of ToolboxTest) {
     log.append(line)
 
     w.Status.text = status
-    ok = file.writeText("TestLog.txt", log)
+    ok = file.writeText("TestLog.txt", log, app.doctype, app.id)
 }
 
 on App.startEmpty {

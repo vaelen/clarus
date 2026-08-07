@@ -678,7 +678,7 @@ window DialogsWin {
 extend DialogsWin {
     on OpenBtn.click {
         var t: text
-        if askOpen(path) {
+        if askOpen(path, app.doctype) {
             file.readText(path, t)
             Body.text = t
             Status.text = "opened"
@@ -688,7 +688,7 @@ extend DialogsWin {
     }
     on SaveBtn.click {
         if askSave(path, "untitled.txt") {
-            file.writeText(path, Body.text)
+            file.writeText(path, Body.text, app.doctype, app.id)
             title = path
             // Task 4b breadcrumb, kept verbatim from the retired fixture:
             // bare `title` READ right after the write above, through a

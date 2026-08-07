@@ -17,7 +17,7 @@ func runEmitFile() {
     n = s.toBytes(buf)
     t.fromBytes(buf, n)
 
-    ok = file.writeText("doc.txt", t)
+    ok = file.writeText("doc.txt", t, app.doctype, app.id)
     if ok {
         alert("write ok")
     } else {

@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 // dialogs.cla: emitui golden fixture -- the three Ch12 dialog builtins
-// (Task 4, mac-target-4c): askOpen(p) and askSave(p, suggested) (both fill
-// their path argument IN PLACE and return bool; rt_ui_ask_open/
+// (Task 4, mac-target-4c): askOpen(p, types) and askSave(p, suggested)
+// (both fill their path argument IN PLACE and return bool; rt_ui_ask_open/
 // rt_ui_ask_save), a file round-trip through the filled path
 // (file.readText/file.writeText, reusing IFileReadText/IFileWriteText
-// unchanged), and askSaveChanges(name), whose saveChoice result is
+// unchanged, writeText now carrying native-gaps-cleanup Task 2's
+// mandatory type/creator args), and askSaveChanges(name), whose
+// saveChoice result is
 // compared against all three built-in enum members (Save/Discard/Cancel).
 // Compile-check only (m68k, via internal/emitui's own gate) -- the real
 // scripted behavior (both cancels, all three saveChoice branches, the
@@ -53,7 +55,7 @@ on App.launch {
     // Task 4b: explicit `w.title` READ off a window-instance value.
     wt = w.title
 
-    ok = askOpen(p)
+    ok = askOpen(p, app.doctype)
     if ok {
         file.readText(p, t)
         w.Body.text = t
@@ -63,12 +65,12 @@ on App.launch {
     ok = askSave(p, suggested)
     if ok {
         t = w.Body.text
-        file.writeText(p, t)
+        file.writeText(p, t, app.doctype, app.id)
     }
 
     choice = askSaveChanges("Doc")
     if choice == Save {
-        file.writeText(p, t)
+        file.writeText(p, t, app.doctype, app.id)
     } else if choice == Discard {
         alert("discarded")
     } else {

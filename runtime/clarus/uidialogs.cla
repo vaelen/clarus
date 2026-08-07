@@ -100,7 +100,12 @@ const rtUiEvCancelled: int = 6
 // clause landed in the toolbox-integration phase; SFGetFile/SFPutFile are
 // exercised for real by the native lane now, not merely "ported for
 // contract completeness".)
-external func UiSFGetFile(path255Out: ptr): bool
+// UiSFGetFile (native-gaps-cleanup Task 2): filter is a new second arg,
+// a Str255-shaped ptr holding askOpen's own `types` string (comma-
+// separated 4-char codes, "*" = all files) -- both lane resolutions parse
+// it identically (nat_UiSFGetFile below; rt_ext_mac.inc's
+// rt_ext_UiSFGetFile for the cprint lane).
+external func UiSFGetFile(path255Out: ptr, filter: ptr): bool
 external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
 
 // nat_UiSFGetFile / nat_UiSFPutFile (pack3-standardfile phase): the real
@@ -117,15 +122,61 @@ external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
 // address, rtUiPstrcpy writes length byte + bytes. Cancel returns false
 // with path255Out untouched -- byte-identical net behavior to the old
 // deferred stubs, so no caller regresses on the cancel path.
-func nat_UiSFGetFile(path255Out: ptr): bool {
+// nat_UiSFGetFile (native-gaps-cleanup Task 2): filter is askOpen's own
+// `types` arg, a Str255-shaped ptr holding comma-separated 4-char codes
+// ("*" = all files, SFGetFile numTypes -1). Parsed here directly off the
+// filter bytes (rtPack4CCRange slices each comma-separated code without
+// copying it into its own scratch buffer first) into up to 4 SFTypeList
+// slots -- a 5th code, or any code longer than 4 characters, is
+// lastError + return false WITHOUT calling SFGetFile at all (the
+// design doc's "no defaults, no sentinels" rule: a bad dynamic filter
+// fails the operation outright, same as a bad literal one would have
+// failed at compile time).
+func nat_UiSFGetFile(path255Out: ptr, filter: ptr): bool {
     var rep: SFReply
     var types: SFTypeList
     var vp: VolumeParam
     var s: string
     var junk: int
+    var flen: int
+    var numTypes: int
+    var segStart: int
+    var i: int
+    var segLen: int
+    var packed: int
+    var codes: list of int
 
-    types.t0 = 0x54455854
-    SFGetFile((100 << 16) | 100, UiStrAddr(""), ptr(0), 1, types, ptr(0), rep)
+    flen = peekb(filter)
+    if flen == 1 and peekb(filter + 1) == int('*') {
+        numTypes = -1
+    } else {
+        segStart = 0
+        i = 0
+        while i <= flen {
+            if i == flen or peekb(filter + 1 + i) == int(',') {
+                if codes.count >= 4 {
+                    rtSetLastErr(2, "askOpen filter must have at most 4 entries")
+                    return false
+                }
+                segLen = i - segStart
+                packed = rtPack4CCRange(filter, 1 + segStart, segLen)
+                if packed == -1 {
+                    rtSetLastErr(2, "askOpen filter entry must be at most 4 characters")
+                    return false
+                }
+                codes.add(packed)
+                segStart = i + 1
+            }
+            i = i + 1
+        }
+        numTypes = codes.count
+        if numTypes >= 1 { types.t0 = codes[0] }
+        if numTypes >= 2 { types.t1 = codes[1] }
+        if numTypes >= 3 { types.t2 = codes[2] }
+        if numTypes >= 4 { types.t3 = codes[3] }
+    }
+
+    SFGetFile((100 << 16) | 100, UiStrAddr(""), ptr(0), numTypes, types, ptr(0), rep)
     if not rep.good {
         return false
     }
@@ -786,8 +837,12 @@ func rtUiFormIsNew(): bool {
 // Alert path instead of spuriously consulting a test-only queue.
 // ================================================================
 
-// rtUiAskOpen (rt_ui.c:2399-2427).
-func rtUiAskOpen(path255: ptr): bool {
+// rtUiAskOpen (rt_ui.c:2399-2427). filter (native-gaps-cleanup Task 2,
+// askOpen's own mandatory `types` arg) is IGNORED on the scripted path --
+// script answers stay authoritative, same as every other scripted
+// dialog answer in this file; only the real (non-scripted) path threads
+// it through to UiSFGetFile.
+func rtUiAskOpen(path255: ptr, filter: ptr): bool {
     var idx: int
     var kind: int
 
@@ -806,7 +861,7 @@ func rtUiAskOpen(path255: ptr): bool {
         rtUiTraceAskPath("ASKOPEN", path255)
         return true
     }
-    return UiSFGetFile(path255)
+    return UiSFGetFile(path255, filter)
 }
 
 // rtUiAskSave (rt_ui.c:2429-2455).

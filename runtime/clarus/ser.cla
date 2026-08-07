@@ -73,7 +73,13 @@
 // so no concern to flag here. SerFileWriteData/SerFileReadTextInto get NO
 // clause -- still-C file I/O, native fallback (nat_ prefix) is a later
 // task.
-external func SerFileWriteData(path: ptr, t: text): int
+// SerFileWriteData (native-gaps-cleanup Task 2): type/creator are new
+// trailing Str255-shaped ptr args, threaded straight through from
+// rtFileSave's own (also new) trailing params -- neither this extern nor
+// rtFileSave validates them; the pad/validate/stamp work happens at the
+// actual write primitive (rt_file_write_data's C-lane static 4CC helper,
+// natFileWriteText's rtFourCC call on the native lane).
+external func SerFileWriteData(path: ptr, t: text, type: ptr, creator: ptr): int
 external func SerFileReadTextInto(path: ptr, out: text): int
 external func SerBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
 external func SerNewPtr(size: int): ptr = trap 0xA11E reg
@@ -244,7 +250,10 @@ func rtSerSaveMap(out: text, m: ptr, desc: ptr, recSize: int) {
 // 0=REC/1=LIST/2=MAP (RT_SER_REC/LIST/MAP), path is the address of the
 // caller's emitted Str255, data is the record's address (REC) or the
 // list/map handle (LIST/MAP), desc is the record's clar_serdesc_<REC>.
-func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
+// type/creator (native-gaps-cleanup Task 2) are file.save's own mandatory
+// trailing args, threaded straight through to SerFileWriteData unvalidated
+// -- see that extern's own doc comment for where the real work happens.
+func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr, type: ptr, creator: ptr): int {
     var out: text
     var recSize: int
     var ok: int
@@ -283,7 +292,7 @@ func rtFileSave(path: ptr, container: int, data: ptr, desc: ptr): int {
     // at the cost of exact message-text parity with the C side's rarer
     // open-vs-write distinction; the C-side write becomes a harmless
     // shadow no longer read by anything.
-    ok = SerFileWriteData(path, out)
+    ok = SerFileWriteData(path, out, type, creator)
     if ok != 1 {
         rtSetLastErr(2, "could not write file")
     }

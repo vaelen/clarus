@@ -316,7 +316,7 @@ func smokeFiles() {
     var e: error
 
     t = "hello file"
-    ok = file.writeText("smokefile.txt", t)
+    ok = file.writeText("smokefile.txt", t, app.doctype, app.id)
     smokeCheck(ok, "file writeText ok")
 
     ok = file.readText("smokefile.txt", t2)
@@ -331,7 +331,7 @@ func smokeFiles() {
     t.append(char(13))
     t.append(char(255))
     t.append('B')
-    ok = file.writeText("smokebin.dat", t)
+    ok = file.writeText("smokebin.dat", t, app.doctype, app.id)
     smokeCheck(ok, "file writeText binary ok")
 
     ok = file.readText("smokebin.dat", t2)
@@ -409,7 +409,7 @@ func smokeFilesBig() {
         t.append(char(i mod 256))
         i = i + 1
     }
-    ok = file.writeText("smokebig.dat", t)
+    ok = file.writeText("smokebig.dat", t, app.doctype, app.id)
     smokeCheck(ok, "file writeText >cap ok")
 
     ok = file.readText("smokebig.dat", t2)

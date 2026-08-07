@@ -2,4 +2,4 @@
 // SPDX-License-Identifier: MIT
 
 func f() { var b: bool
-    b = file.save("p", 5) }
+    b = file.save("p", 5, app.doctype, app.id) }

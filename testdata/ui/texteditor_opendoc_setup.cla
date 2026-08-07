@@ -38,8 +38,8 @@ on App.launch {
     var t2: text
 
     t1.append("Quarterly report draft.")
-    file.writeText("Report.txt", t1)
+    file.writeText("Report.txt", t1, app.doctype, app.id)
 
     t2.append("Meeting notes for today.")
-    file.writeText("My Notes.txt", t2)
+    file.writeText("My Notes.txt", t2, app.doctype, app.id)
 }

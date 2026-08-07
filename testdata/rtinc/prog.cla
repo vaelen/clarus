@@ -9,5 +9,5 @@ record Note { n: int }
 on App.startCLI(args: list of string) {
     var x: Note
     x.n = 7
-    file.save("t.dat", x)
+    file.save("t.dat", x, app.doctype, app.id)
 }

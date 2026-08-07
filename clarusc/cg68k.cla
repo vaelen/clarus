@@ -4457,6 +4457,36 @@ func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
     }
 }
 
+// cgIntr4 (native-gaps-cleanup Task 2): cgIntr3's 4-arg sibling --
+// file_write_text now carries type/creator (both by-address Str255s)
+// after path/text.
+func cgIntr4(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool, addr3: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var a3e: int
+    var args: list of int
+    var addrs: list of bool
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    a3e = irExprNext(a2e)
+    args = cgFreshIntList()
+    args.add(a0e)
+    args.add(a1e)
+    args.add(a2e)
+    args.add(a3e)
+    addrs = cgFreshBoolList()
+    addrs.add(addr0)
+    addrs.add(addr1)
+    addrs.add(addr2)
+    addrs.add(addr3)
+    if not cgCallRuntime(fnName, args, addrs) {
+        quit 1
+    }
+}
+
 // cgFillTightScratchFromPaddedArr/cgDrainTightScratchToPaddedArr (Task 16
 // fix) adapt between a `char[N]` local's own cg68k layout -- each element
 // padded to 2 bytes (cgSlotSizeOf, file header's LAYOUT AUTHORITY note) --
@@ -5293,14 +5323,26 @@ func cgIntrMapRemove(e: int) {
 func cgIntrFileSaveLoad(e: int, fnName: string) {
     var a0: int
     var a1: int
+    var a2: int
+    var a3: int
     var dataT: int
     var dataK: IRKind
     var recNameIdx: int
     var container: int
     var descLbl: int
+    var isSave: bool
 
     a0 = irIntrArgsHead(e)
     a1 = irExprNext(a0)
+    // native-gaps-cleanup Task 2: file.save gains mandatory trailing
+    // type/creator args (rtFileSave's own 2 new trailing ptr params);
+    // file.load stays 4-arg (unchanged) -- fnName tells the two apart,
+    // same convention this function's own doc comment already uses.
+    isSave = fnName == "rtFileSave"
+    if isSave {
+        a2 = irExprNext(a1)
+        a3 = irExprNext(a2)
+    }
     dataT = irExprType(a1)
     dataK = irtKind(dataT)
     if dataK == KRec {
@@ -5331,8 +5373,18 @@ func cgIntrFileSaveLoad(e: int, fnName: string) {
     }
     a68Emit(OpLea, 0, AmPCLabel, 0, descLbl, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    if isSave {
+        cgExprAddr(a2)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgExprAddr(a3)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    }
     cgJsrByName(fnName)
-    cgCleanupStack(16)
+    if isSave {
+        cgCleanupStack(24)
+    } else {
+        cgCleanupStack(16)
+    }
 }
 
 // cgIntr dispatches an EIntr node by its interned NAME. UI intrinsics
@@ -5690,7 +5742,11 @@ func cgIntr(e: int) {
         return
     }
     if nm == "file_write_text" {
-        cgIntr2(e, "natFileWriteText", true, false)
+        // file.writeText(path, text, type, creator) -- native-gaps-cleanup
+        // Task 2: type/creator are new trailing args, both by-address
+        // Str255s (same convention as path) -- natFileWriteText does the
+        // pad/validate/stamp work (rtFourCC).
+        cgIntr4(e, "natFileWriteText", true, false, true, true)
         return
     }
     if nm == "file_name" {
@@ -6218,6 +6274,10 @@ func cgIntrUi(e: int, nm: string) {
         // address-of for a read-only str), no pascal/trap marshaling of
         // any kind needed here at all.
         if nm == "ui_ask_open" {
+            // askOpen(path, types) -- native-gaps-cleanup Task 2: types
+            // (a1) is a new trailing arg, same by-address Str255 shape as
+            // path -- forward it exactly like ui_ask_save's own suggested
+            // arg just below.
             fi = findIRFuncIdxByName(intern("rtUiAskOpen"))
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskOpen not found/reachable")
@@ -6225,8 +6285,10 @@ func cgIntrUi(e: int, nm: string) {
             }
             cgExprAddr(a0)
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+            cgExprAddr(a1)
+            a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             cgCallFunc(fi)
-            cgCleanupStack(4)
+            cgCleanupStack(8)
         } else if nm == "ui_ask_save" {
             fi = findIRFuncIdxByName(intern("rtUiAskSave"))
             if fi == -1 or not shakeReachable(fi) {
@@ -9088,7 +9150,11 @@ func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of 
     cg68ResourceParitySet(extraTypes, extraIds, extraDatas)
 
     img = app68Build(cgAppName(outPath), creator, segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraDatas)
-    if not file.writeText(outPath, img) {
+    // native-gaps-cleanup Task 2: file.writeText's own mandatory type/
+    // creator args -- fileTypeApplication ('APPL') describes this output
+    // (a native 68k application image) exactly; creator is the SAME value
+    // already computed above (the app's own declared id, else '????').
+    if not file.writeText(outPath, img, fileTypeApplication, creator) {
         log("cg68Program: cannot write " + outPath + ": " + lastError.message)
         return false
     }
@@ -9394,12 +9460,18 @@ func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
         segBytes.add(a68Bytes())
 
         if listing {
+            // native-gaps-cleanup Task 2: these are plain debug artifacts
+            // (assembly listing text / raw segment bytes), not app
+            // documents -- fileTypeText/"????" (the same TEXT/???? default
+            // app.doctype/app.id would resolve to here anyway, since this
+            // program has no `app` section) is a clearer literal spelling
+            // for a debug dump than the app-constant idiom.
             segNumStr = numToStr(s)
-            if not file.writeText(base + ".seg" + segNumStr + ".s", a68ListingText()) {
+            if not file.writeText(base + ".seg" + segNumStr + ".s", a68ListingText(), fileTypeText, "????") {
                 log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".s: " + lastError.message)
                 return false
             }
-            if not file.writeText(base + ".seg" + segNumStr + ".dat", a68Bytes()) {
+            if not file.writeText(base + ".seg" + segNumStr + ".dat", a68Bytes(), fileTypeText, "????") {
                 log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".dat: " + lastError.message)
                 return false
             }

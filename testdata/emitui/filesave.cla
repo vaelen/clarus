@@ -9,8 +9,11 @@
 // RT_SER_* shapes and the REC-passes-address-vs-LIST/MAP-passes-handle
 // split in one fixture. The enum carries an explicit label with a quote and
 // a backslash to exercise cpUiCaptionOrNull's escaping being reused for
-// clar_enumlabels_Protocol. The `app` section's id also exercises the
-// strong rt_app_creator override emitted beside rt_ui_app_info.
+// clar_enumlabels_Protocol. Every file.save call below spells its
+// type/creator as app.doctype/app.id (native-gaps-cleanup Task 2's
+// canonical migration spelling) -- the `app` section's own id ("CBKM")
+// flows straight through as the literal creator argument now, no separate
+// rt_app_creator override machinery involved.
 // Compile-check only (m68k, via internal/emitui's own gate) -- the real
 // round-trip (byte-exact saved file, loaded-back equality) is
 // testdata/sertest/roundtrip.cla instead, run host-side.
@@ -49,15 +52,15 @@ on App.startCLI(args: list of string) {
     one.weight = 1.5
     one.protocol = Ftp
 
-    ok = file.save("bookmark.dat", one)
+    ok = file.save("bookmark.dat", one, app.doctype, app.id)
     ok = file.load("bookmark.dat", one)
 
     many.push(one)
-    ok = file.save("bookmarks.dat", many)
+    ok = file.save("bookmarks.dat", many, app.doctype, app.id)
     ok = file.load("bookmarks.dat", many)
 
     byName["example"] = one
-    ok = file.save("byname.dat", byName)
+    ok = file.save("byname.dat", byName, app.doctype, app.id)
     ok = file.load("byname.dat", byName)
 
     if ok {

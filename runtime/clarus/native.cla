@@ -84,14 +84,6 @@ const natIoFDirIndex: int = 28
 const natIoFdType: int = 32
 const natIoFdCreator: int = 36
 
-// natFileTypeText/natFileCreatorMPS: the SAME fixed fdType/fdCreator
-// rt_mac.c's own rt_file_write_text stamps via the cprint lane's
-// Create(path, 0, 'MPS ', 'TEXT') (rt_mac.c:340) -- 'TEXT' = 0x54455854,
-// 'MPS ' = 0x4D505320 (big-endian OSType bytes, same literal style
-// uidialogs.cla's own `types.t0 = 0x54455854` already uses).
-const natFileTypeText: int = 0x54455854
-const natFileCreatorMPS: int = 0x4D505320
-
 // natPbSize is the one NewPtr'd PB block's total size: >=50 bytes for
 // IOParam itself, plus room to hold the 4-byte Str255 "out" (len byte +
 // 3 chars) at natNameOff, built in place so ioNamePtr can point straight
@@ -564,13 +556,32 @@ func natFileFlush() {
 // natInit's natFsRdWrPerm (natInit needs guaranteed write access for its
 // own live per-call append; a fresh Create+Open here needs no such
 // guarantee).
-func natFileWriteText(path: ptr, t: ptr): bool {
+//
+// ftype/fcreator (native-gaps-cleanup Task 2): caller-supplied Str255
+// pointers (file.writeText's mandatory type/creator args), packed+
+// validated via rtFourCC BEFORE Create is even attempted -- an invalid
+// (>4-char) value is lastError + a failed operation, no file touched at
+// all, matching the design doc's "no defaults, no sentinels" rule.
+func natFileWriteText(path: ptr, t: ptr, ftype: ptr, fcreator: ptr): bool {
     var rt: RtText
     var mp: ptr
     var n: int
     var ref: int
     var wrote: int
     var failed: bool
+    var packedType: int
+    var packedCreator: int
+
+    packedType = rtFourCC(ftype)
+    if packedType == -1 {
+        rtSetLastErr(2, "file type must be at most 4 characters")
+        return false
+    }
+    packedCreator = rtFourCC(fcreator)
+    if packedCreator == -1 {
+        rtSetLastErr(2, "file creator must be at most 4 characters")
+        return false
+    }
 
     natFileEnsurePb()
     pokel(natFilePb + natIoNamePtr, int(path))
@@ -581,9 +592,10 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     // its identical Create call).
     NatCreate(natFilePb)
 
-    // task-6a: stamp fdType='TEXT'/fdCreator='MPS ' on a FRESHLY created
-    // file, mirroring rt_mac.c's Create(path, 0, 'MPS ', 'TEXT')
-    // (rt_mac.c:340) -- the cprint lane's high-level Create() is Retro68's
+    // task-6a (stamp fdType/fdCreator on a FRESHLY created file); Task 2
+    // (native-gaps-cleanup) swapped the once-fixed 'TEXT'/'MPS ' pair for
+    // packedType/packedCreator above, the caller's own validated values --
+    // the cprint lane's high-level Create() is Retro68's
     // own glue (multiversal/custom/glue.c:355-378, not an Apple source,
     // quoted only for the mechanism): PBCreateSync, then a get-modify-set
     // FInfo dance through PBGetFInfoSync/PBSetFInfoSync. The bare
@@ -615,8 +627,8 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     // its own GetFInfo/SetFInfo when PBCreateSync itself reports noErr).
     if peekw(natFilePb + natIoResult) == 0 {
         pokew(natFilePb + natIoFDirIndex, 0)
-        pokel(natFilePb + natIoFdType, natFileTypeText)
-        pokel(natFilePb + natIoFdCreator, natFileCreatorMPS)
+        pokel(natFilePb + natIoFdType, packedType)
+        pokel(natFilePb + natIoFdCreator, packedCreator)
         NatSetFInfo(natFilePb)
     }
 
@@ -824,31 +836,29 @@ func natFileName(dst: ptr, path: ptr) {
 }
 
 // nat_SerFileWriteData/nat_SerFileReadTextInto: ser.cla's own
-// `external func SerFileWriteData(path: ptr, t: text): int` /
-// `external func SerFileReadTextInto(path: ptr, out: text): int` are
-// clause-less externs (Plan native-5d Task 3's design: file.save/
+// `external func SerFileWriteData(path: ptr, t: text, type: ptr, creator:
+// ptr): int` / `external func SerFileReadTextInto(path: ptr, out: text):
+// int` are clause-less externs (Plan native-5d Task 3's design: file.save/
 // file.load stay C-only in the codegen sense, resolved through the SAME
 // cgCallExtNatFallback name convention every other clause-less extern
 // uses) -- their nat_ fallbacks reuse natFileWriteText/natFileReadText's
-// PB machinery verbatim. STILL an approximation for the write side after
-// task-6a's FInfo fix: rt_mac.c's own rt_file_write_data stamps 'CLRD'/
-// rt_app_creator (rt_mac.c:392), not natFileWriteText's fixed 'TEXT'/
-// 'MPS ' -- so a native file.save now gets a stamped-but-WRONG type/
-// creator instead of task-6a's own blank-FInfo bug, an improvement but
-// not full lane parity. No native fixture in this task's own scope
-// exercises file.save/file.load (same carve-out the native-5d Task 3
-// design already made), only that a program calling them still compiles
-// and links, per the brief; splitting natFileWriteText's FInfo dance out
-// by caller-supplied type/creator is future work if a native file.save/
-// file.load fixture ever needs it. `t`/`out` are declared `ptr` here rather
-// than `text` -- purely cosmetic: cgCallExtNatFallback's cgPushArgs
-// marshals a `text` argument as its own 4-byte handle VALUE (the generic
-// non-KStr/KRec branch), bit-identical to a `ptr` argument of the same
-// size, so either declared type reads the same stack slot; `ptr` matches
-// every other text-handling function in this runtime (rtTextStore et al.
-// all take `t: ptr`, never `t: text`).
-func nat_SerFileWriteData(path: ptr, t: ptr): int {
-    if natFileWriteText(path, t) {
+// PB machinery verbatim. `t`/`out` are declared `ptr` here rather than
+// `text` -- purely cosmetic: cgCallExtNatFallback's cgPushArgs marshals a
+// `text` argument as its own 4-byte handle VALUE (the generic non-KStr/
+// KRec branch), bit-identical to a `ptr` argument of the same size, so
+// either declared type reads the same stack slot; `ptr` matches every
+// other text-handling function in this runtime (rtTextStore et al. all
+// take `t: ptr`, never `t: text`).
+// native-gaps-cleanup Task 2: type/creator are now threaded straight
+// through from ser.cla's SerFileWriteData extern (its own new trailing
+// ptr params) to natFileWriteText's real caller-supplied values -- this
+// FIXES the "STILL an approximation" wart this comment used to document
+// (file.save on the native lane used to always get natFileWriteText's own
+// fixed 'TEXT'/'MPS ' stamp, ignoring the app's real type/creator; now it
+// gets exactly what the Clarus call site passed, same as every other
+// lane).
+func nat_SerFileWriteData(path: ptr, t: ptr, ftype: ptr, fcreator: ptr): int {
+    if natFileWriteText(path, t, ftype, fcreator) {
         return 1
     }
     return 0

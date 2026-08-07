@@ -86,6 +86,50 @@ func rtPanic(msg: string) {
     CorePanic(msg)
 }
 
+// rtPack4CCRange packs up to 4 bytes starting at p+start, length len, into
+// a 4-byte big-endian OSType-style int (native-gaps-cleanup Task 2),
+// space-padded on the right when shorter than 4 bytes -- -1 when len > 4.
+// ptr/range-based (not a whole Str255) so askOpen's filter parser
+// (uidialogs.cla's nat_UiSFGetFile) can slice individual comma-separated
+// codes directly out of one longer buffer without copying each one into
+// its own scratch Str255 first; rtFourCC below is the common Str255-whole
+// case built on top of it.
+func rtPack4CCRange(p: ptr, start: int, len: int): int {
+    var b0: int
+    var b1: int
+    var b2: int
+    var b3: int
+
+    if len > 4 {
+        return -1
+    }
+    b0 = int(' ')
+    b1 = int(' ')
+    b2 = int(' ')
+    b3 = int(' ')
+    if len >= 1 { b0 = peekb(p + start) }
+    if len >= 2 { b1 = peekb(p + start + 1) }
+    if len >= 3 { b2 = peekb(p + start + 2) }
+    if len >= 4 { b3 = peekb(p + start + 3) }
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+}
+
+// rtFourCC packs a Str255-shaped ptr (len byte + up to 255 data bytes)
+// into a 4-byte big-endian OSType-style int -- space-padded on the right
+// when shorter than 4 bytes, -1 when longer. Callers (file.writeText/
+// file.save's type/creator stamp, askOpen's filter parsing) map -1 to
+// lastError + a failed operation: the "no defaults, no sentinels -- the
+// runtime stamps exactly what arrives" rule every lane implements
+// identically (native-gaps-cleanup design doc, Part A). ptr-typed (not
+// `string`): every caller in this runtime already holds the value as a
+// raw Str255 address at this waist layer (the SAME convention path/
+// suggested/etc. already use throughout uidialogs.cla/native.cla), so a
+// `string` parameter would force a pointless ptr->string round trip at
+// every call site for no benefit.
+func rtFourCC(p: ptr): int {
+    return rtPack4CCRange(p, 1, peekb(p))
+}
+
 // rtArrCheck (rt_core.inc:193-197): bounds-checks a plain-array index,
 // panicking "array index out of range" (unchanged message) on failure,
 // else returns i unchanged. cprint.cla's fpIndexRef Arr arm redirects to

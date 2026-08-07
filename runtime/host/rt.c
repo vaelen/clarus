@@ -48,7 +48,7 @@ void rt_log(const uint8_t *s) {
  * mac-target-4d), after this include point -- rt_ext_host.inc's
  * rt_ext_FileWriteData wrapper (Plan 5b Task 3) needs it in scope here
  * rather than moving the definition up. */
-static int rt_file_write_data(const uint8_t *path, const rt_text *t);
+static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255);
 
 #include "rt_core.inc"
 #include "rt_ext_host.inc"
@@ -137,7 +137,8 @@ int rt_file_read_text(const uint8_t *path, rt_text *t) {
     return 1;
 }
 
-int rt_file_write_text(const uint8_t *path, const rt_text *t) {
+int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255) {
+    (void)type255; (void)creator255; /* no type/creator concept on the host filesystem (see rt_file_write_data below) */
     char cpath[256];
     path_to_cstr(cpath, path);
     FILE *f = fopen(cpath, "wb");
@@ -168,8 +169,11 @@ void rt_file_name(uint8_t *dst255, const uint8_t *path) {
 /* ==================== serialization (Task 1, mac-target-4d) ====================
  * rt_ser.inc's own per-runtime primitive: a fopen/fwrite clone of
  * rt_file_write_text above (no type/creator concept on the host
- * filesystem, unlike the Mac 'CLRD' file). */
-static int rt_file_write_data(const uint8_t *path, const rt_text *t) {
+ * filesystem, unlike the Mac 'CLRD' file). type255/creator255
+ * (native-gaps-cleanup Task 2) are accepted and ignored, same as
+ * rt_file_write_text above -- see that function's own comment. */
+static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255) {
+    (void)type255; (void)creator255;
     char cpath[256];
     path_to_cstr(cpath, path);
     FILE *f = fopen(cpath, "wb");

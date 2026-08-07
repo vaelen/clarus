@@ -329,15 +329,56 @@ int rt_file_read_text(const uint8_t *path, rt_text *t)
     return 1;
 }
 
-int rt_file_write_text(const uint8_t *path, const rt_text *t)
+/* rt_mac_pack4cc_range packs up to 4 bytes starting at s255[start] into a
+ * big-endian OSType, space-padding on the right when shorter than 4 --
+ * returns 0 (leaves *out untouched) when len > 4. native-gaps-cleanup
+ * Task 2's C-lane copy of the SAME semantic rule runtime/clarus/core.cla's
+ * rtPack4CCRange implements on the native lane (every layer of every lane
+ * implements this rule identically -- self-review checklist). Range-based
+ * (not a whole Str255) so rt_ext_UiSFGetFile's filter parser can slice
+ * individual comma-separated codes out of one longer buffer directly.
+ */
+static int rt_mac_pack4cc_range(const uint8_t *s255, int start, int len, unsigned long *out)
+{
+    uint8_t b0 = ' ', b1 = ' ', b2 = ' ', b3 = ' ';
+    if (len > 4) return 0;
+    if (len >= 1) b0 = s255[start];
+    if (len >= 2) b1 = s255[start + 1];
+    if (len >= 3) b2 = s255[start + 2];
+    if (len >= 4) b3 = s255[start + 3];
+    *out = ((unsigned long)b0 << 24) | ((unsigned long)b1 << 16) | ((unsigned long)b2 << 8) | (unsigned long)b3;
+    return 1;
+}
+
+/* rt_mac_pack4cc: rt_mac_pack4cc_range's whole-Str255 case (file.writeText/
+ * file.save's own type/creator args arrive this way). */
+static int rt_mac_pack4cc(const uint8_t *s255, unsigned long *out)
+{
+    return rt_mac_pack4cc_range(s255, 1, s255[0], out);
+}
+
+int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255)
 {
     short ref;
     long count;
+    unsigned long ftype, fcreator;
+
+    /* native-gaps-cleanup Task 2: pad/validate BEFORE Create is even
+       attempted -- an invalid (>4-char) type or creator is lastError + a
+       failed operation, no file touched at all. */
+    if (!rt_mac_pack4cc(type255, &ftype)) {
+        rt_set_lasterr(2, "file type must be at most 4 characters");
+        return 0;
+    }
+    if (!rt_mac_pack4cc(creator255, &fcreator)) {
+        rt_set_lasterr(2, "file creator must be at most 4 characters");
+        return 0;
+    }
 
     /* dupFNErr if the file already exists; ignored either way -- FSOpen
        just below is the real success/failure gate (matches the host's
        fopen(path, "wb"), which also just opens-or-truncates). */
-    Create(path, 0, 'MPS ', 'TEXT');
+    Create(path, 0, fcreator, ftype);
     if (FSOpen(path, 0, &ref) != noErr) {
         rt_set_lasterr(2, "could not open file");
         return 0;
@@ -372,24 +413,33 @@ void rt_file_name(uint8_t *dst255, const uint8_t *path)
     dst255[0] = len;
 }
 
-/* Weak default for rt.h's rt_app_creator -- '????' until clarusc emits a
-   strong definition for a program whose `app` section declares an id
-   (Task 2). rt_mac.c is in every Mac link (unlike rt_ui.c), so CLI-only
-   programs still resolve this symbol. Same weak/strong precedent as
-   rt_ui.c's rt_ui_app_info. */
-const unsigned long rt_app_creator __attribute__((weak)) = 0x3F3F3F3FUL; /* '????' */
+/* rt_app_creator (weak/strong default for rt_file_save's own type/creator
+   stamp) is RETIRED as of native-gaps-cleanup Task 2 -- file.save now
+   carries its own mandatory type/creator args, threaded down to
+   rt_file_write_data below directly; no program-wide global is consulted
+   anymore. */
 
 /* ==================== serialization (Task 1, mac-target-4d) ====================
  * rt_ser.inc's own per-runtime primitive: same File Manager shape as
- * rt_file_write_text above, but type 'CLRD' (not 'TEXT') and creator
- * rt_app_creator (not the fixed 'MPS ') -- so saved data files stay
- * distinguishable from documents in the Finder. */
-static int rt_file_write_data(const uint8_t *path, const rt_text *t)
+ * rt_file_write_text above -- type255/creator255 (native-gaps-cleanup
+ * Task 2) are file.save's own mandatory args now, padded/validated the
+ * same way rt_file_write_text's own do. */
+static int rt_file_write_data(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255)
 {
     short ref;
     long count;
+    unsigned long ftype, fcreator;
 
-    Create(path, 0, rt_app_creator, 'CLRD');
+    if (!rt_mac_pack4cc(type255, &ftype)) {
+        rt_set_lasterr(2, "file type must be at most 4 characters");
+        return 0;
+    }
+    if (!rt_mac_pack4cc(creator255, &fcreator)) {
+        rt_set_lasterr(2, "file creator must be at most 4 characters");
+        return 0;
+    }
+
+    Create(path, 0, fcreator, ftype);
     if (FSOpen(path, 0, &ref) != noErr) {
         rt_set_lasterr(2, "could not open file");
         return 0;

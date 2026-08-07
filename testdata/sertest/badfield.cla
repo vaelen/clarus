@@ -16,6 +16,6 @@ on App.startCLI(args: list of string) {
     var n: Note
     var ok: bool
 
-    ok = file.save("note.dat", n)
+    ok = file.save("note.dat", n, app.doctype, app.id)
     quit 0
 }

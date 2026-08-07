@@ -47,14 +47,22 @@ void rt_ext_DisposePtr(void *p) { DisposePtr((Ptr)p); }
 
 /* ---- Plan 5b Task 3: str/text params + file/container/lasterr ---- */
 void *rt_ext_HandleDeref(void *h) { return *(void **)h; }
-int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t); }
+/* rt_ext_FileWriteData: same static 'CLRD'/'????' default as the host
+ * .inc's own copy (native-gaps-cleanup Task 2) -- see that file's own
+ * comment; this fixture's behavior is otherwise unaffected (path/text
+ * round-trip is all it checks, never FInfo). */
+static const uint8_t rt_ext_default_type[] = {4, 'C', 'L', 'R', 'D'};
+static const uint8_t rt_ext_default_creator[] = {4, '?', '?', '?', '?'};
+int32_t rt_ext_FileWriteData(const uint8_t *path, rt_text *t) { return rt_file_write_data(path, t, rt_ext_default_type, rt_ext_default_creator); }
 int32_t rt_ext_FileReadTextInto(const uint8_t *path, rt_text *out) { return rt_file_read_text(path, out); }
 /* rt_ext_SerFileWriteData/rt_ext_SerFileReadTextInto: ser.cla's own extern
  * names (Plan 5b Task 7 fix), same reasoning as the host .inc -- kept
  * distinct from rt_ext_FileWriteData/rt_ext_FileReadTextInto so ser.cla's
  * `path: ptr` declaration can never collide with a user program's own
- * `external func FileWriteData(path: string, ...)` in one merged TU. */
-int32_t rt_ext_SerFileWriteData(void *path, rt_text *t) { return rt_file_write_data((const uint8_t *)path, t); }
+ * `external func FileWriteData(path: string, ...)` in one merged TU.
+ * type/creator (native-gaps-cleanup Task 2) are ser.cla's own real,
+ * caller-supplied values -- threaded straight through. */
+int32_t rt_ext_SerFileWriteData(void *path, rt_text *t, void *type, void *creator) { return rt_file_write_data((const uint8_t *)path, t, (const uint8_t *)type, (const uint8_t *)creator); }
 int32_t rt_ext_SerFileReadTextInto(void *path, rt_text *out) { return rt_file_read_text((const uint8_t *)path, out); }
 /* rt_ext_Ser{BlockMoveData,NewPtr,DisposePtr}: final-review fix, mirroring
  * runtime/host/rt_ext_host.inc's block exactly -- ser.cla's remaining
@@ -632,14 +640,51 @@ static void rt_ext_ui_pstrcpy(unsigned char *dst, const unsigned char *src) {
  * golden scenario (every one is script-driven, taking rtUiAskOpen/
  * rtUiAskSave's OTHER branch in uidialogs.cla) -- ported for contract
  * completeness, same status as rt_ext_UiLaunchReal below. */
-int32_t rt_ext_UiSFGetFile(void *path255) {
+/* rt_ext_UiSFGetFile (native-gaps-cleanup Task 2): filter255 is askOpen's
+ * own `types` arg (a Str255 -- comma-separated 4-char codes, "*" = all
+ * files). Parsed here into up to 4 SFTypeList slots via
+ * rt_mac_pack4cc_range (rt_mac.c, defined ahead of this include point) --
+ * a 5th code, or any code longer than 4 characters, is lastError + return
+ * 0 WITHOUT calling SFGetFile, same rule uidialogs.cla's own
+ * nat_UiSFGetFile implements for the native lane.
+ */
+int32_t rt_ext_UiSFGetFile(void *path255, void *filter255) {
     Point where;
     SFTypeList types;
     SFReply reply;
+    const uint8_t *f = (const uint8_t *)filter255;
+    uint8_t flen = f[0];
+    short numTypes;
+    int i, segStart, n;
+    unsigned long packed;
+
     where.h = 100;
     where.v = 100;
-    types[0] = 'TEXT';
-    SFGetFile(where, (ConstStr255Param)"\p", NULL, 1, types, NULL, &reply);
+
+    if (flen == 1 && f[1] == '*') {
+        numTypes = -1;
+    } else {
+        n = 0;
+        segStart = 0;
+        for (i = 0; i <= flen; i++) {
+            if (i == flen || f[1 + i] == ',') {
+                if (n >= 4) {
+                    rt_set_lasterr(2, "askOpen filter must have at most 4 entries");
+                    return 0;
+                }
+                if (!rt_mac_pack4cc_range(f, 1 + segStart, i - segStart, &packed)) {
+                    rt_set_lasterr(2, "askOpen filter entry must be at most 4 characters");
+                    return 0;
+                }
+                types[n] = (OSType)packed;
+                n++;
+                segStart = i + 1;
+            }
+        }
+        numTypes = (short)n;
+    }
+
+    SFGetFile(where, (ConstStr255Param)"\p", NULL, numTypes, types, NULL, &reply);
     if (!reply.good) return 0;
     SetVol(NULL, reply.vRefNum);
     rt_ext_ui_pstrcpy((unsigned char *)path255, reply.fName);

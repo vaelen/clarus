@@ -119,7 +119,7 @@ func guiRunAndReport(w: Suite, sel: list of CoreTest) {
     log.append(line)
 
     w.Status.text = status
-    ok = file.writeText("TestLog.txt", log)
+    ok = file.writeText("TestLog.txt", log, app.doctype, app.id)
 }
 
 on App.startEmpty {

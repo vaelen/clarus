@@ -28,7 +28,7 @@ func caseSerBinRoundtrip(): TestResult {
     t.append(char(255))
     t.append('B')
 
-    ok = file.writeText("core_bin_roundtrip.dat", t)
+    ok = file.writeText("core_bin_roundtrip.dat", t, app.doctype, app.id)
     if not ok {
         return tkFail("SerBinRoundtrip", "write failed")
     }
@@ -69,7 +69,7 @@ func caseSerFileRoundtrip(): TestResult {
     n = s.toBytes(buf)
     t.fromBytes(buf, n)
 
-    ok = file.writeText("core_ser_roundtrip.txt", t)
+    ok = file.writeText("core_ser_roundtrip.txt", t, app.doctype, app.id)
     if not ok {
         return tkFail("SerFileRoundtrip", "write failed")
     }
@@ -97,7 +97,7 @@ func caseSerFileNameRoundtrip(): TestResult {
     n = s.toBytes(buf)
     t.fromBytes(buf, n)
 
-    ok = file.writeText("core_ser_name.txt", t)
+    ok = file.writeText("core_ser_name.txt", t, app.doctype, app.id)
     if not ok {
         return tkFail("SerFileNameRoundtrip", "write failed")
     }
@@ -138,7 +138,7 @@ func caseSerMixedScalarRec(): TestResult {
     r.e = "hey"
     r.f = false
     r.g = 2.5
-    ok = file.save("core_mixed_scalar.dat", r)
+    ok = file.save("core_mixed_scalar.dat", r, app.doctype, app.id)
     if not ok {
         return tkFail("SerMixedScalarRec", "save failed")
     }

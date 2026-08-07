@@ -42,7 +42,7 @@ on App.startCLI(args: list of string) {
 
     // ---- list of SaveItem: load over a populated (2-element) list ----
     src.push(fresh)
-    ok = file.save("listload.dat", src)
+    ok = file.save("listload.dat", src, app.doctype, app.id)
     if not ok {
         alert("list-load-save-FAIL")
     }
@@ -60,7 +60,7 @@ on App.startCLI(args: list of string) {
 
     // ---- map of SaveItem: load over a populated (2-entry) map ----
     msrc["a"] = fresh
-    ok = file.save("maploaded.dat", msrc)
+    ok = file.save("maploaded.dat", msrc, app.doctype, app.id)
     if not ok {
         alert("map-load-save-FAIL")
     }

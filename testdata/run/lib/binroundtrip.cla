@@ -17,7 +17,7 @@ func runBinroundtrip() {
     t.append(char(255))
     t.append('B')
 
-    ok = file.writeText("bin.dat", t)
+    ok = file.writeText("bin.dat", t, app.doctype, app.id)
     if not ok {
         alert("write failed")
     }

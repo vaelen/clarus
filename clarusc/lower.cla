@@ -448,6 +448,100 @@ func padTo4(s: string): string {
     return r
 }
 
+// lowArgAt walks argsHead's exprNext chain and returns the AST node at
+// (0-based) index idx, or -1 past the end -- native-gaps-cleanup Task 2's
+// literal-argument checks (below) need the RAW (pre-lowering) arg node to
+// tell a genuine source-level string literal from anything else (an
+// app.doctype/app.id ExAppConst or a const identifier are ALWAYS a legal
+// <=4-char value by construction -- checkAppDoctype/checkAppId/
+// declBuiltinStrConst already guarantee it -- so this deliberately only
+// ever flags a literal ExStringLit; every other shape, including a
+// genuinely dynamic expression, is left for the runtime pad/validate
+// call to handle, per the design doc's "check/lower diagnostic for
+// literals, runtime validate for dynamic strings" rule).
+func lowArgAt(argsHead: int, idx: int): int {
+    var a: int
+    var i: int
+
+    a = argsHead
+    i = 0
+    while i < idx and a != -1 {
+        a = exprNext(a)
+        i = i + 1
+    }
+    return a
+}
+
+// lowCheckLiteral4CCArg flags a source-level string literal (file.writeText/
+// file.save's type/creator args) longer than 4 characters as a compile-time
+// diagnostic -- native-gaps-cleanup Task 2's "LITERAL bad args are
+// compile-time diagnostics" rule. what names the argument in the message
+// ("file.writeText type", "file.save creator", ...). A non-literal arg
+// (identifier, app.doctype/id, any other expression) is left untouched
+// here -- it's validated at runtime instead (rtFourCC and its callers),
+// uniformly for every lane.
+func lowCheckLiteral4CCArg(argAst: int, what: string) {
+    var s: string
+
+    if argAst == -1 {
+        return
+    }
+    if exprKind(argAst) != ExStringLit {
+        return
+    }
+    s = poolGet(stringLitIdx(argAst))
+    if s.length > 4 {
+        emitDiag(exprLine(argAst), exprCol(argAst), what + " must be at most 4 characters")
+    }
+}
+
+// lowCheckLiteralFilter is lowCheckLiteral4CCArg's askOpen counterpart:
+// a LITERAL filter string (comma-separated 4-char codes, "*" = all files)
+// is validated at compile time -- more than 4 entries, or any entry
+// longer than 4 characters, is a diagnostic. A non-literal filter arg
+// validates at runtime instead (uidialogs.cla's nat_UiSFGetFile /
+// rt_ext_mac.inc's rt_ext_UiSFGetFile, both lanes).
+func lowCheckLiteralFilter(argAst: int) {
+    var s: string
+    var i: int
+    var segLen: int
+    var nSeg: int
+
+    if argAst == -1 {
+        return
+    }
+    if exprKind(argAst) != ExStringLit {
+        return
+    }
+    s = poolGet(stringLitIdx(argAst))
+    if s == "*" {
+        return
+    }
+    nSeg = 1
+    segLen = 0
+    i = 0
+    while i < s.length {
+        if s[i] == ',' {
+            if segLen > 4 {
+                emitDiag(exprLine(argAst), exprCol(argAst), "askOpen filter entry must be at most 4 characters")
+                return
+            }
+            nSeg = nSeg + 1
+            segLen = 0
+        } else {
+            segLen = segLen + 1
+        }
+        i = i + 1
+    }
+    if segLen > 4 {
+        emitDiag(exprLine(argAst), exprCol(argAst), "askOpen filter entry must be at most 4 characters")
+        return
+    }
+    if nSeg > 4 {
+        emitDiag(exprLine(argAst), exprCol(argAst), "askOpen filter must have at most 4 entries")
+    }
+}
+
 // lowAppConst lowers `app.doctype` / `app.id` (ExAppConst) straight to a
 // padded STRING LITERAL IR node -- checkAppConstExpr already restricted
 // the field name to "doctype" or "id", so this is total. Resolved
@@ -831,6 +925,12 @@ func lowCall(e: int): int {
         } else if name == "ptr" {
             return lowPtrConv(e, ty)
         } else if name == "askOpen" {
+            // askOpen(path, types) -- native-gaps-cleanup Task 2: types is
+            // a literal-checked filter string (lowCheckLiteralFilter,
+            // below); a dynamic (non-literal) filter validates at
+            // runtime instead (uidialogs.cla's nat_UiSFGetFile /
+            // rt_ext_mac.inc's rt_ext_UiSFGetFile).
+            lowCheckLiteralFilter(lowArgAt(callArgsHead(e), 1))
             return newIRIntr(IUiAskOpen(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askSave" {
             return newIRIntr(IUiAskSave(), lowArgs(callArgsHead(e)), ty)
@@ -1016,6 +1116,13 @@ func lowFileCall(e: int, fn: int, ty: int): int {
     if nm == "readText" {
         return newIRIntr(IFileReadText(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "writeText" {
+        // file.writeText(path, text, type, creator) -- native-gaps-
+        // cleanup Task 2: type/creator are mandatory, literal-checked
+        // (lowCheckLiteral4CCArg) here; a dynamic (non-literal) value
+        // validates at runtime instead (rtFourCC/natFileWriteText,
+        // rt_mac.c's rt_file_write_text).
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.writeText type")
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 3), "file.writeText creator")
         return newIRIntr(IFileWriteText(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "name" {
         return newIRIntr(IFileName(), lowArgs(callArgsHead(e)), ty)
@@ -1032,6 +1139,11 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         intrName = IFileSave()
         if nm == "load" {
             intrName = IFileLoad()
+        } else {
+            // file.save(path, rec, type, creator) -- same Task 2 rule as
+            // writeText above; file.load stays 2-arg (no type/creator).
+            lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.save type")
+            lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 3), "file.save creator")
         }
         return newIRIntr(intrName, lowArgs(callArgsHead(e)), ty)
     }

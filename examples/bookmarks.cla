@@ -89,7 +89,7 @@ on App.startEmpty {
 }
 
 func saveAll() {
-    file.save("Bookmarks Data", bookmarks)
+    file.save("Bookmarks Data", bookmarks, app.doctype, app.id)
 }
 
 extend File {

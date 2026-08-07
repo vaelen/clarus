@@ -2718,7 +2718,12 @@ func fpIntrCall(x: int): text {
     } else if nm == IFileReadText() {
         return "rt_file_read_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
     } else if nm == IFileWriteText() {
-        return "rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
+        // file.writeText(path, text, type, creator) -- native-gaps-cleanup
+        // Task 2: type/creator (a2/fpArgAt(a0,3)) are threaded straight
+        // through as read-only Str255 addresses, same fpStrAddr convention
+        // as path -- rt_file_write_text does the pad/validate/stamp work
+        // (a no-op on the host lane, real FInfo stamping on the Mac lane).
+        return "rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ", " + fpStrAddr(fpArgAt(a0, 3)) + ")"
     } else if nm == IFileName() {
         s0 = fpStrAddr(a0)
         t = fpNewTmp("clar_str_255")
@@ -2767,6 +2772,13 @@ func fpIntrCall(x: int): text {
                 container = "1"
             } else {
                 container = "2"
+            }
+            if nm == IFileSave() {
+                // file.save(path, rec, type, creator) -- native-gaps-
+                // cleanup Task 2: type/creator (a2/fpArgAt(a0,3)) are
+                // mandatory, threaded through as read-only Str255
+                // addresses; file.load stays 4-arg (no type/creator).
+                return fn + "(" + fpStrAddr(a0) + ", " + container + ", " + dataExpr + ", (void*)clar_serdesc_" + recName + ", " + fpStrAddr(a2) + ", " + fpStrAddr(fpArgAt(a0, 3)) + ")"
             }
             return fn + "(" + fpStrAddr(a0) + ", " + container + ", " + dataExpr + ", (void*)clar_serdesc_" + recName + ")"
         }
@@ -2897,17 +2909,17 @@ func fpIntrCall(x: int): text {
         fpEmit("*clar_ui_cur_cancel = 1;")
         return toText("")
     } else if nm == IUiAskOpen() {
-        // `askOpen(p)` -- p is filled IN PLACE by the runtime, so its
-        // address is passed non-const (unlike fpStrAddr's const cast, used
-        // for every read-only Str255 argument elsewhere in this function),
-        // the same "(uint8_t*)&(<addrable lvalue>)" shape IStrSetIndex uses
-        // above for its own out-parameter. Embedded directly (no temp): the
-        // call's own int (0/1) result IS the Bool value, same as every
-        // other int-returning rt_* call in this function (e.g. IStrCmp).
-        // Task 10 (native-5e slice D): askOpen is ported (uidialogs.cla's
-        // rtUiAskOpen) -- same signature/argument shape as the non-ported
-        // rt_ui_ask_open call just below.
-        return "clar_fn_rtUiAskOpen((uint8_t*)&(" + fpAddrable(a0) + "))"
+        // `askOpen(p, types)` -- p is filled IN PLACE by the runtime, so
+        // its address is passed non-const (unlike fpStrAddr's const cast,
+        // used for every read-only Str255 argument elsewhere in this
+        // function), the same "(uint8_t*)&(<addrable lvalue>)" shape
+        // IStrSetIndex uses above for its own out-parameter. types (a1,
+        // native-gaps-cleanup Task 2) is read-only, ordinary fpStrAddr.
+        // Embedded directly (no temp): the call's own int (0/1) result IS
+        // the Bool value, same as every other int-returning rt_* call in
+        // this function (e.g. IStrCmp). Task 10 (native-5e slice D):
+        // askOpen is ported (uidialogs.cla's rtUiAskOpen).
+        return "clar_fn_rtUiAskOpen((uint8_t*)&(" + fpAddrable(a0) + "), " + fpStrAddr(a1) + ")"
     } else if nm == IUiAskSave() {
         // `askSave(p, suggested)` -- p filled in place (see IUiAskOpen
         // above); suggested is read-only, so it takes the ordinary
@@ -5292,46 +5304,15 @@ func cpEmitAppInfo() {
     line.append(cpUiTitleStr(irAppAbout))
     line.append(" };")
     cpRestBuf.add(line)
-    if irAppId != -1 {
-        // Strong override beside rt_ui_app_info -- overrides Task 1's weak
-        // '????' rt_app_creator default (rt.h/rt_mac.c) so saved data files
-        // carry this app's own creator. Only emitted when the app section
-        // actually declared an id (checkAppDecl requires icon to imply id,
-        // but id alone is legal without an icon).
-        cpRestBuf.add(toText("const unsigned long rt_app_creator = " + cpAppCreatorHex(irAppId) + "UL; /* '" + poolGet(irAppId) + "' */"))
-    }
+    // native-gaps-cleanup Task 2: rt_app_creator's strong-override emission
+    // (formerly here, beside rt_ui_app_info) is RETIRED -- its only
+    // consumer was rt_mac.c's rt_file_write_data (file.save's C-lane
+    // stamp), which now takes the caller's own type/creator args directly
+    // (the design doc's mandatory-args rule) instead of reading a
+    // program-wide weak/strong global. Grep evidence (task-2-report.md):
+    // rt_app_creator had exactly one real reader (rt_file_write_data,
+    // rt_mac.c) -- no About-box/resource path ever consulted it.
     cpRestBuf.add(toText(""))
-}
-
-// cpAppCreatorHex renders idIdx's 4-character app id (check.cla's
-// checkAppId already validated exactly 4 printable ASCII characters) as the
-// big-endian hex literal rt_app_creator's strong override needs -- e.g.
-// "CBKM" -> "0x43424B4D".
-func cpAppCreatorHex(idIdx: int): string {
-    var s: string
-    var out: string
-    var i: int
-
-    s = poolGet(idIdx)
-    out = "0x"
-    i = 0
-    while i < 4 {
-        out = out + cpHexByte(int(s[i]))
-        i = i + 1
-    }
-    return out
-}
-
-// cpHexByte renders b (0-255) as 2 uppercase hex digits.
-func cpHexByte(b: int): string {
-    var digits: string
-    var out: string
-
-    digits = "0123456789ABCDEF"
-    out = ""
-    out = out + digits[(b >> 4) & 15]
-    out = out + digits[b & 15]
-    return out
 }
 
 // cpEmitUiBlob prints uiblob.cla's uibBuild() result -- the plan's
