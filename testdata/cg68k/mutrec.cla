@@ -1,0 +1,54 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// mutrec.cla: native-gaps-cleanup Task 4 fix-round cg68k golden fixture --
+// pins cgStackHeuristic's cycle handling (cgHeurLongest/cgHeurOnCycle/
+// cycleExtra) against a real two-node mutual-recursion call graph, the
+// gap the task-4-report.md fix-round Concerns/reviewer finding flagged:
+// the prior verification only exercised a SELF-recursive (one-node cycle)
+// fixture, never committed. mutA/mutB call each other (a genuine 2-cycle
+// in the shake call graph) and each also falls through to its OWN,
+// differently-sized leaf (leafA has a str(255) local, deliberately much
+// bigger than leafB's bare int local) -- the "asymmetric leaf branch off
+// each" the fix-round review asked for, so the two cycle members don't
+// have equal weight either. See task-4-report.md's fix-round appendix for
+// the hand-computed memoized-DFS walk, the cycleExtra sum, and the
+// structural-dominance argument (best's possible cycle-order shortfall is
+// bounded by the very sum cycleExtra unconditionally re-adds).
+func leafA(): int {
+    var big: string(255)
+    big = "x"
+    return 1
+}
+
+func leafB(): int {
+    var small: int
+    small = 2
+    return small
+}
+
+func mutA(n: int): int {
+    var r: int
+    if n <= 0 {
+        r = leafA()
+    } else {
+        r = mutB(n - 1) + 1
+    }
+    return r
+}
+
+func mutB(n: int): int {
+    var r: int
+    if n <= 0 {
+        r = leafB()
+    } else {
+        r = mutA(n - 1) + 1
+    }
+    return r
+}
+
+on App.launch {
+    var x: int
+    x = mutA(3)
+    return
+}

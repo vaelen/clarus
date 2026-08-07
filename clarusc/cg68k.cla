@@ -1511,25 +1511,54 @@ func cgHeurOnCycle(start: int): bool {
 //      per-path) is the cheapest bounded fix. 0 whenever the graph has no
 //      cycle at all -- the toolbox suite composition below has none, so
 //      this term measured 0 there; kept for the next program that does.
+//      cgHeurLongest's own memo (cgHeurState/cgHeurMemo) is SHARED and
+//      ORDER-DEPENDENT across the whole `best` loop below: once a node is
+//      memoized (state 2), every later caller reuses that one cached
+//      value regardless of which OTHER nodes happened to be gray (mid-DFS)
+//      at the time it was computed -- on a multi-member cycle this can
+//      genuinely make `best` undercount the true longest simple path
+//      through the cycle (testdata/cg68k/mutrec.cla's own hand-computed
+//      walk, task-4-report.md's fix-round appendix, demonstrates this on
+//      a real 2-node cycle). `cycleExtra` is what makes that harmless
+//      rather than a second heuristic bug: it unconditionally re-adds
+//      EVERY on-cycle node's own weight once, and the memo's worst-case
+//      shortfall on any single DFS path can itself be at most the sum of
+//      the on-cycle nodes it under-credited -- a subset of that same sum.
+//      So `best + cycleExtra` cannot undershoot the true longest simple
+//      path even when the shared memo undercounts `best` alone; it can
+//      only over-reserve (cycleExtra re-adds weight the memo actually did
+//      capture correctly on that particular path too).
 //   3. `cbExtra` -- the deepest reachable `callback func` body's own
-//      cgHeurLongest. A callback body (cg68SynthCbGlue's
+//      cgHeurLongest, taken as a single MAX across all callback bodies,
+//      not summed across them -- this models at most ONE Toolbox-invoked
+//      callback being live at a time. A callback body (cg68SynthCbGlue's
 //      cgCbGlueBodyFuncIdx) is rooted via shakeAddRoot, not reached by any
-//      shake EDGE (the Toolbox/ROM invokes it directly -- LDEF redraw,
-//      scrollbar action -- while some ENTIRELY DIFFERENT Clarus chain is
-//      already live on the stack), so `best` alone never adds a
-//      callback's own downstream depth on top of whatever chain was
-//      running when the trap fired; without this term the two are only
-//      ever maxed against each other, never summed. Diagnosed on Task 4's
-//      own Step 3 gate (the toolbox suite composition): `best` alone (a
-//      53546-byte deepest traced chain) + cgToolboxHeadroom undershot the
-//      real native boot's need (hung -- see this task's report for the
-//      bisection: passed at stack:65000, still hung at the heuristic's
-//      pre-fix 61738); rtUiLdefDraw's own reachable chain (10806 bytes)
-//      was the missing piece. cgToolboxHeadroom itself stays a flat
-//      constant for what's IRREDUCIBLY untraceable (ROM-internal trap
-//      dispatch overhead); cbExtra covers the traceable-but-disconnected
-//      part properly instead of folding it into a bigger guessed
-//      headroom constant.
+//      shake EDGE FROM shakeAddRoot's own registration (the Toolbox/ROM
+//      invokes it directly -- LDEF redraw, scrollbar action -- while some
+//      ENTIRELY DIFFERENT Clarus chain is already live on the stack), so
+//      `best` alone never adds a callback's own downstream depth on top
+//      of whatever chain was running when the trap fired UNLESS that same
+//      callback body also happens to be called directly by name elsewhere
+//      (an ordinary ECallFn edge into it) -- in that case `best` may
+//      already include its subtree, and cbExtra re-adds it anyway
+//      (over-reserving; the safe direction, not a second undercount).
+//      Known gap: a callback whose OWN body triggers a second, DISTINCT
+//      callback (genuinely nested Toolbox dispatch, not just this one
+//      body's own downstream) would still be undercounted -- cbExtra has
+//      no way to detect or sum across simultaneously-live callbacks; no
+//      such nesting exists anywhere in this repo's runtime/test corpus
+//      today (only rtUiScrollbarAction/rtUiLdefDraw exist as
+//      cg68SynthCbGlue targets, and only one fires at a time in
+//      practice). Diagnosed on Task 4's own Step 3 gate (the toolbox
+//      suite composition): `best` alone (a 53546-byte deepest traced
+//      chain) + cgToolboxHeadroom undershot the real native boot's need
+//      (hung -- see task-4-report.md for the bisection: passed at
+//      stack:65000, still hung at the heuristic's pre-fix 61738);
+//      rtUiLdefDraw's own reachable chain (10806 bytes) was the missing
+//      piece. cgToolboxHeadroom itself stays a flat constant for what's
+//      IRREDUCIBLY untraceable (ROM-internal trap dispatch overhead);
+//      cbExtra covers the traceable-but-disconnected part properly
+//      instead of folding it into a bigger guessed headroom constant.
 func cgStackHeuristic(): int {
     var i: int
     var best: int
