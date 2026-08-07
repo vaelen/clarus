@@ -179,13 +179,19 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // toolbox-cookbook Task 2 -- hardware-proves Task 1's shipped extern
 // catalog against real ROM; the four toolbox/ files are grouped right
 // after kit.cla (composition order is otherwise immaterial, a lowering
-// pre-pass).
+// pre-pass). cases_finfo.cla (FInfoStamp) was added by native-gaps-
+// cleanup Task 3 -- hardware-proves Tasks 1-2's file.writeText stamp
+// rule via a real PBGetFInfoSync readback, consuming toolbox/files.cla's
+// FileParam/PBGetFInfoSync declarations (pack3-standardfile phase);
+// toolbox/files.cla joins the other four toolbox/ catalog files in the
+// same grouped block, right after kit.cla.
 var toolboxFiles = []string{
 	filepath.Join("testsuite", "kit.cla"),
 	filepath.Join("toolbox", "memory.cla"),
 	filepath.Join("toolbox", "events.cla"),
 	filepath.Join("toolbox", "osutils.cla"),
 	filepath.Join("toolbox", "scrap.cla"),
+	filepath.Join("toolbox", "files.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_events.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
@@ -209,6 +215,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_formedit.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_bigtext.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_catalog.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -229,7 +236,7 @@ var toolboxFiles = []string{
 // testdata/ui/toolboxsuite.trace or testdata/uisnaps entry.
 //
 // Beyond the aggregate PASS/FAIL/TOTAL check TestCoreSuiteGUIOn68k does,
-// this test also parses each of the 24 result lines (23 real cases +
+// this test also parses each of the 25 result lines (24 real cases +
 // SelfCheck, runner.cla's own nTbCases) into its own `t.Run(caseName,
 // ...)` subtest -- per-case CI reporting (goal 5), so a single
 // regressed case shows up as its own named red subtest rather than only
@@ -298,8 +305,9 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // migration) Dialogs/Hdim addition, then to 22 by test-consolidation
 // Task 3's own FormEdit addition (Task 8's formedit gap finally closed),
 // then to 23 by test-consolidation Task 4's own BigText addition, then
-// to 24 by toolbox-cookbook Task 2's own Catalog addition: parses each
-// of the 24 result lines (23 real cases + SelfCheck) into its own t.Run
+// to 24 by toolbox-cookbook Task 2's own Catalog addition, then to 25 by
+// native-gaps-cleanup Task 3's own FInfoStamp addition: parses each
+// of the 25 result lines (24 real cases + SelfCheck) into its own t.Run
 // subtest -- per-case CI reporting -- plus the aggregate TOTAL line,
 // regardless of which lane produced the capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
@@ -324,8 +332,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 24 {
-		t.Errorf("result lines: got %d, want 24\ncapture:\n%s", len(results), out)
+	if len(results) != 25 {
+		t.Errorf("result lines: got %d, want 25\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -335,7 +343,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 24 PASS 24 FAIL 0"; total != want {
+	if want := "TOTAL 25 PASS 25 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

@@ -86,7 +86,11 @@
 // is toolbox-cookbook Task 2's own addition: hardware-proves the shipped
 // toolbox/{memory,events,osutils,scrap}.cla extern catalog by calling it
 // against real ROM, in-process -- see cases_catalog.cla's own header
-// comment.
+// comment. FInfoStamp (cases_finfo.cla) is native-gaps-cleanup Task 3's
+// own addition: hardware-proves Tasks 1-2's file.writeText stamp rule
+// (app.doctype/app.id compile-time defaults, exact 4CC pass-through) by
+// reading the written files' real Finder type/creator back via
+// PBGetFInfoSync -- see cases_finfo.cla's own header comment.
 
 enum ToolboxTest {
     All
@@ -113,15 +117,16 @@ enum ToolboxTest {
     FormEdit
     BigText
     Catalog
+    FInfoStamp
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 23 real cases
+// nTbCases is ToolboxTest's member count minus All: the 24 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 24
+const nTbCases: int = 25
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -199,6 +204,9 @@ func tbCaseName(t: ToolboxTest): string {
     case Catalog {
         return "Catalog"
     }
+    case FInfoStamp {
+        return "FInfoStamp"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -233,6 +241,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(FormEdit)
     l.add(BigText)
     l.add(Catalog)
+    l.add(FInfoStamp)
     l.add(SelfCheck)
     return l
 }
@@ -251,7 +260,7 @@ func tbHas(l: list of ToolboxTest, want: ToolboxTest): bool {
 // runToolboxTests dedupes sel, then runs every selected case's branch --
 // same dedupe/wantAll/branch shape as testsuite/core/runner.cla's
 // runCoreTests. Each dispatch arm is its own statement, so the per-statement
-// temp-slot budget holds regardless of case count -- 23 real cases here,
+// temp-slot budget holds regardless of case count -- 24 real cases here,
 // and this dispatch never approaches the budget. (Unlike core's cli.cla
 // arg-matching loop, which needs careful iteration to stay within budget;
 // see coreMatchAndAdd's doc comment in testsuite/core/cli.cla. Moot here
@@ -361,6 +370,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, Catalog) {
         results.add(caseCatalog())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, FInfoStamp) {
+        results.add(caseFInfoStamp())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

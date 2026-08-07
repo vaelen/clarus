@@ -1,0 +1,83 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_finfo.cla: FInfoStamp (Task 3, native-gaps-cleanup) -- hardware-
+// proves Tasks 1-2's stamp rule (app.doctype/app.id are compile-time
+// constants; file.writeText's 4th/5th args are stamped EXACTLY as given,
+// no defaults/sentinels) by writing two real files through file.writeText
+// and reading their Finder type/creator back with a real PBGetFInfoSync
+// trap (toolbox/files.cla) -- the same trap the native writeText path
+// itself uses to stamp them (task-6a, that catalog's own header comment),
+// so this closes the loop with an independent read rather than trusting
+// the write path's own belief about what it wrote.
+//
+// (a) writes "stamp1" via app.doctype/app.id. testsuite/toolbox/gui.cla
+// (this suite's composition) has NO `app` section at all -- confirmed by
+// its absence from the whole file (no `app { ... }` block, no `doctype:`
+// line) -- so per the spec rule (native-gaps-cleanup Task 1: lowAppConst
+// supplies "TEXT"/"????" when an app section is absent, clarusc/lower.cla
+// lowAppConst's own doc comment) app.doctype resolves to "TEXT" and
+// app.id to "????", both already 4 characters so padding is a no-op.
+// Packed big-endian 4CC longs (ASCII byte per char, MSB first):
+//   "TEXT" -> 0x54455854 (T=0x54 E=0x45 X=0x58 T=0x54)
+//   "????" -> 0x3F3F3F3F ('?' = 0x3F, all four bytes identical)
+//
+// (b) writes "stamp2" via the universe const fileTypePicture ("PICT") and
+// a literal creator "RDIT", proving a universe const flows through
+// file.writeText the same as a literal:
+//   "PICT" -> 0x50494354 (P=0x50 I=0x49 C=0x43 T=0x54)
+//   "RDIT" -> 0x52444954 (R=0x52 D=0x44 I=0x49 T=0x54)
+//
+// (c) cleanup: no delete primitive exists in this catalog (toolbox/
+// files.cla is deliberately thin -- SetVol/Get/SetFInfo only, per that
+// file's own header comment; no PBDeleteSync/_Delete declared anywhere in
+// the repo). The two stamp files are left on disk -- boot disks are
+// throwaway (this suite already leaves TestLog.txt and every other
+// suite/example's own written fixture behind the same way).
+
+func caseFInfoStamp(): TestResult {
+    var t: text
+    var fp: FileParam
+    var err: int
+    var detail: string
+
+    t.append("finfo stamp probe")
+
+    // -- (a) app.doctype/app.id, absent-app-section default.
+    if not file.writeText("stamp1", t, app.doctype, app.id) {
+        return tkFail("FInfoStamp", "writeText stamp1 failed")
+    }
+    fp.ioNamePtr = UiStrAddr("stamp1")
+    fp.ioVRefNum = 0
+    fp.ioFDirIndex = 0
+    err = PBGetFInfoSync(fp)
+    if err != 0 {
+        detail = "getfinfo stamp1 err " + tkIntToStr(err)
+        return tkFail("FInfoStamp", detail)
+    }
+    if fp.fdType != 0x54455854 or fp.fdCreator != 0x3F3F3F3F {
+        detail = "stamp1 type " + tkIntToStr(fp.fdType)
+        detail = detail + " creator " + tkIntToStr(fp.fdCreator)
+        return tkFail("FInfoStamp", detail)
+    }
+
+    // -- (b) fileTypePicture universe const + literal creator "RDIT".
+    if not file.writeText("stamp2", t, fileTypePicture, "RDIT") {
+        return tkFail("FInfoStamp", "writeText stamp2 failed")
+    }
+    fp.ioNamePtr = UiStrAddr("stamp2")
+    fp.ioVRefNum = 0
+    fp.ioFDirIndex = 0
+    err = PBGetFInfoSync(fp)
+    if err != 0 {
+        detail = "getfinfo stamp2 err " + tkIntToStr(err)
+        return tkFail("FInfoStamp", detail)
+    }
+    if fp.fdType != 0x50494354 or fp.fdCreator != 0x52444954 {
+        detail = "stamp2 type " + tkIntToStr(fp.fdType)
+        detail = detail + " creator " + tkIntToStr(fp.fdCreator)
+        return tkFail("FInfoStamp", detail)
+    }
+
+    return tkPass("FInfoStamp")
+}
