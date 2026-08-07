@@ -40,7 +40,7 @@ func save(d: Doc): bool {
     if d.path == "" {
         if not askSave(d.path, "Untitled") { return false }   // fills d.path
     }
-    if not file.writeText(d.path, d.Body.text) {
+    if not file.writeText(d.path, d.Body.text, app.doctype, app.id) {
         alert("Couldn't save: " + lastError.message)
         return false
     }
@@ -63,7 +63,7 @@ extend File {                      // app-level commands: always enabled
     on Open.select {
         var p: string(255)
 
-        if askOpen(p) { openPath(p) }
+        if askOpen(p, app.doctype) { openPath(p) }
     }
 
     on Quit.select { quit }        // runtime sends closeRequest to every
