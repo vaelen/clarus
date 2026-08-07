@@ -134,15 +134,19 @@ enum + runner, not one boot per case.
   (Exact file list: `internal/mactest/suite_host_test.go`'s
   `coreCLIHostFiles`/`coreCLIFiles`.) `toolbox` has no host CLI by design
   (Toolbox/hardware-only) — it only runs via a Mac/native boot.
-- **The four gated suite-boot tests** (`CLARUS_MAC_TESTS=1 go test
-  ./internal/mactest`, `internal/mactest/coresuite_test.go`), one boot
-  each, both platform lanes: `TestCoreSuiteGUIOn68k`/`TestCoreSuiteGUIOnMac`
-  (native `emit68k` / Retro68-cprint twins, `core/gui.cla` + `--events`)
-  and `TestToolboxSuiteOn68k`/`TestToolboxSuiteOnMac` (same, `toolbox/
-  gui.cla`). Each parses the captured `tkReport` log and fans it out into
-  one Go subtest per case (`t.Run(caseName, ...)`) for per-case red/green.
-  These are part of T2 (`scripts/test-merge.sh`'s ungated `internal/
-  mactest` run); not part of T1.
+- **The four gated suite-boot tests** (`internal/mactest/coresuite_test.go`),
+  one boot each, both platform lanes: `TestCoreSuiteGUIOn68k`/
+  `TestCoreSuiteGUIOnMac` (native `emit68k` / Retro68-cprint twins,
+  `core/gui.cla` + `--events`) and `TestToolboxSuiteOn68k`/
+  `TestToolboxSuiteOnMac` (same, `toolbox/gui.cla`). Each parses the
+  captured `tkReport` log and fans it out into one Go subtest per case
+  (`t.Run(caseName, ...)`) for per-case red/green. The `On68k` halves run
+  under T2's default `CLARUS_MAC_TESTS=1 go test ./internal/mactest`
+  (`scripts/test-merge.sh`); not part of T1. The `OnMac` twins are the
+  Retro68/cprint lane, demoted (pack3-standardfile phase, 2026-08-07) to
+  an opt-in diagnostic behind `CLARUS_CPRINT_MAC_TESTS=1` — SKIP under
+  bare `CLARUS_MAC_TESTS=1`, so they no longer run as part of T2 by
+  default.
 - `toolbox/{memory,events,osutils,scrap}.cla` (toolbox-cookbook phase) is a
   curated extern catalog of real Inside Macintosh trap declarations,
   ready to compose into a build (positionally or via `include`) for new

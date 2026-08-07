@@ -114,7 +114,7 @@ func TestAppResResources(t *testing.T) {
 // buildSetbundle compiles scripts/setbundle.c against the Retro68-build
 // libhfs, same compile-and-cache-in-t.TempDir() pattern as buildPbm2Icn in
 // pbm2icn_test.go. Requires the Retro68 toolchain checkout (not the
-// emulator), so it's only called from requireMac(t)-gated tests.
+// emulator), so it's only called from requireCprintMac(t)-gated tests.
 func buildSetbundle(t *testing.T) string {
 	t.Helper()
 	root := repoRoot(t)
