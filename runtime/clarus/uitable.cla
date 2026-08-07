@@ -100,9 +100,11 @@ external func UiPopUpMenuSelect(theMenu: ptr, top: word, left: word, popUpItem: 
 // family above; ITS OWN `#pragma parameter NumToString(__D0, __A0)` line
 // just above that (:12342) documents REGISTER convention on 68k, not the
 // plain pascal-stack convention this bare `trap` clause declares -- same
-// unresolved-for-native gap ui.cla's own UiGestalt comment already flags
-// and defers to Task 12 (cg68k has no `reg` clause shape for "one ptr in
-// A0, nothing in D-regs but the trap's own D0 selector"); the cprint lane
+// unresolved-for-native gap ui.cla's own Gestalt externs used to flag and
+// defer to Task 12 (cg68k has no `reg` clause shape for "one ptr in
+// A0, nothing in D-regs but the trap's own D0 selector" -- and note that
+// `reg`'s named form has since landed, so this one is now expressible;
+// it is simply still unexercised on the native lane); the cprint lane
 // (this task's only exercised path) is unaffected, since cprint calls the
 // real C `NumToString` name directly regardless of this clause. ----
 external func UiInvertRect(r: ptr) = trap 0xA8A4

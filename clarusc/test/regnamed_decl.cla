@@ -12,6 +12,10 @@
 // runs it). Declaration-only: TbGestalt is never called here (calls land
 // in Task 2's own goldens, once cg68k grows named-clause codegen), so
 // this only exercises parse.cla/ast.cla/ir.cla/check.cla, not cg68k.cla.
+// The declaration's SHAPE is illustrative only -- pack3-standardfile Task
+// 5a proved the real Gestalt trap returns its response in A0, not through
+// an A1 pointer, so do not copy this as a Gestalt transcription; see
+// toolbox/osutils.cla for the real declaration pair.
 external func TbGestalt(selector: int, response: ptr): word =
     trap 0xA1AD reg(d0: selector, a1: response) ret d0
 

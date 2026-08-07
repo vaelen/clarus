@@ -98,7 +98,8 @@ extern void rt_ext_UiGetMouse(void *);
 extern void rt_ext_UiGlobalToLocal(void *);
 extern void rt_ext_UiSysBeep(short);
 extern int32_t rt_ext_UiTickCount(void);
-extern short rt_ext_UiGestalt(int32_t, void *);
+extern short rt_ext_UiGestaltErr(int32_t);
+extern int32_t rt_ext_UiGestaltValue(int32_t);
 extern void rt_ext_UiHideCursor(void);
 extern short rt_ext_UiOpenDeskAcc(void *);
 extern void rt_ext_UiParamText(void *, void *, void *, void *);
@@ -2863,22 +2864,18 @@ static void clar_fn_rtUiEveryPump(void) {
 }
 
 static void clar_fn_rtUiStartup(void) {
-    void * cv_respSlot;
-    cv_respSlot = 0;
     int32_t cv_resp;
     cv_resp = 0;
     int32_t cv_err;
     cv_err = 0;
     rt_ext_UiMacInitToolbox();
     rt_ext_UiFlushEvents(65535);
-    cv_respSlot = rt_ext_UiNewPtr(4);
-    cv_err = rt_ext_UiGestalt(1937339254, cv_respSlot);
+    cv_err = rt_ext_UiGestaltErr(1937339254);
     if (cv_err == 0) {
-        cv_resp = rt_peekl(cv_respSlot);
+        cv_resp = rt_ext_UiGestaltValue(1937339254);
     } else {
         cv_resp = 0;
     }
-    rt_ext_UiDisposePtr(cv_respSlot);
     cv_rtUiSys7 = ((cv_resp >= 1792) && (cv_resp < 4096));
     clar_fn_rtUiBuildAppleMenu();
     clar_fn_rtUiBuildMenus();

@@ -7,7 +7,12 @@
 // trap word, and the word-result sign-extension (now unified across both
 // `reg` forms -- see cg68k.cla's cgCallExtReg doc comment). TbGestalt
 // mirrors UiGestalt's own real shape (selector in D0, response ptr in
-// A1, `ret d0`, `word` result); TbSwapD2 exercises a D2 register target
+// A1, `ret d0`, `word` result -- which pack3-standardfile Task 5a later proved
+// is NOT a correct transcription of the real Gestalt trap, whose response
+// comes back in A0; this fixture's subject is the emitted call SEQUENCE
+// for an arbitrary named-reg clause, so the shape is kept as-is rather
+// than re-blessed, and it must not be copied as a Gestalt declaration --
+// see toolbox/osutils.cla for the real one); TbSwapD2 exercises a D2 register target
 // (untouched by the positional rule, which only ever uses D0/D1/A0/A1)
 // and a named, non-default `ret d2` result register on a plain `int`
 // result (no sign-extension, full 32 bits straight from D2).

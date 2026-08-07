@@ -26,7 +26,7 @@
  * include list, the oracle for this port: it pulls in the same headers for
  * the same reasons). */
 #include <Sound.h>    /* SysBeep -- rt_ext_UiSysBeep */
-#include <Gestalt.h>  /* Gestalt/gestaltAppleEventsAttr -- rt_ext_UiGestalt, rt_ext_UiLaunchReal */
+#include <Gestalt.h>  /* Gestalt/gestaltAppleEventsAttr -- rt_ext_UiGestalt{Err,Value}, rt_ext_UiLaunchReal */
 #include <Devices.h>  /* OpenDeskAcc -- rt_ext_UiOpenDeskAcc */
 #include <SegLoad.h>  /* CountAppFiles/GetAppFiles/ClrAppFiles/AppFile -- rt_ext_UiLaunchReal */
 #include <Resources.h> /* GetResource/ReleaseResource -- rt_ext_UiLaunchReal's SIZE-resource probe */
@@ -336,7 +336,12 @@ void rt_ext_UiGlobalToLocal(void *pt) { GlobalToLocal((Point *)pt); }
 void rt_ext_UiSysBeep(short duration) { SysBeep(duration); }
 
 int32_t rt_ext_UiTickCount(void) { return (int32_t)TickCount(); }
-short rt_ext_UiGestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+/* Gestalt answers in two registers on the raw 68k trap (D0 = OSErr, A0 =
+   response value), so ui.cla declares it as two single-result externs --
+   see toolbox/osutils.cla's header comment. The C lane just calls the real
+   Gestalt() twice; it is a pure query. */
+short rt_ext_UiGestaltErr(int32_t selector) { long r; return (short)Gestalt((OSType)selector, &r); }
+int32_t rt_ext_UiGestaltValue(int32_t selector) { long r = 0; if (Gestalt((OSType)selector, &r) != noErr) { r = 0; } return (int32_t)r; }
 void rt_ext_UiHideCursor(void) { HideCursor(); }
 short rt_ext_UiOpenDeskAcc(void *deskAccName) { return OpenDeskAcc((ConstStr255Param)deskAccName); }
 void rt_ext_UiParamText(void *param0, void *param1, void *param2, void *param3) {
@@ -774,16 +779,17 @@ void rt_ext_TbHiliteMenu(short menuId) { HiliteMenu(menuId); }
 /* ---- Task 2 (toolbox-integration): testsuite/toolbox/cases_gestalt.cla's
  * own externs (Tb prefix, same "cprint always renders rt_ext_NAME, needs a
  * glue entry regardless of clause" precedent as the Task 12 block just
- * above) -- same real Toolbox calls as rt_ext_UiNewPtr/rt_ext_UiDisposePtr/
- * rt_ext_UiGestalt above, reachable under the suite's own extern names so
- * cases_gestalt.cla can declare its named-reg clause without reaching into
- * ui.cla. GestaltNamed's whole point is proving the NAMED reg(...) clause
- * dispatches correctly on the native (cg68k) lane; the clause is invisible
- * here exactly as the design spec requires (cprint ignores irExternConv
- * entirely, positional or named alike). */
-void *rt_ext_TbNewPtr(int32_t size) { return (void *)NewPtr((Size)size); }
-void rt_ext_TbDisposePtr(void *p) { DisposePtr((Ptr)p); }
-short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+ * above) -- same real Toolbox call as rt_ext_UiGestaltErr/
+ * rt_ext_UiGestaltValue above, reachable under the suite's own extern
+ * names so cases_gestalt.cla can declare its named-reg clauses without
+ * reaching into ui.cla. GestaltNamed's whole point is proving the NAMED
+ * reg(...) clause dispatches correctly on the native (cg68k) lane; the
+ * clause is invisible here exactly as the design spec requires (cprint
+ * ignores irExternConv entirely, positional or named alike) -- which is
+ * also why the WRONG native register binding this pair replaced
+ * (pack3-standardfile Task 5a) never showed on this lane at all. */
+short rt_ext_TbGestaltErr(int32_t selector) { long r; return (short)Gestalt((OSType)selector, &r); }
+int32_t rt_ext_TbGestaltValue(int32_t selector) { long r = 0; if (Gestalt((OSType)selector, &r) != noErr) { r = 0; } return (int32_t)r; }
 
 /* ---- Task 6 (toolbox-integration Feature B):
  * testsuite/toolbox/cases_event.cla's own externs -- same "cprint always
@@ -794,8 +800,8 @@ short rt_ext_TbGestalt(int32_t selector, void *response) { return (short)Gestalt
  * Pascal-convention Toolbox sibling `_EventAvail`, 0xA971, instead; same
  * check-without-removing-from-the-queue semantics, see that file's own
  * header comment for the full trap-word bit-11 evidence). The clause
- * (`= trap 0xA971`) is invisible here exactly like TbGestalt's own
- * named-reg clause above -- cprint calls by NAME only.
+ * (`= trap 0xA971`) is invisible here exactly like TbGestaltErr/
+ * TbGestaltValue's own named-reg clauses above -- cprint calls by NAME only.
  * rt_ext_TbXRecAddr mirrors Task 5's own rt_ext_XRecAddr host-lane
  * identity shim (runtime/host/rt_ext_host.inc) -- "the address of my
  * own argument" has no real Toolbox call behind it on ANY backend, so
@@ -867,7 +873,8 @@ short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
 void rt_ext_HLock(void *h) { HLock((Handle)h); }
 void rt_ext_HUnlock(void *h) { HUnlock((Handle)h); }
 int32_t rt_ext_TickCount(void) { return (int32_t)TickCount(); }
-short rt_ext_Gestalt(int32_t selector, void *response) { return (short)Gestalt((OSType)selector, (long *)response); }
+short rt_ext_GestaltErr(int32_t selector) { long r; return (short)Gestalt((OSType)selector, &r); }
+int32_t rt_ext_GestaltValue(int32_t selector) { long r = 0; if (Gestalt((OSType)selector, &r) != noErr) { r = 0; } return (int32_t)r; }
 int32_t rt_ext_EventAvail(short mask, void *ev) { return (int32_t)EventAvail((EventMask)mask, (EventRecord *)ev); }
 int32_t rt_ext_ZeroScrap(void) { return (int32_t)ZeroScrap(); }
 int32_t rt_ext_PutScrap(int32_t length, int32_t theType, void *source) { return (int32_t)PutScrap((long)length, (ResType)theType, (Ptr)source); }

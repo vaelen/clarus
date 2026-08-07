@@ -50,15 +50,20 @@ func caseCatalog(): TestResult {
     // the plain-catalog vars above, which this section also reuses for
     // its own NewPtr/NewHandle/GetScrap/PutScrap/ZeroScrap calls). Driven
     // flat, one combined `ok` assertion at the end (cases_editmenu.cla's
-    // own style), not a branch-per-step early return: an earlier, more
-    // branch-heavy draft of this section reproducibly broke the plain-
-    // catalog Gestalt check above it (unrelated code, earlier in program
-    // order) on the native-68k lane only -- a latent cg68k codegen bug
-    // this task's own scope (clarusc/*.cla is off-limits) cannot fix.
-    // The exact trigger was never fully isolated (even a same-length
-    // comment/string-literal edit flipped pass/fail in testing), so this
-    // section is kept close to the shape verified clean here (matching
-    // cases_editmenu.cla's own flat style) rather than reshuffled again.
+    // own style), not a branch-per-step early return.
+    //
+    // A note this file used to carry here -- that reshaping this section
+    // "reproducibly broke the plain-catalog Gestalt check above it" and
+    // that even a same-length comment edit flipped pass/fail, blamed on
+    // "a latent cg68k codegen bug ... never fully isolated" -- was a
+    // MISDIAGNOSIS, resolved by pack3-standardfile Task 5a. Nothing here
+    // ever perturbed codegen: the Gestalt check above simply read a
+    // response slot the trap never wrote (wrong register binding, see
+    // that check's own comment), so it asserted `!= 0` against
+    // uninitialized heap garbage and any edit that moved the heap around
+    // flipped the coin. That check is deterministic now. The flat style
+    // stays because it matches cases_editmenu.cla, not because
+    // reordering is dangerous.
     var w: EditMain
     var verbLine: string
     var clickAOk: bool
@@ -77,14 +82,20 @@ func caseCatalog(): TestResult {
     var closedOk: bool
     var aTextAfterPaste: text
 
-    // -- osutils: Gestalt (named-reg, ret d0), same selector rtUiStartup
-    // proves on every boot.
-    p1 = NewPtr(4)
-    err = Gestalt(gestaltSystemVersion, p1)
-    n = peekl(p1)
-    DisposePtr(p1)
-    if err != 0 or n == 0 {
+    // -- osutils: Gestalt, same selector rtUiStartup proves on every boot.
+    // TWO calls, one per result register: the raw trap answers with the
+    // OSErr in D0 and the response VALUE in A0, and a `reg` extern names
+    // only one `ret` register (toolbox/osutils.cla's own header comment has
+    // the full decode of Gestalt.h's TWOWORDINLINE glue). The assertion is
+    // a plausible BCD system-version RANGE, not `!= 0`: until
+    // pack3-standardfile Task 5a this read a NewPtr'd response slot the
+    // trap never actually wrote, so `!= 0` was really an assertion about
+    // uninitialized heap garbage and flipped with any layout change.
+    err = GestaltErr(gestaltSystemVersion)
+    n = GestaltValue(gestaltSystemVersion)
+    if err != 0 or n < 0x0400 or n >= 0x1000 {
         detail = "gestalt err " + tkIntToStr(err)
+        detail = detail + " resp " + tkIntToStr(n)
         return tkFail("Catalog", detail)
     }
 

@@ -1552,8 +1552,8 @@ external func SetHandleSize(h: ptr, newSize: int): int = trap 0xA024 reg memerr
 `reg` also accepts a NAMED form, `reg( REG: paramName, ... )`, binding each register explicitly to one declared parameter by name instead of assigning by position. Register names are contextual identifiers (like `reg` itself), lowercase only, drawn from the closed set `d0 d1 d2 a0 a1` — matching the listing printer's own lowercase spelling; any other spelling, including `d3` or `a5`, is an error (`a5`/`a6`/`a7` are the globals base, frame, and stack registers, never available here). Every declared parameter must be bound exactly once, every bound name must name a real parameter, and no register may be bound twice; unlike the positional form above, the named form has no 2+2 count limit — it is bounded only by the register table itself. Parameter types are the same set the positional form accepts (`int`, `bool`, `char`, `word`, `ptr`; `str`/`text` remain rejected):
 
 ```rust
-external func UiGestalt(selector: int, response: ptr): word =
-    trap 0xA1AD reg(d0: selector, a1: response) ret d0
+external func PostEvent(eventNum: word, eventMsg: int): word =
+    trap 0xA02F reg(a0: eventNum, d0: eventMsg) ret d0
 ```
 
 An optional trailing `ret REG` names the result register, for either form of `reg`; omitted, the default is today's rule — `A0` for a `ptr` result, `D0` otherwise. `ret` on a `void` extern (no declared return type) is an error, and `ret` is mutually exclusive with `memerr` (which already names the result's source — the low-memory global, not a register). Reading the result from whichever register, named or defaulted: an `int` or `ptr` result uses its full 32 bits; a `word` result reads its low 16 bits, SIGN-extended (Toolbox `INTEGER`/`OSErr`); a `bool` or `char` result reads its low byte, zero-extended — see the `word` correction just below.

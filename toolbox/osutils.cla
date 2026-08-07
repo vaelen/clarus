@@ -4,34 +4,53 @@
 // toolbox/osutils.cla: curated OS Utilities / Gestalt declarations
 // (Inside Macintosh II "OS Utilities"; Gestalt from IM VI ch3).
 //
-// Provenance: Gestalt proven verbatim (including the d0/a1 register
-// binding) against runtime/clarus/ui.cla's UiGestalt and
-// testsuite/toolbox/cases_gestalt.cla's TbGestalt, both real
-// (0xA1AD, reg(d0: selector, a1: response) ret d0) traps. NOTE a real
-// discrepancy, not agreement: Retro68 multiversal/defs/Gestalt.yaml
-// claims `responsep` is `register: Out<A0>`, but that is WRONG for
-// actual 68k hardware -- Gestalt.h's own `#pragma parameter __D0
-// Gestalt(__D0, __A1)` (A1, not A0) is the real convention, and
-// ui.cla:285-300 documents the concrete failure this caused: declaring
-// Gestalt as plain pascal (pre-Task-12) left cg68k pushing args on the
-// stack instead of loading D0/A1, so the register-based trap read a
-// garbage selector and wrote through a wild A0 pointer, hanging the
-// machine on a real native boot -- fixed by switching to `reg(d0:
-// selector, a1: response)`, i.e. A1, which is what this catalog uses and
-// what the empirical boot (not the multiversal defs) confirms is
-// correct. This is the reason multiversal is treated as UNTRUSTED WHEN
-// CITED ALONE file-wide in this catalog (see below): it already produced
-// one wrong register binding, so every other multiversal-only citation
-// here has since been re-checked directly against Apple's own Universal
-// Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces), the
-// authoritative source, and is superseded by that re-check.
+// Provenance: Gestalt (0xA1AD) transcribed from CIncludes/Gestalt.h:64-69
+// and AIncludes/Gestalt.a:43, decoded the same way Delay is below --
+// which is the ONLY way to get it right, because the `#pragma parameter`
+// line alone is actively misleading here.
 //
-//   Gestalt  Directly re-confirmed (toolbox-cookbook phase, 2026-08-07)
-//            against CIncludes/Gestalt.h:64 `#pragma parameter __D0
-//            Gestalt(__D0, __A1)` and AIncludes/Gestalt.a:43 `_Gestalt:
-//            OPWORD $A1AD` -- selector in D0, response in A1, OSErr
-//            result in D0: matches `reg(d0: selector, a1: response) ret
-//            d0` exactly, and directly refutes multiversal's `Out<A0>`.
+//   Gestalt.h:  #pragma parameter __D0 Gestalt(__D0, __A1)
+//               Gestalt(OSType selector, long *response)
+//                   TWOWORDINLINE(0xA1AD, 0x2288);
+//
+// The pragma describes the INLINE GLUE's parameter passing, not the raw
+// trap's: `response` (a `long *`) goes in A1 because the glue's SECOND
+// word needs it there. Decode that second word -- 0x2288 is the raw 68k
+// instruction `MOVE.L A0,(A1)` -- and the trap's own contract falls out:
+// the ROM leaves the RESPONSE VALUE in **A0** and the OSErr in D0, and
+// Apple's glue is what copies A0 through the caller's `response`
+// pointer afterwards. The trap itself never writes through A1.
+//
+// So Retro68's multiversal/defs/Gestalt.yaml (`responsep` `register:
+// Out<A0>`) was RIGHT all along, and this catalog's earlier
+// `reg(d0: selector, a1: response) ret d0` declaration was wrong: it
+// bound A1 as an INPUT (harmless, the trap ignores it), read D0 as the
+// result (correct -- that IS the OSErr), and simply DROPPED the response
+// value sitting in A0. `*response` was never written at all, so every
+// caller read back whatever uninitialized heap garbage its freshly
+// NewPtr'd response slot happened to contain -- a clean noErr paired
+// with a junk value, passing or failing purely on heap luck. Proven on
+// real hardware (pack3-standardfile Task 5a, Mini vMac/System 6.0.7):
+// poking a 0x11223344 sentinel into the response slot before the call
+// and reading it back afterwards returns 0x11223344 unchanged, while
+// `ret a0` on the same trap returns 0x0607, the real system version.
+//
+// A Clarus `reg` extern names exactly ONE result register, and has no
+// way to emit Apple's second glue word, so the trap is transcribed
+// TWICE -- GestaltErr reads D0 (the OSErr), GestaltValue reads A0 (the
+// response). Gestalt is a pure query with no side effects, so calling it
+// once for each register is safe; check GestaltErr first, then read
+// GestaltValue. Same "faithful, if reduced, transcription" the Delay
+// note below spells out at length, for the same TWOWORDINLINE reason.
+//
+// Multiversal stays UNTRUSTED WHEN CITED ALONE file-wide in this catalog
+// (see below) -- every multiversal-only citation here has been
+// re-checked directly against Apple's own Universal Interfaces 3.4
+// (Retro68/InterfacesAndLibraries/Interfaces), the authoritative source,
+// and is superseded by that re-check. Gestalt is the standing reminder
+// that the failure mode runs BOTH ways: a generated def can be wrong,
+// and so can a hand reading of a `#pragma parameter` line that describes
+// glue rather than the trap. Decode the inline words.
 //
 // SysBeep proven verbatim against runtime/clarus/ui.cla's UiSysBeep
 // (0xA9C8); re-confirmed directly against CIncludes/Sound.h:1487
@@ -65,6 +84,7 @@
 
 const gestaltSystemVersion: int = 0x73797376
 
-external func Gestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+external func GestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func GestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 external func Delay(numTicks: int): int = trap 0xA03B reg(a0: numTicks) ret d0
 external func SysBeep(duration: word) = trap 0xA9C8

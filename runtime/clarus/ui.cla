@@ -106,35 +106,26 @@
 // trap) -- same distinction text.cla's own header comment makes; verified
 // again here directly against QuickDraw.h's own `BlockMoveData` prototype.
 //
-// Gestalt (UiGestalt, below) is declared PLAIN `trap 0xA1AD` per this
-// task's own given resolution, matching every other Toolbox call here --
-// but Gestalt.h's own `#pragma parameter __D0 Gestalt(__D0, __A1)`, gated
-// on exactly `TARGET_CPU_68K && !TARGET_RT_MAC_CFM` (this repo's own real
-// target), documents Gestalt as REGISTER convention on 68k: selector in
-// D0, response pointer in A1, result in D0 -- not the plain Pascal stack
-// convention this declaration uses. Clarus's own `reg` clause has no way
-// to express "the one ptr param goes in A1, not A0" (its ptr slots fill
-// A0 then A1 in declaration order), so there is no clean way to express
-// Gestalt's actual calling convention as a `reg` extern either.
+// Gestalt (UiGestaltErr/UiGestaltValue, below) is a REGISTER trap whose
+// raw contract answers in TWO registers: the OSErr in D0 and the RESPONSE
+// VALUE in A0. Gestalt.h's `#pragma parameter __D0 Gestalt(__D0, __A1)`
+// describes the INLINE GLUE, not the trap -- the glue's second word,
+// `TWOWORDINLINE(0xA1AD, 0x2288)`, decodes to `MOVE.L A0,(A1)`, i.e. it
+// copies A0 through the caller's `long *response` afterwards. A `reg`
+// extern names exactly ONE result register and cannot emit that store, so
+// the trap is declared twice -- see toolbox/osutils.cla's own header
+// comment for the full decode and the on-hardware proof.
 //
-// VERIFIED BY BOOT (final-review fix round 2, Task 7 Step 7): `rtUiStartup`
-// (below) calls `UiGestalt` unconditionally, first thing, on every single
-// program this port builds -- 8 real Mac Plus/System 6.0.8 Mini vMac boots
-// this session (buttons/menus/canvas/pattern/about/smoke_bounce/
-// smoke_menudemo/smoke_mandel) all called it, all resolved `rtUiSys7`
-// correctly (System 6.0.8 -> false, confirmed by every one of those 8
-// scenarios' trace/pixel output matching its frozen golden byte-for-byte),
-// none crashed. IMPORTANT SCOPE NOTE: this only exercises the cprint/
-// C-emission lane's OWN call path -- `UiGestalt`'s cprint-side wrapper
-// (`rt_ext_UiGestalt`, rt_ext_mac.inc) calls the REAL C `Gestalt()`
-// function through Retro68's own headers, which handle the D0/A1 register
-// convention correctly regardless of what THIS extern's `trap 0xA1AD`
-// clause says -- the raw-trap-word register-convention risk this comment
-// describes is specifically about the NATIVE (cg68k, no C wrapper) UI
-// codegen lane, which does not exist yet (a later task). That path is
-// still genuinely unverified; this note records only that the cprint
-// lane's own call is now proven correct on real hardware, not that the
-// underlying register-convention question is closed.
+// This corrects a long-lived misreading: until pack3-standardfile Task 5a
+// this file declared `UiGestalt(selector, response) = trap 0xA1AD
+// reg(d0: selector, a1: response) ret d0`, which bound A1 as an unread
+// INPUT and dropped A0 entirely, so `*response` was NEVER written on the
+// native lane. `err` still came back a clean noErr, so rtUiStartup below
+// read uninitialized heap garbage out of its own freshly-UiNewPtr'd
+// response slot -- which is exactly the symptom the (now removed)
+// `resp < 0x1000` upper bound there was added to paper over. The cprint
+// lane was unaffected: its wrapper called the real C `Gestalt()`, glue
+// word included.
 //
 // LMGetCurApName (rt_ui_apple_select's else-branch, rt_ui.c:2295, for a
 // program with no `app name` section) is NOT a trap at all -- it is a
@@ -303,25 +294,19 @@ external func UiSysBeep(duration: word) = trap 0xA9C8
 // silently never fire (found via TickProbe, 2026-08-03; regression pin:
 // internal/mactest TestRealEventLoopTickOn68k).
 external func UiTickCount(): int = trap 0xA975
-// UiGestalt's own calling convention (Task 12, native-5e review fix, FIRST
-// NATIVE UI BOOT root-cause): `reg`, NOT plain pascal -- Gestalt is one of
-// the classic Mac Toolbox's few REGISTER-based traps (verified directly
-// against Retro68's own multiversal/defs/Gestalt.yaml: `selector`
-// `register: D0`, `responsep` `register: Out<A0>`, `returnreg: D0` -- no
-// stack-pushed args, no pascal result-reservation slot at all). Declaring
-// it as a plain pascal trap (the pre-Task-12 state -- harmless on the
-// cprint lane, which always resolves to the real C `rt_ext_UiGestalt` ->
-// `Gestalt()` regardless of the declared clause) meant cg68k's own
-// cgCallExtPascal pushed selector/response onto the STACK, which the
-// REAL register-based GestaltDispatch trap handler never reads -- by trap
-// time D0 held whatever `response`'s own load left there (the marshaling
-// loop's last MOVE.L into D0 before pushing it), and A0 was untouched
-// garbage, so Gestalt read a garbage selector and wrote its result
-// through a wild A0 pointer: reproduced empirically as a full machine
-// hang (Mini vMac stuck on its own boot-time gray test-pattern screen,
-// bisected via UiRtQuit(N) checkpoints -- exit 79 reached right before
-// this call, no exit 80 ever written after it).
-external func UiGestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+// UiGestaltErr/UiGestaltValue: Gestalt is `reg`, NOT plain pascal (Task
+// 12, native-5e review fix, FIRST NATIVE UI BOOT root-cause) -- declaring
+// it plain pascal made cg68k push selector/response on the STACK, which
+// the real register-based GestaltDispatch handler never reads, hanging
+// the machine on a native boot. The register BINDINGS were then wrong in
+// their own right until pack3-standardfile Task 5a: multiversal/defs/
+// Gestalt.yaml (`selector` `register: D0`, `responsep` `register:
+// Out<A0>`, `returnreg: D0`) was correct, and the `a1: response` binding
+// read off Gestalt.h's `#pragma parameter` line was a misreading of glue
+// as trap contract. Two declarations because `reg` names one result
+// register; see this file's own header comment and toolbox/osutils.cla.
+external func UiGestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func UiGestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 external func UiHideCursor() = trap 0xA852
 external func UiOpenDeskAcc(deskAccName: ptr): word = trap 0xA9B6
 external func UiParamText(param0: ptr, param1: ptr, param2: ptr, param3: ptr) = trap 0xA98B
@@ -1393,44 +1378,32 @@ func rtUiEveryPump() {
 // ================================================================
 
 func rtUiStartup() {
-    var respSlot: ptr
     var resp: int
     var err: int
 
     UiMacInitToolbox()
     UiFlushEvents(0x0000FFFF)
-    respSlot = UiNewPtr(4)
-    err = UiGestalt(0x73797376, respSlot)
+    // Two calls, one per result register -- Gestalt's raw trap returns the
+    // OSErr in D0 and the response value in A0, and a `reg` extern names
+    // only one `ret` register (see this file's own header comment). Gestalt
+    // is a pure query, so asking twice is safe.
+    err = UiGestaltErr(0x73797376)
     if err == 0 {
-        resp = peekl(respSlot)
+        resp = UiGestaltValue(0x73797376)
     } else {
         resp = 0
     }
-    UiDisposePtr(respSlot)
-    // Task 14 fix (native-5e gate, formedit.cla): `resp` (as `#0x0700`
-    // it's compared against) is a small BCD-encoded system version
-    // (0x0608 for 6.0.8, 0x0700 for 7.0.0, ...) -- REAL values from any
-    // shipped classic Mac System never approach 0x1000. Bounding `resp`
-    // above (not just below, the ORIGINAL `>= 0x0700` check's own job)
-    // guards against exactly the failure mode this session's own
-    // `cgCallExtReg`/`cgRegPassArgsAndTrap` KWord-result fix (cg68k.cla,
-    // native record: Gestalt's real 68k convention is D0=selector/A1=
-    // response, not the generic `reg` clause's own "A0 for the one ptr
-    // arg" scheme -- fixed there) was
-    // ALSO needed for but did not fully resolve on this ROM/system-image
-    // combination: `err` (D0, OSErr) still comes back a clean 0/noErr even
-    // though the trap dispatch never actually reaches a real Gestalt
-    // implementation on this specific Mini vMac ROM, leaving `respSlot`'s
-    // freshly-`UiNewPtr`'d (uninitialized) content untouched -- heap
-    // garbage that is almost always a large, pointer-shaped value, easily
-    // >= 0x0700 by pure chance. A bare `>= 0x0700` then misreads "no real
-    // Gestalt" as "System 7", selecting `rtUiProcMovableDBox` for every
-    // form window regardless of the real System 6.0.8 target, whose title
-    // bar chrome that WDEF does not paint correctly here (see
-    // cgCallExtReg's own doc comment for the full symptom). Bounding
-    // to a plausible BCD range is strictly SAFE for a genuine Gestalt
-    // response too (cprint's own already-correct 0x0608 result satisfies
-    // neither bound and was never affected either way).
+    // `resp` is a small BCD-encoded system version (0x0608 for 6.0.8,
+    // 0x0700 for 7.0.0, ...). The upper `< 0x1000` bound (Task 14,
+    // native-5e) papered over the native lane's then-broken Gestalt
+    // binding, which left the response slot holding uninitialized heap
+    // garbage -- large, pointer-shaped, and >= 0x0700 by pure chance, so a
+    // bare `>= 0x0700` misread "no response at all" as "System 7" and
+    // picked rtUiProcMovableDBox chrome for every form window on a real
+    // System 6 target. pack3-standardfile Task 5a fixed the binding
+    // (UiGestaltValue reads A0); the bound stays anyway as a cheap sanity
+    // guard on a value that drives WDEF selection, and is a no-op for any
+    // genuine response.
     rtUiSys7 = resp >= 0x0700 and resp < 0x1000
     rtUiBuildAppleMenu()
     rtUiBuildMenus()

@@ -28,7 +28,7 @@ var catalogFiles = []string{
 
 // catalogDriver references >=1 symbol per catalog file: TickCount/
 // EventAvail/everyEvent/EventRecord (events), NewPtr/DisposePtr (memory),
-// Gestalt/SysBeep (osutils), ZeroScrap (scrap), SFReply/SFTypeList/
+// GestaltErr/GestaltValue/SysBeep (osutils), ZeroScrap (scrap), SFReply/SFTypeList/
 // Str255/SFGetFile/SFPutFile (standardfile), VolumeParam/PBSetVolSync
 // (files).
 const catalogDriver = `on App.startCLI(args: list of string) {
@@ -44,7 +44,8 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     t0 = TickCount()
     p = NewPtr(4)
     err = ZeroScrap()
-    err = Gestalt(0x73797376, p)
+    err = GestaltErr(0x73797376)
+    t0 = t0 + GestaltValue(0x73797376)
     if EventAvail(everyEvent, ev) {
         t0 = t0 + ev.what
     }

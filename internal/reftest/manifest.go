@@ -88,7 +88,7 @@ package reftest
 // 71/72; Task 15 (native-5e, Ch13 doc pass: `reg memerr`, `trap ... sel`,
 // `inline a5`) added three more fences interleaved among the existing
 // trap/inline ones, shifting them to 74/75; Task 1 (toolbox-integration
-// Feature A: named `reg(...)` clause, the `UiGestalt` worked example)
+// Feature A: named `reg(...)` clause, the named-reg worked example)
 // added one more fence right after the `reg memerr` example, shifting
 // them to 75/76; Task 3 (toolbox-integration: identical-signature extern
 // dedup, the `TickCount` repeated-declaration example) added one more
@@ -125,7 +125,7 @@ package reftest
 // 71 (line 1503): trap/inline clauses — trap pascal (TickCount)
 // 72 (line 1513): trap/inline clauses — trap reg (BlockMove)
 // 73 (line 1519): trap/inline clauses — trap reg memerr (SetHandleSize) (Task 15, native-5e)
-// 74 (line 1525): trap/inline clauses — trap reg(...) named form (UiGestalt) (Task 1, toolbox-integration Feature A)
+// 74 (line 1525): trap/inline clauses — trap reg(...) named form (PostEvent) (Task 1, toolbox-integration Feature A)
 // 75 (line 1534): trap/inline clauses — trap sel SELECTOR (LAddRow) (Task 15, native-5e)
 // 76 (line 1540): trap/inline clauses — inline deref (HandleToPtr)
 // 77 (line 1546): trap/inline clauses — inline nop (DebugBreak)

@@ -91,17 +91,26 @@ Transcribing that into Clarus takes four steps:
    bindings, result location, one file per Manager) — this repo's earlier
    catalog work leaned on it heavily, and older provenance comments in
    `toolbox/*.cla` cite it. **Treat multiversal as untrusted when cited
-   alone.** It has already been wrong once, for a routine in this exact
-   catalog: `multiversal/defs/Gestalt.yaml` claims Gestalt's `responsep`
-   parameter is `register: Out<A0>`; the real 68k convention — confirmed
-   both by `CIncludes/Gestalt.h`'s own `#pragma parameter __D0
-   Gestalt(__D0, __A1)` and by a real hang on a native Mini vMac boot when
-   the wrong register was trusted (`runtime/clarus/ui.cla`'s `UiGestalt`
-   comment tells that story in full) — is **A1**, not A0. multiversal is
-   still useful as a quick index and a second opinion, but any trap word
-   or register binding it reports should be re-checked against the
-   AIncludes/CIncludes/PInterfaces sources above before being trusted on
-   its own, and the FINAL word belongs to empirical boot verification (a
+   alone** — but note that the one case where this repo declared it wrong
+   turned out to be multiversal being *right*. `multiversal/defs/
+   Gestalt.yaml` says Gestalt's `responsep` is `register: Out<A0>`, and an
+   earlier revision of this document called that "wrong for real 68k
+   hardware" on the strength of `CIncludes/Gestalt.h`'s `#pragma parameter
+   __D0 Gestalt(__D0, __A1)`. The pragma describes the inline *glue*'s
+   parameter passing, not the trap's: the glue is
+   `TWOWORDINLINE(0xA1AD, 0x2288)`, and `0x2288` is `MOVE.L A0,(A1)` —
+   compiler-emitted code that copies the trap's A0 result through the
+   caller's `long *response`. The trap answers in A0; A1 is where the glue
+   wants the pointer. See §4 below for the full walkthrough, and
+   `toolbox/osutils.cla`'s header comment for the on-hardware proof.
+   multiversal is still worth re-checking rather than trusting alone, but
+   the real lesson is narrower and sharper: **decode the inline words.** A
+   `#pragma parameter` line on a `TWOWORDINLINE`/`FOURWORDINLINE` routine
+   is describing a call whose second half is glue you must either
+   reproduce or route around. Any trap word or register binding should be
+   re-checked against the AIncludes/CIncludes/PInterfaces sources above
+   before being trusted on its own, and the FINAL word belongs to
+   empirical boot verification (a
    real native `emit68k` boot on Mini vMac, or one of the gated
    `internal/mactest` suites) whenever the two disagree or the stakes are
    high enough to warrant it — a static header, however authoritative,
@@ -272,47 +281,64 @@ memory.cla` — are all plain `reg` (no `memerr`) by the same bit-11 test;
 `SetHandleSize` is the one member of the family whose real error path
 doesn't come back in D0 at all.
 
-## 4. Walkthrough: the named-register form — `Gestalt`
+## 4. Walkthrough: the named-register form, and glue words — `Gestalt`
 
 Some register-convention traps don't fill registers in simple declaration
-order — `Gestalt`'s real convention, per Inside Macintosh VI chapter 3 and
-Retro68's own `Gestalt.h` (`#pragma parameter __D0 Gestalt(__D0, __A1)`), is
-`selector` in D0 and `response` in **A1**, not the positional form's A0.
-`reg`'s NAMED form exists for exactly this: `reg(REG: paramName, ...)` binds
-each register explicitly instead of assigning by position, and an optional
-trailing `ret REG` names the result register (default is A0 for a `ptr`
-result, D0 otherwise — `Gestalt` returns a `word`, so its default result
-register is already D0, and `ret d0` here is redundant with that default;
-it's spelled out anyway to document the real convention explicitly, not
-because the declaration needs it):
+order, and some answer in more registers than a Clarus extern can name.
+`Gestalt` is both, and it is the cautionary tale of this whole document.
+
+Start from `CIncludes/Gestalt.h:64-69`:
+
+```c
+#pragma parameter __D0 Gestalt(__D0, __A1)
+EXTERN_API( OSErr )
+Gestalt(OSType selector, long *response)   TWOWORDINLINE(0xA1AD, 0x2288);
+```
+
+Read the pragma alone and you conclude "selector in D0, response pointer in
+A1, OSErr in D0", and you write this:
 
 ```rust
+// WRONG -- do not copy
 external func Gestalt(selector: int, response: ptr): word =
     trap 0xA1AD reg(d0: selector, a1: response) ret d0
 ```
 
-This is `toolbox/osutils.cla`'s real declaration, verbatim — and it comes
-with a genuinely useful warning, not just a syntax note. `toolbox/
-osutils.cla`'s own header comment records a **real discrepancy** between two
-sources that are supposed to agree: Retro68's `multiversal/defs/
-Gestalt.yaml` claims `responsep` is `register: Out<A0>`, but that's wrong for
-real 68k hardware — `Gestalt.h`'s own `#pragma parameter` line (A1, not A0)
-is the actual convention, and this repository hit the concrete consequence
-of trusting the wrong source: an earlier revision of `runtime/clarus/
-ui.cla`'s `UiGestalt` declared `Gestalt` as plain pascal, which made `cg68k`
-push arguments on the stack instead of loading D0/A1 — the register-based
-trap then read a garbage selector and wrote its response through a wild A0
-pointer, hanging the machine on a real native boot. The fix was switching to
-`reg(d0: selector, a1: response)`, and it is what both `ui.cla`'s `UiGestalt`
-and the catalog's `Gestalt` use today. **The generated defs can be wrong; the
-empirical boot is the tiebreaker** — this is worth internalizing as a general
-rule for every trap transcribed from generated headers, not just this one.
+That was `toolbox/osutils.cla`'s real declaration until the
+pack3-standardfile phase, and it silently returned nothing. **`TWOWORDINLINE`
+means the call is not one instruction.** Decode the second word the way
+§3's `Delay` note decodes its own: `0x2288` is the raw 68k instruction
+`MOVE.L A0,(A1)`. That is compiler glue, emitted *after* the trap returns,
+copying A0 through the caller's `response` pointer. Which tells you the raw
+trap's actual contract: **OSErr in D0, response VALUE in A0**, and it never
+reads A1 at all. Retro68's `multiversal/defs/Gestalt.yaml` said exactly that
+all along (`responsep` `register: Out<A0>`); the pragma was describing the
+glue's inputs, not the trap's.
 
-There is a second, more insidious failure mode `ret d0` guards against, and
-it is the reason the catalog exists at all rather than everyone hand-rolling
-`Gestalt` locally: `testsuite/toolbox/cases_gestalt.cla`'s `caseGestaltNamed`
-case documents a historical bug shape where the register wiring silently
-misroutes the response pointer while the error code still comes back clean:
+A `reg` extern names exactly ONE result register and cannot emit that second
+word, so the trap is transcribed twice — once per result register — and
+callers pair the two:
+
+```rust
+external func GestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func GestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
+```
+
+This is `toolbox/osutils.cla`'s real declaration pair, verbatim. Note `ret
+a0` on an `int` return: without it the default rule (A0 for a `ptr` result,
+D0 otherwise) would read D0 and hand back the error code. Gestalt is a pure
+query with no side effects, so making the call twice is safe; check
+`GestaltErr` first, then read `GestaltValue`. The same "faithful, if reduced,
+transcription" applies as for `Delay`, whose glue word `0x2280` is
+`MOVE.L D0,(A1)` — there the wanted value already sits in D0, so one
+declaration suffices and the pointer parameter can be dropped entirely.
+
+### Why the wrong version looked like it worked
+
+This is the part worth internalizing. The broken declaration passed A1 as an
+input the trap ignores and read D0, which really is the OSErr — so `err` came
+back a clean `noErr` on every call. Only the response was lost. Every caller
+had written the obvious test:
 
 ```rust
 var respSlot: ptr = NewPtr(4)
@@ -320,18 +346,32 @@ var err: int = Gestalt(0x73797376, respSlot) // 'sysv' = gestaltSystemVersion
 var resp: int = peekl(respSlot)
 DisposePtr(respSlot)
 if err == 0 and resp != 0 {
-    // real success
+    // "real success"
 }
 ```
 
-A broken register assignment — response landing in the wrong register —
-reproduces `UiGestalt`'s own historical bug exactly: `err` reads back `0`
-(the call *looks* like it succeeded) while `response` was never actually
-written, leaving `resp` at its zero-initialized default. That is why the
-case (and any real caller) must check **both** `err == 0` **and** `resp !=
-0`, never `err == 0` alone — a clean error code from a register trap proves
-the trap dispatched, not that every argument register actually landed where
-the callee expected.
+`_NewPtr` does not zero its block. `respSlot` was never written by anything,
+so `resp` was whatever heap garbage happened to be lying there — usually
+large and nonzero, so `resp != 0` usually held and the check usually passed.
+It cost this repo two days: `testsuite/toolbox`'s `Catalog` case eventually
+drew a heap layout where those four bytes came back zero, and the resulting
+"passes here, fails there, flips on any unrelated edit, native lane only"
+signature was attributed to a phantom segment-loader bug in `cg68k` — a
+theory that survived a clean git bisect, a cross-lane comparison, and a
+deterministic `--seglimit` reproduction, because *every one of those
+observations was also consistent with it*. The tell that broke it open was a
+size-neutral probe: poke `0x11223344` into the slot before the call, read it
+back after, get `0x11223344`.
+
+Two rules fall out, and they generalize past this trap:
+
+- **Never assert `!= 0` on a Toolbox out-parameter.** Assert the value's real
+  shape. `Gestalt('sysv')` answers a small BCD system version, so the cases
+  in `testsuite/toolbox` now require `0x0400 <= resp < 0x1000`. An out-param
+  test that a wild pointer or an untouched buffer can satisfy is not a test.
+- **A clean error code proves the trap dispatched, nothing more.** It says
+  nothing about whether your argument registers landed where the callee
+  expected, and nothing at all about registers the callee returns in.
 
 ## 5. Walkthrough: extern-record transcription — `EventRecord` and `Point`
 

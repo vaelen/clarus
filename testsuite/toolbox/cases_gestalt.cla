@@ -6,51 +6,67 @@
 // cgRegPassArgsAndTrap/cgCallExtReg) against a REAL Gestalt call, inside
 // a booted program -- the one thing testdata/cg68k/regnamed.cla's own
 // listing-diff test cannot do (that fixture pins the emitted bytes
-// only, never runs). TbGestalt is declared LOCALLY, same "user-code
+// only, never runs). TbGestalt* is declared LOCALLY, same "user-code
 // externs are the proven pattern" precedent as cases_events.cla's own
 // TbTickCount/TbMenuKey and cases_a5.cla's own TbCurrentA5 -- proving
 // the user-authored named-reg path dispatches correctly against real
-// ROM, independent of the runtime's own UiGestalt (ui.cla), which now
-// uses the identical clause shape.
+// ROM, independent of the runtime's own UiGestaltErr/UiGestaltValue
+// (ui.cla), which use the identical clause shapes.
 //
-// TbNewPtr/TbDisposePtr supply the `ptr` response slot (real
-// _NewPtr/_DisposePtr, matches ui.cla's own UiNewPtr/UiDisposePtr pair)
-// -- Gestalt itself never allocates, it only writes through the
-// caller's own address.
+// TWO declarations of the ONE trap, because its raw 68k contract answers
+// in TWO registers -- OSErr in D0, response VALUE in A0 -- and a `reg`
+// extern names exactly one `ret` register. Gestalt.h spells the pair as
+// TWOWORDINLINE(0xA1AD, 0x2288): the trap, then `MOVE.L A0,(A1)`, glue
+// that copies A0 through the caller's own `long *response`. See
+// toolbox/osutils.cla's header comment for the full decode and the
+// on-hardware proof. Between them the two declarations also cover both
+// `ret` registers on the named form -- `ret d0` and `ret a0`, the latter
+// on a non-`ptr` return, which the default rule would never pick.
+//
+// pack3-standardfile Task 5a HISTORY, worth keeping. This case used to
+// declare one `TbGestalt(selector, response) = trap 0xA1AD reg(d0:
+// selector, a1: response) ret d0`, allocate a response slot with
+// _NewPtr, and assert `err == 0 and resp != 0`. That binding passed A1
+// as an input the trap never reads and dropped A0 on the floor, so the
+// slot was NEVER written -- `resp` was whatever uninitialized heap
+// garbage _NewPtr handed back. The case (and cases_catalog.cla's twin
+// check) therefore passed or failed on pure heap luck, which is exactly
+// how it finally surfaced: a native toolbox-suite boot where the slot
+// came back zeroed, reported for two days as a phantom cg68k
+// segment-loader bug. Hence the RANGE assertion below rather than a
+// nonzero one -- a real answer here is a small BCD system version, and
+// nothing else is acceptable.
 
-external func TbNewPtr(size: int): ptr = trap 0xA11E reg
-external func TbDisposePtr(p: ptr) = trap 0xA01F reg
-external func TbGestalt(selector: int, response: ptr): word = trap 0xA1AD reg(d0: selector, a1: response) ret d0
+external func TbGestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) ret d0
+external func TbGestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 
 // caseGestaltNamed: selector 'sysv' = gestaltSystemVersion = 0x73797376
-// (Gestalt.h) -- the SAME selector rtUiStartup's own UiGestalt call
-// already uses on every UI program boot (ui.cla), proven to answer
-// reliably in this exact emulator/ROM/system-image environment (empty
-// System 6.0.8 responds with a small nonzero BCD version, e.g. 0x0608).
-// Selector choice is incidental to this case's real purpose -- proving
-// the user-authored NAMED-reg path (d0/a1/ret d0) marshals correctly,
-// not testing any one selector's support -- so reusing the one already
-// known-good in this environment avoids conflating a register-marshaling
-// regression with an unrelated selector-support question. A working
-// named-reg call comes back err == 0 with a nonzero response. A broken
-// register assignment (response landing in the wrong register -- e.g.
-// the retired cgCallExtGestalt special case's own A1 routing regressing,
-// or the generic positional `reg` clause's "ptr args fill A0" scheme
-// misrouting it here) reproduces exactly UiGestalt's own historical bug:
-// `err` reads back clean (0) while `response` is never actually written
-// -- so this case requires BOTH conditions, not just err == 0.
+// (Gestalt.h) -- the SAME selector rtUiStartup's own Gestalt calls
+// already make on every UI program boot (ui.cla), proven to answer
+// reliably in this exact emulator/ROM/system-image environment (the
+// gated System 6 image answers 0x0607). Selector choice is incidental to
+// this case's real purpose -- proving the user-authored NAMED-reg path
+// marshals correctly, not testing any one selector's support -- so
+// reusing the one already known-good here avoids conflating a
+// register-marshaling regression with an unrelated selector-support
+// question.
+//
+// A working call comes back err == 0 AND a plausible BCD system version:
+// 0x0400 <= resp < 0x1000 (System 4.x is the oldest this toolchain
+// targets; no shipped classic System version ever approached 0x1000).
+// Both halves matter, and the RANGE matters as much as the nonzero-ness:
+// a misrouted response register leaves `err` reading a clean 0 while the
+// value never lands anywhere the caller looks, and "nonzero" alone is
+// satisfied by almost any garbage.
 func caseGestaltNamed(): TestResult {
-    var respSlot: ptr
     var resp: int
     var err: int
     var detail: string
 
-    respSlot = TbNewPtr(4)
-    err = TbGestalt(0x73797376, respSlot)
-    resp = peekl(respSlot)
-    TbDisposePtr(respSlot)
+    err = TbGestaltErr(0x73797376)
+    resp = TbGestaltValue(0x73797376)
 
-    if err == 0 and resp != 0 {
+    if err == 0 and resp >= 0x0400 and resp < 0x1000 {
         return tkPass("GestaltNamed")
     }
     // Built up piecewise into `detail`, same native-68k temp-slot-budget
