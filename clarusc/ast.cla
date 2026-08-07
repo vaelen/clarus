@@ -55,6 +55,14 @@
 //   ExSelect     a=base expr (X); nameIdx=selected field/property name
 //   ExNew        nameIdx=record type name              -- `new T`
 //   ExOpen       nameIdx=window type name               -- `open T` (expr form)
+//   ExAppConst   nameIdx=field name ("doctype" or "id")  -- `app.doctype` /
+//                `app.id` (native-gaps-cleanup Task 1, Part A). A
+//                compile-time-only expression: checkAppConstExpr
+//                (check.cla) validates the field name; lowAppConst
+//                (lower.cla) lowers it straight to a padded STRING
+//                LITERAL (irAppDoctype/irAppId or their "TEXT"/"????"
+//                defaults) -- no backend past lower.cla ever sees this
+//                kind.
 //
 // ---- StmtKind (stmts arena) ----
 //   StBlock      a=vars list head (decls arena, DkVar chain via
@@ -192,6 +200,7 @@ enum ExprKind {
     ExSelect
     ExNew
     ExOpen
+    ExAppConst
 }
 
 enum StmtKind {
@@ -725,6 +734,27 @@ func selectX(i: int): int {
 }
 
 func selectName(i: int): int {
+    return exprs[i].nameIdx
+}
+
+// newAppConst builds an ExAppConst node -- `app.doctype` / `app.id` in
+// expression position (native-gaps-cleanup Task 1, Part A). fieldNameIdx
+// is the member name after the dot; unlike ExSelect there is no base
+// expr slot, since the base is always the fixed `app` keyword, never a
+// user value.
+func newAppConst(fieldNameIdx: int, line: int, col: int): int {
+    var n: ExprNode
+
+    n.kind = ExAppConst
+    n.nameIdx = fieldNameIdx
+    n.next = -1
+    n.line = line
+    n.col = col
+    exprs.add(n)
+    return exprs.count - 1
+}
+
+func appConstField(i: int): int {
     return exprs[i].nameIdx
 }
 

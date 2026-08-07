@@ -697,13 +697,18 @@ var irHasOpenDocument: bool
 // indices (-1 = property absent) -- icon stays build-time-only (check.cla's
 // checkAppDecl already validated it) and never reaches IR. id DOES reach IR
 // as of Task 2 (mac-target-4d): cprint's cpEmitAppInfo reads it back to emit
-// the strong rt_app_creator override beside rt_ui_app_info. irHasApp is
-// false when the program declares no `app` section at all.
+// the strong rt_app_creator override beside rt_ui_app_info. irAppDoctype
+// (native-gaps-cleanup Task 1, Part A) is read ONLY by lower.cla's
+// lowAppConst, to lower `app.doctype` to a padded string literal at
+// compile time -- no backend (cprint/cg68k) ever reads it; unlike id it
+// carries no runtime creator-stamping role. irHasApp is false when the
+// program declares no `app` section at all.
 var irAppName: int
 var irAppVersion: int
 var irAppAuthor: int
 var irAppAbout: int
 var irAppId: int
+var irAppDoctype: int
 var irHasApp: bool
 
 // irLayoutNeededByName (Task 2, mac-target-4d) marks which record types
@@ -1074,6 +1079,7 @@ func irReset() {
     irAppAuthor = -1
     irAppAbout = -1
     irAppId = -1
+    irAppDoctype = -1
     irHasApp = false
     irMenuHandlersHead = -1
     irMenuHandlersTail = -1

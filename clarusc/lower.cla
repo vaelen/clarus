@@ -426,9 +426,55 @@ func lowExpr(e: int): int {
         // so lowCurWinType is always set here for a checker-clean program).
         return lowWinInstRef()
     }
+    case ExAppConst {
+        return lowAppConst(e)
+    }
     }
     lowUnsupported("expression kind " + numToStr(int(exprKind(e))))
     return -1
+}
+
+// padTo4 space-pads s on the right to exactly 4 characters (native-gaps-
+// cleanup Task 1, Part A padding rule) -- s is already checker-guaranteed
+// <= 4 chars (checkAppDoctype: 1..4; checkAppId: exactly 4), so this only
+// ever adds spaces, never truncates.
+func padTo4(s: string): string {
+    var r: string
+
+    r = s
+    while r.length < 4 {
+        r = r + " "
+    }
+    return r
+}
+
+// lowAppConst lowers `app.doctype` / `app.id` (ExAppConst) straight to a
+// padded STRING LITERAL IR node -- checkAppConstExpr already restricted
+// the field name to "doctype" or "id", so this is total. Resolved
+// entirely at compile time: irAppDoctype/irAppId are -1 when the program
+// has no `app` section (or omits the field), which is when the
+// "TEXT"/"????" defaults from the spec apply. After this, no backend
+// (cprint/cg68k) knows app.doctype/app.id ever existed -- zero emission
+// work, exactly like any other string literal.
+func lowAppConst(e: int): int {
+    var name: string
+    var v: string
+
+    name = poolGet(appConstField(e))
+    if name == "doctype" {
+        if irAppDoctype == -1 {
+            v = "TEXT"
+        } else {
+            v = padTo4(poolGet(irAppDoctype))
+        }
+    } else {
+        if irAppId == -1 {
+            v = "????"
+        } else {
+            v = padTo4(poolGet(irAppId))
+        }
+    }
+    return newIRStrConst(lowInternStr(v), irStrType(255))
 }
 
 // lowBin builds a plain IR Bin node (lower.go's l.bin): op is interned here
@@ -4978,8 +5024,12 @@ func lowExternDecl(d: int) {
 // icon is deliberately not read here (build-time only, per the Task 2
 // brief). id IS read (Task 2, mac-target-4d): cpEmitAppInfo turns it into
 // the strong rt_app_creator override, so saved data files carry the app's
-// own creator instead of Task 1's weak '????' default. No validation
-// needed either way, checkAppDecl/checkAppId already rejected everything
+// own creator instead of Task 1's weak '????' default. doctype is ALSO
+// read (native-gaps-cleanup Task 1, Part A), but for a different
+// consumer: lowAppConst reads irAppDoctype back only to lower
+// `app.doctype` expressions to a padded string literal -- no backend
+// module reads it, unlike id. No validation needed either way,
+// checkAppDecl/checkAppId/checkAppDoctype already rejected everything
 // wrong by the time lowering runs.
 func lowAppDecl(d: int) {
     var item: int
@@ -4996,6 +5046,7 @@ func lowAppDecl(d: int) {
         if pname == "author" { irAppAuthor = stringLitIdx(vh) }
         if pname == "about" { irAppAbout = stringLitIdx(vh) }
         if pname == "id" { irAppId = stringLitIdx(vh) }
+        if pname == "doctype" { irAppDoctype = stringLitIdx(vh) }
         item = declNext(item)
     }
 }

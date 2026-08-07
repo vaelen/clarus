@@ -567,6 +567,20 @@ func parsePrimary(): int {
         advance()
         return newWindowSelf(line, col)
     }
+    if t.kind == TkIdent and poolGet(t.nameIdx) == "app" and peekKind() == TkDot {
+        // `app.doctype` / `app.id` (native-gaps-cleanup Task 1, Part A):
+        // a two-token lookahead on "app" followed immediately by "." --
+        // the same contextual-by-text idiom parseTopDecl already uses for
+        // "app" IDENT at declaration position (line ~1801), just gated on
+        // a different next token. A grep of the whole repo (Task 1 Step
+        // 1) found no expression-position use of `app` as an ordinary
+        // identifier, so this lookahead never misfires against existing
+        // code; any FUTURE `var app: T; app.field` would be shadowed by
+        // this rule, same tradeoff "app" already accepts at decl position.
+        advance() // 'app'
+        advance() // '.'
+        return newAppConst(parseMemberName(), line, col)
+    }
     if t.kind == TkIdent {
         advance()
         return newIdent(t.nameIdx, line, col)

@@ -818,7 +818,7 @@ app Bookmarks {
 }
 ```
 
-A program has at most one `app` section; a second is an error. Every property is optional, and all six take a bare string literal — no expressions, no concatenation:
+A program has at most one `app` section; a second is an error. Every property is optional, and all seven take a bare string literal — no expressions, no concatenation:
 
 | Property | Meaning |
 |---|---|
@@ -828,6 +828,22 @@ A program has at most one `app` section; a second is an error. Every property is
 | `about` | A one-line description, shown only in the About box (`ParamText`'s `^3` slot) — no Finder-visible resource carries it. |
 | `icon` | Path to a PBM icon, relative to the file the `app` section is declared in. Requires `id` — the icon is stored under the application's own creator code, so one can't exist without the other. |
 | `id` | The application's four-character creator code (e.g. `"BMRK"`), used to tag the program and its documents for the Finder. Must be exactly four printable characters, not all lowercase (an all-lowercase four-character code is reserved by Apple for system use), and must not contain a `"` or `'` character (the build interpolates it verbatim into generated Rez and CMake source). |
+| `doctype` | The program's default document type code (e.g. `"TEXT"`), used to tag documents the program saves for the Finder. 1 to 4 printable characters, space-padded to four; must not contain a `"` or `'` character. Feeds `app.doctype` (see App Constants, below). Defaults to `"TEXT"` if omitted, or if there is no `app` section at all. |
+
+### App Constants
+
+`app.doctype` and `app.id` are compile-time constant expressions, valid anywhere a `string` expression is expected: they read back the `app` section's own `doctype`/`id` fields, resolved to a string literal at compile time and space-padded to exactly four characters. In a program with no `app` section (or one that omits the field), `app.doctype` is `"TEXT"` and `app.id` is `"????"`.
+
+A handful of common four-character type codes are predeclared as `string` constants, for use with `app.doctype` and anywhere else a document/file type or creator code is needed:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `fileTypeText` | `"TEXT"` | Plain text |
+| `fileTypeData` | `"CLRD"` | The serializer's conventional data-file type (Chapter 12) — recommended when a program wants its data files visually and behaviorally distinct from its documents, though any type code is legal for a data file |
+| `fileTypePicture` | `"PICT"` | QuickDraw picture |
+| `fileTypeApplication` | `"APPL"` | Application |
+
+These constants are a convenience, not a closed set: any four-character string — a custom document type, `"ttro"`, another application's creator code — is an equally legal type or creator code wherever one is expected.
 
 ## Chapter 8: Windows and Widgets
 

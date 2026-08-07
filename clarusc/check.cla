@@ -702,6 +702,7 @@ func buildUiTables() {
     appProps["about"] = 1
     appProps["icon"] = 1
     appProps["id"] = 1
+    appProps["doctype"] = 1
 
     widgetDeclProps["button.caption"] = 1
     widgetDeclProps["button.at"] = 1
@@ -1123,6 +1124,28 @@ func declBuiltinVar(scope: int, name: string, t: int) {
     scopeDeclare(scope, sym)
 }
 
+// declBuiltinStrConst declares a predeclared `const NAME: string` (Ch3:
+// Constants; reference:375's `const versionTag: string = "..."` is the
+// user-facing precedent this reuses the shape of) -- same Symbol shape
+// checkConstDecl builds for a user-written const, just seeded directly
+// into the universe scope instead of coming off a DkConst AST node. Used
+// for the four fileType* constants (native-gaps-cleanup Task 1, Part A).
+func declBuiltinStrConst(scope: int, name: string, val: string) {
+    var sym: Symbol
+
+    sym.nameIdx = intern(name)
+    sym.typeIdx = strT(255)
+    sym.isFunc = false
+    sym.sigIdx = -1
+    sym.isType = false
+    sym.isConst = true
+    sym.constIsStr = true
+    sym.constInt = 0
+    sym.constStrIdx = intern(val)
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
 func declBuiltinFunc1(scope: int, name: string, p1: int, ret: int) {
     var params: list of int
     var sigIdx: int
@@ -1189,6 +1212,15 @@ func registerUniverse(scope: int) {
     declBuiltinFunc2(scope, "pokel", PtrT, IntT, -1)
 
     declBuiltinVar(scope, "lastError", ErrTIndex)
+
+    // fileTypeText/Data/Picture/Application (native-gaps-cleanup Task 1,
+    // Part A) -- predeclared four-character-code string constants for use
+    // with app.doctype/file.writeText/file.save/askOpen; see
+    // declBuiltinStrConst's own doc comment.
+    declBuiltinStrConst(scope, "fileTypeText", "TEXT")
+    declBuiltinStrConst(scope, "fileTypeData", "CLRD")
+    declBuiltinStrConst(scope, "fileTypePicture", "PICT")
+    declBuiltinStrConst(scope, "fileTypeApplication", "APPL")
 }
 
 // buildMethodTables populates the string/text/list-adjacent/connection/
@@ -2711,7 +2743,8 @@ func checkWindowDecl(d: int) {
 // list, so it shares unknown-property/redeclaration checking with
 // checkWindowDecl's item loop but skips that function's items-list handling
 // entirely (an app body is nothing but properties). Every declared property
-// must be a bare string literal; `id` and `icon` get extra validation.
+// must be a bare string literal; `id`, `icon`, and `doctype` get extra
+// validation.
 func checkAppDecl(d: int) {
     var item: int
     var pname: string
@@ -2758,6 +2791,9 @@ func checkAppDecl(d: int) {
                         iconLine = declLine(item)
                         iconCol = declCol(item)
                     }
+                    if pname == "doctype" {
+                        checkAppDoctype(poolGet(stringLitIdx(vh)), declLine(item), declCol(item))
+                    }
                 }
             }
         }
@@ -2798,6 +2834,34 @@ func checkAppId(v: string, line: int, col: int) {
     }
     if allLower {
         emitDiag(line, col, "app id must not be all lowercase")
+    }
+}
+
+// checkAppDoctype validates a `doctype: "XXXX"` value: 1 to 4 printable
+// characters, and no quote characters (same build-mac.sh Rez/CMake
+// interpolation hazard checkAppId's own comment describes). Deliberately
+// has NO all-lowercase restriction -- unlike `id`, an all-lowercase
+// four-char code reserved by Apple only applies to creator/application
+// codes, not document types (native-gaps-cleanup Task 1 controller
+// decision; do not copy checkAppId's allLower check here).
+func checkAppDoctype(v: string, line: int, col: int) {
+    var i: int
+
+    if v.length < 1 or v.length > 4 {
+        emitDiag(line, col, "app doctype must be 1 to 4 printable characters")
+        return
+    }
+    i = 0
+    while i < v.length {
+        if v[i] < ' ' or v[i] > '~' {
+            emitDiag(line, col, "app doctype must be 1 to 4 printable characters")
+            return
+        }
+        if v[i] == '"' or v[i] == '\'' {
+            emitDiag(line, col, "app doctype must not contain quote characters")
+            return
+        }
+        i = i + 1
     }
 }
 
@@ -4783,9 +4847,30 @@ func checkExprInner(e: int, expected: int): int {
     case ExOpen {
         return checkOpenExpr(e)
     }
+    case ExAppConst {
+        return checkAppConstExpr(e)
+    }
     }
     emitDiag(exprLine(e), exprCol(e), "internal: unhandled expression type")
     return InvalidT
+}
+
+// checkAppConstExpr validates `app.doctype` / `app.id` (native-gaps-
+// cleanup Task 1, Part A): the only two field names the parser's `app`
+// `.` IDENT lookahead can produce a legal expression for. Both resolve
+// to `string` at compile time regardless of whether the program has an
+// `app` section at all -- lowAppConst (lower.cla) supplies the
+// "TEXT"/"????" defaults when one is absent, so no appDeclSeen check
+// belongs here.
+func checkAppConstExpr(e: int): int {
+    var name: string
+
+    name = poolGet(appConstField(e))
+    if name != "doctype" and name != "id" {
+        emitDiag(exprLine(e), exprCol(e), "unknown app constant " + name)
+        return InvalidT
+    }
+    return strT(255)
 }
 
 // ================================================================
