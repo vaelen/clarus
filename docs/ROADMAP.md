@@ -1890,8 +1890,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   known limitation (models at most one live Toolbox callback at a
   time; a callback whose own body triggers a second, distinct nested
   callback would still be undercounted) and the shared-memo cycle
-  heuristic's structural-dominance argument (a 3-node-cycle
-  counterexample, `testdata/cg68k/mutrec.cla`) are both documented in
+  heuristic's structural-dominance argument (a 2-node mutual-recursion
+  fixture, `testdata/cg68k/mutrec.cla`, with the dominance argument
+  covering arbitrary N-node cycles) are both documented in
   `cgStackHeuristic`'s own doc comment.
 - **Cross-lane `string(n)` record-field alignment divergence: DONE** —
   fixed on branch `strn-field-alignment` (2026-08-06): the cprint lane now
