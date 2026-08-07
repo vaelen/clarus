@@ -40,11 +40,44 @@ include "uiblob.cla"
 // collapsed and "seg/.." pairs resolved, so "sub/common.cla" and
 // "sub/../sub/common.cla" are the same identity. Purely lexical -- an
 // absolute and a relative spelling of the same file stay distinct by design.
+// The VALUE is the file's asmHeads index PLUS ONE once expand has finished
+// parsing it, or 0 while its expansion is still in progress (an include
+// cycle re-entering it) -- dedupHits below turns that back into an index.
 var seenPaths: map of int
 
 // asmHeads holds each expanded file's decl-list head in POST-ORDER
 // (dependencies before includers), matching driver.go's files/trees order.
 var asmHeads: list of int
+
+// asmTails is parallel to asmHeads: each file's OWN last decl, recorded at
+// parse time before any assembly loop links one file's tail to the next
+// file's head. lastDecl() answers the same question only while a head is
+// still unlinked, so any assembly that re-orders already-linked segments
+// (the hoist path below) must use this instead.
+var asmTails: list of int
+
+// dedupHits records, in expansion order, the asmHeads index of every file
+// whose expansion was skipped because it had already been expanded (-1 for
+// a still-in-progress cycle). The runtime-module splices read the slice of
+// this list their own expand() call appended: a runtime module that
+// include-dedups against a file the USER already composed positionally
+// needs that file's decls HOISTED out of the user chain and into the
+// runtime chain, ahead of the module that needs them (extern record TYPE
+// references are order-sensitive, unlike function references).
+var dedupHits: list of int
+
+// hoistedHead flags the asmHeads indices already hoisted out of the user
+// chain (one entry per user-side file, filled at the end of Phase A), and
+// hoistCount counts them -- a splice that hoisted nothing rebuilds the
+// combined chain exactly as it always did, by appending the user chain
+// wholesale.
+var hoistedHead: list of bool
+var hoistCount: int
+
+// userHeadCount is asmHeads.count after Phase A -- indices below it are the
+// user program's own files (hoistable), indices at or above it belong to a
+// runtime module already spliced into the runtime chain (never hoisted).
+var userHeadCount: int
 
 // entryFailed records that an entry path itself could not be read -- Go's
 // Expand returns this as a hard error (clarus check: stderr + exit 1).
@@ -213,9 +246,13 @@ func expand(rawPath: string, entry: bool): bool {
 
     path = normalizePath(rawPath)
     if seenPaths.has(path) {
+        // Record WHICH file this include deduped against (index, or -1 for
+        // a file still being expanded further up the recursion), so a
+        // runtime-module splice can hoist a user-composed file it needs.
+        dedupHits.add(seenPaths[path] - 1)
         return false
     }
-    seenPaths[path] = 1
+    seenPaths[path] = 0
 
     src = ""
     ok = file.readText(path, src)
@@ -261,7 +298,39 @@ func expand(rawPath: string, entry: bool): bool {
     }
 
     asmHeads.add(head)
+    if head == -1 {
+        asmTails.add(-1)
+    } else {
+        asmTails.add(lastDecl(head))
+    }
+    seenPaths[path] = asmHeads.count
     return false
+}
+
+// hoistDedups returns the decl-list heads of the USER-side files that the
+// dedupHits entries from index fromHit onward (i.e. the ones a single
+// runtime-module expand() call just appended) resolved to, marking each
+// hoisted so it is skipped when the user chain is rebuilt and never hoisted
+// twice. Hits on runtime-side files are ignored: those are already in the
+// runtime chain, ahead of the module that deduped against them.
+func hoistDedups(fromHit: int): list of int {
+    var out: list of int
+    var j: int
+    var hit: int
+
+    j = fromHit
+    while j < dedupHits.count {
+        hit = dedupHits[j]
+        if hit >= 0 and hit < userHeadCount and not hoistedHead[hit] {
+            hoistedHead[hit] = true
+            hoistCount = hoistCount + 1
+            if asmHeads[hit] != -1 {
+                out.add(hit)
+            }
+        }
+        j = j + 1
+    }
+    return out
 }
 
 on App.startCLI(args: list of string) {
@@ -312,6 +381,9 @@ on App.startCLI(args: list of string) {
     var j: int
     var rtReadable: bool
     var beforeCount: int
+    var beforeHits: int
+    var hoists: list of int
+    var hoistBefore: int
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -480,6 +552,14 @@ on App.startCLI(args: list of string) {
         log("cannot open entry file")
         quit 1
     }
+    // Everything expanded so far is the user program's own; everything a
+    // runtime-module splice expands from here on is runtime-side.
+    userHeadCount = asmHeads.count
+    i = 0
+    while i < userHeadCount {
+        hoistedHead.add(false)
+        i = i + 1
+    }
 
     // Assemble the post-order decl lists into one chain for the single
     // checker pass.
@@ -590,13 +670,25 @@ on App.startCLI(args: list of string) {
                 // Same whole-range capture as the ordinary post-check
                 // splice loop below -- a multi-file runtime module (one
                 // that itself `include`s another) pushes more than one
-                // asmHeads entry per expand call.
+                // asmHeads entry per expand call. Files this module's
+                // includes deduped against (a file the user already
+                // composed positionally) push no asmHeads entry at all, so
+                // they are hoisted separately, AHEAD of this module's own
+                // heads -- post-order, exactly where a freshly expanded
+                // include would have landed.
                 beforeCount = asmHeads.count
+                beforeHits = dedupHits.count
                 expand(rtPath, true)
+                hoists = hoistDedups(beforeHits)
+                j = 0
+                while j < hoists.count {
+                    earlyRtHeads.add(hoists[j])
+                    j = j + 1
+                }
                 j = beforeCount
                 while j < asmHeads.count {
                     if asmHeads[j] != -1 {
-                        earlyRtHeads.add(asmHeads[j])
+                        earlyRtHeads.add(j)
                     }
                     j = j + 1
                 }
@@ -608,24 +700,43 @@ on App.startCLI(args: list of string) {
             // chain -- same rebuild shape the ordinary post-check splice
             // uses for combined2 below, just landing in `combined` itself
             // so the single checkProgram call just below sees the whole
-            // thing.
+            // thing. earlyRtHeads holds asmHeads INDICES (not heads), so
+            // each segment's own end comes from asmTails -- lastDecl would
+            // run off the end of a HOISTED segment, whose tail Phase A
+            // already linked to the next user file's head.
             earlyTail = -1
             combined2 = -1
             i = 0
             while i < earlyRtHeads.count {
-                h = earlyRtHeads[i]
+                h = asmHeads[earlyRtHeads[i]]
                 if combined2 == -1 {
                     combined2 = h
                 } else {
                     earlyTail = declListAppend(earlyTail, h)
                 }
-                earlyTail = lastDecl(h)
+                earlyTail = asmTails[earlyRtHeads[i]]
                 i = i + 1
             }
             if combined2 == -1 {
                 combined2 = combined
-            } else {
+            } else if hoistCount == 0 {
                 earlyTail = declListAppend(earlyTail, combined)
+            } else {
+                // Hoisting happened: the user chain has to be re-linked
+                // segment by segment, skipping the hoisted files (now in
+                // the runtime chain above) and terminating explicitly --
+                // the last kept segment's `next` still points at whatever
+                // Phase A linked after it, which may be a hoisted file.
+                i = 0
+                while i < userHeadCount {
+                    h = asmHeads[i]
+                    if h != -1 and not hoistedHead[i] {
+                        earlyTail = declListAppend(earlyTail, h)
+                        earlyTail = asmTails[i]
+                    }
+                    i = i + 1
+                }
+                earlyTail = declListAppend(earlyTail, -1)
             }
             combined = combined2
             earlySpliceDone = true
@@ -940,6 +1051,7 @@ on App.startCLI(args: list of string) {
             if not haveRtDir {
                 rtDir = findRtDir(neededMods[0])
             }
+            hoistBefore = hoistCount
             i = 0
             while i < neededMods.count {
                 rtPath = joinPath(rtDir, neededMods[i])
@@ -963,13 +1075,29 @@ on App.startCLI(args: list of string) {
                 // file (today's placeholder ser.cla) pushes a -1 head -- same
                 // "empty file" sentinel the original assembly loop above
                 // already skips; skip it here too rather than splice a bogus
-                // head.
+                // head. A file this module's includes deduped against --
+                // one the USER already composed positionally, which
+                // therefore pushes no asmHeads entry here -- is hoisted out
+                // of the user chain instead, AHEAD of this module's own
+                // heads (post-order, exactly where a freshly expanded
+                // include would have landed): uidialogs.cla's
+                // ../../toolbox/standardfile.cla declares the SFReply/
+                // SFTypeList record TYPES its own externs use, and type
+                // references are order-sensitive where function references
+                // are not.
                 beforeCount = asmHeads.count
+                beforeHits = dedupHits.count
                 expand(rtPath, true)
+                hoists = hoistDedups(beforeHits)
+                j = 0
+                while j < hoists.count {
+                    rtHeads.add(hoists[j])
+                    j = j + 1
+                }
                 j = beforeCount
                 while j < asmHeads.count {
                     if asmHeads[j] != -1 {
-                        rtHeads.add(asmHeads[j])
+                        rtHeads.add(j)
                     }
                     j = j + 1
                 }
@@ -978,25 +1106,52 @@ on App.startCLI(args: list of string) {
 
             // Rebuild the assembled program with the runtime modules' heads
             // FIRST (declare-before-use), followed by the original
-            // (already fully linked) user-program chain.
+            // (already fully linked) user-program chain. rtHeads holds
+            // asmHeads INDICES (not heads), so each segment's own end comes
+            // from asmTails -- lastDecl would run off the end of a HOISTED
+            // segment, whose tail Phase A already linked to the next user
+            // file's head.
             combined2 = -1
             rtTail = -1
             i = 0
             while i < rtHeads.count {
-                h = rtHeads[i]
+                h = asmHeads[rtHeads[i]]
                 if combined2 == -1 {
                     combined2 = h
                 } else {
                     rtTail = declListAppend(rtTail, h)
                 }
-                rtTail = lastDecl(h)
+                rtTail = asmTails[rtHeads[i]]
                 i = i + 1
             }
             if combined != -1 {
                 if combined2 == -1 {
                     combined2 = combined
-                } else {
+                } else if hoistCount == hoistBefore {
                     rtTail = declListAppend(rtTail, combined)
+                } else {
+                    // Hoisting happened: the user chain has to be re-linked
+                    // segment by segment, skipping the hoisted files (now
+                    // in the runtime chain above) and terminating
+                    // explicitly -- the last kept segment's `next` still
+                    // points at whatever Phase A linked after it, which may
+                    // be a hoisted file. Reachable only when this splice is
+                    // the one that hoisted: the ONLY runtime module with
+                    // includes at all is uidialogs.cla, which belongs to
+                    // the `not earlySpliceDone` set above, so a --testapi
+                    // build's leftover manifest here (ser.cla/native.cla,
+                    // include-less) can never hoist -- and `combined` is
+                    // already the early splice's own rebuilt chain.
+                    i = 0
+                    while i < userHeadCount {
+                        h = asmHeads[i]
+                        if h != -1 and not hoistedHead[i] {
+                            rtTail = declListAppend(rtTail, h)
+                            rtTail = asmTails[i]
+                        }
+                        i = i + 1
+                    }
+                    rtTail = declListAppend(rtTail, -1)
                 }
             }
 
