@@ -218,8 +218,34 @@ func lowAddLocal(nameIdx: int, t: int): int {
 // ================================================================
 
 // lowType maps a checked type-arena index (types.cla) to its IR type index
-// (ir.cla) -- a port of lower.go's lowerType.
+// (ir.cla) -- a port of lower.go's lowerType. Thin wrapper over lowTypeAt
+// with no diagnostic position (0:0) -- every call site that CAN realistically
+// carry a TyXRec (an extern-record-typed var decl or expression) goes
+// through lowTypeAt directly instead (lowResolveType's TxNamed case,
+// lowMustType), so 0:0 here only covers container-element/param/subject
+// positions the checker already forbids from ever being TyXRec (extern
+// records can't be container elements -- check.cla's own "extern records
+// cannot be container elements" diagnostic).
 func lowType(t: int): int {
+    return lowTypeAt(t, 0, 0)
+}
+
+// lowTypeAt is lowType's real implementation, taking an explicit
+// diagnostic position (task-8, native-gaps-cleanup Part C item 4) for the
+// TyXRec arm's own -1 guard: a `var r: SomeXRec` whose `extern record
+// SomeXRec` declaration comes AFTER it in the source checks clean (the
+// checker's declaration pass is two-phase -- order-independent), but
+// lowering processes top-level decls in ONE sequential pass, so
+// irFindRecordLayoutByName(name) can return -1 here if SomeXRec's own
+// irRecords entry hasn't been appended yet. Reports the composition-
+// ordering failure as a real diagnostic (instead of the ir.cla accessor
+// panicking on irRecords[-1], "runtime error: list index out of range")
+// and returns a safe dummy (irCharT array size 0, same SHAPE the real
+// TyXRec arm returns) so lowering can keep collecting diagnostics rather
+// than aborting on the first one.
+func lowTypeAt(t: int, line: int, col: int): int {
+    var recIdx: int
+
     switch typeKind(t) {
     case TyInt { return irIntT }
     case TyBool { return irBoolT }
@@ -244,7 +270,17 @@ func lowType(t: int): int {
         // the brief's own instruction. EXRecAddr (lowXRecAddr) computes
         // this variable's address directly by name -- it never reads this
         // array type back.
-        return irArrType(irCharT, irXRecSize(irFindRecordLayoutByName(typeNameIdx(t))))
+        //
+        // task-8: recIdx can be -1 -- see lowTypeAt's own doc comment --
+        // when SomeXRec's `extern record` declaration hasn't been lowered
+        // yet (irRecords entry not appended). Diagnose instead of letting
+        // irXRecSize's irRecordLayoutFieldsHead(-1) panic on irRecords[-1].
+        recIdx = irFindRecordLayoutByName(typeNameIdx(t))
+        if recIdx == -1 {
+            emitDiag(line, col, "extern record " + poolGet(typeNameIdx(t)) + " is not declared before this use")
+            return irArrType(irCharT, 0)
+        }
+        return irArrType(irCharT, irXRecSize(recIdx))
     }
     case TyArr { return irArrType(lowType(typeElem(t)), typeN(t)) }
     case TyList { return irListType(lowType(typeElem(t))) }
@@ -293,7 +329,10 @@ func lowResolveType(tx: int): int {
         }
         symIdx = scopeLookup(curScope, nameIdx)
         if symIdx != -1 and symbols[symIdx].isType {
-            return lowType(symbols[symIdx].typeIdx)
+            // task-8: real position (tx, this named-type node) so a
+            // forward-referenced `extern record` diagnoses at the `var`'s
+            // own type annotation, not 0:0.
+            return lowTypeAt(symbols[symIdx].typeIdx, typeExprLine(tx), typeExprCol(tx))
         }
         // check.Files already rejected an undefined type name; reaching
         // here on a checker-clean program would be a lowerer bug.
@@ -324,9 +363,12 @@ func lowResolveType(tx: int): int {
 }
 
 // lowMustType returns e's IR type from the checker's recorded type
-// (exprTypeGet, Task 1) -- lower.go's mustType.
+// (exprTypeGet, Task 1) -- lower.go's mustType. Threads e's own position
+// into lowTypeAt (task-8) so an xrec-typed expression whose `extern
+// record` hasn't been lowered yet (see lowTypeAt's doc comment) diagnoses
+// at the USE site, not 0:0.
 func lowMustType(e: int): int {
-    return lowType(exprTypeGet(e))
+    return lowTypeAt(exprTypeGet(e), exprLine(e), exprCol(e))
 }
 
 // lowInternStr interns a string literal into the irStrLits pool, deduping by
@@ -1487,8 +1529,27 @@ func lowXRecAddr(e: int): int {
     }
     baseAddr = lowXRecAddr(selectX(e))
     recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(selectX(e))))
+    if recIdx == -1 {
+        // task-8: same composition-ordering -1 as lowTypeAt's TyXRec arm
+        // (lowTypeAt's own doc comment), reached here via exprTypeGet's
+        // CHECKED type -- irXRecFieldOffsetByName would panic on
+        // irRecords[-1] otherwise. Zero-offset dummy so lowering can keep
+        // collecting diagnostics.
+        lowXRecMissingLayout(typeNameIdx(exprTypeGet(selectX(e))), exprLine(e), exprCol(e))
+        return newIRXRecAddr(irXRecAddrName(baseAddr), irXRecAddrGlobal(baseAddr), irXRecAddrOffset(baseAddr), irPtrT)
+    }
     off = irXRecFieldOffsetByName(recIdx, selectName(e))
     return newIRXRecAddr(irXRecAddrName(baseAddr), irXRecAddrGlobal(baseAddr), irXRecAddrOffset(baseAddr) + off, irPtrT)
+}
+
+// lowXRecMissingLayout (task-8) is lowXRecAddr/lowXRecFieldRead/
+// lowXRecFieldWrite's shared -1 guard -- the same "extern record not
+// declared before this use" diagnostic lowTypeAt's TyXRec arm emits, for
+// the sibling case where the -1 shows up via exprTypeGet's CHECKED type
+// (unaffected by lowTypeAt's own already-guarded dummy IR type) instead of
+// through a `var`'s type annotation.
+func lowXRecMissingLayout(nameIdx: int, line: int, col: int) {
+    emitDiag(line, col, "extern record " + poolGet(nameIdx) + " is not declared before this use")
 }
 
 // lowXRecFieldRead lowers a scalar extern-record field READ (`ev.what`,
@@ -1516,6 +1577,10 @@ func lowXRecFieldRead(e: int): int {
     xExpr = selectX(e)
     ty = lowMustType(e)
     recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(xExpr)))
+    if recIdx == -1 {
+        lowXRecMissingLayout(typeNameIdx(exprTypeGet(xExpr)), exprLine(e), exprCol(e))
+        return newIRIntConst(0, ty)
+    }
     slot = irXRecFieldSlotByName(recIdx, selectName(e))
     xk = irFieldSlotXKind(slot)
     addr = lowXRecAddr(e)
@@ -1559,6 +1624,10 @@ func lowXRecFieldWrite(target: int, srcExpr: int): int {
 
     xExpr = selectX(target)
     recIdx = irFindRecordLayoutByName(typeNameIdx(exprTypeGet(xExpr)))
+    if recIdx == -1 {
+        lowXRecMissingLayout(typeNameIdx(exprTypeGet(xExpr)), exprLine(target), exprCol(target))
+        return newIRExprStmt(newIRIntConst(0, irVoidT))
+    }
     slot = irXRecFieldSlotByName(recIdx, selectName(target))
     xk = irFieldSlotXKind(slot)
     addr = lowXRecAddr(target)

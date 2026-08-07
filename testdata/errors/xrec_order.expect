@@ -1,0 +1,2 @@
+../../testdata/errors/xrec_order.cla:21:12: extern record SomeXRec is not declared before this use
+../../testdata/errors/xrec_order.cla:21:12: extern record SomeXRec is not declared before this use

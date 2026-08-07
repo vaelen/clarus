@@ -1,0 +1,26 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// native-gaps-cleanup Task 8: the composition-ordering failure mode --
+// `var r: SomeXRec` checks clean (the checker's declaration pass is
+// two-phase, order-independent), but SomeXRec's own `extern record`
+// declares AFTER the func that uses it, and lowering processes top-level
+// decls in ONE sequential pass. Before this fix, lowType's TyXRec arm
+// (lower.cla) called irXRecSize(irFindRecordLayoutByName(...)) with a -1
+// (SomeXRec's irRecords entry not appended yet), and ir.cla's
+// irRecordLayoutFieldsHead panicked on irRecords[-1] ("runtime error:
+// list index out of range", exit 3). Now diagnoses instead.
+//
+// The diagnostic is emitted TWICE at the same position: lowering resolves
+// a body-top local's declared type twice for two independent purposes
+// (lowCollectScopeExitCandidates's ARC prepass, then the var-decl
+// statement's own lowering) -- a pre-existing double-resolution this task
+// doesn't touch (out of scope: harmless duplicate report of the same real
+// error, not a second bug).
+func f() {
+    var r: SomeXRec
+}
+
+extern record SomeXRec {
+    v: word
+}
