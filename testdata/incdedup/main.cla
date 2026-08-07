@@ -1,0 +1,15 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// main.cla: includes common.cla through two path spellings (via a/b).
+// Checks clean only if clarusc's include-once set keys on the
+// NORMALIZED path (sub/common.cla == sub/../sub/common.cla).
+include "sub/a.cla"
+include "sub/b.cla"
+
+on App.startCLI(args: list of string) {
+    if common42() != 42 {
+        quit 1
+    }
+    quit 0
+}

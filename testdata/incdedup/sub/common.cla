@@ -1,0 +1,9 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// common.cla: shared leaf reached via two spellings by a.cla/b.cla --
+// the incdedup fixture's whole point. One func; duplicated inclusion
+// is a duplicate-declaration check error.
+func common42(): int {
+    return 42
+}

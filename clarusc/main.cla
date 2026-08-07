@@ -35,12 +35,11 @@ include "cprint.cla"
 include "cg68k.cla"
 include "uiblob.cla"
 
-// seenPaths keys the include-once set (driver.go's `seen`). Go keys by
-// cleaned absolute path so the same file reached two ways dedups; this port
-// keys by the resolved path string.
-// ponytail: string-keyed, not Abs+Clean-keyed -- exact for the flat testdata
-// layouts; upgrade to a real abs/clean if a corpus reaches one file via two
-// distinct relative spellings (Task 11 territory).
+// seenPaths keys the include-once set (driver.go's `seen`), keyed by the
+// path after normalizePath's lexical cleanup: "//" and "./" segments
+// collapsed and "seg/.." pairs resolved, so "sub/common.cla" and
+// "sub/../sub/common.cla" are the same identity. Purely lexical -- an
+// absolute and a relative spelling of the same file stay distinct by design.
 var seenPaths: map of int
 
 // asmHeads holds each expanded file's decl-list head in POST-ORDER
@@ -102,6 +101,57 @@ func joinPath(dir: string, name: string): string {
     return dir + name
 }
 
+// normalizePath lexically cleans a path for the include-once identity
+// (seenPaths) and diagnostics: collapses "//" and "./" segments and
+// resolves each "seg/.." pair, preserving a leading "/" and any leading
+// "../" run. Purely lexical -- no symlink, case, or cwd resolution: an
+// absolute and a relative spelling of the same file stay distinct
+// (documented in the reference's include section).
+func normalizePath(path: string): string {
+    var segs: list of string
+    var work: string
+    var cur: string
+    var junk: string
+    var out: string
+    var i: int
+    var abs: bool
+
+    abs = path.length > 0 and path[0] == '/'
+    work = path + "/"
+    cur = ""
+    i = 0
+    while i < work.length {
+        if work[i] == '/' {
+            if cur == ".." {
+                if segs.count > 0 and segs[segs.count - 1] != ".." {
+                    junk = segs.pop()
+                } else if not abs {
+                    segs.add("..")
+                }
+            } else if cur != "" and cur != "." {
+                segs.add(cur)
+            }
+            cur = ""
+        } else {
+            cur = cur + work[i]
+        }
+        i = i + 1
+    }
+    out = ""
+    if abs {
+        out = "/"
+    }
+    i = 0
+    while i < segs.count {
+        if i > 0 {
+            out = out + "/"
+        }
+        out = out + segs[i]
+        i = i + 1
+    }
+    return out
+}
+
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
 // UP from the current working directory looking for a "runtime/clarus/"
 // directory, probed by trying to read probeFile (the first needed module's
@@ -149,7 +199,8 @@ func lastDecl(head: int): int {
 // diagnostics) -- a port of driver.go's inner `expand`. Returns whether path
 // itself could not be read (the caller turns a missing non-entry file into a
 // "cannot open included file" diagnostic at the include's position).
-func expand(path: string, entry: bool): bool {
+func expand(rawPath: string, entry: bool): bool {
+    var path: string
     var src: text
     var ok: bool
     var head: int
@@ -160,6 +211,7 @@ func expand(path: string, entry: bool): bool {
     var incResolved: string
     var missing: bool
 
+    path = normalizePath(rawPath)
     if seenPaths.has(path) {
         return false
     }
