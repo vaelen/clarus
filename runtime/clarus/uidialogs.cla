@@ -1,6 +1,15 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
+// Catalog-first (ROADMAP item 3's GUIDING PRINCIPLE): pull the real
+// _Pack3/File Manager declarations from the shared catalog instead of
+// hand-declaring them here. Resolved relative to this file, i.e.
+// <rtdir>/../../toolbox/ -- a user program that also composes
+// toolbox/standardfile.cla or toolbox/files.cla positionally dedups via
+// Task 1's normalized include-once identity.
+include "../../toolbox/standardfile.cla"
+include "../../toolbox/files.cla"
+
 // uidialogs.cla: dialogs, StandardFile, and modal forms -- native-5e
 // Task 10 (slice D, the FINAL port slice). Port target: rt_ui.c:344-371
 // (gModal), 586-673 (scripted answer-queue trace formats, MINUS the ring
@@ -89,36 +98,56 @@ const rtUiEvCancelled: int = 6
 external func UiSFGetFile(path255Out: ptr): bool
 external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
 
-// nat_UiSFGetFile/nat_UiSFPutFile (Task 12, native-5e): clause-less nat_
-// fallbacks -- discovered empirically, not named in this task's own
-// brief: rtUiAskOpen/rtUiAskSave's own real (non-scripted) halves, below,
-// are reached by EVERY UI program's compiled output regardless of
-// whether that program's own golden scenario ever takes the real-build
-// branch (same whole-function-reachability situation as every other
-// deferred stub in this file/uitext.cla).
-//
-// DEFERRED STUB, not a real port: this file's own doc comment above
-// already states SFGetFile/SFPutFile are "routine-selector Pascal traps"
-// (`M68K_INLINE(0x3F3C, <selector>, 0xA9EA)` -- push a 16-bit Package
-// Manager selector immediate, THEN trap 0xA9EA/_PackDispatch), not a
-// plain trap this language's `= trap` clause can express directly, AND
-// (this doc comment's own words) "Never exercised by any golden scenario
-// -- ported for contract completeness" on the cprint lane either. Same
-// ponytail call as uitext.cla's TEFromScrap/TEToScrap stubs: a real
-// Package-Manager-dispatch port is real, understood-in-outline
-// (selector-then-trap) but unverified-on-hardware work with zero test
-// coverage to prove it right, for a StandardFile dialog no golden
-// scenario this task gates on ever opens -- return `false` (SFReply's own
-// "user cancelled" result), the same safe answer a real cancelled dialog
-// would give the caller, rather than guess at the full Point/UPP/
-// SFTypeList arg marshaling. Upgrade alongside a future task's own
-// native StandardFile-exercising scenario (formedit/bookmarks/opendoc).
+// nat_UiSFGetFile / nat_UiSFPutFile (pack3-standardfile phase): the real
+// native _Pack3 port -- a transcription of the cprint lane's C wrappers
+// (rt_ext_mac.inc rt_ext_UiSFGetFile/rt_ext_UiSFPutFile), through the
+// toolbox/standardfile.cla + toolbox/files.cla catalog declarations.
+// where is the fixed {v=100, h=100} corner packed (v << 16) | h (System 6
+// has no auto-center convention -- the C reference hard-codes the same).
+// On a good reply: PBSetVolSync makes the picked volume/working directory
+// the default (result ignored, matching C -- a failed SetVol just means
+// the follow-up file.readText/writeText fails on its own), then fName
+// (Str63) is copied into the caller's Str255 via the string round-trip:
+// rep.fName reads out as a Clarus string, UiStrAddr takes its Str255
+// address, rtUiPstrcpy writes length byte + bytes. Cancel returns false
+// with path255Out untouched -- byte-identical net behavior to the old
+// deferred stubs, so no caller regresses on the cancel path.
 func nat_UiSFGetFile(path255Out: ptr): bool {
-    return false
+    var rep: SFReply
+    var types: SFTypeList
+    var vp: VolumeParam
+    var s: string
+    var junk: int
+
+    types.t0 = 0x54455854
+    SFGetFile((100 << 16) | 100, UiStrAddr(""), ptr(0), 1, types, ptr(0), rep)
+    if not rep.good {
+        return false
+    }
+    vp.ioNamePtr = ptr(0)
+    vp.ioVRefNum = rep.vRefNum
+    junk = PBSetVolSync(vp)
+    s = rep.fName
+    rtUiPstrcpy(path255Out, UiStrAddr(s))
+    return true
 }
 
 func nat_UiSFPutFile(suggested255: ptr, path255Out: ptr): bool {
-    return false
+    var rep: SFReply
+    var vp: VolumeParam
+    var s: string
+    var junk: int
+
+    SFPutFile((100 << 16) | 100, UiStrAddr("Save as:"), suggested255, ptr(0), rep)
+    if not rep.good {
+        return false
+    }
+    vp.ioNamePtr = ptr(0)
+    vp.ioVRefNum = rep.vRefNum
+    junk = PBSetVolSync(vp)
+    s = rep.fName
+    rtUiPstrcpy(path255Out, UiStrAddr(s))
+    return true
 }
 
 // ================================================================
