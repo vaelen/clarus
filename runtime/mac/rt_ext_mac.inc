@@ -891,26 +891,68 @@ void *rt_ext_TbXRecAddr(void *p) { return p; }
  * exists under this exact name. */
 void *rt_ext_XRecAddr(void *p) { return p; }
 
-/* rt_ext_TbPostEvent (ui-scenario-retirement Task 3, fix round 1):
+/* rt_ext_TbPostEvent (ui-scenario-retirement Task 3, fix round 1;
+ * clobber list verified by decode, native-gaps-cleanup Task 7):
  * testsuite/toolbox/cases_uitest.cla's own extern -- same "cprint always
  * renders rt_ext_NAME regardless of clause" precedent as every block
- * above, but the FIRST one of these that cannot just call a real
- * Toolbox C function: PostEvent (trap 0xA02F) has no Universal-
- * Interfaces prototype anywhere in Retro68's InterfacesAndLibraries
- * (confirmed by grep -- it is genuinely absent, unlike TickCount/
- * MenuKey/Gestalt/NewPtr/DisposePtr/EventAvail/SetCurrentA5 above, which
- * all have one). So this is hand-written raw register-trap glue instead:
- * eventNum in A0 (low word), eventMsg in D0, `trap 0xA02F` (bit 11
- * clear -- OS/register convention, cases_event.cla's own header comment
- * works out this exact rule), result read back from D0 -- the identical
- * register assignment cases_uitest.cla's own `= trap 0xA02F reg(a0:
- * eventNum, d0: eventMsg) ret d0` clause already gives cg68k's native
- * lane (that lane needs no glue at all -- the clause compiles straight
- * to the TRAP instruction). Conservative clobber list (d1/a1 alongside
- * cc/memory): PostEvent's real register-usage contract beyond D0/A0 is
- * undocumented, and every other trap glue in this file gets to lean on
- * a real C prototype someone else already got right; this one doesn't
- * have that safety net. */
+ * above. Hand-written raw register-trap glue rather than a real-prototype
+ * C call like every other block in this file: PostEvent DOES have an
+ * EXTERN_API prototype in Retro68's Universal Interfaces
+ * (CIncludes/Events.h:562-565, `PostEvent(EventKind eventNum, UInt32
+ * eventMsg) ONEWORDINLINE(0xA02F)`, unconditionally available --
+ * correcting this block's earlier "no prototype" claim, which grep
+ * disproves) -- but its own inline form is a bare ONEWORDINLINE (no
+ * post-trap register-shuffling instruction), so hand-rolling the same
+ * trap word is equivalent; this glue stays hand-written. eventNum in
+ * A0 (low word), eventMsg in D0, `trap 0xA02F` (bit 11 clear -- OS/
+ * register convention, cases_event.cla's own header comment works out
+ * this exact rule), result read back from D0 -- the identical register
+ * assignment cases_uitest.cla's own `= trap 0xA02F reg(a0: eventNum,
+ * d0: eventMsg) ret d0` clause already gives cg68k's native lane (that
+ * lane needs no glue at all -- the clause compiles straight to the
+ * TRAP instruction).
+ *
+ * Register contract, cited not assumed:
+ *   - CIncludes/Events.h:560 `#pragma parameter __D0
+ *     PostEvent(__A0, __D0)`: eventNum in A0, eventMsg in D0, OSErr
+ *     result in D0. No A0 output listed.
+ *   - AIncludes/Events.a:507-519 (`_PostEvent: OPWORD $A02F`) gives the
+ *     same contract in its own hand-written comment: "parameters:
+ *     eventNum => A0, eventMsg => D0; returns: OSErr <= D0" -- again
+ *     no A0 on exit.
+ *   - Inside Macintosh Volume II, "Summary of the Operating System
+ *     Event Manager" (p. II-74) assembly-language routine table:
+ *     "PostEvent  On entry: A0: eventCode (word), D0: eventMsg (long)
+ *     / On exit: D0: result code (word)" -- again D0 only; the SAME
+ *     table lists FlushEvents' D0 on both entry AND exit (a register
+ *     whose exit value genuinely IS defined), so the omission of A0
+ *     from PostEvent's exit column is a real "undefined here", not an
+ *     editorial gap.
+ *   - BUT PostEvent's sibling trap PPostEvent (same low trap byte
+ *     0x2F, one extra flag bit: CIncludes/Events.h:496-502,
+ *     `TWOWORDINLINE(0xA12F, 0x2288)`) decodes as trap word 0xA12F
+ *     followed by second word 0x2288 = MOVE.L A0,(A1) -- Apple's own
+ *     compiler-generated glue reads A0 AFTER the trap returns and
+ *     stores it into *qEl (AIncludes/Events.a:434-441 confirms
+ *     `_PPostEvent: OPWORD $A12F`, `pascal OSErr PPostEvent(EventKind
+ *     eventCode, UInt32 eventMsg, EvQElPtr *qEl)`). That proves the
+ *     underlying Event Manager trap handler for trap-number 0x2F
+ *     leaves a live queue-element pointer in A0 on return; PostEvent's
+ *     plain form (bit8 clear) just doesn't surface it. A0 is Event-
+ *     Manager-internal scratch/result state after 0xA02F too, not a
+ *     caller-preserved register.
+ *
+ * Verdict: A0 must be a clobber, not a plain input. The prior `"r"(a0)`
+ * (input-only) let gcc assume physical a0 is unchanged across the asm
+ * -- a latent miscompile risk if gcc ever keeps an unrelated live
+ * value pinned in a0 across this statement. Fixed to `"+r"(a0)` (gcc
+ * disallows listing a hard-register operand in both an input
+ * constraint and the clobber list, so read-write is the standard idiom
+ * for "destroyed but I don't need the new value"). D1/A1 stay in the
+ * clobber list unchanged: none of the three sources above documents
+ * them as preserved for PostEvent, and per project convention
+ * (decode-don't-trust), silence is not a preservation guarantee --
+ * over-clobbering is safe, under-clobbering isn't. */
 /* Non-static: links into every Retro68 Mac build (dead code in no-flag
  * builds; harmless). */
 short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
@@ -918,8 +960,8 @@ short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
     register int32_t a0 asm("a0") = (int32_t)(uint16_t)eventNum;
     asm volatile (
         ".word 0xA02F"
-        : "+r" (d0)
-        : "r" (a0)
+        : "+r" (d0), "+r" (a0)
+        :
         : "d1", "a1", "cc", "memory"
     );
     return (short)d0;
