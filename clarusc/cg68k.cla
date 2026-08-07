@@ -7282,7 +7282,8 @@ func cgCallExtNatFallback(e: int) {
 //     events-script bytes cg68k itself poured into the constant pool,
 //     cgEmitPoolsBody) -- cgCallExtUiBlobAddr.
 // Every other extern (UiCurrentA5/UiTestEmit/UiRtQuit/UiLaunchReal/
-// UiGestalt/UiCbAddr/... and every non-UI extern in the program) falls
+// UiGestaltErr/UiGestaltValue/UiCbAddr/... and every non-UI extern in the
+// program) falls
 // through to the ordinary clause dispatch, unchanged -- Task 9
 // (toolbox-integration Feature C) removed the LDEF/scrollbar-action
 // by-name pair this block used to carry (two zero-arg externs, each

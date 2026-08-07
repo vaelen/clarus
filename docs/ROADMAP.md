@@ -888,12 +888,15 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   bound above are proven only on Mini vMac, never a real 68k Mac; AppleEvent
   handler glue was never built (nothing to wire, see above), so native AE
   launch/open-document dispatch is untested by any golden; Scrap Manager
-  (`TEFromScrap`/`TEToScrap`) and real `SFGetFile`/`SFPutFile` are clean
-  fail-closed/false-returning stubs on the native lane (`uitext.cla`/
-  `uidialogs.cla`) — every scripted scenario's `askOpen`/`askSave`/copy-
-  paste path uses the already-ported test-mode substitute instead, so
-  neither the real StandardFile Package-dispatch trap nor real Scrap
-  round-tripping has ever run natively. (3) rc-leak parity remains
+  (`TEFromScrap`/`TEToScrap`) is still a clean fail-closed stub on the
+  native lane (`uitext.cla`) — every scripted scenario's copy-paste path
+  uses the already-ported test-mode substitute instead, so real Scrap
+  round-tripping has never run natively. (Real `SFGetFile`/`SFPutFile`
+  were the same kind of stub in `uidialogs.cla` until the
+  pack3-standardfile phase, 2026-08-07, replaced them with real `_Pack3`
+  selector-dispatch transcriptions and live-drove them on the emulator —
+  see that phase's DONE entry below; the scripted scenarios still take
+  the test-mode substitute, by design.) (3) rc-leak parity remains
   structural, not measured, same limit 5d recorded — the host leak ledger
   cannot run on the Mac; the mirror-of-cprint discipline is the guarantee.
   (4) Purgeable resource attribute bits are still not reproduced in
@@ -1245,9 +1248,16 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   files.cla` (PBSetVolSync 0xA015, PBGet/SetFInfoSync 0xA00C/0xA00D,
   VolumeParam/FileParam records; full File Manager fill deferred to a
   future file-abstraction phase). `runtime/clarus/uidialogs.cla` includes
-  both catalogs (the first runtime consumer of `toolbox/*.cla`, enabled
-  by the same phase's clarusc include-dedup-by-normalized-path change —
-  see the reference's include section) and its `nat_UiSFGetFile`/
+  both catalogs — the first runtime consumer of `toolbox/*.cla`. The
+  runtime's own include needs no dedup machinery; what the phase's
+  clarusc work buys is that a USER program can ALSO compose the very same
+  catalog file positionally while the runtime includes it: include-once
+  by normalized path (see the reference's include section) makes the
+  runtime's include a no-op, and the splice then HOISTS that user-side
+  file ahead of `uidialogs.cla` so its record TYPES are declared before
+  use. `internal/testsuite/catalog_test.go`'s
+  `TestCatalogComposesWithUIRuntime` pins that composition on both emit
+  lanes. Its `nat_UiSFGetFile`/
   `nat_UiSFPutFile` deferred stubs became real transcriptions of the C
   wrappers. Native file-create now stamps `'TEXT'`/`'MPS '` FInfo
   (Task 6a — byte-parity with `rt_mac.c`'s `Create` call; previously
@@ -1259,7 +1269,17 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `docs/superpowers/specs/2026-08-07-pack3-standardfile-design.md`.
   Superseded-spec non-goals still standing: TE↔Scrap port, AE/
   GetAppFiles launch, System 7 StandardFile variants (sel 5-8,
-  Gestalt-gate when wanted), dlgHook exposure. Also out of this phase's
+  Gestalt-gate when wanted), dlgHook exposure. **New known limits from
+  this phase, for whoever touches this next:** (a) native `file.save` now
+  stamps `'TEXT'`/`'MPS '` where the C lane stamps `'CLRD'`/the app
+  creator — so save-blobs are newly VISIBLE to an `SFGetFile('TEXT')`
+  filter on the native lane and invisible on the C lane; the two lanes'
+  Standard File file lists no longer agree, and unifying the stamp is
+  future work. (b) `rtUiSys7 == true` (`ui.cla:721`) is NEWLY REACHABLE
+  now that Task 5a fixed the Gestalt register binding — pre-fix the
+  garbage `resp` always failed the `0x0700..0x1000` bound, so the
+  System-7 branch was dead code; no boot has ever taken it (Mini vMac
+  answers `0x0607`), so it remains entirely unexercised. Also out of this phase's
   fallout, two records elsewhere in this file: the Gestalt register-
   binding correction (Task 5a — see the "Honest limits" and known-issues
   entries it rewrote) and the cprint-Mac demotion (next paragraph). Next:
@@ -1294,7 +1314,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
 
   | Branch / stub | Status | Reason / pointer |
   |---|---|---|
-  | `nat_UiSFGetFile`/`nat_UiSFPutFile` (`uidialogs.cla`) | stubbed-by-design | StandardFile's selector-prefixed Package Manager dispatch (`0xA9EA`) was never ported on either lane — returns `false` (cancelled) unconditionally. Deferred to the committed `_Pack3` spec, explicitly scheduled after the Toolbox integration phase (`docs/superpowers/specs/2026-08-03-native-standardfile-pack3-design.md`). |
+  | `nat_UiSFGetFile`/`nat_UiSFPutFile` (`uidialogs.cla`) | ~~stubbed-by-design~~ **CLOSED, pack3-standardfile (2026-08-07)** | Was: StandardFile's selector-prefixed Package Manager dispatch (`0xA9EA`) never ported on either lane, returning `false` (cancelled) unconditionally. Now real `_Pack3` transcriptions over `toolbox/standardfile.cla`, live-driven on the emulator (save → quit → relaunch → reopen, byte-exact). The scripted scenarios still take the test-mode substitute by design, so the real dispatch is covered by live-drive acceptance, not by a golden. |
   | `nat_UiTEFromScrap`/`nat_UiTEToScrap` (`uitext.cla`) | stubbed-by-design | No-op glue (`return 0`, touches nothing) — the call sites themselves (Cut/Copy/Paste, `rtUiStdEditDispatch`) ARE reached by `testdata/ui/editmenu.events` (one of the 23 frozen golden scenarios), but the real TE-scrap "executor" glue (style-run ↔ flat Scrap Manager buffer) was never reverse-engineered on either lane; `uitext.cla:140`'s own comment defers it to a future scenario that needs real native cut/copy/paste to actually survive. `nat_UiTEGetScrapLength` is NOT a stub (a real `peekw(0xAB0)` port) and IS exercised — Paste's 32k-clamp length calc (`uitext.cla:813`) runs on every `editmenu.events` boot. |
   | `nat_UiLaunchReal` (native/cg68k lane, `ui.cla`) | closed by `TestRealEventLoopTickOn68k` | New finding this audit: `tickprobe.cla` boots with no `--events`, so `UiTestScript()` reads empty and `rtUiLaunch` takes its real (non-scripted) branch — `UiLaunchReal()` resolves to `nat_UiLaunchReal` (clause-less extern, native lane), which degrades to `UiFireStartEmpty()`. Not previously documented as closed. |
   | `UiLaunchReal` (cprint/Mac lane, `rt_ext_mac.inc` real C AE glue: `AEInstallEventHandler` + 4 Pascal handlers) | unexercised, recorded | Still genuinely untested — every Mac-lane (Retro68) test build uses `--events`, and `TestRealEventLoopTickOn68k` only covers the native `emit68k` lane (no `TestRealEventLoopTickOnMac` twin exists). Needs a real Finder double-click launch or a dedicated no-events Mac-lane smoke test; not cheap (out of this task's scope to add a new gated Mac boot lane). |

@@ -866,7 +866,8 @@ short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
  * every block above, but the catalog declares its externs under their
  * PLAIN Toolbox names (NewPtr, DisposePtr, NewHandle, DisposeHandle,
  * GetHandleSize, SetHandleSize, BlockMoveData, HLock, HUnlock, TickCount,
- * Gestalt, EventAvail, ZeroScrap, PutScrap, GetScrap, InfoScrap), not a
+ * GestaltErr, GestaltValue, EventAvail, ZeroScrap, PutScrap, GetScrap,
+ * InfoScrap), not a
  * suite-local Tb-prefixed alias -- so most of them resolve to glue that
  * already exists elsewhere in this same file: rt_ext_NewPtr/
  * rt_ext_DisposePtr/rt_ext_NewHandle/rt_ext_DisposeHandle/

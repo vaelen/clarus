@@ -11,9 +11,12 @@
 // (0xA122/0xA023), SetHandleSize (0xA024), BlockMoveData (0xA22E) --
 // proven verbatim against runtime/clarus/list.cla's ListNewPtr family
 // (ListNewPtr/ListDisposePtr/ListNewHandle/ListDisposeHandle/
-// ListSetHandleSize/ListBlockMoveData) and testsuite/toolbox/
-// cases_gestalt.cla's TbNewPtr/TbDisposePtr, both already-shipped `reg`
-// declarations with the same trap words. HLock/HUnlock (0xA029/0xA02A)
+// ListSetHandleSize/ListBlockMoveData), already-shipped `reg`
+// declarations with the same trap words. (This citation also named
+// testsuite/toolbox/cases_gestalt.cla's TbNewPtr/TbDisposePtr until
+// pack3-standardfile Task 5a deleted them; the Apple-interfaces
+// re-verification below is the authoritative evidence regardless.)
+// HLock/HUnlock (0xA029/0xA02A)
 // proven verbatim against runtime/clarus/native.cla's NatHLock/
 // NatHUnlock. GetHandleSize (0xA025) and MoreMasters (0xA036) were
 // originally checked only against Retro68 multiversal/defs/MemoryMgr.yaml.
