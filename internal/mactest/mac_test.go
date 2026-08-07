@@ -22,6 +22,24 @@ func requireMac(t *testing.T) {
 	}
 }
 
+// requireCprintMac gates the cprint/Retro68 gcc build-path tests,
+// demoted from the per-merge gate to an on-demand diagnostic oracle
+// (pack3-standardfile phase, 2026-08-07): every case they cover still
+// runs on the native emit68k lane (TestCoreSuiteGUIOn68k /
+// TestToolboxSuiteOn68k / TestRunErrOn68k / TestAbortOn68k). Set
+// CLARUS_CPRINT_MAC_TESTS=1 when a native-lane failure needs cross-lane
+// localization (cg68k codegen bug vs runtime-logic bug) -- this lane
+// compiling the same runtime through gcc is the triangulation tool that
+// isolated the trailing-bool ABI, 2B<->4B form-hang, and CharParameter
+// marshaling bugs. Standalone: a diagnostic run needs only this var.
+// Lane deletion (rt_ext_mac.inc, build-mac.sh) is 5f Retro68-retirement
+// work, not this phase's.
+func requireCprintMac(t *testing.T) {
+	if os.Getenv("CLARUS_CPRINT_MAC_TESTS") == "" {
+		t.Skip("set CLARUS_CPRINT_MAC_TESTS=1 (cprint-Mac diagnostic lane; needs Retro68 toolchain + Mini vMac + display)")
+	}
+}
+
 // repoRoot returns the repo root, computed from the package directory (go
 // test always runs with cwd == the package dir).
 func repoRoot(t *testing.T) string {
@@ -176,7 +194,7 @@ func firstDiff(want, got string) string {
 // ungated). The .cla/.err/.behavior files for all 6 fixtures STAY -- the
 // host test still consumes them.
 func TestRunErrOnMac(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	files := []string{"../../testdata/runerr/oob.cla"}
 	for _, f := range files {
 		f := f
@@ -212,7 +230,7 @@ func TestRunErrOnMac(t *testing.T) {
 // program) rather than inside test_suite.cla. Expectation is byte-exact
 // out == its .out golden and exit code == its .exit golden.
 func TestAbortAppsOnMac(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	for _, name := range []string{"emit_array"} {
 		name := name
 		t.Run(name, func(t *testing.T) {

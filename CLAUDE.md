@@ -51,9 +51,15 @@ Tiered test gates:
   phase (tag `go-compiler-final`); the gauntlet is all-harness, no
   compiler-unit packages remain.
 - `scripts/test-merge.sh` — T2, run before merging to main. T1's body plus
-  `internal/selfhost` (30m-timeout bootstrap suite) plus the full
-  gated `internal/mactest` package (`CLARUS_MAC_TESTS=1`, needs the Retro68
-  toolchain + Mini vMac).
+  `internal/selfhost` (30m-timeout bootstrap suite) plus the gated
+  `internal/mactest` package's native (emit68k) lane (`CLARUS_MAC_TESTS=1`,
+  needs the Retro68 toolchain + Mini vMac). The Retro68/cprint-gcc lane
+  (pack3-standardfile phase, 2026-08-07) is demoted off this gate — it's an
+  opt-in diagnostic behind `CLARUS_CPRINT_MAC_TESTS=1`, kept as a
+  cross-lane localization oracle (the native lane already covers every
+  case it checks) rather than deleted; deletion is deferred to the 5f
+  Retro68-retirement phase. The C printer's remaining first-class role is
+  host builds (`clarusc emit` + `cc`).
 - Both pass `-count=1` to bust the Go test cache. Plain `go test` caches a
   package's result keyed on its `.go` inputs; it does not know about
   `.cla` fixtures a test reads at runtime (e.g. emitui-style
@@ -194,9 +200,11 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   `native_test.go`). `scripts/build-68k.sh`/`clarusc emit68k --events FILE`
   compile a scripted event sequence into a test build for deterministic UI
   driving (no real input needed); `scripts/build-mac.sh` still takes
-  `--events FILE` too, for the two untouchable Retro68/cprint suite gates
-  (`TestCoreSuiteGUIOnMac`/`TestToolboxSuiteOnMac`) and any future
-  Retro68-lane build, but no longer for scenario goldens. The
+  `--events FILE` too, for the two opt-in Retro68/cprint suite-gate
+  diagnostics (`TestCoreSuiteGUIOnMac`/`TestToolboxSuiteOnMac`, demoted
+  behind `CLARUS_CPRINT_MAC_TESTS=1` by the pack3-standardfile phase,
+  2026-08-07) and any future Retro68-lane build, but no longer for
+  scenario goldens. The
   ui-scenario-retirement phase (2026-08-05) migrated 12 of the original 23
   scenarios into `testsuite/toolbox` cases and retired their
   `testdata/ui`/`testdata/uisnaps` fixtures; the test-consolidation phase

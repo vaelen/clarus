@@ -68,7 +68,7 @@ func TestCoreSuiteGUIOn68k(t *testing.T) {
 // gave every other UI fixture -- that lane has since been retired down to
 // the 4 frozen golden scenarios (test-consolidation, 2026-08-06).
 func TestCoreSuiteGUIOnMac(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "coresuite.events")
 	args := append(pkgRelFiles(coreGUIFiles), "--test", "--events", eventsRel)
 	bin := runBuildMac(t, "coresuite_gui_mac", args...)
@@ -263,7 +263,7 @@ func TestToolboxSuiteOn68k(t *testing.T) {
 // buildNative68kUI. See TestCoreSuiteGUIOnMac's doc comment for why this
 // pairing exists.
 func TestToolboxSuiteOnMac(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
 	// --testapi (Task 3, ui-scenario-retirement): build-mac.sh's own arg
 	// loop needs a dedicated `--testapi` case (see that script) to handle

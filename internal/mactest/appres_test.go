@@ -60,7 +60,7 @@ func buildAppRes(t *testing.T) string {
 // .cla), build-mac.sh derives it from `clarusc appinfo`'s name= line,
 // sanitized to [A-Za-z0-9_-].
 func TestAppResNaming(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	dir := buildAppRes(t)
 	bin := filepath.Join(dir, "App-Res-Probe.bin")
 	if _, err := os.Stat(bin); err != nil {
@@ -75,7 +75,7 @@ func TestAppResNaming(t *testing.T) {
 // 129 + ICN#/ICON 129) and the BNDL arrays extended to list it -- and that
 // the CMakeLists.txt passes the app's id as CREATOR.
 func TestAppResResources(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	dir := buildAppRes(t)
 
 	r, err := os.ReadFile(filepath.Join(dir, "appres.r"))
@@ -140,7 +140,7 @@ func buildSetbundle(t *testing.T) string {
 // stamped the bundle bit (0x2000) and cleared the "has been inited" bit
 // (0x0100) on the file inside the built .dsk.
 func TestAppResBundleBit(t *testing.T) {
-	requireMac(t)
+	requireCprintMac(t)
 	dir := buildAppRes(t)
 	setbundle := buildSetbundle(t)
 

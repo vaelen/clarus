@@ -1232,6 +1232,21 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   retirement, compilation cache, peephole/regalloc buy-back — inventory
   in the 5e entry above).
 
+  **cprint/Retro68 Mac-lane test demotion (pack3-standardfile phase,
+  2026-08-07):** the seven `internal/mactest` tests that boot through
+  Retro68/cmake/gcc (`TestRunErrOnMac`, `TestAbortAppsOnMac`,
+  `TestCoreSuiteGUIOnMac`, `TestToolboxSuiteOnMac`, `TestAppResNaming`,
+  `TestAppResResources`, `TestAppResBundleBit`) are demoted off the T2
+  per-merge gate to an opt-in diagnostic behind `CLARUS_CPRINT_MAC_TESTS=1`
+  (Andrew, 2026-08-07: cprint-68k was a stop-gap; host is the C printer's
+  job now, and the native `emit68k` lane already runs every case these
+  seven cover). Kept, not deleted, as a cross-lane localization oracle —
+  it's what previously triangulated the trailing-bool ABI, 2B/4B form-hang,
+  and CharParameter marshaling bugs. Deletion of the lane itself
+  (`rt_ext_mac.inc`, `scripts/build-mac.sh`) stays deferred to **5f**
+  Retro68-retirement, not this phase. Full phase record: Task 6's ledger
+  entry, `.superpowers/sdd/2026-08-07-pack3-standardfile/`.
+
 - **Known-unexercised runtime surface (test-suite-review Task 13,
   2026-08-04):** a coverage-honesty audit — every `func nat_` fallback in
   `runtime/clarus/*.cla`, every `UiTestScript()`/`rtUiScripted`
