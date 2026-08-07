@@ -1,0 +1,120 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/standardfile.cla: curated Standard File Package (_Pack3)
+// declarations (Inside Macintosh I, "The Standard File Package"),
+// pack3-standardfile phase.
+//
+// Convention: SFPutFile/SFGetFile/SFPPutFile/SFPGetFile are all
+// selector-dispatched Pascal traps through the SAME single trap word
+// 0xA9EA (bit 11 set: 0xA9EA & 0x0800 == 0x0800, the Ch13 pascal-trap
+// reading rule) -- the selector is pushed as an extra word ahead of the
+// trap, exactly the "Package 7"-style dispatch shape uitable.cla's own
+// List Manager routines use (`trap 0xA9E7 sel N`, native-5e Task 14's
+// `sel` extern clause, cgCallExtPascal); every routine below carries its
+// own real selector word.
+//
+// Every trap word, selector, and struct layout below is confirmed
+// directly against Apple's own Universal Interfaces 3.4 (Retro68/
+// InterfacesAndLibraries/Interfaces), the authoritative source in this
+// repo -- Retro68's multiversal yaml reconstruction is UNTRUSTED WHEN
+// CITED ALONE (see toolbox/memory.cla and toolbox/osutils.cla for the
+// concrete Gestalt register mistake that established this rule) and is
+// not cited here at all.
+//
+//   SFPutFile   CIncludes/StandardFile.h:494-500:
+//               `EXTERN_API( void ) SFPutFile(Point where,
+//               ConstStr255Param prompt, /* can be NULL */
+//               ConstStr255Param origName, DlgHookUPP dlgHook, /* can be
+//               NULL */ SFReply *reply) THREEWORDINLINE(0x3F3C, 0x0001,
+//               0xA9EA);` -- sel 0x0001. Corroborated in AIncludes/
+//               StandardFile.a:288-290: `_SFPutFile: move.w #$0001,
+//               -(sp) / dc.w $A9EA`.
+//   SFGetFile   CIncludes/StandardFile.h:511-519:
+//               `EXTERN_API( void ) SFGetFile(Point where,
+//               ConstStr255Param prompt, FileFilterUPP fileFilter, /*
+//               can be NULL */ short numTypes, ConstSFTypeListPtr
+//               typeList, /* can be NULL */ DlgHookUPP dlgHook, /* can
+//               be NULL */ SFReply *reply) THREEWORDINLINE(0x3F3C,
+//               0x0002, 0xA9EA);` -- sel 0x0002. Corroborated in
+//               AIncludes/StandardFile.a:310-312: `_SFGetFile: move.w
+//               #$0002,-(sp) / dc.w $A9EA`.
+//   SFPPutFile  CIncludes/StandardFile.h:530-538:
+//               `EXTERN_API( void ) SFPPutFile(Point where,
+//               ConstStr255Param prompt, /* can be NULL */
+//               ConstStr255Param origName, DlgHookUPP dlgHook, SFReply
+//               *reply, short dlgID, ModalFilterUPP filterProc) /* can
+//               be NULL */ THREEWORDINLINE(0x3F3C, 0x0003, 0xA9EA);` --
+//               sel 0x0003. Corroborated in AIncludes/
+//               StandardFile.a:332-334: `_SFPPutFile: move.w #$0003,
+//               -(sp) / dc.w $A9EA`.
+//   SFPGetFile  CIncludes/StandardFile.h:549-559:
+//               `EXTERN_API( void ) SFPGetFile(Point where,
+//               ConstStr255Param prompt, FileFilterUPP fileFilter, /*
+//               can be NULL */ short numTypes, ConstSFTypeListPtr
+//               typeList, /* can be NULL */ DlgHookUPP dlgHook, /* can
+//               be NULL */ SFReply *reply, short dlgID, ModalFilterUPP
+//               filterProc) /* can be NULL */ THREEWORDINLINE(0x3F3C,
+//               0x0004, 0xA9EA);` -- sel 0x0004. Corroborated in
+//               AIncludes/StandardFile.a:354-356: `_SFPGetFile: move.w
+//               #$0004,-(sp) / dc.w $A9EA`.
+//
+// SFReply layout, CIncludes/StandardFile.h:130-138:
+//   struct SFReply {
+//     Boolean good; Boolean copy; OSType fType; short vRefNum;
+//     short version; StrFileName fName; /* a Str63 on MacOS */
+//   };
+// Field-offset anchor (classic MPW 68k packed rule, same anchor style as
+// testsuite/core/cases_xrec.cla:16-18's own XRSFReply mirror): good@0(1)
+// copy@1(1) fType@2(4) vRefNum@6(2) version@8(2) fName@10(64), total 74.
+//
+// SFTypeList, CIncludes/StandardFile.h:476: `typedef OSType
+// SFTypeList[4];` -- four back-to-back OSType (4-byte) slots, modeled
+// here as four named `int` fields (no fixed-size non-str array type in
+// this language) so a caller can set t0.."TEXT" etc. by name.
+//
+// where: a Point passed BY VALUE, packed `(v << 16) | h` into one `int`
+// -- same convention as every other by-value Point/Cell in this repo
+// (uitable.cla's own doc comment, ui.cla's rt_ext_ui_pt); callers may
+// also pass a 4-byte `Point` extern-record var directly (extern-record
+// -> `ptr`/`int`-by-value decay at the call site handles the reinterpret
+// for a 4-byte record). prompt/origName: `ptr` to a Pascal string (the
+// `Str255` buffer record below, or `UiStrAddr` in runtime code).
+// fileFilter/dlgHook/filterProc: `ptr(0)` = none/default.
+//
+// Str255: a generic Pascal-string buffer for prompt/origName arguments.
+// Lives here as its first consumer; move to a shared types file if a
+// second consumer appears.
+//
+// SFGetFile/SFPutFile are hardware-proven by the runtime's askOpen/
+// askSave live-drive (a later task in this phase); SFPPutFile/
+// SFPGetFile are declaration-only, citation-verified here -- System 6
+// modal dialogs cannot be auto-driven, so there is no automated way to
+// exercise their dlgID/filterProc path. The System 7 StandardGetFile
+// family (sel 5-8, CIncludes/StandardFile.h:568-635) is deliberately
+// left out: this catalog is System-6-first.
+
+extern record SFReply {
+    good: bool
+    copy: bool
+    fType: int
+    vRefNum: word
+    version: word
+    fName: str[63]
+}
+
+extern record SFTypeList {
+    t0: int
+    t1: int
+    t2: int
+    t3: int
+}
+
+extern record Str255 {
+    s: str[255]
+}
+
+external func SFPutFile(where: int, prompt: ptr, origName: ptr, dlgHook: ptr, reply: ptr) = trap 0xA9EA sel 0x0001
+external func SFGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: word, typeList: ptr, dlgHook: ptr, reply: ptr) = trap 0xA9EA sel 0x0002
+external func SFPPutFile(where: int, prompt: ptr, origName: ptr, dlgHook: ptr, reply: ptr, dlgID: word, filterProc: ptr) = trap 0xA9EA sel 0x0003
+external func SFPGetFile(where: int, prompt: ptr, fileFilter: ptr, numTypes: word, typeList: ptr, dlgHook: ptr, reply: ptr, dlgID: word, filterProc: ptr) = trap 0xA9EA sel 0x0004

@@ -1,0 +1,55 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/files.cla: curated File Manager declarations, pack3-standardfile
+// phase. DELIBERATELY THIN -- this catalog holds only what Standard
+// File's own SetVol step needs (a caller must set the default volume
+// before SFPutFile/SFGetFile so the dialog opens on the right disk); the
+// full File Manager fill belongs to a future file-abstraction phase.
+//
+// Every trap word and struct layout below is confirmed directly against
+// Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
+// Interfaces), the authoritative source in this repo -- Retro68's
+// multiversal yaml reconstruction is UNTRUSTED WHEN CITED ALONE (see
+// toolbox/memory.cla and toolbox/osutils.cla for the concrete Gestalt
+// register mistake that established this rule) and is not cited here.
+//
+//   PBSetVolSync  CIncludes/Files.h:1409-1412:
+//                 `#pragma parameter __D0 PBSetVolSync(__A0)` ...
+//                 `EXTERN_API( OSErr ) PBSetVolSync(ParmBlkPtr
+//                 paramBlock) ONEWORDINLINE(0xA015);` -- pb in A0, OSErr
+//                 result in D0, bit 11 clear (0xA015 & 0x0800 == 0) -->
+//                 OS/register convention, bare `reg` (default a0-in/
+//                 d0-out, same shape as toolbox/memory.cla's NewPtr/
+//                 DisposePtr comments). Corroborated in AIncludes/
+//                 Files.a:1546: `_PBSetVolSync: OPWORD $A015` (the
+//                 assembly-side label is `_PBSetVolSync`, not a bare
+//                 `_SetVol` -- no such label exists in Files.a; SetVol
+//                 the glue routine is a separate IMPORT_CFM_FUNCTION
+//                 entry at Files.a:2534 with no trap word of its own).
+//
+// VolumeParam layout, CIncludes/Files.h:470-494 (only the fields _SetVol
+// actually reads are declared; the rest of the real 64-byte struct --
+// filler2/ioVolIndex/dates/counts -- is captured as trailing `pad[40]`
+// filler and can be split out on demand):
+//   qLink@0(4) qType@4(2) ioTrap@6(2) ioCmdAddr@8(4) ioCompletion@12(4)
+//   ioResult@16(2) ioNamePtr@18(4) ioVRefNum@22(2), then pad[40] to the
+//   full 64-byte volume-variant size. _SetVol only reads ioNamePtr
+//   (StringPtr, pass ptr(0) for the current default volume's name) and
+//   ioVRefNum (set 0 to mean "use ioNamePtr" per Inside Macintosh's own
+//   SetVol semantics); every other field is call-time scratch this
+//   catalog never touches.
+
+extern record VolumeParam {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    pad[40]
+}
+
+external func PBSetVolSync(paramBlock: ptr): int = trap 0xA015 reg

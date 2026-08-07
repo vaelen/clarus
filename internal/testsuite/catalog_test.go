@@ -22,16 +22,24 @@ var catalogFiles = []string{
 	filepath.Join("toolbox", "events.cla"),
 	filepath.Join("toolbox", "osutils.cla"),
 	filepath.Join("toolbox", "scrap.cla"),
+	filepath.Join("toolbox", "standardfile.cla"),
+	filepath.Join("toolbox", "files.cla"),
 }
 
 // catalogDriver references >=1 symbol per catalog file: TickCount/
 // EventAvail/everyEvent/EventRecord (events), NewPtr/DisposePtr (memory),
-// Gestalt/SysBeep (osutils), ZeroScrap (scrap).
+// Gestalt/SysBeep (osutils), ZeroScrap (scrap), SFReply/SFTypeList/
+// Str255/SFGetFile/SFPutFile (standardfile), VolumeParam/PBSetVolSync
+// (files).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
     var p: ptr
     var err: int
+    var rep: SFReply
+    var tl: SFTypeList
+    var vp: VolumeParam
+    var pr: Str255
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -44,6 +52,17 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     SysBeep(1)
     if t0 < 0 {
         t0 = 0
+    }
+
+    tl.t0 = 0x54455854
+    pr.s = "Save as:"
+    vp.ioNamePtr = ptr(0)
+    vp.ioVRefNum = 0
+    err = PBSetVolSync(vp)
+    SFGetFile((100 << 16) | 100, pr, ptr(0), 1, tl, ptr(0), rep)
+    SFPutFile((100 << 16) | 100, pr, pr, ptr(0), rep)
+    if rep.good {
+        t0 = t0 + rep.vRefNum
     }
 }
 `
