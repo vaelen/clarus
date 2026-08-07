@@ -169,7 +169,10 @@ emit lanes.
 
 - Deleting the cprint-Mac lane, `rt_ext_mac.inc`, or `build-mac.sh`
   (5f: Retro68 retirement).
-- TE↔Scrap port, AE/GetAppFiles launch (recorded 5e limits).
+- AE/GetAppFiles launch (recorded 5e limit). (This section originally
+  also listed the TE↔Scrap port, carried stale from the 08-03 spec — the
+  toolbox-cookbook phase had already shipped it, `0f2534e`; corrected at
+  final review.)
 - System 7 StandardFile variants; any modal-dialog driving harness.
 - Full File Manager catalog fill.
 - Symlink/case-aware path canonicalization (lexical only).

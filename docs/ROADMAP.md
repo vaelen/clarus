@@ -887,11 +887,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (2) Real-hardware-untested: LM selector-trap dispatch and the Gestalt
   bound above are proven only on Mini vMac, never a real 68k Mac; AppleEvent
   handler glue was never built (nothing to wire, see above), so native AE
-  launch/open-document dispatch is untested by any golden; Scrap Manager
-  (`TEFromScrap`/`TEToScrap`) is still a clean fail-closed stub on the
-  native lane (`uitext.cla`) — every scripted scenario's copy-paste path
-  uses the already-ported test-mode substitute instead, so real Scrap
-  round-tripping has never run natively. (Real `SFGetFile`/`SFPutFile`
+  launch/open-document dispatch is untested by any golden. Scrap: the
+  real native TE↔desk-scrap bridge (`nat_UiTEFromScrap`/`nat_UiTEToScrap`,
+  `uitext.cla:193-230`) landed in the toolbox-cookbook phase (`0f2534e`)
+  and IS hardware-proven by the toolbox suite's `Catalog` case roundtrip
+  (both lanes, T2); every scripted scenario's copy-paste path still uses
+  the test-mode substitute, by design. (Real `SFGetFile`/`SFPutFile`
   were the same kind of stub in `uidialogs.cla` until the
   pack3-standardfile phase, 2026-08-07, replaced them with real `_Pack3`
   selector-dispatch transcriptions and live-drove them on the emulator —
@@ -1267,7 +1268,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   roundtrip byte-exact (`hdir` shows `TEXT/MPS `), Cancel a clean no-op
   on both dialogs. The 08-03 spec is superseded by
   `docs/superpowers/specs/2026-08-07-pack3-standardfile-design.md`.
-  Superseded-spec non-goals still standing: TE↔Scrap port, AE/
+  Superseded-spec non-goals still standing: AE/
   GetAppFiles launch, System 7 StandardFile variants (sel 5-8,
   Gestalt-gate when wanted), dlgHook exposure. **New known limits from
   this phase, for whoever touches this next:** (a) native `file.save` now
@@ -1315,7 +1316,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | Branch / stub | Status | Reason / pointer |
   |---|---|---|
   | `nat_UiSFGetFile`/`nat_UiSFPutFile` (`uidialogs.cla`) | ~~stubbed-by-design~~ **CLOSED, pack3-standardfile (2026-08-07)** | Was: StandardFile's selector-prefixed Package Manager dispatch (`0xA9EA`) never ported on either lane, returning `false` (cancelled) unconditionally. Now real `_Pack3` transcriptions over `toolbox/standardfile.cla`, live-driven on the emulator (save → quit → relaunch → reopen, byte-exact). The scripted scenarios still take the test-mode substitute by design, so the real dispatch is covered by live-drive acceptance, not by a golden. |
-  | `nat_UiTEFromScrap`/`nat_UiTEToScrap` (`uitext.cla`) | stubbed-by-design | No-op glue (`return 0`, touches nothing) — the call sites themselves (Cut/Copy/Paste, `rtUiStdEditDispatch`) ARE reached by `testdata/ui/editmenu.events` (one of the 23 frozen golden scenarios), but the real TE-scrap "executor" glue (style-run ↔ flat Scrap Manager buffer) was never reverse-engineered on either lane; `uitext.cla:140`'s own comment defers it to a future scenario that needs real native cut/copy/paste to actually survive. `nat_UiTEGetScrapLength` is NOT a stub (a real `peekw(0xAB0)` port) and IS exercised — Paste's 32k-clamp length calc (`uitext.cla:813`) runs on every `editmenu.events` boot. |
+  | `nat_UiTEFromScrap`/`nat_UiTEToScrap` (`uitext.cla`) | ~~stubbed-by-design~~ **CLOSED by toolbox-cookbook (`0f2534e`, 2026-08-07)** | Real ports now (`uitext.cla:193-230`: `peekl(0xAB4)`/`UiGetScrap`/`pokew(0xAB0)` and `UiHGetState`/`UiHLock`/`UiPutScrap`), hardware-proven by the toolbox suite `Catalog` case's TE↔desk-scrap roundtrip on both lanes (T2). This row's original no-op-glue description was stale from the moment 0f2534e landed; corrected pack3-standardfile final review, 2026-08-07. `nat_UiTEGetScrapLength` is NOT a stub (a real `peekw(0xAB0)` port) and IS exercised — Paste's 32k-clamp length calc (`uitext.cla:813`) runs on every `editmenu.events` boot. |
   | `nat_UiLaunchReal` (native/cg68k lane, `ui.cla`) | closed by `TestRealEventLoopTickOn68k` | New finding this audit: `tickprobe.cla` boots with no `--events`, so `UiTestScript()` reads empty and `rtUiLaunch` takes its real (non-scripted) branch — `UiLaunchReal()` resolves to `nat_UiLaunchReal` (clause-less extern, native lane), which degrades to `UiFireStartEmpty()`. Not previously documented as closed. |
   | `UiLaunchReal` (cprint/Mac lane, `rt_ext_mac.inc` real C AE glue: `AEInstallEventHandler` + 4 Pascal handlers) | unexercised, recorded | Still genuinely untested — every Mac-lane (Retro68) test build uses `--events`, and `TestRealEventLoopTickOn68k` only covers the native `emit68k` lane (no `TestRealEventLoopTickOnMac` twin exists). Needs a real Finder double-click launch or a dedicated no-events Mac-lane smoke test; not cheap (out of this task's scope to add a new gated Mac boot lane). |
   | `rtUiAskSaveChanges`'s real `Alert(130)` half (`uidialogs.cla`) | unexercised, recorded | Gated on `rtUiScripted`, which is unconditionally `true` for the run's whole lifetime the instant any test's `rtUiRunScripted` starts (`uiscript.cla:1250`) — no existing test ever takes the real half. NOT cheap per this task's own bar: modal `Alert`, needs real input. Same disposition covers `rtUiAskOpen`/`rtUiAskSave`'s own real halves (`UiSFGetFile`/`UiSFPutFile`, row 1 above). |

@@ -307,7 +307,7 @@ func expand(rawPath: string, entry: bool): bool {
     return false
 }
 
-// hoistDedups returns the decl-list heads of the USER-side files that the
+// hoistDedups returns the asmHeads INDICES of the USER-side files that the
 // dedupHits entries from index fromHit onward (i.e. the ones a single
 // runtime-module expand() call just appended) resolved to, marking each
 // hoisted so it is skipped when the user chain is rebuilt and never hoisted
