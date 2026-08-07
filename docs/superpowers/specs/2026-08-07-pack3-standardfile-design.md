@@ -186,3 +186,36 @@ emit lanes.
 - `runtime/clarus/uidialogs.cla` — includes + 2 stub bodies real.
 - `testdata/cg68k/*.s` — golden re-bless fallout.
 - `CLAUDE.md`, `docs/ROADMAP.md` — deprecation story + phase record.
+
+## Outcome (2026-08-07)
+
+Shipped on branch `pack3-standardfile` (Tasks 1-6 + two unplanned tasks),
+all gates green. Deltas from the design above, discovered in flight:
+
+- **Task 5a (unplanned): the Gestalt register-binding correction.** T2's
+  first rehearsal failed `TestToolboxSuiteOn68k/Catalog` ("gestalt err
+  0"). Root cause was NOT this phase's code and NOT the initially
+  suspected cg68k segment bug: every Clarus Gestalt transcription bound
+  the response pointer per Gestalt.h's `#pragma parameter` — but the
+  pragma describes Apple's TWOWORDINLINE glue (`0x2288` = `MOVE.L
+  A0,(A1)`), not the raw trap, which answers in A0. Split into
+  `GestaltErr (ret d0)` / `GestaltValue (ret a0)`; assertions hardened
+  from `!= 0` (which passed on uninitialized heap for weeks) to a BCD
+  version range; the previously "non-reproducible" cg68k shape-corruption
+  bug and the "Mini vMac Gestalt is broken" lore both resolved as
+  artifacts of the same misbinding. The demoted cprint lane served as the
+  localization oracle on day one of its demotion.
+- **Task 6a (unplanned): native FInfo stamping.** Live-drive found saves
+  landing with blank type/creator (pre-existing 5e file-layer gap,
+  unobservable before a working SFGetFile filter). natFileWriteText now
+  stamps `'TEXT'`/`'MPS '` via PBSetFInfoSync after a successful create —
+  byte-parity with the C lane; `toolbox/files.cla` grew
+  PBGet/SetFInfoSync + FileParam. Residual (recorded, out of scope):
+  native `file.save` stamps `'TEXT'`/`'MPS '` vs the C lane's
+  `'CLRD'`/app-creator.
+- Verification outcomes: T2 236s (~10x faster post-demotion), all seven
+  demoted tests SKIP by default and PASS under `CLARUS_CPRINT_MAC_TESTS=1`;
+  listing goldens carry the `MOVE.W #sel,-(SP)` + `DC.W $A9EA` shapes
+  (eyeballed before any boot); live-drive roundtrip proven on screen and
+  by host-side `hdir` (`rt2` = `TEXT/MPS `, 8 bytes, content identical
+  after relaunch; Cancel clean no-op on both dialogs).

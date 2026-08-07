@@ -1234,16 +1234,37 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (see its "Outcome (2026-08-04)" section), plan:
   `docs/superpowers/plans/2026-08-04-compiler-performance.md`.
 
-  **The native Standard File (_Pack3) port is DEFERRED until after the
-  Toolbox phase** (Andrew, 2026-08-03; spec already committed at
-  `docs/superpowers/specs/2026-08-03-native-standardfile-pack3-design.md`,
-  `f3546bb`). It stands to benefit directly: SFReply becomes an `extern
-  record` instead of a 74-byte peek-offset scratch, and a dlgHook becomes
-  expressible if callbacks land first. The spec is written against
-  today's surface; revise at implementation time if the new features
-  offer a cleaner shape. Then **5f** (Mac-resident clarusc, Retro68
-  retirement, compilation cache, peephole/regalloc buy-back — inventory
-  in the 5e entry above).
+  **The native Standard File (_Pack3) port: DONE (pack3-standardfile
+  phase, 2026-08-07, branch `pack3-standardfile`).** Deferred from
+  2026-08-03 exactly as planned, and the deferral paid: the shipped shape
+  is catalog-first per the GUIDING PRINCIPLE above — `toolbox/
+  standardfile.cla` (the full classic S6 package: SFPutFile/SFGetFile/
+  SFPPutFile/SFPGetFile as `= trap 0xA9EA sel 1..4`, `SFReply` as a real
+  `extern record` — the reference's own worked example — plus
+  `SFTypeList`/`Str255` buffers) and a deliberately thin `toolbox/
+  files.cla` (PBSetVolSync 0xA015, PBGet/SetFInfoSync 0xA00C/0xA00D,
+  VolumeParam/FileParam records; full File Manager fill deferred to a
+  future file-abstraction phase). `runtime/clarus/uidialogs.cla` includes
+  both catalogs (the first runtime consumer of `toolbox/*.cla`, enabled
+  by the same phase's clarusc include-dedup-by-normalized-path change —
+  see the reference's include section) and its `nat_UiSFGetFile`/
+  `nat_UiSFPutFile` deferred stubs became real transcriptions of the C
+  wrappers. Native file-create now stamps `'TEXT'`/`'MPS '` FInfo
+  (Task 6a — byte-parity with `rt_mac.c`'s `Create` call; previously
+  blank, silently unobservable until SFGetFile's type filter existed to
+  expose it). Live-drive acceptance (the 4c standard) passed in full:
+  real SFPutFile save → quit → relaunch → real SFGetFile reopen, content
+  roundtrip byte-exact (`hdir` shows `TEXT/MPS `), Cancel a clean no-op
+  on both dialogs. The 08-03 spec is superseded by
+  `docs/superpowers/specs/2026-08-07-pack3-standardfile-design.md`.
+  Superseded-spec non-goals still standing: TE↔Scrap port, AE/
+  GetAppFiles launch, System 7 StandardFile variants (sel 5-8,
+  Gestalt-gate when wanted), dlgHook exposure. Also out of this phase's
+  fallout, two records elsewhere in this file: the Gestalt register-
+  binding correction (Task 5a — see the "Honest limits" and known-issues
+  entries it rewrote) and the cprint-Mac demotion (next paragraph). Next:
+  **5f** (Mac-resident clarusc, Retro68 retirement, compilation cache,
+  peephole/regalloc buy-back — inventory in the 5e entry above).
 
   **cprint/Retro68 Mac-lane test demotion (pack3-standardfile phase,
   2026-08-07):** the seven `internal/mactest` tests that boot through
