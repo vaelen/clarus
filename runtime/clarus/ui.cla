@@ -1348,11 +1348,46 @@ func rtUiBuildEvery() {
 // "int arithmetic wraps identically") -- inverted here into a fire
 // condition (`now - due >= 0`) rather than the C reference's own skip
 // condition, same logic either way.
+//
+// Task 6 (native-gaps-cleanup) root-cause fix: this is the ONE place that
+// touches `rtUiEveryDueArr` without checking `rtUiScripted` first (every
+// other every-array reader/writer -- rtUiScriptEveryPump, UiTestTick,
+// rtUiRun, rtUiLaunch -- gates on `rtUiScripted`/`UiTestScript()`).
+// `rtUiBuildEvery`'s own scripted-vs-real seed IS correct (verified with a
+// temporary debug probe, boot, read, revert: `peekb(UiTestScript())` reads
+// nonzero and `now` seeds to `0` at build time, every time) -- the actual
+// bug is here: `rtUiRun`'s real (non-scripted) event-loop branch calls this
+// unconditionally, but so does test-suite code that legitimately needs the
+// REAL loop's idle work for its OWN purpose while a build is otherwise
+// scripted (testsuite/toolbox/cases_uitest.cla's `casePostEventClick`,
+// which drives a REAL PostEvent-queued click through `UiGetNextEvent`/
+// `rtUiHandleMouseDown` because a virtual `tick` never drains the real OS
+// event queue -- see that case's own header comment). Called while
+// `rtUiScripted` is already true (any composed `--testapi`/`--events`
+// build, set the moment `rtUiRunScripted` starts), it used real
+// `UiTickCount()` (~46 ticks into a suite-sized boot) to reschedule EVERY
+// program-wide every-block's `due` -- including one whose owning window
+// isn't even open yet (the pump has no per-window scope) -- stomping the
+// virtual-tick-seeded schedule with a real-tick one that `rtUiScriptTick`'s
+// own virtual counter (starting at 0) then took ages to catch up to.
+// Forwarding to the scripted twin here, once, fixes every such caller at
+// the source (ponytail: fix the root, not each call site) instead of
+// auditing every current and future real-loop-idle-work caller for its own
+// `rtUiScripted` guard. Unreachable in every frozen golden scenario (all
+// `--events`-driven, so `rtUiRun` always takes rtUiRunScripted's branch and
+// never enters its own real loop -- ui.cla's own header comment on
+// rtUiRun) -- this function is simply never CALLED during any of their
+// boots, scripted or not, so this change cannot affect their trace/snap
+// output.
 func rtUiEveryPump() {
     var now: int
     var i: int
     var due: int
 
+    if rtUiScripted {
+        rtUiScriptEveryPump()
+        return
+    }
     if rtUiEveryDueArr == ptr(0) {
         return
     }

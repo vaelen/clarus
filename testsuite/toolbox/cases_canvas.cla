@@ -26,66 +26,62 @@
 // window overall" -- so it resolves correctly even while this suite's own
 // Suite window is the actual frontmost window on screen throughout.
 //
-// DISCOVERED RUNTIME QUIRK (pre-existing, not introduced by this task;
-// see task-7-report.md's own "concerns" section for the full escalation):
-// `rtUiBuildEvery` (ui.cla, called once from `rtUiStartup`, itself called
-// by the compiler-generated entry sequence BEFORE `App.launch`/`App.
-// startEmpty` or the scripted event loop ever run) seeds every every-
-// block's INITIAL `due` tick as `now + interval`, where `now` is supposed
-// to be `0` for any `--events`-compiled build (`peekb(UiTestScript()) !=
-// 0`) so the schedule is virtual-tick-based throughout. Empirically
-// (peekl(rtUiEveryDueArr) read directly from this case, before this case
-// does anything else), THIS suite's own composed build measured an
-// initial due of 50, not 4 -- consistent with `now` having actually been
-// a REAL `UiTickCount()` value (~46, plausible for how long this SUITE's
-// own larger startup -- many more windows/menus than the retired
-// standalone canvas.cla fixture ever built -- takes before reaching that
-// point) rather than 0, even though `UiTestTick`'s OWN (later-executing)
-// `if rtUiScripted` gate correctly detects and uses the virtual-tick path
-// (confirmed: this case's own tick calls advance rtUiVirtualTicks in
-// lockstep, exactly `+4` per call, with no drift). The retired standalone
-// fixture never surfaced this because its own real boot-time tick count
-// at that early point was apparently small enough to fall within its own
-// script's tick budget (8 x `tick 4` = 32) by coincidence -- a byte-exact
-// blessed golden just captures whatever really happened, bug or not, and
-// nothing about mac-target-4b's own review ever isolated the every-
-// block's OWN initial-due arithmetic to notice.
+// FIXED RUNTIME BUG (native-gaps-cleanup Task 6; formerly a discovered-
+// and-worked-around quirk, see task-7-report.md's own "concerns" section
+// for the original escalation and misdiagnosis): this case used to need a
+// large warm-up `UiTestTick` call before the real measured cadence because
+// this suite's own composed build measured the every-block's INITIAL `due`
+// tick as `50`, not the expected `4`.
 //
-// Workaround (NOT a fake -- it drives the exact same real mechanism,
-// through the same public UiTestTick API, all the way to a state where it
-// behaves exactly as documented): a single generously-oversized warm-up
-// UiTestTick call, BEFORE the real measured cadence, guarantees crossing
-// ANY plausible real-boot-tick-seeded due (scripted ticks cost no real
-// wall-clock time at all, so a big n is free) and fires the block once
-// (a harmless, discarded x+=dx bump); rtUiScriptEveryPump's own reschedule
-// after that fire (`due = rtUiVirtualTicks + interval`) is unconditionally
-// virtual-tick-based, so every firing from then on behaves exactly as
-// designed -- confirmed empirically (see task-7-report.md).
+// Root-caused (not guessed -- a temporary debug probe recorded
+// `peekb(UiTestScript())` and the seeded `now` at the exact moment
+// `rtUiBuildEvery` ran, then a case read them back): `rtUiBuildEvery`'s own
+// `peekb(UiTestScript()) != 0` seed was ALREADY correct every time (reads
+// nonzero, seeds `now = 0`, due = `0 + 4` = `4`) -- the real bug was
+// `rtUiEveryPump` (ui.cla), the ONE every-array reader/writer that did NOT
+// gate on `rtUiScripted` the way its virtual-tick twin
+// (`rtUiScriptEveryPump`, uiscript.cla), `UiTestTick`, `rtUiRun`, and
+// `rtUiLaunch` all do. `testsuite/toolbox/cases_uitest.cla`'s
+// `casePostEventClick` (an EARLIER-dispatched case, by design driving the
+// REAL event loop to deliver a real `PostEvent`-queued click) legitimately
+// calls `rtUiEveryPump()` directly to replicate a real loop iteration's
+// idle work -- but that pump is program-wide, not scoped to whichever
+// window is open, so its real-`UiTickCount()`-based reschedule (`due = now
+// + interval`, `now` ~46 that deep into this suite's own larger startup)
+// stomped THIS case's still-unopened CanvasWin every-block's `due` from
+// `4` to `50`, long before this case ever ran. Fixed at the source:
+// `rtUiEveryPump` now forwards to `rtUiScriptEveryPump` whenever
+// `rtUiScripted` is true, so every current and future caller of the real
+// pump (not just this one) gets the virtual-tick-consistent behavior for
+// free. See `rtUiEveryPump`'s own doc comment (ui.cla) for the full
+// mechanism.
+//
+// With the fix, `due` starts at the correctly-seeded `4` and this case
+// needs no warm-up at all -- the geometry math below is UNCHANGED (it
+// already excluded the old warm-up's own one-time bump from its own
+// firing count), so this case is now both simpler AND the regression test
+// for the fix: if `rtUiEveryPump` regresses to ignoring `rtUiScripted`
+// again, `casePostEventClick`'s own earlier real-pump call would once
+// again stomp `due` with a real-tick value, this case's un-warmed cadence
+// would no longer land the square where expected, and `s1 == s2` would
+// FAIL.
 //
 // A tick's every-pump fires each due entry AT MOST ONCE per UiTestTick
 // call, regardless of the `n` passed (same "at most once per tick N
 // script line" contract canvas.events' own header comment documents) --
-// so, after the warm-up, this case calls UiTestTick(4) three times (not
-// UiTestTick(12) once) to get three firings before the first checksum,
-// mirroring canvas.events' own "tick 4" x3 cadence exactly, then five
-// more calls before the second checksum (canvas.events' own "tick 4" x5).
-
-// tbCanvasWarmupTicks: see this file's own header comment on the
-// discovered runtime quirk -- large enough to clear any plausible real
-// boot-time tick count (a few hundred ticks is several real seconds; this
-// suite's own measured value was ~46) with a wide safety margin, and free
-// (no real wall-clock cost) since it is entirely virtual-tick arithmetic
-// under a scripted boot.
-const tbCanvasWarmupTicks: int = 2000
+// so this case calls UiTestTick(4) three times (not UiTestTick(12) once)
+// to get three firings before the first checksum, mirroring canvas.events'
+// own "tick 4" x3 cadence exactly, then five more calls before the second
+// checksum (canvas.events' own "tick 4" x5).
 
 // tbCanvasCkX0/Y0/W/H: an 8px-aligned checksum region that fully contains
 // the sliding square at BOTH sampled positions. CanvasWin's `size: 160,
 // 160` -> content top-left ((512-160)/2, 44) = (176, 44) (already a
 // multiple of 8, no local-offset adjustment needed). The square is a
-// 20x20 fill at LOCAL (x, 60); x is 19 after 3 firings past the warm-up's
-// own one bump (10 + 3*3) and 34 after 8 firings past it (19 + 3*5) --
-// see this file's own header comment. LOCAL x=16 (176+16=192, a multiple
-// of 8) through LOCAL x=56 (176+56=232, a multiple of 8, width 40) fully
+// 20x20 fill at LOCAL (x, 60); x is 19 after 3 firings (10 + 3*3) and 34
+// after 8 firings (19 + 3*5) -- see this file's own header comment. LOCAL
+// x=16 (176+16=192, a multiple of 8) through LOCAL x=56 (176+56=232, a
+// multiple of 8, width 40) fully
 // contains both squares' bounding boxes (19..39 and 34..54, both inside
 // [16,56]) with margin on every side.
 const tbCanvasCkX0: int = 192
@@ -101,11 +97,6 @@ func caseCanvas(): TestResult {
     var detail: string
 
     w = open CanvasWin
-
-    // Warm-up: see this file's own header comment. Discards its own
-    // (harmless) one-time effect on x -- only the s1/s2 DIFFERENCE below
-    // is asserted, not any absolute x value.
-    UiTestTick(tbCanvasWarmupTicks)
 
     i = 0
     while i < 3 {

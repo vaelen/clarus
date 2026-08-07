@@ -2850,6 +2850,10 @@ static void clar_fn_rtUiEveryPump(void) {
     cv_i = 0;
     int32_t cv_due;
     cv_due = 0;
+    if (cv_rtUiScripted) {
+        clar_fn_rtUiScriptEveryPump();
+        return;
+    }
     if (cv_rtUiEveryDueArr == (void *)(intptr_t)(0)) {
         return;
     }
