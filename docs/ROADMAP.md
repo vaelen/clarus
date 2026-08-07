@@ -868,14 +868,22 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   global" mechanism `MemError`'s own `$0220` uses), lowering it by a fixed
   32KB reserve via a real `SetApplLimit` trap, before `MaxApplZone`.
 
-  **Honest limits.** (1) The Mini vMac ROM's `Gestalt` trap dispatch never
-  reaches a real Gestalt implementation on this emulator — `err`/D0 comes
-  back a clean 0/noErr but `resp` is heap garbage, which without a guard
-  misread as a plausible System-7 version and selected the wrong window
-  WDEF for modal forms; `rtUiStartup` bounds `resp` to a plausible BCD
-  system-version range before trusting it (strictly safe for the cprint
-  lane too, whose real Gestalt result is always correct either way) — a
-  workaround for this ROM/emulator, not a language or codegen limit.
+  **Honest limits.** (1) ~~The Mini vMac ROM's `Gestalt` trap dispatch never
+  reaches a real Gestalt implementation on this emulator~~ — **DISPROVEN,
+  pack3-standardfile Task 5a (2026-08-07).** The ROM's Gestalt works fine
+  and answers `0x0607` for `'sysv'`; the garbage `resp` was OUR bug. The
+  raw `_Gestalt` trap returns its response VALUE in **A0** (Gestalt.h's
+  `TWOWORDINLINE(0xA1AD, 0x2288)`, whose second word is `MOVE.L A0,(A1)` —
+  glue that stores it through the caller's pointer), and every Clarus
+  transcription bound `a1: response` as an input the trap ignores and read
+  `ret d0`, dropping A0 entirely. `*response` was therefore never written,
+  so `resp` was whatever uninitialized `NewPtr` heap the slot held —
+  `err`/D0 really was a clean noErr because the trap really did succeed.
+  Fixed by declaring the trap twice, once per result register
+  (`GestaltErr` `ret d0` / `GestaltValue` `ret a0`); the BCD range bound in
+  `rtUiStartup` is kept as a cheap sanity guard rather than as
+  compensation. See `docs/clarus-toolbox-cookbook.md` §4 and
+  `.superpowers/sdd/2026-08-07-pack3-standardfile/task-5a-report.md`.
   (2) Real-hardware-untested: LM selector-trap dispatch and the Gestalt
   bound above are proven only on Mini vMac, never a real 68k Mac; AppleEvent
   handler glue was never built (nothing to wire, see above), so native AE
@@ -1138,8 +1146,13 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      **Outcome:** all six tasks landed, reference-first. (1) A curated
      `toolbox/{memory,events,osutils,scrap}.cla` extern catalog — real IM
      names, every trap word hand-verified against Retro68's multiversal
-     Universal Interfaces defs, the Gestalt A0-vs-A1 register discrepancy
-     documented honestly rather than papered over (`osutils.cla`); a T1
+     Universal Interfaces defs, and a claimed Gestalt register discrepancy
+     between multiversal and `Gestalt.h` documented rather than papered
+     over (`osutils.cla`) — that write-up resolved the discrepancy the
+     WRONG way and was corrected by pack3-standardfile Task 5a:
+     multiversal was right, the trap returns its response in A0, and the
+     A1 reading came from mistaking `Gestalt.h`'s inline glue for the
+     trap's own contract; a T1
      check test (`internal/testsuite/catalog_test.go`) pins it. (2) The
      `testsuite/toolbox` `Catalog` case wires the catalog into a real
      suite build (22→23 real cases, 24 total incl. `SelfCheck`);
@@ -1768,21 +1781,26 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   the `string(n)` fix's pad walk already converges a `string(n)` field
   that FOLLOWS one of these shapes; only non-str fields after them, and
   the totals themselves, still diverge.
-- **cg68k size/shape-sensitive silent-corruption bug (found during
-  toolbox-cookbook Task 4, 2026-08-06):** a branch-per-step rewrite of
-  `testsuite/toolbox/cases_catalog.cla`'s `caseCatalog` TE section (one
-  `if not stepOk { ... }` per driven step, ~7 branches) corrupts an
-  unrelated, textually-earlier Gestalt check in the same function, on the
-  native (`emit68k`) lane only — `caseCatalog`'s own Gestalt check comes
-  back `n == 0` once the branch-heavy TE section is appended below it.
-  Reproduced 2/2 (`FAIL Catalog: gestalt err 0`,
-  `TestToolboxSuiteOn68k`). Doesn't stop `emit68k` from producing a
-  binary; corrupts the booted program's own runtime behavior instead.
-  Worked around in the shipped `caseCatalog` by avoiding the
-  branch-per-step shape. Repro fixture archived at
+- **~~cg68k size/shape-sensitive silent-corruption bug~~ (raised during
+  toolbox-cookbook Task 4, 2026-08-06) — RESOLVED as a MISDIAGNOSIS by
+  pack3-standardfile Task 5a, 2026-08-07. There was never a cg68k bug.**
+  The reported symptom was real and reproduced 2/2 (a branch-per-step
+  rewrite of `testsuite/toolbox/cases_catalog.cla`'s `caseCatalog` TE
+  section made an unrelated, textually-earlier Gestalt check in the same
+  function come back `n == 0`, native `emit68k` lane only), but the cause
+  was the Gestalt declaration, not codegen: the raw trap returns its
+  response in **A0**, our `reg(d0: selector, a1: response) ret d0` clause
+  dropped A0, so `*response` was never written and the check asserted
+  `!= 0` against uninitialized `NewPtr` heap. Any edit that moved the heap
+  — a branch-heavy rewrite, a segment boundary, even a same-length
+  comment — flipped the coin, which is exactly what "size/shape-sensitive"
+  was describing. Fixed by transcribing the trap twice (once per result
+  register) and by replacing the `!= 0` assertions with a plausible BCD
+  system-version range, so the cases now fail deterministically on both
+  lanes if the binding regresses. Repro fixture stays archived at
   `.superpowers/sdd/2026-08-06-toolbox-cookbook/repro-shape-corruption/`
-  (`cases_catalog.branch-per-step.cla` + README). Not root-caused; needs
-  its own investigation.
+  (superseded banner added); full trail in
+  `.superpowers/sdd/2026-08-07-pack3-standardfile/task-5a-report.md`.
 - **Transient `emit68k` extern-record-decay crash (found during
   toolbox-cookbook Task 4, 2026-08-06; unconfirmed/environment-
   sensitive):** a single observed `emit68k` crash (`runtime error: list

@@ -19,9 +19,16 @@
 //
 // Apple-interfaces re-verification (toolbox-cookbook phase, 2026-08-07):
 // multiversal/defs/*.yaml is a third-party reconstruction and UNTRUSTED
-// WHEN CITED ALONE -- it already got a Toolbox response register wrong
-// once (Gestalt's `responsep`: yaml says A0, real 68k hardware wants A1;
-// see toolbox/osutils.cla). Every trap word and the ScrapStuff layout
+// WHEN CITED ALONE -- a citation it is the SOLE source for has never been
+// checked against Apple at all. (The anecdote that used to justify this
+// rule here -- that multiversal put Gestalt's `responsep` in the wrong
+// register -- was itself wrong, and pack3-standardfile Task 5a retired
+// it: multiversal's `Out<A0>` was RIGHT, and our A1 reading came from
+// taking `Gestalt.h`'s `#pragma parameter` line as the trap's contract
+// when it describes the INLINE GLUE. The sharper rule that survives:
+// decode the inline words -- a `TWOWORDINLINE` routine's second word is
+// glue you must reproduce or route around. See toolbox/osutils.cla.)
+// Every trap word and the ScrapStuff layout
 // below are now confirmed directly against Apple's own Universal
 // Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces): AIncludes/
 // Scrap.a confirms ZeroScrap $A9FC / GetScrap $A9FD / PutScrap $A9FE /

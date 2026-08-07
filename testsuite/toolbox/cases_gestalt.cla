@@ -44,7 +44,10 @@ external func TbGestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector)
 // (Gestalt.h) -- the SAME selector rtUiStartup's own Gestalt calls
 // already make on every UI program boot (ui.cla), proven to answer
 // reliably in this exact emulator/ROM/system-image environment (the
-// gated System 6 image answers 0x0607). Selector choice is incidental to
+// gated System 6 image answers 0x0607 -- 6.0.8 was a printing-only update
+// over 6.0.7 and left gestaltSystemVersion at 0x0607, so this is NOT a
+// mismatch with CLAUDE.md's `System 6.0.8.dsk`). Selector choice is
+// incidental to
 // this case's real purpose -- proving the user-authored NAMED-reg path
 // marshals correctly, not testing any one selector's support -- so
 // reusing the one already known-good here avoids conflating a

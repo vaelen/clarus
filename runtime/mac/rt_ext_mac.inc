@@ -339,7 +339,12 @@ int32_t rt_ext_UiTickCount(void) { return (int32_t)TickCount(); }
 /* Gestalt answers in two registers on the raw 68k trap (D0 = OSErr, A0 =
    response value), so ui.cla declares it as two single-result externs --
    see toolbox/osutils.cla's header comment. The C lane just calls the real
-   Gestalt() twice; it is a pure query. */
+   Gestalt() twice; it is a pure query. Deliberate lane divergence on the
+   ERROR path: this shim returns 0 when Gestalt fails, while the native
+   `ret a0` extern returns whatever A0 happens to hold. Harmless -- every
+   caller checks the Err half first and never reads the Value half on a
+   failure -- and not worth a native-side guard the language can't express
+   without emitting glue. */
 short rt_ext_UiGestaltErr(int32_t selector) { long r; return (short)Gestalt((OSType)selector, &r); }
 int32_t rt_ext_UiGestaltValue(int32_t selector) { long r = 0; if (Gestalt((OSType)selector, &r) != noErr) { r = 0; } return (int32_t)r; }
 void rt_ext_UiHideCursor(void) { HideCursor(); }

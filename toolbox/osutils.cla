@@ -4,8 +4,11 @@
 // toolbox/osutils.cla: curated OS Utilities / Gestalt declarations
 // (Inside Macintosh II "OS Utilities"; Gestalt from IM VI ch3).
 //
-// Provenance: Gestalt (0xA1AD) transcribed from CIncludes/Gestalt.h:64-69
-// and AIncludes/Gestalt.a:43, decoded the same way Delay is below --
+// Provenance: Gestalt (0xA1AD). AIncludes/Gestalt.a:43 contributes the
+// TRAP WORD only (`_Gestalt: OPWORD $A1AD` -- no register block at all,
+// so it is silent on the calling convention). The register evidence comes
+// from decoding CIncludes/Gestalt.h:64-69's inline words, the same way
+// Delay is decoded below, confirmed by an on-hardware probe (see below) --
 // which is the ONLY way to get it right, because the `#pragma parameter`
 // line alone is actively misleading here.
 //
@@ -33,7 +36,10 @@
 // real hardware (pack3-standardfile Task 5a, Mini vMac/System 6.0.7):
 // poking a 0x11223344 sentinel into the response slot before the call
 // and reading it back afterwards returns 0x11223344 unchanged, while
-// `ret a0` on the same trap returns 0x0607, the real system version.
+// `ret a0` on the same trap returns 0x0607, a real system version. (0x0607
+// rather than the 0x0608 this repo's `System 6.0.8.dsk` name suggests:
+// 6.0.8 was a printing-only update over 6.0.7 and left gestaltSystemVersion
+// at 0x0607. Not a mismatch, and not something to "fix".)
 //
 // A Clarus `reg` extern names exactly ONE result register, and has no
 // way to emit Apple's second glue word, so the trap is transcribed

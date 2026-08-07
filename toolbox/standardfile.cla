@@ -18,9 +18,10 @@
 // directly against Apple's own Universal Interfaces 3.4 (Retro68/
 // InterfacesAndLibraries/Interfaces), the authoritative source in this
 // repo -- Retro68's multiversal yaml reconstruction is UNTRUSTED WHEN
-// CITED ALONE (see toolbox/memory.cla and toolbox/osutils.cla for the
-// concrete Gestalt register mistake that established this rule) and is
-// not cited here at all.
+// CITED ALONE (see toolbox/osutils.cla for the Gestalt transcription
+// mistake that established this rule -- note the mistake was OURS, not
+// multiversal's: the real rule is "decode the inline words") and is not
+// cited here at all.
 //
 //   SFPutFile   CIncludes/StandardFile.h:494-500:
 //               `EXTERN_API( void ) SFPutFile(Point where,

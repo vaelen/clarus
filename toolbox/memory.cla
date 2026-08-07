@@ -23,11 +23,18 @@
 // against Apple's own Universal Interfaces 3.4
 // (Retro68/InterfacesAndLibraries/Interfaces), the authoritative source --
 // multiversal/defs/*.yaml is a third-party reconstruction of those same
-// tables and is UNTRUSTED WHEN CITED ALONE: it already got one Memory
-// Manager sibling wrong once (Gestalt's response register -- yaml says
-// A0, real 68k hardware wants A1; see toolbox/osutils.cla). Any
-// multiversal citation above should be read as secondary corroboration
-// only, superseded by the citations below.
+// tables and is UNTRUSTED WHEN CITED ALONE: a citation it is the SOLE
+// source for has never been checked against Apple at all. (The anecdote
+// that used to justify this rule here -- that multiversal put Gestalt's
+// response register in the wrong place -- was itself wrong, and
+// pack3-standardfile Task 5a retired it: multiversal's `Out<A0>` was
+// RIGHT, and our A1 reading came from taking `Gestalt.h`'s `#pragma
+// parameter` line as the trap's contract when it describes the INLINE
+// GLUE. The sharper rule that survives: decode the inline words -- a
+// `TWOWORDINLINE` routine's second word is glue you must reproduce or
+// route around. See toolbox/osutils.cla.) Any multiversal citation above
+// should be read as secondary corroboration only, superseded by the
+// citations below.
 //
 //   NewPtr        CIncludes/MacMemory.h:547 `#pragma parameter __A0
 //                 NewPtr(__D0)`; AIncludes/MacMemory.a:515 `_NewPtr:
