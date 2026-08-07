@@ -18,6 +18,20 @@ uitext.cla`), or a test suite case (`testsuite/toolbox/`) — or is the
 reference's own worked example. None of it is invented for this document;
 each walkthrough below cites its source.
 
+**Who this is for.** Most Clarus programs should never need anything in this
+document: the language's own windows, widgets, menus, forms, and files hide
+the Toolbox behind friendlier abstractions (cut/copy/paste, for example, is
+a capability of text controls, not something an application implements), and
+a "standard" application is written entirely through the lens of the Clarus
+language. The Toolbox surface exists for the minority case — when a program
+needs something the abstractions don't cover — and for the runtime itself,
+which calls the Toolbox through the same `toolbox/` catalog documented here.
+When transcribing something new, prefer the Toolbox as the 1980s Inside
+Macintosh volumes define it (Volume VI covers System 7.0): this repository's
+programs run on System 6 and System 7 both, so use the System 6 form
+whenever possible, and gate anything System 7-only behind a `Gestalt`
+version check with a graceful fallback (§4 shows the mechanics).
+
 ## 1. Reading an IM page
 
 An Inside Macintosh trap listing gives you a Pascal-looking signature, e.g.

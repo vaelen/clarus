@@ -17,6 +17,13 @@ Inside Macintosh declarations into Clarus `extern`/`callback` forms.
   dispatches, reviews, and integrates — it does not write implementation code
   itself. Final whole-branch review may use the most capable model.
 - Feature branch per plan; main stays green; merge only on request.
+- Toolbox calls (runtime included) go through `toolbox/*.cla`; when a new
+  feature needs a new Toolbox routine, enable the rest of that manager's
+  interface at the same time where feasible. Users get friendly Clarus
+  abstractions (80/20 — a standard app needs zero Toolbox knowledge); the
+  catalog is the escape hatch. Prefer 1980s-IM (System 6) APIs; gate
+  System 7-only features behind a Gestalt check with graceful fallback.
+  Full statement: ROADMAP item 3's GUIDING PRINCIPLE block.
 
 ## Build and test
 
