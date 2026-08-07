@@ -29,8 +29,9 @@ var catalogFiles = []string{
 // catalogDriver references >=1 symbol per catalog file: TickCount/
 // EventAvail/everyEvent/EventRecord (events), NewPtr/DisposePtr (memory),
 // GestaltErr/GestaltValue/SysBeep (osutils), ZeroScrap (scrap), SFReply/SFTypeList/
-// Str255/SFGetFile/SFPutFile (standardfile), VolumeParam/PBSetVolSync
-// (files).
+// Str255/SFGetFile/SFPutFile (standardfile), VolumeParam/PBSetVolSync/
+// FileParam/PBGetFInfoSync/PBSetFInfoSync (files, task-6a's FInfo-stamp
+// addition).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -40,6 +41,7 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     var tl: SFTypeList
     var vp: VolumeParam
     var pr: Str255
+    var fp: FileParam
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -64,6 +66,17 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     SFPutFile((100 << 16) | 100, pr, pr, ptr(0), rep)
     if rep.good {
         t0 = t0 + rep.vRefNum
+    }
+
+    fp.ioNamePtr = ptr(0)
+    fp.ioVRefNum = 0
+    fp.ioFDirIndex = 0
+    err = PBGetFInfoSync(fp)
+    fp.fdType = 0x54455854
+    fp.fdCreator = 0x4D505320
+    err = PBSetFInfoSync(fp)
+    if err != 0 {
+        t0 = t0 + 1
     }
 }
 `

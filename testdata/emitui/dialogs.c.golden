@@ -213,6 +213,8 @@ extern void rt_ext_SFGetFile(int32_t, void *, void *, short, void *, void *, voi
 extern void rt_ext_SFPPutFile(int32_t, void *, void *, void *, void *, short, void *);
 extern void rt_ext_SFPGetFile(int32_t, void *, void *, short, void *, void *, void *, short, void *);
 extern int32_t rt_ext_PBSetVolSync(void *);
+extern int32_t rt_ext_PBGetFInfoSync(void *);
+extern int32_t rt_ext_PBSetFInfoSync(void *);
 extern int32_t rt_ext_UiSFGetFile(void *);
 extern int32_t rt_ext_UiSFPutFile(void *, void *);
 

@@ -54,3 +54,65 @@ extern record VolumeParam {
 }
 
 external func PBSetVolSync(paramBlock: ptr): int = trap 0xA015 reg
+
+// ---- PBGetFInfoSync / PBSetFInfoSync (task-6a, pack3-standardfile phase):
+// added to close a Finder-info gap found by the phase's own live-drive --
+// a file the native (emit68k) lane creates via `file.writeText` had blank
+// fdType/fdCreator, hiding it from Standard File's own 'TEXT' Open filter.
+// Retro68's own glue for the high-level Pascal `Create` routine
+// (multiversal/custom/glue.c:355-378, NOT cited as an Apple source -- it's
+// Retro68's own C, quoted here only to explain WHY these two traps are
+// the fix) is PBCreateSync followed by a get-modify-set FInfo dance
+// through exactly these two traps; a bare PBCreateSync has no type/
+// creator field of its own to set.
+//
+//   PBGetFInfoSync  CIncludes/Files.h:1615-1625:
+//                   `#pragma parameter __D0 PBGetFInfoSync(__A0)` ...
+//                   `EXTERN_API( OSErr ) PBGetFInfoSync(ParmBlkPtr
+//                   paramBlock) ONEWORDINLINE(0xA00C);` -- pb in A0,
+//                   OSErr result in D0, bit 11 clear (0xA00C & 0x0800 ==
+//                   0) --> OS/register convention, bare `reg`, same shape
+//                   as PBSetVolSync above. Corroborated in AIncludes/
+//                   Files.a:1886: `_PBGetFInfoSync: OPWORD $A00C`.
+//   PBSetFInfoSync  CIncludes/Files.h:1643-1653:
+//                   `#pragma parameter __D0 PBSetFInfoSync(__A0)` ...
+//                   `EXTERN_API( OSErr ) PBSetFInfoSync(ParmBlkPtr
+//                   paramBlock) ONEWORDINLINE(0xA00D);` -- same shape.
+//                   Corroborated in AIncludes/Files.a:1930:
+//                   `_PBSetFInfoSync: OPWORD $A00D`.
+//
+// FileParam layout, CIncludes/Files.h:441-465 (only the fields Get/
+// SetFInfo actually read or write are named; the rest of the real
+// 80-byte struct is captured as `pad` filler, same discipline as
+// VolumeParam above): qLink@0(4) qType@4(2) ioTrap@6(2) ioCmdAddr@8(4)
+// ioCompletion@12(4) ioResult@16(2) ioNamePtr@18(4) ioVRefNum@22(2)
+// ioFRefNum@24(2) [ioFVersNum/filler1@26(2), unused -- pad] ioFDirIndex@28(2)
+// [ioFlAttrib/ioFlVersNum@30(2), unused -- pad] ioFlFndrInfo@32: the FInfo
+// struct (Finder.h:298-305) itself starts fdType@0(4)/fdCreator@4(4) (so
+// fdType@32/fdCreator@36 here) followed by fdFlags/fdLocation/fdFldr
+// (8 more bytes, unused -- pad), then ioFlNum..ioFlMdDat (32 more bytes,
+// unused -- pad) to the full 80-byte size. ioFDirIndex MUST be poked 0
+// before PBGetFInfoSync (get-by-name, not get-by-index) -- Retro68's own
+// glue does exactly this (`pb.fileParam.ioFDirIndex = 0;`) right before
+// its own PBGetFInfoSync call.
+
+extern record FileParam {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioFRefNum: word
+    pad[2]
+    ioFDirIndex: word
+    pad[2]
+    fdType: int
+    fdCreator: int
+    pad[40]
+}
+
+external func PBGetFInfoSync(paramBlock: ptr): int = trap 0xA00C reg
+external func PBSetFInfoSync(paramBlock: ptr): int = trap 0xA00D reg

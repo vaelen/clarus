@@ -72,6 +72,26 @@ const natIoReqCount: int = 36
 const natIoActCount: int = 40
 const natIoPosMode: int = 44
 
+// natIoFDirIndex/natIoFdType/natIoFdCreator (task-6a): the SAME 50-byte
+// PB block reinterpreted as a File Manager FileParam (a union of
+// variants, same struct memory as IOParam above -- see toolbox/files.cla's
+// own FileParam catalog entry for the full offset derivation, verified
+// there against Files.h/Finder.h). ioFDirIndex@28 aliases IOParam's own
+// ioMisc@28 (both want 0 here, so no extra reset needed between this
+// dance and a following NatOpen); fdType@32/fdCreator@36 are the FInfo
+// fields nested inside ioFlFndrInfo@32.
+const natIoFDirIndex: int = 28
+const natIoFdType: int = 32
+const natIoFdCreator: int = 36
+
+// natFileTypeText/natFileCreatorMPS: the SAME fixed fdType/fdCreator
+// rt_mac.c's own rt_file_write_text stamps via the cprint lane's
+// Create(path, 0, 'MPS ', 'TEXT') (rt_mac.c:340) -- 'TEXT' = 0x54455854,
+// 'MPS ' = 0x4D505320 (big-endian OSType bytes, same literal style
+// uidialogs.cla's own `types.t0 = 0x54455854` already uses).
+const natFileTypeText: int = 0x54455854
+const natFileCreatorMPS: int = 0x4D505320
+
 // natPbSize is the one NewPtr'd PB block's total size: >=50 bytes for
 // IOParam itself, plus room to hold the 4-byte Str255 "out" (len byte +
 // 3 chars) at natNameOff, built in place so ioNamePtr can point straight
@@ -140,6 +160,22 @@ const natLogCap: int = 4096
 // natLogBuf too.
 external func NatNewPtr(size: int): ptr = trap 0xA31E reg
 external func NatCreate(pb: ptr): int = trap 0xA008 reg
+// NatSetFInfo (task-6a): PBSetFInfoSync, 0xA00D -- same trap word, same
+// bare `reg` OS-register convention (pb in A0, OSErr in D0) as every
+// other Nat* trap here, verified against the SAME Apple sources cited in
+// toolbox/files.cla's own PBSetFInfoSync catalog entry (Files.h:1643-
+// 1653, corroborated in AIncludes/Files.a:1930). Declared locally rather
+// than pulled in via `include "../../toolbox/files.cla"` -- this
+// module's own header already explains why it never composes with
+// ordinary Clarus/catalog source (JSR'd directly by label from
+// cg68k.cla), and every other File Manager trap it needs (NatCreate/
+// NatOpen/.../NatFlushVol) is already a local duplicate of a
+// toolbox/files.cla-adjacent trap for the same reason. NO NatGetFInfo
+// here -- see natFileWriteText's own doc comment for why the get half of
+// the C reference's get-modify-set dance is skipped entirely (a real,
+// hardware-only boot hang under busy-heap conditions, task-6a's own
+// live-drive finding).
+external func NatSetFInfo(pb: ptr): int = trap 0xA00D reg
 external func NatOpen(pb: ptr): int = trap 0xA000 reg
 external func NatWrite(pb: ptr): int = trap 0xA003 reg
 external func NatSetEOF(pb: ptr): int = trap 0xA012 reg
@@ -545,6 +581,45 @@ func natFileWriteText(path: ptr, t: ptr): bool {
     // its identical Create call).
     NatCreate(natFilePb)
 
+    // task-6a: stamp fdType='TEXT'/fdCreator='MPS ' on a FRESHLY created
+    // file, mirroring rt_mac.c's Create(path, 0, 'MPS ', 'TEXT')
+    // (rt_mac.c:340) -- the cprint lane's high-level Create() is Retro68's
+    // own glue (multiversal/custom/glue.c:355-378, not an Apple source,
+    // quoted only for the mechanism): PBCreateSync, then a get-modify-set
+    // FInfo dance through PBGetFInfoSync/PBSetFInfoSync. The bare
+    // PBCreateSync trap this module already calls has no type/creator
+    // field of its own; SOME FInfo write is the only way to match it.
+    //
+    // Direct PBSetFInfoSync ONLY, no PBGetFInfoSync first (the brief's
+    // documented "or direct PBSetFInfo after create" alternative to the
+    // full get-modify-set dance): natFilePb is NewPtrCLEAR'd
+    // (natFileEnsurePb) and nothing between that alloc and here writes
+    // its FInfo-region bytes (ioFDirIndex@28/fdType@32/fdCreator@36 and
+    // the fdFlags/fdLocation/fdFldr bytes after them) -- PBCreateSync
+    // itself has no output fields there -- so they are STILL all-zero
+    // right now, exactly what PBGetFInfoSync would read back for a
+    // brand-new file anyway. Skipping the Get reaches the identical
+    // on-disk FInfo (fdType/fdCreator stamped, fdFlags/fdLocation/fdFldr
+    // left at their already-zero default) with one fewer PB trap call.
+    // NOT cosmetic: an earlier cut of this fix DID call PBGetFInfoSync
+    // first and hung solid, real hardware only, at the exact same class
+    // of bug already documented on natFileReadText's own PBGetEOFSync
+    // (see that function's own header) -- a File Manager query trap
+    // hanging under a heap busy with live UI/List/Map/Text traffic
+    // (reproduced by both native suite gates, which push files.writeText
+    // through many prior cases' worth of heap allocation; never
+    // reproduced by an isolated single-file fixture). Gated on Create's
+    // own ioResult (not attempted for an already-existing file,
+    // dupFNErr) so an OVERWRITE leaves the existing file's FInfo
+    // untouched, same as the C lane's Create() glue (which only reaches
+    // its own GetFInfo/SetFInfo when PBCreateSync itself reports noErr).
+    if peekw(natFilePb + natIoResult) == 0 {
+        pokew(natFilePb + natIoFDirIndex, 0)
+        pokel(natFilePb + natIoFdType, natFileTypeText)
+        pokel(natFilePb + natIoFdCreator, natFileCreatorMPS)
+        NatSetFInfo(natFilePb)
+    }
+
     NatOpen(natFilePb)
     if peekw(natFilePb + natIoResult) != 0 {
         rtSetLastErr(2, "could not open file")
@@ -755,12 +830,17 @@ func natFileName(dst: ptr, path: ptr) {
 // file.load stay C-only in the codegen sense, resolved through the SAME
 // cgCallExtNatFallback name convention every other clause-less extern
 // uses) -- their nat_ fallbacks reuse natFileWriteText/natFileReadText's
-// PB machinery verbatim (rt_mac.c's own rt_file_write_data is byte-
-// identical to rt_file_write_text except for Create's type/creator,
-// which PBCreateSync has no field for anyway -- see natFileWriteText's
-// own doc comment; no native fixture in this task's own scope exercises
-// file.save/file.load, only that a program calling them still compiles
-// and links, per the brief). `t`/`out` are declared `ptr` here rather
+// PB machinery verbatim. STILL an approximation for the write side after
+// task-6a's FInfo fix: rt_mac.c's own rt_file_write_data stamps 'CLRD'/
+// rt_app_creator (rt_mac.c:392), not natFileWriteText's fixed 'TEXT'/
+// 'MPS ' -- so a native file.save now gets a stamped-but-WRONG type/
+// creator instead of task-6a's own blank-FInfo bug, an improvement but
+// not full lane parity. No native fixture in this task's own scope
+// exercises file.save/file.load (same carve-out the native-5d Task 3
+// design already made), only that a program calling them still compiles
+// and links, per the brief; splitting natFileWriteText's FInfo dance out
+// by caller-supplied type/creator is future work if a native file.save/
+// file.load fixture ever needs it. `t`/`out` are declared `ptr` here rather
 // than `text` -- purely cosmetic: cgCallExtNatFallback's cgPushArgs
 // marshals a `text` argument as its own 4-byte handle VALUE (the generic
 // non-KStr/KRec branch), bit-identical to a `ptr` argument of the same
