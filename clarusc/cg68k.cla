@@ -6462,12 +6462,13 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
         return
     }
-    if nm == "ui_get_title" or nm == "ui_get_field_text" {
+    if nm == "ui_get_title" or nm == "ui_get_field_text" or nm == "ui_get_label_text" {
         // KStr (fixed-capacity, non-scalar) -- never reaches cgExpr's
         // VALUE context by construction (cgEmitStoreStr's own arms handle
-        // both, Task 14); a real reach here would mean some OTHER src
-        // context fed a KStr EIntr straight to cgExpr, the exact hazard
-        // that function's own header comment fails loud on.
+        // all three, Task 14/native-gaps-cleanup Task 5); a real reach
+        // here would mean some OTHER src context fed a KStr EIntr straight
+        // to cgExpr, the exact hazard that function's own header comment
+        // fails loud on.
         log("cg68k: " + nm + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
         quit 1
     }
@@ -8030,7 +8031,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // inner expr (now itself materializes via cgExprAddr's own
             // Task 14.7 fallback if the inner expr isn't addressable).
             src = irIntrArgsHead(src)
-        } else if nm == "ui_get_field_text" {
+        } else if nm == "ui_get_field_text" or nm == "ui_get_label_text" {
             // Task 14 (native-5e gate, textwidgets.cla): `field.text` read
             // -- fills dst IN PLACE via rtUiWidgetGetStr(instV, wIdx,
             // RTUI_PROP_TEXT, dstAddr), same fill-in-place shape as
@@ -8038,7 +8039,10 @@ func cgEmitStoreStr(dst: int, src: int) {
             // const, 1 address) instead of 2. Pushed in DECLARATION order
             // (instV, wIdx, prop, dst255), matching
             // `func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int,
-            // dst255: ptr)` (uiwidgets.cla) exactly.
+            // dst255: ptr)` (uiwidgets.cla) exactly. `label.text` read
+            // (native-gaps-cleanup Task 5) reuses this identical call
+            // shape -- rtUiWidgetGetStr's own RTUI_LABEL arm reads the
+            // labels[] slot rtUiWidgetSetStr's RTUI_LABEL arm writes.
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
             fi = findIRFuncIdxByName(intern("rtUiWidgetGetStr"))

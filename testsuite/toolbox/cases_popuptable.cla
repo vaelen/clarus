@@ -4,10 +4,12 @@
 // cases_popuptable.cla: Popuptable (Task 8, ui-scenario-retirement batch)
 // -- the migrated replacement for the retired testdata/ui/popuptable.cla
 // golden UI scenario. See harness.cla's own PopupTableWin comment for the
-// window transcription (Result changed from `label` to `field` so its
-// text is directly readable -- clarusc's label.text get gap is still
-// open), the row-click-coordinate reuse, and the record/global list
-// (TbPtBookmark/tbPtBookmarks) declared THERE rather than here -- `rows:`
+// window transcription (Result is a `label`, matching the retired
+// fixture -- native-gaps-cleanup Task 5 closed clarusc's label.text get
+// gap, so it reverted from the Task 8-era `field` workaround back to a
+// `label`, read directly), the row-click-coordinate reuse, and the
+// record/global list (TbPtBookmark/tbPtBookmarks) declared THERE rather
+// than here -- `rows:`
 // is a type-layout position (Ch1 declare-before-use), so the record/list
 // must precede PopupTableWin in file order.
 //
@@ -97,9 +99,8 @@ func casePopuptable(): TestResult {
     dispatchOk = true
 
     // Two different rows, proving the runtime hands back the CORRECT row
-    // index -- not just that SOME select fired -- via a direct `field`
-    // read (harness.cla's own comment on why Result is a field, not a
-    // label).
+    // index -- not just that SOME select fired -- via a direct
+    // `label.text` read (harness.cla's own PopupTableWin comment).
     dispatchOk = dispatchOk and UiTestClick(tbPtRow1X, tbPtRow1Y)
     selBeta = w.Result.text
     dispatchOk = dispatchOk and UiTestClick(tbPtRow0X, tbPtRow0Y)
@@ -129,8 +130,8 @@ func casePopuptable(): TestResult {
     // this ONE click (same isolate-the-single-operation idiom as the
     // dblclick check above) so logAfterSetSel's own emptiness is the
     // whole proof -- nothing appended at all. Read back via
-    // `table.selected` directly (a supported get, unlike label.text)
-    // rather than trusting ReadSel's own title write alone.
+    // `table.selected` directly rather than trusting ReadSel's own title
+    // write alone.
     tbPtLog = ""
     dispatchOk = dispatchOk and UiTestClick(tbPtSetSelX, tbPtSetSelY)
     setSelVal = w.Marks.selected

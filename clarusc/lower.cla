@@ -1743,11 +1743,13 @@ func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
 // itself never lowered as a standalone value (see lowSelect's TyWidget
 // case). Covers the get half of rt_ui.h's ABI as built: bool props via
 // rt_ui_widget_get_bool (check/button `enabled`), int props via
-// rt_ui_widget_get_int (canvas `width`/`height`), field.text via
-// rt_ui_widget_get_str (mac-target-4c Task 2), textview.text via
-// rt_ui_widget_get_text -- a button/check/label caption/text READ is still
-// unsupported here (only ever a write, via lowWidgetSetAssign; label has no
-// get_str call at all yet).
+// rt_ui_widget_get_int (canvas `width`/`height`), field.text/label.text via
+// rt_ui_widget_get_str (mac-target-4c Task 2; label.text added by
+// native-gaps-cleanup Task 5 -- rt_ui_widget_get_str reads the SAME
+// labels[] slot rt_ui_widget_set_str's RTUI_LABEL arm writes, see
+// uiwidgets.cla's rtUiWidgetGetStr), textview.text via
+// rt_ui_widget_get_text -- a button caption READ is still unsupported here
+// (only ever a write, via lowWidgetSetAssign).
 func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
     var recv: LowWidgetRecv
     var widgetKind: string
@@ -1772,6 +1774,8 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
         intrName = IUiGetHeight()
     } else if widgetKind == "field" and propName == "text" {
         intrName = IUiGetFieldText()
+    } else if widgetKind == "label" and propName == "text" {
+        intrName = IUiGetLabelText()
     } else if widgetKind == "textview" and propName == "text" {
         intrName = IUiGetTextviewText()
     } else if (widgetKind == "popup" or widgetKind == "table") and propName == "selected" {

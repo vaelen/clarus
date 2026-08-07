@@ -831,7 +831,12 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
 }
 
 // rtUiWidgetGetStr (rt_ui.c:5381-5399): fill-in-place read; a non-matching
-// kind/prop writes a length-0 Pascal string.
+// kind/prop writes a length-0 Pascal string. The RTUI_LABEL arm
+// (native-gaps-cleanup Task 5) reads the SAME labels[] slot
+// rtUiWidgetSetStr's RTUI_LABEL arm writes (rtUiPstrcpy(rtUiLabelAt(w,
+// wIdx), s), above) -- a label has no TE handle/control title storage of
+// its own, just this per-instance Pascal-string slot, so the get mirrors
+// the set exactly via the same rtUiPstrcpy helper, copied the other way.
 func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int, dst255: ptr) {
     var w: RtUiWinst
     var kind: int
@@ -843,7 +848,9 @@ func rtUiWidgetGetStr(instV: ptr, wIdx: int, prop: int, dst255: ptr) {
     w = RtUiWinst(instV)
     kind = uidWidgetKind(w.winIdx, wIdx)
     pokeb(dst255, 0)
-    if kind == rtUiKindField and prop == rtUiPropText {
+    if kind == rtUiKindLabel and prop == rtUiPropText {
+        rtUiPstrcpy(dst255, rtUiLabelAt(w, wIdx))
+    } else if kind == rtUiKindField and prop == rtUiPropText {
         te = rtUiTeAt(w, wIdx)
         if te != ptr(0) {
             teMp = UiHandleDeref(te)

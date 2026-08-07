@@ -4450,17 +4450,21 @@ static void clar_fn_rtUiWidgetGetStr(void * cv_instV, int32_t cv_wIdx, int32_t c
     cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
     cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_wIdx);
     rt_pokeb(cv_dst255, 0);
-    if ((cv_kind == 4) && (cv_prop == 1)) {
-        cv_te = clar_fn_rtUiTeAt(cv_w, cv_wIdx);
-        if (cv_te != (void *)(intptr_t)(0)) {
-            cv_teMp = rt_ext_UiHandleDeref(cv_te);
-            cv_len = rt_peekw((void *)((char *)(cv_teMp) + (60)));
-            if (cv_len > 255) {
-                cv_len = 255;
+    if ((cv_kind == 3) && (cv_prop == 1)) {
+        clar_fn_rtUiPstrcpy(cv_dst255, clar_fn_rtUiLabelAt(cv_w, cv_wIdx));
+    } else {
+        if ((cv_kind == 4) && (cv_prop == 1)) {
+            cv_te = clar_fn_rtUiTeAt(cv_w, cv_wIdx);
+            if (cv_te != (void *)(intptr_t)(0)) {
+                cv_teMp = rt_ext_UiHandleDeref(cv_te);
+                cv_len = rt_peekw((void *)((char *)(cv_teMp) + (60)));
+                if (cv_len > 255) {
+                    cv_len = 255;
+                }
+                cv_hText = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_teMp) + (62))));
+                rt_ext_UiBlockMoveData(rt_ext_UiHandleDeref(cv_hText), (void *)((char *)(cv_dst255) + (1)), cv_len);
+                rt_pokeb(cv_dst255, cv_len);
             }
-            cv_hText = (void *)(intptr_t)(rt_peekl((void *)((char *)(cv_teMp) + (62))));
-            rt_ext_UiBlockMoveData(rt_ext_UiHandleDeref(cv_hText), (void *)((char *)(cv_dst255) + (1)), cv_len);
-            rt_pokeb(cv_dst255, cv_len);
         }
     }
 }

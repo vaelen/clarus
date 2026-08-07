@@ -122,16 +122,14 @@ extend PatBoard {
 // close proceeds exactly as it would with no handler at all -- Ch5's own
 // `cancel`-is-the-only-way-to-alter-a-closeRequest's-outcome rule).
 // size: 300, 160 -> content top-left ((512-300)/2, 44) = (106, 44), same
-// derivation as tbPokeCenterX/tbPokeCenterY above. Go/Status's own
-// geometry constants live in cases_buttons.cla (same file split as
-// PatBoard's own tb-prefixed constants in cases_pattern.cla, per this
-// file's own header comment). Status's own SET assertion (the retired
-// trace's "T SET Panel.Status.text Clicked" line) is read back via a
-// UiTestChecksum before/after inequality, not a direct `Status.text`
-// read: clarusc's own `lowWidgetPropGet` (clarusc/lower.cla) has no
-// get_str path for `label` yet ("read of label.text (not yet
-// implemented)", confirmed by trying it) -- only field.text/
-// textview.text reads are wired up so far.
+// derivation as tbPokeCenterX/tbPokeCenterY above. Go's own geometry
+// constant lives in cases_buttons.cla (same file split as PatBoard's own
+// tb-prefixed constants in cases_pattern.cla, per this file's own header
+// comment). Status's own SET assertion (the retired trace's "T SET
+// Panel.Status.text Clicked" line) is read back via a direct
+// `Status.text` read (native-gaps-cleanup Task 5 closed clarusc's
+// `lowWidgetPropGet` label.text get_str gap; the prior before/after
+// UiTestChecksum-inequality proxy is retired).
 window ButtonsPanel {
     title: "Panel"
     size: 300, 160
@@ -514,14 +512,20 @@ extend HFitWin {
 // Main renamed PopupTableWin (same global-uniqueness reason as MenuMain/
 // EditMain above), same table/four buttons, same Marks.select/
 // doubleClick/Add.click/Remove.click/SetSel.click/ReadSel.click bodies.
-// ONE deliberate departure, disclosed here: `Result` is a `field`, not the
-// retired fixture's own `label` -- clarusc's lowWidgetPropGet (Task 5's
-// own cases_buttons.cla comment, still true) has no get_str path for
-// `label`, only `field`/`textview`; a `field`'s own text is directly
-// readable (IUiGetFieldText), letting cases_popuptable.cla assert the
-// EXACT bookmark name a click resolved to instead of a mere checksum
-// inequality (weaker: would only prove SOMETHING changed, not that the
-// right row was picked). `tbPtLog` (cases_popuptable.cla's own global, not
+// `Result` is a `label`, matching the retired fixture exactly -- at Task 8
+// this had to be a `field` instead (clarusc's lowWidgetPropGet had no
+// get_str path for `label`, only `field`/`textview`), so cases_
+// popuptable.cla could assert the EXACT bookmark name a click resolved to
+// (a `field`'s own text was directly readable, via IUiGetFieldText)
+// instead of a mere checksum inequality (weaker: would only prove
+// SOMETHING changed, not that the right row was picked). native-gaps-
+// cleanup Task 5 closed that gap (label.text is directly readable now,
+// via IUiGetLabelText -- identical rt_ui_widget_get_str call shape,
+// reading the labels[] slot label.text's own SET path already writes),
+// so Result reverts to its original `label` kind, geometry UNCHANGED
+// (`at: 10, 175`, this file's own explicit-coordinates convention for
+// this window -- see the paragraph below) with the read now going through
+// `label.text` directly. `tbPtLog` (cases_popuptable.cla's own global, not
 // a window-scope var -- same "read after the window that recorded it may
 // already be gone" reasoning as cases_buttons.cla's tbButtonsLog) is
 // INSTRUMENTATION ONLY, appended to from Marks.select/doubleClick so the
@@ -582,7 +586,7 @@ window PopupTableWin {
     button Remove  { at: 98, 145;  caption: "Remove" }
     button SetSel  { at: 186, 145; caption: "SetSel" }
     button ReadSel { at: 274, 145; caption: "ReadSel" }
-    field Result   { at: 10, 175; label: "Result:"; width: 200 }
+    label Result   { at: 10, 175; text: "" }
 }
 
 extend PopupTableWin {
@@ -635,16 +639,15 @@ extend PopupTableWin {
 // end; SaveBtn.click's `title = path` then bare `title` READ-back is the
 // retired fixture's own "Task 4b breadcrumb" -- see its header comment --
 // kept unchanged here). ONE deliberate departure, disclosed here: `Status`
-// is a `field`, not the retired fixture's own `label` -- same
-// `lowWidgetPropGet` gap PopupTableWin's own Result field already
-// disclosed (Task 8, this file's own PopupTableWin comment above): no
-// get_str path for `label`, only `field`/`textview`. Status cycles
-// through SEVEN distinct strings across this scenario's own walkthrough
-// (below) -- a `field`'s directly-readable `.text` lets cases_dialogs.cla
-// assert each one by exact equality instead of Task 5's own
-// checksum-inequality workaround (cases_buttons.cla's tbButtonsStatus
-// pattern), which only proves SOMETHING changed, not which of seven
-// possible strings landed.
+// is a `field`, not the retired fixture's own `label`. At the time this
+// scenario was migrated (Task 9), `lowWidgetPropGet` had no get_str path
+// for `label` at all (only `field`/`textview`), so a `field` was the only
+// way to read Status's SEVEN distinct strings back by exact equality
+// instead of a mere checksum-inequality proxy. native-gaps-cleanup Task 5
+// closed that gap (`label.text` is directly readable now, same as
+// `field.text`) -- kept as a `field` here regardless, since the choice is
+// harmless and re-churning this scenario's geometry comments below for a
+// widget-kind swap isn't this task's scope.
 //
 // Unlike the retired fixture (`on App.launch { open Doc }`, opened once
 // at boot), DialogsWin is opened MID-CASE by caseDialogs -- same

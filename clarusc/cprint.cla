@@ -2878,6 +2878,14 @@ func fpIntrCall(x: int): text {
         t = fpNewTmp("clar_str_255")
         fpEmit("clar_fn_rtUiWidgetGetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
         return t
+    } else if nm == IUiGetLabelText() {
+        // label.text read (native-gaps-cleanup Task 5) -- identical
+        // rt_ui_widget_get_str call shape to IUiGetFieldText just above;
+        // rtUiWidgetGetStr's own RTUI_LABEL arm (uiwidgets.cla) reads the
+        // labels[] slot rtUiWidgetSetStr's RTUI_LABEL arm writes.
+        t = fpNewTmp("clar_str_255")
+        fpEmit("clar_fn_rtUiWidgetGetStr(" + fpExpr(a0) + ", " + fpExpr(a1) + ", RTUI_PROP_TEXT, (uint8_t*)&" + t + ");")
+        return t
     } else if nm == IUiGetTextviewText() {
         // textview.text read (mac-target-4c Task 2) -- a fresh rt_text
         // handle (rt_text_new(), same as fpTextConcat/ITextOfStr above),

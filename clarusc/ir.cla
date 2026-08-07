@@ -3343,6 +3343,16 @@ func IUiGetFieldText(): int {
     return intern("ui_get_field_text")
 }
 
+// IUiGetLabelText (native-gaps-cleanup Task 5): `label.text` read --
+// rt_ui_widget_get_str into a fresh clar_str_255 temp, the exact same
+// str-return shape as IUiGetFieldText (field.text's WRITE reuses
+// IUiSetText for the identical reason -- see lowWidgetSetAssign's own
+// comment). label.text's WRITE already reuses IUiSetText too, so there is
+// no IUiSetLabelText; this is a read-only intrinsic.
+func IUiGetLabelText(): int {
+    return intern("ui_get_label_text")
+}
+
 // IUiGetTextviewText/IUiSetTextviewText (mac-target-4c Task 2):
 // `textview.text` read/write against rt_ui_widget_get_text/set_text's
 // rt_text* ABI -- distinct from field.text's Str255 shape, so these are

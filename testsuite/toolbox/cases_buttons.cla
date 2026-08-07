@@ -28,25 +28,6 @@
 const tbButtonsGoX: int = 166
 const tbButtonsGoY: int = 74
 
-// tbButtonsStatusX0/Y0/W/H: an 8px-aligned box inside Status's rendered
-// rect, used for a before/after checksum INEQUALITY (not a pinned
-// constant -- see harness.cla's own comment on why Status.text can't be
-// read back directly). Layout (rtUiLayout, uiwidgets.cla), widget
-// declaration order Go/On/Status: Go -> LOCAL (20,20)-(100,40) (explicit
-// `at:`, default button height 20). On is `at: right, 22` -> x =
-// prevRight(100) + rtUiGap(8) = 108, y = 22 (explicit, not `bottom`),
-// default check size 90x16 (rtUiCheckW/H) -> LOCAL (108,22)-(198,38).
-// Status is `at: next, bottom` -> x = prevLeft(108) (On's own left edge,
-// the `next` rule), y = prevBottom(38) + rtUiGap(8) = 46, default label
-// size 150x16 (rtUiLabelW/H) -> LOCAL (108,46)-(258,62) -> GLOBAL
-// (214,90)-(364,106) (content top-left (106,44), same as tbButtonsGoX/Y
-// above). The checksummed box (216,88)-(344,112) sits inside that rect
-// with margin on every side.
-const tbButtonsStatusX0: int = 216
-const tbButtonsStatusY0: int = 88
-const tbButtonsStatusW: int = 128
-const tbButtonsStatusH: int = 24
-
 // tbButtonsLog: see this file's own header comment for why this is a
 // GLOBAL rather than a ButtonsPanel window-scope var. Declared here
 // (rather than harness.cla) alongside caseButtons, its only reader --
@@ -62,8 +43,7 @@ func caseButtons(): TestResult {
     var resizedOk: bool
     var closedOk: bool
     var checkedVal: bool
-    var statusBefore: int
-    var statusAfter: int
+    var statusVal: string
     var titleVal: string
     var ok: bool
     var detail: string
@@ -71,14 +51,15 @@ func caseButtons(): TestResult {
     tbButtonsLog = ""
 
     w = open ButtonsPanel
-    statusBefore = UiTestChecksum(tbButtonsStatusX0, tbButtonsStatusY0, tbButtonsStatusW, tbButtonsStatusH)
 
     clickedGo = UiTestClick(tbButtonsGoX, tbButtonsGoY)
     // Read right after the click, mirroring the golden trace's own order:
     // Go.click's SET On.checked/SET Status.text lines (trace lines 4-5)
-    // land before Panel.key (line 6).
+    // land before Panel.key (line 6). Status.text read directly
+    // (native-gaps-cleanup Task 5 closed the label.text read gap) rather
+    // than the retired before/after-checksum-inequality proxy.
     checkedVal = w.On.checked
-    statusAfter = UiTestChecksum(tbButtonsStatusX0, tbButtonsStatusY0, tbButtonsStatusW, tbButtonsStatusH)
+    statusVal = w.Status.text
 
     keyedX = UiTestKey("x")
     titleVal = w.title
@@ -94,7 +75,7 @@ func caseButtons(): TestResult {
 
     ok = clickedGo and keyedX and resizedOk and closedOk
     ok = ok and checkedVal
-    ok = ok and statusBefore != statusAfter
+    ok = ok and statusVal == "Clicked"
     ok = ok and titleVal == "Typed"
     ok = ok and tbButtonsLog == "GKRQD"
 
@@ -133,8 +114,7 @@ func caseButtons(): TestResult {
     } else {
         detail = detail + "false"
     }
-    detail = detail + " statusBefore " + tkIntToStr(statusBefore)
-    detail = detail + " statusAfter " + tkIntToStr(statusAfter)
+    detail = detail + " statusVal " + statusVal
     detail = detail + " titleVal " + titleVal
     detail = detail + " log " + tbButtonsLog
     return tkFail("Buttons", detail)
