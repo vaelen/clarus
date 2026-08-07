@@ -702,6 +702,27 @@ int32_t rt_ext_UiSFPutFile(void *suggested255, void *path255) {
     return 1;
 }
 
+/* rt_ext_PBGetFInfoSync (native-gaps-cleanup Task 3): toolbox/files.cla's
+ * `external func PBGetFInfoSync(paramBlock: ptr): int = trap 0xA00C reg`
+ * catalog entry, cprint lane. Every OTHER `= trap N reg` extern in this
+ * catalog (PBSetVolSync, PBSetFInfoSync) had never actually been CALLED
+ * from cprint-compiled Clarus source before Task 3's FInfoStamp case --
+ * they're consumed only by the native-68k lane, where cg68k emits the raw
+ * A-line trap opcode directly (no C link needed at all), and by
+ * runtime/clarus/native.cla/uidialogs.cla's own NATIVE-ONLY redeclarations
+ * (never spliced into a cprint build). A bare `trap N reg` extern has no
+ * generic cprint fallback -- every rt_ext_NAME symbol needs a hand-written
+ * C body, same as every wrapper above -- so this one was simply never
+ * written until something called it. One-line passthrough to Retro68's own
+ * Universal Interfaces declaration (Files.h), which IS the real Toolbox
+ * trap; the ParmBlkPtr cast matches toolbox/files.cla's own FileParam
+ * catalog comment (ioNamePtr/ioVRefNum/ioFDirIndex/fdType/fdCreator laid
+ * out at the SAME offsets PBGetFInfoSync itself reads/writes). ponytail:
+ * PBSetFInfoSync's own cprint-lane wrapper is still missing -- add it the
+ * same way the moment a case calls it; toolbox/files.cla's declaration
+ * already works native-side, untouched by this gap. */
+int32_t rt_ext_PBGetFInfoSync(void *pb) { return (int32_t)PBGetFInfoSync((ParmBlkPtr)pb); }
+
 static OSErr rt_ext_ui_ae_check_missed(const AppleEvent *evt) {
     DescType actualType;
     Size actualSize;

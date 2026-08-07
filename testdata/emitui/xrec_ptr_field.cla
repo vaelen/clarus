@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// xrec_ptr_field.cla: emitui golden fixture -- an extern-record `ptr`-typed
+// field WRITE with a genuine (non-null) pointer RHS. Regression coverage
+// for the bug native-gaps-cleanup Task 3 found: cprint's IPokeL rendering
+// forwarded a `ptr`-typed RHS straight into rt_pokel's `int32_t` parameter
+// with no cast (runtime/host/rt.h), a hard C error under -Wint-conversion
+// whenever the RHS is a real pointer VALUE -- every prior extern-record
+// ptr-field write anywhere in the tree happened to use the literal
+// `ptr(0)`, which prints as the bare literal `0` and satisfied `int32_t`
+// by accident. Minimal repro: one extern record with a `ptr` field, one
+// external func that returns a real pointer, one field write.
+external func NewPtr(size: int): ptr
+
+extern record Rec {
+    p: ptr
+}
+
+on App.startCLI(args: list of string) {
+    var r: Rec
+
+    r.p = NewPtr(8)
+    quit 0
+}

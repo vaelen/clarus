@@ -1826,7 +1826,29 @@ func fpIntrCall(x: int): text {
         fpEmit("rt_pokew(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
         return toText("")
     } else if nm == IPokeL() {
-        fpEmit("rt_pokel(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        // a1's C rendering may be a genuine pointer expression -- an
+        // extern-record `ptr`-typed field WRITE (lower.cla's
+        // lowXRecFieldWrite, "int/ptr through pokel, all unextended")
+        // reaches here with a1 typed `ptr` whenever the RHS is a real
+        // (non-literal-zero) pointer value, e.g. `fp.ioNamePtr =
+        // UiStrAddr(s)` -- unlike `ptr(0)`, which prints as the bare
+        // literal `0` and happens to already satisfy rt_pokel's int32_t
+        // param by accident. rt_pokel (runtime/host/rt.h) always takes
+        // int32_t; on the native 68k target this never mattered (ptr and
+        // int are both raw 32-bit registers, cg68k's own "pokel" arm
+        // never goes through this printer at all), but plain C does not
+        // implicitly narrow a `void *` to `int32_t` (a hard error under
+        // -Wint-conversion, not just a warning). Cast ONLY when a1 is
+        // actually `ptr`-typed, with the SAME pattern fpConv already uses
+        // for the user-facing `int(ptrExpr)` cast (CvPtrToInt, above) --
+        // gating on the type (rather than casting unconditionally) keeps
+        // every existing int-typed pokel call site's emitted C
+        // byte-identical, so no unrelated golden churns.
+        if irtKind(irExprType(a1)) == KPtr {
+            fpEmit("rt_pokel(" + fpExpr(a0) + ", (int32_t)(intptr_t)(" + fpExpr(a1) + "));")
+        } else {
+            fpEmit("rt_pokel(" + fpExpr(a0) + ", " + fpExpr(a1) + ");")
+        }
         return toText("")
 
     // ---- extern record str[N] field access (Task 4/5, Ch13 Field
