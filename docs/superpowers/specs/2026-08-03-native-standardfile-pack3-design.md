@@ -1,5 +1,13 @@
 # Native Standard File (_Pack3) port — design
 
+> **SUPERSEDED (2026-08-07)** by
+> `2026-08-07-pack3-standardfile-design.md`, per the ROADMAP deferral
+> note's revise-at-implementation-time instruction: declarations move to
+> the `toolbox/*.cla` catalog (`extern record SFReply` replaces the
+> 74-byte scratch), and the phase absorbs the cprint-Mac lane demotion
+> and clarusc include dedup. The marshaling analysis and verification
+> posture below carry forward unchanged.
+
 Date: 2026-08-03. Follow-up to the 5e UI runtime port
 (`2026-08-01-native-5e-ui-runtime-design.md`): closes one of its recorded
 deferred stubs. Native-lane only; the cprint/Retro68 lane's Standard File
