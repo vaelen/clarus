@@ -84,17 +84,22 @@ const rtUiEvCancelled: int = 6
 // ---- StandardFile (Ch12, Task 10): the real (non-scripted) halves of
 // askOpen/askSave. Point is always the fixed {100,100} corner (System 6
 // has no auto-center convention) -- never varies by caller, so it's
-// baked into the C wrapper rather than threaded through as a Clarus-side
+// baked into the wrapper rather than threaded through as a Clarus-side
 // argument (rt_ui.c:2399-2455's own `where.h = 100; where.v = 100;`,
-// unconditional). SFGetFile/SFPutFile are routine-selector Pascal traps
-// (Multiverse.h's own M68K_INLINE(0x3F3C, <selector>, 0xA9EA) encoding),
-// not a single plain trap word this language's `= trap` clause can
-// express -- bare declaration, same "the cprint-lane rt_ext_ wrapper
-// just calls the real C name directly" precedent uitext.cla's own
-// UiTEFromScrap/UiTEToScrap/UiTEGetScrapLength already established (this
-// file's own header comment quotes theirs). Never exercised by any
-// golden scenario (every one is script-driven, taking the `rtUiScripted`
-// branch below instead) -- ported for contract completeness.
+// unconditional). UiSFGetFile/UiSFPutFile stay bare declarations -- the
+// lane seam, not a "can't express this trap" workaround: the cprint lane
+// resolves them to rt_ext_mac.inc's own rt_ext_UiSFGetFile/
+// rt_ext_UiSFPutFile C wrappers (same precedent uitext.cla's own
+// UiTEFromScrap/UiTEToScrap/UiTEGetScrapLength already established), and
+// the native lane resolves them to nat_UiSFGetFile/nat_UiSFPutFile below,
+// which since the pack3-standardfile phase are a REAL port -- SFGetFile/
+// SFPutFile through the toolbox/standardfile.cla catalog's own
+// `= trap 0xA9EA sel N` declarations. (The old rationale here -- that a
+// routine-selector Pascal trap isn't "a single plain trap word this
+// language's `= trap` clause can express" -- is obsolete since the `sel`
+// clause landed in the toolbox-integration phase; SFGetFile/SFPutFile are
+// exercised for real by the native lane now, not merely "ported for
+// contract completeness".)
 external func UiSFGetFile(path255Out: ptr): bool
 external func UiSFPutFile(suggested255: ptr, path255Out: ptr): bool
 
