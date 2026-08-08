@@ -32,22 +32,30 @@ import (
 	"testing"
 )
 
-// resparEntry is one parsed resource: 4-char type, numeric id, raw data.
-// An independent reader, not a port of app68k.cla's own writer -- mirrors
-// internal/cg68k/image_test.go's parseResourceFork (a different Go
-// package, so not directly importable; duplicated here deliberately
-// rather than exported cross-package for one extra caller, same call
-// this repo's other near-duplicate test helpers already made).
+// resparEntry is one parsed resource: 4-char type, numeric id, raw data,
+// and its resource-map name (""  if unnamed -- name-list offset 0xFFFF,
+// Task 5 mac-resident-clarusc). An independent reader, not a port of
+// app68k.cla's own writer -- mirrors internal/cg68k/image_test.go's
+// parseResourceFork (a different Go package, so not directly importable;
+// duplicated here deliberately rather than exported cross-package for one
+// extra caller, same call this repo's other near-duplicate test helpers
+// already made).
 type resparEntry struct {
 	typ  string
 	id   int16
+	name string
 	data []byte
 }
 
 // resparParseFork walks a raw (unpadded) resource fork's type list/ref
 // list/data-offset chain generically -- see internal/cg68k/image_test.go's
 // parseResourceFork for the format documentation (Retro68's own
-// ResourceFork.cc::Resources(istream&) layout).
+// ResourceFork.cc::Resources(istream&) layout). Task 5 (mac-resident-
+// clarusc) additionally decodes each entry's name, per Inside Macintosh's
+// resource-map name-list layout: the ref-list entry's 2-byte name-offset
+// field is either 0xFFFF (unnamed) or an offset, from the name list's own
+// start (map-start-relative nameListOff, map header offset 26), to a
+// Pascal string (length byte + bytes).
 func resparParseFork(t *testing.T, fork []byte) []resparEntry {
 	t.Helper()
 	if len(fork) < 16 {
@@ -58,6 +66,8 @@ func resparParseFork(t *testing.T, fork []byte) []resparEntry {
 
 	m := fork[mapOff:]
 	typeListOff := binary.BigEndian.Uint16(m[24:26])
+	nameListOff := binary.BigEndian.Uint16(m[26:28])
+	nl := m[nameListOff:]
 	tl := m[typeListOff:]
 	numTypes := int(binary.BigEndian.Uint16(tl[0:2])) + 1
 
@@ -71,12 +81,17 @@ func resparParseFork(t *testing.T, fork []byte) []resparEntry {
 		for ri := 0; ri < count; ri++ {
 			re := rl[ri*12:]
 			id := int16(binary.BigEndian.Uint16(re[0:2]))
+			name := ""
+			if nameOff := binary.BigEndian.Uint16(re[2:4]); nameOff != 0xFFFF {
+				nameLen := int(nl[nameOff])
+				name = string(nl[int(nameOff)+1 : int(nameOff)+1+nameLen])
+			}
 			packed := binary.BigEndian.Uint32(re[4:8])
 			off := packed & 0x00FFFFFF
 			data := fork[dataOff:]
 			resLen := binary.BigEndian.Uint32(data[off : off+4])
 			resData := data[off+4 : off+4+resLen]
-			entries = append(entries, resparEntry{typ: typ, id: id, data: resData})
+			entries = append(entries, resparEntry{typ: typ, id: id, name: name, data: resData})
 		}
 	}
 	return entries

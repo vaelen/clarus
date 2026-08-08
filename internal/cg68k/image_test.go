@@ -48,11 +48,13 @@ func TestCrc16XmodemVector(t *testing.T) {
 	}
 }
 
-// resEntry is one parsed resource: its 4-char type, numeric ID, and raw
-// data bytes.
+// resEntry is one parsed resource: its 4-char type, numeric ID, resource-
+// map name (""  if unnamed -- Task 5 mac-resident-clarusc), and raw data
+// bytes.
 type resEntry struct {
 	typ  string
 	id   int16
+	name string
 	data []byte
 }
 
@@ -61,7 +63,11 @@ type resEntry struct {
 // its resource list. Independent of app68k.cla's own fixed 2-type/3-
 // resource layout: walks the real type list/ref list/data-offset chain
 // generically, so it doesn't just mirror app68k.cla's own hardcoded
-// offsets back at it.
+// offsets back at it. Task 5 (mac-resident-clarusc) additionally decodes
+// each entry's name from the name list (Inside Macintosh resource-map
+// layout: ref-list entry's 2-byte name-offset field is 0xFFFF if unnamed,
+// else an offset from the name list's own start to a Pascal string --
+// length byte + bytes).
 func parseResourceFork(t *testing.T, fork []byte) (dataOff, mapOff, dataLen, mapLen uint32, entries []resEntry) {
 	t.Helper()
 	if len(fork) < 16 {
@@ -88,9 +94,11 @@ func parseResourceFork(t *testing.T, fork []byte) (dataOff, mapOff, dataLen, map
 	}
 	typeListOff := binary.BigEndian.Uint16(m[24:26])
 	nameListOff := binary.BigEndian.Uint16(m[26:28])
+	nl := m[nameListOff:]
 	tl := m[typeListOff:]
 	numTypes := int(binary.BigEndian.Uint16(tl[0:2])) + 1
 
+	anyNamed := false
 	for ti := 0; ti < numTypes; ti++ {
 		th := tl[2+ti*8:]
 		typ := string(th[0:4])
@@ -100,8 +108,11 @@ func parseResourceFork(t *testing.T, fork []byte) (dataOff, mapOff, dataLen, map
 		for ri := 0; ri < count; ri++ {
 			re := rl[ri*12:]
 			id := int16(binary.BigEndian.Uint16(re[0:2]))
+			name := ""
 			if nameOff := binary.BigEndian.Uint16(re[2:4]); nameOff != 0xFFFF {
-				t.Errorf("resource %s %d: name offset = %#04x, want 0xFFFF (no names emitted)", typ, id, nameOff)
+				anyNamed = true
+				nameLen := int(nl[nameOff])
+				name = string(nl[int(nameOff)+1 : int(nameOff)+1+nameLen])
 			}
 			packed := binary.BigEndian.Uint32(re[4:8])
 			attr := byte(packed >> 24)
@@ -112,10 +123,13 @@ func parseResourceFork(t *testing.T, fork []byte) (dataOff, mapOff, dataLen, map
 			data := fork[dataOff:]
 			resLen := binary.BigEndian.Uint32(data[off : off+4])
 			resData := data[off+4 : off+4+resLen]
-			entries = append(entries, resEntry{typ: typ, id: id, data: resData})
+			entries = append(entries, resEntry{typ: typ, id: id, name: name, data: resData})
 		}
 	}
-	if nameListOff != uint16(mapLen) {
+	// TestImageStructure/TestSegment... (this package's only two callers)
+	// build fixtures with no --bake flag, so no resource is ever named --
+	// the name list stays empty and sits right at the map's own end.
+	if !anyNamed && nameListOff != uint16(mapLen) {
 		t.Errorf("resource map name list offset = %d, want %d (map length -- no names, so the name list is empty and sits right at the end)", nameListOff, mapLen)
 	}
 	return

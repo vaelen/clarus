@@ -311,9 +311,9 @@ func app68TypeIndexOf(types: list of string, t: string): int {
 
 // app68BuildResourceFork assembles the full resource fork: 256-byte
 // header (16 real bytes + 240 reserved), every resource's data (length-
-// prefixed), then the resource map (type list, ref lists, no name list --
-// every resource this backend ever emits is unnamed). Layout mirrors
-// Retro68's ResourceFork.cc::writeFork exactly (see file header comment).
+// prefixed), then the resource map (type list, ref lists, name list).
+// Layout mirrors Retro68's ResourceFork.cc::writeFork exactly (see file
+// header comment).
 //
 // Task 13 (native-5e) generalizes this from Task 10/15's hardcoded
 // CODE+SIZE-only shape to a fully generic parallel (type, id, data) list
@@ -322,6 +322,20 @@ func app68TypeIndexOf(types: list of string, t: string): int {
 // see codeRes/jtEntries/jtSegNums above), so three parallel lists play
 // that role, same as everywhere else in this file.
 //
+// Task 5 (mac-resident-clarusc) adds a fourth parallel list, resNames:
+// resNames[i] == "" means resource i is unnamed (its ref-list entry's
+// name-list-offset field is the 0xFFFF sentinel, same as before this
+// task); a non-empty resNames[i] gets a Pascal-string entry (length byte
+// + bytes) appended to the name list, in the SAME type/id-sorted
+// traversal order as the ref lists themselves (Inside Macintosh's own
+// resource-map name-list convention), and its ref-list entry's name-list-
+// offset field points at that entry's start (offset from name-list
+// start, i.e. from map-start + nameListOff). Every EXISTING call site
+// passes a same-length all-"" resNames list, so the no-flag output is
+// byte-identical to before this task (0xFFFF for every entry, empty name
+// list) -- this is a pure generalization, not a behavior change for
+// unnamed resources.
+//
 // ORDERING, verified against a REAL Retro68-built resource fork (Rez +
 // Elf2Mac combined, dumped byte-for-byte during this task's own golden
 // extraction, testdata/mac/resparity): resources are grouped by TYPE,
@@ -329,8 +343,9 @@ func app68TypeIndexOf(types: list of string, t: string): int {
 // 'ALRT' < 'BNDL' < 'CODE' < 'DITL' < ... < 'vers' -- uppercase sorts
 // before lowercase in ASCII); within a type, resources sort by ID
 // ascending. This function computes that grouping/sort itself so callers
-// never need to pre-order their resTypes/resIds/resDatas triples.
-func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDatas: list of text): text {
+// never need to pre-order their resTypes/resIds/resDatas/resNames
+// quadruples.
+func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNames: list of string, resDatas: list of text): text {
     var data: text
     var map: text
     var out: text
@@ -351,6 +366,7 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDa
     var refListTotalLen: int
     var running: int
     var nameListOff: int
+    var names: text          // name-list bytes, built in ref-list traversal order
 
     n = resTypes.count
 
@@ -429,7 +445,7 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDa
     // (12 bytes/resource) laid end to end right after that region.
     typeListRegionLen = 2 + uniqTypes.count * 8
     refListTotalLen = order.count * 12
-    nameListOff = 28 + typeListRegionLen + refListTotalLen // map-start-relative; no names, so it's the sentinel just past the last ref list
+    nameListOff = 28 + typeListRegionLen + refListTotalLen // map-start-relative; name list (possibly empty) starts right after the last ref list
 
     map = ""
     while map.length < 24 {          // 16-byte header-copy placeholder (zeros,
@@ -450,13 +466,24 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDa
         running = running + typeCount[ti] * 12
         ti = ti + 1
     }
+    // Ref lists + name list, built together: each entry's name-list-offset
+    // field needs to know where (if anywhere) its own name lands, and the
+    // name list itself is built in the SAME traversal order (type-sorted
+    // then id-sorted) as the ref-list entries that reference it.
+    names = ""
     ti = 0
     idx = 0
     while ti < uniqTypes.count {
         i = 0
         while i < typeCount[ti] {
             app68PutWord(map, resIds[order[idx]])
-            app68PutWord(map, 0xFFFF)        // no name
+            if resNames[order[idx]] == "" {
+                app68PutWord(map, 0xFFFF)    // no name
+            } else {
+                app68PutWord(map, names.length)
+                app68PutByte(names, resNames[order[idx]].length)
+                names.append(resNames[order[idx]])
+            }
             app68PutLong(map, dataOffs[idx]) // attr byte (0) + 3-byte data offset
             app68PutLong(map, 0)             // handle placeholder
             idx = idx + 1
@@ -464,6 +491,7 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDa
         }
         ti = ti + 1
     }
+    map.append(names)
 
     out = ""
     app68PutLong(out, 256)                     // data offset from fork start
@@ -479,16 +507,19 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resDa
 }
 
 // app68Build is the top-level entry point: builds CODE 0, CODE 1..N (one
-// per segment), folds in extraTypes/extraIds/extraDatas (Task 13: SIZE(-1)
-// always, plus whatever resource-parity set cg68WriteImage assembled --
-// ALRT/DITL/vers/icon family/BNDL/FREF/signature STR), assembles the
-// resource fork, wraps it in a 128-byte MacBinary II header, and pads the
-// whole thing to a multiple of 128 bytes. segBytes[s] is segment (s+1)'s
-// raw code bytes; jtEntries[i]/jtSegNums[i] is JT slot i's routine offset
-// (within its own segment) and owning segment number; segJtFirst[s]/
-// segJtCount[s] is segment (s+1)'s own contiguous JT slot range (cg68k.cla's
-// cgAssignFinalJtSlots), used for that segment's CODE-(s+1) header.
-func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraDatas: list of text): text {
+// per segment), folds in extraTypes/extraIds/extraNames/extraDatas (Task
+// 13: SIZE(-1) always, plus whatever resource-parity set cg68WriteImage
+// assembled -- ALRT/DITL/vers/icon family/BNDL/FREF/signature STR; Task 5
+// (mac-resident-clarusc) adds extraNames, "" for every Task-13 resource
+// and the baked file's own path for any `--bake FILE` CLFS resource),
+// assembles the resource fork, wraps it in a 128-byte MacBinary II
+// header, and pads the whole thing to a multiple of 128 bytes. segBytes[s]
+// is segment (s+1)'s raw code bytes; jtEntries[i]/jtSegNums[i] is JT slot
+// i's routine offset (within its own segment) and owning segment number;
+// segJtFirst[s]/segJtCount[s] is segment (s+1)'s own contiguous JT slot
+// range (cg68k.cla's cgAssignFinalJtSlots), used for that segment's
+// CODE-(s+1) header.
+func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
     var code0: text
     var codeRes: list of text
     var rsrc: text
@@ -496,6 +527,7 @@ func app68Build(appName: string(31), creator: string(7), segBytes: list of text,
     var i: int
     var resTypes: list of string
     var resIds: list of int
+    var resNames: list of string
     var resDatas: list of text
 
     code0 = app68BuildCode0(jtEntries, jtSegNums, belowA5)
@@ -509,11 +541,13 @@ func app68Build(appName: string(31), creator: string(7), segBytes: list of text,
 
     resTypes = app68FreshStringList()
     resIds = app68FreshIntList()
+    resNames = app68FreshStringList()
     resDatas = app68FreshTextList()
     i = 0
     while i < codeRes.count {
         resTypes.add("CODE")
         resIds.add(i)
+        resNames.add("")
         resDatas.add(codeRes[i])
         i = i + 1
     }
@@ -521,11 +555,12 @@ func app68Build(appName: string(31), creator: string(7), segBytes: list of text,
     while i < extraTypes.count {
         resTypes.add(extraTypes[i])
         resIds.add(extraIds[i])
+        resNames.add(extraNames[i])
         resDatas.add(extraDatas[i])
         i = i + 1
     }
 
-    rsrc = app68BuildResourceFork(resTypes, resIds, resDatas)
+    rsrc = app68BuildResourceFork(resTypes, resIds, resNames, resDatas)
 
     out = app68BuildHeader(appName, creator, rsrc.length)
     out.append(rsrc)

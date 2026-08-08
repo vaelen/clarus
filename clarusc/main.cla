@@ -334,6 +334,52 @@ func hoistDedups(fromHit: int): list of int {
     return out
 }
 
+// cliResolveBake (Task 5, mac-resident-clarusc) validates and reads every
+// `emit68k --bake FILE` flag, in flag order, filling cg68k.cla's
+// cgBakeNames/cgBakeDatas globals for cg68WriteImage's own CLFS-resource
+// loop -- name = FILE exactly as passed (also the resource's own name),
+// data = the file's raw bytes. Rejects (log + quit 2) a name over 255
+// bytes (the Pascal-string name-list entry's own hard limit) or a name
+// repeated across two --bake flags, both checked BEFORE any file is
+// read; a file that can't be read is quit 1, same as --events. Split out
+// of App.startCLI's own hand-off block, not inlined there, purely to
+// stay under App.startCLI's per-function 32KB native segment budget --
+// TestSelfEmit68k (internal/cg68k/selfemit_test.go) is this repo's own
+// self-hosting headline gate and App.startCLI was already close to that
+// ceiling before this task, same reasoning as cprint.cla's fpIntrCall1..7
+// split (Task 14).
+func cliResolveBake(bakePaths: list of string) {
+    var bi: int
+    var bj: int
+    var bakeBytes: text
+
+    cgBakeNames = cgFreshStringList()
+    cgBakeDatas = cgFreshTextList()
+    bi = 0
+    while bi < bakePaths.count {
+        if bakePaths[bi].length > 255 {
+            log("clarusc emit68k --bake: name too long (" + numToStr(bakePaths[bi].length) + " bytes, max 255): " + bakePaths[bi])
+            quit 2
+        }
+        bj = 0
+        while bj < bi {
+            if bakePaths[bj] == bakePaths[bi] {
+                log("clarusc emit68k --bake: duplicate name: " + bakePaths[bi])
+                quit 2
+            }
+            bj = bj + 1
+        }
+        bakeBytes = ""
+        if not file.readText(bakePaths[bi], bakeBytes) {
+            log("clarusc emit68k: cannot read " + bakePaths[bi] + ": " + lastError.message)
+            quit 1
+        }
+        cgBakeNames.add(bakePaths[bi])
+        cgBakeDatas.add(bakeBytes)
+        bi = bi + 1
+    }
+}
+
 on App.startCLI(args: list of string) {
     var i: int
     var combined: int
@@ -346,6 +392,7 @@ on App.startCLI(args: list of string) {
     var eventsPath: string
     var haveEvents: bool
     var eventsBytes: text
+    var bakePaths: list of string
     var ok68: bool
     var appinfoMode: bool
     var startArg: int
@@ -530,6 +577,20 @@ on App.startCLI(args: list of string) {
             }
             eventsPath = args[i]
             haveEvents = true
+        } else if emitMode68k and args[i] == "--bake" {
+            // Task 5 (mac-resident-clarusc): repeatable -- one 'CLFS'
+            // resource per flag, baked into the emitted .bin's resource
+            // fork (cg68WriteImage, cg68k.cla) so a native clarusc binary
+            // can carry its own runtime/toolbox catalog sources. Files are
+            // actually read at hand-off time below (mirrors --events),
+            // once the whole flag list is known (needed for the
+            // duplicate-name check).
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... FILE...")
+                quit 2
+            }
+            bakePaths.add(args[i])
         } else {
             fileArgs.add(args[i])
         }
@@ -1222,6 +1283,12 @@ on App.startCLI(args: list of string) {
             } else {
                 cgEventsBytes = ""
             }
+            // Task 5 (mac-resident-clarusc): read each --bake FILE now
+            // that the whole flag list is known -- cliResolveBake below
+            // does the actual validation/read (split out of this handler
+            // to stay clear of App.startCLI's own per-function 32KB
+            // native segment budget, TestSelfEmit68k's own headline gate).
+            cliResolveBake(bakePaths)
             ok68 = cg68Program(outPath, listingFlag, segLimitFlag)
             if not ok68 {
                 log("clarusc emit68k: cg68Program failed")

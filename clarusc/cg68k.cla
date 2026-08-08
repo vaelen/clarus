@@ -214,6 +214,18 @@ var cgEventsBytes: text
 var cgAppRawName: string
 var cgAppIconPath: string
 
+// cgBakeNames/cgBakeDatas (Task 5, mac-resident-clarusc) hold one entry
+// per `emit68k --bake FILE` flag, in flag order -- main.cla sets both
+// before calling cg68Program, same hand-off pattern as cgEventsBytes
+// above: cgBakeNames[i] is FILE exactly as passed on the command line
+// (also the CLFS resource's own name, verbatim), cgBakeDatas[i] is that
+// file's raw bytes. Empty (both zero-length lists) for a build with no
+// `--bake` flag, which is every build except the Mac-resident compiler's
+// own self-baking build -- cg68WriteImage below folds these into one
+// 'CLFS' resource per entry, id 128+i.
+var cgBakeNames: list of string
+var cgBakeDatas: list of text
+
 // cgFreshIntList hands back a genuinely empty list (same trick
 // shakeFreshIntList/shakeFreshBoolList use, shake.cla).
 func cgFreshIntList(): list of int {
@@ -9891,7 +9903,9 @@ func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of 
     var creator: string(7)
     var extraTypes: list of string
     var extraIds: list of int
+    var extraNames: list of string
     var extraDatas: list of text
+    var bi: int
 
     if irHasApp and irAppId != -1 {
         creator = poolGet(irAppId)
@@ -9904,7 +9918,31 @@ func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of 
     extraDatas = cgFreshTextList()
     cg68ResourceParitySet(extraTypes, extraIds, extraDatas)
 
-    img = app68Build(cgAppName(outPath), creator, segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraDatas)
+    // cg68ResourceParitySet's own resources are never named -- pad
+    // extraNames with "" to match, one per entry it just added.
+    extraNames = cgFreshStringList()
+    bi = 0
+    while bi < extraTypes.count {
+        extraNames.add("")
+        bi = bi + 1
+    }
+
+    // Task 5 (mac-resident-clarusc): one 'CLFS' resource per `emit68k
+    // --bake FILE` flag (main.cla), id 128+i in flag order, named FILE
+    // exactly as passed, bytes verbatim. cgBakeNames/cgBakeDatas are both
+    // empty for every ordinary build (no --bake flag), so this loop is a
+    // no-op and the resource set -- and the resulting image -- is byte-
+    // identical to before this task.
+    bi = 0
+    while bi < cgBakeNames.count {
+        extraTypes.add("CLFS")
+        extraIds.add(128 + bi)
+        extraNames.add(cgBakeNames[bi])
+        extraDatas.add(cgBakeDatas[bi])
+        bi = bi + 1
+    }
+
+    img = app68Build(cgAppName(outPath), creator, segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraNames, extraDatas)
     // native-gaps-cleanup Task 2: file.writeText's own mandatory type/
     // creator args -- fileTypeApplication ('APPL') describes this output
     // (a native 68k application image) exactly; creator is the SAME value
