@@ -184,7 +184,21 @@ func checkCoreSuiteCapture(t *testing.T, out string) {
 // rule via a real PBGetFInfoSync readback, consuming toolbox/files.cla's
 // FileParam/PBGetFInfoSync declarations (pack3-standardfile phase);
 // toolbox/files.cla joins the other four toolbox/ catalog files in the
-// same grouped block, right after kit.cla.
+// same grouped block, right after kit.cla. toolbox/resources.cla +
+// cases_resources.cla (ResourceBake/WriteResStamp) were added by Task 7
+// (mac-resident-clarusc phase) -- hardware-proves the new
+// `file.readResource`/`file.writeRes` intrinsics; toolbox/resources.cla
+// joins the other five toolbox/ catalog files in the same grouped block,
+// cases_resources.cla joins the other cases_*.cla files ahead of gui.cla.
+
+// toolboxResourceBakeName MUST match testsuite/toolbox/cases_resources.cla's
+// own tbResBakeName constant, character for character: Get1NamedResource
+// keys a baked resource by exactly the string passed on the `--bake`
+// command line (toolbox/resources.cla's own header comment; the design
+// doc's "Key convention" section). "../../" is the walk from this
+// suite's build cwd (this package's own directory) up to the repo root.
+const toolboxResourceBakeName = "../../testdata/mac-resident/resbake.bin"
+
 var toolboxFiles = []string{
 	filepath.Join("testsuite", "kit.cla"),
 	filepath.Join("toolbox", "memory.cla"),
@@ -192,6 +206,7 @@ var toolboxFiles = []string{
 	filepath.Join("toolbox", "osutils.cla"),
 	filepath.Join("toolbox", "scrap.cla"),
 	filepath.Join("toolbox", "files.cla"),
+	filepath.Join("toolbox", "resources.cla"),
 	filepath.Join("testsuite", "toolbox", "runner.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_events.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
@@ -216,6 +231,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_bigtext.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_catalog.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_resources.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -254,7 +270,7 @@ var toolboxFiles = []string{
 func TestToolboxSuiteOn68k(t *testing.T) {
 	requireMac(t)
 	eventsRel := filepath.Join("..", "..", "testdata", "ui", "toolboxsuite.events")
-	toolboxArgs := append([]string{"--testapi"}, pkgRelFiles(toolboxFiles)...)
+	toolboxArgs := append([]string{"--testapi", "--bake", toolboxResourceBakeName}, pkgRelFiles(toolboxFiles)...)
 	bin := buildNative68kUI(t, "toolboxsuite_gui", eventsRel, toolboxArgs...)
 	out, _, exitCode := RunMac(t, bin, 5*time.Minute)
 	if exitCode != 0 {
@@ -306,10 +322,12 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // Task 3's own FormEdit addition (Task 8's formedit gap finally closed),
 // then to 23 by test-consolidation Task 4's own BigText addition, then
 // to 24 by toolbox-cookbook Task 2's own Catalog addition, then to 25 by
-// native-gaps-cleanup Task 3's own FInfoStamp addition: parses each
-// of the 25 result lines (24 real cases + SelfCheck) into its own t.Run
-// subtest -- per-case CI reporting -- plus the aggregate TOTAL line,
-// regardless of which lane produced the capture.
+// native-gaps-cleanup Task 3's own FInfoStamp addition, then to 27 by
+// Task 7's (mac-resident-clarusc) own ResourceBake/WriteResStamp
+// addition: parses each of the 27 result lines (26 real cases +
+// SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
+// the aggregate TOTAL line, regardless of which lane produced the
+// capture.
 func checkToolboxSuiteCapture(t *testing.T, out string) {
 	t.Helper()
 	type caseResult struct {
@@ -332,8 +350,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 25 {
-		t.Errorf("result lines: got %d, want 25\ncapture:\n%s", len(results), out)
+	if len(results) != 27 {
+		t.Errorf("result lines: got %d, want 27\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -343,7 +361,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 25 PASS 25 FAIL 0"; total != want {
+	if want := "TOTAL 27 PASS 27 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

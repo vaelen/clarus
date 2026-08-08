@@ -155,6 +155,22 @@ int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *typ
     return 1;
 }
 
+/* rt_file_read_resource/rt_file_write_res (Task 7, mac-resident-clarusc):
+ * host-only stubs -- this filesystem has no resource-fork concept at all,
+ * so both always fail. Real implementations are runtime/clarus/native.cla's
+ * natReadResource/natWriteRes (Mac lane only). */
+int rt_file_read_resource(const uint8_t *name, rt_text *t) {
+    (void)name; (void)t;
+    rt_set_lasterr(2, "resources not supported on this platform");
+    return 0;
+}
+
+int rt_file_write_res(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255) {
+    (void)path; (void)t; (void)type255; (void)creator255;
+    rt_set_lasterr(2, "resources not supported on this platform");
+    return 0;
+}
+
 void rt_file_name(uint8_t *dst255, const uint8_t *path) {
     uint8_t n = path[0];
     int start = 0;

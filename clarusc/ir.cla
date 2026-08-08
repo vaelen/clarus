@@ -3242,6 +3242,21 @@ func IFileName(): int {
     return intern("file_name")
 }
 
+// -- files (Task 7, mac-resident-clarusc): 'CLFS'-named resource read /
+// raw resource-fork write, the minimal Mac-resident-compiler surface
+// (spec section 3). Same two-lowered-args shape as IFileReadText/
+// IFileWriteText above; host lane always fails (rt.c's
+// rt_file_read_resource/rt_file_write_res -- no resource fork on that
+// filesystem), native lane is runtime/clarus/native.cla's
+// natReadResource/natWriteRes.
+func IFileReadResource(): int {
+    return intern("file_read_resource")
+}
+
+func IFileWriteRes(): int {
+    return intern("file_write_res")
+}
+
 // -- files (record serialization, Task 2 mac-target-4d -> rt_file_save/
 // rt_file_load, rt.h's Task 1 contract). Both intrinsics take the same two
 // lowered args (path, data) as IFileReadText/IFileWriteText above; unlike

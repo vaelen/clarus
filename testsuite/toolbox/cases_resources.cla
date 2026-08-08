@@ -1,0 +1,119 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_resources.cla: ResourceBake + WriteResStamp (Task 7, mac-
+// resident-clarusc phase) -- hardware-proves `file.readResource`/
+// `file.writeRes` (the compiler's own bootstrap-source-read/output-write
+// primitives, Tasks 8+/9+) against a REAL 'CLFS' baked resource and a
+// REAL resource-fork write, in-process.
+
+// tbResBakeName MUST match internal/mactest/coresuite_test.go's own
+// `--bake` FILE argument for this suite's native build, character for
+// character -- Get1NamedResource keys a baked resource by exactly the
+// string passed on the command line (toolbox/resources.cla's own header
+// comment; the design doc's "Key convention" section). "../../" is the
+// walk from this suite's build cwd (internal/mactest, the Go test
+// package directory) up to the repo root.
+const tbResBakeName: string = "../../testdata/mac-resident/resbake.bin"
+
+// tbResBakeLen/tbResBakeBytes: testdata/mac-resident/resbake.bin's exact
+// contents ("Clarus" + 0x00 + 0xFF + two MacRoman-range bytes, 0x80 'Ä'
+// and 0x8A 'â') -- chosen to prove the byte-for-byte, binary-faithful
+// promise `file.readResource` shares with `file.readText` (Chapter 12):
+// a raw 0x00 and 0xFF must round-trip unchanged, not get treated as a
+// C-string terminator or a sentinel.
+const tbResBakeLen: int = 10
+
+func caseResourceBake(): TestResult {
+    var out: text
+    var expect: text
+    var detail: string
+    var ok: bool
+    var missingOk: bool
+    var missingOut: text
+
+    ok = file.readResource(tbResBakeName, out)
+    if not ok {
+        detail = "readResource baked blob failed: " + lastError.message
+        return tkFail("ResourceBake", detail)
+    }
+
+    // Build the expected 10-byte value via char()+append rather than a
+    // `char[N]` local + `.toBytes()`/direct indexing (a real, pre-
+    // existing, unrelated cg68k codegen bug on the native lane -- found
+    // live-driving this exact case: `.toBytes()` fills a `char[N]`
+    // local's PADDED (2-byte-stride) slots via cgDrainTightScratchToPaddedArr,
+    // but the array's own storage is ALREADY tight-packed (1-byte
+    // stride, small-scalar-width phase), so alternating bytes land in
+    // never-read padding and ordinary `buf[i]` reads see zeros at every
+    // odd index -- confirmed with an isolated non-UI native repro
+    // (`s.toBytes(buf)` then `buf[i]`, no resource code involved at
+    // all) and reported separately; out of scope to fix here. `text ==
+    // text` (rtTextCmp, native.cla/text.cla) never touches that array
+    // machinery, so it stays a reliable byte-for-byte check, including
+    // the raw 0x00/0xFF bytes a string LITERAL couldn't safely carry
+    // (ASCII-only source, embedded NUL) -- also proves `file.readResource`
+    // shares `file.readText`'s "every byte value 0-255 round-trips
+    // unchanged" promise (Chapter 12).
+    expect.append(char(67))  // C
+    expect.append(char(108)) // l
+    expect.append(char(97))  // a
+    expect.append(char(114)) // r
+    expect.append(char(117)) // u
+    expect.append(char(115)) // s
+    expect.append(char(0))
+    expect.append(char(255))
+    expect.append(char(128)) // MacRoman 'Ä'
+    expect.append(char(138)) // MacRoman 'â'
+
+    if out.length != tbResBakeLen or out != expect {
+        detail = "content mismatch, len " + tkIntToStr(out.length)
+        return tkFail("ResourceBake", detail)
+    }
+
+    // A name with no matching 'CLFS' resource must fail cleanly (false +
+    // lastError), not crash or return stale/garbage content.
+    missingOk = file.readResource("no-such-baked-resource", missingOut)
+    if missingOk {
+        return tkFail("ResourceBake", "readResource of a missing name returned true")
+    }
+
+    return tkPass("ResourceBake")
+}
+
+func caseWriteResStamp(): TestResult {
+    var t: text
+    var fp: FileParam
+    var err: int
+    var detail: string
+    var ok: bool
+
+    t.append("resfork probe")
+
+    ok = file.writeRes("wrstamp", t, "TSTR", "TSTC")
+    if not ok {
+        detail = "writeRes failed: " + lastError.message
+        return tkFail("WriteResStamp", detail)
+    }
+
+    // Re-stat the written file's real Finder type/creator via
+    // PBGetFInfoSync -- the same independent-readback pattern
+    // cases_finfo.cla's FInfoStamp case already uses for file.writeText.
+    fp.ioNamePtr = UiStrAddr("wrstamp")
+    fp.ioVRefNum = 0
+    fp.ioFDirIndex = 0
+    err = PBGetFInfoSync(fp)
+    if err != 0 {
+        detail = "getfinfo err " + tkIntToStr(err)
+        return tkFail("WriteResStamp", detail)
+    }
+    // "TSTR" -> 0x54535452 (T=0x54 S=0x53 T=0x54 R=0x52)
+    // "TSTC" -> 0x54535443 (T=0x54 S=0x53 T=0x54 C=0x43)
+    if fp.fdType != 0x54535452 or fp.fdCreator != 0x54535443 {
+        detail = "type " + tkIntToStr(fp.fdType)
+        detail = detail + " creator " + tkIntToStr(fp.fdCreator)
+        return tkFail("WriteResStamp", detail)
+    }
+
+    return tkPass("WriteResStamp")
+}

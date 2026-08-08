@@ -6361,6 +6361,20 @@ func cgIntr(e: int) {
         cgIntr4(e, "natFileWriteText", true, false, true, true)
         return
     }
+    if nm == "file_read_resource" {
+        // file.readResource(name, out) -- Task 7 (mac-resident-clarusc);
+        // same addr0/addr1 shape as file_read_text above (name is a
+        // Str255-shaped ptr, out's own value already IS the rtText box
+        // pointer).
+        cgIntr2(e, "natReadResource", true, false)
+        return
+    }
+    if nm == "file_write_res" {
+        // file.writeRes(path, fork, doctype, creator) -- same shape as
+        // file_write_text above.
+        cgIntr4(e, "natWriteRes", true, false, true, true)
+        return
+    }
     if nm == "file_name" {
         log("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
         quit 1

@@ -1273,6 +1273,8 @@ The `file` namespace covers documents and preferences. Every function but `file.
 | `save` | `file.save(path: string, data, type: string, creator: string): bool` | `data`: any `record`, `list of` record, or `map of` record; stamped with `type`/`creator` |
 | `load` | `file.load(path: string, data): bool` | fills `data` in place |
 | `name` | `file.name(path: string): string` | the file's display name; always succeeds |
+| `readResource` | `file.readResource(name: string, out: text): bool` | fills `out` from the named resource; Macintosh only |
+| `writeRes` | `file.writeRes(path: string, fork: text, doctype: string, creator: string): bool` | writes `fork`'s contents as `path`'s resource fork, stamped with `doctype`/`creator`; Macintosh only |
 
 `save` and `load` serialize using the field layout already known from the record's declaration (Chapter 3) — no separate schema is written or read.
 
@@ -1281,6 +1283,8 @@ Every field of the record — transitively, for a `list of` or `map of` payload 
 **Binary faithfulness:** `readText` and `writeText` transfer content verbatim, byte for byte — no newline translation, and every byte value 0–255 (including 0) round-trips unchanged. Since a `text` is a byte buffer (Chapter 3), these two functions are also the way to read and write binary data.
 
 **`type`/`creator`:** four-character Finder type/creator codes (the App Section's `app.doctype`/`app.id` constants, above, are the idiomatic values — `file.writeText(p, t, app.doctype, app.id)`; the four `fileType*` constants or any other 4-character `string` also work). There are no defaults: every call spells them out. A `string` literal longer than four characters is a build-time error; a shorter one is space-padded on the right. A *non-literal* `string` longer than four characters fails the whole operation instead (`false` + `lastError`) — the same rule `askOpen`'s filter, below, follows. These literal-length checks run during `clarusc emit`'s lowering pass, not bare check-only mode (`clarusc FILE.cla`) — a program with a bad literal here passes a check-only run and is only rejected when built with `emit`. Stamping happens only when the file is freshly created; writing to an already-existing path leaves that file's type/creator untouched. Double-clicking a document saved this way in the Finder launches the application that wrote it and fires `App.openDocument` with the document's path (Chapter 7).
+
+**`readResource`/`writeRes`:** a minimal pair reserved for resource-fork access — `readResource` fills `out` from a named resource in the current resource chain; `writeRes` writes `fork` verbatim as a *whole file's* resource fork (the data fork is left empty), stamped with `doctype`/`creator` the same way `writeText` stamps a data-fork file. Both are Macintosh-only: on a host build, `readResource` always returns `false` (nothing to fill), and `writeRes` always returns `false` (nothing written) — there is no resource fork on that filesystem. `writeRes`'s `doctype`/`creator` follow the exact same literal-length/padding rule as `writeText`'s `type`/`creator`, above. Ordinary programs have little reason to reach for either function directly; they exist for tools that read or produce Macintosh resource forks.
 
 ### Dialogs
 

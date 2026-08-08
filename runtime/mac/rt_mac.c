@@ -18,6 +18,7 @@
 #include <Dialogs.h>
 #include <Files.h>
 #include <Memory.h>
+#include <Resources.h>
 #include <Quickdraw.h>
 #include <Fonts.h>
 #include <Windows.h>
@@ -380,6 +381,82 @@ int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *typ
        fopen(path, "wb"), which also just opens-or-truncates). */
     Create(path, 0, fcreator, ftype);
     if (FSOpen(path, 0, &ref) != noErr) {
+        rt_set_lasterr(2, "could not open file");
+        return 0;
+    }
+    SetEOF(ref, 0);
+    count = t->len;
+    if (t->len > 0 && FSWrite(ref, &count, *t->h) != noErr) {
+        FSClose(ref);
+        FlushVol(NULL, 0);
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    FSClose(ref);
+    FlushVol(NULL, 0);
+    if (count != t->len) {
+        rt_set_lasterr(2, "could not write file");
+        return 0;
+    }
+    return 1;
+}
+
+/* rt_file_read_resource/rt_file_write_res (Task 7, mac-resident-clarusc):
+ * this lane's own real implementations, using Retro68's high-level C
+ * glue directly (Get1NamedResource/ReleaseResource/GetHandleSize/HLock/
+ * HUnlock from Resources.h/Memory.h; OpenRF/FSWrite/FSClose/SetEOF/
+ * Create/FlushVol from Files.h -- the SAME routines rt_file_read_text/
+ * rt_file_write_text above already use, just OpenRF standing in for
+ * FSOpen so the write lands in the RESOURCE fork instead of the data
+ * fork). Same lastError codes/messages as runtime/clarus/native.cla's
+ * natReadResource/natWriteRes (the emit68k-lane twin of these two
+ * functions) and runtime/host/rt.c's host-only stubs. writeRes is a raw
+ * fork write, not a Resource Manager call sequence -- see the design
+ * doc's own rejected-alternatives section (native.cla's natWriteRes
+ * doc comment quotes it in full). */
+int rt_file_read_resource(const uint8_t *name, rt_text *t)
+{
+    Handle h;
+    long sz;
+
+    h = Get1NamedResource('CLFS', name);
+    if (h == NULL) {
+        rt_set_lasterr(2, "resource not found");
+        return 0;
+    }
+    sz = GetHandleSize(h);
+    HLock(h);
+    rt_text_grow(t, (int32_t)sz);
+    if (sz > 0) BlockMoveData(*h, *t->h, sz);
+    HUnlock(h);
+    ReleaseResource(h);
+    t->len = (int32_t)sz;
+    return 1;
+}
+
+int rt_file_write_res(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255)
+{
+    short ref;
+    long count;
+    unsigned long ftype, fcreator;
+
+    if (!rt_mac_pack4cc(type255, &ftype)) {
+        rt_set_lasterr(2, "file type must be at most 4 characters");
+        return 0;
+    }
+    if (!rt_mac_pack4cc(creator255, &fcreator)) {
+        rt_set_lasterr(2, "file creator must be at most 4 characters");
+        return 0;
+    }
+
+    /* dupFNErr if the file already exists; ignored either way -- OpenRF
+       just below is the real success/failure gate, same convention as
+       rt_file_write_text above. Create() already stamps ftype/fcreator
+       at creation time (its own creator/fileType params), so there is
+       no separate SetFInfo step on this lane, unlike native.cla's own
+       raw-PB natWriteRes. */
+    Create(path, 0, fcreator, ftype);
+    if (OpenRF(path, 0, &ref) != noErr) {
         rt_set_lasterr(2, "could not open file");
         return 0;
     }

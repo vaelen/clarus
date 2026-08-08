@@ -146,6 +146,14 @@ int rt_file_read_text(const uint8_t *path, rt_text *t);        /* whole-file rea
 int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255);
 void rt_file_name(uint8_t *dst255, const uint8_t *path);       /* basename of path; always succeeds */
 
+/* file.readResource/file.writeRes (Task 7, mac-resident-clarusc): host
+   stubs only -- no resource-fork concept on this filesystem. readResource
+   always fills nothing and returns false; writeRes always writes nothing
+   and returns false. Real implementations are runtime/clarus/native.cla's
+   natReadResource/natWriteRes (Mac lane only). */
+int rt_file_read_resource(const uint8_t *name, rt_text *t);
+int rt_file_write_res(const uint8_t *path, const rt_text *t, const uint8_t *type255, const uint8_t *creator255);
+
 /* ---- record serialization (Task 1, mac-target-4d) ----
    Canonical big-endian, field-wise file format shared verbatim between the
    host and Mac runtimes via rt_ser.inc (#included at the bottom of each

@@ -177,6 +177,67 @@ external func NatRead(pb: ptr): int = trap 0xA002 reg
 external func NatHLock(h: ptr) = trap 0xA029 reg
 external func NatHUnlock(h: ptr) = trap 0xA02A reg
 
+// ---- Task 7 (mac-resident-clarusc): natReadResource/natWriteRes's own
+// traps, declared locally same as every other File/Memory/Resource
+// Manager trap in this module (this file's own header explains why it
+// never composes with toolbox/*.cla). Every trap word decoded directly
+// against Retro68/InterfacesAndLibraries (CIncludes pragma + AIncludes
+// OPWORD), same standing rule as toolbox/resources.cla and toolbox/
+// files.cla's own citations (which quote the identical evidence in full):
+//   NatGet1NamedResource  Resources.h:437 `EXTERN_API( Handle )
+//                         Get1NamedResource(ResType theType,
+//                         ConstStr255Param name) ONEWORDINLINE(0xA820);`
+//                         no `#pragma parameter` (Handle-CFM-style decl) --
+//                         bit 11 SET (0xA820 & 0x0800 != 0) -> pascal
+//                         (stack args, left to right; Handle result),
+//                         same convention as this module's own
+//                         NatExitToShell/UiFrontWindow-style plain `trap`
+//                         externs. Resources.a:478 `_Get1NamedResource:
+//                         OPWORD $A820` corroborates the trap word.
+//   NatReleaseResource    Resources.h:466 `EXTERN_API( void )
+//                         ReleaseResource(Handle theResource)
+//                         ONEWORDINLINE(0xA9A3);` -- bit 11 SET, pascal,
+//                         void result. Resources.a:514 `_ReleaseResource:
+//                         OPWORD $A9A3` corroborates.
+//   NatGetHandleSize      MacMemory.h:1162 `#pragma parameter __D0
+//                         InlineGetHandleSize(__A0)` ONEWORDINLINE(0xA025)
+//                         -- bit 11 clear -> `reg` (h in A0, size in D0),
+//                         same trap word toolbox/memory.cla's own
+//                         GetHandleSize already cites; duplicated locally
+//                         here for the same reason NatHLock/NatHUnlock
+//                         above duplicate toolbox/memory.cla's HLock/
+//                         HUnlock.
+//   NatOpenRF             Files.h:1566 `#pragma parameter __D0
+//                         PBOpenRFSync(__A0)` ONEWORDINLINE(0xA00A) --
+//                         bit 11 clear -> `reg` (pb in A0, OSErr in D0),
+//                         the SAME IOParam-shaped natFilePb block
+//                         natFileWriteText's own NatOpen already uses,
+//                         just the resource-fork twin -- opens the
+//                         RESOURCE fork of the file named at ioNamePtr
+//                         instead of the data fork; every other IOParam
+//                         field (ioRefNum out, then read/write/close via
+//                         the SAME NatWrite/NatClose traps) behaves
+//                         identically once open. Files.a:1797
+//                         `_PBOpenRFSync: OPWORD $A00A` corroborates.
+external func NatGet1NamedResource(theType: int, name: ptr): ptr = trap 0xA820
+// NatReleaseResource is declared (trap word verified above) but MUST
+// NEVER be called from natReadResource's own path -- empirically
+// root-caused, real hardware, boot-hang SOLID; see natReadResource's own
+// doc comment for the full bisection. Kept declared (not deleted) so
+// the citation above stays a complete, honest record of what was
+// checked, and so a future fix attempt (if the root cause is ever
+// pinned down) has the trap ready to hand.
+external func NatReleaseResource(h: ptr) = trap 0xA9A3
+external func NatGetHandleSize(h: ptr): int = trap 0xA025 reg
+external func NatOpenRF(pb: ptr): int = trap 0xA00A reg
+
+// natClfsType: 'CLFS' packed big-endian (C=0x43 L=0x4C F=0x46 S=0x53) --
+// the same resource type Task 5's `emit68k --bake` stamps on every baked
+// resource (cg68k.cla's cg68WriteImage, `extraTypes.add("CLFS")`).
+// natReadResource looks up exactly this type, by name, in the current
+// resource chain.
+const natClfsType: int = 0x434C4653
+
 // _ExitToShell (Traps.h: 0xA9F4) takes no parameters and never returns --
 // Pascal convention is the natural (and, with zero args/result, the only
 // observable) choice, matching TickCount's own zero-arg style in the
@@ -833,6 +894,195 @@ func natFileName(dst: ptr, path: ptr) {
         pokeb(dst + 1 + i, peekb(path + 1 + start + i))
         i = i + 1
     }
+}
+
+// natReadResource (Task 7, mac-resident-clarusc): `file.readResource(name,
+// out)` -- fills `out` from the current resource chain's 'CLFS' resource
+// named `name` (a Str255-shaped ptr, same convention as every other
+// natFile* path argument). false + lastError(2, "resource not found") if
+// no such resource exists; a missing resource is the ordinary "not
+// found" case, not a crash -- Get1NamedResource itself returns a nil
+// Handle (0) rather than raising any error signal this module could
+// trap.
+//
+// Copy idiom: GetHandleSize sizes the resource up front (no PBGetEOFSync-
+// style hazard here -- that boot-hang was specific to _Read's own
+// unsized-EOF loop, natFileReadText's own header; a resource Handle's
+// size is always known synchronously, no loop needed at all), HLock
+// brackets the read exactly like natFileWriteText's own write bracket
+// (a relocating call -- here, rtTextGrow's own possible SetHandleSize --
+// must never run while `out`'s master pointer is captured, but the
+// SOURCE handle `h` is a different block, locked for the whole
+// function), then the SAME rtTextGrow/TextHandleDeref/TextBlockMoveData
+// re-derive-after-grow discipline natFileReadText's own header documents
+// at length: `out`'s master pointer (`mp`) is captured only AFTER
+// rtTextGrow, since growing `out` can relocate `out`'s own Handle (never
+// `h`'s -- `h` stays locked throughout, immune regardless of ordering).
+//
+// NO ReleaseResource call (empirically root-caused, task-7's own live-
+// drive): a cut of this function ending `NatHUnlock(h); NatReleaseResource(h)`
+// hung the boot SOLID on real hardware, 100% reproducibly, downstream of
+// a heap already busy with this same suite's prior cases' traffic --
+// bisected the same way natFileReadText's own PBGetEOFSync hang and
+// natFileWriteText's own PBGetFInfoSync-before-write hang were: build a
+// diagnostic cut that returns early at each successive step
+// (Get1NamedResource alone; +GetHandleSize/HLock/deref; +rtTextGrow/copy/
+// HUnlock) and re-boot -- every cut through HUnlock completed cleanly,
+// the ONLY cut that hung was the one that went on to call
+// ReleaseResource. WORKAROUND, same shape as those two precedents:
+// leave the resource locked and never released -- a small, permanent
+// "still resident" cost per distinct name read (acceptable: this
+// primitive's whole reason to exist is a self-recompiling compiler
+// reading a handful of small baked source files once per process
+// lifetime, then exiting; nothing re-reads the same name enough times
+// for the unreleased handles to matter). Root cause not fully explained
+// (same as the other two precedents) -- what IS unconditional is the
+// workaround: never call NatReleaseResource anywhere in this path.
+func natReadResource(name: ptr, out: ptr): bool {
+    var h: ptr
+    var rt: RtText
+    var mp: ptr
+    var srcp: ptr
+    var sz: int
+
+    h = NatGet1NamedResource(natClfsType, name)
+    if h == ptr(0) {
+        rtSetLastErr(2, "resource not found")
+        return false
+    }
+
+    sz = NatGetHandleSize(h)
+    NatHLock(h)
+    srcp = TextHandleDeref(h)
+
+    rtTextGrow(out, sz)
+    rt = RtText(out)
+    mp = TextHandleDeref(rt.h)
+    if sz > 0 {
+        TextBlockMoveData(srcp, mp, sz)
+    }
+
+    NatHUnlock(h)
+
+    rt = RtText(out)
+    rt.len = sz
+    return true
+}
+
+// natWriteRes (Task 7, mac-resident-clarusc): `file.writeRes(path, fork,
+// doctype, creator)` -- creates `path`, writes `fork`'s bytes VERBATIM as
+// its RESOURCE fork (the data fork is never opened, so it stays empty),
+// stamped with doctype/creator. A deliberately raw fork write, not a
+// Resource Manager call sequence (AddResource/UpdateResFile) -- the
+// design doc's own rejected-alternatives section: this primitive exists
+// to lay down an already-fully-built resource-fork IMAGE (res68k.cla's
+// own builder, used elsewhere), so decomposing that image back into
+// individual RM calls would be pure extra surface for no benefit.
+//
+// Create/stamp discipline copied verbatim from natFileWriteText (READ
+// FIRST, per that function's own doc comment): dupFNErr from Create is
+// ignored (Open/OpenRF below is the real success/failure gate), and
+// FInfo is stamped via a DIRECT PBSetFInfoSync right after a successful
+// Create -- no PBGetFInfoSync first -- for the exact real-hardware boot-
+// hang reason natFileWriteText's own comment documents at length (a
+// File Manager query trap under a busy heap). The one structural
+// difference: OpenRF (the resource fork) stands in for Open (the data
+// fork) -- everything downstream (SetEOF/Write/Close/Flush) is the
+// identical natFilePb/ref dance either way, since both forks are
+// addressed by the same ioRefNum-keyed I/O calls once opened. No
+// chunking loop (unlike natFileReadText's bounce-buffer loop): `fork`'s
+// full length is already known before the first Write, so -- exactly
+// like natFileWriteText's own single-shot write -- one PBWriteSync call
+// with ioReqCount = the whole length suffices; HLock/HUnlock around the
+// call is the SAME real-hardware relocation-safety bracket
+// natFileWriteText's own comment root-causes (the trap can itself
+// allocate and trigger compaction mid-call).
+func natWriteRes(path: ptr, t: ptr, ftype: ptr, fcreator: ptr): bool {
+    var rt: RtText
+    var mp: ptr
+    var n: int
+    var ref: int
+    var wrote: int
+    var failed: bool
+    var packedType: int
+    var packedCreator: int
+
+    packedType = rtFourCC(ftype)
+    if packedType == -1 {
+        rtSetLastErr(2, "file type must be at most 4 characters")
+        return false
+    }
+    packedCreator = rtFourCC(fcreator)
+    if packedCreator == -1 {
+        rtSetLastErr(2, "file creator must be at most 4 characters")
+        return false
+    }
+
+    natFileEnsurePb()
+    pokel(natFilePb + natIoNamePtr, int(path))
+    pokew(natFilePb + natIoVRefNum, 0)
+
+    // dupFNErr (file already exists) ignored either way -- OpenRF just
+    // below is the real success/failure gate, same convention as
+    // natFileWriteText's own Create call.
+    NatCreate(natFilePb)
+
+    // Direct PBSetFInfoSync ONLY, no PBGetFInfoSync first -- see
+    // natFileWriteText's own doc comment for the full real-hardware
+    // rationale (identical here: natFilePb is freshly NewPtrCLEAR'd by
+    // natFileEnsurePb, and nothing between that alloc and here writes
+    // its FInfo-region bytes, so they are still all-zero, exactly what a
+    // Get would read back for a brand-new file anyway).
+    if peekw(natFilePb + natIoResult) == 0 {
+        pokew(natFilePb + natIoFDirIndex, 0)
+        pokel(natFilePb + natIoFdType, packedType)
+        pokel(natFilePb + natIoFdCreator, packedCreator)
+        NatSetFInfo(natFilePb)
+    }
+
+    // Open the RESOURCE fork (PBOpenRFSync), not the data fork -- the
+    // whole point of file.writeRes.
+    pokel(natFilePb + natIoNamePtr, int(path))
+    pokew(natFilePb + natIoVRefNum, 0)
+    NatOpenRF(natFilePb)
+    if peekw(natFilePb + natIoResult) != 0 {
+        rtSetLastErr(2, "could not open file")
+        return false
+    }
+    ref = peekw(natFilePb + natIoRefNum)
+
+    pokew(natFilePb + natIoRefNum, ref)
+    pokel(natFilePb + natIoMisc, 0)
+    NatSetEOF(natFilePb)
+
+    rt = RtText(t)
+    n = rt.len
+    wrote = 0
+    failed = false
+    if n > 0 {
+        NatHLock(rt.h)
+        mp = TextHandleDeref(rt.h)
+        pokew(natFilePb + natIoRefNum, ref)
+        pokel(natFilePb + natIoBuffer, int(mp))
+        pokel(natFilePb + natIoReqCount, n)
+        pokew(natFilePb + natIoPosMode, natFsAtMark)
+        NatWrite(natFilePb)
+        wrote = peekl(natFilePb + natIoActCount)
+        NatHUnlock(rt.h)
+        if peekw(natFilePb + natIoResult) != 0 {
+            failed = true
+        }
+    }
+
+    pokew(natFilePb + natIoRefNum, ref)
+    NatClose(natFilePb)
+    natFileFlush()
+
+    if failed or wrote != n {
+        rtSetLastErr(2, "could not write file")
+        return false
+    }
+    return true
 }
 
 // nat_SerFileWriteData/nat_SerFileReadTextInto: ser.cla's own

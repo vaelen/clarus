@@ -1,0 +1,57 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/resources.cla: curated Resource Manager declarations, Task 7
+// (mac-resident-clarusc phase). DELIBERATELY THIN, same discipline
+// toolbox/files.cla's own header documents -- just the two routines
+// `file.readResource`'s native implementation needs (GetHandleSize/
+// HLock/HUnlock, also used here, already live in toolbox/memory.cla; no
+// need to redeclare them in a second catalog file).
+//
+// Every trap word below is confirmed directly against Apple's own
+// Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/Interfaces),
+// per this repo's standing trap-verification rule (decode the inline
+// words -- see toolbox/osutils.cla's Gestalt correction for why a
+// `#pragma parameter` line or a third-party reconstruction alone is not
+// enough).
+//
+//   Get1NamedResource  CIncludes/Resources.h:436-439:
+//                       `EXTERN_API( Handle ) Get1NamedResource(ResType
+//                       theType, ConstStr255Param name)
+//                       ONEWORDINLINE(0xA820);` -- no `#pragma parameter`
+//                       line at all (this is a Handle-CFM-style
+//                       declaration, not a `#pragma parameter`-annotated
+//                       inline glue) -- bit 11 SET (0xA820 & 0x0800 !=
+//                       0) --> PASCAL convention: args pushed on the
+//                       stack left to right (theType, then name), Handle
+//                       result. Corroborated in AIncludes/Resources.a:478
+//                       `_Get1NamedResource: OPWORD $A820`.
+//   ReleaseResource     CIncludes/Resources.h:465-466:
+//                       `EXTERN_API( void ) ReleaseResource(Handle
+//                       theResource) ONEWORDINLINE(0xA9A3);` -- bit 11
+//                       SET, pascal, void result, one Handle arg.
+//                       Corroborated in AIncludes/Resources.a:514
+//                       `_ReleaseResource: OPWORD $A9A3`.
+//
+// KNOWN HAZARD: `ReleaseResource`, called on the native (emit68k) lane
+// after reading a resource under a heap already busy with prior traffic,
+// was empirically found to hang the boot SOLID on real hardware (Task
+// 7's own live-drive bisection -- see runtime/clarus/native.cla's
+// natReadResource doc comment for the full trap-by-trap isolation, the
+// same technique that root-caused the File Manager's own PBGetEOFSync/
+// PBGetFInfoSync-before-write hangs). native.cla's own implementation
+// works around this by never calling it. Root cause not pinned down;
+// a caller of this catalog entry directly should be aware the same
+// hang may reproduce under similar busy-heap conditions.
+//
+// `theType` (Get1NamedResource's ResType/OSType parameter) is a packed
+// 4-character code, same convention as `file.writeText`'s type/creator
+// (Chapter 12) -- callers pass an `int` (e.g. the packed 'CLFS' value
+// `file.readResource`'s own native implementation uses,
+// runtime/clarus/native.cla's natClfsType), not a `string`; this catalog
+// declares the raw trap only; the friendly `file.readResource`/
+// `file.writeRes` intrinsics (Chapter 12) are the abstraction most
+// programs should reach for instead of calling these two directly.
+
+external func Get1NamedResource(theType: int, name: ptr): ptr = trap 0xA820
+external func ReleaseResource(theResource: ptr) = trap 0xA9A3

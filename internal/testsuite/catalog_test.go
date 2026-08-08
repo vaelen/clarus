@@ -24,14 +24,17 @@ var catalogFiles = []string{
 	filepath.Join("toolbox", "scrap.cla"),
 	filepath.Join("toolbox", "standardfile.cla"),
 	filepath.Join("toolbox", "files.cla"),
+	filepath.Join("toolbox", "resources.cla"),
 }
 
 // catalogDriver references >=1 symbol per catalog file: TickCount/
 // EventAvail/everyEvent/EventRecord (events), NewPtr/DisposePtr (memory),
 // GestaltErr/GestaltValue/SysBeep (osutils), ZeroScrap (scrap), SFReply/SFTypeList/
 // Str255/SFGetFile/SFPutFile (standardfile), VolumeParam/PBSetVolSync/
-// FileParam/PBGetFInfoSync/PBSetFInfoSync (files, task-6a's FInfo-stamp
-// addition).
+// FileParam/PBGetFInfoSync/PBSetFInfoSync/IOParam/PBCreateSync/
+// PBOpenRFSync/PBWriteSync/PBCloseSync (files, task-6a's FInfo-stamp
+// addition plus Task 7's create/open-RF/write/close fill), Get1NamedResource/
+// ReleaseResource (resources, Task 7, mac-resident-clarusc phase).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -42,6 +45,8 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     var vp: VolumeParam
     var pr: Str255
     var fp: FileParam
+    var iop: IOParam
+    var rh: ptr
 
     t0 = TickCount()
     p = NewPtr(4)
@@ -78,6 +83,16 @@ const catalogDriver = `on App.startCLI(args: list of string) {
     if err != 0 {
         t0 = t0 + 1
     }
+
+    iop.ioNamePtr = ptr(0)
+    iop.ioVRefNum = 0
+    err = PBCreateSync(iop)
+    err = PBOpenRFSync(iop)
+    err = PBWriteSync(iop)
+    err = PBCloseSync(iop)
+
+    rh = Get1NamedResource(0x54455854, pr)
+    ReleaseResource(rh)
 }
 `
 

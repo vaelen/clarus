@@ -91,6 +91,13 @@
 // (app.doctype/app.id compile-time defaults, exact 4CC pass-through) by
 // reading the written files' real Finder type/creator back via
 // PBGetFInfoSync -- see cases_finfo.cla's own header comment.
+// ResourceBake/WriteResStamp (cases_resources.cla) are Task 7's own
+// addition (mac-resident-clarusc phase): hardware-prove the new
+// `file.readResource`/`file.writeRes` intrinsics -- a real
+// Get1NamedResource lookup against a `--bake`d 'CLFS' resource (content
+// + missing-name failure) and a real resource-fork write re-statted via
+// the same PBGetFInfoSync pattern FInfoStamp uses -- see
+// cases_resources.cla's own header comment.
 
 enum ToolboxTest {
     All
@@ -118,15 +125,17 @@ enum ToolboxTest {
     BigText
     Catalog
     FInfoStamp
+    ResourceBake
+    WriteResStamp
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 24 real cases
+// nTbCases is ToolboxTest's member count minus All: the 26 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 25
+const nTbCases: int = 27
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -207,6 +216,12 @@ func tbCaseName(t: ToolboxTest): string {
     case FInfoStamp {
         return "FInfoStamp"
     }
+    case ResourceBake {
+        return "ResourceBake"
+    }
+    case WriteResStamp {
+        return "WriteResStamp"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -242,6 +257,8 @@ func tbAllCases(): list of ToolboxTest {
     l.add(BigText)
     l.add(Catalog)
     l.add(FInfoStamp)
+    l.add(ResourceBake)
+    l.add(WriteResStamp)
     l.add(SelfCheck)
     return l
 }
@@ -374,6 +391,14 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, FInfoStamp) {
         results.add(caseFInfoStamp())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, ResourceBake) {
+        results.add(caseResourceBake())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, WriteResStamp) {
+        results.add(caseWriteResStamp())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

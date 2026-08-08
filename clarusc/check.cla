@@ -1296,6 +1296,30 @@ func buildMethodTables() {
     sigAdd(psPlain(strT(255)))
     fileFuncs["writeText"] = sigEnd(BoolT)
 
+    // file.readResource(name, out) -- Task 7 (mac-resident-clarusc):
+    // fills `out` from the named 'CLFS' resource in the current resource
+    // chain; same shape as readText above (str255 name, text out-param).
+    // Host lane always fails (no resource fork on that filesystem, see
+    // rt.c's rt_file_read_resource); native lane is
+    // runtime/clarus/native.cla's natReadResource.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(TextT))
+    fileFuncs["readResource"] = sigEnd(BoolT)
+
+    // file.writeRes(path, fork, doctype, creator) -- Task 7: writes
+    // `fork`'s bytes verbatim as `path`'s resource fork (data fork left
+    // empty), stamped with doctype/creator -- same mandatory-literal-
+    // type/creator rule as writeText above (lowFileCall's "writeRes" arm
+    // validates via lowCheckLiteral4CCArg). Host lane always fails (see
+    // rt.c's rt_file_write_res); native lane is natWriteRes.
+    sigStart()
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(TextT))
+    sigAdd(psPlain(strT(255)))
+    sigAdd(psPlain(strT(255)))
+    fileFuncs["writeRes"] = sigEnd(BoolT)
+
     // file.save(path, rec, type, creator) -- same Task 2 rule as
     // writeText above; file.load stays 2-arg (loading needs no type
     // info).

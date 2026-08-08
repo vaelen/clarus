@@ -2839,6 +2839,14 @@ func fpIntrCall6(nm: int, x: int, a0: int, a1: int, a2: int): text {
         // as path -- rt_file_write_text does the pad/validate/stamp work
         // (a no-op on the host lane, real FInfo stamping on the Mac lane).
         return "rt_file_write_text(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ", " + fpStrAddr(fpArgAt(a0, 3)) + ")"
+    } else if nm == IFileReadResource() {
+        // file.readResource(name, out) -- Task 7 (mac-resident-clarusc);
+        // same fpStrAddr/fpExpr shape as IFileReadText above.
+        return "rt_file_read_resource(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ")"
+    } else if nm == IFileWriteRes() {
+        // file.writeRes(path, fork, doctype, creator) -- same shape as
+        // IFileWriteText above.
+        return "rt_file_write_res(" + fpStrAddr(a0) + ", " + fpExpr(a1) + ", " + fpStrAddr(a2) + ", " + fpStrAddr(fpArgAt(a0, 3)) + ")"
     } else if nm == IFileName() {
         s0 = fpStrAddr(a0)
         t = fpNewTmp("clar_str_255")

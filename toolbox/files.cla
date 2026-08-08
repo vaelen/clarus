@@ -116,3 +116,74 @@ extern record FileParam {
 
 external func PBGetFInfoSync(paramBlock: ptr): int = trap 0xA00C reg
 external func PBSetFInfoSync(paramBlock: ptr): int = trap 0xA00D reg
+
+// ---- PBCreateSync / PBOpenRFSync / PBWriteSync / PBCloseSync (Task 7,
+// mac-resident-clarusc phase): fill out the File Manager's own create/
+// open-resource-fork/write/close family -- `file.writeRes`'s native
+// implementation (runtime/clarus/native.cla's natWriteRes) needs all
+// four, and the Toolbox-first principle (CLAUDE.md) says to enable the
+// rest of a manager's interface at the same time a new feature needs
+// one piece of it. All four are register (OS) convention, same as every
+// other PBxxxSync trap already in this file.
+//
+//   PBCreateSync   CIncludes/Files.h:1482-1484:
+//                  `#pragma parameter __D0 PBCreateSync(__A0)` ...
+//                  `EXTERN_API( OSErr ) PBCreateSync(ParmBlkPtr
+//                  paramBlock) ONEWORDINLINE(0xA008);` -- pb in A0,
+//                  OSErr in D0, bit 11 clear (0xA008 & 0x0800 == 0) -->
+//                  `reg`. Corroborated in AIncludes/Files.a:1657
+//                  `_PBCreateSync: OPWORD $A008`.
+//   PBOpenRFSync   CIncludes/Files.h:1566-1568:
+//                  `#pragma parameter __D0 PBOpenRFSync(__A0)` ...
+//                  `EXTERN_API( OSErr ) PBOpenRFSync(ParmBlkPtr
+//                  paramBlock) ONEWORDINLINE(0xA00A);` -- same shape.
+//                  Opens the RESOURCE fork of the file named at
+//                  ioNamePtr (same IOParam fields PBOpenSync/PBWriteSync/
+//                  PBCloseSync already use, below) instead of the data
+//                  fork; ioRefNum comes back keyed to that fork.
+//                  Corroborated in AIncludes/Files.a:1797
+//                  `_PBOpenRFSync: OPWORD $A00A`.
+//   PBWriteSync    CIncludes/Devices.h:1009-1012 (moved out of Files.h
+//                  into Devices.h per that header's own comment, same as
+//                  PBOpenSync/PBCloseSync below): `#pragma parameter
+//                  __D0 PBWriteSync(__A0)` ... `ONEWORDINLINE(0xA003)`.
+//                  Corroborated in AIncludes/Devices.a:1053
+//                  `_PBWriteSync: OPWORD $A003`.
+//   PBCloseSync    CIncludes/Devices.h:913-916: `#pragma parameter __D0
+//                  PBCloseSync(__A0)` ... `ONEWORDINLINE(0xA001)`.
+//                  Corroborated in AIncludes/Devices.a:917
+//                  `_PBCloseSync: OPWORD $A001`.
+//
+// IOParam layout, CIncludes/Files.h's own struct (verified against a
+// 68k target's natural field widths, same derivation runtime/clarus/
+// native.cla's own natFilePb header comment documents in full -- this
+// record mirrors it field-for-field, public-catalog spelling): qLink@0(4)
+// qType@4(2) ioTrap@6(2) ioCmdAddr@8(4) ioCompletion@12(4) ioResult@16(2)
+// ioNamePtr@18(4) ioVRefNum@22(2) ioRefNum@24(2) ioVersNum/ioPermssn@26
+// (2, only the low byte -- ioPermssn -- is ever set by this catalog's
+// callers) ioMisc@28(4) ioBuffer@32(4) ioReqCount@36(4) ioActCount@40(4)
+// ioPosMode@44(2) ioPosOffset@46(4) -- struct size 50.
+
+extern record IOParam {
+    qLink: ptr
+    qType: word
+    ioTrap: word
+    ioCmdAddr: ptr
+    ioCompletion: ptr
+    ioResult: word
+    ioNamePtr: ptr
+    ioVRefNum: word
+    ioRefNum: word
+    pad[2]
+    ioMisc: ptr
+    ioBuffer: ptr
+    ioReqCount: int
+    ioActCount: int
+    ioPosMode: word
+    ioPosOffset: int
+}
+
+external func PBCreateSync(paramBlock: ptr): int = trap 0xA008 reg
+external func PBOpenRFSync(paramBlock: ptr): int = trap 0xA00A reg
+external func PBWriteSync(paramBlock: ptr): int = trap 0xA003 reg
+external func PBCloseSync(paramBlock: ptr): int = trap 0xA001 reg

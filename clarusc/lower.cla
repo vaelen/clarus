@@ -1166,6 +1166,14 @@ func lowFileCall(e: int, fn: int, ty: int): int {
         lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.writeText type")
         lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 3), "file.writeText creator")
         return newIRIntr(IFileWriteText(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "readResource" {
+        return newIRIntr(IFileReadResource(), lowArgs(callArgsHead(e)), ty)
+    } else if nm == "writeRes" {
+        // file.writeRes(path, fork, doctype, creator) -- Task 7: same
+        // mandatory-literal-length validation as writeText above.
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 2), "file.writeRes doctype")
+        lowCheckLiteral4CCArg(lowArgAt(callArgsHead(e), 3), "file.writeRes creator")
+        return newIRIntr(IFileWriteRes(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "name" {
         return newIRIntr(IFileName(), lowArgs(callArgsHead(e)), ty)
     } else if nm == "save" or nm == "load" {
