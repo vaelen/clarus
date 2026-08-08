@@ -1,0 +1,36 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// peep_quick.cla -- peephole pattern-5 fixture (peephole68k Task 8):
+// small integer constants (MOVEQ range, edges -128/127/0) and
+// out-of-range ones (unchanged MOVE.L #imm). Golden must show MOVEQ for
+// the small ones only. CCR note: MOVE and MOVEQ set N/Z and clear V/C
+// identically, so no flag-context analysis is needed.
+//
+// Deviates from the task brief's draft the same way peep_pushpop.cla
+// (Task 4) documents: no print()/numToStr() calls -- neither exists in
+// this language -- and `on App.launch` instead of `on App.startCLI`,
+// matching every other plain testdata/cg68k fixture.
+
+func small(): int {
+    return 5 + 100
+}
+
+func edges(a: int): int {
+    var x: int
+    x = a + 127
+    x = x - 128
+    if x == 0 {
+        return 1
+    }
+    return 200000
+}
+
+on App.launch {
+    var s: int
+    var e: int
+
+    s = small()
+    e = edges(1)
+    return
+}

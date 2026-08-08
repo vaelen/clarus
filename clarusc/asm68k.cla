@@ -136,6 +136,7 @@ enum A68Op {
     OpScc
     OpClr
     OpDbra
+    OpMoveq
 }
 
 enum A68Mode {
@@ -965,6 +966,14 @@ func a68InstrWord(idx: int): int {
     case OpSubq {
         return 0x5100 | (a68QuickN(sv) << 9) | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
     }
+    case OpMoveq {
+        // Quick-immediate move: 0x7000, dest register at bits11-9, the
+        // 8-bit signed immediate inline at bits7-0. `sv & 0xFF` truncates
+        // to those low 8 bits regardless of sv's sign -- `&` is a plain
+        // two's-complement bitwise AND, so sv=-1 yields 0xFF, matching
+        // the byte MOVEQ's own sign-extension expects back out.
+        return 0x7000 | (dr << 9) | (sv & 0xFF)
+    }
     case OpNegInsn {
         return 0x4400 | (a68SizeCodeStd(size) << 6) | a68EaField(dm, dr)
     }
@@ -1285,6 +1294,9 @@ func a68ListingLine(idx: int): string {
     }
     case OpSubq {
         return "SUBQ." + suf + " #" + numToStr(sv) + "," + a68EaText(dm, dr, dv)
+    }
+    case OpMoveq {
+        return "MOVEQ #" + numToStr(sv) + ",D" + numToStr(dr)
     }
     case OpNegInsn {
         return "NEG." + suf + " " + a68EaText(dm, dr, dv)

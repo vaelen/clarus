@@ -55,8 +55,17 @@ func peepKill(i: int) {
 
 // peepIsSimpleLoadToD0: item i is a single instruction that fully
 // defines D0 without reading D0 or D1 and without touching A7 --
-// naive codegen's own load shapes:
+// naive codegen's own load shapes, PLUS pattern 5a's own rewrite of the
+// first shape:
 //   MOVE.L #imm,D0            (AmImm -> D0)
+//   MOVEQ #imm,D0             (pattern 5a's own MOVE.L->MOVEQ narrowing
+//                              of the line above -- runs LAST in each
+//                              sweep, so a window spanning a sweep
+//                              boundary can see this shape already
+//                              converted; MOVEQ fully defines D0 and
+//                              reads nothing, exactly like the MOVE.L
+//                              it replaced, so it belongs on the same
+//                              whitelist)
 //   MOVE.L d16(An),D0, An!=A7 (AmDisp16 -> D0; A7 excluded because a
 //                              pattern may be deleting a push above it,
 //                              which would shift an A7-relative offset)
@@ -68,6 +77,7 @@ func peepIsSimpleLoadToD0(i: int): bool {
 
     it = a68Items[i]
     if it.kind != KindInstr { return false }
+    if it.op == OpMoveq { return it.dr == 0 }
     if it.op != OpMove { return false }
     if it.size != 4 { return false }
     if it.dm != AmDn or it.dr != 0 { return false }
@@ -222,6 +232,48 @@ func peepPassDeadClr(startIdx: int): bool {
     return didChange
 }
 
+// peepPassQuick -- pattern 5 (spec "Pattern set" #5), two reductions:
+//
+// 5a: MOVE.L #imm,Dn, -128 <= imm <= 127  ==>  MOVEQ #imm,Dn
+//     (6 bytes -> 2). CCR-equivalent: MOVE and MOVEQ both set N/Z and
+//     clear V/C from the moved value, so this needs NO flag-liveness
+//     analysis -- the spec's CCR conservatism rule is satisfied
+//     trivially. Fires on ANY Dn destination, including loads patterns
+//     1/2a have already retargeted to D1. Because this pass runs LAST
+//     in peepFunc's per-sweep list, a window that patterns 1/2a can
+//     still rewrite in THIS sweep is rewritten by them first -- 5a only
+//     ever sees what they left alone. A window spanning a sweep
+//     boundary could still see 1/2a lose their match once 5a has
+//     already narrowed the load to OpMoveq; peepIsSimpleLoadToD0's own
+//     OpMoveq-to-D0 arm (above) is the mitigation, keeping such a load
+//     whitelisted for 1/2a even after narrowing.
+// 5b: ADDA.L #imm,An, 0 <= imm <= 32767  ==>  ADDA.W #imm,An
+//     (6 bytes -> 4; ADDA.W sign-extends its word, hence the positive
+//     bound; ADDA never sets CCR in either size). Matches the runtime
+//     scratch-area shapes (ADDA.L #256,A7 etc.).
+func peepPassQuick(startIdx: int): bool {
+    var i: int
+    var it: A68Item
+    var didChange: bool
+
+    didChange = false
+    i = startIdx
+    while i < a68Items.count {
+        it = a68Items[i]
+        if it.kind == KindInstr and it.op == OpMove and it.size == 4 and it.sm == AmImm and it.dm == AmDn and it.sv >= 0 - 128 and it.sv <= 127 {
+            it.op = OpMoveq
+            a68Items[i] = it
+            didChange = true
+        } else if it.kind == KindInstr and it.op == OpAdda and it.size == 4 and it.sm == AmImm and it.sv >= 0 and it.sv <= 32767 {
+            it.size = 2
+            a68Items[i] = it
+            didChange = true
+        }
+        i = i + 1
+    }
+    return didChange
+}
+
 // peepFunc: run all patterns over [startIdx..count) to fixpoint, then
 // re-derive layout. Patterns are added per task; each returns true if
 // it changed anything this sweep.
@@ -239,7 +291,7 @@ func peepFunc(startIdx: int) {
         if peepPassPushPop(startIdx) { changed = true }
         if peepPassShuffle(startIdx) { changed = true }
         if peepPassDeadClr(startIdx) { changed = true }
-        // (further pattern calls land here in Task 8)
+        if peepPassQuick(startIdx) { changed = true }
         if changed {
             any = true
         }
