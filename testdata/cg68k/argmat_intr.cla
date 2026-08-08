@@ -1,0 +1,46 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// argmat_intr.cla: Mac-resident-clarusc Task 2 -- freshly-produced str
+// values (a str_concat EIntr result) passed DIRECTLY as call arguments
+// (the cgPushArgs materialization gap, peephole68k Task 1/2's own
+// documented hoist in lex.cla:614-622, now closed for real by
+// cgPushArgMaterialized's generic fallback, cg68k.cla). A container-
+// element read (`parts[0]`, EIndexRef) is already addressable and
+// exercised here as a control case that never needed this fix.
+//
+// numToStr (int -> string) is clarusc's OWN internal compiler helper
+// (clarusc/lib.cla), not part of the standard runtime any ordinary
+// program can call -- so, following emit_arith.cla's own established
+// testdata/run idiom, each case is a bare `if cond { alert("... ok") }
+// else { alert("... FAIL") }` rather than printing a number.
+func takes(s: string): int {
+    return s.length
+}
+func two(a: string, b: string): int {
+    return a.length + b.length
+}
+on App.startCLI(args: list of string) {
+    var n: int
+    var parts: list of string
+    parts.add("xy")
+    n = takes("a" + "bc")
+    if n == 3 {
+        alert("str_concat as arg ok")
+    } else {
+        alert("str_concat as arg FAIL")
+    }
+    n = n + takes(parts[0])
+    if n == 5 {
+        alert("container element as arg ok")
+    } else {
+        alert("container element as arg FAIL")
+    }
+    n = n + two("p" + "q", "r" + "st")
+    if n == 10 {
+        alert("two str_concat hoists, one call ok")
+    } else {
+        alert("two str_concat hoists, one call FAIL")
+    }
+    quit 0
+}

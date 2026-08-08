@@ -1,0 +1,6 @@
+exit=0
+--- stdout ---
+str_concat as arg ok
+container element as arg ok
+two str_concat hoists, one call ok
+--- stderr ---

@@ -6933,17 +6933,21 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
 // result pointer (`cgMaterializeCallResult`); an `EIntr("str_coerce", ...)`
 // (`lowCoerceStr`, lower.cla -- a str literal/var whose capacity differs
 // from the callee's own param capacity) clamp-copies via `rtStrStore`
-// (`cgMaterializeStrCoerce`). Any OTHER unaddressable shape (a bare
-// `EStrConst`/`EVarRef`/`EFieldRef` never reaches here at all --
-// `cgIsAddressableArgShape` already routed those through the existing
-// address-of+block-copy path; a container-element/str_concat/other
-// EIntr result as a bare call argument is a real, still-open gap, same
-// category as `ENewRec`-as-bare-arg already documented in the Task 12
-// report) hard-errors rather than silently falling through to garbage.
+// (`cgMaterializeStrCoerce`). A bare `EStrConst`/`EVarRef`/`EFieldRef`
+// never reaches here at all -- `cgIsAddressableArgShape` already routed
+// those through the existing address-of+block-copy path. Any OTHER
+// unaddressable shape (Mac-resident-clarusc Task 2 -- str_concat/
+// str_concat_char/str_prepend_char/str_slice/a container-element read/
+// any other KStr/KRec-producing EIntr as a bare call argument, e.g.
+// `takes("a" + "bc")`; formerly a real, open gap, same category as
+// `ENewRec`-as-bare-arg documented in the Task 12 report) falls through
+// to the generic materialize-to-temp-then-block-copy path at this
+// function's tail instead of hard-erroring.
 func cgPushArgMaterialized(a: int, t: int) {
     var sz: int
     var k: IRExprKind
     var nm: string
+    var tmp: int
 
     sz = cgSizeOf(t)
     k = irExprKind(a)
@@ -6965,8 +6969,36 @@ func cgPushArgMaterialized(a: int, t: int) {
             return
         }
     }
-    log("cg68k: cgPushArgs: unaddressable, unmaterializable KStr/KRec argument (expr kind " + numToStr(int(k)) + ") -- bind it to a variable first")
-    quit 1
+    // Generic fallback (Mac-resident-clarusc Task 2 -- was the hard error
+    // this doc comment used to describe, e.g. `takes("a" + "bc")`,
+    // testdata/run/argmat_intr.cla): any OTHER value-producing KStr/KRec
+    // shape -- str_concat/str_concat_char/str_prepend_char/str_slice/
+    // container-element-read/etc, whatever EIntr this file's OWN single
+    // canonical str/rec construction dispatch (cgEmitStoreStr/
+    // cgEmitStoreRec) already knows how to build -- reuses that dispatch
+    // via cgMaterializeToTemp, the SAME generic materialize-to-a-fresh-
+    // temp fallback cgExprAddr's own catch-all arm already uses elsewhere
+    // (str_cmp/alert/log arguments, non-addressable map keys) -- rather
+    // than hand-duplicating a second copy of that per-intrinsic dispatch
+    // here. Slightly less efficient than this function's other arms
+    // (constructs into an EXTRA temp, then block-copies into the arg's
+    // own reserved slot, instead of constructing straight into the slot),
+    // but correct for any EIntr shape, present or future, with no new
+    // per-name cases to maintain in two places.
+    //
+    // The reserved arg slot's own address is already captured in A1 by
+    // this function's shared prologue above -- but cgMaterializeToTemp
+    // (through cgEmitStoreStr's own str-builder arms, e.g.
+    // cgStrBuilderIntoTemp/cgFlushA1TempToDst) clobbers A1 for ITS OWN
+    // scratch handling, the same "stable stash across nested arg
+    // evaluation" hazard cgMaterializeCallResult's own doc comment
+    // describes -- so the outer slot address is saved on the stack first
+    // and recovered afterward, rather than trusted to survive.
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
+    tmp = cgMaterializeToTemp(a)
+    cgExprAddr(tmp)
+    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
+    cgBlockCopy(sz)
 }
 
 // cgMaterializeCallResult calls a (an ECallFn whose return needs the
