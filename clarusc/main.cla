@@ -35,303 +35,15 @@ include "res68k.cla"
 include "cprint.cla"
 include "cg68k.cla"
 include "uiblob.cla"
+include "drive.cla"
 
-// seenPaths keys the include-once set (driver.go's `seen`), keyed by the
-// path after normalizePath's lexical cleanup: "//" and "./" segments
-// collapsed and "seg/.." pairs resolved, so "sub/common.cla" and
-// "sub/../sub/common.cla" are the same identity. Purely lexical -- an
-// absolute and a relative spelling of the same file stay distinct by design.
-// The VALUE is the file's asmHeads index PLUS ONE once expand has finished
-// parsing it, or 0 while its expansion is still in progress (an include
-// cycle re-entering it) -- dedupHits below turns that back into an index.
-var seenPaths: map of int
-
-// asmHeads holds each expanded file's decl-list head in POST-ORDER
-// (dependencies before includers), matching driver.go's files/trees order.
-var asmHeads: list of int
-
-// asmTails is parallel to asmHeads: each file's OWN last decl, recorded at
-// parse time before any assembly loop links one file's tail to the next
-// file's head. lastDecl() answers the same question only while a head is
-// still unlinked, so any assembly that re-orders already-linked segments
-// (the hoist path below) must use this instead.
-var asmTails: list of int
-
-// dedupHits records, in expansion order, the asmHeads index of every file
-// whose expansion was skipped because it had already been expanded (-1 for
-// a still-in-progress cycle). The runtime-module splices read the slice of
-// this list their own expand() call appended: a runtime module that
-// include-dedups against a file the USER already composed positionally
-// needs that file's decls HOISTED out of the user chain and into the
-// runtime chain, ahead of the module that needs them (extern record TYPE
-// references are order-sensitive, unlike function references).
-var dedupHits: list of int
-
-// hoistedHead flags the asmHeads indices already hoisted out of the user
-// chain (one entry per user-side file, filled at the end of Phase A), and
-// hoistCount counts them -- a splice that hoisted nothing rebuilds the
-// combined chain exactly as it always did, by appending the user chain
-// wholesale.
-var hoistedHead: list of bool
-var hoistCount: int
-
-// userHeadCount is asmHeads.count after Phase A -- indices below it are the
-// user program's own files (hoistable), indices at or above it belong to a
-// runtime module already spliced into the runtime chain (never hoisted).
-var userHeadCount: int
-
-// entryFailed records that an entry path itself could not be read -- Go's
-// Expand returns this as a hard error (clarus check: stderr + exit 1).
-var entryFailed: bool
-
-// dirOf returns path's directory including the trailing '/', or "" if path
-// has no slash (mirrors filepath.Dir + a following Join for our purposes).
-func dirOf(path: string): string {
-    var i: int
-    var last: int
-
-    last = -1
-    i = 0
-    while i < path.length {
-        if path[i] == '/' {
-            last = i
-        }
-        i = i + 1
-    }
-    if last == -1 {
-        return ""
-    }
-    return path[0, last + 1]
-}
-
-// baseNameNoExt returns path's final path segment with a trailing ".cla"
-// stripped (if present) -- used by appinfo's filename-fallback rung.
-func baseNameNoExt(path: string): string {
-    var i: int
-    var last: int
-    var base: string
-
-    last = -1
-    i = 0
-    while i < path.length {
-        if path[i] == '/' {
-            last = i
-        }
-        i = i + 1
-    }
-    base = path[last + 1, path.length - (last + 1)]
-    if base.length >= 4 and base[base.length - 4, 4] == ".cla" {
-        base = base[0, base.length - 4]
-    }
-    return base
-}
-
-// joinPath resolves an include's path relative to dir (filepath.Join): an
-// absolute name (leading '/') wins outright, otherwise it hangs off dir.
-func joinPath(dir: string, name: string): string {
-    if name.length > 0 and name[0] == '/' {
-        return name
-    }
-    return dir + name
-}
-
-// normalizePath lexically cleans a path for the include-once identity
-// (seenPaths) and diagnostics: collapses "//" and "./" segments and
-// resolves each "seg/.." pair, preserving a leading "/" and any leading
-// "../" run. Purely lexical -- no symlink, case, or cwd resolution: an
-// absolute and a relative spelling of the same file stay distinct
-// (documented in the reference's include section).
-func normalizePath(path: string): string {
-    var segs: list of string
-    var work: string
-    var cur: string
-    var junk: string
-    var out: string
-    var i: int
-    var abs: bool
-
-    abs = path.length > 0 and path[0] == '/'
-    work = path + "/"
-    cur = ""
-    i = 0
-    while i < work.length {
-        if work[i] == '/' {
-            if cur == ".." {
-                if segs.count > 0 and segs[segs.count - 1] != ".." {
-                    junk = segs.pop()
-                } else if not abs {
-                    segs.add("..")
-                }
-            } else if cur != "" and cur != "." {
-                segs.add(cur)
-            }
-            cur = ""
-        } else {
-            cur = cur + work[i]
-        }
-        i = i + 1
-    }
-    out = ""
-    if abs {
-        out = "/"
-    }
-    i = 0
-    while i < segs.count {
-        if i > 0 {
-            out = out + "/"
-        }
-        out = out + segs[i]
-        i = i + 1
-    }
-    return out
-}
-
-// findRtDir resolves the default --rtdir when the flag is omitted: it walks
-// UP from the current working directory looking for a "runtime/clarus/"
-// directory, probed by trying to read probeFile (the first needed module's
-// file name) out of each candidate. Tries the cwd itself plus up to 9 parent
-// levels (10 total) and returns the first candidate that has probeFile, or
-// "" if none of them do -- absence here is not itself an error; the caller
-// only reports one once a needed module truly can't be found.
-func findRtDir(probeFile: string): string {
-    var prefix: string
-    var i: int
-    var candidate: string
-    var probe: text
-    var ok: bool
-
-    prefix = ""
-    i = 0
-    while i < 10 {
-        candidate = prefix + "runtime/clarus/"
-        probe = ""
-        ok = file.readText(candidate + probeFile, probe)
-        if ok {
-            return candidate
-        }
-        prefix = prefix + "../"
-        i = i + 1
-    }
-    return ""
-}
-
-// lastDecl returns the last node in head's `next` chain (head must be a real
-// index, not -1) -- used to splice one file's decl list onto the running
-// combined list.
-func lastDecl(head: int): int {
-    var d: int
-
-    d = head
-    while declNext(d) != -1 {
-        d = declNext(d)
-    }
-    return d
-}
-
-// expand loads, lexes, and parses path, recursing into its leading includes
-// first (post-order decl assembly into asmHeads, pre-order parse
-// diagnostics) -- a port of driver.go's inner `expand`. Returns whether path
-// itself could not be read (the caller turns a missing non-entry file into a
-// "cannot open included file" diagnostic at the include's position).
-func expand(rawPath: string, entry: bool): bool {
-    var path: string
-    var src: text
-    var ok: bool
-    var head: int
-    var dir: string
-    var d: int
-    var pathIdx: int
-    var incName: string
-    var incResolved: string
-    var missing: bool
-
-    path = normalizePath(rawPath)
-    if seenPaths.has(path) {
-        // Record WHICH file this include deduped against (index, or -1 for
-        // a file still being expanded further up the recursion), so a
-        // runtime-module splice can hoist a user-composed file it needs.
-        dedupHits.add(seenPaths[path] - 1)
-        return false
-    }
-    seenPaths[path] = 0
-
-    src = ""
-    ok = file.readText(path, src)
-    if not ok {
-        if entry {
-            entryFailed = true
-        }
-        return true
-    }
-
-    // Stamp every lex/parse diagnostic this file produces with its own path
-    // (curPathIdx is read by emitDiag). Set it BEFORE lexing/parsing.
-    pathIdx = intern(path)
-    curPathIdx = pathIdx
-    lexAll(src)
-    head = parseFile()
-
-    // Record each top-level decl's owning file so the single check pass can
-    // attribute a check diagnostic to the file its decl came from (Go's
-    // per-decl c.f), not the entry path.
-    d = head
-    while d != -1 {
-        setDeclFile(d, pathIdx)
-        d = declNext(d)
-    }
-
-    dir = dirOf(path)
-    d = head
-    while d != -1 {
-        if declKind(d) == DkInclude {
-            incName = poolGet(includePath(d))
-            incResolved = joinPath(dir, incName)
-            missing = expand(incResolved, false)
-            if missing {
-                // Recursion may have moved curPathIdx into a child file;
-                // restore this file's path before stamping the diagnostic,
-                // which Go attributes to the includer.
-                curPathIdx = pathIdx
-                emitDiag(declLine(d), declCol(d), "cannot open included file \"" + incName + "\"")
-            }
-        }
-        d = declNext(d)
-    }
-
-    asmHeads.add(head)
-    if head == -1 {
-        asmTails.add(-1)
-    } else {
-        asmTails.add(lastDecl(head))
-    }
-    seenPaths[path] = asmHeads.count
-    return false
-}
-
-// hoistDedups returns the asmHeads INDICES of the USER-side files that the
-// dedupHits entries from index fromHit onward (i.e. the ones a single
-// runtime-module expand() call just appended) resolved to, marking each
-// hoisted so it is skipped when the user chain is rebuilt and never hoisted
-// twice. Hits on runtime-side files are ignored: those are already in the
-// runtime chain, ahead of the module that deduped against them.
-func hoistDedups(fromHit: int): list of int {
-    var out: list of int
-    var j: int
-    var hit: int
-
-    j = fromHit
-    while j < dedupHits.count {
-        hit = dedupHits[j]
-        if hit >= 0 and hit < userHeadCount and not hoistedHead[hit] {
-            hoistedHead[hit] = true
-            hoistCount = hoistCount + 1
-            if asmHeads[hit] != -1 {
-                out.add(hit)
-            }
-        }
-        j = j + 1
-    }
-    return out
+// feReadSource is main.cla's front end for drive.cla's expand() seam
+// (Task 6): the host CLI reads everything straight off disk via
+// file.readText, exactly as expand() always has done -- key (a runtime
+// module's rtdir-relative name, or "" for a non-runtime file) is ignored
+// entirely; this front end has no resource fallback.
+func feReadSource(path: string, key: string, out: text): bool {
+    return file.readText(path, out)
 }
 
 // cliResolveBake (Task 5, mac-resident-clarusc) validates and reads every
@@ -382,9 +94,6 @@ func cliResolveBake(bakePaths: list of string) {
 
 on App.startCLI(args: list of string) {
     var i: int
-    var combined: int
-    var tail: int
-    var h: int
     var emitMode: bool
     var emitMode68k: bool
     var listingFlag: bool
@@ -393,6 +102,8 @@ on App.startCLI(args: list of string) {
     var haveEvents: bool
     var eventsBytes: text
     var bakePaths: list of string
+    var nopeepFlag: bool
+    var ok: bool
     var ok68: bool
     var appinfoMode: bool
     var startArg: int
@@ -411,27 +122,7 @@ on App.startCLI(args: list of string) {
     var item: int
     var pname: string
     var vh: int
-    var rtDir: string
-    var haveRtDir: bool
-    var isUiProg: bool
     var testApiFlag: bool
-    var earlySpliceDone: bool
-    var earlyIsUiProg: bool
-    var earlyMods: list of string
-    var earlyRtHeads: list of int
-    var earlyTail: int
-    var neededMods: list of string
-    var rtHeads: list of int
-    var combined2: int
-    var rtTail: int
-    var rtPath: string
-    var rtProbe: text
-    var j: int
-    var rtReadable: bool
-    var beforeCount: int
-    var beforeHits: int
-    var hoists: list of int
-    var hoistBefore: int
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -439,6 +130,9 @@ on App.startCLI(args: list of string) {
     // clean slate regardless of how the process was entered.
     resetDiags()
     astReset()
+    // hostPaths (drive.cla): this front end is the host CLI -- '/' path
+    // semantics.
+    hostPaths = true
 
     if args.count == 0 {
         log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
@@ -546,7 +240,7 @@ on App.startCLI(args: list of string) {
             // undocumented, like --seglimit): skip the peephole pass so
             // a native-lane bug can be triangulated as
             // peephole-induced or not in one rebuild.
-            peepDisabled = true
+            nopeepFlag = true
         } else if emitMode68k and args[i] == "--seglimit" {
             // Test-only override of cg68Program's per-segment payload
             // budget (default 32760) -- deliberately UNDOCUMENTED in the
@@ -609,228 +303,33 @@ on App.startCLI(args: list of string) {
         quit 2
     }
 
-    // Phase A: include-expand + lex + parse every entry file, collecting all
-    // parse-phase diagnostics.
-    i = 0
-    while i < fileArgs.count {
-        expand(fileArgs[i], true)
-        i = i + 1
-    }
-    if entryFailed {
-        log("cannot open entry file")
-        quit 1
-    }
-    // Everything expanded so far is the user program's own; everything a
-    // runtime-module splice expands from here on is runtime-side.
-    userHeadCount = asmHeads.count
-    i = 0
-    while i < userHeadCount {
-        hoistedHead.add(false)
-        i = i + 1
-    }
-
-    // Assemble the post-order decl lists into one chain for the single
-    // checker pass.
-    combined = -1
-    tail = -1
-    i = 0
-    while i < asmHeads.count {
-        h = asmHeads[i]
-        if h != -1 {
-            if combined == -1 {
-                combined = h
-            } else {
-                tail = declListAppend(tail, h)
-            }
-            tail = lastDecl(h)
+    // Task 6 (mac-resident-clarusc): the whole pipeline -- Phase A
+    // expand/lex/parse, the --testapi early splice, the first checkProgram
+    // pass, and (only when wantEmit) the runtime-manifest splice, second
+    // checkProgram pass, and lowerProgram -- now lives in drive.cla's
+    // driveCompile, shared with the future macgui front end. wantEmit/
+    // want68k tell it how far to go, mirroring the original
+    // `if emitMode or emitMode68k` / `if emitMode68k` gates now that
+    // check-only, appinfo, emit, and emit68k all share this one call.
+    wantEmit = emitMode or emitMode68k
+    want68k = emitMode68k
+    ok = driveCompile(fileArgs, testApiFlag)
+    if not ok {
+        // entryFailed (an unreadable entry file) is checked BEFORE `diags`
+        // -- it is reported the moment Phase A hits it, before any
+        // checkProgram pass has run, so diags is still empty in that case
+        // and this exactly reproduces the original message/precedence.
+        if entryFailed {
+            log("cannot open entry file")
+            quit 1
         }
-        i = i + 1
-    }
-
-    // Early --testapi splice (ui-scenario-retirement Task 2, Component 1b):
-    // a program calling any `UiTest*` name (uitest.cla) would otherwise
-    // fail the ordinary "clean standalone" gate just below outright --
-    // UiTestClick and friends are ordinary top-level funcs, declared only
-    // in uitest.cla, not built-in language surface, so the checker has
-    // nowhere to resolve them without the splice. `--testapi` opts a UI
-    // program into splicing the SAME runtime-module set the ordinary
-    // post-check manifest below would eventually add (core/str/text/list/
-    // map, UNCONDITIONAL, plus uidesc/ui/uiwidgets/uitext/uitable/
-    // uiscript/uidialogs, isUiProg-gated) PLUS uitest.cla, in BEFORE this
-    // first checkProgram call -- so the ONE call just below both replaces
-    // the "clean standalone" gate and resolves every UiTest* name at once,
-    // rather than needing a second, separate check pass the way the
-    // ordinary post-check manifest splice does. isUiProg is computed here
-    // from the PARSED decl list (the exact same parse-level window/menu/
-    // every scan the ordinary post-check block repeats below, at its own
-    // "isUiProg reports whether..." comment) -- duplicated rather than
-    // hoisted into a shared call so the untouched no-flag path is provably
-    // unaffected by this addition; available before check since window/
-    // menu/every detection needs no type info. A non-UI program is
-    // unaffected either way: earlyIsUiProg stays false, nothing is
-    // spliced, and the ordinary "clean standalone" check below runs
-    // exactly as it always has.
-    //
-    // ser.cla's own usage-flag splice is deliberately NOT part of this
-    // early set and stays untouched, gated on usesFileSaveLoad in the
-    // ordinary post-check block below exactly as before: no ui*.cla module
-    // calls rtFileSave/rtFileLoad, so ser.cla needs no early presence, and
-    // usesFileSaveLoad itself is only known as a side effect of a
-    // checkProgram pass over the user's own calls -- unknowable before any
-    // check has run. native.cla is likewise never part of this early set:
-    // it resolves purely by name at codegen time (cgCallExtNatFallback),
-    // never by declare-before-use, so it needs no check-time presence,
-    // early or otherwise.
-    earlySpliceDone = false
-    if testApiFlag and combined != -1 {
-        earlyIsUiProg = false
-        d = combined
-        while d != -1 {
-            if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
-                earlyIsUiProg = true
-            }
-            d = declNext(d)
+        // Print every diagnostic as "path:line:col: message", parse phase
+        // before check phase, matching clarus check's stdout exactly.
+        i = 0
+        while i < diags.count {
+            alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
+            i = i + 1
         }
-        if earlyIsUiProg {
-            earlyMods.add("core.cla")
-            earlyMods.add("str.cla")
-            earlyMods.add("text.cla")
-            earlyMods.add("list.cla")
-            earlyMods.add("map.cla")
-            earlyMods.add("uidesc.cla")
-            earlyMods.add("ui.cla")
-            earlyMods.add("uiwidgets.cla")
-            earlyMods.add("uitext.cla")
-            earlyMods.add("uitable.cla")
-            earlyMods.add("uiscript.cla")
-            earlyMods.add("uidialogs.cla")
-            earlyMods.add("uitest.cla")
-            // Same "set the flag true directly, right alongside the
-            // manifest decision" convention the ordinary post-check block
-            // uses for these same eight flags -- true here regardless of
-            // whether that block's own (now-guarded, `not earlySpliceDone`)
-            // copy of this same assignment would otherwise run.
-            cpCorePorted = true
-            cpStrPorted = true
-            cpTextPorted = true
-            cpTextArcPorted = true
-            cpListPorted = true
-            cpListArcPorted = true
-            cpMapPorted = true
-            cpMapArcPorted = true
-
-            if not haveRtDir {
-                rtDir = findRtDir(earlyMods[0])
-            }
-            i = 0
-            while i < earlyMods.count {
-                rtPath = joinPath(rtDir, earlyMods[i])
-                rtProbe = ""
-                rtReadable = file.readText(rtPath, rtProbe)
-                if not rtReadable {
-                    if haveRtDir {
-                        log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
-                    } else {
-                        log("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
-                    }
-                    quit 1
-                }
-                // Same whole-range capture as the ordinary post-check
-                // splice loop below -- a multi-file runtime module (one
-                // that itself `include`s another) pushes more than one
-                // asmHeads entry per expand call. Files this module's
-                // includes deduped against (a file the user already
-                // composed positionally) push no asmHeads entry at all, so
-                // they are hoisted separately, AHEAD of this module's own
-                // heads -- post-order, exactly where a freshly expanded
-                // include would have landed.
-                beforeCount = asmHeads.count
-                beforeHits = dedupHits.count
-                expand(rtPath, true)
-                hoists = hoistDedups(beforeHits)
-                j = 0
-                while j < hoists.count {
-                    earlyRtHeads.add(hoists[j])
-                    j = j + 1
-                }
-                j = beforeCount
-                while j < asmHeads.count {
-                    if asmHeads[j] != -1 {
-                        earlyRtHeads.add(j)
-                    }
-                    j = j + 1
-                }
-                i = i + 1
-            }
-
-            // Rebuild `combined` with the early runtime-module heads FIRST
-            // (declare-before-use), followed by the original user-program
-            // chain -- same rebuild shape the ordinary post-check splice
-            // uses for combined2 below, just landing in `combined` itself
-            // so the single checkProgram call just below sees the whole
-            // thing. earlyRtHeads holds asmHeads INDICES (not heads), so
-            // each segment's own end comes from asmTails -- lastDecl would
-            // run off the end of a HOISTED segment, whose tail Phase A
-            // already linked to the next user file's head.
-            earlyTail = -1
-            combined2 = -1
-            i = 0
-            while i < earlyRtHeads.count {
-                h = asmHeads[earlyRtHeads[i]]
-                if combined2 == -1 {
-                    combined2 = h
-                } else {
-                    earlyTail = declListAppend(earlyTail, h)
-                }
-                earlyTail = asmTails[earlyRtHeads[i]]
-                i = i + 1
-            }
-            if combined2 == -1 {
-                combined2 = combined
-            } else if hoistCount == 0 {
-                earlyTail = declListAppend(earlyTail, combined)
-            } else {
-                // Hoisting happened: the user chain has to be re-linked
-                // segment by segment, skipping the hoisted files (now in
-                // the runtime chain above) and terminating explicitly --
-                // the last kept segment's `next` still points at whatever
-                // Phase A linked after it, which may be a hoisted file.
-                i = 0
-                while i < userHeadCount {
-                    h = asmHeads[i]
-                    if h != -1 and not hoistedHead[i] {
-                        earlyTail = declListAppend(earlyTail, h)
-                        earlyTail = asmTails[i]
-                    }
-                    i = i + 1
-                }
-                earlyTail = declListAppend(earlyTail, -1)
-            }
-            combined = combined2
-            earlySpliceDone = true
-        }
-    }
-
-    // Phase B: one checker pass over the whole program, collecting all
-    // check-phase diagnostics (they follow every parse diagnostic). The
-    // checker switches curPathIdx per top-level decl (setCheckPath) so each
-    // check diagnostic is stamped with its decl's file, exactly as the Go
-    // checker attributes to files[i] / dd.f rather than the entry path.
-    if combined != -1 {
-        checkProgram(combined)
-    }
-
-    // Print every diagnostic as "path:line:col: message", parse phase before
-    // check phase, matching clarus check's stdout exactly.
-    i = 0
-    while i < diags.count {
-        alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
-        i = i + 1
-    }
-
-    // A program that fails checking is never emitted: print its diagnostics
-    // and quit 1, exactly as the default check path does.
-    if diags.count > 0 {
         quit 1
     }
 
@@ -841,6 +340,8 @@ on App.startCLI(args: list of string) {
     // ".cla". icon is joined against the app section's OWN declaring file's
     // directory (appDeclPathIdx), not the entry file's -- an app section
     // reached via include lives in a different directory than the entry.
+    // `combined` is drive.cla's own global, the first-pass assembled chain
+    // driveCompile just left in place.
     if appinfoMode {
         d = combined
         appIdx = -1
@@ -875,425 +376,39 @@ on App.startCLI(args: list of string) {
         quit 0
     }
 
-    // Emit path: the gate above already required the user program to check
-    // CLEAN STANDALONE (check-only semantics are untouched by any of this --
-    // no runtime module is ever consulted before it). Only now, for emit
-    // (or emit68k -- native-5d Task 7 reuses this ENTIRE manifest block
-    // unchanged, "same manifest as emit plus nothing new yet" per the plan;
-    // native.cla joins the manifest in Task 11), do we consult the
-    // program's usage flags (set by checkProgram just above) against the
-    // hardcoded runtime-module manifest, pull in whatever they need, and
-    // re-check the combined program before lowering -- a runtime-module
-    // diagnostic is a compiler bug, but it must still surface, attributed
-    // to the runtime file via expand's own setDeclFile loop.
-    if emitMode or emitMode68k {
-        // isUiProg reports whether this program declares any window, menu,
-        // or `every` block -- computed from the checked AST decl list
-        // (`combined`) so it's available BEFORE lowering: ir.cla's
-        // irIsUiProgram() (cprint.cla) reads IR arrays lowerProgram doesn't
-        // populate until later, so it can't gate the manifest splice below.
-        // Same "usage flag from checkProgram's own decl list" convention as
-        // usesFileSaveLoad, just computed here rather than as a check.cla
-        // global (window/menu/every detection needs no type info).
-        isUiProg = false
-        d = combined
-        while d != -1 {
-            if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
-                isUiProg = true
-            }
-            d = declNext(d)
-        }
-
-        // Task 13 (native-5e resource parity): resolve the app section's
-        // raw name (the same name-property > app-label > file-basename
-        // fallback `clarusc appinfo` uses, above) and icon path (joined
-        // against the app section's OWN declaring file's directory, same
-        // as appinfoMode's own iconV line) into cg68k.cla's cgAppRawName/
-        // cgAppIconPath globals -- cg68WriteImage's resource builders need
-        // both, and neither reaches IR (irAppName is -1 unless a `name:`
-        // property was declared explicitly; icon is deliberately never
-        // lowered at all, ir.cla's own header comment). emit68k-only: the
-        // C lane's own icon handling is scripts/build-mac.sh + pbm2icn.c,
-        // untouched by this task.
-        if emitMode68k {
-            d = combined
-            appIdx = -1
-            while d != -1 {
-                if declKind(d) == DkApp { appIdx = d }
-                d = declNext(d)
-            }
-            nameV = ""
-            iconV = ""
-            resolved = ""
-            if appIdx != -1 {
-                item = appDeclPropsHead(appIdx)
-                while item != -1 {
-                    pname = poolGet(propertyName(item))
-                    vh = propertyValuesHead(item)
-                    if pname == "name" { nameV = poolGet(stringLitIdx(vh)) }
-                    if pname == "icon" { iconV = poolGet(stringLitIdx(vh)) }
-                    item = declNext(item)
-                }
-                if nameV != "" { resolved = nameV } else { resolved = poolGet(appDeclName(appIdx)) }
-            }
-            if resolved == "" { resolved = baseNameNoExt(fileArgs[0]) }
-            cgAppRawName = resolved
-            if appIdx != -1 and iconV != "" {
-                cgAppIconPath = joinPath(dirOf(poolGet(appDeclPathIdx(appIdx))), iconV)
-            } else {
-                cgAppIconPath = ""
-            }
-        }
-
-        // Plan native-5d Task 3: core.cla is spliced FIRST, ahead of every
-        // other manifest entry -- str.cla/text.cla/list.cla/map.cla/
-        // ser.cla all call its rtSetLastErr/rtPanic directly now (no more
-        // per-module *SetLastErr/*Panic externs), and the flat top-level
-        // scope checkFuncSig shares across this whole splice requires
-        // declare-before-use. UNCONDITIONAL like str/text/list/map below
-        // (every emitted program needs it transitively through those),
-        // same "set the flag true directly, right alongside the manifest
-        // decision" convention every other unconditional module uses.
-        //
-        // ui-scenario-retirement Task 2: this whole block -- the core/str/
-        // text/list/map UNCONDITIONAL splice through the isUiProg-gated
-        // UI-set splice just below -- is guarded by `not earlySpliceDone`
-        // (interior left at its original indent, not re-indented under the
-        // new guard, to keep this diff a pure wrap): when --testapi's
-        // early splice (above, before the first checkProgram call) already
-        // spliced this exact module set into `combined`, re-adding it here
-        // would double-declare every one of its functions/types and fail
-        // the second checkProgram call below. ser.cla's own usage-flag
-        // splice and native.cla's own emit68k-only splice (further down)
-        // are OUTSIDE this guard -- neither is ever part of the early
-        // splice, so both always run exactly as before.
-        if not earlySpliceDone {
-        cpCorePorted = true
-        neededMods.add("core.cla")
-        // Task 8: str.cla is the first UNCONDITIONAL entry -- every program
-        // uses strings (Ch3's built-in Str255 family), so it's always
-        // pulled in and cpStrPorted is always true, not gated by a usage
-        // flag the way cpSerPorted/usesFileSaveLoad is.
-        cpStrPorted = true
-        neededMods.add("str.cla")
-        // Task 9: text.cla is the second UNCONDITIONAL entry -- every
-        // program uses Text (Ch3's built-in growable string type), so it's
-        // always pulled in and cpTextPorted is always true, same convention
-        // as str.cla just above. Added AFTER str.cla in neededMods
-        // deliberately: the manifest splice order (below) is
-        // declare-before-use across runtime modules, and text.cla's own
-        // functions are free to call str.cla's (peekb/pokeb-based) helpers.
-        cpTextPorted = true
-        neededMods.add("text.cla")
-        // Plan 5c wave2a Task 2: cpTextArcPorted is a SEPARATE flag from
-        // cpTextPorted just above (that one gates Text's data operations,
-        // wave1 Task 9; this one gates Text's retain/release/free traffic,
-        // now that text.cla grows rtTextRetain/rtTextRelease too) -- same
-        // "unconditional, set true directly alongside the decision"
-        // convention, since text.cla is always in the manifest regardless.
-        cpTextArcPorted = true
-        // Task 10: list.cla is the third UNCONDITIONAL entry -- every
-        // program uses List (Ch5's built-in growable collection type), so
-        // it's always pulled in and cpListPorted is always true, same
-        // convention as str.cla/text.cla just above. Added AFTER text.cla
-        // in neededMods deliberately: same declare-before-use splice order.
-        cpListPorted = true
-        neededMods.add("list.cla")
-        // Plan 5c wave2a Task 3: cpListArcPorted is a SEPARATE flag from
-        // cpListPorted just above (that one gates List's data operations,
-        // wave1 Task 10; this one gates List's retain/release/free/lastref
-        // traffic, now that list.cla grows rtListRetain/rtListRelease/
-        // rtListLastref too) -- same "unconditional, set true directly
-        // alongside the decision" convention as cpTextArcPorted, since
-        // list.cla is always in the manifest regardless.
-        cpListArcPorted = true
-        // Task 11: map.cla is the fourth (and last, for this wave)
-        // UNCONDITIONAL entry -- every program uses Map (Ch5's built-in
-        // sorted-key collection type), so it's always pulled in and
-        // cpMapPorted is always true, same convention as str.cla/text.cla/
-        // list.cla just above. Added AFTER list.cla in neededMods
-        // deliberately: same declare-before-use splice order (map.cla
-        // calls str.cla's rtStrCmp directly for key comparisons).
-        cpMapPorted = true
-        neededMods.add("map.cla")
-        // Plan 5c wave2a Task 4: cpMapArcPorted is a SEPARATE flag from
-        // cpMapPorted just above (that one gates Map's data operations,
-        // wave1 Task 11; this one gates Map's retain/release/free/lastref
-        // traffic, now that map.cla grows rtMapRetain/rtMapRelease/
-        // rtMapLastref too) -- same "unconditional, set true directly
-        // alongside the decision" convention as cpTextArcPorted/
-        // cpListArcPorted, since map.cla is always in the manifest
-        // regardless. This is the LAST *ArcPorted flag for this wave --
-        // every heap-backed family's ARC traffic is now Clarus-owned.
-        cpMapArcPorted = true
-        // ui.cla/uiwidgets.cla splice in for a UI program (isUiProg,
-        // computed above) ONLY -- unlike core/str/text/list/map above, a
-        // non-UI program has no use for a Toolbox extern block, so this is
-        // gated like ser.cla's own usesFileSaveLoad block just below, not
-        // unconditional. Spliced AFTER map.cla (declare-before-use is moot
-        // here -- these add pure extern declarations, no bodies calling
-        // anything else in the manifest yet) and BEFORE ser.cla, mirroring
-        // the ser.cla gated-splice pattern this comment sits next to.
-        if isUiProg {
-            // Task 7 Step 2: uidesc.cla (blob accessors + RtUiWinst/
-            // RtUiCanvasBuf overlay-record TYPES + rtUiAllocLocked) splices
-            // BEFORE ui.cla/uiwidgets.cla -- same "foundational types
-            // first" convention str->text->list->map already established;
-            // ui.cla/uiwidgets.cla's own Step 3+ bodies call uidesc.cla's
-            // accessors and use its overlay record types.
-            neededMods.add("uidesc.cla")
-            neededMods.add("ui.cla")
-            neededMods.add("uiwidgets.cla")
-            // Task 8: uitext.cla (TextEdit field/textview widgets --
-            // extern block + mutation funnel/relayout/focus/scrollbar
-            // machinery) -- spliced right after uiwidgets.cla, same
-            // "whole-program visibility makes splice order irrelevant to
-            // correctness" note the uiscript.cla comment just below
-            // already gives; placed here rather than after uiscript.cla
-            // purely to keep the widget-surface modules (uidesc/ui/
-            // uiwidgets/uitext/uitable) grouped together ahead of the
-            // trace/scripted-interpreter module.
-            neededMods.add("uitext.cla")
-            // Task 9: uitable.cla (List Manager tables, manual popups, the
-            // LDEF stub) -- spliced right after uitext.cla, same "whole-
-            // program visibility makes splice order irrelevant to
-            // correctness" note as uitext.cla's own comment above (its own
-            // ser.cla RtFt* constant references resolve fine regardless of
-            // ser.cla's own later splice position, below).
-            neededMods.add("uitable.cla")
-            // Task 7 Step 5: uiscript.cla (trace helpers + scripted
-            // interpreter + snap) -- spliced last of the four ui*.cla
-            // modules; its own trace helpers are called BY ui.cla/
-            // uiwidgets.cla (whole-program visibility makes the splice
-            // order itself irrelevant to that -- see docs/clarus-
-            // language-reference.md:736), so this position is only
-            // "last" by the brief's own stated file-creation order, not
-            // a real dependency requirement.
-            neededMods.add("uiscript.cla")
-            // Task 10: uidialogs.cla (dialogs, StandardFile, modal forms --
-            // gModal + the fill/validate/writeback walker) -- spliced last;
-            // same "whole-program visibility makes splice order irrelevant
-            // to correctness" note as uiscript.cla's own comment above (its
-            // own uitable.cla RtFt*/rtUiKindPopup/uiscript.cla answer-queue
-            // references resolve fine regardless of splice position).
-            neededMods.add("uidialogs.cla")
-        }
-        } // end `if not earlySpliceDone` (ui-scenario-retirement Task 2)
-        // The manifest: Task 4 (Plan 5b) shipped exactly this one usage-
-        // flag/file pair (ser.cla) plus the machinery; Task 7 repointed
-        // "ser.cla" at the real serialization module (rtFileSave/
-        // rtFileLoad, replacing the placeholder). As of Plan native-5d
-        // Task 4, ser.cla is spliced LAST, AFTER str/text/list/map above
-        // (not right after core.cla, its original position) -- ser.cla's
-        // rtFileSave/rtFileLoad now call list.cla's/map.cla's
-        // rtList*/rtMap* functions directly for LIST/MAP save/load
-        // (replacing the old C-extern SerList*/SerMap* shims), so
-        // declare-before-use across this flat top-level splice scope
-        // requires list.cla/map.cla ahead of ser.cla. cpSerPorted
-        // (cprint.cla) is set directly here, right alongside the manifest
-        // decision it mirrors, so it's always correct per-program even
-        // when this process compiles many programs in a row (differential/
-        // selfhost harnesses).
-        cpSerPorted = usesFileSaveLoad
-        if usesFileSaveLoad {
-            neededMods.add("ser.cla")
-        }
-
-        // Task 11: native.cla is the manifest's LAST entry, emit68k-only
-        // (never emit's C target -- the C target's own console/quit/
-        // panic/args resolution is runtime/mac/rt_mac.c or
-        // runtime/host/rt.c, linked at the C build step, not spliced
-        // Clarus source). Every earlier module's CorePanic call
-        // (core.cla's rtPanic, transitively reachable from every program
-        // via rtTextGrow's OOM path) resolves to native.cla's
-        // nat_CorePanic purely by name at codegen time
-        // (cgCallExtNatFallback) -- not by declare-before-use -- so it is
-        // correct for native.cla to be spliced after everything that
-        // calls it.
-        if emitMode68k {
-            neededMods.add("native.cla")
-        }
-
-        combined2 = combined
-        if neededMods.count > 0 {
-            if not haveRtDir {
-                rtDir = findRtDir(neededMods[0])
-            }
-            hoistBefore = hoistCount
-            i = 0
-            while i < neededMods.count {
-                rtPath = joinPath(rtDir, neededMods[i])
-                rtProbe = ""
-                rtReadable = file.readText(rtPath, rtProbe)
-                if not rtReadable {
-                    if haveRtDir {
-                        log("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
-                    } else {
-                        log("runtime module " + neededMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
-                    }
-                    quit 1
-                }
-                // expand recurses into rtPath's own includes BEFORE
-                // appending rtPath's own head (post-order), so a single call
-                // can push more than one asmHeads entry -- capture the WHOLE
-                // [beforeCount, asmHeads.count) range it added, not just the
-                // last one, or a multi-file runtime module would silently
-                // lose its included dependencies' declarations (parsed and
-                // diagnosed, but never spliced into combined2). A decl-less
-                // file (today's placeholder ser.cla) pushes a -1 head -- same
-                // "empty file" sentinel the original assembly loop above
-                // already skips; skip it here too rather than splice a bogus
-                // head. A file this module's includes deduped against --
-                // one the USER already composed positionally, which
-                // therefore pushes no asmHeads entry here -- is hoisted out
-                // of the user chain instead, AHEAD of this module's own
-                // heads (post-order, exactly where a freshly expanded
-                // include would have landed): uidialogs.cla's
-                // ../../toolbox/standardfile.cla declares the SFReply/
-                // SFTypeList record TYPES its own externs use, and type
-                // references are order-sensitive where function references
-                // are not.
-                beforeCount = asmHeads.count
-                beforeHits = dedupHits.count
-                expand(rtPath, true)
-                hoists = hoistDedups(beforeHits)
-                j = 0
-                while j < hoists.count {
-                    rtHeads.add(hoists[j])
-                    j = j + 1
-                }
-                j = beforeCount
-                while j < asmHeads.count {
-                    if asmHeads[j] != -1 {
-                        rtHeads.add(j)
-                    }
-                    j = j + 1
-                }
-                i = i + 1
-            }
-
-            // Rebuild the assembled program with the runtime modules' heads
-            // FIRST (declare-before-use), followed by the original
-            // (already fully linked) user-program chain. rtHeads holds
-            // asmHeads INDICES (not heads), so each segment's own end comes
-            // from asmTails -- lastDecl would run off the end of a HOISTED
-            // segment, whose tail Phase A already linked to the next user
-            // file's head.
-            combined2 = -1
-            rtTail = -1
-            i = 0
-            while i < rtHeads.count {
-                h = asmHeads[rtHeads[i]]
-                if combined2 == -1 {
-                    combined2 = h
-                } else {
-                    rtTail = declListAppend(rtTail, h)
-                }
-                rtTail = asmTails[rtHeads[i]]
-                i = i + 1
-            }
-            if combined != -1 {
-                if combined2 == -1 {
-                    combined2 = combined
-                } else if hoistCount == hoistBefore {
-                    rtTail = declListAppend(rtTail, combined)
-                } else {
-                    // Hoisting happened: the user chain has to be re-linked
-                    // segment by segment, skipping the hoisted files (now
-                    // in the runtime chain above) and terminating
-                    // explicitly -- the last kept segment's `next` still
-                    // points at whatever Phase A linked after it, which may
-                    // be a hoisted file. Reachable only when this splice is
-                    // the one that hoisted: the ONLY runtime module with
-                    // includes at all is uidialogs.cla, which belongs to
-                    // the `not earlySpliceDone` set above, so a --testapi
-                    // build's leftover manifest here (ser.cla/native.cla,
-                    // include-less) can never hoist -- and `combined` is
-                    // already the early splice's own rebuilt chain.
-                    i = 0
-                    while i < userHeadCount {
-                        h = asmHeads[i]
-                        if h != -1 and not hoistedHead[i] {
-                            rtTail = declListAppend(rtTail, h)
-                            rtTail = asmTails[i]
-                        }
-                        i = i + 1
-                    }
-                    rtTail = declListAppend(rtTail, -1)
-                }
-            }
-
-            // checkProgram resets and rebuilds all check-global state
-            // itself (the same reset+check sequence as the first pass, and
-            // as check_test's runCase driver uses repeatedly in-process).
-            // diags is empty on entry (the gate above already required
-            // that), so every diagnostic printed here is new.
-            checkProgram(combined2)
-            i = 0
-            while i < diags.count {
-                alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
-                i = i + 1
-            }
-            if diags.count > 0 {
-                quit 1
-            }
-        }
-
-        irReset()
-        lowerProgram(combined2)
-        // native-gaps-cleanup Task 2: lowerProgram can itself emitDiag now
-        // (lowCheckLiteral4CCArg/lowCheckLiteralFilter, lower.cla) --
-        // print+quit exactly like the two checkProgram gates above, so a
-        // literal type/creator/filter diagnostic actually surfaces instead
-        // of silently falling through to emission.
-        i = 0
-        while i < diags.count {
-            alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
-            i = i + 1
-        }
-        if diags.count > 0 {
+    // Emit path: driveCompile already required the user program to check
+    // CLEAN STANDALONE, consulted the runtime-module manifest, re-checked,
+    // and lowered to IR (wantEmit was set above) -- only the target-
+    // specific back end is left here.
+    if emitMode {
+        shakeProgram()
+        cSrc = emitProgram()
+        wrote = file.writeText(outPath, cSrc, app.doctype, app.id)
+        if not wrote {
+            log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
             quit 1
         }
-        if emitMode {
-            shakeProgram()
-            cSrc = emitProgram()
-            wrote = file.writeText(outPath, cSrc, app.doctype, app.id)
-            if not wrote {
-                log("clarusc emit: cannot write " + outPath + ": " + lastError.message)
+    } else if emitMode68k {
+        if haveEvents {
+            eventsBytes = ""
+            if not file.readText(eventsPath, eventsBytes) {
+                log("clarusc emit68k: cannot read " + eventsPath + ": " + lastError.message)
                 quit 1
             }
-        } else if emitMode68k {
-            // native-5d Task 7: root the native-only entry points BEFORE
-            // shaking (cg68AddRoots's own doc comment, cg68k.cla), then hand
-            // off to cg68Program instead of emitProgram.
-            cg68AddRoots()
-            // Task 8 (toolbox-integration Feature C): synthesize/root
-            // one pascal glue IRFunc per `callback func` an ECbAddr decay
-            // was ever built for -- see cg68SynthCbGlue's own doc comment
-            // (cg68k.cla) for why this must run at this exact point too.
-            cg68SynthCbGlue()
-            shakeProgram()
-            if haveEvents {
-                eventsBytes = ""
-                if not file.readText(eventsPath, eventsBytes) {
-                    log("clarusc emit68k: cannot read " + eventsPath + ": " + lastError.message)
-                    quit 1
-                }
-                cgEventsBytes = eventsBytes
-            } else {
-                cgEventsBytes = ""
-            }
-            // Task 5 (mac-resident-clarusc): read each --bake FILE now
-            // that the whole flag list is known -- cliResolveBake below
-            // does the actual validation/read (split out of this handler
-            // to stay clear of App.startCLI's own per-function 32KB
-            // native segment budget, TestSelfEmit68k's own headline gate).
-            cliResolveBake(bakePaths)
-            ok68 = cg68Program(outPath, listingFlag, segLimitFlag)
-            if not ok68 {
-                log("clarusc emit68k: cg68Program failed")
-                quit 1
-            }
+            cgEventsBytes = eventsBytes
+        } else {
+            cgEventsBytes = ""
+        }
+        // Task 5 (mac-resident-clarusc): read each --bake FILE now that the
+        // whole flag list is known -- cliResolveBake below does the actual
+        // validation/read (split out of this handler to stay clear of
+        // App.startCLI's own per-function 32KB native segment budget,
+        // TestSelfEmit68k's own headline gate).
+        cliResolveBake(bakePaths)
+        ok68 = driveEmit68k(outPath, listingFlag, segLimitFlag, nopeepFlag)
+        if not ok68 {
+            log("clarusc emit68k: cg68Program failed")
+            quit 1
         }
     }
     quit 0
