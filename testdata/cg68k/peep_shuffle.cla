@@ -1,0 +1,31 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// peep_shuffle.cla -- peephole pattern-2 fixture (peephole68k Task 5):
+// both operands simple loads. After pattern 1, the left load feeds
+// MOVE.L D0,D1 directly; pattern 2a retargets the left load to D1 and
+// deletes the move. Golden must show load->D1 / load->D0 / op with no
+// register shuffle between.
+
+func both(a: int, b: int): int {
+    return a + b
+}
+
+func bothsub(a: int, b: int): int {
+    return a - b
+}
+
+func chain(a: int, b: int, c: int): int {
+    return a + b + c
+}
+
+on App.launch {
+    var s: int
+    var d: int
+    var t: int
+
+    s = both(2, 3)
+    d = bothsub(9, 4)
+    t = chain(1, 2, 3)
+    return
+}
