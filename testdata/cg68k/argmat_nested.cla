@@ -1,0 +1,38 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// argmat_nested.cla: Mac-resident-clarusc Task 2 follow-up (review Critical
+// finding) -- a str/rec-RETURNING call used AS another call's own argument
+// (cgPushArgMaterialized's ECallFn arm -> cgMaterializeCallResult), where
+// the INNER call's own second argument itself needs the generic
+// materialization fallback (a str_concat EIntr). cgMaterializeCallResult's
+// own doc comment already named this as a "not reachable by any fixture
+// today" limitation before Task 2 generalized cgPushArgMaterialized's
+// fallback -- this fixture makes it reachable, and pins the fix (A1 saved/
+// reloaded around cgMaterializeCallResult's own cgPushArgs call).
+record argmatPair {
+    x: int
+    y: int
+}
+
+func mk(a: int, s: string): argmatPair {
+    var p: argmatPair
+    p.x = a
+    p.y = s.length
+    return p
+}
+
+func sumPair(p: argmatPair): int {
+    return p.x + p.y
+}
+
+on App.startCLI(args: list of string) {
+    var n: int
+    n = sumPair(mk(3, "a" + "bc"))
+    if n == 6 {
+        alert("nested ok")
+    } else {
+        alert("nested FAIL")
+    }
+    quit 0
+}

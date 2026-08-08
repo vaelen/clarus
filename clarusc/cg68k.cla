@@ -7006,14 +7006,33 @@ func cgPushArgMaterialized(a: int, t: int) {
 // every currently-reachable KRec/KStr this backend's own `needsHidden`
 // rule would route through it, per cgEmitFunc's identical test) with the
 // reserved arg slot (A1, stashed by cgPushArgMaterialized) as its hidden
-// pointer: pushes a's OWN argument chain first (cgPushArgs, recursively --
-// KNOWN LIMITATION shared with cgConcatIntoTemp's own A1-stash precedent:
-// if ONE of a's own args needed ITS OWN materialization, that nested call
-// would overwrite A1 before we read it back below; not reachable by any
-// fixture today, same class of narrowing this file already accepts
-// elsewhere), then A1, then JSRs and cleans up ONLY a's own args + the
-// hidden-pointer push -- the reserved OUTER slot itself is left alone, it
-// IS this argument's own final home.
+// pointer: pushes a's OWN argument chain first (cgPushArgs, recursively),
+// then A1, then JSRs and cleans up ONLY a's own args + the hidden-pointer
+// push -- the reserved OUTER slot itself is left alone, it IS this
+// argument's own final home.
+//
+// Mac-resident-clarusc Task 2 review fix (Critical): cgPushArgs is NOT
+// A1-transparent -- ANY KStr/KRec argument of a's own (addressable, via
+// cgPushArgs' own address-of+block-copy branch, OR materialized, via
+// cgPushArgMaterialized -- both use A1 as scratch) clobbers it. This used
+// to be a documented "not reachable by any fixture today" limitation
+// (cgMaterializeCallResult was the ONLY producer of nested
+// cgPushArgMaterialized calls, and no fixture nested one KStr/KRec
+// call-result inside another's own arg list); Task 2's own generalization
+// of cgPushArgMaterialized's fallback (any EIntr, not just
+// ENewRec/ECallFn/str_coerce) made it commonly reachable --
+// testdata/run/argmat_nested.cla (`sumPair(mk(3, "a" + "bc"))`, the inner
+// mk() call's own second arg needing materialization) reproduced a real
+// native-lane miscompile. Fix: stash the OUTER reserved-slot address (A1)
+// on the stack BEFORE calling cgPushArgs, then reload it from the stack
+// (at displacement `total` -- cgPushArgs only ever nets `total` bytes
+// PUSHED, so the stashed copy sits exactly `total` bytes further up the
+// stack once cgPushArgs returns) rather than trusting the register --
+// same "stack survives, no register does" discipline as every other
+// nested-call-safe sequence in this file (cgMaterializeStrCoerce's own
+// immediate A1 push, this function's own `total`-relative displacement
+// math). The stashed copy is popped once total+4 (a's own args + the
+// hidden pointer) is cleaned up after the call.
 func cgMaterializeCallResult(a: int) {
     var fi: int
     var total: int
@@ -7036,10 +7055,13 @@ func cgMaterializeCallResult(a: int) {
         log("cg68k: cgMaterializeCallResult: nested str/rec-returning call-result materialization (" + poolGet(irCallFnName(a)) + ") not supported -- would clobber the outer hidden-result pointer stashed in A1; bind the inner call to a temp first")
         quit 1
     }
+    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     total = cgPushArgs(irCallFnArgsHead(a))
+    a68Emit(OpMovea, 4, AmDisp16, 7, total, AmAn, 1, 0)
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
     cgCallFunc(fi)
     cgCleanupStack(total + 4)
+    cgCleanupStack(4)
     cgMaterializeDepth = cgMaterializeDepth - 1
 }
 
