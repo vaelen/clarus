@@ -1,0 +1,111 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// parsebench.cla -- compiler-shaped native benchmark (peephole68k Task 2).
+// Composes clarusc's own lexer (lib/tok/lex) and runs lexAll over an
+// embedded representative source 10 times, reporting elapsed ticks via
+// the capture console:
+//   BENCH lex iters=10 ticks=<n>
+// Not a pass/fail timing gate -- internal/mactest's TestParseBench68k
+// (CLARUS_BENCH68K=1) boots it and logs the number. Build:
+//   scripts/build-68k.sh ParseBench clarusc/lib.cla clarusc/tok.cla \
+//     clarusc/lex.cla toolbox/events.cla testdata/bench/parsebench.cla
+//
+// Three deviations from the task brief's original sketch, all recorded in
+// this task's report:
+//
+// 1. The sketch used `print(...)`, which is not a real Clarus builtin
+//    (grepped the language reference and runtime -- no such thing).
+//    `alert(msg: string)` is the real output statement, and per
+//    testsuite/kit.cla's own tkReport comment it is already "the
+//    host-stdout / Mac-capture-console channel" this harness's capture
+//    protocol reads as `out` -- so alert() is the correct substitution,
+//    not a workaround.
+//
+// 2. LEX-ONLY, not lex+parse: the brief's own Step 2 anticipated this
+//    fallback ("If lib/tok/lex/ast/parse turn out NOT to be a
+//    self-contained prefix... trim the benchmark to lexAll-only").
+//    lib+tok+lex (with one approved one-line hoist in lex.cla -- see its
+//    lexNext() comment dated 2026-08-08) DOES build natively. Composing
+//    ast.cla + parse.cla and calling parseFile() does not: parse.cla has
+//    roughly a dozen more parseErrorf(...) call sites with the identical
+//    "string concat built inline as a call argument" shape that trips
+//    cg68k's cgPushArgs ("unaddressable, unmaterializable KStr/KRec
+//    argument"). Fixing all of those is a much larger, unreviewed
+//    compiler-source change than the single hoist Andrew approved for
+//    this task, so this benchmark stays lexer-only rather than expanding
+//    that fix unilaterally. See the task report for the full bisection.
+//
+// 3. iters=10, not iters=50: measured directly (a diagnostic build that
+//    alert()s the TickCount() delta after each of 5 back-to-back lexAll
+//    calls over benchSource()), one lexAll pass over this ~700-byte/159-
+//    token source costs a STABLE ~999 ticks (~16.7s) on real 68k
+//    hardware -- current (pre-peephole) cg68k codegen is exactly the kind
+//    of unoptimized native code this whole phase exists to speed up, so
+//    this is a real, reproducible cost, not noise (strPool/toks counts
+//    are identical after every call -- interning dedupes correctly, this
+//    is genuinely how slow the current codegen is, confirmed with
+//    per-iteration TickCount deltas in one boot: 955, 998, 999, 999, 999).
+//    50 iterations would cost ~50000 ticks (~14 minutes), blowing
+//    RunMac's 5-minute timeout; 10 iterations costs ~10000 ticks (~2.8
+//    minutes), comfortably inside it with margin for boot overhead. See
+//    the task report for the full measurement.
+func benchSource(): text {
+    var s: text
+
+    s = ""
+    s = s + "record Point {\n    x: int\n    y: int\n}\n"
+    s = s + "func dist2(a: Point, b: Point): int {\n"
+    s = s + "    var dx: int\n    var dy: int\n"
+    s = s + "    dx = a.x - b.x\n    dy = a.y - b.y\n"
+    s = s + "    return dx * dx + dy * dy\n}\n"
+    s = s + "func fib(n: int): int {\n"
+    s = s + "    if n < 2 {\n        return n\n    }\n"
+    s = s + "    return fib(n - 1) + fib(n - 2)\n}\n"
+    s = s + "func sum(xs: list of int): int {\n"
+    s = s + "    var t: int\n    var i: int\n"
+    s = s + "    t = 0\n    i = 0\n"
+    s = s + "    while i < xs.count {\n"
+    s = s + "        t = t + xs[i]\n        i = i + 1\n    }\n"
+    s = s + "    return t\n}\n"
+    s = s + "func greet(name: string): string {\n"
+    s = s + "    return \"hello, \" + name\n}\n"
+    return s
+}
+
+on App.launch {
+    var src: text
+    var t0: int
+    var t1: int
+    var i: int
+    var n: int
+    var line: string
+
+    src = benchSource()
+    t0 = TickCount()
+    i = 0
+    while i < 10 {
+        n = lexAll(src)
+        // diags.count check (brief item (b), adapted to the lex-only
+        // fallback): benchSource is fixed, valid Clarus source, so diags
+        // (lib.cla's shared global) should stay 0 through every
+        // iteration; checking once after the first iteration is enough
+        // to catch a real lex regression without adding a resetDiags()
+        // call to the hot loop.
+        if i == 0 {
+            if diags.count > 0 {
+                alert("BENCH lex FAILED: diags")
+                quit 1
+            }
+        }
+        i = i + 1
+    }
+    t1 = TickCount()
+    if n <= 1 {
+        alert("BENCH lex FAILED: empty lex")
+        quit 1
+    }
+    line = "BENCH lex iters=10 ticks=" + numToStr(t1 - t0)
+    alert(line)
+    quit 0
+}

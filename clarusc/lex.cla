@@ -548,6 +548,7 @@ func lexNext(): Token {
     var b: char
     var startLine: int
     var startCol: int
+    var unexpMsg: string
 
     while true {
         // Skip whitespace (not newline) and comments.
@@ -614,7 +615,12 @@ func lexNext(): Token {
         lexAdvance()
         // ponytail: use plain quote + byte, not Go's %q (escapes non-printable/non-ASCII).
         // Only diverges for control bytes or non-ASCII input; fine for normal .cla source.
-        emitDiag(startLine, startCol, "unexpected character '" + b + "'")
+        // cg68k gap (peephole68k Task 2, 2026-08-08): a str concat passed
+        // directly as a call arg fails cgPushArgs natively ("unaddressable,
+        // unmaterializable KStr/KRec argument"); bind it first. Real fix
+        // belongs to the Mac-resident-clarusc phase.
+        unexpMsg = "unexpected character '" + b + "'"
+        emitDiag(startLine, startCol, unexpMsg)
         continue
     }
 }
