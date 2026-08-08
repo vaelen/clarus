@@ -88,10 +88,18 @@ func hfsutilsBin(t *testing.T, name string) string {
 }
 
 // runHfs runs an hfsutils tool (args[0] is the program name, e.g.
-// "hcopy") and fails the test on any error.
-func runHfs(t *testing.T, args ...string) string {
+// "hcopy") against d's disk and fails the test on any error. HOME is
+// overridden to d.dir (this snowDisk's own scratch dir): hfsutils tools
+// keep the "currently mounted volume" pointer in $HOME/.hcwd, a real
+// piece of cross-process shared state (confirmed via `strings` on the
+// hmount binary) -- without isolating HOME per snowDisk, two snowDisks
+// mounting different images from concurrent test processes could race on
+// that shared file. Each snowDisk gets its own t.TempDir(), so this also
+// isolates .hcwd per snowDisk for free.
+func (d *snowDisk) runHfs(t *testing.T, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(hfsutilsBin(t, args[0]), args[1:]...)
+	cmd.Env = append(os.Environ(), "HOME="+d.dir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s: %v\n%s", strings.Join(args, " "), err, out)
@@ -176,9 +184,11 @@ func newSnowDisk(t *testing.T) *snowDisk {
 // deferred functions via runtime.Goexit).
 func (d *snowDisk) mount(t *testing.T) func() {
 	t.Helper()
-	runHfs(t, "hmount", d.img)
+	d.runHfs(t, "hmount", d.img)
 	return func() {
-		exec.Command(hfsutilsBin(t, "humount")).Run()
+		cmd := exec.Command(hfsutilsBin(t, "humount"))
+		cmd.Env = append(os.Environ(), "HOME="+d.dir)
+		cmd.Run()
 	}
 }
 
@@ -205,7 +215,7 @@ func (d *snowDisk) putText(t *testing.T, name string, data []byte) {
 	}
 	unmount := d.mount(t)
 	defer unmount()
-	runHfs(t, "hcopy", "-t", tmp, hfsPath(name))
+	d.runHfs(t, "hcopy", "-t", tmp, hfsPath(name))
 }
 
 // putMacBinary installs a MacBinary-encoded native build (forks
@@ -218,7 +228,7 @@ func (d *snowDisk) putMacBinary(t *testing.T, binPath, name string) {
 	t.Helper()
 	unmount := d.mount(t)
 	defer unmount()
-	runHfs(t, "hcopy", "-m", binPath, ":System Folder:Startup Items:"+name)
+	d.runHfs(t, "hcopy", "-m", binPath, ":System Folder:Startup Items:"+name)
 }
 
 // get extracts name (bare = volume root, or an explicit colon path, e.g.
@@ -227,7 +237,7 @@ func (d *snowDisk) get(t *testing.T, name string) []byte {
 	t.Helper()
 	tmp := filepath.Join(t.TempDir(), "get-text")
 	unmount := d.mount(t)
-	runHfs(t, "hcopy", "-t", hfsPath(name), tmp)
+	d.runHfs(t, "hcopy", "-t", hfsPath(name), tmp)
 	unmount()
 	b, err := os.ReadFile(tmp)
 	if err != nil {
@@ -242,7 +252,7 @@ func (d *snowDisk) getMacBinary(t *testing.T, name string) []byte {
 	t.Helper()
 	tmp := filepath.Join(t.TempDir(), "get-bin")
 	unmount := d.mount(t)
-	runHfs(t, "hcopy", "-m", hfsPath(name), tmp)
+	d.runHfs(t, "hcopy", "-m", hfsPath(name), tmp)
 	unmount()
 	b, err := os.ReadFile(tmp)
 	if err != nil {
@@ -272,31 +282,65 @@ const snowQuitGrace = 20 * time.Second
 // until Snow's process exits -- see the file header), so it is
 // necessarily a best-effort/proxy signal (e.g. elapsed wall-clock time);
 // runSnow itself makes no assumption about what done checks.
+//
+// Two failure paths that DON'T fall through to the caller's extraction
+// code (fixing task-4-review.md's Critical/Important findings):
+//
+//   - Snow's process dying during the poll loop (crash, bad workspace
+//     JSON, missing ROM, ...) is detected within one poll tick and fails
+//     the test immediately, instead of burning the whole timeout and
+//     then failing confusingly at hfsutils extraction.
+//   - A quit that isn't graceful (snowQuitGrace elapses, so the harness
+//     falls back to killing the process by PID) fails the test loudly.
+//     The disk image is untrustworthy after a forced kill -- guest HFS
+//     writes only flush to the host-visible file on a clean Snow process
+//     exit (see the file header) -- so proceeding to extract from it
+//     would silently assert against a possibly-corrupt image.
 func runSnow(t *testing.T, d *snowDisk, timeout time.Duration, done func() bool) {
 	t.Helper()
+	start := time.Now()
 	snowBin := filepath.Join(repoRoot(t), "snow", "Snow")
 	cmd := exec.Command(snowBin, d.workspace)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("launch Snow: %v", err)
 	}
 
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
+	// Safety net: if the caller's done() (or something else in the test)
+	// unwinds this goroutine early via t.Fatalf/FailNow without runSnow
+	// reaching its own quit/kill logic below, don't leak Snow on screen.
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			cmd.Process.Kill()
+		}
+	})
+
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) && !done() {
-		time.Sleep(snowPollInterval)
+		select {
+		case werr := <-exited:
+			reaped = true
+			t.Fatalf("Snow exited early (state %v) after %s", werr, time.Since(start))
+		case <-time.After(snowPollInterval):
+		}
 	}
 
 	quitErr := exec.Command("osascript", "-e", `quit app "Snow"`).Run()
 
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
 	select {
-	case <-exited:
-	case <-time.After(snowQuitGrace):
-		t.Logf("Snow did not quit gracefully within %s (quit app error: %v); killing pid %d", snowQuitGrace, quitErr, cmd.Process.Pid)
-		if err := cmd.Process.Kill(); err != nil {
-			t.Logf("kill Snow pid %d: %v", cmd.Process.Pid, err)
+	case werr := <-exited:
+		reaped = true
+		if werr != nil {
+			t.Logf("Snow process exited with error after quit request: %v", werr)
 		}
-		<-exited
+	case <-time.After(snowQuitGrace):
+		reaped = true
+		killErr := cmd.Process.Kill()
+		<-exited // Kill() forces the exit; bound the wait so we don't hang.
+		t.Fatalf("Snow did not quit gracefully within %s (quit app error: %v); force-killed pid %d (kill error: %v) -- disk image is untrustworthy after a forced kill, failing instead of extracting from it", snowQuitGrace, quitErr, cmd.Process.Pid, killErr)
 	}
 }
 
