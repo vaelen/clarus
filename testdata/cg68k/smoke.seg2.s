@@ -1,263 +1,3 @@
-        ; func smokeFilesBig  (JT slot 94)
-        ;   local t : -4(A6)  size 4
-        ;   local t2 : -8(A6)  size 4
-        ;   local ok : -10(A6)  size 2
-        ;   local pass : -12(A6)  size 2
-        ;   local i : -16(A6)  size 4
-        ;   local n : -20(A6)  size 4
-        ;   local __store10 : -24(A6)  size 4
-LBL_0:
-        LINK A6,#-8320
-        LEA -4(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-        LEA -8(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-        MOVEQ #0,D0
-        MOVE.B D0,-10(A6)
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-16(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-20(A6)
-        LEA -24(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
-        MOVE.L #40000,D0
-        MOVE.L D0,-20(A6)
-        LEA -24(A6),A0
-        MOVE.L A1,-(A7)
-        MOVE.L 0(A0),D0
-        MOVE.L D0,-(A7)
-        JSR 130(A5)
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        JSR 114(A5)
-        MOVE.L D0,-28(A6)
-        MOVE.L -28(A6),D0
-        MOVE.L D0,-(A7)
-        LEA LBL_118(PC),A0
-        MOVE.L A0,-(A7)
-        JSR 138(A5)
-        ADDQ.L #8,A7
-        MOVE.L -28(A6),D0
-        MOVE.L D0,-24(A6)
-        LEA -4(A6),A0
-        MOVE.L A1,-(A7)
-        MOVE.L 0(A0),D0
-        MOVE.L D0,-(A7)
-        JSR 130(A5)
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        MOVE.L -24(A6),D0
-        MOVE.L D0,-4(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-24(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-16(A6)
-LBL_176:
-        MOVE.L -16(A6),D1
-        MOVE.L -20(A6),D0
-        CMP.L D0,D1
-        SLT D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_177
-        MOVE.L -4(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -16(A6),D1
-        MOVE.L #256,D0
-        BSR.W LBL_173
-        ANDI.L #255,D0
-        MOVE.L D0,-(A7)
-        JSR 202(A5)
-        ADDQ.L #8,A7
-        MOVE.L -16(A6),D1
-        MOVEQ #1,D0
-        ADD.L D1,D0
-        MOVE.L D0,-16(A6)
-        BRA.W LBL_176
-LBL_177:
-        LEA LBL_139(PC),A0
-        MOVE.L A0,-(A7)
-        MOVE.L -4(A6),D0
-        MOVE.L D0,-(A7)
-        LEA LBL_113(PC),A0
-        MOVE.L A0,-(A7)
-        LEA LBL_114(PC),A0
-        MOVE.L A0,-(A7)
-        JSR 594(A5)
-        ADDA.W #16,A7
-        MOVE.B D0,-10(A6)
-        CLR.L D0
-        MOVE.B -10(A6),D0
-        MOVE.B D0,-(A7)
-        LEA LBL_140(PC),A0
-        ADDA.L #-256,A7
-        MOVEA.L A7,A1
-        MOVE.W #127,D0
-LBL_178:
-        MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_178
-        JSR 674(A5)
-        ADDA.W #258,A7
-        LEA LBL_139(PC),A0
-        MOVE.L A0,-(A7)
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        JSR 602(A5)
-        ADDQ.L #8,A7
-        MOVE.B D0,-10(A6)
-        CLR.L D0
-        MOVE.B -10(A6),D0
-        MOVE.B D0,-(A7)
-        LEA LBL_141(PC),A0
-        ADDA.L #-256,A7
-        MOVEA.L A7,A1
-        MOVE.W #127,D0
-LBL_179:
-        MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_179
-        JSR 674(A5)
-        ADDA.W #258,A7
-        MOVEQ #1,D0
-        MOVE.B D0,-12(A6)
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        JSR 170(A5)
-        ADDQ.L #4,A7
-        MOVE.L D0,D1
-        MOVE.L -20(A6),D0
-        CMP.L D0,D1
-        SNE D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_180
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-LBL_180:
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVEQ #0,D0
-        MOVE.L D0,-(A7)
-        JSR 178(A5)
-        ADDQ.L #8,A7
-        MOVE.L D0,-(A7)
-        MOVEQ #0,D0
-        ANDI.L #255,D0
-        MOVE.L (A7)+,D1
-        CMP.L D0,D1
-        SNE D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_181
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-LBL_181:
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L -20(A6),D1
-        MOVEQ #1,D0
-        SUB.L D0,D1
-        MOVE.L D1,D0
-        MOVE.L D0,-(A7)
-        JSR 178(A5)
-        ADDQ.L #8,A7
-        MOVE.L D0,-(A7)
-        MOVE.L -20(A6),D1
-        MOVEQ #1,D0
-        SUB.L D0,D1
-        MOVE.L D1,D0
-        MOVE.L D0,D1
-        MOVE.L #256,D0
-        BSR.W LBL_173
-        ANDI.L #255,D0
-        MOVE.L (A7)+,D1
-        CMP.L D0,D1
-        SNE D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_182
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-LBL_182:
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L #32767,D0
-        MOVE.L D0,-(A7)
-        JSR 178(A5)
-        ADDQ.L #8,A7
-        MOVE.L D0,-(A7)
-        MOVE.L #32767,D1
-        MOVE.L #256,D0
-        BSR.W LBL_173
-        ANDI.L #255,D0
-        MOVE.L (A7)+,D1
-        CMP.L D0,D1
-        SNE D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_183
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-LBL_183:
-        MOVE.L -8(A6),D0
-        MOVE.L D0,-(A7)
-        MOVE.L #32768,D0
-        MOVE.L D0,-(A7)
-        JSR 178(A5)
-        ADDQ.L #8,A7
-        MOVE.L D0,-(A7)
-        MOVE.L #32768,D1
-        MOVE.L #256,D0
-        BSR.W LBL_173
-        ANDI.L #255,D0
-        MOVE.L (A7)+,D1
-        CMP.L D0,D1
-        SNE D0
-        ANDI.L #1,D0
-        TST.L D0
-        BEQ.W LBL_184
-        MOVEQ #0,D0
-        MOVE.B D0,-12(A6)
-LBL_184:
-        CLR.L D0
-        MOVE.B -12(A6),D0
-        MOVE.B D0,-(A7)
-        LEA LBL_142(PC),A0
-        ADDA.L #-256,A7
-        MOVEA.L A7,A1
-        MOVE.W #127,D0
-LBL_185:
-        MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_185
-        JSR 674(A5)
-        ADDA.W #258,A7
-        LEA -4(A6),A0
-        MOVE.L A1,-(A7)
-        MOVE.L 0(A0),D0
-        MOVE.L D0,-(A7)
-        JSR 130(A5)
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-        LEA -8(A6),A0
-        MOVE.L A1,-(A7)
-        MOVE.L 0(A0),D0
-        MOVE.L D0,-(A7)
-        JSR 130(A5)
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A1
-LBL_175:
-        UNLK A6
-        RTS
         ; func handler_App_launch  (JT slot 95)
         ;   local p : -48(A6)  size 48
         ;   local __store11 : -96(A6)  size 48
@@ -266,7 +6,7 @@ LBL_175:
         ;   local n : -152(A6)  size 4
         ;   local __store12 : -200(A6)  size 48
         ;   local __store13 : -248(A6)  size 48
-LBL_1:
+LBL_0:
         LINK A6,#-8544
         MOVEQ #3,D0
         MOVE.L D0,-48(A6)
@@ -278,9 +18,9 @@ LBL_1:
         MOVE.L D0,-36(A6)
         LEA -32(A6),A0
         MOVE.W #15,D0
-LBL_187:
+LBL_32:
         CLR.W (A0)+
-        DBRA D0,LBL_187
+        DBRA D0,LBL_32
         MOVEQ #3,D0
         MOVE.L D0,-96(A6)
         MOVEQ #4,D0
@@ -291,9 +31,9 @@ LBL_187:
         MOVE.L D0,-84(A6)
         LEA -80(A6),A0
         MOVE.W #15,D0
-LBL_188:
+LBL_33:
         CLR.W (A0)+
-        DBRA D0,LBL_188
+        DBRA D0,LBL_33
         MOVEQ #3,D0
         MOVE.L D0,-144(A6)
         MOVEQ #4,D0
@@ -304,9 +44,9 @@ LBL_188:
         MOVE.L D0,-132(A6)
         LEA -128(A6),A0
         MOVE.W #15,D0
-LBL_189:
+LBL_34:
         CLR.W (A0)+
-        DBRA D0,LBL_189
+        DBRA D0,LBL_34
         MOVEQ #0,D0
         MOVE.L D0,-148(A6)
         MOVEQ #0,D0
@@ -321,9 +61,9 @@ LBL_189:
         MOVE.L D0,-188(A6)
         LEA -184(A6),A0
         MOVE.W #15,D0
-LBL_190:
+LBL_35:
         CLR.W (A0)+
-        DBRA D0,LBL_190
+        DBRA D0,LBL_35
         MOVEQ #3,D0
         MOVE.L D0,-248(A6)
         MOVEQ #4,D0
@@ -334,14 +74,14 @@ LBL_190:
         MOVE.L D0,-236(A6)
         LEA -232(A6),A0
         MOVE.W #15,D0
-LBL_191:
+LBL_36:
         CLR.W (A0)+
-        DBRA D0,LBL_191
+        DBRA D0,LBL_36
         LEA -96(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -96(A6),A0
@@ -363,21 +103,21 @@ LBL_191:
         MOVEA.L A1,A0
         LEA 16(A0),A0
         MOVE.W #15,D0
-LBL_192:
+LBL_37:
         CLR.W (A0)+
-        DBRA D0,LBL_192
+        DBRA D0,LBL_37
         LEA -96(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_169
+        BSR.W LBL_25
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -48(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -96(A6),A0
@@ -386,9 +126,9 @@ LBL_192:
         MOVEA.L A0,A1
         MOVEA.L (A7)+,A0
         MOVE.W #23,D0
-LBL_193:
+LBL_38:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_193
+        DBRA D0,LBL_38
         LEA -48(A6),A0
         LEA 0(A0),A0
         MOVE.L (A0),D0
@@ -398,13 +138,13 @@ LBL_193:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_143(PC),A0
+        LEA LBL_1(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_194:
+LBL_39:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_194
+        DBRA D0,LBL_39
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -416,13 +156,13 @@ LBL_194:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_144(PC),A0
+        LEA LBL_2(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_195:
+LBL_40:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_195
+        DBRA D0,LBL_40
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -434,13 +174,13 @@ LBL_195:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_145(PC),A0
+        LEA LBL_3(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_196:
+LBL_41:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_196
+        DBRA D0,LBL_41
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -453,13 +193,13 @@ LBL_196:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_146(PC),A0
+        LEA LBL_4(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_197:
+LBL_42:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_197
+        DBRA D0,LBL_42
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -144(A6),A0
@@ -471,13 +211,13 @@ LBL_197:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_147(PC),A0
+        LEA LBL_5(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_198:
+LBL_43:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_198
+        DBRA D0,LBL_43
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -144(A6),A0
@@ -489,13 +229,13 @@ LBL_198:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_148(PC),A0
+        LEA LBL_6(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_199:
+LBL_44:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_199
+        DBRA D0,LBL_44
         JSR 674(A5)
         ADDA.W #258,A7
         MOVEQ #10,D0
@@ -510,7 +250,7 @@ LBL_199:
         MOVE.L A0,-(A7)
         MOVEQ #31,D0
         MOVE.L D0,-(A7)
-        LEA LBL_149(PC),A0
+        LEA LBL_7(PC),A0
         MOVE.L A0,-(A7)
         JSR 82(A5)
         ADDA.W #12,A7
@@ -530,13 +270,13 @@ LBL_199:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_150(PC),A0
+        LEA LBL_8(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_200:
+LBL_45:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_200
+        DBRA D0,LBL_45
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -549,20 +289,20 @@ LBL_200:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_151(PC),A0
+        LEA LBL_9(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_201:
+LBL_46:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_201
+        DBRA D0,LBL_46
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
         LEA 12(A0),A0
         LEA 4(A0),A0
         MOVE.L A0,-(A7)
-        LEA LBL_149(PC),A0
+        LEA LBL_7(PC),A0
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDQ.L #8,A7
@@ -572,20 +312,20 @@ LBL_201:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_152(PC),A0
+        LEA LBL_10(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_202:
+LBL_47:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_202
+        DBRA D0,LBL_47
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -200(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -48(A6),A0
@@ -594,21 +334,21 @@ LBL_202:
         MOVEA.L A0,A1
         MOVEA.L (A7)+,A0
         MOVE.W #23,D0
-LBL_203:
+LBL_48:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_203
+        DBRA D0,LBL_48
         LEA -200(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_169
+        BSR.W LBL_25
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -144(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -200(A6),A0
@@ -617,9 +357,9 @@ LBL_203:
         MOVEA.L A0,A1
         MOVEA.L (A7)+,A0
         MOVE.W #23,D0
-LBL_204:
+LBL_49:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_204
+        DBRA D0,LBL_49
         MOVEQ #99,D0
         MOVE.L D0,-(A7)
         LEA -144(A6),A0
@@ -642,13 +382,13 @@ LBL_204:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_153(PC),A0
+        LEA LBL_11(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_205:
+LBL_50:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_205
+        DBRA D0,LBL_50
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -144(A6),A0
@@ -660,13 +400,13 @@ LBL_205:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_154(PC),A0
+        LEA LBL_12(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_206:
+LBL_51:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_206
+        DBRA D0,LBL_51
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -679,13 +419,13 @@ LBL_206:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_155(PC),A0
+        LEA LBL_13(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_207:
+LBL_52:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_207
+        DBRA D0,LBL_52
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -144(A6),A0
@@ -698,20 +438,20 @@ LBL_207:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_156(PC),A0
+        LEA LBL_14(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_208:
+LBL_53:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_208
+        DBRA D0,LBL_53
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -248(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         MOVE.L #555,D0
@@ -724,7 +464,7 @@ LBL_208:
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -248(A6),A0
@@ -733,9 +473,9 @@ LBL_208:
         MOVEA.L A0,A1
         MOVEA.L (A7)+,A0
         MOVE.W #23,D0
-LBL_209:
+LBL_54:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_209
+        DBRA D0,LBL_54
         LEA -48(A6),A0
         LEA 0(A0),A0
         MOVE.L (A0),D0
@@ -745,13 +485,13 @@ LBL_209:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_157(PC),A0
+        LEA LBL_15(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_210:
+LBL_55:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_210
+        DBRA D0,LBL_55
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
@@ -764,22 +504,22 @@ LBL_210:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_158(PC),A0
+        LEA LBL_16(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_211:
+LBL_56:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_211
+        DBRA D0,LBL_56
         JSR 674(A5)
         ADDA.W #258,A7
         LEA -48(A6),A0
         ADDA.L #-48,A7
         MOVEA.L A7,A1
         MOVE.W #23,D0
-LBL_212:
+LBL_57:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_212
+        DBRA D0,LBL_57
         JSR 690(A5)
         ADDA.W #48,A7
         MOVE.L D0,-152(A6)
@@ -796,30 +536,30 @@ LBL_212:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_159(PC),A0
+        LEA LBL_17(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_213:
+LBL_58:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_213
+        DBRA D0,LBL_58
         JSR 674(A5)
         ADDA.W #258,A7
         MOVEQ #6,D0
         MOVE.L D0,D1
-        LEA LBL_168(PC),A0
+        LEA LBL_24(PC),A0
         MOVE.W #2,D2
-LBL_215:
+LBL_60:
         CMP.L (A0)+,D1
-        BEQ.W LBL_214
-        DBRA D2,LBL_215
+        BEQ.W LBL_59
+        DBRA D2,LBL_60
         ; enum conversion miss -> rtEnumCheck(v, false, <name arg unused>) panics
         MOVE.L D1,-(A7)
         CLR.W -(A7)
         ADDA.L #-256,A7
         JSR 74(A5)
         ADDA.W #262,A7
-LBL_214:
+LBL_59:
         MOVE.L D0,-148(A6)
         MOVE.L -148(A6),D1
         MOVEQ #6,D0
@@ -827,13 +567,13 @@ LBL_214:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_160(PC),A0
+        LEA LBL_18(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_216:
+LBL_61:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_216
+        DBRA D0,LBL_61
         JSR 674(A5)
         ADDA.W #258,A7
         MOVE.L -148(A6),D1
@@ -842,13 +582,13 @@ LBL_216:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_161(PC),A0
+        LEA LBL_19(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_217:
+LBL_62:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_217
+        DBRA D0,LBL_62
         JSR 674(A5)
         ADDA.W #258,A7
         JSR 698(A5)
@@ -858,20 +598,20 @@ LBL_217:
         JSR 730(A5)
         JSR 738(A5)
         JSR 746(A5)
-        LEA LBL_162(PC),A0
+        LEA LBL_20(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_218:
+LBL_63:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_218
+        DBRA D0,LBL_63
         LEA -252(A6),A0
         MOVE.L A0,-(A7)
         JSR 762(A5)
         ADDA.W #260,A7
         LEA -252(A6),A0
         MOVE.L A0,-(A7)
-        LEA LBL_163(PC),A0
+        LEA LBL_21(PC),A0
         MOVE.L A0,-(A7)
         JSR 98(A5)
         ADDQ.L #8,A7
@@ -881,18 +621,18 @@ LBL_218:
         SEQ D0
         ANDI.L #1,D0
         MOVE.B D0,-(A7)
-        LEA LBL_164(PC),A0
+        LEA LBL_22(PC),A0
         ADDA.L #-256,A7
         MOVEA.L A7,A1
         MOVE.W #127,D0
-LBL_219:
+LBL_64:
         MOVE.W (A0)+,(A1)+
-        DBRA D0,LBL_219
+        DBRA D0,LBL_64
         JSR 674(A5)
         ADDA.W #258,A7
         JSR 778(A5)
-        BSR.W LBL_0
-        LEA LBL_165(PC),A0
+        JSR 786(A5)
+        LEA LBL_23(PC),A0
         MOVE.L A0,-(A7)
         JSR 514(A5)
         ADDQ.L #4,A7
@@ -900,17 +640,17 @@ LBL_219:
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -144(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-        BSR.W LBL_174
+        BSR.W LBL_30
         MOVEQ #0,D0
         MOVE.L D0,-(A7)
         JSR 530(A5)
@@ -919,20 +659,20 @@ LBL_219:
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
         LEA -144(A6),A0
         MOVE.L A1,-(A7)
         LEA 0(A0),A0
         MOVE.L A0,-(A7)
-        BSR.W LBL_170
+        BSR.W LBL_26
         ADDQ.L #4,A7
         MOVEA.L (A7)+,A1
-LBL_186:
+LBL_31:
         UNLK A6
         RTS
-LBL_171:
+LBL_27:
         ; cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -957,7 +697,7 @@ LBL_171:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_172:
+LBL_28:
         ; cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -969,19 +709,19 @@ LBL_172:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_220
+        BPL.W LBL_65
         NEG.L D2
         MOVE.L #1,D4
-LBL_220:
+LBL_65:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_221
+        BPL.W LBL_66
         NEG.L D3
         MOVE.L #1,D5
-LBL_221:
+LBL_66:
         CLR.L D6
         MOVE.W #31,D7
-LBL_222:
+LBL_67:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -989,16 +729,16 @@ LBL_222:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_223
+        BCS.W LBL_68
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_223:
-        DBRA D7,LBL_222
+LBL_68:
+        DBRA D7,LBL_67
         EOR.L D5,D4
         TST.L D4
-        BEQ.W LBL_224
+        BEQ.W LBL_69
         NEG.L D2
-LBL_224:
+LBL_69:
         MOVE.L D2,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -1007,7 +747,7 @@ LBL_224:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_173:
+LBL_29:
         ; cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)
         MOVE.L D2,-(A7)
         MOVE.L D3,-(A7)
@@ -1019,19 +759,19 @@ LBL_173:
         MOVE.L D0,D3
         CLR.L D4
         TST.L D2
-        BPL.W LBL_225
+        BPL.W LBL_70
         NEG.L D2
         MOVE.L #1,D4
-LBL_225:
+LBL_70:
         CLR.L D5
         TST.L D3
-        BPL.W LBL_226
+        BPL.W LBL_71
         NEG.L D3
         MOVE.L #1,D5
-LBL_226:
+LBL_71:
         CLR.L D6
         MOVE.W #31,D7
-LBL_227:
+LBL_72:
         TST.L D2
         SMI D0
         ASL.L #1,D2
@@ -1039,15 +779,15 @@ LBL_227:
         ANDI.L #1,D0
         OR.L D0,D6
         CMP.L D3,D6
-        BCS.W LBL_228
+        BCS.W LBL_73
         SUB.L D3,D6
         ADDQ.L #1,D2
-LBL_228:
-        DBRA D7,LBL_227
+LBL_73:
+        DBRA D7,LBL_72
         TST.L D4
-        BEQ.W LBL_229
+        BEQ.W LBL_74
         NEG.L D6
-LBL_229:
+LBL_74:
         MOVE.L D6,D0
         MOVE.L (A7)+,D7
         MOVE.L (A7)+,D6
@@ -1056,12 +796,12 @@ LBL_229:
         MOVE.L (A7)+,D3
         MOVE.L (A7)+,D2
         RTS
-LBL_174:
+LBL_30:
         ; cg_free_globals
         LINK A6,#-48
         MOVE.L -32(A5),D0
         MOVE.L D0,-4(A6)
-LBL_230:
+LBL_75:
         MOVE.L A1,-(A7)
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
@@ -1070,7 +810,7 @@ LBL_230:
         MOVEA.L (A7)+,A1
         UNLK A6
         RTS
-LBL_169:
+LBL_25:
         ; cg_retain_smokePoint(rec ptr at 8(A6))
         LINK A6,#-48
         MOVEA.L 8(A6),A0
@@ -1078,7 +818,7 @@ LBL_169:
         MOVEA.L A1,A0
         UNLK A6
         RTS
-LBL_170:
+LBL_26:
         ; cg_release_smokePoint(rec ptr at 8(A6))
         LINK A6,#-48
         MOVEA.L 8(A6),A0
@@ -1087,583 +827,89 @@ LBL_170:
         UNLK A6
         RTS
         ; constant pool: string literals
-LBL_2:
-        DC.B $18
-        DC.B $61,$72,$72,$61,$79,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-        DC.B $00
-LBL_3:
-        DC.B $19
-        DC.B $6E,$6F,$20,$65,$6E,$75,$6D,$20,$6D,$65,$6D,$62,$65,$72,$20,$77,$69,$74,$68,$20,$76,$61,$6C,$75,$65
-LBL_4:
-        DC.B $10
-        DC.B $64,$69,$76,$69,$73,$69,$6F,$6E,$20,$62,$79,$20,$7A,$65,$72,$6F
-        DC.B $00
-LBL_5:
-        DC.B $10
-        DC.B $73,$74,$72,$69,$6E,$67,$20,$74,$72,$75,$6E,$63,$61,$74,$65,$64
-        DC.B $00
-LBL_6:
-        DC.B $19
-        DC.B $73,$74,$72,$69,$6E,$67,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_7:
-        DC.B $12
-        DC.B $73,$6C,$69,$63,$65,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-        DC.B $00
-LBL_8:
-        DC.B $0D
-        DC.B $6F,$75,$74,$20,$6F,$66,$20,$6D,$65,$6D,$6F,$72,$79
-LBL_9:
-        DC.B $17
-        DC.B $74,$65,$78,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_10:
-        DC.B $17
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
-LBL_11:
-        DC.B $11
-        DC.B $70,$6F,$70,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
-LBL_12:
-        DC.B $13
-        DC.B $73,$68,$69,$66,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
-LBL_13:
-        DC.B $13
-        DC.B $66,$69,$72,$73,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
-LBL_14:
-        DC.B $12
-        DC.B $6C,$61,$73,$74,$20,$6F,$6E,$20,$65,$6D,$70,$74,$79,$20,$6C,$69,$73,$74
-        DC.B $00
-LBL_15:
-        DC.B $11
-        DC.B $6D,$61,$70,$20,$6B,$65,$79,$20,$6E,$6F,$74,$20,$66,$6F,$75,$6E,$64
-LBL_16:
-        DC.B $0F
-        DC.B $72,$75,$6E,$74,$69,$6D,$65,$20,$65,$72,$72,$6F,$72,$3A,$20
-LBL_17:
-        DC.B $26
-        DC.B $66,$69,$6C,$65,$20,$74,$79,$70,$65,$20,$6D,$75,$73,$74,$20,$62,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$63,$68,$61,$72,$61,$63,$74,$65,$72,$73
-        DC.B $00
-LBL_18:
-        DC.B $29
-        DC.B $66,$69,$6C,$65,$20,$63,$72,$65,$61,$74,$6F,$72,$20,$6D,$75,$73,$74,$20,$62,$65,$20,$61,$74,$20,$6D,$6F,$73,$74,$20,$34,$20,$63,$68,$61,$72,$61,$63,$74,$65,$72,$73
-LBL_19:
-        DC.B $13
-        DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$6F,$70,$65,$6E,$20,$66,$69,$6C,$65
-LBL_20:
-        DC.B $14
-        DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$77,$72,$69,$74,$65,$20,$66,$69,$6C,$65
-        DC.B $00
-LBL_21:
-        DC.B $13
-        DC.B $63,$6F,$75,$6C,$64,$20,$6E,$6F,$74,$20,$72,$65,$61,$64,$20,$66,$69,$6C,$65
-LBL_22:
-        DC.B $05
-        DC.B $50,$41,$53,$53,$20
-LBL_23:
-        DC.B $05
-        DC.B $46,$41,$49,$4C,$20
-LBL_24:
-        DC.B $19
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$70,$75,$73,$68
-LBL_25:
-        DC.B $0E
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$66,$69,$72,$73,$74
-        DC.B $00
-LBL_26:
-        DC.B $0D
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$6C,$61,$73,$74
-LBL_27:
-        DC.B $13
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$69,$6E,$64,$65,$78,$20,$72,$65,$61,$64
-LBL_28:
-        DC.B $12
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$69,$6E,$64,$65,$78,$20,$73,$65,$74
-        DC.B $00
-LBL_29:
-        DC.B $10
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$75,$6E,$73,$68,$69,$66,$74
-        DC.B $00
-LBL_30:
-        DC.B $1C
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$75,$6E,$73,$68,$69,$66,$74
-        DC.B $00
-LBL_31:
-        DC.B $15
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$73,$68,$69,$66,$74,$20,$72,$65,$74,$75,$72,$6E
-LBL_32:
-        DC.B $1A
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$73,$68,$69,$66,$74
-        DC.B $00
-LBL_33:
-        DC.B $13
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$70,$6F,$70,$20,$72,$65,$74,$75,$72,$6E
-LBL_34:
-        DC.B $18
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$70,$6F,$70
-        DC.B $00
-LBL_35:
-        DC.B $1B
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-LBL_36:
-        DC.B $1B
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$76,$61,$6C,$75,$65,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-LBL_37:
-        DC.B $15
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$66,$6F,$72,$2D,$6C,$69,$73,$74,$20,$73,$75,$6D
-LBL_38:
-        DC.B $1C
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$74,$20,$64,$69,$73,$63,$61,$72,$64,$65,$64,$20,$70,$6F,$70,$20,$63,$6F,$75,$6E,$74
-        DC.B $00
-LBL_39:
-        DC.B $05
-        DC.B $61,$6C,$70,$68,$61
-LBL_40:
-        DC.B $04
-        DC.B $62,$65,$74,$61
-        DC.B $00
-LBL_41:
-        DC.B $05
-        DC.B $67,$61,$6D,$6D,$61
-LBL_42:
-        DC.B $1A
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$70,$75,$73,$68
-        DC.B $00
-LBL_43:
-        DC.B $0F
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$66,$69,$72,$73,$74
-LBL_44:
-        DC.B $0E
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$6C,$61,$73,$74
-        DC.B $00
-LBL_45:
-        DC.B $14
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$69,$6E,$64,$65,$78,$20,$72,$65,$61,$64
-        DC.B $00
-LBL_46:
-        DC.B $04
-        DC.B $42,$45,$54,$41
-        DC.B $00
-LBL_47:
-        DC.B $13
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$69,$6E,$64,$65,$78,$20,$73,$65,$74
-LBL_48:
-        DC.B $16
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$73,$68,$69,$66,$74,$20,$72,$65,$74,$75,$72,$6E
-        DC.B $00
-LBL_49:
-        DC.B $1B
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$73,$68,$69,$66,$74
-LBL_50:
-        DC.B $14
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$70,$6F,$70,$20,$72,$65,$74,$75,$72,$6E
-        DC.B $00
-LBL_51:
-        DC.B $19
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$70,$6F,$70
-LBL_52:
-        DC.B $1C
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-        DC.B $00
-LBL_53:
-        DC.B $04
-        DC.B $73,$6F,$6C,$6F
-        DC.B $00
-LBL_54:
-        DC.B $03
-        DC.B $64,$75,$6F
-LBL_55:
-        DC.B $1D
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$64,$69,$73,$63,$61,$72,$64,$65,$64,$20,$70,$6F,$70,$20,$63,$6F,$75,$6E,$74
-LBL_56:
-        DC.B $23
-        DC.B $6C,$69,$73,$74,$20,$74,$65,$78,$74,$20,$76,$61,$6C,$75,$65,$20,$61,$66,$74,$65,$72,$20,$64,$69,$73,$63,$61,$72,$64,$65,$64,$20,$70,$6F,$70
-LBL_57:
-        DC.B $03
-        DC.B $6F,$6E,$65
-LBL_58:
-        DC.B $03
-        DC.B $74,$77,$6F
-LBL_59:
-        DC.B $05
-        DC.B $74,$68,$72,$65,$65
-LBL_60:
-        DC.B $17
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$73,$65,$74
-LBL_61:
-        DC.B $15
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$73,$75,$62,$73,$63,$72,$69,$70,$74,$20,$67,$65,$74
-LBL_62:
-        DC.B $13
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$68,$61,$73,$20,$70,$72,$65,$73,$65,$6E,$74
-LBL_63:
-        DC.B $04
-        DC.B $66,$6F,$75,$72
-        DC.B $00
-LBL_64:
-        DC.B $12
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$68,$61,$73,$20,$61,$62,$73,$65,$6E,$74
-        DC.B $00
-LBL_65:
-        DC.B $1A
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$67,$65,$74,$2D,$64,$65,$66,$61,$75,$6C,$74,$20,$61,$62,$73,$65,$6E,$74
-        DC.B $00
-LBL_66:
-        DC.B $1B
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$67,$65,$74,$2D,$64,$65,$66,$61,$75,$6C,$74,$20,$70,$72,$65,$73,$65,$6E,$74
-LBL_67:
-        DC.B $11
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$6F,$76,$65,$72,$77,$72,$69,$74,$65
-LBL_68:
-        DC.B $1A
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-        DC.B $00
-LBL_69:
-        DC.B $18
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$68,$61,$73,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-        DC.B $00
-LBL_70:
-        DC.B $0B
-        DC.B $6E,$6F,$6E,$65,$78,$69,$73,$74,$65,$6E,$74
-LBL_71:
-        DC.B $1B
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$72,$65,$6D,$6F,$76,$65,$2D,$61,$62,$73,$65,$6E,$74,$20,$6E,$6F,$2D,$6F,$70
-LBL_72:
-        DC.B $13
-        DC.B $6D,$61,$70,$20,$69,$6E,$74,$20,$66,$6F,$72,$2D,$6D,$61,$70,$20,$73,$75,$6D
-LBL_73:
-        DC.B $01
-        DC.B $61
-LBL_74:
-        DC.B $05
-        DC.B $61,$70,$70,$6C,$65
-LBL_75:
-        DC.B $01
-        DC.B $62
-LBL_76:
-        DC.B $06
-        DC.B $62,$61,$6E,$61,$6E,$61
-        DC.B $00
-LBL_77:
-        DC.B $18
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$73,$65,$74
-        DC.B $00
-LBL_78:
-        DC.B $16
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$73,$75,$62,$73,$63,$72,$69,$70,$74,$20,$67,$65,$74
-        DC.B $00
-LBL_79:
-        DC.B $01
-        DC.B $7A
-LBL_80:
-        DC.B $04
-        DC.B $6E,$6F,$6E,$65
-        DC.B $00
-LBL_81:
-        DC.B $1B
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$67,$65,$74,$2D,$64,$65,$66,$61,$75,$6C,$74,$20,$61,$62,$73,$65,$6E,$74
-LBL_82:
-        DC.B $1C
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$67,$65,$74,$2D,$64,$65,$66,$61,$75,$6C,$74,$20,$70,$72,$65,$73,$65,$6E,$74
-        DC.B $00
-LBL_83:
-        DC.B $07
-        DC.B $61,$76,$6F,$63,$61,$64,$6F
-LBL_84:
-        DC.B $12
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$6F,$76,$65,$72,$77,$72,$69,$74,$65
-        DC.B $00
-LBL_85:
-        DC.B $1B
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$63,$6F,$75,$6E,$74,$20,$61,$66,$74,$65,$72,$20,$72,$65,$6D,$6F,$76,$65
-LBL_86:
-        DC.B $16
-        DC.B $6D,$61,$70,$20,$74,$65,$78,$74,$20,$66,$6F,$72,$2D,$6D,$61,$70,$20,$76,$61,$6C,$75,$65
-        DC.B $00
-LBL_87:
-        DC.B $05
-        DC.B $68,$65,$6C,$6C,$6F
-LBL_88:
-        DC.B $07
-        DC.B $2C,$20,$77,$6F,$72,$6C,$64
-LBL_89:
-        DC.B $0C
-        DC.B $68,$65,$6C,$6C,$6F,$2C,$20,$77,$6F,$72,$6C,$64
-        DC.B $00
-LBL_90:
-        DC.B $0F
-        DC.B $74,$65,$78,$74,$20,$61,$70,$70,$65,$6E,$64,$20,$73,$74,$72
-LBL_91:
-        DC.B $0D
-        DC.B $68,$65,$6C,$6C,$6F,$2C,$20,$77,$6F,$72,$6C,$64,$21
-LBL_92:
-        DC.B $10
-        DC.B $74,$65,$78,$74,$20,$61,$70,$70,$65,$6E,$64,$20,$63,$68,$61,$72
-        DC.B $00
-LBL_93:
-        DC.B $08
-        DC.B $20,$28,$61,$67,$61,$69,$6E,$29
-        DC.B $00
-LBL_94:
-        DC.B $15
-        DC.B $68,$65,$6C,$6C,$6F,$2C,$20,$77,$6F,$72,$6C,$64,$21,$20,$28,$61,$67,$61,$69,$6E,$29
-LBL_95:
-        DC.B $0B
-        DC.B $74,$65,$78,$74,$20,$63,$6F,$6E,$63,$61,$74
-LBL_96:
-        DC.B $23
-        DC.B $74,$65,$78,$74,$20,$63,$6F,$6E,$63,$61,$74,$20,$6C,$65,$61,$76,$65,$73,$20,$73,$6F,$75,$72,$63,$65,$20,$75,$6E,$63,$68,$61,$6E,$67,$65,$64
-LBL_97:
-        DC.B $0B
-        DC.B $74,$65,$78,$74,$20,$6C,$65,$6E,$67,$74,$68
-LBL_98:
-        DC.B $0E
-        DC.B $74,$65,$78,$74,$20,$63,$6D,$70,$20,$65,$71,$75,$61,$6C
-        DC.B $00
-LBL_99:
-        DC.B $04
-        DC.B $6E,$6F,$70,$65
-        DC.B $00
-LBL_100:
-        DC.B $12
-        DC.B $74,$65,$78,$74,$20,$63,$6D,$70,$20,$6E,$6F,$74,$2D,$65,$71,$75,$61,$6C
-        DC.B $00
-LBL_101:
-        DC.B $01
-        DC.B $6B
-LBL_102:
-        DC.B $02
-        DC.B $76,$31
-        DC.B $00
-LBL_103:
-        DC.B $18
-        DC.B $6E,$65,$73,$74,$65,$64,$20,$6C,$69,$73,$74,$2D,$6F,$66,$2D,$6D,$61,$70,$20,$63,$6F,$75,$6E,$74
-        DC.B $00
-LBL_104:
-        DC.B $17
-        DC.B $6E,$65,$73,$74,$65,$64,$20,$6C,$69,$73,$74,$2D,$6F,$66,$2D,$6D,$61,$70,$20,$72,$65,$61,$64
-LBL_105:
-        DC.B $02
-        DC.B $76,$32
-        DC.B $00
-LBL_106:
-        DC.B $26
-        DC.B $6E,$65,$73,$74,$65,$64,$20,$6C,$69,$73,$74,$2D,$6F,$66,$2D,$6D,$61,$70,$20,$61,$6C,$69,$61,$73,$69,$6E,$67,$20,$28,$73,$61,$6D,$65,$20,$6D,$61,$70,$29
-        DC.B $00
-LBL_107:
-        DC.B $25
-        DC.B $61,$6C,$69,$61,$73,$3A,$20,$6D,$75,$74,$61,$74,$65,$20,$76,$69,$61,$20,$62,$20,$76,$69,$73,$69,$62,$6C,$65,$20,$74,$68,$72,$6F,$75,$67,$68,$20,$61
-LBL_108:
-        DC.B $1E
-        DC.B $61,$6C,$69,$61,$73,$3A,$20,$76,$61,$6C,$75,$65,$20,$76,$69,$73,$69,$62,$6C,$65,$20,$74,$68,$72,$6F,$75,$67,$68,$20,$61
-        DC.B $00
-LBL_109:
-        DC.B $21
-        DC.B $61,$6C,$69,$61,$73,$3A,$20,$72,$65,$61,$73,$73,$69,$67,$6E,$20,$62,$20,$74,$6F,$20,$61,$20,$66,$72,$65,$73,$68,$20,$6C,$69,$73,$74
-LBL_110:
-        DC.B $27
-        DC.B $61,$6C,$69,$61,$73,$3A,$20,$72,$65,$61,$73,$73,$69,$67,$6E,$69,$6E,$67,$20,$62,$20,$6C,$65,$61,$76,$65,$73,$20,$61,$20,$75,$6E,$74,$6F,$75,$63,$68,$65,$64
-LBL_111:
-        DC.B $0A
-        DC.B $68,$65,$6C,$6C,$6F,$20,$66,$69,$6C,$65
-        DC.B $00
-LBL_112:
-        DC.B $0D
-        DC.B $73,$6D,$6F,$6B,$65,$66,$69,$6C,$65,$2E,$74,$78,$74
-LBL_113:
-        DC.B $04
-        DC.B $54,$45,$58,$54
-        DC.B $00
-LBL_114:
-        DC.B $04
-        DC.B $3F,$3F,$3F,$3F
-        DC.B $00
-LBL_115:
-        DC.B $11
-        DC.B $66,$69,$6C,$65,$20,$77,$72,$69,$74,$65,$54,$65,$78,$74,$20,$6F,$6B
-LBL_116:
-        DC.B $10
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$6F,$6B
-        DC.B $00
-LBL_117:
-        DC.B $1D
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$63,$6F,$6E,$74,$65,$6E,$74,$20,$6D,$61,$74,$63,$68,$65,$73
-LBL_118:
-        DC.B $00
-        DC.B $00
-LBL_119:
-        DC.B $0C
-        DC.B $73,$6D,$6F,$6B,$65,$62,$69,$6E,$2E,$64,$61,$74
-        DC.B $00
-LBL_120:
-        DC.B $18
-        DC.B $66,$69,$6C,$65,$20,$77,$72,$69,$74,$65,$54,$65,$78,$74,$20,$62,$69,$6E,$61,$72,$79,$20,$6F,$6B
-        DC.B $00
-LBL_121:
-        DC.B $17
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$62,$69,$6E,$61,$72,$79,$20,$6F,$6B
-LBL_122:
-        DC.B $1B
-        DC.B $66,$69,$6C,$65,$20,$62,$69,$6E,$61,$72,$79,$20,$72,$6F,$75,$6E,$64,$74,$72,$69,$70,$20,$62,$79,$74,$65,$73
-LBL_123:
-        DC.B $09
-        DC.B $61,$2F,$62,$2F,$63,$2E,$74,$78,$74
-LBL_124:
-        DC.B $05
-        DC.B $63,$2E,$74,$78,$74
-LBL_125:
-        DC.B $12
-        DC.B $66,$69,$6C,$65,$20,$6E,$61,$6D,$65,$20,$62,$61,$73,$65,$6E,$61,$6D,$65
-        DC.B $00
-LBL_126:
-        DC.B $08
-        DC.B $73,$6F,$6C,$6F,$2E,$74,$78,$74
-        DC.B $00
-LBL_127:
-        DC.B $12
-        DC.B $66,$69,$6C,$65,$20,$6E,$61,$6D,$65,$20,$6E,$6F,$2D,$73,$6C,$61,$73,$68
-        DC.B $00
-LBL_128:
-        DC.B $04
-        DC.B $64,$69,$72,$2F
-        DC.B $00
-LBL_129:
-        DC.B $18
-        DC.B $66,$69,$6C,$65,$20,$6E,$61,$6D,$65,$20,$74,$72,$61,$69,$6C,$69,$6E,$67,$20,$73,$6C,$61,$73,$68
-        DC.B $00
-LBL_130:
-        DC.B $09
-        DC.B $78,$2F,$79,$2F,$7A,$2E,$74,$78,$74
-LBL_131:
-        DC.B $05
-        DC.B $7A,$2E,$74,$78,$74
-LBL_132:
-        DC.B $14
-        DC.B $66,$69,$6C,$65,$20,$6E,$61,$6D,$65,$20,$76,$69,$61,$20,$72,$65,$74,$75,$72,$6E
-        DC.B $00
-LBL_133:
-        DC.B $18
-        DC.B $73,$6D,$6F,$6B,$65,$2D,$64,$6F,$65,$73,$2D,$6E,$6F,$74,$2D,$65,$78,$69,$73,$74,$2E,$74,$78,$74
-        DC.B $00
-LBL_134:
-        DC.B $23
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$6D,$69,$73,$73,$69,$6E,$67,$20,$72,$65,$74,$75,$72,$6E,$73,$20,$66,$61,$6C,$73,$65
-LBL_135:
-        DC.B $24
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$6D,$69,$73,$73,$69,$6E,$67,$20,$6C,$61,$73,$74,$45,$72,$72,$6F,$72,$20,$63,$6F,$64,$65
-        DC.B $00
-LBL_136:
-        DC.B $27
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$6D,$69,$73,$73,$69,$6E,$67,$20,$6C,$61,$73,$74,$45,$72,$72,$6F,$72,$20,$6D,$65,$73,$73,$61,$67,$65
-LBL_137:
-        DC.B $25
-        DC.B $65,$72,$72,$6F,$72,$20,$6C,$6F,$63,$61,$6C,$20,$63,$6F,$70,$79,$20,$28,$65,$20,$3D,$20,$6C,$61,$73,$74,$45,$72,$72,$6F,$72,$29,$20,$63,$6F,$64,$65
-LBL_138:
-        DC.B $28
-        DC.B $65,$72,$72,$6F,$72,$20,$6C,$6F,$63,$61,$6C,$20,$63,$6F,$70,$79,$20,$28,$65,$20,$3D,$20,$6C,$61,$73,$74,$45,$72,$72,$6F,$72,$29,$20,$6D,$65,$73,$73,$61,$67,$65
-        DC.B $00
-LBL_139:
-        DC.B $0C
-        DC.B $73,$6D,$6F,$6B,$65,$62,$69,$67,$2E,$64,$61,$74
-        DC.B $00
-LBL_140:
-        DC.B $16
-        DC.B $66,$69,$6C,$65,$20,$77,$72,$69,$74,$65,$54,$65,$78,$74,$20,$3E,$63,$61,$70,$20,$6F,$6B
-        DC.B $00
-LBL_141:
-        DC.B $15
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$3E,$63,$61,$70,$20,$6F,$6B
-LBL_142:
-        DC.B $22
-        DC.B $66,$69,$6C,$65,$20,$72,$65,$61,$64,$54,$65,$78,$74,$20,$3E,$63,$61,$70,$20,$63,$6F,$6E,$74,$65,$6E,$74,$20,$6D,$61,$74,$63,$68,$65,$73
-        DC.B $00
-LBL_143:
+LBL_1:
         DC.B $0E
         DC.B $63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$78
         DC.B $00
-LBL_144:
+LBL_2:
         DC.B $0E
         DC.B $63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$79
         DC.B $00
-LBL_145:
+LBL_3:
         DC.B $11
         DC.B $63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$65,$6E,$75,$6D
-LBL_146:
+LBL_4:
         DC.B $17
         DC.B $63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$6E,$65,$73,$74,$65,$64,$20,$7A,$69,$70
-LBL_147:
+LBL_5:
         DC.B $18
         DC.B $62,$61,$72,$65,$2D,$64,$65,$63,$6C,$20,$63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$78
         DC.B $00
-LBL_148:
+LBL_6:
         DC.B $1B
         DC.B $62,$61,$72,$65,$2D,$64,$65,$63,$6C,$20,$63,$74,$6F,$72,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$65,$6E,$75,$6D
-LBL_149:
+LBL_7:
         DC.B $0B
         DC.B $53,$70,$72,$69,$6E,$67,$66,$69,$65,$6C,$64
-LBL_150:
+LBL_8:
         DC.B $0B
         DC.B $66,$69,$65,$6C,$64,$20,$73,$65,$74,$20,$78
-LBL_151:
+LBL_9:
         DC.B $14
         DC.B $66,$69,$65,$6C,$64,$20,$73,$65,$74,$20,$6E,$65,$73,$74,$65,$64,$20,$7A,$69,$70
         DC.B $00
-LBL_152:
+LBL_10:
         DC.B $14
         DC.B $66,$69,$65,$6C,$64,$20,$73,$65,$74,$20,$6E,$65,$73,$74,$65,$64,$20,$73,$74,$72
         DC.B $00
-LBL_153:
+LBL_11:
         DC.B $15
         DC.B $63,$6F,$70,$79,$20,$69,$6E,$64,$65,$70,$65,$6E,$64,$65,$6E,$63,$65,$20,$70,$2E,$78
-LBL_154:
+LBL_12:
         DC.B $15
         DC.B $63,$6F,$70,$79,$20,$69,$6E,$64,$65,$70,$65,$6E,$64,$65,$6E,$63,$65,$20,$71,$2E,$78
-LBL_155:
+LBL_13:
         DC.B $1C
         DC.B $63,$6F,$70,$79,$20,$69,$6E,$64,$65,$70,$65,$6E,$64,$65,$6E,$63,$65,$20,$70,$2E,$61,$64,$64,$72,$2E,$7A,$69,$70
         DC.B $00
-LBL_156:
+LBL_14:
         DC.B $1C
         DC.B $63,$6F,$70,$79,$20,$69,$6E,$64,$65,$70,$65,$6E,$64,$65,$6E,$63,$65,$20,$71,$2E,$61,$64,$64,$72,$2E,$7A,$69,$70
         DC.B $00
-LBL_157:
+LBL_15:
         DC.B $17
         DC.B $72,$65,$63,$6F,$72,$64,$20,$72,$65,$74,$75,$72,$6E,$20,$64,$65,$66,$61,$75,$6C,$74,$20,$78
-LBL_158:
+LBL_16:
         DC.B $13
         DC.B $72,$65,$63,$6F,$72,$64,$20,$72,$65,$74,$75,$72,$6E,$20,$66,$69,$65,$6C,$64
-LBL_159:
+LBL_17:
         DC.B $15
         DC.B $72,$65,$63,$6F,$72,$64,$20,$70,$61,$72,$61,$6D,$20,$62,$79,$20,$76,$61,$6C,$75,$65
-LBL_160:
+LBL_18:
         DC.B $14
         DC.B $65,$6E,$75,$6D,$20,$69,$6E,$74,$2D,$3E,$65,$6E,$75,$6D,$20,$76,$61,$6C,$69,$64
         DC.B $00
-LBL_161:
+LBL_19:
         DC.B $18
         DC.B $65,$6E,$75,$6D,$20,$65,$6E,$75,$6D,$2D,$3E,$69,$6E,$74,$20,$72,$6F,$75,$6E,$64,$74,$72,$69,$70
         DC.B $00
-LBL_162:
+LBL_20:
         DC.B $06
         DC.B $61,$62,$63,$64,$65,$66
         DC.B $00
-LBL_163:
+LBL_21:
         DC.B $03
         DC.B $61,$62,$63
-LBL_164:
+LBL_22:
         DC.B $1C
         DC.B $73,$74,$72,$69,$6E,$67,$28,$33,$29,$2D,$72,$65,$74,$75,$72,$6E,$20,$41,$42,$49,$20,$70,$61,$74,$68,$20,$6F,$6B
         DC.B $00
-LBL_165:
+LBL_23:
         DC.B $0A
         DC.B $73,$6D,$6F,$6B,$65,$20,$64,$6F,$6E,$65
         DC.B $00
-LBL_166:
-        DC.B $17
-        DC.B $6C,$69,$73,$74,$20,$69,$6E,$64,$65,$78,$20,$6F,$75,$74,$20,$6F,$66,$20,$72,$61,$6E,$67,$65
         ; constant pool: enum value tables
-LBL_167:
-        DC.L $00000000
-        DC.L $00000001
-        DC.L $00000002
-LBL_168:
+LBL_24:
         DC.L $00000005
         DC.L $00000006
         DC.L $00000007

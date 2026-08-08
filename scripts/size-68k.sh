@@ -73,15 +73,21 @@ measure toolboxgui --testapi testsuite/kit.cla \
 # comment used to describe are gone -- cgBigTmpSlots/cgTmpSlots bumped to
 # clarusc's own observed need, three real backend gaps fixed: discarded
 # str/rec-returning call statements, `return <- nested call` for string
-# returns, and depth-2 call-result materialization). Self-emit now fails
-# LATER and DEEPER instead: cgPackProgram's per-segment fixed cost
-# (cgPoolSize, clarusc's own constant pool -- every string literal in the
-# whole compiler, duplicated into EVERY 32KB CODE segment by the current
-# packing design) is ALONE already ~32.8KB, bigger than the entire 32KB
-# segment budget, so no function -- however small -- can ever be packed.
-# This is a structural packing-model limitation (whole-pool-per-segment
-# duplication doesn't scale to a compiler-sized program), not a "bump a
-# constant" fix, and is out of Task 3's scope -- see its own task report.
+# returns, and depth-2 call-result materialization). Task 13 then closed
+# the pool-duplication blocker Task 3 found next (cgPackProgram used to
+# charge every segment the FULL constant pool -- clarusc's own pool alone
+# was ~32.8KB, bigger than the entire 32KB segment budget -- see Task 3's
+# own report); each segment now carries only the pool entries its own
+# packed functions actually reference (cgPackProgram/cg68Measure,
+# clarusc/cg68k.cla). Self-emit now fails LATER and DEEPER again, on a
+# THIRD, unrelated structural limit: a single function, fpIntrCall
+# (cprint.cla's ~1258-line C-target intrinsic-call dispatcher), compiles
+# to ~105KB of native 68k code alone -- more than 3x the whole 32KB
+# segment budget, so no packing strategy (pool-related or not) can ever
+# fit it in one segment. Splitting an oversized single function across
+# segments (or restructuring fpIntrCall into several smaller functions)
+# is a different, larger piece of work than pool segmentation -- flagged
+# as a new follow-on item, not attempted here (see Task 13's own report).
 # Ordered last so the other two targets' SIZE lines still print before
 # this one aborts the script (set -e).
 measure clarusc clarusc/main.cla
