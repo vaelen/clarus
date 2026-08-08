@@ -8,6 +8,7 @@
 internal/mactest/probe/build/
 internal/mactest/uiprobe/build/
 /vasm
+/snow
 
 # Inside Macintosh reference PDFs (local only, never committed)
 /inside-macintosh-v1
