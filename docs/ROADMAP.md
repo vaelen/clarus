@@ -1302,6 +1302,11 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   entries it rewrote) and the cprint-Mac demotion (next paragraph). Next:
   **5f** (Mac-resident clarusc, Retro68 retirement, compilation cache,
   peephole/regalloc buy-back — inventory in the 5e entry above).
+  **Decomposed 2026-08-08** into four ordered sub-phases, each with its
+  own spec/plan/branch, rather than one big 5f: **peephole** (native-68k
+  codegen quality buy-back, first — landed, see the phase entry below) →
+  **Mac-resident clarusc** (next) → **compilation cache** → **Retro68
+  retirement** (last).
 
   **cprint/Retro68 Mac-lane test demotion (pack3-standardfile phase,
   2026-08-07):** the seven `internal/mactest` tests that boot through
@@ -1317,6 +1322,83 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (`rt_ext_mac.inc`, `scripts/build-mac.sh`) stays deferred to **5f**
   Retro68-retirement, not this phase. Full phase record: Task 6's ledger
   entry, `.superpowers/sdd/2026-08-07-pack3-standardfile/`.
+
+- **Peephole68k (branch `peephole68k`, 2026-08-08 — first sub-phase of
+  the decomposed 5f above; not yet merged to main, merge is Andrew's
+  call): DONE, pending merge.** Buys back native-68k code quality lost
+  to 5d's deliberately naive codegen, ahead of Mac-resident clarusc's
+  own self-compile workload. **Pattern census:** landed — 1 (push/pop
+  pair elimination), 2a (load retarget; the 2b dead-move arm was deleted
+  as unreachable-by-construction, Task 5), 4 (dead `CLR.L` elimination,
+  4 real fire sites), 5 (`MOVEQ` + `ADDA.W` strength reduction, a new
+  `OpMoveq` encoder entry). **Dropped:** pattern 3 (stack-cleanup
+  batching) — proved structurally unreachable under this backend's
+  calling convention: every nonzero `cgCleanupStack` is followed by the
+  very next call's own argument push (`AmPreDec` A7, since zero registers
+  are callee-saved, any value surviving a nested call must go through the
+  stack), which `peepIsA7Neutral` correctly rejects, so no A7-neutral
+  window ever exists between two cleanups without crossing the call
+  itself — confirmed structurally (every call-emission site) and
+  empirically (corpus-wide grep, zero hits; two hand probes); ratified by
+  Andrew. Full analysis: `.superpowers/sdd/2026-08-08-peephole68k/
+  task-6-report.md`.
+
+  **Measured (from the Task 1 baseline):** size — coregui
+  249918/8 segments → 213054/7 (−14.8%, and one fewer CODE segment),
+  toolboxgui 293652/9 → 252082/8 (−14.2%, also one fewer segment); the
+  third target (`clarusc/main.cla` self-emit68k) stays unmeasurable this
+  phase on a pre-existing cg68k gap (below). **Controlled timing**
+  (same tree, same session, three foreground runs each, on the
+  lexer-only compiler-shaped bench — the bench-meter recalibration
+  below is why this is the only trustworthy comparison): peephole ON
+  15818/15818/15818 ticks vs. `--nopeep` 18080/18080/18080 ticks, ≈12.5%
+  faster. **Bench-meter recalibration lesson:** the tick meter is
+  deterministic per binary within one measurement session, but even a
+  byte-identical binary can read a different absolute tick count across
+  separate sessions (host/emulator wall-clock drift) — cross-session
+  deltas against old baselines are not trustworthy; only a same-session
+  peephole-vs-`--nopeep` A/B is. **`--nopeep` isolation proof:** the
+  current compiler's `emit68k --nopeep` output is byte-identical to the
+  pre-branch (committed-snapshot) compiler's plain `emit68k` output, on
+  both a single-file UI fixture (`testdata/cg68k/tickprobe.cla`) and the
+  full lexer-bench composition (`clarusc/lib.cla`+`tok.cla`+`lex.cla`) —
+  proving the peephole plumbing is a true no-op when disabled. The 4
+  frozen UI scenarios' framebuffer/trace goldens stayed BYTE-IDENTICAL
+  throughout (behavior-unchanged gate); per-scenario native times for the
+  record (regression guard, ~3.5s fixed boot overhead + layout
+  sensitivity, not a headline number): `smoke_bounce` 7.90s total,
+  `smoke_mandel` build 0.41s/boot 12.27s, `texteditor` build 0.40s/boot
+  8.81s, `bookmarks` build 0.42s/boot 15.40s.
+
+  **Pre-existing cg68k gaps this phase found (recorded as inputs to
+  Mac-resident clarusc, not fixed here):** `clarusc/main.cla` itself
+  cannot `emit68k` — "too many str/rec temps" (`cgBigTmpSlots`), then,
+  once bumped, "`cgPushArgs`: unaddressable, unmaterializable KStr/KRec
+  argument" (Task 1); the same gap class (a freshly-concatenated string
+  literal passed directly as a call argument) also blocks clarusc's own
+  lexer natively, worked around with one approved one-line hoist in
+  `clarusc/lex.cla` (bind the concatenation to a local var first, comment
+  names the gap) — roughly 14 more `parse.cla` `parseErrorf(...)` call
+  sites have the identical shape and are deliberately NOT fixed here
+  (Task 2). **Caller-cleans footnote:** 5d's calling-convention spec gave
+  three justifications for caller-cleans (no RTD on the 68000, Pascal
+  results ping through memory, and caller-cleans lets peephole batch
+  stack pops); this phase's Task 6 found the third one unrealizable under
+  the D0-staged immediate-push argument convention described above — the
+  other two still stand. **Deferred minors** (future-phase follow-up, not
+  blocking): negative-immediate `MOVEQ` encoding has no executable
+  coverage (Clarus never constant-folds negative literals, so no fixture
+  produces a negative `AmImm` `MOVE` to `Dn`) — revisit when constant
+  folding lands; the `ADDA` 32767/32768 boundary is unfixtured; the
+  `parse.cla` gap sites above.
+
+  T2 green (`scripts/test-merge.sh`'s three components, run separately,
+  foreground): T1 body ~15s, `internal/selfhost` ~89s, gated
+  `internal/mactest` native lane ~130s. Design:
+  `docs/superpowers/specs/2026-08-08-peephole68k-design.md` ("Outcome"
+  section); plan: `docs/superpowers/plans/2026-08-08-peephole68k.md`;
+  full task-by-task ledger + reports:
+  `.superpowers/sdd/2026-08-08-peephole68k/`.
 
 - **Known-unexercised runtime surface (test-suite-review Task 13,
   2026-08-04):** a coverage-honesty audit — every `func nat_` fallback in

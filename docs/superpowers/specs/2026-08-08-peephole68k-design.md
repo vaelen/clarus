@@ -191,3 +191,244 @@ for the record (regression guard, ~3.5s fixed boot overhead acknowledged).
 Remaining 5f sub-phases in order: Mac-resident clarusc (next; its brainstorm
 inherits post-peephole timing), compilation cache, Retro68 retirement.
 Regalloc and `.B` branch relaxation only if measurement demands them.
+
+## Outcome (2026-08-08)
+
+9 tasks, branch `peephole68k`. Not yet merged to main — merge is Andrew's
+call (`superpowers:finishing-a-development-branch`).
+
+### Pattern census
+
+**Landed:**
+
+1. **Pattern 1 — push/pop pair elimination** (Task 4): a value pushed then
+   immediately popped back (across an intervening, provably A7-neutral
+   window) retargets the pop's destination straight from the push's
+   source, deleting both. Dominant win — 229 pushes vs. 42 pops in the
+   naive stack machine's own emission was the phase's opening observation.
+2. **Pattern 2a — load retarget** (Task 5): a simple D0 load immediately
+   followed by a move that fully consumes it retargets the load's
+   destination directly, deleting the intermediate move. **Pattern 2b**
+   (a sibling dead-move arm) was drafted but proved unreachable by
+   construction against the real corpus (a reviewer multiset audit showed
+   every observed golden delta was attributable to 2a alone) — deleted
+   rather than shipped as untested dead code, after one fix round.
+3. **Pattern 4 — dead `CLR.L` elimination** (Task 7): a `CLR.L` whose
+   destination is overwritten before being read is deleted. Small but
+   real: 4 fire sites (2 in the fixture, 2 in the corpus —
+   `nat_CoreSetLastErr`, `caseFormEdit`).
+4. **Pattern 5 — `MOVEQ` + `ADDA.W` strength reduction** (Task 8): a
+   `MOVE.L #imm,Dn` with `-128 <= imm <= 127` narrows to the 2-byte
+   `MOVEQ`; an `ADDA.L #imm,An` with `0 <= imm <= 32767` narrows to the
+   4-byte `ADDA.W`. Required one new encoder entry, `OpMoveq`, in
+   `asm68k.cla` (opcode word, no extension words, listing text). This
+   was the first pattern to shrink CODE segments outright (both suite
+   GUIs dropped a segment), not just bytes in place. Interplay with
+   patterns 1/2a (a cross-sweep "starvation" risk where a later-sweep
+   `MOVEQ` stops matching 1/2a's own `OpMove`-shaped guards) was
+   mitigated by teaching the shared `peepIsSimpleLoadToD0` helper to
+   recognize `OpMoveq`-to-D0 as an equally valid simple load — unexercised
+   by the current corpus (1/2a and 5 already collapse in the same sweep
+   today) but correct and cheap insurance for a future codegen shape.
+
+**Dropped:** **Pattern 3 — stack-cleanup batching** (Task 6), ratified by
+Andrew (2026-08-08). Proved structurally unreachable under this backend's
+calling convention, not merely rare: every nonzero `cgCleanupStack` call
+site's very next real instruction is unconditionally a push (`AmPreDec`
+A7) — because the backend keeps zero callee-saved registers, any value
+that must survive a nested call (e.g. `cgArith`'s D1 stash before
+evaluating the right operand) has no register-only path and must go
+through the stack. `peepIsA7Neutral` correctly excludes `AmPreDec`, so no
+A7-neutral window ever exists between two cleanups without crossing the
+call itself. Confirmed both structurally (every `cgCleanupStack` call
+site read directly: `cgPushArgs`, `cgCallFnScalar`/`cgCallFnInto`/
+`cgCallRuntime`, `cgPushArgMaterialized`/`cgMaterializeCallResult`,
+`cgEmitCallbackGlue`, `cgForListStmt`/`cgForMapStmt`) and empirically
+(corpus-wide grep over every committed `testdata/cg68k/*.s` golden with a
+strictly looser proxy pattern than the real whitelist — zero hits; two
+hand-built probe fixtures, both breaking at the first hop). Full
+analysis: `.superpowers/sdd/2026-08-08-peephole68k/task-6-report.md`.
+Revisit only alongside a future regalloc/ABI phase that defers or batches
+argument pushes across adjacent calls — it falls out nearly free there.
+
+### Measured numbers
+
+**Size** (deterministic, host-only, `scripts/size-68k.sh`; cumulative from
+the Task 1 baseline):
+
+| target | baseline | final | delta |
+|---|---|---|---|
+| coregui | 249918 bytes / 8 segments | 213054 bytes / 7 segments | −14.8%, and one fewer CODE segment |
+| toolboxgui | 293652 bytes / 9 segments | 252082 bytes / 8 segments | −14.2%, and one fewer CODE segment |
+
+(The third target, `clarusc/main.cla` self-`emit68k`, stays unmeasurable
+this phase — see "Pre-existing gaps found" below.)
+
+**Timing — the controlled peephole-vs-`--nopeep` comparison.** The
+bench-meter recalibration below is exactly why this, not a delta against
+an old baseline, is the headline number: the current-tree lexer-only
+compiler-shaped bench (`testdata/bench/parsebench.cla`, composition
+`clarusc/lib.cla`+`tok.cla`+`lex.cla`+`toolbox/events.cla`) was built
+twice from the SAME tree in the SAME session — once `emit68k` (peephole
+on, the default) and once `emit68k --nopeep` — and each binary run three
+times foreground via `LaunchAPPL`/Mini vMac directly (not through
+`internal/mactest`'s gated `TestParseBench68k`, whose own 8-minute-per-run
+`RunMac` timeout budget doesn't fit six back-to-back runs in one
+session):
+
+- Peephole ON: **15818 / 15818 / 15818** ticks (three runs, ~4m26s wall
+  each).
+- `--nopeep`: **18080 / 18080 / 18080** ticks (three runs, ~5m04s wall
+  each).
+- **≈12.5% faster with the peephole pass on**, on this tree, measured the
+  honest way.
+
+Both readings are exactly reproducible within their own session (zero
+run-to-run spread) — consistent with Task 7/8's own finding that the tick
+meter is deterministic *per binary*.
+
+### Bench-meter recalibration lesson (Tasks 7-9)
+
+Task 7 first found ~15% apparent run-to-run noise (14157/16285/16285 on
+what should have been one binary); Task 8 re-measured the SAME binary
+three times and got 15818/15818/15818 — zero spread — showing the earlier
+"noise" was actually a different binary (a different tree state), not
+jitter. Task 9 adds one more data point that sharpens the lesson further:
+building the `--nopeep` composition today and byte-comparing it against
+what the pre-branch (committed-snapshot) compiler emits for the identical
+source (`clarusc/lib.cla`+`tok.cla`+today's already-hoisted `lex.cla`)
+confirms the two binaries are **byte-identical** — yet Task 2's own
+original baseline for this same byte-identical code, measured in an
+earlier session, was 17175-17295 ticks, not today's 18080. So even a
+byte-for-byte identical binary can read a different absolute tick count
+across separate measurement sessions (host load, Mini vMac wall-clock
+timing drift — 68000 instruction timing itself doesn't depend on absolute
+load addresses). **The upshot: cross-session tick deltas against an old
+baseline are not trustworthy evidence of a codegen change, only same-
+session, same-tree, flag-toggled A/B comparisons are** — exactly the
+protocol this task's controlled bench above follows, and the reason the
+phase's headline timing claim is peephole-vs-`--nopeep`, not
+peephole-vs-Task-2.
+
+### `--nopeep` isolation proof
+
+Two independent byte-compares, both showing the flag is a true no-op when
+set, confirming the peephole plumbing (the `cgEmitFunc` hook, `peep68k.cla`
+itself, the `asm68k.cla` additions, `main.cla`'s flag parsing) never
+changes emitted code when disabled:
+
+```
+# boot = pre-branch compiler (committed clarusc/clarusc.c, unregenerated
+# at this point in the task — predates this whole branch)
+cc -O1 -I runtime/host -o /tmp/boot clarusc/clarusc.c runtime/host/rt.c
+
+# 1. single-file UI fixture
+/tmp/boot emit68k -o /tmp/iso_boot/tickprobe.bin testdata/cg68k/tickprobe.cla
+/tmp/cur  emit68k --nopeep -o /tmp/iso_nopeep/tickprobe.bin testdata/cg68k/tickprobe.cla
+cmp /tmp/iso_boot/tickprobe.bin /tmp/iso_nopeep/tickprobe.bin   # => identical
+
+# 2. the lexer-bench composition (exercises the lex.cla hoist too)
+/tmp/boot emit68k -o /tmp/bench_boothoist/parsebench.bin \
+    clarusc/lib.cla clarusc/tok.cla clarusc/lex.cla toolbox/events.cla \
+    testdata/bench/parsebench.cla
+/tmp/cur  emit68k --nopeep -o /tmp/bench_nopeep/parsebench.bin \
+    clarusc/lib.cla clarusc/tok.cla clarusc/lex.cla toolbox/events.cla \
+    testdata/bench/parsebench.cla
+cmp /tmp/bench_boothoist/parsebench.bin /tmp/bench_nopeep/parsebench.bin  # => identical
+```
+
+(`cur` is the current-tree two-stage-bootstrapped compiler.) Both
+comparisons came back byte-identical. The second is the stronger proof:
+`boot` (main's cg68k, no peephole machinery at all) compiling today's
+`lex.cla` (which DOES carry the Task 2 hoist) is exactly "hoist only, no
+peephole" — matching `--nopeep`'s own claimed behavior — and the two
+outputs match exactly.
+
+### Scenario re-measure (gate, not a timing headline)
+
+`CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+'TestUiScenariosOn68k|TestSmokeBounceOn68k' -count=1 -v -timeout 30m`: all
+4 frozen scenarios PASS, framebuffer/trace goldens BYTE-IDENTICAL to their
+blessed goldens (the required gate — codegen changed, the screen did not).
+Per-scenario native times, recorded for the regression-guard record only
+(~3.5s fixed boot overhead + binary-layout sensitivity, per the bench-meter
+lesson above — not to be read as a peephole timing claim):
+
+| scenario | build | boot |
+|---|---|---|
+| smoke_bounce | — (single total 7.90s) | — |
+| smoke_mandel | 0.41s | 12.27s |
+| texteditor | 0.40s | 8.81s |
+| bookmarks | 0.42s | 15.40s |
+
+### Snapshot regeneration
+
+Followed `internal/selfhost/fixedpoint_test.go`'s Go-free recipe exactly
+(boot from the old snapshot → emit current source → build current →
+re-emit `clarusc/clarusc.c`). `TestSnapshotFixedPoint`: **PASS** — fixed
+point holds (gen1 == gen2, 4157567 bytes) with the peephole pass compiled
+into the snapshot compiler itself.
+
+### Pre-existing gaps found this phase (inputs to Mac-resident clarusc)
+
+Neither is a peephole68k design question, and neither was fixed beyond
+the one approved one-line hoist below — both are recorded as scoping
+input for the Mac-resident-clarusc phase, which needs clarusc to
+self-host natively:
+
+- **`clarusc/main.cla` cannot `emit68k` at all** (Task 1): "too many
+  str/rec temps needed in one statement" (`cgBigTmpSlots`), and once that
+  constant is bumped, a second, deeper gap — "`cgPushArgs`: unaddressable,
+  unmaterializable KStr/KRec argument". `scripts/size-68k.sh` measures
+  `clarusc` last and tolerates this failure by design.
+- **The same gap class blocks clarusc's own lexer** (Task 2): a
+  freshly-concatenated string literal passed directly as a call argument
+  (`clarusc/lex.cla:617`'s `emitDiag(..., "unexpected character '" + b +
+  "'")`) trips the identical `cgPushArgs` error the moment anything calls
+  `lexAll`/`lexNext` natively. Andrew approved ONE hoist (bind the
+  concatenation to a local `unexpMsg` var first, comment names the gap)
+  to unblock this phase's bench; `clarusc/parse.cla` has roughly 14 more
+  `parseErrorf(...)` call sites with the identical shape, deliberately
+  left unfixed (patching the code generator itself, not one call site at
+  a time, is Mac-resident clarusc's job).
+
+### Caller-cleans footnote
+
+5d's design spec gave three justifications for choosing caller-cleans
+(`docs/superpowers/specs/2026-07-30-native-5d-codegen68k-design.md`): no
+RTD on the 68000, Pascal-convention results ping through memory, and
+"caller-cleans lets peephole batch stack pops". Task 6's pattern-3
+analysis (above) shows the third justification does not hold in practice
+— this backend's D0-staged, push-per-argument, zero-callee-saved-register
+convention means a cleanup is never followed by an A7-neutral window, so
+no batching opportunity exists to buy back. The other two justifications
+(no RTD; Pascal memory-passed results) are untouched by this finding and
+still stand as the real reasons for the convention.
+
+### Deferred minors (for a future phase, not blocking)
+
+- Negative-immediate `MOVEQ` encoding (`sv & 0xFF` for `sv < 0`,
+  hand-verified `0x76FF` for `MOVEQ #-1,D3`) has no executable coverage —
+  Clarus never constant-folds negative literals, so no fixture can
+  produce a negative `AmImm` `MOVE` to `Dn` today. Revisit when constant
+  folding lands.
+- No `ADDA` 32767/32768 boundary fixture.
+- The `parse.cla` gap sites named above.
+
+### Verification
+
+- Per-pattern golden fixtures under `testdata/cg68k/`, vasm `-no-opt`
+  round-trip on every rewritten listing (including the new `OpMoveq`),
+  determinism suite: all green throughout.
+- T1 (`--smoke` where the task touched `runtime/`/`clarusc/`) after every
+  task; T2 (`scripts/test-merge.sh`, run as its three component commands
+  separately, foreground) at phase end: **PASS** — T1 body ~15s,
+  `internal/selfhost` ~89s, gated `internal/mactest` native lane ~130s
+  (4 frozen scenarios + `TestRealEventLoopTickOn68k` + core/toolbox suite
+  GUI boots + native codegen tests + runerr/abort + resource parity, 0
+  FAIL).
+
+Full task-by-task detail:
+`.superpowers/sdd/2026-08-08-peephole68k/task-{1..9}-report.md` (ledger:
+same directory's `progress.md`); plan:
+`docs/superpowers/plans/2026-08-08-peephole68k.md`.
