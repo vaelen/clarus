@@ -665,6 +665,23 @@ git commit -m "feat(macresident): System 7 required-suite Quit AppleEvent handli
 
 ---
 
+### Task 14: Split `fpIntrCall` + near-limit function audit (added 2026-08-09 from Task 13's finding; EXECUTE BEFORE TASK 10)
+
+**Files:**
+- Modify: `clarusc/cprint.cla` (`fpIntrCall` — compiles to ~105KB native, the ONLY function over the 32,760B segment budget in clarusc's own composition; split at source level into cohesive pieces, e.g. by intrinsic family, each under ~24KB compiled to leave headroom)
+- Modify: the `TestSelfEmit68k` pin from Task 13 (flip it to assert FULL self-emit success at default seglimit)
+
+**Interfaces:**
+- Consumes: Task 13's pool segmentation; its report's `--seglimit` sweep evidence.
+- Produces: `clarusc emit68k ... clarusc/main.cla` succeeds at the DEFAULT segment limit; `scripts/size-68k.sh` prints the `SIZE clarusc ...` line (record it — this is the phase's Mac-binary size baseline, feeding the SIZE-resource number in Task 10). Also: a one-table audit in the report of every function ≥24KB compiled (from the emitter's own per-function sizes — cg68k knows them; find where, e.g. `cgFuncFrameSizes`-adjacent bookkeeping or the pack pass) so the next near-limit landmine is known before it fires.
+
+- [ ] **Step 1: Read `fpIntrCall` and split mechanically** — it is cprint's intrinsic-dispatch printer; split by dispatch ranges into `fpIntrCallN` helpers called from a thin dispatcher, preserving output byte-for-byte (this is a pure code-motion refactor of compiler source: the C it PRINTS must not change).
+- [ ] **Step 2: Differential guard** — two-stage-bootstrapped current compiler before/after the split emits byte-identical C for clarusc itself (`emit` of main.cla) and byte-identical `.bin` for tickprobe (`emit68k`) — code motion in the printer must be invisible in both output lanes.
+- [ ] **Step 3: Self-emit at default seglimit + SIZE line** — run it, record `SIZE clarusc ...`, flip `TestSelfEmit68k` to full success, run the near-limit audit table.
+- [ ] **Step 4: T1 and commit** — `scripts/test-task.sh --smoke` foreground; commit with the standing trailer.
+
+---
+
 ## Self-review notes (kept honest)
 
 - Spec §1 acceptance → Task 11 (byte-compare + boot); §2 gaps → Tasks 2–3; §3 `--bake`+named resources → Task 5; §3 minimal file surface + seam → Tasks 6–7; §4 resolution → Tasks 8+10 (`feReadSource`); §5 paths → Task 8; §6 output write → Tasks 7 (writeRes) + 9 (fork split) + 10 (call site); §7 memory posture → Tasks 1, 3, 10 (budget closed with real numbers); §8 T1 items → Tasks 2,5,7,8; harness spike → Task 4; T2 → Task 11; non-goals respected (no cache, no Retro68 changes, no extra resource surface).
