@@ -648,6 +648,23 @@ git commit -m "feat(macresident): System 7 required-suite Quit AppleEvent handli
 
 ---
 
+### Task 13: Constant-pool segmentation (added 2026-08-09 from Task 3's structural finding; EXECUTE BEFORE TASK 10)
+
+**Files:**
+- Modify: `clarusc/cg68k.cla` (`cgPackProgram` + pool emission/label-reservation sites; see Task 3's report for the discovery trace), possibly `clarusc/asm68k.cla` (if label/relayout plumbing needs a per-segment notion it lacks)
+- Create: at least one committed self-check that pins the capability (preferred: a host-side Go test asserting `emit68k` of clarusc's own CLI composition succeeds — the two-stage bootstrap recipe in Global-facts — e.g. `TestSelfEmit68k` in `internal/cg68k` or `internal/selfhost`; it's a seconds-scale host run)
+
+**Interfaces:**
+- Consumes: Task 3's report (`task-3-report.md`) — the blocker: `cgPackProgram` duplicates the ENTIRE constant pool into every CODE segment, and clarusc's own pool is 32.8KB against the 32,760-byte segment budget, so nothing packs.
+- Produces: per-segment constant pools — each segment carries only the constants its own packed functions reference (dedup within a segment; a constant referenced from N segments appears in those N pools — 68k PC-relative data access cannot cross segments, so per-referencing-segment duplication is the correct shape, verify that premise in the code before building on it). Gate: `scripts/size-68k.sh` prints a real `SIZE clarusc ...` line; the new self-emit test passes.
+
+- [ ] **Step 1: Read the current pool model end to end** — reservation (`cgReserveStrLitLabels`, `cgReserveUiPoolLabels`), emission, and how `cgPackProgram` charges pool bytes to segments. Write the two-paragraph design (what owns a constant, how labels resolve per segment) in the report BEFORE coding.
+- [ ] **Step 2: Implement + fixture.** The at-scale fixture is clarusc itself (the self-emit test). If a small synthetic multi-segment shared-constant fixture is cheap to add to `testdata/cg68k/`, add it with a golden; if it needs contrived >32KB literals, skip it and say so — the self-emit test is the pin.
+- [ ] **Step 3: Behavior gates.** Frozen UI scenario trace/PBM goldens: byte-identical (behavior unchanged). `internal/cg68k` `.s` goldens: single-segment fixtures should be UNCHANGED (their one segment already held the whole pool); any multi-segment golden churn must be explainable as pool ownership/ordering, eyeballed and reported. coregui/toolboxgui sizes (`scripts/size-68k.sh`): record before/after — per-segment pools should SHRINK multi-segment binaries (less duplication); growth is a red flag to explain.
+- [ ] **Step 4: T1 and commit** — `scripts/test-task.sh --smoke` foreground, then commit (standing trailer).
+
+---
+
 ## Self-review notes (kept honest)
 
 - Spec §1 acceptance → Task 11 (byte-compare + boot); §2 gaps → Tasks 2–3; §3 `--bake`+named resources → Task 5; §3 minimal file surface + seam → Tasks 6–7; §4 resolution → Tasks 8+10 (`feReadSource`); §5 paths → Task 8; §6 output write → Tasks 7 (writeRes) + 9 (fork split) + 10 (call site); §7 memory posture → Tasks 1, 3, 10 (budget closed with real numbers); §8 T1 items → Tasks 2,5,7,8; harness spike → Task 4; T2 → Task 11; non-goals respected (no cache, no Retro68 changes, no extra resource surface).
