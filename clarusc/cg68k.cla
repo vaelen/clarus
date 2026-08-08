@@ -551,6 +551,35 @@ const cgTmpSlots: int = 14
 // testdata/run/bigtmp_ceiling.cla, which exercises exactly 16 so an
 // accidental future shrink fails there, loudly, instead of only being
 // caught by self-hosting clarusc again.
+//
+// Cost/review note (Task 3 fix round): both pools are reserved
+// UNCONDITIONALLY in every function's frame (this file's own "cheap if
+// unused" framing above), so this bump's real per-function cost is
+// +6144B (cgBigTmpSlots 4->16, x512B/slot) + 24B (cgTmpSlots 8->14,
+// x4B/slot) = +6168B/function, paid by EVERY reachable function whether
+// or not it ever touches either pool. Quantified before accepting the
+// flat design over per-function sizing (task-3-report.md's own
+// "Fix round: frame-cost quantification" has the full numbers; summary
+// here since a future reader of just this const deserves the headline):
+// this is a STACK reservation, not a CODE-size or heap cost -- it changes
+// only the immediate operand of each function's own `LINK A6,#-N`
+// (same instruction bytes either way; confirmed zero effect on the
+// per-segment 32KB CODE budget) and the deepest-call-chain SetApplLimit
+// reserve cgStackHeuristic below computes automatically. That reserve,
+// re-measured after this bump: tickprobe 199,676B, coregui 224,588B,
+// toolboxgui 245,248B, clarusc's own self-emit composition (measured
+// directly since packing still fails on an unrelated pool-segmentation
+// gap) 2,220,906B (~2.17MB) -- all a small fraction of both the phase's
+// 128MB Snow acceptance machine and the ~48-64MB SIZE-resource compile
+// partition the plan already budgets (Task 10). A corpus scan (clarusc's
+// own 1611-function self-emit reachable set) found 69% of functions use
+// ZERO big-temp slots and 93% use <=2 of the 16 reserved -- real waste,
+// but bounded by call-chain DEPTH (which stays small above), not by
+// total function count, so it doesn't compound the way it might look at
+// first glance. Recommendation on record: keep the flat reservation
+// (simpler, no correctness risk found at this target); revisit only if
+// a future phase re-targets a memory-constrained machine (the pre-Snow-
+// pivot 4MB Mac Plus scope Task 1 originally assumed).
 const cgBigTmpSlots: int = 16
 const cgBigTmpSize: int = 512
 
