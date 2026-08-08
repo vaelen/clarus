@@ -76,6 +76,51 @@ func peepIsSimpleLoadToD0(i: int): bool {
     return false
 }
 
+// peepPassPushPop -- pattern 1 (spec "Pattern set" #1):
+//   MOVE.L D0,-(A7) / <simple load -> D0> / MOVE.L (A7)+,D1
+//     ==>
+//   MOVE.L D0,D1    / <same load>
+// Left lands in D1 up front (preserving the D1=left/D0=right operator
+// contract -- CMP.L D0,D1's direction depends on it), the load is
+// untouched, the pop dies. The 14+12-cycle push/pop becomes a 4-cycle
+// register move; 3 instructions -> 2. Only fires when the middle item
+// is a whitelisted simple load (peepIsSimpleLoadToD0): those never read
+// D1 and never touch A7, so the early D1 write and the deleted A7
+// traffic are both invisible to it. peepNextReal only skips comments/
+// dead items, so no barrier can hide inside the window.
+func peepPassPushPop(startIdx: int): bool {
+    var i: int
+    var j: int
+    var k: int
+    var it: A68Item
+    var didChange: bool
+
+    didChange = false
+    i = startIdx
+    while i < a68Items.count {
+        it = a68Items[i]
+        if it.kind == KindInstr and it.op == OpMove and it.size == 4 and it.sm == AmDn and it.sr == 0 and it.dm == AmPreDec and it.dr == 7 {
+            j = peepNextReal(i)
+            if j != -1 and peepIsSimpleLoadToD0(j) {
+                k = peepNextReal(j)
+                if k != -1 {
+                    if a68Items[k].kind == KindInstr and a68Items[k].op == OpMove and a68Items[k].size == 4 and a68Items[k].sm == AmPostInc and a68Items[k].sr == 7 and a68Items[k].dm == AmDn and a68Items[k].dr == 1 {
+                        // rewrite i: MOVE.L D0,-(A7) -> MOVE.L D0,D1
+                        it.dm = AmDn
+                        it.dr = 1
+                        it.dv = 0
+                        a68Items[i] = it
+                        peepKill(k)
+                        didChange = true
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return didChange
+}
+
 // peepFunc: run all patterns over [startIdx..count) to fixpoint, then
 // re-derive layout. Patterns are added per task; each returns true if
 // it changed anything this sweep.
@@ -90,8 +135,8 @@ func peepFunc(startIdx: int) {
     changed = true
     while changed {
         changed = false
-        // (pattern calls land here in Tasks 4-8, e.g.:
-        //  if peepPassPushPop(startIdx) { changed = true } )
+        if peepPassPushPop(startIdx) { changed = true }
+        // (further pattern calls land here in Tasks 5-8)
         if changed {
             any = true
         }

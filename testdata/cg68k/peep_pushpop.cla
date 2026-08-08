@@ -1,0 +1,47 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// peep_pushpop.cla -- peephole pattern-1 fixture (peephole68k Task 4):
+// binary ops whose right operand is a simple load. The golden listing
+// must show MOVE.L D0,D1 + load with NO MOVE.L D0,-(A7)/(A7)+ pair in
+// these bodies (commutative, non-commutative, immediate, and compare
+// consumers).
+//
+// Deviates from the task brief's draft in two ways: (1) no print()/
+// numToStr() calls -- neither exists in this language (grepped the
+// reference and the whole tree; testdata/cg68k fixtures are standalone
+// listing-golden inputs, not runtime programs, so nothing needs to be
+// printed), and (2) `on App.launch` instead of `on App.startCLI` --
+// most existing testdata/cg68k fixtures (arith.cla, calls.cla,
+// control.cla, etc.) use App.launch; startCLI is only used by the ones
+// that actually read `args`. Mirrors calls.cla's plain-call-from-
+// App.launch shape.
+
+func padd(a: int, b: int): int {
+    return a + b
+}
+
+func psub(a: int, b: int): int {
+    return a - b
+}
+
+func pcmp(a: int, b: int): bool {
+    return a < b
+}
+
+func pimm(a: int): int {
+    return a + 41
+}
+
+on App.launch {
+    var s: int
+    var d: int
+    var c: bool
+    var i: int
+
+    s = padd(2, 3)
+    d = psub(9, 4)
+    c = pcmp(1, 2)
+    i = pimm(1)
+    return
+}
