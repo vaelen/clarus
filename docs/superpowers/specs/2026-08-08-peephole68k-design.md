@@ -230,6 +230,12 @@ call (`superpowers:finishing-a-development-branch`).
    recognize `OpMoveq`-to-D0 as an equally valid simple load — unexercised
    by the current corpus (1/2a and 5 already collapse in the same sweep
    today) but correct and cheap insurance for a future codegen shape.
+   Original pattern 5's other two arms — narrowing `ADDQ`/`SUBQ` against
+   an immediate operand, and `MOVE #0,Dn` → `CLR` — were never attempted:
+   naive codegen never materializes an immediate into a register via
+   `ADD`/`SUB` (no `AmImm` `ADD`/`SUB` shapes exist to match), and `MOVEQ
+   #0` already subsumes `CLR` at equal size, so there was no narrowing
+   left to do.
 
 **Dropped:** **Pattern 3 — stack-cleanup batching** (Task 6), ratified by
 Andrew (2026-08-08). Proved structurally unreachable under this backend's
@@ -238,10 +244,13 @@ site's very next real instruction is unconditionally a push (`AmPreDec`
 A7) — because the backend keeps zero callee-saved registers, any value
 that must survive a nested call (e.g. `cgArith`'s D1 stash before
 evaluating the right operand) has no register-only path and must go
-through the stack. `peepIsA7Neutral` correctly excludes `AmPreDec`, so no
-A7-neutral window ever exists between two cleanups without crossing the
-call itself. Confirmed both structurally (every `cgCleanupStack` call
-site read directly: `cgPushArgs`, `cgCallFnScalar`/`cgCallFnInto`/
+through the stack. A hypothetical `peepIsA7Neutral` A7-neutrality check
+(Task 6's uncommitted investigation probe — never shipped in
+`peep68k.cla`, since the pattern itself was dropped) would correctly
+exclude `AmPreDec`, so no A7-neutral window would ever exist between two
+cleanups without crossing the call itself. Confirmed both structurally
+(every `cgCleanupStack` call site read directly: `cgPushArgs`,
+`cgCallFnScalar`/`cgCallFnInto`/
 `cgCallRuntime`, `cgPushArgMaterialized`/`cgMaterializeCallResult`,
 `cgEmitCallbackGlue`, `cgForListStmt`/`cgForMapStmt`) and empirically
 (corpus-wide grep over every committed `testdata/cg68k/*.s` golden with a

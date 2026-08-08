@@ -596,8 +596,11 @@ func a68IFormExtWords(size: int, dm: A68Mode): int {
 
 // a68InstrExtWords is the per-op extension-word-count table: how many
 // 16-bit words follow the opcode word, given op/size and the two operand
-// modes. Ops not listed here (shift register forms, EXT, SWAP, UNLK, RTS)
-// always contribute 0 and fall through to the trailing return.
+// modes. Ops not listed here (shift register forms, EXT, SWAP, UNLK, RTS,
+// MOVEQ) always contribute 0 and fall through to the trailing return.
+// MOVEQ's omission is deliberate: its 8-bit immediate lives inline in the
+// opcode word itself (see a68InstrWord's OpMoveq case), so it never has
+// extension words to count.
 //
 // ADD/SUB/AND/OR dispatch an AmImm source to the shared *I-form rule
 // (a68IFormExtWords) automatically -- matching a68InstrWord/
@@ -1506,6 +1509,9 @@ func a68SelfExercise() {
     lblAnchor = a68NewLabel()
     a68Bind(lblAnchor)
     a68Emit(OpMove, 2, AmPCLabel, 0, lblAnchor, AmDn, 4, 0) // MOVE.W LBL_x(PC),D4
+
+    // -- MOVEQ (pattern 5's narrowing target) --
+    a68Emit(OpMoveq, 4, AmImm, 0, 42, AmDn, 5, 0)           // MOVEQ #42,D5
 
     // -- MOVEA --
     a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 1, 0)             // MOVEA.L D0,A1
