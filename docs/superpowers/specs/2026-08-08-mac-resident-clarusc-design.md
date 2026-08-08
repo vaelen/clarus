@@ -63,12 +63,20 @@ access. The Mac front end supports `emit68k` compilation only (no
 
 ## 3. `--bake`: general resource baking
 
-`clarusc emit68k --bake PATH` (repeatable). File → one resource named
-exactly `PATH` as passed. Directory → recursive, keys `PATH/sub/file`.
-One resource type (`'CLFS'`), name = key, bytes = verbatim file contents.
-Duplicate keys are a build-time error (the Resource Manager would
-silently shadow: `Get1NamedResource` returns the first match). Resource
-names cap at 255 chars — enforced at bake time.
+`clarusc emit68k --bake PATH` (repeatable). PATH must be a **file** — no
+directory form: neither the language nor the toolchain has any
+directory-enumeration primitive (verified: zero readdir/listdir/
+PBGetCatInfo hits repo-wide), so the build script globs and passes each
+file. One resource per file: type `'CLFS'`, **name = PATH exactly as
+passed**, bytes = verbatim contents. Duplicate keys are a build-time
+error (the Resource Manager would silently shadow: `Get1NamedResource`
+returns the first match). Resource names cap at 255 chars — enforced at
+bake time.
+
+Baked resources are *named*; `app68BuildResourceFork` today emits only
+unnamed resources (empty name list), so it gains an optional per-resource
+name (empty = unnamed, existing callers unchanged, no-`--bake` output
+byte-identical).
 
 Key convention: the path as passed on the command line. The Mac compiler
 build runs `--bake runtime/clarus --bake toolbox` from repo root, so keys
@@ -82,10 +90,30 @@ lives in CODE-segment space (32KB segmentation pressure; `ui.cla` alone
 is ~101KB), which is why baking is resource-based. Host `.bin` output
 without `--bake` is byte-identical to today.
 
-This is a general emit68k feature, not compiler-private — but only the
-compiler driver *reads* baked files this phase. A user-program read API
-(`file.readText` fallback or an explicit resource-read surface) is a real
-language-surface decision, deferred; noted as the natural follow-up.
+This is a general emit68k feature, not compiler-private. Reading baked
+resources from Clarus code gets a **minimal language surface** (amended
+2026-08-08 after recon — the Mac front end is ordinary user code and
+cannot reach runtime internals; the alternatives, `--testapi` on a
+shipping build or a per-byte copy loop in user code, are worse):
+
+- `file.readResource(name: string, out: text): bool` — fill `out` from
+  the named `'CLFS'` resource in the current resource chain; native impl
+  in `runtime/clarus/native.cla` (Get-named-resource → copy via the
+  `natFileReadText` grow/deref/BlockMove idiom → `ReleaseResource`);
+  host impl returns false (host binaries have no resource fork).
+- `file.writeRes(path: string, fork: text, doctype: string,
+  creator: string): bool` — create `path`, write `fork` verbatim as its
+  resource fork, leave the data fork empty, stamp type/creator (the
+  output-write primitive, §6).
+
+**Conservative-subset guard:** the snapshot composition (`main.cla` +
+includes) must not contain the new surface for one release cycle. The
+shared driver therefore reads all source through a front-end-supplied
+seam — `func feReadSource(path: string, key: string, out: text): bool`,
+defined by each front end: `main.cla`'s uses `file.readText` (+ rtdir
+mapping) only; `macgui.cla`'s tries disk then `file.readResource`.
+`file.writeRes` appears only in `macgui.cla`. Both new intrinsics are
+documented in the language reference (Chapter on files).
 
 ## 4. Include & runtime-source resolution on Mac
 
@@ -127,6 +155,15 @@ list if baked-file counts get large or lookups become per-line).
   the output writer stay in native `:` form end to end. A
   `hostPaths: bool` driver global (set by each front end) governs the
   path helpers (`normalizePath`/`dirOf`/join), not source syntax.
+- **askOpen returns a bare Standard File name, not a full path**
+  (verified: the Str255 goes straight to the File Manager with
+  `ioVRefNum = 0`, i.e. default volume/dir — that's why the texteditor
+  scenario's bare-name round trip works). The compile model is therefore
+  default-directory-relative; the front end ensures the chosen file's
+  volume/dir becomes the default (SetVol from the SFReply, the exact
+  purpose `toolbox/files.cla`'s `PBSetVolSync` was cataloged for) so
+  bare-name reads and write-next-to-source both land in the source's
+  folder.
 - Include dedup stays exact-match on the path string; HFS
   case-insensitivity is a documented simplification (case-fold if it
   ever bites).
@@ -176,18 +213,38 @@ whole heap (MultiFinder partition tuning noted as future).
   new `toolbox/files.cla` + `toolbox/resources.cla` entries.
 - `internal/cg68k` golden regen, reviewed.
 
+**Harness spike (own task, before the integration test):** the native
+lane has NO existing machinery to put arbitrary files onto the boot disk
+or pull files back off it (verified: texteditor's `Report.txt` is written
+by a setup-companion `.cla` at boot; LaunchAPPL builds and deletes its
+own temp disk). The spike resolves the file-in/file-out mechanism with
+ranked strategies: (1) read `Retro68/LaunchAPPL`'s minivmac backend
+source for an extra-file/extra-disk/keep-disk hook; (2) own-disk boot —
+hfsutils (`toolchain/bin/h*`) builds a scratch HFS image, boot-block
+startup-app trick per LaunchAPPL's own source, Mini vMac driven directly
+(must also solve log capture, which today rides LaunchAPPL's stdout);
+(3) fallback, adopted only if 1–2 prove impractical within the task and
+recorded for sign-off: file-in via a baked `'CLFS'` test resource,
+file-out via fork checksums+length logged from the Mac side and compared
+against the same checksums of host output (byte-compare weakened to
+strong-checksum-compare; the produced-app boot still proves launchability
+end-to-end).
+
 **T2 (gated, `internal/mactest`, new test):**
-1. Build Clarusc.APPL (`emit68k --bake runtime/clarus --bake toolbox` +
-   macgui composition, `--events` script baked in).
-2. hcopy `tickprobe.cla` and a second small source (one that includes a
-   `toolbox/` catalog file and calls one real trap) onto the scratch
-   disk.
+1. Build Clarusc.APPL (`emit68k --bake <runtime/clarus/*.cla glob>
+   --bake <toolbox/*.cla glob>` + macgui composition, `--events` script
+   baked in).
+2. Seed `tickprobe.cla` and a second small source (one that includes a
+   `toolbox/` catalog file and calls one real trap) onto the boot disk
+   via the spike's mechanism.
 3. Boot; script: answer-open tickprobe.cla → compile via menu verb →
    answer-open the catalog-using source → compile → quit.
-4. hcopy both produced APPLs back out with resource forks;
+4. Pull both produced APPLs back out (spike mechanism);
    **byte-compare each resource fork against host `emit68k` of the same
    source** (built without `--events`, same flags) — the differential
-   oracle.
+   oracle. Same compiler algorithm on two architectures producing
+   identical bytes is the real cross-check; any word-size or
+   endianness-assumption bug in clarusc surfaces here.
 5. LaunchAPPL-boot the produced tickprobe APPL; exit 0 proves the on-Mac
    fork write + stamp made a real launchable app.
 
@@ -200,9 +257,12 @@ boot of its output; everything else rides the byte-compare oracle.
 Compilation cache (next sub-phase); Retro68 retirement (last);
 self-host-on-Mac (needs the cache; this phase proves the compiler runs
 and compiles small programs natively); `emit`/`appinfo`/check-only modes
-on Mac; user-program read API for baked resources; `openDocument`
-droplet behavior; editor/IDE features; System 7 anything;
-snapshot/bootstrap changes; startup resource-name cache.
+on Mac; any resource surface beyond the minimal
+`file.readResource`/`file.writeRes` pair (§3); `openDocument` droplet
+behavior; editor/IDE features; System 7 anything; bootstrap-chain
+changes (snapshot is regenerated once at phase end per the standing
+release convention, via `TestSnapshotFixedPoint`'s printed recipe);
+startup resource-name cache.
 
 ## Rejected alternatives
 
