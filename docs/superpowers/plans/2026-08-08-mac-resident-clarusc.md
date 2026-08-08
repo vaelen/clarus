@@ -47,10 +47,20 @@
   ```
 - `scripts/size-68k.sh` exists (peephole Task 1): per-target `SIZE name bytes segments` lines; its clarusc line was expected to fail pre-fix.
 - Emulator wall-clock: the lexer-only bench ran ~15.8k ticks (~264 emulated seconds); a full compile is MINUTES. Give T2 boots generous timeouts (≥15 min) and run them foreground.
+- **Snow facts (2026-08-09 boot test; acceptance emulator for Tasks 4/10/11/12):** launch `./snow/Snow ./snow/<workspace>.snoww` (GUI app, no headless mode; runs until quit — background it). Workspace JSON: `snow/Clarus.snoww` (clone of `MacII.snoww`; `scsi_targets[0].Disk` names the device image, paths relative to the workspace file; `pram_path` cloned too; `init_args.start_fastforward` exists). Boot to Finder ≈45s. Disk access from the host, ONLY while Snow is not running: `toolchain/bin/hmount snow/<img>` (auto-selects HFS partition 1 of the full-device image), `hcopy -m` both directions (forks preserved), `hcopy -t` for text, `humount`. Native `log()`/trace output = plain file `out` next to the app, extractable the same way. System 7.1 menus are NOT sticky: menu interaction needs press-drag-release (a `drag.swift` helper exists in the session scratchpad; copy it into the repo if a task needs it). Window geometry via `osascript ... process "Snow" ... window 1`; Mac framebuffer origin ≈ window +60,+113 at scale ≈1.375 (window 1000×782). `TeachText`/`Read Me` live on the image — don't disturb the System Folder. Keep `snow/hdd0.img` and `snow/MacII.snoww` pristine; work only on copies.
 
 ---
 
 ### Task 1: Memory + size baseline (measurement only, no code)
+
+> **OUTCOME (2026-08-09, task complete — do not re-dispatch):** measured
+> 39.8MB live high-water for tickprobe+UI-splice (report in the phase
+> workspace). Resolution: acceptance environment moved to the Snow
+> emulator (Mac II, 128MB, System 7.1) — see the spec's Goal/§7 as
+> amended; memory is GO there. First Snow boot also passed (Bounce +
+> TickProbe correct; `rtUiSys7` branch live for the first time) and
+> found the §7b Quit-AE gap (new Task 12). Tasks 4, 10, 11 below carry
+> Snow-specific amendments.
 
 **Files:**
 - Create: `.superpowers/sdd/2026-08-08-mac-resident-clarusc/task-1-report.md` (numbers + go/no-go)
@@ -192,46 +202,49 @@ git commit -m "feat(macresident): clarusc self-emit68k -- big-temp pool sizing"
 
 ---
 
-### Task 4: Emulator file round-trip spike (harness only, no compiler changes)
+### Task 4: Snow file round-trip harness (REWRITTEN 2026-08-09 for the Snow pivot)
 
 **Files:**
-- Create: `internal/mactest/macdisk_test.go` (helpers + a small self-test)
+- Create: `internal/mactest/snow_test.go` (helpers + a gated self-test)
+- Create: `scripts/drag.swift` (promote the session-scratchpad helper: press-drag-release CGEvent for non-sticky System 7 menus)
 - Create: `.superpowers/sdd/2026-08-08-mac-resident-clarusc/task-4-report.md` (decision memo)
 
 **Interfaces:**
-- Consumes: `toolchain/bin/h*` (hfsutils), `toolchain/bin/LaunchAPPL`, `Retro68/LaunchAPPL` sources, `RunMac`/`parseCapture`.
+- Consumes: the Snow facts block in "Verified codebase facts" (launch, workspace JSON, hfsutils-on-device-image recipe, `out`-file log channel, screen-coordinate mapping).
 - Produces (target API — adjust to findings, keep names):
   ```go
-  func newMacDisk(t *testing.T, sizeKB int) *macDisk
-  func (d *macDisk) putText(t *testing.T, name string, data []byte)   // TEXT/ttxt
-  func (d *macDisk) getMacBinary(t *testing.T, name string) []byte    // resource fork preserved
-  func runMacWithDisk(t *testing.T, appBin string, d *macDisk, timeout time.Duration) (out, log string, exit int)
+  func newSnowDisk(t *testing.T) *snowDisk        // copies snow/hdd0.img + writes a scratch .snoww pointing at it
+  func (d *snowDisk) putText(t *testing.T, name string, data []byte)
+  func (d *snowDisk) putMacBinary(t *testing.T, binPath, name string)
+  func (d *snowDisk) get(t *testing.T, name string) []byte            // text mode
+  func (d *snowDisk) getMacBinary(t *testing.T, name string) []byte   // forks preserved
+  func runSnow(t *testing.T, d *snowDisk, timeout time.Duration, done func() bool) // boots, polls done(), quits Snow
   ```
+  Gate the whole file on a new env var `CLARUS_SNOW_TESTS=1` (Snow is a GUI app that steals the screen — never fold into plain `CLARUS_MAC_TESTS`).
 
-- [ ] **Step 1: Read LaunchAPPL's minivmac backend**
+- [ ] **Step 1: Auto-launch without GUI clicks**
 
-Read `Retro68/LaunchAPPL/` (the minivmac/shared disk-building code). Answer in the memo: how does it build the boot disk, how does AutoQuit get invoked, is there ANY supported way to (a) add extra files to the boot disk or (b) keep/point-at a caller-supplied disk? How does the `##CLARUS-EXIT##` output capture physically travel (this decides whether a non-LaunchAPPL boot can capture logs at all)?
+Probe the Startup Items route: `hcopy -m` an app into `:System Folder:Startup Items:` on a scratch copy of the image, boot Snow, verify the app launches itself. If Startup Items works (expected on 7.1), it is THE launch mechanism — no click automation in the harness. Record the result. Also spend at most ~30 min probing the undocumented `shared_dir` workspace key (set it to a host dir, boot, look for a mounted volume); adopt it only if it obviously works, otherwise note and move on.
 
-- [ ] **Step 2: Prototype the ranked strategies until one round-trips**
+- [ ] **Step 2: Completion detection + shutdown/flush**
 
-Strategy 1: extra-file/extra-disk hook inside LaunchAPPL invocation (flag, config key, or second image in `~/.LaunchAPPL.cfg`'s minivmac backend). Strategy 2: own scratch HFS image via hfsutils, mounted as a second disk alongside LaunchAPPL's own boot flow (Mini vMac auto-mounts `mnvm_dat` disks — see CLAUDE.md's full-Finder recipe — but the LaunchAPPL path may accept additional images; the memo from Step 1 decides). Strategy 3 (fallback, needs sign-off recorded in the memo): file-in via baked `'CLFS'` resource, file-out via logged fork checksums (spec §8 wording).
-Acceptance probe for 1/2: boot ANY existing UI .bin (e.g. `build-68k/TickProbe`-style build of `testdata/cg68k/tickprobe.cla`) with a scratch disk carrying a marker TEXT file; after exit, pull a file the app wrote back off the disk and byte-compare.
+The app under test self-quits (TickProbe pattern). Options to prototype, in order: (a) `done()` polls for a sentinel — the app's LAST action before quit is writing a marker file (or its `out` file), and the harness polls by watching the image file's mtime/size from the host (the image IS written through while Snow runs — verify this claim first; if writes are buffered until quit, fall back to (b)); (b) fixed generous wait after boot, then quit Snow, then inspect. Quitting Snow: try plain SIGTERM/`osascript -e 'quit app "Snow"'` after the app has exited to Finder and ~10s of Finder idle (HFS flush); validate no corruption by byte-comparing a file written before shutdown across 3 repeated runs. A scripted Finder Shut Down via drag.swift is the fallback if kill-after-idle proves unreliable. Record which mechanism won and the reliability evidence (3/3 clean runs minimum).
 
 - [ ] **Step 3: Land the helpers + a gated self-test**
 
-`TestMacDiskRoundTrip` (under `CLARUS_MAC_TESTS=1`): put a TEXT file on the disk, boot a trivial app that copies it (`file.readText` + `file.writeText` in a 10-line fixture `.cla`), pull the copy out, byte-compare. This is the integration test's foundation — it must be rock solid.
+`TestSnowRoundTrip` (under `CLARUS_SNOW_TESTS=1`): scratch disk; `putText` a marker file; put a 10-line fixture app (`file.readText` marker + `file.writeText` copy + quit) in Startup Items; `runSnow`; `get` the copy out; byte-compare; also assert the app's `out` file is extractable. This is the integration test's foundation — it must be rock solid (run it 3× in a row green).
 
-Run: `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run TestMacDiskRoundTrip -v` (foreground, generous -timeout)
-Expected: PASS.
+Run: `CLARUS_SNOW_TESTS=1 go test ./internal/mactest -run TestSnowRoundTrip -count=1 -v -timeout 20m` (foreground)
+Expected: PASS, 3 consecutive runs.
 
 - [ ] **Step 4: T1 and commit**
 
-Run: `scripts/test-task.sh` (no --smoke needed unless `runtime/`/`clarusc/` were touched)
+Run: `scripts/test-task.sh` (add --smoke only if `runtime/`/`clarusc/` were touched)
 Expected: PASS.
 
 ```bash
 git add -A
-git commit -m "test(macresident): emulator file round-trip harness (macdisk helpers)"
+git commit -m "test(macresident): Snow file round-trip harness (snowDisk helpers)"
 ```
 
 ---
@@ -474,6 +487,14 @@ git commit -m "refactor(macresident): fork-split emit path (driveEmit68kFork)"
   build-run/clarusc emit68k --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
       $BAKES ${EVENTS:+--events "$EVENTS"} clarusc/macgui.cla
   ```
+- **SIZE resource (Snow pivot):** the app runs under System 7's Process
+  Manager, so its SIZE partition must cover the compile working set
+  (spec §7 as amended: comfortably above the Mac-side estimate of the
+  39.8MB host high-water — on a 128MB machine, err large, e.g. 48–64MB).
+  Find where `res68k`/`cg68k` emits SIZE today and how its value is set;
+  make the partition configurable or macgui-specific rather than
+  hardcoding a giant default for every Clarus app. Verify in Task 11
+  that the compile doesn't die of an undersized partition.
 
 - [ ] **Step 1: Verify the bare-name reachability assumption**
 
@@ -551,17 +572,17 @@ quit
 ```
 Menu indices per macgui's actual menu layout (File is menu 1 only if there's no Apple menu entry — check how examples number theirs; texteditor uses `menu 2 x` because Apple is 1). Answers queue before the verb that opens the dialog.
 
-- [ ] **Step 3: The test**
+- [ ] **Step 3: The test (Snow, per the Task 4 harness)**
 
-`TestMacResidentClaruscOn68k` (gated `CLARUS_MAC_TESTS=1`):
+`TestMacResidentClaruscOnSnow` (gated `CLARUS_SNOW_TESTS=1`):
 1. Build ClarusC.bin via `scripts/build-clarusc-mac.sh` with `EVENTS=testdata/macresident/clarusc.events`.
 2. Host oracles: bootstrapped clarusc `emit68k --rtdir runtime/clarus/ -o <tmp>/tick_host.bin testdata/cg68k/tickprobe.cla` and same for catprobe (no `--events`, no `--bake`); slice each fork per `resparBuildAndParse` (`img[128:128+rsrcLen]`, length at `h[87:91]`).
-3. Disk: `newMacDisk`, `putText("tickprobe.cla", ...)` + `putText("catprobe.cla", ...)`. Deliberately NO toolbox/osutils.cla on disk — its resolution MUST come from the baked resource.
-4. `runMacWithDisk(t, ClarusC.bin, disk, 30*time.Minute)` → exit 0; log contains two `BUILT` lines; record compile wall-clock in the report.
-5. `getMacBinary` both produced apps (names per appinfo rules: `TickProbe`, `CatProbe` — verify against `clarusc appinfo` output); slice forks; `bytes.Equal` against the host forks. THE core assertion.
-6. `RunMac` the extracted TickProbe MacBinary → exit 0 (launchable-app proof).
+3. Disk: `newSnowDisk`; `putMacBinary` ClarusC into Startup Items (Task 4's launch mechanism); `putText("tickprobe.cla", ...)` + `putText("catprobe.cla", ...)` at the root. Deliberately NO toolbox/osutils.cla on disk — its resolution MUST come from the baked resource. NOTE: the events script drives ClarusC itself; verify with Task 4's completion mechanism (sentinel = ClarusC's own quit after the script's `quit` verb; its `out` file carries the log).
+4. `runSnow(...)` with a ≥30 min timeout; after extraction, assert the `out` log contains two `BUILT` lines; record compile wall-clock in the report.
+5. `getMacBinary` both produced apps (names per appinfo rules: `TickProbe`, `CatProbe` — verify against `clarusc appinfo` output); slice forks; `bytes.Equal` against the host forks. THE core assertion. (askOpen paths: the sources sit in the root, ClarusC launches from Startup Items — Task 10's SetVol/default-dir verification decides whether the events script's `answer-open` names need a folder prefix; resolve there, not here.)
+6. Launchable-app proof: fresh `newSnowDisk`, extracted TickProbe into Startup Items, `runSnow` → its `out` trace appears and ends with the 60-fire quit shape (compare loosely: OPEN/FRONT present, ≥60 FIRE lines — Mac II fires per event-loop pass, so exact counts are CPU-speed-dependent; do NOT golden-compare real-mode fire counts).
 
-Run: `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run TestMacResidentClarusc -count=1 -timeout 60m -v` (foreground)
+Run: `CLARUS_SNOW_TESTS=1 go test ./internal/mactest -run TestMacResidentClarusc -count=1 -timeout 60m -v` (foreground)
 Expected: PASS. If the fork compare fails, dump both forks to files and `xxd`-diff the first divergence — a word-size/endianness bug in clarusc itself is EXACTLY what this oracle exists to catch; report it, don't paper over it.
 
 - [ ] **Step 4: Docs**
@@ -582,6 +603,47 @@ Expected: PASS.
 ```bash
 git add -A
 git commit -m "feat(macresident): on-Mac compile integration test + snapshot regen + phase records"
+```
+
+---
+
+### Task 12: System 7 Quit AppleEvent (EXECUTE BEFORE TASK 11; added 2026-08-09)
+
+**Files:**
+- Create: `toolbox/appleevents.cla` (AE catalog: `AEProcessAppleEvent`, `AEInstallEventHandler`, `AEGetParamDesc`/reply plumbing as needed — decode-the-inline-words rule, citations mandatory)
+- Modify: `runtime/clarus/ui.cla` (the `rtUiSys7` path: handle `kHighLevelEvent` in the real event loop; install/dispatch the required-suite Quit handler via a `callback func` — the toolbox-integration phase's callback mechanism)
+- Modify: `internal/testsuite/catalog_test.go` (new catalog entries)
+
+**Interfaces:**
+- Consumes: spec §7b; the existing `App.openDocument` System 7 arm (see how it already touches AppleEvents — mirror its conventions); `callback func` (language reference).
+- Produces: a Clarus UI app on System 7 quits when the Finder/Process Manager sends `kAEQuitApplication` (shutdown proceeds); System 6 path byte-identical behavior; scripted-lane goldens untouched (the handler code must be unreachable under `--events`/System 6 — same discipline as `rtUiSys7` itself).
+
+- [ ] **Step 1: Read the existing System 7 arm + the 5faaa6c lesson**
+
+Read `runtime/clarus/ui.cla`'s `rtUiSys7` sites and `App.openDocument`'s System 7 arm, plus the ROADMAP's real-event-loop trap-convention entry (`5faaa6c`). Write down in the report: where `kHighLevelEvent` arrives in the loop, and whether openDocument already calls `AEProcessAppleEvent` (if yes, extend its handler table; if no, this task installs the first real AE plumbing and openDocument's arm should be left alone).
+
+- [ ] **Step 2: Implement minimal required-suite handling**
+
+Quit → set the runtime's existing quit flag (find how the `quit` statement sets it; reuse). oapp → no-op acknowledge. odoc/pdoc → route to the existing openDocument path if present, else return `errAEEventNotHandled`. Trap words and register conventions verified against Universal Interfaces; citations in `toolbox/appleevents.cla`.
+
+- [ ] **Step 3: Prove it on Snow (real-mode only — scripted lane cannot see this)**
+
+Manual-or-scripted probe (Task 4 helpers if landed): scratch disk, Bounce in Startup Items, boot, then scripted Finder Shut Down (drag.swift; Special menu drag coordinates in the Snow facts block) — shutdown must now COMPLETE (the 2026-08-09 boot test's exact failure). Record before/after evidence (screenshot or the fact the emulator process exits after Snow's own shutdown). If Task 4 landed a reusable scripted-shutdown helper, add this as a gated `CLARUS_SNOW_TESTS=1` test `TestQuitAppleEventOnSnow`; if not, a documented manual verification in the report is acceptable THIS task, and Task 11 step 6 re-proves app boot regardless.
+
+- [ ] **Step 4: Guard the frozen goldens**
+
+Run the native golden lane relevant subset (the 4 frozen scenarios) — byte-identical (the new code must be dead under scripted events / System 6).
+Run: `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run 'TestSmokeBounceOn68k|TestSmokeMandelUIScenario|TestUiScenariosOn68k' -count=1 -timeout 30m` (verify the exact test names in native_test.go first)
+Expected: PASS, goldens untouched.
+
+- [ ] **Step 5: T1 and commit**
+
+Run: `scripts/test-task.sh --smoke` (foreground)
+Expected: PASS.
+
+```bash
+git add -A
+git commit -m "feat(macresident): System 7 required-suite Quit AppleEvent handling"
 ```
 
 ---

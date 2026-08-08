@@ -6,8 +6,19 @@ Date: 2026-08-08. Second sub-phase of the decomposed 5f (peephole → **this**
 ## Goal & acceptance
 
 Deliverable: **Clarusc.APPL** — clarusc itself compiled by host
-`clarusc emit68k` (cross), running on System 6 in Mini vMac as a one-shot
-GUI compiler.
+`clarusc emit68k` (cross), running as a one-shot GUI compiler on the
+**Snow emulator** (`snow/Snow` + `snow/MacII.snoww`: Mac IIFDHD, 128MB
+RAM, System 7.1, full-device SCSI image `hdd0.img`) — the acceptance
+environment chosen 2026-08-09 after Task 1's memory measurement killed
+the Mac Plus premise (39.8MB live high-water for a tickprobe+UI-splice
+compile vs a ~3.8MB budget; profile in the phase workspace's
+task-1-report.md). The existing Mini vMac/System 6 lane is untouched for
+all pre-existing T2 tests; the 4MB-Plus compile stays a stated aspiration
+for after the compilation-cache phase's memory work. First-boot proof
+(2026-08-09): Bounce and TickProbe run correctly on System 7.1/Snow —
+the first-ever exercise of the `rtUiSys7` branch — and hfsutils operates
+directly on Snow's device image (`hmount` partition 1, `hcopy -m`
+in/out).
 
 Acceptance: on-Mac, it compiles `testdata/cg68k/tickprobe.cla` (a real
 self-quitting `every`-block UI program already in-tree) from a `.cla` file
@@ -187,18 +198,45 @@ query) go in a new `toolbox/resources.cla`.
 
 ## 7. Memory & speed posture
 
-Named risk, measured before it's bet on: **plan task 1** instruments host
-clarusc (arena/heap high-water) compiling tickprobe + full UI splice, and
-sizes the Mac composition via self-emit. Budget: 4MB Mac Plus minus
-System 6 (~300KB) minus the loaded app's CODE — the compile must fit in
-what remains, with `ReleaseResource` reclaiming each module's source
-after parse. If the measurement says it doesn't fit, stop and re-scope
-(options ranked then: trim the splice for the acceptance app, lazier
-arena retirement) rather than discovering it in the emulator.
+RESOLVED 2026-08-09: Task 1 measured a **39.8MB live-allocation
+high-water** for the tickprobe+UI-splice compile (instrumented at the
+`rt_mem` choke point; profile: 67% owned by `cg68Program`, 77% of live
+bytes in `list of X` handle boxes; a minimal non-UI compile is only
+~6.4MB). That kills the 4MB Mac Plus premise for this phase. The
+acceptance environment is Snow's 128MB Mac II (Goal section), where the
+budget is a non-issue. The profile is kept as the opening brief for the
+compilation-cache phase's memory-diet work; the Plus remains the
+post-diet aspiration.
 
 Compile wall-clock is recorded, not gated — speed is the cache phase's
-business. No SIZE resource work: System 6 plain Finder gives the app the
-whole heap (MultiFinder partition tuning noted as future).
+business. **SIZE resource now matters:** System 7's Process Manager
+partitions application memory MultiFinder-style, so ClarusC.APPL needs a
+SIZE resource with a partition sized for the measured working set (~a
+comfortable margin above the Mac-side estimate of the 39.8MB host
+number); check what `res68k` emits today and set the macgui build's
+partition accordingly, verified on Snow in the integration test.
+
+## 7b. System 7 runtime gap: Quit AppleEvent (first-boot finding, in scope)
+
+The 2026-08-09 Snow boot surfaced a real defect: our apps ignore the
+required-suite **Quit AppleEvent**, so a running Clarus app blocks
+System 7 shutdown (observed: Bounce, windowless after its window was
+closed and with no Quit menu, wedged Finder shutdown until force-quit).
+Invisible on the scripted lane and on System 6/LaunchAPPL by
+construction — same class as the `5faaa6c` lesson: only a lane that
+executes the real path proves it.
+
+In scope this phase (the harness's clean-shutdown step needs it, and
+it's user-visible on 7.1): handle the required suite's
+`kAEQuitApplication` in the runtime's System 7 path (`rtUiSys7`,
+newly live) — minimally Quit; the other three required events
+(oapp/odoc/pdoc) route to existing behavior where it exists
+(`App.openDocument` already has a System 7 arm) or are acknowledged
+per IM. AE externs go in a new `toolbox/appleevents.cla` per the
+standing catalog rules. Closing a window still does NOT quit the app —
+that's authentic Mac behavior, not a defect. Verification must be
+real-mode on Snow (scripted goldens can't see it): app running →
+Finder Shut Down → app quits, shutdown completes.
 
 ## 8. Testing
 
@@ -213,22 +251,24 @@ whole heap (MultiFinder partition tuning noted as future).
   new `toolbox/files.cla` + `toolbox/resources.cla` entries.
 - `internal/cg68k` golden regen, reviewed.
 
-**Harness spike (own task, before the integration test):** the native
-lane has NO existing machinery to put arbitrary files onto the boot disk
-or pull files back off it (verified: texteditor's `Report.txt` is written
-by a setup-companion `.cla` at boot; LaunchAPPL builds and deletes its
-own temp disk). The spike resolves the file-in/file-out mechanism with
-ranked strategies: (1) read `Retro68/LaunchAPPL`'s minivmac backend
-source for an extra-file/extra-disk/keep-disk hook; (2) own-disk boot —
-hfsutils (`toolchain/bin/h*`) builds a scratch HFS image, boot-block
-startup-app trick per LaunchAPPL's own source, Mini vMac driven directly
-(must also solve log capture, which today rides LaunchAPPL's stdout);
-(3) fallback, adopted only if 1–2 prove impractical within the task and
-recorded for sign-off: file-in via a baked `'CLFS'` test resource,
-file-out via fork checksums+length logged from the Mac side and compared
-against the same checksums of host output (byte-compare weakened to
-strong-checksum-compare; the produced-app boot still proves launchability
-end-to-end).
+**Harness spike (own task, before the integration test) — re-pointed at
+Snow (2026-08-09), with the hard parts already proven by hand in the
+boot test:** file-in/file-out is `hmount snow/<scratch>.img` (partition
+1) + `hcopy -m` (both directions, forks preserved) on a copy of the
+System 7.1 device image, edited only while Snow is not running; native
+`log()`/trace output lands in a plain `out` file next to the app,
+extractable the same way. The spike turns that manual recipe into Go
+helpers plus the remaining automation: launching the app at boot
+(preferred: drop it in the System Folder's Startup Items — no GUI
+clicks; fallback: scripted double-click via screencapture+CGEvent, the
+coordinates recipe is in the phase workspace), detecting completion
+(poll the disk image mtime, or fixed generous wait, or Snow's log —
+spike decides), and clean shutdown/flush before extraction (the Quit-AE
+work in §7b is what makes a scripted Finder Shut Down survivable;
+killing Snow after the app has quit and Finder has flushed is the
+fallback, validated against a byte-compare). Snow has no documented
+headless/scripting mode — the spike works within that; `shared_dir`
+(present in the workspace file, undocumented) is worth one probe.
 
 **T2 (gated, `internal/mactest`, new test):**
 1. Build Clarusc.APPL (`emit68k --bake <runtime/clarus/*.cla glob>
