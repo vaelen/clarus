@@ -1,0 +1,61 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// roundtrip.cla: Task 4's Snow-harness self-test fixture -- the smallest
+// UI program that proves the host<->Snow file round trip: reads a marker
+// file the harness planted on the boot image, writes its contents back
+// out under a different name (proving file.writeText actually landed
+// bytes on the real HFS volume, not just a host-side illusion), then
+// quits. Modeled on testdata/cg68k/tickprobe.cla's app/window shape and
+// testdata/ui/texteditor_opendoc_setup.cla's file.writeText usage.
+// internal/mactest/snow_test.go rebuilds this via scripts/build-68k.sh.
+//
+// Path convention (empirically probed, task-4-report.md): this app
+// self-launches from ":System Folder:Startup Items:" (the harness's
+// proven no-click auto-launch mechanism -- Finder auto-opens everything
+// it finds in that folder at boot, application or not), so its own
+// default directory is Startup Items, two levels below the volume root
+// (root -> System Folder -> Startup Items). The harness plants
+// input/output files at the volume root instead of Startup Items --
+// dropping a plain document there too would make Finder try to
+// auto-open IT as well, at boot, throwing a blocking "could not be
+// opened" dialog before this app ever gets a turn. ":::NAME" is the HFS
+// partial-pathname up-level idiom (each extra leading colon beyond the
+// first means "one directory up"), so ":::Marker.txt"/":::Copy.txt"
+// reach the root from here regardless of the volume's name.
+app SnowRoundTrip {
+    name: "SnowRoundTrip"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Snow harness round-trip fixture."
+    id: "SNRT"
+}
+
+window Main {
+    title: "SnowRoundTrip"
+    size: 200, 100
+}
+
+on App.launch {
+    var t: text
+    var ok1: bool
+    var ok2: bool
+    open Main
+    ok1 = file.readText(":::Marker.txt", t)
+    ok2 = file.writeText(":::Copy.txt", t, app.doctype, app.id)
+    // alert() on the native (emit68k) lane never blocks for real user
+    // input -- it's a capture-only stub (native.cla's natAlert) that logs
+    // straight into the "out" file, so these are cheap extra signal for
+    // the harness to assert on, not a real modal dialog.
+    if ok1 {
+        alert("read ok")
+    } else {
+        alert("read FAILED: " + lastError.message)
+    }
+    if ok2 {
+        alert("write ok")
+    } else {
+        alert("write FAILED: " + lastError.message)
+    }
+    quit
+}
