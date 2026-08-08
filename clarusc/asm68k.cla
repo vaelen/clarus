@@ -161,6 +161,12 @@ const KindData: int = 2
 const KindTrap: int = 3
 const KindComment: int = 4
 
+// KindDead (peephole68k): an item the peephole pass (peep68k.cla) has
+// deleted. Zero-length; skipped by the encoder and the listing printer.
+// Marking dead instead of removing keeps arena indices stable during a
+// rewrite sweep.
+const KindDead: int = 5
+
 const DKindB: int = 0
 const DKindW: int = 1
 const DKindL: int = 2
@@ -248,6 +254,45 @@ func a68Bind(l: int) {
     it.addr = a68Pc
     it.len = 0
     a68Items.add(it)
+}
+
+// a68Relayout re-derives layout for the arena tail [fromIdx..count)
+// after a peephole rewrite (peep68k.cla): each item's len (from the same
+// per-op table a68PushInstr consulted), each item's addr, every KindBind
+// label address in the range, and the running a68Pc. Layout is DERIVED
+// state -- patterns edit op/mode/value fields and kinds only, never addr
+// -- so one forward walk re-establishes everything a68Finish and the
+// listing printer need. Rewrites never touch items before fromIdx, so
+// the tail's starting address is the untouched a68Items[fromIdx].addr.
+// DKindAlign lengths are kept as emitted: every instruction length is
+// even, so a rewrite can never change parity (see peep68k.cla's own
+// same-size-or-smaller rule).
+func a68Relayout(fromIdx: int) {
+    var i: int
+    var pc: int
+    var it: A68Item
+
+    if fromIdx >= a68Items.count {
+        return
+    }
+    pc = a68Items[fromIdx].addr
+    i = fromIdx
+    while i < a68Items.count {
+        it = a68Items[i]
+        if it.kind == KindInstr {
+            it.len = 2 + a68InstrExtWords(it.op, it.size, it.sm, it.dm) * 2
+        } else if it.kind == KindDead {
+            it.len = 0
+        }
+        it.addr = pc
+        a68Items[i] = it
+        if it.kind == KindBind {
+            a68LabelAddr[it.label] = pc
+        }
+        pc = pc + it.len
+        i = i + 1
+    }
+    a68Pc = pc
 }
 
 // ================================================================
@@ -1022,6 +1067,9 @@ func a68EncodeItem(out: text, idx: int) {
     var kind: int
 
     kind = a68Items[idx].kind
+    if kind == KindDead {
+        return
+    }
     if kind == KindInstr {
         a68PutWord(out, a68InstrWord(idx))
         a68WriteExtWords(out, idx)
@@ -1030,7 +1078,7 @@ func a68EncodeItem(out: text, idx: int) {
     } else if kind == KindData {
         a68EncodeData(out, idx)
     }
-    // KindBind, KindComment: zero bytes.
+    // KindBind, KindComment, KindDead: zero bytes.
 }
 
 // ================================================================
@@ -1401,6 +1449,7 @@ func a68ListingText(): text {
         } else if kind == KindInstr {
             a68AppendLine(out, "        " + a68ListingLine(i))
         }
+        // KindDead: no listing line.
         i = i + 1
     }
     return out

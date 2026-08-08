@@ -29,6 +29,7 @@ include "ir.cla"
 include "lower.cla"
 include "shake.cla"
 include "asm68k.cla"
+include "peep68k.cla"
 include "app68k.cla"
 include "res68k.cla"
 include "cprint.cla"
@@ -493,6 +494,12 @@ on App.startCLI(args: list of string) {
             testApiFlag = true
         } else if emitMode68k and args[i] == "--listing" {
             listingFlag = true
+        } else if emitMode68k and args[i] == "--nopeep" {
+            // peephole68k diagnostic escape hatch (deliberately
+            // undocumented, like --seglimit): skip the peephole pass so
+            // a native-lane bug can be triangulated as
+            // peephole-induced or not in one rebuild.
+            peepDisabled = true
         } else if emitMode68k and args[i] == "--seglimit" {
             // Test-only override of cg68Program's per-segment payload
             // budget (default 32760) -- deliberately UNDOCUMENTED in the

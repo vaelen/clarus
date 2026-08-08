@@ -3259,6 +3259,7 @@ func cgEmitFunc(f: int) {
     var recLocalTypes: list of int
     var tmpOffs: list of int
     var bigTmpOffs: list of int
+    var startIdx: int
 
     // Task 9 (toolbox-integration Feature C): the hand-built LDEF/
     // scrollbar-action pascal glue stubs this by-name block used to
@@ -3277,6 +3278,11 @@ func cgEmitFunc(f: int) {
         cgEmitCallbackGlue(f, cgCbGlueBodyFor(f))
         return
     }
+
+    // peephole68k: capture where this function's items start; peepFunc
+    // rewrites exactly this tail after the body is emitted (glue funcs
+    // above are hand-shaped and skipped deliberately).
+    startIdx = a68Items.count
 
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
@@ -3446,6 +3452,7 @@ func cgEmitFunc(f: int) {
     a68Bind(cgCurEpilogueLabel)
     a68Emit(OpUnlk, 0, AmNone, 0, 0, AmAn, 6, 0)
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
+    peepFunc(startIdx)
 }
 
 // cgCbPascalWidth is the pascal-convention stack-slot width (in bytes) of

@@ -1,0 +1,102 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// peep68k.cla -- peephole pass over asm68k's instruction arena
+// (peephole68k phase; spec:
+// docs/superpowers/specs/2026-08-08-peephole68k-design.md).
+//
+// peepFunc(startIdx) runs at the tail of cgEmitFunc, over exactly the
+// items that function just emitted. Because cg68Measure sizes functions
+// by calling the real cgEmitFunc, the pass runs identically under
+// measurement and emission -- segment packing stays exact by
+// construction.
+//
+// SAFETY RULES (every pattern MUST obey; see the spec's "Safety rules"):
+//   - a match window never spans a KindBind (control can enter there),
+//     any control-flow/call instruction (Bcc/BRA/BSR/JSR/JMP/DBRA/RTS),
+//     a KindTrap, or KindData;
+//   - KindComment/KindDead are transparent (peepNextReal skips them);
+//   - rewrites are same-size-or-smaller, and all instruction sizes are
+//     even, so parity (DKindAlign) is never disturbed;
+//   - patterns match EXACT op/size/mode/register shapes -- no general
+//     effect analysis. Whitelists over naive codegen's actual shapes;
+//   - patterns never read it.addr (a68Relayout re-derives layout after).
+
+// peepDisabled: set by main.cla's --nopeep (emit68k-only diagnostic
+// flag). Default false = pass enabled.
+var peepDisabled: bool
+
+// peepNextReal returns the index of the next non-transparent item after
+// i (skipping KindComment and KindDead), or -1 at arena end. The caller
+// checks the returned item's kind/shape itself -- including whether it
+// is a barrier.
+func peepNextReal(i: int): int {
+    var j: int
+
+    j = i + 1
+    while j < a68Items.count {
+        if a68Items[j].kind != KindComment and a68Items[j].kind != KindDead {
+            return j
+        }
+        j = j + 1
+    }
+    return -1
+}
+
+// peepKill marks item i deleted (KindDead, zero length).
+func peepKill(i: int) {
+    var it: A68Item
+
+    it = a68Items[i]
+    it.kind = KindDead
+    it.len = 0
+    a68Items[i] = it
+}
+
+// peepIsSimpleLoadToD0: item i is a single instruction that fully
+// defines D0 without reading D0 or D1 and without touching A7 --
+// naive codegen's own load shapes:
+//   MOVE.L #imm,D0            (AmImm -> D0)
+//   MOVE.L d16(An),D0, An!=A7 (AmDisp16 -> D0; A7 excluded because a
+//                              pattern may be deleting a push above it,
+//                              which would shift an A7-relative offset)
+// Deliberately NOT whitelisted: AmDn sources (could read D1), AmPostInc/
+// AmPreDec (mutate their base register), byte/word loads (upper bytes
+// of D0 not defined), anything writing other registers.
+func peepIsSimpleLoadToD0(i: int): bool {
+    var it: A68Item
+
+    it = a68Items[i]
+    if it.kind != KindInstr { return false }
+    if it.op != OpMove { return false }
+    if it.size != 4 { return false }
+    if it.dm != AmDn or it.dr != 0 { return false }
+    if it.sm == AmImm { return true }
+    if it.sm == AmDisp16 and it.sr != 7 { return true }
+    return false
+}
+
+// peepFunc: run all patterns over [startIdx..count) to fixpoint, then
+// re-derive layout. Patterns are added per task; each returns true if
+// it changed anything this sweep.
+func peepFunc(startIdx: int) {
+    var changed: bool
+    var any: bool
+
+    if peepDisabled {
+        return
+    }
+    any = false
+    changed = true
+    while changed {
+        changed = false
+        // (pattern calls land here in Tasks 4-8, e.g.:
+        //  if peepPassPushPop(startIdx) { changed = true } )
+        if changed {
+            any = true
+        }
+    }
+    if any {
+        a68Relayout(startIdx)
+    }
+}
