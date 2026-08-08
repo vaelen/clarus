@@ -7202,7 +7202,6 @@ LBL_68:
         MOVE.L #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        CLR.L D0
         MOVE.B 8(A6),D0
         MOVE.B D0,-42(A5)
         MOVE.L -4(A6),D0
@@ -9877,17 +9876,21 @@ LBL_717:
 LBL_716:
         UNLK A6
         RTS
-        ; func natLastErrMsg  (JT slot 334)
-        ;   hidden result ptr : 8(A6)  size 4
+        ; func nat_CoreSetLastErr  (JT slot 334)
+        ;   param code : 264(A6)  size 4
+        ;   param msg : 8(A6)  size 256
 LBL_92:
         LINK A6,#-2128
-        MOVE.L 8(A6),-(A7)
-        MOVE.L #255,-(A7)
+        MOVE.L 264(A6),D0
+        MOVE.L D0,-184(A5)
         LEA -440(A5),A0
+        MOVE.L A0,-(A7)
+        MOVE.L #255,D0
+        MOVE.L D0,-(A7)
+        LEA 8(A6),A0
         MOVE.L A0,-(A7)
         JSR 82(A5)
         ADDA.W #12,A7
-        BRA.W LBL_718
 LBL_718:
         UNLK A6
         RTS

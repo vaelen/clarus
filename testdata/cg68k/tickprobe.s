@@ -309,7 +309,7 @@ LBL_0:
 LBL_308:
         MOVE.W (A0)+,(A1)+
         DBRA D0,LBL_308
-        JSR 2866(A5)
+        JSR 2706(A5)
         ADDA.W #260,A7
 LBL_307:
         UNLK A6

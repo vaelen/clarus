@@ -1,0 +1,19 @@
+// peep_clr.cla -- peephole pattern-4 fixture (peephole68k Task 7):
+// consecutive bool/char loads+stores. cgLoadVar's CLR.L D0 zero-extend
+// is dead when the loaded byte is consumed at byte width and D0 is then
+// fully redefined. Golden must show the second copy's CLR.L gone.
+
+func flip(a: bool, b: bool): bool {
+    var x: bool
+    var y: bool
+    x = a
+    y = b
+    return x and y
+}
+
+on App.launch {
+    var r: bool
+
+    r = flip(true, true)
+    return
+}

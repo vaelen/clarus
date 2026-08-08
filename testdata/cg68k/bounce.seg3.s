@@ -7141,7 +7141,6 @@ LBL_68:
         MOVE.L #0,D0
         MOVEA.L (A7)+,A0
         MOVE.W D0,(A0)
-        CLR.L D0
         MOVE.B 8(A6),D0
         MOVE.B D0,-42(A5)
         MOVE.L -4(A6),D0

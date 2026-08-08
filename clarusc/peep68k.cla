@@ -184,6 +184,44 @@ func peepPassShuffle(startIdx: int): bool {
     return didChange
 }
 
+// peepPassDeadClr -- pattern 4 (spec "Pattern set" #4): cgLoadVar's
+// bool/char shape CLR.L D0 / MOVE.B <mem>,D0 followed by MOVE.B D0,<mem>
+// (byte-width consumer) followed by an item that fully redefines D0
+// (peepFullyDefinesD0, which includes the NEXT copy's own CLR.L D0)
+// ==> the CLR.L dies: only the low byte was consumed, and the stale
+// upper bytes are then overwritten before any read. All three follower
+// checks are required -- if any is absent (barrier, other consumer),
+// do not fire; the zero-extend may be live.
+func peepPassDeadClr(startIdx: int): bool {
+    var i: int
+    var j: int
+    var k: int
+    var m: int
+    var it: A68Item
+    var didChange: bool
+
+    didChange = false
+    i = startIdx
+    while i < a68Items.count {
+        it = a68Items[i]
+        if it.kind == KindInstr and it.op == OpClr and it.size == 4 and it.dm == AmDn and it.dr == 0 {
+            j = peepNextReal(i)
+            if j != -1 and a68Items[j].kind == KindInstr and a68Items[j].op == OpMove and a68Items[j].size == 1 and a68Items[j].dm == AmDn and a68Items[j].dr == 0 and a68Items[j].sm == AmDisp16 and a68Items[j].sr != 7 {
+                k = peepNextReal(j)
+                if k != -1 and a68Items[k].kind == KindInstr and a68Items[k].op == OpMove and a68Items[k].size == 1 and a68Items[k].sm == AmDn and a68Items[k].sr == 0 and a68Items[k].dm == AmDisp16 and a68Items[k].dr != 7 {
+                    m = peepNextReal(k)
+                    if m != -1 and peepFullyDefinesD0(m) {
+                        peepKill(i)
+                        didChange = true
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return didChange
+}
+
 // peepFunc: run all patterns over [startIdx..count) to fixpoint, then
 // re-derive layout. Patterns are added per task; each returns true if
 // it changed anything this sweep.
@@ -200,7 +238,8 @@ func peepFunc(startIdx: int) {
         changed = false
         if peepPassPushPop(startIdx) { changed = true }
         if peepPassShuffle(startIdx) { changed = true }
-        // (further pattern calls land here in Tasks 6-8)
+        if peepPassDeadClr(startIdx) { changed = true }
+        // (further pattern calls land here in Task 8)
         if changed {
             any = true
         }
