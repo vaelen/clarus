@@ -79,15 +79,17 @@ measure toolboxgui --testapi testsuite/kit.cla \
 # was ~32.8KB, bigger than the entire 32KB segment budget -- see Task 3's
 # own report); each segment now carries only the pool entries its own
 # packed functions actually reference (cgPackProgram/cg68Measure,
-# clarusc/cg68k.cla). Self-emit now fails LATER and DEEPER again, on a
-# THIRD, unrelated structural limit: a single function, fpIntrCall
-# (cprint.cla's ~1258-line C-target intrinsic-call dispatcher), compiles
-# to ~105KB of native 68k code alone -- more than 3x the whole 32KB
-# segment budget, so no packing strategy (pool-related or not) can ever
-# fit it in one segment. Splitting an oversized single function across
-# segments (or restructuring fpIntrCall into several smaller functions)
-# is a different, larger piece of work than pool segmentation -- flagged
-# as a new follow-on item, not attempted here (see Task 13's own report).
-# Ordered last so the other two targets' SIZE lines still print before
-# this one aborts the script (set -e).
+# clarusc/cg68k.cla). That left a THIRD, unrelated structural limit: a
+# single function, fpIntrCall (cprint.cla's ~1258-line C-target
+# intrinsic-call dispatcher), compiled alone to ~105KB of native 68k
+# code -- more than 3x the whole 32KB segment budget, so no packing
+# strategy (pool-related or not) could ever fit it in one segment. Task
+# 14 closed this too: pure source-level code motion split fpIntrCall's
+# dispatch into fpIntrCall1..7 (a thin fpIntrCall dispatcher chaining
+# through them via a fpIntrMatched fallthrough flag, same output bytes,
+# same order -- see that task's own report for the differential-guard
+# evidence and the near-limit function-size audit). clarusc now emits
+# itself cleanly at the default segment limit; this SIZE line prints for
+# real. Still ordered last so the other two targets' SIZE lines print
+# first regardless (set -e).
 measure clarusc clarusc/main.cla

@@ -1764,37 +1764,14 @@ func fpArgAt(head: int, n: int): int {
 // Void operations (alert, quit, set_index, append, ...) emit their call as
 // a statement and return "" -- see fpStmt's SExprStmt case, the only
 // context they appear in.
+var fpIntrMatched: bool  // Task 14: chain-of-helpers dispatch signal for fpIntrCallN's fallthrough
+
 func fpIntrCall(x: int): text {
     var nm: int
     var a0: int
     var a1: int
     var a2: int
     var t: text
-    var s0: text
-    var s1: text
-    var cap0: int
-    var cap1: int
-    var l: text
-    var v: text
-    var fn: string
-    var m: text
-    var k: text
-    var dv: text
-    var winName: string
-    var inst: text
-    var fld: int
-    var dataT: int
-    var dataKind: IRKind
-    var recName: string
-    var container: string
-    var dataExpr: text
-    var freeVarBuf: text
-    var argT: int
-    var argK: IRKind
-    var elemT: int
-    var ctype: string
-    var old: text
-    var ref: text
 
     nm = irIntrName(x)
     a0 = irIntrArgsHead(x)
@@ -1804,6 +1781,54 @@ func fpIntrCall(x: int): text {
     if a1 != -1 {
         a2 = irExprNext(a1)
     }
+
+    fpIntrMatched = true
+    t = fpIntrCall1(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall2(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall3(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall4(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall5(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall6(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+    fpIntrMatched = true
+    t = fpIntrCall7(nm, x, a0, a1, a2)
+    if fpIntrMatched {
+        return t
+    }
+
+    // Task 4 review fix (Important 3): a real unhandled intrinsic name --
+    // see cpFatal's own doc comment.
+    return cpFatal("intrinsic " + poolGet(nm))
+}
+
+func fpIntrCall1(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var recName: string
+    var argT: int
+    var argK: IRKind
 
     if nm == IAlert() {
         fpEmit("rt_alert(" + fpStrAddr(a0) + ");")
@@ -1995,7 +2020,19 @@ func fpIntrCall(x: int): text {
     // branch below wraps each `fpStrAddr(...)` result in `(void*)` for
     // this reason -- verified zero new warnings vs. the pre-Task-8
     // bootstrap one-liner after this fix.
-    } else if nm == IStrConcat() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall2(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var s1: text
+    var cap0: int
+    var cap1: int
+
+    if nm == IStrConcat() {
         s0 = fpStrAddr(a0)
         s1 = fpStrAddr(a1)
         t = fpNewTmp("clar_str_255")
@@ -2104,7 +2141,18 @@ func fpIntrCall(x: int): text {
         return "rt_str_index_of_char(" + fpStrAddr(a0) + ", (uint8_t)(" + fpExpr(a1) + "))"
 
     // ---- text ----
-    } else if nm == ITextCmp() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall3(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var s1: text
+    var cap1: int
+
+    if nm == ITextCmp() {
         return fpTextCmp(a0, a1)
     } else if nm == ITextConcat() {
         return fpTextConcat(a0, a1)
@@ -2241,7 +2289,24 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- list ----
-    } else if nm == IListPush() or nm == IListUnshift() or nm == IListPushRetain() or nm == IListUnshiftRetain() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var l: text
+    var v: text
+    var fn: string
+    var freeVarBuf: text
+    var elemT: int
+    var ctype: string
+    var old: text
+    var ref: text
+
+    if nm == IListPush() or nm == IListUnshift() or nm == IListPushRetain() or nm == IListUnshiftRetain() {
         // v goes through fpCopyToTemp, not fpAddrable: push/unshift can
         // realloc a0's backing store, and if v were instead a raw
         // rt_list_at pointer (fpAddrable's IndexRef shortcut, e.g.
@@ -2489,7 +2554,20 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- map ----
-    } else if nm == IMapSet() or nm == IMapSetRetain() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var v: text
+    var m: text
+    var k: text
+    var dv: text
+    var freeVarBuf: text
+
+    if nm == IMapSet() or nm == IMapSetRetain() {
         // v goes through fpCopyToTemp, not fpAddrable, for the same reason
         // as list_push/unshift above: map_set grows m's key/value arrays on
         // a new key, so a raw rt_list_at-derived pointer passed as v (e.g.
@@ -2713,7 +2791,22 @@ func fpIntrCall(x: int): text {
         return toText("")
 
     // ---- lastError ----
-    } else if nm == ILastErrCode() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall6(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var s0: text
+    var fn: string
+    var dataT: int
+    var dataKind: IRKind
+    var recName: string
+    var container: string
+    var dataExpr: text
+
+    if nm == ILastErrCode() {
         // Plan native-5d Task 12.5 (storage-inversion fix): lastError
         // storage is platform-owned again (core.cla's file header) -- read
         // the raw C globals directly, same as before Task 3's short-lived
@@ -2811,7 +2904,18 @@ func fpIntrCall(x: int): text {
         return fn + "(" + fpStrAddr(a0) + ", " + container + ", " + dataExpr + ", &clar_layout_" + recName + ")"
 
     // ---- UI (Task 4: Ch7-11 -> runtime/mac/rt_ui.h) ----
-    } else if nm == IUiOpen() {
+    }
+    fpIntrMatched = false
+    return toText("")
+}
+
+func fpIntrCall7(nm: int, x: int, a0: int, a1: int, a2: int): text {
+    var t: text
+    var winName: string
+    var inst: text
+    var fld: int
+
+    if nm == IUiOpen() {
         // `open W` -- x's own ty (set at lowering time) is the KWinRef type
         // carrying W's name; see ir.cla's KWinRef doc comment.
         // Task 7 Step 6 (native-5e): under --uiport, rtUiOpen takes the
@@ -3002,9 +3106,8 @@ func fpIntrCall(x: int): text {
     } else if nm == IUiAddrOfGlobal() {
         return "((void*)&(" + fpExpr(a0) + "))"
     }
-    // Task 4 review fix (Important 3): a real unhandled intrinsic name --
-    // see cpFatal's own doc comment.
-    return cpFatal("intrinsic " + poolGet(nm))
+    fpIntrMatched = false
+    return toText("")
 }
 
 // fpUiEditStmt prints one `edit F, target` / `edit F, new T` call (Ch10;
