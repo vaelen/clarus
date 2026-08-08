@@ -682,6 +682,25 @@ git commit -m "feat(macresident): System 7 required-suite Quit AppleEvent handli
 
 ---
 
+### Task 15: Cross-segment accessor defect — characterize, fix, re-enable live clamp (added 2026-08-09 from Task 7's FormEdit root cause; EXECUTE BEFORE TASK 10)
+
+**Files:**
+- Modify: `clarusc/cg68k.cla` (the defect) and/or `clarusc/asm68k.cla` (if it's veneer/return-staging)
+- Modify: `runtime/clarus/` ui-family (REVERT the rtUiFieldCap live-clamp disable once the compiler defect is fixed)
+- Create: minimal reproducing fixture in `testdata/cg68k/` (+ golden) — a function in one segment calling a `UiProgDesc()`-style pool-reading accessor packed into another segment, asserting the returned value
+
+**Interfaces:**
+- Consumes: Task 7's report + re-review (root-cause narrative, containment map, the three instrumentation attempts that hung real hardware — read what was tried before trying it again); Task 13's report (per-segment pool design — the defect may be an interaction with it).
+- Produces: the defect characterized at instruction level (what the caller-side/callee-side/veneer code actually does wrong), fixed in the compiler, the live clamp re-enabled, FormEdit + full toolbox suite + all 4 frozen scenarios green, and the minimal fixture pinning the shape forever. If characterization proves the defect NOT fixable within the task (or reveals a deeper Task 13 design flaw), STOP and report BLOCKED with the characterization — do not stack workarounds.
+
+**Known facts to build on (from Task 7):** blob pool copies are byte-identical across segments; accessors co-located with their own segment's blob copy return correctly when called same-segment; `rtUiFieldCap` calling them CROSS-segment reads a wrong capacity; suite-layout shifts (adding cases/--bake) move which callers land cross-segment. Suspect surfaces: cross-segment call return-value staging through the jump-table veneer, pool-label binding in the caller's segment, or an inlining/addressing arm that bypasses the veneer.
+
+- [ ] **Step 1: Minimal repro on HOST evidence first** — build the fixture; confirm it miscomputes on the native lane and is correct on host; shrink until the divergence is one accessor call. (The Task 7 agent's live-instrumentation hangs suggest instrumenting INSIDE the UI boot is hostile — a standalone non-UI-boot fixture with a tickprobe-style trace write sidesteps that.)
+- [ ] **Step 2: Instruction-level characterization** — `--listing` both segments; trace the call site, veneer, callee, and pool labels by hand; name the defective emission in the report before touching the compiler.
+- [ ] **Step 3: Fix + re-enable + full gates** — compiler fix; revert the clamp disable; fixture golden; `CLARUS_MAC_TESTS=1` toolbox suite twice + all 4 frozen scenarios byte-identical; `TestSelfEmit68k`; `scripts/test-task.sh --smoke`; commit (standing trailer).
+
+---
+
 ## Self-review notes (kept honest)
 
 - Spec §1 acceptance → Task 11 (byte-compare + boot); §2 gaps → Tasks 2–3; §3 `--bake`+named resources → Task 5; §3 minimal file surface + seam → Tasks 6–7; §4 resolution → Tasks 8+10 (`feReadSource`); §5 paths → Task 8; §6 output write → Tasks 7 (writeRes) + 9 (fork split) + 10 (call site); §7 memory posture → Tasks 1, 3, 10 (budget closed with real numbers); §8 T1 items → Tasks 2,5,7,8; harness spike → Task 4; T2 → Task 11; non-goals respected (no cache, no Retro68 changes, no extra resource surface).
