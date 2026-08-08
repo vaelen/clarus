@@ -134,7 +134,16 @@ func peepFullyDefinesD0(i: int): bool {
     return false
 }
 
-// peepPassShuffle -- pattern 2 (spec "Pattern set" #2), two sub-shapes.
+// peepPassShuffle -- pattern 2 (spec "Pattern set" #2), sub-shape 2a only.
+// (2b -- delete a dead MOVE.L <safe-src>,D0 whose next real item fully
+// redefines D0 -- was dropped, fix-round 1: peepIsSimpleLoadToD0(i) is
+// true for every AmImm/AmDisp16 source, which is 2b's whole safe-src
+// set minus AmDn, so any item matching 2b's guard also matches 2a's and
+// takes THIS function's "if" branch; 2b's own arm was reachable only
+// for an AmDn (register) source, and naive codegen never emits a dead
+// MOVE.L Dn,D0 immediately followed by a full D0 redefine -- confirmed
+// unreachable-by-construction against the whole testdata/cg68k corpus.
+// peepFullyDefinesD0 stays; 2a still uses it.)
 //
 // 2a: <simple load -> D0> / MOVE.L D0,D1   [next real fully defines D0
 //                                           without reading it]
@@ -143,11 +152,6 @@ func peepFullyDefinesD0(i: int): bool {
 //     so redirecting its destination is safe; the dead-D0 requirement
 //     (next real item is itself a whitelisted load-to-D0, or CLR.L D0)
 //     guarantees nothing downstream wanted the loaded value in D0.
-//
-// 2b: MOVE.L <safe-src>,D0 whose next real item fully defines D0
-//     without reading it  ==>  deleted. safe-src = AmDn/AmImm/AmDisp16
-//     (never AmPostInc/AmPreDec -- those mutate their base register even
-//     when the destination dies).
 func peepPassShuffle(startIdx: int): bool {
     var i: int
     var j: int
@@ -173,12 +177,6 @@ func peepPassShuffle(startIdx: int): bool {
                         didChange = true
                     }
                 }
-            }
-        } else if it.kind == KindInstr and it.op == OpMove and it.size == 4 and it.dm == AmDn and it.dr == 0 and (it.sm == AmDn or it.sm == AmImm or it.sm == AmDisp16) {
-            j = peepNextReal(i)
-            if j != -1 and peepFullyDefinesD0(j) {
-                peepKill(i)
-                didChange = true
             }
         }
         i = i + 1
