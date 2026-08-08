@@ -110,8 +110,12 @@ Each pattern is one small function inspecting 2–4 items through the safety
 walker, ordered most-frequent first:
 
 1. **Push/pop pair elimination.** `MOVE.L D0,-(A7)` · one whitelisted simple
-   load into D0 · `MOVE.L (A7)+,D1` → retarget the load to D1, delete push
-   and pop. Fires on nearly every binary op and compare. 3 instructions → 1.
+   load into D0 · `MOVE.L (A7)+,D1` → `MOVE.L D0,D1` · same load. (NOT
+   "retarget the load to D1": that would leave left/right swapped across
+   D0/D1, breaking non-commutative consumers like `CMP.L D0,D1`. Moving
+   left into D1 up front preserves the D1=left/D0=right contract for every
+   consumer.) Fires on nearly every binary op and compare; 3 instructions
+   → 2, and the 14+12-cycle push/pop pair becomes a 4-cycle register move.
 2. **Accumulator shuffle cleanup.** `MOVE.L D1,D0` (the non-commutative-op
    restore) or `MOVE.L D0,Dn` immediately followed by a full overwrite of
    the destination before any read → delete. Also `MOVE X→D0`/`MOVE D0→X`
