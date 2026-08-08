@@ -1,0 +1,37 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// smalltmp_ceiling.cla: mac-resident-clarusc Task 3 -- regression pin for
+// cgTmpSlots (clarusc/cg68k.cla). clarusc's own self-emit needs 14
+// concurrently-live small (<=4-byte) tracked temps within ONE statement
+// -- a call whose OWN 14 arguments are each an `l.pop()` (cgIntrListPopLike's
+// own out-param scratch, cgNewTrackedTmp), all evaluated left-to-right and
+// tracked until the call itself fires (cgFreeStmtTmps only runs at
+// end-of-statement, Task 13's own per-statement, not per-flush, lifetime).
+// Discovered alongside bigtmp_ceiling.cla's own big-pool ceiling while
+// self-hosting clarusc; the const is now set to the exact observed need
+// (14), and THIS fixture exercises exactly that many at once -- a future
+// accidental shrink of cgTmpSlots below 14 fails HERE, as a loud test
+// failure, instead of only being discovered later self-hosting clarusc
+// itself (a field error).
+func sum14(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int, k: int, l: int, m: int, n: int): int {
+    return a + b + c + d + e + f + g + h + i + j + k + l + m + n
+}
+on App.startCLI(args: list of string) {
+    var nums: list of int
+    var i: int
+    var total: int
+
+    i = 1
+    while i <= 14 {
+        nums.push(i)
+        i = i + 1
+    }
+    total = sum14(nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop(), nums.pop())
+    if total == 105 {
+        alert("smalltmp ceiling ok")
+    } else {
+        alert("smalltmp ceiling FAIL")
+    }
+    quit 0
+}

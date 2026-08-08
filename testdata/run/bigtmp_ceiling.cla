@@ -1,0 +1,29 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// bigtmp_ceiling.cla: mac-resident-clarusc Task 3 -- regression pin for
+// cgBigTmpSlots (clarusc/cg68k.cla). clarusc's own self-emit (compiling
+// itself through `clarusc emit68k`) needs 16 concurrently-live big
+// (str/rec) temps within ONE statement -- a call whose OWN 16 arguments
+// each need cgPushArgMaterialized's generic fallback (Task 2), so
+// cgStmtBigTmpNext's per-statement bump allocator never gets to reuse a
+// slot before the call itself fires. Discovered when clarusc's own
+// self-emit hit "too many str/rec temps needed in one statement -- bump
+// cgBigTmpSlots" at the OLD ceiling (4); the const is now set to the
+// exact observed need (16), and THIS fixture exercises exactly that many
+// at once -- a future accidental shrink of cgBigTmpSlots below 16 fails
+// HERE, as a loud test failure, instead of only being discovered later
+// self-hosting clarusc itself (a field error).
+func take16(a: string, b: string, c: string, d: string, e: string, f: string, g: string, h: string, i: string, j: string, k: string, l: string, m: string, n: string, o: string, p: string): int {
+    return a.length + b.length + c.length + d.length + e.length + f.length + g.length + h.length + i.length + j.length + k.length + l.length + m.length + n.length + o.length + p.length
+}
+on App.startCLI(args: list of string) {
+    var n: int
+    n = take16("a" + "1", "a" + "2", "a" + "3", "a" + "4", "a" + "5", "a" + "6", "a" + "7", "a" + "8", "a" + "9", "a" + "10", "a" + "11", "a" + "12", "a" + "13", "a" + "14", "a" + "15", "a" + "16")
+    if n == 39 {
+        alert("bigtmp ceiling ok")
+    } else {
+        alert("bigtmp ceiling FAIL")
+    }
+    quit 0
+}

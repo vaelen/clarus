@@ -7,7 +7,7 @@
         ;   local n : -20(A6)  size 4
         ;   local __store10 : -24(A6)  size 4
 LBL_0:
-        LINK A6,#-2152
+        LINK A6,#-8320
         LEA -4(A6),A0
         MOVE.L A0,-(A7)
         JSR 114(A5)
@@ -267,7 +267,7 @@ LBL_175:
         ;   local __store12 : -200(A6)  size 48
         ;   local __store13 : -248(A6)  size 48
 LBL_1:
-        LINK A6,#-2376
+        LINK A6,#-8544
         MOVEQ #3,D0
         MOVE.L D0,-48(A6)
         MOVEQ #4,D0

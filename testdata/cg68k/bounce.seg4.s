@@ -1,7 +1,7 @@
         ; func nat_UiScreenBounds  (JT slot 368)
         ;   param out : 8(A6)  size 4
 LBL_0:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 8(A6),D0
         MOVE.L D0,-(A7)
         MOVE.L -456(A5),D1
@@ -31,7 +31,7 @@ LBL_139:
         ;   param boundsOut : 8(A6)  size 4
         ;   local rb : -4(A6)  size 4
 LBL_1:
-        LINK A6,#-2132
+        LINK A6,#-8300
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L 16(A6),D0
@@ -94,7 +94,7 @@ LBL_140:
         ; func ui_every_0  (JT slot 370)
         ;   local g : -4(A6)  size 4
 LBL_2:
-        LINK A6,#-2132
+        LINK A6,#-8300
         MOVEQ #0,D0
         MOVE.L D0,-4(A6)
         MOVE.L #0,-(A7)
@@ -226,7 +226,7 @@ LBL_142:
         ; func ui_Game_opened  (JT slot 371)
         ;   param window : 8(A6)  size 4
 LBL_3:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L #655360,D0
         MOVE.L D0,-(A7)
         MOVE.L 8(A6),D0
@@ -257,7 +257,7 @@ LBL_149:
         ;   param a : 12(A6)  size 4
         ;   param b : 8(A6)  size 4
 LBL_4:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 24(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -300,7 +300,7 @@ LBL_150:
         ;   param a : 12(A6)  size 4
         ;   param b : 8(A6)  size 4
 LBL_5:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 28(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -346,7 +346,7 @@ LBL_154:
         ;   param handlerIdx : 12(A6)  size 4
         ;   param frontInstOrNil : 8(A6)  size 4
 LBL_6:
-        LINK A6,#-2128
+        LINK A6,#-8296
         LEA LBL_127(PC),A0
         MOVE.L A0,-(A7)
         JSR 2826(A5)
@@ -362,7 +362,7 @@ LBL_159:
         ; func clar_ui_fire_every  (JT slot 375)
         ;   param idx : 8(A6)  size 4
 LBL_7:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 8(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -390,7 +390,7 @@ LBL_160:
         ;   param winIdx : 12(A6)  size 4
         ;   param inst : 8(A6)  size 4
 LBL_8:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 12(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -416,7 +416,7 @@ LBL_163:
         ; func clar_ui_fire_staterows  (JT slot 377)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_9:
-        LINK A6,#-2128
+        LINK A6,#-8296
         MOVE.L 8(A6),D1
         MOVEQ #0,D0
         CMP.L D0,D1
@@ -1174,7 +1174,7 @@ LBL_166:
         RTS
         ; func clar_ui_fire_startempty  (JT slot 378)
 LBL_10:
-        LINK A6,#-2128
+        LINK A6,#-8296
 LBL_281:
         UNLK A6
         RTS

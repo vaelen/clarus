@@ -1,0 +1,82 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// gapclose3.cla: mac-resident-clarusc Task 3 -- regression fixture for the
+// three real (not ceiling-only) native-backend gaps found while
+// self-hosting clarusc through `clarusc emit68k`:
+//
+// 1. cgCallFnScalar: a BARE, discarded call statement to a str/rec-
+//    returning function (clarusc's own `expect(TkComma)` idiom in
+//    parse.cla -- consume, only care about the side effect, drop the
+//    Token) used to hard-error unconditionally ("need cgCallFnInto"),
+//    even though this exact "discarded call" shape already has a working
+//    release-tracked path for the <=4-byte case just below it in the same
+//    function. `wrapPair(mkPair(...))` below, as a bare statement, pins
+//    the fix (materialize into a TRACKED big temp, released at
+//    end-of-statement like any other discarded owning value).
+// 2. cgEmitReturnStr: `return <str-returning call>()` used to hard-error
+//    ("nested call not supported"), even though its own KRec sibling
+//    (cgEmitReturnRec) already handled the identical ECallFn shape via
+//    cgExprAddr's generic materialize-to-temp fallback. `greetWrap`
+//    below pins the fix (just falls through to the same generic tail).
+// 3. cgMaterializeCallResult: a call-result materialization (an ECallFn
+//    argument whose own return needs the hidden-pointer convention) whose
+//    OWN argument list contains ANOTHER call-result needing the identical
+//    materialization (nesting depth 2) used to fail closed
+//    ("nested ... not supported") rather than trust the existing
+//    save/reload-via-stack invariant at a second level -- exactly
+//    clarusc's own `poolGet(...)`-inside-another-str/rec-call shape.
+//    `sumPair(wrapPair(mkPair(1, 2)))` below needs exactly this: mkPair's
+//    own Pair result materializes as wrapPair's argument (depth 1), while
+//    wrapPair's own Pair result simultaneously materializes as sumPair's
+//    argument (depth 2) -- pins cgMaterializeMaxDepth's generalization.
+record Pair {
+    a: int
+    b: int
+}
+
+func mkPair(x: int, y: int): Pair {
+    var p: Pair
+    p.a = x
+    p.b = y
+    return p
+}
+
+func wrapPair(p: Pair): Pair {
+    var q: Pair
+    q.a = p.a + 1
+    q.b = p.b + 1
+    return q
+}
+
+func sumPair(p: Pair): int {
+    return p.a + p.b
+}
+
+func greet(): string {
+    return "hi"
+}
+
+func greetWrap(): string {
+    return greet()
+}
+
+on App.startCLI(args: list of string) {
+    var n: int
+    var s: string
+
+    wrapPair(mkPair(9, 9))
+    n = sumPair(wrapPair(mkPair(1, 2)))
+    if n == 5 {
+        alert("depth-2 materialization ok")
+    } else {
+        alert("depth-2 materialization FAIL")
+    }
+    s = greetWrap()
+    if s == "hi" {
+        alert("return <- nested call ok")
+    } else {
+        alert("return <- nested call FAIL")
+    }
+    quit 0
+}

@@ -519,8 +519,15 @@ var cgSerdescLabels: list of int
 // aren't built by this task -- cgNewTrackedTmp hard-errors on any
 // cgSizeOf(t)>4 result, same "not exercised by this task's fixtures"
 // scope note the rest of this file already uses for KRec/KStr/KArr
-// container elements).
-const cgTmpSlots: int = 8
+// container elements). mac-resident-clarusc Task 3: bumped from 8 to 14
+// (self-hosting clarusc through emit68k hit the "too many tracked temps"
+// error -- a single statement in clarusc's own source, a call whose
+// arguments are 14 chained `list.pop()`s, needs 14 concurrently-tracked
+// small temps). Set to the exact observed need, not padded -- see the
+// regression pin, testdata/run/smalltmp_ceiling.cla, which exercises
+// exactly 14 so an accidental future shrink fails there, loudly, instead
+// of only being caught by self-hosting clarusc again.
+const cgTmpSlots: int = 14
 
 // cgBigTmpSlots/cgBigTmpSize (Task 14.7 gap-closure; bumped Task 14,
 // native-5e): a SEPARATE, smaller pool sized for a KStr/KRec temp
@@ -536,8 +543,15 @@ const cgTmpSlots: int = 8
 // than 2 concurrently-live big temps. Both are literally the upgrade
 // path their own error messages name ("bump cgBigTmpSlots"/the size
 // check) -- not a new mechanism, just headroom for real (not synthetic)
-// UI record shapes.
-const cgBigTmpSlots: int = 4
+// UI record shapes. mac-resident-clarusc Task 3: bumped 4 -> 16 --
+// self-hosting clarusc through emit68k hit the ceiling again, this time
+// from clarusc's OWN source (a single call statement with 16 str_concat
+// arguments, each needing cgPushArgMaterialized's own generic fallback).
+// Set to the exact observed need, not padded -- see the regression pin,
+// testdata/run/bigtmp_ceiling.cla, which exercises exactly 16 so an
+// accidental future shrink fails there, loudly, instead of only being
+// caught by self-hosting clarusc again.
+const cgBigTmpSlots: int = 16
 const cgBigTmpSize: int = 512
 
 var cgTmpBaseOffs: list of int
@@ -583,18 +597,39 @@ var cgLastTrackedOff: int
 // (cgFreeStmtTmps) releases it (final-review T13).
 var cgDiscardExprIdx: int
 
-// cgMaterializeDepth: final-review I1 guard. cgMaterializeCallResult
-// stashes its hidden-result pointer in A1 (cgPushArgMaterialized) BEFORE
-// pushing its own callee's argument chain (cgPushArgs) -- if evaluating
-// one of THOSE args itself needs materialization (e.g. `f(g(makeStr()))`
-// with g str-returning and an unaddressable inner arg), the nested call
-// overwrites A1 before the outer frame reads it back, a silent
-// miscompile (the outer hidden pointer becomes garbage). Depth-counted
-// here rather than guarded some other way because the clobber is a
-// property of REENTRANCY, not of any single call site. 0 outside any
-// materialization, 1 while inside the outermost one; a second nested
-// entry (depth would become 2) fails closed instead of corrupting A1.
+// cgMaterializeDepth: final-review I1 guard, generalized by
+// mac-resident-clarusc Task 3. cgMaterializeCallResult stashes its
+// hidden-result pointer in A1 (cgPushArgMaterialized) BEFORE pushing its
+// own callee's argument chain (cgPushArgs) -- if evaluating one of THOSE
+// args itself needs materialization (e.g. `f(g(makeStr()))` with g
+// str-returning and an unaddressable inner arg), the nested call
+// overwrites A1. Task 2's own fix (this function's doc comment) already
+// established the reload invariant that makes this safe: A1 is saved on
+// the STACK (not trusted in the register) before calling cgPushArgs, and
+// reloaded afterward from displacement `total` -- a purely local
+// save/reload pair, self-contained to this one call frame, correct
+// regardless of what cgPushArgs does internally as long as it nets
+// exactly `total` bytes pushed (cgPushArgs' own invariant, unconditional,
+// not depth-dependent). By induction the SAME pair is correct at every
+// nesting level -- each level's save/reload is relative to ITS OWN
+// immediate A7 right after ITS OWN cgPushArgs call, oblivious to any
+// other level's. Originally guarded at depth 1 (fail closed rather than
+// trust an unverified case); clarusc's own self-emit needs depth 2
+// (`f(g(poolGet(...)))`-shaped code, pinned by
+// testdata/run/gapclose3.cla's `sumPair(wrapPair(mkPair(...)))` case) --
+// raised to cgMaterializeMaxDepth and hardware-verified (booted on real
+// 68k, native output byte-identical to host) rather than left blocking
+// self-hosting. 0
+// outside any materialization, 1 while inside the outermost one, etc.;
+// depth exceeding the cap still fails closed (truly pathological
+// nesting, never observed, kept as a backstop, not a proof of a real
+// limit).
 var cgMaterializeDepth: int
+
+// cgMaterializeMaxDepth is cgMaterializeDepth's cap -- generous headroom
+// past the depth-2 case clarusc's own source needs (hardware-verified),
+// same "fixed constant, hard error past it" discipline as cgDeepLevels.
+const cgMaterializeMaxDepth: int = 8
 
 // cgDeepLevels bounds container release-walk nesting (a List/Map element
 // that is itself a List/Map recurses -- cpEmitRelease's own ARC Task 8
@@ -7048,11 +7083,13 @@ func cgMaterializeCallResult(a: int) {
         log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " is not str/rec-returning -- materialization not built for this shape")
         quit 1
     }
-    // Final-review I1: fail closed on nested materialization rather than
-    // silently clobber A1 -- see cgMaterializeDepth's own doc comment.
+    // Final-review I1, generalized (Task 3): the stack save/reload pair
+    // below is depth-agnostic (see cgMaterializeDepth's own doc comment
+    // for the invariant) -- only truly pathological nesting past
+    // cgMaterializeMaxDepth still fails closed, as a backstop.
     cgMaterializeDepth = cgMaterializeDepth + 1
-    if cgMaterializeDepth > 1 {
-        log("cg68k: cgMaterializeCallResult: nested str/rec-returning call-result materialization (" + poolGet(irCallFnName(a)) + ") not supported -- would clobber the outer hidden-result pointer stashed in A1; bind the inner call to a temp first")
+    if cgMaterializeDepth > cgMaterializeMaxDepth {
+        log("cg68k: cgMaterializeCallResult: str/rec-returning call-result materialization nested >" + numToStr(cgMaterializeMaxDepth) + " deep (" + poolGet(irCallFnName(a)) + ") -- bump cgMaterializeMaxDepth or bind an inner call to a temp first")
         quit 1
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
@@ -7103,6 +7140,7 @@ func cgCallFnScalar(e: int) {
     var total: int
     var retType: int
     var off: int
+    var dst: int
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
@@ -7112,6 +7150,34 @@ func cgCallFnScalar(e: int) {
     if cgRetNeedsHidden(irFuncRet(fi)) {
         // Task 14.7 fix (review round 2: cgRetNeedsHidden, the single
         // shared authority -- see its own doc comment).
+        //
+        // mac-resident-clarusc Task 3: a BARE, discarded call statement to
+        // a str/rec-returning function (clarusc's own `expect(TkComma)`
+        // idiom in parse.cla -- consume a token, only care about the
+        // side effect/diagnostic, drop the returned Token) reaches here
+        // too -- cgExpr's ECallFn arm is the only route to this function,
+        // and cgStmt's SExprStmt case calls cgExpr unconditionally on the
+        // discarded expr, str/rec return or not. Below mirrors this same
+        // function's own scalar/handle-kind discard branch (further down,
+        // `cgNewTrackedTmp` + release) generalized to the >4-byte case,
+        // and mirrors cgMaterializeToTemp's own KRec/KStr dispatch --
+        // just TRACKED (cgNewTrackedTmp, not cgMaterializeToTemp's
+        // untracked cgAllocTmpOff) so cgFreeStmtTmps releases it at
+        // end-of-statement like any other discarded owning value, instead
+        // of hard-erroring. A genuine non-discard str/rec value reaching
+        // cgExpr in bare-scalar context (the case this error message was
+        // written for) still hard-errors below.
+        if e == cgDiscardExprIdx {
+            retType = irFuncRet(fi)
+            off = cgNewTrackedTmp(retType)
+            dst = cgVarRefAt(off, retType)
+            if irtKind(retType) == KRec {
+                cgEmitStoreRec(dst, e)
+            } else {
+                cgEmitStoreStr(dst, e)
+            }
+            return
+        }
         log("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
         quit 1
     }
@@ -8174,8 +8240,17 @@ func cgEmitStoreStr(dst: int, src: int) {
 // the POINTER VALUE already sitting at 8(A6) (pushed by value, not
 // LEA'd, and NOT an IRExpr -- so neither branch here can route through
 // cgCallRuntime the way cgEmitStoreStr's default path now does).
-// ECallFn (returning a call result directly) isn't exercised by this
-// task's fixtures -- TODO, not built.
+// ECallFn (returning a call result directly, e.g. `return f()` where f
+// also returns string) falls through to the generic tail below exactly
+// like every other not-specially-handled src kind -- cgExprAddr(src)'s
+// own general fallback (Task 14.7) already materializes any ECallFn into
+// a fresh scratch temp via cgEmitStoreStr, then this function's generic
+// tail block-copies from that temp into the hidden pointer via
+// rtStrStore. Same fix, same reasoning, as cgEmitReturnRec's own ECallFn
+// handling (its doc comment) -- mac-resident-clarusc Task 3 found this
+// one still hard-erroring (clarusc's own self-emit hits `return
+// numToStr(...)`-shaped code), its sibling's own comment already having
+// been updated for the analogous KRec case.
 func cgEmitReturnStr(src: int) {
     var sk: IRExprKind
     var nm: string
@@ -8308,9 +8383,6 @@ func cgEmitReturnStr(src: int) {
             log("cg68k: cgEmitReturnStr: intrinsic " + nm + " unsupported in return context")
             quit 1
         }
-    } else if sk == ECallFn {
-        log("cg68k: cgEmitReturnStr: return <- nested call not supported (bind it to a variable first)")
-        quit 1
     }
 
     cap = irtN(cgCurRetType)

@@ -67,11 +67,21 @@ measure toolboxgui --testapi testsuite/kit.cla \
     testsuite/toolbox/cases_bigtext.cla testsuite/toolbox/cases_catalog.cla \
     testsuite/toolbox/cases_finfo.cla testsuite/toolbox/gui.cla
 
-# clarusc measured last: as of this writing, self-hosting clarusc/main.cla
-# through emit68k hits a pre-existing native-backend gap (cg68k.cla,
-# "too many str/rec temps needed in one statement -- bump cgBigTmpSlots";
-# bumping that constant just uncovers a second, deeper gap --
-# "cgPushArgs: unaddressable, unmaterializable KStr/KRec argument"),
-# unrelated to peephole68k. Ordered last so the other two targets' SIZE
-# lines still print before this one aborts the script (set -e).
+# clarusc measured last: mac-resident-clarusc Task 3 closed every codegen
+# gap self-hosting clarusc/main.cla through emit68k used to hit (the old
+# "too many str/rec temps"/"unaddressable KStr/KRec argument" errors this
+# comment used to describe are gone -- cgBigTmpSlots/cgTmpSlots bumped to
+# clarusc's own observed need, three real backend gaps fixed: discarded
+# str/rec-returning call statements, `return <- nested call` for string
+# returns, and depth-2 call-result materialization). Self-emit now fails
+# LATER and DEEPER instead: cgPackProgram's per-segment fixed cost
+# (cgPoolSize, clarusc's own constant pool -- every string literal in the
+# whole compiler, duplicated into EVERY 32KB CODE segment by the current
+# packing design) is ALONE already ~32.8KB, bigger than the entire 32KB
+# segment budget, so no function -- however small -- can ever be packed.
+# This is a structural packing-model limitation (whole-pool-per-segment
+# duplication doesn't scale to a compiler-sized program), not a "bump a
+# constant" fix, and is out of Task 3's scope -- see its own task report.
+# Ordered last so the other two targets' SIZE lines still print before
+# this one aborts the script (set -e).
 measure clarusc clarusc/main.cla
