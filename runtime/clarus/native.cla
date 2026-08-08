@@ -963,6 +963,14 @@ func natReadResource(name: ptr, out: ptr): bool {
     }
 
     NatHUnlock(h)
+    // Deliberately NO NatReleaseResource(h) here -- see this function's
+    // own doc comment above for the full bisection. Calling it hung the
+    // boot solid on real hardware; leaving `h` locked-and-resident
+    // forever is the proven workaround. Bounded: this primitive reads a
+    // handful of small baked source files once per process lifetime
+    // (the self-recompiling compiler's own bootstrap-source reads), so
+    // the permanent per-distinct-name resident cost never accumulates
+    // into a real leak in practice.
 
     rt = RtText(out)
     rt.len = sz

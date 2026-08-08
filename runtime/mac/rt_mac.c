@@ -403,17 +403,30 @@ int rt_file_write_text(const uint8_t *path, const rt_text *t, const uint8_t *typ
 
 /* rt_file_read_resource/rt_file_write_res (Task 7, mac-resident-clarusc):
  * this lane's own real implementations, using Retro68's high-level C
- * glue directly (Get1NamedResource/ReleaseResource/GetHandleSize/HLock/
- * HUnlock from Resources.h/Memory.h; OpenRF/FSWrite/FSClose/SetEOF/
- * Create/FlushVol from Files.h -- the SAME routines rt_file_read_text/
- * rt_file_write_text above already use, just OpenRF standing in for
- * FSOpen so the write lands in the RESOURCE fork instead of the data
- * fork). Same lastError codes/messages as runtime/clarus/native.cla's
- * natReadResource/natWriteRes (the emit68k-lane twin of these two
- * functions) and runtime/host/rt.c's host-only stubs. writeRes is a raw
- * fork write, not a Resource Manager call sequence -- see the design
- * doc's own rejected-alternatives section (native.cla's natWriteRes
- * doc comment quotes it in full). */
+ * glue directly (Get1NamedResource/GetHandleSize/HLock/HUnlock from
+ * Resources.h/Memory.h; OpenRF/FSWrite/FSClose/SetEOF/Create/FlushVol
+ * from Files.h -- the SAME routines rt_file_read_text/rt_file_write_text
+ * above already use, just OpenRF standing in for FSOpen so the write
+ * lands in the RESOURCE fork instead of the data fork). Same lastError
+ * codes/messages as runtime/clarus/native.cla's natReadResource/
+ * natWriteRes (the emit68k-lane twin of these two functions) and
+ * runtime/host/rt.c's host-only stubs. writeRes is a raw fork write, not
+ * a Resource Manager call sequence -- see the design doc's own
+ * rejected-alternatives section (native.cla's natWriteRes doc comment
+ * quotes it in full).
+ *
+ * NO ReleaseResource call, deliberately (Task 7 fix-round): the emit68k
+ * lane's own natReadResource (native.cla) empirically hung the boot
+ * SOLID, real hardware, calling this exact trap on a resource just read
+ * this same way -- see that function's own doc comment for the full
+ * bisection. This C-lane twin has never been boot-verified itself (the
+ * Retro68/cprint lane is opt-in, CLARUS_CPRINT_MAC_TESTS=1, not run by
+ * this task) -- rather than assume Get1NamedResource/ReleaseResource
+ * behave differently through Retro68's InterfaceLib glue than through
+ * the bare trap dispatch native.cla drives directly (no evidence either
+ * way), this mirrors the proven-safe workaround: never release. Same
+ * "small, permanent per-distinct-name resident cost, acceptable for a
+ * once-per-process-lifetime compiler read" tradeoff either lane. */
 int rt_file_read_resource(const uint8_t *name, rt_text *t)
 {
     Handle h;
@@ -429,7 +442,6 @@ int rt_file_read_resource(const uint8_t *name, rt_text *t)
     rt_text_grow(t, (int32_t)sz);
     if (sz > 0) BlockMoveData(*h, *t->h, sz);
     HUnlock(h);
-    ReleaseResource(h);
     t->len = (int32_t)sz;
     return 1;
 }

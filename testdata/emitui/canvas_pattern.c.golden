@@ -5234,41 +5234,6 @@ static void clar_fn_rtUiTeClamp(void * cv_te, int32_t cv_maxLen) {
 }
 
 static int32_t clar_fn_rtUiFieldCap(void * cv_inst, int32_t cv_wIdx) {
-    clar_rec_RtUiWinst * cv_w;
-    cv_w = 0;
-    int32_t cv_formOff;
-    cv_formOff = 0;
-    int32_t cv_fieldIdx;
-    cv_fieldIdx = 0;
-    int32_t cv_layoutOff;
-    cv_layoutOff = 0;
-    int32_t cv_ftype;
-    cv_ftype = 0;
-    int32_t cv_strCap;
-    cv_strCap = 0;
-    if (clar_fn_uidWidgetKind((((clar_rec_RtUiWinst *)(cv_inst)))->cv_winIdx, cv_wIdx) != 4) {
-        return 255;
-    }
-    if (!((cv_rtUiModalActive && (cv_rtUiModalInst == cv_inst)))) {
-        return 255;
-    }
-    cv_w = ((clar_rec_RtUiWinst *)(cv_inst));
-    cv_formOff = clar_fn_uidWinFormOff((cv_w)->cv_winIdx);
-    cv_fieldIdx = clar_fn_uidFormFindFieldIndex(cv_formOff, cv_wIdx);
-    if (cv_fieldIdx == (-(1))) {
-        return 255;
-    }
-    cv_layoutOff = clar_fn_uidFormLayoutOff(cv_formOff);
-    cv_ftype = clar_fn_uidFieldFtype(cv_layoutOff, cv_fieldIdx);
-    if (cv_ftype == 4) {
-        cv_strCap = clar_fn_uidFieldStrCap(cv_layoutOff, cv_fieldIdx);
-        if (cv_strCap < 255) {
-            return cv_strCap;
-        }
-    }
-    if (cv_ftype == 3) {
-        return 1;
-    }
     return 255;
     return 0;
 }
