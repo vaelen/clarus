@@ -789,8 +789,6 @@ func driveEarlySplice(testapi: bool): bool {
     var i: int
     var j: int
     var rtPath: string
-    var rtProbe: text
-    var rtReadable: bool
     var beforeCount: int
     var beforeHits: int
     var hoists: list of int
@@ -839,16 +837,6 @@ func driveEarlySplice(testapi: bool): bool {
     i = 0
     while i < earlyMods.count {
         rtPath = joinPath(rtDir, earlyMods[i])
-        rtProbe = ""
-        rtReadable = feReadSource(rtPath, rtModuleKey(earlyMods[i]), rtProbe)
-        if not rtReadable {
-            if haveRtDir {
-                log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
-            } else {
-                log("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
-            }
-            quit 1
-        }
         // Same whole-range capture as driveManifestSplice's loop below -- a
         // multi-file runtime module (one that itself `include`s another)
         // pushes more than one asmHeads entry per expand call. Files this
@@ -858,7 +846,34 @@ func driveEarlySplice(testapi: bool): bool {
         // exactly where a freshly expanded include would have landed).
         beforeCount = asmHeads.count
         beforeHits = dedupHits.count
-        expand(rtPath, true, rtModuleKey(earlyMods[i]))
+        // Fix round 3 (mac-resident-clarusc): this used to PROBE
+        // feReadSource separately (into a throwaway rtProbe text, checked,
+        // then discarded) before calling expand() below -- which calls
+        // feReadSource AGAIN, for real, into the src this module's own
+        // lex/parse actually runs on. Two consequences of that redundant
+        // double read: (1) a plain inefficiency (every baked module read
+        // twice, one throwaway), and (2) a real correctness gap -- a probe
+        // that succeeds but whose real read then fails (rare, but a Mac
+        // resource re-read is not the same operation main.cla's own
+        // feReadSource -- unconditional file.readText -- guarantees
+        // idempotent) previously fell straight through UNCHECKED: expand()
+        // sets entryFailed and reports "missing", but nothing here ever
+        // looked at either, and driveCompile's own entryFailed check runs
+        // exactly once, right after Phase A's ENTRY-file loop, never again
+        // after this function's own expand() calls -- so a runtime
+        // module's own read failure was invisible all the way out to a
+        // "successful", silently incomplete compile. Now: ONE read via
+        // expand() directly, whose own return value is the single source
+        // of truth for "found or not" -- removes the double-read hazard
+        // entirely rather than merely detecting it after the fact.
+        if expand(rtPath, true, rtModuleKey(earlyMods[i])) {
+            if haveRtDir {
+                log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
+            } else {
+                log("runtime module " + earlyMods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+            }
+            quit 1
+        }
         hoists = hoistDedups(beforeHits)
         j = 0
         while j < hoists.count {
@@ -950,8 +965,6 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var rtHeads: list of int
     var rtTail: int
     var rtPath: string
-    var rtProbe: text
-    var rtReadable: bool
     var i: int
     var j: int
     var h: int
@@ -1045,9 +1058,19 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         i = 0
         while i < neededMods.count {
             rtPath = joinPath(rtDir, neededMods[i])
-            rtProbe = ""
-            rtReadable = feReadSource(rtPath, rtModuleKey(neededMods[i]), rtProbe)
-            if not rtReadable {
+            beforeCount = asmHeads.count
+            beforeHits = dedupHits.count
+            // Fix round 3 (mac-resident-clarusc): see driveEarlySplice's
+            // own doc comment (identical bug/fix, above in this file) for
+            // the full reasoning -- this used to probe feReadSource
+            // separately (into a throwaway rtProbe, discarded) before
+            // calling expand() below (a SECOND, independent feReadSource
+            // call for the same module); a probe that hit but whose real
+            // read then missed silently produced a module contributing
+            // zero declarations, no diagnostic, no quit. Now: ONE read via
+            // expand() directly, whose own return value is the single
+            // source of truth.
+            if expand(rtPath, true, rtModuleKey(neededMods[i])) {
                 if haveRtDir {
                     log("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
                 } else {
@@ -1055,9 +1078,6 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
                 }
                 quit 1
             }
-            beforeCount = asmHeads.count
-            beforeHits = dedupHits.count
-            expand(rtPath, true, rtModuleKey(neededMods[i]))
             hoists = hoistDedups(beforeHits)
             j = 0
             while j < hoists.count {
