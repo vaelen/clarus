@@ -46,6 +46,17 @@ func feReadSource(path: string, key: string, out: text): bool {
     return file.readText(path, out)
 }
 
+// feHasKey is main.cla's front end for drive.cla's expand() seam (Task 8
+// fix round 2): whether a 'CLFS' resource named key could satisfy a read.
+// The host CLI has no baked resources at all, so always false -- expand()
+// then never treats a disk-loaded file's key as a possible dedup alias,
+// which keeps host behavior (hostPaths=true never calls this anyway) and
+// any future host-side reasoning about hostPaths=false paths conservative.
+// Task 10's macgui implements this for real (a resource-presence check).
+func feHasKey(key: string): bool {
+    return false
+}
+
 // cliResolveBake (Task 5, mac-resident-clarusc) validates and reads every
 // `emit68k --bake FILE` flag, in flag order, filling cg68k.cla's
 // cgBakeNames/cgBakeDatas globals for cg68WriteImage's own CLFS-resource
