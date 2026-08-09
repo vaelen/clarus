@@ -9,7 +9,8 @@ include "tok.cla"
 //
 // Byte-vs-escape gotcha this port has to route around: Clarus's own char
 // escape `\n` decodes to CR (13, "the Mac newline" Ñ Chapter 2), NOT to the
-// LF (10) byte that actually ends a line in a .cla file's raw bytes. Every
+// LF (10) byte that ends a line in a .cla file's raw bytes on this host (a
+// Mac-authored file ends its lines with CR instead -- see lexIsNewline). Every
 // place below that means "the raw newline byte in the source being lexed"
 // therefore spells it char(10), never '\n' Ñ using '\n' there would silently
 // compare against 13 instead of 10. Where Go's decodeEscape produces the
@@ -34,7 +35,21 @@ var lexEscByte: char
 var toks: list of Token
 
 func isSpace(c: char): bool {
-    return c == ' ' or c == '\t' or c == char(13)
+    return c == ' ' or c == '\t'
+}
+
+// lexIsNewline reports whether c ends a source line. BOTH byte 10 (LF, how
+// every .cla file in this repo is stored) and byte 13 (CR, how a real Mac
+// text file -- including any .cla file typed on the Mac, copied there with
+// `hcopy -t`, or saved by a Mac editor -- stores its line endings) count.
+// CR was originally classified as ordinary whitespace here, which made an
+// LF-free Mac source file lex as ONE line: its leading `//` comment ran to
+// end of input and swallowed the whole file, yielding a program with zero
+// declarations that compiled "successfully" to an empty application (found
+// mac-resident-clarusc Task 11: every on-Mac ClarusC compile emitted a
+// 12,072-byte husk, byte-identical to compiling /dev/null).
+func lexIsNewline(c: char): bool {
+    return c == char(10) or c == char(13)
 }
 
 func isHex(c: char): bool {
@@ -97,7 +112,7 @@ func lexAdvance() {
 
     c = lexSrc[lexOff]
     lexOff = lexOff + 1
-    if c == char(10) {
+    if c == char(10) or (c == char(13) and (lexOff >= lexSrc.length or lexSrc[lexOff] != char(10))) {
         lexLine = lexLine + 1
         lexCol = 1
     } else {
@@ -449,7 +464,7 @@ func lexDecodeEscape(quote: char): bool {
 // quote on the current line Ñ or to end of line if there is none Ñ so a bad
 // literal ('ab', '\q) never leaves stray tokens for the caller to trip over.
 func lexResyncCharLit() {
-    while lexOff < lexSrc.length and lexSrc[lexOff] != char(10) {
+    while lexOff < lexSrc.length and not lexIsNewline(lexSrc[lexOff]) {
         if lexSrc[lexOff] == '\'' {
             lexAdvance()
             return
@@ -464,7 +479,7 @@ func lexChar(line: int, col: int): Token {
 
     lexAdvance() // consume opening '
 
-    if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+    if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
         emitDiag(line, col, "unterminated character literal")
         return lexEmit(TkCharLit, line, col, 0, 0, 0)
     }
@@ -483,7 +498,7 @@ func lexChar(line: int, col: int): Token {
         lexAdvance()
     }
 
-    if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+    if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
         emitDiag(line, col, "unterminated character literal")
         return lexEmit(TkCharLit, line, col, 0, 0, 0)
     }
@@ -507,7 +522,7 @@ func lexString(line: int, col: int): Token {
     lexAdvance() // consume opening "
 
     while true {
-        if lexOff >= lexSrc.length or lexSrc[lexOff] == char(10) {
+        if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
             emitDiag(line, col, "unterminated string literal")
             break
         }
@@ -558,7 +573,7 @@ func lexNext(): Token {
                 continue
             }
             if b == '/' and lexOff + 1 < lexSrc.length and lexSrc[lexOff + 1] == '/' {
-                while lexOff < lexSrc.length and lexSrc[lexOff] != char(10) {
+                while lexOff < lexSrc.length and not lexIsNewline(lexSrc[lexOff]) {
                     lexAdvance()
                 }
                 continue
@@ -583,7 +598,7 @@ func lexNext(): Token {
         startCol = lexCol
         b = lexSrc[lexOff]
 
-        if b == char(10) {
+        if lexIsNewline(b) {
             lexAdvance()
             if not lexHavePrev or isOperatorKind(lexPrev) or lexPrev == TkNewline or lexPrev == TkSemi {
                 continue

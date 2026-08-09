@@ -1202,6 +1202,28 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         i = i + 1
     }
 
+    // A program with ZERO top-level declarations is never what anyone meant:
+    // an empty file, a file that is entirely comments, or -- the way this
+    // guard was earned -- a source file the lexer silently ate whole
+    // (mac-resident-clarusc Task 11: a Mac CR-line-ending .cla read by an
+    // LF-only lexer, whose leading `//` comment ran to end of input). Without
+    // this, such a compile SUCCEEDS: there is nothing to check, nothing to
+    // splice a runtime for, shake drops everything, and the back end emits a
+    // valid 12,072-byte application that does nothing -- reported as BUILT.
+    // Fail loudly instead, through the ordinary diagnostic channel both front
+    // ends already report. Gated on wantEmit: a comment-only snippet is a
+    // legitimate CHECK-only input (docs/clarus-language-reference.md has
+    // several such fences, pinned by internal/reftest) -- it is EMITTING an
+    // empty application that is never intentional.
+    // diags.count == 0 keeps this from piling a confusing second diagnostic
+    // on top of a file that DID have declarations the parser rejected
+    // (testdata/errors/varorder.cla and friends): a real parse error already
+    // fails the compile with a better message.
+    if wantEmit and combined == -1 and diags.count == 0 {
+        emitDiag(1, 1, "no declarations found: source is empty or entirely comments")
+        return false
+    }
+
     earlySpliceDone = driveEarlySplice(testapi)
 
     // Phase B: one checker pass over the whole program, collecting all
