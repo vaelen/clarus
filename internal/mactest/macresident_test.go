@@ -104,6 +104,24 @@ func buildHostOracleFork(t *testing.T, fixture string) []byte {
 // minutes ran out. So one compile alone can take close to the full 50
 // minutes. Raised to 110 minutes for real headroom on TWO sequential
 // compiles (runSnow's own timeout raised to 130 minutes accordingly).
+//
+// EVERY timing above was measured against a compiler that was silently
+// compiling NOTHING. Fix round 4 found that the .cla sources staged here
+// (putText, i.e. hcopy -t, i.e. CR line endings) were swallowed whole by
+// an LF-only lexer, so each "compile" was really a compile of an empty
+// program: no runtime splice, a 12,072-byte output. With that fixed, each
+// compile does roughly 9x the work -- the host self-hosted compiler takes
+// 0.37s on tickprobe.cla vs 0.04s on an empty file, and the on-Mac cost
+// tracks that ratio. Observed directly: a 4-hour boot at 6.8x fast-forward
+// did not finish the FIRST compile (clean trace, no error, Snow pegged at
+// 100% host CPU the whole time -- real work, not a hang). Budget scales
+// off the old 110-minute figure by that same ~9x: on the order of TEN
+// HOURS of wall clock for both compiles at ~7x fast-forward, more without
+// fast-forward. Left at 110 minutes rather than raised to a number nobody
+// would wait out by accident: this test is opt-in (CLARUS_SNOW_TESTS=1)
+// and every real run of it already sets CLARUS_MACRESIDENT_SETTLE
+// explicitly. Set it to 12h (with a -timeout above that) for a run
+// actually meant to reach the byte-compare.
 const macResidentCompileSettle = 110 * time.Minute
 
 // macResidentSettle returns macResidentCompileSettle, or
@@ -213,7 +231,25 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	// quit Snow, so the two must never be equal.
 	runSnowTimeout := settle + 20*time.Minute
 	bootStart := time.Now()
-	runSnow(t, d, runSnowTimeout, func() bool { return time.Since(bootStart) >= settle })
+	// settle is an UPPER bound, not a fixed wait. CLARUS_MACRESIDENT_DONE,
+	// when set, names a host file an operator watching the emulator can
+	// create the moment ClarusC's scripted `quit` visibly lands -- ending
+	// the wait immediately instead of burning the rest of a deliberately
+	// generous budget. It can never cause a false PASS: tripping it early
+	// just means the extraction/byte-compare assertions below run against a
+	// half-finished disk and FAIL, exactly as a too-short settle already
+	// does (fix round 1's own CLARUS_MACRESIDENT_SETTLE tradeoff note).
+	doneMarker := os.Getenv("CLARUS_MACRESIDENT_DONE")
+	runSnow(t, d, runSnowTimeout, func() bool {
+		if time.Since(bootStart) >= settle {
+			return true
+		}
+		if doneMarker == "" {
+			return false
+		}
+		_, err := os.Stat(doneMarker)
+		return err == nil
+	})
 	t.Logf("on-Mac double-compile boot: %s wall clock (settle=%s)", time.Since(bootStart), settle)
 
 	appOut := string(d.get(t, ":System Folder:Startup Items:out"))
