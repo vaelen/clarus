@@ -395,48 +395,64 @@ func rtUiTeClamp(te: ptr, maxLen: int) {
 }
 
 // rt_ui_field_cap (rt_ui.c:1819-1842) -> rtUiFieldCap. A FIELD's text cap
-// is RTUI_FIELD_TEXT_MAX (255) by default; Task 10's own design additionally
-// narrowed it, while the CURRENTLY open modal form has this exact widget
-// bound to a STR field with a smaller declared `string(n)` cap (or a CHAR
-// field, cap 1), by walking the form's own binds/layout tables through
-// uidesc.cla's UiProgDesc()-based accessors (uidWinFormOff/
-// uidFormFindFieldIndex/uidFormLayoutOff/uidFieldFtype/uidFieldStrCap).
+// is RTUI_FIELD_TEXT_MAX (255) by default, UNLESS this exact widget is the
+// CURRENTLY open modal form's own STR-bound field with a smaller strCap
+// (a `string(n)`'s own declared cap) or its CHAR-bound field (cap 1) --
+// reuses this existing clamp mechanism with a SMALLER ceiling rather than
+// adding a second clamp path (Task 10). Only ever tighter than
+// rtUiFieldTextMax, never looser: an INT/FIXED/ENUM bind (or no bind at
+// all, or no form open at all) falls through to the plain default.
+// uidesc.cla's own uidFormFindFieldIndex covers rt_ui_form_find_bind's
+// linear-scan role directly (form's binds array, widgetIndex ->
+// fieldIndex, -1 if unbound/no form).
 //
-// Task 7 fix-round (mac-resident-clarusc): that narrowing path is
-// DISABLED here -- always the plain rtUiFieldTextMax ceiling, live typing
-// never gets tightened below it -- after live-driving found it reading a
-// WRONG (effectively garbage, observed as ftype==rtUiFtChar's cap-1
-// behavior) result for testsuite/toolbox's own FormEditWin.Url field
-// (`string(255)`) specifically in this task's larger binary, hanging
-// every keystroke but the first. Root-caused as far as budget allowed,
-// not further: the STATIC UI descriptor blob is proven BYTE-IDENTICAL
-// (and semantically correct -- ftype=str, strCap=255, verified by direct
-// offset decode) between the pre-Task-7 tree (where this path works) and
-// this one (where it doesn't), ruling out a uiblob.cla emission bug;
-// every uidesc.cla accessor this call chain reaches that itself calls
-// UiProgDesc() directly (uidWinFormOff/uidFormBindsOff/uidFormNBinds/
-// uidBindWidgetIndex/uidBindFieldIndex/uidFormLayoutOff/uidFieldBase) is
-// confirmed co-located in the SAME segment as that segment's own local
-// UI-blob constant-pool copy (cg68k.cla's cgPackProgram/cgCurPoolUsesUiBlob
-// duplication scheme) -- yet rtUiFieldCap itself (uitext.cla) lands in a
-// DIFFERENT segment and reaches them only via ordinary cross-segment JT
-// calls. The defect is localized to that boundary -- something about
-// this specific caller/callee-segment split resolves wrong at runtime --
-// without a further isolated repro pinning the exact miscompiled
-// instruction; a real cg68k bug, filed as a follow-up, not specific to
-// file.readResource/file.writeRes. SAFE workaround, not a data-safety
-// regression: rtUiFormAccept (uidialogs.cla) re-reads strCap through the
-// SAME uidFieldStrCap accessor and clamps independently at accept time
-// (`if len > strCap { len = strCap }`) before ever writing into the bound
-// record's buffer, so a field typed past its live cap still truncates
-// safely on OK -- this only relaxes the LIVE per-keystroke UX ceiling,
-// never the actual written-back data. Confirmed fix: the full 27-case
-// toolbox suite (including FormEdit) passes reliably with this change,
-// twice in a row, where it previously failed FormEdit's own URL-field
-// assertion (and briefly a real ReleaseResource-class boot hang while
-// this was being instrumented mid-investigation, unrelated -- see
-// task-7-report.md's Fix Round 1 for the full bisection).
+// mac-resident-clarusc Task 7 DISABLED this narrowing (unconditional
+// `return rtUiFieldTextMax`), reading the symptom as a cg68k
+// cross-segment call defect; Task 15 characterized it properly and
+// restored this body verbatim. It was never a cross-segment problem: this
+// function sits at the very bottom of the deepest call chain the whole UI
+// runtime has (real event loop -> UiFireWidget dispatch -> user handler ->
+// `edit` -> nested modal loop -> key dispatch -> rtUiTeMutated -> here ->
+// six more uidesc.cla accessor frames), and cg68k's SetApplLimit
+// stack-reserve heuristic was undercounting that chain by less than one
+// 8.3KB Clarus frame, so these accessor calls ran off the end of the
+// reserved stack into the application heap and read a garbage capacity.
+// Deleting this body simply made the chain one frame shallower, which is
+// why the "fix" worked; adding a log() call to it made the chain DEEPER,
+// which is why all three instrumentation attempts hung instead. The real
+// fix is in cgStackHeuristic (clarusc/cg68k.cla, term 4 `sevExtra`) --
+// see that function's own comment and task-15-report.md.
 func rtUiFieldCap(inst: ptr, wIdx: int): int {
+    var w: RtUiWinst
+    var formOff: int
+    var fieldIdx: int
+    var layoutOff: int
+    var ftype: int
+    var strCap: int
+
+    if uidWidgetKind(RtUiWinst(inst).winIdx, wIdx) != rtUiKindField {
+        return rtUiFieldTextMax
+    }
+    if not (rtUiModalActive and rtUiModalInst == inst) {
+        return rtUiFieldTextMax
+    }
+    w = RtUiWinst(inst)
+    formOff = uidWinFormOff(w.winIdx)
+    fieldIdx = uidFormFindFieldIndex(formOff, wIdx)
+    if fieldIdx == -1 {
+        return rtUiFieldTextMax
+    }
+    layoutOff = uidFormLayoutOff(formOff)
+    ftype = uidFieldFtype(layoutOff, fieldIdx)
+    if ftype == rtUiFtStr {
+        strCap = uidFieldStrCap(layoutOff, fieldIdx)
+        if strCap < rtUiFieldTextMax {
+            return strCap
+        }
+    }
+    if ftype == rtUiFtChar {
+        return 1
+    }
     return rtUiFieldTextMax
 }
 

@@ -324,7 +324,10 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // to 24 by toolbox-cookbook Task 2's own Catalog addition, then to 25 by
 // native-gaps-cleanup Task 3's own FInfoStamp addition, then to 27 by
 // Task 7's (mac-resident-clarusc) own ResourceBake/WriteResStamp
-// addition: parses each of the 27 result lines (26 real cases +
+// addition, then to 28 by mac-resident-clarusc Task 15's own FieldCap
+// addition (the language reference's live `string(n)` typing clamp, the
+// pin for that task's cgStackHeuristic fix): parses each of the 28
+// result lines (27 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -350,8 +353,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 27 {
-		t.Errorf("result lines: got %d, want 27\ncapture:\n%s", len(results), out)
+	if len(results) != 28 {
+		t.Errorf("result lines: got %d, want 28\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -361,7 +364,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 27 PASS 27 FAIL 0"; total != want {
+	if want := "TOTAL 28 PASS 28 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }

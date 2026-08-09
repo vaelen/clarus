@@ -23,7 +23,7 @@ LBL_121:
         CLR.W (A0)+
         DBRA D0,LBL_121
         MOVEA.L $0130.W,A0
-        ADDA.L #-58850,A0
+        ADDA.L #-92112,A0
         DC.W $A02D  ; _SetApplLimit
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters

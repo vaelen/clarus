@@ -226,3 +226,65 @@ func caseFormEdit(): TestResult {
     }
     return tkFail("FormEdit", detail)
 }
+
+// caseFieldCap (mac-resident-clarusc Task 15): the live, per-keystroke
+// field-cap clamp for a bound `string(n)` field with n < 255 --
+// docs/clarus-language-reference.md:1049's normative "typing is limited
+// to n characters" promise for a form-bound `field`. Until this case
+// existed that promise was UNOBSERVABLE anywhere in the corpus: the only
+// bound STR field any live test typed into was FormEditWin.Url, whose own
+// `string(255)` cap is exactly rtUiFieldTextMax, so a working clamp and a
+// disabled one produce identical results. Task 7's re-review flagged that
+// gap when it ruled the disable a spec violation; this case closes it.
+//
+// The observable has to distinguish the LIVE clamp (rtUiFieldCap ->
+// rtUiTeClamp, per keystroke) from the ACCEPT-time clamp (rtUiFormAccept's
+// own independent `if len > strCap { len = strCap }`), and both truncate
+// to the same first-n prefix, so simply typing past the cap and reading
+// the accepted record back cannot tell them apart. One Backspace after
+// the overrun does:
+//   live clamp working -> the field already holds only the first 63 typed
+//     chars (Name is `string(63)`, harness.cla), Backspace leaves 62, and
+//     accept writes back 62.
+//   live clamp disabled -> the field holds all 70 typed chars, Backspace
+//     leaves 69, and accept's own clamp still writes back 63.
+// So `name.length == 62` passes only when the live clamp really ran.
+// Deliberately a SEPARATE case from caseFormEdit rather than more steps
+// inside it: this one asserts a language-reference promise, caseFormEdit
+// asserts the accepted(rec) round trip, and a failure should say which.
+const tbFcTyped: string = "0123456789012345678901234567890123456789012345678901234567890123456789"
+const tbFcWant:  string = "01234567890123456789012345678901234567890123456789012345678901"
+
+func caseFieldCap(): TestResult {
+    var editOk: bool
+    var got: string(63)
+    var detail: string
+
+    tbFeAcceptedFired = false
+    editOk = true
+
+    edit FormEditWin, new TbFeBookmark
+
+    editOk = editOk and UiTestClick(tbFeNameX, tbFeNameY)
+    editOk = editOk and UiTestType(tbFcTyped)
+    editOk = editOk and UiTestKey("8")
+    editOk = editOk and UiTestClick(tbFeOkX, tbFeOkY)
+
+    got = tbFeAccepted.name
+    if editOk and tbFeAcceptedFired and got == tbFcWant {
+        return tkPass("FieldCap")
+    }
+    detail = "name [" + got + "]"
+    detail = detail + " len " + tkIntToStr(got.length)
+    if tbFeAcceptedFired {
+        detail = detail + " acceptedFired true"
+    } else {
+        detail = detail + " acceptedFired false"
+    }
+    if editOk {
+        detail = detail + " editOk true"
+    } else {
+        detail = detail + " editOk false"
+    }
+    return tkFail("FieldCap", detail)
+}

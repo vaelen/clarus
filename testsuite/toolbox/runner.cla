@@ -122,6 +122,7 @@ enum ToolboxTest {
     Dialogs
     Hdim
     FormEdit
+    FieldCap
     BigText
     Catalog
     FInfoStamp
@@ -130,12 +131,12 @@ enum ToolboxTest {
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 26 real cases
+// nTbCases is ToolboxTest's member count minus All: the 27 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 27
+const nTbCases: int = 28
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -207,6 +208,9 @@ func tbCaseName(t: ToolboxTest): string {
     case FormEdit {
         return "FormEdit"
     }
+    case FieldCap {
+        return "FieldCap"
+    }
     case BigText {
         return "BigText"
     }
@@ -254,6 +258,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(Dialogs)
     l.add(Hdim)
     l.add(FormEdit)
+    l.add(FieldCap)
     l.add(BigText)
     l.add(Catalog)
     l.add(FInfoStamp)
@@ -379,6 +384,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, FormEdit) {
         results.add(caseFormEdit())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, FieldCap) {
+        results.add(caseFieldCap())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, BigText) {

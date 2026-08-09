@@ -1822,10 +1822,59 @@ func cgHeurOnCycle(start: int): bool {
     return false
 }
 
+// cgNameHasPrefix is a plain per-character prefix test -- the language has
+// no substring/startsWith primitive, and cgIsSeveredEntry below needs two
+// different prefixes (the existing hand-unrolled `nat` test in
+// cg68AddRoots predates this helper and is left alone).
+func cgNameHasPrefix(nm: string, pre: string): bool {
+    var i: int
+
+    if nm.length < pre.length {
+        return false
+    }
+    i = 0
+    while i < pre.length {
+        if nm[i] != pre[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// cgIsSeveredEntry answers whether irFuncs name `nm` is the TARGET of a
+// call the shake call graph cannot see -- an ECallExt-mediated call.
+// shake.cla's own ECallExt arm walks the argument list and stops
+// ("`external func` -- resolves straight to rt_ext_NAME, never an irFuncs
+// entry"), which is true on the C lane but NOT on this one: cgCallExt
+// resolves two whole families of extern back to a real, called Clarus
+// IRFunc, and neither produces a shakeEdgesFrom/To entry --
+//   - the reverse-waist UI dispatchers (cgCallExtUiSynth /
+//     lower.cla's lowUiSynthExternName): every `clar_ui_fire_*` function,
+//     the ONLY route from the runtime's own event loop into a user `on`
+//     handler (and from there into `open`/`edit`, i.e. straight back down
+//     into the runtime again);
+//   - the `nat*` native helpers (cgCallExtNatFallback), which every
+//     file/console/Toolbox-adjacent extern lands on.
+// Both families are kept REACHABLE by cg68AddRoots' name-based roots, so
+// they are emitted correctly -- but a root is not an edge, so
+// cgHeurLongest sees them as the starts of their own disconnected
+// fragments instead of as the continuation of whatever chain called them.
+// Same name-prefix conventions cg68AddRoots and lowUiSynthExternName
+// already establish; matching by prefix rather than re-deriving the
+// extern->target mapping keeps this a read-only audit of irFuncs, with no
+// second copy of cgCallExt's dispatch to drift out of sync.
+func cgIsSeveredEntry(nm: string): bool {
+    if cgNameHasPrefix(nm, "nat") {
+        return true
+    }
+    return cgNameHasPrefix(nm, "clar_ui_fire_")
+}
+
 // cgStackHeuristic (native-gaps-cleanup Task 4) computes the native
 // startup's SetApplLimit stack-reserve immediate. An explicit `stack: N`
 // app field (checker/lower already validated 4096..1048576) wins
-// outright -- no max() against the heuristic. Otherwise: three terms
+// outright -- no max() against the heuristic. Otherwise: four terms
 // summed, then floored at 32768 and even-rounded:
 //
 //   1. `best` -- the post-shake call graph's deepest acyclic-collapsed
@@ -1888,12 +1937,44 @@ func cgHeurOnCycle(start: int): bool {
 //      IRREDUCIBLY untraceable (ROM-internal trap dispatch overhead);
 //      cbExtra covers the traceable-but-disconnected part properly
 //      instead of folding it into a bigger guessed headroom constant.
+//   4. `sevExtra` -- the SAME treatment for the OTHER disconnected-entry
+//      family, added by mac-resident-clarusc Task 15: the deepest
+//      cgHeurLongest over every reachable ECallExt-reached target
+//      (cgIsSeveredEntry above -- the `clar_ui_fire_*` reverse-waist
+//      dispatchers and the `nat*` helpers), taken as a single MAX for the
+//      same "at most one of these severed sub-chains is live at a time"
+//      reason cbExtra states. Without it the model was silently pricing
+//      only ONE SIDE of the reverse waist: on the toolbox-suite
+//      composition `best`'s own argmax was `clar_ui_fire_widget` itself
+//      (measured: best=195410, cbExtra=41646, cycleExtra=0 -> 245248
+//      reserve), i.e. the whole runtime prefix that CALLS the dispatcher
+//      (rtUiRun -> event dispatch -> UiFireWidget) was charged at zero,
+//      even though at runtime it is unmistakably below the dispatcher on
+//      the same stack. That left the model with no margin at all: a real
+//      boot needed between 245248 and 247296 bytes (bisected on hardware,
+//      see task-15-report.md), i.e. the shipped number was short by under
+//      ONE 8.3KB Clarus frame, and the deepest chain in the whole suite
+//      -- a modal form's per-keystroke rtUiTeMutated -> rtUiFieldCap ->
+//      uidesc.cla accessor walk -- ran off the end of the reserve into
+//      the application heap. The visible symptom was NOT a crash but a
+//      quiet wrong answer (rtUiFieldCap read a garbage field cap, so
+//      typing into a bound form field kept only the first character), and
+//      instrumenting that chain with a log() call -- one more frame --
+//      turned it into a hang instead. Charging both sides of the waist
+//      restores real margin (toolbox suite: 440658).
+//      Known limitation, deliberately not modelled: severances NEST (a
+//      user handler reached through the dispatcher can itself call a
+//      `nat*` helper through a second severed edge), and a re-entrant UI
+//      (event loop -> handler -> modal loop -> handler) has no static
+//      depth bound at all. `stack: N` stays the escape hatch for a
+//      program that outgrows this model.
 func cgStackHeuristic(): int {
     var i: int
     var best: int
     var v: int
     var cycleExtra: int
     var cbExtra: int
+    var sevExtra: int
     var result: int
 
     if irAppStack != -1 {
@@ -1938,7 +2019,17 @@ func cgStackHeuristic(): int {
         i = i + 1
     }
 
-    result = best + cycleExtra + cbExtra + cgToolboxHeadroom
+    sevExtra = 0
+    i = 0
+    while i < irFuncs.count {
+        if shakeReachable(i) and cgIsSeveredEntry(poolGet(irFuncName(i))) {
+            v = cgHeurLongest(i)
+            if v > sevExtra { sevExtra = v }
+        }
+        i = i + 1
+    }
+
+    result = best + cycleExtra + cbExtra + sevExtra + cgToolboxHeadroom
     if result mod 2 != 0 {
         result = result + 1
     }
