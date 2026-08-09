@@ -398,6 +398,81 @@ func driveKeyResolve(baseKey: string, rel: string): string {
     return out
 }
 
+// driveFreshIntList/driveFreshBoolList/driveFreshIntMap hand back a
+// genuinely NEW empty container each call (same trick cg68k.cla's own
+// cgFreshIntList/cgFreshBoolList use) -- required because `list of`/`map
+// of` are reference types (Chapter 3: "text, list, map, and window refs
+// pass by reference"), so reusing one local across several global
+// assignments would alias them instead of giving each global its own
+// storage.
+func driveFreshIntList(): list of int {
+    var l: list of int
+    return l
+}
+func driveFreshBoolList(): list of bool {
+    var l: list of bool
+    return l
+}
+func driveFreshIntMap(): map of int {
+    var m: map of int
+    return m
+}
+
+// driveReset (Task 10, mac-resident-clarusc) clears every drive.cla-owned
+// module global that must not leak across repeated driveCompile calls in
+// the SAME process. Every prior front end (main.cla's host CLI) is
+// single-shot -- one process, one driveCompile call -- so this was never
+// needed before; Task 6's own report explicitly deferred it ("re-entrancy
+// verification" assigned to Task 10). macgui.cla (this task) is the
+// first front end that calls driveCompile more than once per process
+// (once per user "Compile..." action), so it MUST call driveReset(),
+// together with resetDiags() (lib.cla) and astReset() (ast.cla) -- both
+// of THOSE already existed for exactly this purpose (their own doc
+// comments: "call between compiling independent programs") but were only
+// ever invoked once, at process start, by main.cla's startCLI -- before
+// EVERY driveCompile call.
+//
+// Deliberately does NOT touch:
+//   - ir.cla's arenas: irReset() already runs inside driveCompile itself
+//     (right before lowerProgram), unconditionally, every call.
+//   - check.cla/types.cla's state: checkProgram calls checkReset() at
+//     its own top, every call (its own doc comment: "rebuilds the
+//     universe scope... from scratch -- called by checkProgram itself,
+//     callers never need to remember it").
+//   - cg68k.cla's/shake.cla's own per-run lists (cgJtSlots, cgFuncLabels,
+//     shakeMarks, ...): cg68k.cla's own "Module state" header documents
+//     these as "rebuilt fresh at the top of every cg68Program() call"
+//     (now cg68Measure, reached via driveEmit68kFork) -- reassigned, not
+//     appended-to, every call.
+//   - lib.cla's strPool/strIndex (the intern pool): shared, unbounded-
+//     growth-but-harmless infrastructure, not a per-compile arena --
+//     every index a cleared program (diags/AST/IR) might have referenced
+//     is gone the moment THOSE reset, so a stale pool entry is simply
+//     never looked up again. The differential test harness already
+//     tolerates this same growth across many compiles in one process;
+//     macgui.cla's own compile-then-exit-eventually lifetime is no
+//     different.
+//   - rtDir/haveRtDir: deliberately PRESERVED across compiles (once
+//     resolved, the runtime-module directory doesn't change), same
+//     reasoning findRtDir's own lazy-fill-once design already assumes.
+//   - cgEventsBytes/cgBakeNames/cgBakeDatas/cgSizePartitionBytes: never
+//     set by macgui.cla at all (no --events/--bake/--partition
+//     equivalent for a program it compiles at runtime), so they stay at
+//     their process-start zero value (empty/0) for every compile --
+//     nothing to reset.
+func driveReset() {
+    seenPaths = driveFreshIntMap()
+    asmHeads = driveFreshIntList()
+    asmTails = driveFreshIntList()
+    dedupHits = driveFreshIntList()
+    hoistedHead = driveFreshBoolList()
+    hoistCount = 0
+    userHeadCount = 0
+    entryFailed = false
+    combined = -1
+    combined2 = -1
+}
+
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
 // UP from the current working directory looking for a "runtime/clarus/"
 // directory, probed by trying to read probeFile (the first needed module's

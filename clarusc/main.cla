@@ -296,6 +296,21 @@ on App.startCLI(args: list of string) {
                 quit 2
             }
             bakePaths.add(args[i])
+        } else if emitMode68k and args[i] == "--partition" {
+            // SIZE(-1) partition override (Task 10, mac-resident-clarusc):
+            // preferred/minimum bytes for the emitted app's Process
+            // Manager memory partition (app68k.cla's app68BuildSize, via
+            // cg68k.cla's cgSizePartitionBytes) -- deliberately
+            // UNDOCUMENTED, like --seglimit: every ordinary build gets
+            // the 2MB default; only scripts/build-clarusc-mac.sh (whose
+            // ClarusC.APPL needs far more, for its own compile working
+            // set) passes this.
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--partition N] FILE...")
+                quit 2
+            }
+            cgSizePartitionBytes = cgParseDecimal(args[i])
         } else {
             fileArgs.add(args[i])
         }

@@ -302,18 +302,35 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 // (testdata/mac/resparity), which is exactly 0x00C0 despite its differing
 // size longs, confirming the flag word (and only the flag word) needs to
 // match.
-func app68BuildSize(hlEventAware: bool): text {
+//
+// partitionBytes (Task 10, mac-resident-clarusc): per-app override for
+// both the preferred and minimum partition size, added because
+// ClarusC.APPL (this phase's own Mac-resident compiler front end) needs
+// FAR more than every other program's 2MB default -- its own compile
+// working set (cg68k.cla's own header comment: ~48-64MB budgeted,
+// measured self-emit stack alone already ~2.2MB before any heap
+// allocation). <=0 keeps the original, still-default 2097152 (2MB) for
+// every other caller -- cg68ResourceParitySet's own cgSizePartitionBytes
+// global defaults to 0 (Clarus's int zero value), so every EXISTING
+// build (no `--partition` flag passed) emits byte-identical SIZE(-1)
+// bytes to before this parameter existed.
+func app68BuildSize(hlEventAware: bool, partitionBytes: int): text {
     var out: text
     var flags: int
+    var partition: int
 
     flags = 0x0080
     if hlEventAware {
         flags = flags | 0x0040
     }
+    partition = partitionBytes
+    if partition <= 0 {
+        partition = 2097152
+    }
     out = ""
     app68PutWord(out, flags)
-    app68PutLong(out, 2097152)
-    app68PutLong(out, 2097152)
+    app68PutLong(out, partition)
+    app68PutLong(out, partition)
     return out
 }
 

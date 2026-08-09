@@ -1,0 +1,269 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// macgui.cla: ClarusC.APPL, the Mac-resident compiler's GUI front end
+// (Task 10, mac-resident-clarusc phase). Everything the phase built so
+// far (the self-hosted clarusc pipeline, clarusc/*.cla) becomes a real
+// Mac application: pick a .cla file with a real Standard File dialog,
+// compile it with the SAME drive.cla pipeline main.cla's host CLI uses,
+// and -- on a clean compile -- emit a native 68k application and write
+// it to disk with file.writeRes.
+//
+// Own include block, deliberately the SAME module set as main.cla's own
+// (lib/tok/lex/ast/parse/types/check/ir/lower/shake/asm68k/peep68k/
+// app68k/res68k/cprint/cg68k/uiblob/drive), because this program IS the
+// compiler, just with a GUI front end instead of a CLI one -- it needs
+// the whole self-hosted pipeline as a library at runtime. main.cla NEVER
+// includes this file (a separate emit68k build, scripts/build-clarusc-
+// mac.sh, not part of the clarusc.c bootstrap snapshot's own
+// composition) -- the two front ends are siblings, not layered.
+//
+// DECLARATION ORDER NOTE: a top-level func's PARAMETER TYPES are resolved
+// during checkProgram's phase 1, in file order (checkTopDeclPhase1 walks
+// `combined` once, declaring as it goes) -- unlike a body's own local
+// vars, which resolve in phase 2 against the now-complete top-level scope.
+// So `app`/`window Log`/`menu File` are declared FIRST, below, before any
+// function whose signature names the `Log` window type (gcLog/gcCompile).
+include "lib.cla"
+include "tok.cla"
+include "lex.cla"
+include "ast.cla"
+include "parse.cla"
+include "types.cla"
+include "check.cla"
+include "ir.cla"
+include "lower.cla"
+include "shake.cla"
+include "asm68k.cla"
+include "peep68k.cla"
+include "app68k.cla"
+include "res68k.cla"
+include "cprint.cla"
+include "cg68k.cla"
+include "uiblob.cla"
+include "drive.cla"
+
+// gcGet1NamedResource: a SECOND declaration of the same trap Get1NamedResource
+// (toolbox/resources.cla) already catalogs, with a `string` `name` param
+// instead of `ptr` -- same precedent as runtime/clarus/ui.cla's own
+// UiNewMenu (`ptr`) / UiNewMenuStr (`string`) pair, both trap 0xA931. A
+// `str`-typed extern param auto-marshals the address of the caller's
+// Str255 (docs/clarus-language-reference.md's own extern-marshaling
+// rule), so this needs no separate "turn a string into a ptr" helper
+// (uiscript.cla's UiStrAddr, which macgui.cla -- see the note below --
+// cannot reach anyway).
+//
+// NOT `include "../toolbox/resources.cla"` and NOT UiStrAddr: both are
+// runtime/catalog symbols only reachable AFTER driveManifestSplice, but
+// this file's OWN top-level code (feHasKey below) is checked STANDALONE,
+// with NO runtime module spliced in yet (main.cla's own --testapi doc
+// comment: "clarusc enforces user code checks standalone before any
+// runtime module is consulted") -- confirmed empirically building this
+// file: referencing UiStrAddr directly from here failed
+// "undefined: UiStrAddr" even though uiscript.cla (which declares it) is
+// unconditionally spliced in moments later for any UI program. A LOCAL
+// `external func` declaration, by contrast, is part of macgui.cla's own
+// source (parsed in Phase A, before the standalone check ever runs), so
+// it's visible right away -- toolbox/resources.cla's own Get1NamedResource
+// entry is a `ptr`-taking declaration for a DIFFERENT reason (its own
+// callers already have a ptr in hand); its file wasn't included here at
+// all, so there's no name collision between the two.
+external func gcGet1NamedResource(theType: int, name: string): ptr = trap 0xA820
+
+// gcClfsType packs 'CLFS' big-endian (C=0x43 L=0x4C F=0x46 S=0x53) --
+// the same resource type file.readResource's native implementation
+// (runtime/clarus/native.cla's natReadResource) looks up, under its own
+// name natClfsType. Duplicated here rather than depending on that
+// runtime-internal constant: native.cla is spliced into this program
+// automatically (driveManifestSplice, because this build targets
+// emit68k), but reaching into a runtime module's own internals from user
+// source is exactly the layering toolbox/*.cla catalogs exist to avoid.
+const gcClfsType: int = 0x434C4653
+
+// feHasKey (Task 8 round 2's seam; real-implemented here for the first
+// time -- see drive.cla's expand() doc comment for the full identity-
+// resolution rule this answers) -- whether a 'CLFS' resource named key
+// exists in the CURRENT resource chain (the one this app's own resource
+// fork carries, baked by scripts/build-clarusc-mac.sh's `--bake` flags
+// for every runtime/clarus + toolbox source file). A cheap PRESENCE
+// probe only -- gcGet1NamedResource alone, no content copy (feReadSource
+// below does the real read separately, only when actually needed).
+//
+// Deliberately NO ReleaseResource call, even though toolbox/resources.cla
+// catalogs it for the `ptr`-taking form: that same file's own KNOWN
+// HAZARD note (corroborated by native.cla's natReadResource doc comment)
+// found that calling ReleaseResource after a resource read hangs real
+// hardware SOLID under a busy heap. Same workaround as natReadResource:
+// leave the handle resident forever. Bounded cost -- this build's baked
+// namespace is a few dozen files (runtime/clarus/*.cla + toolbox/*.cla),
+// so the permanent per-distinct-name resident cost never accumulates
+// into a real leak across a session's worth of compiles.
+func feHasKey(key: string): bool {
+    if key == "" {
+        return false
+    }
+    return gcGet1NamedResource(gcClfsType, key) != ptr(0)
+}
+
+// feReadSource (Task 6's seam; the resource-backed half Task 6 left for
+// this task) -- disk first (file.readText, identical to main.cla's own
+// host-only feReadSource), then, only on a disk miss with a non-empty
+// key, the baked 'CLFS' resource feHasKey above may have already
+// confirmed exists (file.readResource).
+func feReadSource(path: string, key: string, out: text): bool {
+    if file.readText(path, out) {
+        return true
+    }
+    if key == "" {
+        return false
+    }
+    return file.readResource(key, out)
+}
+
+app ClarusC {
+    name: "ClarusC"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "The Mac-resident Clarus compiler."
+    id: "CLRC"
+}
+
+window Log {
+    title: "ClarusC"
+    size: 480, 300
+    resizable: min(320, 160)
+
+    textview Output { fill: both; scrollbar: both }
+}
+
+// Menu layout (Task 11's events script drives this by `menu N M`):
+//   menu 1 -- Apple menu (rtUiBuildAppleMenu, ui.cla): automatic, never
+//     declared in source -- built by the runtime for every UI program.
+//   menu 2 -- File: item 1 "Compile..." (key K), item 2 "Quit" (key Q).
+menu File {
+    item Compile "Compile\xC9" key "K"
+    item Quit    "Quit"        key "Q"
+}
+
+// gcLog appends line (plus a trailing Mac newline) to w's log textview.
+// Reads Output.text back out, appends in place, then reassigns the whole
+// value -- the same read-mutate-reassign idiom texteditor.cla's own
+// save() uses to READ a textview's text (Body.text as a plain
+// argument); WRITING one always goes through a whole-value assignment
+// (Appendix C's own openPath: `d.Body.text = t`), never a direct method
+// call on the property expression itself.
+func gcLog(w: Log, line: string) {
+    var buf: text
+
+    buf = w.Output.text
+    buf.append(line)
+    buf.append("\n")
+    w.Output.text = buf
+}
+
+// gcCompile drives one compile-and-emit run for path p, logging every
+// step into w's textview. drive.cla's own module globals were built for
+// a single-shot-per-process CLI (main.cla) -- this program compiles
+// repeatedly in one process (once per "Compile..." action), so every
+// per-compile-owned global that drive.cla/lib.cla/ast.cla document as
+// "reset between independent programs" is reset HERE, before
+// driveCompile runs: driveReset() (drive.cla: seenPaths/asmHeads/
+// asmTails/dedupHits/hoistedHead/hoistCount/userHeadCount/entryFailed/
+// combined/combined2 -- see its own doc comment for the full list, and
+// for what does NOT need resetting here because it already self-resets
+// elsewhere in the pipeline: ir.cla's arenas via irReset() inside
+// driveCompile itself, check.cla/types.cla's state via checkReset()
+// inside checkProgram itself, cg68k.cla's/shake.cla's own per-run lists
+// via their own "rebuilt fresh at the top of every call" convention),
+// resetDiags() (lib.cla: diags/diagPaths/declFileTab/curPathIdx), and
+// astReset() (ast.cla: the four AST arenas) -- the same two calls
+// main.cla's startCLI makes, but only ONCE (per-process); here, EVERY
+// compile.
+func gcCompile(w: Log, p: string) {
+    var entries: list of string
+    var ok: bool
+    var i: int
+    var built: bool
+    var appName: string
+    var creator: string
+    var fork: text
+    var wrote: bool
+
+    driveReset()
+    resetDiags()
+    astReset()
+    hostPaths = false
+    wantEmit = true
+    want68k = true
+
+    entries.add(p)
+    ok = driveCompile(entries, false)
+
+    // entryFailed (an unreadable entry file) is checked BEFORE diags,
+    // exactly like main.cla's own startCLI -- driveCompile leaves diags
+    // empty in this case.
+    if entryFailed {
+        gcLog(w, "cannot open entry file: " + p)
+        alert("cannot open entry file: " + p)
+        return
+    }
+
+    // Diags appended to the log unconditionally (empty loop, no-op, on a
+    // clean compile).
+    i = 0
+    while i < diags.count {
+        gcLog(w, formatDiag(poolGet(diagPaths[i]), diags[i]))
+        i = i + 1
+    }
+
+    if not ok {
+        alert(formatDiag(poolGet(diagPaths[0]), diags[0]))
+        return
+    }
+
+    built = driveEmit68kFork("", false, 0, false)
+    if not built {
+        gcLog(w, "emit68k failed")
+        alert("emit68k failed")
+        return
+    }
+
+    // Read driveLastFork/driveLastAppName/driveLastCreator IMMEDIATELY
+    // after a successful driveEmit68kFork -- their own documented
+    // validity window (drive.cla) is "until the NEXT driveEmit68kFork
+    // call", and capturing all three into locals right away is the
+    // simplest way to honor that even though nothing else in this
+    // function calls driveEmit68kFork again before they're used.
+    appName = driveLastAppName()
+    creator = driveLastCreator()
+    fork = driveLastFork()
+
+    wrote = file.writeRes(appName, fork, "APPL", creator)
+    if not wrote {
+        gcLog(w, "write failed: " + lastError.message)
+        alert("write failed: " + lastError.message)
+        return
+    }
+
+    gcLog(w, "BUILT " + appName + " " + numToStr(fork.length) + " bytes")
+}
+
+on App.startEmpty {
+    open Log
+}
+
+extend File {
+    on Compile.select {
+        var w: Log = Log.front
+        var p: string(255)
+
+        if w == nil {
+            w = open Log
+        }
+        if askOpen(p, "TEXT") {
+            gcCompile(w, p)
+        }
+    }
+
+    on Quit.select { quit }
+}

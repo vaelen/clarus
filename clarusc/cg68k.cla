@@ -245,6 +245,28 @@ var cgLastCreator: string(7)
 var cgBakeNames: list of string
 var cgBakeDatas: list of text
 
+// cgSizePartitionBytes (Task 10, mac-resident-clarusc) overrides the
+// SIZE(-1) resource's preferred/minimum partition (app68k.cla's
+// app68BuildSize, called from cg68ResourceParitySet below) -- main.cla
+// sets this from `emit68k --partition N`, same "front end sets a global
+// before calling driveEmit68k(Fork)" hand-off as cgEventsBytes/
+// cgAppRawName above. Zero (never set) for every build without the flag,
+// which app68BuildSize treats as "keep the original 2097152 (2MB)
+// default" -- ClarusC.APPL's own build (scripts/build-clarusc-mac.sh) is
+// the only caller that passes it today, needing more than 2MB for its
+// own compile working set.
+//
+// scripts/build-clarusc-mac.sh passes 4194304 (4MB), NOT the plan's
+// aspirational 48-64MB: the checked-in snow/Clarus.snoww acceptance
+// workspace boots with pmmu_enabled=false (no 32-bit addressing), which
+// caps Process-Manager-allocatable RAM at ~6.8MB regardless of its 128MB
+// physical ram_size -- empirically found (Task 10) booting a 64MB
+// request: "There is not enough memory to open ClarusC (65,536K needed,
+// 6,968K available)". 4MB is double the ordinary default while staying
+// safely under that ceiling; revisit once the acceptance image gets a
+// 32-bit-addressing enabler (out of scope for this task).
+var cgSizePartitionBytes: int
+
 // cgFreshIntList hands back a genuinely empty list (same trick
 // shakeFreshIntList/shakeFreshBoolList use, shake.cla).
 func cgFreshIntList(): list of int {
@@ -10061,7 +10083,7 @@ func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, ex
 
     extraTypes.add("SIZE")
     extraIds.add(-1)
-    extraDatas.add(app68BuildSize(irIsUiProgram()))
+    extraDatas.add(app68BuildSize(irIsUiProgram(), cgSizePartitionBytes))
 }
 
 // cg68BuildFork (Task 9, mac-resident-clarusc -- split out of what used to
