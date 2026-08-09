@@ -271,8 +271,13 @@ func TestImageStructure(t *testing.T) {
 	}
 	preferred := binary.BigEndian.Uint32(sizeRes[2:6])
 	minimum := binary.BigEndian.Uint32(sizeRes[6:10])
-	if preferred != 393216 || minimum != 393216 {
-		t.Errorf("SIZE preferred/minimum = %d/%d, want 393216/393216 (384KB)", preferred, minimum)
+	// mac-resident-clarusc Task 12: bumped from 384KB (393216) to 2MB
+	// (2097152) -- app68k.cla's own app68BuildSize doc comment has the
+	// full story (a real, reproducible Snow boot hang at 384KB, root-
+	// caused to stack/heap headroom once clarusc.c's own pre-existing
+	// staleness, found and fixed by the same task, is corrected).
+	if preferred != 2097152 || minimum != 2097152 {
+		t.Errorf("SIZE preferred/minimum = %d/%d, want 2097152/2097152 (2MB)", preferred, minimum)
 	}
 
 	// -- CODE 1 header + raw code range --

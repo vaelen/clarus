@@ -8078,8 +8078,21 @@ func cgCallExtPascal(e: int, xi: int) {
     // on the stack as its selector -- "illegal instruction" before any
     // window ever drew (popuptable.cla's table widget is built during
     // App.launch, before ShowWindow).
+    // mac-resident-clarusc Task 12: conv 9 (`seld0`) is the AppleEvent
+    // Manager's own selector-dispatch shape -- the selector PRELOADS D0
+    // instead of being pushed (see parseExternFuncDecl's own `seld0` doc
+    // comment for the two Retro68 THREEWORDINLINE encodings this
+    // distinguishes, 0x303C vs `sel`'s 0x3F3C). Emitted in place of (never
+    // in addition to) the ordinary `sel` push below, after every declared
+    // arg is already on the stack and before the trap word -- D0 is safe
+    // to clobber here: every arg push above that used D0 as scratch has
+    // already moved its value onto the stack by this point.
     if irExternSel(xi) != -1 {
-        a68Emit(OpMove, 2, AmImm, 0, irExternSel(xi), AmPreDec, 7, 0)
+        if irExternConv(xi) == 9 {
+            a68Emit(OpMove, 2, AmImm, 0, irExternSel(xi), AmDn, 0, 0)
+        } else {
+            a68Emit(OpMove, 2, AmImm, 0, irExternSel(xi), AmPreDec, 7, 0)
+        }
     }
     a68EmitTrap(irExternTrap(xi), poolGet(irCallExtName(e)))
     if irtKind(retTy) != KVoid {
@@ -8247,7 +8260,7 @@ func cgCallExt(e: int) {
     conv = irExternConv(xi)
     if conv == 2 or conv == 7 {
         cgCallExtReg(e, xi)
-    } else if conv == 1 {
+    } else if conv == 1 or conv == 9 {
         cgCallExtPascal(e, xi)
     } else if conv == 3 {
         cgCallExtDeref(e)
@@ -9933,8 +9946,16 @@ func cgAppName(outPath: string): string(31) {
 //     signature STR + FREF 128/129 + BNDL 128 + app ICN#/ICON 128
 //     (decoded from the declared PBM) + the static doc icon ICN#/ICON
 //     129. SIZE(-1) is always present, for every program, with
-//     isHighLevelEventAware set iff irHasApp (app68BuildSize's own doc
-//     comment).
+//     isHighLevelEventAware set iff irIsUiProgram() (app68BuildSize's own
+//     doc comment) -- REVISED, mac-resident-clarusc Task 12: originally
+//     iff irHasApp, but that left every UI program with no `app` section
+//     (testdata/valid/bounce.cla is exactly this shape) unable to receive
+//     the required-suite Quit AppleEvent this task adds native handling
+//     for, wedging Finder shutdown (the first System 7.1 boot's own
+//     finding) -- the AE handlers this task installs (ui.cla's
+//     nat_UiLaunchReal) are unconditional for every UI program, `app`
+//     section or not, so the SIZE flag that makes the Process Manager
+//     WILLING to send them AppleEvents in the first place must match.
 // Fails closed (log + quit 1) if a declared icon path can't be read or
 // isn't a well-formed 32x32 PBM -- the check.cla/main.cla layer never
 // validates the file itself (build-time-only per ir.cla's header
@@ -10040,7 +10061,7 @@ func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, ex
 
     extraTypes.add("SIZE")
     extraIds.add(-1)
-    extraDatas.add(app68BuildSize(irHasApp))
+    extraDatas.add(app68BuildSize(irIsUiProgram()))
 }
 
 // cg68BuildFork (Task 9, mac-resident-clarusc -- split out of what used to

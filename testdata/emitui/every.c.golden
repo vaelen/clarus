@@ -49,6 +49,8 @@ extern void rt_ext_MapDisposePtr(void *);
 extern void * rt_ext_MapNewHandle(int32_t);
 extern void rt_ext_MapDisposeHandle(void *);
 extern void rt_ext_MapRcCheck(void *, int32_t);
+extern short rt_ext_AEInstallEventHandler(int32_t, int32_t, void *, int32_t, int32_t);
+extern short rt_ext_AEProcessAppleEvent(void *);
 extern void * rt_ext_UiHandleDeref(void *);
 extern void * rt_ext_UiNewPtr(int32_t);
 extern void * rt_ext_UiNewPtrClear(int32_t);
@@ -109,6 +111,7 @@ extern void rt_ext_UiMacInitToolbox(void);
 extern void rt_ext_UiRtQuit(int32_t);
 extern void * rt_ext_UiTestScript(void);
 extern void rt_ext_UiLaunchReal(void);
+extern void rt_ext_UiAEProcessEvent(void *);
 extern void rt_ext_UiScreenBounds(void *);
 extern void * rt_ext_UiNewMenuStr(short, const uint8_t *);
 extern void rt_ext_UiAppendMenuStr(void *, const uint8_t *);
@@ -3839,6 +3842,10 @@ static void clar_fn_rtUiRun(void) {
                 } else {
                     if (cv_what == 8) {
                         clar_fn_rtUiHandleActivate((void *)(intptr_t)(rt_peekl((void *)((char *)(cv_evBuf) + (2)))), ((rt_peekw((void *)((char *)(cv_evBuf) + (14))) & 1) != 0));
+                    } else {
+                        if (cv_what == 23) {
+                            rt_ext_UiAEProcessEvent(cv_evBuf);
+                        }
                     }
                 }
             }

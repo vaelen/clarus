@@ -1,0 +1,78 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// toolbox/appleevents.cla: curated AppleEvent Manager declarations
+// (Inside Macintosh VI, "Apple Event Manager"), mac-resident-clarusc
+// Task 12 -- the first System 7.1 boot (Snow emulator) found that Clarus
+// apps ignore the required-suite Quit AppleEvent, so a running app blocks
+// Finder shutdown until force-quit. This catalog is the minimal slice
+// that fixes it: enough of the AppleEvent Manager for a program to
+// install its own event handler (a `callback func`) and pump
+// AEProcessAppleEvent from a real WaitNextEvent loop.
+//
+// Convention, and why this ISN'T `trap 0xA816 sel N` like
+// toolbox/standardfile.cla's own Standard File Package routines: every
+// AppleEvent Manager routine dispatches through the ONE shared trap
+// 0xA816, distinguished by a selector word -- but unlike the "Package"
+// trap families (Standard File's 0xA9EA, the List Manager's 0xA9E7),
+// which PUSH the selector immediately before the trap
+// (THREEWORDINLINE(0x3F3C, sel, trap) -- 0x3F3C is MOVE.W #sel,-(SP)),
+// every AppleEvent Manager routine instead PRELOADS the selector into D0
+// (THREEWORDINLINE(0x303C, sel, trap) -- 0x303C is MOVE.W #sel,D0). This
+// task's own language-reference addition, the `seld0` clause (Trap and
+// Inline Clauses), is exactly this second shape; `sel` cannot express it.
+//
+// Every trap word and selector below is confirmed directly against
+// Apple's own Universal Interfaces 3.4 (Retro68/InterfacesAndLibraries/
+// Interfaces), the authoritative source in this repo, per the standing
+// "decode the inline words" rule (toolbox/osutils.cla's own header
+// comment) -- corroborated BOTH ways (the C pragma's THREEWORDINLINE and
+// the assembly macro's raw OPWORDs, which must and do agree):
+//
+//   AEInstallEventHandler  CIncludes/AppleEvents.h:136-142:
+//               `EXTERN_API( OSErr ) AEInstallEventHandler(
+//               AEEventClass theAEEventClass, AEEventID theAEEventID,
+//               AEEventHandlerUPP handler, long handlerRefcon, Boolean
+//               isSysHandler) THREEWORDINLINE(0x303C, 0x091F, 0xA816);`
+//               -- seld0 0x091F. Corroborated in AIncludes/
+//               AppleEvents.a:105-114: `_AEInstallEventHandler:
+//               move.w #$091F,D0 / dc.w $A816`.
+//   AEProcessAppleEvent    CIncludes/AEInteraction.h:87-95:
+//               `EXTERN_API( OSErr ) AEProcessAppleEvent(const
+//               EventRecord *theEventRecord) THREEWORDINLINE(0x303C,
+//               0x021B, 0xA816);` -- seld0 0x021B. Corroborated in
+//               AIncludes/AEInteraction.a:72-81: `_AEProcessAppleEvent:
+//               move.w #$021B,D0 / dc.w $A816`.
+//
+// handler: a `callback func` matching AEEventHandlerUPP's own signature
+// (Inside Macintosh: `pascal OSErr MyHandler(const AppleEvent
+// *theAppleEvent, AppleEvent *reply, long handlerRefcon)`) -- decays to
+// its glue address at the call site (language reference's `callback
+// func` section), the same mechanism uitable.cla's rtUiLdefDraw/
+// uitext.cla's rtUiScrollbarAction already use for an LDEF/action
+// procedure. theEventRecord (AEProcessAppleEvent): the raw 16-byte buffer
+// a real UiWaitNextEvent call already filled in for a kHighLevelEvent.
+//
+// Deliberately NOT in this minimal slice: AEGetParamDesc/AECountItems/
+// AEGetNthPtr/AEDisposeDesc (decoding a kAEOpenDocuments docList into
+// FSSpecs) and AEGetAttributePtr (the keyMissedKeywordAttr completeness
+// check IM recommends for every handler) -- runtime/clarus/native.cla's
+// own AE handler doesn't install a kAEOpenDocuments/kAEPrintDocuments
+// handler at all, so the AppleEvent Manager's own built-in dispatch
+// already answers both with errAEEventNotHandled with no code needed
+// here; a future task can add real document-drop-while-running delivery
+// (FSSpec -> path, OpenWD/SetVol) if that becomes a real requirement,
+// the same way toolbox/files.cla grew its own FSSpec-adjacent entries
+// incrementally. kCoreEventClass and the four required-suite event IDs
+// are cataloged below regardless (CIncludes/AppleEvents.h:82-90) --
+// documentation-cheap even where this task's own runtime use only
+// touches two of them (oapp/quit).
+
+const kCoreEventClass: int = 0x61657674 // 'aevt'
+const kAEOpenApplication: int = 0x6F617070 // 'oapp'
+const kAEOpenDocuments: int = 0x6F646F63 // 'odoc'
+const kAEPrintDocuments: int = 0x70646F63 // 'pdoc'
+const kAEQuitApplication: int = 0x71756974 // 'quit'
+
+external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): word = trap 0xA816 seld0 0x091F
+external func AEProcessAppleEvent(theEventRecord: ptr): word = trap 0xA816 seld0 0x021B

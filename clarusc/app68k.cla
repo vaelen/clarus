@@ -263,20 +263,45 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 }
 
 // app68BuildSize builds the 10-byte SIZE(-1) payload: flags word, then
-// preferred and minimum memory size, both 384KB (this task's own brief;
-// UNCHANGED by hlEventAware -- Task 13 (native-5e) mirrors build-mac.sh's
-// appres.r *flag word* exactly (its own comment: notHighLevelEventAware ->
-// isHighLevelEventAware is "what makes a Clarus build AppleEvent-aware"),
-// not its memory partition size, which is a pure Rez-side tuning choice
-// (1024*1024 there) this native writer has no reason to copy byte-for-
-// byte -- 384KB stays this backend's own already-proven default either
-// way. hlEventAware=false: only is32BitCompatible set (0x0080, Task 10's
-// original, still used for a non-app-declared program). hlEventAware=true
-// (irHasApp, Task 13): is32BitCompatible + isHighLevelEventAware (0x0080 |
-// 0x0040 = 0x00C0) -- verified against a REAL Retro68 build's own SIZE(-1)
-// bytes for an app-section program (testdata/mac/resparity), which is
-// exactly 0x00C0 despite its differing size longs, confirming the flag
-// word (and only the flag word) needs to match.
+// preferred and minimum memory size. REVISED, mac-resident-clarusc
+// Task 12: both bumped from the original 384KB (native-5d's own brief) to
+// 2MB (2097152) -- Task 12's own Snow acceptance boot found a REAL,
+// reproducible early hang (frozen desktop, no window ever draws, no
+// natInit-created "out" file even appears) on a plain UI program
+// (testdata/valid/bounce.cla) at 384KB, root-caused to stack/heap
+// headroom: cgEmitFunc's own per-function LINK frame floor is ~8.3KB on
+// the CURRENT compiler (cgTmpSlots/cgBigTmpSlots/cgBigTmpSize's fixed
+// per-function scratch pools, cg68k.cla's own header comment), and the
+// early boot call chain alone (rtUiStartup -> App.launch -> rtUiLaunch ->
+// UiLaunchReal -> nat_UiLaunchReal, each its own ~8.3KB+ frame) already
+// exhausts a 384KB partition's stack headroom before any Toolbox call
+// this task added even runs -- confirmed BOTH ways: reverting every
+// mac-resident-clarusc Task 12 source change (clarusc/*.cla AND
+// runtime/clarus/ui.cla, byte-for-byte back to this phase's own starting
+// commit) still hangs at 384KB once `clarusc/clarusc.c`'s OWN staleness
+// (a separate, pre-existing bug this task also found and fixed --
+// TestSnapshotFixedPoint was failing at this phase's own starting commit,
+// unrelated to and predating this task) is corrected, and bumping the
+// partition to 2MB with ZERO other change makes the identical binary boot
+// and run cleanly on Snow. 2MB is an empirically-verified, generously
+// round choice (not a computed minimum) -- comfortably above the ~8.3KB-
+// per-frame floor at any plausible call depth for a program this size,
+// same "round, generous, not hand-tuned to the byte" spirit as the
+// original 384KB pick. UNCHANGED by hlEventAware (Task 13, native-5e,
+// mirrors build-mac.sh's own appres.r *flag word* exactly -- its own
+// comment: notHighLevelEventAware -> isHighLevelEventAware is "what makes
+// a Clarus build AppleEvent-aware" -- not its memory partition size,
+// which is a pure Rez-side tuning choice (1024*1024 there) this native
+// writer has no reason to copy byte-for-byte). hlEventAware=false: only
+// is32BitCompatible set (0x0080, Task 10's original, still used for a
+// non-UI program). hlEventAware=true (Task 13; caller is
+// irIsUiProgram() as of mac-resident-clarusc Task 12, was irHasApp before
+// -- see cg68ResourceParitySet's own call site comment): is32BitCompatible
+// + isHighLevelEventAware (0x0080 | 0x0040 = 0x00C0) -- verified against a
+// REAL Retro68 build's own SIZE(-1) bytes for an app-section program
+// (testdata/mac/resparity), which is exactly 0x00C0 despite its differing
+// size longs, confirming the flag word (and only the flag word) needs to
+// match.
 func app68BuildSize(hlEventAware: bool): text {
     var out: text
     var flags: int
@@ -287,8 +312,8 @@ func app68BuildSize(hlEventAware: bool): text {
     }
     out = ""
     app68PutWord(out, flags)
-    app68PutLong(out, 393216)
-    app68PutLong(out, 393216)
+    app68PutLong(out, 2097152)
+    app68PutLong(out, 2097152)
     return out
 }
 

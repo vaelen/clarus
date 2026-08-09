@@ -159,6 +159,25 @@
 // reference-counted (rt_ui.c's own struct rt_ui_winst is a plain malloc'd
 // -- NewHandleClear'd -- box, freed unconditionally by rt_ui_close, never
 // rc-tracked).
+// AE handler catalog (mac-resident-clarusc Task 12): pull the real
+// AppleEvent Manager declarations from the shared catalog instead of
+// hand-declaring them here -- same "catalog-first" convention
+// uidialogs.cla's own header comment establishes for toolbox/
+// standardfile.cla/files.cla. Resolved relative to this file, i.e.
+// <rtdir>/../../toolbox/ -- a user program that also composes
+// toolbox/appleevents.cla positionally dedups via the normalized
+// include-once identity. Harmless on the cprint lane (conv 9's `seld0`
+// clause is invisible to cprint.cla, which never consults a trap/reg/sel
+// clause at all -- every extern call renders as `rt_ext_<Name>` uniformly
+// regardless), and unreachable there in practice anyway: nat_UiLaunchReal
+// (below, near UiLaunchReal) is a clause-less nat_ fallback, resolved by
+// cgCallExtNatFallback on the NATIVE lane only; the cprint lane keeps its
+// own separate, already-complete rt_ext_UiLaunchReal (rt_ext_mac.inc),
+// untouched by this task. Must precede every other declaration in this
+// file (`include must precede other declarations`), hence all the way up
+// here rather than down by its own point of use.
+include "../../toolbox/appleevents.cla"
+
 external func UiHandleDeref(h: ptr): ptr = inline deref
 external func UiNewPtr(size: int): ptr = trap 0xA11E reg
 external func UiNewPtrClear(size: int): ptr = trap 0xA31E reg
@@ -358,27 +377,111 @@ external func UiTestScript(): ptr
 // UiLaunchReal: the C-side glue for rt_ui_launch's real-build branch
 // (AEInstallEventHandler + the 4 pascal AE handlers + AEDesc decoding +
 // the System-6 CountAppFiles fallback, rt_ui.c:3963-4028) -- kept
-// entirely as C (no function pointers reach Clarus at all), per Task 7
-// report log entry #3. Never exercised by any golden scenario (all of
-// them are script-driven); ported for contract completeness, not a
-// tested path.
+// entirely as C on the CPRINT lane (rt_ext_mac.inc's own already-complete
+// rt_ext_UiLaunchReal; no function pointers reach Clarus there, per Task 7
+// report log entry #3), never exercised by any golden scenario there
+// either (all of them are script-driven). REVISED, mac-resident-clarusc
+// Task 12: the NATIVE lane's own fallback (nat_UiLaunchReal, below) is no
+// longer a stub -- `callback func` (landed after Task 7, toolbox-
+// integration phase) lets it install real handlers straight into Clarus
+// code, proven for real on Snow (see that task's report).
 external func UiLaunchReal()
 
-// nat_UiLaunchReal (Task 12, native-5e): UiLaunchReal's clause-less nat_
-// fallback -- cgCallExtNatFallback resolves it here by name. The native
-// backend has no AppleEvent handlers installed yet (Task 13's own
-// resource-parity work: the SIZE flags marking isHighLevelEventAware, and
-// the AEInstallEventHandler-equivalent wiring UiLaunchReal's own C-side
-// counterpart does) -- every golden scenario builds with `--events`
-// anyway, so rtUiLaunch's real-build branch (this one) is NEVER taken for
-// any of them (`peekb(UiTestScript()) == 0` is the sole gate, ui.cla's own
-// rtUiLaunch), making this purely a "must compile, need not be exercised"
-// stub this task. Degrades to the same "no launch-doc guest event found"
-// path the scripted branch takes when its own script has no `launchdoc`
-// line: UiFireStartEmpty() -- the honest answer for what a native,
-// non-scripted launch can determine today with no real AE detection.
+// UiAEProcessEvent (Task 12): pumps a kHighLevelEvent through the
+// AppleEvent Manager to whichever handler nat_UiLaunchReal/
+// rt_ext_UiLaunchReal installed -- bare and per-backend for the same
+// reason UiLaunchReal itself is (rtUiRun, which calls this, is shared by
+// both backends; the cprint lane's own AEProcessAppleEvent call needs a
+// hand-written C body, same as every other cprint-side AE call in this
+// port). evBuf is the raw 16-byte EventRecord buffer UiWaitNextEvent
+// already filled in (rt_ui.c's own `AEProcessAppleEvent(&ev)` -- rtUiRun's
+// own doc comment above explains why this file can't just call the
+// native lane's real `AEProcessAppleEvent` (toolbox/appleevents.cla)
+// directly from here). Return value ignored, matching rt_ui.c's own call
+// site exactly (a bare statement, no error handling).
+external func UiAEProcessEvent(evBuf: ptr)
+
+// aeQuitHandler/aeOappHandler (Task 12): the required-suite AppleEvent
+// handlers nat_UiLaunchReal installs below, real `callback func`s (the
+// toolbox-integration phase's mechanism) -- unlike the cprint lane's own
+// rt_ext_mac.inc AE handlers (rt_ext_ui_ae_quit et al, pure C, "no
+// function pointers reach Clarus" per Task 7 report log entry #3, written
+// before `callback func` existed), the native lane can call straight back
+// into ordinary Clarus code: aeQuitHandler calls the REAL rtUiQuit() close
+// cascade (honoring a cancelled closeRequest) rather than the cprint
+// lane's own degenerate "no windows open" shortcut (rt_ext_ui_ae_quit's
+// own comment explains why it's stuck with that -- a real Clarus function
+// pointer, which is exactly what a callback IS). Neither handler fetches
+// any parameter off theAppleEvent (quit/oapp both take none in the
+// required suite) or checks keyMissedKeywordAttr (IM's own
+// handler-completeness convention); reply is likewise unused (returning
+// noErr from an installed handler makes the AppleEvent Manager send an
+// empty "we handled it" reply on our behalf) -- this task's own brief
+// calls for MINIMAL required-suite handling, not the full completeness
+// checklist. kAEOpenDocuments/kAEPrintDocuments deliberately get NO
+// installed handler at all: the AppleEvent Manager's own built-in
+// dispatch already answers errAEEventNotHandled for a (class, id) pair
+// with nothing registered, which is exactly this task's own brief's
+// fallback for odoc/pdoc ("route to the existing openDocument path if
+// present, else return errAEEventNotHandled") -- App.openDocument's real
+// AE arm (decoding a docList into FSSpecs/paths) does not exist yet
+// (Step 1's own finding: rt_ui_launch's script-parsing branch is the ONLY
+// real port so far; the C reference's OWN odoc handler, rt_ext_mac.inc's
+// rt_ext_ui_ae_odoc, is itself untested by any golden), so there is no
+// "existing" path to route to.
+callback func aeQuitHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): word {
+    rtUiQuit()
+    // Reached only if rtUiQuit's own close cascade was CANCELLED (some
+    // window's closeRequest ran `cancel`) -- the ordinary quit path calls
+    // UiRtQuit(0) -> natQuit(0) -> ExitToShell, which does not return, so
+    // this line is unreachable on that path; the app stays open and
+    // genuinely did handle the event when it IS reached (same distinction
+    // rt_ext_ui_ae_quit's own comment documents).
+    return 0 // noErr
+}
+
+callback func aeOappHandler(theAppleEvent: ptr, reply: ptr, handlerRefcon: int): word {
+    // No-op acknowledge: nat_UiLaunchReal (below) already ran the
+    // program's own startup (UiFireStartEmpty) unconditionally BEFORE
+    // installing this handler, so there is nothing left to do when the
+    // Process Manager's own oapp AppleEvent arrives moments later --
+    // calling UiFireStartEmpty() again here would double-fire it.
+    return 0 // noErr
+}
+
+// nat_UiLaunchReal (Task 12, native-5e; REVISED mac-resident-clarusc
+// Task 12): UiLaunchReal's clause-less nat_ fallback -- cgCallExtNatFallback
+// resolves it here by name. Gated on rtUiSys7 (the existing System-6-vs-7
+// runtime flag, already set by the time this runs -- cgEmitStartup's own
+// fixed order is rtUiStartup [sets rtUiSys7] / [App.launch] / rtUiLaunch
+// [calls UiLaunchReal] / rtUiRun): on System 7+, installs the two
+// required-suite handlers above so the Finder's Quit AppleEvent (the
+// first System 7.1 boot's own finding: an unhandled Quit wedges Finder
+// shutdown until force-quit) actually reaches rtUiQuit(). On System 6
+// (rtUiSys7 false) this is BYTE-IDENTICAL to the pre-Task-12 stub:
+// AEInstallEventHandler is real Toolbox trap 0xA816, which doesn't exist
+// before System 7 and must never be called on a System 6 boot. Document
+// delivery (odoc/pdoc, launch-time or while running) stays the same "no
+// real AE detection" gap the old stub already had -- see the handlers'
+// own header comment above for why that's this task's deliberate scope
+// line, not an oversight.
 func nat_UiLaunchReal() {
+    var junk: int
+
+    if rtUiSys7 {
+        junk = AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, aeQuitHandler, 0, false)
+        junk = AEInstallEventHandler(kCoreEventClass, kAEOpenApplication, aeOappHandler, 0, false)
+    }
     UiFireStartEmpty()
+}
+
+// nat_UiAEProcessEvent (Task 12): UiAEProcessEvent's native fallback --
+// straight through to the real trap (toolbox/appleevents.cla's
+// AEProcessAppleEvent, included above), result discarded (rtUiRun's own
+// call site ignores it too, matching rt_ui.c).
+func nat_UiAEProcessEvent(evBuf: ptr) {
+    var junk: int
+    junk = AEProcessAppleEvent(evBuf)
 }
 
 // UiScreenBounds: qd.screenBits.bounds is a QuickDraw GLOBAL (not a trap
@@ -2419,14 +2522,22 @@ func rtUiHandleKey(ev: ptr) {
 // UNTESTED by every one of this slice's required golden scenarios (all
 // of them are `--events`-driven, so `UiTestScript()` is always non-empty
 // and rtUiRunScripted (uiscript.cla) always takes over instead) -- ported
-// for contract completeness, not a byte-verified path. kHighLevelEvent
-// (AppleEvents) is a documented no-op here: AEProcessAppleEvent isn't a
-// plain A-line trap (no entry in Retro68's Traps.h -- the AppleEvent
-// Manager dispatches through a different mechanism), and this whole
-// branch only ever fires once rtUiLaunch's real-build AE path (C-side
-// glue, UiLaunchReal) has installed handlers -- harmless to skip on
-// every lane this slice's own tests exercise (rt_ui.c's own comment:
-// "harmless on System 6 ... no such event is ever posted there either").
+// for contract completeness, not a byte-verified path (proven for real on
+// Snow instead, mac-resident-clarusc Task 12 -- see that task's report).
+// kHighLevelEvent (what == 23, Events.h's own kHighLevelEvent) is now
+// handled (REVISED, Task 12; was a documented no-op before): dispatched
+// to UiAEProcessEvent (a bare, per-backend extern -- AEProcessAppleEvent
+// isn't a plain A-line trap the ordinary `= trap` clause could call
+// directly from HERE even after the `seld0` clause landed, since this
+// file is shared by both backends and the cprint lane's own copy needs a
+// hand-written C body, same "UiLaunchReal stays bare" reasoning). This
+// arm only ever fires once nat_UiLaunchReal's real-build AE path has
+// installed handlers -- harmless to skip on every lane this slice's own
+// tests exercise (rt_ui.c's own comment: "harmless on System 6 ... no
+// such event is ever posted there either"), and dead code (never taken)
+// on the `--events` scripted lane regardless, since UiTestScript() being
+// non-empty returns out of this function before the loop below is ever
+// reached at all.
 // ================================================================
 
 func rtUiRun() {
@@ -2459,6 +2570,8 @@ func rtUiRun() {
             rtUiHandleUpdate(ptr(peekl(evBuf + 2)))
         } else if what == 8 {
             rtUiHandleActivate(ptr(peekl(evBuf + 2)), (peekw(evBuf + 14) & 0x1) != 0)
+        } else if what == 23 {
+            UiAEProcessEvent(evBuf)
         }
         rtUiEveryPump()
         rtUiTeIdleFront()

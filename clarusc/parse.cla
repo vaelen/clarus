@@ -1510,27 +1510,30 @@ func parseRegBind(codes: list of int, names: list of int) {
 }
 
 // parseExternFuncDecl parses `"external" "func" IDENT "(" [ params ] ")"
-// [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | regClause ]
+// [ ":" type ] [ "=" ( "trap" INTLIT [ "sel" INTLIT | "seld0" INTLIT | regClause ]
 // | "inline" ( "deref" | "nop" | "a5" ) ) ]` where
 // `regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ]
 // [ "ret" REG ]` and `regBind = REG ":" IDENT` (Task 3, Ch13: `external
 // func`; trap/inline clause added Task 2, native-5d; `inline a5` added
 // Task 12, native-5e; `reg memerr` and `trap ... sel` both added Task 14,
 // native-5e; regClause's named form -- the parenthesized regBind list and
-// `ret REG` -- added Task 1, toolbox-integration Feature A) -- parseFuncDecl
+// `ret REG` -- added Task 1, toolbox-integration Feature A; `trap ...
+// seld0` added mac-resident-clarusc Task 12, the AppleEvent Manager's own
+// D0-preload selector shape -- see the `seld0` arm's own doc comment,
+// above) -- parseFuncDecl
 // minus the body block, since an external declaration ends at the
 // signature; a following `{` is left for parseTopDecl to reject as an
 // ordinary top-level parse error (there is no external-func body to
-// parse). `trap`/`sel`/`reg`/`memerr`/`ret`/`inline`/`deref`/`nop`/`a5`
+// parse). `trap`/`sel`/`seld0`/`reg`/`memerr`/`ret`/`inline`/`deref`/`nop`/`a5`
 // are all contextual identifiers, matched the same curIsIdentText way
 // `external` itself is (no new tokens), and REG (d0/d1/d2/a0/a1) is too
-// (parseRegName) -- the trap/sel words are ordinary TkInt, decimal or hex
-// (the lexer already handles `0xA122`). trapVal/convFlag/selVal/
+// (parseRegName) -- the trap/sel/seld0 words are ordinary TkInt, decimal
+// or hex (the lexer already handles `0xA122`). trapVal/convFlag/selVal/
 // retRegCode default to -1/0/-1/-1 (no clause); the checker
 // (checkExternFunc) validates trapVal/convFlag/the regClause's own rules
-// (selVal has no separate validation -- the grammar itself makes `sel`
-// and `reg` mutually exclusive, and `sel` never changes convFlag away
-// from 1). A regBind's REGISTER half is validated here (parseRegName,
+// (selVal has no separate validation -- the grammar itself makes `sel`/
+// `seld0`/`reg` mutually exclusive, `sel` never changes convFlag away
+// from 1, and `seld0` always sets it to 9). A regBind's REGISTER half is validated here (parseRegName,
 // same "unknown X" idiom as the inline sub-keyword check below); its
 // PARAM half is only captured raw (ast.cla's astAddExternRegBinds) --
 // resolving it against the decl's own declared parameters needs the full
@@ -1611,6 +1614,26 @@ func parseExternFuncDecl(): int {
                 advance()
                 selTok = expect(TkInt)
                 selVal = selTok.intVal
+            } else if curIsIdentText("seld0") {
+                // Task 12 (mac-resident-clarusc): `trap 0xA816 seld0
+                // 0x091F` -- the AppleEvent Manager's OWN selector-dispatch
+                // shape, distinct from `sel` above: every AE Manager
+                // routine (AEInstallEventHandler, AEProcessAppleEvent, ...)
+                // shares trap 0xA816, but the selector is PRELOADED INTO
+                // D0, never pushed (Retro68's own THREEWORDINLINE(0x303C,
+                // selector, 0xA816) encoding -- 0x303C is MOVE.W
+                // #selector,D0, not `sel`'s 0x3F3C MOVE.W #selector,-(SP)).
+                // convFlag 9 marks this at cgCallExtPascal (cg68k.cla),
+                // which emits the MOVE.W-to-D0 form instead of the push
+                // after every declared arg is on the stack, in place of
+                // (never in addition to) `sel`'s push. See toolbox/
+                // appleevents.cla's own header comment for the citations
+                // (CIncludes THREEWORDINLINE + AIncludes OPWORD macro, both
+                // agreeing) this task decoded it from.
+                advance()
+                selTok = expect(TkInt)
+                selVal = selTok.intVal
+                convFlag = 9
             } else if curIsIdentText("reg") {
                 advance()
                 convFlag = 2

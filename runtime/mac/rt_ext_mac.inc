@@ -829,6 +829,22 @@ void rt_ext_UiLaunchReal(void) {
     }
 }
 
+/* rt_ext_UiAEProcessEvent (mac-resident-clarusc Task 12): ui.cla's shared
+ * rtUiRun gained a real kHighLevelEvent arm (UiAEProcessEvent(evBuf)) --
+ * this is its cprint-lane body, a one-line forward to the real Toolbox
+ * call (already available: AppleEvents.h is included above, for
+ * rt_ext_UiLaunchReal's own AE handlers). Link-safety only: rtUiRun is
+ * shared source, compiled into every UI program's C output on this lane
+ * too, so the symbol must resolve even though rt_ext_UiLaunchReal's own
+ * SIZE(-1) resource (build-mac.sh's appres.r, HASAPP-gated the same way
+ * app68BuildSize used to be before this task's own native-lane fix) means
+ * this arm stays practically unreachable on the cprint lane for a
+ * non-app-section program -- a known, deliberately out-of-scope parallel
+ * gap this task's report calls out (the native/Snow lane is this task's
+ * only proof target). Result discarded, matching rt_ui.c's own call site.
+ */
+void rt_ext_UiAEProcessEvent(void *evBuf) { (void)AEProcessAppleEvent((EventRecord *)evBuf); }
+
 /* ---- test-suite-review Task 12: testsuite/toolbox/cases_events.cla's own
  * externs (Tb prefix, NOT part of the runtime/clarus/ waist) -- cprint
  * always renders an `external func ... = trap ...` as rt_ext_NAME

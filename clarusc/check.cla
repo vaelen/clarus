@@ -2336,7 +2336,7 @@ func checkExternFunc(d: int) {
 
     conv = externFuncConv(d)
     trapVal = externFuncTrap(d)
-    if conv == 1 or conv == 2 or conv == 6 or conv == 7 or conv == 8 {
+    if conv == 1 or conv == 2 or conv == 6 or conv == 7 or conv == 8 or conv == 9 {
         if trapVal < 0xA000 or trapVal > 0xAFFF {
             emitDiag(declLine(d), declCol(d), "trap word must be in 0xA000..0xAFFF")
         }

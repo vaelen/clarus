@@ -25,6 +25,7 @@ var catalogFiles = []string{
 	filepath.Join("toolbox", "standardfile.cla"),
 	filepath.Join("toolbox", "files.cla"),
 	filepath.Join("toolbox", "resources.cla"),
+	filepath.Join("toolbox", "appleevents.cla"),
 }
 
 // catalogDriver references >=1 symbol per catalog file: TickCount/
@@ -34,7 +35,10 @@ var catalogFiles = []string{
 // FileParam/PBGetFInfoSync/PBSetFInfoSync/IOParam/PBCreateSync/
 // PBOpenRFSync/PBWriteSync/PBCloseSync (files, task-6a's FInfo-stamp
 // addition plus Task 7's create/open-RF/write/close fill), Get1NamedResource/
-// ReleaseResource (resources, Task 7, mac-resident-clarusc phase).
+// ReleaseResource (resources, Task 7, mac-resident-clarusc phase),
+// kCoreEventClass/kAEQuitApplication/AEInstallEventHandler/
+// AEProcessAppleEvent (appleevents, Task 12, mac-resident-clarusc phase --
+// also exercises the `seld0` extern clause this same task adds).
 const catalogDriver = `on App.startCLI(args: list of string) {
     var ev: EventRecord
     var t0: int
@@ -93,6 +97,9 @@ const catalogDriver = `on App.startCLI(args: list of string) {
 
     rh = Get1NamedResource(0x54455854, pr)
     ReleaseResource(rh)
+
+    err = AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, ptr(0), 0, false)
+    err = AEProcessAppleEvent(ptr(0))
 }
 `
 

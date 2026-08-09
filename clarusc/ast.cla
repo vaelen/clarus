@@ -152,8 +152,10 @@
 //                flag (0=none, 1=pascal trap, 2=reg trap [positional],
 //                3=inline deref, 4=inline nop, 5=inline a5, 6=reg trap
 //                [positional] memerr, 7=reg trap [named], 8=reg trap
-//                [named] memerr -- 5/6 Task 12/14 native-5e, 7/8 Task 1
-//                toolbox-integration Feature A) -- intVal is what
+//                [named] memerr, 9=pascal trap with a D0-preload selector
+//                (`seld0`) -- 5/6 Task 12/14 native-5e, 7/8 Task 1
+//                toolbox-integration Feature A, 9 mac-resident-clarusc
+//                Task 12) -- intVal is what
 //                distinguishes the inline/reg sub-forms, since c is -1 for
 //                all of them. Same a/b slot layout as DkFunc so
 //                funcDeclName/ParamsHead/RetType and checkFuncSig work
@@ -1649,13 +1651,14 @@ func externFuncTrap(i: int): int {
     return decls[i].c & 0xFFFF
 }
 
-// externFuncSel returns a DkExternFunc's `trap WORD sel SELECTOR` clause's
+// externFuncSel returns a DkExternFunc's `trap WORD sel SELECTOR` (or
+// mac-resident-clarusc Task 12's `trap WORD seld0 SELECTOR`) clause's
 // selector word (Task 14, native-5e -- a "Package 7" List Manager style
 // selector-dispatch trap, e.g. UiLNew's real `0xA9E7` trap shared by every
 // List Manager routine, distinguished only by this selector; see
-// parseExternFuncDecl's own doc comment), or -1 if the extern has no `sel`
-// clause. Packed into `c`'s upper 16 bits as selVal+1 (0 = none); -1 is
-// never itself a valid selVal+1 encoding here (trapVal is always
+// parseExternFuncDecl's own doc comment), or -1 if the extern has no `sel`/
+// `seld0` clause. Packed into `c`'s upper 16 bits as selVal+1 (0 = none);
+// -1 is never itself a valid selVal+1 encoding here (trapVal is always
 // 0xA000..0xAFFF, i.e. c is never negative), so this is exact.
 func externFuncSel(i: int): int {
     return (decls[i].c >> 16) - 1
@@ -1664,7 +1667,10 @@ func externFuncSel(i: int): int {
 // externFuncConv returns a DkExternFunc's calling-convention flag: 0=none,
 // 1=pascal trap, 2=reg trap (positional), 3=inline deref, 4=inline nop,
 // 5=inline a5, 6=reg trap (positional) memerr, 7=reg trap (named), 8=reg
-// trap (named) memerr.
+// trap (named) memerr, 9=pascal trap with a D0-preload selector (`seld0`,
+// mac-resident-clarusc Task 12 -- the AppleEvent Manager's own
+// selector-dispatch shape, distinct from conv 1's `sel`'s stack-pushed
+// selector).
 func externFuncConv(i: int): int {
     return decls[i].intVal
 }

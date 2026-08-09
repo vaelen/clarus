@@ -1542,7 +1542,7 @@ An `external func` declaration may end with a clause tying it to a specific Tool
 
 ```
 externDecl = "external" "func" IDENT "(" [ params ] ")" [ ":" type ]
-             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | regClause ]
+             [ "=" ( "trap" ( INT | HEXINT ) [ "sel" ( INT | HEXINT ) | "seld0" ( INT | HEXINT ) | regClause ]
                    | "inline" ( "deref" | "nop" | "a5" ) ) ] ;
 regClause = "reg" [ "(" regBind { "," regBind } ")" ] [ "memerr" ] [ "ret" REG ] ;
 regBind   = REG ":" IDENT ;   // REG in { d0, d1, d2, a0, a1 }, lowercase
@@ -1584,6 +1584,8 @@ Some Toolbox packages share a single trap word across many routines, distinguish
 ```rust
 external func LAddRow(count: word, rowNum: word, lHandle: ptr): word = trap 0xA9E7 sel 0x0008
 ```
+
+Some other Toolbox managers share a single trap word the same way, but distinguish the routine by PRELOADING the selector into D0 instead of pushing it — the AppleEvent Manager's own trap `0xA816` (every `AE*` routine) is the working example. `trap NNNN seld0 SELECTOR` names that shape: the selector is moved into D0 immediately before the trap, after every declared argument has already been pushed — no extra stack word, so no extra cleanup either. `seld0` and `sel` are two different selector-dispatch shapes for two different trap families; a routine's own Inside Macintosh/Universal-Interfaces `THREEWORDINLINE` encoding says which — `0x3F3C` (`MOVE.W #selector,-(SP)`) is `sel`, `0x303C` (`MOVE.W #selector,D0`) is `seld0`. Like `sel`, `seld0` is mutually exclusive with `reg` (`external func AEInstallEventHandler(theAEEventClass: int, theAEEventID: int, handler: ptr, handlerRefcon: int, isSysHandler: bool): word = trap 0xA816 seld0 0x091F`, toolbox/appleevents.cla).
 
 `= inline deref`, `= inline nop`, and `= inline a5` name no trap at all — they mark the external as a compiler-known intrinsic, expanded at the call site instead of dispatched through a trap number. `inline deref` requires the signature `(ptr): ptr` exactly, reading the pointer stored at its argument address (the common master-pointer-to-object-pointer step of following a Handle):
 
