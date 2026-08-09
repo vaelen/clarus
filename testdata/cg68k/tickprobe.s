@@ -64,7 +64,7 @@ LBL_218:
         CLR.W (A0)+
         DBRA D0,LBL_218
         MOVEA.L $0130.W,A0
-        ADDA.L #-233368,A0
+        ADDA.L #-249980,A0
         DC.W $A02D  ; _SetApplLimit
         DC.W $A063  ; _MaxApplZone
         DC.W $A036  ; _MoreMasters

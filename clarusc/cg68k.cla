@@ -1823,7 +1823,7 @@ func cgHeurOnCycle(start: int): bool {
 }
 
 // cgNameHasPrefix is a plain per-character prefix test -- the language has
-// no substring/startsWith primitive, and cgIsSeveredEntry below needs two
+// no substring/startsWith primitive, and cgSeveredFamily below needs two
 // different prefixes (the existing hand-unrolled `nat` test in
 // cg68AddRoots predates this helper and is left alone).
 func cgNameHasPrefix(nm: string, pre: string): bool {
@@ -1842,20 +1842,22 @@ func cgNameHasPrefix(nm: string, pre: string): bool {
     return true
 }
 
-// cgIsSeveredEntry answers whether irFuncs name `nm` is the TARGET of a
-// call the shake call graph cannot see -- an ECallExt-mediated call.
-// shake.cla's own ECallExt arm walks the argument list and stops
-// ("`external func` -- resolves straight to rt_ext_NAME, never an irFuncs
-// entry"), which is true on the C lane but NOT on this one: cgCallExt
-// resolves two whole families of extern back to a real, called Clarus
-// IRFunc, and neither produces a shakeEdgesFrom/To entry --
-//   - the reverse-waist UI dispatchers (cgCallExtUiSynth /
+// cgSeveredFamily classifies irFuncs name `nm` as the TARGET of a call
+// the shake call graph cannot see -- an ECallExt-mediated call: 1 for the
+// reverse-waist UI dispatcher family, 2 for the `nat*` native-helper
+// family, 0 for anything else. shake.cla's own ECallExt arm walks the
+// argument list and stops ("`external func` -- resolves straight to
+// rt_ext_NAME, never an irFuncs entry"), which is true on the C lane but
+// NOT on this one: cgCallExt resolves both of these families back to a
+// real, called Clarus IRFunc, and neither produces a shakeEdgesFrom/To
+// entry --
+//   - family 1, the reverse-waist UI dispatchers (cgCallExtUiSynth /
 //     lower.cla's lowUiSynthExternName): every `clar_ui_fire_*` function,
 //     the ONLY route from the runtime's own event loop into a user `on`
 //     handler (and from there into `open`/`edit`, i.e. straight back down
 //     into the runtime again);
-//   - the `nat*` native helpers (cgCallExtNatFallback), which every
-//     file/console/Toolbox-adjacent extern lands on.
+//   - family 2, the `nat*` native helpers (cgCallExtNatFallback), which
+//     every file/console/Toolbox-adjacent extern lands on.
 // Both families are kept REACHABLE by cg68AddRoots' name-based roots, so
 // they are emitted correctly -- but a root is not an edge, so
 // cgHeurLongest sees them as the starts of their own disconnected
@@ -1863,12 +1865,18 @@ func cgNameHasPrefix(nm: string, pre: string): bool {
 // Same name-prefix conventions cg68AddRoots and lowUiSynthExternName
 // already establish; matching by prefix rather than re-deriving the
 // extern->target mapping keeps this a read-only audit of irFuncs, with no
-// second copy of cgCallExt's dispatch to drift out of sync.
-func cgIsSeveredEntry(nm: string): bool {
-    if cgNameHasPrefix(nm, "nat") {
-        return true
+// second copy of cgCallExt's dispatch to drift out of sync. The `nat`
+// test is a bare 3-character prefix, so a USER function named e.g.
+// `natter` is classified as family 2 as well -- harmless: the only effect
+// is a slightly larger stack reserve, the safe direction.
+func cgSeveredFamily(nm: string): int {
+    if cgNameHasPrefix(nm, "clar_ui_fire_") {
+        return 1
     }
-    return cgNameHasPrefix(nm, "clar_ui_fire_")
+    if cgNameHasPrefix(nm, "nat") {
+        return 2
+    }
+    return 0
 }
 
 // cgStackHeuristic (native-gaps-cleanup Task 4) computes the native
@@ -1938,12 +1946,23 @@ func cgIsSeveredEntry(nm: string): bool {
 //      cbExtra covers the traceable-but-disconnected part properly
 //      instead of folding it into a bigger guessed headroom constant.
 //   4. `sevExtra` -- the SAME treatment for the OTHER disconnected-entry
-//      family, added by mac-resident-clarusc Task 15: the deepest
+//      families, added by mac-resident-clarusc Task 15: the deepest
 //      cgHeurLongest over every reachable ECallExt-reached target
-//      (cgIsSeveredEntry above -- the `clar_ui_fire_*` reverse-waist
-//      dispatchers and the `nat*` helpers), taken as a single MAX for the
-//      same "at most one of these severed sub-chains is live at a time"
-//      reason cbExtra states. Without it the model was silently pricing
+//      (cgSeveredFamily above), taken as a MAX WITHIN each family and
+//      SUMMED ACROSS the two. The cross-family sum is not caution, it is
+//      required: the two families genuinely COMPOSE on one stack, and
+//      examples/texteditor.cla does it on every Save/Open --
+//      clar_ui_fire_menu/clar_ui_fire_launchdoc -> the user's own handler
+//      -> file.writeText/file.readText/askOpen ->
+//      nat_SerFileWriteData/nat_SerFileReadTextInto/nat_UiSFGetFile: two
+//      severed edges nested on one chain. A MAX across families
+//      under-prices exactly that, which is the same failure class this
+//      term exists to fix. WITHIN a family the MAX is sound: a `nat*`
+//      body reaches other `nat*` bodies through ordinary ECallFn edges
+//      cgHeurLongest already follows (nothing is severed there), and
+//      dispatcher-inside-dispatcher is plain UI re-entrancy, which is
+//      unbounded and is called out as uncovered below rather than
+//      pretended away. Without this term the model was silently pricing
 //      only ONE SIDE of the reverse waist: on the toolbox-suite
 //      composition `best`'s own argmax was `clar_ui_fire_widget` itself
 //      (measured: best=195410, cbExtra=41646, cycleExtra=0 -> 245248
@@ -1960,13 +1979,14 @@ func cgIsSeveredEntry(nm: string): bool {
 //      quiet wrong answer (rtUiFieldCap read a garbage field cap, so
 //      typing into a bound form field kept only the first character), and
 //      instrumenting that chain with a log() call -- one more frame --
-//      turned it into a hang instead. Charging both sides of the waist
-//      restores real margin (toolbox suite: 440658).
-//      Known limitation, deliberately not modelled: severances NEST (a
-//      user handler reached through the dispatcher can itself call a
-//      `nat*` helper through a second severed edge), and a re-entrant UI
-//      (event loop -> handler -> modal loop -> handler) has no static
-//      depth bound at all. `stack: N` stays the escape hatch for a
+//      turned it into a hang instead. Charging every side of the waist
+//      restores real margin.
+//      Known limitation, deliberately not modelled: a re-entrant UI
+//      (event loop -> handler -> modal loop -> handler -> ...) has no
+//      static depth bound at all, so no term here can bound a program
+//      that genuinely nests dispatches; two DISTINCT `nat*` chains live
+//      at once is the same unbounded case (it needs a re-entering
+//      dispatcher between them). `stack: N` stays the escape hatch for a
 //      program that outgrows this model.
 func cgStackHeuristic(): int {
     var i: int
@@ -1975,6 +1995,9 @@ func cgStackHeuristic(): int {
     var cycleExtra: int
     var cbExtra: int
     var sevExtra: int
+    var sevUi: int
+    var sevNat: int
+    var fam: int
     var result: int
 
     if irAppStack != -1 {
@@ -2019,15 +2042,25 @@ func cgStackHeuristic(): int {
         i = i + 1
     }
 
-    sevExtra = 0
+    sevUi = 0
+    sevNat = 0
     i = 0
     while i < irFuncs.count {
-        if shakeReachable(i) and cgIsSeveredEntry(poolGet(irFuncName(i))) {
-            v = cgHeurLongest(i)
-            if v > sevExtra { sevExtra = v }
+        if shakeReachable(i) {
+            fam = cgSeveredFamily(poolGet(irFuncName(i)))
+            if fam != 0 {
+                v = cgHeurLongest(i)
+                if fam == 1 and v > sevUi {
+                    sevUi = v
+                }
+                if fam == 2 and v > sevNat {
+                    sevNat = v
+                }
+            }
         }
         i = i + 1
     }
+    sevExtra = sevUi + sevNat
 
     result = best + cycleExtra + cbExtra + sevExtra + cgToolboxHeadroom
     if result mod 2 != 0 {
