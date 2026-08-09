@@ -5,9 +5,17 @@
 // native boot smoke for ClarusC.APPL, the Mac-resident compiler's GUI
 // front end (clarusc/macgui.cla). Uses the Task 4 Snow harness
 // (snow_test.go), not LaunchAPPL/Mini vMac: ClarusC.APPL is a
-// System-7-targeted app with a 64MB SIZE(-1) partition (scripts/
-// build-clarusc-mac.sh's own --partition flag) -- Mini vMac's 4MB Mac
-// Plus cannot host it.
+// System-7-targeted app with a 4MB SIZE(-1) partition (scripts/
+// build-clarusc-mac.sh's own --partition flag, double the ordinary 2MB
+// default) -- Mini vMac's 4MB Mac Plus cannot host it even at that
+// reduced size (no headroom left for the app itself). 4MB, not the
+// plan's original 48-64MB target, because the checked-in snow/
+// Clarus.snoww workspace boots with no 32-bit addressing
+// (init_args.pmmu_enabled=false), which caps Process-Manager-allocatable
+// RAM at ~6.8MB regardless of the workspace's 128MB physical ram_size --
+// found by a REAL Finder alert requesting the original 64MB target:
+// "There is not enough memory to open ClarusC (65,536K needed, 6,968K
+// available)". 4MB is comfortably under that ceiling.
 package mactest
 
 import (

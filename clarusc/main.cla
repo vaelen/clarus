@@ -134,6 +134,7 @@ on App.startCLI(args: list of string) {
     var pname: string
     var vh: int
     var testApiFlag: bool
+    var partitionDigitIdx: int
 
     // Reset-at-start: one clarusc invocation checks (or emits) one program
     // (each differential-harness case is a fresh exec). These resets clear the
@@ -305,12 +306,34 @@ on App.startCLI(args: list of string) {
             // the 2MB default; only scripts/build-clarusc-mac.sh (whose
             // ClarusC.APPL needs far more, for its own compile working
             // set) passes this.
+            //
+            // Validated HERE, not inside cgParseDecimal (which stays a
+            // bare best-effort digit-scanner, --seglimit's own long-
+            // standing behavior: a garbage --seglimit silently degrades
+            // to 0, treated as "no override" -- left alone, since
+            // --seglimit is a diagnostic-only flag no build script
+            // passes). --partition is different: scripts/build-clarusc-
+            // mac.sh (a real, committed build script) now passes it, so a
+            // typo there must fail loudly instead of silently building a
+            // 2MB ClarusC.APPL that then can't compile anything.
             i = i + 1
             if i >= args.count {
                 log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] [--events FILE] [--bake FILE]... [--partition N] FILE...")
                 quit 2
             }
+            partitionDigitIdx = 0
+            while partitionDigitIdx < args[i].length {
+                if not isDigit(args[i][partitionDigitIdx]) {
+                    log("clarusc emit68k --partition: not a positive number: " + args[i])
+                    quit 2
+                }
+                partitionDigitIdx = partitionDigitIdx + 1
+            }
             cgSizePartitionBytes = cgParseDecimal(args[i])
+            if args[i].length == 0 or cgSizePartitionBytes <= 0 {
+                log("clarusc emit68k --partition: not a positive number: " + args[i])
+                quit 2
+            }
         } else {
             fileArgs.add(args[i])
         }

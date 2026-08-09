@@ -9884,10 +9884,14 @@ func cgReserveUiPoolLabels() {
 // ================================================================
 
 // cgParseDecimal parses a plain non-negative decimal literal (main.cla's
-// `--seglimit N` test-only flag is this function's only caller -- no
-// sign, no whitespace, no error reporting beyond silently ignoring any
-// non-digit byte, which is fine for a value only ever supplied by a
-// test harness in full control of its own argv).
+// `--seglimit N` test-only flag and `--partition N` flag are this
+// function's two callers) -- no sign, no whitespace, no error reporting
+// beyond silently ignoring any non-digit byte. Fine for --seglimit
+// (a value only ever supplied by a test harness in full control of its
+// own argv); --partition's own call site (main.cla) validates its raw
+// string BEFORE calling this, since that flag is now reachable from a
+// real build script (scripts/build-clarusc-mac.sh) where a typo must
+// fail loudly rather than silently degrade to 0.
 func cgParseDecimal(s: string): int {
     var n: int
     var i: int
