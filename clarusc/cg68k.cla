@@ -256,15 +256,16 @@ var cgBakeDatas: list of text
 // the only caller that passes it today, needing more than 2MB for its
 // own compile working set.
 //
-// scripts/build-clarusc-mac.sh passes 4194304 (4MB), NOT the plan's
-// aspirational 48-64MB: the checked-in snow/Clarus.snoww acceptance
-// workspace boots with pmmu_enabled=false (no 32-bit addressing), which
-// caps Process-Manager-allocatable RAM at ~6.8MB regardless of its 128MB
-// physical ram_size -- empirically found (Task 10) booting a 64MB
-// request: "There is not enough memory to open ClarusC (65,536K needed,
-// 6,968K available)". 4MB is double the ordinary default while staying
-// safely under that ceiling; revisit once the acceptance image gets a
-// 32-bit-addressing enabler (out of scope for this task).
+// scripts/build-clarusc-mac.sh passes 50331648 (48MB, Task 11), per the
+// design spec's section 7 estimate (14-22MB working set + headroom). Task 10
+// originally landed on 4MB instead: the then-current snow/Clarus.snoww
+// acceptance workspace booted with pmmu_enabled=false (no 32-bit
+// addressing), which capped Process-Manager-allocatable RAM at ~6.8MB
+// regardless of its 128MB physical ram_size -- empirically found booting
+// a 64MB request: "There is not enough memory to open ClarusC (65,536K
+// needed, 6,968K available)". As of 2026-08-09 the Snow machine runs a
+// 32-bit-clean ROM (snow/rominator.rom) with 32-bit addressing enabled
+// (Largest Unused Block 129,868K verified), removing that ceiling.
 var cgSizePartitionBytes: int
 
 // cgFreshIntList hands back a genuinely empty list (same trick

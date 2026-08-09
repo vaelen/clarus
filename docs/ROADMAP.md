@@ -1400,6 +1400,174 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   full task-by-task ledger + reports:
   `.superpowers/sdd/2026-08-08-peephole68k/`.
 
+- **Mac-resident clarusc (branch `mac-resident-clarusc`, 2026-08-08/09 —
+  second sub-phase of the decomposed 5f above): CODE-COMPLETE; the
+  final live integration-test PASS is the one thing NOT yet in hand (see
+  below) — do not merge until a future session runs
+  `TestMacResidentClaruscOnSnow` to a clean PASS.**
+  `ClarusC.APPL` (`clarusc/macgui.cla`, built by
+  `scripts/build-clarusc-mac.sh`) is a real Mac application that runs
+  `clarusc emit68k` ON the Mac itself, compiling OTHER `.cla` programs
+  with no host machine involved — a real Standard File "Compile..."
+  dialog drives the SAME `drive.cla` pipeline the host CLI uses, then
+  writes a native `.APPL` to disk via `file.writeRes`. It self-bakes the
+  whole `runtime/clarus/*.cla` + `toolbox/*.cla` source catalog into its
+  own resource fork (`emit68k --bake FILE`, one flag per file, verbatim
+  name), so a compile it runs needs no `runtime/clarus/` directory on the
+  Mac disk at all — every `include` and every automatic runtime-module
+  splice (core/str/text/list/map/ui*) resolves through a baked `'CLFS'`
+  resource instead (Task 8's `driveKeyResolve` + a resource-backed
+  `feReadSource`, Task 6/10's front-end seam).
+
+  **Task 11 (final task, phase close) — environment pivot mid-task:** the
+  brief was written against a 24-bit Snow acceptance machine
+  (`snow/MacIIFDHD-IIx-IIcx.rom`, `pmmu_enabled=false`), which capped
+  Process-Manager-allocatable RAM at ~6.8MB regardless of 128MB physical
+  RAM (Task 10's own finding) and forced a 4MB `SIZE(-1)` partition
+  compromise. Before Task 11 started, the controller re-synced the Snow
+  workspace to a 32-bit-clean ROM (`snow/rominator.rom`, real BMOW splash
+  confirms "Detected 128 MB RAM, 32-bit mode" at boot; Largest Unused
+  Block 129,868K verified) — `scripts/build-clarusc-mac.sh`'s
+  `--partition` raised from 4MB to 48MB (50331648 bytes) accordingly,
+  matching the design spec's own §7 estimate (14-22MB working set +
+  headroom). `internal/mactest/snow_test.go` had two now-stale hardcodes
+  fixed to read the acceptance machine's own facts instead of a frozen
+  filename: `rom_path`/`display_card_rom_path` are now absolutized from
+  whatever `snow/Clarus.snoww` itself names (not a literal
+  `MacIIFDHD-IIx-IIcx.rom` string), and the scratch disk image is cloned
+  from `scsi_targets[0].Disk` in that same workspace JSON (not a literal
+  `hdd0-clarus.img`, which no longer existed post-resync — the controller
+  had renamed it to `hdd0.img`). A separate, unrelated build-script bug
+  surfaced during revalidation: `scripts/build-68k.sh` cached its
+  bootstrap compiler at `build-68k/clarusc`, which — on macOS's default
+  case-insensitive filesystem — collides with `build-68k/ClarusC/`, the
+  output directory `build-clarusc-mac.sh`'s own build produces; running
+  both in the same tree silently clobbered the cached binary with a
+  directory. Fixed by moving `build-68k.sh`'s bootstrap cache to
+  `build-run/clarusc`, the same shared cache `build-clarusc-mac.sh`/
+  `clarus-run.sh` already use for the identical bootstrap recipe.
+
+  **The real bug this task exists to catch, caught:** every prior task in
+  this phase built and boot-smoked `ClarusC.APPL`, but none had ever
+  driven its "Compile..." action to completion — Task 10's own boot
+  smoke used a baked events script that only exercises `App.startEmpty`
+  then `quit`, never `Compile.select`. The FIRST attempt at a real
+  on-Mac compile (this task) failed immediately: `driveManifestSplice`/
+  `driveEarlySplice` (`clarusc/drive.cla`) read every automatic
+  runtime-module file (`core.cla`, `ui.cla`, …) via the low-level
+  `file.readText` directly, bypassing the `feReadSource` seam `expand()`
+  already used for ordinary `include`s. With no `runtime/clarus/`
+  directory on the Mac disk (the entire point of `--bake` is to avoid
+  needing one), every runtime-module read failed outright — "runtime
+  module core.cla not found (searched runtime/clarus/ from the working
+  directory upward); use --rtdir" — and `ClarusC.APPL`'s own compile of
+  ANY UI program was unreachable code until fixed. Root-cause fix (not a
+  guard at the call site): a new `rtModuleKey(mod)` helper
+  (`"runtime/clarus/" + mod`, exactly the `--bake` name
+  `build-clarusc-mac.sh` gives every runtime file) threaded through both
+  the readability probe and the `expand()` call at both splice sites —
+  four call sites, one helper. Byte-identical on host: `main.cla`'s own
+  `feReadSource` ignores its `key` argument entirely and always reads
+  straight off disk, so the swap from `file.readText` to `feReadSource`
+  is a pure no-op there, confirmed by T1 staying green.
+
+  **Fixtures (Step 1-2):** `testdata/mac-resident/catprobe.cla` — one
+  `include "../../toolbox/osutils.cla"` (deliberately never staged on
+  the Snow disk, so it can ONLY resolve via the baked-resource fallback),
+  one real cataloged trap call (`GestaltErr(gestaltSystemVersion)` —
+  `osutils.cla` doesn't declare `TickCount`, the brief's own sketch was
+  wrong about that), self-quit. `testdata/mac-resident/clarusc.events`
+  drives two on-Mac compiles: `answer-open :::tickprobe.cla` / `menu 2 1`
+  (Compile…) / `answer-open :::catprobe.cla` / `menu 2 1` / `quit` — the
+  `:::` HFS up-level idiom is required because `ClarusC` self-launches
+  from `:System Folder:Startup Items:` (two levels below the volume
+  root, where the harness's `putText` actually places the source files),
+  same convention Task 4's own `roundtrip.cla` fixture established; the
+  ENTRY file's own resource key always starts at `""` regardless of that
+  disk-path spelling (`driveCompile`'s `expand(entries[i], true, "")`),
+  so this has no bearing on the baked-resource include resolution above.
+
+  **Integration test (`internal/mactest/macresident_test.go`,
+  `TestMacResidentClaruscOnSnow`, gated `CLARUS_SNOW_TESTS=1`):** builds
+  `ClarusC.APPL` with the events script baked in, boots it on Snow with
+  `tickprobe.cla`/`catprobe.cla` at the volume root and NO
+  `toolbox/osutils.cla` anywhere on disk, and requires (1) the captured
+  `out` trace shows both scripted compiles were dispatched with no
+  alert-visible error text (`gcLog`'s own "BUILT " line, it turns out,
+  only ever reaches the on-screen Log textview — never the trace-capture
+  stream — so a literal `"BUILT "` search, the brief's own Step 4
+  wording, can never match regardless of success; `alert()`, which IS
+  trace-visible, is the real per-compile error signal, and every
+  `gcCompile` error path calls it); (2) `TickProbe`/`CatProbe`, extracted
+  from the boot disk (`hcopy -m`, MacBinary-preserved), have resource
+  forks byte-identical to the SAME two fixtures built by the
+  current-source HOST compiler (`claruscboot.CurrentExe`, two-stage
+  bootstrap — mandatory, since the committed snapshot predates this
+  task's own fixes) — THE core assertion; (3) the on-Mac-produced
+  `TickProbe`, booted standalone with no `--events` (the real,
+  non-scripted `rtUiRun`/`UiTickCount` event loop), actually launches and
+  runs to completion — proof the byte-identity check isn't comparing two
+  equally-broken outputs.
+
+  **Result: test correctly designed and code-complete; NOT run to a
+  final PASS/FAIL within this task's own session.** Four real Snow-boot
+  attempts, in order: (1) a killed early manual probe that first
+  produced the `driveManifestSplice` crash trace, fixed as above; (2) a
+  full 50-minute automated run whose trace proved BOTH
+  `Compile.select`/`askOpen` pairs fired with zero alert/error text
+  (strong evidence both compiles at least started cleanly), but with no
+  exit trailer — compile 2 (catprobe.cla) was still running when the
+  50-minute settle elapsed, revealing that ONE compile alone can take
+  close to that long (compiling ~12,000 lines of runtime source —
+  core/str/text/list/map/ui* — through the full self-hosted
+  lex/parse/check/lower/shake/asm68k/peep68k/cg68k pipeline, interpreted
+  on emulated 68k hardware; consistent with peephole68k's own bench
+  finding that lexing just `lib.cla`+`tok.cla`+`lex.cla` alone took
+  ~264s of Mac-tick time); this same run is what surfaced the "BUILT "
+  assertion design flaw above. `macResidentCompileSettle` raised to 110
+  minutes (runSnow's own timeout to 130m) accordingly; (3) and (4), two
+  more attempts with the corrected/lengthened test, both terminated
+  partway through (at roughly 51 and 60+ minutes respectively, past the
+  point either prior run had reached with zero errors) by what appears
+  to be an environment-level background-task lifecycle limit on the
+  execution host, unrelated to the code under test — the Go test
+  process itself was SIGKILLed externally (no panic, no Go-level
+  timeout, nothing past its own first log line), reproducing even after
+  deliberately avoiding any accumulation of concurrent background
+  helper tasks. Every attempt's OWN evidence (before being cut off) was
+  consistent and error-free: clean boots, both askOpen answers accepted,
+  zero alert-visible error text, sustained legitimate CPU activity the
+  entire time. Task 11's own commit lands with the fix, the corrected
+  test, and this honest result — completing the live end-to-end
+  byte-identity proof is the clear, well-defined next step for whoever
+  next has a session that can hold a ~2-hour foreground Snow boot
+  uninterrupted; task-11-report.md (gitignored) has the full run-by-run
+  writeup.
+
+  **`start_fastforward` tried and NOT adopted:** enabling it
+  (`init_args.start_fastforward=true` in the scratch workspace JSON)
+  produced a boot that sat for minutes with no launch at all (host CPU
+  usage low and flat, no `ClarusC` window ever appearing within 3+
+  minutes of guest time it should not have needed even at 1×) — an
+  apparent bad interaction between fast-forward and something latency-
+  or timing-sensitive in this specific boot path. Not investigated
+  further: real-time already completes inside a practical (if long) test
+  timeout, and this is the first time anything in this repo has ever
+  tried fast-forward, so there's no regression to chase.
+
+  **Honest limits:** `ClarusC.APPL`'s default-directory compile model is
+  exactly what Task 10 documented (an app launched from Startup Items
+  has ITS OWN folder as the default directory for a bare relative path;
+  reaching the volume root needs the HFS up-level idiom) — there is no
+  "open from anywhere" convenience yet, matching the host CLI's own
+  plain-argv model. `file.readResource`/`file.writeRes` remain
+  Macintosh-only; a host build's `readResource` always returns `false`
+  (`docs/clarus-language-reference.md`'s own entry, confirmed unchanged
+  and accurate by this task). Design:
+  `.superpowers/sdd/2026-08-08-mac-resident-clarusc/` (spec, plan, and
+  every task's brief/report/review); full task-11 evidence:
+  `task-11-report.md` in that same directory (gitignored).
+
 - **Known-unexercised runtime surface (test-suite-review Task 13,
   2026-08-04):** a coverage-honesty audit — every `func nat_` fallback in
   `runtime/clarus/*.cla`, every `UiTestScript()`/`rtUiScripted`

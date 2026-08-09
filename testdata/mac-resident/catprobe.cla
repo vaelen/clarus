@@ -1,0 +1,47 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// catprobe.cla: Task 11's own fixture (mac-resident-clarusc phase),
+// proving the baked toolbox/ catalog resolves via resource fallback when
+// ClarusC compiles THIS file ON the Mac -- its `include` has no disk copy
+// there (deliberately not staged on the Snow acceptance disk), so
+// resolution can only succeed through driveKeyResolve's baked-resource
+// fallback (Task 8), served from the 'CLFS' resource
+// scripts/build-clarusc-mac.sh bakes ClarusC.APPL with (one entry per
+// runtime/clarus + toolbox source file, keyed by its repo-relative
+// path). The host oracle build resolves the same include via the real
+// relative path instead (this file sits two directories below the repo
+// root, matching "../../toolbox/osutils.cla" either way).
+//
+// toolbox/osutils.cla does NOT declare TickCount (that's a runtime-only
+// wrapper, UiTickCount) -- it declares GestaltErr/GestaltValue/Delay/
+// SysBeep. GestaltErr(gestaltSystemVersion) is the cataloged trap call
+// here: a real, side-effect-free Toolbox call whose result (the OSErr)
+// is easy to check.
+//
+// Modeled on testdata/cg68k/tickprobe.cla / testdata/snow/roundtrip.cla's
+// app/window shape.
+include "../../toolbox/osutils.cla"
+
+app CatProbe {
+    name: "CatProbe"
+    version: "1.0"
+    author: "Andrew C. Young <andrew@vaelen.org>"
+    about: "Toolbox-catalog resource-fallback probe."
+    id: "CPRB"
+}
+
+window Main {
+    title: "CatProbe"
+    size: 200, 100
+}
+
+on App.launch {
+    var e: int
+    open Main
+    e = GestaltErr(gestaltSystemVersion)
+    if e == 0 {
+        quit 0
+    }
+    quit 1
+}

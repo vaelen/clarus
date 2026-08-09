@@ -502,6 +502,19 @@ func findRtDir(probeFile: string): string {
     return ""
 }
 
+// rtModuleKey computes the baked-resource key for a runtime module's bare
+// filename (e.g. "core.cla" -> "runtime/clarus/core.cla") -- exactly the
+// `--bake FILE` name scripts/build-clarusc-mac.sh gives every
+// runtime/clarus/*.cla file (cliResolveBake, main.cla: "name = FILE exactly
+// as passed"), so a resource-backed feReadSource (macgui.cla's) can serve a
+// runtime-module read via the baked 'CLFS' resource the same way expand()
+// already serves an ordinary `include`'s resource fallback (driveKeyResolve).
+// On host this key is inert: main.cla's own feReadSource ignores it, always
+// reading straight off disk.
+func rtModuleKey(mod: string): string {
+    return "runtime/clarus/" + mod
+}
+
 // lastDecl returns the last node in head's `next` chain (head must be a real
 // index, not -1) -- used to splice one file's decl list onto the running
 // combined list.
@@ -827,7 +840,7 @@ func driveEarlySplice(testapi: bool): bool {
     while i < earlyMods.count {
         rtPath = joinPath(rtDir, earlyMods[i])
         rtProbe = ""
-        rtReadable = file.readText(rtPath, rtProbe)
+        rtReadable = feReadSource(rtPath, rtModuleKey(earlyMods[i]), rtProbe)
         if not rtReadable {
             if haveRtDir {
                 log("runtime module " + earlyMods[i] + " not found (searched " + rtDir + "); use --rtdir")
@@ -845,7 +858,7 @@ func driveEarlySplice(testapi: bool): bool {
         // exactly where a freshly expanded include would have landed).
         beforeCount = asmHeads.count
         beforeHits = dedupHits.count
-        expand(rtPath, true, "")
+        expand(rtPath, true, rtModuleKey(earlyMods[i]))
         hoists = hoistDedups(beforeHits)
         j = 0
         while j < hoists.count {
@@ -1033,7 +1046,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         while i < neededMods.count {
             rtPath = joinPath(rtDir, neededMods[i])
             rtProbe = ""
-            rtReadable = file.readText(rtPath, rtProbe)
+            rtReadable = feReadSource(rtPath, rtModuleKey(neededMods[i]), rtProbe)
             if not rtReadable {
                 if haveRtDir {
                     log("runtime module " + neededMods[i] + " not found (searched " + rtDir + "); use --rtdir")
@@ -1044,7 +1057,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             }
             beforeCount = asmHeads.count
             beforeHits = dedupHits.count
-            expand(rtPath, true, "")
+            expand(rtPath, true, rtModuleKey(neededMods[i]))
             hoists = hoistDedups(beforeHits)
             j = 0
             while j < hoists.count {

@@ -192,6 +192,20 @@ toolchain/bin/LaunchAPPL -e minivmac App.bin   # takes MacBinary (.bin)
   the first arg is a `.cla` file). `--events FILE` pours a scripted-event
   file into the native constant pool for deterministic UI driving, the
   native counterpart to `build-mac.sh`'s own `--events` below.
+- Build the Mac-resident compiler itself (`ClarusC.APPL` — a real Mac app
+  that runs `clarusc emit68k` ON the Mac, compiling OTHER `.cla` programs
+  with no host involved): `scripts/build-clarusc-mac.sh [--events FILE]`
+  → `build-68k/ClarusC/ClarusC.bin`. `--bake FILE` (one flag per
+  `runtime/clarus/*.cla` + `toolbox/*.cla` file, used verbatim as the
+  baked `'CLFS'` resource's name) embeds the whole runtime/toolbox source
+  catalog in the app's own resource fork, so it needs no
+  `runtime/clarus/` directory on the Mac disk; `--partition N` overrides
+  the SIZE(-1) resource's partition (ClarusC.APPL itself needs more than
+  the ordinary 2MB default — see `docs/ROADMAP.md`'s mac-resident-clarusc
+  phase entry). `file.readResource(name, out)`/`file.writeRes(path,
+  fork, doctype, creator)` are the underlying resource-fork intrinsics
+  (Mac-only; a host build's `readResource` always returns `false`) — see
+  `docs/clarus-language-reference.md`'s own entry for both.
 - Gated Mac-vs-host byte-compare harness (needs the toolchain + emulator):
   `CLARUS_MAC_TESTS=1 go test ./internal/mactest`.
 - UI test scenarios live in `testdata/ui`, with blessed goldens (trace +

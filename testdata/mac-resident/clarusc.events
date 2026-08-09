@@ -1,0 +1,5 @@
+answer-open :::tickprobe.cla
+menu 2 1
+answer-open :::catprobe.cla
+menu 2 1
+quit

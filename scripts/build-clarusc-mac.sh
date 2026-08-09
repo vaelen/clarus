@@ -50,21 +50,21 @@ if [ -n "$EVENTS" ]; then
     EVENTS_ARG="--events $EVENTS"
 fi
 
-# 3. emit. --partition 4194304 (4MB): the plan's own budget for this
-#    app's SIZE(-1) partition was "comfortably above" the ~48-64MB
-#    high-water estimate for the compile working set (cg68k.cla's own
-#    cgBigTmpSlots doc comment cites the same range) on the "128MB Snow
-#    acceptance machine" -- but the checked-in snow/Clarus.snoww workspace
-#    boots with pmmu_enabled=false (no 32-bit addressing), which caps
-#    Process-Manager-allocatable RAM at ~6.8MB regardless of the 128MB
-#    physical ram_size (empirically found booting a 64MB request:
-#    "There is not enough memory to open ClarusC (65,536K needed, 6,968K
-#    available)"). 4MB is double the ordinary 2MB default -- genuinely
-#    more headroom for a compile -- while staying safely inside that
-#    ~6.8MB ceiling. Revisit once the acceptance image gets a 32-bit-
-#    addressing enabler (out of scope here); see clarusc/cg68k.cla's
-#    cgSizePartitionBytes doc comment for the same note.
+# 3. emit. --partition 50331648 (48MB): the plan's own section 7 estimate for
+#    this app's compile working set was 14-22MB, plus headroom. Originally
+#    landed at a 4MB compromise (Task 10) because the then-current
+#    snow/Clarus.snoww workspace booted with pmmu_enabled=false (no
+#    32-bit addressing), capping Process-Manager-allocatable RAM at
+#    ~6.8MB regardless of the 128MB physical ram_size, confirmed by a
+#    REAL Finder alert requesting 64MB ("There is not enough memory to
+#    open ClarusC (65,536K needed, 6,968K available)"). As of 2026-08-09
+#    the Snow acceptance machine runs a 32-bit-clean ROM
+#    (snow/rominator.rom) with 32-bit addressing enabled (Largest Unused
+#    Block 129,868K verified), removing that ceiling -- raised to 48MB,
+#    comfortably covering the estimate with the 127MB now actually
+#    available. See clarusc/cg68k.cla's cgSizePartitionBytes doc comment
+#    for the same note.
 mkdir -p build-68k/ClarusC
 "$CLARUSC" emit68k --rtdir runtime/clarus/ -o build-68k/ClarusC/ClarusC.bin \
-    $BAKES $EVENTS_ARG --partition 4194304 clarusc/macgui.cla
+    $BAKES $EVENTS_ARG --partition 50331648 clarusc/macgui.cla
 echo "built: build-68k/ClarusC/ClarusC.bin"

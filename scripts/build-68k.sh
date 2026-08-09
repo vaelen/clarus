@@ -39,9 +39,14 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-mkdir -p "$ROOT/build-68k"
-# 1. bootstrap clarusc from the committed snapshot (cached)
-CLARUSC="$ROOT/build-68k/clarusc"
+mkdir -p "$ROOT/build-68k" "$ROOT/build-run"
+# 1. bootstrap clarusc from the committed snapshot (cached under
+# build-run/, shared with build-clarusc-mac.sh/clarus-run.sh's identical
+# recipe -- NOT build-68k/clarusc: on a case-insensitive filesystem (the
+# macOS default) that path collides with build-68k/ClarusC/, the output
+# directory scripts/build-clarusc-mac.sh's own build produces, silently
+# clobbering the bootstrap binary with a directory).
+CLARUSC="$ROOT/build-run/clarusc"
 if [ ! -x "$CLARUSC" ] || [ "$ROOT/clarusc/clarusc.c" -nt "$CLARUSC" ]; then
     cc -O1 -I"$ROOT/runtime/host" -o "$CLARUSC" \
         "$ROOT/clarusc/clarusc.c" "$ROOT/runtime/host/rt.c"

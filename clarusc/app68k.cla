@@ -307,15 +307,17 @@ func app68BuildCodeN(seg: text, jtFirstSlot: int, jtCount: int): text {
 // both the preferred and minimum partition size, added because
 // ClarusC.APPL (this phase's own Mac-resident compiler front end) needs
 // more than every other program's 2MB default -- its own compile working
-// set (cg68k.cla's own header comment originally cited ~48-64MB, but
-// that target isn't reachable on the checked-in Snow acceptance image:
-// it boots with no 32-bit addressing, which caps Process-Manager-
-// allocatable RAM at ~6.8MB regardless of its 128MB physical RAM --
-// confirmed by a REAL "not enough memory" Finder alert requesting 64MB.
-// scripts/build-clarusc-mac.sh lands on 4MB instead: double the ordinary
-// default, safely under that ~6.8MB ceiling -- see cg68k.cla's own
-// cgSizePartitionBytes doc comment for the full finding). <=0 keeps the
-// original, still-default 2097152 (2MB) for every other caller --
+// set (cg68k.cla's own header comment cites ~14-22MB plus headroom).
+// Task 10 originally found that target unreachable on the then-current
+// Snow acceptance image (no 32-bit addressing, ~6.8MB Process-Manager
+// ceiling regardless of 128MB physical RAM -- confirmed by a REAL "not
+// enough memory" Finder alert requesting 64MB) and landed on a 4MB
+// compromise instead. As of 2026-08-09 the Snow machine runs a 32-bit-
+// clean ROM with 32-bit addressing enabled, removing that ceiling;
+// scripts/build-clarusc-mac.sh now passes 48MB (Task 11) -- see
+// cg68k.cla's own cgSizePartitionBytes doc comment for the full finding.
+// <=0 keeps the original, still-default 2097152 (2MB) for every other
+// caller --
 // cg68ResourceParitySet's own cgSizePartitionBytes global defaults to 0
 // (Clarus's int zero value), so every EXISTING build (no `--partition`
 // flag passed) emits byte-identical SIZE(-1) bytes to before this

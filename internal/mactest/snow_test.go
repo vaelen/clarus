@@ -120,17 +120,29 @@ func copyFile(t *testing.T, src, dst string) {
 }
 
 // snowDisk is a scratch boot disk for one Snow test: a private copy of
-// snow/hdd0-clarus.img (the proven, already-set-up System 7.1 image --
-// see the Snow facts block) plus a scratch workspace (.snoww) and PRAM
-// file pointing at it, so the pristine snow/hdd0.img, snow/MacII.snoww
-// and the shared ROMs are never touched.
+// the disk image snow/Clarus.snoww's own scsi_targets[0].Disk names (the
+// proven, already-set-up System 7.1 image -- see the Snow facts block)
+// plus a scratch workspace (.snoww) and PRAM file pointing at it, so the
+// pristine snow/ originals and the shared ROMs are never touched.
 type snowDisk struct {
 	dir       string // t.TempDir(): img, pram, and workspace all live here
-	img       string // scratch copy of snow/hdd0-clarus.img
+	img       string // scratch copy of Clarus.snoww's scsi_targets[0].Disk
 	workspace string // scratch .snoww naming img/pram, ROM paths absolute
 }
 
-// newSnowDisk clones snow/hdd0-clarus.img + snow/clarus.pram into a fresh
+// snowAbsPath absolutizes a workspace-relative ROM path from
+// snow/Clarus.snoww (stored as a bare filename, e.g. "rominator.rom") by
+// joining it against snow/; an already-absolute path (or an unexpected
+// non-string/missing value) passes through unchanged.
+func snowAbsPath(root string, v any) string {
+	p, ok := v.(string)
+	if !ok || p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(root, "snow", p)
+}
+
+// newSnowDisk clones Clarus.snoww's own disk image + snow/clarus.pram into a fresh
 // t.TempDir() and writes a scratch workspace JSON (cloned from
 // snow/Clarus.snoww) pointing rom_path/display_card_rom_path/pram_path/
 // scsi_targets[0].Disk at that scratch copy -- the same "workspace JSON
@@ -142,12 +154,6 @@ func newSnowDisk(t *testing.T) *snowDisk {
 	root := repoRoot(t)
 	dir := t.TempDir()
 
-	img := filepath.Join(dir, "hdd0.img")
-	copyFile(t, filepath.Join(root, "snow", "hdd0-clarus.img"), img)
-
-	pram := filepath.Join(dir, "clarus.pram")
-	copyFile(t, filepath.Join(root, "snow", "clarus.pram"), pram)
-
 	raw, err := os.ReadFile(filepath.Join(root, "snow", "Clarus.snoww"))
 	if err != nil {
 		t.Fatalf("read snow/Clarus.snoww: %v", err)
@@ -156,13 +162,41 @@ func newSnowDisk(t *testing.T) *snowDisk {
 	if err := json.Unmarshal(raw, &ws); err != nil {
 		t.Fatalf("parse snow/Clarus.snoww: %v", err)
 	}
-	ws["rom_path"] = filepath.Join(root, "snow", "MacIIFDHD-IIx-IIcx.rom")
-	ws["display_card_rom_path"] = filepath.Join(root, "snow", "AppleMacintoshDisplayCard8-24.bin")
-	ws["pram_path"] = pram
+
+	// Disk image: read the source filename from the template's own
+	// scsi_targets[0].Disk (e.g. "hdd0.img") instead of hardcoding it --
+	// the same reasoning as rom_path below. A stale hardcoded name here
+	// previously pointed at snow/hdd0-clarus.img, which no longer exists
+	// after the controller's 2026-08-09 resync renamed it to hdd0.img.
 	targets, ok := ws["scsi_targets"].([]any)
 	if !ok || len(targets) == 0 {
 		t.Fatalf("snow/Clarus.snoww: scsi_targets missing or empty")
 	}
+	target0, ok := targets[0].(map[string]any)
+	if !ok {
+		t.Fatalf("snow/Clarus.snoww: scsi_targets[0] is not an object")
+	}
+	diskName, ok := target0["Disk"].(string)
+	if !ok || diskName == "" {
+		t.Fatalf("snow/Clarus.snoww: scsi_targets[0].Disk missing or empty")
+	}
+
+	img := filepath.Join(dir, "hdd0.img")
+	copyFile(t, snowAbsPath(root, diskName), img)
+
+	pram := filepath.Join(dir, "clarus.pram")
+	copyFile(t, filepath.Join(root, "snow", "clarus.pram"), pram)
+
+	// rom_path/display_card_rom_path: absolutize whatever snow/Clarus.snoww
+	// itself names (relative to snow/), instead of hardcoding a specific ROM
+	// filename here. As of 2026-08-09 the checked-in workspace names
+	// snow/rominator.rom (a 32-bit-clean ROM, replacing the earlier
+	// MacIIFDHD-IIx-IIcx.rom) -- hardcoding the old name would silently pin
+	// every Snow test back to the pre-32-bit-addressing ROM even after the
+	// controller re-synced the workspace.
+	ws["rom_path"] = snowAbsPath(root, ws["rom_path"])
+	ws["display_card_rom_path"] = snowAbsPath(root, ws["display_card_rom_path"])
+	ws["pram_path"] = pram
 	targets[0] = map[string]any{"Disk": img}
 	ws["scsi_targets"] = targets
 
