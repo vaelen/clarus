@@ -18196,8 +18196,43 @@ static int32_t clar_fn_checkAppConstExpr(int32_t cv_e) {
 }
 
 static void clar_fn_checkReset(void) {
+    rt_map * cv_freshEnumConstOf;
+    cv_freshEnumConstOf = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    rt_map * cv_freshConstUseIsStr;
+    cv_freshConstUseIsStr = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    rt_map * cv_freshConstUseInt;
+    cv_freshConstUseInt = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    rt_map * cv_freshConstUseStr;
+    cv_freshConstUseStr = (rt_map *)clar_fn_rtMapNew(sizeof(clar_str_255));
+    rt_map * cv_freshExprTypeOf;
+    cv_freshExprTypeOf = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
     clar_fn_typesReset();
     clar_fn_scopesReset();
+        clar_fn_rtMapRetain((void*)cv_freshEnumConstOf);
+
+        clar_fn_rtMapRelease((void*)cv_enumConstOf);
+
+    cv_enumConstOf = cv_freshEnumConstOf;
+        clar_fn_rtMapRetain((void*)cv_freshConstUseIsStr);
+
+        clar_fn_rtMapRelease((void*)cv_constUseIsStr);
+
+    cv_constUseIsStr = cv_freshConstUseIsStr;
+        clar_fn_rtMapRetain((void*)cv_freshConstUseInt);
+
+        clar_fn_rtMapRelease((void*)cv_constUseInt);
+
+    cv_constUseInt = cv_freshConstUseInt;
+        clar_fn_rtMapRetain((void*)cv_freshConstUseStr);
+
+        clar_fn_rtMapRelease((void*)cv_constUseStr);
+
+    cv_constUseStr = cv_freshConstUseStr;
+        clar_fn_rtMapRetain((void*)cv_freshExprTypeOf);
+
+        clar_fn_rtMapRelease((void*)cv_exprTypeOf);
+
+    cv_exprTypeOf = cv_freshExprTypeOf;
     cv_connectionT = clar_fn_pushSimple(13);
     cv_listenerT = clar_fn_pushSimple(14);
     cv_serviceBrowserT = clar_fn_pushSimple(15);
@@ -18251,6 +18286,16 @@ static void clar_fn_checkReset(void) {
     clar_fn_buildMethodTables();
     clar_fn_buildUiTables();
     clar_fn_buildEventsTable();
+        clar_fn_rtMapRelease((void*)cv_freshEnumConstOf);
+
+        clar_fn_rtMapRelease((void*)cv_freshConstUseIsStr);
+
+        clar_fn_rtMapRelease((void*)cv_freshConstUseInt);
+
+        clar_fn_rtMapRelease((void*)cv_freshConstUseStr);
+
+        clar_fn_rtMapRelease((void*)cv_freshExprTypeOf);
+
 }
 
 static void clar_fn_checkTopDeclPhase1(int32_t cv_d) {
@@ -26659,8 +26704,17 @@ static int32_t clar_fn_lowUiSynthExternName(int32_t cv_externNameIdx) {
 static int32_t clar_fn_lowerProgram(int32_t cv_declHead) {
     int32_t cv_d;
     cv_d = 0;
+    rt_map * cv_freshStrIdx;
+    cv_freshStrIdx = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+    int32_t cv___ret10;
+    cv___ret10 = 0;
     cv_lowSwitchN = 0;
     cv_uiMenuCount = 0;
+        clar_fn_rtMapRetain((void*)cv_freshStrIdx);
+
+        clar_fn_rtMapRelease((void*)cv_lowStrIdx);
+
+    cv_lowStrIdx = cv_freshStrIdx;
     cv_lowCurWinType = (-(1));
     cv_lowCurHandlerEvent = (-(1));
     cv_lowCurAcceptedParam = (-(1));
@@ -26684,7 +26738,10 @@ static int32_t clar_fn_lowerProgram(int32_t cv_declHead) {
         clar_fn_lowSynthUiDispatchers();
         clar_fn_lowUiPortAddRoots();
     }
-    return 0;
+    cv___ret10 = 0;
+        clar_fn_rtMapRelease((void*)cv_freshStrIdx);
+
+    return cv___ret10;
     return 0;
 }
 
@@ -26949,22 +27006,6 @@ static void clar_fn_shakeProgram(void) {
 static rt_list * clar_fn_shakeFreshBoolList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret10;
-    cv___ret10 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___ret10);
-
-    cv___ret10 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret10);
-
-        clar_fn_rtListRelease((void*)cv_l);
-
-    return cv___ret10;
-    return NULL;
-}
-
-static rt_list * clar_fn_shakeFreshIntList(void) {
-    rt_list * cv_l;
-    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___ret11;
     cv___ret11 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
         clar_fn_rtListRelease((void*)cv___ret11);
@@ -26975,6 +27016,22 @@ static rt_list * clar_fn_shakeFreshIntList(void) {
         clar_fn_rtListRelease((void*)cv_l);
 
     return cv___ret11;
+    return NULL;
+}
+
+static rt_list * clar_fn_shakeFreshIntList(void) {
+    rt_list * cv_l;
+    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    rt_list * cv___ret12;
+    cv___ret12 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+        clar_fn_rtListRelease((void*)cv___ret12);
+
+    cv___ret12 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret12);
+
+        clar_fn_rtListRelease((void*)cv_l);
+
+    return cv___ret12;
     return NULL;
 }
 
@@ -27585,8 +27642,8 @@ static int32_t clar_fn_a68Finish(void) {
     cv_i = 0;
     rt_text * cv_out;
     cv_out = (rt_text *)clar_fn_rtTextNew();
-    int32_t cv___ret12;
-    cv___ret12 = 0;
+    int32_t cv___ret13;
+    cv___ret13 = 0;
     rt_text * cv___store13;
     cv___store13 = (rt_text *)clar_fn_rtTextNew();
     cv_a68UnresolvedId = (-(1));
@@ -27595,9 +27652,9 @@ static int32_t clar_fn_a68Finish(void) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_a68LabelDefined)))) break;
         if (!((*(int32_t*)rt_list_at(cv_a68LabelDefined, (int32_t)(cv_i))))) {
             cv_a68UnresolvedId = cv_i;
-            cv___ret12 = 0;
+            cv___ret13 = 0;
             clar_fn_rtTextRelease((void*)cv_out);
-            return cv___ret12;
+            return cv___ret13;
         }
         cv_i = (cv_i + 1);
     }
@@ -27618,19 +27675,19 @@ static int32_t clar_fn_a68Finish(void) {
     clar_fn_rtTextRetain((void*)cv_out);
     clar_fn_rtTextRelease((void*)cv_a68BytesOut);
     cv_a68BytesOut = cv_out;
-    cv___ret12 = 1;
+    cv___ret13 = 1;
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret12;
+    return cv___ret13;
     return 0;
 }
 
 static rt_text * clar_fn_a68Bytes(void) {
-    rt_text * cv___ret13;
-    cv___ret13 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___ret13);
-    cv___ret13 = cv_a68BytesOut;
-    clar_fn_rtTextRetain((void*)cv___ret13);
-    return cv___ret13;
+    rt_text * cv___ret14;
+    cv___ret14 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextRelease((void*)cv___ret14);
+    cv___ret14 = cv_a68BytesOut;
+    clar_fn_rtTextRetain((void*)cv___ret14);
+    return cv___ret14;
     return NULL;
 }
 
@@ -29092,8 +29149,8 @@ static rt_text * clar_fn_a68BytesListingLine(rt_text * cv_t) {
     cv_n = 0;
     rt_text * cv___store14;
     cv___store14 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret14;
-    cv___ret14 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret15;
+    cv___ret15 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store14);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -29104,11 +29161,11 @@ static rt_text * clar_fn_a68BytesListingLine(rt_text * cv_t) {
     cv___store14 = 0;
     cv_n = clar_fn_rtTextLen((void*)cv_t);
     if (cv_n == 0) {
-        clar_fn_rtTextRelease((void*)cv___ret14);
-        cv___ret14 = cv_s;
-        clar_fn_rtTextRetain((void*)cv___ret14);
+        clar_fn_rtTextRelease((void*)cv___ret15);
+        cv___ret15 = cv_s;
+        clar_fn_rtTextRetain((void*)cv___ret15);
         clar_fn_rtTextRelease((void*)cv_s);
-        return cv___ret14;
+        return cv___ret15;
     }
     clar_fn_rtTextAppendStr((void*)cv_s, (void*)(const uint8_t*)&(clar_lit_1007));
     clar_str_255 t2;
@@ -29123,11 +29180,11 @@ static rt_text * clar_fn_a68BytesListingLine(rt_text * cv_t) {
         clar_fn_rtTextAppendStr((void*)cv_s, (void*)(const uint8_t*)&(t3));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtTextRelease((void*)cv___ret14);
-    cv___ret14 = cv_s;
-    clar_fn_rtTextRetain((void*)cv___ret14);
+    clar_fn_rtTextRelease((void*)cv___ret15);
+    cv___ret15 = cv_s;
+    clar_fn_rtTextRetain((void*)cv___ret15);
     clar_fn_rtTextRelease((void*)cv_s);
-    return cv___ret14;
+    return cv___ret15;
     return NULL;
 }
 
@@ -29154,8 +29211,8 @@ static rt_text * clar_fn_a68ListingText(void) {
     cv___store15 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store16;
     cv___store16 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret15;
-    cv___ret15 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret16;
+    cv___ret16 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store15);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -29224,12 +29281,12 @@ static rt_text * clar_fn_a68ListingText(void) {
         }
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtTextRelease((void*)cv___ret15);
-    cv___ret15 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret15);
+    clar_fn_rtTextRelease((void*)cv___ret16);
+    cv___ret16 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret16);
     clar_fn_rtTextRelease((void*)cv_out);
     clar_fn_rtTextRelease((void*)cv_bytesLine);
-    return cv___ret15;
+    return cv___ret16;
     return NULL;
 }
 
@@ -29276,8 +29333,8 @@ static int32_t clar_fn_peepIsSimpleLoadToD0(int32_t cv_i) {
     cv_it = clar_new_A68Item();
     clar_rec_A68Item cv___store18;
     cv___store18 = clar_new_A68Item();
-    int32_t cv___ret16;
-    cv___ret16 = 0;
+    int32_t cv___ret17;
+    cv___ret17 = 0;
     clar_release_A68Item(&(cv___store18));
     cv___store18 = (*(clar_rec_A68Item*)rt_list_at(cv_a68Items, (int32_t)(cv_i)));
     clar_retain_A68Item(&(cv___store18));
@@ -29285,43 +29342,43 @@ static int32_t clar_fn_peepIsSimpleLoadToD0(int32_t cv_i) {
     cv_it = cv___store18;
     (cv___store18).cv_dataText = 0;
     if ((cv_it).cv_kind != 0) {
-        cv___ret16 = 0;
+        cv___ret17 = 0;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if ((cv_it).cv_op == 37) {
-        cv___ret16 = ((cv_it).cv_dr == 0);
+        cv___ret17 = ((cv_it).cv_dr == 0);
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if ((cv_it).cv_op != 0) {
-        cv___ret16 = 0;
+        cv___ret17 = 0;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if ((cv_it).cv_size != 4) {
-        cv___ret16 = 0;
+        cv___ret17 = 0;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if (((cv_it).cv_dm != 1) || ((cv_it).cv_dr != 0)) {
-        cv___ret16 = 0;
+        cv___ret17 = 0;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if ((cv_it).cv_sm == 8) {
-        cv___ret16 = 1;
+        cv___ret17 = 1;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
     if (((cv_it).cv_sm == 6) && ((cv_it).cv_sr != 7)) {
-        cv___ret16 = 1;
+        cv___ret17 = 1;
         clar_release_A68Item(&(cv_it));
-        return cv___ret16;
+        return cv___ret17;
     }
-    cv___ret16 = 0;
+    cv___ret17 = 0;
     clar_release_A68Item(&(cv_it));
-    return cv___ret16;
+    return cv___ret17;
     return 0;
 }
 
@@ -29338,8 +29395,8 @@ static int32_t clar_fn_peepPassPushPop(int32_t cv_startIdx) {
     cv_didChange = 0;
     clar_rec_A68Item cv___store19;
     cv___store19 = clar_new_A68Item();
-    int32_t cv___ret17;
-    cv___ret17 = 0;
+    int32_t cv___ret18;
+    cv___ret18 = 0;
     cv_didChange = 0;
     cv_i = cv_startIdx;
     while (1) {
@@ -29374,23 +29431,23 @@ static int32_t clar_fn_peepPassPushPop(int32_t cv_startIdx) {
         }
         cv_i = (cv_i + 1);
     }
-    cv___ret17 = cv_didChange;
+    cv___ret18 = cv_didChange;
     clar_release_A68Item(&(cv_it));
-    return cv___ret17;
+    return cv___ret18;
     return 0;
 }
 
 static int32_t clar_fn_peepFullyDefinesD0(int32_t cv_i) {
     clar_rec_A68Item cv_it;
     cv_it = clar_new_A68Item();
-    int32_t cv___ret18;
-    cv___ret18 = 0;
+    int32_t cv___ret19;
+    cv___ret19 = 0;
     clar_rec_A68Item cv___store20;
     cv___store20 = clar_new_A68Item();
     if (clar_fn_peepIsSimpleLoadToD0(cv_i)) {
-        cv___ret18 = 1;
+        cv___ret19 = 1;
         clar_release_A68Item(&(cv_it));
-        return cv___ret18;
+        return cv___ret19;
     }
     clar_release_A68Item(&(cv___store20));
     cv___store20 = (*(clar_rec_A68Item*)rt_list_at(cv_a68Items, (int32_t)(cv_i)));
@@ -29399,18 +29456,18 @@ static int32_t clar_fn_peepFullyDefinesD0(int32_t cv_i) {
     cv_it = cv___store20;
     (cv___store20).cv_dataText = 0;
     if ((cv_it).cv_kind != 0) {
-        cv___ret18 = 0;
+        cv___ret19 = 0;
         clar_release_A68Item(&(cv_it));
-        return cv___ret18;
+        return cv___ret19;
     }
     if (((((cv_it).cv_op == 35) && ((cv_it).cv_size == 4)) && ((cv_it).cv_dm == 1)) && ((cv_it).cv_dr == 0)) {
-        cv___ret18 = 1;
+        cv___ret19 = 1;
         clar_release_A68Item(&(cv_it));
-        return cv___ret18;
+        return cv___ret19;
     }
-    cv___ret18 = 0;
+    cv___ret19 = 0;
     clar_release_A68Item(&(cv_it));
-    return cv___ret18;
+    return cv___ret19;
     return 0;
 }
 
@@ -29431,8 +29488,8 @@ static int32_t clar_fn_peepPassShuffle(int32_t cv_startIdx) {
     cv___store21 = clar_new_A68Item();
     clar_rec_A68Item cv___store22;
     cv___store22 = clar_new_A68Item();
-    int32_t cv___ret19;
-    cv___ret19 = 0;
+    int32_t cv___ret20;
+    cv___ret20 = 0;
     cv_didChange = 0;
     cv_i = cv_startIdx;
     while (1) {
@@ -29471,10 +29528,10 @@ static int32_t clar_fn_peepPassShuffle(int32_t cv_startIdx) {
         }
         cv_i = (cv_i + 1);
     }
-    cv___ret19 = cv_didChange;
+    cv___ret20 = cv_didChange;
     clar_release_A68Item(&(cv_it));
     clar_release_A68Item(&(cv_nx));
-    return cv___ret19;
+    return cv___ret20;
     return 0;
 }
 
@@ -29493,8 +29550,8 @@ static int32_t clar_fn_peepPassDeadClr(int32_t cv_startIdx) {
     cv_didChange = 0;
     clar_rec_A68Item cv___store23;
     cv___store23 = clar_new_A68Item();
-    int32_t cv___ret20;
-    cv___ret20 = 0;
+    int32_t cv___ret21;
+    cv___ret21 = 0;
     cv_didChange = 0;
     cv_i = cv_startIdx;
     while (1) {
@@ -29520,9 +29577,9 @@ static int32_t clar_fn_peepPassDeadClr(int32_t cv_startIdx) {
         }
         cv_i = (cv_i + 1);
     }
-    cv___ret20 = cv_didChange;
+    cv___ret21 = cv_didChange;
     clar_release_A68Item(&(cv_it));
-    return cv___ret20;
+    return cv___ret21;
     return 0;
 }
 
@@ -29535,8 +29592,8 @@ static int32_t clar_fn_peepPassQuick(int32_t cv_startIdx) {
     cv_didChange = 0;
     clar_rec_A68Item cv___store24;
     cv___store24 = clar_new_A68Item();
-    int32_t cv___ret21;
-    cv___ret21 = 0;
+    int32_t cv___ret22;
+    cv___ret22 = 0;
     cv_didChange = 0;
     cv_i = cv_startIdx;
     while (1) {
@@ -29572,9 +29629,9 @@ static int32_t clar_fn_peepPassQuick(int32_t cv_startIdx) {
         }
         cv_i = (cv_i + 1);
     }
-    cv___ret21 = cv_didChange;
+    cv___ret22 = cv_didChange;
     clar_release_A68Item(&(cv_it));
-    return cv___ret21;
+    return cv___ret22;
     return 0;
 }
 
@@ -29615,50 +29672,50 @@ static void clar_fn_peepFunc(int32_t cv_startIdx) {
 static rt_list * clar_fn_app68FreshIntList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret22;
-    cv___ret22 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___ret22);
+    rt_list * cv___ret23;
+    cv___ret23 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+        clar_fn_rtListRelease((void*)cv___ret23);
 
-    cv___ret22 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret22);
+    cv___ret23 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret23);
 
         clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret22;
+    return cv___ret23;
     return NULL;
 }
 
 static rt_list * clar_fn_app68FreshTextList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
-    rt_list * cv___ret23;
-    cv___ret23 = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
-        if (clar_fn_rtListLastref((void*)cv___ret23)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret23); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___ret23, i)); }
-    clar_fn_rtListRelease((void*)cv___ret23);
+    rt_list * cv___ret24;
+    cv___ret24 = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
+        if (clar_fn_rtListLastref((void*)cv___ret24)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret24); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___ret24, i)); }
+    clar_fn_rtListRelease((void*)cv___ret24);
 
-    cv___ret23 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret23);
+    cv___ret24 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret24);
 
         if (clar_fn_rtListLastref((void*)cv_l)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_l); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_l, i)); }
     clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret23;
+    return cv___ret24;
     return NULL;
 }
 
 static rt_list * clar_fn_app68FreshStringList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
-    rt_list * cv___ret24;
-    cv___ret24 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
-        clar_fn_rtListRelease((void*)cv___ret24);
+    rt_list * cv___ret25;
+    cv___ret25 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
+        clar_fn_rtListRelease((void*)cv___ret25);
 
-    cv___ret24 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret24);
+    cv___ret25 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret25);
 
         clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret24;
+    return cv___ret25;
     return NULL;
 }
 
@@ -29729,8 +29786,8 @@ static rt_text * clar_fn_app68BuildHeader(clar_str_31 cv_appName, clar_str_7 cv_
     cv_crcVal = 0;
     rt_text * cv___store25;
     cv___store25 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret25;
-    cv___ret25 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret26;
+    cv___ret26 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store25);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -29767,11 +29824,11 @@ static rt_text * clar_fn_app68BuildHeader(clar_str_31 cv_appName, clar_str_7 cv_
     cv_crcVal = clar_fn_app68Crc16(cv_h);
     clar_fn_app68PutWord(cv_h, cv_crcVal);
     clar_fn_app68PutWord(cv_h, 0);
-    clar_fn_rtTextRelease((void*)cv___ret25);
-    cv___ret25 = cv_h;
-    clar_fn_rtTextRetain((void*)cv___ret25);
+    clar_fn_rtTextRelease((void*)cv___ret26);
+    cv___ret26 = cv_h;
+    clar_fn_rtTextRetain((void*)cv___ret26);
     clar_fn_rtTextRelease((void*)cv_h);
-    return cv___ret25;
+    return cv___ret26;
     return NULL;
 }
 
@@ -29784,8 +29841,8 @@ static rt_text * clar_fn_app68BuildCode0(rt_list * cv_jtEntries, rt_list * cv_jt
     cv_i = 0;
     rt_text * cv___store26;
     cv___store26 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret26;
-    cv___ret26 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret27;
+    cv___ret27 = (rt_text *)clar_fn_rtTextNew();
     cv_jtLen = (8 * clar_fn_rtListCount((void*)cv_jtEntries));
     clar_fn_rtTextRelease((void*)cv___store26);
     rt_text * t1 = NULL;
@@ -29808,11 +29865,11 @@ static rt_text * clar_fn_app68BuildCode0(rt_list * cv_jtEntries, rt_list * cv_jt
         clar_fn_app68PutWord(cv_out, 43504);
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtTextRelease((void*)cv___ret26);
-    cv___ret26 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret26);
+    clar_fn_rtTextRelease((void*)cv___ret27);
+    cv___ret27 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret27);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret26;
+    return cv___ret27;
     return NULL;
 }
 
@@ -29821,8 +29878,8 @@ static rt_text * clar_fn_app68BuildCodeN(rt_text * cv_seg, int32_t cv_jtFirstSlo
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store27;
     cv___store27 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret27;
-    cv___ret27 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret28;
+    cv___ret28 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store27);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -29834,11 +29891,11 @@ static rt_text * clar_fn_app68BuildCodeN(rt_text * cv_seg, int32_t cv_jtFirstSlo
     clar_fn_app68PutWord(cv_out, (cv_jtFirstSlot * 8));
     clar_fn_app68PutWord(cv_out, cv_jtCount);
     clar_fn_rtTextAppendText((void*)cv_out, (void*)cv_seg);
-    clar_fn_rtTextRelease((void*)cv___ret27);
-    cv___ret27 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret27);
+    clar_fn_rtTextRelease((void*)cv___ret28);
+    cv___ret28 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret28);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret27;
+    return cv___ret28;
     return NULL;
 }
 
@@ -29851,8 +29908,8 @@ static rt_text * clar_fn_app68BuildSize(int32_t cv_hlEventAware, int32_t cv_part
     cv_partition = 0;
     rt_text * cv___store28;
     cv___store28 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret28;
-    cv___ret28 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret29;
+    cv___ret29 = (rt_text *)clar_fn_rtTextNew();
     cv_flags = 128;
     if (cv_hlEventAware) {
         cv_flags = (cv_flags | 64);
@@ -29872,11 +29929,11 @@ static rt_text * clar_fn_app68BuildSize(int32_t cv_hlEventAware, int32_t cv_part
     clar_fn_app68PutWord(cv_out, cv_flags);
     clar_fn_app68PutLong(cv_out, cv_partition);
     clar_fn_app68PutLong(cv_out, cv_partition);
-    clar_fn_rtTextRelease((void*)cv___ret28);
-    cv___ret28 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret28);
+    clar_fn_rtTextRelease((void*)cv___ret29);
+    cv___ret29 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret29);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret28;
+    return cv___ret29;
     return NULL;
 }
 
@@ -29956,8 +30013,8 @@ static rt_text * clar_fn_app68BuildResourceFork(rt_list * cv_resTypes, rt_list *
     cv___store36 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store37;
     cv___store37 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret29;
-    cv___ret29 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret30;
+    cv___ret30 = (rt_text *)clar_fn_rtTextNew();
     cv_n = clar_fn_rtListCount((void*)cv_resTypes);
         clar_fn_rtListRelease((void*)cv___store29);
 
@@ -30162,9 +30219,9 @@ static rt_text * clar_fn_app68BuildResourceFork(rt_list * cv_resTypes, rt_list *
     }
     clar_fn_rtTextAppendText((void*)cv_out, (void*)cv_data);
     clar_fn_rtTextAppendText((void*)cv_out, (void*)cv_map);
-    clar_fn_rtTextRelease((void*)cv___ret29);
-    cv___ret29 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret29);
+    clar_fn_rtTextRelease((void*)cv___ret30);
+    cv___ret30 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret30);
     clar_fn_rtTextRelease((void*)cv_data);
     clar_fn_rtTextRelease((void*)cv_map);
     clar_fn_rtTextRelease((void*)cv_out);
@@ -30179,7 +30236,7 @@ static rt_text * clar_fn_app68BuildResourceFork(rt_list * cv_resTypes, rt_list *
         clar_fn_rtListRelease((void*)cv_group);
 
     clar_fn_rtTextRelease((void*)cv_names);
-    return cv___ret29;
+    return cv___ret30;
     return NULL;
 }
 
@@ -30210,8 +30267,8 @@ static rt_text * clar_fn_app68BuildFork(rt_list * cv_segBytes, rt_list * cv_jtEn
     cv___store42 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
     rt_list * cv___store43;
     cv___store43 = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
-    rt_text * cv___ret30;
-    cv___ret30 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret31;
+    cv___ret31 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store38);
     rt_text * t1 = NULL;
     t1 = clar_fn_app68BuildCode0(cv_jtEntries, cv_jtSegNums, cv_belowA5);
@@ -30318,10 +30375,10 @@ static rt_text * clar_fn_app68BuildFork(rt_list * cv_segBytes, rt_list * cv_jtEn
         clar_fn_rtListPush((void*)cv_resDatas, (void*)&(t17));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtTextRelease((void*)cv___ret30);
+    clar_fn_rtTextRelease((void*)cv___ret31);
     rt_text * t18 = NULL;
     t18 = clar_fn_app68BuildResourceFork(cv_resTypes, cv_resIds, cv_resNames, cv_resDatas);
-    cv___ret30 = t18;
+    cv___ret31 = t18;
     clar_fn_rtTextRelease((void*)cv_code0);
         if (clar_fn_rtListLastref((void*)cv_codeRes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_codeRes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_codeRes, i)); }
     clar_fn_rtListRelease((void*)cv_codeRes);
@@ -30335,7 +30392,7 @@ static rt_text * clar_fn_app68BuildFork(rt_list * cv_segBytes, rt_list * cv_jtEn
         if (clar_fn_rtListLastref((void*)cv_resDatas)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_resDatas); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_resDatas, i)); }
     clar_fn_rtListRelease((void*)cv_resDatas);
 
-    return cv___ret30;
+    return cv___ret31;
     return NULL;
 }
 
@@ -30344,8 +30401,8 @@ static rt_text * clar_fn_app68WrapFork(clar_str_31 cv_appName, clar_str_7 cv_cre
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store44;
     cv___store44 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret31;
-    cv___ret31 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret32;
+    cv___ret32 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store44);
     rt_text * t1 = NULL;
     t1 = clar_fn_app68BuildHeader(cv_appName, cv_creator, clar_fn_rtTextLen((void*)cv_fork));
@@ -30358,11 +30415,11 @@ static rt_text * clar_fn_app68WrapFork(clar_str_31 cv_appName, clar_str_7 cv_cre
         if (!(((clar_fn_rtTextLen((void*)cv_out) % 128) != 0))) break;
         clar_fn_rtTextAppendChar((void*)cv_out, (int32_t)(((uint8_t)(0))));
     }
-    clar_fn_rtTextRelease((void*)cv___ret31);
-    cv___ret31 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret31);
+    clar_fn_rtTextRelease((void*)cv___ret32);
+    cv___ret32 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret32);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret31;
+    return cv___ret32;
     return NULL;
 }
 
@@ -30378,8 +30435,8 @@ static rt_text * clar_fn_app68BuildAlrt(int32_t cv_top, int32_t cv_left, int32_t
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store45;
     cv___store45 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret33;
-    cv___ret33 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret34;
+    cv___ret34 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store45);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30392,11 +30449,11 @@ static rt_text * clar_fn_app68BuildAlrt(int32_t cv_top, int32_t cv_left, int32_t
     clar_fn_app68PutWord(cv_out, cv_ditlId);
     clar_fn_app68PutWord(cv_out, 17476);
     clar_fn_app68PutWord(cv_out, 12298);
-    clar_fn_rtTextRelease((void*)cv___ret33);
-    cv___ret33 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret33);
+    clar_fn_rtTextRelease((void*)cv___ret34);
+    cv___ret34 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret34);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret33;
+    return cv___ret34;
     return NULL;
 }
 
@@ -30416,8 +30473,8 @@ static rt_text * clar_fn_app68BuildDitl128(void) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store46;
     cv___store46 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret34;
-    cv___ret34 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret35;
+    cv___ret35 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store46);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30435,11 +30492,11 @@ static rt_text * clar_fn_app68BuildDitl128(void) {
     t3 = clar_fn_toText(clar_lit_1021);
     clar_fn_app68DitlItem(cv_out, 10, 20, 110, 420, (8 | 128), t3);
     clar_fn_rtTextRelease(t3);
-    clar_fn_rtTextRelease((void*)cv___ret34);
-    cv___ret34 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret34);
+    clar_fn_rtTextRelease((void*)cv___ret35);
+    cv___ret35 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret35);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret34;
+    return cv___ret35;
     return NULL;
 }
 
@@ -30448,8 +30505,8 @@ static rt_text * clar_fn_app68BuildDitl130(void) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store47;
     cv___store47 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret35;
-    cv___ret35 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret36;
+    cv___ret36 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store47);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30475,11 +30532,11 @@ static rt_text * clar_fn_app68BuildDitl130(void) {
     t5 = clar_fn_toText(clar_lit_1022);
     clar_fn_app68DitlItem(cv_out, 10, 20, 60, 360, (8 | 128), t5);
     clar_fn_rtTextRelease(t5);
-    clar_fn_rtTextRelease((void*)cv___ret35);
-    cv___ret35 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret35);
+    clar_fn_rtTextRelease((void*)cv___ret36);
+    cv___ret36 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret36);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret35;
+    return cv___ret36;
     return NULL;
 }
 
@@ -30494,8 +30551,8 @@ static rt_text * clar_fn_app68BuildDitl129(int32_t cv_hasIcon, int32_t cv_iconRe
     cv___store48 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store49;
     cv___store49 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret36;
-    cv___ret36 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret37;
+    cv___ret37 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store48);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30538,12 +30595,12 @@ static rt_text * clar_fn_app68BuildDitl129(int32_t cv_hasIcon, int32_t cv_iconRe
         clar_fn_app68PutWord(cv_iconData, cv_iconResId);
         clar_fn_app68DitlItem(cv_out, 13, 20, 45, 52, (32 | 128), cv_iconData);
     }
-    clar_fn_rtTextRelease((void*)cv___ret36);
-    cv___ret36 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret36);
+    clar_fn_rtTextRelease((void*)cv___ret37);
+    cv___ret37 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret37);
     clar_fn_rtTextRelease((void*)cv_out);
     clar_fn_rtTextRelease((void*)cv_iconData);
-    return cv___ret36;
+    return cv___ret37;
     return NULL;
 }
 
@@ -30552,8 +30609,8 @@ static rt_text * clar_fn_app68BuildStr255(clar_str_255 cv_s) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store50;
     cv___store50 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret37;
-    cv___ret37 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret38;
+    cv___ret38 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store50);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30564,11 +30621,11 @@ static rt_text * clar_fn_app68BuildStr255(clar_str_255 cv_s) {
     cv___store50 = 0;
     clar_fn_app68PutByte(cv_out, clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_s)));
     clar_fn_rtTextAppendStr((void*)cv_out, (void*)(const uint8_t*)&(cv_s));
-    clar_fn_rtTextRelease((void*)cv___ret37);
-    cv___ret37 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret37);
+    clar_fn_rtTextRelease((void*)cv___ret38);
+    cv___ret38 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret38);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret37;
+    return cv___ret38;
     return NULL;
 }
 
@@ -30577,8 +30634,8 @@ static rt_text * clar_fn_app68BuildVers(clar_str_255 cv_shortVer, clar_str_255 c
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store51;
     cv___store51 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret38;
-    cv___ret38 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret39;
+    cv___ret39 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store51);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30600,11 +30657,11 @@ static rt_text * clar_fn_app68BuildVers(clar_str_255 cv_shortVer, clar_str_255 c
     t3 = clar_fn_app68BuildStr255(cv_longVer);
     clar_fn_rtTextAppendText((void*)cv_out, (void*)t3);
     clar_fn_rtTextRelease(t3);
-    clar_fn_rtTextRelease((void*)cv___ret38);
-    cv___ret38 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret38);
+    clar_fn_rtTextRelease((void*)cv___ret39);
+    cv___ret39 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret39);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret38;
+    return cv___ret39;
     return NULL;
 }
 
@@ -30613,8 +30670,8 @@ static rt_text * clar_fn_app68BuildFref(clar_str_255 cv_fileType, int32_t cv_loc
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store52;
     cv___store52 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret39;
-    cv___ret39 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret40;
+    cv___ret40 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store52);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30626,11 +30683,11 @@ static rt_text * clar_fn_app68BuildFref(clar_str_255 cv_fileType, int32_t cv_loc
     clar_fn_app68PutFixed(cv_out, cv_fileType, 4);
     clar_fn_app68PutWord(cv_out, cv_localId);
     clar_fn_app68PutByte(cv_out, 0);
-    clar_fn_rtTextRelease((void*)cv___ret39);
-    cv___ret39 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret39);
+    clar_fn_rtTextRelease((void*)cv___ret40);
+    cv___ret40 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret40);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret39;
+    return cv___ret40;
     return NULL;
 }
 
@@ -30639,8 +30696,8 @@ static rt_text * clar_fn_app68BuildBndl(clar_str_255 cv_appId) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store53;
     cv___store53 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret40;
-    cv___ret40 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret41;
+    cv___ret41 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store53);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -30664,11 +30721,11 @@ static rt_text * clar_fn_app68BuildBndl(clar_str_255 cv_appId) {
     clar_fn_app68PutWord(cv_out, 128);
     clar_fn_app68PutWord(cv_out, 1);
     clar_fn_app68PutWord(cv_out, 129);
-    clar_fn_rtTextRelease((void*)cv___ret40);
-    cv___ret40 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret40);
+    clar_fn_rtTextRelease((void*)cv___ret41);
+    cv___ret41 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret41);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret40;
+    return cv___ret41;
     return NULL;
 }
 
@@ -31026,14 +31083,14 @@ static void clar_fn_app68PbmComputeMask(rt_text * cv_icon, rt_text * cv_maskOut)
 static int32_t clar_fn_app68BuildIcnFamily(rt_text * cv_iconPbmRaw, rt_text * cv_iconOut, rt_text * cv_icnOut) {
     rt_text * cv_mask;
     cv_mask = (rt_text *)clar_fn_rtTextNew();
-    int32_t cv___ret41;
-    cv___ret41 = 0;
+    int32_t cv___ret42;
+    cv___ret42 = 0;
     rt_text * cv___store59;
     cv___store59 = (rt_text *)clar_fn_rtTextNew();
     if (!(clar_fn_app68PbmDecode(cv_iconPbmRaw, cv_iconOut))) {
-        cv___ret41 = 0;
+        cv___ret42 = 0;
         clar_fn_rtTextRelease((void*)cv_mask);
-        return cv___ret41;
+        return cv___ret42;
     }
     clar_fn_rtTextRelease((void*)cv___store59);
     rt_text * t1 = NULL;
@@ -31046,9 +31103,9 @@ static int32_t clar_fn_app68BuildIcnFamily(rt_text * cv_iconPbmRaw, rt_text * cv
     clar_fn_app68PbmComputeMask(cv_iconOut, cv_mask);
     clar_fn_rtTextAppendText((void*)cv_icnOut, (void*)cv_iconOut);
     clar_fn_rtTextAppendText((void*)cv_icnOut, (void*)cv_mask);
-    cv___ret41 = 1;
+    cv___ret42 = 1;
     clar_fn_rtTextRelease((void*)cv_mask);
-    return cv___ret41;
+    return cv___ret42;
     return 0;
 }
 
@@ -31121,8 +31178,8 @@ static rt_text * clar_fn_toText(clar_str_255 cv_s) {
     cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store60;
     cv___store60 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret42;
-    cv___ret42 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret43;
+    cv___ret43 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store60);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -31132,26 +31189,26 @@ static rt_text * clar_fn_toText(clar_str_255 cv_s) {
     cv_t = cv___store60;
     cv___store60 = 0;
     clar_fn_rtTextAppendStr((void*)cv_t, (void*)(const uint8_t*)&(cv_s));
-    clar_fn_rtTextRelease((void*)cv___ret42);
-    cv___ret42 = cv_t;
-    clar_fn_rtTextRetain((void*)cv___ret42);
+    clar_fn_rtTextRelease((void*)cv___ret43);
+    cv___ret43 = cv_t;
+    clar_fn_rtTextRetain((void*)cv___ret43);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret42;
+    return cv___ret43;
     return NULL;
 }
 
 static rt_text * clar_fn_cpFatal(clar_str_255 cv_what) {
-    rt_text * cv___ret43;
-    cv___ret43 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret44;
+    cv___ret44 = (rt_text *)clar_fn_rtTextNew();
     clar_str_255 t1;
     clar_fn_rtStrConcat((void*)&t1, (void*)(const uint8_t*)&(clar_lit_1038), (void*)(const uint8_t*)&(cv_what));
     rt_log((const uint8_t*)&(t1));
     rt_quit((int32_t)(1));
-    clar_fn_rtTextRelease((void*)cv___ret43);
+    clar_fn_rtTextRelease((void*)cv___ret44);
     rt_text * t2 = NULL;
     t2 = clar_fn_toText(clar_lit_17);
-    cv___ret43 = t2;
-    return cv___ret43;
+    cv___ret44 = t2;
+    return cv___ret44;
     return NULL;
 }
 
@@ -31253,8 +31310,8 @@ static rt_text * clar_fn_fpNewTmp(clar_str_255 cv_ctype) {
     cv_name = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store63;
     cv___store63 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret44;
-    cv___ret44 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret45;
+    cv___ret45 = (rt_text *)clar_fn_rtTextNew();
     cv_fpTmpN = (cv_fpTmpN + 1);
     clar_fn_rtTextRelease((void*)cv___store63);
     rt_text * t1 = NULL;
@@ -31316,11 +31373,11 @@ static rt_text * clar_fn_fpNewTmp(clar_str_255 cv_ctype) {
         clar_fn_rtTextRelease(t15);
         clar_fn_rtTextRelease(t16);
     }
-    clar_fn_rtTextRelease((void*)cv___ret44);
-    cv___ret44 = cv_name;
-    clar_fn_rtTextRetain((void*)cv___ret44);
+    clar_fn_rtTextRelease((void*)cv___ret45);
+    cv___ret45 = cv_name;
+    clar_fn_rtTextRetain((void*)cv___ret45);
     clar_fn_rtTextRelease((void*)cv_name);
-    return cv___ret44;
+    return cv___ret45;
     return NULL;
 }
 
@@ -31551,8 +31608,8 @@ static rt_text * clar_fn_fpNewTrackedTmp(int32_t cv_t) {
     cv_isRec = 0;
     rt_text * cv___store66;
     cv___store66 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret45;
-    cv___ret45 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret46;
+    cv___ret46 = (rt_text *)clar_fn_rtTextNew();
     clar_str_255 t1;
     t1 = clar_fn_cpCType(cv_t);
     clar_fn_rtStrStore((void*)&(cv_ctype), 255, (void*)(const uint8_t*)&(t1));
@@ -31648,11 +31705,11 @@ static rt_text * clar_fn_fpNewTrackedTmp(int32_t cv_t) {
     int32_t t27;
     t27 = cv_t;
     clar_fn_rtListPush((void*)cv_fpStmtTmpType, (void*)&(t27));
-    clar_fn_rtTextRelease((void*)cv___ret45);
-    cv___ret45 = cv_name;
-    clar_fn_rtTextRetain((void*)cv___ret45);
+    clar_fn_rtTextRelease((void*)cv___ret46);
+    cv___ret46 = cv_name;
+    clar_fn_rtTextRetain((void*)cv___ret46);
     clar_fn_rtTextRelease((void*)cv_name);
-    return cv___ret45;
+    return cv___ret46;
     return NULL;
 }
 
@@ -32233,96 +32290,96 @@ static int32_t clar_fn_cpTypeEqual(int32_t cv_a, int32_t cv_b) {
 static rt_text * clar_fn_fpExpr(int32_t cv_e) {
     int32_t cv___switch33;
     cv___switch33 = 0;
-    rt_text * cv___ret46;
-    cv___ret46 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret47;
+    cv___ret47 = (rt_text *)clar_fn_rtTextNew();
     cv___switch33 = clar_fn_irExprKind(cv_e);
     if (cv___switch33 == 0) {
-        clar_fn_rtTextRelease((void*)cv___ret46);
+        clar_fn_rtTextRelease((void*)cv___ret47);
         rt_text * t1 = NULL;
         t1 = clar_fn_toText(clar_fn_numToStr(clar_fn_irIntConstV(cv_e)));
-        cv___ret46 = t1;
-        return cv___ret46;
+        cv___ret47 = t1;
+        return cv___ret47;
     } else {
         if (cv___switch33 == 1) {
-            clar_fn_rtTextRelease((void*)cv___ret46);
+            clar_fn_rtTextRelease((void*)cv___ret47);
             clar_str_255 t2;
             t2 = clar_fn_numToStr(clar_fn_irStrConstIdx(cv_e));
             clar_str_255 t3;
             clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(clar_lit_1088), (void*)(const uint8_t*)&(t2));
             rt_text * t4 = NULL;
             t4 = clar_fn_toText(t3);
-            cv___ret46 = t4;
-            return cv___ret46;
+            cv___ret47 = t4;
+            return cv___ret47;
         } else {
             if (cv___switch33 == 2) {
-                clar_fn_rtTextRelease((void*)cv___ret46);
+                clar_fn_rtTextRelease((void*)cv___ret47);
                 clar_str_255 t5;
                 t5 = clar_fn_poolGet(clar_fn_irVarRefName(cv_e));
                 clar_str_255 t6;
                 clar_fn_rtStrConcat((void*)&t6, (void*)(const uint8_t*)&(clar_lit_1087), (void*)(const uint8_t*)&(t5));
                 rt_text * t7 = NULL;
                 t7 = clar_fn_toText(t6);
-                cv___ret46 = t7;
-                return cv___ret46;
+                cv___ret47 = t7;
+                return cv___ret47;
             } else {
                 if (cv___switch33 == 5) {
-                    clar_fn_rtTextRelease((void*)cv___ret46);
+                    clar_fn_rtTextRelease((void*)cv___ret47);
                     rt_text * t8 = NULL;
                     t8 = clar_fn_fpBin(cv_e);
-                    cv___ret46 = t8;
-                    return cv___ret46;
+                    cv___ret47 = t8;
+                    return cv___ret47;
                 } else {
                     if (cv___switch33 == 6) {
-                        clar_fn_rtTextRelease((void*)cv___ret46);
+                        clar_fn_rtTextRelease((void*)cv___ret47);
                         rt_text * t9 = NULL;
                         t9 = clar_fn_fpUn(cv_e);
-                        cv___ret46 = t9;
-                        return cv___ret46;
+                        cv___ret47 = t9;
+                        return cv___ret47;
                     } else {
                         if (cv___switch33 == 7) {
-                            clar_fn_rtTextRelease((void*)cv___ret46);
+                            clar_fn_rtTextRelease((void*)cv___ret47);
                             rt_text * t10 = NULL;
                             t10 = clar_fn_fpConv(cv_e);
-                            cv___ret46 = t10;
-                            return cv___ret46;
+                            cv___ret47 = t10;
+                            return cv___ret47;
                         } else {
                             if (cv___switch33 == 10) {
-                                clar_fn_rtTextRelease((void*)cv___ret46);
+                                clar_fn_rtTextRelease((void*)cv___ret47);
                                 rt_text * t11 = NULL;
                                 t11 = clar_fn_fpIntrCall(cv_e);
-                                cv___ret46 = t11;
-                                return cv___ret46;
+                                cv___ret47 = t11;
+                                return cv___ret47;
                             } else {
                                 if (cv___switch33 == 4) {
-                                    clar_fn_rtTextRelease((void*)cv___ret46);
+                                    clar_fn_rtTextRelease((void*)cv___ret47);
                                     rt_text * t12 = NULL;
                                     t12 = clar_fn_fpIndexRef(cv_e);
-                                    cv___ret46 = t12;
-                                    return cv___ret46;
+                                    cv___ret47 = t12;
+                                    return cv___ret47;
                                 } else {
                                     if (cv___switch33 == 3) {
-                                        clar_fn_rtTextRelease((void*)cv___ret46);
+                                        clar_fn_rtTextRelease((void*)cv___ret47);
                                         rt_text * t13 = NULL;
                                         t13 = clar_fn_fpFieldRef(cv_e);
-                                        cv___ret46 = t13;
-                                        return cv___ret46;
+                                        cv___ret47 = t13;
+                                        return cv___ret47;
                                     } else {
                                         if (cv___switch33 == 12) {
-                                            clar_fn_rtTextRelease((void*)cv___ret46);
+                                            clar_fn_rtTextRelease((void*)cv___ret47);
                                             rt_text * t14 = NULL;
                                             t14 = clar_fn_fpXRecAddr(cv_e);
-                                            cv___ret46 = t14;
-                                            return cv___ret46;
+                                            cv___ret47 = t14;
+                                            return cv___ret47;
                                         } else {
                                             if (cv___switch33 == 13) {
-                                                clar_fn_rtTextRelease((void*)cv___ret46);
+                                                clar_fn_rtTextRelease((void*)cv___ret47);
                                                 rt_text * t15 = NULL;
                                                 t15 = clar_fn_fpCbAddr(cv_e);
-                                                cv___ret46 = t15;
-                                                return cv___ret46;
+                                                cv___ret47 = t15;
+                                                return cv___ret47;
                                             } else {
                                                 if (cv___switch33 == 11) {
-                                                    clar_fn_rtTextRelease((void*)cv___ret46);
+                                                    clar_fn_rtTextRelease((void*)cv___ret47);
                                                     clar_str_255 t16;
                                                     t16 = clar_fn_poolGet(clar_fn_irNewRecName(cv_e));
                                                     clar_str_255 t17;
@@ -32331,22 +32388,22 @@ static rt_text * clar_fn_fpExpr(int32_t cv_e) {
                                                     clar_fn_rtStrConcat((void*)&t18, (void*)(const uint8_t*)&(t17), (void*)(const uint8_t*)&(clar_lit_1086));
                                                     rt_text * t19 = NULL;
                                                     t19 = clar_fn_toText(t18);
-                                                    cv___ret46 = t19;
-                                                    return cv___ret46;
+                                                    cv___ret47 = t19;
+                                                    return cv___ret47;
                                                 } else {
                                                     if (cv___switch33 == 8) {
-                                                        clar_fn_rtTextRelease((void*)cv___ret46);
+                                                        clar_fn_rtTextRelease((void*)cv___ret47);
                                                         rt_text * t20 = NULL;
                                                         t20 = clar_fn_fpCallFn(cv_e);
-                                                        cv___ret46 = t20;
-                                                        return cv___ret46;
+                                                        cv___ret47 = t20;
+                                                        return cv___ret47;
                                                     } else {
                                                         if (cv___switch33 == 9) {
-                                                            clar_fn_rtTextRelease((void*)cv___ret46);
+                                                            clar_fn_rtTextRelease((void*)cv___ret47);
                                                             rt_text * t21 = NULL;
                                                             t21 = clar_fn_fpCallExt(cv_e);
-                                                            cv___ret46 = t21;
-                                                            return cv___ret46;
+                                                            cv___ret47 = t21;
+                                                            return cv___ret47;
                                                         }
                                                     }
                                                 }
@@ -32361,15 +32418,15 @@ static rt_text * clar_fn_fpExpr(int32_t cv_e) {
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret46);
+    clar_fn_rtTextRelease((void*)cv___ret47);
     clar_str_255 t22;
     t22 = clar_fn_numToStr(((int32_t)(clar_fn_irExprKind(cv_e))));
     clar_str_255 t23;
     clar_fn_rtStrConcat((void*)&t23, (void*)(const uint8_t*)&(clar_lit_1089), (void*)(const uint8_t*)&(t22));
     rt_text * t24 = NULL;
     t24 = clar_fn_cpFatal(t23);
-    cv___ret46 = t24;
-    return cv___ret46;
+    cv___ret47 = t24;
+    return cv___ret47;
     return NULL;
 }
 
@@ -32406,8 +32463,8 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
     cv___store72 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store73;
     cv___store73 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret47;
-    cv___ret47 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret48;
+    cv___ret48 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store68);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -32487,23 +32544,23 @@ static rt_text * clar_fn_fpCallFn(int32_t cv_e) {
         clar_fn_rtTextRelease(t11);
         clar_fn_rtTextRelease(t12);
         clar_fn_rtTextRelease(t13);
-        clar_fn_rtTextRelease((void*)cv___ret47);
-        cv___ret47 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret47);
+        clar_fn_rtTextRelease((void*)cv___ret48);
+        cv___ret48 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret48);
         clar_fn_rtTextRelease((void*)cv_args);
         clar_fn_rtTextRelease((void*)cv_argText);
         clar_fn_rtTextRelease((void*)cv_call);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret47;
+        return cv___ret48;
     }
-    clar_fn_rtTextRelease((void*)cv___ret47);
-    cv___ret47 = cv_call;
-    clar_fn_rtTextRetain((void*)cv___ret47);
+    clar_fn_rtTextRelease((void*)cv___ret48);
+    cv___ret48 = cv_call;
+    clar_fn_rtTextRetain((void*)cv___ret48);
     clar_fn_rtTextRelease((void*)cv_args);
     clar_fn_rtTextRelease((void*)cv_argText);
     clar_fn_rtTextRelease((void*)cv_call);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret47;
+    return cv___ret48;
     return NULL;
 }
 
@@ -32540,8 +32597,8 @@ static rt_text * clar_fn_fpCallExt(int32_t cv_e) {
     cv___store81 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store82;
     cv___store82 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret48;
-    cv___ret48 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret49;
+    cv___ret49 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store74);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -32666,31 +32723,31 @@ static rt_text * clar_fn_fpCallExt(int32_t cv_e) {
         clar_fn_rtTextRelease(t19);
         clar_fn_rtTextRelease(t20);
         clar_fn_rtTextRelease(t21);
-        clar_fn_rtTextRelease((void*)cv___ret48);
-        cv___ret48 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret48);
+        clar_fn_rtTextRelease((void*)cv___ret49);
+        cv___ret49 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret49);
         clar_fn_rtTextRelease((void*)cv_args);
         clar_fn_rtTextRelease((void*)cv_argText);
         clar_fn_rtTextRelease((void*)cv_call);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret48;
+        return cv___ret49;
     }
-    clar_fn_rtTextRelease((void*)cv___ret48);
-    cv___ret48 = cv_call;
-    clar_fn_rtTextRetain((void*)cv___ret48);
+    clar_fn_rtTextRelease((void*)cv___ret49);
+    cv___ret49 = cv_call;
+    clar_fn_rtTextRetain((void*)cv___ret49);
     clar_fn_rtTextRelease((void*)cv_args);
     clar_fn_rtTextRelease((void*)cv_argText);
     clar_fn_rtTextRelease((void*)cv_call);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret48;
+    return cv___ret49;
     return NULL;
 }
 
 static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
-    rt_text * cv___ret49;
-    cv___ret49 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret50;
+    cv___ret50 = (rt_text *)clar_fn_rtTextNew();
     if (clar_fn_irtKind(clar_fn_irExprType(clar_fn_irFieldRefX(cv_e))) == 12) {
-        clar_fn_rtTextRelease((void*)cv___ret49);
+        clar_fn_rtTextRelease((void*)cv___ret50);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(clar_fn_irFieldRefX(cv_e));
         rt_text * t2 = NULL;
@@ -32704,14 +32761,14 @@ static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
         clar_str_255 t5;
         t5 = clar_fn_poolGet(clar_fn_irFieldRefName(cv_e));
         clar_fn_rtTextConcat((void*)t4, (void*)t3, (void*)(const uint8_t*)&(t5), (void*)0);
-        cv___ret49 = t4;
+        cv___ret50 = t4;
         clar_fn_rtTextRelease(t1);
         clar_fn_rtTextRelease(t2);
         clar_fn_rtTextRelease(t3);
-        return cv___ret49;
+        return cv___ret50;
     }
     if (clar_fn_irtKind(clar_fn_irExprType(clar_fn_irFieldRefX(cv_e))) == 16) {
-        clar_fn_rtTextRelease((void*)cv___ret49);
+        clar_fn_rtTextRelease((void*)cv___ret50);
         rt_text * t6 = NULL;
         t6 = clar_fn_fpExpr(clar_fn_irFieldRefX(cv_e));
         rt_text * t7 = NULL;
@@ -32725,13 +32782,13 @@ static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
         clar_str_255 t10;
         t10 = clar_fn_poolGet(clar_fn_irFieldRefName(cv_e));
         clar_fn_rtTextConcat((void*)t9, (void*)t8, (void*)(const uint8_t*)&(t10), (void*)0);
-        cv___ret49 = t9;
+        cv___ret50 = t9;
         clar_fn_rtTextRelease(t6);
         clar_fn_rtTextRelease(t7);
         clar_fn_rtTextRelease(t8);
-        return cv___ret49;
+        return cv___ret50;
     }
-    clar_fn_rtTextRelease((void*)cv___ret49);
+    clar_fn_rtTextRelease((void*)cv___ret50);
     rt_text * t11 = NULL;
     t11 = clar_fn_fpExpr(clar_fn_irFieldRefX(cv_e));
     rt_text * t12 = NULL;
@@ -32745,18 +32802,18 @@ static rt_text * clar_fn_fpFieldRef(int32_t cv_e) {
     clar_str_255 t15;
     t15 = clar_fn_poolGet(clar_fn_irFieldRefName(cv_e));
     clar_fn_rtTextConcat((void*)t14, (void*)t13, (void*)(const uint8_t*)&(t15), (void*)0);
-    cv___ret49 = t14;
+    cv___ret50 = t14;
     clar_fn_rtTextRelease(t11);
     clar_fn_rtTextRelease(t12);
     clar_fn_rtTextRelease(t13);
-    return cv___ret49;
+    return cv___ret50;
     return NULL;
 }
 
 static rt_text * clar_fn_fpXRecAddr(int32_t cv_e) {
-    rt_text * cv___ret50;
-    cv___ret50 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___ret50);
+    rt_text * cv___ret51;
+    cv___ret51 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextRelease((void*)cv___ret51);
     rt_text * t1 = NULL;
     clar_str_255 t2;
     t2 = clar_fn_poolGet(clar_fn_irXRecAddrName(cv_e));
@@ -32772,15 +32829,15 @@ static rt_text * clar_fn_fpXRecAddr(int32_t cv_e) {
     clar_fn_rtStrConcat((void*)&t7, (void*)(const uint8_t*)&(t6), (void*)(const uint8_t*)&(clar_lit_1100));
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(t7));
-    cv___ret50 = t1;
-    return cv___ret50;
+    cv___ret51 = t1;
+    return cv___ret51;
     return NULL;
 }
 
 static rt_text * clar_fn_fpCbAddr(int32_t cv_e) {
-    rt_text * cv___ret51;
-    cv___ret51 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___ret51);
+    rt_text * cv___ret52;
+    cv___ret52 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextRelease((void*)cv___ret52);
     rt_text * t1 = NULL;
     clar_str_255 t2;
     t2 = clar_fn_poolGet(clar_fn_irCbAddrName(cv_e));
@@ -32790,20 +32847,20 @@ static rt_text * clar_fn_fpCbAddr(int32_t cv_e) {
     clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(t3), (void*)(const uint8_t*)&(clar_lit_443));
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(t4));
-    cv___ret51 = t1;
-    return cv___ret51;
+    cv___ret52 = t1;
+    return cv___ret52;
     return NULL;
 }
 
 static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
     int32_t cv_xt;
     cv_xt = 0;
-    rt_text * cv___ret52;
-    cv___ret52 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret53;
+    cv___ret53 = (rt_text *)clar_fn_rtTextNew();
     cv_xt = clar_fn_irExprType(clar_fn_irIndexRefX(cv_e));
     if (clar_fn_irtKind(cv_xt) == 11) {
         if (cv_cpCorePorted) {
-            clar_fn_rtTextRelease((void*)cv___ret52);
+            clar_fn_rtTextRelease((void*)cv___ret53);
             rt_text * t1 = NULL;
             t1 = clar_fn_fpExpr(clar_fn_irIndexRefX(cv_e));
             rt_text * t2 = NULL;
@@ -32828,7 +32885,7 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
             rt_text * t9 = NULL;
             t9 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t9, (void*)t7, (void*)(const uint8_t*)&(clar_lit_1104), (void*)0);
-            cv___ret52 = t9;
+            cv___ret53 = t9;
             clar_fn_rtTextRelease(t1);
             clar_fn_rtTextRelease(t2);
             clar_fn_rtTextRelease(t3);
@@ -32836,9 +32893,9 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
             clar_fn_rtTextRelease(t5);
             clar_fn_rtTextRelease(t6);
             clar_fn_rtTextRelease(t7);
-            return cv___ret52;
+            return cv___ret53;
         }
-        clar_fn_rtTextRelease((void*)cv___ret52);
+        clar_fn_rtTextRelease((void*)cv___ret53);
         rt_text * t10 = NULL;
         t10 = clar_fn_fpExpr(clar_fn_irIndexRefX(cv_e));
         rt_text * t11 = NULL;
@@ -32863,7 +32920,7 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
         rt_text * t18 = NULL;
         t18 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t18, (void*)t16, (void*)(const uint8_t*)&(clar_lit_1104), (void*)0);
-        cv___ret52 = t18;
+        cv___ret53 = t18;
         clar_fn_rtTextRelease(t10);
         clar_fn_rtTextRelease(t11);
         clar_fn_rtTextRelease(t12);
@@ -32871,10 +32928,10 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
         clar_fn_rtTextRelease(t14);
         clar_fn_rtTextRelease(t15);
         clar_fn_rtTextRelease(t16);
-        return cv___ret52;
+        return cv___ret53;
     } else {
         if (clar_fn_irtKind(cv_xt) == 7) {
-            clar_fn_rtTextRelease((void*)cv___ret52);
+            clar_fn_rtTextRelease((void*)cv___ret53);
             clar_str_255 t19;
             t19 = clar_fn_cpCType(clar_fn_irExprType(cv_e));
             clar_str_255 t20;
@@ -32897,20 +32954,20 @@ static rt_text * clar_fn_fpIndexRef(int32_t cv_e) {
             rt_text * t27 = NULL;
             t27 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t27, (void*)t25, (void*)(const uint8_t*)&(clar_lit_1109), (void*)0);
-            cv___ret52 = t27;
+            cv___ret53 = t27;
             clar_fn_rtTextRelease(t22);
             clar_fn_rtTextRelease(t23);
             clar_fn_rtTextRelease(t24);
             clar_fn_rtTextRelease(t25);
             clar_fn_rtTextRelease(t26);
-            return cv___ret52;
+            return cv___ret53;
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret52);
+    clar_fn_rtTextRelease((void*)cv___ret53);
     rt_text * t28 = NULL;
     t28 = clar_fn_toText(clar_lit_17);
-    cv___ret52 = t28;
-    return cv___ret52;
+    cv___ret53 = t28;
+    return cv___ret53;
     return NULL;
 }
 
@@ -32933,20 +32990,20 @@ static clar_str_255 clar_fn_cOp(clar_str_255 cv_op) {
 static rt_text * clar_fn_fpBin(int32_t cv_e) {
     clar_str_255 cv_op;
     cv_op = (clar_str_255){0};
-    rt_text * cv___ret53;
-    cv___ret53 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret54;
+    cv___ret54 = (rt_text *)clar_fn_rtTextNew();
     clar_str_255 t1;
     t1 = clar_fn_poolGet(clar_fn_irBinOp(cv_e));
     clar_fn_rtStrStore((void*)&(cv_op), 255, (void*)(const uint8_t*)&(t1));
     if ((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_36)) == 0) || (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_37)) == 0)) {
-        clar_fn_rtTextRelease((void*)cv___ret53);
+        clar_fn_rtTextRelease((void*)cv___ret54);
         rt_text * t2 = NULL;
         t2 = clar_fn_fpAndOr(cv_e);
-        cv___ret53 = t2;
-        return cv___ret53;
+        cv___ret54 = t2;
+        return cv___ret54;
     }
     if ((clar_fn_irtKind(clar_fn_irExprType(cv_e)) == 15) && ((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_143)) == 0) || (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_18)) == 0))) {
-        clar_fn_rtTextRelease((void*)cv___ret53);
+        clar_fn_rtTextRelease((void*)cv___ret54);
         rt_text * t3 = NULL;
         t3 = clar_fn_fpExpr(clar_fn_irBinX(cv_e));
         rt_text * t4 = NULL;
@@ -32969,7 +33026,7 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
         rt_text * t10 = NULL;
         t10 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t10, (void*)t8, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-        cv___ret53 = t10;
+        cv___ret54 = t10;
         clar_fn_rtTextRelease(t3);
         clar_fn_rtTextRelease(t4);
         clar_fn_rtTextRelease(t5);
@@ -32977,9 +33034,9 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
         clar_fn_rtTextRelease(t7);
         clar_fn_rtTextRelease(t8);
         clar_fn_rtTextRelease(t9);
-        return cv___ret53;
+        return cv___ret54;
     }
-    clar_fn_rtTextRelease((void*)cv___ret53);
+    clar_fn_rtTextRelease((void*)cv___ret54);
     rt_text * t11 = NULL;
     t11 = clar_fn_fpExpr(clar_fn_irBinX(cv_e));
     rt_text * t12 = NULL;
@@ -33004,7 +33061,7 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
     rt_text * t19 = NULL;
     t19 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t19, (void*)t17, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-    cv___ret53 = t19;
+    cv___ret54 = t19;
     clar_fn_rtTextRelease(t11);
     clar_fn_rtTextRelease(t12);
     clar_fn_rtTextRelease(t13);
@@ -33012,7 +33069,7 @@ static rt_text * clar_fn_fpBin(int32_t cv_e) {
     clar_fn_rtTextRelease(t16);
     clar_fn_rtTextRelease(t17);
     clar_fn_rtTextRelease(t18);
-    return cv___ret53;
+    return cv___ret54;
     return NULL;
 }
 
@@ -33025,8 +33082,8 @@ static clar_rec_FpCapture clar_fn_fpCaptureExpr(int32_t cv_e) {
     cv_cap = clar_new_FpCapture();
     rt_text * cv___store83;
     cv___store83 = (rt_text *)clar_fn_rtTextNew();
-    clar_rec_FpCapture cv___ret54;
-    cv___ret54 = clar_new_FpCapture();
+    clar_rec_FpCapture cv___ret55;
+    cv___ret55 = clar_new_FpCapture();
         clar_fn_rtListRetain((void*)cv_fpBody);
 
         if (clar_fn_rtListLastref((void*)cv_saved)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_saved); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_saved, i)); }
@@ -33060,9 +33117,9 @@ static clar_rec_FpCapture clar_fn_fpCaptureExpr(int32_t cv_e) {
     clar_fn_rtListRelease((void*)cv_fpBody);
 
     cv_fpBody = cv_saved;
-    clar_release_FpCapture(&(cv___ret54));
-    cv___ret54 = cv_cap;
-    clar_retain_FpCapture(&(cv___ret54));
+    clar_release_FpCapture(&(cv___ret55));
+    cv___ret55 = cv_cap;
+    clar_retain_FpCapture(&(cv___ret55));
         if (clar_fn_rtListLastref((void*)cv_saved)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_saved); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_saved, i)); }
     clar_fn_rtListRelease((void*)cv_saved);
 
@@ -33070,7 +33127,7 @@ static clar_rec_FpCapture clar_fn_fpCaptureExpr(int32_t cv_e) {
     clar_fn_rtListRelease((void*)cv_fresh);
 
     clar_release_FpCapture(&(cv_cap));
-    return cv___ret54;
+    return cv___ret55;
     return clar_new_FpCapture();
 }
 
@@ -33093,8 +33150,8 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     cv___store84 = (rt_text *)clar_fn_rtTextNew();
     clar_rec_FpCapture cv___store85;
     cv___store85 = clar_new_FpCapture();
-    rt_text * cv___ret55;
-    cv___ret55 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret56;
+    cv___ret56 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store86;
     cv___store86 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store87;
@@ -33119,7 +33176,7 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     (cv___store85).cv_stmts = 0;
     (cv___store85).cv_value = 0;
     if (clar_fn_rtListCount((void*)(cv_cap).cv_stmts) == 0) {
-        clar_fn_rtTextRelease((void*)cv___ret55);
+        clar_fn_rtTextRelease((void*)cv___ret56);
         rt_text * t4 = NULL;
         t4 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcatSl((void*)t4, (void*)(const uint8_t*)&(clar_lit_1063), (void*)cv_x);
@@ -33140,7 +33197,7 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
         rt_text * t10 = NULL;
         t10 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t10, (void*)t9, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-        cv___ret55 = t10;
+        cv___ret56 = t10;
         clar_fn_rtTextRelease(t4);
         clar_fn_rtTextRelease(t5);
         clar_fn_rtTextRelease(t6);
@@ -33150,7 +33207,7 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
         clar_release_FpCapture(&(cv_cap));
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_cond);
-        return cv___ret55;
+        return cv___ret56;
     }
     clar_fn_rtTextRelease((void*)cv___store86);
     rt_text * t11 = NULL;
@@ -33240,14 +33297,14 @@ static rt_text * clar_fn_fpAndOr(int32_t cv_e) {
     t26 = clar_fn_toText(clar_lit_1118);
     clar_fn_fpEmit(t26);
     clar_fn_rtTextRelease(t26);
-    clar_fn_rtTextRelease((void*)cv___ret55);
-    cv___ret55 = cv_t;
-    clar_fn_rtTextRetain((void*)cv___ret55);
+    clar_fn_rtTextRelease((void*)cv___ret56);
+    cv___ret56 = cv_t;
+    clar_fn_rtTextRetain((void*)cv___ret56);
     clar_fn_rtTextRelease((void*)cv_x);
     clar_release_FpCapture(&(cv_cap));
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_cond);
-    return cv___ret55;
+    return cv___ret56;
     return NULL;
 }
 
@@ -33258,8 +33315,8 @@ static rt_text * clar_fn_fpUn(int32_t cv_e) {
     cv_op = (clar_str_255){0};
     rt_text * cv___store88;
     cv___store88 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret56;
-    cv___ret56 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret57;
+    cv___ret57 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store88);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irUnX(cv_e));
@@ -33271,52 +33328,52 @@ static rt_text * clar_fn_fpUn(int32_t cv_e) {
     t2 = clar_fn_poolGet(clar_fn_irUnOp(cv_e));
     clar_fn_rtStrStore((void*)&(cv_op), 255, (void*)(const uint8_t*)&(t2));
     if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_18)) == 0) {
-        clar_fn_rtTextRelease((void*)cv___ret56);
+        clar_fn_rtTextRelease((void*)cv___ret57);
         rt_text * t3 = NULL;
         t3 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcatSl((void*)t3, (void*)(const uint8_t*)&(clar_lit_1119), (void*)cv_x);
         rt_text * t4 = NULL;
         t4 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t4, (void*)t3, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-        cv___ret56 = t4;
+        cv___ret57 = t4;
         clar_fn_rtTextRelease(t3);
         clar_fn_rtTextRelease((void*)cv_x);
-        return cv___ret56;
+        return cv___ret57;
     } else {
         if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_38)) == 0) {
-            clar_fn_rtTextRelease((void*)cv___ret56);
+            clar_fn_rtTextRelease((void*)cv___ret57);
             rt_text * t5 = NULL;
             t5 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcatSl((void*)t5, (void*)(const uint8_t*)&(clar_lit_1120), (void*)cv_x);
             rt_text * t6 = NULL;
             t6 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t6, (void*)t5, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-            cv___ret56 = t6;
+            cv___ret57 = t6;
             clar_fn_rtTextRelease(t5);
             clar_fn_rtTextRelease((void*)cv_x);
-            return cv___ret56;
+            return cv___ret57;
         } else {
             if (clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_op), (void*)(const uint8_t*)&(clar_lit_144)) == 0) {
-                clar_fn_rtTextRelease((void*)cv___ret56);
+                clar_fn_rtTextRelease((void*)cv___ret57);
                 rt_text * t7 = NULL;
                 t7 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcatSl((void*)t7, (void*)(const uint8_t*)&(clar_lit_1121), (void*)cv_x);
                 rt_text * t8 = NULL;
                 t8 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t8, (void*)t7, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                cv___ret56 = t8;
+                cv___ret57 = t8;
                 clar_fn_rtTextRelease(t7);
                 clar_fn_rtTextRelease((void*)cv_x);
-                return cv___ret56;
+                return cv___ret57;
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret56);
+    clar_fn_rtTextRelease((void*)cv___ret57);
     rt_text * t9 = NULL;
     t9 = clar_fn_toText(clar_lit_17);
-    cv___ret56 = t9;
+    cv___ret57 = t9;
     clar_fn_rtTextRelease((void*)cv_x);
-    return cv___ret56;
+    return cv___ret57;
     return NULL;
 }
 
@@ -33329,8 +33386,8 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
     cv_n = 0;
     rt_text * cv___store89;
     cv___store89 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret57;
-    cv___ret57 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret58;
+    cv___ret58 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store89);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(clar_fn_irConvX(cv_e));
@@ -33340,60 +33397,60 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
     cv___store89 = 0;
     cv_op = clar_fn_irConvOp(cv_e);
     if (cv_op == 0) {
-        clar_fn_rtTextRelease((void*)cv___ret57);
+        clar_fn_rtTextRelease((void*)cv___ret58);
         rt_text * t2 = NULL;
         t2 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcatSl((void*)t2, (void*)(const uint8_t*)&(clar_lit_1122), (void*)cv_x);
         rt_text * t3 = NULL;
         t3 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t3, (void*)t2, (void*)(const uint8_t*)&(clar_lit_1123), (void*)0);
-        cv___ret57 = t3;
+        cv___ret58 = t3;
         clar_fn_rtTextRelease(t2);
         clar_fn_rtTextRelease((void*)cv_x);
-        return cv___ret57;
+        return cv___ret58;
     } else {
         if (cv_op == 1) {
-            clar_fn_rtTextRelease((void*)cv___ret57);
+            clar_fn_rtTextRelease((void*)cv___ret58);
             rt_text * t4 = NULL;
             t4 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcatSl((void*)t4, (void*)(const uint8_t*)&(clar_lit_1124), (void*)cv_x);
             rt_text * t5 = NULL;
             t5 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t5, (void*)t4, (void*)(const uint8_t*)&(clar_lit_1125), (void*)0);
-            cv___ret57 = t5;
+            cv___ret58 = t5;
             clar_fn_rtTextRelease(t4);
             clar_fn_rtTextRelease((void*)cv_x);
-            return cv___ret57;
+            return cv___ret58;
         } else {
             if (cv_op == 2) {
-                clar_fn_rtTextRelease((void*)cv___ret57);
+                clar_fn_rtTextRelease((void*)cv___ret58);
                 rt_text * t6 = NULL;
                 t6 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcatSl((void*)t6, (void*)(const uint8_t*)&(clar_lit_1126), (void*)cv_x);
                 rt_text * t7 = NULL;
                 t7 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t7, (void*)t6, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                cv___ret57 = t7;
+                cv___ret58 = t7;
                 clar_fn_rtTextRelease(t6);
                 clar_fn_rtTextRelease((void*)cv_x);
-                return cv___ret57;
+                return cv___ret58;
             } else {
                 if ((cv_op == 3) || (cv_op == 4)) {
-                    clar_fn_rtTextRelease((void*)cv___ret57);
+                    clar_fn_rtTextRelease((void*)cv___ret58);
                     rt_text * t8 = NULL;
                     t8 = (rt_text *)clar_fn_rtTextNew();
                     clar_fn_rtTextConcatSl((void*)t8, (void*)(const uint8_t*)&(clar_lit_1127), (void*)cv_x);
                     rt_text * t9 = NULL;
                     t9 = (rt_text *)clar_fn_rtTextNew();
                     clar_fn_rtTextConcat((void*)t9, (void*)t8, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                    cv___ret57 = t9;
+                    cv___ret58 = t9;
                     clar_fn_rtTextRelease(t8);
                     clar_fn_rtTextRelease((void*)cv_x);
-                    return cv___ret57;
+                    return cv___ret58;
                 } else {
                     if (cv_op == 5) {
                         cv_n = clar_fn_cpEnumCount(clar_fn_irConvEnumName(cv_e));
-                        clar_fn_rtTextRelease((void*)cv___ret57);
+                        clar_fn_rtTextRelease((void*)cv___ret58);
                         clar_str_255 t10;
                         t10 = clar_fn_poolGet(clar_fn_irConvEnumName(cv_e));
                         clar_str_255 t11;
@@ -33412,39 +33469,39 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
                         rt_text * t17 = NULL;
                         t17 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t17, (void*)t16, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                        cv___ret57 = t17;
+                        cv___ret58 = t17;
                         clar_fn_rtTextRelease(t16);
                         clar_fn_rtTextRelease((void*)cv_x);
-                        return cv___ret57;
+                        return cv___ret58;
                     } else {
                         if (cv_op == 6) {
-                            clar_fn_rtTextRelease((void*)cv___ret57);
+                            clar_fn_rtTextRelease((void*)cv___ret58);
                             rt_text * t18 = NULL;
                             t18 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcatSl((void*)t18, (void*)(const uint8_t*)&(clar_lit_1130), (void*)cv_x);
                             rt_text * t19 = NULL;
                             t19 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t19, (void*)t18, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret57 = t19;
+                            cv___ret58 = t19;
                             clar_fn_rtTextRelease(t18);
                             clar_fn_rtTextRelease((void*)cv_x);
-                            return cv___ret57;
+                            return cv___ret58;
                         } else {
                             if (cv_op == 7) {
-                                clar_fn_rtTextRelease((void*)cv___ret57);
+                                clar_fn_rtTextRelease((void*)cv___ret58);
                                 rt_text * t20 = NULL;
                                 t20 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcatSl((void*)t20, (void*)(const uint8_t*)&(clar_lit_1131), (void*)cv_x);
                                 rt_text * t21 = NULL;
                                 t21 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t21, (void*)t20, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                cv___ret57 = t21;
+                                cv___ret58 = t21;
                                 clar_fn_rtTextRelease(t20);
                                 clar_fn_rtTextRelease((void*)cv_x);
-                                return cv___ret57;
+                                return cv___ret58;
                             } else {
                                 if (cv_op == 8) {
-                                    clar_fn_rtTextRelease((void*)cv___ret57);
+                                    clar_fn_rtTextRelease((void*)cv___ret58);
                                     clar_str_255 t22;
                                     t22 = clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_e)));
                                     clar_str_255 t23;
@@ -33457,49 +33514,49 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
                                     rt_text * t26 = NULL;
                                     t26 = (rt_text *)clar_fn_rtTextNew();
                                     clar_fn_rtTextConcat((void*)t26, (void*)t25, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                    cv___ret57 = t26;
+                                    cv___ret58 = t26;
                                     clar_fn_rtTextRelease(t25);
                                     clar_fn_rtTextRelease((void*)cv_x);
-                                    return cv___ret57;
+                                    return cv___ret58;
                                 } else {
                                     if (cv_op == 9) {
-                                        clar_fn_rtTextRelease((void*)cv___ret57);
+                                        clar_fn_rtTextRelease((void*)cv___ret58);
                                         rt_text * t27 = NULL;
                                         t27 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcatSl((void*)t27, (void*)(const uint8_t*)&(clar_lit_1134), (void*)cv_x);
                                         rt_text * t28 = NULL;
                                         t28 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcat((void*)t28, (void*)t27, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                        cv___ret57 = t28;
+                                        cv___ret58 = t28;
                                         clar_fn_rtTextRelease(t27);
                                         clar_fn_rtTextRelease((void*)cv_x);
-                                        return cv___ret57;
+                                        return cv___ret58;
                                     } else {
                                         if (cv_op == 10) {
-                                            clar_fn_rtTextRelease((void*)cv___ret57);
+                                            clar_fn_rtTextRelease((void*)cv___ret58);
                                             rt_text * t29 = NULL;
                                             t29 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcatSl((void*)t29, (void*)(const uint8_t*)&(clar_lit_1135), (void*)cv_x);
                                             rt_text * t30 = NULL;
                                             t30 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcat((void*)t30, (void*)t29, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                            cv___ret57 = t30;
+                                            cv___ret58 = t30;
                                             clar_fn_rtTextRelease(t29);
                                             clar_fn_rtTextRelease((void*)cv_x);
-                                            return cv___ret57;
+                                            return cv___ret58;
                                         } else {
                                             if (cv_op == 11) {
-                                                clar_fn_rtTextRelease((void*)cv___ret57);
+                                                clar_fn_rtTextRelease((void*)cv___ret58);
                                                 rt_text * t31 = NULL;
                                                 t31 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextConcatSl((void*)t31, (void*)(const uint8_t*)&(clar_lit_1124), (void*)cv_x);
                                                 rt_text * t32 = NULL;
                                                 t32 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextConcat((void*)t32, (void*)t31, (void*)(const uint8_t*)&(clar_lit_1136), (void*)0);
-                                                cv___ret57 = t32;
+                                                cv___ret58 = t32;
                                                 clar_fn_rtTextRelease(t31);
                                                 clar_fn_rtTextRelease((void*)cv_x);
-                                                return cv___ret57;
+                                                return cv___ret58;
                                             }
                                         }
                                     }
@@ -33511,16 +33568,16 @@ static rt_text * clar_fn_fpConv(int32_t cv_e) {
             }
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret57);
+    clar_fn_rtTextRelease((void*)cv___ret58);
     clar_str_255 t33;
     t33 = clar_fn_numToStr(((int32_t)(cv_op)));
     clar_str_255 t34;
     clar_fn_rtStrConcat((void*)&t34, (void*)(const uint8_t*)&(clar_lit_1137), (void*)(const uint8_t*)&(t33));
     rt_text * t35 = NULL;
     t35 = clar_fn_cpFatal(t34);
-    cv___ret57 = t35;
+    cv___ret58 = t35;
     clar_fn_rtTextRelease((void*)cv_x);
-    return cv___ret57;
+    return cv___ret58;
     return NULL;
 }
 
@@ -33559,21 +33616,21 @@ static int32_t clar_fn_cpEnumCount(int32_t cv_nameIdx) {
 static rt_text * clar_fn_fpAddrable(int32_t cv_e) {
     int32_t cv_k;
     cv_k = 0;
-    rt_text * cv___ret58;
-    cv___ret58 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret59;
+    cv___ret59 = (rt_text *)clar_fn_rtTextNew();
     cv_k = clar_fn_irExprKind(cv_e);
     if (((((cv_k == 2) || (cv_k == 3)) || (cv_k == 4)) || (cv_k == 1)) || (cv_k == 10)) {
-        clar_fn_rtTextRelease((void*)cv___ret58);
+        clar_fn_rtTextRelease((void*)cv___ret59);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpExpr(cv_e);
-        cv___ret58 = t1;
-        return cv___ret58;
+        cv___ret59 = t1;
+        return cv___ret59;
     }
-    clar_fn_rtTextRelease((void*)cv___ret58);
+    clar_fn_rtTextRelease((void*)cv___ret59);
     rt_text * t2 = NULL;
     t2 = clar_fn_fpCopyToTemp(cv_e);
-    cv___ret58 = t2;
-    return cv___ret58;
+    cv___ret59 = t2;
+    return cv___ret59;
     return NULL;
 }
 
@@ -33586,8 +33643,8 @@ static rt_text * clar_fn_fpCopyToTemp(int32_t cv_e) {
     cv___store90 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store91;
     cv___store91 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret59;
-    cv___ret59 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret60;
+    cv___ret60 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store90);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(cv_e);
@@ -33616,19 +33673,19 @@ static rt_text * clar_fn_fpCopyToTemp(int32_t cv_e) {
     clar_fn_rtTextRelease(t3);
     clar_fn_rtTextRelease(t4);
     clar_fn_rtTextRelease(t5);
-    clar_fn_rtTextRelease((void*)cv___ret59);
-    cv___ret59 = cv_t;
-    clar_fn_rtTextRetain((void*)cv___ret59);
+    clar_fn_rtTextRelease((void*)cv___ret60);
+    cv___ret60 = cv_t;
+    clar_fn_rtTextRetain((void*)cv___ret60);
     clar_fn_rtTextRelease((void*)cv_v);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret59;
+    return cv___ret60;
     return NULL;
 }
 
 static rt_text * clar_fn_fpStrAddr(int32_t cv_e) {
-    rt_text * cv___ret60;
-    cv___ret60 = (rt_text *)clar_fn_rtTextNew();
-    clar_fn_rtTextRelease((void*)cv___ret60);
+    rt_text * cv___ret61;
+    cv___ret61 = (rt_text *)clar_fn_rtTextNew();
+    clar_fn_rtTextRelease((void*)cv___ret61);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpAddrable(cv_e);
     rt_text * t2 = NULL;
@@ -33637,10 +33694,10 @@ static rt_text * clar_fn_fpStrAddr(int32_t cv_e) {
     rt_text * t3 = NULL;
     t3 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t3, (void*)t2, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-    cv___ret60 = t3;
+    cv___ret61 = t3;
     clar_fn_rtTextRelease(t1);
     clar_fn_rtTextRelease(t2);
-    return cv___ret60;
+    return cv___ret61;
     return NULL;
 }
 
@@ -33649,13 +33706,13 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
     cv_atk = 0;
     int32_t cv_btk;
     cv_btk = 0;
-    rt_text * cv___ret61;
-    cv___ret61 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret62;
+    cv___ret62 = (rt_text *)clar_fn_rtTextNew();
     cv_atk = clar_fn_irtKind(clar_fn_irExprType(cv_a));
     cv_btk = clar_fn_irtKind(clar_fn_irExprType(cv_b));
     if ((cv_atk == 6) && (cv_btk == 6)) {
         if (cv_cpTextPorted) {
-            clar_fn_rtTextRelease((void*)cv___ret61);
+            clar_fn_rtTextRelease((void*)cv___ret62);
             rt_text * t1 = NULL;
             t1 = clar_fn_fpExpr(cv_a);
             rt_text * t2 = NULL;
@@ -33672,15 +33729,15 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
             rt_text * t6 = NULL;
             t6 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t6, (void*)t4, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-            cv___ret61 = t6;
+            cv___ret62 = t6;
             clar_fn_rtTextRelease(t1);
             clar_fn_rtTextRelease(t2);
             clar_fn_rtTextRelease(t3);
             clar_fn_rtTextRelease(t4);
             clar_fn_rtTextRelease(t5);
-            return cv___ret61;
+            return cv___ret62;
         }
-        clar_fn_rtTextRelease((void*)cv___ret61);
+        clar_fn_rtTextRelease((void*)cv___ret62);
         rt_text * t7 = NULL;
         t7 = clar_fn_fpExpr(cv_a);
         rt_text * t8 = NULL;
@@ -33697,17 +33754,17 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
         rt_text * t12 = NULL;
         t12 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t12, (void*)t10, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-        cv___ret61 = t12;
+        cv___ret62 = t12;
         clar_fn_rtTextRelease(t7);
         clar_fn_rtTextRelease(t8);
         clar_fn_rtTextRelease(t9);
         clar_fn_rtTextRelease(t10);
         clar_fn_rtTextRelease(t11);
-        return cv___ret61;
+        return cv___ret62;
     } else {
         if ((cv_atk == 6) && (cv_btk == 5)) {
             if (cv_cpTextPorted) {
-                clar_fn_rtTextRelease((void*)cv___ret61);
+                clar_fn_rtTextRelease((void*)cv___ret62);
                 rt_text * t13 = NULL;
                 t13 = clar_fn_fpExpr(cv_a);
                 rt_text * t14 = NULL;
@@ -33724,15 +33781,15 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
                 rt_text * t18 = NULL;
                 t18 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t18, (void*)t16, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                cv___ret61 = t18;
+                cv___ret62 = t18;
                 clar_fn_rtTextRelease(t13);
                 clar_fn_rtTextRelease(t14);
                 clar_fn_rtTextRelease(t15);
                 clar_fn_rtTextRelease(t16);
                 clar_fn_rtTextRelease(t17);
-                return cv___ret61;
+                return cv___ret62;
             }
-            clar_fn_rtTextRelease((void*)cv___ret61);
+            clar_fn_rtTextRelease((void*)cv___ret62);
             rt_text * t19 = NULL;
             t19 = clar_fn_fpExpr(cv_a);
             rt_text * t20 = NULL;
@@ -33749,17 +33806,17 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
             rt_text * t24 = NULL;
             t24 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextConcat((void*)t24, (void*)t22, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-            cv___ret61 = t24;
+            cv___ret62 = t24;
             clar_fn_rtTextRelease(t19);
             clar_fn_rtTextRelease(t20);
             clar_fn_rtTextRelease(t21);
             clar_fn_rtTextRelease(t22);
             clar_fn_rtTextRelease(t23);
-            return cv___ret61;
+            return cv___ret62;
         }
     }
     if (cv_cpTextPorted) {
-        clar_fn_rtTextRelease((void*)cv___ret61);
+        clar_fn_rtTextRelease((void*)cv___ret62);
         rt_text * t25 = NULL;
         t25 = clar_fn_fpExpr(cv_b);
         rt_text * t26 = NULL;
@@ -33776,15 +33833,15 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
         rt_text * t30 = NULL;
         t30 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextConcat((void*)t30, (void*)t28, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-        cv___ret61 = t30;
+        cv___ret62 = t30;
         clar_fn_rtTextRelease(t25);
         clar_fn_rtTextRelease(t26);
         clar_fn_rtTextRelease(t27);
         clar_fn_rtTextRelease(t28);
         clar_fn_rtTextRelease(t29);
-        return cv___ret61;
+        return cv___ret62;
     }
-    clar_fn_rtTextRelease((void*)cv___ret61);
+    clar_fn_rtTextRelease((void*)cv___ret62);
     rt_text * t31 = NULL;
     t31 = clar_fn_fpExpr(cv_b);
     rt_text * t32 = NULL;
@@ -33801,13 +33858,13 @@ static rt_text * clar_fn_fpTextCmp(int32_t cv_a, int32_t cv_b) {
     rt_text * t36 = NULL;
     t36 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t36, (void*)t34, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-    cv___ret61 = t36;
+    cv___ret62 = t36;
     clar_fn_rtTextRelease(t31);
     clar_fn_rtTextRelease(t32);
     clar_fn_rtTextRelease(t33);
     clar_fn_rtTextRelease(t34);
     clar_fn_rtTextRelease(t35);
-    return cv___ret61;
+    return cv___ret62;
     return NULL;
 }
 
@@ -33820,8 +33877,8 @@ static rt_text * clar_fn_fpTextConcat(int32_t cv_a, int32_t cv_b) {
     cv___store92 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store93;
     cv___store93 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret62;
-    cv___ret62 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret63;
+    cv___ret63 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store92);
     rt_text * t1 = NULL;
     t1 = clar_fn_fpExpr(cv_a);
@@ -33967,12 +34024,12 @@ static rt_text * clar_fn_fpTextConcat(int32_t cv_a, int32_t cv_b) {
             clar_fn_rtTextRelease(t32);
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret62);
-    cv___ret62 = cv_t;
-    clar_fn_rtTextRetain((void*)cv___ret62);
+    clar_fn_rtTextRelease((void*)cv___ret63);
+    cv___ret63 = cv_t;
+    clar_fn_rtTextRetain((void*)cv___ret63);
     clar_fn_rtTextRelease((void*)cv_ae);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret62;
+    return cv___ret63;
     return NULL;
 }
 
@@ -34121,8 +34178,8 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store95;
     cv___store95 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret63;
-    cv___ret63 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret64;
+    cv___ret64 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store96;
     cv___store96 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store97;
@@ -34152,11 +34209,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store95;
     cv___store95 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store96);
@@ -34167,11 +34224,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store96;
     cv___store96 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store97);
@@ -34182,11 +34239,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store97;
     cv___store97 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store98);
@@ -34197,11 +34254,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store98;
     cv___store98 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store99);
@@ -34212,11 +34269,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store99;
     cv___store99 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store100);
@@ -34227,11 +34284,11 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store100;
     cv___store100 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
     cv_fpIntrMatched = 1;
     clar_fn_rtTextRelease((void*)cv___store101);
@@ -34242,22 +34299,22 @@ static rt_text * clar_fn_fpIntrCall(int32_t cv_x) {
     cv_t = cv___store101;
     cv___store101 = 0;
     if (cv_fpIntrMatched) {
-        clar_fn_rtTextRelease((void*)cv___ret63);
-        cv___ret63 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret63);
+        clar_fn_rtTextRelease((void*)cv___ret64);
+        cv___ret64 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret64);
         clar_fn_rtTextRelease((void*)cv_t);
-        return cv___ret63;
+        return cv___ret64;
     }
-    clar_fn_rtTextRelease((void*)cv___ret63);
+    clar_fn_rtTextRelease((void*)cv___ret64);
     clar_str_255 t8;
     t8 = clar_fn_poolGet(cv_nm);
     clar_str_255 t9;
     clar_fn_rtStrConcat((void*)&t9, (void*)(const uint8_t*)&(clar_lit_1162), (void*)(const uint8_t*)&(t8));
     rt_text * t10 = NULL;
     t10 = clar_fn_cpFatal(t9);
-    cv___ret63 = t10;
+    cv___ret64 = t10;
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret63;
+    return cv___ret64;
     return NULL;
 }
 
@@ -34272,8 +34329,8 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv_argT = 0;
     int32_t cv_argK;
     cv_argK = 0;
-    rt_text * cv___ret64;
-    cv___ret64 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret65;
+    cv___ret65 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store102;
     cv___store102 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store103;
@@ -34295,13 +34352,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         clar_fn_rtTextRelease(t1);
         clar_fn_rtTextRelease(t2);
         clar_fn_rtTextRelease(t3);
-        clar_fn_rtTextRelease((void*)cv___ret64);
+        clar_fn_rtTextRelease((void*)cv___ret65);
         rt_text * t4 = NULL;
         t4 = clar_fn_toText(clar_lit_17);
-        cv___ret64 = t4;
+        cv___ret65 = t4;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_s0);
-        return cv___ret64;
+        return cv___ret65;
     } else {
         if (cv_nm == clar_fn_ILog()) {
             rt_text * t5 = NULL;
@@ -34316,16 +34373,16 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtTextRelease(t5);
             clar_fn_rtTextRelease(t6);
             clar_fn_rtTextRelease(t7);
-            clar_fn_rtTextRelease((void*)cv___ret64);
+            clar_fn_rtTextRelease((void*)cv___ret65);
             rt_text * t8 = NULL;
             t8 = clar_fn_toText(clar_lit_17);
-            cv___ret64 = t8;
+            cv___ret65 = t8;
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_s0);
-            return cv___ret64;
+            return cv___ret65;
         } else {
             if (cv_nm == clar_fn_IPeekB()) {
-                clar_fn_rtTextRelease((void*)cv___ret64);
+                clar_fn_rtTextRelease((void*)cv___ret65);
                 rt_text * t9 = NULL;
                 t9 = clar_fn_fpExpr(cv_a0);
                 rt_text * t10 = NULL;
@@ -34334,15 +34391,15 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 rt_text * t11 = NULL;
                 t11 = (rt_text *)clar_fn_rtTextNew();
                 clar_fn_rtTextConcat((void*)t11, (void*)t10, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                cv___ret64 = t11;
+                cv___ret65 = t11;
                 clar_fn_rtTextRelease(t9);
                 clar_fn_rtTextRelease(t10);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
-                return cv___ret64;
+                return cv___ret65;
             } else {
                 if (cv_nm == clar_fn_IPeekW()) {
-                    clar_fn_rtTextRelease((void*)cv___ret64);
+                    clar_fn_rtTextRelease((void*)cv___ret65);
                     rt_text * t12 = NULL;
                     t12 = clar_fn_fpExpr(cv_a0);
                     rt_text * t13 = NULL;
@@ -34351,15 +34408,15 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     rt_text * t14 = NULL;
                     t14 = (rt_text *)clar_fn_rtTextNew();
                     clar_fn_rtTextConcat((void*)t14, (void*)t13, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                    cv___ret64 = t14;
+                    cv___ret65 = t14;
                     clar_fn_rtTextRelease(t12);
                     clar_fn_rtTextRelease(t13);
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_s0);
-                    return cv___ret64;
+                    return cv___ret65;
                 } else {
                     if (cv_nm == clar_fn_IPeekL()) {
-                        clar_fn_rtTextRelease((void*)cv___ret64);
+                        clar_fn_rtTextRelease((void*)cv___ret65);
                         rt_text * t15 = NULL;
                         t15 = clar_fn_fpExpr(cv_a0);
                         rt_text * t16 = NULL;
@@ -34368,12 +34425,12 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t17 = NULL;
                         t17 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t17, (void*)t16, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret64 = t17;
+                        cv___ret65 = t17;
                         clar_fn_rtTextRelease(t15);
                         clar_fn_rtTextRelease(t16);
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
-                        return cv___ret64;
+                        return cv___ret65;
                     } else {
                         if (cv_nm == clar_fn_IPokeB()) {
                             rt_text * t18 = NULL;
@@ -34399,13 +34456,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease(t21);
                             clar_fn_rtTextRelease(t22);
                             clar_fn_rtTextRelease(t23);
-                            clar_fn_rtTextRelease((void*)cv___ret64);
+                            clar_fn_rtTextRelease((void*)cv___ret65);
                             rt_text * t24 = NULL;
                             t24 = clar_fn_toText(clar_lit_17);
-                            cv___ret64 = t24;
+                            cv___ret65 = t24;
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
-                            return cv___ret64;
+                            return cv___ret65;
                         } else {
                             if (cv_nm == clar_fn_IPokeW()) {
                                 rt_text * t25 = NULL;
@@ -34431,13 +34488,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease(t28);
                                 clar_fn_rtTextRelease(t29);
                                 clar_fn_rtTextRelease(t30);
-                                clar_fn_rtTextRelease((void*)cv___ret64);
+                                clar_fn_rtTextRelease((void*)cv___ret65);
                                 rt_text * t31 = NULL;
                                 t31 = clar_fn_toText(clar_lit_17);
-                                cv___ret64 = t31;
+                                cv___ret65 = t31;
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
-                                return cv___ret64;
+                                return cv___ret65;
                             } else {
                                 if (cv_nm == clar_fn_IPokeL()) {
                                     if (clar_fn_irtKind(clar_fn_irExprType(cv_a1)) == 15) {
@@ -34489,13 +34546,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease(t42);
                                         clar_fn_rtTextRelease(t43);
                                     }
-                                    clar_fn_rtTextRelease((void*)cv___ret64);
+                                    clar_fn_rtTextRelease((void*)cv___ret65);
                                     rt_text * t44 = NULL;
                                     t44 = clar_fn_toText(clar_lit_17);
-                                    cv___ret64 = t44;
+                                    cv___ret65 = t44;
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_s0);
-                                    return cv___ret64;
+                                    return cv___ret65;
                                 } else {
                                     if (cv_nm == clar_fn_IXRecStrRead()) {
                                         clar_fn_rtTextRelease((void*)cv___store102);
@@ -34568,12 +34625,12 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             clar_fn_rtTextRelease(t60);
                                             clar_fn_rtTextRelease(t61);
                                         }
-                                        clar_fn_rtTextRelease((void*)cv___ret64);
-                                        cv___ret64 = cv_t;
-                                        clar_fn_rtTextRetain((void*)cv___ret64);
+                                        clar_fn_rtTextRelease((void*)cv___ret65);
+                                        cv___ret65 = cv_t;
+                                        clar_fn_rtTextRetain((void*)cv___ret65);
                                         clar_fn_rtTextRelease((void*)cv_t);
                                         clar_fn_rtTextRelease((void*)cv_s0);
-                                        return cv___ret64;
+                                        return cv___ret65;
                                     } else {
                                         if (cv_nm == clar_fn_IXRecStrWrite()) {
                                             clar_fn_rtTextRelease((void*)cv___store103);
@@ -34648,13 +34705,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease(t77);
                                                 clar_fn_rtTextRelease(t78);
                                             }
-                                            clar_fn_rtTextRelease((void*)cv___ret64);
+                                            clar_fn_rtTextRelease((void*)cv___ret65);
                                             rt_text * t79 = NULL;
                                             t79 = clar_fn_toText(clar_lit_17);
-                                            cv___ret64 = t79;
+                                            cv___ret65 = t79;
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
-                                            return cv___ret64;
+                                            return cv___ret65;
                                         } else {
                                             if (cv_nm == clar_fn_IQuit()) {
                                                 rt_text * t80 = NULL;
@@ -34669,17 +34726,17 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease(t80);
                                                 clar_fn_rtTextRelease(t81);
                                                 clar_fn_rtTextRelease(t82);
-                                                clar_fn_rtTextRelease((void*)cv___ret64);
+                                                clar_fn_rtTextRelease((void*)cv___ret65);
                                                 rt_text * t83 = NULL;
                                                 t83 = clar_fn_toText(clar_lit_17);
-                                                cv___ret64 = t83;
+                                                cv___ret65 = t83;
                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                 clar_fn_rtTextRelease((void*)cv_s0);
-                                                return cv___ret64;
+                                                return cv___ret65;
                                             } else {
                                                 if (cv_nm == clar_fn_IFixMul()) {
                                                     if (cv_cpCorePorted) {
-                                                        clar_fn_rtTextRelease((void*)cv___ret64);
+                                                        clar_fn_rtTextRelease((void*)cv___ret65);
                                                         rt_text * t84 = NULL;
                                                         t84 = clar_fn_fpExpr(cv_a0);
                                                         rt_text * t85 = NULL;
@@ -34696,7 +34753,7 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         rt_text * t89 = NULL;
                                                         t89 = (rt_text *)clar_fn_rtTextNew();
                                                         clar_fn_rtTextConcat((void*)t89, (void*)t87, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                        cv___ret64 = t89;
+                                                        cv___ret65 = t89;
                                                         clar_fn_rtTextRelease(t84);
                                                         clar_fn_rtTextRelease(t85);
                                                         clar_fn_rtTextRelease(t86);
@@ -34704,9 +34761,9 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease(t88);
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
-                                                        return cv___ret64;
+                                                        return cv___ret65;
                                                     }
-                                                    clar_fn_rtTextRelease((void*)cv___ret64);
+                                                    clar_fn_rtTextRelease((void*)cv___ret65);
                                                     rt_text * t90 = NULL;
                                                     t90 = clar_fn_fpExpr(cv_a0);
                                                     rt_text * t91 = NULL;
@@ -34723,7 +34780,7 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     rt_text * t95 = NULL;
                                                     t95 = (rt_text *)clar_fn_rtTextNew();
                                                     clar_fn_rtTextConcat((void*)t95, (void*)t93, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                    cv___ret64 = t95;
+                                                    cv___ret65 = t95;
                                                     clar_fn_rtTextRelease(t90);
                                                     clar_fn_rtTextRelease(t91);
                                                     clar_fn_rtTextRelease(t92);
@@ -34731,11 +34788,11 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease(t94);
                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                     clar_fn_rtTextRelease((void*)cv_s0);
-                                                    return cv___ret64;
+                                                    return cv___ret65;
                                                 } else {
                                                     if (cv_nm == clar_fn_IFixDiv()) {
                                                         if (cv_cpCorePorted) {
-                                                            clar_fn_rtTextRelease((void*)cv___ret64);
+                                                            clar_fn_rtTextRelease((void*)cv___ret65);
                                                             rt_text * t96 = NULL;
                                                             t96 = clar_fn_fpExpr(cv_a0);
                                                             rt_text * t97 = NULL;
@@ -34752,7 +34809,7 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             rt_text * t101 = NULL;
                                                             t101 = (rt_text *)clar_fn_rtTextNew();
                                                             clar_fn_rtTextConcat((void*)t101, (void*)t99, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                            cv___ret64 = t101;
+                                                            cv___ret65 = t101;
                                                             clar_fn_rtTextRelease(t96);
                                                             clar_fn_rtTextRelease(t97);
                                                             clar_fn_rtTextRelease(t98);
@@ -34760,9 +34817,9 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             clar_fn_rtTextRelease(t100);
                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                             clar_fn_rtTextRelease((void*)cv_s0);
-                                                            return cv___ret64;
+                                                            return cv___ret65;
                                                         }
-                                                        clar_fn_rtTextRelease((void*)cv___ret64);
+                                                        clar_fn_rtTextRelease((void*)cv___ret65);
                                                         rt_text * t102 = NULL;
                                                         t102 = clar_fn_fpExpr(cv_a0);
                                                         rt_text * t103 = NULL;
@@ -34779,7 +34836,7 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         rt_text * t107 = NULL;
                                                         t107 = (rt_text *)clar_fn_rtTextNew();
                                                         clar_fn_rtTextConcat((void*)t107, (void*)t105, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                        cv___ret64 = t107;
+                                                        cv___ret65 = t107;
                                                         clar_fn_rtTextRelease(t102);
                                                         clar_fn_rtTextRelease(t103);
                                                         clar_fn_rtTextRelease(t104);
@@ -34787,7 +34844,7 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease(t106);
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
-                                                        return cv___ret64;
+                                                        return cv___ret65;
                                                     } else {
                                                         if ((cv_nm == clar_fn_IRetain()) || (cv_nm == clar_fn_IRelease())) {
                                                             clar_fn_rtTextRelease((void*)cv___store104);
@@ -34899,13 +34956,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                     }
                                                                 }
                                                             }
-                                                            clar_fn_rtTextRelease((void*)cv___ret64);
+                                                            clar_fn_rtTextRelease((void*)cv___ret65);
                                                             rt_text * t127 = NULL;
                                                             t127 = clar_fn_toText(clar_lit_17);
-                                                            cv___ret64 = t127;
+                                                            cv___ret65 = t127;
                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                             clar_fn_rtTextRelease((void*)cv_s0);
-                                                            return cv___ret64;
+                                                            return cv___ret65;
                                                         }
                                                     }
                                                 }
@@ -34921,13 +34978,13 @@ static rt_text * clar_fn_fpIntrCall1(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret64);
+    clar_fn_rtTextRelease((void*)cv___ret65);
     rt_text * t128 = NULL;
     t128 = clar_fn_toText(clar_lit_17);
-    cv___ret64 = t128;
+    cv___ret65 = t128;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_s0);
-    return cv___ret64;
+    return cv___ret65;
     return NULL;
 }
 
@@ -34948,8 +35005,8 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv___store107 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store108;
     cv___store108 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret65;
-    cv___ret65 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret66;
+    cv___ret66 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store109;
     cv___store109 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store110;
@@ -35059,13 +35116,13 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtTextRelease(t14);
             clar_fn_rtTextRelease(t15);
         }
-        clar_fn_rtTextRelease((void*)cv___ret65);
-        cv___ret65 = cv_t;
-        clar_fn_rtTextRetain((void*)cv___ret65);
+        clar_fn_rtTextRelease((void*)cv___ret66);
+        cv___ret66 = cv_t;
+        clar_fn_rtTextRetain((void*)cv___ret66);
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_s0);
         clar_fn_rtTextRelease((void*)cv_s1);
-        return cv___ret65;
+        return cv___ret66;
     } else {
         if (cv_nm == clar_fn_IStrConcatChar()) {
             clar_fn_rtTextRelease((void*)cv___store109);
@@ -35142,13 +35199,13 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_rtTextRelease(t29);
                 clar_fn_rtTextRelease(t30);
             }
-            clar_fn_rtTextRelease((void*)cv___ret65);
-            cv___ret65 = cv_t;
-            clar_fn_rtTextRetain((void*)cv___ret65);
+            clar_fn_rtTextRelease((void*)cv___ret66);
+            cv___ret66 = cv_t;
+            clar_fn_rtTextRetain((void*)cv___ret66);
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_s0);
             clar_fn_rtTextRelease((void*)cv_s1);
-            return cv___ret65;
+            return cv___ret66;
         } else {
             if (cv_nm == clar_fn_IStrPrependChar()) {
                 clar_fn_rtTextRelease((void*)cv___store112);
@@ -35225,17 +35282,17 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease(t44);
                     clar_fn_rtTextRelease(t45);
                 }
-                clar_fn_rtTextRelease((void*)cv___ret65);
-                cv___ret65 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret65);
+                clar_fn_rtTextRelease((void*)cv___ret66);
+                cv___ret66 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret66);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
                 clar_fn_rtTextRelease((void*)cv_s1);
-                return cv___ret65;
+                return cv___ret66;
             } else {
                 if (cv_nm == clar_fn_IStrCmp()) {
                     if (cv_cpStrPorted) {
-                        clar_fn_rtTextRelease((void*)cv___ret65);
+                        clar_fn_rtTextRelease((void*)cv___ret66);
                         rt_text * t46 = NULL;
                         t46 = clar_fn_fpStrAddr(cv_a0);
                         rt_text * t47 = NULL;
@@ -35252,7 +35309,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t51 = NULL;
                         t51 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t51, (void*)t49, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret65 = t51;
+                        cv___ret66 = t51;
                         clar_fn_rtTextRelease(t46);
                         clar_fn_rtTextRelease(t47);
                         clar_fn_rtTextRelease(t48);
@@ -35261,9 +35318,9 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
                         clar_fn_rtTextRelease((void*)cv_s1);
-                        return cv___ret65;
+                        return cv___ret66;
                     }
-                    clar_fn_rtTextRelease((void*)cv___ret65);
+                    clar_fn_rtTextRelease((void*)cv___ret66);
                     rt_text * t52 = NULL;
                     t52 = clar_fn_fpStrAddr(cv_a0);
                     rt_text * t53 = NULL;
@@ -35280,7 +35337,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     rt_text * t57 = NULL;
                     t57 = (rt_text *)clar_fn_rtTextNew();
                     clar_fn_rtTextConcat((void*)t57, (void*)t55, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                    cv___ret65 = t57;
+                    cv___ret66 = t57;
                     clar_fn_rtTextRelease(t52);
                     clar_fn_rtTextRelease(t53);
                     clar_fn_rtTextRelease(t54);
@@ -35289,11 +35346,11 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_s0);
                     clar_fn_rtTextRelease((void*)cv_s1);
-                    return cv___ret65;
+                    return cv___ret66;
                 } else {
                     if (cv_nm == clar_fn_IStrLen()) {
                         if (cv_cpStrPorted) {
-                            clar_fn_rtTextRelease((void*)cv___ret65);
+                            clar_fn_rtTextRelease((void*)cv___ret66);
                             rt_text * t58 = NULL;
                             t58 = clar_fn_fpStrAddr(cv_a0);
                             rt_text * t59 = NULL;
@@ -35302,15 +35359,15 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t60 = NULL;
                             t60 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t60, (void*)t59, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret65 = t60;
+                            cv___ret66 = t60;
                             clar_fn_rtTextRelease(t58);
                             clar_fn_rtTextRelease(t59);
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
                             clar_fn_rtTextRelease((void*)cv_s1);
-                            return cv___ret65;
+                            return cv___ret66;
                         }
-                        clar_fn_rtTextRelease((void*)cv___ret65);
+                        clar_fn_rtTextRelease((void*)cv___ret66);
                         rt_text * t61 = NULL;
                         t61 = clar_fn_fpStrAddr(cv_a0);
                         rt_text * t62 = NULL;
@@ -35319,17 +35376,17 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t63 = NULL;
                         t63 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t63, (void*)t62, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret65 = t63;
+                        cv___ret66 = t63;
                         clar_fn_rtTextRelease(t61);
                         clar_fn_rtTextRelease(t62);
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
                         clar_fn_rtTextRelease((void*)cv_s1);
-                        return cv___ret65;
+                        return cv___ret66;
                     } else {
                         if (cv_nm == clar_fn_IStrIndex()) {
                             if (cv_cpStrPorted) {
-                                clar_fn_rtTextRelease((void*)cv___ret65);
+                                clar_fn_rtTextRelease((void*)cv___ret66);
                                 rt_text * t64 = NULL;
                                 t64 = clar_fn_fpStrAddr(cv_a0);
                                 rt_text * t65 = NULL;
@@ -35346,7 +35403,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 rt_text * t69 = NULL;
                                 t69 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t69, (void*)t67, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                cv___ret65 = t69;
+                                cv___ret66 = t69;
                                 clar_fn_rtTextRelease(t64);
                                 clar_fn_rtTextRelease(t65);
                                 clar_fn_rtTextRelease(t66);
@@ -35355,9 +35412,9 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                return cv___ret65;
+                                return cv___ret66;
                             }
-                            clar_fn_rtTextRelease((void*)cv___ret65);
+                            clar_fn_rtTextRelease((void*)cv___ret66);
                             rt_text * t70 = NULL;
                             t70 = clar_fn_fpStrAddr(cv_a0);
                             rt_text * t71 = NULL;
@@ -35374,7 +35431,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t75 = NULL;
                             t75 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t75, (void*)t73, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                            cv___ret65 = t75;
+                            cv___ret66 = t75;
                             clar_fn_rtTextRelease(t70);
                             clar_fn_rtTextRelease(t71);
                             clar_fn_rtTextRelease(t72);
@@ -35383,7 +35440,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
                             clar_fn_rtTextRelease((void*)cv_s1);
-                            return cv___ret65;
+                            return cv___ret66;
                         } else {
                             if (cv_nm == clar_fn_IStrSetIndex()) {
                                 clar_fn_rtTextRelease((void*)cv___store115);
@@ -35459,14 +35516,14 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtTextRelease(t90);
                                     clar_fn_rtTextRelease(t91);
                                 }
-                                clar_fn_rtTextRelease((void*)cv___ret65);
+                                clar_fn_rtTextRelease((void*)cv___ret66);
                                 rt_text * t92 = NULL;
                                 t92 = clar_fn_toText(clar_lit_17);
-                                cv___ret65 = t92;
+                                cv___ret66 = t92;
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                return cv___ret65;
+                                return cv___ret66;
                             } else {
                                 if (cv_nm == clar_fn_IStrFromBytes()) {
                                     clar_fn_rtTextRelease((void*)cv___store117);
@@ -35584,14 +35641,14 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease(t119);
                                         clar_fn_rtTextRelease(t120);
                                     }
-                                    clar_fn_rtTextRelease((void*)cv___ret65);
+                                    clar_fn_rtTextRelease((void*)cv___ret66);
                                     rt_text * t121 = NULL;
                                     t121 = clar_fn_toText(clar_lit_17);
-                                    cv___ret65 = t121;
+                                    cv___ret66 = t121;
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_s0);
                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                    return cv___ret65;
+                                    return cv___ret66;
                                 } else {
                                     if (cv_nm == clar_fn_IStrToBytes()) {
                                         clar_fn_rtTextRelease((void*)cv___store119);
@@ -35610,7 +35667,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         cv___store120 = 0;
                                         cv_cap1 = clar_fn_irtN(clar_fn_irExprType(cv_a1));
                                         if (cv_cpStrPorted) {
-                                            clar_fn_rtTextRelease((void*)cv___ret65);
+                                            clar_fn_rtTextRelease((void*)cv___ret66);
                                             rt_text * t124 = NULL;
                                             t124 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcatSl((void*)t124, (void*)(const uint8_t*)&(clar_lit_1207), (void*)cv_s0);
@@ -35631,7 +35688,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             rt_text * t130 = NULL;
                                             t130 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcat((void*)t130, (void*)t128, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                            cv___ret65 = t130;
+                                            cv___ret66 = t130;
                                             clar_fn_rtTextRelease(t124);
                                             clar_fn_rtTextRelease(t125);
                                             clar_fn_rtTextRelease(t126);
@@ -35640,9 +35697,9 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                            return cv___ret65;
+                                            return cv___ret66;
                                         }
-                                        clar_fn_rtTextRelease((void*)cv___ret65);
+                                        clar_fn_rtTextRelease((void*)cv___ret66);
                                         rt_text * t131 = NULL;
                                         t131 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcatSl((void*)t131, (void*)(const uint8_t*)&(clar_lit_1208), (void*)cv_s0);
@@ -35663,7 +35720,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         rt_text * t137 = NULL;
                                         t137 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcat((void*)t137, (void*)t135, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                        cv___ret65 = t137;
+                                        cv___ret66 = t137;
                                         clar_fn_rtTextRelease(t131);
                                         clar_fn_rtTextRelease(t132);
                                         clar_fn_rtTextRelease(t133);
@@ -35672,7 +35729,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease((void*)cv_t);
                                         clar_fn_rtTextRelease((void*)cv_s0);
                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                        return cv___ret65;
+                                        return cv___ret66;
                                     } else {
                                         if (cv_nm == clar_fn_IStrCoerce()) {
                                             clar_fn_rtTextRelease((void*)cv___store121);
@@ -35746,13 +35803,13 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease(t152);
                                                 clar_fn_rtTextRelease(t153);
                                             }
-                                            clar_fn_rtTextRelease((void*)cv___ret65);
-                                            cv___ret65 = cv_t;
-                                            clar_fn_rtTextRetain((void*)cv___ret65);
+                                            clar_fn_rtTextRelease((void*)cv___ret66);
+                                            cv___ret66 = cv_t;
+                                            clar_fn_rtTextRetain((void*)cv___ret66);
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                            return cv___ret65;
+                                            return cv___ret66;
                                         } else {
                                             if (cv_nm == clar_fn_IStrSlice()) {
                                                 clar_fn_rtTextRelease((void*)cv___store123);
@@ -35851,17 +35908,17 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease(t173);
                                                     clar_fn_rtTextRelease(t174);
                                                 }
-                                                clar_fn_rtTextRelease((void*)cv___ret65);
-                                                cv___ret65 = cv_t;
-                                                clar_fn_rtTextRetain((void*)cv___ret65);
+                                                clar_fn_rtTextRelease((void*)cv___ret66);
+                                                cv___ret66 = cv_t;
+                                                clar_fn_rtTextRetain((void*)cv___ret66);
                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                 clar_fn_rtTextRelease((void*)cv_s0);
                                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                                return cv___ret65;
+                                                return cv___ret66;
                                             } else {
                                                 if (cv_nm == clar_fn_IStrIndexOfStr()) {
                                                     if (cv_cpStrPorted) {
-                                                        clar_fn_rtTextRelease((void*)cv___ret65);
+                                                        clar_fn_rtTextRelease((void*)cv___ret66);
                                                         rt_text * t175 = NULL;
                                                         t175 = clar_fn_fpStrAddr(cv_a0);
                                                         rt_text * t176 = NULL;
@@ -35878,7 +35935,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         rt_text * t180 = NULL;
                                                         t180 = (rt_text *)clar_fn_rtTextNew();
                                                         clar_fn_rtTextConcat((void*)t180, (void*)t178, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                        cv___ret65 = t180;
+                                                        cv___ret66 = t180;
                                                         clar_fn_rtTextRelease(t175);
                                                         clar_fn_rtTextRelease(t176);
                                                         clar_fn_rtTextRelease(t177);
@@ -35887,9 +35944,9 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
                                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                                        return cv___ret65;
+                                                        return cv___ret66;
                                                     }
-                                                    clar_fn_rtTextRelease((void*)cv___ret65);
+                                                    clar_fn_rtTextRelease((void*)cv___ret66);
                                                     rt_text * t181 = NULL;
                                                     t181 = clar_fn_fpStrAddr(cv_a0);
                                                     rt_text * t182 = NULL;
@@ -35906,7 +35963,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     rt_text * t186 = NULL;
                                                     t186 = (rt_text *)clar_fn_rtTextNew();
                                                     clar_fn_rtTextConcat((void*)t186, (void*)t184, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                    cv___ret65 = t186;
+                                                    cv___ret66 = t186;
                                                     clar_fn_rtTextRelease(t181);
                                                     clar_fn_rtTextRelease(t182);
                                                     clar_fn_rtTextRelease(t183);
@@ -35915,11 +35972,11 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                     clar_fn_rtTextRelease((void*)cv_s0);
                                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                                    return cv___ret65;
+                                                    return cv___ret66;
                                                 } else {
                                                     if (cv_nm == clar_fn_IStrIndexOfChar()) {
                                                         if (cv_cpStrPorted) {
-                                                            clar_fn_rtTextRelease((void*)cv___ret65);
+                                                            clar_fn_rtTextRelease((void*)cv___ret66);
                                                             rt_text * t187 = NULL;
                                                             t187 = clar_fn_fpStrAddr(cv_a0);
                                                             rt_text * t188 = NULL;
@@ -35936,7 +35993,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             rt_text * t192 = NULL;
                                                             t192 = (rt_text *)clar_fn_rtTextNew();
                                                             clar_fn_rtTextConcat((void*)t192, (void*)t190, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                            cv___ret65 = t192;
+                                                            cv___ret66 = t192;
                                                             clar_fn_rtTextRelease(t187);
                                                             clar_fn_rtTextRelease(t188);
                                                             clar_fn_rtTextRelease(t189);
@@ -35945,9 +36002,9 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                             clar_fn_rtTextRelease((void*)cv_s0);
                                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                                            return cv___ret65;
+                                                            return cv___ret66;
                                                         }
-                                                        clar_fn_rtTextRelease((void*)cv___ret65);
+                                                        clar_fn_rtTextRelease((void*)cv___ret66);
                                                         rt_text * t193 = NULL;
                                                         t193 = clar_fn_fpStrAddr(cv_a0);
                                                         rt_text * t194 = NULL;
@@ -35964,7 +36021,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         rt_text * t198 = NULL;
                                                         t198 = (rt_text *)clar_fn_rtTextNew();
                                                         clar_fn_rtTextConcat((void*)t198, (void*)t196, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                        cv___ret65 = t198;
+                                                        cv___ret66 = t198;
                                                         clar_fn_rtTextRelease(t193);
                                                         clar_fn_rtTextRelease(t194);
                                                         clar_fn_rtTextRelease(t195);
@@ -35973,7 +36030,7 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
                                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                                        return cv___ret65;
+                                                        return cv___ret66;
                                                     }
                                                 }
                                             }
@@ -35988,14 +36045,14 @@ static rt_text * clar_fn_fpIntrCall2(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret65);
+    clar_fn_rtTextRelease((void*)cv___ret66);
     rt_text * t199 = NULL;
     t199 = clar_fn_toText(clar_lit_17);
-    cv___ret65 = t199;
+    cv___ret66 = t199;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_s0);
     clar_fn_rtTextRelease((void*)cv_s1);
-    return cv___ret65;
+    return cv___ret66;
     return NULL;
 }
 
@@ -36008,8 +36065,8 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv_s1 = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_cap1;
     cv_cap1 = 0;
-    rt_text * cv___ret66;
-    cv___ret66 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret67;
+    cv___ret67 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store126;
     cv___store126 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store127;
@@ -36039,24 +36096,24 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     rt_text * cv___store139;
     cv___store139 = (rt_text *)clar_fn_rtTextNew();
     if (cv_nm == clar_fn_ITextCmp()) {
-        clar_fn_rtTextRelease((void*)cv___ret66);
+        clar_fn_rtTextRelease((void*)cv___ret67);
         rt_text * t1 = NULL;
         t1 = clar_fn_fpTextCmp(cv_a0, cv_a1);
-        cv___ret66 = t1;
+        cv___ret67 = t1;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_s0);
         clar_fn_rtTextRelease((void*)cv_s1);
-        return cv___ret66;
+        return cv___ret67;
     } else {
         if (cv_nm == clar_fn_ITextConcat()) {
-            clar_fn_rtTextRelease((void*)cv___ret66);
+            clar_fn_rtTextRelease((void*)cv___ret67);
             rt_text * t2 = NULL;
             t2 = clar_fn_fpTextConcat(cv_a0, cv_a1);
-            cv___ret66 = t2;
+            cv___ret67 = t2;
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_s0);
             clar_fn_rtTextRelease((void*)cv_s1);
-            return cv___ret66;
+            return cv___ret67;
         } else {
             if (cv_nm == clar_fn_ITextConcatSL()) {
                 clar_fn_rtTextRelease((void*)cv___store126);
@@ -36143,13 +36200,13 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease(t18);
                     clar_fn_rtTextRelease(t19);
                 }
-                clar_fn_rtTextRelease((void*)cv___ret66);
-                cv___ret66 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret66);
+                clar_fn_rtTextRelease((void*)cv___ret67);
+                cv___ret67 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret67);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
                 clar_fn_rtTextRelease((void*)cv_s1);
-                return cv___ret66;
+                return cv___ret67;
             } else {
                 if (cv_nm == clar_fn_ITextStore()) {
                     if (cv_cpTextPorted) {
@@ -36201,18 +36258,18 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease(t30);
                         clar_fn_rtTextRelease(t31);
                     }
-                    clar_fn_rtTextRelease((void*)cv___ret66);
+                    clar_fn_rtTextRelease((void*)cv___ret67);
                     rt_text * t32 = NULL;
                     t32 = clar_fn_toText(clar_lit_17);
-                    cv___ret66 = t32;
+                    cv___ret67 = t32;
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_s0);
                     clar_fn_rtTextRelease((void*)cv_s1);
-                    return cv___ret66;
+                    return cv___ret67;
                 } else {
                     if (cv_nm == clar_fn_ITextLen()) {
                         if (cv_cpTextPorted) {
-                            clar_fn_rtTextRelease((void*)cv___ret66);
+                            clar_fn_rtTextRelease((void*)cv___ret67);
                             rt_text * t33 = NULL;
                             t33 = clar_fn_fpExpr(cv_a0);
                             rt_text * t34 = NULL;
@@ -36221,15 +36278,15 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t35 = NULL;
                             t35 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t35, (void*)t34, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret66 = t35;
+                            cv___ret67 = t35;
                             clar_fn_rtTextRelease(t33);
                             clar_fn_rtTextRelease(t34);
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
                             clar_fn_rtTextRelease((void*)cv_s1);
-                            return cv___ret66;
+                            return cv___ret67;
                         }
-                        clar_fn_rtTextRelease((void*)cv___ret66);
+                        clar_fn_rtTextRelease((void*)cv___ret67);
                         rt_text * t36 = NULL;
                         t36 = clar_fn_fpExpr(cv_a0);
                         rt_text * t37 = NULL;
@@ -36238,17 +36295,17 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t38 = NULL;
                         t38 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t38, (void*)t37, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret66 = t38;
+                        cv___ret67 = t38;
                         clar_fn_rtTextRelease(t36);
                         clar_fn_rtTextRelease(t37);
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
                         clar_fn_rtTextRelease((void*)cv_s1);
-                        return cv___ret66;
+                        return cv___ret67;
                     } else {
                         if (cv_nm == clar_fn_ITextIndex()) {
                             if (cv_cpTextPorted) {
-                                clar_fn_rtTextRelease((void*)cv___ret66);
+                                clar_fn_rtTextRelease((void*)cv___ret67);
                                 rt_text * t39 = NULL;
                                 t39 = clar_fn_fpExpr(cv_a0);
                                 rt_text * t40 = NULL;
@@ -36265,7 +36322,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 rt_text * t44 = NULL;
                                 t44 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t44, (void*)t42, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                cv___ret66 = t44;
+                                cv___ret67 = t44;
                                 clar_fn_rtTextRelease(t39);
                                 clar_fn_rtTextRelease(t40);
                                 clar_fn_rtTextRelease(t41);
@@ -36274,9 +36331,9 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                return cv___ret66;
+                                return cv___ret67;
                             }
-                            clar_fn_rtTextRelease((void*)cv___ret66);
+                            clar_fn_rtTextRelease((void*)cv___ret67);
                             rt_text * t45 = NULL;
                             t45 = clar_fn_fpExpr(cv_a0);
                             rt_text * t46 = NULL;
@@ -36293,7 +36350,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t50 = NULL;
                             t50 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t50, (void*)t48, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                            cv___ret66 = t50;
+                            cv___ret67 = t50;
                             clar_fn_rtTextRelease(t45);
                             clar_fn_rtTextRelease(t46);
                             clar_fn_rtTextRelease(t47);
@@ -36302,7 +36359,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
                             clar_fn_rtTextRelease((void*)cv_s1);
-                            return cv___ret66;
+                            return cv___ret67;
                         } else {
                             if (cv_nm == clar_fn_ITextSetIndex()) {
                                 clar_fn_rtTextRelease((void*)cv___store129);
@@ -36378,14 +36435,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtTextRelease(t65);
                                     clar_fn_rtTextRelease(t66);
                                 }
-                                clar_fn_rtTextRelease((void*)cv___ret66);
+                                clar_fn_rtTextRelease((void*)cv___ret67);
                                 rt_text * t67 = NULL;
                                 t67 = clar_fn_toText(clar_lit_17);
-                                cv___ret66 = t67;
+                                cv___ret67 = t67;
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                return cv___ret66;
+                                return cv___ret67;
                             } else {
                                 if (cv_nm == clar_fn_ITextFromBytes()) {
                                     clar_fn_rtTextRelease((void*)cv___store131);
@@ -36482,14 +36539,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease(t88);
                                         clar_fn_rtTextRelease(t89);
                                     }
-                                    clar_fn_rtTextRelease((void*)cv___ret66);
+                                    clar_fn_rtTextRelease((void*)cv___ret67);
                                     rt_text * t90 = NULL;
                                     t90 = clar_fn_toText(clar_lit_17);
-                                    cv___ret66 = t90;
+                                    cv___ret67 = t90;
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_s0);
                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                    return cv___ret66;
+                                    return cv___ret67;
                                 } else {
                                     if (cv_nm == clar_fn_ITextToBytes()) {
                                         clar_fn_rtTextRelease((void*)cv___store133);
@@ -36508,7 +36565,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         cv___store134 = 0;
                                         cv_cap1 = clar_fn_irtN(clar_fn_irExprType(cv_a1));
                                         if (cv_cpTextPorted) {
-                                            clar_fn_rtTextRelease((void*)cv___ret66);
+                                            clar_fn_rtTextRelease((void*)cv___ret67);
                                             rt_text * t93 = NULL;
                                             t93 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcatSl((void*)t93, (void*)(const uint8_t*)&(clar_lit_1228), (void*)cv_s0);
@@ -36529,7 +36586,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             rt_text * t99 = NULL;
                                             t99 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcat((void*)t99, (void*)t97, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                            cv___ret66 = t99;
+                                            cv___ret67 = t99;
                                             clar_fn_rtTextRelease(t93);
                                             clar_fn_rtTextRelease(t94);
                                             clar_fn_rtTextRelease(t95);
@@ -36538,9 +36595,9 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                            return cv___ret66;
+                                            return cv___ret67;
                                         }
-                                        clar_fn_rtTextRelease((void*)cv___ret66);
+                                        clar_fn_rtTextRelease((void*)cv___ret67);
                                         rt_text * t100 = NULL;
                                         t100 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcatSl((void*)t100, (void*)(const uint8_t*)&(clar_lit_1229), (void*)cv_s0);
@@ -36561,7 +36618,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         rt_text * t106 = NULL;
                                         t106 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcat((void*)t106, (void*)t104, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                        cv___ret66 = t106;
+                                        cv___ret67 = t106;
                                         clar_fn_rtTextRelease(t100);
                                         clar_fn_rtTextRelease(t101);
                                         clar_fn_rtTextRelease(t102);
@@ -36570,7 +36627,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease((void*)cv_t);
                                         clar_fn_rtTextRelease((void*)cv_s0);
                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                        return cv___ret66;
+                                        return cv___ret67;
                                     } else {
                                         if (cv_nm == clar_fn_ITextSlice()) {
                                             clar_fn_rtTextRelease((void*)cv___store135);
@@ -36669,17 +36726,17 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease(t126);
                                                 clar_fn_rtTextRelease(t127);
                                             }
-                                            clar_fn_rtTextRelease((void*)cv___ret66);
-                                            cv___ret66 = cv_t;
-                                            clar_fn_rtTextRetain((void*)cv___ret66);
+                                            clar_fn_rtTextRelease((void*)cv___ret67);
+                                            cv___ret67 = cv_t;
+                                            clar_fn_rtTextRetain((void*)cv___ret67);
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                            return cv___ret66;
+                                            return cv___ret67;
                                         } else {
                                             if (cv_nm == clar_fn_ITextIndexOfStr()) {
                                                 if (cv_cpTextPorted) {
-                                                    clar_fn_rtTextRelease((void*)cv___ret66);
+                                                    clar_fn_rtTextRelease((void*)cv___ret67);
                                                     rt_text * t128 = NULL;
                                                     t128 = clar_fn_fpExpr(cv_a0);
                                                     rt_text * t129 = NULL;
@@ -36696,7 +36753,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     rt_text * t133 = NULL;
                                                     t133 = (rt_text *)clar_fn_rtTextNew();
                                                     clar_fn_rtTextConcat((void*)t133, (void*)t131, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                    cv___ret66 = t133;
+                                                    cv___ret67 = t133;
                                                     clar_fn_rtTextRelease(t128);
                                                     clar_fn_rtTextRelease(t129);
                                                     clar_fn_rtTextRelease(t130);
@@ -36705,9 +36762,9 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                     clar_fn_rtTextRelease((void*)cv_s0);
                                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                                    return cv___ret66;
+                                                    return cv___ret67;
                                                 }
-                                                clar_fn_rtTextRelease((void*)cv___ret66);
+                                                clar_fn_rtTextRelease((void*)cv___ret67);
                                                 rt_text * t134 = NULL;
                                                 t134 = clar_fn_fpExpr(cv_a0);
                                                 rt_text * t135 = NULL;
@@ -36724,7 +36781,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 rt_text * t139 = NULL;
                                                 t139 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextConcat((void*)t139, (void*)t137, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                cv___ret66 = t139;
+                                                cv___ret67 = t139;
                                                 clar_fn_rtTextRelease(t134);
                                                 clar_fn_rtTextRelease(t135);
                                                 clar_fn_rtTextRelease(t136);
@@ -36733,11 +36790,11 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                 clar_fn_rtTextRelease((void*)cv_s0);
                                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                                return cv___ret66;
+                                                return cv___ret67;
                                             } else {
                                                 if (cv_nm == clar_fn_ITextIndexOfChar()) {
                                                     if (cv_cpTextPorted) {
-                                                        clar_fn_rtTextRelease((void*)cv___ret66);
+                                                        clar_fn_rtTextRelease((void*)cv___ret67);
                                                         rt_text * t140 = NULL;
                                                         t140 = clar_fn_fpExpr(cv_a0);
                                                         rt_text * t141 = NULL;
@@ -36754,7 +36811,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         rt_text * t145 = NULL;
                                                         t145 = (rt_text *)clar_fn_rtTextNew();
                                                         clar_fn_rtTextConcat((void*)t145, (void*)t143, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                        cv___ret66 = t145;
+                                                        cv___ret67 = t145;
                                                         clar_fn_rtTextRelease(t140);
                                                         clar_fn_rtTextRelease(t141);
                                                         clar_fn_rtTextRelease(t142);
@@ -36763,9 +36820,9 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
                                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                                        return cv___ret66;
+                                                        return cv___ret67;
                                                     }
-                                                    clar_fn_rtTextRelease((void*)cv___ret66);
+                                                    clar_fn_rtTextRelease((void*)cv___ret67);
                                                     rt_text * t146 = NULL;
                                                     t146 = clar_fn_fpExpr(cv_a0);
                                                     rt_text * t147 = NULL;
@@ -36782,7 +36839,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     rt_text * t151 = NULL;
                                                     t151 = (rt_text *)clar_fn_rtTextNew();
                                                     clar_fn_rtTextConcat((void*)t151, (void*)t149, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                    cv___ret66 = t151;
+                                                    cv___ret67 = t151;
                                                     clar_fn_rtTextRelease(t146);
                                                     clar_fn_rtTextRelease(t147);
                                                     clar_fn_rtTextRelease(t148);
@@ -36791,7 +36848,7 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                     clar_fn_rtTextRelease((void*)cv_s0);
                                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                                    return cv___ret66;
+                                                    return cv___ret67;
                                                 } else {
                                                     if (cv_nm == clar_fn_ITextAppendStr()) {
                                                         if (cv_cpTextPorted) {
@@ -36843,14 +36900,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             clar_fn_rtTextRelease(t162);
                                                             clar_fn_rtTextRelease(t163);
                                                         }
-                                                        clar_fn_rtTextRelease((void*)cv___ret66);
+                                                        clar_fn_rtTextRelease((void*)cv___ret67);
                                                         rt_text * t164 = NULL;
                                                         t164 = clar_fn_toText(clar_lit_17);
-                                                        cv___ret66 = t164;
+                                                        cv___ret67 = t164;
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_s0);
                                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                                        return cv___ret66;
+                                                        return cv___ret67;
                                                     } else {
                                                         if (cv_nm == clar_fn_ITextAppendChar()) {
                                                             if (cv_cpTextPorted) {
@@ -36902,14 +36959,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                 clar_fn_rtTextRelease(t175);
                                                                 clar_fn_rtTextRelease(t176);
                                                             }
-                                                            clar_fn_rtTextRelease((void*)cv___ret66);
+                                                            clar_fn_rtTextRelease((void*)cv___ret67);
                                                             rt_text * t177 = NULL;
                                                             t177 = clar_fn_toText(clar_lit_17);
-                                                            cv___ret66 = t177;
+                                                            cv___ret67 = t177;
                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                             clar_fn_rtTextRelease((void*)cv_s0);
                                                             clar_fn_rtTextRelease((void*)cv_s1);
-                                                            return cv___ret66;
+                                                            return cv___ret67;
                                                         } else {
                                                             if (cv_nm == clar_fn_ITextAppendText()) {
                                                                 if (cv_cpTextPorted) {
@@ -36961,14 +37018,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                     clar_fn_rtTextRelease(t188);
                                                                     clar_fn_rtTextRelease(t189);
                                                                 }
-                                                                clar_fn_rtTextRelease((void*)cv___ret66);
+                                                                clar_fn_rtTextRelease((void*)cv___ret67);
                                                                 rt_text * t190 = NULL;
                                                                 t190 = clar_fn_toText(clar_lit_17);
-                                                                cv___ret66 = t190;
+                                                                cv___ret67 = t190;
                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                 clar_fn_rtTextRelease((void*)cv_s0);
                                                                 clar_fn_rtTextRelease((void*)cv_s1);
-                                                                return cv___ret66;
+                                                                return cv___ret67;
                                                             } else {
                                                                 if (cv_nm == clar_fn_ITextOfStr()) {
                                                                     clar_fn_rtTextRelease((void*)cv___store138);
@@ -37032,13 +37089,13 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                         clar_fn_rtTextRelease(t201);
                                                                         clar_fn_rtTextRelease(t202);
                                                                     }
-                                                                    clar_fn_rtTextRelease((void*)cv___ret66);
-                                                                    cv___ret66 = cv_t;
-                                                                    clar_fn_rtTextRetain((void*)cv___ret66);
+                                                                    clar_fn_rtTextRelease((void*)cv___ret67);
+                                                                    cv___ret67 = cv_t;
+                                                                    clar_fn_rtTextRetain((void*)cv___ret67);
                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                     clar_fn_rtTextRelease((void*)cv_s0);
                                                                     clar_fn_rtTextRelease((void*)cv_s1);
-                                                                    return cv___ret66;
+                                                                    return cv___ret67;
                                                                 } else {
                                                                     if (cv_nm == clar_fn_ITextFreeVar()) {
                                                                         if (cv_cpTextArcPorted) {
@@ -37068,14 +37125,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                             clar_fn_rtTextRelease(t207);
                                                                             clar_fn_rtTextRelease(t208);
                                                                         }
-                                                                        clar_fn_rtTextRelease((void*)cv___ret66);
+                                                                        clar_fn_rtTextRelease((void*)cv___ret67);
                                                                         rt_text * t209 = NULL;
                                                                         t209 = clar_fn_toText(clar_lit_17);
-                                                                        cv___ret66 = t209;
+                                                                        cv___ret67 = t209;
                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                         clar_fn_rtTextRelease((void*)cv_s0);
                                                                         clar_fn_rtTextRelease((void*)cv_s1);
-                                                                        return cv___ret66;
+                                                                        return cv___ret67;
                                                                     }
                                                                 }
                                                             }
@@ -37094,14 +37151,14 @@ static rt_text * clar_fn_fpIntrCall3(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret66);
+    clar_fn_rtTextRelease((void*)cv___ret67);
     rt_text * t210 = NULL;
     t210 = clar_fn_toText(clar_lit_17);
-    cv___ret66 = t210;
+    cv___ret67 = t210;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_s0);
     clar_fn_rtTextRelease((void*)cv_s1);
-    return cv___ret66;
+    return cv___ret67;
     return NULL;
 }
 
@@ -37130,8 +37187,8 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv___store140 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store141;
     cv___store141 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret67;
-    cv___ret67 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret68;
+    cv___ret68 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store142;
     cv___store142 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store143;
@@ -37230,10 +37287,10 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtTextRelease(t11);
             clar_fn_rtTextRelease(t12);
         }
-        clar_fn_rtTextRelease((void*)cv___ret67);
+        clar_fn_rtTextRelease((void*)cv___ret68);
         rt_text * t13 = NULL;
         t13 = clar_fn_toText(clar_lit_17);
-        cv___ret67 = t13;
+        cv___ret68 = t13;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_s0);
         clar_fn_rtTextRelease((void*)cv_l);
@@ -37241,7 +37298,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         clar_fn_rtTextRelease((void*)cv_freeVarBuf);
         clar_fn_rtTextRelease((void*)cv_old);
         clar_fn_rtTextRelease((void*)cv_ref);
-        return cv___ret67;
+        return cv___ret68;
     } else {
         if ((cv_nm == clar_fn_IListPop()) || (cv_nm == clar_fn_IListShift())) {
             clar_fn_rtTextRelease((void*)cv___store142);
@@ -37311,9 +37368,9 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease(t24);
                     clar_fn_rtTextRelease(t25);
                 }
-                clar_fn_rtTextRelease((void*)cv___ret67);
-                cv___ret67 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret67);
+                clar_fn_rtTextRelease((void*)cv___ret68);
+                cv___ret68 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret68);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
                 clar_fn_rtTextRelease((void*)cv_l);
@@ -37321,7 +37378,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                 clar_fn_rtTextRelease((void*)cv_old);
                 clar_fn_rtTextRelease((void*)cv_ref);
-                return cv___ret67;
+                return cv___ret68;
             }
             clar_fn_rtTextRelease((void*)cv___store144);
             rt_text * t26 = NULL;
@@ -37372,9 +37429,9 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_rtTextRelease(t36);
             }
             clar_fn_fpHandoff(cv_t);
-            clar_fn_rtTextRelease((void*)cv___ret67);
-            cv___ret67 = cv_t;
-            clar_fn_rtTextRetain((void*)cv___ret67);
+            clar_fn_rtTextRelease((void*)cv___ret68);
+            cv___ret68 = cv_t;
+            clar_fn_rtTextRetain((void*)cv___ret68);
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_s0);
             clar_fn_rtTextRelease((void*)cv_l);
@@ -37382,7 +37439,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtTextRelease((void*)cv_freeVarBuf);
             clar_fn_rtTextRelease((void*)cv_old);
             clar_fn_rtTextRelease((void*)cv_ref);
-            return cv___ret67;
+            return cv___ret68;
         } else {
             if ((cv_nm == clar_fn_IListFirst()) || (cv_nm == clar_fn_IListLast())) {
                 clar_fn_rtTextRelease((void*)cv___store145);
@@ -37551,9 +37608,9 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease(t69);
                     }
                 }
-                clar_fn_rtTextRelease((void*)cv___ret67);
-                cv___ret67 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret67);
+                clar_fn_rtTextRelease((void*)cv___ret68);
+                cv___ret68 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret68);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
                 clar_fn_rtTextRelease((void*)cv_l);
@@ -37561,7 +37618,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                 clar_fn_rtTextRelease((void*)cv_old);
                 clar_fn_rtTextRelease((void*)cv_ref);
-                return cv___ret67;
+                return cv___ret68;
             } else {
                 if (cv_nm == clar_fn_IListRemove()) {
                     clar_fn_rtTextRelease((void*)cv___store148);
@@ -37659,10 +37716,10 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease(t87);
                         clar_fn_rtTextRelease(t88);
                     }
-                    clar_fn_rtTextRelease((void*)cv___ret67);
+                    clar_fn_rtTextRelease((void*)cv___ret68);
                     rt_text * t89 = NULL;
                     t89 = clar_fn_toText(clar_lit_17);
-                    cv___ret67 = t89;
+                    cv___ret68 = t89;
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_s0);
                     clar_fn_rtTextRelease((void*)cv_l);
@@ -37670,7 +37727,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                     clar_fn_rtTextRelease((void*)cv_old);
                     clar_fn_rtTextRelease((void*)cv_ref);
-                    return cv___ret67;
+                    return cv___ret68;
                 } else {
                     if ((cv_nm == clar_fn_IListSet()) || (cv_nm == clar_fn_IListSetRetain())) {
                         clar_fn_rtTextRelease((void*)cv___store151);
@@ -37761,10 +37818,10 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease(t104);
                         clar_fn_rtTextRelease(t105);
                         clar_fn_rtTextRelease(t106);
-                        clar_fn_rtTextRelease((void*)cv___ret67);
+                        clar_fn_rtTextRelease((void*)cv___ret68);
                         rt_text * t107 = NULL;
                         t107 = clar_fn_toText(clar_lit_17);
-                        cv___ret67 = t107;
+                        cv___ret68 = t107;
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
                         clar_fn_rtTextRelease((void*)cv_l);
@@ -37772,11 +37829,11 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                         clar_fn_rtTextRelease((void*)cv_old);
                         clar_fn_rtTextRelease((void*)cv_ref);
-                        return cv___ret67;
+                        return cv___ret68;
                     } else {
                         if (cv_nm == clar_fn_IListCount()) {
                             if (cv_cpListPorted) {
-                                clar_fn_rtTextRelease((void*)cv___ret67);
+                                clar_fn_rtTextRelease((void*)cv___ret68);
                                 rt_text * t108 = NULL;
                                 t108 = clar_fn_fpExpr(cv_a0);
                                 rt_text * t109 = NULL;
@@ -37785,7 +37842,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 rt_text * t110 = NULL;
                                 t110 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t110, (void*)t109, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                cv___ret67 = t110;
+                                cv___ret68 = t110;
                                 clar_fn_rtTextRelease(t108);
                                 clar_fn_rtTextRelease(t109);
                                 clar_fn_rtTextRelease((void*)cv_t);
@@ -37795,9 +37852,9 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                                 clar_fn_rtTextRelease((void*)cv_old);
                                 clar_fn_rtTextRelease((void*)cv_ref);
-                                return cv___ret67;
+                                return cv___ret68;
                             }
-                            clar_fn_rtTextRelease((void*)cv___ret67);
+                            clar_fn_rtTextRelease((void*)cv___ret68);
                             rt_text * t111 = NULL;
                             t111 = clar_fn_fpExpr(cv_a0);
                             rt_text * t112 = NULL;
@@ -37806,7 +37863,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t113 = NULL;
                             t113 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t113, (void*)t112, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret67 = t113;
+                            cv___ret68 = t113;
                             clar_fn_rtTextRelease(t111);
                             clar_fn_rtTextRelease(t112);
                             clar_fn_rtTextRelease((void*)cv_t);
@@ -37816,7 +37873,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                             clar_fn_rtTextRelease((void*)cv_old);
                             clar_fn_rtTextRelease((void*)cv_ref);
-                            return cv___ret67;
+                            return cv___ret68;
                         } else {
                             if (cv_nm == clar_fn_IListFreeVar()) {
                                 clar_fn_rtTextRelease((void*)cv___store156);
@@ -37833,10 +37890,10 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtStrConcat((void*)&t116, (void*)(const uint8_t*)&(clar_lit_1087), (void*)(const uint8_t*)&(t115));
                                 clar_fn_cpEmitRelease(cv_freeVarBuf, t116, clar_fn_irExprType(cv_a0));
                                 clar_fn_fpEmit(cv_freeVarBuf);
-                                clar_fn_rtTextRelease((void*)cv___ret67);
+                                clar_fn_rtTextRelease((void*)cv___ret68);
                                 rt_text * t117 = NULL;
                                 t117 = clar_fn_toText(clar_lit_17);
-                                cv___ret67 = t117;
+                                cv___ret68 = t117;
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_l);
@@ -37844,7 +37901,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
                                 clar_fn_rtTextRelease((void*)cv_old);
                                 clar_fn_rtTextRelease((void*)cv_ref);
-                                return cv___ret67;
+                                return cv___ret68;
                             }
                         }
                     }
@@ -37853,10 +37910,10 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret67);
+    clar_fn_rtTextRelease((void*)cv___ret68);
     rt_text * t118 = NULL;
     t118 = clar_fn_toText(clar_lit_17);
-    cv___ret67 = t118;
+    cv___ret68 = t118;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_s0);
     clar_fn_rtTextRelease((void*)cv_l);
@@ -37864,7 +37921,7 @@ static rt_text * clar_fn_fpIntrCall4(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
     clar_fn_rtTextRelease((void*)cv_old);
     clar_fn_rtTextRelease((void*)cv_ref);
-    return cv___ret67;
+    return cv___ret68;
     return NULL;
 }
 
@@ -37887,8 +37944,8 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv___store158 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store159;
     cv___store159 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret68;
-    cv___ret68 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret69;
+    cv___ret69 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store160;
     cv___store160 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store161;
@@ -38005,17 +38062,17 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtTextRelease(t14);
             clar_fn_rtTextRelease(t15);
         }
-        clar_fn_rtTextRelease((void*)cv___ret68);
+        clar_fn_rtTextRelease((void*)cv___ret69);
         rt_text * t16 = NULL;
         t16 = clar_fn_toText(clar_lit_17);
-        cv___ret68 = t16;
+        cv___ret69 = t16;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_v);
         clar_fn_rtTextRelease((void*)cv_m);
         clar_fn_rtTextRelease((void*)cv_k);
         clar_fn_rtTextRelease((void*)cv_dv);
         clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-        return cv___ret68;
+        return cv___ret69;
     } else {
         if (cv_nm == clar_fn_IMapGet()) {
             clar_fn_rtTextRelease((void*)cv___store160);
@@ -38204,16 +38261,16 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease(t54);
                 }
             }
-            clar_fn_rtTextRelease((void*)cv___ret68);
-            cv___ret68 = cv_t;
-            clar_fn_rtTextRetain((void*)cv___ret68);
+            clar_fn_rtTextRelease((void*)cv___ret69);
+            cv___ret69 = cv_t;
+            clar_fn_rtTextRetain((void*)cv___ret69);
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_v);
             clar_fn_rtTextRelease((void*)cv_m);
             clar_fn_rtTextRelease((void*)cv_k);
             clar_fn_rtTextRelease((void*)cv_dv);
             clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-            return cv___ret68;
+            return cv___ret69;
         } else {
             if (cv_nm == clar_fn_IMapGetDv()) {
                 clar_fn_rtTextRelease((void*)cv___store164);
@@ -38436,16 +38493,16 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease(t99);
                     }
                 }
-                clar_fn_rtTextRelease((void*)cv___ret68);
-                cv___ret68 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret68);
+                clar_fn_rtTextRelease((void*)cv___ret69);
+                cv___ret69 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret69);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_v);
                 clar_fn_rtTextRelease((void*)cv_m);
                 clar_fn_rtTextRelease((void*)cv_k);
                 clar_fn_rtTextRelease((void*)cv_dv);
                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                return cv___ret68;
+                return cv___ret69;
             } else {
                 if (cv_nm == clar_fn_IMapGetDvBirth()) {
                     clar_fn_rtTextRelease((void*)cv___store169);
@@ -38780,20 +38837,20 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease(t172);
                         }
                     }
-                    clar_fn_rtTextRelease((void*)cv___ret68);
-                    cv___ret68 = cv_t;
-                    clar_fn_rtTextRetain((void*)cv___ret68);
+                    clar_fn_rtTextRelease((void*)cv___ret69);
+                    cv___ret69 = cv_t;
+                    clar_fn_rtTextRetain((void*)cv___ret69);
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_v);
                     clar_fn_rtTextRelease((void*)cv_m);
                     clar_fn_rtTextRelease((void*)cv_k);
                     clar_fn_rtTextRelease((void*)cv_dv);
                     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                    return cv___ret68;
+                    return cv___ret69;
                 } else {
                     if (cv_nm == clar_fn_IMapHas()) {
                         if (cv_cpMapPorted) {
-                            clar_fn_rtTextRelease((void*)cv___ret68);
+                            clar_fn_rtTextRelease((void*)cv___ret69);
                             rt_text * t173 = NULL;
                             t173 = clar_fn_fpExpr(cv_a0);
                             rt_text * t174 = NULL;
@@ -38810,7 +38867,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t178 = NULL;
                             t178 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t178, (void*)t176, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret68 = t178;
+                            cv___ret69 = t178;
                             clar_fn_rtTextRelease(t173);
                             clar_fn_rtTextRelease(t174);
                             clar_fn_rtTextRelease(t175);
@@ -38822,9 +38879,9 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease((void*)cv_k);
                             clar_fn_rtTextRelease((void*)cv_dv);
                             clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                            return cv___ret68;
+                            return cv___ret69;
                         }
-                        clar_fn_rtTextRelease((void*)cv___ret68);
+                        clar_fn_rtTextRelease((void*)cv___ret69);
                         rt_text * t179 = NULL;
                         t179 = clar_fn_fpExpr(cv_a0);
                         rt_text * t180 = NULL;
@@ -38841,7 +38898,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t184 = NULL;
                         t184 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t184, (void*)t182, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret68 = t184;
+                        cv___ret69 = t184;
                         clar_fn_rtTextRelease(t179);
                         clar_fn_rtTextRelease(t180);
                         clar_fn_rtTextRelease(t181);
@@ -38853,7 +38910,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease((void*)cv_k);
                         clar_fn_rtTextRelease((void*)cv_dv);
                         clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                        return cv___ret68;
+                        return cv___ret69;
                     } else {
                         if (cv_nm == clar_fn_IMapRemove()) {
                             clar_fn_rtTextRelease((void*)cv___store174);
@@ -38910,21 +38967,21 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease(t193);
                                 clar_fn_rtTextRelease(t194);
                             }
-                            clar_fn_rtTextRelease((void*)cv___ret68);
+                            clar_fn_rtTextRelease((void*)cv___ret69);
                             rt_text * t195 = NULL;
                             t195 = clar_fn_toText(clar_lit_17);
-                            cv___ret68 = t195;
+                            cv___ret69 = t195;
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_v);
                             clar_fn_rtTextRelease((void*)cv_m);
                             clar_fn_rtTextRelease((void*)cv_k);
                             clar_fn_rtTextRelease((void*)cv_dv);
                             clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                            return cv___ret68;
+                            return cv___ret69;
                         } else {
                             if (cv_nm == clar_fn_IMapCount()) {
                                 if (cv_cpMapPorted) {
-                                    clar_fn_rtTextRelease((void*)cv___ret68);
+                                    clar_fn_rtTextRelease((void*)cv___ret69);
                                     rt_text * t196 = NULL;
                                     t196 = clar_fn_fpExpr(cv_a0);
                                     rt_text * t197 = NULL;
@@ -38933,7 +38990,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     rt_text * t198 = NULL;
                                     t198 = (rt_text *)clar_fn_rtTextNew();
                                     clar_fn_rtTextConcat((void*)t198, (void*)t197, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                    cv___ret68 = t198;
+                                    cv___ret69 = t198;
                                     clar_fn_rtTextRelease(t196);
                                     clar_fn_rtTextRelease(t197);
                                     clar_fn_rtTextRelease((void*)cv_t);
@@ -38942,9 +38999,9 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtTextRelease((void*)cv_k);
                                     clar_fn_rtTextRelease((void*)cv_dv);
                                     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                                    return cv___ret68;
+                                    return cv___ret69;
                                 }
-                                clar_fn_rtTextRelease((void*)cv___ret68);
+                                clar_fn_rtTextRelease((void*)cv___ret69);
                                 rt_text * t199 = NULL;
                                 t199 = clar_fn_fpExpr(cv_a0);
                                 rt_text * t200 = NULL;
@@ -38953,7 +39010,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 rt_text * t201 = NULL;
                                 t201 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t201, (void*)t200, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                cv___ret68 = t201;
+                                cv___ret69 = t201;
                                 clar_fn_rtTextRelease(t199);
                                 clar_fn_rtTextRelease(t200);
                                 clar_fn_rtTextRelease((void*)cv_t);
@@ -38962,7 +39019,7 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_k);
                                 clar_fn_rtTextRelease((void*)cv_dv);
                                 clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                                return cv___ret68;
+                                return cv___ret69;
                             } else {
                                 if (cv_nm == clar_fn_IMapFreeVar()) {
                                     clar_fn_rtTextRelease((void*)cv___store176);
@@ -38979,17 +39036,17 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtStrConcat((void*)&t204, (void*)(const uint8_t*)&(clar_lit_1087), (void*)(const uint8_t*)&(t203));
                                     clar_fn_cpEmitRelease(cv_freeVarBuf, t204, clar_fn_irExprType(cv_a0));
                                     clar_fn_fpEmit(cv_freeVarBuf);
-                                    clar_fn_rtTextRelease((void*)cv___ret68);
+                                    clar_fn_rtTextRelease((void*)cv___ret69);
                                     rt_text * t205 = NULL;
                                     t205 = clar_fn_toText(clar_lit_17);
-                                    cv___ret68 = t205;
+                                    cv___ret69 = t205;
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_v);
                                     clar_fn_rtTextRelease((void*)cv_m);
                                     clar_fn_rtTextRelease((void*)cv_k);
                                     clar_fn_rtTextRelease((void*)cv_dv);
                                     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-                                    return cv___ret68;
+                                    return cv___ret69;
                                 }
                             }
                         }
@@ -38999,17 +39056,17 @@ static rt_text * clar_fn_fpIntrCall5(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret68);
+    clar_fn_rtTextRelease((void*)cv___ret69);
     rt_text * t206 = NULL;
     t206 = clar_fn_toText(clar_lit_17);
-    cv___ret68 = t206;
+    cv___ret69 = t206;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_v);
     clar_fn_rtTextRelease((void*)cv_m);
     clar_fn_rtTextRelease((void*)cv_k);
     clar_fn_rtTextRelease((void*)cv_dv);
     clar_fn_rtTextRelease((void*)cv_freeVarBuf);
-    return cv___ret68;
+    return cv___ret69;
     return NULL;
 }
 
@@ -39030,8 +39087,8 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv_container = (clar_str_255){0};
     rt_text * cv_dataExpr;
     cv_dataExpr = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret69;
-    cv___ret69 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret70;
+    cv___ret70 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store177;
     cv___store177 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store178;
@@ -39047,14 +39104,14 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     rt_text * cv___store183;
     cv___store183 = (rt_text *)clar_fn_rtTextNew();
     if (cv_nm == clar_fn_ILastErrCode()) {
-        clar_fn_rtTextRelease((void*)cv___ret69);
+        clar_fn_rtTextRelease((void*)cv___ret70);
         rt_text * t1 = NULL;
         t1 = clar_fn_toText(clar_lit_1284);
-        cv___ret69 = t1;
+        cv___ret70 = t1;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_s0);
         clar_fn_rtTextRelease((void*)cv_dataExpr);
-        return cv___ret69;
+        return cv___ret70;
     } else {
         if (cv_nm == clar_fn_ILastErrMsg()) {
             clar_fn_rtTextRelease((void*)cv___store177);
@@ -39073,13 +39130,13 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_fpEmit(t4);
             clar_fn_rtTextRelease(t3);
             clar_fn_rtTextRelease(t4);
-            clar_fn_rtTextRelease((void*)cv___ret69);
-            cv___ret69 = cv_t;
-            clar_fn_rtTextRetain((void*)cv___ret69);
+            clar_fn_rtTextRelease((void*)cv___ret70);
+            cv___ret70 = cv_t;
+            clar_fn_rtTextRetain((void*)cv___ret70);
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_s0);
             clar_fn_rtTextRelease((void*)cv_dataExpr);
-            return cv___ret69;
+            return cv___ret70;
         } else {
             if (cv_nm == clar_fn_ILastErr()) {
                 clar_fn_rtTextRelease((void*)cv___store178);
@@ -39103,16 +39160,16 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_fpEmit(t8);
                 clar_fn_rtTextRelease(t7);
                 clar_fn_rtTextRelease(t8);
-                clar_fn_rtTextRelease((void*)cv___ret69);
-                cv___ret69 = cv_t;
-                clar_fn_rtTextRetain((void*)cv___ret69);
+                clar_fn_rtTextRelease((void*)cv___ret70);
+                cv___ret70 = cv_t;
+                clar_fn_rtTextRetain((void*)cv___ret70);
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_s0);
                 clar_fn_rtTextRelease((void*)cv_dataExpr);
-                return cv___ret69;
+                return cv___ret70;
             } else {
                 if (cv_nm == clar_fn_IFileReadText()) {
-                    clar_fn_rtTextRelease((void*)cv___ret69);
+                    clar_fn_rtTextRelease((void*)cv___ret70);
                     rt_text * t9 = NULL;
                     t9 = clar_fn_fpStrAddr(cv_a0);
                     rt_text * t10 = NULL;
@@ -39129,7 +39186,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     rt_text * t14 = NULL;
                     t14 = (rt_text *)clar_fn_rtTextNew();
                     clar_fn_rtTextConcat((void*)t14, (void*)t12, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                    cv___ret69 = t14;
+                    cv___ret70 = t14;
                     clar_fn_rtTextRelease(t9);
                     clar_fn_rtTextRelease(t10);
                     clar_fn_rtTextRelease(t11);
@@ -39138,10 +39195,10 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_s0);
                     clar_fn_rtTextRelease((void*)cv_dataExpr);
-                    return cv___ret69;
+                    return cv___ret70;
                 } else {
                     if (cv_nm == clar_fn_IFileWriteText()) {
-                        clar_fn_rtTextRelease((void*)cv___ret69);
+                        clar_fn_rtTextRelease((void*)cv___ret70);
                         rt_text * t15 = NULL;
                         t15 = clar_fn_fpStrAddr(cv_a0);
                         rt_text * t16 = NULL;
@@ -39174,7 +39231,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t26 = NULL;
                         t26 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t26, (void*)t24, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                        cv___ret69 = t26;
+                        cv___ret70 = t26;
                         clar_fn_rtTextRelease(t15);
                         clar_fn_rtTextRelease(t16);
                         clar_fn_rtTextRelease(t17);
@@ -39189,10 +39246,10 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_s0);
                         clar_fn_rtTextRelease((void*)cv_dataExpr);
-                        return cv___ret69;
+                        return cv___ret70;
                     } else {
                         if (cv_nm == clar_fn_IFileReadResource()) {
-                            clar_fn_rtTextRelease((void*)cv___ret69);
+                            clar_fn_rtTextRelease((void*)cv___ret70);
                             rt_text * t27 = NULL;
                             t27 = clar_fn_fpStrAddr(cv_a0);
                             rt_text * t28 = NULL;
@@ -39209,7 +39266,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             rt_text * t32 = NULL;
                             t32 = (rt_text *)clar_fn_rtTextNew();
                             clar_fn_rtTextConcat((void*)t32, (void*)t30, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                            cv___ret69 = t32;
+                            cv___ret70 = t32;
                             clar_fn_rtTextRelease(t27);
                             clar_fn_rtTextRelease(t28);
                             clar_fn_rtTextRelease(t29);
@@ -39218,10 +39275,10 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_s0);
                             clar_fn_rtTextRelease((void*)cv_dataExpr);
-                            return cv___ret69;
+                            return cv___ret70;
                         } else {
                             if (cv_nm == clar_fn_IFileWriteRes()) {
-                                clar_fn_rtTextRelease((void*)cv___ret69);
+                                clar_fn_rtTextRelease((void*)cv___ret70);
                                 rt_text * t33 = NULL;
                                 t33 = clar_fn_fpStrAddr(cv_a0);
                                 rt_text * t34 = NULL;
@@ -39254,7 +39311,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 rt_text * t44 = NULL;
                                 t44 = (rt_text *)clar_fn_rtTextNew();
                                 clar_fn_rtTextConcat((void*)t44, (void*)t42, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                cv___ret69 = t44;
+                                cv___ret70 = t44;
                                 clar_fn_rtTextRelease(t33);
                                 clar_fn_rtTextRelease(t34);
                                 clar_fn_rtTextRelease(t35);
@@ -39269,7 +39326,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_s0);
                                 clar_fn_rtTextRelease((void*)cv_dataExpr);
-                                return cv___ret69;
+                                return cv___ret70;
                             } else {
                                 if (cv_nm == clar_fn_IFileName()) {
                                     clar_fn_rtTextRelease((void*)cv___store179);
@@ -39303,13 +39360,13 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtTextRelease(t48);
                                     clar_fn_rtTextRelease(t49);
                                     clar_fn_rtTextRelease(t50);
-                                    clar_fn_rtTextRelease((void*)cv___ret69);
-                                    cv___ret69 = cv_t;
-                                    clar_fn_rtTextRetain((void*)cv___ret69);
+                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                    cv___ret70 = cv_t;
+                                    clar_fn_rtTextRetain((void*)cv___ret70);
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_s0);
                                     clar_fn_rtTextRelease((void*)cv_dataExpr);
-                                    return cv___ret69;
+                                    return cv___ret70;
                                 } else {
                                     if ((cv_nm == clar_fn_IFileSave()) || (cv_nm == clar_fn_IFileLoad())) {
                                         cv_dataT = clar_fn_irExprType(cv_a1);
@@ -39392,7 +39449,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 }
                                             }
                                             if (cv_nm == clar_fn_IFileSave()) {
-                                                clar_fn_rtTextRelease((void*)cv___ret69);
+                                                clar_fn_rtTextRelease((void*)cv___ret70);
                                                 clar_str_255 t63;
                                                 clar_fn_rtStrConcat((void*)&t63, (void*)(const uint8_t*)&(cv_fn), (void*)(const uint8_t*)&(clar_lit_1063));
                                                 rt_text * t64 = NULL;
@@ -39437,7 +39494,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 rt_text * t78 = NULL;
                                                 t78 = (rt_text *)clar_fn_rtTextNew();
                                                 clar_fn_rtTextConcat((void*)t78, (void*)t76, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                cv___ret69 = t78;
+                                                cv___ret70 = t78;
                                                 clar_fn_rtTextRelease(t64);
                                                 clar_fn_rtTextRelease(t65);
                                                 clar_fn_rtTextRelease(t66);
@@ -39455,9 +39512,9 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                 clar_fn_rtTextRelease((void*)cv_s0);
                                                 clar_fn_rtTextRelease((void*)cv_dataExpr);
-                                                return cv___ret69;
+                                                return cv___ret70;
                                             }
-                                            clar_fn_rtTextRelease((void*)cv___ret69);
+                                            clar_fn_rtTextRelease((void*)cv___ret70);
                                             clar_str_255 t79;
                                             clar_fn_rtStrConcat((void*)&t79, (void*)(const uint8_t*)&(cv_fn), (void*)(const uint8_t*)&(clar_lit_1063));
                                             rt_text * t80 = NULL;
@@ -39486,7 +39543,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             rt_text * t88 = NULL;
                                             t88 = (rt_text *)clar_fn_rtTextNew();
                                             clar_fn_rtTextConcat((void*)t88, (void*)t87, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                            cv___ret69 = t88;
+                                            cv___ret70 = t88;
                                             clar_fn_rtTextRelease(t80);
                                             clar_fn_rtTextRelease(t81);
                                             clar_fn_rtTextRelease(t82);
@@ -39498,13 +39555,13 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_s0);
                                             clar_fn_rtTextRelease((void*)cv_dataExpr);
-                                            return cv___ret69;
+                                            return cv___ret70;
                                         }
                                         clar_fn_rtStrStore((void*)&(cv_fn), 255, (void*)(const uint8_t*)&(clar_lit_1303));
                                         if (cv_nm == clar_fn_IFileLoad()) {
                                             clar_fn_rtStrStore((void*)&(cv_fn), 255, (void*)(const uint8_t*)&(clar_lit_1304));
                                         }
-                                        clar_fn_rtTextRelease((void*)cv___ret69);
+                                        clar_fn_rtTextRelease((void*)cv___ret70);
                                         clar_str_255 t89;
                                         clar_fn_rtStrConcat((void*)&t89, (void*)(const uint8_t*)&(cv_fn), (void*)(const uint8_t*)&(clar_lit_1063));
                                         rt_text * t90 = NULL;
@@ -39533,7 +39590,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         rt_text * t98 = NULL;
                                         t98 = (rt_text *)clar_fn_rtTextNew();
                                         clar_fn_rtTextConcat((void*)t98, (void*)t97, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                        cv___ret69 = t98;
+                                        cv___ret70 = t98;
                                         clar_fn_rtTextRelease(t90);
                                         clar_fn_rtTextRelease(t91);
                                         clar_fn_rtTextRelease(t92);
@@ -39545,7 +39602,7 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease((void*)cv_t);
                                         clar_fn_rtTextRelease((void*)cv_s0);
                                         clar_fn_rtTextRelease((void*)cv_dataExpr);
-                                        return cv___ret69;
+                                        return cv___ret70;
                                     }
                                 }
                             }
@@ -39556,14 +39613,14 @@ static rt_text * clar_fn_fpIntrCall6(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret69);
+    clar_fn_rtTextRelease((void*)cv___ret70);
     rt_text * t99 = NULL;
     t99 = clar_fn_toText(clar_lit_17);
-    cv___ret69 = t99;
+    cv___ret70 = t99;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_s0);
     clar_fn_rtTextRelease((void*)cv_dataExpr);
-    return cv___ret69;
+    return cv___ret70;
     return NULL;
 }
 
@@ -39576,8 +39633,8 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     cv_inst = (rt_text *)clar_fn_rtTextNew();
     int32_t cv_fld;
     cv_fld = 0;
-    rt_text * cv___ret70;
-    cv___ret70 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret71;
+    cv___ret71 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store184;
     cv___store184 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store185;
@@ -39589,7 +39646,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
     rt_text * cv___store188;
     cv___store188 = (rt_text *)clar_fn_rtTextNew();
     if (cv_nm == clar_fn_IUiOpen()) {
-        clar_fn_rtTextRelease((void*)cv___ret70);
+        clar_fn_rtTextRelease((void*)cv___ret71);
         rt_text * t1 = NULL;
         clar_str_255 t2;
         t2 = clar_fn_numToStr(clar_fn_cpFindWindowIndex(clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_x)))));
@@ -39599,13 +39656,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(t3), (void*)(const uint8_t*)&(clar_lit_443));
         t1 = (rt_text *)clar_fn_rtTextNew();
         clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(t4));
-        cv___ret70 = t1;
+        cv___ret71 = t1;
         clar_fn_rtTextRelease((void*)cv_t);
         clar_fn_rtTextRelease((void*)cv_inst);
-        return cv___ret70;
+        return cv___ret71;
     } else {
         if (cv_nm == clar_fn_IUiFront()) {
-            clar_fn_rtTextRelease((void*)cv___ret70);
+            clar_fn_rtTextRelease((void*)cv___ret71);
             rt_text * t5 = NULL;
             clar_str_255 t6;
             t6 = clar_fn_numToStr(clar_fn_cpFindWindowIndex(clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_x)))));
@@ -39615,10 +39672,10 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
             clar_fn_rtStrConcat((void*)&t8, (void*)(const uint8_t*)&(t7), (void*)(const uint8_t*)&(clar_lit_443));
             t5 = (rt_text *)clar_fn_rtTextNew();
             clar_fn_rtTextStore((void*)t5, (void*)(const uint8_t*)&(t8));
-            cv___ret70 = t5;
+            cv___ret71 = t5;
             clar_fn_rtTextRelease((void*)cv_t);
             clar_fn_rtTextRelease((void*)cv_inst);
-            return cv___ret70;
+            return cv___ret71;
         } else {
             if (cv_nm == clar_fn_IUiClose()) {
                 rt_text * t9 = NULL;
@@ -39633,13 +39690,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                 clar_fn_rtTextRelease(t9);
                 clar_fn_rtTextRelease(t10);
                 clar_fn_rtTextRelease(t11);
-                clar_fn_rtTextRelease((void*)cv___ret70);
+                clar_fn_rtTextRelease((void*)cv___ret71);
                 rt_text * t12 = NULL;
                 t12 = clar_fn_toText(clar_lit_17);
-                cv___ret70 = t12;
+                cv___ret71 = t12;
                 clar_fn_rtTextRelease((void*)cv_t);
                 clar_fn_rtTextRelease((void*)cv_inst);
-                return cv___ret70;
+                return cv___ret71;
             } else {
                 if (cv_nm == clar_fn_IUiQuit()) {
                     rt_text * t13 = NULL;
@@ -39647,16 +39704,16 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                     clar_fn_rtTextStore((void*)t13, (void*)(const uint8_t*)&(clar_lit_1309));
                     clar_fn_fpEmit(t13);
                     clar_fn_rtTextRelease(t13);
-                    clar_fn_rtTextRelease((void*)cv___ret70);
+                    clar_fn_rtTextRelease((void*)cv___ret71);
                     rt_text * t14 = NULL;
                     t14 = clar_fn_toText(clar_lit_17);
-                    cv___ret70 = t14;
+                    cv___ret71 = t14;
                     clar_fn_rtTextRelease((void*)cv_t);
                     clar_fn_rtTextRelease((void*)cv_inst);
-                    return cv___ret70;
+                    return cv___ret71;
                 } else {
                     if (cv_nm == clar_fn_IUiState()) {
-                        clar_fn_rtTextRelease((void*)cv___ret70);
+                        clar_fn_rtTextRelease((void*)cv___ret71);
                         clar_str_255 t15;
                         t15 = clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_x)));
                         clar_str_255 t16;
@@ -39671,12 +39728,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                         rt_text * t20 = NULL;
                         t20 = (rt_text *)clar_fn_rtTextNew();
                         clar_fn_rtTextConcat((void*)t20, (void*)t19, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                        cv___ret70 = t20;
+                        cv___ret71 = t20;
                         clar_fn_rtTextRelease(t18);
                         clar_fn_rtTextRelease(t19);
                         clar_fn_rtTextRelease((void*)cv_t);
                         clar_fn_rtTextRelease((void*)cv_inst);
-                        return cv___ret70;
+                        return cv___ret71;
                     } else {
                         if (cv_nm == clar_fn_IUiStateDefaults()) {
                             clar_str_255 t21;
@@ -39715,13 +39772,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 }
                                 cv_fld = clar_fn_irFieldSlotNext(cv_fld);
                             }
-                            clar_fn_rtTextRelease((void*)cv___ret70);
+                            clar_fn_rtTextRelease((void*)cv___ret71);
                             rt_text * t29 = NULL;
                             t29 = clar_fn_toText(clar_lit_17);
-                            cv___ret70 = t29;
+                            cv___ret71 = t29;
                             clar_fn_rtTextRelease((void*)cv_t);
                             clar_fn_rtTextRelease((void*)cv_inst);
-                            return cv___ret70;
+                            return cv___ret71;
                         } else {
                             if (cv_nm == clar_fn_IUiSetTitle()) {
                                 rt_text * t30 = NULL;
@@ -39747,13 +39804,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                 clar_fn_rtTextRelease(t33);
                                 clar_fn_rtTextRelease(t34);
                                 clar_fn_rtTextRelease(t35);
-                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                clar_fn_rtTextRelease((void*)cv___ret71);
                                 rt_text * t36 = NULL;
                                 t36 = clar_fn_toText(clar_lit_17);
-                                cv___ret70 = t36;
+                                cv___ret71 = t36;
                                 clar_fn_rtTextRelease((void*)cv_t);
                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                return cv___ret70;
+                                return cv___ret71;
                             } else {
                                 if (cv_nm == clar_fn_IUiGetTitle()) {
                                     clar_fn_rtTextRelease((void*)cv___store185);
@@ -39783,12 +39840,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                     clar_fn_rtTextRelease(t40);
                                     clar_fn_rtTextRelease(t41);
                                     clar_fn_rtTextRelease(t42);
-                                    clar_fn_rtTextRelease((void*)cv___ret70);
-                                    cv___ret70 = cv_t;
-                                    clar_fn_rtTextRetain((void*)cv___ret70);
+                                    clar_fn_rtTextRelease((void*)cv___ret71);
+                                    cv___ret71 = cv_t;
+                                    clar_fn_rtTextRetain((void*)cv___ret71);
                                     clar_fn_rtTextRelease((void*)cv_t);
                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                    return cv___ret70;
+                                    return cv___ret71;
                                 } else {
                                     if (cv_nm == clar_fn_IUiSetCaption()) {
                                         rt_text * t43 = NULL;
@@ -39825,13 +39882,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                         clar_fn_rtTextRelease(t49);
                                         clar_fn_rtTextRelease(t50);
                                         clar_fn_rtTextRelease(t51);
-                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                         rt_text * t52 = NULL;
                                         t52 = clar_fn_toText(clar_lit_17);
-                                        cv___ret70 = t52;
+                                        cv___ret71 = t52;
                                         clar_fn_rtTextRelease((void*)cv_t);
                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                        return cv___ret70;
+                                        return cv___ret71;
                                     } else {
                                         if (cv_nm == clar_fn_IUiSetText()) {
                                             rt_text * t53 = NULL;
@@ -39868,13 +39925,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                             clar_fn_rtTextRelease(t59);
                                             clar_fn_rtTextRelease(t60);
                                             clar_fn_rtTextRelease(t61);
-                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                             rt_text * t62 = NULL;
                                             t62 = clar_fn_toText(clar_lit_17);
-                                            cv___ret70 = t62;
+                                            cv___ret71 = t62;
                                             clar_fn_rtTextRelease((void*)cv_t);
                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                            return cv___ret70;
+                                            return cv___ret71;
                                         } else {
                                             if (cv_nm == clar_fn_IUiGetFieldText()) {
                                                 clar_fn_rtTextRelease((void*)cv___store186);
@@ -39915,12 +39972,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                 clar_fn_rtTextRelease(t69);
                                                 clar_fn_rtTextRelease(t70);
                                                 clar_fn_rtTextRelease(t71);
-                                                clar_fn_rtTextRelease((void*)cv___ret70);
-                                                cv___ret70 = cv_t;
-                                                clar_fn_rtTextRetain((void*)cv___ret70);
+                                                clar_fn_rtTextRelease((void*)cv___ret71);
+                                                cv___ret71 = cv_t;
+                                                clar_fn_rtTextRetain((void*)cv___ret71);
                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                return cv___ret70;
+                                                return cv___ret71;
                                             } else {
                                                 if (cv_nm == clar_fn_IUiGetLabelText()) {
                                                     clar_fn_rtTextRelease((void*)cv___store187);
@@ -39961,12 +40018,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                     clar_fn_rtTextRelease(t78);
                                                     clar_fn_rtTextRelease(t79);
                                                     clar_fn_rtTextRelease(t80);
-                                                    clar_fn_rtTextRelease((void*)cv___ret70);
-                                                    cv___ret70 = cv_t;
-                                                    clar_fn_rtTextRetain((void*)cv___ret70);
+                                                    clar_fn_rtTextRelease((void*)cv___ret71);
+                                                    cv___ret71 = cv_t;
+                                                    clar_fn_rtTextRetain((void*)cv___ret71);
                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                    return cv___ret70;
+                                                    return cv___ret71;
                                                 } else {
                                                     if (cv_nm == clar_fn_IUiGetTextviewText()) {
                                                         clar_fn_rtTextRelease((void*)cv___store188);
@@ -40012,12 +40069,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                         clar_fn_rtTextRelease(t88);
                                                         clar_fn_rtTextRelease(t89);
                                                         clar_fn_rtTextRelease(t90);
-                                                        clar_fn_rtTextRelease((void*)cv___ret70);
-                                                        cv___ret70 = cv_t;
-                                                        clar_fn_rtTextRetain((void*)cv___ret70);
+                                                        clar_fn_rtTextRelease((void*)cv___ret71);
+                                                        cv___ret71 = cv_t;
+                                                        clar_fn_rtTextRetain((void*)cv___ret71);
                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                        return cv___ret70;
+                                                        return cv___ret71;
                                                     } else {
                                                         if (cv_nm == clar_fn_IUiSetTextviewText()) {
                                                             rt_text * t91 = NULL;
@@ -40054,16 +40111,16 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                             clar_fn_rtTextRelease(t97);
                                                             clar_fn_rtTextRelease(t98);
                                                             clar_fn_rtTextRelease(t99);
-                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                             rt_text * t100 = NULL;
                                                             t100 = clar_fn_toText(clar_lit_17);
-                                                            cv___ret70 = t100;
+                                                            cv___ret71 = t100;
                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                            return cv___ret70;
+                                                            return cv___ret71;
                                                         } else {
                                                             if (cv_nm == clar_fn_IUiGetChecked()) {
-                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                 rt_text * t101 = NULL;
                                                                 t101 = clar_fn_fpExpr(cv_a0);
                                                                 rt_text * t102 = NULL;
@@ -40080,7 +40137,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                 rt_text * t106 = NULL;
                                                                 t106 = (rt_text *)clar_fn_rtTextNew();
                                                                 clar_fn_rtTextConcat((void*)t106, (void*)t104, (void*)(const uint8_t*)&(clar_lit_1325), (void*)0);
-                                                                cv___ret70 = t106;
+                                                                cv___ret71 = t106;
                                                                 clar_fn_rtTextRelease(t101);
                                                                 clar_fn_rtTextRelease(t102);
                                                                 clar_fn_rtTextRelease(t103);
@@ -40088,7 +40145,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                 clar_fn_rtTextRelease(t105);
                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                return cv___ret70;
+                                                                return cv___ret71;
                                                             } else {
                                                                 if (cv_nm == clar_fn_IUiSetChecked()) {
                                                                     rt_text * t107 = NULL;
@@ -40125,16 +40182,16 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                     clar_fn_rtTextRelease(t113);
                                                                     clar_fn_rtTextRelease(t114);
                                                                     clar_fn_rtTextRelease(t115);
-                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                     rt_text * t116 = NULL;
                                                                     t116 = clar_fn_toText(clar_lit_17);
-                                                                    cv___ret70 = t116;
+                                                                    cv___ret71 = t116;
                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                    return cv___ret70;
+                                                                    return cv___ret71;
                                                                 } else {
                                                                     if (cv_nm == clar_fn_IUiGetEnabled()) {
-                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                         rt_text * t117 = NULL;
                                                                         t117 = clar_fn_fpExpr(cv_a0);
                                                                         rt_text * t118 = NULL;
@@ -40151,7 +40208,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                         rt_text * t122 = NULL;
                                                                         t122 = (rt_text *)clar_fn_rtTextNew();
                                                                         clar_fn_rtTextConcat((void*)t122, (void*)t120, (void*)(const uint8_t*)&(clar_lit_1328), (void*)0);
-                                                                        cv___ret70 = t122;
+                                                                        cv___ret71 = t122;
                                                                         clar_fn_rtTextRelease(t117);
                                                                         clar_fn_rtTextRelease(t118);
                                                                         clar_fn_rtTextRelease(t119);
@@ -40159,7 +40216,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                         clar_fn_rtTextRelease(t121);
                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                        return cv___ret70;
+                                                                        return cv___ret71;
                                                                     } else {
                                                                         if (cv_nm == clar_fn_IUiSetEnabled()) {
                                                                             rt_text * t123 = NULL;
@@ -40196,16 +40253,16 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                             clar_fn_rtTextRelease(t129);
                                                                             clar_fn_rtTextRelease(t130);
                                                                             clar_fn_rtTextRelease(t131);
-                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                             rt_text * t132 = NULL;
                                                                             t132 = clar_fn_toText(clar_lit_17);
-                                                                            cv___ret70 = t132;
+                                                                            cv___ret71 = t132;
                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                            return cv___ret70;
+                                                                            return cv___ret71;
                                                                         } else {
                                                                             if (cv_nm == clar_fn_IUiGetWidth()) {
-                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                 rt_text * t133 = NULL;
                                                                                 t133 = clar_fn_fpExpr(cv_a0);
                                                                                 rt_text * t134 = NULL;
@@ -40222,7 +40279,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                 rt_text * t138 = NULL;
                                                                                 t138 = (rt_text *)clar_fn_rtTextNew();
                                                                                 clar_fn_rtTextConcat((void*)t138, (void*)t136, (void*)(const uint8_t*)&(clar_lit_1331), (void*)0);
-                                                                                cv___ret70 = t138;
+                                                                                cv___ret71 = t138;
                                                                                 clar_fn_rtTextRelease(t133);
                                                                                 clar_fn_rtTextRelease(t134);
                                                                                 clar_fn_rtTextRelease(t135);
@@ -40230,10 +40287,10 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                 clar_fn_rtTextRelease(t137);
                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                return cv___ret70;
+                                                                                return cv___ret71;
                                                                             } else {
                                                                                 if (cv_nm == clar_fn_IUiGetHeight()) {
-                                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                     rt_text * t139 = NULL;
                                                                                     t139 = clar_fn_fpExpr(cv_a0);
                                                                                     rt_text * t140 = NULL;
@@ -40250,7 +40307,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                     rt_text * t144 = NULL;
                                                                                     t144 = (rt_text *)clar_fn_rtTextNew();
                                                                                     clar_fn_rtTextConcat((void*)t144, (void*)t142, (void*)(const uint8_t*)&(clar_lit_1332), (void*)0);
-                                                                                    cv___ret70 = t144;
+                                                                                    cv___ret71 = t144;
                                                                                     clar_fn_rtTextRelease(t139);
                                                                                     clar_fn_rtTextRelease(t140);
                                                                                     clar_fn_rtTextRelease(t141);
@@ -40258,10 +40315,10 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                     clar_fn_rtTextRelease(t143);
                                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                    return cv___ret70;
+                                                                                    return cv___ret71;
                                                                                 } else {
                                                                                     if (cv_nm == clar_fn_IUiGetSelected()) {
-                                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                         rt_text * t145 = NULL;
                                                                                         t145 = clar_fn_fpExpr(cv_a0);
                                                                                         rt_text * t146 = NULL;
@@ -40278,7 +40335,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                         rt_text * t150 = NULL;
                                                                                         t150 = (rt_text *)clar_fn_rtTextNew();
                                                                                         clar_fn_rtTextConcat((void*)t150, (void*)t148, (void*)(const uint8_t*)&(clar_lit_1333), (void*)0);
-                                                                                        cv___ret70 = t150;
+                                                                                        cv___ret71 = t150;
                                                                                         clar_fn_rtTextRelease(t145);
                                                                                         clar_fn_rtTextRelease(t146);
                                                                                         clar_fn_rtTextRelease(t147);
@@ -40286,7 +40343,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                         clar_fn_rtTextRelease(t149);
                                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                        return cv___ret70;
+                                                                                        return cv___ret71;
                                                                                     } else {
                                                                                         if (cv_nm == clar_fn_IUiSetSelected()) {
                                                                                             rt_text * t151 = NULL;
@@ -40323,13 +40380,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                             clar_fn_rtTextRelease(t157);
                                                                                             clar_fn_rtTextRelease(t158);
                                                                                             clar_fn_rtTextRelease(t159);
-                                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                             rt_text * t160 = NULL;
                                                                                             t160 = clar_fn_toText(clar_lit_17);
-                                                                                            cv___ret70 = t160;
+                                                                                            cv___ret71 = t160;
                                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                            return cv___ret70;
+                                                                                            return cv___ret71;
                                                                                         } else {
                                                                                             if (cv_nm == clar_fn_IUiMenuEnable()) {
                                                                                                 rt_text * t161 = NULL;
@@ -40366,13 +40423,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                 clar_fn_rtTextRelease(t167);
                                                                                                 clar_fn_rtTextRelease(t168);
                                                                                                 clar_fn_rtTextRelease(t169);
-                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                 rt_text * t170 = NULL;
                                                                                                 t170 = clar_fn_toText(clar_lit_17);
-                                                                                                cv___ret70 = t170;
+                                                                                                cv___ret71 = t170;
                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                return cv___ret70;
+                                                                                                return cv___ret71;
                                                                                             } else {
                                                                                                 if (cv_nm == clar_fn_IUiCancel()) {
                                                                                                     rt_text * t171 = NULL;
@@ -40380,16 +40437,16 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                     clar_fn_rtTextStore((void*)t171, (void*)(const uint8_t*)&(clar_lit_1337));
                                                                                                     clar_fn_fpEmit(t171);
                                                                                                     clar_fn_rtTextRelease(t171);
-                                                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                     rt_text * t172 = NULL;
                                                                                                     t172 = clar_fn_toText(clar_lit_17);
-                                                                                                    cv___ret70 = t172;
+                                                                                                    cv___ret71 = t172;
                                                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                    return cv___ret70;
+                                                                                                    return cv___ret71;
                                                                                                 } else {
                                                                                                     if (cv_nm == clar_fn_IUiAskOpen()) {
-                                                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                         rt_text * t173 = NULL;
                                                                                                         t173 = clar_fn_fpAddrable(cv_a0);
                                                                                                         rt_text * t174 = NULL;
@@ -40406,7 +40463,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                         rt_text * t178 = NULL;
                                                                                                         t178 = (rt_text *)clar_fn_rtTextNew();
                                                                                                         clar_fn_rtTextConcat((void*)t178, (void*)t176, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                                                                        cv___ret70 = t178;
+                                                                                                        cv___ret71 = t178;
                                                                                                         clar_fn_rtTextRelease(t173);
                                                                                                         clar_fn_rtTextRelease(t174);
                                                                                                         clar_fn_rtTextRelease(t175);
@@ -40414,10 +40471,10 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                         clar_fn_rtTextRelease(t177);
                                                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                        return cv___ret70;
+                                                                                                        return cv___ret71;
                                                                                                     } else {
                                                                                                         if (cv_nm == clar_fn_IUiAskSave()) {
-                                                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                             rt_text * t179 = NULL;
                                                                                                             t179 = clar_fn_fpAddrable(cv_a0);
                                                                                                             rt_text * t180 = NULL;
@@ -40434,7 +40491,7 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                             rt_text * t184 = NULL;
                                                                                                             t184 = (rt_text *)clar_fn_rtTextNew();
                                                                                                             clar_fn_rtTextConcat((void*)t184, (void*)t182, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                                                                            cv___ret70 = t184;
+                                                                                                            cv___ret71 = t184;
                                                                                                             clar_fn_rtTextRelease(t179);
                                                                                                             clar_fn_rtTextRelease(t180);
                                                                                                             clar_fn_rtTextRelease(t181);
@@ -40442,10 +40499,10 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                             clar_fn_rtTextRelease(t183);
                                                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                            return cv___ret70;
+                                                                                                            return cv___ret71;
                                                                                                         } else {
                                                                                                             if (cv_nm == clar_fn_IUiAskSaveChanges()) {
-                                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                 rt_text * t185 = NULL;
                                                                                                                 t185 = clar_fn_fpStrAddr(cv_a0);
                                                                                                                 rt_text * t186 = NULL;
@@ -40454,12 +40511,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                 rt_text * t187 = NULL;
                                                                                                                 t187 = (rt_text *)clar_fn_rtTextNew();
                                                                                                                 clar_fn_rtTextConcat((void*)t187, (void*)t186, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-                                                                                                                cv___ret70 = t187;
+                                                                                                                cv___ret71 = t187;
                                                                                                                 clar_fn_rtTextRelease(t185);
                                                                                                                 clar_fn_rtTextRelease(t186);
                                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                return cv___ret70;
+                                                                                                                return cv___ret71;
                                                                                                             } else {
                                                                                                                 if (cv_nm == clar_fn_IUiCanvasClear()) {
                                                                                                                     rt_text * t188 = NULL;
@@ -40485,13 +40542,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                     clar_fn_rtTextRelease(t191);
                                                                                                                     clar_fn_rtTextRelease(t192);
                                                                                                                     clar_fn_rtTextRelease(t193);
-                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                     rt_text * t194 = NULL;
                                                                                                                     t194 = clar_fn_toText(clar_lit_17);
-                                                                                                                    cv___ret70 = t194;
+                                                                                                                    cv___ret71 = t194;
                                                                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                    return cv___ret70;
+                                                                                                                    return cv___ret71;
                                                                                                                 } else {
                                                                                                                     if (cv_nm == clar_fn_IUiCanvasLine()) {
                                                                                                                         rt_text * t195 = NULL;
@@ -40561,13 +40618,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                         clar_fn_rtTextRelease(t210);
                                                                                                                         clar_fn_rtTextRelease(t211);
                                                                                                                         clar_fn_rtTextRelease(t212);
-                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                         rt_text * t213 = NULL;
                                                                                                                         t213 = clar_fn_toText(clar_lit_17);
-                                                                                                                        cv___ret70 = t213;
+                                                                                                                        cv___ret71 = t213;
                                                                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                        return cv___ret70;
+                                                                                                                        return cv___ret71;
                                                                                                                     } else {
                                                                                                                         if (cv_nm == clar_fn_IUiCanvasRect()) {
                                                                                                                             rt_text * t214 = NULL;
@@ -40648,13 +40705,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                             clar_fn_rtTextRelease(t232);
                                                                                                                             clar_fn_rtTextRelease(t233);
                                                                                                                             clar_fn_rtTextRelease(t234);
-                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                             rt_text * t235 = NULL;
                                                                                                                             t235 = clar_fn_toText(clar_lit_17);
-                                                                                                                            cv___ret70 = t235;
+                                                                                                                            cv___ret71 = t235;
                                                                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                            return cv___ret70;
+                                                                                                                            return cv___ret71;
                                                                                                                         } else {
                                                                                                                             if (cv_nm == clar_fn_IUiCanvasCircle()) {
                                                                                                                                 rt_text * t236 = NULL;
@@ -40713,13 +40770,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                 clar_fn_rtTextRelease(t248);
                                                                                                                                 clar_fn_rtTextRelease(t249);
                                                                                                                                 clar_fn_rtTextRelease(t250);
-                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                 rt_text * t251 = NULL;
                                                                                                                                 t251 = clar_fn_toText(clar_lit_17);
-                                                                                                                                cv___ret70 = t251;
+                                                                                                                                cv___ret71 = t251;
                                                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                return cv___ret70;
+                                                                                                                                return cv___ret71;
                                                                                                                             } else {
                                                                                                                                 if (cv_nm == clar_fn_IUiCanvasFillCircle()) {
                                                                                                                                     rt_text * t252 = NULL;
@@ -40778,13 +40835,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                     clar_fn_rtTextRelease(t264);
                                                                                                                                     clar_fn_rtTextRelease(t265);
                                                                                                                                     clar_fn_rtTextRelease(t266);
-                                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                     rt_text * t267 = NULL;
                                                                                                                                     t267 = clar_fn_toText(clar_lit_17);
-                                                                                                                                    cv___ret70 = t267;
+                                                                                                                                    cv___ret71 = t267;
                                                                                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                    return cv___ret70;
+                                                                                                                                    return cv___ret71;
                                                                                                                                 } else {
                                                                                                                                     if (cv_nm == clar_fn_IUiCanvasPattern()) {
                                                                                                                                         rt_text * t268 = NULL;
@@ -40821,13 +40878,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                         clar_fn_rtTextRelease(t274);
                                                                                                                                         clar_fn_rtTextRelease(t275);
                                                                                                                                         clar_fn_rtTextRelease(t276);
-                                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                         rt_text * t277 = NULL;
                                                                                                                                         t277 = clar_fn_toText(clar_lit_17);
-                                                                                                                                        cv___ret70 = t277;
+                                                                                                                                        cv___ret71 = t277;
                                                                                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                        return cv___ret70;
+                                                                                                                                        return cv___ret71;
                                                                                                                                     } else {
                                                                                                                                         if (cv_nm == clar_fn_IUiCanvasDrawText()) {
                                                                                                                                             rt_text * t278 = NULL;
@@ -40886,33 +40943,33 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                             clar_fn_rtTextRelease(t290);
                                                                                                                                             clar_fn_rtTextRelease(t291);
                                                                                                                                             clar_fn_rtTextRelease(t292);
-                                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                             rt_text * t293 = NULL;
                                                                                                                                             t293 = clar_fn_toText(clar_lit_17);
-                                                                                                                                            cv___ret70 = t293;
+                                                                                                                                            cv___ret71 = t293;
                                                                                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                            return cv___ret70;
+                                                                                                                                            return cv___ret71;
                                                                                                                                         } else {
                                                                                                                                             if (cv_nm == clar_fn_IUiEdit()) {
                                                                                                                                                 clar_fn_fpUiEditStmt(cv_x, cv_a0, cv_a1, cv_a2);
-                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                 rt_text * t294 = NULL;
                                                                                                                                                 t294 = clar_fn_toText(clar_lit_17);
-                                                                                                                                                cv___ret70 = t294;
+                                                                                                                                                cv___ret71 = t294;
                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                return cv___ret70;
+                                                                                                                                                return cv___ret71;
                                                                                                                                             } else {
                                                                                                                                                 if (cv_nm == clar_fn_IUiFormIsNew()) {
-                                                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                    clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                     rt_text * t295 = NULL;
                                                                                                                                                     t295 = (rt_text *)clar_fn_rtTextNew();
                                                                                                                                                     clar_fn_rtTextStore((void*)t295, (void*)(const uint8_t*)&(clar_lit_1348));
-                                                                                                                                                    cv___ret70 = t295;
+                                                                                                                                                    cv___ret71 = t295;
                                                                                                                                                     clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                     clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                    return cv___ret70;
+                                                                                                                                                    return cv___ret71;
                                                                                                                                                 } else {
                                                                                                                                                     if (cv_nm == clar_fn_IUiSetCancelFlag()) {
                                                                                                                                                         rt_text * t296 = NULL;
@@ -40927,17 +40984,17 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                                         clar_fn_rtTextRelease(t296);
                                                                                                                                                         clar_fn_rtTextRelease(t297);
                                                                                                                                                         clar_fn_rtTextRelease(t298);
-                                                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                        clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                         rt_text * t299 = NULL;
                                                                                                                                                         t299 = clar_fn_toText(clar_lit_17);
-                                                                                                                                                        cv___ret70 = t299;
+                                                                                                                                                        cv___ret71 = t299;
                                                                                                                                                         clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                         clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                        return cv___ret70;
+                                                                                                                                                        return cv___ret71;
                                                                                                                                                     } else {
                                                                                                                                                         if (cv_nm == clar_fn_IUiValueAtPtr()) {
                                                                                                                                                             if (clar_fn_irtKind(clar_fn_irExprType(cv_x)) == 5) {
-                                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                                 clar_str_255 t300;
                                                                                                                                                                 t300 = clar_fn_numToStr(clar_fn_irtN(clar_fn_irExprType(cv_x)));
                                                                                                                                                                 clar_str_255 t301;
@@ -40952,14 +41009,14 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                                                 rt_text * t305 = NULL;
                                                                                                                                                                 t305 = (rt_text *)clar_fn_rtTextNew();
                                                                                                                                                                 clar_fn_rtTextConcat((void*)t305, (void*)t304, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                                                                                                                                cv___ret70 = t305;
+                                                                                                                                                                cv___ret71 = t305;
                                                                                                                                                                 clar_fn_rtTextRelease(t303);
                                                                                                                                                                 clar_fn_rtTextRelease(t304);
                                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                                return cv___ret70;
+                                                                                                                                                                return cv___ret71;
                                                                                                                                                             }
-                                                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                            clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                             clar_str_255 t306;
                                                                                                                                                             t306 = clar_fn_poolGet(clar_fn_irtName(clar_fn_irExprType(cv_x)));
                                                                                                                                                             clar_str_255 t307;
@@ -40974,15 +41031,15 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                                             rt_text * t311 = NULL;
                                                                                                                                                             t311 = (rt_text *)clar_fn_rtTextNew();
                                                                                                                                                             clar_fn_rtTextConcat((void*)t311, (void*)t310, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                                                                                                                            cv___ret70 = t311;
+                                                                                                                                                            cv___ret71 = t311;
                                                                                                                                                             clar_fn_rtTextRelease(t309);
                                                                                                                                                             clar_fn_rtTextRelease(t310);
                                                                                                                                                             clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                             clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                            return cv___ret70;
+                                                                                                                                                            return cv___ret71;
                                                                                                                                                         } else {
                                                                                                                                                             if (cv_nm == clar_fn_IUiAddrOfGlobal()) {
-                                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret70);
+                                                                                                                                                                clar_fn_rtTextRelease((void*)cv___ret71);
                                                                                                                                                                 rt_text * t312 = NULL;
                                                                                                                                                                 t312 = clar_fn_fpExpr(cv_a0);
                                                                                                                                                                 rt_text * t313 = NULL;
@@ -40991,12 +41048,12 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
                                                                                                                                                                 rt_text * t314 = NULL;
                                                                                                                                                                 t314 = (rt_text *)clar_fn_rtTextNew();
                                                                                                                                                                 clar_fn_rtTextConcat((void*)t314, (void*)t313, (void*)(const uint8_t*)&(clar_lit_1100), (void*)0);
-                                                                                                                                                                cv___ret70 = t314;
+                                                                                                                                                                cv___ret71 = t314;
                                                                                                                                                                 clar_fn_rtTextRelease(t312);
                                                                                                                                                                 clar_fn_rtTextRelease(t313);
                                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_t);
                                                                                                                                                                 clar_fn_rtTextRelease((void*)cv_inst);
-                                                                                                                                                                return cv___ret70;
+                                                                                                                                                                return cv___ret71;
                                                                                                                                                             }
                                                                                                                                                         }
                                                                                                                                                     }
@@ -41037,13 +41094,13 @@ static rt_text * clar_fn_fpIntrCall7(int32_t cv_nm, int32_t cv_x, int32_t cv_a0,
         }
     }
     cv_fpIntrMatched = 0;
-    clar_fn_rtTextRelease((void*)cv___ret70);
+    clar_fn_rtTextRelease((void*)cv___ret71);
     rt_text * t315 = NULL;
     t315 = clar_fn_toText(clar_lit_17);
-    cv___ret70 = t315;
+    cv___ret71 = t315;
     clar_fn_rtTextRelease((void*)cv_t);
     clar_fn_rtTextRelease((void*)cv_inst);
-    return cv___ret70;
+    return cv___ret71;
     return NULL;
 }
 
@@ -42415,16 +42472,16 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
     cv_c = 0;
     rt_text * cv_r;
     cv_r = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret71;
-    cv___ret71 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret72;
+    cv___ret72 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store213;
     cv___store213 = (rt_text *)clar_fn_rtTextNew();
     if (((clar_fn_rtTextLen((void*)cv_s) < 2) || (clar_fn_rtTextIndex((void*)cv_s, (int32_t)(0)) != 40)) || (clar_fn_rtTextIndex((void*)cv_s, (int32_t)((clar_fn_rtTextLen((void*)cv_s) - 1))) != 41)) {
-        clar_fn_rtTextRelease((void*)cv___ret71);
-        cv___ret71 = cv_s;
-        clar_fn_rtTextRetain((void*)cv___ret71);
+        clar_fn_rtTextRelease((void*)cv___ret72);
+        cv___ret72 = cv_s;
+        clar_fn_rtTextRetain((void*)cv___ret72);
         clar_fn_rtTextRelease((void*)cv_r);
-        return cv___ret71;
+        return cv___ret72;
     }
     cv_depth = 0;
     cv_i = 0;
@@ -42437,11 +42494,11 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
             if (cv_c == 41) {
                 cv_depth = (cv_depth - 1);
                 if ((cv_depth == 0) && (cv_i != (clar_fn_rtTextLen((void*)cv_s) - 1))) {
-                    clar_fn_rtTextRelease((void*)cv___ret71);
-                    cv___ret71 = cv_s;
-                    clar_fn_rtTextRetain((void*)cv___ret71);
+                    clar_fn_rtTextRelease((void*)cv___ret72);
+                    cv___ret72 = cv_s;
+                    clar_fn_rtTextRetain((void*)cv___ret72);
                     clar_fn_rtTextRelease((void*)cv_r);
-                    return cv___ret71;
+                    return cv___ret72;
                 }
             }
         }
@@ -42461,11 +42518,11 @@ static rt_text * clar_fn_fpStripOuterParens(rt_text * cv_s) {
         clar_fn_rtTextAppendChar((void*)cv_r, (int32_t)(clar_fn_rtTextIndex((void*)cv_s, (int32_t)(cv_i))));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtTextRelease((void*)cv___ret71);
-    cv___ret71 = cv_r;
-    clar_fn_rtTextRetain((void*)cv___ret71);
+    clar_fn_rtTextRelease((void*)cv___ret72);
+    cv___ret72 = cv_r;
+    clar_fn_rtTextRetain((void*)cv___ret72);
     clar_fn_rtTextRelease((void*)cv_r);
-    return cv___ret71;
+    return cv___ret72;
     return NULL;
 }
 
@@ -42574,8 +42631,8 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     cv___store218 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store219;
     cv___store219 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret72;
-    cv___ret72 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret73;
+    cv___ret73 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store216);
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(clar_lit_17);
@@ -42656,7 +42713,7 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     if (t15) {
         clar_fn_rtStrStore((void*)&(cv_linkage), 255, (void*)(const uint8_t*)&(clar_lit_17));
     }
-    clar_fn_rtTextRelease((void*)cv___ret72);
+    clar_fn_rtTextRelease((void*)cv___ret73);
     clar_str_255 t16;
     t16 = clar_fn_cpCType(clar_fn_irFuncRet(cv_f));
     clar_str_255 t17;
@@ -42679,12 +42736,12 @@ static rt_text * clar_fn_cpFuncProto(int32_t cv_f) {
     rt_text * t25 = NULL;
     t25 = clar_fn_toText(clar_lit_443);
     clar_fn_rtTextConcat((void*)t24, (void*)t23, (void*)0, (void*)t25);
-    cv___ret72 = t24;
+    cv___ret73 = t24;
     clar_fn_rtTextRelease(t22);
     clar_fn_rtTextRelease(t23);
     clar_fn_rtTextRelease(t25);
     clar_fn_rtTextRelease((void*)cv_params);
-    return cv___ret72;
+    return cv___ret73;
     return NULL;
 }
 
@@ -44108,8 +44165,8 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
     cv___store229 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store230;
     cv___store230 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret73;
-    cv___ret73 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret74;
+    cv___ret74 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store223);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -44221,7 +44278,7 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
     t18 = (*(rt_text **)rt_list_at(cv_argsOut, (int32_t)(0)));
     clar_fn_rtTextRelease((void*)t18);
     (*(rt_text **)rt_list_at(cv_argsOut, (int32_t)(0))) = t17;
-    clar_fn_rtTextRelease((void*)cv___ret73);
+    clar_fn_rtTextRelease((void*)cv___ret74);
     clar_str_255 t19;
     t19 = clar_fn_cpCbRetWireType(clar_fn_irFuncRet(cv_fIdx));
     clar_str_255 t20;
@@ -44238,11 +44295,11 @@ static rt_text * clar_fn_cpCbSignature(int32_t cv_fIdx, rt_list * cv_paramsOut, 
     rt_text * t25 = NULL;
     t25 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t25, (void*)t24, (void*)(const uint8_t*)&(clar_lit_443), (void*)0);
-    cv___ret73 = t25;
+    cv___ret74 = t25;
     clar_fn_rtTextRelease(t24);
     clar_fn_rtTextRelease((void*)cv_params);
     clar_fn_rtTextRelease((void*)cv_args);
-    return cv___ret73;
+    return cv___ret74;
     return NULL;
 }
 
@@ -44251,8 +44308,8 @@ static rt_text * clar_fn_cpCbGlueProto(int32_t cv_fIdx) {
     cv_params = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     rt_list * cv_args;
     cv_args = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
-    rt_text * cv___ret74;
-    cv___ret74 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret75;
+    cv___ret75 = (rt_text *)clar_fn_rtTextNew();
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_17));
@@ -44265,7 +44322,7 @@ static rt_text * clar_fn_cpCbGlueProto(int32_t cv_fIdx) {
     rt_text * t4 = NULL;
     t4 = t3;
     clar_fn_rtListPush((void*)cv_args, (void*)&(t4));
-    clar_fn_rtTextRelease((void*)cv___ret74);
+    clar_fn_rtTextRelease((void*)cv___ret75);
     rt_text * t5 = NULL;
     t5 = clar_fn_cpCbSignature(cv_fIdx, cv_params, cv_args);
     rt_text * t6 = NULL;
@@ -44274,7 +44331,7 @@ static rt_text * clar_fn_cpCbGlueProto(int32_t cv_fIdx) {
     rt_text * t7 = NULL;
     t7 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextConcat((void*)t7, (void*)t6, (void*)(const uint8_t*)&(clar_lit_1045), (void*)0);
-    cv___ret74 = t7;
+    cv___ret75 = t7;
     clar_fn_rtTextRelease(t5);
     clar_fn_rtTextRelease(t6);
         if (clar_fn_rtListLastref((void*)cv_params)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_params); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_params, i)); }
@@ -44283,7 +44340,7 @@ static rt_text * clar_fn_cpCbGlueProto(int32_t cv_fIdx) {
         if (clar_fn_rtListLastref((void*)cv_args)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_args); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_args, i)); }
     clar_fn_rtListRelease((void*)cv_args);
 
-    return cv___ret74;
+    return cv___ret75;
     return NULL;
 }
 
@@ -44310,8 +44367,8 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
     cv___store234 = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store235;
     cv___store235 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret75;
-    cv___ret75 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret76;
+    cv___ret76 = (rt_text *)clar_fn_rtTextNew();
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextStore((void*)t1, (void*)(const uint8_t*)&(clar_lit_17));
@@ -44425,9 +44482,9 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
             cv___store235 = 0;
         }
     }
-    clar_fn_rtTextRelease((void*)cv___ret75);
-    cv___ret75 = cv_body;
-    clar_fn_rtTextRetain((void*)cv___ret75);
+    clar_fn_rtTextRelease((void*)cv___ret76);
+    cv___ret76 = cv_body;
+    clar_fn_rtTextRetain((void*)cv___ret76);
         if (clar_fn_rtListLastref((void*)cv_params)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_params); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_params, i)); }
     clar_fn_rtListRelease((void*)cv_params);
 
@@ -44436,7 +44493,7 @@ static rt_text * clar_fn_cpCbGlueWrapper(int32_t cv_fIdx) {
 
     clar_fn_rtTextRelease((void*)cv_sig);
     clar_fn_rtTextRelease((void*)cv_body);
-    return cv___ret75;
+    return cv___ret76;
     return NULL;
 }
 
@@ -45048,8 +45105,8 @@ static rt_text * clar_fn_cpSerEnumValsInline(int32_t cv_nameIdx) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store238;
     cv___store238 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret76;
-    cv___ret76 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret77;
+    cv___ret77 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store238);
     rt_text * t1 = NULL;
     t1 = clar_fn_toText(clar_lit_17);
@@ -45071,11 +45128,11 @@ static rt_text * clar_fn_cpSerEnumValsInline(int32_t cv_nameIdx) {
                 clar_fn_rtTextAppendStr((void*)cv_out, (void*)(const uint8_t*)&(t3));
                 cv_m = clar_fn_irEnumMemberNext(cv_m);
             }
-            clar_fn_rtTextRelease((void*)cv___ret76);
-            cv___ret76 = cv_out;
-            clar_fn_rtTextRetain((void*)cv___ret76);
+            clar_fn_rtTextRelease((void*)cv___ret77);
+            cv___ret77 = cv_out;
+            clar_fn_rtTextRetain((void*)cv___ret77);
             clar_fn_rtTextRelease((void*)cv_out);
-            return cv___ret76;
+            return cv___ret77;
         }
         cv_i = (cv_i + 1);
     }
@@ -45086,11 +45143,11 @@ static rt_text * clar_fn_cpSerEnumValsInline(int32_t cv_nameIdx) {
     rt_log((const uint8_t*)&(t5));
     clar_fn_rtTextRelease((void*)cv_out);
     rt_quit((int32_t)(1));
-    clar_fn_rtTextRelease((void*)cv___ret76);
-    cv___ret76 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret76);
+    clar_fn_rtTextRelease((void*)cv___ret77);
+    cv___ret77 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret77);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret76;
+    return cv___ret77;
     return NULL;
 }
 
@@ -45109,8 +45166,8 @@ static rt_text * clar_fn_cpSerFieldRow(clar_str_255 cv_recName, int32_t cv_f) {
     cv_row = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store239;
     cv___store239 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret77;
-    cv___ret77 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret78;
+    cv___ret78 = (rt_text *)clar_fn_rtTextNew();
     cv_t = clar_fn_irFieldSlotType(cv_f);
     cv_k = clar_fn_irtKind(cv_t);
     cv_strCap = 0;
@@ -45176,11 +45233,11 @@ static rt_text * clar_fn_cpSerFieldRow(clar_str_255 cv_recName, int32_t cv_f) {
         clar_fn_rtTextRelease(t14);
     }
     clar_fn_rtTextAppendStr((void*)cv_row, (void*)(const uint8_t*)&(clar_lit_960));
-    clar_fn_rtTextRelease((void*)cv___ret77);
-    cv___ret77 = cv_row;
-    clar_fn_rtTextRetain((void*)cv___ret77);
+    clar_fn_rtTextRelease((void*)cv___ret78);
+    cv___ret78 = cv_row;
+    clar_fn_rtTextRetain((void*)cv___ret78);
     clar_fn_rtTextRelease((void*)cv_row);
-    return cv___ret77;
+    return cv___ret78;
     return NULL;
 }
 
@@ -46354,8 +46411,8 @@ static rt_text * clar_fn_emitProgram(void) {
     cv_out = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store251;
     cv___store251 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret78;
-    cv___ret78 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret79;
+    cv___ret79 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store251);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -46410,35 +46467,19 @@ static rt_text * clar_fn_emitProgram(void) {
         clar_fn_cpAppendLine(cv_out, clar_lit_17);
     }
     clar_fn_cpAppendTextList(cv_out, cv_cpRestBuf);
-    clar_fn_rtTextRelease((void*)cv___ret78);
-    cv___ret78 = cv_out;
-    clar_fn_rtTextRetain((void*)cv___ret78);
+    clar_fn_rtTextRelease((void*)cv___ret79);
+    cv___ret79 = cv_out;
+    clar_fn_rtTextRetain((void*)cv___ret79);
     clar_fn_rtTextRelease((void*)cv_out);
-    return cv___ret78;
+    return cv___ret79;
     return NULL;
 }
 
 static rt_list * clar_fn_cgFreshIntList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret79;
-    cv___ret79 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___ret79);
-
-    cv___ret79 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret79);
-
-        clar_fn_rtListRelease((void*)cv_l);
-
-    return cv___ret79;
-    return NULL;
-}
-
-static rt_list * clar_fn_cgFreshStringList(void) {
-    rt_list * cv_l;
-    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
     rt_list * cv___ret80;
-    cv___ret80 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
+    cv___ret80 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
         clar_fn_rtListRelease((void*)cv___ret80);
 
     cv___ret80 = cv_l;
@@ -46450,11 +46491,11 @@ static rt_list * clar_fn_cgFreshStringList(void) {
     return NULL;
 }
 
-static rt_list * clar_fn_cgFreshBoolList(void) {
+static rt_list * clar_fn_cgFreshStringList(void) {
     rt_list * cv_l;
-    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
     rt_list * cv___ret81;
-    cv___ret81 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    cv___ret81 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
         clar_fn_rtListRelease((void*)cv___ret81);
 
     cv___ret81 = cv_l;
@@ -46466,39 +46507,55 @@ static rt_list * clar_fn_cgFreshBoolList(void) {
     return NULL;
 }
 
-static rt_list * clar_fn_cgFreshTextList(void) {
+static rt_list * clar_fn_cgFreshBoolList(void) {
     rt_list * cv_l;
-    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
+    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___ret82;
-    cv___ret82 = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
-        if (clar_fn_rtListLastref((void*)cv___ret82)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret82); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___ret82, i)); }
-    clar_fn_rtListRelease((void*)cv___ret82);
+    cv___ret82 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+        clar_fn_rtListRelease((void*)cv___ret82);
 
     cv___ret82 = cv_l;
         clar_fn_rtListRetain((void*)cv___ret82);
 
+        clar_fn_rtListRelease((void*)cv_l);
+
+    return cv___ret82;
+    return NULL;
+}
+
+static rt_list * clar_fn_cgFreshTextList(void) {
+    rt_list * cv_l;
+    cv_l = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
+    rt_list * cv___ret83;
+    cv___ret83 = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
+        if (clar_fn_rtListLastref((void*)cv___ret83)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv___ret83); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv___ret83, i)); }
+    clar_fn_rtListRelease((void*)cv___ret83);
+
+    cv___ret83 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret83);
+
         if (clar_fn_rtListLastref((void*)cv_l)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_l); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_l, i)); }
     clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret82;
+    return cv___ret83;
     return NULL;
 }
 
 static rt_list * clar_fn_cgFreshIntListList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(rt_list *));
-    rt_list * cv___ret83;
-    cv___ret83 = (rt_list *)clar_fn_rtListNew(sizeof(rt_list *));
-        if (clar_fn_rtListLastref((void*)cv___ret83)) {
-    for (int32_t ix8 = 0; ix8 < clar_fn_rtListCount((void*)cv___ret83); ix8++) {
-    rt_list * en8 = *(rt_list **)clar_fn_rtListAt((void*)cv___ret83, ix8);
+    rt_list * cv___ret84;
+    cv___ret84 = (rt_list *)clar_fn_rtListNew(sizeof(rt_list *));
+        if (clar_fn_rtListLastref((void*)cv___ret84)) {
+    for (int32_t ix8 = 0; ix8 < clar_fn_rtListCount((void*)cv___ret84); ix8++) {
+    rt_list * en8 = *(rt_list **)clar_fn_rtListAt((void*)cv___ret84, ix8);
     clar_fn_rtListRelease((void*)en8);
     }
     }
-    clar_fn_rtListRelease((void*)cv___ret83);
+    clar_fn_rtListRelease((void*)cv___ret84);
 
-    cv___ret83 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret83);
+    cv___ret84 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret84);
 
         if (clar_fn_rtListLastref((void*)cv_l)) {
     for (int32_t ix9 = 0; ix9 < clar_fn_rtListCount((void*)cv_l); ix9++) {
@@ -46508,7 +46565,7 @@ static rt_list * clar_fn_cgFreshIntListList(void) {
     }
     clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret83;
+    return cv___ret84;
     return NULL;
 }
 
@@ -46845,8 +46902,8 @@ static rt_text * clar_fn_cg68ToText(clar_str_255 cv_s) {
     cv_t = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store256;
     cv___store256 = (rt_text *)clar_fn_rtTextNew();
-    rt_text * cv___ret84;
-    cv___ret84 = (rt_text *)clar_fn_rtTextNew();
+    rt_text * cv___ret85;
+    cv___ret85 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtTextRelease((void*)cv___store256);
     rt_text * t1 = NULL;
     t1 = (rt_text *)clar_fn_rtTextNew();
@@ -46856,11 +46913,11 @@ static rt_text * clar_fn_cg68ToText(clar_str_255 cv_s) {
     cv_t = cv___store256;
     cv___store256 = 0;
     clar_fn_rtTextAppendStr((void*)cv_t, (void*)(const uint8_t*)&(cv_s));
-    clar_fn_rtTextRelease((void*)cv___ret84);
-    cv___ret84 = cv_t;
-    clar_fn_rtTextRetain((void*)cv___ret84);
+    clar_fn_rtTextRelease((void*)cv___ret85);
+    cv___ret85 = cv_t;
+    clar_fn_rtTextRetain((void*)cv___ret85);
     clar_fn_rtTextRelease((void*)cv_t);
-    return cv___ret84;
+    return cv___ret85;
     return NULL;
 }
 
@@ -47511,8 +47568,8 @@ static int32_t clar_fn_cgHeurOnCycle(int32_t cv_start) {
     cv___store263 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store264;
     cv___store264 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv___ret85;
-    cv___ret85 = 0;
+    int32_t cv___ret86;
+    cv___ret86 = 0;
         clar_fn_rtListRelease((void*)cv___store263);
 
     rt_list * t1 = NULL;
@@ -47558,12 +47615,12 @@ static int32_t clar_fn_cgHeurOnCycle(int32_t cv_start) {
         if (!((cv_qi < clar_fn_rtListCount((void*)cv_queue)))) break;
         cv_cur = (*(int32_t*)rt_list_at(cv_queue, (int32_t)(cv_qi)));
         if (cv_cur == cv_start) {
-            cv___ret85 = 1;
+            cv___ret86 = 1;
                 clar_fn_rtListRelease((void*)cv_visited);
 
                 clar_fn_rtListRelease((void*)cv_queue);
 
-            return cv___ret85;
+            return cv___ret86;
         }
         cv_j = 0;
         while (1) {
@@ -47581,12 +47638,12 @@ static int32_t clar_fn_cgHeurOnCycle(int32_t cv_start) {
         }
         cv_qi = (cv_qi + 1);
     }
-    cv___ret85 = 0;
+    cv___ret86 = 0;
         clar_fn_rtListRelease((void*)cv_visited);
 
         clar_fn_rtListRelease((void*)cv_queue);
 
-    return cv___ret85;
+    return cv___ret86;
     return 0;
 }
 
@@ -48337,8 +48394,8 @@ static int32_t clar_fn_cgReserveDeepScratch(int32_t cv_startNeg) {
     cv___store271 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store272;
     cv___store272 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv___ret86;
-    cv___ret86 = 0;
+    int32_t cv___ret87;
+    cv___ret87 = 0;
     cv_running = cv_startNeg;
         clar_fn_rtListRelease((void*)cv___store269);
 
@@ -48417,7 +48474,7 @@ static int32_t clar_fn_cgReserveDeepScratch(int32_t cv_startNeg) {
         clar_fn_rtListRelease((void*)cv_cgDeepValueOffs);
 
     cv_cgDeepValueOffs = cv_vals;
-    cv___ret86 = cv_running;
+    cv___ret87 = cv_running;
         clar_fn_rtListRelease((void*)cv_ptrs);
 
         clar_fn_rtListRelease((void*)cv_counts);
@@ -48426,7 +48483,7 @@ static int32_t clar_fn_cgReserveDeepScratch(int32_t cv_startNeg) {
 
         clar_fn_rtListRelease((void*)cv_vals);
 
-    return cv___ret86;
+    return cv___ret87;
     return 0;
 }
 
@@ -48920,8 +48977,8 @@ static rt_list * clar_fn_cgBuildSerdescInts(int32_t cv_recNameIdx) {
     cv_m = 0;
     rt_list * cv___store275;
     cv___store275 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret87;
-    cv___ret87 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    rt_list * cv___ret88;
+    cv___ret88 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
         clar_fn_rtListRelease((void*)cv___store275);
 
     rt_list * t1 = NULL;
@@ -49018,14 +49075,14 @@ static rt_list * clar_fn_cgBuildSerdescInts(int32_t cv_recNameIdx) {
         }
         cv_f = clar_fn_irFieldSlotNext(cv_f);
     }
-        clar_fn_rtListRelease((void*)cv___ret87);
+        clar_fn_rtListRelease((void*)cv___ret88);
 
-    cv___ret87 = cv_out;
-        clar_fn_rtListRetain((void*)cv___ret87);
+    cv___ret88 = cv_out;
+        clar_fn_rtListRetain((void*)cv___ret88);
 
         clar_fn_rtListRelease((void*)cv_out);
 
-    return cv___ret87;
+    return cv___ret88;
     return NULL;
 }
 
@@ -56067,8 +56124,8 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
     cv___store357 = (rt_list *)clar_fn_rtListNew(sizeof(clar_str_255));
     rt_text * cv___store358;
     cv___store358 = (rt_text *)clar_fn_rtTextNew();
-    int32_t cv___ret88;
-    cv___ret88 = 0;
+    int32_t cv___ret89;
+    cv___ret89 = 0;
     if (cv_irHasApp && (cv_irAppId != (-(1)))) {
         clar_str_255 t1;
         t1 = clar_fn_poolGet(cv_irAppId);
@@ -56148,7 +56205,7 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
     clar_fn_rtTextRelease((void*)cv_cgLastFork);
     cv_cgLastFork = cv___store358;
     cv___store358 = 0;
-    cv___ret88 = 1;
+    cv___ret89 = 1;
         clar_fn_rtListRelease((void*)cv_extraTypes);
 
         clar_fn_rtListRelease((void*)cv_extraIds);
@@ -56158,7 +56215,7 @@ static int32_t clar_fn_cg68BuildFork(rt_list * cv_jtEntries, rt_list * cv_jtSegN
         if (clar_fn_rtListLastref((void*)cv_extraDatas)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_extraDatas); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_extraDatas, i)); }
     clar_fn_rtListRelease((void*)cv_extraDatas);
 
-    return cv___ret88;
+    return cv___ret89;
     return 0;
 }
 
@@ -56167,8 +56224,8 @@ static int32_t clar_fn_cg68WriteImageWrap(clar_str_255 cv_outPath) {
     cv_img = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store359;
     cv___store359 = (rt_text *)clar_fn_rtTextNew();
-    int32_t cv___ret89;
-    cv___ret89 = 0;
+    int32_t cv___ret90;
+    cv___ret90 = 0;
     clar_fn_rtTextRelease((void*)cv___store359);
     rt_text * t1 = NULL;
     t1 = clar_fn_app68WrapFork(clar_fn_cgAppName(cv_outPath), cv_cgLastCreator, cv_cgLastFork);
@@ -56186,13 +56243,13 @@ static int32_t clar_fn_cg68WriteImageWrap(clar_str_255 cv_outPath) {
         clar_str_255 t5;
         clar_fn_rtStrConcat((void*)&t5, (void*)(const uint8_t*)&(t3), (void*)(const uint8_t*)&(t4));
         rt_log((const uint8_t*)&(t5));
-        cv___ret89 = 0;
+        cv___ret90 = 0;
         clar_fn_rtTextRelease((void*)cv_img);
-        return cv___ret89;
+        return cv___ret90;
     }
-    cv___ret89 = 1;
+    cv___ret90 = 1;
     clar_fn_rtTextRelease((void*)cv_img);
-    return cv___ret89;
+    return cv___ret90;
     return 0;
 }
 
@@ -56257,8 +56314,8 @@ static int32_t clar_fn_cg68Measure(void) {
     cv___store379 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store380;
     cv___store380 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv___ret90;
-    cv___ret90 = 0;
+    int32_t cv___ret91;
+    cv___ret91 = 0;
     clar_fn_a68Reset();
     clar_fn_cgResetCodegenState();
     clar_fn_cgAssignGlobalOffsets();
@@ -56687,7 +56744,7 @@ static int32_t clar_fn_cg68Measure(void) {
     clar_fn_cgEmitPoolsBody();
     cv_cgPoolSize = (clar_fn_a68SizeSoFar() - cv_before);
     cv_cgMeasuringPoolSizes = 0;
-    cv___ret90 = 1;
+    cv___ret91 = 1;
         clar_fn_rtListRelease((void*)cv_segPlaceholder);
 
         clar_fn_rtListRelease((void*)cv_allStrLits);
@@ -56696,7 +56753,7 @@ static int32_t clar_fn_cg68Measure(void) {
 
         clar_fn_rtListRelease((void*)cv_allSerdescs);
 
-    return cv___ret90;
+    return cv___ret91;
     return 0;
 }
 
@@ -56765,8 +56822,8 @@ static int32_t clar_fn_cgPackProgram(void) {
     cv___store390 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store391;
     cv___store391 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv___ret91;
-    cv___ret91 = 0;
+    int32_t cv___ret92;
+    cv___ret92 = 0;
     cv_fixedBase = (4 + cv_cgGlueBundleSize);
     cv_freshAvail = (cv_cgSegLimit - cv_fixedBase);
         clar_fn_rtListRelease((void*)cv___store381);
@@ -57031,7 +57088,7 @@ static int32_t clar_fn_cgPackProgram(void) {
                     clar_str_255 t25;
                     clar_fn_rtStrConcat((void*)&t25, (void*)(const uint8_t*)&(t24), (void*)(const uint8_t*)&(clar_lit_1741));
                     rt_log((const uint8_t*)&(t25));
-                    cv___ret91 = 0;
+                    cv___ret92 = 0;
                         clar_fn_rtListRelease((void*)cv_segUsed);
 
                         clar_fn_rtListRelease((void*)cv_segAvail);
@@ -57070,7 +57127,7 @@ static int32_t clar_fn_cgPackProgram(void) {
 
                         clar_fn_rtListRelease((void*)cv_newSerdescSet);
 
-                    return cv___ret91;
+                    return cv___ret92;
                 }
                 clar_fn_cgPoolDeltaAndUnion((*(rt_list **)rt_list_at(cv_cgFuncStrLits, (int32_t)(cv_i))), cv_cgStrLitSize, cv_newStrSet);
                 clar_fn_cgPoolDeltaAndUnion((*(rt_list **)rt_list_at(cv_cgFuncEnumTables, (int32_t)(cv_i))), cv_cgEnumTableSize, cv_newEnumSet);
@@ -57195,7 +57252,7 @@ static int32_t clar_fn_cgPackProgram(void) {
         clar_fn_rtListRelease((void*)cv_cgSegUsesUiEvents);
 
     cv_cgSegUsesUiEvents = cv_segUiEvents;
-    cv___ret91 = 1;
+    cv___ret92 = 1;
         clar_fn_rtListRelease((void*)cv_segUsed);
 
         clar_fn_rtListRelease((void*)cv_segAvail);
@@ -57234,7 +57291,7 @@ static int32_t clar_fn_cgPackProgram(void) {
 
         clar_fn_rtListRelease((void*)cv_newSerdescSet);
 
-    return cv___ret91;
+    return cv___ret92;
     return 0;
 }
 
@@ -57261,8 +57318,8 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
     cv_segBytes = (rt_list *)clar_fn_rtListNew(sizeof(rt_text *));
     clar_str_255 cv_segNumStr;
     cv_segNumStr = (clar_str_255){0};
-    int32_t cv___ret92;
-    cv___ret92 = 0;
+    int32_t cv___ret93;
+    cv___ret93 = 0;
     rt_list * cv___store392;
     cv___store392 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store393;
@@ -57281,7 +57338,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
         cv_cgSegLimit = 32760;
     }
     if (!(clar_fn_cg68Measure())) {
-        cv___ret92 = 0;
+        cv___ret93 = 0;
             clar_fn_rtListRelease((void*)cv_jtEntries);
 
             clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57289,10 +57346,10 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
             if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-        return cv___ret92;
+        return cv___ret93;
     }
     if (!(clar_fn_cgPackProgram())) {
-        cv___ret92 = 0;
+        cv___ret93 = 0;
             clar_fn_rtListRelease((void*)cv_jtEntries);
 
             clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57300,7 +57357,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
             if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-        return cv___ret92;
+        return cv___ret93;
     }
     clar_fn_cgAssignFinalJtSlots();
         clar_fn_rtListRelease((void*)cv___store392);
@@ -57438,7 +57495,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
             clar_str_255 t12;
             clar_fn_rtStrConcat((void*)&t12, (void*)(const uint8_t*)&(t11), (void*)(const uint8_t*)&(clar_lit_443));
             rt_log((const uint8_t*)&(t12));
-            cv___ret92 = 0;
+            cv___ret93 = 0;
                 clar_fn_rtListRelease((void*)cv_jtEntries);
 
                 clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57446,7 +57503,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                 if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-            return cv___ret92;
+            return cv___ret93;
         }
         if (cv_s == 1) {
             (*(int32_t*)rt_list_at(cv_jtEntries, (int32_t)(0))) = (*(int32_t*)rt_list_at(cv_a68LabelAddr, (int32_t)(cv_startupLbl)));
@@ -57495,7 +57552,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                 clar_str_255 t26;
                 clar_fn_rtStrConcat((void*)&t26, (void*)(const uint8_t*)&(t24), (void*)(const uint8_t*)&(t25));
                 rt_log((const uint8_t*)&(t26));
-                cv___ret92 = 0;
+                cv___ret93 = 0;
                     clar_fn_rtListRelease((void*)cv_jtEntries);
 
                     clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57503,7 +57560,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                     if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-                return cv___ret92;
+                return cv___ret93;
             }
             clar_str_255 t27;
             clar_fn_rtStrConcat((void*)&t27, (void*)(const uint8_t*)&(cv_base), (void*)(const uint8_t*)&(clar_lit_1744));
@@ -57530,7 +57587,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                 clar_str_255 t37;
                 clar_fn_rtStrConcat((void*)&t37, (void*)(const uint8_t*)&(t35), (void*)(const uint8_t*)&(t36));
                 rt_log((const uint8_t*)&(t37));
-                cv___ret92 = 0;
+                cv___ret93 = 0;
                     clar_fn_rtListRelease((void*)cv_jtEntries);
 
                     clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57538,13 +57595,13 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                     if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-                return cv___ret92;
+                return cv___ret93;
             }
         }
         cv_s = (cv_s + 1);
     }
     if (!(clar_fn_cg68BuildFork(cv_jtEntries, cv_jtSegNums, cv_segBytes))) {
-        cv___ret92 = 0;
+        cv___ret93 = 0;
             clar_fn_rtListRelease((void*)cv_jtEntries);
 
             clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57552,9 +57609,9 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
             if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-        return cv___ret92;
+        return cv___ret93;
     }
-    cv___ret92 = 1;
+    cv___ret93 = 1;
         clar_fn_rtListRelease((void*)cv_jtEntries);
 
         clar_fn_rtListRelease((void*)cv_jtSegNums);
@@ -57562,39 +57619,39 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
         if (clar_fn_rtListLastref((void*)cv_segBytes)) { int32_t i; for (i = 0; i < clar_fn_rtListCount((void*)cv_segBytes); i++) clar_fn_rtTextRelease((void*)*(rt_text **)clar_fn_rtListAt((void*)cv_segBytes, i)); }
     clar_fn_rtListRelease((void*)cv_segBytes);
 
-    return cv___ret92;
+    return cv___ret93;
     return 0;
 }
 
 static rt_list * clar_fn_uibFreshIntList(void) {
     rt_list * cv_l;
     cv_l = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret93;
-    cv___ret93 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-        clar_fn_rtListRelease((void*)cv___ret93);
+    rt_list * cv___ret94;
+    cv___ret94 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+        clar_fn_rtListRelease((void*)cv___ret94);
 
-    cv___ret93 = cv_l;
-        clar_fn_rtListRetain((void*)cv___ret93);
+    cv___ret94 = cv_l;
+        clar_fn_rtListRetain((void*)cv___ret94);
 
         clar_fn_rtListRelease((void*)cv_l);
 
-    return cv___ret93;
+    return cv___ret94;
     return NULL;
 }
 
 static rt_map * clar_fn_uibFreshIntMap(void) {
     rt_map * cv_m;
     cv_m = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
-    rt_map * cv___ret94;
-    cv___ret94 = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
-        clar_fn_rtMapRelease((void*)cv___ret94);
+    rt_map * cv___ret95;
+    cv___ret95 = (rt_map *)clar_fn_rtMapNew(sizeof(int32_t));
+        clar_fn_rtMapRelease((void*)cv___ret95);
 
-    cv___ret94 = cv_m;
-        clar_fn_rtMapRetain((void*)cv___ret94);
+    cv___ret95 = cv_m;
+        clar_fn_rtMapRetain((void*)cv___ret95);
 
         clar_fn_rtMapRelease((void*)cv_m);
 
-    return cv___ret94;
+    return cv___ret95;
     return NULL;
 }
 
@@ -58460,8 +58517,8 @@ static rt_list * clar_fn_uibBuild(void) {
     cv_result = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     rt_list * cv___store414;
     cv___store414 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    rt_list * cv___ret95;
-    cv___ret95 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    rt_list * cv___ret96;
+    cv___ret96 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     clar_fn_uibReset();
     cv_i = 0;
     while (1) {
@@ -58661,14 +58718,14 @@ static rt_list * clar_fn_uibBuild(void) {
     clar_fn_uibAppendAll(cv_result, cv_uibLayouts);
     clar_fn_uibAppendAll(cv_result, cv_uibEnumArrays);
     clar_fn_uibAppendAll(cv_result, cv_uibStrings);
-        clar_fn_rtListRelease((void*)cv___ret95);
+        clar_fn_rtListRelease((void*)cv___ret96);
 
-    cv___ret95 = cv_result;
-        clar_fn_rtListRetain((void*)cv___ret95);
+    cv___ret96 = cv_result;
+        clar_fn_rtListRetain((void*)cv___ret96);
 
         clar_fn_rtListRelease((void*)cv_result);
 
-    return cv___ret95;
+    return cv___ret96;
     return NULL;
 }
 
@@ -58768,13 +58825,13 @@ static clar_str_255 clar_fn_normalizePath(clar_str_255 cv_path) {
     cv_i = 0;
     int32_t cv_abs;
     cv_abs = 0;
-    clar_str_255 cv___ret96;
-    cv___ret96 = (clar_str_255){0};
+    clar_str_255 cv___ret97;
+    cv___ret97 = (clar_str_255){0};
     if (!(cv_hostPaths)) {
-        clar_fn_rtStrStore((void*)&(cv___ret96), 255, (void*)(const uint8_t*)&(cv_path));
+        clar_fn_rtStrStore((void*)&(cv___ret97), 255, (void*)(const uint8_t*)&(cv_path));
             clar_fn_rtListRelease((void*)cv_segs);
 
-        return cv___ret96;
+        return cv___ret97;
     }
     cv_abs = ((clar_fn_rtStrLen((void*)(const uint8_t*)&(cv_path)) > 0) && (clar_fn_rtStrIndex((void*)(const uint8_t*)&(cv_path), (int32_t)(0)) == 47));
     clar_str_255 t1;
@@ -58829,10 +58886,10 @@ static clar_str_255 clar_fn_normalizePath(clar_str_255 cv_path) {
         clar_fn_rtStrStore((void*)&(cv_out), 255, (void*)(const uint8_t*)&(t7));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtStrStore((void*)&(cv___ret96), 255, (void*)(const uint8_t*)&(cv_out));
+    clar_fn_rtStrStore((void*)&(cv___ret97), 255, (void*)(const uint8_t*)&(cv_out));
         clar_fn_rtListRelease((void*)cv_segs);
 
-    return cv___ret96;
+    return cv___ret97;
     return (clar_str_255){0};
 }
 
@@ -58851,15 +58908,15 @@ static clar_str_255 clar_fn_drivePathJoin(clar_str_255 cv_dir, clar_str_255 cv_r
     cv_base = (clar_str_255){0};
     int32_t cv_i;
     cv_i = 0;
-    clar_str_255 cv___ret97;
-    cv___ret97 = (clar_str_255){0};
+    clar_str_255 cv___ret98;
+    cv___ret98 = (clar_str_255){0};
     if (cv_hostPaths) {
         clar_str_255 t1;
         t1 = clar_fn_joinPath(cv_dir, cv_rel);
-        clar_fn_rtStrStore((void*)&(cv___ret97), 255, (void*)(const uint8_t*)&(t1));
+        clar_fn_rtStrStore((void*)&(cv___ret98), 255, (void*)(const uint8_t*)&(t1));
             clar_fn_rtListRelease((void*)cv_segs);
 
-        return cv___ret97;
+        return cv___ret98;
     }
     cv_climbs = 0;
     cv_leadingDone = 0;
@@ -58912,10 +58969,10 @@ static clar_str_255 clar_fn_drivePathJoin(clar_str_255 cv_dir, clar_str_255 cv_r
         clar_fn_rtStrStore((void*)&(cv_out), 255, (void*)(const uint8_t*)&(t6));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtStrStore((void*)&(cv___ret97), 255, (void*)(const uint8_t*)&(cv_out));
+    clar_fn_rtStrStore((void*)&(cv___ret98), 255, (void*)(const uint8_t*)&(cv_out));
         clar_fn_rtListRelease((void*)cv_segs);
 
-    return cv___ret97;
+    return cv___ret98;
     return (clar_str_255){0};
 }
 
@@ -58955,8 +59012,8 @@ static clar_str_255 clar_fn_driveKeyResolve(clar_str_255 cv_baseKey, clar_str_25
     cv_out = (clar_str_255){0};
     int32_t cv_i;
     cv_i = 0;
-    clar_str_255 cv___ret98;
-    cv___ret98 = (clar_str_255){0};
+    clar_str_255 cv___ret99;
+    cv___ret99 = (clar_str_255){0};
     clar_str_255 t1;
     t1 = clar_fn_dirOf(cv_baseKey);
     clar_str_255 t2;
@@ -59004,10 +59061,10 @@ static clar_str_255 clar_fn_driveKeyResolve(clar_str_255 cv_baseKey, clar_str_25
         clar_fn_rtStrStore((void*)&(cv_out), 255, (void*)(const uint8_t*)&(t8));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtStrStore((void*)&(cv___ret98), 255, (void*)(const uint8_t*)&(cv_out));
+    clar_fn_rtStrStore((void*)&(cv___ret99), 255, (void*)(const uint8_t*)&(cv_out));
         clar_fn_rtListRelease((void*)cv_segs);
 
-    return cv___ret98;
+    return cv___ret99;
     return (clar_str_255){0};
 }
 
@@ -59024,8 +59081,8 @@ static clar_str_255 clar_fn_findRtDir(clar_str_255 cv_probeFile) {
     cv_ok = 0;
     rt_text * cv___store420;
     cv___store420 = (rt_text *)clar_fn_rtTextNew();
-    clar_str_255 cv___ret102;
-    cv___ret102 = (clar_str_255){0};
+    clar_str_255 cv___ret103;
+    cv___ret103 = (clar_str_255){0};
     clar_fn_rtStrStore((void*)&(cv_prefix), 255, (void*)(const uint8_t*)&(clar_lit_17));
     cv_i = 0;
     while (1) {
@@ -59045,18 +59102,18 @@ static clar_str_255 clar_fn_findRtDir(clar_str_255 cv_probeFile) {
         clar_fn_rtStrConcat((void*)&t3, (void*)(const uint8_t*)&(cv_candidate), (void*)(const uint8_t*)&(cv_probeFile));
         cv_ok = rt_file_read_text((const uint8_t*)&(t3), cv_probe);
         if (cv_ok) {
-            clar_fn_rtStrStore((void*)&(cv___ret102), 255, (void*)(const uint8_t*)&(cv_candidate));
+            clar_fn_rtStrStore((void*)&(cv___ret103), 255, (void*)(const uint8_t*)&(cv_candidate));
             clar_fn_rtTextRelease((void*)cv_probe);
-            return cv___ret102;
+            return cv___ret103;
         }
         clar_str_255 t4;
         clar_fn_rtStrConcat((void*)&t4, (void*)(const uint8_t*)&(cv_prefix), (void*)(const uint8_t*)&(clar_lit_1759));
         clar_fn_rtStrStore((void*)&(cv_prefix), 255, (void*)(const uint8_t*)&(t4));
         cv_i = (cv_i + 1);
     }
-    clar_fn_rtStrStore((void*)&(cv___ret102), 255, (void*)(const uint8_t*)&(clar_lit_17));
+    clar_fn_rtStrStore((void*)&(cv___ret103), 255, (void*)(const uint8_t*)&(clar_lit_17));
     clar_fn_rtTextRelease((void*)cv_probe);
-    return cv___ret102;
+    return cv___ret103;
     return (clar_str_255){0};
 }
 
@@ -59110,8 +59167,8 @@ static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_st
     cv_diskProbe = (rt_text *)clar_fn_rtTextNew();
     rt_text * cv___store421;
     cv___store421 = (rt_text *)clar_fn_rtTextNew();
-    int32_t cv___ret103;
-    cv___ret103 = 0;
+    int32_t cv___ret104;
+    cv___ret104 = 0;
     rt_text * cv___store422;
     cv___store422 = (rt_text *)clar_fn_rtTextNew();
     clar_fn_rtStrStore((void*)&(cv_altPath), 255, (void*)(const uint8_t*)&(clar_lit_17));
@@ -59161,10 +59218,10 @@ static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_st
         int32_t t7;
         t7 = (t6 - 1);
         clar_fn_rtListPush((void*)cv_dedupHits, (void*)&(t7));
-        cv___ret103 = 0;
+        cv___ret104 = 0;
         clar_fn_rtTextRelease((void*)cv_src);
         clar_fn_rtTextRelease((void*)cv_diskProbe);
-        return cv___ret103;
+        return cv___ret104;
     }
     if ((clar_fn_rtStrCmp((void*)(const uint8_t*)&(cv_altPath), (void*)(const uint8_t*)&(clar_lit_17)) != 0) && clar_fn_rtMapHas((void*)cv_seenPaths, (void*)(const uint8_t*)&(cv_altPath))) {
         int32_t t8;
@@ -59172,10 +59229,10 @@ static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_st
         int32_t t9;
         t9 = (t8 - 1);
         clar_fn_rtListPush((void*)cv_dedupHits, (void*)&(t9));
-        cv___ret103 = 0;
+        cv___ret104 = 0;
         clar_fn_rtTextRelease((void*)cv_src);
         clar_fn_rtTextRelease((void*)cv_diskProbe);
-        return cv___ret103;
+        return cv___ret104;
     }
     int32_t t10;
     t10 = 0;
@@ -59198,10 +59255,10 @@ static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_st
         if (cv_entry) {
             cv_entryFailed = 1;
         }
-        cv___ret103 = 1;
+        cv___ret104 = 1;
         clar_fn_rtTextRelease((void*)cv_src);
         clar_fn_rtTextRelease((void*)cv_diskProbe);
-        return cv___ret103;
+        return cv___ret104;
     }
     cv_pathIdx = clar_fn_intern(cv_path);
     cv_curPathIdx = cv_pathIdx;
@@ -59274,10 +59331,10 @@ static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_st
         t24 = clar_fn_rtListCount((void*)cv_asmHeads);
         clar_fn_rtMapSet((void*)cv_seenPaths, (void*)(const uint8_t*)&(cv_altPath), (void*)&(t24));
     }
-    cv___ret103 = 0;
+    cv___ret104 = 0;
     clar_fn_rtTextRelease((void*)cv_src);
     clar_fn_rtTextRelease((void*)cv_diskProbe);
-    return cv___ret103;
+    return cv___ret104;
     return 0;
 }
 
@@ -59288,8 +59345,8 @@ static rt_list * clar_fn_hoistDedups(int32_t cv_fromHit) {
     cv_j = 0;
     int32_t cv_hit;
     cv_hit = 0;
-    rt_list * cv___ret104;
-    cv___ret104 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
+    rt_list * cv___ret105;
+    cv___ret105 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     cv_j = cv_fromHit;
     while (1) {
         if (!((cv_j < clar_fn_rtListCount((void*)cv_dedupHits)))) break;
@@ -59305,14 +59362,14 @@ static rt_list * clar_fn_hoistDedups(int32_t cv_fromHit) {
         }
         cv_j = (cv_j + 1);
     }
-        clar_fn_rtListRelease((void*)cv___ret104);
+        clar_fn_rtListRelease((void*)cv___ret105);
 
-    cv___ret104 = cv_out;
-        clar_fn_rtListRetain((void*)cv___ret104);
+    cv___ret105 = cv_out;
+        clar_fn_rtListRetain((void*)cv___ret105);
 
         clar_fn_rtListRelease((void*)cv_out);
 
-    return cv___ret104;
+    return cv___ret105;
     return NULL;
 }
 
@@ -59347,14 +59404,14 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
     cv_hoists = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     int32_t cv_h;
     cv_h = 0;
-    int32_t cv___ret105;
-    cv___ret105 = 0;
+    int32_t cv___ret106;
+    cv___ret106 = 0;
     rt_text * cv___store423;
     cv___store423 = (rt_text *)clar_fn_rtTextNew();
     rt_list * cv___store424;
     cv___store424 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
     if ((!(cv_testapi)) || (cv_combined == (-(1)))) {
-        cv___ret105 = 0;
+        cv___ret106 = 0;
             clar_fn_rtListRelease((void*)cv_earlyMods);
 
             clar_fn_rtListRelease((void*)cv_earlyRtHeads);
@@ -59362,7 +59419,7 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
         clar_fn_rtTextRelease((void*)cv_rtProbe);
             clar_fn_rtListRelease((void*)cv_hoists);
 
-        return cv___ret105;
+        return cv___ret106;
     }
     cv_earlyIsUiProg = 0;
     cv_d = cv_combined;
@@ -59374,7 +59431,7 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
         cv_d = clar_fn_declNext(cv_d);
     }
     if (!(cv_earlyIsUiProg)) {
-        cv___ret105 = 0;
+        cv___ret106 = 0;
             clar_fn_rtListRelease((void*)cv_earlyMods);
 
             clar_fn_rtListRelease((void*)cv_earlyRtHeads);
@@ -59382,7 +59439,7 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
         clar_fn_rtTextRelease((void*)cv_rtProbe);
             clar_fn_rtListRelease((void*)cv_hoists);
 
-        return cv___ret105;
+        return cv___ret106;
     }
     clar_str_255 t1;
     t1 = clar_lit_1762;
@@ -59544,7 +59601,7 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
         }
     }
     cv_combined = cv_earlyCombined2;
-    cv___ret105 = 1;
+    cv___ret106 = 1;
         clar_fn_rtListRelease((void*)cv_earlyMods);
 
         clar_fn_rtListRelease((void*)cv_earlyRtHeads);
@@ -59552,7 +59609,7 @@ static int32_t clar_fn_driveEarlySplice(int32_t cv_testapi) {
     clar_fn_rtTextRelease((void*)cv_rtProbe);
         clar_fn_rtListRelease((void*)cv_hoists);
 
-    return cv___ret105;
+    return cv___ret106;
     return 0;
 }
 
@@ -59605,8 +59662,8 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
     cv___store425 = (rt_text *)clar_fn_rtTextNew();
     rt_list * cv___store426;
     cv___store426 = (rt_list *)clar_fn_rtListNew(sizeof(int32_t));
-    int32_t cv___ret106;
-    cv___ret106 = 0;
+    int32_t cv___ret107;
+    cv___ret107 = 0;
     cv_isUiProg = 0;
     cv_d = cv_combined;
     while (1) {
@@ -59849,7 +59906,7 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
         }
         clar_fn_checkProgram(cv_combined2);
         if (clar_fn_rtListCount((void*)cv_diags) > 0) {
-            cv___ret106 = 0;
+            cv___ret107 = 0;
                 clar_fn_rtListRelease((void*)cv_neededMods);
 
                 clar_fn_rtListRelease((void*)cv_rtHeads);
@@ -59857,10 +59914,10 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
             clar_fn_rtTextRelease((void*)cv_rtProbe);
                 clar_fn_rtListRelease((void*)cv_hoists);
 
-            return cv___ret106;
+            return cv___ret107;
         }
     }
-    cv___ret106 = 1;
+    cv___ret107 = 1;
         clar_fn_rtListRelease((void*)cv_neededMods);
 
         clar_fn_rtListRelease((void*)cv_rtHeads);
@@ -59868,7 +59925,7 @@ static int32_t clar_fn_driveManifestSplice(rt_list * cv_entries, int32_t cv_earl
     clar_fn_rtTextRelease((void*)cv_rtProbe);
         clar_fn_rtListRelease((void*)cv_hoists);
 
-    return cv___ret106;
+    return cv___ret107;
     return 0;
 }
 

@@ -104,6 +104,30 @@ func buildHostOracleFork(t *testing.T, fixture string) []byte {
 // compiles (runSnow's own timeout raised to 130 minutes accordingly).
 const macResidentCompileSettle = 110 * time.Minute
 
+// macResidentSettle returns macResidentCompileSettle, or
+// CLARUS_MACRESIDENT_SETTLE's own parsed value when set (a Go duration
+// string, e.g. "12m") -- added by Task 11 fix round 1 so a controller
+// re-verifying a specific fix can budget a much shorter live run than the
+// conservative 110-minute default (sized for the WORST observed single
+// compile, not the common case) without editing this file. Honest
+// tradeoff: a short override risks a false FAIL if this particular run's
+// compile is slower than usual (real Snow-hardware wall clock is not
+// perfectly reproducible run to run) -- it never risks a false PASS, since
+// the assertions below are unchanged either way. Unset (the default) keeps
+// today's conservative behavior exactly.
+func macResidentSettle(t *testing.T) time.Duration {
+	t.Helper()
+	v := os.Getenv("CLARUS_MACRESIDENT_SETTLE")
+	if v == "" {
+		return macResidentCompileSettle
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		t.Fatalf("CLARUS_MACRESIDENT_SETTLE=%q: %v", v, err)
+	}
+	return d
+}
+
 // macResidentLaunchSettle is TestMacResidentClaruscOnSnow's own second
 // sub-test (Step 6, launchable-app proof): TickProbe.bin, extracted from
 // the first sub-test's own byte-identity check, booted standalone with
@@ -174,9 +198,15 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	d.putText(t, "tickprobe.cla", mustReadFile(t, tickFixture))
 	d.putText(t, "catprobe.cla", mustReadFile(t, catFixture))
 
+	settle := macResidentSettle(t)
+	// 20-minute headroom above the settle window, same margin the
+	// original 110min/130min const pair used -- runSnow's own timeout is
+	// a hard kill, settle is when this test's own poll loop decides to
+	// quit Snow, so the two must never be equal.
+	runSnowTimeout := settle + 20*time.Minute
 	bootStart := time.Now()
-	runSnow(t, d, 130*time.Minute, func() bool { return time.Since(bootStart) >= macResidentCompileSettle })
-	t.Logf("on-Mac double-compile boot: %s wall clock", time.Since(bootStart))
+	runSnow(t, d, runSnowTimeout, func() bool { return time.Since(bootStart) >= settle })
+	t.Logf("on-Mac double-compile boot: %s wall clock (settle=%s)", time.Since(bootStart), settle)
 
 	appOut := string(d.get(t, ":System Folder:Startup Items:out"))
 	fireCount := strings.Count(appOut, "T FIRE File.Compile.select")

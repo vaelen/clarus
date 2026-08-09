@@ -5972,11 +5972,42 @@ func lowUiSynthExternName(externNameIdx: int): int {
 // declNext), populating the ir.cla arenas + Program flags. Returns 0 (ir.cla
 // has no wrapping Program value: the arenas ARE the program). irReset() must
 // have run first.
+//
+// lowStrIdx reset (Task 11 fix round 1, mac-resident-clarusc): lowInternStr's
+// own dedup cache maps a literal's STRING VALUE to the irStrLits index it
+// was assigned -- but irReset() just wiped irStrLits itself back to empty,
+// while lowStrIdx (a plain module-level map, declared with lowSwitchN/
+// uiMenuCount above but never listed alongside their own "reset once per
+// program in lowerProgram" doc comment) is not one of the two things this
+// function already resets. A single-shot process (every front end before
+// macgui.cla) never noticed: lowStrIdx starts empty at process start and
+// is used exactly once. macgui.cla's gcCompile calls driveCompile (and so
+// lowerProgram) repeatedly in one process; a second compile's lowering hit
+// literals it had ALSO seen in the first compile's runtime-module splice
+// (near-guaranteed -- both compiles splice nearly the same core/ui module
+// set, sharing the same embedded error-message strings) and returned the
+// FIRST compile's now-stale irStrLits index straight from the cache,
+// without ever calling irAddStrLit -- so the second compile's own
+// (correctly emptied) irStrLits pool stayed short while its own AST still
+// carried the old, now out-of-range indices, and cg68k.cla's
+// cgReserveStrLitLabels/cgPoolStrRef ("list index out of range") crashed
+// walking a function body that referenced one. Root-caused on host (no Mac
+// hardware needed) with a scratch driver replaying gcCompile's own
+// driveReset/resetDiags/astReset/driveCompile/driveEmit68kFork sequence
+// twice in one process (testdata/cg68k/tickprobe.cla then testdata/mac-
+// resident/catprobe.cla, matching the live Snow run's own two `Compile...`
+// dispatches) -- not committed as a lasting fixture (would need a new
+// hostPaths=false-capable Go test harness this task's brief judged not
+// worth adding); the regression pin is TestMacResidentClaruscOnSnow
+// itself (internal/mactest/macresident_test.go), which drives this exact
+// two-compile sequence on real hardware.
 func lowerProgram(declHead: int): int {
     var d: int
+    var freshStrIdx: map of int
 
     lowSwitchN = 0
     uiMenuCount = 0
+    lowStrIdx = freshStrIdx
     lowCurWinType = -1
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1

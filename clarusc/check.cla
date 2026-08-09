@@ -4949,9 +4949,43 @@ func checkAppConstExpr(e: int): int {
 // Go's own behavior, not an inefficiency unique to this port; paramSpecs/
 // methodSigs are explicitly emptied first so they don't grow across
 // repeated resets in a long-running process.
+// checkReset's own doc comment family (funcScopeByDecl etc., above) argues
+// a decl/expr-indexed side table needs no bulk clear because "every key
+// used within a checkProgram call is always freshly written in THAT SAME
+// call before anything in that call reads it" -- true for a table written
+// UNCONDITIONALLY for every node of its own kind (funcScopeByDecl: every
+// func decl), false for one written only CONDITIONALLY. enumConstOf/
+// constUseIsStr/constUseInt/constUseStr are written only when an Ident
+// happens to resolve to a const/enum member (lowIdent, lower.cla) -- an
+// ORDINARY local var's Ident node never writes an entry at its own index,
+// in ANY compile. Task 11 fix round 2 (mac-resident-clarusc): macgui.cla
+// (Task 10) broke the one-program-per-process assumption these four maps
+// (and exprTypeOf's own doc comment explicitly names the same assumption)
+// were built under -- a second driveCompile call in the same process gets
+// fresh AST node indices from astReset() that inevitably collide with a
+// FIRST compile's indices, and for these four maps a stale hit at a
+// reused index (this time belonging to an ordinary local var, never
+// written this compile) reads back as a genuine const/enum reference --
+// e.g. lowIdent's `enumConstOf.has(key)` returning true for a plain local
+// and handing lowering a bogus EIntConst as an ASSIGNMENT TARGET
+// (cg68k.cla's cgStmt then panics: "SAssign dst kind 0 ... unsupported").
+// Reset here, fresh per checkProgram call, same idiom as every other
+// module-global map reset in this file (a genuinely new empty map, not a
+// mutated existing one -- map is a reference type, Ch3).
 func checkReset() {
+    var freshEnumConstOf: map of int
+    var freshConstUseIsStr: map of int
+    var freshConstUseInt: map of int
+    var freshConstUseStr: map of string
+    var freshExprTypeOf: map of int
+
     typesReset()
     scopesReset()
+    enumConstOf = freshEnumConstOf
+    constUseIsStr = freshConstUseIsStr
+    constUseInt = freshConstUseInt
+    constUseStr = freshConstUseStr
+    exprTypeOf = freshExprTypeOf
 
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)
