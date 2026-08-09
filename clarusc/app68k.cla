@@ -506,24 +506,25 @@ func app68BuildResourceFork(resTypes: list of string, resIds: list of int, resNa
     return out
 }
 
-// app68Build is the top-level entry point: builds CODE 0, CODE 1..N (one
-// per segment), folds in extraTypes/extraIds/extraNames/extraDatas (Task
-// 13: SIZE(-1) always, plus whatever resource-parity set cg68WriteImage
-// assembled -- ALRT/DITL/vers/icon family/BNDL/FREF/signature STR; Task 5
-// (mac-resident-clarusc) adds extraNames, "" for every Task-13 resource
-// and the baked file's own path for any `--bake FILE` CLFS resource),
-// assembles the resource fork, wraps it in a 128-byte MacBinary II
-// header, and pads the whole thing to a multiple of 128 bytes. segBytes[s]
-// is segment (s+1)'s raw code bytes; jtEntries[i]/jtSegNums[i] is JT slot
-// i's routine offset (within its own segment) and owning segment number;
+// app68BuildFork is app68Build's own fork-assembly half (mac-resident-
+// clarusc Task 9): builds CODE 0, CODE 1..N (one per segment), folds in
+// extraTypes/extraIds/extraNames/extraDatas (Task 13: SIZE(-1) always,
+// plus whatever resource-parity set cg68WriteImage assembled -- ALRT/DITL/
+// vers/icon family/BNDL/FREF/signature STR; Task 5 (mac-resident-clarusc)
+// adds extraNames, "" for every Task-13 resource and the baked file's own
+// path for any `--bake FILE` CLFS resource), and assembles the raw
+// resource fork -- no MacBinary header, no padding. segBytes[s] is segment
+// (s+1)'s raw code bytes; jtEntries[i]/jtSegNums[i] is JT slot i's routine
+// offset (within its own segment) and owning segment number;
 // segJtFirst[s]/segJtCount[s] is segment (s+1)'s own contiguous JT slot
 // range (cg68k.cla's cgAssignFinalJtSlots), used for that segment's
-// CODE-(s+1) header.
-func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
+// CODE-(s+1) header. Split out of app68Build so a fork-only caller (the
+// on-Mac front end, via cg68k.cla's cg68BuildFork/driveEmit68kFork) can
+// hand the raw fork straight to `file.writeRes` instead of paying for a
+// MacBinary wrap it will immediately strip back off.
+func app68BuildFork(segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
     var code0: text
     var codeRes: list of text
-    var rsrc: text
-    var out: text
     var i: int
     var resTypes: list of string
     var resIds: list of int
@@ -560,12 +561,30 @@ func app68Build(appName: string(31), creator: string(7), segBytes: list of text,
         i = i + 1
     }
 
-    rsrc = app68BuildResourceFork(resTypes, resIds, resNames, resDatas)
+    return app68BuildResourceFork(resTypes, resIds, resNames, resDatas)
+}
 
-    out = app68BuildHeader(appName, creator, rsrc.length)
-    out.append(rsrc)
+// app68WrapFork is app68Build's other half: wrap an already-built resource
+// fork (app68BuildFork's return, or any equivalent) in a 128-byte
+// MacBinary II header and pad the whole thing to a multiple of 128 bytes.
+// Split out so both app68Build (below) and cg68k.cla's cg68WriteImageWrap
+// (the host `emit68k` tail, after driveEmit68kFork) share one wrap
+// implementation instead of two copies drifting apart.
+func app68WrapFork(appName: string(31), creator: string(7), fork: text): text {
+    var out: text
+
+    out = app68BuildHeader(appName, creator, fork.length)
+    out.append(fork)
     while out.length mod 128 != 0 {
         out.append(char(0))
     }
     return out
+}
+
+// app68Build is the top-level entry point: app68BuildFork + app68WrapFork
+// in sequence -- see each's own doc comment for what it does. Kept as a
+// single call for any caller that wants the finished MacBinary image and
+// doesn't care about the fork/wrap seam.
+func app68Build(appName: string(31), creator: string(7), segBytes: list of text, jtEntries: list of int, jtSegNums: list of int, segJtFirst: list of int, segJtCount: list of int, belowA5: int, extraTypes: list of string, extraIds: list of int, extraNames: list of string, extraDatas: list of text): text {
+    return app68WrapFork(appName, creator, app68BuildFork(segBytes, jtEntries, jtSegNums, segJtFirst, segJtCount, belowA5, extraTypes, extraIds, extraNames, extraDatas))
 }

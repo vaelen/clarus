@@ -1122,14 +1122,20 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     return true
 }
 
-// driveEmit68k lowers the already-compiled program (driveCompile must have
-// returned true first, with wantEmit/want68k set) to a native 68k
-// MacBinary image: roots the native-only entry points, synthesizes pascal
-// glue for any callback, shakes, then hands off to cg68Program. `nopeep`
-// sets peep68k.cla's peepDisabled global -- the caller no longer sets it
-// directly during flag parsing (main.cla still owns parsing --nopeep into
-// a local bool; this is where it actually takes effect now).
-func driveEmit68k(outPath: string, listing: bool, segLimit: int, nopeep: bool): bool {
+// driveEmit68kFork (Task 9, mac-resident-clarusc) lowers the already-
+// compiled program (driveCompile must have returned true first, with
+// wantEmit/want68k set) all the way to a finished native 68k resource
+// fork, WITHOUT the MacBinary wrap driveEmit68k below still does for the
+// host `emit68k` CLI: roots the native-only entry points, synthesizes
+// pascal glue for any callback, shakes, then hands off to cg68ProgramFork
+// (cg68k.cla) -- the same segment-emission pipeline as driveEmit68k, just
+// stopping short of the wrap+write. `nopeep` sets peep68k.cla's
+// peepDisabled global, same as driveEmit68k always did. On success, the
+// fork bytes/app name/creator are readable via driveLastFork/
+// driveLastAppName/driveLastCreator below -- a front end that writes the
+// raw fork itself (`file.writeRes`, Task 10) calls this instead of
+// driveEmit68k and never sees a MacBinary byte.
+func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: bool): bool {
     peepDisabled = nopeep
     // native-5d Task 7: root the native-only entry points BEFORE shaking.
     cg68AddRoots()
@@ -1137,5 +1143,39 @@ func driveEmit68k(outPath: string, listing: bool, segLimit: int, nopeep: bool): 
     // glue IRFunc per `callback func` an ECbAddr decay was ever built for.
     cg68SynthCbGlue()
     shakeProgram()
-    return cg68Program(outPath, listing, segLimit)
+    return cg68ProgramFork(outPath, listing, segLimit)
+}
+
+// driveEmit68k is the host `emit68k` entry point: driveEmit68kFork above,
+// then the MacBinary wrap + write (cg68WriteImageWrap, cg68k.cla) --
+// byte-identical to the old single-function driveEmit68k (which called
+// cg68Program directly; cg68Program was itself exactly this same
+// cg68ProgramFork-then-wrap sequence, now split across the two files at
+// the fork seam instead of bundled in one cg68k.cla function).
+func driveEmit68k(outPath: string, listing: bool, segLimit: int, nopeep: bool): bool {
+    if not driveEmit68kFork(outPath, listing, segLimit, nopeep) {
+        return false
+    }
+    return cg68WriteImageWrap(outPath)
+}
+
+// driveLastFork/driveLastAppName/driveLastCreator (Task 9, mac-resident-
+// clarusc) expose driveEmit68kFork's last output to a resource-writing
+// front end: the raw resource-fork image (no MacBinary header, no
+// padding), the app's own declared name (appinfo naming rules -- the same
+// name/appDeclName/entry-basename fallback `clarusc appinfo` uses,
+// already resolved into cg68k.cla's cgAppRawName by driveManifestSplice
+// above), and the four-char creator code cg68BuildFork resolved from the
+// app section (declared app id, else "????"). Thin passthroughs onto
+// cg68k.cla's own globals -- kept here, not there, since these are the
+// documented front-end-facing contract surface (drive.cla owns the
+// front-end-neutral pipeline; cg68k.cla owns codegen internals).
+func driveLastFork(): text {
+    return cgLastFork
+}
+func driveLastAppName(): string {
+    return cgAppRawName
+}
+func driveLastCreator(): string {
+    return cgLastCreator
 }

@@ -214,6 +214,17 @@ var cgEventsBytes: text
 var cgAppRawName: string
 var cgAppIconPath: string
 
+// cgLastFork/cgLastCreator (Task 9, mac-resident-clarusc) hold
+// cg68BuildFork's own last output: the raw resource-fork image (no
+// MacBinary header, no padding) and the creator code it resolved from the
+// program's app section. cg68WriteImageWrap (the host `emit68k` tail)
+// reads both to finish the MacBinary wrap; drive.cla's
+// driveLastFork/driveLastCreator expose them (plus cgAppRawName above,
+// already the app-section name) to a resource-writing front end that
+// skips the wrap entirely.
+var cgLastFork: text
+var cgLastCreator: string(7)
+
 // cgBakeNames/cgBakeDatas (Task 5, mac-resident-clarusc) hold one entry
 // per `emit68k --bake FILE` flag, in flag order -- main.cla sets both
 // before calling cg68Program, same hand-off pattern as cgEventsBytes
@@ -10024,21 +10035,28 @@ func cg68ResourceParitySet(extraTypes: list of string, extraIds: list of int, ex
     extraDatas.add(app68BuildSize(irHasApp))
 }
 
-// cg68WriteImage builds the real MacBinary application image (app68k.cla)
-// from every segment's already-finished stream and writes it to outPath.
-// jtEntries/jtSegNums are indexed by FINAL JT slot number
-// (cgAssignFinalJtSlots), already fully populated by cg68Program's own
-// per-segment loop; segBytes[s-1] is segment s's raw code bytes
-// (cgSegJtFirst[s-1]/cgSegJtCount[s-1] give that segment's own JT range
-// for its CODE-N header). creator (Task 13, native-5e) is the program's
-// own declared app id (irAppId) when it declared one, else "????" (the
-// unregistered-developer creator code, this repo's own existing default,
-// scripts/build-mac.sh's `${APPID:-????}`) -- matches the MacBinary
-// header's own creator field, which app68BuildHeader already threads
-// through unconditionally (nothing to change there).
-func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of int, segBytes: list of text): bool {
-    var img: text
-    var creator: string(7)
+// cg68BuildFork (Task 9, mac-resident-clarusc -- split out of what used to
+// be cg68WriteImage's own body) assembles the raw resource-fork image
+// (app68k.cla's app68BuildFork -- CODE 0, CODE 1..N, plus every extra
+// resource: Task 13's resource-parity set, Task 5's `--bake` CLFS
+// resources) and the creator code it resolves from the program's app
+// section, storing both into cgLastFork/cgLastCreator. jtEntries/jtSegNums
+// are indexed by FINAL JT slot number (cgAssignFinalJtSlots), already
+// fully populated by cg68ProgramFork's own per-segment loop; segBytes[s-1]
+// is segment s's raw code bytes (cgSegJtFirst[s-1]/cgSegJtCount[s-1] give
+// that segment's own JT range for its CODE-N header). creator (Task 13,
+// native-5e) is the program's own declared app id (irAppId) when it
+// declared one, else "????" (the unregistered-developer creator code,
+// this repo's own existing default, scripts/build-mac.sh's
+// `${APPID:-????}`) -- matches the MacBinary header's own creator field.
+// No outPath here: unlike the old cg68WriteImage, building the fork needs
+// no output path at all -- naming is either the wrap step's own concern
+// (cg68WriteImageWrap, still outPath-derived, for the host MacBinary
+// file) or the app section's own declared name (cgAppRawName, already
+// resolved by drive.cla's driveManifestSplice), for a front end with no
+// outPath to derive from. Always succeeds today (kept `bool` to match
+// driveEmit68kFork's own shape and leave room for a future failure path).
+func cg68BuildFork(jtEntries: list of int, jtSegNums: list of int, segBytes: list of text): bool {
     var extraTypes: list of string
     var extraIds: list of int
     var extraNames: list of string
@@ -10046,9 +10064,9 @@ func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of 
     var bi: int
 
     if irHasApp and irAppId != -1 {
-        creator = poolGet(irAppId)
+        cgLastCreator = poolGet(irAppId)
     } else {
-        creator = "????"
+        cgLastCreator = "????"
     }
 
     extraTypes = cgFreshStringList()
@@ -10080,12 +10098,26 @@ func cg68WriteImage(outPath: string, jtEntries: list of int, jtSegNums: list of 
         bi = bi + 1
     }
 
-    img = app68Build(cgAppName(outPath), creator, segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraNames, extraDatas)
+    cgLastFork = app68BuildFork(segBytes, jtEntries, jtSegNums, cgSegJtFirst, cgSegJtCount, cgGlobalsBelowA5Size, extraTypes, extraIds, extraNames, extraDatas)
+    return true
+}
+
+// cg68WriteImageWrap (Task 9, mac-resident-clarusc) is cg68WriteImage's
+// other half: wrap cg68BuildFork's last output (cgLastFork/cgLastCreator)
+// in a MacBinary header named from outPath (app68k.cla's app68WrapFork)
+// and write it. Together with cg68BuildFork, byte-identical to the old
+// single-function cg68WriteImage for every existing (host) caller --
+// cg68Program below still calls both in sequence.
+func cg68WriteImageWrap(outPath: string): bool {
+    var img: text
+
+    img = app68WrapFork(cgAppName(outPath), cgLastCreator, cgLastFork)
     // native-gaps-cleanup Task 2: file.writeText's own mandatory type/
     // creator args -- fileTypeApplication ('APPL') describes this output
     // (a native 68k application image) exactly; creator is the SAME value
-    // already computed above (the app's own declared id, else '????').
-    if not file.writeText(outPath, img, fileTypeApplication, creator) {
+    // cg68BuildFork already resolved (the app's own declared id, else
+    // '????').
+    if not file.writeText(outPath, img, fileTypeApplication, cgLastCreator) {
         log("cg68Program: cannot write " + outPath + ": " + lastError.message)
         return false
     }
@@ -10558,23 +10590,29 @@ func cgPackProgram(): bool {
     return true
 }
 
-// cg68Program is the top-level emit68k driver: measure the whole program
-// standalone (cg68Measure), pack every reachable function into segments
-// (cgPackProgram), assign final JT slots from that packing
+// cg68ProgramFork (Task 9, mac-resident-clarusc -- renamed from the old
+// cg68Program, which this function now sits under) is the top-level
+// emit68k driver up through building the raw resource fork: measure the
+// whole program standalone (cg68Measure), pack every reachable function
+// into segments (cgPackProgram), assign final JT slots from that packing
 // (cgAssignFinalJtSlots), then really emit each segment in turn --
 // startup + cg_init_globals in segment 1 only, that segment's own packed
 // functions, the duplicated-glue bundle, and the full constant pool,
 // every segment -- finishing and collecting each segment's own jump-
-// table entries before moving to the next. Returns false (after logging
-// why) on any diagnostic-worthy failure: an oversized function
-// (cgPackProgram), an unresolved label (a real codegen bug -- this
-// backend's own scaffolding never leaves one dangling), or a write
-// failure. main.cla calls this AFTER cg68AddRoots()+shakeProgram() --
-// see cg68AddRoots's own doc comment. segLimit<=0 selects the real
-// classic-Mac budget (32760); a positive value is a TEST-ONLY override
-// (main.cla's undocumented `--seglimit` flag) to force a small program
-// into several segments deterministically.
-func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
+// table entries before moving to the next, then cg68BuildFork to
+// assemble the fork itself (cgLastFork/cgLastCreator). Returns false
+// (after logging why) on any diagnostic-worthy failure: an oversized
+// function (cgPackProgram) or an unresolved label (a real codegen bug --
+// this backend's own scaffolding never leaves one dangling). Does NOT
+// write anything -- no MacBinary wrap, no file -- see cg68WriteImageWrap
+// (the wrap+write step) and drive.cla's driveEmit68kFork/driveEmit68k
+// (which call this, then wrap only for the host path). drive.cla calls
+// this AFTER cg68AddRoots()+shakeProgram() -- see cg68AddRoots's own doc
+// comment. segLimit<=0 selects the real classic-Mac budget (32760); a
+// positive value is a TEST-ONLY override (main.cla's undocumented
+// `--seglimit` flag) to force a small program into several segments
+// deterministically.
+func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var i: int
     var s: int
     var ok: bool
@@ -10729,7 +10767,7 @@ func cg68Program(outPath: string, listing: bool, segLimit: int): bool {
         s = s + 1
     }
 
-    if not cg68WriteImage(outPath, jtEntries, jtSegNums, segBytes) {
+    if not cg68BuildFork(jtEntries, jtSegNums, segBytes) {
         return false
     }
     return true
