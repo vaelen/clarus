@@ -13,7 +13,7 @@
 //
 // Why `App.launch`, not `App.startCLI`/`App.startEmpty` (both tried and
 // discarded during this task): cg68k.cla's non-UI program startup
-// (cg68Program's entry-handler dispatch, its own comment: "entry-handler
+// (cg68ProgramFork's entry-handler dispatch, its own comment: "entry-handler
 // dispatch stub -- no event/arg marshaling yet (Task 11)") calls EVERY
 // declared app-level handler unconditionally on a native boot --
 // `App.launch`, `App.startEmpty`, `App.startCLI`, `App.openDocument`, all

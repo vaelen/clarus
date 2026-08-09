@@ -222,6 +222,14 @@ var cgAppIconPath: string
 // driveLastFork/driveLastCreator expose them (plus cgAppRawName above,
 // already the app-section name) to a resource-writing front end that
 // skips the wrap entirely.
+//
+// Validity window: only meaningful after a driveEmit68kFork/cg68ProgramFork
+// call that returned true, and only until the next such call overwrites
+// them. A FAILED call does NOT reset either global -- cg68BuildFork (the
+// only place that writes them) only ever runs after cg68Measure/
+// cgPackProgram/the per-segment emission loop already succeeded, so on
+// failure they still hold a prior successful build's values, if any.
+// Callers must check the emit call's own return before reading.
 var cgLastFork: text
 var cgLastCreator: string(7)
 
@@ -10107,7 +10115,8 @@ func cg68BuildFork(jtEntries: list of int, jtSegNums: list of int, segBytes: lis
 // in a MacBinary header named from outPath (app68k.cla's app68WrapFork)
 // and write it. Together with cg68BuildFork, byte-identical to the old
 // single-function cg68WriteImage for every existing (host) caller --
-// cg68Program below still calls both in sequence.
+// drive.cla's driveEmit68k calls cg68ProgramFork (which calls
+// cg68BuildFork) then this, in sequence.
 func cg68WriteImageWrap(outPath: string): bool {
     var img: text
 
@@ -10118,7 +10127,7 @@ func cg68WriteImageWrap(outPath: string): bool {
     // cg68BuildFork already resolved (the app's own declared id, else
     // '????').
     if not file.writeText(outPath, img, fileTypeApplication, cgLastCreator) {
-        log("cg68Program: cannot write " + outPath + ": " + lastError.message)
+        log("cg68WriteImageWrap: cannot write " + outPath + ": " + lastError.message)
         return false
     }
     return true
@@ -10718,7 +10727,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
 
         ok = a68Finish()
         if not ok {
-            log("cg68Program: unresolved label " + numToStr(a68UnresolvedLabel()) + " (segment " + numToStr(s) + ")")
+            log("cg68ProgramFork: unresolved label " + numToStr(a68UnresolvedLabel()) + " (segment " + numToStr(s) + ")")
             return false
         }
 
@@ -10755,11 +10764,11 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             // for a debug dump than the app-constant idiom.
             segNumStr = numToStr(s)
             if not file.writeText(base + ".seg" + segNumStr + ".s", a68ListingText(), fileTypeText, "????") {
-                log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".s: " + lastError.message)
+                log("cg68ProgramFork: cannot write " + base + ".seg" + segNumStr + ".s: " + lastError.message)
                 return false
             }
             if not file.writeText(base + ".seg" + segNumStr + ".dat", a68Bytes(), fileTypeText, "????") {
-                log("cg68Program: cannot write " + base + ".seg" + segNumStr + ".dat: " + lastError.message)
+                log("cg68ProgramFork: cannot write " + base + ".seg" + segNumStr + ".dat: " + lastError.message)
                 return false
             }
         }

@@ -9,7 +9,7 @@
 // every produced .segN.s/.segN.dat pair round-trips through vasm byte-
 // identically (Task 6/8's own oracle, extended per-segment), and that
 // emitting the same program twice produces a byte-identical .bin
-// (cgPackProgram/cg68Program's own determinism requirement: packing input
+// (cgPackProgram/cg68ProgramFork's own determinism requirement: packing input
 // is declaration order over shaken functions, no size-dependent
 // reordering). Fixture: test-suite-review Task 9's core suite CLI
 // composition (testsuite/kit.cla + core/runner.cla + one core/cases_*.cla

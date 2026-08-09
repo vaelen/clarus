@@ -112,7 +112,7 @@ func runNativeHostCompare(t *testing.T, fixtureName string) {
 
 // runNativeHostCompareSeglimit is runNativeHostCompare generalized with an
 // optional forced per-segment budget (segLimit <= 0 uses the real,
-// undecorated `clarusc emit68k` invocation -- cg68Program's own default
+// undecorated `clarusc emit68k` invocation -- cg68ProgramFork's own default
 // 32760-byte budget; segLimit > 0 additionally passes `--seglimit N`).
 // Logs how many CODE segments the build actually produced either way, so
 // a forced-multi-segment run's own log line is visible evidence in test

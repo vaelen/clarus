@@ -840,7 +840,8 @@ func driveEarlySplice(testapi: bool): bool {
 // first (declare-before-use) and re-checks it. want68k also resolves the
 // app's raw name/icon path into cg68k.cla's cgAppRawName/cgAppIconPath
 // globals here (Task 13, native-5e resource parity's original spot),
-// since cg68Program (driveEmit68k) needs both and neither reaches IR.
+// since cg68BuildFork (driveEmit68kFork/driveEmit68k) needs both and
+// neither reaches IR.
 // `entries` is driveCompile's own entries param, threaded through only for
 // the app-name fallback's baseNameNoExt(entries[0]).
 //
@@ -1170,6 +1171,17 @@ func driveEmit68k(outPath: string, listing: bool, segLimit: int, nopeep: bool): 
 // cg68k.cla's own globals -- kept here, not there, since these are the
 // documented front-end-facing contract surface (drive.cla owns the
 // front-end-neutral pipeline; cg68k.cla owns codegen internals).
+//
+// Validity window (driveLastFork/driveLastCreator, cgLastFork/
+// cgLastCreator underneath): only valid after a driveEmit68kFork call
+// that returned true, and only until the NEXT driveEmit68kFork/
+// driveEmit68k call. A failed driveEmit68kFork does NOT reset them --
+// cgLastFork/cgLastCreator keep whatever a PRIOR successful call left
+// there (cg68BuildFork, which sets both, is only ever reached after
+// cg68Measure/cgPackProgram/the per-segment emission loop all already
+// succeeded) -- so a caller (Task 10's front end) MUST check
+// driveEmit68kFork's own return value before reading either getter, or
+// risk silently reusing a stale prior build's fork.
 func driveLastFork(): text {
     return cgLastFork
 }

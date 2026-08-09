@@ -158,8 +158,8 @@ on App.startCLI(args: list of string) {
     // `clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...` (native-5d
     // Task 7) runs the SAME check + runtime-manifest pipeline as emit, then
     // roots the native-only entry points (cg68AddRoots), shakes, and hands
-    // off to cg68Program (cg68k.cla) instead of emitProgram -- see
-    // cg68Program's own doc comment for what it writes today (a single-
+    // off to driveEmit68k (drive.cla) instead of emitProgram -- see
+    // driveEmit68k's own doc comment for what it writes today (a single-
     // segment listing, with --listing; no .bin container until Task 10).
     // Subcommand `clarusc appinfo FILE...` runs the same check pipeline and,
     // on success, prints the program's app metadata as key=value lines
@@ -253,13 +253,13 @@ on App.startCLI(args: list of string) {
             // peephole-induced or not in one rebuild.
             nopeepFlag = true
         } else if emitMode68k and args[i] == "--seglimit" {
-            // Test-only override of cg68Program's per-segment payload
+            // Test-only override of cg68ProgramFork's per-segment payload
             // budget (default 32760) -- deliberately UNDOCUMENTED in the
             // usage strings above: it exists so a test can force a small
             // program into several real segments (proving cross-segment
             // calls + LoadSeg work on real hardware) without needing a
-            // suite-sized fixture. See clarusc/cg68k.cla's cg68Program doc
-            // comment.
+            // suite-sized fixture. See clarusc/cg68k.cla's cg68ProgramFork
+            // doc comment.
             i = i + 1
             if i >= args.count {
                 log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] [--seglimit N] FILE...")
@@ -418,7 +418,7 @@ on App.startCLI(args: list of string) {
         cliResolveBake(bakePaths)
         ok68 = driveEmit68k(outPath, listingFlag, segLimitFlag, nopeepFlag)
         if not ok68 {
-            log("clarusc emit68k: cg68Program failed")
+            log("clarusc emit68k: driveEmit68k failed")
             quit 1
         }
     }

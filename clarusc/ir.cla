@@ -700,7 +700,7 @@ var irHasOpenDocument: bool
 // override beside rt_ui_app_info; that override is RETIRED as of
 // native-gaps-cleanup Task 2 (file.save's own mandatory type/creator args
 // replace it -- see cpEmitAppInfo's own doc comment). id's OTHER reader
-// survives unchanged: cg68k.cla's cg68Program reads it directly for the
+// survives unchanged: cg68k.cla's cg68BuildFork reads it directly for the
 // native binary's OWN application resource creator (a different concern
 // entirely -- the executable's Signature, not a saved document's stamp).
 // irAppDoctype (native-gaps-cleanup Task 1, Part A) is read ONLY by
