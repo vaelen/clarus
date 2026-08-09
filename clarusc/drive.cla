@@ -16,10 +16,12 @@
 // main.cla still owns that fork, see its own startCLI).
 
 // hostPaths: true selects '/' path semantics (main.cla, the host CLI);
-// false will select HFS ':' semantics for the future macgui front end.
-// Declared now (Task 6) even though nothing moved into this file yet
-// consults it -- joinPath/normalizePath below are moved VERBATIM,
-// unchanged; a later task teaches them to branch on it.
+// false selects HFS ':' semantics (Task 8: drivePathJoin/driveKeyResolve
+// + expand()'s Mac arm) for the future macgui front end (Task 10, which
+// sets it false and supplies the resource-backed feReadSource). main.cla
+// still sets it true unconditionally, so every hostPaths=false branch
+// added below is dead code on host today -- exercised for real only by
+// Task 11's on-Mac compile.
 var hostPaths: bool
 
 // wantEmit: the front end sets this true, before calling driveCompile,
@@ -181,6 +183,17 @@ func normalizePath(path: string): string {
     var i: int
     var abs: bool
 
+    if not hostPaths {
+        // Mac: drivePathJoin/driveKeyResolve (below) already fold every
+        // "."/".." at construction time -- HFS climbs become extra leading
+        // colons, key-space climbs are popped/stripped -- so a disk-form
+        // or key-form identity reaching here is already lexically clean.
+        // Passthrough; include dedup on Mac is exact-match on this string
+        // (HFS case-insensitivity is a documented simplification, design
+        // spec section 5).
+        return path
+    }
+
     abs = path.length > 0 and path[0] == '/'
     work = path + "/"
     cur = ""
@@ -206,6 +219,164 @@ func normalizePath(path: string): string {
     if abs {
         out = "/"
     }
+    i = 0
+    while i < segs.count {
+        if i > 0 {
+            out = out + "/"
+        }
+        out = out + segs[i]
+        i = i + 1
+    }
+    return out
+}
+
+// drivePathJoin resolves an include's relative path against dir. hostPaths:
+// today's joinPath, unchanged (an absolute name wins outright, otherwise it
+// hangs off dir).
+//
+// hostPaths=false (Mac, Task 8): rel is always '/'-separated -- design spec
+// section 5: "/" is the only separator allowed in source files -- and gets
+// converted to HFS ':' form at resolution time. HFS has no ".." name; its
+// only "go up" notation is an empty path component (adjacent colons), so
+// each LEADING ".." segment in rel becomes one extra colon appended to dir,
+// and the remaining segments join with ':'. dir=="" (no directory context
+// yet -- e.g. an entry file opened by a bare Standard File name) is treated
+// as ":" (current-directory-relative), matching the design spec's own
+// standalone conversion examples.
+//
+// Worked examples (task brief + design spec section 5, verbatim, plus the
+// dir=="" and combined-climb cases):
+//   drivePathJoin("Disk:src:", "a/b.cla")  == "Disk:src:a:b.cla"
+//   drivePathJoin("", "a/b.cla")           == ":a:b.cla"
+//   drivePathJoin("", "../x.cla")          == "::x.cla"
+//   drivePathJoin("Disk:src:", "../x.cla") == "Disk:src::x.cla"
+func drivePathJoin(dir: string, rel: string): string {
+    var segs: list of string
+    var cur: string
+    var climbs: int
+    var leadingDone: bool
+    var out: string
+    var base: string
+    var i: int
+
+    if hostPaths {
+        return joinPath(dir, rel)
+    }
+
+    climbs = 0
+    leadingDone = false
+    cur = ""
+    i = 0
+    while i <= rel.length {
+        if i == rel.length or rel[i] == '/' {
+            if cur == ".." and not leadingDone {
+                climbs = climbs + 1
+            } else if cur != "" {
+                segs.add(cur)
+                leadingDone = true
+            }
+            cur = ""
+        } else {
+            cur = cur + rel[i]
+        }
+        i = i + 1
+    }
+
+    base = dir
+    if base == "" {
+        base = ":"
+    }
+    out = base
+    i = 0
+    while i < climbs {
+        out = out + ":"
+        i = i + 1
+    }
+    i = 0
+    while i < segs.count {
+        if i > 0 {
+            out = out + ":"
+        }
+        out = out + segs[i]
+        i = i + 1
+    }
+    return out
+}
+
+// driveMacDirOf returns diskPath's directory including the trailing ':',
+// mirroring dirOf but for HFS ':'-separated disk-form paths -- used only
+// when hostPaths is false, to seed drivePathJoin's `dir` argument for an
+// included file's own further includes. "" if diskPath has no ':' (e.g.
+// a bare entry-file name with no directory component of its own yet).
+func driveMacDirOf(diskPath: string): string {
+    var i: int
+    var last: int
+
+    last = -1
+    i = 0
+    while i < diskPath.length {
+        if diskPath[i] == ':' {
+            last = i
+        }
+        i = i + 1
+    }
+    if last == -1 {
+        return ""
+    }
+    return diskPath[0, last + 1]
+}
+
+// driveKeyResolve computes the resource key (pure '/'-space arithmetic --
+// no HFS anywhere in a key, by design: a key is a 'CLFS' resource name,
+// matching the --bake key convention, never a disk path) for an include
+// named rel, relative to the includer's own key baseKey. Uses dirOf
+// (unconditionally '/'-based, same as normalizePath's dot-segment cleanup
+// below) regardless of hostPaths -- key space is always '/' space, even
+// when the driver as a whole is running in HFS disk-path mode, since a
+// file's key and its disk path are independent identities threaded in
+// parallel by expand(). One difference from normalizePath: a leading
+// "../" run that tries to climb above the root is STRIPPED instead of
+// kept -- there is no "above the root" in key space, only the flat
+// baked-resource namespace a --bake invocation populated.
+//
+// Worked examples (task brief, verbatim, plus the resource-includer case):
+//   driveKeyResolve("", "toolbox/files.cla")               == "toolbox/files.cla"
+//   driveKeyResolve("", "../../toolbox/files.cla")         == "toolbox/files.cla"
+//   // A file itself loaded FROM a resource carries its key as its own
+//   // recorded identity (expand()'s `path`); further includes from such a
+//   // file resolve against THAT key -- e.g. a baked "toolbox/files.cla"
+//   // including "../osutils.cla":
+//   driveKeyResolve("toolbox/files.cla", "../osutils.cla") == "osutils.cla"
+func driveKeyResolve(baseKey: string, rel: string): string {
+    var segs: list of string
+    var work: string
+    var cur: string
+    var junk: string
+    var out: string
+    var i: int
+
+    work = dirOf(baseKey) + rel + "/"
+    cur = ""
+    i = 0
+    while i < work.length {
+        if work[i] == '/' {
+            if cur == ".." {
+                if segs.count > 0 and segs[segs.count - 1] != ".." {
+                    junk = segs.pop()
+                }
+                // else: this ".." climbs above the root -- stripped, not
+                // kept (unlike normalizePath's host arm, which preserves a
+                // leading "../" run for a relative host path).
+            } else if cur != "" and cur != "." {
+                segs.add(cur)
+            }
+            cur = ""
+        } else {
+            cur = cur + work[i]
+        }
+        i = i + 1
+    }
+    out = ""
     i = 0
     while i < segs.count {
         if i > 0 {
@@ -266,16 +437,35 @@ func lastDecl(head: int): int {
 // "cannot open included file" diagnostic at the include's position).
 //
 // The source read itself goes through the front end's feReadSource seam
-// (Task 6) rather than a direct file.readText: `key` is a best-effort
-// resource-lookup hint -- path's tail past rtDir when path resolves inside
-// the current runtime-module directory (e.g. "core.cla", or
-// "toolbox/standardfile.cla" for a nested runtime include), "" otherwise.
-// main.cla's own feReadSource ignores it entirely (plain file.readText,
-// exactly as before this task); a future resource-backed front end
-// (macgui) uses it as the resource name to fall back to when the plain
-// path read fails.
-func expand(rawPath: string, entry: bool): bool {
+// (Task 6) rather than a direct file.readText. `key` (a parameter as of
+// Task 8, was a purely-local best-effort hint before) is the RESOLVED
+// resource key for rawPath itself, computed by the CALLER before this call:
+// driveCompile's entry loop passes "" (an entry file has no key -- design
+// spec: the compile model is default-directory-relative, no baked
+// counterpart), and this function's own include loop below passes
+// driveKeyResolve(<this file's own key>, incName) for each include.
+//
+// hostPaths=true (host): `key` is IGNORED and recomputed exactly as before
+// Task 8 -- path's tail past rtDir when path resolves inside the current
+// runtime-module directory, "" otherwise -- so main.cla's front end (which
+// itself ignores key entirely) sees byte-identical behavior.
+//
+// hostPaths=false (Mac, Task 8): rawPath is the HFS disk-form path a
+// caller's drivePathJoin already built. Filesystem wins on a hit (design
+// spec section 4's readSource() contract: "filesystem first, relative to
+// the including file's directory"); a miss means this file exists only as
+// a baked 'CLFS' resource with no on-disk counterpart, so `key` (not the
+// disk path, which doesn't exist) becomes the recorded identity --
+// diagnostics show it, seenPaths dedups on it, and its OWN includes below
+// resolve against it in key space via driveKeyResolve, exactly as an
+// includer that came from a resource per the design spec. Either way, the
+// disk path is still what's threaded to feReadSource and to
+// driveMacDirOf/drivePathJoin for the next level's disk-side attempt --
+// spec section 4's filesystem-first check runs unconditionally, regardless
+// of how the includer itself was found.
+func expand(rawPath: string, entry: bool, key: string): bool {
     var path: string
+    var readPath: string
     var src: text
     var ok: bool
     var head: int
@@ -284,10 +474,27 @@ func expand(rawPath: string, entry: bool): bool {
     var pathIdx: int
     var incName: string
     var incResolved: string
+    var incKey: string
     var missing: bool
-    var key: string
+    var diskProbe: text
 
-    path = normalizePath(rawPath)
+    if hostPaths {
+        readPath = normalizePath(rawPath)
+        path = readPath
+        key = ""
+        if rtDir != "" and readPath.length > rtDir.length and readPath[0, rtDir.length] == rtDir {
+            key = readPath[rtDir.length, readPath.length - rtDir.length]
+        }
+    } else {
+        readPath = rawPath
+        diskProbe = ""
+        if file.readText(readPath, diskProbe) {
+            path = readPath
+        } else {
+            path = key
+        }
+    }
+
     if seenPaths.has(path) {
         // Record WHICH file this include deduped against (index, or -1 for
         // a file still being expanded further up the recursion), so a
@@ -298,11 +505,7 @@ func expand(rawPath: string, entry: bool): bool {
     seenPaths[path] = 0
 
     src = ""
-    key = ""
-    if rtDir != "" and path.length > rtDir.length and path[0, rtDir.length] == rtDir {
-        key = path[rtDir.length, path.length - rtDir.length]
-    }
-    ok = feReadSource(path, key, src)
+    ok = feReadSource(readPath, key, src)
     if not ok {
         if entry {
             entryFailed = true
@@ -326,19 +529,31 @@ func expand(rawPath: string, entry: bool): bool {
         d = declNext(d)
     }
 
-    dir = dirOf(path)
+    if hostPaths {
+        dir = dirOf(readPath)
+    } else {
+        dir = driveMacDirOf(readPath)
+    }
     d = head
     while d != -1 {
         if declKind(d) == DkInclude {
             incName = poolGet(includePath(d))
-            incResolved = joinPath(dir, incName)
-            missing = expand(incResolved, false)
-            if missing {
-                // Recursion may have moved curPathIdx into a child file;
-                // restore this file's path before stamping the diagnostic,
-                // which Go attributes to the includer.
-                curPathIdx = pathIdx
-                emitDiag(declLine(d), declCol(d), "cannot open included file \"" + incName + "\"")
+            if not hostPaths and incName.length > 0 and incName[0] == '/' {
+                emitDiag(declLine(d), declCol(d), "absolute include paths are not supported on Mac")
+            } else {
+                incResolved = drivePathJoin(dir, incName)
+                incKey = ""
+                if not hostPaths {
+                    incKey = driveKeyResolve(key, incName)
+                }
+                missing = expand(incResolved, false, incKey)
+                if missing {
+                    // Recursion may have moved curPathIdx into a child file;
+                    // restore this file's path before stamping the diagnostic,
+                    // which Go attributes to the includer.
+                    curPathIdx = pathIdx
+                    emitDiag(declLine(d), declCol(d), "cannot open included file \"" + incName + "\"")
+                }
             }
         }
         d = declNext(d)
@@ -471,7 +686,7 @@ func driveEarlySplice(testapi: bool): bool {
         // exactly where a freshly expanded include would have landed).
         beforeCount = asmHeads.count
         beforeHits = dedupHits.count
-        expand(rtPath, true)
+        expand(rtPath, true, "")
         hoists = hoistDedups(beforeHits)
         j = 0
         while j < hoists.count {
@@ -669,7 +884,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             }
             beforeCount = asmHeads.count
             beforeHits = dedupHits.count
-            expand(rtPath, true)
+            expand(rtPath, true, "")
             hoists = hoistDedups(beforeHits)
             j = 0
             while j < hoists.count {
@@ -761,7 +976,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     i = 0
     while i < entries.count {
-        expand(entries[i], true)
+        expand(entries[i], true, "")
         i = i + 1
     }
     if entryFailed {
