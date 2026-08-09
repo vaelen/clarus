@@ -347,6 +347,16 @@ func driveMacDirOf(diskPath: string): string {
 //   // file resolve against THAT key -- e.g. a baked "toolbox/files.cla"
 //   // including "../osutils.cla":
 //   driveKeyResolve("toolbox/files.cla", "../osutils.cla") == "osutils.cla"
+//   // Both-ways case (fix round 1, review finding): a disk-based include
+//   // chain and a resource-based include chain that both name the same
+//   // relative target converge on the IDENTICAL key, so expand() (which
+//   // now uses this key, not the disk path, as every non-entry file's
+//   // identity on Mac) dedups them against each other instead of parsing
+//   // the target twice -- a user file at key "src/a.cla" including
+//   // "../../toolbox/files.cla", and a baked "toolbox/osutils.cla"
+//   // resource including "files.cla", both land on "toolbox/files.cla":
+//   driveKeyResolve("src/a.cla", "../../toolbox/files.cla") == "toolbox/files.cla"
+//   driveKeyResolve("toolbox/osutils.cla", "files.cla")     == "toolbox/files.cla"
 func driveKeyResolve(baseKey: string, rel: string): string {
     var segs: list of string
     var work: string
@@ -450,19 +460,26 @@ func lastDecl(head: int): int {
 // runtime-module directory, "" otherwise -- so main.cla's front end (which
 // itself ignores key entirely) sees byte-identical behavior.
 //
-// hostPaths=false (Mac, Task 8): rawPath is the HFS disk-form path a
-// caller's drivePathJoin already built. Filesystem wins on a hit (design
-// spec section 4's readSource() contract: "filesystem first, relative to
-// the including file's directory"); a miss means this file exists only as
-// a baked 'CLFS' resource with no on-disk counterpart, so `key` (not the
-// disk path, which doesn't exist) becomes the recorded identity --
-// diagnostics show it, seenPaths dedups on it, and its OWN includes below
-// resolve against it in key space via driveKeyResolve, exactly as an
-// includer that came from a resource per the design spec. Either way, the
-// disk path is still what's threaded to feReadSource and to
-// driveMacDirOf/drivePathJoin for the next level's disk-side attempt --
-// spec section 4's filesystem-first check runs unconditionally, regardless
-// of how the includer itself was found.
+// hostPaths=false (Mac, Task 8, identity rule fixed in review round 1):
+// rawPath is the HFS disk-form path a caller's drivePathJoin already built,
+// and it's always what's threaded to feReadSource and to
+// driveMacDirOf/drivePathJoin for the next level -- design spec section 4's
+// filesystem-first readSource() check runs unconditionally, regardless of
+// how the includer itself was found. But the RECORDED identity (seenPaths
+// dedup key, diagnostics, pathIdx) is NOT the disk path for a non-entry
+// file: it's always `key`, whether this particular include actually hit
+// the filesystem or fell back to the 'CLFS' resource. This is deliberate,
+// not merely the resource-fallback case the design spec calls out --
+// `key` is reach-path-independent (a pure function of the chain of
+// relative include names back to the entry) while a disk path is not, so
+// the SAME logical file reached once through a disk-relative chain and
+// once through a chain that passed through a resource-loaded includer
+// still computes the identical key both times and dedups correctly,
+// instead of parsing twice under two different identity strings. A
+// top-level entry is the one exception: it's always a real disk file (no
+// resource fallback applies to it), so it keeps disk-path identity,
+// mirroring host -- two distinct entries must stay distinct even though
+// both would nominally have key "".
 func expand(rawPath: string, entry: bool, key: string): bool {
     var path: string
     var readPath: string
@@ -476,7 +493,6 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     var incResolved: string
     var incKey: string
     var missing: bool
-    var diskProbe: text
 
     if hostPaths {
         readPath = normalizePath(rawPath)
@@ -485,14 +501,30 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         if rtDir != "" and readPath.length > rtDir.length and readPath[0, rtDir.length] == rtDir {
             key = readPath[rtDir.length, readPath.length - rtDir.length]
         }
-    } else {
+    } else if entry {
+        // A top-level entry is always a real disk file the user picked
+        // (Standard File never hands back a resource) -- disk-path identity,
+        // mirroring host, so two distinct entries stay distinct.
         readPath = rawPath
-        diskProbe = ""
-        if file.readText(readPath, diskProbe) {
-            path = readPath
-        } else {
-            path = key
-        }
+        path = readPath
+    } else {
+        // Fix round 1 (review finding): a non-entry file's identity is
+        // ALWAYS its key, never its disk path, regardless of whether THIS
+        // particular include happened to resolve on disk or would need the
+        // resource fallback -- key is already fully resolved for every
+        // include (the caller always computes it via driveKeyResolve, one
+        // level below, before recursing), and unlike a disk path it is
+        // reach-path-independent: the same logical file included once via
+        // a disk-relative chain and once via a resource-relative chain
+        // (an includer that itself came from a resource) computes the
+        // IDENTICAL key both times, so the two reach paths dedup against
+        // each other instead of parsing the file twice under two different
+        // identity strings (a spurious "already declared" checker error on
+        // an otherwise legitimate Mac build -- the read still tries the
+        // filesystem first via feReadSource below regardless of which
+        // identity is recorded here).
+        readPath = rawPath
+        path = key
     }
 
     if seenPaths.has(path) {
