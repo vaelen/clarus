@@ -35,6 +35,8 @@ package mactest
 
 import (
 	"bytes"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -159,7 +161,13 @@ const macResidentLaunchSettle = 30 * time.Second
 //     evidence neither compile hit an error path -- discovered THIS
 //     task, when a first automated run's "assert BUILT " check (the
 //     brief's own Step 4 wording) turned out structurally unsatisfiable
-//     since gcLog's own output is never trace-visible at all.
+//     since gcLog's own output is never trace-visible at all. Fix round
+//     2 re-checked this (re-read gcLog itself: still, and structurally
+//     always will be, `w.Output.text = buf` and nothing else) before
+//     accepting a request to "require two BUILT lines" here -- literally
+//     impossible without changing gcLog's own behavior (out of this
+//     test's scope), so extraction success (point 2) is, and must remain,
+//     this test's own real "did compile 2 actually finish" signal.
 //  2. TickProbe/CatProbe, extracted from the boot disk, are
 //     byte-identical (resource fork only, MacBinary header stripped) to
 //     the SAME fixtures compiled by the current-source HOST compiler --
@@ -209,6 +217,13 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	t.Logf("on-Mac double-compile boot: %s wall clock (settle=%s)", time.Since(bootStart), settle)
 
 	appOut := string(d.get(t, ":System Folder:Startup Items:out"))
+	// Fix round 2 diagnosability: ALWAYS log the full trace, pass or fail --
+	// round 1's log never captured this (only the two failing assertions'
+	// own truncated dumps), so a "did compile 2 even reach the write step"
+	// question was unanswerable after the fact. Cheap (a few KB) and
+	// t.Logf only surfaces under -v or on failure, so this costs nothing on
+	// a quiet PASS.
+	t.Logf("app out (%d bytes):\n%s", len(appOut), appOut)
 	fireCount := strings.Count(appOut, "T FIRE File.Compile.select")
 	askOpenCount := strings.Count(appOut, "T ASKOPEN :::")
 	if fireCount != 2 || askOpenCount != 2 {
@@ -227,14 +242,19 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	}
 
 	// gcCompile writes the compiled app via file.writeRes(appName, ...)
-	// with a BARE name (ioVRefNum=0, "current default volume/directory"),
-	// and the scripted askOpen path never calls PBSetVolSync (Task 10's
-	// own SetVol finding: only the REAL, non-scripted Standard File path
-	// does) -- so the default directory never moves off wherever ClarusC
-	// itself launched from, :System Folder:Startup Items:. Both compiled
-	// apps land there, NOT at the volume root where the .cla sources are.
-	tickBin := d.getMacBinary(t, ":System Folder:Startup Items:TickProbe")
-	catBin := d.getMacBinary(t, ":System Folder:Startup Items:CatProbe")
+	// with a BARE name -- natWriteRes (native.cla) pokes ioVRefNum=0 and
+	// never touches an ioDirID field at all (NatCreate/NatOpenRF are trap
+	// 0xA008/0xA00A, the PLAIN pre-HFS File Manager calls, which have no
+	// ioDirID field to set), so the write lands wherever the single global
+	// "default directory" points -- normally wherever ClarusC itself
+	// launched from (:System Folder:Startup Items:, Task 10's own SetVol
+	// finding: only the REAL Standard File path calls SetVol; the scripted
+	// askOpen lane never does), but round 2 found this untrustworthy
+	// without direct proof -- macResidentExtractApp (below) tries BOTH the
+	// volume root and Startup Items, and dumps both directories' listings
+	// if neither has the file, instead of guessing.
+	tickBin := macResidentExtractApp(t, d, "TickProbe")
+	catBin := macResidentExtractApp(t, d, "CatProbe")
 	tickFork := readForkFromMacBinaryBytes(t, tickBin)
 	catFork := readForkFromMacBinaryBytes(t, catBin)
 
@@ -266,6 +286,43 @@ func TestMacResidentClaruscOnSnow(t *testing.T) {
 	if everyFireCount < 60 {
 		t.Errorf("TickProbe out has only %d \"T FIRE every.\" lines, want >= 60 (real-tick event loop):\n%s", everyFireCount, tickOut)
 	}
+}
+
+// macResidentExtractApp extracts name (a bare app name written by
+// file.writeRes -- see the doc comment at its call site for why the
+// landing directory is not a sure thing) trying, in order, the volume
+// root and :System Folder:Startup Items:. Returns the first hit's raw
+// MacBinary bytes; on a miss at BOTH, fails with an `hls -l` listing of
+// both directories, so a future miss is self-explaining (candidate name
+// wrong? not written at all? written under a different name entirely?)
+// instead of a bare "no such file or directory" -- fix round 2's own
+// diagnosability gap.
+func macResidentExtractApp(t *testing.T, d *snowDisk, name string) []byte {
+	t.Helper()
+	candidates := []string{hfsPath(name), ":System Folder:Startup Items:" + name}
+	var misses []string
+	for _, c := range candidates {
+		tmp := filepath.Join(t.TempDir(), "get-bin")
+		unmount := d.mount(t)
+		cmd := exec.Command(hfsutilsBin(t, "hcopy"), "-m", c, tmp)
+		cmd.Env = append(os.Environ(), "HOME="+d.dir)
+		out, err := cmd.CombinedOutput()
+		unmount()
+		if err == nil {
+			b, rerr := os.ReadFile(tmp)
+			if rerr != nil {
+				t.Fatalf("read extracted %s (found at %s): %v", name, c, rerr)
+			}
+			t.Logf("%s extracted from %s (%d bytes)", name, c, len(b))
+			return b
+		}
+		misses = append(misses, fmt.Sprintf("%s: %v\n%s", c, err, out))
+	}
+	rootListing := d.runHfs(t, "hls", "-l", ":")
+	startupListing := d.runHfs(t, "hls", "-l", ":System Folder:Startup Items:")
+	t.Fatalf("%s not found at any candidate location:\n%s\nvolume root listing:\n%s\nStartup Items listing:\n%s",
+		name, strings.Join(misses, "\n"), rootListing, startupListing)
+	return nil
 }
 
 // mustReadFile reads path or fails the test.
@@ -314,8 +371,23 @@ func dumpForkMismatch(t *testing.T, name string, gotMac, wantHost []byte) {
 			break
 		}
 	}
+	// Fix round 3: t.TempDir()'s own dump files don't survive past the test
+	// process's exit, and round 2's own failure needed a live re-run just to
+	// see what the mismatched bytes actually were -- log the first 64 bytes
+	// of EACH fork directly (hex.Dump, stdlib) so the run's own -v output is
+	// self-sufficient even after TempDir cleanup.
+	t.Logf("%s on-Mac fork, first 64 bytes:\n%s", name, hex.Dump(head(gotMac, 64)))
+	t.Logf("%s host oracle fork, first 64 bytes:\n%s", name, hex.Dump(head(wantHost, 64)))
 	t.Fatalf("%s fork mismatch: on-Mac %d bytes vs host oracle %d bytes; first divergence at byte %d\non-Mac fork:   %s\nhost fork:     %s\nxxd -s %d -l 64 <file> to inspect",
 		name, len(gotMac), len(wantHost), div, macPath, hostPath, maxInt(div-16, 0))
+}
+
+// head returns b's first n bytes, or all of b if shorter.
+func head(b []byte, n int) []byte {
+	if len(b) < n {
+		return b
+	}
+	return b[:n]
 }
 
 func maxInt(a, b int) int {
