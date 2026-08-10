@@ -103,6 +103,14 @@ enum TypeKind {
     // other position checkIdent reaches for a callback name is diagnosed
     // right there, before this type ever reaches compatible()/assignable.
     TyCallback
+
+    // TySortedMap (map-hashtable phase, Task 2) is `sortedmap of T`: a
+    // string-keyed container like TyMap, iterated in ascending key order
+    // (rtSortedMap* runtime, Task 1), but a DISTINCT type from TyMap --
+    // never assignable/equal to it. Same TypeInfo shape as TyMap
+    // (elem=value type index). Appended last, after TyCallback; ordering
+    // among the other kinds is not load-bearing.
+    TySortedMap
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -224,6 +232,17 @@ func mapT(val: int): int {
     var t: TypeInfo
 
     t.kind = TyMap
+    t.n = 0
+    t.elem = val
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func sortedMapT(val: int): int {
+    var t: TypeInfo
+
+    t.kind = TySortedMap
     t.n = 0
     t.elem = val
     t.nameIdx = -1
@@ -441,6 +460,9 @@ func assignable(src: int, dst: int): bool {
     case TyMap {
         return typesEqual(typeElem(src), typeElem(dst))
     }
+    case TySortedMap {
+        return typesEqual(typeElem(src), typeElem(dst))
+    }
     }
     return true // same-kind scalars/resources/void need no further check
 }
@@ -489,6 +511,9 @@ func typesEqual(a: int, b: int): bool {
         return typesEqual(typeElem(a), typeElem(b))
     }
     case TyMap {
+        return typesEqual(typeElem(a), typeElem(b))
+    }
+    case TySortedMap {
         return typesEqual(typeElem(a), typeElem(b))
     }
     }

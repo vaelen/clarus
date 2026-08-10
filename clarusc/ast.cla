@@ -292,6 +292,11 @@ enum TypeExprKind {
     TxByte
     TxXStr
     TxPad
+
+    // TxSortedMap (map-hashtable phase, Task 2) is `sortedmap of T` --
+    // same a=value-type-expr shape as TxMap. Appended last, after TxPad;
+    // ordering among the other kinds is not load-bearing.
+    TxSortedMap
 }
 
 record ExprNode {
@@ -2072,6 +2077,22 @@ func newMapType(val: int, line: int, col: int): int {
 }
 
 func mapTypeVal(i: int): int {
+    return typeExprs[i].a
+}
+
+func newSortedMapType(val: int, line: int, col: int): int {
+    var n: TypeExpr
+
+    n.kind = TxSortedMap
+    n.a = val
+    n.next = -1
+    n.line = line
+    n.col = col
+    typeExprs.add(n)
+    return typeExprs.count - 1
+}
+
+func sortedMapTypeVal(i: int): int {
     return typeExprs[i].a
 }
 

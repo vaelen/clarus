@@ -167,6 +167,13 @@ enum IRKind {
     // a nested field's packed size (irXRecSize, recursively) from its
     // slot's `t` alone.
     KXRec
+
+    // KSortedMap (map-hashtable phase, Task 2) is `sortedmap of T`'s IR
+    // type -- same elem=value IRType index shape as KMap, but backed by
+    // the DISTINCT rtSortedMap* runtime (ascending key order). Appended
+    // last, after KXRec; ordering among the other kinds is not
+    // load-bearing.
+    KSortedMap
 }
 
 enum IRStmtKind {
@@ -1162,7 +1169,7 @@ func irtNeedsCtor(t: int): bool {
     if k == KArr {
         return irtNeedsCtor(irtElem(t))
     }
-    return k == KText or k == KList or k == KMap or k == KRec
+    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KRec
 }
 
 // irSimpleType builds a kind-only IRType (no capacity/elem/name) -- used
@@ -1181,6 +1188,10 @@ func irListType(elem: int): int {
 
 func irMapType(elem: int): int {
     return newIRType(KMap, 0, elem, -1)
+}
+
+func irSortedMapType(elem: int): int {
+    return newIRType(KSortedMap, 0, elem, -1)
 }
 
 func irArrType(elem: int, n: int): int {
@@ -3121,6 +3132,47 @@ func IMapCount(): int {
 // IMapFreeVar -- see ITextFreeVar's doc comment.
 func IMapFreeVar(): int {
     return intern("map_free_var")
+}
+
+// -- sortedmap (string keys, ascending iteration; map-hashtable phase,
+// Task 2) -- the nine ISortedMap* intrinsics are the DISTINCT-runtime twins
+// of the nine IMap* ones directly above (IMapSetRetain's/IMapGetDv's/
+// IMapGetDvBirth's own doc comments apply here unchanged, name-for-name).
+func ISortedMapSet(): int {
+    return intern("sortedmap_set")
+}
+
+func ISortedMapSetRetain(): int {
+    return intern("sortedmap_set_retain")
+}
+
+func ISortedMapGet(): int {
+    return intern("sortedmap_get")
+}
+
+func ISortedMapGetDv(): int {
+    return intern("sortedmap_get_dv")
+}
+
+func ISortedMapGetDvBirth(): int {
+    return intern("sortedmap_get_dv_birth")
+}
+
+func ISortedMapHas(): int {
+    return intern("sortedmap_has")
+}
+
+func ISortedMapRemove(): int {
+    return intern("sortedmap_remove")
+}
+
+func ISortedMapCount(): int {
+    return intern("sortedmap_count")
+}
+
+// ISortedMapFreeVar -- see ITextFreeVar's doc comment.
+func ISortedMapFreeVar(): int {
+    return intern("sortedmap_free_var")
 }
 
 // -- retain/release (ARC Task 2) --

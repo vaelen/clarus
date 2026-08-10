@@ -618,6 +618,13 @@ var appDeclSeen: bool
 // whether the serialization runtime module needs pulling into the emit.
 var usesFileSaveLoad: bool
 
+// usesSortedMap is true once the program under check has named `sortedmap
+// of T` anywhere a type is resolved (resolveType's TxSortedMap arm sets
+// it, mirroring usesFileSaveLoad above) -- drive.cla's manifest splice
+// reads this to decide whether the sortedmap runtime module needs pulling
+// into the emit.
+var usesSortedMap: bool
+
 // progGen is bumped by every checkReset so the per-program menuItems set
 // (below) can namespace its keys and never consult a stale entry from a
 // previous program compiled in the same process (maps have no bulk-clear
@@ -977,6 +984,9 @@ func typeName(t: int): string {
     case TyMap {
         return "map of " + typeName(typeElem(t))
     }
+    case TySortedMap {
+        return "sortedmap of " + typeName(typeElem(t))
+    }
     }
     return "?"
 }
@@ -1040,6 +1050,9 @@ func kindName(k: TypeKind): string {
     }
     case TyMap {
         return "map"
+    }
+    case TySortedMap {
+        return "sortedmap"
     }
     }
     return "?"
@@ -1598,6 +1611,9 @@ func checkMethodCall(sel: int, argsHead: int): int {
     case TyMap {
         return checkMapMethod(xt, sel, argsHead)
     }
+    case TySortedMap {
+        return checkMapMethod(xt, sel, argsHead)
+    }
     case TyText {
         if textOnlyMethods.has(name) {
             return checkTableMethod(textOnlyMethods, sel, argsHead)
@@ -1726,6 +1742,23 @@ func resolveType(te: int): int {
             return mapT(InvalidT)
         }
         return mapT(et)
+    }
+    case TxSortedMap {
+        usesSortedMap = true
+        et = resolveType(sortedMapTypeVal(te))
+        if et != InvalidT and typeKind(et) == TyPtr {
+            emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return sortedMapT(InvalidT)
+        }
+        if et != InvalidT and typeKind(et) == TyOverlay {
+            emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
+            return sortedMapT(InvalidT)
+        }
+        if et != InvalidT and typeKind(et) == TyXRec {
+            emitDiag(typeExprLine(te), typeExprCol(te), "extern records cannot be container elements")
+            return sortedMapT(InvalidT)
+        }
+        return sortedMapT(et)
     }
     case TxArray {
         et = resolveType(arrayTypeElem(te))
@@ -2647,7 +2680,7 @@ func checkFuncBody(d: int) {
 func formForFieldIsByValue(t: int): bool {
     var fh: int
 
-    if typeKind(t) == TyText or typeKind(t) == TyList or typeKind(t) == TyMap {
+    if typeKind(t) == TyText or typeKind(t) == TyList or typeKind(t) == TyMap or typeKind(t) == TySortedMap {
         return false
     }
     if typeKind(t) == TyArr {
@@ -3599,7 +3632,7 @@ func readOnlyPropName(sel: int): string {
     }
     xt = checkExpr(selectX(sel), -1)
     switch typeKind(xt) {
-    case TyList, TyMap {
+    case TyList, TyMap, TySortedMap {
         if name == "count" {
             return "count"
         }
@@ -3867,6 +3900,14 @@ func checkForStmt(s: int) {
         }
         declareForVar(v1, typeElem(seqT))
     } else if typeKind(seqT) == TyMap {
+        if v2 == -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "map iteration requires key and value variables")
+        }
+        declareForVar(v1, strT(255))
+        if v2 != -1 {
+            declareForVar(v2, typeElem(seqT))
+        }
+    } else if typeKind(seqT) == TySortedMap {
         if v2 == -1 {
             emitDiag(stmtLine(s), stmtCol(s), "map iteration requires key and value variables")
         }
@@ -4410,6 +4451,10 @@ func checkComparison(e: int, allowEnum: bool): int {
             emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
             return InvalidT
         }
+        if typeKind(lt) == TySortedMap {
+            emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
+            return InvalidT
+        }
     }
     if not compatible(lt, rt) and not compatible(rt, lt) {
         emitDiag(exprLine(e), exprCol(e), "type mismatch: " + typeName(lt) + " and " + typeName(rt))
@@ -4484,7 +4529,7 @@ func checkIndex(e: int): int {
         }
         return typeElem(xt)
     }
-    if typeKind(xt) == TyMap {
+    if typeKind(xt) == TyMap or typeKind(xt) == TySortedMap {
         it = checkExpr(idx, strT(255))
         if it != InvalidT and typeKind(it) != TyStr {
             emitDiag(exprLine(idx), exprCol(idx), "map index must be string")
@@ -4614,7 +4659,7 @@ func checkSelect(e: int): int {
             return IntT
         }
     }
-    case TyList, TyMap {
+    case TyList, TyMap, TySortedMap {
         if name == "count" {
             return IntT
         }
@@ -5001,6 +5046,7 @@ func checkReset() {
     inCloseRequest = false
     appDeclSeen = false
     usesFileSaveLoad = false
+    usesSortedMap = false
     progGen = progGen + 1
 
     while paramSpecs.count > 0 {
