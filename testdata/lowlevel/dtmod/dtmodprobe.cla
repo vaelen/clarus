@@ -1,0 +1,113 @@
+// dtmodprobe.cla: Task 3 probe -- composes runtime/clarus/datetime.cla +
+// datetime_c.cla positionally (host lane) and drives rtDateTimeStr/
+// rtDurationStr/rtNow directly with the spec's fixed vectors. The same
+// vectors reappear as core-suite cases in Task 6; this probe exists so
+// the modules are proven BEFORE the builtin wiring (Task 4) lands.
+//
+// Deviates from the task brief in two ways:
+//
+// 1. The draft's `app DtModProbe { id: "CLDM" }` block is dropped, same
+//    reason as dtglueprobe.cla (Task 1): any `app` block makes cprint
+//    emit `#include "rt_ui.h"`, mac-only, breaking this probe's host
+//    run. `on App.startCLI` needs no app-identity block to run
+//    host-side.
+//
+// 2. This file lives in testdata/lowlevel/dtmod/, NOT directly in
+//    testdata/lowlevel/, unlike every other probe there. Reason:
+//    internal/lowlevel's TestLowlevel (lowlevel_test.go) globs
+//    testdata/lowlevel/*.cla (one level, non-recursive) and compiles
+//    each fixture STANDALONE -- `clarusc emit -o outC fixture`, no
+//    --rtdir, no sibling files. Every existing lowlevel fixture is a
+//    fully self-contained single file for exactly that reason. This
+//    probe is NOT self-contained -- it calls rtDateTimeStr/
+//    rtDurationStr/rtNow, which live in runtime/clarus/datetime.cla +
+//    datetime_c.cla and must be composed positionally (see this
+//    directory's own README-less convention: no compiler wiring exists
+//    yet for these modules, Task 4 adds that). Dropped directly into
+//    testdata/lowlevel/ it would either fail TestLowlevel's mandatory
+//    sibling-.out check (t.Fatal, missing golden) or, with a .out added,
+//    fail the standalone compile itself (undefined rtDateTimeStr etc.)
+//    -- either way a T1 break. filepath.Glob's "*.cla" pattern does not
+//    match across a path separator, so nesting one directory down keeps
+//    the fixture out of that glob entirely while still living under
+//    testdata/lowlevel/ for discoverability. Run manually via the
+//    compose recipe in this phase's Task 3 brief (Step 5); Task 6 makes
+//    the same vectors reappear as real core-suite cases run by CI.
+
+on App.startCLI(args: list of string) {
+    var t: int
+    var s: string
+
+    s = rtDurationStr(0)
+    if s != "0s" {
+        alert("FAIL durationStr(0)")
+        quit 1
+    }
+    s = rtDurationStr(45)
+    if s != "45s" {
+        alert("FAIL durationStr(45)")
+        quit 1
+    }
+    s = rtDurationStr(1805)
+    if s != "30m 5s" {
+        alert("FAIL durationStr(1805)")
+        quit 1
+    }
+    s = rtDurationStr(3605)
+    if s != "1h 0m 5s" {
+        alert("FAIL durationStr(3605)")
+        quit 1
+    }
+    s = rtDurationStr(176520)
+    if s != "49h 2m 0s" {
+        alert("FAIL durationStr(176520)")
+        quit 1
+    }
+    s = rtDurationStr(-45)
+    if s != "-45s" {
+        alert("FAIL durationStr(-45)")
+        quit 1
+    }
+    s = rtDateTimeStr(0)
+    if s != "01-01-04 00:00:00" {
+        alert("FAIL dateTimeStr(0)")
+        quit 1
+    }
+    s = rtDateTimeStr(86399)
+    if s != "01-01-04 23:59:59" {
+        alert("FAIL dateTimeStr(86399)")
+        quit 1
+    }
+    s = rtDateTimeStr(5097600)
+    if s != "02-29-04 00:00:00" {
+        alert("FAIL dateTimeStr(5097600)")
+        quit 1
+    }
+    s = rtDateTimeStr(2147483647)
+    if s != "01-19-72 03:14:07" {
+        alert("FAIL dateTimeStr(2^31-1)")
+        quit 1
+    }
+    t = -2147483647
+    t = t - 1
+    s = rtDateTimeStr(t)
+    if s != "01-19-72 03:14:08" {
+        alert("FAIL dateTimeStr(2^31)")
+        quit 1
+    }
+    s = rtDateTimeStr(-444896896)
+    if s != "01-01-26 00:00:00" {
+        alert("FAIL dateTimeStr(2026-01-01)")
+        quit 1
+    }
+    t = rtNow()
+    if t >= 0 {
+        alert("FAIL rtNow not in unsigned upper half")
+        quit 1
+    }
+    if t < -444896896 {
+        alert("FAIL rtNow before 2026")
+        quit 1
+    }
+    alert("OK")
+}

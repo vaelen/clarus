@@ -1,0 +1,14 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// datetime_68k.cla: the native-68k rtNow -- reads the low-memory Time
+// global ($020C: unsigned seconds since 1904, local time) directly, the
+// same single MOVE.L Apple's own GetDateTime glue performs
+// (TWOWORDINLINE 0x20B8, 0x020C; CIncludes/DateTimeUtils.h). Time is
+// maintained by the one-second interrupt, so this read never touches
+// the clock chip. Spliced (with datetime.cla) only for want68k programs
+// that use a datetime builtin; datetime_c.cla is the C-lane twin.
+
+func rtNow(): int {
+    return peekl(ptr(0x020C))
+}

@@ -1,0 +1,25 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// datetime_c.cla: the C-lane rtNow. The extern renders as
+// rt_ext_DtReadDateTime (runtime/host/rt_ext_host.inc: host clock
+// converted UTC->local and shifted to the Mac epoch;
+// runtime/mac/rt_ext_mac.inc: the real ReadDateTime). The declaration
+// is the truthful _ReadDateTime contract (0xA039: A0 = VAR secs, OSErr
+// <= D0) even though this module is never spliced on the native lane,
+// so the trap word is never emitted -- datetime_68k.cla is the native
+// twin (a direct Time-global read, cheaper than the chip resync this
+// trap would perform).
+
+extern record DtSecsBox {
+    secs: int
+}
+
+external func DtReadDateTime(t: ptr): int = trap 0xA039 reg(a0: t) ret d0
+
+func rtNow(): int {
+    var box: DtSecsBox
+
+    DtReadDateTime(box)
+    return box.secs
+}

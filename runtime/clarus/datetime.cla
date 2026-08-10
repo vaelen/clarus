@@ -1,0 +1,138 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// datetime.cla: the date/time runtime backing the now()/dateTimeStr()/
+// durationStr() builtins (2026-08-10 datetime-instrumentation spec).
+// Conditionally spliced by drive.cla only when a program calls one of
+// the three builtins (check.cla's usesDateTime flag), together with
+// exactly ONE per-lane rtNow variant: datetime_68k.cla (native 68k --
+// reads the low-memory Time global) or datetime_c.cla (C lanes --
+// rt_ext glue).
+//
+// A datetime is a plain int: seconds since the Mac epoch (Jan 1 1904,
+// 00:00:00, LOCAL time), the raw value the Toolbox clock stores. The
+// count is UNSIGNED at the Toolbox level and crossed 2^31 in 1972, so
+// every realistic clock reading is negative as a Clarus int; all
+// calendar decomposition happens in the real Secs2Date trap (native
+// lane) or its C glue twin rt_ext_DtSecs2Date -- never in Clarus
+// arithmetic.
+//
+// DtDateTimeRec/DtSecs2Date are module-private twins of the public
+// toolbox/osutils.cla catalog declarations (DateTimeRec/SecondsToDate):
+// a runtime module cannot reference user-composable catalog files, the
+// same reason ui.cla privately declares UiTickCount alongside the
+// catalog's TickCount. Extern dedup keeps a program composing both safe
+// (testdata/lowlevel/externdedup.cla pins byte-identical dedup).
+
+extern record DtDateTimeRec {
+    year: word
+    month: word
+    day: word
+    hour: word
+    minute: word
+    second: word
+    dayOfWeek: word
+}
+
+// _SecondsToDate / Secs2Date (0xA9C6): unsigned seconds => D0,
+// DateTimeRec pointer => A0, no result. Register-based despite bit 11
+// (see toolbox/osutils.cla's Date-Time provenance block).
+external func DtSecs2Date(secs: int, d: ptr) = trap 0xA9C6 reg(d0: secs, a0: d)
+
+// dtTwoDigit: zero-padded two-digit decimal field (callers guarantee
+// 0 <= v <= 99).
+func dtTwoDigit(v: int): string {
+    var s: string
+
+    s = s + char(v / 10 + int('0'))
+    s = s + char(v mod 10 + int('0'))
+    return s
+}
+
+// dtIntToStr: non-negative decimal conversion -- the module's own copy
+// of the proven rtUiTestIntToStr shape (uitest.cla): numToStr is
+// compiler-internal and unavailable to runtime modules, and the
+// codebase's convention is one copy per splice (uitest/uiscript/kit all
+// carry one).
+func dtIntToStr(n: int): string {
+    var digits: char[12]
+    var count: int
+    var v: int
+    var s: string
+    var i: int
+
+    count = 0
+    v = n
+    while v > 0 {
+        digits[count] = char(v mod 10 + int('0'))
+        v = v / 10
+        count = count + 1
+    }
+    if count == 0 {
+        digits[0] = '0'
+        count = 1
+    }
+    i = count - 1
+    while i >= 0 {
+        s = s + digits[i]
+        i = i - 1
+    }
+    return s
+}
+
+// rtDateTimeStr backs dateTimeStr(t): "mm-dd-yy HH:MM:SS", zero-padded,
+// 24-hour clock, two-digit year. The unsigned decomposition is entirely
+// DtSecs2Date's; the fields come back as small positive ints.
+func rtDateTimeStr(t: int): string {
+    var rec: DtDateTimeRec
+    var s: string
+
+    DtSecs2Date(t, rec)
+    s = dtTwoDigit(rec.month)
+    s = s + "-"
+    s = s + dtTwoDigit(rec.day)
+    s = s + "-"
+    s = s + dtTwoDigit(rec.year mod 100)
+    s = s + " "
+    s = s + dtTwoDigit(rec.hour)
+    s = s + ":"
+    s = s + dtTwoDigit(rec.minute)
+    s = s + ":"
+    s = s + dtTwoDigit(rec.second)
+    return s
+}
+
+// rtDurationStr backs durationStr(secs): "Xh Ym Zs" with units above the
+// highest nonzero unit omitted ("1h 0m 5s", "30m 5s", "45s", "0s");
+// seconds always shown; negative input is "-" + the absolute form.
+func rtDurationStr(secs: int): string {
+    var s: string
+    var v: int
+    var h: int
+    var m: int
+    var sec: int
+    var part: string
+
+    v = secs
+    if v < 0 {
+        s = "-"
+        v = -v
+    }
+    h = v / 3600
+    m = (v mod 3600) / 60
+    sec = v mod 60
+    if h > 0 {
+        part = dtIntToStr(h)
+        s = s + part
+        s = s + "h "
+    }
+    if h > 0 or m > 0 {
+        part = dtIntToStr(m)
+        s = s + part
+        s = s + "m "
+    }
+    part = dtIntToStr(sec)
+    s = s + part
+    s = s + "s"
+    return s
+}
