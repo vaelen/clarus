@@ -631,12 +631,12 @@ record Symbol {
 var symbols: list of Symbol
 
 // Scope is a lexical block of declarations, chained to its enclosing scope
-// (parent == -1 for the top level). names maps a symbol's name (the plain
-// string, not its interned index -- map keys are strings; see lib.cla's
-// own strIndex for the same shape) to that symbol's index in `symbols`.
+// (parent == -1 for the top level). names maps a symbol's interned name
+// index (nameIdx -- see lib.cla's strIndex, the intern pool itself) to
+// that symbol's index in `symbols`.
 record Scope {
     parent: int
-    names: map of int
+    names: intmap of int
 }
 
 var scopes: list of Scope
@@ -657,10 +657,10 @@ func scopeNew(parent: int): int {
 // turning a false return into a "redeclaration of X" diagnostic at the
 // declaration's own line:col, mirroring scope.go's Declare error.
 func scopeDeclare(scope: int, sym: Symbol): bool {
-    var key: string
+    var key: int
     var idx: int
 
-    key = poolGet(sym.nameIdx)
+    key = sym.nameIdx
     if scopes[scope].names.has(key) {
         return false
     }
@@ -671,16 +671,19 @@ func scopeDeclare(scope: int, sym: Symbol): bool {
 }
 
 // scopeLookup finds nameIdx in scope or any enclosing scope, returning its
-// index in `symbols`, or -1 if undeclared anywhere in the chain.
+// index in `symbols`, or -1 if undeclared anywhere in the chain. A single
+// get(key, -1) probe suffices (rather than has()-then-get()): -1 is never
+// a real symbols index (scopeDeclare only ever stores symbols.count - 1
+// AFTER an add(), which is always >= 0).
 func scopeLookup(scope: int, nameIdx: int): int {
     var cur: int
-    var key: string
+    var found: int
 
-    key = poolGet(nameIdx)
     cur = scope
     while cur != -1 {
-        if scopes[cur].names.has(key) {
-            return scopes[cur].names.get(key, -1)
+        found = scopes[cur].names.get(nameIdx, -1)
+        if found != -1 {
+            return found
         }
         cur = scopes[cur].parent
     }

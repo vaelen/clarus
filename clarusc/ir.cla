@@ -739,18 +739,18 @@ var irHasApp: bool
 // reached file.save/load (lower.cla's lowFileCall) and so need a
 // clar_layout_NAME table -- cprint's cpEmitLayouts walks irRecords in
 // declaration order and emits only the ones this registry names. Keyed by
-// name (poolGet), same plain-name-key idiom as check.cla's
-// recFieldsHeadByName (no per-generation namespacing: one clarusc emit
-// invocation lowers exactly one program, main.cla's own "one program per
-// process" contract).
-var irLayoutNeededByName: map of int
+// interned nameIdx directly (map-hashtable phase, Stage B: was poolGet'd
+// through a string map; no per-generation namespacing needed either way --
+// one clarusc emit invocation lowers exactly one program, main.cla's own
+// "one program per process" contract).
+var irLayoutNeededByName: intmap of int
 
 func irMarkLayoutNeeded(nameIdx: int) {
-    irLayoutNeededByName[poolGet(nameIdx)] = 1
+    irLayoutNeededByName[nameIdx] = 1
 }
 
 func irLayoutNeeded(nameIdx: int): bool {
-    return irLayoutNeededByName.get(poolGet(nameIdx), 0) == 1
+    return irLayoutNeededByName.get(nameIdx, 0) == 1
 }
 
 // irRcWalkNeededByName (ARC Task 2) marks which record types were seen as
@@ -758,17 +758,18 @@ func irLayoutNeeded(nameIdx: int): bool {
 // fpIntrCall) -- cprint's cpEmitRcWalks walks irRecords in declaration
 // order and emits a clar_retain_NAME/clar_release_NAME pair only for the
 // ones this registry names. Same mark/query pair idiom as
-// irMarkLayoutNeeded/irLayoutNeeded just above, keyed by name (poolGet) for
-// the same reason. Nothing marks this yet -- lower.cla doesn't emit either
-// intrinsic until a later ARC task -- so cpEmitRcWalks stays dormant.
-var irRcWalkNeededByName: map of int
+// irMarkLayoutNeeded/irLayoutNeeded just above, keyed by interned nameIdx
+// directly for the same reason. Nothing marks this yet -- lower.cla doesn't
+// emit either intrinsic until a later ARC task -- so cpEmitRcWalks stays
+// dormant.
+var irRcWalkNeededByName: intmap of int
 
 func irMarkRcWalkNeeded(nameIdx: int) {
-    irRcWalkNeededByName[poolGet(nameIdx)] = 1
+    irRcWalkNeededByName[nameIdx] = 1
 }
 
 func irRcWalkNeeded(nameIdx: int): bool {
-    return irRcWalkNeededByName.get(poolGet(nameIdx), 0) == 1
+    return irRcWalkNeededByName.get(nameIdx, 0) == 1
 }
 
 // The extern registry (Task 3, Ch13: `external func`) -- one entry per

@@ -29,10 +29,11 @@ include "ir.cla"
 // ================================================================
 
 // LowScope is one nested local-variable scope: names present as locals in
-// this scope (value 1). Mirrors lower.go's localScopes entries -- consulted
-// by lowIsLocal so lowIdent can tell a local VarRef from a global one.
+// this scope (value 1), keyed by interned nameIdx. Mirrors lower.go's
+// localScopes entries -- consulted by lowIsLocal so lowIdent can tell a
+// local VarRef from a global one.
 record LowScope {
-    names: map of int
+    names: intmap of int
 }
 
 var lowScopes: list of LowScope
@@ -182,17 +183,15 @@ func lowDeclareLocal(nameIdx: int) {
     var top: int
 
     top = lowScopes.count - 1
-    lowScopes[top].names[poolGet(nameIdx)] = 1
+    lowScopes[top].names[nameIdx] = 1
 }
 
 func lowIsLocal(nameIdx: int): bool {
     var i: int
-    var key: string
 
-    key = poolGet(nameIdx)
     i = lowScopes.count - 1
     while i >= 0 {
-        if lowScopes[i].names.has(key) {
+        if lowScopes[i].names.has(nameIdx) {
             return true
         }
         i = i - 1

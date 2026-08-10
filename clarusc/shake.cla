@@ -88,17 +88,16 @@ include "ir.cla"
 // just accumulate across compiles).
 var shakeMarks: list of bool
 
-// shakeFuncIdxByName maps poolGet(irFuncName(i)) -> i, the same
-// map-of-int-keyed-by-poolGet(name) idiom irRcWalkNeededByName/
-// irLayoutNeededByName already use (ir.cla) -- O(log n) per lookup instead
-// of findIRFuncIdxByName's linear scan, since the walk below calls this at
-// every ECallFn/EIntr/handler-name site across the whole program. Rebuilt
-// (overwritten, not cleared -- matches irRcWalkNeededByName's own
-// never-cleared convention) at the top of every shakeProgram call: every
-// name from the CURRENT program is re-pointed at its current index, so a
-// stale entry from a prior compile can only survive for a name this
-// program never looks up.
-var shakeFuncIdxByName: map of int
+// shakeFuncIdxByName maps irFuncName(i) -> i, keyed by interned nameIdx
+// directly (map-hashtable phase, Stage B: was poolGet'd through a string
+// map) -- O(1) per lookup instead of findIRFuncIdxByName's linear scan,
+// since the walk below calls this at every ECallFn/EIntr/handler-name site
+// across the whole program. Rebuilt (overwritten, not cleared -- matches
+// irRcWalkNeededByName's own never-cleared convention) at the top of every
+// shakeProgram call: every name from the CURRENT program is re-pointed at
+// its current index, so a stale entry from a prior compile can only
+// survive for a name this program never looks up.
+var shakeFuncIdxByName: intmap of int
 
 // shakeWorklist holds irFuncs indices already marked but not yet walked for
 // their own callees -- a growing list of int, walked by a plain index loop
@@ -166,7 +165,7 @@ func shakeEdgeTo(i: int): int {
 func shakeMarkAndEnqueue(nameIdx: int) {
     var idx: int
 
-    idx = shakeFuncIdxByName.get(poolGet(nameIdx), -1)
+    idx = shakeFuncIdxByName.get(nameIdx, -1)
     if idx == -1 {
         return
     }
@@ -206,7 +205,7 @@ func shakeProgram() {
     i = 0
     while i < irFuncs.count {
         shakeMarks.add(false)
-        shakeFuncIdxByName[poolGet(irFuncName(i))] = i
+        shakeFuncIdxByName[irFuncName(i)] = i
         i = i + 1
     }
 
