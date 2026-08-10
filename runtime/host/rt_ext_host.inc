@@ -299,6 +299,34 @@ void *rt_ext_MapNewPtr(int32_t size) {
 }
 void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_SortedMapHandleDeref/SortedMapSetHandleSize/SortedMapBlockMoveData/
+ * SortedMapNewPtr/SortedMapDisposePtr/SortedMapNewHandle/SortedMapDisposeHandle/
+ * SortedMapRcCheck (map-hashtable Task 1, 2026-08-10): sortedmap.cla's own
+ * extern wrappers backing the preserved sorted-array map implementation.
+ * Byte-parallel to the rt_ext_Map* set above, delegating to the same
+ * underlying primitives. */
+void *rt_ext_SortedMapHandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_SortedMapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
+void rt_ext_SortedMapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void *rt_ext_SortedMapNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_SortedMapDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_SortedMapRcCheck(void *box, int32_t rc) {
+    if (rc <= 0) {
+        fprintf(stderr, "rt_rc: over-release at %s\n", rt_mem_tag_of(box));
+        abort();
+    }
+}
+void *rt_ext_SortedMapNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_SortedMapDisposePtr(void *p) { DisposePtr((Ptr)p); }
+
 /* rt_ext_XRecAddr (Task 5, toolbox-integration Feature B: `extern
  * record`): identity shim lets a testdata/lowlevel fixture recover the raw
  * address an extern-record decay (EXRecAddr) produced, so pure-Clarus

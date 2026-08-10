@@ -1,0 +1,425 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// sortedmap.cla: the preserved sorted-array map implementation, backing the
+// `sortedmap of T` type -- ascending-key iteration via binary search over
+// sorted parallel arrays. This is an exact rename-copy of the pre-hashtable
+// runtime/clarus/map.cla; bodies are unchanged. Conditionally spliced by
+// drive.cla (Task 2 of the 2026-08-10 map-hashtable plan) only when a
+// program uses `sortedmap`.
+//
+// Extern names are SortedMap-prefixed (SortedMapHandleDeref, etc.) to avoid
+// the scopeDeclare name-collision hazard -- the same reason map.cla's own
+// Map-prefixed externs exist. Each extern is backed by an rt_ext_SortedMap*
+// wrapper in both runtime/host/rt_ext_host.inc and runtime/mac/rt_ext_mac.inc.
+//
+// For full implementation and layout details, see the original map.cla's
+// comprehensive header comment (preserved in git history). The semantic
+// contract is identical to the sorted map behavior: binary search lookup,
+// sorted insertion/removal by ascending key, and iteration in key order.
+external func SortedMapHandleDeref(h: ptr): ptr = inline deref
+// `reg memerr`, not plain `reg` -- see text.cla's own TextSetHandleSize
+// doc comment (Task 14, native-5e) for why: SetHandleSize is a void
+// Pascal procedure, no result in D0.
+external func SortedMapSetHandleSize(h: ptr, n: int): int = trap 0xA024 reg memerr
+external func SortedMapBlockMoveData(src: ptr, dst: ptr, count: int) = trap 0xA22E reg
+// SortedMapNewPtr/SortedMapDisposePtr (Task 1, Plan 5c wave2a): the box allocator
+// rtSortedMapNew below uses, mirroring TextNewPtr/ListNewPtr's own oom-panic-at-
+// the-primitive placement exactly (text.cla/list.cla) on host; rtSortedMapNew
+// below now guards the native path too.
+external func SortedMapNewPtr(size: int): ptr = trap 0xA11E reg
+external func SortedMapDisposePtr(p: ptr) = trap 0xA01F reg
+// SortedMapNewHandle/SortedMapDisposeHandle/SortedMapRcCheck (Task 1, Plan 5c wave2a): the
+// ARC waist externs rtSortedMapNew/rtSortedMapRetain/rtSortedMapRelease below use, same shape
+// as text.cla's TextNewHandle/TextDisposeHandle/TextRcCheck and list.cla's
+// ListNewHandle/ListDisposeHandle/ListRcCheck. SortedMapNewHandle oom-panics on
+// NULL itself on host; rtSortedMapNew below guards the native path too.
+// SortedMapRcCheck is the cold-path over-release
+// guard: rtSortedMapRelease only calls it once it has already determined `rc <=
+// 0` itself (the host body then prints "rt_rc: over-release at %s" and
+// aborts; the Mac body is a no-op) -- never called unconditionally the way
+// the C reference's rt_rc_check is.
+external func SortedMapNewHandle(n: int): ptr = trap 0xA122 reg
+external func SortedMapDisposeHandle(h: ptr) = trap 0xA023 reg
+external func SortedMapRcCheck(box: ptr, rc: int) = inline nop
+
+// SORTEDMAP_KEYBLOCK (rt_core.inc:601, `#define SORTEDMAP_KEYBLOCK 256`): fixed byte
+// width of one key slot -- a full Str255 block (1-byte length + up to 255
+// content bytes), regardless of the actual key's length.
+const SORTEDMAP_KEYBLOCK: int = 256
+
+// RtSortedMap (Ch13: Overlay Records) mirrors rt_core.inc:582-590's `struct
+// rt_map { int32_t rc; Handle keys; Handle vals; int32_t valsize;
+// int32_t count; int32_t cap; int32_t valcap; }` field-for-field --
+// rt_core.inc's rt_map_layout_check typedef guards this layout stays exact.
+overlay record RtSortedMap {
+    rc: int
+    keys: ptr
+    vals: ptr
+    valsize: int
+    count: int
+    cap: int
+    valcap: int
+}
+
+// sortedmapKeySlot (rt_core.inc:612-615, `map_key_slot`): the address of key
+// entry i -- derives the keys Handle's master pointer fresh on every call
+// (relocation discipline, module header comment above).
+func sortedmapKeySlot(m: ptr, i: int): ptr {
+    return SortedMapHandleDeref(RtSortedMap(m).keys) + i * SORTEDMAP_KEYBLOCK
+}
+
+// sortedmapValSlot (rt_core.inc:617-620, `map_val_slot`): the address of value
+// entry i -- derives the vals Handle's master pointer fresh on every call,
+// same reasoning as sortedmapKeySlot above.
+func sortedmapValSlot(m: ptr, i: int): ptr {
+    return SortedMapHandleDeref(RtSortedMap(m).vals) + i * RtSortedMap(m).valsize
+}
+
+// sortedmapLowerBound (rt_core.inc:623-637, `map_lower_bound`): binary search for
+// the smallest index whose key is >= `key` (lower bound). EXACT port of the
+// C reference's loop arithmetic (lo=0, hi=count, mid=lo+(hi-lo)/2, < moves
+// lo up, >= moves hi down) -- off-by-one here corrupts every map. The C
+// reference bundles the found-flag into this same function via an out
+// parameter; this port splits that off into sortedmapKeyEq (below), called
+// separately by sortedmapFind/rtSortedMapSet -- an equivalent, not identical,
+// structure: same total work (one binary search, one extra rtStrCmp to
+// settle "found"), same result, no `int *found` out-parameter needed.
+func sortedmapLowerBound(m: ptr, key: ptr): int {
+    var count: int
+    var lo: int
+    var hi: int
+    var mid: int
+
+    count = RtSortedMap(m).count
+    lo = 0
+    hi = count
+    while lo < hi {
+        mid = lo + (hi - lo) / 2
+        if rtStrCmp(sortedmapKeySlot(m, mid), key) < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return lo
+}
+
+// sortedmapKeyEq reports whether entry pos exists and holds exactly `key` --
+// together with sortedmapLowerBound above, exactly reproduces map_lower_bound's
+// own `*found = lo < m->count && rt_str_cmp(map_key_slot(m, lo), key) == 0`
+// (rt_core.inc:636).
+func sortedmapKeyEq(m: ptr, pos: int, key: ptr): bool {
+    return pos < RtSortedMap(m).count and rtStrCmp(sortedmapKeySlot(m, pos), key) == 0
+}
+
+// sortedmapFind (rt_core.inc:639-643, `map_find`): the found index, or -1 if
+// absent -- an exact port, delegating to sortedmapLowerBound + sortedmapKeyEq exactly
+// as the C reference delegates to map_lower_bound + its found out-param.
+func sortedmapFind(m: ptr, key: ptr): int {
+    var pos: int
+
+    pos = sortedmapLowerBound(m, key)
+    if sortedmapKeyEq(m, pos, key) {
+        return pos
+    }
+    return -1
+}
+
+// rtSortedMapGrowKeys (rt_core.inc:243-255's rt_core_grow, specialized to the
+// keys Handle/cap field -- the first of rt_map_set's two back-to-back grow
+// calls, rt_core.inc:676-677): doubles cap (from 4 if currently empty)
+// until it covers `need`, then SortedMapSetHandleSize once (in bytes,
+// newcap*SORTEDMAP_KEYBLOCK). Callers that hold a master pointer derived before
+// calling this MUST re-derive it afterward -- growth can move the block
+// (relocation discipline, module header comment above; sortedmapKeySlot already
+// does this on every call, so ordinary callers need not think about it).
+func rtSortedMapGrowKeys(m: ptr, need: int) {
+    var rm: RtSortedMap
+    var cap: int
+    var newcap: int
+    var err: int
+
+    rm = RtSortedMap(m)
+    cap = rm.cap
+    if need <= cap {
+        return
+    }
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = SortedMapSetHandleSize(rm.keys, newcap * SORTEDMAP_KEYBLOCK)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    rm.cap = newcap
+}
+
+// rtSortedMapGrowVals: the second of rt_map_set's two back-to-back grow calls
+// (rt_core.inc:677), specialized to the vals Handle/valcap field/per-map
+// valsize -- otherwise identical in structure to rtSortedMapGrowKeys above.
+func rtSortedMapGrowVals(m: ptr, need: int) {
+    var rm: RtSortedMap
+    var cap: int
+    var newcap: int
+    var valsize: int
+    var err: int
+
+    rm = RtSortedMap(m)
+    cap = rm.valcap
+    if need <= cap {
+        return
+    }
+    valsize = rm.valsize
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = SortedMapSetHandleSize(rm.vals, newcap * valsize)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    rm.valcap = newcap
+}
+
+// rtSortedMapBoxSize is SortedMapNewPtr's argument for rtSortedMapNew's box below -- mirrors
+// text.cla's/list.cla's own rtTextBoxSize/rtListBoxSize reasoning exactly:
+// this language has no sizeof operator, so it's a hand-derived constant
+// rather than an exact `sizeof(struct rt_map)`. rt_core.inc's own
+// rt_map_layout_check pins struct rt_map to exactly `{ int32_t rc; Handle
+// keys; Handle vals; int32_t valsize; int32_t count; int32_t cap;
+// int32_t valcap; }` (seven fields), but a Handle is a native pointer,
+// whose width (and the padding a natural-alignment C struct layout inserts
+// around it) differs by target. 56 (seven fields, each conservatively
+// budgeted a full 8-byte pointer-width slot) safely covers both the
+// x86_64/arm64 differential-test host and the real 4-byte-pointer 68k
+// target: SortedMapNewPtr only guarantees "at least this many bytes," so a
+// little slack here is harmless, unlike an UNDER-sized box, which would
+// corrupt whatever heap memory follows it.
+const rtSortedMapBoxSize: int = 56
+
+// rtSortedMapNew (rt_core.inc:622-636, `rt_map_new`) -- Plan 5c wave2a Task 4:
+// birth allocation is now entirely Clarus-owned, mirroring the C reference
+// field by field (rc=1, keys/vals each a fresh empty Handle, valsize/count/
+// cap/valcap poked). SortedMapNewPtr/SortedMapNewHandle's own C shim panics on NULL
+// (host only -- Task 9 (native-5d) gave both a bare `reg` trap clause,
+// which has no such check), so these guards are dead on host, live on
+// native -- same message the C shim uses ("out of memory"), same
+// `x == ptr(0)` idiom rtSortedMapRetain/etc. already use.
+func rtSortedMapNew(valsize: int): ptr {
+    var m: ptr
+    var rm: RtSortedMap
+
+    m = SortedMapNewPtr(rtSortedMapBoxSize)
+    if m == ptr(0) {
+        rtPanic("out of memory")
+    }
+    rm = RtSortedMap(m)
+    rm.rc = 1
+    rm.keys = SortedMapNewHandle(0)
+    if rm.keys == ptr(0) {
+        rtPanic("out of memory")
+    }
+    rm.vals = SortedMapNewHandle(0)
+    if rm.vals == ptr(0) {
+        rtPanic("out of memory")
+    }
+    rm.valsize = valsize
+    rm.count = 0
+    rm.cap = 0
+    rm.valcap = 0
+    return m
+}
+
+// rtSortedMapRetain (rt_core.inc:847-852, `rt_map_retain`) -- Plan 5c wave2a Task
+// 4: null-safe increment, no over-release guard (same design decision as
+// text.cla's rtTextRetain/list.cla's rtListRetain -- the guard is a
+// release-only cold path, see SortedMapRcCheck's own doc comment above and
+// rtSortedMapRelease below).
+func rtSortedMapRetain(m: ptr) {
+    var rm: RtSortedMap
+
+    if m == ptr(0) {
+        return
+    }
+    rm = RtSortedMap(m)
+    rm.rc = rm.rc + 1
+}
+
+// rtSortedMapRelease (rt_core.inc:854-864, `rt_map_release`; the rt_map_free
+// alias, rt_core.inc:865, is exactly this function -- cprint.cla's
+// IMapFreeVar reaches this through cpEmitRelease, no separate rtSortedMapFree
+// exists) -- Plan 5c wave2a Task 4: null-safe; the guard runs ONLY on the
+// cold `rc <= 0` path (SortedMapRcCheck's own doc comment above) rather than
+// unconditionally the way the C reference's rt_rc_check call does;
+// decrements regardless; disposes the keys Handle, then the vals Handle,
+// then the box itself once rc reaches 0 -- that exact order, matching the
+// C reference's own DisposeHandle(m->keys); DisposeHandle(m->vals);
+// DisposePtr((Ptr)m); sequence.
+func rtSortedMapRelease(m: ptr) {
+    var rm: RtSortedMap
+
+    if m == ptr(0) {
+        return
+    }
+    rm = RtSortedMap(m)
+    if rm.rc <= 0 {
+        SortedMapRcCheck(m, rm.rc)
+    }
+    rm.rc = rm.rc - 1
+    if rm.rc == 0 {
+        SortedMapDisposeHandle(rm.keys)
+        SortedMapDisposeHandle(rm.vals)
+        SortedMapDisposePtr(m)
+    }
+}
+
+// rtSortedMapLastref (rt_core.inc:795, `rt_map_lastref`) -- Plan 5c wave2a Task
+// 4: null-safe "is this the box's only live reference" predicate, same
+// contract as rtListLastref/rtTextLastref -- cpEmitRelease's element-
+// release walk gates on this, reading rc BEFORE cpEmitRelease's own
+// rtSortedMapRelease call runs, so two release call sites sharing one rc>=2 map
+// never both walk and re-release the same values.
+func rtSortedMapLastref(m: ptr): bool {
+    return m != ptr(0) and RtSortedMap(m).rc == 1
+}
+
+// rtSortedMapSet (rt_core.inc:666-689, `rt_map_set`): upsert. On a match,
+// overwrites the existing value in place (no growth, no shift). On a miss,
+// grows both arrays for one more entry, shifts the tail (everything at or
+// after `pos`) up by one slot in both arrays (skipped when pos is already
+// count, matching the C reference's own `if (tail > 0)` guard), writes the
+// new key's length byte + content bytes (peekb/pokeb, str.cla Task 8
+// convention -- SortedMapBlockMoveData copies only `klen` content bytes, NOT the
+// whole SORTEDMAP_KEYBLOCK slot, exactly matching rt_map_set's own
+// `BlockMoveData(key + 1, kslot + 1, klen)`), writes the value, then
+// increments count.
+func rtSortedMapSet(m: ptr, key: ptr, val: ptr) {
+    var rm: RtSortedMap
+    var pos: int
+    var tail: int
+    var klen: int
+    var kslot: ptr
+
+    rm = RtSortedMap(m)
+    pos = sortedmapLowerBound(m, key)
+    if sortedmapKeyEq(m, pos, key) {
+        SortedMapBlockMoveData(val, sortedmapValSlot(m, pos), rm.valsize)
+        return
+    }
+    rtSortedMapGrowKeys(m, rm.count + 1)
+    rtSortedMapGrowVals(m, rm.count + 1)
+    tail = rm.count - pos
+    if tail > 0 {
+        SortedMapBlockMoveData(sortedmapKeySlot(m, pos), sortedmapKeySlot(m, pos + 1), tail * SORTEDMAP_KEYBLOCK)
+        SortedMapBlockMoveData(sortedmapValSlot(m, pos), sortedmapValSlot(m, pos + 1), tail * rm.valsize)
+    }
+    klen = peekb(key)
+    kslot = sortedmapKeySlot(m, pos)
+    pokeb(kslot, klen)
+    SortedMapBlockMoveData(key + 1, kslot + 1, klen)
+    SortedMapBlockMoveData(val, sortedmapValSlot(m, pos), rm.valsize)
+    rm.count = rm.count + 1
+}
+
+// rtSortedMapGet (rt_core.inc:691-696, `rt_map_get`): panics ("map key not
+// found") on an absent key -- never a sentinel return, matching the
+// behavior contract exactly.
+func rtSortedMapGet(m: ptr, key: ptr, out: ptr) {
+    var idx: int
+
+    idx = sortedmapFind(m, key)
+    if idx < 0 {
+        rtPanic("map key not found")
+    }
+    SortedMapBlockMoveData(sortedmapValSlot(m, idx), out, RtSortedMap(m).valsize)
+}
+
+// rtSortedMapGetDv (rt_core.inc:698-705, `rt_map_get_dv`): returns false and
+// leaves `out` untouched on an absent key; returns true and fills `out` on
+// present.
+func rtSortedMapGetDv(m: ptr, key: ptr, out: ptr): bool {
+    var idx: int
+
+    idx = sortedmapFind(m, key)
+    if idx < 0 {
+        return false
+    }
+    SortedMapBlockMoveData(sortedmapValSlot(m, idx), out, RtSortedMap(m).valsize)
+    return true
+}
+
+// rtSortedMapHas (rt_core.inc:707-710, `rt_map_has`).
+func rtSortedMapHas(m: ptr, key: ptr): bool {
+    return sortedmapFind(m, key) >= 0
+}
+
+// rtSortedMapRemove (rt_core.inc:712-722, `rt_map_remove`): silent on an absent
+// key (language reference: "silently succeeds if absent"). On a match,
+// compacts the tail (everything after `idx`) down by one slot in both
+// arrays (skipped when idx was the last entry), then decrements count.
+func rtSortedMapRemove(m: ptr, key: ptr) {
+    var rm: RtSortedMap
+    var idx: int
+    var tail: int
+
+    idx = sortedmapFind(m, key)
+    if idx < 0 {
+        return
+    }
+    rm = RtSortedMap(m)
+    tail = rm.count - 1 - idx
+    if tail > 0 {
+        SortedMapBlockMoveData(sortedmapKeySlot(m, idx + 1), sortedmapKeySlot(m, idx), tail * SORTEDMAP_KEYBLOCK)
+        SortedMapBlockMoveData(sortedmapValSlot(m, idx + 1), sortedmapValSlot(m, idx), tail * rm.valsize)
+    }
+    rm.count = rm.count - 1
+}
+
+// rtSortedMapCount (rt_core.inc:724).
+func rtSortedMapCount(m: ptr): int {
+    return RtSortedMap(m).count
+}
+
+// rtSortedMapClear (rt_core.inc:733, `rt_map_clear`): count = 0, capacity kept --
+// ported for interface parity with the C reference (no `IMapClear`
+// intrinsic exists in cprint.cla's fpIntrCall dispatch today, so this
+// function is currently unreachable from any emitted program, same as
+// rtListClear/rtTextStoreText); kept in case a future Map method routes
+// here rather than silently dropped.
+func rtSortedMapClear(m: ptr) {
+    var rm: RtSortedMap
+
+    rm = RtSortedMap(m)
+    rm.count = 0
+}
+
+// rtSortedMapKeyAt (rt_core.inc:735-739, `rt_map_key_at`): panics ("map key not
+// found", the same message the C reference reuses for this out-of-range
+// case) on an out-of-range index. Copies the FULL SORTEDMAP_KEYBLOCK-byte slot
+// (a whole Str255 block) into key255 -- fpForMapStmt's own call site
+// passes the address of a `cv_<name>` Str255-typed loop variable.
+func rtSortedMapKeyAt(m: ptr, i: int, key255: ptr) {
+    if i < 0 or i >= RtSortedMap(m).count {
+        rtPanic("map key not found")
+    }
+    SortedMapBlockMoveData(sortedmapKeySlot(m, i), key255, SORTEDMAP_KEYBLOCK)
+}
+
+// rtSortedMapValAt (rt_core.inc:741-745, `rt_map_val_at`): same out-of-range
+// contract as rtSortedMapKeyAt above.
+func rtSortedMapValAt(m: ptr, i: int, out: ptr) {
+    if i < 0 or i >= RtSortedMap(m).count {
+        rtPanic("map key not found")
+    }
+    SortedMapBlockMoveData(sortedmapValSlot(m, i), out, RtSortedMap(m).valsize)
+}

@@ -254,6 +254,29 @@ void *rt_ext_MapNewPtr(int32_t size) {
 }
 void rt_ext_MapDisposePtr(void *p) { DisposePtr((Ptr)p); }
 
+/* rt_ext_SortedMapHandleDeref/SortedMapSetHandleSize/SortedMapBlockMoveData/
+ * SortedMapNewPtr/SortedMapDisposePtr/SortedMapNewHandle/SortedMapDisposeHandle/
+ * SortedMapRcCheck (map-hashtable Task 1, 2026-08-10): sortedmap.cla's own
+ * extern wrappers backing the preserved sorted-array map implementation.
+ * Mirrors runtime/host/rt_ext_host.inc's block exactly, except
+ * rt_ext_SortedMapRcCheck's body is a no-op -- no ledger on Mac. */
+void *rt_ext_SortedMapHandleDeref(void *h) { return *(void **)h; }
+int32_t rt_ext_SortedMapSetHandleSize(void *h, int32_t n) { SetHandleSize((Handle)h, (Size)n); return (int32_t)MemError(); }
+void rt_ext_SortedMapBlockMoveData(void *src, void *dst, int32_t n) { BlockMoveData((Ptr)src, (Ptr)dst, (Size)n); }
+void *rt_ext_SortedMapNewHandle(int32_t n) {
+    void *h = (void *)NewHandle((Size)n);
+    if (!h) rt_core_oom();
+    return h;
+}
+void rt_ext_SortedMapDisposeHandle(void *h) { DisposeHandle((Handle)h); }
+void rt_ext_SortedMapRcCheck(void *box, int32_t rc) { (void)box; (void)rc; }
+void *rt_ext_SortedMapNewPtr(int32_t size) {
+    void *p = (void *)NewPtr((Size)size);
+    if (!p) rt_panic("out of memory");
+    return p;
+}
+void rt_ext_SortedMapDisposePtr(void *p) { DisposePtr((Ptr)p); }
+
 /* ---- native-5e Task 7 Step 1: ui.cla/uiwidgets.cla Toolbox extern block ----
  * One rt_ext_Ui<Name> wrapper per `external func Ui<Name>` declared in
  * runtime/clarus/ui.cla and runtime/clarus/uiwidgets.cla -- Mac-ONLY (no
