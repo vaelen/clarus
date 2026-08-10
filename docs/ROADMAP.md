@@ -1,32 +1,29 @@
 # Clarus Roadmap
 
 Living document — the authoritative sequencing and strategy record. Updated
-2026-07-23. The per-task execution history lives in `.superpowers/sdd/progress.md`
+2026-08-10. The per-task execution history lives in `.superpowers/sdd/progress.md`
 (gitignored scratch; git history is the durable record).
 
 Completed phases are archived in `docs/HISTORY.md`.
 
 ## Standing principles
 
-     **GUIDING PRINCIPLE (Andrew, 2026-08-07 — governs all future
-     Toolbox work; ratifies and extends the sunset follow-on):** any
-     call into the Toolbox goes through the appropriate `toolbox/*.cla`
-     interface — runtime code included — to unify the cprint and native
-     backends and cut duplication. When a new feature needs a new
-     Toolbox function, enable the rest of that manager's interface at
-     the same time where feasible, rather than declaring one routine at
-     a time. Layering follows the 80/20 rule: the RUNTIME uses Toolbox
-     calls directly, but the majority of user code should never need
-     to — most Toolbox routines hide behind friendlier Clarus
-     abstractions (e.g. cut/copy/paste is a simple capability on text
-     controls, not a Scrap Manager lesson), so a "standard" application
-     is written entirely through the lens of the Clarus language. The
-     catalog exists so users CAN drop to the Toolbox outside the common
-     case, not so they must. API-era discipline: prefer the Toolbox as
-     defined by the 1980s Inside Macintosh volumes (I–V; Volume VI
-     covers System 7.0) — target System 6 features whenever possible,
-     and gate any System 7-only feature behind a version check
-     (Gestalt) with a graceful fallback when the feature is absent.
+**GUIDING PRINCIPLE (Andrew, 2026-08-07 — governs all future Toolbox work;
+ratifies and extends the sunset follow-on):** any call into the Toolbox goes
+through the appropriate `toolbox/*.cla` interface — runtime code included — to
+unify the cprint and native backends and cut duplication. When a new feature
+needs a new Toolbox function, enable the rest of that manager's interface at
+the same time where feasible, rather than declaring one routine at a time.
+Layering follows the 80/20 rule: the RUNTIME uses Toolbox calls directly, but
+the majority of user code should never need to — most Toolbox routines hide
+behind friendlier Clarus abstractions (e.g. cut/copy/paste is a simple
+capability on text controls, not a Scrap Manager lesson), so a "standard"
+application is written entirely through the lens of the Clarus language. The
+catalog exists so users CAN drop to the Toolbox outside the common case, not so
+they must. API-era discipline: prefer the Toolbox as defined by the 1980s
+Inside Macintosh volumes (I–V; Volume VI covers System 7.0) — target System 6
+features whenever possible, and gate any System 7-only feature behind a version
+check (Gestalt) with a graceful fallback when the feature is absent.
 
 ## Decided sequencing (REORDERED from the older plan docs' roadmap notes)
 
