@@ -464,6 +464,114 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | `UiNewMenuStr` (`ui.cla`, `string`-typed `NewMenu` overload) | unexercised, recorded (dead code) | Zero-call-site dead declaration found by the same sweep — `UiNewMenu` (the `ptr`-typed sibling) is the one actually used for real menu creation (`ui.cla:1029,1099`, exercised by every menu-bearing golden). No coverage gap to close, just an unused declaration; not touched (out of scope to delete dead runtime surface in a test-review task). |
   | `nat_CorePanic`, `nat_CoreSetLastErr`, `nat_SerFileWriteData`/`nat_SerFileReadTextInto`, `nat_UiTestEmit`, `nat_UiRtQuit`, `nat_UiMacInitToolbox`, `nat_UiScreenBounds`, `nat_UiScreenBits` | closed, listed for completeness | All confirmed exercised on the native/Mac lane by existing infrastructure: `TestRunErrOn68k` (panic), `TestSuiteOn68k`'s ser roundtrip cases (file I/O), every native UI boot (TestEmit/RtQuit/MacInitToolbox/ScreenBounds), and the `snap` scripted command — used across a dozen+ `testdata/ui/*.events` goldens — for `ScreenBits`. `rtSetLastErr`'s truncation path is pinned by name in `core.cla`'s own header comment (`TestTextwidgetsUIScenario`'s `trunc32001` snap, one of the 23 frozen golden scenarios). |
 
+- **datetime-instrumentation (branch `worktree-native-perf-findings`,
+  2026-08-10/11, based on `map-hashtable`): DONE.** Two deliverables in
+  one phase: a minimal date/time surface in the standard library, and
+  always-on progress + per-phase `TickCount()` instrumentation in
+  clarusc itself — the "instrument first" step the native-compiler
+  performance findings doc calls for, and the fix for on-Mac compiles
+  giving no sign they're running. 12 tasks, commits `8ee003f..c00188f`;
+  full ledger: `.superpowers/sdd/2026-08-10-datetime-instrumentation/
+  progress.md`; design: `docs/superpowers/specs/
+  2026-08-10-datetime-instrumentation-design.md`.
+
+  **Language surface — three new builtins, no new type.** `now(): int`,
+  `dateTimeStr(t: int): string` (`"mm-dd-yy HH:MM:SS"`), `durationStr(secs:
+  int): string` (`"Xh Ym Zs"`, leading-zero units omitted, `"-"`-prefixed
+  for negative input). A datetime is a **plain `int`**: unsigned Mac-epoch
+  local seconds, considered and rejected a nominal `datetime` type as
+  retrofittable later. **Unsigned note (documented in the reference):**
+  Mac-epoch seconds exceed 2³¹−1 in 1972, so the Mac's unsigned 32-bit
+  value lands in a signed Clarus `int` and every realistic clock reading
+  is negative — safe because subtraction is bit-identical signed vs.
+  unsigned (mod 2³²), ordering is monotonic within the 1972-2040
+  half-range, and all calendar decomposition happens inside `Secs2Date`
+  (ROM) or its C glue, never in Clarus arithmetic. Difference between two
+  datetimes is plain subtraction, documented rather than wrapped.
+
+  **Toolbox catalog (`toolbox/osutils.cla`):** Date-Time Utilities added
+  per the fill-the-manager standing principle — `record DateTimeRec`,
+  `ReadDateTime`, `SecondsToDate`, `DateToSeconds`. `SetDateTime` is
+  deliberately absent (out of scope, §12 of the design). The bit-11
+  exception (`GetDateTime` is inline low-memory glue, not a real trap, so
+  it can't be a Clarus extern — it gets a doc comment pointing at `now()`
+  instead) is documented in both the reference and the catalog's own
+  provenance comments.
+
+  **Runtime module + lane variants:** `runtime/clarus/datetime.cla`
+  (shared `rtDateTimeStr`/`rtDurationStr`, pure Clarus string building)
+  plus per-lane `rtNow`: `datetime_68k.cla` (native — `peekl(0x020C)`,
+  a direct read of the low-memory `Time` global, zero-cost since the
+  one-second interrupt already maintains it) and `datetime_c.cla` (both
+  C lanes — extern `DtTimeNow`, rendered as `rt_ext_DtTimeNow` glue).
+  Decomposition strategy: let the ROM do it on native (`Secs2Date` trap,
+  correct by construction) and match it with ~10 lines of C civil-date
+  math on host/Retro68, pinned by shared test vectors spanning the
+  unsigned range (pre-1972 positive value, modern negative-int value,
+  month/year boundaries, a leap day, midnight/23:59:59) so `dateTimeStr`
+  produces identical strings on every lane.
+
+  **Instrumentation — the `feProgress` seam:** a new front-end-provided
+  `feProgress(line: string)` (the `feHasKey` precedent), called from
+  `drive.cla` at fixed points (`Starting`, `Compiling <file>`, `Included
+  <path>` per actual read — a free liveness heartbeat during the ~17-
+  runtime-module splice, `Loading runtime`, one completion line per driver
+  phase boundary with `<duration> (<ticks> ticks)`, `Compiled <file> -
+  <total>`, `Finished`). Host CLI (`main.cla`) routes to `log()` → stderr,
+  keeping stdout clean; `ClarusC.APPL` (`macgui.cla`) appends to the Log
+  textview via `gcLog`, flushed on every `gcCompile` exit path (a Task 9
+  review fix — two flush holes found and closed). **Gated on `want68k`
+  ONLY** — check-only/appinfo mode and non-emit host builds stay quiet, so
+  every Class-A byte-golden (`TestErrorGoldens`, `reftest`, `claruscboot`,
+  `emitui`, `perfgate`) stays green with no golden churn. Emitted forks
+  for programs that don't use the datetime builtins are byte-identical
+  before/after this phase (matched-basename fork-diff methodology, the
+  map-phase's own precedent — MacBinary embeds the `-o` basename, so a
+  naive byte-compare across differently-named builds is a false
+  positive).
+
+  **Two-stage bootstrap** (the map-phase pattern): Stage A (`c980554`)
+  landed the builtins + runtime module + glue without clarusc using them
+  internally; Stage B (`c00188f`) wired the instrumentation into clarusc
+  itself. Fixed point held both times (3,261,377 B then 3,278,906 B).
+
+  **Test-suite growth:** core suite 54 → 57 `CoreTest` cases
+  (`DurationStrShapes`/`DateTimeStrVectors`/`NowSanity` — the shared
+  host-vs-ROM lane-identity vectors); toolbox suite 28 → 29
+  (`DateTimeRoundTrip`, hardware-proving `Date2Secs(Secs2Date(t)) == t`).
+  **Emulator scope deliberately narrow, by explicit design decision:**
+  `TestCoreSuiteGUIOn68k` + `TestToolboxSuiteOn68k` were the phase's ONLY
+  emulator runs — no smoke tests, no scenario goldens. Both PASS on the
+  first attempt, 40.6s total (core 4.79s, toolbox 35.35s); no fix round
+  needed (Task 11, HEAD unchanged at `c00188f`).
+
+  **Debt / deferrals:**
+  - Live Mac Log-window painting mid-compile — the compile runs
+    synchronously inside an event handler, so today's appended lines
+    render only when events next process; deferred to
+    `docs/superpowers/specs/2026-08-10-clarusc-mac-live-log-design.md`,
+    scheduled after more Layer-1 performance work.
+  - Instrumented on-Mac compile timing capture — converting the
+    performance findings doc's memory-proxy ranking into real 68k tick
+    timings — still pending; this phase built the instrumentation, not
+    the on-Mac measurement run.
+  - Host `rt_ext` glue for the catalog's Date-Time names (`ReadDateTime`/
+    `SecondsToDate`/`DateToSeconds`) unadded — nothing host-side calls
+    them yet; only the runtime module's private `Dt`-prefixed twins have
+    glue.
+  - `rt_ext_mac.inc`'s Date-Time glue is header-verified but not
+    Retro68-compiled this phase (the opt-in cprint lane,
+    `CLARUS_CPRINT_MAC_TESTS=1`, wasn't run) — first real compile is
+    whenever that lane next runs.
+  - `TestToolboxSuiteOn68k`'s doc comment (`internal/mactest/
+    coresuite_test.go:260`) still says "25 result lines (24 real cases"
+    — pre-existing staleness that predates this phase, now doubly stale
+    at 29; not fixed (Task 12's docs sweep only touched ROADMAP/STATUS/
+    the ledger, not this Go file).
+  - **T2 (`scripts/test-merge.sh`) still owed before any merge** —
+    standing debt carried forward from the map-hashtable phase, now
+    covering this phase's commits too. Recorded here, not run.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

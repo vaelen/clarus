@@ -1,126 +1,107 @@
-# Session status — 2026-08-10 (native compiler performance / map rework)
+# Session status — 2026-08-11 (datetime + compiler instrumentation)
 
 Handoff summary for the next session. Branch: `worktree-native-perf-findings`
-(stacked on unmerged `mac-resident-clarusc`, pushed to origin, final
-whole-branch review MERGEABLE AS-IS, **not merged** — merge is Andrew's call).
+(stacked on unmerged `mac-resident-clarusc` → `map-hashtable`, pushed to
+origin, **not merged** — merge is Andrew's call).
 
 ## Why this session happened
 
-On-Mac compiles with `ClarusC.APPL` take hours — useless to a real
-programmer. This session (1) audited the compiler for performance problems,
-(2) fixed the worst one (maps), and (3) monitored the Snow acceptance run.
+`ClarusC.APPL` compiles take hours with zero feedback — a user can't tell a
+working compile from a hang. This session (1) gave clarusc a way to read the
+clock (the language had none) and (2) wired always-on progress + per-phase
+`TickCount()` instrumentation through that new capability, the "instrument
+first" step the native-compiler performance findings doc calls for.
 
-## 1. Performance review (no-code exploration)
+## 1. datetime-instrumentation phase (IMPLEMENTED, this branch)
 
-Full ranked findings: `docs/superpowers/specs/2026-08-10-native-compiler-performance-findings.md`.
-Three layers:
+Spec: `docs/superpowers/specs/2026-08-10-datetime-instrumentation-design.md`;
+ledger: `.superpowers/sdd/2026-08-10-datetime-instrumentation/progress.md`
+(12 tasks, all review-clean; commits `8ee003f..c00188f`). Full detail in the
+ROADMAP phase entry — summary here:
 
-- **Layer 1 — algorithmic bugs in clarusc**: `keywordKind` re-interns 33
-  keyword literals per identifier (~80-95% of lex time); `exprTypeOf[numToStr(e)]`
-  and 7 sibling int-keyed tables laundered through string maps (O(E²)·260B
-  ≈ 40-100GB of trap-dispatched memmove per 12k-line compile);
-  `cgHeurOnCycle` O(V²·E); codegen inner-loop linear scans with 256-byte
-  string compares; every function code-generated twice (measure + emit);
-  384-byte `A68Item` copied 8-24× per instruction by the peephole.
-- **Layer 2 — systemic runtime costs**: `string` = 256-byte by-value Str255;
-  `map` was a sorted array with 256-byte key blocks (docs claimed hashtable);
-  every small copy is a `_BlockMoveData` trap; `* / mod` are subroutine
-  calls (div = 32-iteration loop); `text[i]` is a JSR; ARC is a full JSR per
-  op; every frame reserves ≥8KB.
-- **Layer 3 — architecture**: every compile re-lexes/parses/checks/lowers
-  ~12.9k runtime lines; tree-shake runs only before codegen; nothing cached
-  across compiles. Options ranked: shake-early, session-resident runtime,
-  baked pre-parsed runtime, single codegen pass, true separate
-  compilation/linker.
+- **Three new builtins, no new type:** `now(): int`, `dateTimeStr(t: int):
+  string`, `durationStr(secs: int): string`. A datetime is a plain `int` —
+  unsigned Mac-epoch local seconds, landing as a negative signed value for
+  every realistic clock reading (documented, safe: subtraction and ordering
+  are correct within the 1972-2040 half-range; all calendar decomposition
+  happens in ROM/C glue, never in Clarus arithmetic).
+- **Toolbox catalog** (`toolbox/osutils.cla`): Date-Time Utilities added
+  (`DateTimeRec`, `ReadDateTime`, `SecondsToDate`, `DateToSeconds`;
+  `SetDateTime` deliberately absent) with the bit-11 `GetDateTime`-is-inline-
+  glue exception documented in both the reference and provenance comments.
+- **Runtime module** `datetime.cla` + lane variants: native reads the
+  low-memory `Time` global directly (`peekl(0x020C)`, zero-cost); both C
+  lanes call `rt_ext` glue. `dateTimeStr` lane-identity pinned by shared
+  test vectors across the unsigned range.
+- **Instrumentation:** new `feProgress` seam (`main.cla` → stderr;
+  `macgui.cla` → buffered Log-textview flush on every `gcCompile` exit),
+  driving `Starting`/`Compiling`/`Included` (heartbeat through all ~17
+  spliced runtime modules)/`Loading runtime`/9 phase-completion
+  lines/`Compiled`/`Finished`. **Gated on `want68k` ONLY** — every Class-A
+  byte-golden (`TestErrorGoldens`, `reftest`, `claruscboot`, `emitui`,
+  `perfgate`) stayed green throughout; fork bytes proven byte-identical
+  (matched-basename methodology).
+- **Two snapshot regenerations** (Stage A `c980554`, Stage B `c00188f`),
+  fixed point held both times.
+- **Suite growth:** core 54 → 57 (`DurationStrShapes`/`DateTimeStrVectors`/
+  `NowSanity`); toolbox 28 → 29 (`DateTimeRoundTrip`). Emulator:
+  `TestCoreSuiteGUIOn68k` + `TestToolboxSuiteOn68k` both PASS first attempt
+  (40.6s total) — the phase's ONLY emulator runs, by explicit narrow-scope
+  decision.
 
-Baseline: host does the compile the Mac takes hours on in ~1.25s/142MB RSS.
+### Debt / deferrals (all recorded in the ROADMAP entry)
 
-## 2. map/sortedmap/intmap phase (IMPLEMENTED, this branch)
+- Live Mac Log-window painting mid-compile → deferred spec
+  `docs/superpowers/specs/2026-08-10-clarusc-mac-live-log-design.md`,
+  scheduled after more Layer-1 perf work.
+- Instrumented on-Mac compile timing capture (the measurement run that
+  converts the perf findings doc's memory-proxy ranking into real 68k
+  ticks) still pending.
+- Host `rt_ext` glue for the catalog's Date-Time names unadded (nothing
+  host-side calls them yet).
+- `rt_ext_mac.inc` Date-Time glue header-verified, not Retro68-compiled
+  (opt-in cprint lane not run this phase).
+- `TestToolboxSuiteOn68k`'s pre-existing stale "25 result lines" doc
+  comment (`internal/mactest/coresuite_test.go:260`) — predates this
+  phase, now doubly stale at 29; not fixed (out of this phase's docs-sweep
+  scope).
+- **T2 (`scripts/test-merge.sh`) still owed before any merge** — standing
+  debt from the map-hashtable phase, now covering this phase too.
 
-Spec: `docs/superpowers/specs/2026-08-10-map-hashtable-design.md`; plan:
-`docs/superpowers/plans/2026-08-10-map-hashtable.md`; ledger:
-`.superpowers/sdd/2026-08-10-map-hashtable/progress.md` (11 tasks, all
-review-clean; ~33 commits `7a7d6e1..` incl. the docs below).
+## 2. Prior phase context (still true, unchanged this session)
 
-- **`map of T` is now a real hashtable in BOTH lanes**
-  (`runtime/clarus/map.cla` + `runtime/host/rt_core.inc`, byte-identical
-  algorithms): dense insertion-order entries + open-addressed power-of-two
-  index, djb2 hash 31-bit-masked per step, mask-only arithmetic (no div),
-  variable-length key pool (256-byte key blocks GONE), swap-last remove.
-  Iteration order is now **unspecified-but-deterministic** (reference
-  updated); drop-in otherwise — same API, panics, contracts.
-- **`sortedmap of T`** — the old sorted implementation preserved verbatim as
-  a new type (ascending-key iteration contract), spliced only when used.
-- **`intmap of T`** — int keys, identity hash, always spliced (lives in
-  map.cla). Key single-evaluation bug found in review and fixed (749e91f).
-- **Compiler migrated to intmap** (Stage B): `exprTypeOf` family keyed by
-  arena index directly (numToStr keys deleted), `Scope.names` keyed by
-  interned nameIdx, shake/ir name tables. Emitted output proven
-  byte-identical pre/post; snapshot regenerated twice
-  (Stage A `dc24e96`, Stage B `9cc5c1c`), fixed point holds.
-- **Tests**: core suite 42→54 cases (map stress, sortedmap ordering
-  contract, intmap incl. growth/negative keys); order-dependent
-  expectations made order-agnostic BEFORE the switch; 68k emulator suite
-  green: core 54/54, toolbox 28/28 — the hashtable's first hardware run.
-- **Measured results (host)**: the silently-red-on-main
-  `TestEmitPerfTripwire` went GREEN — host emit median ~1.1-1.5s → **0.205s**
-  (vs 0.300s baseline); the old O(n)·256B sorted-array map insert WAS that
-  regression. The compiler-internal intmap migration measured host-NEUTRAL
-  (initial ~6% claim retracted after review) — its rationale is the
-  **unmeasured 68k lane**, where each old lookup paid a numToStr allocation
-  + string hash + per-probe rtStrCmp calls.
-- **Debt/deferrals** (all in the ROADMAP phase entry): T2/`internal/selfhost`
-  NOT run this phase (expect possible `clarusc/test/*.out` churn on first
-  T2); Stage C candidates: intmapHash multiplicative mixer (if 68k
-  measurement shows clustering), remaining int-keyed tables
-  (ast.cla externReg*, checkEnumDecl seen, recFieldsHeadByName/xrecSizeByName),
-  probe-loop corruption guards, offsetof layout assertions, map/sortedmap
-  `get(k, dv)` host-vs-native argument-evaluation-order corner,
-  `edit sm[k]` diagnostic quality, ir\*NeededByName cross-compile reset.
-
-## 3. Docs housekeeping
-
-`docs/ROADMAP.md` split (2,385 → 792 lines): all merged-to-main phase
-records moved verbatim to new `docs/HISTORY.md` (1,632 lines, newest-last);
-ROADMAP keeps sequencing, Standing principles (the Toolbox GUIDING
-PRINCIPLE), the two unmerged phase entries, small open items, process
-conventions. CLAUDE.md pointers updated.
-
-## 4. Snow acceptance run (mac-resident-clarusc) — FAILED, with a milestone
-
-The unattended 13h run (started 05:47 JST, verdict 18:48 JST) FAILED:
-
-- **Milestone: compile #1 SUCCEEDED on the Mac** — `TickProbe` extracted at
-  **102,016 bytes**, a full-size fork (not the 12KB husk). The CR-lexer fix
-  (0637077) is proven on hardware; ClarusC fully compiled a real program
-  on-Mac for the first time.
-- **Failure: compile #2 (catprobe) died with `runtime error: out of
-  memory` (exit 3)** inside the 48MB partition. Likely mechanism: single
-  compile peaks at 39.8MB (task-1 profile, OLD map runtime) and compile #2
-  starts from a heap carrying compile #1's residue (never-reset intern
-  pool + irLayoutNeededByName/irRcWalkNeededByName by design, plus
-  fragmentation).
-- Log: `/private/tmp/claude-501/-Users-andrew-repos-clarus/6e547e26-.../scratchpad/integration-run-final.log`;
-  run-by-run history in
-  `/Users/andrew/repos/clarus/.superpowers/sdd/2026-08-08-mac-resident-clarusc/progress.md`
-  (main checkout) and its task-11-report.md.
+- **map/sortedmap/intmap** (map-hashtable phase, done 2026-08-10): `map of
+  T` is a real hashtable on both lanes; `sortedmap of T` preserves the old
+  ascending-order contract; `intmap of T` replaced the compiler's own
+  `numToStr`-keyed internal tables. Host emit perf tripwire regression
+  fixed (~1.1-1.5s → 0.205s median). Full detail: ROADMAP's map-hashtable
+  entry.
+- **Snow acceptance run (mac-resident-clarusc):** last run FAILED with a
+  milestone — compile #1 succeeded on real Mac hardware (full-size fork,
+  not a husk); compile #2 died OOM in a 48MB partition. That run used the
+  PRE-hashtable runtime; rebuilding `ClarusC.APPL` from this branch (which
+  now includes both the hashtable fix AND the new instrumentation) and
+  rerunning is still the next decisive experiment — the instrumentation
+  built this session means a rerun will, for the first time, show visible
+  progress instead of an opaque hang.
 
 ## Recommended next steps (in order)
 
 1. **Rebuild `ClarusC.APPL` from THIS branch and rerun the Snow
-   acceptance.** The failed run used the pre-hashtable runtime; the map
-   rework directly attacks both the OOM (6-10MB of exprTypeOf keys alone,
-   256-byte key blocks gone) and the multi-hour compile time (the O(E²)
-   memmove and intern-pool costs were 68k-lane dominant). This is the
-   cheapest decisive experiment.
-2. Measure per-phase `TickCount()` on-Mac to convert the findings doc's
-   memory-derived ranking into real 68k timings.
+   acceptance.** Now carries both the map-hashtable fix and the progress
+   instrumentation — the rerun should show live stderr/log progress lines
+   even before addressing the OOM.
+2. Use the new instrumentation for its intended purpose: capture real
+   on-Mac per-phase `TickCount()` timings, converting the performance
+   findings doc's memory-derived ranking into fact.
 3. Next perf targets from the findings doc (Layer 1): `keywordKind`
    pre-interned constants (~10× lexing), `cgHeurOnCycle` adjacency+SCC,
    codegen lookup maps + `cgSizeOf` memo, `a68Comment` gating, single
    codegen pass.
-4. Run T2 (`scripts/test-merge.sh`) before any merge to main; expect
-   possible module-golden churn (documented debt).
-5. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
-   Snow acceptance PASS; `worktree-native-perf-findings` is
-   review-approved and stacked on it.
+4. Land the deferred live-log-window spec
+   (`2026-08-10-clarusc-mac-live-log-design.md`) once scheduled.
+5. Run T2 (`scripts/test-merge.sh`) before any merge to main; expect
+   possible module-golden churn (standing debt, both phases).
+6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
+   Snow acceptance PASS; `map-hashtable` and `datetime-instrumentation`
+   are both review-approved and stacked on top of it.
