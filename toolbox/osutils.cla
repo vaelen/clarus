@@ -94,3 +94,49 @@ external func GestaltErr(selector: int): word = trap 0xA1AD reg(d0: selector) re
 external func GestaltValue(selector: int): int = trap 0xA1AD reg(d0: selector) ret a0
 external func Delay(numTicks: int): int = trap 0xA03B reg(a0: numTicks) ret d0
 external func SysBeep(duration: word) = trap 0xA9C8
+
+// ---- Date-Time Utilities (IM II "Date and Time Operations") ----
+//
+// Provenance: declarations verified against Interfaces/CIncludes/
+// DateTimeUtils.h and Interfaces/AIncludes/DateTimeUtils.a (2026-08-10
+// datetime-instrumentation phase). GetDateTime is deliberately ABSENT:
+// it is not a trap at all -- Apple's glue is TWOWORDINLINE(0x20B8,
+// 0x020C), a MOVE.L of the low-memory Time global ($020C) through the
+// caller's pointer -- and Clarus programs should call the builtin now()
+// instead, which performs exactly that read on the native lane.
+//
+// _SecondsToDate/_DateToSeconds are the documented EXCEPTION to the
+// reference's bit-11 convention rule: Toolbox-range trap words (bit 11
+// set) with REGISTER-based contracts. AIncludes/DateTimeUtils.a is
+// explicit ("secs => D0, d => A0" over OPWORD $A9C6), and the CIncludes
+// pragma (#pragma parameter SecondsToDate(__D0, __A0), ONEWORDINLINE)
+// shows no glue words at all -- the raw trap takes registers.
+
+extern record DateTimeRec {
+    year: word
+    month: word
+    day: word
+    hour: word
+    minute: word
+    second: word
+    dayOfWeek: word
+}
+
+// _ReadDateTime (0xA039): re-reads the battery-backed clock chip
+// (slow, serial) and rewrites the Time global; boot-time resync, not a
+// routine time read. A0 = VAR secs (unsigned long), OSErr <= D0.
+external func ReadDateTime(time: ptr): int = trap 0xA039 reg(a0: time) ret d0
+
+// _SecondsToDate / Secs2Date (0xA9C6): unsigned seconds => D0,
+// DateTimeRec pointer => A0, no result. Fills year (full year), month
+// 1-12, day 1-31, hour 0-23, minute, second, dayOfWeek (1 = Sunday).
+external func SecondsToDate(secs: int, d: ptr) = trap 0xA9C6 reg(d0: secs, a0: d)
+
+// _DateToSeconds / Date2Secs (0xA9C7): DateTimeRec pointer => A0,
+// unsigned seconds <= D0. Tolerates out-of-range fields (month 13 rolls
+// into the next year) -- the ROM's own date arithmetic hook.
+external func DateToSeconds(d: ptr): int = trap 0xA9C7 reg(a0: d) ret d0
+
+// (SetDateTime is deliberately absent -- writing the clock is nothing a
+// Clarus program needs; if it ever is, 0xA03A takes D0 = seconds, OSErr
+// <= D0.)

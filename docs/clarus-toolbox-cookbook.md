@@ -755,6 +755,35 @@ of the same trap ever disagree, that disagreement is exactly the kind of
 thing this document's §1 and §4 warn about: one of the two transcriptions is
 wrong, and the compiler is telling you to go find out which.
 
+## 10. Walkthrough: the bit-11 exception — `SecondsToDate`
+
+`SecondsToDate`'s trap word is `0xA9C6`. `0xA9C6 & 0x0800 == 0x0800` — bit 11
+set, which §1's rule reads as the plain Toolbox/Pascal convention. Checking
+the actual glue instead settles it the other way. `CIncludes/DateTimeUtils.h`
+gives:
+
+```c
+#pragma parameter SecondsToDate(__D0, __A0)
+EXTERN_API( void )
+SecondsToDate(unsigned long secs, DateTimeRec *d)   ONEWORDINLINE(0xA9C6);
+```
+
+`ONEWORDINLINE` — one word, no second glue instruction — and `AIncludes/
+DateTimeUtils.a` says so explicitly: `secs => D0, d => A0`. There is no
+compiler-emitted copy after the trap returns; the raw trap itself is
+register-based, despite its bit-11-set trap word. This is the reference's
+one documented exception to the bit-11 rule (Ch13, the bit-11 paragraph),
+and the declaration follows the register convention, not the plain one:
+
+```rust
+external func SecondsToDate(secs: int, d: ptr) = trap 0xA9C6 reg(d0: secs, a0: d)
+```
+
+This is `toolbox/osutils.cla`'s real declaration, verbatim. `DateToSeconds`
+(`0xA9C7`) is the same shape, register-based for the identical reason —
+always check the glue word count, not just the bit-11 bit, when the two
+disagree.
+
 ---
 
 *Everything in this document is a citation, not an assertion — see the
