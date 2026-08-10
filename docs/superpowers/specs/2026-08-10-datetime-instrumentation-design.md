@@ -177,12 +177,14 @@ New front-end-provided function `feProgress(line: string)` (the
   for appinfo/diagnostic conventions.
 - **ClarusC.APPL** (`macgui.cla`): append to the Log textview via the
   existing `gcLog` path (window handle via a module global set at compile
-  start), **plus force the appended line to paint immediately**. The
-  compile runs synchronously inside an event handler; today the window
-  repaints only when events process, which is exactly the "is it even
-  running?" bug. Making each progress line visible mid-compile is an
-  explicit implementation task (whatever the widget layer needs:
-  synchronous invalidate+draw of the textview after append).
+  start). **Making those lines visibly paint mid-compile is deferred** to
+  its own later phase
+  (`2026-08-10-clarusc-mac-live-log-design.md`) — the compile runs
+  synchronously inside an event handler, so today the appended lines
+  render only when events next process. This phase's deliverable is the
+  host-lane log plus the seam; the Mac window catches up when that spec
+  runs (scheduled after more performance work, before the next emulator
+  compile attempt).
 
 drive.cla composes each line as `"[" + dateTimeStr(now()) + "] " + msg`.
 Durations come from `TickCount()` deltas, reported as
@@ -238,26 +240,29 @@ drive.cla's).
   clarusc stderr/stdout and makes it tolerant of the new progress lines
   (host CLI emits them on stderr only in emit modes).
 - **Snapshot**: `TestSnapshotFixedPoint` at both stages (§6).
-- T1 (`--smoke` — runtime touched) per task; T2 before merge.
+- **Emulator scope (deliberately narrow this phase)**: the core and
+  toolbox suite boots are the *only* emulator runs — the toolbox boot is
+  what proves the trap wiring. No smoke tests, no scenario goldens, no
+  other emulator lanes; those wait until after the next round of
+  performance work (see the deferred live-log spec). T1 per task
+  **without** `--smoke`, by explicit decision.
 
 ## 10. Acceptance
 
-1. A 65-line program calling all three builtins compiles and runs on
-   host and native with correct output (test vectors).
+1. The core suite's new datetime cases pass on host, and the suites'
+   68k boots (core + toolbox, including the new `DateTime` case) pass on
+   the emulator — the only emulator runs this phase.
 2. A `clarusc emit68k` run on host prints the full instrumented log to
    stderr with plausible timings.
-3. `ClarusC.APPL` on the emulator shows progress lines appearing
-   **live** in the Log window during a compile — the window visibly
-   updates while the compile is still running.
-4. One instrumented on-Mac compile captured: per-phase tick numbers for
-   the findings doc's ranking (follow-up analysis, not part of this
-   phase's gate).
+
+Deferred to later phases: live Log-window updates in `ClarusC.APPL`
+(`2026-08-10-clarusc-mac-live-log-design.md`) and the instrumented
+on-Mac compile that converts the findings doc's ranking into real
+timings — both scheduled after more Layer-1 performance work, when
+running the compiler on the emulator is worth the hours again.
 
 ## 11. Risks
 
-- **macgui live repaint** is the riskiest unknown (widget-layer work of
-  unknown depth). It is allowed to land as its own task late in the
-  plan; everything else is independent of it.
 - **Host glue vs ROM divergence** in `dateTimeStr` — pinned by shared
   test vectors; scope limited to 1904–2040 which both sides handle.
 - **Two snapshot regenerations** — routine (done twice in the map
