@@ -1,0 +1,75 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_datetime.cla: DurationStrShapes / DateTimeStrVectors / NowSanity
+// (datetime-instrumentation phase). The fixed vectors are the SHARED
+// lane-identity pin from the spec (Sec 9): the same literals must pass on
+// the host (C glue civil arithmetic) and native 68k (ROM Secs2Date)
+// lanes. 2147483647 / its successor straddle the 2^31 unsigned boundary;
+// -444896896 is 2026-01-01 00:00:00 (unsigned 3,850,070,400).
+
+func caseDurationStrShapes(): TestResult {
+    if durationStr(0) != "0s" {
+        return tkFail("DurationStrShapes", "0s wrong")
+    }
+    if durationStr(45) != "45s" {
+        return tkFail("DurationStrShapes", "45s wrong")
+    }
+    if durationStr(1805) != "30m 5s" {
+        return tkFail("DurationStrShapes", "30m 5s wrong")
+    }
+    if durationStr(3605) != "1h 0m 5s" {
+        return tkFail("DurationStrShapes", "1h 0m 5s wrong")
+    }
+    if durationStr(176520) != "49h 2m 0s" {
+        return tkFail("DurationStrShapes", "49h 2m 0s wrong")
+    }
+    if durationStr(-45) != "-45s" {
+        return tkFail("DurationStrShapes", "-45s wrong")
+    }
+    return tkPass("DurationStrShapes")
+}
+
+func caseDateTimeStrVectors(): TestResult {
+    var t: int
+
+    if dateTimeStr(0) != "01-01-04 00:00:00" {
+        return tkFail("DateTimeStrVectors", "epoch wrong")
+    }
+    if dateTimeStr(86399) != "01-01-04 23:59:59" {
+        return tkFail("DateTimeStrVectors", "day-end wrong")
+    }
+    if dateTimeStr(5097600) != "02-29-04 00:00:00" {
+        return tkFail("DateTimeStrVectors", "leap day wrong")
+    }
+    if dateTimeStr(2147483647) != "01-19-72 03:14:07" {
+        return tkFail("DateTimeStrVectors", "2^31-1 wrong")
+    }
+    t = -2147483647
+    t = t - 1
+    if dateTimeStr(t) != "01-19-72 03:14:08" {
+        return tkFail("DateTimeStrVectors", "2^31 wrong")
+    }
+    if dateTimeStr(-444896896) != "01-01-26 00:00:00" {
+        return tkFail("DateTimeStrVectors", "2026 wrong")
+    }
+    return tkPass("DateTimeStrVectors")
+}
+
+func caseNowSanity(): TestResult {
+    var a: int
+    var b: int
+
+    a = now()
+    b = now()
+    if a >= 0 {
+        return tkFail("NowSanity", "not in unsigned upper half")
+    }
+    if a < -444896896 {
+        return tkFail("NowSanity", "before 2026")
+    }
+    if b < a {
+        return tkFail("NowSanity", "went backwards")
+    }
+    return tkPass("NowSanity")
+}

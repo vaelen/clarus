@@ -41,6 +41,12 @@
 // against `intmap of T` instead of `map of T`, keyed by int; IntMapGrowIter
 // is new -- 200-key growth/rehash plus order-agnostic iteration and
 // negative-key coverage, intmap's own contract.
+//
+// DurationStrShapes/DateTimeStrVectors/NowSanity (cases_datetime.cla,
+// datetime-instrumentation phase Task 6) are the 53rd-55th real cases:
+// fixed-vector coverage for durationStr()/dateTimeStr() (a shared
+// lane-identity pin -- the same literals must pass on both the host and
+// native 68k lanes) plus a monotonicity/range sanity check on now().
 
 enum CoreTest {
     All
@@ -97,16 +103,19 @@ enum CoreTest {
     IntMapHasRemove
     IntMapOfListUpsert
     IntMapGrowIter
+    DurationStrShapes
+    DateTimeStrVectors
+    NowSanity
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 53 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 56 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 54
+const nCoreCases: int = 57
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -274,6 +283,15 @@ func coreCaseName(t: CoreTest): string {
     case IntMapGrowIter {
         return "IntMapGrowIter"
     }
+    case DurationStrShapes {
+        return "DurationStrShapes"
+    }
+    case DateTimeStrVectors {
+        return "DateTimeStrVectors"
+    }
+    case NowSanity {
+        return "NowSanity"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -347,6 +365,9 @@ func coreAllCases(): list of CoreTest {
     l.add(IntMapHasRemove)
     l.add(IntMapOfListUpsert)
     l.add(IntMapGrowIter)
+    l.add(DurationStrShapes)
+    l.add(DateTimeStrVectors)
+    l.add(NowSanity)
     l.add(SelfCheck)
     return l
 }
@@ -595,6 +616,18 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, IntMapGrowIter) {
         results.add(caseIntMapGrowIter())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, DurationStrShapes) {
+        results.add(caseDurationStrShapes())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, DateTimeStrVectors) {
+        results.add(caseDateTimeStrVectors())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, NowSanity) {
+        results.add(caseNowSanity())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

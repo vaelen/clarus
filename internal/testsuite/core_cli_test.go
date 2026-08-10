@@ -72,6 +72,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_ser.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_misc.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_xrec.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_datetime.cla"),
 		filepath.Join(root, "testsuite", "core", "cli.cla"),
 	}
 	args := append([]string{"emit", "--rtdir", rtDir, "-o", outC}, files...)
@@ -197,6 +198,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"SortedMapSetCount", "SortedMapHasRemove", "SortedMapOfListUpsert", "SortedMapIterOrder",
 			"MapGrowRehash", "MapRemoveSwap", "MapIterComplete", "MapLongKeys",
 			"IntMapSetCount", "IntMapHasRemove", "IntMapOfListUpsert", "IntMapGrowIter",
+			"DurationStrShapes", "DateTimeStrVectors", "NowSanity",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {
