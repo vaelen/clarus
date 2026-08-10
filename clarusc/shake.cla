@@ -96,7 +96,13 @@ var shakeMarks: list of bool
 // irRcWalkNeededByName's own never-cleared convention) at the top of every
 // shakeProgram call: every name from the CURRENT program is re-pointed at
 // its current index, so a stale entry from a prior compile can only
-// survive for a name this program never looks up.
+// survive for a name this program never looks up. This "keyed by nameIdx,
+// never reset" design is only sound because lib.cla's intern pool
+// (strPool/strIndex) is itself deliberately NEVER reset across compiles
+// in the same process (drive.cla's driveReset doc comment) -- if a future
+// change ever resets the pool mid-process, a nameIdx here could silently
+// alias a DIFFERENT string in a later compile (the a259d0f staleness
+// class), so any such change must also reset this table.
 var shakeFuncIdxByName: intmap of int
 
 // shakeWorklist holds irFuncs indices already marked but not yet walked for
