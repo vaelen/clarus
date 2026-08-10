@@ -78,16 +78,27 @@ C-lane glue for the catalog externs is added only for routines something
 actually calls (the runtime module's private twins, §4); catalog entries
 themselves are declarations and cost nothing.
 
-## 4. Runtime module: `runtime/clarus/datetime.cla`
+## 4. Runtime module: `runtime/clarus/datetime.cla` (+ lane variants)
 
-New conditionally-spliced module (the `sortedmap.cla` pattern):
+New conditionally-spliced module (the `sortedmap.cla` pattern), with
+`rtNow` split into per-lane variant files (the `native.cla`
+lane-conditional-splice precedent), because the native clock read has no
+lane-portable expression:
 
-- `rtNow(): int` — calls a module-private clock extern.
-- `rtDateTimeStr(t: int): string` — calls a module-private `Secs2Date`
-  twin into a module-private `DtDateTimeRec`, then formats the fields
-  (pure Clarus string building; zero-pad helpers local to the module).
-- `rtDurationStr(secs: int): string` — pure Clarus (signed arithmetic
-  only; durations are small).
+- `datetime.cla` (shared, all lanes):
+  - `rtDateTimeStr(t: int): string` — calls a module-private `Secs2Date`
+    twin into a module-private `DtDateTimeRec`, then formats the fields
+    (pure Clarus string building; zero-pad helpers local to the module).
+  - `rtDurationStr(secs: int): string` — pure Clarus (signed arithmetic
+    only; durations are small).
+- `datetime_68k.cla` (native lane only):
+  `func rtNow(): int { return peekl(0x020C) }` — reads the low-memory
+  `Time` global directly, the era-authentic zero-cost path (`Time` is
+  maintained by the one-second interrupt; no chip access on read).
+- `datetime_c.cla` (C lanes only): `rtNow` calls a module-private extern
+  `DtTimeNow(): int`, rendered by cprint as `rt_ext_DtTimeNow` glue
+  (§5). The extern carries the truthful `ReadDateTime` trap word/contract
+  even though the C lanes never emit it.
 
 Runtime modules cannot reference user-composable catalog files, so
 datetime.cla declares **private twins** of the externs and record
@@ -112,8 +123,8 @@ time glue today):
   ticks-since-boot; all uses are deltas. (This alone un-breaks host
   builds that compose `toolbox/events.cla` and call `TickCount()`.)
 - Glue for the `Dt*` clock/Secs2Date twins:
-  - clock read: `time(NULL)` converted UTC→local (`localtime()`), shifted
-    by the epoch offset 2,082,844,800 s (86,400 × 24,107 days,
+  - `rt_ext_DtTimeNow`: `time(NULL)` converted UTC→local (`localtime()`),
+    shifted by the epoch offset 2,082,844,800 s (86,400 × 24,107 days,
     1904→1970), stored as the unsigned bit pattern in a 32-bit int.
   - `Secs2Date` twin: ~10 lines of C civil-date decomposition operating
     on `uint32_t` (or equivalently, shift back to Unix time and use
@@ -130,9 +141,10 @@ has `rt_ext_TickCount`).
 - `check.cla`: declare the three builtins; set a `usesDateTime` usage
   flag when any is called (the `usesSortedMap` precedent,
   `check.cla:1759`).
-- `drive.cla` manifest splice: `datetime.cla` spliced when
-  `usesDateTime` (`drive.cla:1059-1066` neighborhood, alongside
-  sortedmap/ser).
+- `drive.cla` manifest splice: when `usesDateTime`, splice
+  `datetime.cla` plus exactly one variant — `datetime_68k.cla` if
+  `want68k`, else `datetime_c.cla` (`drive.cla:1059-1069` neighborhood,
+  alongside sortedmap/ser/native).
 - `lower.cla`: route the three builtins to **ordinary IR calls by name**
   (`rtNow`/`rtDateTimeStr`/`rtDurationStr`) — the `rtFixMul` precedent.
   Spliced runtime functions compile on every lane, so there are **no
