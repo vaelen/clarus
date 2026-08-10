@@ -34,6 +34,13 @@
 // a hashtable -- written and proven green against the OLD sorted-array
 // implementation first (every check is order-agnostic), then kept
 // unchanged through the rewrite itself.
+//
+// IntMapSetCount/IntMapHasRemove/IntMapOfListUpsert/IntMapGrowIter
+// (cases_intmap.cla, map-hashtable phase Task 8) are the 49th-52nd real
+// cases: the first three mirror cases_map.cla's own three cases verbatim
+// against `intmap of T` instead of `map of T`, keyed by int; IntMapGrowIter
+// is new -- 200-key growth/rehash plus order-agnostic iteration and
+// negative-key coverage, intmap's own contract.
 
 enum CoreTest {
     All
@@ -86,16 +93,20 @@ enum CoreTest {
     MapRemoveSwap
     MapIterComplete
     MapLongKeys
+    IntMapSetCount
+    IntMapHasRemove
+    IntMapOfListUpsert
+    IntMapGrowIter
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 49 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 53 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 50
+const nCoreCases: int = 54
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -251,6 +262,18 @@ func coreCaseName(t: CoreTest): string {
     case MapLongKeys {
         return "MapLongKeys"
     }
+    case IntMapSetCount {
+        return "IntMapSetCount"
+    }
+    case IntMapHasRemove {
+        return "IntMapHasRemove"
+    }
+    case IntMapOfListUpsert {
+        return "IntMapOfListUpsert"
+    }
+    case IntMapGrowIter {
+        return "IntMapGrowIter"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -320,6 +343,10 @@ func coreAllCases(): list of CoreTest {
     l.add(MapRemoveSwap)
     l.add(MapIterComplete)
     l.add(MapLongKeys)
+    l.add(IntMapSetCount)
+    l.add(IntMapHasRemove)
+    l.add(IntMapOfListUpsert)
+    l.add(IntMapGrowIter)
     l.add(SelfCheck)
     return l
 }
@@ -552,6 +579,22 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, MapLongKeys) {
         results.add(caseMapLongKeys())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, IntMapSetCount) {
+        results.add(caseIntMapSetCount())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, IntMapHasRemove) {
+        results.add(caseIntMapHasRemove())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, IntMapOfListUpsert) {
+        results.add(caseIntMapOfListUpsert())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, IntMapGrowIter) {
+        results.add(caseIntMapGrowIter())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

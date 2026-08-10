@@ -65,6 +65,7 @@ func buildCoreCLI(t *testing.T) string {
 		filepath.Join(root, "testsuite", "core", "cases_list.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_map.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_sortedmap.cla"),
+		filepath.Join(root, "testsuite", "core", "cases_intmap.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_rec.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_arr.cla"),
 		filepath.Join(root, "testsuite", "core", "cases_enumfix.cla"),
@@ -195,6 +196,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"XRecFieldsRoundtrip",
 			"SortedMapSetCount", "SortedMapHasRemove", "SortedMapOfListUpsert", "SortedMapIterOrder",
 			"MapGrowRehash", "MapRemoveSwap", "MapIterComplete", "MapLongKeys",
+			"IntMapSetCount", "IntMapHasRemove", "IntMapOfListUpsert", "IntMapGrowIter",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

@@ -1,0 +1,157 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_intmap.cla: the core suite's intmap-family test cases
+// (map-hashtable phase, Task 8). Case -> source:
+//   IntMapSetCount    <- cases_map.cla's MapSetCount, keyed by int
+//   IntMapHasRemove   <- cases_map.cla's MapHasRemove, keyed by int
+//   IntMapOfListUpsert <- cases_map.cla's MapOfListUpsert, keyed by int (42)
+//   IntMapGrowIter    <- new: 200-key growth/rehash coverage plus
+//                        order-agnostic iteration and negative-key
+//                        coverage, `intmap of T`'s own contract
+//                        (docs/clarus-language-reference.md's "Integer
+//                        maps" section).
+
+func caseIntMapSetCount(): TestResult {
+    var m: intmap of int
+
+    // inserted deliberately out of order: `intmap of T`'s iteration order
+    // is unspecified (hashtable-backed) -- not exercised by this
+    // aggregate count/get check, but kept for parity with cases_map.cla's
+    // own insertion order.
+    m[3] = 3
+    m[2] = 2
+    m[1] = 1
+    if m.count != 3 {
+        return tkFail("IntMapSetCount", "count wrong")
+    }
+    if m[1] != 1 {
+        return tkFail("IntMapSetCount", "index get wrong")
+    }
+    if m.get(1, 0) != 1 {
+        return tkFail("IntMapSetCount", "get-default get wrong")
+    }
+    return tkPass("IntMapSetCount")
+}
+
+func caseIntMapHasRemove(): TestResult {
+    var m: intmap of int
+
+    m[3] = 3
+    m[2] = 2
+    m[1] = 1
+    if not m.has(1) {
+        return tkFail("IntMapHasRemove", "has 1 wrong")
+    }
+    m.remove(2)
+    if m.has(2) {
+        return tkFail("IntMapHasRemove", "remove 2 wrong")
+    }
+    return tkPass("IntMapHasRemove")
+}
+
+func caseIntMapOfListMakeInner(a: string, b: string): list of text {
+    var l: list of text
+    l.push(a)
+    l.push(b)
+    return l
+}
+
+func caseIntMapOfListUpsert(): TestResult {
+    var mList: intmap of list of text
+
+    // the birth inner list under 42 is evicted (and must be deep-released)
+    // when the key is overwritten -- arc_fpreleaseval_nested.cla probe 1,
+    // same as cases_map.cla's MapOfListUpsert.
+    mList[42] = caseIntMapOfListMakeInner("a1", "a2")
+    mList[42] = caseIntMapOfListMakeInner("b1", "b2")
+    if mList[42].count != 2 {
+        return tkFail("IntMapOfListUpsert", "upsert count wrong")
+    }
+    if mList[42].first() != "b1" {
+        return tkFail("IntMapOfListUpsert", "upsert content wrong")
+    }
+    return tkPass("IntMapOfListUpsert")
+}
+
+// caseIntMapGrowIter inserts 200 sequential keys (0..199, value i*2),
+// crossing several index-doubling rehashes, spot-checks a handful of
+// keys by value, sums every key and value via an order-agnostic
+// `for k, v in m` walk, then covers a negative key (-5) separately --
+// `intmap of T`'s own contract atop the shared hashtable machinery
+// cases_map.cla's MapGrowRehash/MapIterComplete already stress for
+// string keys.
+func caseIntMapGrowIter(): TestResult {
+    var m: intmap of int
+    var i: int
+    var spot: int[5]
+    var si: int
+    var got: int
+    var seen: int = 0
+    var keySum: int = 0
+    var valSum: int = 0
+    var wantKeySum: int = 0
+    var wantValSum: int = 0
+    var k: int
+    var v: int
+    var detail: string
+
+    i = 0
+    while i < 200 {
+        m[i] = i * 2
+        wantKeySum = wantKeySum + i
+        wantValSum = wantValSum + i * 2
+        i = i + 1
+    }
+    if m.count != 200 {
+        return tkFail("IntMapGrowIter", "count wrong: " + tkIntToStr(m.count))
+    }
+
+    spot[0] = 0
+    spot[1] = 7
+    spot[2] = 63
+    spot[3] = 64
+    spot[4] = 199
+
+    si = 0
+    while si < 5 {
+        got = m.get(spot[si], -1)
+        if got != spot[si] * 2 {
+            return tkFail("IntMapGrowIter", "spot check wrong at " + tkIntToStr(spot[si]))
+        }
+        si = si + 1
+    }
+
+    for k, v in m {
+        seen = seen + 1
+        keySum = keySum + k
+        valSum = valSum + v
+    }
+    if seen != 200 or keySum != wantKeySum or valSum != wantValSum {
+        // Built up piecewise, not as one long chained-`+` argument: native
+        // 68k codegen (cg68k) has a per-statement string temp-slot budget
+        // -- same reason cases_map.cla's own MapIterComplete builds its
+        // detail line piecewise.
+        detail = "seen=" + tkIntToStr(seen)
+        detail = detail + " keySum=" + tkIntToStr(keySum)
+        detail = detail + " valSum=" + tkIntToStr(valSum)
+        return tkFail("IntMapGrowIter", detail)
+    }
+
+    m[-5] = -50
+    if not m.has(-5) {
+        return tkFail("IntMapGrowIter", "negative key has wrong")
+    }
+    if m.get(-5, 0) != -50 {
+        return tkFail("IntMapGrowIter", "negative key get wrong")
+    }
+    if m.count != 201 {
+        return tkFail("IntMapGrowIter", "count wrong after negative-key insert: " + tkIntToStr(m.count))
+    }
+    m.remove(-5)
+    if m.has(-5) {
+        return tkFail("IntMapGrowIter", "negative key remove wrong")
+    }
+
+    return tkPass("IntMapGrowIter")
+}

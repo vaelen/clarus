@@ -45,7 +45,7 @@ measure() {
 measure coregui testsuite/kit.cla testsuite/core/runner.cla \
     testsuite/core/cases_arr.cla testsuite/core/cases_enumfix.cla \
     testsuite/core/cases_list.cla testsuite/core/cases_map.cla \
-    testsuite/core/cases_sortedmap.cla \
+    testsuite/core/cases_sortedmap.cla testsuite/core/cases_intmap.cla \
     testsuite/core/cases_misc.cla testsuite/core/cases_rec.cla \
     testsuite/core/cases_ser.cla testsuite/core/cases_str.cla \
     testsuite/core/cases_text.cla testsuite/core/cases_xrec.cla \
