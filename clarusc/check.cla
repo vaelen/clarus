@@ -545,8 +545,8 @@ func cvZero(): CVal {
 // decl-indexed) and needs the progGen-namespacing menuKey already uses,
 // for exactly the reason menuKey's own comment gives -- see its own
 // comment just below.
-var funcScopeByDecl: map of int
-var funcRetByDecl: map of int
+var funcScopeByDecl: intmap of int
+var funcRetByDecl: intmap of int
 
 // funcSigByDecl (Task 3, Ch13 dedup) is an eighth decl-indexed side table,
 // same family/idiom as the two above: keyed by a DkFunc/DkExternFunc
@@ -558,7 +558,7 @@ var funcRetByDecl: map of int
 // checkFuncSig below) still gets its OWN param/return types checked
 // against its OWN declared params, not the earlier decl's it's being
 // compared against.
-var funcSigByDecl: map of int
+var funcSigByDecl: intmap of int
 
 // externFirstDeclByName/externMergeCandidate (Task 3, Ch13: `external
 // func` dedup -- duplicate extern declarations are legal iff identical,
@@ -577,22 +577,22 @@ var funcSigByDecl: map of int
 // checkFuncSig in between (single-threaded, no recursion here).
 var externFirstDeclByName: map of int
 var externMergeCandidate: int
-var enumConstOf: map of int
-var constUseIsStr: map of int
-var constUseInt: map of int
-var constUseStr: map of string
+var enumConstOf: intmap of int
+var constUseIsStr: intmap of int
+var constUseInt: intmap of int
+var constUseStr: intmap of string
 // exprTypeOf is keyed by expr arena index; lower.cla/cprint.cla (the emit
 // path) read it via exprTypeGet AFTER checkProgram, in the SAME process, with
 // no astReset in between -- `clarusc emit` runs one program per process, so
 // those indices still name the AST that produced these entries.
-var exprTypeOf: map of int
+var exprTypeOf: intmap of int
 
 func enumConstGet(e: int): int {
-    return enumConstOf.get(numToStr(e), 0)
+    return enumConstOf.get(e, 0)
 }
 
 func exprTypeGet(e: int): int {
-    return exprTypeOf.get(numToStr(e), InvalidT)
+    return exprTypeOf.get(e, InvalidT)
 }
 
 // ================================================================
@@ -2203,7 +2203,7 @@ func checkFuncSig(d: int) {
     var sym: Symbol
     var fnScope: int
     var psym: Symbol
-    var key: string
+    var key: int
     var i: int
     var externKey: string
 
@@ -2232,7 +2232,7 @@ func checkFuncSig(d: int) {
         ret = -1
     }
     sigIdx = newFuncSig(params, ret)
-    key = numToStr(d)
+    key = d
     funcSigByDecl[key] = sigIdx
     sym.nameIdx = funcDeclName(d)
     sym.typeIdx = -1
@@ -2367,7 +2367,7 @@ func checkExternFunc(d: int) {
     // type legality, reg-trap counts, ...) needs to validate what d
     // itself actually declared.
     mergeCandidate = externMergeCandidate
-    sigIdx = funcSigByDecl.get(numToStr(d), -1)
+    sigIdx = funcSigByDecl.get(d, -1)
     if sigIdx == -1 {
         return
     }
@@ -2573,7 +2573,7 @@ func checkCallbackFunc(d: int) {
     var ret: int
 
     checkFuncSig(d)
-    sigIdx = funcSigByDecl.get(numToStr(d), -1)
+    sigIdx = funcSigByDecl.get(d, -1)
     if sigIdx == -1 {
         return
     }
@@ -2623,8 +2623,8 @@ func externClauseMatches(a: int, b: int): bool {
     var i: int
     var n: int
 
-    sigA = funcSigByDecl.get(numToStr(a), -1)
-    sigB = funcSigByDecl.get(numToStr(b), -1)
+    sigA = funcSigByDecl.get(a, -1)
+    sigB = funcSigByDecl.get(b, -1)
     if sigA == -1 or sigB == -1 {
         return false
     }
@@ -2684,9 +2684,9 @@ func emitConflictingExtern(a: int, b: int) {
 func checkFuncBody(d: int) {
     var savedScope: int
     var savedRet: int
-    var key: string
+    var key: int
 
-    key = numToStr(d)
+    key = d
     savedScope = curScope
     savedRet = curFuncRet
     curScope = funcScopeByDecl.get(key, -1)
@@ -4046,7 +4046,7 @@ func checkCaseLabel(lbl: int, expected: int): int {
 // straight off the AST; a bare enum member or const Ident reads the resolved
 // value checkExpr/checkIdent recorded per expr index.
 func caseLabelKey(lbl: int): string {
-    var key: string
+    var key: int
 
     switch exprKind(lbl) {
     case ExIntLit {
@@ -4059,7 +4059,7 @@ func caseLabelKey(lbl: int): string {
         return "s" + poolGet(stringLitIdx(lbl))
     }
     case ExIdent {
-        key = numToStr(lbl)
+        key = lbl
         if constUseIsStr.has(key) {
             if constUseIsStr.get(key, 0) == 1 {
                 return "s" + constUseStr.get(key, "")
@@ -4228,7 +4228,7 @@ func checkIdent(e: int, expected: int): int {
     var symIdx: int
     var i: int
     var mi: int
-    var key: string
+    var key: int
 
     nameIdx = identName(e)
     name = poolGet(nameIdx)
@@ -4266,7 +4266,7 @@ func checkIdent(e: int, expected: int): int {
             return InvalidT
         }
         if symbols[symIdx].isConst {
-            key = numToStr(e)
+            key = e
             constUseIsStr[key] = boolToInt(symbols[symIdx].constIsStr)
             constUseInt[key] = symbols[symIdx].constInt
             if symbols[symIdx].constStrIdx != -1 {
@@ -4280,7 +4280,7 @@ func checkIdent(e: int, expected: int): int {
         i = 0
         while i < typeN(expected) {
             if poolGet(enumMembers[mi + i].nameIdx) == name {
-                enumConstOf[numToStr(e)] = enumMembers[mi + i].value
+                enumConstOf[e] = enumMembers[mi + i].value
                 return expected
             }
             i = i + 1
@@ -4944,7 +4944,7 @@ func checkCall(e: int, expected: int): int {
 func checkExpr(e: int, expected: int): int {
     var t: int
     t = checkExprInner(e, expected)
-    exprTypeOf[numToStr(e)] = t
+    exprTypeOf[e] = t
     return t
 }
 
@@ -5069,11 +5069,11 @@ func checkAppConstExpr(e: int): int {
 // module-global map reset in this file (a genuinely new empty map, not a
 // mutated existing one -- map is a reference type, Ch3).
 func checkReset() {
-    var freshEnumConstOf: map of int
-    var freshConstUseIsStr: map of int
-    var freshConstUseInt: map of int
-    var freshConstUseStr: map of string
-    var freshExprTypeOf: map of int
+    var freshEnumConstOf: intmap of int
+    var freshConstUseIsStr: intmap of int
+    var freshConstUseInt: intmap of int
+    var freshConstUseStr: intmap of string
+    var freshExprTypeOf: intmap of int
 
     typesReset()
     scopesReset()

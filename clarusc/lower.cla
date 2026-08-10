@@ -815,12 +815,12 @@ func lowIdent(e: int): int {
     var nm: int
     var global: bool
     var ty: int
-    var key: string
+    var key: int
     var winRef: int
 
     nm = identName(e)
     ty = lowMustType(e)
-    key = numToStr(e)
+    key = e
     if enumConstOf.has(key) {
         return newIRIntConst(enumConstOf.get(key, 0), ty)
     }
