@@ -286,6 +286,7 @@ func lowTypeAt(t: int, line: int, col: int): int {
     case TyList { return irListType(lowType(typeElem(t))) }
     case TyMap { return irMapType(lowType(typeElem(t))) }
     case TySortedMap { return irSortedMapType(lowType(typeElem(t))) }
+    case TyIntMap { return irIntMapType(lowType(typeElem(t))) }
     case TyWindowRef { return irWinRefType(typeNameIdx(t)) }
     }
     // TyInvalid and the checker-only pseudo-kinds never reach a
@@ -358,6 +359,9 @@ func lowResolveType(tx: int): int {
     }
     case TxSortedMap {
         return irSortedMapType(lowResolveType(sortedMapTypeVal(tx)))
+    }
+    case TxIntMap {
+        return irIntMapType(lowResolveType(intMapTypeVal(tx)))
     }
     case TxArray {
         return irArrType(lowResolveType(arrayTypeElem(tx)), arrayTypeN(tx))
@@ -1035,9 +1039,11 @@ func lowMethodCall(e: int, fn: int): int {
     } else if xk == TyList {
         return lowListMethod(recv, fn, callArgsHead(e), ty)
     } else if xk == TyMap {
-        return lowMapMethod(recv, fn, callArgsHead(e), ty, false)
+        return lowMapMethod(recv, fn, callArgsHead(e), ty, false, false)
     } else if xk == TySortedMap {
-        return lowMapMethod(recv, fn, callArgsHead(e), ty, true)
+        return lowMapMethod(recv, fn, callArgsHead(e), ty, true, false)
+    } else if xk == TyIntMap {
+        return lowMapMethod(recv, fn, callArgsHead(e), ty, false, true)
     }
     lowUnsupported("method call on receiver kind " + numToStr(int(xk)))
     return -1
@@ -1317,16 +1323,19 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
     return -1
 }
 
-// lowMapMethod lowers `m.name(args)` for a Map OR SortedMap receiver
-// (expr.go's lowerMapMethod), parameterized by `sorted` so the two
-// families share one implementation instead of two provably-identical
-// copies (mirrors cg68k.cla's own cgIntrMapGet/etc. parameterization):
+// lowMapMethod lowers `m.name(args)` for a Map, SortedMap, OR IntMap
+// receiver (expr.go's lowerMapMethod), parameterized by `sorted`/`im` so
+// the three families share one implementation instead of three
+// provably-identical copies (mirrors cg68k.cla's own cgIntrMapGet/etc.
+// parameterization): at most one of sorted/im is true (map is neither).
 // get's default-value argument goes through lowCoerceStr against the
 // map's elem type for the same reason list push's value arg does --
 // IMapGetDv's C printer pre-fills its result temp with a plain `=`
 // from the default, which requires the default's own C struct type to
-// already match.
-func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool): int {
+// already match. The KEY itself (string for map/sortedmap, int for
+// intmap) needs no such coercion -- lowExpr's own result already matches
+// the runtime's expected shape for either key type.
+func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im: bool): int {
     var nm: string
     var key: int
     var dv: int
@@ -1339,7 +1348,11 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool): in
     var countName: int
 
     nm = poolGet(selectName(sel))
-    if sorted {
+    if im {
+        hasName = IIntMapHas()
+        removeName = IIntMapRemove()
+        countName = IIntMapCount()
+    } else if sorted {
         hasName = ISortedMapHas()
         removeName = ISortedMapRemove()
         countName = ISortedMapCount()
@@ -1361,13 +1374,17 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool): in
         // IMapGetDvBirth's own ir.cla doc comment for why a birth default
         // needs different (and currently missing) retain/release handling
         // than a non-birth one.
-        if sorted {
+        if im {
+            getName = IIntMapGetDv()
+        } else if sorted {
             getName = ISortedMapGetDv()
         } else {
             getName = IMapGetDv()
         }
         if lowEscapeTrackableKind(irtKind(elemT)) and lowElemIsBirth(dvAst, rawDv, elemT) {
-            if sorted {
+            if im {
+                getName = IIntMapGetDvBirth()
+            } else if sorted {
                 getName = ISortedMapGetDvBirth()
             } else {
                 getName = IMapGetDvBirth()
@@ -1524,6 +1541,8 @@ func lowIndex(e: int): int {
         return newIRIntr(IMapGet(), lowBin2Args(indexX(e), indexI(e)), ty)
     } else if xk == TySortedMap {
         return newIRIntr(ISortedMapGet(), lowBin2Args(indexX(e), indexI(e)), ty)
+    } else if xk == TyIntMap {
+        return newIRIntr(IIntMapGet(), lowBin2Args(indexX(e), indexI(e)), ty)
     }
     lowUnsupported("index of unsupported kind " + numToStr(int(xk)))
     return -1
@@ -1788,6 +1807,8 @@ func lowSelect(e: int): int {
         return newIRIntr(IMapCount(), lowExpr(xExpr), ty)
     } else if xk == TySortedMap and propName == "count" {
         return newIRIntr(ISortedMapCount(), lowExpr(xExpr), ty)
+    } else if xk == TyIntMap and propName == "count" {
+        return newIRIntr(IIntMapCount(), lowExpr(xExpr), ty)
     }
     lowUnsupported("select ." + propName)
     return -1
@@ -2100,7 +2121,7 @@ func lowStoreIntrOwnsResult(src: int): bool {
         return false
     }
     nm = irIntrName(src)
-    return nm == IUiGetTextviewText() or nm == IMapGet() or nm == ISortedMapGet()
+    return nm == IUiGetTextviewText() or nm == IMapGet() or nm == ISortedMapGet() or nm == IIntMapGet()
 }
 
 // lowElemIsBirth is ARC Task 5's container-ELEMENT-store counterpart to
@@ -2258,7 +2279,7 @@ func lowNullValueAppend(tail: int, dst: int, t: int): int {
     var ix: int
 
     k = irtKind(t)
-    if k == KText or k == KList or k == KMap or k == KSortedMap {
+    if k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap {
         tail = irStmtListAppend(tail, newIRAssign(dst, newIRIntConst(0, t)))
     } else if k == KRec {
         ri = 0
@@ -2815,6 +2836,26 @@ func lowFor(s: int): int {
         n = newIRForMap(forV1(s), forV2(s), seq, body)
         lowPopScope()
         return n
+    } else if typeKind(seqT) == TyIntMap {
+        // map-hashtable phase Task 7: intmap's key local is IntT's own IR
+        // type (irIntT), NOT irStrType(255) -- intmap keys are ints, not
+        // Str255 pointers. SForMap is still reused (no new IR stmt kind);
+        // both backends key off irtKind(irExprType(irForMapMapV(s))) to
+        // fetch the key via rtIntMapKeyAt's return value instead of an
+        // out-pointer Str255 copy.
+        lowPushScope()
+        lowAddLocal(forV1(s), irIntT)
+        lowDeclareLocal(forV1(s))
+        lowExcludeFreeName(forV1(s))
+        if forV2(s) != -1 {
+            lowAddLocal(forV2(s), lowType(typeElem(seqT)))
+            lowDeclareLocal(forV2(s))
+            lowExcludeFreeName(forV2(s))
+        }
+        body = lowBlock(forBody(s))
+        n = newIRForMap(forV1(s), forV2(s), seq, body)
+        lowPopScope()
+        return n
     }
     lowUnsupported("cannot iterate for-loop sequence kind " + numToStr(int(typeKind(seqT))))
     return -1
@@ -2927,15 +2968,15 @@ func lowNewReturnTemp(): int {
     return lowRetTempIdx
 }
 
-// lowEscapeTrackableKind reports whether t is one of the four counted
-// (Text/List/Map/SortedMap) kinds this section's release machinery tracks
-// by NAME (as opposed to lowIsRecBearing's record/array walk, which needs
-// no such per-name bookkeeping) -- used throughout lower.cla wherever a
-// birth/retain/release decision needs to know "is this a directly counted
-// handle" (lowCountedStore, lowElemIsBirth, lowReturn, the globals/
-// window-var release-walk gates).
+// lowEscapeTrackableKind reports whether t is one of the five counted
+// (Text/List/Map/SortedMap/IntMap) kinds this section's release machinery
+// tracks by NAME (as opposed to lowIsRecBearing's record/array walk, which
+// needs no such per-name bookkeeping) -- used throughout lower.cla wherever
+// a birth/retain/release decision needs to know "is this a directly
+// counted handle" (lowCountedStore, lowElemIsBirth, lowReturn, the
+// globals/window-var release-walk gates).
 func lowEscapeTrackableKind(k: IRKind): bool {
-    return k == KText or k == KList or k == KMap or k == KSortedMap
+    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap
 }
 
 // lowCollectScopeExitCandidates (ARC Task 4, generalized Task 8) adds
@@ -3022,6 +3063,8 @@ func lowBuildScopeExitFrees(): int {
                 intrName = IMapFreeVar()
             } else if irtKind(t) == KSortedMap {
                 intrName = ISortedMapFreeVar()
+            } else if irtKind(t) == KIntMap {
+                intrName = IIntMapFreeVar()
             }
         }
         st = newIRExprStmt(newIRIntr(intrName, newIRVarRef(intern(nm), false, t), irVoidT))
@@ -3546,6 +3589,23 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
             // ARC Task 7 site 4: sortedmap-of-record upsert, same rule as
             // map/list.
             intrName = ISortedMapSetRetain()
+        }
+        rhs = lowCoerceStr(elemTy, rhs)
+        irExprListAppend(x, i)
+        irExprListAppend(i, rhs)
+        return newIRExprStmt(newIRIntr(intrName, x, irVoidT))
+    } else if xk == TyIntMap {
+        // map-hashtable phase Task 7: the key (i) is an int, pushed
+        // directly (no lowCoerceStr -- that only applies to the VALUE);
+        // otherwise identical to Map/SortedMap's own upsert-guard shape.
+        elemTy = irtElem(irExprType(x))
+        intrName = IIntMapSet()
+        if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
+            intrName = IIntMapSetRetain()
+        } else if lowIsRecBearing(elemTy) and not lowRecStoreIsBirth(rhsAst) {
+            // ARC Task 7 site 4: intmap-of-record upsert, same rule as
+            // map/sortedmap/list.
+            intrName = IIntMapSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rhs)
         irExprListAppend(x, i)
@@ -5871,6 +5931,8 @@ func lowSynthReleaseVarsBody(winNameIdx: int, stateFieldsHead: int): int {
                     intrName = IMapFreeVar()
                 } else if irtKind(ft) == KSortedMap {
                     intrName = ISortedMapFreeVar()
+                } else if irtKind(ft) == KIntMap {
+                    intrName = IIntMapFreeVar()
                 }
             }
             st = newIRExprStmt(newIRIntr(intrName, fieldRef, irVoidT))
