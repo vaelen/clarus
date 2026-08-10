@@ -1,0 +1,66 @@
+// dtglueprobe.cla: link/behavior probe for Task 1's host rt_ext glue
+// (rt_ext_TickCount / rt_ext_DtReadDateTime / rt_ext_DtSecs2Date).
+// Declares the same extern shapes datetime_c.cla will use (Task 3).
+//
+// Deviates from the task brief's literal draft: the draft's `app
+// DtGlueProbe { id: "CLDG" }` block is dropped. `irHasApp` alone (any
+// `app` block, UI or not -- clarusc/cprint.cla's cpEmitMain, ~line 6508)
+// makes cprint emit `#include "rt_ui.h"`, which lives only under
+// runtime/mac -- a host build (clarus-run.sh / `clarusc emit --rtdir
+// runtime/clarus/`, -I runtime/host only) can't find it, so Step 4's own
+// host run breaks with the block present. Every sibling host-CLI probe in
+// this directory (callback_host.cla, externdedup.cla, peekpoke.cla) omits
+// `app` entirely -- `on App.startCLI` needs no app identity block to run
+// host-side, same established idiom followed here.
+
+extern record DtSecsBox {
+    secs: int
+}
+
+extern record DtDateTimeRec {
+    year: word
+    month: word
+    day: word
+    hour: word
+    minute: word
+    second: word
+    dayOfWeek: word
+}
+
+external func TickCount(): int = trap 0xA975
+external func DtReadDateTime(t: ptr): int = trap 0xA039 reg(a0: t) ret d0
+external func DtSecs2Date(secs: int, d: ptr) = trap 0xA9C6 reg(d0: secs, a0: d)
+
+on App.startCLI(args: list of string) {
+    var box: DtSecsBox
+    var rec: DtDateTimeRec
+    var t1: int
+    var t2: int
+
+    t1 = TickCount()
+    t2 = TickCount()
+    if t2 < t1 {
+        alert("FAIL ticks went backwards")
+        quit 1
+    }
+    DtReadDateTime(box)
+    if box.secs >= 0 {
+        alert("FAIL now not in unsigned upper half")
+        quit 1
+    }
+    DtSecs2Date(box.secs, rec)
+    if rec.month < 1 or rec.month > 12 {
+        alert("FAIL month out of range")
+        quit 1
+    }
+    if rec.year < 2026 {
+        alert("FAIL year before 2026")
+        quit 1
+    }
+    DtSecs2Date(0, rec)
+    if rec.year != 1904 or rec.month != 1 or rec.day != 1 or rec.dayOfWeek != 6 {
+        alert("FAIL epoch decode wrong")
+        quit 1
+    }
+    alert("OK")
+}

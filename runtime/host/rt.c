@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "rt_mem_host.inc"
 
 void rt_panic(const char *msg) {

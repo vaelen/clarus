@@ -361,4 +361,66 @@ int32_t rt_ext_CbInvoke(void *fn, int32_t a, void *b) {
     return ((int32_t (*)(int32_t, void *))fn)(a, b);
 }
 
+/* ---- Date/time (2026-08-10 datetime-instrumentation spec) ---- */
+
+/* rt_ext_TickCount: host twin of _TickCount (0xA975) -- 60ths of a second
+ * on an arbitrary monotonic zero point (the Mac's is boot; ours is
+ * CLOCK_MONOTONIC's), so deltas behave identically. First host glue for
+ * this trap: before this, a host build composing toolbox/events.cla and
+ * calling TickCount() failed to link. */
+int32_t rt_ext_TickCount(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int32_t)(uint32_t)((uint32_t)ts.tv_sec * 60u + (uint32_t)(ts.tv_nsec / 16666667L));
+}
+
+/* Mac epoch (1904-01-01 00:00:00 LOCAL) vs Unix epoch (1970-01-01 UTC):
+ * 24,107 days. The Mac clock stores local-time seconds, so the host's
+ * current UTC offset (tm_gmtoff) is applied. */
+#define RT_MAC_EPOCH_DELTA 2082844800UL
+
+static uint32_t rt_dt_now_mac(void) {
+    time_t now = time(NULL);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    return (uint32_t)((unsigned long)now + (unsigned long)tmv.tm_gmtoff + RT_MAC_EPOCH_DELTA);
+}
+
+/* rt_ext_DtReadDateTime: C-lane twin of _ReadDateTime (0xA039) -- writes
+ * current Mac-epoch local seconds through the caller's pointer, returns
+ * noErr. Pointee is datetime_c.cla's DtSecsBox { secs: int }. */
+int32_t rt_ext_DtReadDateTime(void *t) {
+    *(int32_t *)t = (int32_t)rt_dt_now_mac();
+    return 0;
+}
+
+/* rt_ext_DtSecs2Date: C-lane twin of _SecondsToDate (0xA9C6): unsigned
+ * Mac-epoch local seconds -> DateTimeRec's seven int16 fields (year,
+ * month 1-12, day 1-31, hour 0-23, minute, second, dayOfWeek 1=Sunday).
+ * Hinnant civil-from-days shifted so day 0 = 1904-01-01 (a Friday).
+ * Pinned against the ROM lane by the core suite's shared test vectors. */
+void rt_ext_DtSecs2Date(int32_t secs, void *d) {
+    uint32_t u = (uint32_t)secs;
+    uint32_t days = u / 86400u;
+    uint32_t rem = u % 86400u;
+    int16_t *f = (int16_t *)d;
+    long z = (long)days + 695361L; /* 719468 (Hinnant, 1970-based) - 24107 */
+    long era = z / 146097L;
+    long doe = z - era * 146097L;
+    long yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L;
+    long y = yoe + era * 400L;
+    long doy = doe - (365L * yoe + yoe / 4L - yoe / 100L);
+    long mp = (5L * doy + 2L) / 153L;
+    long day = doy - (153L * mp + 2L) / 5L + 1L;
+    long month = mp < 10L ? mp + 3L : mp - 9L;
+    if (month <= 2L) y = y + 1L;
+    f[0] = (int16_t)y;
+    f[1] = (int16_t)month;
+    f[2] = (int16_t)day;
+    f[3] = (int16_t)(rem / 3600u);
+    f[4] = (int16_t)((rem % 3600u) / 60u);
+    f[5] = (int16_t)(rem % 60u);
+    f[6] = (int16_t)((days + 5u) % 7u + 1u); /* day 0 = Friday = 6 */
+}
+
 #endif /* CLARUS_RT_EXT_HOST_INC */

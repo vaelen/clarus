@@ -1026,6 +1026,14 @@ short rt_ext_TbPostEvent(short eventNum, int32_t eventMsg) {
 void rt_ext_HLock(void *h) { HLock((Handle)h); }
 void rt_ext_HUnlock(void *h) { HUnlock((Handle)h); }
 int32_t rt_ext_TickCount(void) { return (int32_t)TickCount(); }
+
+/* ---- Date/time (2026-08-10 datetime-instrumentation spec) ---- */
+int32_t rt_ext_DtReadDateTime(void *t) { return (int32_t)ReadDateTime((unsigned long *)t); }
+void rt_ext_DtSecs2Date(int32_t secs, void *d) { SecondsToDate((unsigned long)secs, (DateTimeRec *)d); }
+int32_t rt_ext_ReadDateTime(void *t) { return (int32_t)ReadDateTime((unsigned long *)t); }
+void rt_ext_SecondsToDate(int32_t secs, void *d) { SecondsToDate((unsigned long)secs, (DateTimeRec *)d); }
+int32_t rt_ext_DateToSeconds(void *d) { unsigned long s; DateToSeconds((DateTimeRec *)d, &s); return (int32_t)s; }
+
 short rt_ext_GestaltErr(int32_t selector) { long r; return (short)Gestalt((OSType)selector, &r); }
 int32_t rt_ext_GestaltValue(int32_t selector) { long r = 0; if (Gestalt((OSType)selector, &r) != noErr) { r = 0; } return (int32_t)r; }
 int32_t rt_ext_EventAvail(short mask, void *ev) { return (int32_t)EventAvail((EventMask)mask, (EventRecord *)ev); }
