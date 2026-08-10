@@ -1568,6 +1568,163 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   every task's brief/report/review); full task-11 evidence:
   `task-11-report.md` in that same directory (gitignored).
 
+- **map-hashtable (branch `worktree-native-perf-findings`, 2026-08-10,
+  based on `mac-resident-clarusc`): DONE.** Replaced `map of T`'s O(n)
+  sorted-array insert with a real insertion-order hashtable on both
+  lanes, and split the old ordered-iteration contract off into a new
+  `sortedmap of T` type so nothing that actually needed ascending-key
+  order lost it. A third new type, `intmap of T` (int-keyed, sharing
+  `map`'s hashtable machinery via delegation), replaced the compiler's
+  own internal `numToStr`-keyed symbol tables. 11 tasks, full ledger +
+  every task's brief/report/review: `.superpowers/sdd/
+  2026-08-10-map-hashtable/`; design: `docs/superpowers/specs/
+  2026-08-10-map-hashtable-design.md`; plan: `docs/superpowers/plans/
+  2026-08-10-map-hashtable.md`.
+
+  **Three types, three contracts:**
+  - **`map of T`** (Task 5, both lanes — `runtime/host/rt_core.inc` +
+    `runtime/clarus/map.cla`): real open-addressing hashtable (14-field
+    `RtMap`/`struct rt_map` overlay, `rtMapBoxSize = 112`), replacing the
+    old key-sorted binary-search-over-packed-arena design. **Semantic
+    change:** iteration order is now unspecified-but-deterministic
+    (insertion/removal-history-dependent, not ascending key order) —
+    `docs/clarus-language-reference.md`'s Maps section (iteration bullet
+    + the `:161` row) and `rt_core.inc`'s own CONTRACT banner updated to
+    say so. Every `map`-of-something existing test, fixture, and golden
+    across the corpus was audited for an order dependency and fixed
+    order-agnostically BEFORE the rewrite landed (Task 4) — see the T2
+    debt note below for what that did and didn't reach.
+  - **`sortedmap of T`** (Tasks 1-3): a distinct type preserving the OLD
+    ascending-key-order contract exactly (never assignable to or
+    comparable with `map`), usage-gated splice (`usesSortedMap` ->
+    `cpSortedMapPorted` -> `sortedmap.cla`) so a program that never
+    names it pays nothing.
+  - **`intmap of T`** (Tasks 6-9): int-keyed hashtable, unconditionally
+    spliced (per the spec's own design decision, unlike `sortedmap`'s
+    usage-gating), sharing `map`'s hashtable machinery underneath via
+    delegation rather than a parallel implementation. Task 10 (Stage B)
+    then migrated eight compiler-internal `map of T` tables that were
+    already int-keyed under a `numToStr(intKey)` round-trip (e.g.
+    `check.cla`'s `exprTypeOf`/`funcSigByDecl`/`enumConstOf` family,
+    `types.cla`'s `Scope.names`, `ir.cla`'s two `*NeededByName` tables,
+    `shake.cla`'s `shakeFuncIdxByName`) onto real `intmap of T`, dropping
+    the string round-trip entirely. Four tables were correctly left as
+    string maps (genuinely string-content-keyed: `strIndex`, the
+    string-literal dedup pool, two composite-key dedup sets); several
+    more int-keyed-but-unmigrated tables were identified and filed as
+    Stage C candidates below rather than swept in, since they were
+    outside this task's explicit brief list.
+
+  **Test-suite growth: 42 → 54 `CoreTest` cases** (`testsuite/core`,
+  `nCoreCases`): 42 → 46 (Task 3, `sortedmap` cases: `SortedMapSetCount`/
+  `SortedMapHasRemove`/`SortedMapOfListUpsert`/`SortedMapIterOrder`) → 50
+  (Task 5, hashtable-`map` cases: `MapGrowRehash`/`MapRemoveSwap`/
+  `MapIterComplete`/`MapLongKeys`) → 54 (Task 8, `intmap` cases:
+  `IntMapSetCount`/`IntMapHasRemove`/`IntMapOfListUpsert`/
+  `IntMapGrowIter`). `testsuite/toolbox`'s 28 cases (27 real + SelfCheck)
+  are untouched by this phase. Two full snapshot regenerations:
+  Stage A (`dc24e96`, after Task 5 — sortedmap/intmap/hashtable-map all
+  land in the committed `clarusc.c` together) and Stage B (`9cc5c1c`,
+  after Task 10's intmap migration); the three-stage bootstrap fixed
+  point was independently re-verified after each.
+
+  **The honest perf story — two separate findings, not one:**
+  - **Task 5's hashtable fixed a real, silently-red regression.**
+    `TestEmitPerfTripwire` (`internal/perfgate`) was RED on `main` and on
+    this phase's own base commit alike BEFORE Task 5 landed — host emit
+    median ~1.1-1.5s against the 0.3s baseline set 2026-08-04, more than
+    2x over the tripwire's own gate, going unnoticed because nothing had
+    re-run it since the baseline was set. Root cause: `map`'s old O(n)
+    sorted-array insert, paid on every `clarusc emit` because clarusc
+    compiles its own source using `map of T` internally. After Task 5:
+    median 0.205s against the same 0.300s baseline — PASS, with headroom.
+    This is a real, measured win, not a retracted one.
+  - **Task 10's compiler-internal intmap migration measured
+    host-NEUTRAL — an initial ~6% claim was retracted.** A 3-run
+    tickprobe.cla comparison isn't enough signal on a sub-half-second
+    fixture; a proper re-measurement (10 interleaved pre/post pairs of
+    clarusc self-compiling its own `main.cla`, to cancel system-load
+    drift) came back 10.73s pre / 10.99s post summed user-CPU — noise-
+    to-slightly-negative, post winning only 4 of 10 pairs. **Honest
+    rationale for keeping the migration anyway:** Task 5's hashtable
+    already made the HOST lookup path cheap, so removing Stage B's
+    `numToStr` round-trip on top of an already-fast host probe doesn't
+    move the needle within measurement noise. The migration's real case
+    is the UNMEASURED 68k lane, where every one of those lookups
+    previously paid a `numToStr` allocation, a string hash, and a
+    per-probe `rtStrCmp` call — real cost on actual 68k hardware that is
+    nearly free on a modern host. Nobody has yet measured clarusc's own
+    native-68k compile time with this migration in place; that
+    measurement, not a host number, is what would validate or refute
+    Stage B's premise.
+
+  **T2 debt, explicit (per Andrew's direction, not run this phase):**
+  `internal/selfhost`'s full 30-minute suite was NOT run this phase,
+  except Task 4's own scoped pre-emptive fix-and-check
+  (`go test ./internal/selfhost -run 'TestBehaviorGoldens/run/
+  (breakcont|collections|emit_map|for_loop_var_alias)\.cla'`) — those
+  four fixtures were the only ones found printing `map`-iteration-
+  dependent output anywhere in `testdata/run`, and all four were fixed
+  order-agnostically (aggregate sums / fixed-order `.has` lookups
+  instead of `alert()`-per-iteration) BEFORE the hashtable switch, with
+  their `.out`/`.behavior` goldens regenerated where the fix changed
+  printed text. Task 11 re-swept the whole corpus
+  (`testdata/run/**`, `testsuite/**`, `clarusc/test/**`) for any other
+  `for k, v in <map>` iteration-order dependency and found none beyond
+  those four (already fixed) and the ones already known out-of-scope
+  (diagnostic-only fixtures, cg68k asm-listing goldens that never run).
+  `clarusc/test/*.cla`'s own `map of T` mentions are all
+  checker-declaration fixtures (type-checking pins), not iteration/print
+  fixtures — no evidence any `clarusc/test/*.out` module golden needs
+  regeneration, but this is unverified without an actual `internal/
+  selfhost` run. **First T2 run after this phase should still expect
+  possible churn in `internal/selfhost` and `clarusc/test/*.out`** — that
+  audit reduces the risk, it doesn't replace running the suite.
+
+  **Step 2 finding (Task 11): a stale test-harness expectation, not a
+  hashtable bug.** The mandated single UI-suite run
+  (`TestCoreSuiteGUIOn68k`/`TestToolboxSuiteOn68k`, native 68k lane) at
+  first FAILed — but every one of the 54 individual `CoreTest` cases,
+  including all 12 `map`/`sortedmap`/`intmap` cases, PASSed on real
+  hardware; the failure was `internal/mactest/coresuite_test.go`'s own
+  hardcoded `"TOTAL 42 PASS 42 FAIL 0"` expectation, never updated across
+  Tasks 3/5/8's case-count growth (42→46→50→54) because this was the
+  first time this phase's work had actually booted the native GUI suite
+  (by design — UI-once-at-end). Fixed (hardcoded 42 → 54, comments
+  updated to match); re-run clean: `TestCoreSuiteGUIOn68k` PASS (54/54),
+  `TestToolboxSuiteOn68k` PASS (28/28, untouched by this phase). No
+  goldens were re-blessed this phase — no iteration-order-sensitive
+  byte-layout golden was affected by the native run.
+
+  **Stage C candidates (recorded, not scheduled):**
+  - `intmapHash` (`runtime/clarus/map.cla:912`) is the identity function
+    (`key & 0x7FFFFFFF`) with no mixing; decl-arena indices are
+    allocated in a tight sequential/strided pattern that could cluster
+    under a power-of-two index-capacity mask — a multiplicative mixer is
+    the candidate first fix if a future on-target measurement shows
+    clustering or a smaller-than-expected win.
+  - `ast.cla`'s `externRetRegByDecl`/`externRegBindStart`/
+    `externRegBindCount` and `check.cla`'s `checkEnumDecl` `seen` table —
+    same `numToStr(intKey)`-round-trip shape as Task 10's migrated
+    tables, correctly out of that task's explicit scope, not yet moved.
+  - `irLayoutNeededByName`/`irRcWalkNeededByName` (`ir.cla`) cross-compile
+    reset — these two tables are never reset between compiles in the
+    same process, safe today only because `lib.cla`'s intern pool is
+    itself deliberately never reset either; a future Mac-resident
+    memory change resetting the intern pool mid-process would need to
+    reset these two as well.
+  - Deferred minors from Task 5's own review: unbounded index probe
+    loops have no corruption guard (could hang on an invariant break);
+    `rt_map_layout_check` is `sizeof`-only (no `offsetof` field-order
+    assertions); the dead `MAP_KEYBLOCK` constant in `rt_core.inc`;
+    `map.cla`'s three near-identical growers could collapse to one
+    helper; the hash's signed-int32 shift-add is UB on overflow in the C
+    emission (both lanes agree today, reviewer-verified); the keypool is
+    append-only until release/clear (fine for compiler workloads, a real
+    ceiling for anything else); `caseIntMapGrowIter` lacks the `-5` vs
+    `2147483643` masked-hash-collision partner pair a fuller test would
+    pin.
+
 - **Known-unexercised runtime surface (test-suite-review Task 13,
   2026-08-04):** a coverage-honesty audit — every `func nat_` fallback in
   `runtime/clarus/*.cla`, every `UiTestScript()`/`rtUiScripted`
