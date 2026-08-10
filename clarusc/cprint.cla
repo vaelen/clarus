@@ -170,9 +170,9 @@ var cpMapArcPorted: bool
 // cpSortedMapPorted (map-hashtable phase, Task 2) is `sortedmap of T`'s
 // ported-module flag -- UNLIKE cpMapPorted/cpMapArcPorted (both always
 // true, since map.cla is an unconditional manifest entry), sortedmap.cla
-// is CONDITIONALLY spliced (mirrors cpSerPorted's own convention): main.cla
-// sets this to check.cla's usesSortedMap right where drive.cla decides
-// whether to pull runtime/clarus/sortedmap.cla into the manifest. A single
+// is CONDITIONALLY spliced (mirrors cpSerPorted's own convention): drive.cla
+// (driveManifestSplice) sets this to check.cla's usesSortedMap right where
+// it decides whether to pull runtime/clarus/sortedmap.cla into the manifest. A single
 // flag covers BOTH data operations and ARC (set/get/has/remove/count AND
 // retain/release/lastref) -- unlike Map's own two-flag split
 // (cpMapPorted/cpMapArcPorted, a historical wave1-vs-wave2a artifact) --

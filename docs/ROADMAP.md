@@ -1623,7 +1623,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `IntMapSetCount`/`IntMapHasRemove`/`IntMapOfListUpsert`/
   `IntMapGrowIter`). `testsuite/toolbox`'s 28 cases (27 real + SelfCheck)
   are untouched by this phase. Two full snapshot regenerations:
-  Stage A (`dc24e96`, after Task 5 — sortedmap/intmap/hashtable-map all
+  Stage A (`dc24e96`, Task 9's own commit landing after the intmap runtime+compiler
+  support (Tasks 6-8) as well, not just the map rewrite — sortedmap/intmap/hashtable-map all
   land in the committed `clarusc.c` together) and Stage B (`9cc5c1c`,
   after Task 10's intmap migration); the three-stage bootstrap fixed
   point was independently re-verified after each.
@@ -1703,6 +1704,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     under a power-of-two index-capacity mask — a multiplicative mixer is
     the candidate first fix if a future on-target measurement shows
     clustering or a smaller-than-expected win.
+  - `recFieldsHeadByName`/`xrecSizeByName` (`check.cla`) — int-keyed tables
+    still on string maps.
   - `ast.cla`'s `externRetRegByDecl`/`externRegBindStart`/
     `externRegBindCount` and `check.cla`'s `checkEnumDecl` `seen` table —
     same `numToStr(intKey)`-round-trip shape as Task 10's migrated
@@ -1713,6 +1716,12 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     itself deliberately never reset either; a future Mac-resident
     memory change resetting the intern pool mid-process would need to
     reset these two as well.
+  - Two corners found by final review: (a) intmap `get(k, dv)` evaluates
+    key/dv in different orders host vs native when both have side effects —
+    either pin "argument evaluation order unspecified" in the reference or
+    bind the host key symmetrically; (b) `edit F, sm[k]`/`im[k]` dies in
+    lowering with a generic "edit target" message instead of a checker
+    diagnostic naming the map-only restriction.
   - Deferred minors from Task 5's own review: unbounded index probe
     loops have no corruption guard (could hang on an invariant break);
     `rt_map_layout_check` is `sizeof`-only (no `offsetof` field-order
