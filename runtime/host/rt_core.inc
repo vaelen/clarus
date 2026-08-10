@@ -590,34 +590,66 @@ void *rt_list_at(rt_list *l, int32_t i)
 int32_t rt_list_count(const rt_list *l) { return l->count; }
 
 /* ==================== map ====================
- * Sorted parallel arrays, same layout as before: `keys` holds `count`
- * str255 blocks (256 bytes each) and `vals` holds `count` fixed-size
- * values, index-aligned with `keys`. Entries stay in ascending key order
- * (rt_str_cmp, byte-wise): lookup is a binary search, insertion opens the
- * sorted position in both arrays, removal compacts. Iteration
- * (rt_map_key_at/rt_map_val_at) walks the arrays directly, so it delivers
- * the same ascending-key snapshot order the goldens depend on. */
+ * CONTRACT (map-hashtable phase, Task 5): open-addressed (linear-probe)
+ * HASHTABLE, string keys -> fixed-size values. Iteration visits entries
+ * in an unspecified but DETERMINISTIC order (insertion order, perturbed
+ * by removes) -- NOT sorted; a given sequence of inserts/removes always
+ * replays the same order, but that order carries no ascending-key
+ * guarantee. Use `sortedmap of T` (runtime/clarus/sortedmap.cla -- a
+ * Clarus-lane-only type, no C-lane rt_sortedmap_* API exists) when
+ * ascending key order is required -- it is an exact copy of this
+ * section's OLD sorted-parallel-array design, preserved verbatim there.
+ *
+ * Entries live densely in `keys` (now a per-entry META array, 12 bytes
+ * each: {hash, keyOff, keyLen}) and `vals` (unchanged role: count *
+ * valsize value bytes, index-aligned with `keys`). A key's actual content
+ * bytes live in `keypool`, appended once (never moved or reclaimed by a
+ * later remove) and referenced by each entry's own (keyOff, keyLen).
+ * `index` is the open-addressing lookup table: indexcap (a power of two,
+ * 0 until the first insert) int32 slots, each an entry index, EMPTY
+ * (-1), or TOMB (-2).
+ *
+ * This section and runtime/clarus/map.cla's Clarus twin both implement
+ * .superpowers/sdd/2026-08-10-map-hashtable/shared-design-constants.md
+ * verbatim, function by function, so the two lanes stay byte-identical --
+ * a single running program can reach either lane against the SAME struct
+ * instances (cprint.cla's fpUiEditStmt `edit` statement map arm and
+ * rt_ser.inc's legacy load/save fallback both call these C functions
+ * directly, ungated by the Clarus-lane redirect), so any algorithmic
+ * drift between the two would corrupt live data, not just look
+ * different. */
 
-#define MAP_KEYBLOCK 256
+#define MAP_ENTRY_STRIDE 12   /* {hash:int32, keyOff:int32, keyLen:int32} */
+#define MAP_KEYBLOCK 256      /* rt_map_key_at's out buffer is still a full
+                                  Str255 (1 len byte + up to 255 content
+                                  bytes) -- this constant now only names
+                                  that width, not an on-disk key-slot size. */
+#define MAP_INDEX_EMPTY (-1)
+#define MAP_INDEX_TOMB  (-2)
 
 struct rt_map {
     int32_t rc;
-    Handle keys;     /* count * MAP_KEYBLOCK bytes */
-    Handle vals;     /* count * valsize bytes */
+    Handle keys;      /* count * MAP_ENTRY_STRIDE bytes: per-entry meta */
+    Handle vals;      /* count * valsize bytes */
     int32_t valsize;
     int32_t count;
-    int32_t cap;     /* keys capacity, in entries */
-    int32_t valcap;  /* vals capacity, in entries (grown in lockstep with cap) */
+    int32_t cap;       /* keys/vals capacity, in entries (grown in lockstep) */
+    int32_t valcap;
+    Handle keypool;    /* poolused of poolcap raw key content bytes */
+    int32_t poolused;
+    int32_t poolcap;
+    Handle index;      /* indexcap int32 slots: entry idx / EMPTY / TOMB */
+    int32_t indexcap;   /* power of two; 0 until first insert */
+    int32_t tombs;
 };
 
-/* Plan 5b Task 11: runtime/clarus/map.cla's `overlay record RtMap { rc:
- * int; keys: ptr; vals: ptr; valsize: int; count: int; cap: int; valcap:
- * int }` is a byte-for-byte view of struct rt_map above -- this guard
- * fails to compile (a negative array size) if that ever drifts. Same
- * placement/reasoning as rt_list_layout_check/rt_text_layout_check just
- * above: fires for every consumer of rt_core.inc (host rt.c, Mac 68k
- * rt_mac.c, and both rt_mem_test.c/rt_rc_test.c memory harnesses). */
-typedef char rt_map_layout_check[(sizeof(rt_map) == sizeof(struct { int32_t a; void *b; void *c; int32_t d; int32_t e; int32_t f; int32_t g; })) ? 1 : -1];
+/* runtime/clarus/map.cla's `overlay record RtMap` (13 fields, same order)
+ * is a byte-for-byte view of struct rt_map above -- this guard fails to
+ * compile (a negative array size) if that ever drifts. Same placement/
+ * reasoning as rt_list_layout_check/rt_text_layout_check above: fires for
+ * every consumer of rt_core.inc (host rt.c, Mac 68k rt_mac.c, and both
+ * rt_mem_test.c/rt_rc_test.c memory harnesses). */
+typedef char rt_map_layout_check[(sizeof(rt_map) == sizeof(struct { int32_t a; void *b; void *c; int32_t d; int32_t e; int32_t f; int32_t g; void *h; int32_t i2; int32_t j2; void *k2; int32_t l2; int32_t n2; })) ? 1 : -1];
 
 rt_map *rt_map_new(int32_t valsize)
 {
@@ -632,12 +664,30 @@ rt_map *rt_map_new(int32_t valsize)
     m->count = 0;
     m->cap = 0;
     m->valcap = 0;
+    m->keypool = NewHandle(0);
+    if (!m->keypool) rt_core_oom();
+    m->poolused = 0;
+    m->poolcap = 0;
+    m->index = NewHandle(0);
+    if (!m->index) rt_core_oom();
+    m->indexcap = 0;
+    m->tombs = 0;
     return m;
 }
 
-static uint8_t *map_key_slot(const rt_map *m, int32_t i)
+static uint8_t *map_entry_slot(const rt_map *m, int32_t i)
 {
-    return (uint8_t *)*m->keys + (size_t)i * MAP_KEYBLOCK;
+    return (uint8_t *)*m->keys + (size_t)i * MAP_ENTRY_STRIDE;
+}
+static int32_t map_entry_hash(const rt_map *m, int32_t i) { return *(int32_t *)(map_entry_slot(m, i) + 0); }
+static int32_t map_entry_key_off(const rt_map *m, int32_t i) { return *(int32_t *)(map_entry_slot(m, i) + 4); }
+static int32_t map_entry_key_len(const rt_map *m, int32_t i) { return *(int32_t *)(map_entry_slot(m, i) + 8); }
+static void map_set_entry_meta(rt_map *m, int32_t i, int32_t hash, int32_t keyOff, int32_t keyLen)
+{
+    uint8_t *slot = map_entry_slot(m, i);
+    *(int32_t *)(slot + 0) = hash;
+    *(int32_t *)(slot + 4) = keyOff;
+    *(int32_t *)(slot + 8) = keyLen;
 }
 
 static uint8_t *map_val_slot(const rt_map *m, int32_t i)
@@ -645,62 +695,222 @@ static uint8_t *map_val_slot(const rt_map *m, int32_t i)
     return (uint8_t *)*m->vals + (size_t)i * (size_t)m->valsize;
 }
 
-/* Binary search for the smallest index whose key is >= `key` (lower bound).
-   Sets *found if the key at that index is an exact match. */
-static int32_t map_lower_bound(const rt_map *m, const uint8_t *key, int *found)
+static uint8_t *map_index_slot(const rt_map *m, int32_t i)
 {
-    int32_t lo, hi, mid;
-    lo = 0;
-    hi = m->count;
-    while (lo < hi) {
-        mid = lo + (hi - lo) / 2;
-        if (rt_str_cmp(map_key_slot(m, mid), key) < 0) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
+    return (uint8_t *)*m->index + (size_t)i * 4;
+}
+static int32_t map_index_get(const rt_map *m, int32_t i) { return *(int32_t *)map_index_slot(m, i); }
+static void map_index_put(rt_map *m, int32_t i, int32_t v) { *(int32_t *)map_index_slot(m, i) = v; }
+
+/* map_hash (shared design constants' "Hash (map)" rule): djb2, masked to
+   31 bits (via uint32_t & 0x7FFFFFFFu) after EVERY step, not just at the
+   end -- matching runtime/clarus/map.cla's own mapHash exactly, step for
+   step. */
+static int32_t map_hash(const uint8_t *key)
+{
+    int32_t klen, i;
+    uint32_t h;
+    uint8_t b;
+    klen = key[0];
+    h = 5381u;
+    for (i = 0; i < klen; i++) {
+        b = key[1 + i];
+        h = (h << 5) + h + b;
+        h &= 0x7FFFFFFFu;
     }
-    *found = lo < m->count && rt_str_cmp(map_key_slot(m, lo), key) == 0;
-    return lo;
+    return (int32_t)h;
 }
 
-static int32_t map_find(const rt_map *m, const uint8_t *key)
+/* map_pool_key_eq (shared design constants' "Match test (map)" rule, the
+   keyLen/byte-compare half): compares a candidate entry's own (keyOff,
+   keyLen) pool range against key/klen. */
+static int map_pool_key_eq(const rt_map *m, int32_t keyOff, int32_t keyLen, const uint8_t *key, int32_t klen)
 {
-    int found;
-    int32_t pos;
-    pos = map_lower_bound(m, key, &found);
-    return found ? pos : -1;
+    const uint8_t *base;
+    int32_t i;
+    if (keyLen != klen) return 0;
+    base = (const uint8_t *)*m->keypool + keyOff;
+    for (i = 0; i < klen; i++) {
+        if (base[i] != key[1 + i]) return 0;
+    }
+    return 1;
+}
+
+/* map_index_find_slot: the one shared probe loop map_index_lookup (entry
+   index) and rt_map_remove (needs the INDEX SLOT itself, to TOMB it) both
+   build on -- see runtime/clarus/map.cla's mapIndexFindSlot doc comment
+   for the full probe/match rules this implements. */
+static int32_t map_index_find_slot(const rt_map *m, int32_t hash, const uint8_t *key)
+{
+    int32_t indexcap, klen, slot, v;
+    if (m->indexcap == 0) return -1;
+    klen = key[0];
+    indexcap = m->indexcap;
+    slot = hash & (indexcap - 1);
+    for (;;) {
+        v = map_index_get(m, slot);
+        if (v == MAP_INDEX_EMPTY) return -1;
+        if (v != MAP_INDEX_TOMB) {
+            if (map_entry_hash(m, v) == hash && map_pool_key_eq(m, map_entry_key_off(m, v), map_entry_key_len(m, v), key, klen)) {
+                return slot;
+            }
+        }
+        slot = (slot + 1) & (indexcap - 1);
+    }
+}
+
+static int32_t map_index_lookup(const rt_map *m, int32_t hash, const uint8_t *key)
+{
+    int32_t slot;
+    slot = map_index_find_slot(m, hash, key);
+    if (slot < 0) return -1;
+    return map_index_get(m, slot);
+}
+
+/* map_index_slot_for: see runtime/clarus/map.cla's mapIndexSlotFor doc
+   comment -- `key` is accepted (and unused here) only to keep the same
+   call shape map_index_lookup uses, matching the shared design
+   constants' Interfaces list; every call site either already knows the
+   key is absent (rt_map_set, after its own map_index_lookup missed) or
+   reinserts by an already-unique stored hash (map_rehash), so no key
+   comparison is ever needed while finding an insert slot. */
+static int32_t map_index_slot_for(const rt_map *m, int32_t hash, const uint8_t *key)
+{
+    int32_t indexcap, slot, firstTomb, v;
+    (void)key;
+    indexcap = m->indexcap;
+    slot = hash & (indexcap - 1);
+    firstTomb = -1;
+    for (;;) {
+        v = map_index_get(m, slot);
+        if (v == MAP_INDEX_EMPTY) {
+            return firstTomb >= 0 ? firstTomb : slot;
+        }
+        if (v == MAP_INDEX_TOMB && firstTomb < 0) firstTomb = slot;
+        slot = (slot + 1) & (indexcap - 1);
+    }
+}
+
+static void map_index_insert(rt_map *m, int32_t hash, int32_t entryIdx)
+{
+    int32_t slot, old;
+    slot = map_index_slot_for(m, hash, NULL);
+    old = map_index_get(m, slot);
+    map_index_put(m, slot, entryIdx);
+    if (old == MAP_INDEX_TOMB) m->tombs--;
+}
+
+/* map_index_repoint: see runtime/clarus/map.cla's mapIndexRepoint doc
+   comment -- matches on the moved entry's own stored index value (unique
+   among live entries) along its hash's probe chain, rather than a key
+   re-compare; a deliberate simplification over the shared design
+   constants' literal "find it by ... key compare" phrasing, applied
+   identically in both lanes. */
+static void map_index_repoint(rt_map *m, int32_t hash, int32_t oldIdx, int32_t newIdx)
+{
+    int32_t indexcap, slot, v;
+    indexcap = m->indexcap;
+    slot = hash & (indexcap - 1);
+    for (;;) {
+        v = map_index_get(m, slot);
+        if (v == oldIdx) { map_index_put(m, slot, newIdx); return; }
+        slot = (slot + 1) & (indexcap - 1);
+    }
+}
+
+static void map_alloc_index(rt_map *m, int32_t newcap)
+{
+    int32_t i;
+    int32_t *mp;
+    SetHandleSize(m->index, (Size)newcap * 4);
+    if (MemError() != noErr) rt_core_oom();
+    m->indexcap = newcap;
+    mp = (int32_t *)*m->index;
+    for (i = 0; i < newcap; i++) mp[i] = MAP_INDEX_EMPTY;
+}
+
+/* map_rehash (shared design constants' "Growth" rule, doubling half):
+   doubles indexcap, resets every slot to EMPTY, resets tombs to 0, then
+   re-inserts every live dense entry by its own stored hash. */
+static void map_rehash(rt_map *m)
+{
+    int32_t newcap, i, h;
+    newcap = m->indexcap * 2;
+    map_alloc_index(m, newcap);
+    m->tombs = 0;
+    for (i = 0; i < m->count; i++) {
+        h = map_entry_hash(m, i);
+        map_index_insert(m, h, i);
+    }
+}
+
+/* map_ensure_index_capacity: materializes indexcap=8 on the first insert,
+   else rehash-doubles once (count + tombs) * 4 >= indexcap * 3 (checked
+   using the state BEFORE the pending insert, per the shared design
+   constants). Called before every INSERT, never before an overwrite. */
+static void map_ensure_index_capacity(rt_map *m)
+{
+    if (m->indexcap == 0) { map_alloc_index(m, 8); return; }
+    if ((m->count + m->tombs) * 4 >= m->indexcap * 3) map_rehash(m);
+}
+
+/* map_grow_entries/map_grow_vals/map_grow_pool: the entries/vals/keypool
+   Handles' own amortized-doubling growers -- the shared design
+   constants' "Entry/vals/keypool arrays grow by the existing doubling-
+   SetHandleSize pattern" rule, reusing the generic rt_core_grow helper
+   above (unlike runtime/clarus/map.cla, which hand-rolls one grower per
+   Handle -- this language has no generic pointer-to-cap-field helper the
+   Clarus side can share the same way; the growth POLICY is identical
+   either way: double from 4, oom-panic on failure). */
+static void map_grow_entries(rt_map *m, int32_t need) { rt_core_grow(m->keys, &m->cap, need, MAP_ENTRY_STRIDE); }
+static void map_grow_vals(rt_map *m, int32_t need) { rt_core_grow(m->vals, &m->valcap, need, m->valsize); }
+static void map_grow_pool(rt_map *m, int32_t need) { rt_core_grow(m->keypool, &m->poolcap, need, 1); }
+
+/* map_pool_append (Interfaces: mapPoolAppend(m, key) -> keyOff): appends
+   key's CONTENT bytes (not the Pascal length byte) to the keypool,
+   growing it first if needed, and returns the offset written at. */
+static int32_t map_pool_append(rt_map *m, const uint8_t *key)
+{
+    int32_t klen, off;
+    uint8_t *mp;
+    klen = key[0];
+    map_grow_pool(m, m->poolused + klen);
+    off = m->poolused;
+    mp = (uint8_t *)*m->keypool;
+    BlockMoveData(key + 1, mp + off, (Size)klen);
+    m->poolused = off + klen;
+    return off;
 }
 
 void rt_map_set(rt_map *m, const uint8_t *key, const void *val)
 {
-    int found;
-    int32_t pos, tail, klen;
-    uint8_t *kslot;
-    pos = map_lower_bound(m, key, &found);
-    if (found) {
-        BlockMoveData(val, map_val_slot(m, pos), (Size)m->valsize);
+    int32_t h, idx, klen, keyOff;
+
+    h = map_hash(key);
+    idx = map_index_lookup(m, h, key);
+    if (idx >= 0) {
+        BlockMoveData(val, map_val_slot(m, idx), (Size)m->valsize);
         return;
     }
-    rt_core_grow(m->keys, &m->cap, m->count + 1, MAP_KEYBLOCK);
-    rt_core_grow(m->vals, &m->valcap, m->count + 1, m->valsize);
-    tail = m->count - pos;
-    if (tail > 0) {
-        BlockMoveData(map_key_slot(m, pos), map_key_slot(m, pos + 1), (Size)tail * MAP_KEYBLOCK);
-        BlockMoveData(map_val_slot(m, pos), map_val_slot(m, pos + 1), (Size)tail * (Size)m->valsize);
-    }
+
+    map_ensure_index_capacity(m);
+    map_grow_entries(m, m->count + 1);
+    map_grow_vals(m, m->count + 1);
+
     klen = key[0];
-    kslot = map_key_slot(m, pos);
-    kslot[0] = (uint8_t)klen;
-    BlockMoveData(key + 1, kslot + 1, (Size)klen);
-    BlockMoveData(val, map_val_slot(m, pos), (Size)m->valsize);
+    keyOff = map_pool_append(m, key);
+
+    idx = m->count;
+    map_set_entry_meta(m, idx, h, keyOff, klen);
+    BlockMoveData(val, map_val_slot(m, idx), (Size)m->valsize);
+    map_index_insert(m, h, idx);
     m->count++;
 }
 
 void rt_map_get(rt_map *m, const uint8_t *key, void *out)
 {
     int32_t idx;
-    idx = map_find(m, key);
+    idx = map_index_lookup(m, map_hash(key), key);
     if (idx < 0) rt_panic("map key not found");
     BlockMoveData(map_val_slot(m, idx), out, (Size)m->valsize);
 }
@@ -708,7 +918,7 @@ void rt_map_get(rt_map *m, const uint8_t *key, void *out)
 int rt_map_get_dv(rt_map *m, const uint8_t *key, void *out)
 {
     int32_t idx;
-    idx = map_find(m, key);
+    idx = map_index_lookup(m, map_hash(key), key);
     if (idx < 0) return 0;
     BlockMoveData(map_val_slot(m, idx), out, (Size)m->valsize);
     return 1;
@@ -716,36 +926,64 @@ int rt_map_get_dv(rt_map *m, const uint8_t *key, void *out)
 
 int rt_map_has(rt_map *m, const uint8_t *key)
 {
-    return map_find(m, key) >= 0;
+    return map_index_lookup(m, map_hash(key), key) >= 0;
 }
 
 void rt_map_remove(rt_map *m, const uint8_t *key)
 {
-    int32_t idx, tail;
-    idx = map_find(m, key);
-    if (idx < 0) return; /* silently succeeds if absent */
-    tail = m->count - 1 - idx;
-    if (tail > 0) {
-        BlockMoveData(map_key_slot(m, idx + 1), map_key_slot(m, idx), (Size)tail * MAP_KEYBLOCK);
-        BlockMoveData(map_val_slot(m, idx + 1), map_val_slot(m, idx), (Size)tail * (Size)m->valsize);
+    int32_t h, slot, idx, lastIdx, lastHash;
+
+    h = map_hash(key);
+    slot = map_index_find_slot(m, h, key);
+    if (slot < 0) return; /* silently succeeds if absent */
+    idx = map_index_get(m, slot);
+    map_index_put(m, slot, MAP_INDEX_TOMB);
+    m->tombs++;
+
+    lastIdx = m->count - 1;
+    if (idx != lastIdx) {
+        BlockMoveData(map_entry_slot(m, lastIdx), map_entry_slot(m, idx), MAP_ENTRY_STRIDE);
+        BlockMoveData(map_val_slot(m, lastIdx), map_val_slot(m, idx), (Size)m->valsize);
+        lastHash = map_entry_hash(m, idx);
+        map_index_repoint(m, lastHash, lastIdx, idx);
     }
     m->count--;
 }
 
 int32_t rt_map_count(const rt_map *m) { return m->count; }
 
-/* count = 0; capacity kept -- mirrors rt_list_clear/rt_map_clear exactly
-   (same growth-preserving pattern as this file's own remove/pop: no
-   SetHandleSize call, the Handle just keeps whatever capacity it had).
+/* count = 0; capacity kept -- mirrors rt_list_clear exactly (same
+   growth-preserving pattern as this file's own remove/pop: no
+   SetHandleSize call, every Handle just keeps whatever capacity it had).
    Task 1, mac-target-4d: rt_file_load clears the target before filling it
-   back in from a saved list/map. */
+   back in from a saved list/map. map-hashtable phase Task 5: also resets
+   tombs/poolused and every index slot to EMPTY (shared design
+   constants' "clear" rule) -- the index/keypool capacities themselves
+   stay put, same as keys/vals. */
 void rt_list_clear(rt_list *l) { l->count = 0; }
-void rt_map_clear(rt_map *m) { m->count = 0; }
+void rt_map_clear(rt_map *m)
+{
+    int32_t i;
+    int32_t *mp;
+    m->count = 0;
+    m->tombs = 0;
+    m->poolused = 0;
+    if (m->indexcap > 0) {
+        mp = (int32_t *)*m->index;
+        for (i = 0; i < m->indexcap; i++) mp[i] = MAP_INDEX_EMPTY;
+    }
+}
 
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255)
 {
+    int32_t keyLen, keyOff;
+    const uint8_t *pool;
     if (i < 0 || i >= m->count) rt_panic("map key not found");
-    BlockMoveData(map_key_slot(m, i), key255, MAP_KEYBLOCK);
+    keyLen = map_entry_key_len(m, i);
+    keyOff = map_entry_key_off(m, i);
+    key255[0] = (uint8_t)keyLen;
+    pool = (const uint8_t *)*m->keypool;
+    BlockMoveData(pool + keyOff, key255 + 1, (Size)keyLen);
 }
 
 void rt_map_val_at(const rt_map *m, int32_t i, void *out)
@@ -858,6 +1096,8 @@ void rt_map_release(rt_map *m)
     if (--m->rc == 0) {
         DisposeHandle(m->keys);
         DisposeHandle(m->vals);
+        DisposeHandle(m->keypool);
+        DisposeHandle(m->index);
         DisposePtr((Ptr)m);
     }
 }

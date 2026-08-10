@@ -363,6 +363,12 @@ typedef struct {
     int32_t cv_count;
     int32_t cv_cap;
     int32_t cv_valcap;
+    void * cv_keypool;
+    int32_t cv_poolused;
+    int32_t cv_poolcap;
+    void * cv_index;
+    int32_t cv_indexcap;
+    int32_t cv_tombs;
 } clar_rec_RtMap;
 typedef struct {
     void * cv_selfH;
@@ -628,7 +634,6 @@ static CLAR_PASCAL void clar_cb_rtUiLdefDraw(short cv_msg, uint8_t cv_select, vo
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg);
 static void clar_fn_rtPanic(clar_str_255 cv_msg);
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
-static int32_t clar_fn_rtStrCmp(void * cv_a, void * cv_b);
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextRetain(void * cv_t);
@@ -645,12 +650,26 @@ static void clar_fn_rtListRelease(void * cv_l);
 static int32_t clar_fn_rtListLastref(void * cv_l);
 static void * clar_fn_rtListAt(void * cv_l, int32_t cv_i);
 static int32_t clar_fn_rtListCount(void * cv_l);
-static void * clar_fn_mapKeySlot(void * cv_m, int32_t cv_i);
+static void * clar_fn_mapEntrySlot(void * cv_m, int32_t cv_i);
 static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i);
-static int32_t clar_fn_mapLowerBound(void * cv_m, void * cv_key);
-static int32_t clar_fn_mapKeyEq(void * cv_m, int32_t cv_pos, void * cv_key);
-static void clar_fn_rtMapGrowKeys(void * cv_m, int32_t cv_need);
-static void clar_fn_rtMapGrowVals(void * cv_m, int32_t cv_need);
+static void * clar_fn_mapIndexSlot(void * cv_m, int32_t cv_i);
+static int32_t clar_fn_mapEntryHash(void * cv_m, int32_t cv_i);
+static int32_t clar_fn_mapEntryKeyOff(void * cv_m, int32_t cv_i);
+static int32_t clar_fn_mapEntryKeyLen(void * cv_m, int32_t cv_i);
+static void clar_fn_mapSetEntryMeta(void * cv_m, int32_t cv_i, int32_t cv_hash, int32_t cv_keyOff, int32_t cv_keyLen);
+static int32_t clar_fn_mapHash(void * cv_key);
+static int32_t clar_fn_mapPoolKeyEq(void * cv_m, int32_t cv_keyOff, int32_t cv_keyLen, void * cv_key, int32_t cv_klen);
+static int32_t clar_fn_mapIndexFindSlot(void * cv_m, int32_t cv_hash, void * cv_key);
+static int32_t clar_fn_mapIndexLookup(void * cv_m, int32_t cv_hash, void * cv_key);
+static int32_t clar_fn_mapIndexSlotFor(void * cv_m, int32_t cv_hash, void * cv_key);
+static void clar_fn_mapIndexInsert(void * cv_m, int32_t cv_hash, int32_t cv_entryIdx);
+static void clar_fn_mapAllocIndex(void * cv_m, int32_t cv_newcap);
+static void clar_fn_mapRehash(void * cv_m);
+static void clar_fn_mapEnsureIndexCapacity(void * cv_m);
+static void clar_fn_mapGrowEntries(void * cv_m, int32_t cv_need);
+static void clar_fn_mapGrowVals(void * cv_m, int32_t cv_need);
+static void clar_fn_mapGrowPool(void * cv_m, int32_t cv_need);
+static int32_t clar_fn_mapPoolAppend(void * cv_m, void * cv_key);
 static void * clar_fn_rtMapNew(int32_t cv_valsize);
 static void clar_fn_rtMapRetain(void * cv_m);
 static void clar_fn_rtMapRelease(void * cv_m);
@@ -992,49 +1011,6 @@ static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src) 
     }
 }
 
-static int32_t clar_fn_rtStrCmp(void * cv_a, void * cv_b) {
-    int32_t cv_la;
-    cv_la = 0;
-    int32_t cv_lb;
-    cv_lb = 0;
-    int32_t cv_n;
-    cv_n = 0;
-    int32_t cv_i;
-    cv_i = 0;
-    int32_t cv_ca;
-    cv_ca = 0;
-    int32_t cv_cb;
-    cv_cb = 0;
-    cv_la = rt_peekb(cv_a);
-    cv_lb = rt_peekb(cv_b);
-    if (cv_la < cv_lb) {
-        cv_n = cv_la;
-    } else {
-        cv_n = cv_lb;
-    }
-    cv_i = 0;
-    while (1) {
-        if (!((cv_i < cv_n))) break;
-        cv_ca = rt_peekb((void *)((char *)((void *)((char *)(cv_a) + (1))) + (cv_i)));
-        cv_cb = rt_peekb((void *)((char *)((void *)((char *)(cv_b) + (1))) + (cv_i)));
-        if (cv_ca < cv_cb) {
-            return (-(1));
-        }
-        if (cv_ca > cv_cb) {
-            return 1;
-        }
-        cv_i = (cv_i + 1);
-    }
-    if (cv_la < cv_lb) {
-        return (-(1));
-    }
-    if (cv_la > cv_lb) {
-        return 1;
-    }
-    return 0;
-    return 0;
-}
-
 static void clar_fn_rtTextGrow(void * cv_t, int32_t cv_need) {
     clar_rec_RtText * cv_rt;
     cv_rt = 0;
@@ -1313,8 +1289,8 @@ static int32_t clar_fn_rtListCount(void * cv_l) {
     return 0;
 }
 
-static void * clar_fn_mapKeySlot(void * cv_m, int32_t cv_i) {
-    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keys)) + ((cv_i * 256)));
+static void * clar_fn_mapEntrySlot(void * cv_m, int32_t cv_i) {
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keys)) + ((cv_i * 12)));
     return 0;
 }
 
@@ -1323,37 +1299,230 @@ static void * clar_fn_mapValSlot(void * cv_m, int32_t cv_i) {
     return 0;
 }
 
-static int32_t clar_fn_mapLowerBound(void * cv_m, void * cv_key) {
-    int32_t cv_count;
-    cv_count = 0;
-    int32_t cv_lo;
-    cv_lo = 0;
-    int32_t cv_hi;
-    cv_hi = 0;
-    int32_t cv_mid;
-    cv_mid = 0;
-    cv_count = (((clar_rec_RtMap *)(cv_m)))->cv_count;
-    cv_lo = 0;
-    cv_hi = cv_count;
+static void * clar_fn_mapIndexSlot(void * cv_m, int32_t cv_i) {
+    return (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_index)) + ((cv_i * 4)));
+    return 0;
+}
+
+static int32_t clar_fn_mapEntryHash(void * cv_m, int32_t cv_i) {
+    return rt_peekl(clar_fn_mapEntrySlot(cv_m, cv_i));
+    return 0;
+}
+
+static int32_t clar_fn_mapEntryKeyOff(void * cv_m, int32_t cv_i) {
+    return rt_peekl((void *)((char *)(clar_fn_mapEntrySlot(cv_m, cv_i)) + (4)));
+    return 0;
+}
+
+static int32_t clar_fn_mapEntryKeyLen(void * cv_m, int32_t cv_i) {
+    return rt_peekl((void *)((char *)(clar_fn_mapEntrySlot(cv_m, cv_i)) + (8)));
+    return 0;
+}
+
+static void clar_fn_mapSetEntryMeta(void * cv_m, int32_t cv_i, int32_t cv_hash, int32_t cv_keyOff, int32_t cv_keyLen) {
+    void * cv_slot;
+    cv_slot = 0;
+    cv_slot = clar_fn_mapEntrySlot(cv_m, cv_i);
+    rt_pokel(cv_slot, cv_hash);
+    rt_pokel((void *)((char *)(cv_slot) + (4)), cv_keyOff);
+    rt_pokel((void *)((char *)(cv_slot) + (8)), cv_keyLen);
+}
+
+static int32_t clar_fn_mapHash(void * cv_key) {
+    int32_t cv_klen;
+    cv_klen = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_h;
+    cv_h = 0;
+    int32_t cv_b;
+    cv_b = 0;
+    cv_klen = rt_peekb(cv_key);
+    cv_h = 5381;
+    cv_i = 0;
     while (1) {
-        if (!((cv_lo < cv_hi))) break;
-        cv_mid = (cv_lo + ((cv_hi - cv_lo) / 2));
-        if (clar_fn_rtStrCmp(clar_fn_mapKeySlot(cv_m, cv_mid), cv_key) < 0) {
-            cv_lo = (cv_mid + 1);
-        } else {
-            cv_hi = cv_mid;
-        }
+        if (!((cv_i < cv_klen))) break;
+        cv_b = rt_peekb((void *)((char *)((void *)((char *)(cv_key) + (1))) + (cv_i)));
+        cv_h = (((cv_h << 5) + cv_h) + cv_b);
+        cv_h = (cv_h & 2147483647);
+        cv_i = (cv_i + 1);
     }
-    return cv_lo;
+    return cv_h;
     return 0;
 }
 
-static int32_t clar_fn_mapKeyEq(void * cv_m, int32_t cv_pos, void * cv_key) {
-    return ((cv_pos < (((clar_rec_RtMap *)(cv_m)))->cv_count) && (clar_fn_rtStrCmp(clar_fn_mapKeySlot(cv_m, cv_pos), cv_key) == 0));
+static int32_t clar_fn_mapPoolKeyEq(void * cv_m, int32_t cv_keyOff, int32_t cv_keyLen, void * cv_key, int32_t cv_klen) {
+    void * cv_base;
+    cv_base = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    if (cv_keyLen != cv_klen) {
+        return 0;
+    }
+    cv_base = (void *)((char *)(rt_ext_MapHandleDeref((((clar_rec_RtMap *)(cv_m)))->cv_keypool)) + (cv_keyOff));
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_klen))) break;
+        if (rt_peekb((void *)((char *)(cv_base) + (cv_i))) != rt_peekb((void *)((char *)((void *)((char *)(cv_key) + (1))) + (cv_i)))) {
+            return 0;
+        }
+        cv_i = (cv_i + 1);
+    }
+    return 1;
     return 0;
 }
 
-static void clar_fn_rtMapGrowKeys(void * cv_m, int32_t cv_need) {
+static int32_t clar_fn_mapIndexFindSlot(void * cv_m, int32_t cv_hash, void * cv_key) {
+    int32_t cv_indexcap;
+    cv_indexcap = 0;
+    int32_t cv_klen;
+    cv_klen = 0;
+    int32_t cv_slot;
+    cv_slot = 0;
+    int32_t cv_v;
+    cv_v = 0;
+    cv_indexcap = (((clar_rec_RtMap *)(cv_m)))->cv_indexcap;
+    if (cv_indexcap == 0) {
+        return (-(1));
+    }
+    cv_klen = rt_peekb(cv_key);
+    cv_slot = (cv_hash & (cv_indexcap - 1));
+    while (1) {
+        if (!(1)) break;
+        cv_v = rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
+        if (cv_v == -1) {
+            return (-(1));
+        }
+        if (cv_v != -2) {
+            if ((clar_fn_mapEntryHash(cv_m, cv_v) == cv_hash) && clar_fn_mapPoolKeyEq(cv_m, clar_fn_mapEntryKeyOff(cv_m, cv_v), clar_fn_mapEntryKeyLen(cv_m, cv_v), cv_key, cv_klen)) {
+                return cv_slot;
+            }
+        }
+        cv_slot = ((cv_slot + 1) & (cv_indexcap - 1));
+    }
+    return 0;
+}
+
+static int32_t clar_fn_mapIndexLookup(void * cv_m, int32_t cv_hash, void * cv_key) {
+    int32_t cv_slot;
+    cv_slot = 0;
+    cv_slot = clar_fn_mapIndexFindSlot(cv_m, cv_hash, cv_key);
+    if (cv_slot < 0) {
+        return (-(1));
+    }
+    return rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
+    return 0;
+}
+
+static int32_t clar_fn_mapIndexSlotFor(void * cv_m, int32_t cv_hash, void * cv_key) {
+    int32_t cv_indexcap;
+    cv_indexcap = 0;
+    int32_t cv_slot;
+    cv_slot = 0;
+    int32_t cv_firstTomb;
+    cv_firstTomb = 0;
+    int32_t cv_v;
+    cv_v = 0;
+    cv_indexcap = (((clar_rec_RtMap *)(cv_m)))->cv_indexcap;
+    cv_slot = (cv_hash & (cv_indexcap - 1));
+    cv_firstTomb = (-(1));
+    while (1) {
+        if (!(1)) break;
+        cv_v = rt_peekl(clar_fn_mapIndexSlot(cv_m, cv_slot));
+        if (cv_v == -1) {
+            if (cv_firstTomb >= 0) {
+                return cv_firstTomb;
+            }
+            return cv_slot;
+        }
+        if ((cv_v == -2) && (cv_firstTomb < 0)) {
+            cv_firstTomb = cv_slot;
+        }
+        cv_slot = ((cv_slot + 1) & (cv_indexcap - 1));
+    }
+    return 0;
+}
+
+static void clar_fn_mapIndexInsert(void * cv_m, int32_t cv_hash, int32_t cv_entryIdx) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_slot;
+    cv_slot = 0;
+    void * cv_slotPtr;
+    cv_slotPtr = 0;
+    int32_t cv_old;
+    cv_old = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_slot = clar_fn_mapIndexSlotFor(cv_m, cv_hash, (void *)(intptr_t)(0));
+    cv_slotPtr = clar_fn_mapIndexSlot(cv_m, cv_slot);
+    cv_old = rt_peekl(cv_slotPtr);
+    rt_pokel(cv_slotPtr, cv_entryIdx);
+    if (cv_old == -2) {
+        (cv_rm)->cv_tombs = ((cv_rm)->cv_tombs - 1);
+    }
+}
+
+static void clar_fn_mapAllocIndex(void * cv_m, int32_t cv_newcap) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_err;
+    cv_err = 0;
+    void * cv_mp;
+    cv_mp = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_index, (cv_newcap * 4));
+    if (cv_err != 0) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_indexcap = cv_newcap;
+    cv_mp = rt_ext_MapHandleDeref((cv_rm)->cv_index);
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < cv_newcap))) break;
+        rt_pokel((void *)((char *)(cv_mp) + ((cv_i * 4))), -1);
+        cv_i = (cv_i + 1);
+    }
+}
+
+static void clar_fn_mapRehash(void * cv_m) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_newcap;
+    cv_newcap = 0;
+    int32_t cv_i;
+    cv_i = 0;
+    int32_t cv_h;
+    cv_h = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_newcap = ((cv_rm)->cv_indexcap * 2);
+    clar_fn_mapAllocIndex(cv_m, cv_newcap);
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    (cv_rm)->cv_tombs = 0;
+    cv_i = 0;
+    while (1) {
+        if (!((cv_i < (cv_rm)->cv_count))) break;
+        cv_h = clar_fn_mapEntryHash(cv_m, cv_i);
+        clar_fn_mapIndexInsert(cv_m, cv_h, cv_i);
+        cv_i = (cv_i + 1);
+    }
+}
+
+static void clar_fn_mapEnsureIndexCapacity(void * cv_m) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    if ((cv_rm)->cv_indexcap == 0) {
+        clar_fn_mapAllocIndex(cv_m, 8);
+        return;
+    }
+    if ((((cv_rm)->cv_count + (cv_rm)->cv_tombs) * 4) >= ((cv_rm)->cv_indexcap * 3)) {
+        clar_fn_mapRehash(cv_m);
+    }
+}
+
+static void clar_fn_mapGrowEntries(void * cv_m, int32_t cv_need) {
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
     int32_t cv_cap;
@@ -1376,14 +1545,14 @@ static void clar_fn_rtMapGrowKeys(void * cv_m, int32_t cv_need) {
         if (!((cv_newcap < cv_need))) break;
         cv_newcap = (cv_newcap * 2);
     }
-    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keys, (cv_newcap * 256));
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keys, (cv_newcap * 12));
     if (cv_err != 0) {
         clar_fn_rtPanic(clar_lit_6);
     }
     (cv_rm)->cv_cap = cv_newcap;
 }
 
-static void clar_fn_rtMapGrowVals(void * cv_m, int32_t cv_need) {
+static void clar_fn_mapGrowVals(void * cv_m, int32_t cv_need) {
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
     int32_t cv_cap;
@@ -1416,12 +1585,63 @@ static void clar_fn_rtMapGrowVals(void * cv_m, int32_t cv_need) {
     (cv_rm)->cv_valcap = cv_newcap;
 }
 
+static void clar_fn_mapGrowPool(void * cv_m, int32_t cv_need) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_cap;
+    cv_cap = 0;
+    int32_t cv_newcap;
+    cv_newcap = 0;
+    int32_t cv_err;
+    cv_err = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_cap = (cv_rm)->cv_poolcap;
+    if (cv_need <= cv_cap) {
+        return;
+    }
+    if (cv_cap > 0) {
+        cv_newcap = cv_cap;
+    } else {
+        cv_newcap = 4;
+    }
+    while (1) {
+        if (!((cv_newcap < cv_need))) break;
+        cv_newcap = (cv_newcap * 2);
+    }
+    cv_err = rt_ext_MapSetHandleSize((cv_rm)->cv_keypool, cv_newcap);
+    if (cv_err != 0) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_poolcap = cv_newcap;
+}
+
+static int32_t clar_fn_mapPoolAppend(void * cv_m, void * cv_key) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    int32_t cv_klen;
+    cv_klen = 0;
+    int32_t cv_off;
+    cv_off = 0;
+    void * cv_mp;
+    cv_mp = 0;
+    cv_klen = rt_peekb(cv_key);
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    clar_fn_mapGrowPool(cv_m, ((cv_rm)->cv_poolused + cv_klen));
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    cv_off = (cv_rm)->cv_poolused;
+    cv_mp = rt_ext_MapHandleDeref((cv_rm)->cv_keypool);
+    rt_ext_MapBlockMoveData((void *)((char *)(cv_key) + (1)), (void *)((char *)(cv_mp) + (cv_off)), cv_klen);
+    (cv_rm)->cv_poolused = (cv_off + cv_klen);
+    return cv_off;
+    return 0;
+}
+
 static void * clar_fn_rtMapNew(int32_t cv_valsize) {
     void * cv_m;
     cv_m = 0;
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
-    cv_m = rt_ext_MapNewPtr(56);
+    cv_m = rt_ext_MapNewPtr(112);
     if (cv_m == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(clar_lit_6);
     }
@@ -1439,6 +1659,18 @@ static void * clar_fn_rtMapNew(int32_t cv_valsize) {
     (cv_rm)->cv_count = 0;
     (cv_rm)->cv_cap = 0;
     (cv_rm)->cv_valcap = 0;
+    (cv_rm)->cv_keypool = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_keypool == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_poolused = 0;
+    (cv_rm)->cv_poolcap = 0;
+    (cv_rm)->cv_index = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_index == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_indexcap = 0;
+    (cv_rm)->cv_tombs = 0;
     return cv_m;
     return 0;
 }
@@ -1467,6 +1699,8 @@ static void clar_fn_rtMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_MapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_MapDisposeHandle((cv_rm)->cv_vals);
+        rt_ext_MapDisposeHandle((cv_rm)->cv_keypool);
+        rt_ext_MapDisposeHandle((cv_rm)->cv_index);
         rt_ext_MapDisposePtr(cv_m);
     }
 }
@@ -1479,32 +1713,30 @@ static int32_t clar_fn_rtMapLastref(void * cv_m) {
 static void clar_fn_rtMapSet(void * cv_m, void * cv_key, void * cv_val) {
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
-    int32_t cv_pos;
-    cv_pos = 0;
-    int32_t cv_tail;
-    cv_tail = 0;
+    int32_t cv_h;
+    cv_h = 0;
+    int32_t cv_idx;
+    cv_idx = 0;
     int32_t cv_klen;
     cv_klen = 0;
-    void * cv_kslot;
-    cv_kslot = 0;
+    int32_t cv_keyOff;
+    cv_keyOff = 0;
     cv_rm = ((clar_rec_RtMap *)(cv_m));
-    cv_pos = clar_fn_mapLowerBound(cv_m, cv_key);
-    if (clar_fn_mapKeyEq(cv_m, cv_pos, cv_key)) {
-        rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_pos), (cv_rm)->cv_valsize);
+    cv_h = clar_fn_mapHash(cv_key);
+    cv_idx = clar_fn_mapIndexLookup(cv_m, cv_h, cv_key);
+    if (cv_idx >= 0) {
+        rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_idx), (cv_rm)->cv_valsize);
         return;
     }
-    clar_fn_rtMapGrowKeys(cv_m, ((cv_rm)->cv_count + 1));
-    clar_fn_rtMapGrowVals(cv_m, ((cv_rm)->cv_count + 1));
-    cv_tail = ((cv_rm)->cv_count - cv_pos);
-    if (cv_tail > 0) {
-        rt_ext_MapBlockMoveData(clar_fn_mapKeySlot(cv_m, cv_pos), clar_fn_mapKeySlot(cv_m, (cv_pos + 1)), (cv_tail * 256));
-        rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_pos), clar_fn_mapValSlot(cv_m, (cv_pos + 1)), (cv_tail * (cv_rm)->cv_valsize));
-    }
+    clar_fn_mapEnsureIndexCapacity(cv_m);
+    clar_fn_mapGrowEntries(cv_m, ((cv_rm)->cv_count + 1));
+    clar_fn_mapGrowVals(cv_m, ((cv_rm)->cv_count + 1));
     cv_klen = rt_peekb(cv_key);
-    cv_kslot = clar_fn_mapKeySlot(cv_m, cv_pos);
-    rt_pokeb(cv_kslot, cv_klen);
-    rt_ext_MapBlockMoveData((void *)((char *)(cv_key) + (1)), (void *)((char *)(cv_kslot) + (1)), cv_klen);
-    rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_pos), (cv_rm)->cv_valsize);
+    cv_keyOff = clar_fn_mapPoolAppend(cv_m, cv_key);
+    cv_idx = (cv_rm)->cv_count;
+    clar_fn_mapSetEntryMeta(cv_m, cv_idx, cv_h, cv_keyOff, cv_klen);
+    rt_ext_MapBlockMoveData(cv_val, clar_fn_mapValSlot(cv_m, cv_idx), (cv_rm)->cv_valsize);
+    clar_fn_mapIndexInsert(cv_m, cv_h, cv_idx);
     (cv_rm)->cv_count = ((cv_rm)->cv_count + 1);
 }
 
@@ -1514,10 +1746,13 @@ static int32_t clar_fn_rtMapCount(void * cv_m) {
 }
 
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
-    if ((cv_i < 0) || (cv_i >= (((clar_rec_RtMap *)(cv_m)))->cv_count)) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    if ((cv_i < 0) || (cv_i >= (cv_rm)->cv_count)) {
         clar_fn_rtPanic(clar_lit_13);
     }
-    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (cv_rm)->cv_valsize);
 }
 
 static int32_t clar_fn_uidI32(void * cv_p) {

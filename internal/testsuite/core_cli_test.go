@@ -194,6 +194,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"MiscArithBasic", "MiscBreakContWhile", "MiscCrc8Smbus", "MiscEmitArithAddMul", "MiscEmitControlForRange", "MiscEmitFuncRecursion", "MiscMutRecEvenOdd", "MiscWhileCondText", "MiscWideProtoSumBoxMetrics", "MiscLongCondChain",
 			"XRecFieldsRoundtrip",
 			"SortedMapSetCount", "SortedMapHasRemove", "SortedMapOfListUpsert", "SortedMapIterOrder",
+			"MapGrowRehash", "MapRemoveSwap", "MapIterComplete", "MapLongKeys",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

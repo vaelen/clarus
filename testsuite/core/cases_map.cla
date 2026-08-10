@@ -178,11 +178,40 @@ func caseMapRemoveSwap(): TestResult {
     if m.count != 5 {
         return tkFail("MapRemoveSwap", "count wrong: " + tkIntToStr(m.count))
     }
-    if m.has("b") or m.has("d") or m.has("f") or m.has("h") or m.has("j") {
-        return tkFail("MapRemoveSwap", "removed key still present")
+    // Checked one key per statement, not one long `or`-chained condition:
+    // native 68k codegen (cg68k) has a per-statement temp-slot budget a
+    // five-way chain of `.has`/`.get` calls exceeds ("too many tracked
+    // temps in one statement") -- same reason kit.cla's own tkReport
+    // builds its summary line piecewise.
+    if m.has("b") {
+        return tkFail("MapRemoveSwap", "removed key still present: b")
     }
-    if m.get("a", -1) != 1 or m.get("c", -1) != 3 or m.get("e", -1) != 5 or m.get("g", -1) != 7 or m.get("i", -1) != 9 {
-        return tkFail("MapRemoveSwap", "survivor value wrong")
+    if m.has("d") {
+        return tkFail("MapRemoveSwap", "removed key still present: d")
+    }
+    if m.has("f") {
+        return tkFail("MapRemoveSwap", "removed key still present: f")
+    }
+    if m.has("h") {
+        return tkFail("MapRemoveSwap", "removed key still present: h")
+    }
+    if m.has("j") {
+        return tkFail("MapRemoveSwap", "removed key still present: j")
+    }
+    if m.get("a", -1) != 1 {
+        return tkFail("MapRemoveSwap", "survivor value wrong: a")
+    }
+    if m.get("c", -1) != 3 {
+        return tkFail("MapRemoveSwap", "survivor value wrong: c")
+    }
+    if m.get("e", -1) != 5 {
+        return tkFail("MapRemoveSwap", "survivor value wrong: e")
+    }
+    if m.get("g", -1) != 7 {
+        return tkFail("MapRemoveSwap", "survivor value wrong: g")
+    }
+    if m.get("i", -1) != 9 {
+        return tkFail("MapRemoveSwap", "survivor value wrong: i")
     }
 
     m["b"] = 20
@@ -208,6 +237,7 @@ func caseMapIterComplete(): TestResult {
     var seen: int = 0
     var sum: int = 0
     var wantSum: int = 0
+    var detail: string
 
     i = 0
     while i < 20 {
@@ -221,7 +251,16 @@ func caseMapIterComplete(): TestResult {
         sum = sum + v
     }
     if seen != 20 or sum != wantSum {
-        return tkFail("MapIterComplete", "seen=" + tkIntToStr(seen) + " sum=" + tkIntToStr(sum) + " want=" + tkIntToStr(wantSum))
+        // Built up piecewise, not as one long chained-`+` argument: native
+        // 68k codegen (cg68k) has a per-statement string temp-slot budget
+        // that three tkIntToStr() calls in one expression exceeds ("too
+        // many tracked temps in one statement") -- same reason
+        // testsuite/kit.cla's own tkReport builds its summary line
+        // piecewise.
+        detail = "seen=" + tkIntToStr(seen)
+        detail = detail + " sum=" + tkIntToStr(sum)
+        detail = detail + " want=" + tkIntToStr(wantSum)
+        return tkFail("MapIterComplete", detail)
     }
     return tkPass("MapIterComplete")
 }

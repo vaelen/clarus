@@ -59,12 +59,14 @@ int main(void) {
     if (!rt_map_get_dv(m, (uint8_t*)&k1, &got) || got != 10) { printf("map getdv FAIL\n"); return 1; }
     int32_t missing = -1;
     if (rt_map_get_dv(m, (uint8_t*)"\x03""baz", &missing) || missing != -1) { printf("map getdv default FAIL\n"); return 1; }
-    /* iteration is ascending key order: "bar" < "foo" even though "foo" was inserted first */
+    /* map-hashtable phase Task 5: map is now a hashtable, not sorted --
+       iteration is insertion order (perturbed by removes), not ascending
+       key order. "foo" was inserted first, then "bar". */
     uint8_t key255[256];
     rt_map_key_at(m, 0, key255);
-    if (key255[0] != 3 || key255[1] != 'b') { printf("map key_at sorted FAIL\n"); return 1; }
+    if (key255[0] != 3 || key255[1] != 'f') { printf("map key_at insertion order FAIL\n"); return 1; }
     rt_map_key_at(m, 1, key255);
-    if (key255[0] != 3 || key255[1] != 'f') { printf("map key_at sorted2 FAIL\n"); return 1; }
+    if (key255[0] != 3 || key255[1] != 'b') { printf("map key_at insertion order2 FAIL\n"); return 1; }
 
     /* text */
     rt_text *t = rt_text_new();

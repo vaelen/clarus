@@ -191,10 +191,12 @@ static void test_map_roundtrip(void) {
     CHECK(rt_file_load(path, RT_SER_MAP, m2, &test_layout), "map load should succeed");
     CHECK(rt_map_count(m2) == 2, "map load restores exact count");
     if (rt_map_count(m2)) {
-        /* natural (ascending byte-wise) key order: "bar" < "foo" */
+        /* map-hashtable phase Task 5: map is now a hashtable, not sorted --
+           save/load preserves insertion order ("foo" then "bar", the order
+           `m` was originally built in), not ascending byte-wise order. */
         uint8_t key255[256];
         rt_map_key_at(m2, 0, key255);
-        CHECK(key255[0] == 3 && memcmp(key255 + 1, "bar", 3) == 0, "map key order: bar first");
+        CHECK(key255[0] == 3 && memcmp(key255 + 1, "foo", 3) == 0, "map key order: foo first (insertion order)");
         rt_map_get(m2, keyBar, &got);
         CHECK(memcmp(&got, &r2, sizeof(test_rec)) == 0, "map[bar] round-trips");
         rt_map_get(m2, keyFoo, &got);

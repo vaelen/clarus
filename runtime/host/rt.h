@@ -71,7 +71,14 @@ int32_t rt_list_count(const rt_list *l);
 void rt_args_init(int argc, char **argv);
 rt_list *rt_args_list(void);   /* list of str255 (256-byte elements: 1 len byte + 255 data bytes) */
 
-typedef struct rt_map rt_map;     /* string keys -> fixed-size values */
+/* string keys (up to 255 bytes) -> fixed-size values. map-hashtable phase
+   Task 5: an open-addressed hashtable (rt_core.inc has the full layout/
+   algorithm doc) -- iteration visits entries in an unspecified but
+   deterministic order (insertion order, perturbed by removes), NOT
+   sorted; use `sortedmap of T` (runtime/clarus/sortedmap.cla -- a
+   Clarus-lane-only type, no C-lane rt_sortedmap_* API exists) when
+   ascending key order is required. */
+typedef struct rt_map rt_map;
 rt_map *rt_map_new(int32_t valsize);
 void rt_map_set(rt_map *m, const uint8_t *key, const void *val);
 void rt_map_get(rt_map *m, const uint8_t *key, void *out);        /* panics absent: "map key not found" */
@@ -79,7 +86,8 @@ int  rt_map_get_dv(rt_map *m, const uint8_t *key, void *out);     /* returns 0 a
 int  rt_map_has(rt_map *m, const uint8_t *key);
 void rt_map_remove(rt_map *m, const uint8_t *key);
 int32_t rt_map_count(const rt_map *m);
-/* iteration for `for k, v in m`: stable snapshot by index */
+/* iteration for `for k, v in m`: stable snapshot by index, in whatever
+   order rt_map's own insertion/removal history currently produces */
 void rt_map_key_at(const rt_map *m, int32_t i, uint8_t *key255);
 void rt_map_val_at(const rt_map *m, int32_t i, void *out);
 

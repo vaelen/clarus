@@ -87,6 +87,12 @@ typedef struct {
     int32_t cv_count;
     int32_t cv_cap;
     int32_t cv_valcap;
+    void * cv_keypool;
+    int32_t cv_poolused;
+    int32_t cv_poolcap;
+    void * cv_index;
+    int32_t cv_indexcap;
+    int32_t cv_tombs;
 } clar_rec_RtMap;
 typedef struct { uint8_t e[4]; } clar_arr_char_4;
 
@@ -328,7 +334,7 @@ static void * clar_fn_rtMapNew(int32_t cv_valsize) {
     cv_m = 0;
     clar_rec_RtMap * cv_rm;
     cv_rm = 0;
-    cv_m = rt_ext_MapNewPtr(56);
+    cv_m = rt_ext_MapNewPtr(112);
     if (cv_m == (void *)(intptr_t)(0)) {
         clar_fn_rtPanic(clar_lit_6);
     }
@@ -346,6 +352,18 @@ static void * clar_fn_rtMapNew(int32_t cv_valsize) {
     (cv_rm)->cv_count = 0;
     (cv_rm)->cv_cap = 0;
     (cv_rm)->cv_valcap = 0;
+    (cv_rm)->cv_keypool = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_keypool == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_poolused = 0;
+    (cv_rm)->cv_poolcap = 0;
+    (cv_rm)->cv_index = rt_ext_MapNewHandle(0);
+    if ((cv_rm)->cv_index == (void *)(intptr_t)(0)) {
+        clar_fn_rtPanic(clar_lit_6);
+    }
+    (cv_rm)->cv_indexcap = 0;
+    (cv_rm)->cv_tombs = 0;
     return cv_m;
     return 0;
 }
@@ -374,6 +392,8 @@ static void clar_fn_rtMapRelease(void * cv_m) {
     if ((cv_rm)->cv_rc == 0) {
         rt_ext_MapDisposeHandle((cv_rm)->cv_keys);
         rt_ext_MapDisposeHandle((cv_rm)->cv_vals);
+        rt_ext_MapDisposeHandle((cv_rm)->cv_keypool);
+        rt_ext_MapDisposeHandle((cv_rm)->cv_index);
         rt_ext_MapDisposePtr(cv_m);
     }
 }
@@ -389,10 +409,13 @@ static int32_t clar_fn_rtMapCount(void * cv_m) {
 }
 
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
-    if ((cv_i < 0) || (cv_i >= (((clar_rec_RtMap *)(cv_m)))->cv_count)) {
+    clar_rec_RtMap * cv_rm;
+    cv_rm = 0;
+    cv_rm = ((clar_rec_RtMap *)(cv_m));
+    if ((cv_i < 0) || (cv_i >= (cv_rm)->cv_count)) {
         clar_fn_rtPanic(clar_lit_13);
     }
-    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (((clar_rec_RtMap *)(cv_m)))->cv_valsize);
+    rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (cv_rm)->cv_valsize);
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {

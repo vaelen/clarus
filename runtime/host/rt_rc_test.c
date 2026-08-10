@@ -131,7 +131,10 @@ static void test_list_and_map_cycle(void)
     before = rt_mem_live_count();
     rt_map_release(m);
     after = rt_mem_live_count();
-    CHECK(before - after == 3, "map release-to-zero drops live count by 3 (keys+vals+box)");
+    /* map-hashtable phase Task 5: the hashtable rewrite added two more
+       Handles (keypool, index) to the box, so a fresh map now drops 5
+       blocks (keys+vals+keypool+index+box), not 3. */
+    CHECK(before - after == 5, "map release-to-zero drops live count by 5 (keys+vals+keypool+index+box)");
 }
 
 /* 6: rt_text_free on an rc==1 value == release-to-zero (alias behavior). */
