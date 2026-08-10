@@ -230,6 +230,7 @@ func gcCompile(w: Log, p: string) {
     // exactly like main.cla's own startCLI -- driveCompile leaves diags
     // empty in this case.
     if entryFailed {
+        gcFlushProgress(w)
         gcLog(w, "cannot open entry file: " + p)
         alert("cannot open entry file: " + p)
         return
@@ -269,6 +270,7 @@ func gcCompile(w: Log, p: string) {
 
     wrote = file.writeRes(appName, fork, "APPL", creator)
     if not wrote {
+        gcFlushProgress(w)
         gcLog(w, "write failed: " + lastError.message)
         alert("write failed: " + lastError.message)
         return

@@ -637,6 +637,16 @@ var drvStartTicks: int
 var drvPhaseTicks: int
 var drvEntryName: string
 
+// drvSpliceActive: true while driveEarlySplice/driveManifestSplice are
+// running their own expand() loop over the runtime-module list. Those
+// calls pass entry=true (a missing runtime module is fatal, same as a
+// missing CLI entry file -- see the fix-round-3 comments on both loops
+// below), which would otherwise make expand()'s progress dispatch
+// mislabel every spliced module "Compiling" instead of "Included". This
+// flag lets expand() tell the two apart without touching either splice
+// loop's own entry argument (entryFailed semantics are load-bearing).
+var drvSpliceActive: bool
+
 // driveProgress: timestamp-prefix msg and hand it to the front end; a
 // no-op unless want68k (block comment above).
 func driveProgress(msg: string) {
@@ -761,7 +771,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         return true
     }
 
-    if entry {
+    if entry and not drvSpliceActive {
         progressLine = "Compiling " + path
     } else {
         progressLine = "Included " + path
@@ -923,6 +933,7 @@ func driveEarlySplice(testapi: bool): bool {
     if not haveRtDir {
         rtDir = findRtDir(earlyMods[0])
     }
+    drvSpliceActive = true
     i = 0
     while i < earlyMods.count {
         rtPath = joinPath(rtDir, earlyMods[i])
@@ -978,6 +989,7 @@ func driveEarlySplice(testapi: bool): bool {
         }
         i = i + 1
     }
+    drvSpliceActive = false
 
     // Rebuild `combined` with the early runtime-module heads FIRST
     // (declare-before-use), followed by the original user-program chain.
@@ -1170,6 +1182,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             rtDir = findRtDir(neededMods[0])
         }
         hoistBefore = hoistCount
+        drvSpliceActive = true
         i = 0
         while i < neededMods.count {
             rtPath = joinPath(rtDir, neededMods[i])
@@ -1208,6 +1221,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             }
             i = i + 1
         }
+        drvSpliceActive = false
 
         // Rebuild the assembled program with the runtime modules' heads
         // FIRST (declare-before-use), followed by the original (already
