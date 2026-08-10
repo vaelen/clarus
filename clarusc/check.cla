@@ -987,6 +987,9 @@ func typeName(t: int): string {
     case TySortedMap {
         return "sortedmap of " + typeName(typeElem(t))
     }
+    case TyIntMap {
+        return "intmap of " + typeName(typeElem(t))
+    }
     }
     return "?"
 }
@@ -1053,6 +1056,9 @@ func kindName(k: TypeKind): string {
     }
     case TySortedMap {
         return "sortedmap"
+    }
+    case TyIntMap {
+        return "intmap"
     }
     }
     return "?"
@@ -1533,8 +1539,11 @@ func checkListMethod(lt: int, sel: int, argsHead: int): int {
     return InvalidT
 }
 
-// checkMapMethod checks `map of T` operations (Ch3: Maps).
-func checkMapMethod(mt: int, sel: int, argsHead: int): int {
+// checkMapMethod checks `map of T`/`sortedmap of T`/`intmap of T`
+// operations (Ch3: Maps) -- keyT parameterizes the key type checked for
+// get/has/remove (strT(255) for map/sortedmap, IntT for intmap) so all
+// three families share one implementation.
+func checkMapMethod(mt: int, sel: int, argsHead: int, keyT: int): int {
     var elem: int
     var name: string
     var argCount: int
@@ -1552,7 +1561,7 @@ func checkMapMethod(mt: int, sel: int, argsHead: int): int {
         }
         a1 = argsHead
         a2 = exprNext(a1)
-        checkParamArg(a1, psPlain(strT(255)))
+        checkParamArg(a1, psPlain(keyT))
         checkParamArg(a2, psPlain(elem))
         return elem
     }
@@ -1561,7 +1570,7 @@ func checkMapMethod(mt: int, sel: int, argsHead: int): int {
             emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
             return BoolT
         }
-        checkParamArg(argsHead, psPlain(strT(255)))
+        checkParamArg(argsHead, psPlain(keyT))
         return BoolT
     }
     if name == "remove" {
@@ -1569,7 +1578,7 @@ func checkMapMethod(mt: int, sel: int, argsHead: int): int {
             emitDiag(exprLine(sel), exprCol(sel), "wrong number of arguments to " + name)
             return VoidT
         }
-        checkParamArg(argsHead, psPlain(strT(255)))
+        checkParamArg(argsHead, psPlain(keyT))
         return VoidT
     }
     if name == "count" {
@@ -1609,10 +1618,13 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return checkListMethod(xt, sel, argsHead)
     }
     case TyMap {
-        return checkMapMethod(xt, sel, argsHead)
+        return checkMapMethod(xt, sel, argsHead, strT(255))
     }
     case TySortedMap {
-        return checkMapMethod(xt, sel, argsHead)
+        return checkMapMethod(xt, sel, argsHead, strT(255))
+    }
+    case TyIntMap {
+        return checkMapMethod(xt, sel, argsHead, IntT)
     }
     case TyText {
         if textOnlyMethods.has(name) {
@@ -1759,6 +1771,26 @@ func resolveType(te: int): int {
             return sortedMapT(InvalidT)
         }
         return sortedMapT(et)
+    }
+    case TxIntMap {
+        // map-hashtable phase Task 7: intmap lives in the always-spliced
+        // map.cla (unlike sortedmap.cla, which is conditionally spliced),
+        // so no usesIntMap flag is needed here -- drive.cla sets
+        // cpIntMapPorted unconditionally, mirroring cpMapPorted.
+        et = resolveType(intMapTypeVal(te))
+        if et != InvalidT and typeKind(et) == TyPtr {
+            emitDiag(typeExprLine(te), typeExprCol(te), "ptr cannot be a container element")
+            return intMapT(InvalidT)
+        }
+        if et != InvalidT and typeKind(et) == TyOverlay {
+            emitDiag(typeExprLine(te), typeExprCol(te), "overlay records cannot be container elements")
+            return intMapT(InvalidT)
+        }
+        if et != InvalidT and typeKind(et) == TyXRec {
+            emitDiag(typeExprLine(te), typeExprCol(te), "extern records cannot be container elements")
+            return intMapT(InvalidT)
+        }
+        return intMapT(et)
     }
     case TxArray {
         et = resolveType(arrayTypeElem(te))
@@ -2680,7 +2712,7 @@ func checkFuncBody(d: int) {
 func formForFieldIsByValue(t: int): bool {
     var fh: int
 
-    if typeKind(t) == TyText or typeKind(t) == TyList or typeKind(t) == TyMap or typeKind(t) == TySortedMap {
+    if typeKind(t) == TyText or typeKind(t) == TyList or typeKind(t) == TyMap or typeKind(t) == TySortedMap or typeKind(t) == TyIntMap {
         return false
     }
     if typeKind(t) == TyArr {
@@ -3632,7 +3664,7 @@ func readOnlyPropName(sel: int): string {
     }
     xt = checkExpr(selectX(sel), -1)
     switch typeKind(xt) {
-    case TyList, TyMap, TySortedMap {
+    case TyList, TyMap, TySortedMap, TyIntMap {
         if name == "count" {
             return "count"
         }
@@ -3912,6 +3944,14 @@ func checkForStmt(s: int) {
             emitDiag(stmtLine(s), stmtCol(s), "map iteration requires key and value variables")
         }
         declareForVar(v1, strT(255))
+        if v2 != -1 {
+            declareForVar(v2, typeElem(seqT))
+        }
+    } else if typeKind(seqT) == TyIntMap {
+        if v2 == -1 {
+            emitDiag(stmtLine(s), stmtCol(s), "map iteration requires key and value variables")
+        }
+        declareForVar(v1, IntT)
         if v2 != -1 {
             declareForVar(v2, typeElem(seqT))
         }
@@ -4455,6 +4495,10 @@ func checkComparison(e: int, allowEnum: bool): int {
             emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
             return InvalidT
         }
+        if typeKind(lt) == TyIntMap {
+            emitDiag(exprLine(e), exprCol(e), "maps cannot be compared")
+            return InvalidT
+        }
     }
     if not compatible(lt, rt) and not compatible(rt, lt) {
         emitDiag(exprLine(e), exprCol(e), "type mismatch: " + typeName(lt) + " and " + typeName(rt))
@@ -4533,6 +4577,13 @@ func checkIndex(e: int): int {
         it = checkExpr(idx, strT(255))
         if it != InvalidT and typeKind(it) != TyStr {
             emitDiag(exprLine(idx), exprCol(idx), "map index must be string")
+        }
+        return typeElem(xt)
+    }
+    if typeKind(xt) == TyIntMap {
+        it = checkExpr(idx, IntT)
+        if it != InvalidT and typeKind(it) != TyInt {
+            emitDiag(exprLine(idx), exprCol(idx), "intmap index must be int")
         }
         return typeElem(xt)
     }
@@ -4659,7 +4710,7 @@ func checkSelect(e: int): int {
             return IntT
         }
     }
-    case TyList, TyMap, TySortedMap {
+    case TyList, TyMap, TySortedMap, TyIntMap {
         if name == "count" {
             return IntT
         }

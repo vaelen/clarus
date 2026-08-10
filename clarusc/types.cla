@@ -111,6 +111,15 @@ enum TypeKind {
     // (elem=value type index). Appended last, after TyCallback; ordering
     // among the other kinds is not load-bearing.
     TySortedMap
+
+    // TyIntMap (map-hashtable phase, Task 7) is `intmap of T`: an
+    // int-keyed hashtable (rtIntMap* runtime, Task 6), sharing map.cla's
+    // machinery and therefore ALWAYS spliced (unlike TySortedMap, which is
+    // conditional). Same TypeInfo shape as TyMap/TySortedMap (elem=value
+    // type index) -- only the KEY type differs (int, not string). Appended
+    // last, after TySortedMap; ordering among the other kinds is not
+    // load-bearing.
+    TyIntMap
 }
 
 // TypeInfo is one entry in typeArena. Only the fields relevant to `kind`
@@ -243,6 +252,17 @@ func sortedMapT(val: int): int {
     var t: TypeInfo
 
     t.kind = TySortedMap
+    t.n = 0
+    t.elem = val
+    t.nameIdx = -1
+    typeArena.add(t)
+    return typeArena.count - 1
+}
+
+func intMapT(val: int): int {
+    var t: TypeInfo
+
+    t.kind = TyIntMap
     t.n = 0
     t.elem = val
     t.nameIdx = -1
@@ -463,6 +483,9 @@ func assignable(src: int, dst: int): bool {
     case TySortedMap {
         return typesEqual(typeElem(src), typeElem(dst))
     }
+    case TyIntMap {
+        return typesEqual(typeElem(src), typeElem(dst))
+    }
     }
     return true // same-kind scalars/resources/void need no further check
 }
@@ -514,6 +537,9 @@ func typesEqual(a: int, b: int): bool {
         return typesEqual(typeElem(a), typeElem(b))
     }
     case TySortedMap {
+        return typesEqual(typeElem(a), typeElem(b))
+    }
+    case TyIntMap {
         return typesEqual(typeElem(a), typeElem(b))
     }
     }

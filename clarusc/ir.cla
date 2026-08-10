@@ -174,6 +174,12 @@ enum IRKind {
     // last, after KXRec; ordering among the other kinds is not
     // load-bearing.
     KSortedMap
+
+    // KIntMap (map-hashtable phase, Task 7) is `intmap of T`'s IR type --
+    // same elem=value IRType index shape as KMap/KSortedMap, but keyed by
+    // int (rtIntMap* runtime, Task 6). Appended last, after KSortedMap;
+    // ordering among the other kinds is not load-bearing.
+    KIntMap
 }
 
 enum IRStmtKind {
@@ -1169,7 +1175,7 @@ func irtNeedsCtor(t: int): bool {
     if k == KArr {
         return irtNeedsCtor(irtElem(t))
     }
-    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KRec
+    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap or k == KRec
 }
 
 // irSimpleType builds a kind-only IRType (no capacity/elem/name) -- used
@@ -1192,6 +1198,10 @@ func irMapType(elem: int): int {
 
 func irSortedMapType(elem: int): int {
     return newIRType(KSortedMap, 0, elem, -1)
+}
+
+func irIntMapType(elem: int): int {
+    return newIRType(KIntMap, 0, elem, -1)
 }
 
 func irArrType(elem: int, n: int): int {
@@ -3173,6 +3183,48 @@ func ISortedMapCount(): int {
 // ISortedMapFreeVar -- see ITextFreeVar's doc comment.
 func ISortedMapFreeVar(): int {
     return intern("sortedmap_free_var")
+}
+
+// -- intmap (int keys; map-hashtable phase, Task 7) -- the nine IIntMap*
+// intrinsics are the int-keyed twins of the nine IMap* ones above
+// (IMapSetRetain's/IMapGetDv's/IMapGetDvBirth's own doc comments apply
+// here unchanged, name-for-name) -- only the key type differs (int, not
+// string).
+func IIntMapSet(): int {
+    return intern("intmap_set")
+}
+
+func IIntMapSetRetain(): int {
+    return intern("intmap_set_retain")
+}
+
+func IIntMapGet(): int {
+    return intern("intmap_get")
+}
+
+func IIntMapGetDv(): int {
+    return intern("intmap_get_dv")
+}
+
+func IIntMapGetDvBirth(): int {
+    return intern("intmap_get_dv_birth")
+}
+
+func IIntMapHas(): int {
+    return intern("intmap_has")
+}
+
+func IIntMapRemove(): int {
+    return intern("intmap_remove")
+}
+
+func IIntMapCount(): int {
+    return intern("intmap_count")
+}
+
+// IIntMapFreeVar -- see ITextFreeVar's doc comment.
+func IIntMapFreeVar(): int {
+    return intern("intmap_free_var")
 }
 
 // -- retain/release (ARC Task 2) --

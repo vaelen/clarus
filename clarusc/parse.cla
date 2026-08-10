@@ -650,6 +650,10 @@ func parseType(): int {
         expectIdentText("of")
         elemT = parseType()
         t = newSortedMapType(elemT, line, col)
+    } else if nStr == "intmap" {
+        expectIdentText("of")
+        elemT = parseType()
+        t = newIntMapType(elemT, line, col)
     } else {
         t = newNamedType(nameTok.nameIdx, line, col)
     }
