@@ -1183,7 +1183,7 @@ func cgSizeOf(t: int): int {
     case KVoid {
         return 0
     }
-    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KSortedMap, KWinRef, KUiState, KOverlay {
+    case KInt, KFixed, KPtr, KEnum, KText, KList, KMap, KSortedMap, KIntMap, KWinRef, KUiState, KOverlay {
         return 4
     }
     case KBool, KChar {
@@ -1484,6 +1484,7 @@ func cgKindName(k: IRKind): string {
     case KList { return "list" }
     case KMap { return "map" }
     case KSortedMap { return "sortedmap" }
+    case KIntMap { return "intmap" }
     case KRec { return "rec" }
     case KEnum { return "enum" }
     case KArr { return "arr" }
@@ -2528,6 +2529,8 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
         cgEmitContainerBirthCall("rtMapNew", cgSizeOf(irtElem(t)), reg, off)
     } else if k == KSortedMap {
         cgEmitContainerBirthCall("rtSortedMapNew", cgSizeOf(irtElem(t)), reg, off)
+    } else if k == KIntMap {
+        cgEmitContainerBirthCall("rtIntMapNew", cgSizeOf(irtElem(t)), reg, off)
     } else if k == KErr {
         // Task 14.7: mirrors cpDefaultInit's own KErr arm (cprint.cla:
         // 3170-3172, `dst.code = 0; dst.message = (clar_str_255){0};`) --
@@ -2739,6 +2742,8 @@ func cgRetainAt(reg: int, off: int, t: int) {
         cgEmitPtrRcCall("rtMapRetain", reg, off)
     } else if k == KSortedMap {
         cgEmitPtrRcCall("rtSortedMapRetain", reg, off)
+    } else if k == KIntMap {
+        cgEmitPtrRcCall("rtIntMapRetain", reg, off)
     } else if k == KRec {
         cgEmitRecWalkCall(true, reg, off, irtName(t))
     } else if k == KArr {
@@ -2772,7 +2777,7 @@ func cgReleaseAt(reg: int, off: int, t: int) {
         // above); container element ARC is Task 13 territory, and this is
         // it.
         cgDeepReleaseContainer(reg, off, t, 0)
-    } else if k == KMap or k == KSortedMap {
+    } else if k == KMap or k == KSortedMap or k == KIntMap {
         cgDeepReleaseContainer(reg, off, t, 0)
     } else if k == KRec {
         cgEmitRecWalkCall(false, reg, off, irtName(t))
@@ -3129,7 +3134,7 @@ func cgContainerElemNeedsWalk(et: int): bool {
     var k: IRKind
 
     k = irtKind(et)
-    if k == KText or k == KList or k == KMap or k == KSortedMap {
+    if k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap {
         return true
     }
     if k == KRec {
@@ -3158,7 +3163,7 @@ func cgNeedsRelease(t: int): bool {
     if k == KArr {
         return cgNeedsRelease(irtElem(t))
     }
-    return k == KText or k == KList or k == KMap or k == KSortedMap
+    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap
 }
 
 // cgEmitAtCall JSRs fnName(ptr, idx) -- rtListAt/rtMapValAt's own shape,
@@ -3203,7 +3208,7 @@ func cgContainerElemRelease(et: int, depth: int) {
         cgEmitPtrRcCall("rtTextRelease", 0, 0)
     } else if k == KRec {
         cgEmitRecWalkCall(false, 0, 0, irtName(et))
-    } else if k == KList or k == KMap or k == KSortedMap {
+    } else if k == KList or k == KMap or k == KSortedMap or k == KIntMap {
         cgDeepReleaseContainer(0, 0, et, depth)
     }
 }
@@ -3234,18 +3239,19 @@ func cgEmitMapValAtCall(fnName: string, ptrOff: int, idxOff: int, valOff: int) {
     a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
 }
 
-// cgDeepReleaseContainer is cpEmitRelease's KList/KMap/KSortedMap native
-// counterpart (cprint.cla:3226-3406, map-hashtable phase Task 2 added the
-// KSortedMap arm there): lastref-gated element walk (only the reference
-// that drops the container to zero may free what it owns -- ARC Task 6
-// round 3's shared-container double-free guard, mirrored exactly) then the
-// container's own release. (reg, off) addresses the SLOT holding the
-// container's pointer VALUE (cgEmitPtrRcCall's own convention) -- read
-// into this depth's OWN scratch ONCE, up front, and never re-derived from
-// (reg, off) again (reg may be 0/A0, clobbered by the walk itself -- see
-// the module header comment). depth selects this call's {ptr,count,index}
-// triple; a NESTED List/Map/SortedMap element recurses at depth+1 via
-// cgContainerElemRelease, so sibling/ancestor levels never collide.
+// cgDeepReleaseContainer is cpEmitRelease's KList/KMap/KSortedMap/KIntMap
+// native counterpart (cprint.cla:3226-3406, map-hashtable phase Task 2
+// added the KSortedMap arm there, Task 7 the KIntMap one): lastref-gated
+// element walk (only the reference that drops the container to zero may
+// free what it owns -- ARC Task 6 round 3's shared-container double-free
+// guard, mirrored exactly) then the container's own release. (reg, off)
+// addresses the SLOT holding the container's pointer VALUE (cgEmitPtrRcCall's
+// own convention) -- read into this depth's OWN scratch ONCE, up front, and
+// never re-derived from (reg, off) again (reg may be 0/A0, clobbered by the
+// walk itself -- see the module header comment). depth selects this call's
+// {ptr,count,index} triple; a NESTED List/Map/SortedMap/IntMap element
+// recurses at depth+1 via cgContainerElemRelease, so sibling/ancestor levels
+// never collide.
 //
 // map-hashtable phase Task 2: the runtime-name family (which of List/Map/
 // SortedMap's own Lastref/Count/At-or-ValAt/Release this calls) is derived
@@ -3254,7 +3260,10 @@ func cgEmitMapValAtCall(fnName: string, ptrOff: int, idxOff: int, valOff: int) {
 // latent bug class this removes by construction. Map and SortedMap share
 // the SAME "opaque, out-param ValAt" addressing shape (unlike List's
 // directly-addressable backing array), only their runtime name prefix
-// differs.
+// differs. map-hashtable phase Task 7: IntMap joins the SAME opaque
+// out-param-ValAt family -- this walk only ever touches VALUES (fixed-size,
+// same shape regardless of key type), so IntMap's int keys never enter into
+// it at all.
 func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     var et: int
     var ptrOff: int
@@ -3276,8 +3285,16 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     ptrOff = cgDeepPtrOffs[depth]
     countOff = cgDeepCountOffs[depth]
     idxOff = cgDeepIndexOffs[depth]
-    opaque = irtKind(t) == KMap or irtKind(t) == KSortedMap
-    if irtKind(t) == KSortedMap {
+    opaque = irtKind(t) == KMap or irtKind(t) == KSortedMap or irtKind(t) == KIntMap
+    if irtKind(t) == KIntMap {
+        // map-hashtable phase Task 7: same opaque, out-param ValAt shape as
+        // Map/SortedMap -- only the runtime name prefix differs. (The KEY
+        // fetch this walk never needs -- it only walks VALUES.)
+        lastrefFn = "rtIntMapLastref"
+        countFn = "rtIntMapCount"
+        atFn = "rtIntMapValAt"
+        relFn = "rtIntMapRelease"
+    } else if irtKind(t) == KSortedMap {
         lastrefFn = "rtSortedMapLastref"
         countFn = "rtSortedMapCount"
         atFn = "rtSortedMapValAt"
@@ -3294,7 +3311,7 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
         relFn = "rtListRelease"
     }
 
-    // t is always KList/KMap/KSortedMap here (a 4-byte pointer-shaped
+    // t is always KList/KMap/KSortedMap/KIntMap here (a 4-byte pointer-shaped
     // kind) -- stash the container's own pointer VALUE into this depth's
     // scratch, never re-derived from (reg, off) again (see this
     // function's own doc comment: reg may be 0/A0, clobbered by the walk
@@ -4803,6 +4820,14 @@ func cgEmitStoreRec(dst: int, src: int) {
             cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
             return
         }
+        if nm == "intmap_get" {
+            cgCopyScratchToDst(cgIntrIntMapGet(src), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "intmap_get_dv" or nm == "intmap_get_dv_birth" {
+            cgCopyScratchToDst(cgIntrIntMapGetDv(src, nm == "intmap_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
         log("cg68k: cgEmitStoreRec: intrinsic " + nm + " unsupported in store context")
         quit 1
     }
@@ -6124,6 +6149,211 @@ func cgIntrMapRemove(e: int, prefix: string) {
     cgCleanupStack(8)
 }
 
+// cgIntrIntMapSet mirrors cgIntrMapSet (map-hashtable phase Task 7): the
+// int-keyed twin, NOT sharing cgIntrMapSet's own `prefix` parameterization
+// because the key argument shape differs structurally (int by VALUE, not
+// Str255 by ADDRESS) -- see the cgIntr dispatch's own doc comment above for
+// why. The key is evaluated into its own scratch slot (kOff) exactly ONCE,
+// mirroring mOff's own stash, then reused (loaded from kOff) at every JSR
+// site below -- an intmap key is an arbitrary int expression (no
+// addressable-lvalue restriction the way a string map key has), so
+// re-evaluating it more than once would re-run a side effect
+// (`m[f()] = v`) once per call site.
+func cgIntrIntMapSet(e: int, retainVariant: bool) {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var elemT: int
+    var mOff: int
+    var kOff: int
+    var vOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    elemT = irExprType(a2e)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    kOff = cgAllocTmpOff(irIntT)
+    cgExpr(a1e)
+    cgStoreD0At(6, kOff, irIntT)
+
+    if cgNeedsRelease(elemT) {
+        cgIntMapReleaseGuard(mOff, kOff, elemT)
+    }
+
+    vOff = cgAllocTmpOff(elemT)
+    cgStoreElemAt(vOff, elemT, a2e)
+    if cgLastTrackedOff != -1 {
+        cgHandoff(cgLastTrackedOff)
+    }
+    if retainVariant {
+        cgRetainAt(6, vOff, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapSet")
+    cgCleanupStack(12)
+}
+
+// cgIntrIntMapGet mirrors cgIntrMapGet -- the int-keyed twin (see
+// cgIntrIntMapSet's own doc comment for why this isn't just another
+// `prefix` branch of the string-keyed family).
+func cgIntrIntMapGet(e: int): int {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var mOff: int
+    var kOff: int
+    var off: int
+    var k: IRKind
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irExprType(e)
+    k = irtKind(elemT)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    kOff = cgAllocTmpOff(irIntT)
+    cgExpr(a1e)
+    cgStoreD0At(6, kOff, irIntT)
+
+    if cgIsHandleKind(k) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapGet")
+    cgCleanupStack(12)
+
+    if cgIsHandleKind(k) {
+        cgRetainAt(6, off, elemT)
+        cgLastTrackedOff = off
+    }
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
+}
+
+// cgIntrIntMapGetDv mirrors cgIntrMapGetDv -- the int-keyed twin (see
+// cgIntrIntMapSet's own doc comment).
+func cgIntrIntMapGetDv(e: int, isBirth: bool): int {
+    var a0e: int
+    var a1e: int
+    var a2e: int
+    var elemT: int
+    var mOff: int
+    var kOff: int
+    var dvOff: int
+    var off: int
+    var k: IRKind
+    var skipLbl: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    a2e = irExprNext(a1e)
+    elemT = irExprType(e)
+    k = irtKind(elemT)
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    kOff = cgAllocTmpOff(irIntT)
+    cgExpr(a1e)
+    cgStoreD0At(6, kOff, irIntT)
+
+    dvOff = cgAllocTmpOff(elemT)
+    cgStoreElemAt(dvOff, elemT, a2e)
+    if cgLastTrackedOff != -1 {
+        cgHandoff(cgLastTrackedOff)
+    }
+
+    if cgIsHandleKind(k) {
+        off = cgNewTrackedTmp(elemT)
+    } else {
+        off = cgAllocTmpOff(elemT)
+    }
+    cgCopyScratch(dvOff, off, elemT)
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapGetDv")
+    cgCleanupStack(12)
+
+    if cgIsHandleKind(k) {
+        if isBirth {
+            a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
+            a68Emit(OpMove, 4, AmDisp16, 6, dvOff, AmDn, 1, 0)
+            a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+            skipLbl = a68NewLabel()
+            a68EmitBr(OpBcc, 7, skipLbl) // BEQ: off==dvOff -> unchanged, skip
+            cgRetainAt(6, off, elemT)
+            cgReleaseAt(6, dvOff, elemT)
+            a68Bind(skipLbl)
+        } else {
+            cgRetainAt(6, off, elemT)
+        }
+        cgLastTrackedOff = off
+    }
+    if cgSizeOf(elemT) <= 4 {
+        cgIntrLoadScratch(off, elemT)
+    }
+    return off
+}
+
+// cgIntrIntMapRemove mirrors cgIntrMapRemove -- the int-keyed twin (see
+// cgIntrIntMapSet's own doc comment).
+func cgIntrIntMapRemove(e: int) {
+    var a0e: int
+    var a1e: int
+    var elemT: int
+    var mOff: int
+    var kOff: int
+
+    a0e = irIntrArgsHead(e)
+    a1e = irExprNext(a0e)
+    elemT = irtElem(irExprType(a0e))
+    mOff = cgAllocTmpOff(irPtrT)
+    cgExpr(a0e)
+    cgStoreD0At(6, mOff, irPtrT)
+
+    kOff = cgAllocTmpOff(irIntT)
+    cgExpr(a1e)
+    cgStoreD0At(6, kOff, irIntT)
+
+    if cgNeedsRelease(elemT) {
+        cgIntMapReleaseGuard(mOff, kOff, elemT)
+    }
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapRemove")
+    cgCleanupStack(8)
+}
+
 // cgIntrFileSaveLoad implements IFileSave/IFileLoad (Task 14 fix,
 // native-5e gate, bookmarks.cla) -- mirrors cprint.cla's own IFileSave/
 // IFileLoad arm (fpIntrCall): the data arg's OWN IR type carries the
@@ -6580,6 +6810,52 @@ func cgIntr(e: int) {
         return
     }
     if nm == "sortedmap_free_var" {
+        cgReleaseExpr(irIntrArgsHead(e))
+        return
+    }
+
+    // ---- map-hashtable phase Task 7: intmap family -- TyMap's twin
+    // above, but int-KEYED: has/count/free_var reuse the SAME generic
+    // cgIntr1/cgIntr2/cgReleaseExpr helpers (with addr1=false for the key
+    // arg -- rtIntMapHas/rtIntMapCount take an int key/no key by VALUE, not
+    // by address), one call each so no double-evaluation risk regardless.
+    // set/get/get_dv(_birth)/remove need their OWN dedicated
+    // cgIntrIntMap*/cgIntMapReleaseGuard functions (not the parameterized
+    // cgIntrMap*/cgMapReleaseGuard family above) because those assume a
+    // string key is always addressable (cgExprAddr, re-evaluated safely
+    // multiple times per the checker's own addressable-key constraint) --
+    // an intmap key is an ARBITRARY int expression with no such
+    // restriction, so it must be evaluated exactly ONCE into a scratch slot
+    // and reused from there.
+    if nm == "intmap_set" or nm == "intmap_set_retain" {
+        cgIntrIntMapSet(e, nm == "intmap_set_retain")
+        return
+    }
+    if nm == "intmap_get" {
+        cgIntrIntMapGet(e)
+        return
+    }
+    if nm == "intmap_get_dv" {
+        cgIntrIntMapGetDv(e, false)
+        return
+    }
+    if nm == "intmap_get_dv_birth" {
+        cgIntrIntMapGetDv(e, true)
+        return
+    }
+    if nm == "intmap_has" {
+        cgIntr2(e, "rtIntMapHas", false, false)
+        return
+    }
+    if nm == "intmap_remove" {
+        cgIntrIntMapRemove(e)
+        return
+    }
+    if nm == "intmap_count" {
+        cgIntr1(e, "rtIntMapCount", false)
+        return
+    }
+    if nm == "intmap_free_var" {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
@@ -8764,6 +9040,14 @@ func cgEmitStoreStr(dst: int, src: int) {
             cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
             return
         }
+        if nm == "intmap_get" {
+            cgCopyScratchToDst(cgIntrIntMapGet(src), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
+        if nm == "intmap_get_dv" or nm == "intmap_get_dv_birth" {
+            cgCopyScratchToDst(cgIntrIntMapGetDv(src, nm == "intmap_get_dv_birth"), dst, cgSizeOf(irExprType(dst)))
+            return
+        }
         if nm == "str_coerce" {
             // Task 14.7 (was a silent no-op TODO): a Str value binding
             // into a differently-capacitied Str slot (lowCoerceStr,
@@ -9207,6 +9491,45 @@ func cgMapReleaseGuard(mOff: int, kExpr: int, elemT: int, prefix: string) {
     a68Bind(afterLbl)
 }
 
+// cgIntMapReleaseGuard is cgMapReleaseGuard's int-keyed twin (map-hashtable
+// phase Task 7): same `if (rtIntMapHas(m, k)) { old = rtIntMapGet(m, k);
+// release(old) }` shape, but kOff is a FRAME SLOT holding the key's
+// already-evaluated VALUE (stashed by the caller, cgIntrIntMapSet/
+// cgIntrIntMapRemove's own kOff), reloaded fresh at each JSR site below --
+// NOT re-evaluated via cgExpr(kExpr) a second/third time the way
+// cgMapReleaseGuard's own cgExprAddr(kExpr) safely can (that's only safe
+// because a string map key is restricted to an addressable lvalue with no
+// side effects; an intmap key is an arbitrary int expression, so it must be
+// computed exactly once and reused from a slot, same discipline
+// fpMapReleaseGuard's own `im` branch uses in cprint.cla).
+func cgIntMapReleaseGuard(mOff: int, kOff: int, elemT: int) {
+    var afterLbl: int
+    var oldOff: int
+
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapHas")
+    cgCleanupStack(8)
+    a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
+    afterLbl = a68NewLabel()
+    a68EmitBr(OpBcc, 7, afterLbl) // BEQ: has==false -> skip
+
+    oldOff = cgAllocTmpOff(elemT)
+    a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+    a68Emit(OpLea, 0, AmDisp16, 6, oldOff, AmAn, 0, 0)
+    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+    cgJsrByName("rtIntMapGet")
+    cgCleanupStack(12)
+    cgReleaseAt(6, oldOff, elemT)
+
+    a68Bind(afterLbl)
+}
+
 // cgCopyElemInto copies ONE list element's bytes from (A0) (rtListAt's own
 // returned address) into dstOff(dstReg) -- a plain byte copy, no retain
 // (the language's own borrow semantics: a for-list loop variable is a
@@ -9327,19 +9650,31 @@ func cgForListStmt(s: int) {
     cgCleanupStack(12)
 }
 
-// cgForMapStmt mirrors fpForMapStmt (cprint.cla:2846-2882): ascending key
-// order (rt.c's own CONTRACT comment on rt_map), an index loop over
-// rtMapCount/rtMapKeyAt/rtMapValAt -- same three-value real-stack scratch
-// shape as cgForListStmt above, same reasoning. Map's own key/val
-// accessors are OUT-PARAM style (unlike List's address-returning
-// rtListAt), so the loop variable's address is simply LEA'd and passed
-// directly -- no separate copy step. The value fetch only runs when the
-// loop declared one (irForMapV(s) != -1, parseForStmt's own "no second
-// IDENT" signal for `for k in m` without a value variable).
+// cgForMapStmt mirrors fpForMapStmt (cprint.cla:2846-2882): an index loop
+// over rtMapCount/rtMapKeyAt/rtMapValAt -- same three-value real-stack
+// scratch shape as cgForListStmt above, same reasoning. Iteration order is
+// insertion-order/unspecified for `map`/`intmap` (both hashtable-backed)
+// and ascending key order ONLY for `sortedmap` (map-hashtable phase: the
+// CARRIED DEFERRED FINDING from Task 5 -- this comment previously claimed
+// ascending order for the plain hashtable too, true only back when rt_map
+// was sorted-array-backed). Map's own key/val accessors are OUT-PARAM style
+// (unlike List's address-returning rtListAt), so the loop variable's
+// address is simply LEA'd and passed directly -- no separate copy step
+// (IntMap's own KeyAt is the one exception, see below). The value fetch
+// only runs when the loop declared one (irForMapV(s) != -1, parseForStmt's
+// own "no second IDENT" signal for `for k in m` without a value variable).
 //
 // map-hashtable phase Task 2: SForMap is REUSED for a SortedMap receiver
 // too (no new IR stmt kind) -- `prefix` (the iterated map expr's own IR
 // kind) selects the rtSortedMap*/rtMap* family this loop calls.
+//
+// map-hashtable phase Task 7: SForMap is reused a THIRD time for an IntMap
+// receiver -- `intM` (derived the same way as `prefix`) selects a
+// DIFFERENT KeyAt shape: rtIntMapKeyAt(m, i) RETURNS the key in D0 (an
+// int), unlike rtMapKeyAt/rtSortedMapKeyAt's own out-param
+// `(m, i, &kOff)` triple -- Count/ValAt keep the SAME out-param shape
+// (values are fixed-size regardless of key type), so only the KeyAt call
+// site branches.
 func cgForMapStmt(s: int) {
     var kOff: int
     var vOff: int
@@ -9347,6 +9682,7 @@ func cgForMapStmt(s: int) {
     var incrLbl: int
     var endLbl: int
     var prefix: string
+    var intM: bool
 
     kOff = cgFindFrameOffset(poolGet(irForMapK(s)))
     if kOff == cgUnresolved {
@@ -9363,8 +9699,12 @@ func cgForMapStmt(s: int) {
     }
 
     prefix = "rtMap"
+    intM = false
     if irtKind(irExprType(irForMapMapV(s))) == KSortedMap {
         prefix = "rtSortedMap"
+    } else if irtKind(irExprType(irForMapMapV(s))) == KIntMap {
+        prefix = "rtIntMap"
+        intM = true
     }
 
     cgExpr(irForMapMapV(s))
@@ -9390,10 +9730,18 @@ func cgForMapStmt(s: int) {
     a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)    // D1 = index
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpLea, 0, AmDisp16, 6, kOff, AmAn, 0, 0)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "KeyAt")
-    cgCleanupStack(12)
+    if intM {
+        // rtIntMapKeyAt(m, i) RETURNS the key in D0 -- no out-param arg,
+        // store D0 straight into the key's own frame slot after the call.
+        cgJsrByName("rtIntMapKeyAt")
+        cgCleanupStack(8)
+        cgStoreD0At(6, kOff, irIntT)
+    } else {
+        a68Emit(OpLea, 0, AmDisp16, 6, kOff, AmAn, 0, 0)
+        a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
+        cgJsrByName(prefix + "KeyAt")
+        cgCleanupStack(12)
+    }
 
     if vOff != cgUnresolved {
         a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0)
@@ -9446,7 +9794,7 @@ func cgReturnStmt(s: int) {
     } else {
         cgExpr(x)
         rk = irtKind(irExprType(x))
-        if (rk == KText or rk == KList or rk == KMap or rk == KSortedMap) and cgLastTrackedOff != -1 {
+        if (rk == KText or rk == KList or rk == KMap or rk == KSortedMap or rk == KIntMap) and cgLastTrackedOff != -1 {
             cgHandoff(cgLastTrackedOff)
         }
     }
@@ -9477,7 +9825,7 @@ func cgContinueStmt() {
 // whether a freshly evaluated src needs the cgLastTrackedOff handoff
 // check.
 func cgIsHandleKind(k: IRKind): bool {
-    return k == KText or k == KList or k == KMap or k == KSortedMap
+    return k == KText or k == KList or k == KMap or k == KSortedMap or k == KIntMap
 }
 
 // cgStmt mirrors fpStmt's own per-statement shape (cprint.cla:2688-2803):
