@@ -3,6 +3,7 @@
 #include <stddef.h> /* NULL, used by rt_text_concat's bstr/btext args */
 
 typedef struct { uint8_t len; uint8_t b[255]; } clar_str_255;
+typedef struct rt_intmap rt_intmap;
 static void clar_fn_rtStrStore(void * cv_dst, int32_t cv_dstcap, void * cv_src);
 static void * clar_fn_rtTextNew(void);
 static void clar_fn_rtTextRetain(void * cv_t);
@@ -20,6 +21,12 @@ static void clar_fn_rtMapRelease(void * cv_m);
 static int32_t clar_fn_rtMapLastref(void * cv_m);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
+static void * clar_fn_rtIntMapNew(int32_t cv_valsize);
+static void clar_fn_rtIntMapRetain(void * cv_m);
+static void clar_fn_rtIntMapRelease(void * cv_m);
+static int32_t clar_fn_rtIntMapLastref(void * cv_m);
+static int32_t clar_fn_rtIntMapCount(void * cv_m);
+static void clar_fn_rtIntMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 extern void rt_ext_CorePanic(const uint8_t *);
 extern void rt_ext_CoreSetLastErr(int32_t, const uint8_t *);
 extern void rt_ext_StrBlockMoveData(void *, void *, int32_t);
@@ -127,6 +134,12 @@ static void clar_fn_rtMapRelease(void * cv_m);
 static int32_t clar_fn_rtMapLastref(void * cv_m);
 static int32_t clar_fn_rtMapCount(void * cv_m);
 static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
+static void * clar_fn_rtIntMapNew(int32_t cv_valsize);
+static void clar_fn_rtIntMapRetain(void * cv_m);
+static void clar_fn_rtIntMapRelease(void * cv_m);
+static int32_t clar_fn_rtIntMapLastref(void * cv_m);
+static int32_t clar_fn_rtIntMapCount(void * cv_m);
+static void clar_fn_rtIntMapValAt(void * cv_m, int32_t cv_i, void * cv_out);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
 static void clar_fn_rtSetLastErr(int32_t cv_code, clar_str_255 cv_msg) {
@@ -416,6 +429,33 @@ static void clar_fn_rtMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
         clar_fn_rtPanic(clar_lit_13);
     }
     rt_ext_MapBlockMoveData(clar_fn_mapValSlot(cv_m, cv_i), cv_out, (cv_rm)->cv_valsize);
+}
+
+static void * clar_fn_rtIntMapNew(int32_t cv_valsize) {
+    return clar_fn_rtMapNew(cv_valsize);
+    return 0;
+}
+
+static void clar_fn_rtIntMapRetain(void * cv_m) {
+    clar_fn_rtMapRetain(cv_m);
+}
+
+static void clar_fn_rtIntMapRelease(void * cv_m) {
+    clar_fn_rtMapRelease(cv_m);
+}
+
+static int32_t clar_fn_rtIntMapLastref(void * cv_m) {
+    return clar_fn_rtMapLastref(cv_m);
+    return 0;
+}
+
+static int32_t clar_fn_rtIntMapCount(void * cv_m) {
+    return clar_fn_rtMapCount(cv_m);
+    return 0;
+}
+
+static void clar_fn_rtIntMapValAt(void * cv_m, int32_t cv_i, void * cv_out) {
+    clar_fn_rtMapValAt(cv_m, cv_i, cv_out);
 }
 
 static void clar_fn_handler_App_startCLI(rt_list * cv_args) {

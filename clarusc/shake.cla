@@ -66,6 +66,15 @@
 // has no visibility into check.cla today), and harmless either way.
 // cpEmitDefaultInitFnProtos's own analogous gate (cprint.cla) mirrors this
 // 23-name total; keep both in sync if either set changes.
+//
+// intmap.cla's own ARC/default-init core (map-hashtable phase, Task 7)
+// adds 6 MORE names (rtIntMapNew/ValAt/Count/Retain/Release/Lastref),
+// bringing the total to 29 -- UNLIKE sortedmap.cla's six (conditionally
+// spliced), these genuinely belong in the unconditional set alongside the
+// original 17: intmap.cla lives in the always-spliced map.cla itself, so
+// these six always exist in the emit, same as rtMapNew/etc. above.
+// cpEmitDefaultInitFnProtos's own analogous gate (cprint.cla) mirrors this
+// 29-name total; keep both in sync if either set changes.
 
 include "lib.cla"
 include "ir.cla"
@@ -302,6 +311,18 @@ func shakeProgram() {
     shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
     shakeMarkAndEnqueue(intern("rtSortedMapLastref"))
 
+    // ---- intmap ARC/default-init core (map-hashtable phase, Task 7) --
+    // UNLIKE sortedmap's own six just above, intmap.cla lives in the
+    // always-spliced map.cla, so these six genuinely belong in the SAME
+    // unconditional set as the original 17 rtMap*/rtList*/rtText* names --
+    // not a "no-op when absent" convenience, they always exist.
+    shakeMarkAndEnqueue(intern("rtIntMapNew"))
+    shakeMarkAndEnqueue(intern("rtIntMapValAt"))
+    shakeMarkAndEnqueue(intern("rtIntMapCount"))
+    shakeMarkAndEnqueue(intern("rtIntMapRetain"))
+    shakeMarkAndEnqueue(intern("rtIntMapRelease"))
+    shakeMarkAndEnqueue(intern("rtIntMapLastref"))
+
     // ---- worklist: walk every marked function's body, discovering more ----
     wi = 0
     while wi < shakeWorklist.count {
@@ -391,9 +412,15 @@ func shakeWalkStmt(s: int) {
         // own IR kind to root the RIGHT family's KeyAt (rtMapKeyAt has no
         // rtSortedMap twin need here since rtSortedMapValAt is already
         // unconditionally rooted above, but rtSortedMapKeyAt is not, same
-        // asymmetry as rtMapKeyAt).
+        // asymmetry as rtMapKeyAt). map-hashtable phase Task 7: SForMap
+        // reused a THIRD time for IntMap -- rtIntMapKeyAt joins the same
+        // per-kind branch (rtIntMapValAt IS already unconditionally rooted
+        // above, alongside its five ARC/default-init siblings, but
+        // rtIntMapKeyAt is not, same asymmetry).
         if irtKind(irExprType(irForMapMapV(s))) == KSortedMap {
             shakeMarkAndEnqueue(intern("rtSortedMapKeyAt"))
+        } else if irtKind(irExprType(irForMapMapV(s))) == KIntMap {
+            shakeMarkAndEnqueue(intern("rtIntMapKeyAt"))
         } else {
             shakeMarkAndEnqueue(intern("rtMapKeyAt"))
         }
@@ -631,6 +658,33 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtSortedMapCount"))
     } else if nm == ISortedMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
+
+    // ---- intmap (map-hashtable phase, Task 7) -- TyMap's twin above,
+    // name for name (all six data-op names -- Set/Get/GetDv/Has/Remove/
+    // Count -- still need their own explicit root here despite
+    // rtIntMapNew/ValAt/Retain/Release/Lastref already being unconditional:
+    // these six are gated on the INTRINSIC actually being used, same as
+    // Map/SortedMap's own data ops) ----
+    } else if nm == IIntMapSet() or nm == IIntMapSetRetain() {
+        shakeMarkAndEnqueue(intern("rtIntMapSet"))
+        // fpMapReleaseGuard again -- see IMapSet's own comment above.
+        shakeMarkAndEnqueue(intern("rtIntMapHas"))
+        shakeMarkAndEnqueue(intern("rtIntMapGet"))
+    } else if nm == IIntMapGet() {
+        shakeMarkAndEnqueue(intern("rtIntMapGet"))
+    } else if nm == IIntMapGetDv() or nm == IIntMapGetDvBirth() {
+        shakeMarkAndEnqueue(intern("rtIntMapGetDv"))
+    } else if nm == IIntMapHas() {
+        shakeMarkAndEnqueue(intern("rtIntMapHas"))
+    } else if nm == IIntMapRemove() {
+        shakeMarkAndEnqueue(intern("rtIntMapRemove"))
+        // fpMapReleaseGuard again -- see IMapSet's own comment above.
+        shakeMarkAndEnqueue(intern("rtIntMapHas"))
+        shakeMarkAndEnqueue(intern("rtIntMapGet"))
+    } else if nm == IIntMapCount() {
+        shakeMarkAndEnqueue(intern("rtIntMapCount"))
+    } else if nm == IIntMapFreeVar() {
+        shakeMarkAndEnqueue(intern("rtIntMapRelease"))
 
     // ---- ui ----
     } else if nm == IUiEdit() {

@@ -830,6 +830,9 @@ func driveEarlySplice(testapi: bool): bool {
     cpListArcPorted = true
     cpMapPorted = true
     cpMapArcPorted = true
+    // map-hashtable phase Task 7: cpIntMapPorted unconditionally true here
+    // too, mirroring cpMapPorted -- see driveManifestSplice's own comment.
+    cpIntMapPorted = true
 
     if not haveRtDir {
         rtDir = findRtDir(earlyMods[0])
@@ -1031,6 +1034,11 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         cpMapPorted = true
         neededMods.add("map.cla")
         cpMapArcPorted = true
+        // map-hashtable phase Task 7: cpIntMapPorted mirrors cpMapPorted
+        // exactly (unconditional, no usage flag, no separate manifest
+        // entry) -- intmap.cla's rtIntMap* family lives in map.cla itself,
+        // which is already unconditionally spliced above.
+        cpIntMapPorted = true
         if isUiProg {
             neededMods.add("uidesc.cla")
             neededMods.add("ui.cla")

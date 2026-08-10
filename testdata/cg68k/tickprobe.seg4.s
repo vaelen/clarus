@@ -1,4 +1,4 @@
-        ; func clar_ui_fire_staterows  (JT slot 400)
+        ; func clar_ui_fire_staterows  (JT slot 406)
         ;   param rowsIdx : 8(A6)  size 4
 LBL_0:
         LINK A6,#-8296
@@ -688,12 +688,12 @@ LBL_117:
 LBL_119:
         LEA LBL_1(PC),A0
         MOVE.L A0,-(A7)
-        JSR 2954(A5)
+        JSR 3002(A5)
         ADDQ.L #4,A7
         BSR.W LBL_5
         MOVEQ #1,D0
         MOVE.L D0,-(A7)
-        JSR 2962(A5)
+        JSR 3010(A5)
         ADDQ.L #4,A7
         MOVEQ #0,D0
         BRA.W LBL_6
