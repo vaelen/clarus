@@ -57,15 +57,16 @@
 //
 // sortedmap.cla's own ARC/default-init core (map-hashtable phase, Task 2)
 // adds 6 more names (rtSortedMapNew/ValAt/Count/Retain/Release/Lastref) to
-// this same unconditional block, bringing the total to 23 -- UNLIKE the
-// original 17, sortedmap.cla is CONDITIONALLY spliced (only when
+// this same unconditional block (23 names at the time -- see the Task 7
+// paragraph just below for the current 29-name running total) -- UNLIKE
+// the original 17, sortedmap.cla is CONDITIONALLY spliced (only when
 // usesSortedMap), so these six are no-ops (shakeMarkAndEnqueue's own
 // idx==-1 guard) whenever the module isn't in this compile's manifest, but
 // stay in the SAME unconditional list rather than a separate usesSortedMap-
 // gated one -- cheaper than threading that flag through shake.cla (which
 // has no visibility into check.cla today), and harmless either way.
 // cpEmitDefaultInitFnProtos's own analogous gate (cprint.cla) mirrors this
-// 23-name total; keep both in sync if either set changes.
+// running total; keep both in sync if either set changes.
 //
 // intmap.cla's own ARC/default-init core (map-hashtable phase, Task 7)
 // adds 6 MORE names (rtIntMapNew/ValAt/Count/Retain/Release/Lastref),

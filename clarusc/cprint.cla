@@ -3432,7 +3432,17 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
             cpFatal("intmap set without cpIntMapPorted")
         }
         m = fpExpr(a0)
-        k = fpExpr(a1)
+        // fpCopyToTemp, not fpExpr: k is reused up to three times below
+        // (fpMapReleaseGuard's own has+get, then this arm's own Set call).
+        // fpExpr returns RAW CALL TEXT for a scalar int result (fpCallFn
+        // only materializes a temp for a handle-bearing return) -- pasting
+        // that text three times would re-run a side-effecting key
+        // expression (`m[nextKey()] = v`) three times on host vs once on
+        // native (cg68k's cgIntrIntMapSet stashes the key into kOff
+        // exactly once). fpCopyToTemp evaluates a1 exactly once and binds
+        // the result to a fresh temp, the same discipline fpAddrable
+        // already gives string keys.
+        k = fpCopyToTemp(a1)
         if fpNeedsRelease(irExprType(a2)) {
             fpMapReleaseGuard(m, k, irExprType(a2), false, true)
         }
@@ -3542,7 +3552,10 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
             cpFatal("intmap remove without cpIntMapPorted")
         }
         m = fpExpr(a0)
-        k = fpExpr(a1)
+        // fpCopyToTemp, not fpExpr -- same double-eval hazard as
+        // IIntMapSet's own arm above (k is reused up to three times:
+        // fpMapReleaseGuard's has+get, then this arm's own Remove call).
+        k = fpCopyToTemp(a1)
         if fpNeedsRelease(irtElem(irExprType(a0))) {
             fpMapReleaseGuard(m, k, irtElem(irExprType(a0)), false, true)
         }
