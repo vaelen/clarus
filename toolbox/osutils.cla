@@ -107,10 +107,16 @@ external func SysBeep(duration: word) = trap 0xA9C8
 //
 // _SecondsToDate/_DateToSeconds are the documented EXCEPTION to the
 // reference's bit-11 convention rule: Toolbox-range trap words (bit 11
-// set) with REGISTER-based contracts. AIncludes/DateTimeUtils.a is
-// explicit ("secs => D0, d => A0" over OPWORD $A9C6), and the CIncludes
-// pragma (#pragma parameter SecondsToDate(__D0, __A0), ONEWORDINLINE)
-// shows no glue words at all -- the raw trap takes registers.
+// set) with REGISTER-based contracts. _SecondsToDate's register
+// contract is settled by AIncludes/DateTimeUtils.a ("secs => D0,
+// d => A0" over OPWORD $A9C6) and the CIncludes pragma (#pragma
+// parameter SecondsToDate(__D0, __A0), ONEWORDINLINE) -- no glue words
+// at all, so the raw trap itself takes registers. _DateToSeconds has no
+// such annotation in either header (AIncludes gives a bare OPWORD
+// $A9C7 with no register comment; CIncludes' DateToSeconds() carries no
+// pragma or inline at all) -- its A0-in/D0-out contract instead comes
+// straight from Inside Macintosh II p. II-379's own "On entry AO ...
+// On exit DO" block.
 
 extern record DateTimeRec {
     year: word
@@ -125,7 +131,7 @@ extern record DateTimeRec {
 // _ReadDateTime (0xA039): re-reads the battery-backed clock chip
 // (slow, serial) and rewrites the Time global; boot-time resync, not a
 // routine time read. A0 = VAR secs (unsigned long), OSErr <= D0.
-external func ReadDateTime(time: ptr): int = trap 0xA039 reg(a0: time) ret d0
+external func ReadDateTime(time: ptr): word = trap 0xA039 reg(a0: time) ret d0
 
 // _SecondsToDate / Secs2Date (0xA9C6): unsigned seconds => D0,
 // DateTimeRec pointer => A0, no result. Fills year (full year), month
@@ -133,8 +139,10 @@ external func ReadDateTime(time: ptr): int = trap 0xA039 reg(a0: time) ret d0
 external func SecondsToDate(secs: int, d: ptr) = trap 0xA9C6 reg(d0: secs, a0: d)
 
 // _DateToSeconds / Date2Secs (0xA9C7): DateTimeRec pointer => A0,
-// unsigned seconds <= D0. Tolerates out-of-range fields (month 13 rolls
-// into the next year) -- the ROM's own date arithmetic hook.
+// unsigned seconds <= D0. Per Inside Macintosh II p. II-379: year and
+// month must be within their valid ranges or results are unpredictable;
+// the remaining four fields (day/hour/minute/second) tolerate overflow
+// -- e.g. September 34 rolls into October 4.
 external func DateToSeconds(d: ptr): int = trap 0xA9C7 reg(a0: d) ret d0
 
 // (SetDateTime is deliberately absent -- writing the clock is nothing a
