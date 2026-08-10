@@ -10,9 +10,10 @@
 func caseMapSetCount(): TestResult {
     var m: map of int
 
-    // inserted deliberately out of order: iteration must come back sorted
-    // (not exercised by this aggregate count/get check, but kept for
-    // parity with emit_map.cla's own insertion order).
+    // inserted deliberately out of order: `map of T`'s iteration order is
+    // unspecified (hashtable-backed; see `sortedmap of T` for the ordered
+    // guarantee) -- not exercised by this aggregate count/get check, but
+    // kept for parity with emit_map.cla's own insertion order.
     m["c"] = 3
     m["b"] = 2
     m["a"] = 1

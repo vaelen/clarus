@@ -44,7 +44,6 @@ func runBreakcont() {
     var total: int
     var l: list of int
     var m: map of int
-    var seen: string
 
     // while: break
     i = 0
@@ -103,28 +102,26 @@ func runBreakcont() {
     }
     breakcontShow("for list continue total = ", total)
 
-    // for over a map: break (keys visited in ascending order: a, b, c)
+    // for over a map: break -- `map of T`'s iteration order is unspecified
+    // (hashtable-backed), so break/continue are exercised on a visit-count
+    // threshold rather than a specific key, deterministic under any order.
     m["a"] = 1
     m["b"] = 2
     m["c"] = 3
     total = 0
-    seen = ""
     for k, v in m {
-        if k == "c" { break }
-        total = total + v
-        seen = seen + k
+        if total == 2 { break }
+        total = total + 1
     }
     breakcontShow("for map break total = ", total)
-    alert(seen)
 
     // for over a map: continue
     total = 0
-    seen = ""
+    i = 0
     for k, v in m {
-        if k == "b" { continue }
-        total = total + v
-        seen = seen + k
+        i = i + 1
+        if i == 2 { continue }
+        total = total + 1
     }
     breakcontShow("for map continue total = ", total)
-    alert(seen)
 }

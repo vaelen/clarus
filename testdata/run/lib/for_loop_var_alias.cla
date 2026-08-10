@@ -77,6 +77,7 @@ func runForLoopVarAlias(args: list of string) {
     var l3a: list of text
     var l3b: list of text
     var found3: list of text
+    var found3Total: int
 
     pass = true
 
@@ -107,10 +108,16 @@ func runForLoopVarAlias(args: list of string) {
     l3b.add("three")
     m3["a"] = l3a
     m3["b"] = l3b
+    // `map of T`'s iteration order is unspecified, so this can't assume
+    // "last iteration is b" (last-write-wins into found3) -- sum
+    // v3.count across all iterations instead, order-agnostic (l3a=1 +
+    // l3b=2 = 3).
+    found3Total = 0
     for k3, v3 in m3 {
         found3 = v3
+        found3Total = found3Total + v3.count
     }
-    if found3.count != 2 { pass = false }
+    if found3Total != 3 { pass = false }
 
     if pass {
         alert("ok")

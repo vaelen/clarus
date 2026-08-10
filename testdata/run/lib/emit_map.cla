@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 // emit_map.cla: Task 7 coverage slice for clarusc emit -- map intrinsics
-// (set/get/get-default/has/remove/count), for-map iteration in sorted key
-// order, and a `map of string(N)` set with a differently-sized string to
+// (set/get/get-default/has/remove/count), for-map iteration (order
+// unspecified for `map of T`; the sum below is order-agnostic, and the
+// printed keys come from fixed-order has-based lookups, not loop order),
+// and a `map of string(N)` set with a differently-sized string to
 // exercise coerceStr (IStrCoerce) together with the copyToTemp aliasing
 // guard on the value argument (IMapSet). Self-verifying via `if cond {
 // alert("... ok") } else { alert("... FAIL") }`, same convention as
@@ -66,11 +68,19 @@ func runEmitMap(args: list of string) {
         alert("remove FAIL")
     }
 
-    // ---- for-map: sorted key order (a, c remain after removing b) ----
+    // ---- for-map: order is unspecified for `map of T` -- sum via
+    // iteration is order-agnostic; the printed a/c lines come from
+    // explicit has-based lookups in a fixed order we choose, not from
+    // loop order (a, c remain after removing b) ----
     sum = 0
     for k, v in m {
-        alert(k)
         sum = sum + v
+    }
+    if m.has("a") {
+        alert("a")
+    }
+    if m.has("c") {
+        alert("c")
     }
     if sum == 4 {
         alert("for-map ok")

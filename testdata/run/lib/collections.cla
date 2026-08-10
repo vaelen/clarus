@@ -66,7 +66,8 @@ func runCollections() {
     }
 
     // map: set/get/get-with-default/has/remove/count
-    // inserted deliberately out of order: iteration must come back sorted
+    // inserted deliberately out of order: `map of T`'s iteration order is
+    // unspecified (hashtable-backed)
     m["c"] = 3
     m["b"] = 2
     m["a"] = 1
@@ -87,10 +88,17 @@ func runCollections() {
         alert("no b")
     }
 
-    // for over a map: ascending key order (inserted c,b,a; b removed; sorted yields a,c)
-    for k, v in m {
-        alert(k)
-        collectionsShow("  value = ", v)
+    // for over a map: order is unspecified for `map of T` since the
+    // hashtable switch -- look up the known remaining keys explicitly in
+    // a fixed order we choose (inserted c,b,a; b removed; a,c remain)
+    // instead of relying on iteration order
+    if m.has("a") {
+        alert("a")
+        collectionsShow("  value = ", m["a"])
+    }
+    if m.has("c") {
+        alert("c")
+        collectionsShow("  value = ", m["c"])
     }
 
     // for over an inclusive range
