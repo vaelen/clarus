@@ -1041,6 +1041,15 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             neededMods.add("uidialogs.cla")
         }
     }
+    // map-hashtable phase Task 2: cpSortedMapPorted mirrors cpSerPorted's
+    // own usage-gated splice, ordered right after map.cla (its data-shape
+    // cousin) and before ser.cla -- see cpSortedMapPorted's own doc comment
+    // (cprint.cla) for why sortedmap.cla, unlike map.cla, is CONDITIONALLY
+    // spliced.
+    cpSortedMapPorted = usesSortedMap
+    if usesSortedMap {
+        neededMods.add("sortedmap.cla")
+    }
     cpSerPorted = usesFileSaveLoad
     if usesFileSaveLoad {
         neededMods.add("ser.cla")

@@ -117,7 +117,7 @@ Note: `window` is both the declaration keyword and, inside a window's handlers, 
 **Contextual keywords** (special meaning only in the noted position, usable as identifiers elsewhere):
 
 ```
-list map of string text int bool fixed        (type positions)
+list map sortedmap of string text int bool fixed  (type positions)
 item separator standard key                    (menu bodies)
 form binds shows rows column width             (window/form/table bodies)
 title size resizable min at fill scrollbar
@@ -159,6 +159,7 @@ Clarus is statically typed. All types are known at compile time; values are eith
 | `text` | 4-byte handle | heap | unbounded text buffer |
 | `list of T` | 4-byte handle | heap | growable sequence of fixed-size T |
 | `map of T` | 4-byte handle | heap | hashtable, string keys ≤ 255 bytes, values fixed-size |
+| `sortedmap of T` | 4-byte handle | heap | string-keyed container, values fixed-size; iterates in ascending key order |
 | window ref (e.g. `Doc`) | 4 bytes | inline | reference to a window instance; `nil` until assigned |
 | `connection`, `listener`, `serviceBrowser` | opaque | resource | networking resources (Chapter 12) |
 | `error` | record | inline | `{ code: int, message: string }` |
@@ -341,6 +342,22 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
 Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in ascending key order (byte-wise) — deterministic regardless of insertion or removal history.
+
+### Sorted maps
+
+A `sortedmap of T` is a string-keyed (up to 255 bytes) container of fixed-size values of type `T`, with the exact same operations as `map of T`:
+
+- `m[k] = v` — set key `k` to value `v`
+- `m[k]` — retrieve value for key `k` (returns `T`); runtime error if absent
+- `m.get(k, dv)` — retrieve the value for key `k`, or the default value `dv` (of type `T`) if the key is absent; never errors
+- `m.has(k)` — test for key presence (returns `bool`)
+- `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
+- `m.count` — number of entries (returns `int`)
+- `for k, v in m { … }` — iterate (see Chapter 5)
+
+Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in ascending key order (byte-wise) — deterministic regardless of insertion or removal history.
+
+`sortedmap of T` is a distinct type from `map of T`: the two are never assignable or comparable to each other, even with the same element type `T`.
 
 ### Text
 
@@ -1662,6 +1679,7 @@ type        = "int" | "bool" | "fixed" | "char" | "text" | "ptr"
             | "string" [ "(" INT ")" ]
             | "list" "of" type
             | "map" "of" type
+            | "sortedmap" "of" type
             | IDENT
             | type "[" INT "]" ;
 

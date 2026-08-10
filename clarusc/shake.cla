@@ -54,6 +54,18 @@
 // rtMapSet, ...) stay individually gated on their own intrinsic, so a
 // program that never touches Map still drops rtMapSet/rtMapGet/.../rtStrCmp
 // and the rest of map.cla's own transitive closure.
+//
+// sortedmap.cla's own ARC/default-init core (map-hashtable phase, Task 2)
+// adds 6 more names (rtSortedMapNew/ValAt/Count/Retain/Release/Lastref) to
+// this same unconditional block, bringing the total to 23 -- UNLIKE the
+// original 17, sortedmap.cla is CONDITIONALLY spliced (only when
+// usesSortedMap), so these six are no-ops (shakeMarkAndEnqueue's own
+// idx==-1 guard) whenever the module isn't in this compile's manifest, but
+// stay in the SAME unconditional list rather than a separate usesSortedMap-
+// gated one -- cheaper than threading that flag through shake.cla (which
+// has no visibility into check.cla today), and harmless either way.
+// cpEmitDefaultInitFnProtos's own analogous gate (cprint.cla) mirrors this
+// 23-name total; keep both in sync if either set changes.
 
 include "lib.cla"
 include "ir.cla"
@@ -273,6 +285,23 @@ func shakeProgram() {
     shakeMarkAndEnqueue(intern("rtMapRelease"))
     shakeMarkAndEnqueue(intern("rtMapLastref"))
 
+    // ---- sortedmap ARC/default-init core (map-hashtable phase, Task 2) --
+    // UNLIKE the 17 names just above, sortedmap.cla is CONDITIONALLY
+    // spliced (only when usesSortedMap), so these six no-op harmlessly
+    // (shakeMarkAndEnqueue's own idx==-1 guard, verified: shakeFuncIdxByName
+    // is a plain map.get(name, -1) lookup) whenever the module isn't in
+    // this compile's manifest at all -- kept unconditional anyway, same
+    // "self-documenting, costs nothing when absent" convention as the
+    // rtMap*/rtList*/rtText* core rather than threading a usesSortedMap
+    // check through shake.cla, which has no visibility into check.cla's
+    // flag today.
+    shakeMarkAndEnqueue(intern("rtSortedMapNew"))
+    shakeMarkAndEnqueue(intern("rtSortedMapValAt"))
+    shakeMarkAndEnqueue(intern("rtSortedMapCount"))
+    shakeMarkAndEnqueue(intern("rtSortedMapRetain"))
+    shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
+    shakeMarkAndEnqueue(intern("rtSortedMapLastref"))
+
     // ---- worklist: walk every marked function's body, discovering more ----
     wi = 0
     while wi < shakeWorklist.count {
@@ -356,7 +385,18 @@ func shakeWalkStmt(s: int) {
         // core (shakeProgram); rtMapKeyAt is not (it's never needed by
         // cpDefaultInit/cpEmitGlobalsInit/cpEmitRetain/cpEmitRelease, only
         // by this loop), so it's rooted here explicitly.
-        shakeMarkAndEnqueue(intern("rtMapKeyAt"))
+        //
+        // map-hashtable phase Task 2: SForMap is REUSED for a SortedMap
+        // receiver too (no new IR stmt kind) -- key off the iterated expr's
+        // own IR kind to root the RIGHT family's KeyAt (rtMapKeyAt has no
+        // rtSortedMap twin need here since rtSortedMapValAt is already
+        // unconditionally rooted above, but rtSortedMapKeyAt is not, same
+        // asymmetry as rtMapKeyAt).
+        if irtKind(irExprType(irForMapMapV(s))) == KSortedMap {
+            shakeMarkAndEnqueue(intern("rtSortedMapKeyAt"))
+        } else {
+            shakeMarkAndEnqueue(intern("rtMapKeyAt"))
+        }
         shakeMarkAndEnqueue(intern("rtMapValAt"))
         shakeWalkExpr(irForMapMapV(s))
         shakeWalkStmts(irForMapBody(s))
@@ -568,6 +608,29 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtMapCount"))
     } else if nm == IMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtMapRelease"))
+
+    // ---- sortedmap (map-hashtable phase, Task 2) -- TyMap's twin above,
+    // name for name ----
+    } else if nm == ISortedMapSet() or nm == ISortedMapSetRetain() {
+        shakeMarkAndEnqueue(intern("rtSortedMapSet"))
+        // fpMapReleaseGuard again -- see IMapSet's own comment above.
+        shakeMarkAndEnqueue(intern("rtSortedMapHas"))
+        shakeMarkAndEnqueue(intern("rtSortedMapGet"))
+    } else if nm == ISortedMapGet() {
+        shakeMarkAndEnqueue(intern("rtSortedMapGet"))
+    } else if nm == ISortedMapGetDv() or nm == ISortedMapGetDvBirth() {
+        shakeMarkAndEnqueue(intern("rtSortedMapGetDv"))
+    } else if nm == ISortedMapHas() {
+        shakeMarkAndEnqueue(intern("rtSortedMapHas"))
+    } else if nm == ISortedMapRemove() {
+        shakeMarkAndEnqueue(intern("rtSortedMapRemove"))
+        // fpMapReleaseGuard again -- see IMapSet's own comment above.
+        shakeMarkAndEnqueue(intern("rtSortedMapHas"))
+        shakeMarkAndEnqueue(intern("rtSortedMapGet"))
+    } else if nm == ISortedMapCount() {
+        shakeMarkAndEnqueue(intern("rtSortedMapCount"))
+    } else if nm == ISortedMapFreeVar() {
+        shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
 
     // ---- ui ----
     } else if nm == IUiEdit() {
