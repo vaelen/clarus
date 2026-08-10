@@ -1,0 +1,53 @@
+// dtbuiltins.cla: Task 4 probe -- the dtmodprobe.cla vectors driven
+// through the now()/dateTimeStr()/durationStr() builtins, proving the
+// check/lower/splice wiring end to end on the host lane.
+//
+// Deviates from the task brief the same way dtmodprobe.cla (Task 3) did:
+// the draft's `app DtBuiltins { id: "CLDB" }` block is dropped -- any
+// `app` block makes cprint emit `#include "rt_ui.h"`, mac-only, breaking
+// this probe's host run. `on App.startCLI` needs no app-identity block
+// to run host-side. Lives next to dtmodprobe.cla in testdata/lowlevel/
+// dtmod/ (not directly in testdata/lowlevel/) for the same reason as
+// that file: it needs --rtdir to splice runtime/clarus/datetime.cla, so
+// it must stay out of internal/lowlevel's non-recursive
+// testdata/lowlevel/*.cla glob (which standalone-compiles each fixture
+// with a required sibling .out golden).
+
+on App.startCLI(args: list of string) {
+    var t: int
+    var s: string
+
+    s = durationStr(1805)
+    if s != "30m 5s" {
+        alert("FAIL durationStr")
+        quit 1
+    }
+    s = dateTimeStr(0)
+    if s != "01-01-04 00:00:00" {
+        alert("FAIL dateTimeStr epoch")
+        quit 1
+    }
+    s = dateTimeStr(2147483647)
+    if s != "01-19-72 03:14:07" {
+        alert("FAIL dateTimeStr 2^31-1")
+        quit 1
+    }
+    t = -2147483647
+    t = t - 1
+    s = dateTimeStr(t)
+    if s != "01-19-72 03:14:08" {
+        alert("FAIL dateTimeStr 2^31")
+        quit 1
+    }
+    t = now()
+    if t >= 0 {
+        alert("FAIL now sign")
+        quit 1
+    }
+    t = now() - t
+    if t < 0 {
+        alert("FAIL now went backwards")
+        quit 1
+    }
+    alert("OK")
+}

@@ -985,6 +985,14 @@ func lowCall(e: int): int {
             return newIRIntr(IUiAskSave(), lowArgs(callArgsHead(e)), ty)
         } else if name == "askSaveChanges" {
             return newIRIntr(IUiAskSaveChanges(), lowArgs(callArgsHead(e)), ty)
+        } else if name == "now" {
+            return newIRCallFn(intern("rtNow"), -1, ty)
+        } else if name == "dateTimeStr" {
+            symIdx = scopeLookup(curScope, identName(fn))
+            return newIRCallFn(intern("rtDateTimeStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
+        } else if name == "durationStr" {
+            symIdx = scopeLookup(curScope, identName(fn))
+            return newIRCallFn(intern("rtDurationStr"), lowCallArgs(callArgsHead(e), symbols[symIdx].sigIdx), ty)
         }
         symIdx = scopeLookup(curScope, identName(fn))
         if symIdx != -1 and symbols[symIdx].isType and typeKind(symbols[symIdx].typeIdx) == TyEnum {

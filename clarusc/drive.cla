@@ -1058,6 +1058,18 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     if usesSortedMap {
         neededMods.add("sortedmap.cla")
     }
+    // datetime (2026-08-10 spec): datetime.cla + exactly one per-lane
+    // rtNow variant. No cprint ported-flag exists for this family -- the
+    // builtins lower to ordinary named calls (lowCall), so the C lane
+    // compiles the spliced .cla source directly.
+    if usesDateTime {
+        neededMods.add("datetime.cla")
+        if want68k {
+            neededMods.add("datetime_68k.cla")
+        } else {
+            neededMods.add("datetime_c.cla")
+        }
+    }
     cpSerPorted = usesFileSaveLoad
     if usesFileSaveLoad {
         neededMods.add("ser.cla")

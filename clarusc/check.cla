@@ -625,6 +625,13 @@ var usesFileSaveLoad: bool
 // into the emit.
 var usesSortedMap: bool
 
+// usesDateTime is true once the program under check has called one of
+// the date/time builtins (now/dateTimeStr/durationStr) -- drive.cla's
+// manifest splice reads it to decide whether runtime/clarus/datetime.cla
+// (plus exactly one per-lane rtNow variant) must be spliced. Mirrors
+// usesSortedMap above.
+var usesDateTime: bool
+
 // progGen is bumped by every checkReset so the per-program menuItems set
 // (below) can namespace its keys and never consult a stale entry from a
 // previous program compiled in the same process (maps have no bulk-clear
@@ -1166,6 +1173,25 @@ func declBuiltinStrConst(scope: int, name: string, val: string) {
     scopeDeclare(scope, sym)
 }
 
+func declBuiltinFunc0(scope: int, name: string, ret: int) {
+    var params: list of int
+    var sigIdx: int
+    var sym: Symbol
+
+    sigIdx = newFuncSig(params, ret)
+    sym.nameIdx = intern(name)
+    sym.typeIdx = -1
+    sym.isFunc = true
+    sym.sigIdx = sigIdx
+    sym.isType = false
+    sym.isConst = false
+    sym.constIsStr = false
+    sym.constInt = 0
+    sym.constStrIdx = -1
+    sym.isMenu = false
+    scopeDeclare(scope, sym)
+}
+
 func declBuiltinFunc1(scope: int, name: string, p1: int, ret: int) {
     var params: list of int
     var sigIdx: int
@@ -1228,6 +1254,14 @@ func registerUniverse(scope: int) {
     declBuiltinFunc2(scope, "askSave", strT(255), strT(255), BoolT)
     declBuiltinFunc1(scope, "askSaveChanges", strT(255), SaveChoiceT)
     declBuiltinFunc1(scope, "log", strT(255), -1)
+
+    // Date/time builtins (2026-08-10 datetime-instrumentation spec): a
+    // datetime is a plain int (unsigned Mac-epoch seconds); see
+    // runtime/clarus/datetime.cla for the backing functions these lower
+    // to (lowCall's arms) when drive.cla splices it (usesDateTime).
+    declBuiltinFunc0(scope, "now", IntT)
+    declBuiltinFunc1(scope, "dateTimeStr", IntT, strT(255))
+    declBuiltinFunc1(scope, "durationStr", IntT, strT(255))
 
     declBuiltinFunc1(scope, "peekb", PtrT, IntT)
     declBuiltinFunc1(scope, "peekw", PtrT, IntT)
@@ -4896,6 +4930,9 @@ func checkIdentCall(e: int, fn: int): int {
     if name == "ptr" {
         return checkConversion(e, PtrT, "ptr")
     }
+    if name == "now" or name == "dateTimeStr" or name == "durationStr" {
+        usesDateTime = true
+    }
 
     symIdx = scopeLookup(curScope, identName(fn))
     if symIdx == -1 {
@@ -5098,6 +5135,7 @@ func checkReset() {
     appDeclSeen = false
     usesFileSaveLoad = false
     usesSortedMap = false
+    usesDateTime = false
     progGen = progGen + 1
 
     while paramSpecs.count > 0 {
