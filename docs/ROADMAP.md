@@ -1716,10 +1716,16 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     itself deliberately never reset either; a future Mac-resident
     memory change resetting the intern pool mid-process would need to
     reset these two as well.
-  - Two corners found by final review: (a) intmap `get(k, dv)` evaluates
-    key/dv in different orders host vs native when both have side effects —
-    either pin "argument evaluation order unspecified" in the reference or
-    bind the host key symmetrically; (b) `edit F, sm[k]`/`im[k]` dies in
+  - Two corners found by final review (attribution corrected by its
+    scoped re-review): (a) map/sortedmap `get(k, dv)` evaluates k and dv
+    in different orders host vs native — the shared native
+    `cgIntrMapGetDv` (cg68k.cla) evaluates m, dv, then k, while the host
+    emission (cprint.cla's `IMapGetDv`/`ISortedMapGetDv` arms) evaluates
+    m, k, then dv; observable only if both k and dv have interacting
+    side effects (intmap's own `get` was already made order-consistent
+    by Task 7's key-binding fix, 749e91f) — either pin "argument
+    evaluation order unspecified" in the reference or align the native
+    order; (b) `edit F, sm[k]`/`im[k]` dies in
     lowering with a generic "edit target" message instead of a checker
     diagnostic naming the map-only restriction.
   - Deferred minors from Task 5's own review: unbounded index probe
