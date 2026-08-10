@@ -27,6 +27,13 @@
 // SortedMapIterOrder is new -- it proves the ascending-key iteration
 // order contract that belongs to sortedmap alone (plain `map` makes no
 // such promise).
+//
+// MapGrowRehash/MapRemoveSwap/MapIterComplete/MapLongKeys (cases_map.cla,
+// map-hashtable phase Task 5) are the 45th-48th real cases: a hashtable-
+// stress safety net for plain `map of T`'s rewrite from a sorted array to
+// a hashtable -- written and proven green against the OLD sorted-array
+// implementation first (every check is order-agnostic), then kept
+// unchanged through the rewrite itself.
 
 enum CoreTest {
     All
@@ -75,16 +82,20 @@ enum CoreTest {
     SortedMapHasRemove
     SortedMapOfListUpsert
     SortedMapIterOrder
+    MapGrowRehash
+    MapRemoveSwap
+    MapIterComplete
+    MapLongKeys
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 45 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 49 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 46
+const nCoreCases: int = 50
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -228,6 +239,18 @@ func coreCaseName(t: CoreTest): string {
     case SortedMapIterOrder {
         return "SortedMapIterOrder"
     }
+    case MapGrowRehash {
+        return "MapGrowRehash"
+    }
+    case MapRemoveSwap {
+        return "MapRemoveSwap"
+    }
+    case MapIterComplete {
+        return "MapIterComplete"
+    }
+    case MapLongKeys {
+        return "MapLongKeys"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -293,6 +316,10 @@ func coreAllCases(): list of CoreTest {
     l.add(SortedMapHasRemove)
     l.add(SortedMapOfListUpsert)
     l.add(SortedMapIterOrder)
+    l.add(MapGrowRehash)
+    l.add(MapRemoveSwap)
+    l.add(MapIterComplete)
+    l.add(MapLongKeys)
     l.add(SelfCheck)
     return l
 }
@@ -509,6 +536,22 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, SortedMapIterOrder) {
         results.add(caseSortedMapIterOrder())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, MapGrowRehash) {
+        results.add(caseMapGrowRehash())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, MapRemoveSwap) {
+        results.add(caseMapRemoveSwap())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, MapIterComplete) {
+        results.add(caseMapIterComplete())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, MapLongKeys) {
+        results.add(caseMapLongKeys())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

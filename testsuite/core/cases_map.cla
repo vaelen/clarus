@@ -6,6 +6,30 @@
 //   MapSetCount    <- emit_map.cla ("set+count ok" / "get ok")
 //   MapHasRemove   <- collections.cla ("has a" / "no b")
 //   MapOfListUpsert <- arc_fpreleaseval_nested.cla ("map-of-list-upsert-ok")
+//
+// MapGrowRehash/MapRemoveSwap/MapIterComplete/MapLongKeys (map-hashtable
+// phase, Task 5, Step 1) are new -- a hashtable-stress safety net written
+// and run green against the OLD sorted-array implementation FIRST (every
+// check here is order-agnostic, so it holds regardless of which map
+// implementation is under it), then kept unchanged through the rewrite to
+// prove the new hashtable behaves identically from the outside:
+//   MapGrowRehash  -- 200 distinct keys, crossing several index rehashes
+//                     (indexcap 8 -> 16 -> ... -> 512 at the shared design
+//                     constants' load-factor threshold), then spot-checks
+//                     10 keys by value.
+//   MapRemoveSwap  -- 10 keys, 5 removed interleaved with survivor
+//                     lookups (exercises the remove-swap-last-entry-into-
+//                     the-hole mechanic and its index re-pointing), then
+//                     two removed keys are re-inserted (exercises
+//                     tombstone reuse).
+//   MapIterComplete -- 20 keys with known values; `for k, v in m` must
+//                     visit every entry exactly once (order-agnostic: only
+//                     count and value-sum are checked, never a sequence).
+//   MapLongKeys    -- two 255-byte (Str255-max) keys differing only in
+//                     their last byte, plus the empty-string key -- proves
+//                     entries store/retrieve independently at the key-
+//                     length extremes the keypool/entry-meta layout must
+//                     handle correctly.
 
 func caseMapSetCount(): TestResult {
     var m: map of int
@@ -66,4 +90,181 @@ func caseMapOfListUpsert(): TestResult {
         return tkFail("MapOfListUpsert", "upsert content wrong")
     }
     return tkPass("MapOfListUpsert")
+}
+
+// caseMapGrowRehash inserts 200 distinct keys ("k0".."k199"), crossing
+// several index-doubling rehashes, then spot-checks 10 keys by value --
+// order-agnostic (only count and per-key values are checked).
+func caseMapGrowRehash(): TestResult {
+    var m: map of int
+    var i: int
+    var k: string
+    var spot: int[10]
+    var si: int
+    var got: int
+
+    i = 0
+    while i < 200 {
+        k = "k" + tkIntToStr(i)
+        m[k] = i
+        i = i + 1
+    }
+    if m.count != 200 {
+        return tkFail("MapGrowRehash", "count wrong: " + tkIntToStr(m.count))
+    }
+
+    spot[0] = 0
+    spot[1] = 1
+    spot[2] = 7
+    spot[3] = 8
+    spot[4] = 42
+    spot[5] = 63
+    spot[6] = 64
+    spot[7] = 100
+    spot[8] = 150
+    spot[9] = 199
+
+    si = 0
+    while si < 10 {
+        k = "k" + tkIntToStr(spot[si])
+        got = m.get(k, -1)
+        if got != spot[si] {
+            return tkFail("MapGrowRehash", "spot check wrong at k" + tkIntToStr(spot[si]))
+        }
+        si = si + 1
+    }
+    return tkPass("MapGrowRehash")
+}
+
+// caseMapRemoveSwap inserts a..j (10 keys), removes 5 of them interleaved
+// with survivor lookups (exercising the remove-swap mechanic against a
+// live map, not just a final-state check), then re-inserts two removed
+// keys (exercising tombstone reuse).
+func caseMapRemoveSwap(): TestResult {
+    var m: map of int
+
+    m["a"] = 1
+    m["b"] = 2
+    m["c"] = 3
+    m["d"] = 4
+    m["e"] = 5
+    m["f"] = 6
+    m["g"] = 7
+    m["h"] = 8
+    m["i"] = 9
+    m["j"] = 10
+
+    m.remove("b")
+    if not m.has("a") or m.get("a", -1) != 1 {
+        return tkFail("MapRemoveSwap", "a wrong after removing b")
+    }
+    m.remove("d")
+    if not m.has("c") or m.get("c", -1) != 3 {
+        return tkFail("MapRemoveSwap", "c wrong after removing d")
+    }
+    m.remove("f")
+    if not m.has("e") or m.get("e", -1) != 5 {
+        return tkFail("MapRemoveSwap", "e wrong after removing f")
+    }
+    m.remove("h")
+    if not m.has("g") or m.get("g", -1) != 7 {
+        return tkFail("MapRemoveSwap", "g wrong after removing h")
+    }
+    m.remove("j")
+    if not m.has("i") or m.get("i", -1) != 9 {
+        return tkFail("MapRemoveSwap", "i wrong after removing j")
+    }
+
+    if m.count != 5 {
+        return tkFail("MapRemoveSwap", "count wrong: " + tkIntToStr(m.count))
+    }
+    if m.has("b") or m.has("d") or m.has("f") or m.has("h") or m.has("j") {
+        return tkFail("MapRemoveSwap", "removed key still present")
+    }
+    if m.get("a", -1) != 1 or m.get("c", -1) != 3 or m.get("e", -1) != 5 or m.get("g", -1) != 7 or m.get("i", -1) != 9 {
+        return tkFail("MapRemoveSwap", "survivor value wrong")
+    }
+
+    m["b"] = 20
+    m["d"] = 40
+    if m.count != 7 {
+        return tkFail("MapRemoveSwap", "count wrong after reinsert: " + tkIntToStr(m.count))
+    }
+    if m.get("b", -1) != 20 or m.get("d", -1) != 40 {
+        return tkFail("MapRemoveSwap", "reinsert value wrong")
+    }
+
+    return tkPass("MapRemoveSwap")
+}
+
+// caseMapIterComplete inserts 20 keys with known values summing to a
+// computed total, then verifies `for k, v in m` visits every entry
+// exactly once -- order-agnostic completeness, never a sequence check.
+func caseMapIterComplete(): TestResult {
+    var m: map of int
+    var i: int
+    var k: string
+    var v: int
+    var seen: int = 0
+    var sum: int = 0
+    var wantSum: int = 0
+
+    i = 0
+    while i < 20 {
+        k = "n" + tkIntToStr(i)
+        m[k] = i * 3 + 1
+        wantSum = wantSum + i * 3 + 1
+        i = i + 1
+    }
+    for k, v in m {
+        seen = seen + 1
+        sum = sum + v
+    }
+    if seen != 20 or sum != wantSum {
+        return tkFail("MapIterComplete", "seen=" + tkIntToStr(seen) + " sum=" + tkIntToStr(sum) + " want=" + tkIntToStr(wantSum))
+    }
+    return tkPass("MapIterComplete")
+}
+
+// caseMapLongKeys builds two 255-byte (Str255-max) keys differing only in
+// their last byte, plus the empty-string key, and verifies all three
+// store/retrieve independently.
+func caseMapLongKeys(): TestResult {
+    var m: map of int
+    var buf: text
+    var i: int
+    var key1: string
+    var key2: string
+
+    i = 0
+    while i < 254 {
+        buf.append('x')
+        i = i + 1
+    }
+    buf.append('A')
+    key1 = buf[0, 255]
+    buf[254] = 'B'
+    key2 = buf[0, 255]
+
+    if key1 == key2 {
+        return tkFail("MapLongKeys", "test keys not actually distinct")
+    }
+
+    m[key1] = 111
+    m[key2] = 222
+    m[""] = 333
+
+    if m.count != 3 {
+        return tkFail("MapLongKeys", "count wrong: " + tkIntToStr(m.count))
+    }
+    if m.get(key1, -1) != 111 {
+        return tkFail("MapLongKeys", "key1 wrong")
+    }
+    if m.get(key2, -1) != 222 {
+        return tkFail("MapLongKeys", "key2 wrong")
+    }
+    if m.get("", -1) != 333 {
+        return tkFail("MapLongKeys", "empty key wrong")
+    }
+    return tkPass("MapLongKeys")
 }
