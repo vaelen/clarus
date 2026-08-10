@@ -1,0 +1,105 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_sortedmap.cla: the core suite's sortedmap-family test cases
+// (map-hashtable phase, Task 3). Same bodies as cases_map.cla's map
+// cases, with every `map of` swapped for `sortedmap of` -- the two types
+// share behavior on everything but iteration order, so the tests
+// shouldn't change. Case -> source:
+//   SortedMapSetCount    <- cases_map.cla's MapSetCount
+//   SortedMapHasRemove   <- cases_map.cla's MapHasRemove
+//   SortedMapOfListUpsert <- cases_map.cla's MapOfListUpsert
+//   SortedMapIterOrder   <- new: sortedmap's own ascending-iteration
+//                            contract (docs/clarus-language-reference.md:
+//                            "Iteration ... visits entries in ascending
+//                            key order"), which plain `map` makes no
+//                            promise about.
+
+func caseSortedMapSetCount(): TestResult {
+    var m: sortedmap of int
+
+    // inserted deliberately out of order: iteration must come back sorted
+    // (not exercised by this aggregate count/get check, but kept for
+    // parity with cases_map.cla's own insertion order).
+    m["c"] = 3
+    m["b"] = 2
+    m["a"] = 1
+    if m.count != 3 {
+        return tkFail("SortedMapSetCount", "count wrong")
+    }
+    if m["a"] != 1 {
+        return tkFail("SortedMapSetCount", "index get wrong")
+    }
+    if m.get("a", 0) != 1 {
+        return tkFail("SortedMapSetCount", "get-default get wrong")
+    }
+    return tkPass("SortedMapSetCount")
+}
+
+func caseSortedMapHasRemove(): TestResult {
+    var m: sortedmap of int
+
+    m["c"] = 3
+    m["b"] = 2
+    m["a"] = 1
+    if not m.has("a") {
+        return tkFail("SortedMapHasRemove", "has a wrong")
+    }
+    m.remove("b")
+    if m.has("b") {
+        return tkFail("SortedMapHasRemove", "remove b wrong")
+    }
+    return tkPass("SortedMapHasRemove")
+}
+
+func caseSortedMapOfListMakeInner(a: string, b: string): list of text {
+    var l: list of text
+    l.push(a)
+    l.push(b)
+    return l
+}
+
+func caseSortedMapOfListUpsert(): TestResult {
+    var mList: sortedmap of list of text
+
+    // the birth inner list under "k" is evicted (and must be deep-released)
+    // when the key is overwritten -- arc_fpreleaseval_nested.cla probe 1,
+    // same as cases_map.cla's MapOfListUpsert.
+    mList["k"] = caseSortedMapOfListMakeInner("a1", "a2")
+    mList["k"] = caseSortedMapOfListMakeInner("b1", "b2")
+    if mList["k"].count != 2 {
+        return tkFail("SortedMapOfListUpsert", "upsert count wrong")
+    }
+    if mList["k"].first() != "b1" {
+        return tkFail("SortedMapOfListUpsert", "upsert content wrong")
+    }
+    return tkPass("SortedMapOfListUpsert")
+}
+
+// caseSortedMapIterOrder is sortedmap's own contract: ascending
+// byte-wise key order on iteration, deterministic regardless of
+// insertion or removal history (docs/clarus-language-reference.md).
+// Plain `map` makes no such promise, so this case has no cases_map.cla
+// counterpart.
+func caseSortedMapIterOrder(): TestResult {
+    var m: sortedmap of int
+    var out: text
+    m["b"] = 2
+    m["c"] = 3
+    m["a"] = 1
+    for k, v in m {
+        out.append(k)
+    }
+    if out != "abc" {
+        return tkFail("SortedMapIterOrder", "iteration not ascending")
+    }
+    m.remove("b")
+    out = ""
+    for k2, v2 in m {
+        out.append(k2)
+    }
+    if out != "ac" {
+        return tkFail("SortedMapIterOrder", "post-remove order wrong")
+    }
+    return tkPass("SortedMapIterOrder")
+}

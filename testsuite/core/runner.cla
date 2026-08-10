@@ -19,6 +19,14 @@
 // because it needs no real Toolbox trap (peek/poke and the address-of-my-
 // own-argument `XRecAddr` decay are trap-free), so it rides the existing
 // core boots for free.
+//
+// SortedMapSetCount/SortedMapHasRemove/SortedMapOfListUpsert/
+// SortedMapIterOrder (cases_sortedmap.cla, map-hashtable phase Task 3) are
+// the 41st-44th real cases: the first three mirror cases_map.cla's own
+// three cases verbatim against `sortedmap of T` instead of `map of T`;
+// SortedMapIterOrder is new -- it proves the ascending-key iteration
+// order contract that belongs to sortedmap alone (plain `map` makes no
+// such promise).
 
 enum CoreTest {
     All
@@ -63,16 +71,20 @@ enum CoreTest {
     MiscWideProtoSumBoxMetrics
     MiscLongCondChain
     XRecFieldsRoundtrip
+    SortedMapSetCount
+    SortedMapHasRemove
+    SortedMapOfListUpsert
+    SortedMapIterOrder
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 41 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 45 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 42
+const nCoreCases: int = 46
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -204,6 +216,18 @@ func coreCaseName(t: CoreTest): string {
     case XRecFieldsRoundtrip {
         return "XRecFieldsRoundtrip"
     }
+    case SortedMapSetCount {
+        return "SortedMapSetCount"
+    }
+    case SortedMapHasRemove {
+        return "SortedMapHasRemove"
+    }
+    case SortedMapOfListUpsert {
+        return "SortedMapOfListUpsert"
+    }
+    case SortedMapIterOrder {
+        return "SortedMapIterOrder"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -265,6 +289,10 @@ func coreAllCases(): list of CoreTest {
     l.add(MiscWideProtoSumBoxMetrics)
     l.add(MiscLongCondChain)
     l.add(XRecFieldsRoundtrip)
+    l.add(SortedMapSetCount)
+    l.add(SortedMapHasRemove)
+    l.add(SortedMapOfListUpsert)
+    l.add(SortedMapIterOrder)
     l.add(SelfCheck)
     return l
 }
@@ -465,6 +493,22 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, XRecFieldsRoundtrip) {
         results.add(caseXRecFieldsRoundtrip())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SortedMapSetCount) {
+        results.add(caseSortedMapSetCount())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SortedMapHasRemove) {
+        results.add(caseSortedMapHasRemove())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SortedMapOfListUpsert) {
+        results.add(caseSortedMapOfListUpsert())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, SortedMapIterOrder) {
+        results.add(caseSortedMapIterOrder())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

@@ -63,6 +63,7 @@ func segmentationFixture(root string) []string {
 		filepath.Join("testsuite", "core", "cases_text.cla"),
 		filepath.Join("testsuite", "core", "cases_list.cla"),
 		filepath.Join("testsuite", "core", "cases_map.cla"),
+		filepath.Join("testsuite", "core", "cases_sortedmap.cla"),
 		filepath.Join("testsuite", "core", "cases_rec.cla"),
 		filepath.Join("testsuite", "core", "cases_arr.cla"),
 		filepath.Join("testsuite", "core", "cases_enumfix.cla"),
