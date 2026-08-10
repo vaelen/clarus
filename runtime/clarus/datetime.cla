@@ -105,6 +105,8 @@ func rtDateTimeStr(t: int): string {
 // rtDurationStr backs durationStr(secs): "Xh Ym Zs" with units above the
 // highest nonzero unit omitted ("1h 0m 5s", "30m 5s", "45s", "0s");
 // seconds always shown; negative input is "-" + the absolute form.
+// Edge case: negating INT_MIN (-2147483648) overflows, so durationStr of
+// that exact value is unspecified; realistic durations never approach it.
 func rtDurationStr(secs: int): string {
     var s: string
     var v: int

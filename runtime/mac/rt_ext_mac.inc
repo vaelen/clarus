@@ -1030,7 +1030,7 @@ int32_t rt_ext_TickCount(void) { return (int32_t)TickCount(); }
 /* ---- Date/time (2026-08-10 datetime-instrumentation spec) ---- */
 int32_t rt_ext_DtReadDateTime(void *t) { return (int32_t)ReadDateTime((unsigned long *)t); }
 void rt_ext_DtSecs2Date(int32_t secs, void *d) { SecondsToDate((unsigned long)secs, (DateTimeRec *)d); }
-int32_t rt_ext_ReadDateTime(void *t) { return (int32_t)ReadDateTime((unsigned long *)t); }
+short rt_ext_ReadDateTime(void *t) { return (short)ReadDateTime((unsigned long *)t); }
 void rt_ext_SecondsToDate(int32_t secs, void *d) { SecondsToDate((unsigned long)secs, (DateTimeRec *)d); }
 int32_t rt_ext_DateToSeconds(void *d) { unsigned long s; DateToSeconds((DateTimeRec *)d, &s); return (int32_t)s; }
 

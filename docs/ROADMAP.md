@@ -518,8 +518,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   runtime-module splice, `Loading runtime`, one completion line per driver
   phase boundary with `<duration> (<ticks> ticks)`, `Compiled <file> -
   <total>`, `Finished`). Host CLI (`main.cla`) routes to `log()` → stderr,
-  keeping stdout clean; `ClarusC.APPL` (`macgui.cla`) appends to the Log
-  textview via `gcLog`, flushed on every `gcCompile` exit path (a Task 9
+  keeping stdout clean; `ClarusC.APPL` (`macgui.cla`) buffers lines and
+  flushes them into the Log textview via `gcFlushProgress` (a direct
+  `w.Output.text` append), on every `gcCompile` exit path (a Task 9
   review fix — two flush holes found and closed). **Gated on `want68k`
   ONLY** — check-only/appinfo mode and non-emit host builds stay quiet, so
   every Class-A byte-golden (`TestErrorGoldens`, `reftest`, `claruscboot`,
