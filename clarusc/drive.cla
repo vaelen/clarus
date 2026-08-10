@@ -615,6 +615,84 @@ func lastDecl(head: int): int {
 //   files. Post-round-2: same feHasKey("a.cla") == false gate -- both stay
 //   on disk-path identity ("Proj:a.cla" vs "Proj::a.cla", drivePathJoin's
 //   HFS parent-climb form) -- distinct, both parsed.
+
+// ---- Compile-progress instrumentation (datetime-instrumentation
+// phase). Lines are emitted ONLY for want68k compiles: the C `emit`
+// lane must stay byte-silent (internal/selfhost's TestErrorGoldens
+// compares emit-mode CombinedOutput byte-exactly, and perfgate times
+// the lane), and check-only/appinfo modes must stay silent
+// (internal/reftest / internal/claruscboot assert zero output). Every
+// line goes through the feProgress front-end seam -- main.cla: log()
+// to stderr; macgui.cla: buffered into the Log window (painted after
+// the compile until the deferred live-log phase,
+// 2026-08-10-clarusc-mac-live-log-design.md).
+
+// _TickCount (0xA975): stack-result Pascal trap -- plain `trap`, NO
+// `reg` (the reg form is the documented 2026-08-03 stale-D0 bug,
+// testdata/cg68k/tickprobe.cla). Host builds link rt_ext_TickCount
+// (runtime/host/rt_ext_host.inc, added by this phase).
+external func TickCount(): int = trap 0xA975
+
+var drvStartTicks: int
+var drvPhaseTicks: int
+var drvEntryName: string
+
+// driveProgress: timestamp-prefix msg and hand it to the front end; a
+// no-op unless want68k (block comment above).
+func driveProgress(msg: string) {
+    var line: string
+
+    if not want68k {
+        return
+    }
+    line = "[" + dateTimeStr(now()) + "] "
+    line = line + msg
+    feProgress(line)
+}
+
+// driveProgressPhase: driveProgress plus a "(duration, N ticks)" suffix
+// measured since the previous phase mark; advances the mark.
+func driveProgressPhase(msg: string) {
+    var t: int
+    var d: int
+    var line: string
+
+    if not want68k {
+        return
+    }
+    t = TickCount()
+    d = t - drvPhaseTicks
+    line = msg + " ("
+    line = line + durationStr(d / 60)
+    line = line + ", "
+    line = line + numToStr(d)
+    line = line + " ticks)"
+    driveProgress(line)
+    drvPhaseTicks = t
+}
+
+// driveProgressDone: the front ends' shared tail after a successful
+// fork/image write -- the compile total plus the Finished stamp.
+func driveProgressDone() {
+    var t: int
+    var d: int
+    var line: string
+
+    if not want68k {
+        return
+    }
+    t = TickCount()
+    d = t - drvStartTicks
+    line = "Compiled " + drvEntryName
+    line = line + " - "
+    line = line + durationStr(d / 60)
+    line = line + " ("
+    line = line + numToStr(d)
+    line = line + " ticks)"
+    driveProgress(line)
+    driveProgress("Finished")
+}
+
 func expand(rawPath: string, entry: bool, key: string): bool {
     var path: string
     var altPath: string
@@ -630,6 +708,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
     var incKey: string
     var missing: bool
     var diskProbe: text
+    var progressLine: string
 
     altPath = ""
     if hostPaths {
@@ -681,6 +760,13 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         }
         return true
     }
+
+    if entry {
+        progressLine = "Compiling " + path
+    } else {
+        progressLine = "Included " + path
+    }
+    driveProgress(progressLine)
 
     // Stamp every lex/parse diagnostic this file produces with its own path
     // (curPathIdx is read by emitDiag). Set it BEFORE lexing/parsing.
@@ -1196,6 +1282,13 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var tail: int
     var earlySpliceDone: bool
 
+    drvStartTicks = TickCount()
+    drvPhaseTicks = drvStartTicks
+    if entries.count > 0 {
+        drvEntryName = entries[0]
+    }
+    driveProgress("Starting")
+
     i = 0
     while i < entries.count {
         expand(entries[i], true, "")
@@ -1204,6 +1297,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if entryFailed {
         return false
     }
+    driveProgressPhase("Parsed user program")
     // Everything expanded so far is the user program's own; everything a
     // runtime-module splice expands from here on is runtime-side.
     userHeadCount = asmHeads.count
@@ -1263,14 +1357,17 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if diags.count > 0 {
         return false
     }
+    driveProgressPhase("Checked user program")
 
     if not wantEmit {
         return true
     }
 
+    driveProgress("Loading runtime")
     if not driveManifestSplice(entries, earlySpliceDone) {
         return false
     }
+    driveProgressPhase("Loaded runtime + checked whole program")
 
     irReset()
     lowerProgram(combined2)
@@ -1279,6 +1376,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if diags.count > 0 {
         return false
     }
+    driveProgressPhase("Lowered")
     return true
 }
 
@@ -1303,6 +1401,7 @@ func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: boo
     // glue IRFunc per `callback func` an ECbAddr decay was ever built for.
     cg68SynthCbGlue()
     shakeProgram()
+    driveProgressPhase("Shaken")
     return cg68ProgramFork(outPath, listing, segLimit)
 }
 

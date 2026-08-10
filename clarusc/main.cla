@@ -57,6 +57,15 @@ func feHasKey(key: string): bool {
     return false
 }
 
+// feProgress is main.cla's front end for drive.cla's compile-progress
+// seam (datetime-instrumentation phase): log() -> stderr, the CLI's
+// diagnostic-stream convention (stdout stays clean for appinfo/
+// diagnostics). driveProgress itself gates on want68k, so check-only /
+// emit / appinfo invocations remain byte-silent.
+func feProgress(line: string) {
+    log(line)
+}
+
 // cliResolveBake (Task 5, mac-resident-clarusc) validates and reads every
 // `emit68k --bake FILE` flag, in flag order, filling cg68k.cla's
 // cgBakeNames/cgBakeDatas globals for cg68WriteImage's own CLFS-resource
@@ -459,6 +468,7 @@ on App.startCLI(args: list of string) {
             log("clarusc emit68k: driveEmit68k failed")
             quit 1
         }
+        driveProgressDone()
     }
     quit 0
 }

@@ -11135,6 +11135,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var jtSegNums: list of int
     var segBytes: list of text
     var segNumStr: string
+    var progressLine: string
 
     if segLimit > 0 {
         cgSegLimit = segLimit
@@ -11145,9 +11146,13 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     if not cg68Measure() {
         return false
     }
+    driveProgressPhase("Measured")
     if not cgPackProgram() {
         return false
     }
+    progressLine = "Packed " + numToStr(cgSegCount)
+    progressLine = progressLine + " segments"
+    driveProgressPhase(progressLine)
     cgAssignFinalJtSlots()
 
     jtEntries = cgFreshIntList()
@@ -11275,11 +11280,14 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             }
         }
 
+        progressLine = "Emitted segment " + numToStr(s)
+        driveProgressPhase(progressLine)
         s = s + 1
     }
 
     if not cg68BuildFork(jtEntries, jtSegNums, segBytes) {
         return false
     }
+    driveProgressPhase("Built fork")
     return true
 }

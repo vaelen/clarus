@@ -120,6 +120,32 @@ func feReadSource(path: string, key: string, out: text): bool {
     return file.readResource(key, out)
 }
 
+// gcProgressBuf accumulates drive.cla's compile-progress lines during
+// the synchronous compile; gcCompile flushes it into the Log textview
+// at its exit points. Painting lines LIVE mid-compile is the deferred
+// 2026-08-10-clarusc-mac-live-log-design.md phase -- this buffer is the
+// seam it will build on.
+var gcProgressBuf: text
+
+func feProgress(line: string) {
+    gcProgressBuf.append(line)
+    gcProgressBuf.append("\n")
+}
+
+// gcFlushProgress: append-and-clear the buffered progress lines into
+// w's log textview (same read-mutate-reassign idiom as gcLog).
+func gcFlushProgress(w: Log) {
+    var buf: text
+
+    if gcProgressBuf.length == 0 {
+        return
+    }
+    buf = w.Output.text
+    buf.append(gcProgressBuf)
+    w.Output.text = buf
+    gcProgressBuf = ""
+}
+
 app ClarusC {
     name: "ClarusC"
     version: "1.0"
@@ -192,6 +218,7 @@ func gcCompile(w: Log, p: string) {
     driveReset()
     resetDiags()
     astReset()
+    gcProgressBuf = ""
     hostPaths = false
     wantEmit = true
     want68k = true
@@ -207,6 +234,7 @@ func gcCompile(w: Log, p: string) {
         alert("cannot open entry file: " + p)
         return
     }
+    gcFlushProgress(w)
 
     // Diags appended to the log unconditionally (empty loop, no-op, on a
     // clean compile).
@@ -225,6 +253,7 @@ func gcCompile(w: Log, p: string) {
     if not built {
         gcLog(w, "emit68k failed")
         alert("emit68k failed")
+        gcFlushProgress(w)
         return
     }
 
@@ -245,6 +274,8 @@ func gcCompile(w: Log, p: string) {
         return
     }
 
+    driveProgressDone()
+    gcFlushProgress(w)
     gcLog(w, "BUILT " + appName + " " + numToStr(fork.length) + " bytes")
 }
 
