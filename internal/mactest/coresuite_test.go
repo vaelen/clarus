@@ -87,7 +87,7 @@ func TestCoreSuiteGUIOnMac(t *testing.T) {
 // width phase's SerMixedScalarRec pin/task-6-review's own
 // XRecFieldsRoundtrip, then 46/50/54 via that phase's sortedmap/
 // hashtable-map/intmap case additions): parses the PASS/FAIL/TOTAL lines
-// kit.cla's tkReport funnels every case through, requiring all 54 real
+// kit.cla's tkReport funnels every case through, requiring all 57 real
 // CoreTest cases (56 + SelfCheck) PASS and the matching TOTAL line,
 // regardless of which lane produced the capture.
 func checkCoreSuiteCapture(t *testing.T, out string) {
