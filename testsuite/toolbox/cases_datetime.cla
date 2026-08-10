@@ -1,0 +1,45 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// cases_datetime.cla: DateTimeRoundTrip (datetime-instrumentation
+// phase) -- hardware-proves the Date-Time Utilities catalog contracts
+// (SecondsToDate 0xA9C6 / DateToSeconds 0xA9C7, the two register-based-
+// despite-bit-11 exceptions) and the now()/dateTimeStr builtins against
+// real ROM. Uses the PUBLIC toolbox/osutils.cla declarations -- unlike
+// the runtime module's private Dt* twins -- because proving the catalog
+// itself is the point (same rationale as cases_events.cla's own local
+// externs). Assumes the emulated clock is set to the host's real date
+// (Mini vMac maps host time), i.e. >= 2026: now() must sit in the
+// unsigned upper half.
+
+func caseDateTimeRoundTrip(): TestResult {
+    var t: int
+    var rt: int
+    var rec: DateTimeRec
+    var s: string
+    var detail: string
+
+    t = now()
+    if t >= 0 {
+        return tkFail("DateTimeRoundTrip", "now not in unsigned upper half")
+    }
+    SecondsToDate(t, rec)
+    if rec.month < 1 or rec.month > 12 {
+        detail = "month " + tkIntToStr(rec.month)
+        return tkFail("DateTimeRoundTrip", detail)
+    }
+    if rec.day < 1 or rec.day > 31 {
+        detail = "day " + tkIntToStr(rec.day)
+        return tkFail("DateTimeRoundTrip", detail)
+    }
+    rt = DateToSeconds(rec)
+    if rt != t {
+        return tkFail("DateTimeRoundTrip", "round trip mismatch")
+    }
+    s = dateTimeStr(t)
+    if s.length != 17 {
+        detail = "len " + tkIntToStr(s.length)
+        return tkFail("DateTimeRoundTrip", detail)
+    }
+    return tkPass("DateTimeRoundTrip")
+}

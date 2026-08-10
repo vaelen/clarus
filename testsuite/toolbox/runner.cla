@@ -97,7 +97,12 @@
 // Get1NamedResource lookup against a `--bake`d 'CLFS' resource (content
 // + missing-name failure) and a real resource-fork write re-statted via
 // the same PBGetFInfoSync pattern FInfoStamp uses -- see
-// cases_resources.cla's own header comment.
+// cases_resources.cla's own header comment. DateTimeRoundTrip
+// (cases_datetime.cla) is datetime-instrumentation Task 7's own
+// addition: hardware-proves the Date-Time Utilities catalog contracts
+// (SecondsToDate/DateToSeconds, toolbox/osutils.cla) and the
+// now()/dateTimeStr builtins against real ROM -- see
+// cases_datetime.cla's own header comment.
 
 enum ToolboxTest {
     All
@@ -128,15 +133,16 @@ enum ToolboxTest {
     FInfoStamp
     ResourceBake
     WriteResStamp
+    DateTimeRoundTrip
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 27 real cases
+// nTbCases is ToolboxTest's member count minus All: the 28 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 28
+const nTbCases: int = 29
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -226,6 +232,9 @@ func tbCaseName(t: ToolboxTest): string {
     case WriteResStamp {
         return "WriteResStamp"
     }
+    case DateTimeRoundTrip {
+        return "DateTimeRoundTrip"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -264,6 +273,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(FInfoStamp)
     l.add(ResourceBake)
     l.add(WriteResStamp)
+    l.add(DateTimeRoundTrip)
     l.add(SelfCheck)
     return l
 }
@@ -408,6 +418,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, WriteResStamp) {
         results.add(caseWriteResStamp())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, DateTimeRoundTrip) {
+        results.add(caseDateTimeRoundTrip())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

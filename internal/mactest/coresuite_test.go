@@ -236,6 +236,7 @@ var toolboxFiles = []string{
 	filepath.Join("testsuite", "toolbox", "cases_catalog.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
 	filepath.Join("testsuite", "toolbox", "cases_resources.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_datetime.cla"),
 	filepath.Join("testsuite", "toolbox", "gui.cla"),
 }
 
@@ -330,8 +331,9 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // Task 7's (mac-resident-clarusc) own ResourceBake/WriteResStamp
 // addition, then to 28 by mac-resident-clarusc Task 15's own FieldCap
 // addition (the language reference's live `string(n)` typing clamp, the
-// pin for that task's cgStackHeuristic fix): parses each of the 28
-// result lines (27 real cases +
+// pin for that task's cgStackHeuristic fix), then to 29 by
+// datetime-instrumentation Task 7's own DateTimeRoundTrip addition:
+// parses each of the 29 result lines (28 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -357,8 +359,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 28 {
-		t.Errorf("result lines: got %d, want 28\ncapture:\n%s", len(results), out)
+	if len(results) != 29 {
+		t.Errorf("result lines: got %d, want 29\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -368,7 +370,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 28 PASS 28 FAIL 0"; total != want {
+	if want := "TOTAL 29 PASS 29 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
