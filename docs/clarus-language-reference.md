@@ -1333,6 +1333,16 @@ Four built-in dialogs cover file selection and quit confirmation. As Chapter 6 n
 
 `log(msg: string)` writes a diagnostic line to the platform's diagnostic stream: on a command-line host, standard error; on the Macintosh, a destination reserved for a later release (a log file or debugging window) — programs use it identically either way. Diagnostics belong in `log`; user-facing output belongs in `alert` or files.
 
+### Date and Time
+
+A datetime is a plain `int`: seconds since the Mac epoch — January 1, 1904, 00:00:00, **local time** — the same raw value the Macintosh clock (the low-memory `Time` global) stores, and the same value the Toolbox uses for file dates. The count is unsigned at the Toolbox level (it wraps on February 6, 2040) and crossed 2³¹ back in 1972, so every contemporary clock reading is *negative* when held in an `int`. This is safe by construction: differences and orderings among real clock values behave correctly (see below), and calendar decomposition is performed by the Toolbox — never by Clarus arithmetic.
+
+- `now(): int` — the current datetime. On the Macintosh this reads the `Time` global the one-second interrupt maintains (the exact read `GetDateTime` performs); on a command-line host it derives the same local-time value from the host clock.
+- `dateTimeStr(t: int): string` — formats `t` as `"mm-dd-yy HH:MM:SS"`: zero-padded fields, 24-hour clock, two-digit year.
+- `durationStr(secs: int): string` — formats a span of seconds as `"1h 0m 5s"`, `"30m 5s"`, `"45s"`, `"0s"`: units above the highest nonzero unit are omitted, seconds always appear, and a negative span is `"-"` followed by the absolute span's form.
+
+The difference between two datetimes is plain subtraction — `b - a` is the span in seconds, correct even across the 2³¹ boundary (two's-complement subtraction is modulo 2³²). Ordering comparisons are likewise correct for any two values in the 1972–2040 range (both sit in the same signed half); only comparing a pre-1972 constant against a modern reading misorders. There is no time-zone API: the classic Mac OS keeps its clock in local time (GMT offset is an opt-in Map-control-panel hint the OS itself never applies), and Clarus follows the platform. For calendar-field access or date arithmetic beyond subtraction, use the Date-Time Utilities in `toolbox/osutils.cla` (`DateTimeRec`, `SecondsToDate`, `DateToSeconds`).
+
 ### Errors
 
 An `error` (Chapter 3) is the record `{ code: int, message: string }`. The global `lastError: error` holds the detail behind the most recent soft failure: a `false` return from a `file` function, or a clamped string store or byte copy (Chapters 3 and 4).
