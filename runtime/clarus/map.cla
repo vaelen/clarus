@@ -846,3 +846,329 @@ func rtMapValAt(m: ptr, i: int, out: ptr) {
     }
     MapBlockMoveData(mapValSlot(m, i), out, rm.valsize)
 }
+
+// ---------------------------------------------------------------------
+// rtIntMap* (Task 6, map-hashtable phase): the same open-addressed
+// hashtable machinery above, keyed by `int` with an identity hash instead
+// of a Pascal-string key hashed by content. Reuses the SAME `RtMap` box
+// layout and the SAME `keys`/`vals`/`keypool`/`index` Handles rtMapNew
+// already births -- `keypool`/`poolused`/`poolcap` are simply never
+// touched by any function below (an intmap key IS its own 4-byte meta
+// record, no pool bytes needed), but the keypool Handle is still birthed
+// (via a direct call into rtMapNew) so release stays uniform across both
+// families -- one dispose order, no int-map-specific special case.
+//
+// No C-lane twin: unlike `map`, no C code path ever touches an intmap --
+// no `edit F, intmapVar` UI-statement support in cprint.cla, no
+// rt_ser.inc legacy load/save fallback, no `rt_intmap_*` functions in
+// rt_core.inc at all. cprint.cla always emits calls to these Clarus
+// `clar_fn_rtIntMap*` functions directly; there is no ported/unported
+// split to gate the way rtMap's own C twin needs.
+//
+// Sharing decisions (helper-by-helper, against the map helpers above):
+// shared AS-IS (index-side code that never touches a key, only entry
+// indices/hashes already computed by the caller): mapIndexSlot,
+// mapIndexSlotFor (already ignores its `key` param entirely -- see its
+// own doc comment above), mapIndexInsert, mapIndexRepoint, mapAllocIndex,
+// mapGrowVals. Shared by direct delegation (box/refcount lifecycle and
+// dense-array bounds-checked value access have zero key-type dependence):
+// rtIntMapNew -> rtMapNew, rtIntMapRetain -> rtMapRetain, rtIntMapRelease
+// -> rtMapRelease, rtIntMapLastref -> rtMapLastref, rtIntMapCount ->
+// rtMapCount, rtIntMapClear -> rtMapClear, rtIntMapValAt -> rtMapValAt.
+// Duplicated (the entry meta layout differs -- 4-byte {key:int32} here vs
+// map's 12-byte {hash,keyOff,keyLen} -- so anything touching entry meta
+// or comparing keys needs its own small version rather than a contorted
+// shared one): the entry-slot/entry-key accessors, the probe loop that
+// compares a stored key (mapIndexFindSlot's map twin has to hash-then-
+// pool-compare; intmapIndexFindSlot just compares the stored int32),
+// the entries grower (stride differs), and rehash (map's rehash reads
+// each entry's STORED hash; intmap stores no hash field at all -- an
+// int's hash is cheap to recompute, so intmapRehash re-derives it from
+// the stored key instead).
+// ---------------------------------------------------------------------
+
+// INTMAP_ENTRY_STRIDE: byte width of one intmap entry's meta record in
+// `keys` -- just {key:int32}, no stored hash (identity hash is free to
+// recompute) and no keyOff/keyLen (no pool).
+const INTMAP_ENTRY_STRIDE: int = 4
+
+// intmapEntrySlot: the address of entry i's 4-byte meta record -- same
+// fresh-derivation discipline as mapEntrySlot above.
+func intmapEntrySlot(m: ptr, i: int): ptr {
+    return MapHandleDeref(RtMap(m).keys) + i * INTMAP_ENTRY_STRIDE
+}
+
+// intmapEntryKey/intmapSetEntryKey: read/write entry i's stored key.
+func intmapEntryKey(m: ptr, i: int): int {
+    return peekl(intmapEntrySlot(m, i))
+}
+func intmapSetEntryKey(m: ptr, i: int, key: int) {
+    pokel(intmapEntrySlot(m, i), key)
+}
+
+// intmapHash (shared design constants' "Hash (intmap)" rule): identity
+// hash, masked to 31 bits so it's always a valid non-negative probe seed
+// (same mask mapHash uses, just no byte-by-byte mixing needed).
+func intmapHash(key: int): int {
+    return key & 0x7FFFFFFF
+}
+
+// intmapIndexFindSlot: mapIndexFindSlot's twin, but the match test is a
+// direct stored-key compare (no hash+pool compare needed -- an intmap's
+// hash is fully determined by its key, so any two distinct keys that
+// reach this same occupied slot are conclusively distinguished by the
+// stored key alone). Same EMPTY-terminates / TOMB-skipped / indexcap==0
+// short-circuit shape as its map twin.
+func intmapIndexFindSlot(m: ptr, hash: int, key: int): int {
+    var indexcap: int
+    var slot: int
+    var v: int
+
+    indexcap = RtMap(m).indexcap
+    if indexcap == 0 {
+        return -1
+    }
+    slot = hash & (indexcap - 1)
+    while true {
+        v = peekl(mapIndexSlot(m, slot))
+        if v == INDEX_EMPTY {
+            return -1
+        }
+        if v != INDEX_TOMB {
+            if intmapEntryKey(m, v) == key {
+                return slot
+            }
+        }
+        slot = (slot + 1) & (indexcap - 1)
+    }
+}
+
+// intmapIndexLookup: mapIndexLookup's twin -- entry index or -1.
+func intmapIndexLookup(m: ptr, hash: int, key: int): int {
+    var slot: int
+
+    slot = intmapIndexFindSlot(m, hash, key)
+    if slot < 0 {
+        return -1
+    }
+    return peekl(mapIndexSlot(m, slot))
+}
+
+// intmapGrowEntries: mapGrowEntries's twin, stride INTMAP_ENTRY_STRIDE
+// instead of MAP_ENTRY_STRIDE -- otherwise the identical amortized-
+// doubling shape (and the same relocation-discipline note: callers must
+// re-derive any master pointer taken before calling this).
+func intmapGrowEntries(m: ptr, need: int) {
+    var rm: RtMap
+    var cap: int
+    var newcap: int
+    var err: int
+
+    rm = RtMap(m)
+    cap = rm.cap
+    if need <= cap {
+        return
+    }
+    if cap > 0 {
+        newcap = cap
+    } else {
+        newcap = 4
+    }
+    while newcap < need {
+        newcap = newcap * 2
+    }
+    err = MapSetHandleSize(rm.keys, newcap * INTMAP_ENTRY_STRIDE)
+    if err != 0 {
+        rtPanic("out of memory")
+    }
+    rm.cap = newcap
+}
+
+// intmapRehash: mapRehash's twin -- doubles indexcap, resets every slot
+// to EMPTY (mapAllocIndex, shared), resets tombs to 0, then re-inserts
+// every live dense entry 0..count-1 (mapIndexInsert, shared). Unlike
+// mapRehash, which reads each entry's STORED hash, this recomputes the
+// hash from the entry's stored key (intmapHash) -- intmap entries carry
+// no separate hash field to read.
+func intmapRehash(m: ptr) {
+    var rm: RtMap
+    var newcap: int
+    var i: int
+    var k: int
+    var h: int
+
+    rm = RtMap(m)
+    newcap = rm.indexcap * 2
+    mapAllocIndex(m, newcap)
+    rm = RtMap(m)
+    rm.tombs = 0
+    i = 0
+    while i < rm.count {
+        k = intmapEntryKey(m, i)
+        h = intmapHash(k)
+        mapIndexInsert(m, h, i)
+        i = i + 1
+    }
+}
+
+// intmapEnsureIndexCapacity: mapEnsureIndexCapacity's twin -- identical
+// load-factor rule, just calls intmapRehash instead of mapRehash.
+func intmapEnsureIndexCapacity(m: ptr) {
+    var rm: RtMap
+
+    rm = RtMap(m)
+    if rm.indexcap == 0 {
+        mapAllocIndex(m, 8)
+        return
+    }
+    if (rm.count + rm.tombs) * 4 >= rm.indexcap * 3 {
+        intmapRehash(m)
+    }
+}
+
+// rtIntMapNew: box/Handle birth has zero key-type dependence (four empty
+// Handles including keypool, birthed anyway so release stays uniform
+// across families) -- delegates straight into rtMapNew.
+func rtIntMapNew(valsize: int): ptr {
+    return rtMapNew(valsize)
+}
+
+// rtIntMapRetain: rc arithmetic has zero key-type dependence.
+func rtIntMapRetain(m: ptr) {
+    rtMapRetain(m)
+}
+
+// rtIntMapRelease: dispose order (keys, vals, keypool, index, box) has
+// zero key-type dependence -- keypool disposes an empty Handle here, same
+// as any other rtMapRelease call on a map that never grew its pool.
+func rtIntMapRelease(m: ptr) {
+    rtMapRelease(m)
+}
+
+// rtIntMapLastref: null-safe "only owner" predicate has zero key-type
+// dependence.
+func rtIntMapLastref(m: ptr): bool {
+    return rtMapLastref(m)
+}
+
+// rtIntMapSet: upsert, same shape as rtMapSet -- intmapIndexLookup finds
+// an existing match first (overwrite touches only the value slot); on a
+// miss, intmapEnsureIndexCapacity/intmapGrowEntries grow the index/entry
+// arrays (mapGrowVals, shared, grows vals), the new entry's key is
+// written directly (no pool append -- an int key IS its meta record),
+// then mapIndexInsert (shared) wires it into the index.
+func rtIntMapSet(m: ptr, key: int, val: ptr) {
+    var rm: RtMap
+    var h: int
+    var idx: int
+
+    rm = RtMap(m)
+    h = intmapHash(key)
+    idx = intmapIndexLookup(m, h, key)
+    if idx >= 0 {
+        MapBlockMoveData(val, mapValSlot(m, idx), rm.valsize)
+        return
+    }
+
+    intmapEnsureIndexCapacity(m)
+    intmapGrowEntries(m, rm.count + 1)
+    mapGrowVals(m, rm.count + 1)
+
+    idx = rm.count
+    intmapSetEntryKey(m, idx, key)
+    MapBlockMoveData(val, mapValSlot(m, idx), rm.valsize)
+    mapIndexInsert(m, h, idx)
+    rm.count = rm.count + 1
+}
+
+// rtIntMapGet: panics ("map key not found") on an absent key, matching
+// rtMapGet's contract exactly.
+func rtIntMapGet(m: ptr, key: int, out: ptr) {
+    var idx: int
+
+    idx = intmapIndexLookup(m, intmapHash(key), key)
+    if idx < 0 {
+        rtPanic("map key not found")
+    }
+    MapBlockMoveData(mapValSlot(m, idx), out, RtMap(m).valsize)
+}
+
+// rtIntMapGetDv: false/untouched on absent, true/filled on present.
+func rtIntMapGetDv(m: ptr, key: int, out: ptr): bool {
+    var idx: int
+
+    idx = intmapIndexLookup(m, intmapHash(key), key)
+    if idx < 0 {
+        return false
+    }
+    MapBlockMoveData(mapValSlot(m, idx), out, RtMap(m).valsize)
+    return true
+}
+
+// rtIntMapHas.
+func rtIntMapHas(m: ptr, key: int): bool {
+    return intmapIndexLookup(m, intmapHash(key), key) >= 0
+}
+
+// rtIntMapRemove: silent on an absent key; same swap-with-last dance as
+// rtMapRemove, re-deriving the moved entry's hash from its stored key
+// (intmapHash) rather than reading a stored hash field, then mapIndexRepoint
+// (shared) to fix up the moved entry's index slot.
+func rtIntMapRemove(m: ptr, key: int) {
+    var rm: RtMap
+    var h: int
+    var slot: int
+    var idx: int
+    var lastIdx: int
+    var lastKey: int
+    var lastHash: int
+
+    rm = RtMap(m)
+    h = intmapHash(key)
+    slot = intmapIndexFindSlot(m, h, key)
+    if slot < 0 {
+        return
+    }
+    idx = peekl(mapIndexSlot(m, slot))
+    pokel(mapIndexSlot(m, slot), INDEX_TOMB)
+    rm.tombs = rm.tombs + 1
+
+    lastIdx = rm.count - 1
+    if idx != lastIdx {
+        MapBlockMoveData(intmapEntrySlot(m, lastIdx), intmapEntrySlot(m, idx), INTMAP_ENTRY_STRIDE)
+        MapBlockMoveData(mapValSlot(m, lastIdx), mapValSlot(m, idx), rm.valsize)
+        lastKey = intmapEntryKey(m, idx)
+        lastHash = intmapHash(lastKey)
+        mapIndexRepoint(m, lastHash, lastIdx, idx)
+    }
+    rm.count = rm.count - 1
+}
+
+// rtIntMapCount: dense count read has zero key-type dependence.
+func rtIntMapCount(m: ptr): int {
+    return rtMapCount(m)
+}
+
+// rtIntMapClear: count/tombs/poolused reset + index-slots-to-EMPTY walk
+// has zero key-type dependence (poolused was already always 0 here).
+func rtIntMapClear(m: ptr) {
+    rtMapClear(m)
+}
+
+// rtIntMapKeyAt (shared design constants' "Iteration contract" rule):
+// RETURNS the key directly, unlike rtMapKeyAt's Str255 out-pointer --
+// same out-of-range ("map key not found") panic contract.
+func rtIntMapKeyAt(m: ptr, i: int): int {
+    var rm: RtMap
+
+    rm = RtMap(m)
+    if i < 0 or i >= rm.count {
+        rtPanic("map key not found")
+    }
+    return intmapEntryKey(m, i)
+}
+
+// rtIntMapValAt: bounds-checked value copy has zero key-type dependence.
+func rtIntMapValAt(m: ptr, i: int, out: ptr) {
+    rtMapValAt(m, i, out)
+}
