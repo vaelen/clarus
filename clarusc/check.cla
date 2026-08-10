@@ -512,8 +512,8 @@ func cvZero(): CVal {
 }
 
 // ---- per-decl / per-expr side tables ----
-// funcScopeByDecl/funcRetByDecl: keyed by a DkFunc decl's own arena index
-// (as a string), recording checkFuncSig's fnScope/ret for checkFuncBody to
+// funcScopeByDecl/funcRetByDecl: keyed by a DkFunc decl's own arena index,
+// recording checkFuncSig's fnScope/ret for checkFuncBody to
 // consume in phase 2 WITHOUT re-resolving the signature (re-resolving
 // against the wider phase-2 scope would both re-declare the function,
 // tripping a false "redeclaration of X", and could wrongly resolve a
