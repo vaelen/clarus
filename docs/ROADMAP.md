@@ -815,7 +815,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   2026-08-12-cross-compile-degradation-findings.md` (now annotated
   `[FIXED]`/`[DEFERRED]` per item, see below).
 
-  **Root causes fixed, three:**
+  **Root causes fixed, three, plus one close-out task:**
   1. **Synthetic `__store` temps' prologue births** (Tasks 2+3, both
      lanes) — lowering's synthetic counted-store temps were
      unconditionally default-initialized (a real container birth) at
@@ -840,7 +840,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      values/params.
   3. **No per-compile intern-pool reset** (Tasks 6+7) — `libReset` plus
      162 `IXxx` interned-literal caches, 4 lazy-init bool guards, 11
-     `check.cla` string-keyed maps folded to `intmap`, and `progGen`
+     `check.cla` string-keyed maps folded into `checkReset`, and `progGen`
      namespacing removed from `menuItems`/`externFirstDeclByName` (both
      now cleanly reset instead) — closes the unbounded-growth class.
      Guarded going forward by a new T1 gate,

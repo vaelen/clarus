@@ -134,7 +134,7 @@ it silently. Sites that leak per compile:
 **[FIXED]** memory-leak-fix Tasks 6 (`516da06`, fix round `147839a`) + 7
 (`43ff780`, fix round `e3499cb`): `libReset` plus 162 `IXxx`
 interned-literal caches, 4 lazy-init bool guards, 11 `check.cla`
-string-keyed maps folded to `intmap` and cleanly reset, and `progGen`
+string-keyed maps folded into `checkReset` and cleanly reset, and `progGen`
 namespacing removed from `menuItems`/`externFirstDeclByName` (both now
 cleanly reset in-place instead of growing forever). Includes the
 one-line `irColumnDescs` addition to `irReset` called out below. Guarded

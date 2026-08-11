@@ -373,7 +373,7 @@ An `intmap of T` is an int-keyed hashtable of fixed-size values of type `T`, wit
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
-- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are inline strings, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained. `.clear()` releases the values it discards (keys are ints, never released). It is O(1) for scalar value types and O(n) for reference-bearing value types (the values are released first)
 - `for k, v in m { … }` — iterate (see Chapter 5), `k` is `int`
 
 Iteration (`for k, v in m`) visits entries in an unspecified but deterministic order (a given sequence of inserts and removes always replays the same order) — same contract as `map of T`.

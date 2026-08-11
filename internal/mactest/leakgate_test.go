@@ -121,7 +121,7 @@ func runLeakFixture(t *testing.T, claPath string) {
 	}
 }
 
-// runDblcompile builds clarusc/test/dblcompile.cla (self-contained via
+// buildDblcompile builds clarusc/test/dblcompile.cla (self-contained via
 // its own includes) and returns the exe path.
 func buildDblcompile(t *testing.T) string {
 	t.Helper()
@@ -203,5 +203,35 @@ func runDoubleCompileGate(t *testing.T) {
 	}
 	if !bytes.Equal(fork0, fork2) {
 		t.Fatalf("leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked into the 3rd compile's fork", len(fork0), len(fork2))
+	}
+
+	// Strictly stronger oracle: alternate a DIFFERENT fixture into the
+	// middle slot (tickprobe, catprobe, tickprobe) so the byte-identity
+	// check can't be satisfied by trivially re-running the exact same
+	// compile three times -- it proves no state survives a compile of a
+	// DIFFERENT entry, not just repeats of the same one.
+	catprobe := filepath.Join(root, "testdata", "mac-resident", "catprobe.cla")
+	workAlt, err := os.MkdirTemp(scratchRoot, "leakgate-3x-alt-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	defer os.RemoveAll(workAlt)
+	liveAlt := runDblcompileOnce(t, exe, workAlt, []string{tickprobe, catprobe, tickprobe})
+
+	growthPerCompileAlt := (liveAlt - live1) / 2
+	if growthPerCompileAlt > 64 {
+		t.Fatalf("alternating-fixture live-block growth per extra compile = %d (live1=%d liveAlt=%d), want <= 64", growthPerCompileAlt, live1, liveAlt)
+	}
+
+	forkAlt0, err := os.ReadFile(filepath.Join(workAlt, "leakfork_0.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_0.bin (alt): %v", err)
+	}
+	forkAlt2, err := os.ReadFile(filepath.Join(workAlt, "leakfork_2.bin"))
+	if err != nil {
+		t.Fatalf("read leakfork_2.bin (alt): %v", err)
+	}
+	if !bytes.Equal(forkAlt0, forkAlt2) {
+		t.Fatalf("alternating run: leakfork_0.bin (%d bytes) != leakfork_2.bin (%d bytes): stale state leaked across a different-fixture compile", len(forkAlt0), len(forkAlt2))
 	}
 }

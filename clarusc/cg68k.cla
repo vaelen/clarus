@@ -4190,6 +4190,7 @@ func cgClearDeepContainer(a0e: int, t: int, clearFn: int) {
     }
     cgEmitPtrRcCall(clearFn, 6, ptrOff)
 }
+
 func cgFindEnumByName(nameIdx: int): int {
     var i: int
     var nm: string

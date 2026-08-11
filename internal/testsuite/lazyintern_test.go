@@ -21,6 +21,12 @@
 // function -- irReset/checkReset/driveReset/lexAll/lowerProgram/... are
 // all valid homes, matching how the existing ~166 instances are spread
 // across the codebase.
+//
+// Limitation: this is convention-enforced, not exhaustive. The scan only
+// matches the two spellings above -- a sentinel guard written `== -1`
+// and a bool guard named `*Inited`. A guard spelled `< 0` instead of
+// `== -1`, or a bool guard named anything other than `*Inited`, slips
+// through undetected.
 package testsuite
 
 import (
