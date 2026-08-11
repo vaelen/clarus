@@ -149,7 +149,8 @@ var gcProgressBuf: text
 // was wrong and how it was fixed; 16 is the correct number for the
 // CORRECTED layout, which reserves a 24px top strip for Status.)
 const gcTickerLines: int = 16
-const gcBarWidth: int = 10
+const gcBarWidth: int = 20
+const gcSpinTicks: int = 30
 
 var gcTickerRing: list of string
 var gcBaseLog: text
@@ -195,11 +196,19 @@ func feProgress(line: string) {
     gcTickerAdd(line)
 }
 
-// feProgressStep (live-log phase): drive.cla's counted-progress seam.
-// Renders an ASCII bar -- [######----] 12/32 -- into the Log window's
-// Status label; the runtime's sync-paint label path makes it visible
-// mid-handler. Pure ASCII by constraint (no MacRoman bytes).
-func feProgressStep(cur: int, total: int) {
+// gcStatusBase: the bar+label+step text of the current stage, kept so
+// feProgressTick can repaint it with a rotating spinner glyph without
+// rebuilding (live-log phase, 3b).
+var gcStatusBase: string
+var gcSpinIdx: int
+var gcSpinLast: int
+
+// feProgressStep (live-log phase, 3b): drive.cla's stage-progress seam.
+// Renders a 20-char ASCII bar plus label plus step count --
+// [#####---------------] Loading Runtime (Step 4/10) -- into the Log
+// window's Status label; the runtime's sync-paint label path makes it
+// visible mid-handler. Pure ASCII by constraint (no MacRoman bytes).
+func feProgressStep(cur: int, total: int, label: string) {
     var w: Log
     var bar: string
     var filled: int
@@ -216,6 +225,9 @@ func feProgressStep(cur: int, total: int) {
     if total > 0 {
         filled = (cur * gcBarWidth) / total
     }
+    if filled > gcBarWidth {
+        filled = gcBarWidth
+    }
     bar = "["
     i = 0
     while i < gcBarWidth {
@@ -227,10 +239,56 @@ func feProgressStep(cur: int, total: int) {
         i = i + 1
     }
     bar = bar + "] "
+    bar = bar + label
+    bar = bar + " (Step "
     bar = bar + numToStr(cur)
     bar = bar + "/"
     bar = bar + numToStr(total)
+    bar = bar + ")"
+    gcStatusBase = bar
+    gcSpinIdx = 0
+    gcSpinLast = TickCount()
     w.Status.text = bar
+}
+
+// feProgressTick: liveness spinner. Throttled HERE (not at the callers)
+// by TickCount -- repaint at most every gcSpinTicks ticks, so per-
+// function callers cost one trap per call and ~2 repaints per second.
+func feProgressTick() {
+    var w: Log
+    var t: int
+    var line: string
+    var glyph: string
+
+    if not gcLiveActive {
+        return
+    }
+    t = TickCount()
+    if t - gcSpinLast < gcSpinTicks {
+        return
+    }
+    gcSpinLast = t
+    w = Log.front
+    if w == nil {
+        return
+    }
+    gcSpinIdx = gcSpinIdx + 1
+    if gcSpinIdx == 4 {
+        gcSpinIdx = 0
+    }
+    if gcSpinIdx == 0 {
+        glyph = "|"
+    } else if gcSpinIdx == 1 {
+        glyph = "/"
+    } else if gcSpinIdx == 2 {
+        glyph = "-"
+    } else {
+        glyph = "\\"
+    }
+    line = gcStatusBase
+    line = line + " "
+    line = line + glyph
+    w.Status.text = line
 }
 
 app ClarusC {
@@ -293,6 +351,7 @@ func gcFlushProgress(w: Log) {
 
     gcLiveActive = false
     w.Status.text = ""
+    gcStatusBase = ""
     buf = gcBaseLog
     buf.append(gcProgressBuf)
     w.Output.text = buf

@@ -11716,6 +11716,7 @@ func cg68Measure(): bool {
         } else {
             cgFuncSize.add(0)
         }
+        driveProgressTick()
         i = i + 1
     }
 
@@ -12090,6 +12091,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var segBytes: list of text
     var segNumStr: string
     var progressLine: string
+    var stageLine: string
 
     // Findings 1.4 (Task 13): fill every rn* pre-interned runtime-call
     // name BEFORE cg68Measure's own first cgEmitFunc call can need one --
@@ -12103,16 +12105,19 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         cgSegLimit = 32760
     }
 
+    driveProgressStage("Measuring")
     if not cg68Measure() {
         return false
     }
     driveProgressPhase("Measured")
+    driveProgressStage("Packing")
     if not cgPackProgram() {
         return false
     }
     progressLine = "Packed " + numToStr(cgSegCount)
     progressLine = progressLine + " segments"
     driveProgressPhase(progressLine)
+    drvStepsAddSegments(cgSegCount)
     cgAssignFinalJtSlots()
 
     jtEntries = cgFreshIntList()
@@ -12128,6 +12133,8 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
 
     s = 1
     while s <= cgSegCount {
+        stageLine = "Writing Segment " + numToStr(s)
+        driveProgressStage(stageLine)
         a68Reset()
         cgAssignSegFuncLabels(s)
 
@@ -12182,6 +12189,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             if shakeReachable(i) and cgFuncSegment[i] == s {
                 cgEmitFunc(i)
             }
+            driveProgressTick()
             i = i + 1
         }
 
@@ -12247,12 +12255,12 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             }
         }
 
-        driveProgressStep(s, cgSegCount)
         progressLine = "Emitted segment " + numToStr(s)
         driveProgressPhase(progressLine)
         s = s + 1
     }
 
+    driveProgressStage("Building Fork")
     if not cg68BuildFork(jtEntries, jtSegNums, segBytes) {
         return false
     }

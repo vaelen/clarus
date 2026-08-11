@@ -5358,6 +5358,9 @@ func checkProgram(declHead: int) {
         } else if declKind(d) == DkEvery {
             checkEveryDecl(d)
         }
+        // live-log phase, 3b: liveness pulse for this per-decl walk --
+        // a no-op unless want68k (driveProgressTick's own gate).
+        driveProgressTick()
         d = declNext(d)
     }
 }

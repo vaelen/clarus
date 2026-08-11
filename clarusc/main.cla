@@ -66,10 +66,13 @@ func feProgress(line: string) {
     log(line)
 }
 
-// feProgressStep (live-log phase): counted-progress seam -- a no-op on
-// the host CLI; the per-segment driveProgressPhase lines land on
-// stderr via feProgress already.
-func feProgressStep(cur: int, total: int) {
+// feProgressStep/feProgressTick (live-log phase): counted-progress and
+// liveness seams -- no-ops on the host CLI; stderr already carries the
+// per-stage feProgress lines.
+func feProgressStep(cur: int, total: int, label: string) {
+}
+
+func feProgressTick() {
 }
 
 // cliResolveBake (Task 5, mac-resident-clarusc) validates and reads every

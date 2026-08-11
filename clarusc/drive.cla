@@ -660,17 +660,42 @@ func driveProgress(msg: string) {
     feProgress(line)
 }
 
-// driveProgressStep (live-log phase): the counted-progress front-end
-// seam -- "cur of total" for a counted loop, today cg68k's per-segment
-// emission. Same want68k gate as driveProgress: the C emit lane and
-// check-only/appinfo modes stay byte-silent. Front ends: main.cla
-// no-op (its per-segment feProgress lines already cover it);
-// macgui.cla renders the Log window's Status-label bar.
-func driveProgressStep(cur: int, total: int) {
+// Stage/step progress (live-log phase, 3b amendment): drive announces
+// the START of each pipeline stage through feProgressStep with a
+// present-tense label and a running step count -- 10 fixed stages plus,
+// once cgPackProgram knows it, one per segment (drvStepsAddSegments).
+// Separate from the timestamped log lines by design: log and bar are
+// independent consumers of the pipeline's progress.
+const drvFixedSteps: int = 10
+
+var drvStepCur: int
+var drvStepTotal: int
+
+// driveProgressStage: announce entering the next stage. Same want68k
+// gate as driveProgress -- emit/check-only/appinfo stay byte-silent.
+func driveProgressStage(label: string) {
     if not want68k {
         return
     }
-    feProgressStep(cur, total)
+    drvStepCur = drvStepCur + 1
+    feProgressStep(drvStepCur, drvStepTotal, label)
+}
+
+// drvStepsAddSegments: grow the step total by the just-discovered
+// segment count (cg68k, after packing). The bar can jump backwards at
+// this moment -- accepted by design (spec 3b).
+func drvStepsAddSegments(n: int) {
+    drvStepTotal = drvStepTotal + n
+}
+
+// driveProgressTick: liveness pulse from long-running inner loops
+// (per-function measure/emit, per-file expansion, per-decl check).
+// Callers never throttle; the macgui front end throttles by TickCount.
+func driveProgressTick() {
+    if not want68k {
+        return
+    }
+    feProgressTick()
 }
 
 // driveProgressPhase: driveProgress plus a "(duration, N ticks)" suffix
@@ -790,6 +815,7 @@ func expand(rawPath: string, entry: bool, key: string): bool {
         progressLine = "Included " + path
     }
     driveProgress(progressLine)
+    driveProgressTick()
 
     // Stamp every lex/parse diagnostic this file produces with its own path
     // (curPathIdx is read by emitDiag). Set it BEFORE lexing/parsing.
@@ -1283,6 +1309,7 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         // (the same reset+check sequence as the first pass). diags is
         // empty on entry (driveCompile's own first-check gate already
         // required that), so every diagnostic here is new.
+        driveProgressStage("Checking Whole Program")
         checkProgram(combined2)
         if diags.count > 0 {
             return false
@@ -1332,8 +1359,12 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     if entries.count > 0 {
         drvEntryName = entries[0]
     }
+    drvStepCur = 0
+    drvStepTotal = drvFixedSteps
+    driveProgressStage("Starting Compilation")
     driveProgress("Starting")
 
+    driveProgressStage("Parsing")
     i = 0
     while i < entries.count {
         expand(entries[i], true, "")
@@ -1396,6 +1427,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     // Phase B: one checker pass over the whole program, collecting all
     // check-phase diagnostics (they follow every parse diagnostic).
+    driveProgressStage("Checking")
     if combined != -1 {
         checkProgram(combined)
     }
@@ -1408,12 +1440,14 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return true
     }
 
+    driveProgressStage("Loading Runtime")
     driveProgress("Loading runtime")
     if not driveManifestSplice(entries, earlySpliceDone) {
         return false
     }
     driveProgressPhase("Loaded runtime + checked whole program")
 
+    driveProgressStage("Lowering")
     irReset()
     lowerProgram(combined2)
     // native-gaps-cleanup Task 2: lowerProgram can itself emitDiag now
@@ -1449,6 +1483,7 @@ func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: boo
     // Task 8 (toolbox-integration Feature C): synthesize/root one pascal
     // glue IRFunc per `callback func` an ECbAddr decay was ever built for.
     cg68SynthCbGlue()
+    driveProgressStage("Shaking")
     shakeProgram()
     driveProgressPhase("Shaken")
     return cg68ProgramFork(outPath, listing, segLimit)
