@@ -189,16 +189,23 @@ record A68Item {
     dv: int
     label: int
     trapWord: int
-    trapName: string(63)
+    trapNameIdx: int
     dataKind: int
     dataVal: int
-    dataText: text
-    commentText: string(255)
+    dataTextIdx: int
+    commentIdx: int
     addr: int
     len: int
 }
 
 var a68Items: list of A68Item
+
+// Side tables for the three fields most items never use (findings 1.6b):
+// trap names go through the shared intern pool (trapNameIdx into
+// strPool, lib.cla); comment/data-bytes text is per-module since it is
+// not shared/deduped like identifiers. -1 in the record means "none".
+var a68CommentTexts: list of string
+var a68DataTexts: list of text
 
 // a68LabelAddr/a68LabelDefined are parallel arrays indexed by label id
 // (a68NewLabel's return value): the address a68Bind recorded, and whether
@@ -220,6 +227,8 @@ var a68UnresolvedId: int
 
 func a68Reset() {
     a68Items.clear()
+    a68CommentTexts.clear()
+    a68DataTexts.clear()
     a68LabelAddr.clear()
     a68LabelDefined.clear()
     a68Pc = 0
@@ -246,6 +255,9 @@ func a68Bind(l: int) {
 
     it.kind = KindBind
     it.label = l
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 0
     a68Items.add(it)
@@ -310,6 +322,9 @@ func a68PushInstr(op: A68Op, size: int, sm: A68Mode, sr: int, sv: int, dm: A68Mo
     it.dm = dm
     it.dr = dr
     it.dv = dv
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 2 + extWords * 2
     a68Items.add(it)
@@ -348,7 +363,9 @@ func a68EmitTrap(word: int, name: string(63)) {
 
     it.kind = KindTrap
     it.trapWord = word
-    it.trapName = name
+    it.trapNameIdx = intern(name)
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 2
     a68Items.add(it)
@@ -361,6 +378,9 @@ func a68DcB(v: int) {
     it.kind = KindData
     it.dataKind = DKindB
     it.dataVal = v
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 1
     a68Items.add(it)
@@ -373,6 +393,9 @@ func a68DcW(v: int) {
     it.kind = KindData
     it.dataKind = DKindW
     it.dataVal = v
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 2
     a68Items.add(it)
@@ -385,6 +408,9 @@ func a68DcL(v: int) {
     it.kind = KindData
     it.dataKind = DKindL
     it.dataVal = v
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 4
     a68Items.add(it)
@@ -396,7 +422,10 @@ func a68DcBytes(t: text) {
 
     it.kind = KindData
     it.dataKind = DKindBytes
-    it.dataText = t
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = a68DataTexts.count
+    a68DataTexts.add(t)
     it.addr = a68Pc
     it.len = t.length
     a68Items.add(it)
@@ -413,6 +442,9 @@ func a68Align() {
 
     it.kind = KindData
     it.dataKind = DKindAlign
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     if a68Pc mod 2 != 0 {
         it.len = 1
@@ -427,7 +459,10 @@ func a68Comment(s: string(255)) {
     var it: A68Item
 
     it.kind = KindComment
-    it.commentText = s
+    it.trapNameIdx = -1
+    it.dataTextIdx = -1
+    it.commentIdx = a68CommentTexts.count
+    a68CommentTexts.add(s)
     it.addr = a68Pc
     it.len = 0
     a68Items.add(it)
@@ -1058,7 +1093,9 @@ func a68EncodeData(out: text, idx: int) {
     } else if dk == DKindL {
         a68PutLong(out, a68Items[idx].dataVal)
     } else if dk == DKindBytes {
-        out.append(a68Items[idx].dataText)
+        if a68Items[idx].dataTextIdx != -1 {
+            out.append(a68DataTexts[a68Items[idx].dataTextIdx])
+        }
     } else if dk == DKindAlign {
         if a68Items[idx].len == 1 {
             a68PutByte(out, 0)
@@ -1440,12 +1477,20 @@ func a68ListingText(): text {
         if kind == KindBind {
             a68AppendLine(out, "LBL_" + numToStr(a68Items[i].label) + ":")
         } else if kind == KindComment {
-            a68AppendLine(out, "        ; " + a68Items[i].commentText)
+            if a68Items[i].commentIdx != -1 {
+                a68AppendLine(out, "        ; " + a68CommentTexts[a68Items[i].commentIdx])
+            }
         } else if kind == KindTrap {
-            a68AppendLine(out, "        DC.W $" + a68HexN(a68Items[i].trapWord, 4) + "  ; " + a68Items[i].trapName)
+            if a68Items[i].trapNameIdx != -1 {
+                a68AppendLine(out, "        DC.W $" + a68HexN(a68Items[i].trapWord, 4) + "  ; " + poolGet(a68Items[i].trapNameIdx))
+            }
         } else if kind == KindData {
             if a68Items[i].dataKind == DKindBytes {
-                bytesLine = a68BytesListingLine(a68Items[i].dataText)
+                if a68Items[i].dataTextIdx != -1 {
+                    bytesLine = a68BytesListingLine(a68DataTexts[a68Items[i].dataTextIdx])
+                } else {
+                    bytesLine = ""
+                }
                 if bytesLine.length > 0 {
                     a68AppendTextLine(out, bytesLine)
                 }
