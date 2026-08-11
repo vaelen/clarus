@@ -132,20 +132,6 @@ func feProgress(line: string) {
     gcProgressBuf.append("\n")
 }
 
-// gcFlushProgress: append-and-clear the buffered progress lines into
-// w's log textview (same read-mutate-reassign idiom as gcLog).
-func gcFlushProgress(w: Log) {
-    var buf: text
-
-    if gcProgressBuf.length == 0 {
-        return
-    }
-    buf = w.Output.text
-    buf.append(gcProgressBuf)
-    w.Output.text = buf
-    gcProgressBuf = ""
-}
-
 app ClarusC {
     name: "ClarusC"
     version: "1.0"
@@ -169,6 +155,20 @@ window Log {
 menu File {
     item Compile "Compile\xC9" key "K"
     item Quit    "Quit"        key "Q"
+}
+
+// gcFlushProgress: append-and-clear the buffered progress lines into
+// w's log textview (same read-mutate-reassign idiom as gcLog).
+func gcFlushProgress(w: Log) {
+    var buf: text
+
+    if gcProgressBuf.length == 0 {
+        return
+    }
+    buf = w.Output.text
+    buf.append(gcProgressBuf)
+    w.Output.text = buf
+    gcProgressBuf = ""
 }
 
 // gcLog appends line (plus a trailing Mac newline) to w's log textview.
