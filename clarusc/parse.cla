@@ -57,24 +57,104 @@ var parseSawNonInclude: bool
 // since each call overwrites and is read back before any other call runs.
 var parseArgsAppleTalk: bool
 
+// Contextual-keyword name indices, pre-interned once and cached in module
+// globals (tok.cla's kwInit pattern -- see its own doc comment for why this
+// can't be a plain global initializer): curIsIdentIdx below compares
+// against these instead of curIsIdentText's poolGet + string compare.
+var cwInited: bool
+var cwMod: int
+var cwAppletalk: int
+var cwPad: int
+var cwWord: int
+var cwByte: int
+var cwStr: int
+var cwTrap: int
+var cwSel: int
+var cwSeld0: int
+var cwReg: int
+var cwMemerr: int
+var cwRet: int
+var cwInline: int
+var cwDeref: int
+var cwNop: int
+var cwA5: int
+var cwExternal: int
+var cwOverlay: int
+var cwExtern: int
+var cwCallback: int
+var cwForm: int
+var cwColumn: int
+var cwFill: int
+var cwKey: int
+var cwOf: int
+var cwShows: int
+var cwWidth: int
+var cwTicks: int
+var cwApp: int
+
+// cwInit interns every contextual-keyword name exactly once, on
+// parseSyncCur's first call (idempotent -- cwInited guards re-entry).
+func cwInit() {
+    if cwInited { return }
+    cwInited = true
+    cwMod = intern("mod")
+    cwAppletalk = intern("appletalk")
+    cwPad = intern("pad")
+    cwWord = intern("word")
+    cwByte = intern("byte")
+    cwStr = intern("str")
+    cwTrap = intern("trap")
+    cwSel = intern("sel")
+    cwSeld0 = intern("seld0")
+    cwReg = intern("reg")
+    cwMemerr = intern("memerr")
+    cwRet = intern("ret")
+    cwInline = intern("inline")
+    cwDeref = intern("deref")
+    cwNop = intern("nop")
+    cwA5 = intern("a5")
+    cwExternal = intern("external")
+    cwOverlay = intern("overlay")
+    cwExtern = intern("extern")
+    cwCallback = intern("callback")
+    cwForm = intern("form")
+    cwColumn = intern("column")
+    cwFill = intern("fill")
+    cwKey = intern("key")
+    cwOf = intern("of")
+    cwShows = intern("shows")
+    cwWidth = intern("width")
+    cwTicks = intern("ticks")
+    cwApp = intern("app")
+}
+
 // ================================================================
 // Cursor helpers (parser.go's tok/peek/next)
 // ================================================================
+
+// curTokKind/curTokLine/curTokCol/curTokNameIdx cache toks[parseIdx]'s
+// fields, refreshed by parseSyncCur after every parseIdx change --
+// curKind()/curLine()/curCol() read the cache instead of paying a
+// bounds-checked list read + Token record copy per call.
+var curTokKind: TokKind
+var curTokLine: int
+var curTokCol: int
+var curTokNameIdx: int
 
 func curTok(): Token {
     return toks[parseIdx]
 }
 
 func curKind(): TokKind {
-    return toks[parseIdx].kind
+    return curTokKind
 }
 
 func curLine(): int {
-    return toks[parseIdx].line
+    return curTokLine
 }
 
 func curCol(): int {
-    return toks[parseIdx].col
+    return curTokCol
 }
 
 // advance moves the cursor to the next token, clamping at the last token
@@ -84,6 +164,7 @@ func advance() {
     if parseIdx < toks.count - 1 {
         parseIdx = parseIdx + 1
     }
+    parseSyncCur()
 }
 
 // peekKind reports the kind of the token after the current one, without
@@ -96,12 +177,32 @@ func peekKind(): TokKind {
     return toks[toks.count - 1].kind
 }
 
-// curIsIdentText reports whether the current token is an IDENT whose text
-// equals s (the pattern behind every contextual keyword: mod, of, form,
-// shows, width, fill, ticks, appletalk, column, key, item, separator,
-// standard, include).
-func curIsIdentText(s: string): bool {
-    return curKind() == TkIdent and poolGet(curTok().nameIdx) == s
+// parseSyncCur refreshes the cached current-token fields. Called after
+// every parseIdx change (advance and parseReset -- the only two assignment
+// sites, `/usr/bin/grep -n 'parseIdx' clarusc/parse.cla`), so the cache
+// never goes stale. Also lazily runs cwInit here rather than only from
+// parseReset: this is the ONE choke point every parseIdx change funnels
+// through, so it guarantees cw* are interned before any curIsIdentIdx call
+// regardless of entry path, without having to audit every future caller.
+func parseSyncCur() {
+    var t: Token
+
+    cwInit()
+    t = toks[parseIdx]
+    curTokKind = t.kind
+    curTokLine = t.line
+    curTokCol = t.col
+    curTokNameIdx = t.nameIdx
+}
+
+// curIsIdentIdx reports whether the current token is an IDENT whose
+// interned name equals idx -- the int-compare replacement for
+// curIsIdentText's poolGet + string compare (every contextual keyword:
+// mod, of, form, shows, width, fill, ticks, appletalk, column, key, app,
+// pad, word, byte, str, trap, sel, seld0, reg, memerr, ret, inline, deref,
+// nop, a5, external, overlay, extern, callback).
+func curIsIdentIdx(idx: int): bool {
+    return curTokKind == TkIdent and curTokNameIdx == idx
 }
 
 func parseErrorf(line: int, col: int, msg: string) {
@@ -203,11 +304,12 @@ func expect(k: TokKind): Token {
     return t
 }
 
-// expectIdentText consumes the current token if it is an IDENT with the
-// given text (the contextual keyword `of` in `list of`/`map of`, etc.),
-// else records a syntax error.
-func expectIdentText(s: string) {
-    if not curIsIdentText(s) {
+// expectIdentIdx consumes the current token if it is an IDENT whose
+// interned name equals idx (the contextual keyword `of` in `list
+// of`/`map of`, etc.), else records a syntax error quoting s (the display
+// text for the diagnostic).
+func expectIdentIdx(idx: int, s: string) {
+    if not curIsIdentIdx(idx) {
         parseErrorf(curLine(), curCol(), "expected \"" + s + "\", found " + tokKindQuoted(curKind()))
         return
     }
@@ -359,7 +461,7 @@ func parseMul(): int {
     while not parseAborted {
         line = curLine()
         col = curCol()
-        if curIsIdentText("mod") {
+        if curIsIdentIdx(cwMod) {
             advance()
             y = parseUnary()
             x = newBin(OpMod, x, y, line, col)
@@ -502,7 +604,7 @@ func parseArgs(): int {
     }
 
     appleTalk = false
-    if curIsIdentText("appletalk") and isPrimaryStart(peekKind()) {
+    if curIsIdentIdx(cwAppletalk) and isPrimaryStart(peekKind()) {
         advance()
         appleTalk = true
     }
@@ -567,7 +669,7 @@ func parsePrimary(): int {
         advance()
         return newWindowSelf(line, col)
     }
-    if t.kind == TkIdent and poolGet(t.nameIdx) == "app" and peekKind() == TkDot {
+    if t.kind == TkIdent and t.nameIdx == cwApp and peekKind() == TkDot {
         // `app.doctype` / `app.id` (native-gaps-cleanup Task 1, Part A):
         // a two-token lookahead on "app" followed immediately by "." --
         // the same contextual-by-text idiom parseTopDecl already uses for
@@ -639,19 +741,19 @@ func parseType(): int {
     } else if nStr == "string" {
         t = newStringType(255, line, col)
     } else if nStr == "list" {
-        expectIdentText("of")
+        expectIdentIdx(cwOf, "of")
         elemT = parseType()
         t = newListType(elemT, line, col)
     } else if nStr == "map" {
-        expectIdentText("of")
+        expectIdentIdx(cwOf, "of")
         elemT = parseType()
         t = newMapType(elemT, line, col)
     } else if nStr == "sortedmap" {
-        expectIdentText("of")
+        expectIdentIdx(cwOf, "of")
         elemT = parseType()
         t = newSortedMapType(elemT, line, col)
     } else if nStr == "intmap" {
-        expectIdentText("of")
+        expectIdentIdx(cwOf, "of")
         elemT = parseType()
         t = newIntMapType(elemT, line, col)
     } else {
@@ -1142,7 +1244,7 @@ func parseXRecFieldDecl(): int {
 
     line = curLine()
     col = curCol()
-    if curIsIdentText("pad") and peekKind() == TkLBracket {
+    if curIsIdentIdx(cwPad) and peekKind() == TkLBracket {
         advance() // 'pad'
         advance() // '['
         n = expect(TkInt)
@@ -1172,17 +1274,17 @@ func parseXRecFieldType(): int {
     var col: int
     var n: Token
 
-    if curIsIdentText("word") {
+    if curIsIdentIdx(cwWord) {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
     }
-    if curIsIdentText("byte") {
+    if curIsIdentIdx(cwByte) {
         tok = curTok()
         advance()
         return newByteType(tok.line, tok.col)
     }
-    if curIsIdentText("str") and peekKind() == TkLBracket {
+    if curIsIdentIdx(cwStr) and peekKind() == TkLBracket {
         line = curLine()
         col = curCol()
         advance() // 'str'
@@ -1448,7 +1550,7 @@ func parseFuncDecl(): int {
 func parseExternType(): int {
     var tok: Token
 
-    if curIsIdentText("word") {
+    if curIsIdentIdx(cwWord) {
         tok = curTok()
         advance()
         return newWordType(tok.line, tok.col)
@@ -1596,12 +1698,12 @@ func parseExternFuncDecl(): int {
     retRegCode = -1
     if curKind() == TkAssign {
         advance()
-        if curIsIdentText("trap") {
+        if curIsIdentIdx(cwTrap) {
             advance()
             trapTok = expect(TkInt)
             trapVal = trapTok.intVal
             convFlag = 1
-            if curIsIdentText("sel") {
+            if curIsIdentIdx(cwSel) {
                 // Task 14 (native-5e): `trap 0xA9E7 sel 0x0044` -- a
                 // "Package 7" (List Manager) selector-dispatch trap: ALL
                 // of LNew/LDispose/LAddRow/etc share the ONE trap word
@@ -1622,7 +1724,7 @@ func parseExternFuncDecl(): int {
                 advance()
                 selTok = expect(TkInt)
                 selVal = selTok.intVal
-            } else if curIsIdentText("seld0") {
+            } else if curIsIdentIdx(cwSeld0) {
                 // Task 12 (mac-resident-clarusc): `trap 0xA816 seld0
                 // 0x091F` -- the AppleEvent Manager's OWN selector-dispatch
                 // shape, distinct from `sel` above: every AE Manager
@@ -1642,7 +1744,7 @@ func parseExternFuncDecl(): int {
                 selTok = expect(TkInt)
                 selVal = selTok.intVal
                 convFlag = 9
-            } else if curIsIdentText("reg") {
+            } else if curIsIdentIdx(cwReg) {
                 advance()
                 convFlag = 2
                 hasNamed = false
@@ -1673,7 +1775,7 @@ func parseExternFuncDecl(): int {
                 // winvar.cla gate failure this fixes. Composes with the
                 // named form exactly the same way (Task 1).
                 hasMemerr = false
-                if curIsIdentText("memerr") {
+                if curIsIdentIdx(cwMemerr) {
                     advance()
                     hasMemerr = true
                 }
@@ -1682,7 +1784,7 @@ func parseExternFuncDecl(): int {
                 // validates the void-return and memerr mutual-exclusion
                 // rules; -1 (unset) means "use the conv's own default
                 // rule" (A0 for a ptr result, D0 otherwise).
-                if curIsIdentText("ret") {
+                if curIsIdentIdx(cwRet) {
                     advance()
                     retRegCode = parseRegName()
                 }
@@ -1695,15 +1797,15 @@ func parseExternFuncDecl(): int {
                     convFlag = 6
                 }
             }
-        } else if curIsIdentText("inline") {
+        } else if curIsIdentIdx(cwInline) {
             advance()
-            if curIsIdentText("deref") {
+            if curIsIdentIdx(cwDeref) {
                 advance()
                 convFlag = 3
-            } else if curIsIdentText("nop") {
+            } else if curIsIdentIdx(cwNop) {
                 advance()
                 convFlag = 4
-            } else if curIsIdentText("a5") {
+            } else if curIsIdentIdx(cwA5) {
                 advance()
                 convFlag = 5
             } else {
@@ -1805,14 +1907,14 @@ func parseTopDecl(): int {
         return parseIncludeDecl()
     }
     parseSawNonInclude = true
-    if curIsIdentText("external") and peekKind() == TkFunc {
+    if curIsIdentIdx(cwExternal) and peekKind() == TkFunc {
         return parseExternFuncDecl()
     }
-    if curIsIdentText("overlay") and peekKind() == TkRecord {
+    if curIsIdentIdx(cwOverlay) and peekKind() == TkRecord {
         advance()
         return parseRecordDeclOverlay()
     }
-    if curIsIdentText("extern") and peekKind() == TkRecord {
+    if curIsIdentIdx(cwExtern) and peekKind() == TkRecord {
         // Task 4 (toolbox-integration Feature B): `extern record` -- a
         // DIFFERENT contextual keyword from `external func`'s "external"
         // (the spec's own worked examples use the short form here; see
@@ -1821,7 +1923,7 @@ func parseTopDecl(): int {
         advance()
         return parseRecordDeclXRec()
     }
-    if curIsIdentText("callback") and peekKind() == TkFunc {
+    if curIsIdentIdx(cwCallback) and peekKind() == TkFunc {
         // Task 7 (toolbox-integration Feature C): `callback func` -- a
         // THIRD contextual-before-"func" keyword alongside "external"
         // above, same discipline: an ordinary identifier everywhere else
@@ -1843,7 +1945,7 @@ func parseTopDecl(): int {
     if curKind() == TkExtend { return parseExtendDecl() }
     if curKind() == TkOn { return parseHandlerDecl() }
     if curKind() == TkEvery { return parseEveryDecl() }
-    if curKind() == TkIdent and poolGet(curTok().nameIdx) == "app" and peekKind() == TkIdent {
+    if curKind() == TkIdent and curTokNameIdx == cwApp and peekKind() == TkIdent {
         return parseAppDecl()
     }
     parseErrorf(curLine(), curCol(), "expected declaration, found " + tokKindQuoted(curKind()))
@@ -1933,7 +2035,7 @@ func parseWindowItem(): int {
     if curKind() == TkVar {
         return parseVarDecl()
     }
-    if curIsIdentText("form") {
+    if curIsIdentIdx(cwForm) {
         return parseFormFor()
     }
     if curKind() == TkIdent and isWidgetKind(poolGet(curTok().nameIdx)) {
@@ -2011,7 +2113,7 @@ func parseProperty(): int {
         advance()
         return newProperty(intern("cancel"), -1, line, col)
     }
-    if curIsIdentText("column") {
+    if curIsIdentIdx(cwColumn) {
         return parseColumn()
     }
     if curKind() == TkIdent {
@@ -2050,15 +2152,15 @@ func parseColumn(): int {
     col = curCol()
     advance() // 'column'
     header = expect(TkStringLit)
-    expectIdentText("shows")
+    expectIdentIdx(cwShows, "shows")
     shows = expect(TkIdent)
-    expectIdentText("width")
+    expectIdentIdx(cwWidth, "width")
     widthPx = 0
     widthFill = false
     if curKind() == TkInt {
         widthPx = curTok().intVal
         advance()
-    } else if curIsIdentText("fill") {
+    } else if curIsIdentIdx(cwFill) {
         widthFill = true
         advance()
     } else {
@@ -2118,7 +2220,7 @@ func parseMenuEntry(): int {
         name = expect(TkIdent)
         caption = expect(TkStringLit)
         keyIdx = -1
-        if curIsIdentText("key") {
+        if curIsIdentIdx(cwKey) {
             advance()
             key = expect(TkStringLit)
             keyIdx = key.nameIdx
@@ -2232,7 +2334,7 @@ func parseEveryDecl(): int {
     col = curCol()
     advance() // 'every'
     n = expect(TkInt)
-    expectIdentText("ticks")
+    expectIdentIdx(cwTicks, "ticks")
     body = parseBodyBlock()
     return newEveryDecl(n.intVal, body, line, col)
 }
@@ -2283,4 +2385,5 @@ func parseReset() {
     parseIdx = 0
     parseAborted = false
     parseSawNonInclude = false
+    parseSyncCur()
 }

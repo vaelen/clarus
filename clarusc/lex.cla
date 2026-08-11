@@ -23,6 +23,12 @@ var lexCol: int
 var lexPrev: TokKind
 var lexHavePrev: bool
 
+// lexLen caches lexSrc.length for the scanning loops below: lexSrc is
+// immutable during a lex pass, so re-reading .length on every loop
+// condition (a bounds-checked text-length call) is wasted work once it's
+// known at lexInit time.
+var lexLen: int
+
 // lexOpKind and lexEscByte are out-parameters: Clarus functions return a
 // single value and take no out-params, so lexTryOperator/lexDecodeEscape
 // (which port Go's multi-return lexOperator/decodeEscape) stash their extra
@@ -97,6 +103,7 @@ func isOperatorKind(k: TokKind): bool {
 
 func lexInit(src: text) {
     lexSrc = src
+    lexLen = src.length
     lexOff = 0
     lexLine = 1
     lexCol = 1
@@ -112,7 +119,7 @@ func lexAdvance() {
 
     c = lexSrc[lexOff]
     lexOff = lexOff + 1
-    if c == char(10) or (c == char(13) and (lexOff >= lexSrc.length or lexSrc[lexOff] != char(10))) {
+    if c == char(10) or (c == char(13) and (lexOff >= lexLen or lexSrc[lexOff] != char(10))) {
         lexLine = lexLine + 1
         lexCol = 1
     } else {
@@ -144,7 +151,7 @@ func lexTryOperator(): bool {
     var two: string
     var b: char
 
-    if lexOff + 1 < lexSrc.length {
+    if lexOff + 1 < lexLen {
         two = lexSrc[lexOff, 2]
         switch two {
         case "<<" {
@@ -313,11 +320,11 @@ func lexNumber(line: int, col: int): Token {
 
     start = lexOff
 
-    if lexSrc[lexOff] == '0' and lexOff + 1 < lexSrc.length and (lexSrc[lexOff + 1] == 'x' or lexSrc[lexOff + 1] == 'X') {
+    if lexSrc[lexOff] == '0' and lexOff + 1 < lexLen and (lexSrc[lexOff + 1] == 'x' or lexSrc[lexOff + 1] == 'X') {
         lexAdvance()
         lexAdvance()
         hexStart = lexOff
-        while lexOff < lexSrc.length and isHex(lexSrc[lexOff]) {
+        while lexOff < lexLen and isHex(lexSrc[lexOff]) {
             lexAdvance()
         }
         if lexOff == hexStart {
@@ -333,11 +340,11 @@ func lexNumber(line: int, col: int): Token {
         return lexEmit(TkInt, line, col, 0, v, 0)
     }
 
-    while lexOff < lexSrc.length and isDigit(lexSrc[lexOff]) {
+    while lexOff < lexLen and isDigit(lexSrc[lexOff]) {
         lexAdvance()
     }
 
-    if lexOff + 1 < lexSrc.length and lexSrc[lexOff] == '.' and isDigit(lexSrc[lexOff + 1]) {
+    if lexOff + 1 < lexLen and lexSrc[lexOff] == '.' and isDigit(lexSrc[lexOff + 1]) {
         whole = 0
         i = start
         while i < lexOff {
@@ -346,7 +353,7 @@ func lexNumber(line: int, col: int): Token {
         }
         lexAdvance() // consume '.'
         fracStart = lexOff
-        while lexOff < lexSrc.length and isDigit(lexSrc[lexOff]) {
+        while lexOff < lexLen and isDigit(lexSrc[lexOff]) {
             lexAdvance()
         }
         fracNum = 0
@@ -384,7 +391,7 @@ func lexIdent(line: int, col: int): Token {
     var kind: TokKind
 
     start = lexOff
-    while lexOff < lexSrc.length and isAlnum(lexSrc[lexOff]) {
+    while lexOff < lexLen and isAlnum(lexSrc[lexOff]) {
         lexAdvance()
     }
     rawLen = lexOff - start
@@ -420,7 +427,7 @@ func lexIdent(line: int, col: int): Token {
 func lexDecodeEscape(quote: char): bool {
     var c: char
 
-    if lexOff >= lexSrc.length {
+    if lexOff >= lexLen {
         return false
     }
     c = lexSrc[lexOff]
@@ -449,7 +456,7 @@ func lexDecodeEscape(quote: char): bool {
         }
     }
     case 'x' {
-        if lexOff + 1 < lexSrc.length and isHex(lexSrc[lexOff]) and isHex(lexSrc[lexOff + 1]) {
+        if lexOff + 1 < lexLen and isHex(lexSrc[lexOff]) and isHex(lexSrc[lexOff + 1]) {
             lexEscByte = char(hexDigitVal(lexSrc[lexOff]) * 16 + hexDigitVal(lexSrc[lexOff + 1]))
             lexAdvance()
             lexAdvance()
@@ -464,7 +471,7 @@ func lexDecodeEscape(quote: char): bool {
 // quote on the current line Ñ or to end of line if there is none Ñ so a bad
 // literal ('ab', '\q) never leaves stray tokens for the caller to trip over.
 func lexResyncCharLit() {
-    while lexOff < lexSrc.length and not lexIsNewline(lexSrc[lexOff]) {
+    while lexOff < lexLen and not lexIsNewline(lexSrc[lexOff]) {
         if lexSrc[lexOff] == '\'' {
             lexAdvance()
             return
@@ -479,7 +486,7 @@ func lexChar(line: int, col: int): Token {
 
     lexAdvance() // consume opening '
 
-    if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
+    if lexOff >= lexLen or lexIsNewline(lexSrc[lexOff]) {
         emitDiag(line, col, "unterminated character literal")
         return lexEmit(TkCharLit, line, col, 0, 0, 0)
     }
@@ -498,7 +505,7 @@ func lexChar(line: int, col: int): Token {
         lexAdvance()
     }
 
-    if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
+    if lexOff >= lexLen or lexIsNewline(lexSrc[lexOff]) {
         emitDiag(line, col, "unterminated character literal")
         return lexEmit(TkCharLit, line, col, 0, 0, 0)
     }
@@ -522,7 +529,7 @@ func lexString(line: int, col: int): Token {
     lexAdvance() // consume opening "
 
     while true {
-        if lexOff >= lexSrc.length or lexIsNewline(lexSrc[lexOff]) {
+        if lexOff >= lexLen or lexIsNewline(lexSrc[lexOff]) {
             emitDiag(line, col, "unterminated string literal")
             break
         }
@@ -566,14 +573,14 @@ func lexNext(): Token {
 
     while true {
         // Skip whitespace (not newline) and comments.
-        while lexOff < lexSrc.length {
+        while lexOff < lexLen {
             b = lexSrc[lexOff]
             if isSpace(b) {
                 lexAdvance()
                 continue
             }
-            if b == '/' and lexOff + 1 < lexSrc.length and lexSrc[lexOff + 1] == '/' {
-                while lexOff < lexSrc.length and not lexIsNewline(lexSrc[lexOff]) {
+            if b == '/' and lexOff + 1 < lexLen and lexSrc[lexOff + 1] == '/' {
+                while lexOff < lexLen and not lexIsNewline(lexSrc[lexOff]) {
                     lexAdvance()
                 }
                 continue
@@ -581,7 +588,7 @@ func lexNext(): Token {
             break
         }
 
-        if lexOff >= lexSrc.length {
+        if lexOff >= lexLen {
             // Emit a synthetic NEWLINE at EOF to end incomplete statements
             // (e.g. "x = 1 +" with no trailing newline). This deliberately
             // bypasses the operator-continuation suppression below: at true
