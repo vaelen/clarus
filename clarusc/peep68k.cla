@@ -45,12 +45,8 @@ func peepNextReal(i: int): int {
 
 // peepKill marks item i deleted (KindDead, zero length).
 func peepKill(i: int) {
-    var it: A68Item
-
-    it = a68Items[i]
-    it.kind = KindDead
-    it.len = 0
-    a68Items[i] = it
+    a68Items[i].kind = KindDead
+    a68Items[i].len = 0
 }
 
 // peepIsSimpleLoadToD0: item i is a single instruction that fully
@@ -73,16 +69,13 @@ func peepKill(i: int) {
 // AmPreDec (mutate their base register), byte/word loads (upper bytes
 // of D0 not defined), anything writing other registers.
 func peepIsSimpleLoadToD0(i: int): bool {
-    var it: A68Item
-
-    it = a68Items[i]
-    if it.kind != KindInstr { return false }
-    if it.op == OpMoveq { return it.dr == 0 }
-    if it.op != OpMove { return false }
-    if it.size != 4 { return false }
-    if it.dm != AmDn or it.dr != 0 { return false }
-    if it.sm == AmImm { return true }
-    if it.sm == AmDisp16 and it.sr != 7 { return true }
+    if a68Items[i].kind != KindInstr { return false }
+    if a68Items[i].op == OpMoveq { return a68Items[i].dr == 0 }
+    if a68Items[i].op != OpMove { return false }
+    if a68Items[i].size != 4 { return false }
+    if a68Items[i].dm != AmDn or a68Items[i].dr != 0 { return false }
+    if a68Items[i].sm == AmImm { return true }
+    if a68Items[i].sm == AmDisp16 and a68Items[i].sr != 7 { return true }
     return false
 }
 
@@ -102,24 +95,21 @@ func peepPassPushPop(startIdx: int): bool {
     var i: int
     var j: int
     var k: int
-    var it: A68Item
     var didChange: bool
 
     didChange = false
     i = startIdx
     while i < a68Items.count {
-        it = a68Items[i]
-        if it.kind == KindInstr and it.op == OpMove and it.size == 4 and it.sm == AmDn and it.sr == 0 and it.dm == AmPreDec and it.dr == 7 {
+        if a68Items[i].kind == KindInstr and a68Items[i].op == OpMove and a68Items[i].size == 4 and a68Items[i].sm == AmDn and a68Items[i].sr == 0 and a68Items[i].dm == AmPreDec and a68Items[i].dr == 7 {
             j = peepNextReal(i)
             if j != -1 and peepIsSimpleLoadToD0(j) {
                 k = peepNextReal(j)
                 if k != -1 {
                     if a68Items[k].kind == KindInstr and a68Items[k].op == OpMove and a68Items[k].size == 4 and a68Items[k].sm == AmPostInc and a68Items[k].sr == 7 and a68Items[k].dm == AmDn and a68Items[k].dr == 1 {
                         // rewrite i: MOVE.L D0,-(A7) -> MOVE.L D0,D1
-                        it.dm = AmDn
-                        it.dr = 1
-                        it.dv = 0
-                        a68Items[i] = it
+                        a68Items[i].dm = AmDn
+                        a68Items[i].dr = 1
+                        a68Items[i].dv = 0
                         peepKill(k)
                         didChange = true
                     }
@@ -135,12 +125,9 @@ func peepPassPushPop(startIdx: int): bool {
 // D0 (or D1, or memory through A7). Whitelist: a simple load
 // (peepIsSimpleLoadToD0) or CLR.L D0.
 func peepFullyDefinesD0(i: int): bool {
-    var it: A68Item
-
     if peepIsSimpleLoadToD0(i) { return true }
-    it = a68Items[i]
-    if it.kind != KindInstr { return false }
-    if it.op == OpClr and it.size == 4 and it.dm == AmDn and it.dr == 0 { return true }
+    if a68Items[i].kind != KindInstr { return false }
+    if a68Items[i].op == OpClr and a68Items[i].size == 4 and a68Items[i].dm == AmDn and a68Items[i].dr == 0 { return true }
     return false
 }
 
@@ -166,23 +153,18 @@ func peepPassShuffle(startIdx: int): bool {
     var i: int
     var j: int
     var k: int
-    var it: A68Item
-    var nx: A68Item
     var didChange: bool
 
     didChange = false
     i = startIdx
     while i < a68Items.count {
-        it = a68Items[i]
         if peepIsSimpleLoadToD0(i) {
             j = peepNextReal(i)
             if j != -1 {
-                nx = a68Items[j]
-                if nx.kind == KindInstr and nx.op == OpMove and nx.size == 4 and nx.sm == AmDn and nx.sr == 0 and nx.dm == AmDn and nx.dr == 1 {
+                if a68Items[j].kind == KindInstr and a68Items[j].op == OpMove and a68Items[j].size == 4 and a68Items[j].sm == AmDn and a68Items[j].sr == 0 and a68Items[j].dm == AmDn and a68Items[j].dr == 1 {
                     k = peepNextReal(j)
                     if k != -1 and peepFullyDefinesD0(k) {
-                        it.dr = 1
-                        a68Items[i] = it
+                        a68Items[i].dr = 1
                         peepKill(j)
                         didChange = true
                     }
@@ -207,14 +189,12 @@ func peepPassDeadClr(startIdx: int): bool {
     var j: int
     var k: int
     var m: int
-    var it: A68Item
     var didChange: bool
 
     didChange = false
     i = startIdx
     while i < a68Items.count {
-        it = a68Items[i]
-        if it.kind == KindInstr and it.op == OpClr and it.size == 4 and it.dm == AmDn and it.dr == 0 {
+        if a68Items[i].kind == KindInstr and a68Items[i].op == OpClr and a68Items[i].size == 4 and a68Items[i].dm == AmDn and a68Items[i].dr == 0 {
             j = peepNextReal(i)
             if j != -1 and a68Items[j].kind == KindInstr and a68Items[j].op == OpMove and a68Items[j].size == 1 and a68Items[j].dm == AmDn and a68Items[j].dr == 0 and a68Items[j].sm == AmDisp16 and a68Items[j].sr != 7 {
                 k = peepNextReal(j)
@@ -253,20 +233,16 @@ func peepPassDeadClr(startIdx: int): bool {
 //     scratch-area shapes (ADDA.L #256,A7 etc.).
 func peepPassQuick(startIdx: int): bool {
     var i: int
-    var it: A68Item
     var didChange: bool
 
     didChange = false
     i = startIdx
     while i < a68Items.count {
-        it = a68Items[i]
-        if it.kind == KindInstr and it.op == OpMove and it.size == 4 and it.sm == AmImm and it.dm == AmDn and it.sv >= 0 - 128 and it.sv <= 127 {
-            it.op = OpMoveq
-            a68Items[i] = it
+        if a68Items[i].kind == KindInstr and a68Items[i].op == OpMove and a68Items[i].size == 4 and a68Items[i].sm == AmImm and a68Items[i].dm == AmDn and a68Items[i].sv >= 0 - 128 and a68Items[i].sv <= 127 {
+            a68Items[i].op = OpMoveq
             didChange = true
-        } else if it.kind == KindInstr and it.op == OpAdda and it.size == 4 and it.sm == AmImm and it.sv >= 0 and it.sv <= 32767 {
-            it.size = 2
-            a68Items[i] = it
+        } else if a68Items[i].kind == KindInstr and a68Items[i].op == OpAdda and a68Items[i].size == 4 and a68Items[i].sm == AmImm and a68Items[i].sv >= 0 and a68Items[i].sv <= 32767 {
+            a68Items[i].size = 2
             didChange = true
         }
         i = i + 1

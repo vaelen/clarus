@@ -265,7 +265,6 @@ func a68Bind(l: int) {
 func a68Relayout(fromIdx: int) {
     var i: int
     var pc: int
-    var it: A68Item
 
     if fromIdx >= a68Items.count {
         return
@@ -273,18 +272,16 @@ func a68Relayout(fromIdx: int) {
     pc = a68Items[fromIdx].addr
     i = fromIdx
     while i < a68Items.count {
-        it = a68Items[i]
-        if it.kind == KindInstr {
-            it.len = 2 + a68InstrExtWords(it.op, it.size, it.sm, it.dm) * 2
-        } else if it.kind == KindDead {
-            it.len = 0
+        if a68Items[i].kind == KindInstr {
+            a68Items[i].len = 2 + a68InstrExtWords(a68Items[i].op, a68Items[i].size, a68Items[i].sm, a68Items[i].dm) * 2
+        } else if a68Items[i].kind == KindDead {
+            a68Items[i].len = 0
         }
-        it.addr = pc
-        a68Items[i] = it
-        if it.kind == KindBind {
-            a68LabelAddr[it.label] = pc
+        a68Items[i].addr = pc
+        if a68Items[i].kind == KindBind {
+            a68LabelAddr[a68Items[i].label] = pc
         }
-        pc = pc + it.len
+        pc = pc + a68Items[i].len
         i = i + 1
     }
     a68Pc = pc
