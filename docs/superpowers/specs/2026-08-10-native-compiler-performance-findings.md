@@ -63,7 +63,7 @@ memory path).
 
 ## Layer 1 — algorithmic bugs in clarusc (small diffs, huge wins)
 
-### 1.1 `keywordKind`: up to 33 `intern()` calls per identifier token — CRITICAL
+### 1.1 `keywordKind`: up to 33 `intern()` calls per identifier token — CRITICAL [FIXED 2026-08-11]
 
 **Issue:** After the lexer scans an identifier, it must decide whether
 it's a keyword (`func`, `var`, `while`, …) or a plain name.
@@ -86,7 +86,7 @@ has the identifier's interned `nameIdx` in hand, so the whole function
 becomes 33 integer comparisons. Expected ~10× on lexing from a ~40-line
 mechanical change.
 
-### 1.2 `exprTypeOf[numToStr(e)]` per expression node — CRITICAL
+### 1.2 `exprTypeOf[numToStr(e)]` per expression node — CRITICAL [ALREADY FIXED by map-hashtable]
 
 **Issue:** The checker records the computed type of every expression
 node: `exprTypeOf[numToStr(e)] = t` (`check.cla:4848-4853`). The key `e`
@@ -117,7 +117,7 @@ access; the `numToStr` calls and the quadratic memmove vanish in one
 edit. Probably the single biggest win in the checker, and the same edit
 pattern applies to the IR/lower tables.
 
-### 1.3 `cgHeurOnCycle`: O(V²·E) whole-graph BFS — CRITICAL for cg68k
+### 1.3 `cgHeurOnCycle`: O(V²·E) whole-graph BFS — CRITICAL for cg68k [FIXED]
 
 **Issue:** The stack-size heuristic needs to know which functions sit on
 call-graph cycles. The call graph is stored as flat edge lists with one
@@ -141,7 +141,7 @@ which answers "is on a cycle" for *every* function in a single O(V+E)
 traversal. ~40 lines; turns the worst asymptotic offender in the
 backend into noise.
 
-### 1.4 Codegen inner-loop linear scans with 256-byte string compares — VERY HIGH
+### 1.4 Codegen inner-loop linear scans with 256-byte string compares — VERY HIGH [FIXED]
 
 **Issue:** The hottest loops in cg68k resolve names by walking whole
 tables and comparing strings, all of it twice (measure + emit):
@@ -174,7 +174,7 @@ invalidated by `irReset`. Hoist the 40
 once per compile. All mechanical, ~50–100 lines total; removes string
 traffic from the innermost codegen loop.
 
-### 1.5 `cgIntr` string dispatch — HIGH
+### 1.5 `cgIntr` string dispatch — HIGH [FIXED]
 
 **Issue:** When the code generator meets an intrinsic operation (string
 concat, list push, UI calls…), it fetches the intrinsic's *name* as a
@@ -196,7 +196,7 @@ interned pool index, so compare it against pre-resolved int constants
 from string to int. Mechanical edit across ~100 arms, following
 cprint.cla's existing pattern.
 
-### 1.6 Peephole copies a 384-byte record 8–24× per instruction — HIGH
+### 1.6 Peephole copies a 384-byte record 8–24× per instruction — HIGH [FIXED]
 
 **Issue:** Every assembly instruction lives in an `A68Item` record
 (`asm68k.cla:180-199`) that carries fields for *all* item kinds at once:
@@ -221,7 +221,7 @@ touch them. Then have the peephole read fields in place
 the assembler arena's memory footprint ~8×, which matters for the
 8 MB-machine goal.
 
-### 1.7 Every function code-generated twice — HIGH
+### 1.7 Every function code-generated twice — HIGH [DEFERRED — single-segment reuse wouldn't help multi-segment ClarusC (32 segments); full reuse needs relocation entries, Layer 3 scope]
 
 **Issue:** 68k applications are split into ≤32 KB code segments, and to
 bin-pack functions into segments the compiler needs their sizes. It gets
@@ -251,21 +251,21 @@ anyway.
 Each is minor alone; together they're a real constant factor, and most
 are one-to-twenty-line changes.
 
-- **`a68Comment` always runs** (`asm68k.cla:435`): listing-file comment
+- **`a68Comment` always runs** [FIXED] (`asm68k.cla:435`): listing-file comment
   strings — one per function, per parameter, per local, per global
   (`cg68k.cla:3816,3861,3882,1717`) — are built with concat+`numToStr`
   and stored in the arena even when `--listing` is off; downstream
   passes then skip over them (`peep68k.cla:38`). *Fix:* early-return
   when listing is disabled — one line.
-- **`intern` triple-searches** (`lib.cla:14-20`, `map.cla:430`): it
+- **`intern` triple-searches** [FIXED] (`lib.cla:14-20`, `map.cla:430`): it
   calls `has()`, then `get()`, then on a miss the insert binary-searches
   a third time. *Fix:* one positional lookup that returns "found or
   insertion point."
-- **~116 `IStrConcat()`-style helpers** (`ir.cla:2861` etc.; 101 in
+- **~116 `IStrConcat()`-style helpers** [FIXED] (`ir.cla:2861` etc.; 101 in
   lower.cla, 85 in shake.cla) re-intern a string literal on every call,
   and sit inside per-node dispatch chains. *Fix:* memoize each into a
   module int, reset by `irReset`.
-- **`cgPackProgram` membership scans**
+- **`cgPackProgram` membership scans** [FIXED]
   (`cgIntListHas`, `cg68k.cla:399,304,10505-10537`; also `:9739`,
   `:3428`): segment pool bookkeeping tests "is this constant already in
   the segment?" by linear-scanning a growing int list — O(F·S·P·M) ≈
@@ -273,51 +273,51 @@ are one-to-twenty-line changes.
   ("one-time cost, not a hot path") no longer holds at self-host scale.
   *Fix:* a presence bitmap (`list of bool` indexed by pool entry)
   alongside the ordered list.
-- **`irIsExtern` per call site** (`ir.cla:912,930`): lowering routes
+- **`irIsExtern` per call site** [FIXED] (`ir.cla:912,930`): lowering routes
   every call by scanning ~269 extern names with two 256 B copies per
   candidate. *Fix:* name-index→extern-index map populated at
   registration (`irRegisterExtern`, `ir.cla:837`).
-- **String compares where both sides are interned ints**: record-field
+- **String compares where both sides are interned ints** [FIXED]: record-field
   lookup, enum-member scans, widget/window member lookup all do
   `poolGet(field.nameIdx) == name`
   (`check.cla:4566-4602,3620,3173,3208,4196`) when comparing the two int
   indices directly is equivalent. *Fix:* compare `nameIdx == nameIdx`.
-- **`scopeLookup` de-interns** (`types.cla:624-637`): symbol lookup
+- **`scopeLookup` de-interns** [ALREADY FIXED — single-probe `intmap` lookup, inherited from the map-hashtable phase] (`types.cla:624-637`): symbol lookup
   converts the interned int back to a 256 B string via `poolGet`, then
   probes each scope level with `has()`+`get()` (two binary searches
   each). *Fix:* collapse to one probe; longer-term, int-keyed scope
   tables.
-- **Type-name probes before every lookup**: `resolveType`
+- **Type-name probes before every lookup** [FIXED]: `resolveType`
   (`check.cla:1660-1675`) and `checkIdentCall` (`:4790`) compare against
   `"int"`, `"bool"`, `"fixed"`… as string literals on every type
   reference and call site; `"file"` probes on every select/method call
   (`:4544,1574`). *Fix:* pre-intern the built-in names once at
   `checkReset` and compare ints.
-- **`readOnlyPropName` re-checks the LHS** (`check.cla:3600` vs
+- **`readOnlyPropName` re-checks the LHS** [FIXED] (`check.cla:3600` vs
   `:3645`): every `a.b = x` type-checks the receiver subtree twice —
   once in the main path, once inside the read-only-property check —
   doubling all per-node costs including the 1.2 map writes. *Fix:* pass
   the already-computed receiver type in as an argument.
-- **Scopes never freed** (`types.cla:595-601`, `check.cla:3688`): every
+- **Scopes never freed** [FIXED] (`types.cla:595-601`, `check.cla:3688`): every
   block pushes a `Scope` (3 Memory Manager allocations for its map) that
   stays alive until end of program — ~9,000 live blocks fragmenting the
   heap during checking. Block scopes are strictly LIFO. *Fix:* pop them
   on block exit, or keep a free list of recycled scope slots.
-- **Arena clears by pop-loop** (`lex.cla:645`, `ast.cla:360-373`,
+- **Arena clears by pop-loop** [FIXED] (`lex.cla:645`, `ast.cla:360-373`,
   `lib.cla:84-92`, `irReset` draining ~20 arenas): resets drain lists
   one `pop()` call at a time, each copying the element out.
   `rtListClear` (`list.cla:444`) exists and does it in O(1). *Fix:* use
   it.
-- **`numToStr` builds backwards by prepend** (`lib.cla:128-141`): one
+- **`numToStr` builds backwards by prepend** [DROPPED — moot, §1.2's fix already removed its hottest caller] (`lib.cla:128-141`): one
   string-prepend (256 B scratch + runtime calls) plus two
   software-divide loops per digit. *Fix:* fill a 12-byte buffer
   back-to-front, one `fromBytes` at the end. (Mostly moot once 1.2
   removes its hottest caller.)
-- **`assignable` missing early-out** (`types.cla:396` vs `:462`): the
+- **`assignable` missing early-out** [FIXED] (`types.cla:396` vs `:462`): the
   type-compatibility check has no `src == dst` fast path even though
   `typesEqual` has one, and identical type indices are the common case.
   *Fix:* add the same one-line early return.
-- **Parser token re-fetching** (`parse.cla:64-97`, 124 `curKind()`
+- **Parser token re-fetching** [FIXED] (`parse.cla:64-97`, 124 `curKind()`
   sites): `curKind()`/`curTok()` go through a bounds-checked
   `rt_list_at` call (and a 24-byte record copy) every time, and the
   expression-precedence chain calls them 12–20× per primary expression;
@@ -358,7 +358,7 @@ Remediation direction: pass strings by reference at the ABI level (the
 runtime already takes `ptr` internally), or at minimum copy only
 `len+1` bytes.
 
-### 2.2 `map` is a sorted array of 256-byte key blocks, string keys only
+### 2.2 `map` is a sorted array of 256-byte key blocks, string keys only [STALE — `map` is a real hashtable since the map-hashtable phase; the old sorted-array/ascending-order contract now lives in the separate `sortedmap of T` type]
 
 `runtime/clarus/map.cla:165,204-222,422-446` (docs claim a hash table;
 the implementation is not one). Lookup = log n *function-call* probes

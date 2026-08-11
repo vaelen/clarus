@@ -573,6 +573,142 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     standing debt carried forward from the map-hashtable phase, now
     covering this phase's commits too. Recorded here, not run.
 
+- **layer1-compiler-perf (branch `worktree-native-perf-findings`,
+  2026-08-11, based on `datetime-instrumentation`): DONE.** Worked the
+  native-compiler performance findings doc's Layer 1 list (algorithmic
+  bugs in clarusc itself) end to end — 19 tasks, commits
+  `94bc1f1..d3581f5`; full ledger + every task's brief/report/review:
+  `.superpowers/sdd/2026-08-11-layer1-compiler-perf/progress.md`; findings
+  doc: `docs/superpowers/specs/2026-08-10-native-compiler-performance-
+  findings.md` (now annotated per-item, see below).
+
+  **What landed, by findings item:**
+  - **§1.1** (`keywordKind` up to 33 `intern()` calls/token) — Task 1:
+    lazy-init interned keyword globals (`kwInit()`/`kwInited` pattern,
+    forced by the plan amendment that global initializers can't call
+    `intern()` on the host-C lane).
+  - **§1.2** (`exprTypeOf[numToStr(e)]` per node) — already fixed by the
+    prior map-hashtable phase's `intmap` migration; verified, not
+    re-touched.
+  - **§1.3** (`cgHeurOnCycle` O(V²·E) whole-graph BFS) — Task 11:
+    iterative Tarjan SCC, verified line-by-line; the plan's prepend-order
+    CSR snippet was buggy (edge order is load-bearing for
+    `cgHeurLongest`), caught by the CCFROZEN gate and fixed with
+    append-order tails + a 0-mismatch debug-oracle proof.
+  - **§1.4** (codegen inner-loop 256-byte string-compare scans) — Tasks
+    12+13: `irIsExtern` name-index map (Task 12) and 138 call-site
+    conversions to interned-int frame lookups (Task 13; the brief
+    undercounted by 4).
+  - **§1.5** (`cgIntr` string dispatch) — Task 14: 171 arm mappings + 20
+    `IOp*` literals converted, arm order/count preserved per function.
+  - **§1.6** (384-byte `A68Item` record copies in the peephole) — Tasks
+    16+17: in-place field access (16), then the record itself shrunk
+    384→72 bytes via int side-table indices for trap names/comments/data
+    text (17).
+  - **§1.7** (every function code-generated twice) — **explicitly
+    deferred**, see below.
+  - **§1.8** (near-free bundle) — spread across Tasks 2 (`intern`
+    triple-search), 3 (~116 `I*()` string-literal re-intern helpers,
+    memoized), 4 (parser cursor caching + lexer length caching), 5
+    (checker int-compares: builtins/fields/members, `assignable`
+    fast-path, `readOnlyPropName` memo reuse), 6 (checker string-keyed
+    maps re-keyed to `intmap`), 7 (block scopes freed on exit via
+    `scopesTruncate`), 8–10 (`.clear()` language feature + 70 arena-drain
+    call sites converted from pop-loops), 12 (`irIsExtern`, shared with
+    §1.4), 15 (`cgIntListHas` presence-bitmap for segment-pool
+    membership), 18 (`a68Comment` string construction gated behind
+    `--listing`). `numToStr`'s own backwards-prepend fix was **dropped as
+    moot** — §1.2's fix already removed its hottest caller.
+    `scopeLookup`'s de-intern was **already fixed** (single-probe
+    `intmap` lookup, inherited from the map-hashtable phase).
+
+  **Unplanned fixes found mid-phase:**
+  - **Task 0b:** `macgui.cla`'s `gcFlushProgress(w: Log)` was declared
+    textually before the `window Log` block, violating the file's own
+    declare-before-use rule — `emit68k` of `macgui.cla` had been broken
+    since `ada40fc` (the datetime-instrumentation phase). Fixed for real
+    (not just the temp-reorder Task 0 used to build its oracle); the
+    `/tmp/l1old/cc.bin` byte-identity oracle is reproducible from
+    committed source again.
+  - **Task 8b:** `.clear()`'s own arrival (Task 8) grew macgui by ~210
+    new globals, which broke the 32KB code-segment limit via
+    `clar_ui_fire_staterows` emitting one dispatch arm per global
+    regardless of type. Fixed by restricting arms to list-typed globals
+    only (the "list-typed-arms rule" — only list-typed state needs a
+    staterows arm at all); macgui is back to 32 segments.
+  - **Gate amendment (Task 10):** multi-segment byte-identity checks
+    switched to a FROZEN A2 source tree (`/tmp/l1src`, a git-archive of
+    commit `1ffb12d`) instead of the live working tree, because compiling
+    the working tree's own `macgui.cla` conflates "the input changed"
+    with "the compiler's behavior changed" once `macgui.cla` is itself
+    among the files a task edits. Plan amended for Tasks 11-18
+    accordingly.
+
+  **Language addition:** `.clear()` for `list of T` / `map of T` /
+  `intmap of T` / `sortedmap of T` (Task 8) — the runtime functions
+  already existed, this added surface syntax and both backends' arms,
+  enabling O(1) arena resets in Tasks 9-10 instead of pop-loop drains.
+  Core suite grew 57 → 58 `CoreTest` cases (`ClearBasics`).
+
+  **Two-stage bootstrap** (map-phase pattern): Stage A folded into Task
+  8's own commit; Stage B this task's own regen (`d3581f5`). Snapshot:
+  3,278,906 B (phase start) → 3,361,198 B (Stage B).
+
+  **Measured results:**
+
+  | Benchmark | Pre-phase | Post-phase | Speedup |
+  |---|---|---|---|
+  | Host self-compile (`emit clarusc/main.cla`, 10-pair median) | 0.531s | 0.465s | 1.14x |
+  | `emit68k testdata/cg68k/tickprobe.cla` (10-pair median) | 0.122s | 0.034s | 3.60x |
+  | `emit testdata/emitui/every.cla` (10-pair median) | 0.066s | 0.047s | 1.40x |
+  | Frozen-fixture macro (`emit68k` of the frozen A2 `macgui.cla`, tracked per-task) | 2.69s (Task 0) | 0.55s (Task 18, reconfirmed post-only 0.56s) | ~4.9x |
+  | Peak RSS, `emit68k tickprobe.cla` | 129.1 MB | 36.9 MB | 3.5x |
+  | Peak RSS, `emit68k` frozen macgui | 882.5 MB (Task 0 baseline) | 215.3 MB | 4.1x |
+
+  Per-task frozen-fixture macro trail (all against the same frozen A2
+  `macgui.cla`): Task 0 baseline 2.69s → Task 11 (Tarjan SCC) 0.98s
+  (2.7x) → Task 13 (frame-offset ints) 0.91s (2.9x) → Task 16 (in-place
+  peephole) 0.65s (4.1x) → Task 17 (`A68Item` shrink) 0.56s (4.8x) →
+  Task 18 (gated listing comments) 0.55s, essentially flat vs. Task 17 —
+  expected, since Task 18's saving is proportional to `--listing` usage
+  and this benchmark never passes it. Host self-compile A/B trail: Task 1
+  0.48→0.45s, Task 3 0.51→0.50s, Task 4 0.50→0.45s (~10%) — small relative
+  to the frozen-fixture 68k numbers because host codegen hot paths are
+  native-side and the self-compile fixture is small; the 68k macro numbers
+  are the honest headline.
+
+  **Explicit deferrals:**
+  - **§1.7 (double codegen) deferred**, not attempted this phase. The
+    cheap fix (single-segment byte reuse) only helps single-segment
+    programs; `ClarusC.APPL` itself is 32 segments, so it wouldn't move
+    the number that matters. Full reuse needs relocation entries so
+    emission becomes segment-independent — that's Layer 3 scope (caching
+    and architecture), not a Layer-1 algorithmic fix.
+  - `numToStr`'s prepend-loop fix dropped — moot once §1.2's caller was
+    already gone (map-hashtable phase).
+  - Layer 2 (systemic runtime/codegen costs: 256-byte `Str255`, `map`'s
+    old string-keyed-block layout — now stale, see the findings-doc
+    annotation below) and Layer 3 (architecture/caching, including
+    §1.7's full fix) are both untouched this phase — explicitly out of
+    scope per the findings doc's own suggested sequencing.
+  - **T2 (`scripts/test-merge.sh`) still owed before any merge** — now
+    covers three stacked, unmerged phases (map-hashtable,
+    datetime-instrumentation, this phase). Recorded here, not run.
+  - **On-Mac instrumented timing capture still pending** — the
+    datetime-instrumentation phase built the `feProgress` seam and
+    per-phase `TickCount()` instrumentation; nobody has yet rebuilt
+    `ClarusC.APPL` from a branch carrying BOTH that instrumentation AND
+    this phase's ~5x native compiler speedup and rerun the Snow
+    acceptance boot to capture real on-Mac per-phase timings. That rerun
+    is the next decisive experiment.
+
+  **Test-suite growth:** core suite 57 → 58 (`ClearBasics`, Task 8);
+  toolbox suite untouched (24 real cases). Emulator scope: this phase's
+  ONE permitted boot, `TestCoreSuiteGUIOn68k`, PASS (58/58 cases, 0 FAIL,
+  3.63s) — no toolbox suite boot, no smoke tests, by explicit
+  narrow-scope design (same discipline as the datetime-instrumentation
+  phase).
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).
