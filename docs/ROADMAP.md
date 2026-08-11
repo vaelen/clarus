@@ -728,7 +728,7 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
      deferred update event, so a set made mid-compile is visible before
      the compile returns. New `LivePaint` toolbox case
      (`testsuite/toolbox/cases_textwidgets.cla`) hardware-proves it;
-     toolbox suite grew 29 → 30 real cases (`nTbCases`, `runtime.cla`).
+     toolbox suite grew 28 → 29 real cases; `nTbCases` (which includes SelfCheck) grew 29 → 30 (`testsuite/toolbox/runner.cla`).
      Collateral: emitui/cg68k golden regens for the new draw calls.
   2. **`feProgressStep`/`feProgressTick` counted-progress seams**
      (`clarusc/drive.cla` + lane implementers) — originally landed as a

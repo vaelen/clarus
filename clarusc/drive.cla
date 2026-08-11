@@ -1305,6 +1305,12 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
             }
         }
 
+        // Stage 5 of drvFixedSteps. Reached on every want68k compile despite
+        // living inside the neededMods.count > 0 block: the native.cla splice
+        // above adds to neededMods unconditionally under want68k, so this
+        // block cannot be skipped on the 68k lane -- if that splice ever
+        // becomes conditional, this stage (and the step count) silently
+        // vanishes with it.
         // checkProgram resets and rebuilds all check-global state itself
         // (the same reset+check sequence as the first pass). diags is
         // empty on entry (driveCompile's own first-check gate already
