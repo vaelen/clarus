@@ -1298,9 +1298,25 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         // record elements; see lowRecStoreIsBirth's own doc comment).
         // Mutually exclusive with the Text/List/Map branch (lowIsRecBearing
         // is only ever true where lowEscapeTrackableKind is false).
+        // memory-leak-fix phase, fix round 2: lowArrHeapScalarBearing
+        // (a fixed array whose innermost element is Text/List/Map, e.g.
+        // `text[3]`) joins lowIsRecBearing in this SAME branch -- an
+        // array's element type is never simultaneously rec-bearing AND
+        // heap-scalar-bearing (lowIsRecBearing/lowArrHeapScalarBearing's
+        // own KRec-vs-lowEscapeTrackableKind split is mutually exclusive
+        // at the innermost element), so combining them here can never
+        // double-fire; lowRecStoreIsBirth is the right birth check for
+        // BOTH (it's a pure AST-shape check -- ExCall to ExIdent/pop/shift
+        // -- not actually record-specific despite its name; see its own
+        // doc comment). Before this fix, a whole array-of-Text/List/Map
+        // VALUE pushed onto a container was never retained at all --
+        // silent under-retention that a correct element-release walk
+        // (memory-leak-fix Tasks 4/5) then double-releases against the
+        // source array's own scope-exit release (fix round 2's own
+        // over-release regression, confirmed by hand-probe).
         if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
             pushName = IListPushRetain()
-        } else if lowIsRecBearing(elemT) and not lowRecStoreIsBirth(argsHead) {
+        } else if (lowIsRecBearing(elemT) or lowArrHeapScalarBearing(elemT)) and not lowRecStoreIsBirth(argsHead) {
             pushName = IListPushRetain()
         }
         v = lowCoerceStr(elemT, rawV)
@@ -1310,9 +1326,11 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         elemT = irtElem(irExprType(recv))
         rawV = lowExpr(argsHead)
         unshiftName = IListUnshift()
+        // memory-leak-fix phase, fix round 2: same combined predicate as
+        // push/add above.
         if lowEscapeTrackableKind(irtKind(elemT)) and not lowElemIsBirth(argsHead, rawV, elemT) {
             unshiftName = IListUnshiftRetain()
-        } else if lowIsRecBearing(elemT) and not lowRecStoreIsBirth(argsHead) {
+        } else if (lowIsRecBearing(elemT) or lowArrHeapScalarBearing(elemT)) and not lowRecStoreIsBirth(argsHead) {
             unshiftName = IListUnshiftRetain()
         }
         v = lowCoerceStr(elemT, rawV)
@@ -3592,15 +3610,22 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
     } else if xk == TyList {
         elemTy = lowMustType(lhs)
-        if not lowEscapeTrackableKind(irtKind(elemTy)) and not lowIsRecBearing(elemTy) {
+        // memory-leak-fix phase, fix round 2: lowArrHeapScalarBearing
+        // joins the early-bail guard too -- a `text[3]`-typed elemTy is
+        // neither lowEscapeTrackableKind nor lowIsRecBearing, so it used
+        // to fall through to the plain, uncounted lowStoreStmt below
+        // (no retain of the new value, no release of the old one either).
+        if not lowEscapeTrackableKind(irtKind(elemTy)) and not lowIsRecBearing(elemTy) and not lowArrHeapScalarBearing(elemTy) {
             return lowStoreStmt(newIRIndexRef(x, i, elemTy), rhs, elemTy)
         }
         rawRhs = rhs
         intrName = IListSet()
         // ARC Task 7 site 4 (overwrite): mirrors the push/unshift birth
         // split just above -- lowElemIsBirth for Text/List/Map,
-        // lowRecStoreIsBirth for a record-bearing element, mutually
-        // exclusive gates.
+        // lowRecStoreIsBirth for a record-bearing OR array-heap-scalar-
+        // bearing element (fix round 2), mutually exclusive gates -- the
+        // `else` below already covers BOTH once the guard above admits
+        // the array case, no further change needed here.
         if lowEscapeTrackableKind(irtKind(elemTy)) {
             if not lowElemIsBirth(rhsAst, rawRhs, elemTy) {
                 intrName = IListSetRetain()
@@ -3625,8 +3650,10 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         intrName = IMapSet()
         if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
             intrName = IMapSetRetain()
-        } else if lowIsRecBearing(elemTy) and not lowRecStoreIsBirth(rhsAst) {
+        } else if (lowIsRecBearing(elemTy) or lowArrHeapScalarBearing(elemTy)) and not lowRecStoreIsBirth(rhsAst) {
             // ARC Task 7 site 4: map-of-record upsert, same rule as list.
+            // memory-leak-fix phase, fix round 2: map-of-array-of-Text/
+            // List/Map upsert joins the same branch.
             intrName = IMapSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rhs)
@@ -3638,9 +3665,11 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         intrName = ISortedMapSet()
         if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
             intrName = ISortedMapSetRetain()
-        } else if lowIsRecBearing(elemTy) and not lowRecStoreIsBirth(rhsAst) {
+        } else if (lowIsRecBearing(elemTy) or lowArrHeapScalarBearing(elemTy)) and not lowRecStoreIsBirth(rhsAst) {
             // ARC Task 7 site 4: sortedmap-of-record upsert, same rule as
-            // map/list.
+            // map/list. memory-leak-fix phase, fix round 2:
+            // sortedmap-of-array-of-Text/List/Map upsert joins the same
+            // branch.
             intrName = ISortedMapSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rhs)
@@ -3655,9 +3684,11 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         intrName = IIntMapSet()
         if lowEscapeTrackableKind(irtKind(elemTy)) and not lowElemIsBirth(rhsAst, rhs, elemTy) {
             intrName = IIntMapSetRetain()
-        } else if lowIsRecBearing(elemTy) and not lowRecStoreIsBirth(rhsAst) {
+        } else if (lowIsRecBearing(elemTy) or lowArrHeapScalarBearing(elemTy)) and not lowRecStoreIsBirth(rhsAst) {
             // ARC Task 7 site 4: intmap-of-record upsert, same rule as
-            // map/sortedmap/list.
+            // map/sortedmap/list. memory-leak-fix phase, fix round 2:
+            // intmap-of-array-of-Text/List/Map upsert joins the same
+            // branch.
             intrName = IIntMapSetRetain()
         }
         rhs = lowCoerceStr(elemTy, rhs)

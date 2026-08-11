@@ -1,32 +1,34 @@
-// arrelem.cla: memory-leak-fix phase Task 5 fix round 1 regression --
-// review finding: cgContainerElemNeedsWalk/cgContainerElemRelease (native)
-// and cpEmitRelease/cpEmitElemReleaseWalk's per-kind branches (host) had
-// no KArr arm. `list of Item[3]` (and the map/sortedmap/intmap value-type
-// equivalent) is legal Clarus -- check.cla only bans ptr/overlay/xrec as
-// array ELEMENT types, not KArr as a container element/value type -- and
-// BOTH the `.clear()` Deep walk (Task 4/5) and the pre-existing scope-exit
-// teardown walk (cgDeepReleaseContainer/cpEmitRelease, predating this
-// phase) silently skipped releasing the text handles packed inside each
-// array-typed slot/value.
+// arrelem.cla: memory-leak-fix phase Task 5 fix rounds 1+2 regression --
+// round 1's review finding: cgContainerElemNeedsWalk/cgContainerElemRelease
+// (native) and cpEmitRelease/cpEmitElemReleaseWalk's per-kind branches
+// (host) had no KArr arm. `list of Item[3]` (and the map/sortedmap/intmap
+// value-type equivalent) is legal Clarus -- check.cla only bans
+// ptr/overlay/xrec as array ELEMENT types, not KArr as a container
+// element/value type -- and BOTH the `.clear()` Deep walk (Task 4/5) and
+// the pre-existing scope-exit teardown walk (cgDeepReleaseContainer/
+// cpEmitRelease, predating this phase) silently skipped releasing the
+// text handles packed inside each array-typed slot/value. Round 1 fixed
+// this (cg68k.cla/cprint.cla's own KArr walk arms).
 //
-// Uses Item[3] (array-of-handle-bearing-record), NOT text[3]
-// (array-of-text): populating a container element/value with a whole
-// array-of-TEXT VALUE (`l.push(arrOfText)`/`m[k] = arrOfText`) hits a
-// SEPARATE, pre-existing, unrelated gap -- lowListMethod's push/unshift
-// and lowIndexAssign's List/Map/SortedMap/IntMap branches decide the
-// *Retain intrinsic variant via `lowEscapeTrackableKind(irtKind(elemT)) or
+// Round 1 used Item[3] (array-of-handle-bearing-record), NOT text[3]
+// (array-of-text), because populating a container element/value with a
+// whole array-of-TEXT VALUE (`l.push(arrOfText)`/`m[k] = arrOfText`) hit a
+// SEPARATE, pre-existing gap: lowListMethod's push/unshift and
+// lowIndexAssign's List/Map/SortedMap/IntMap branches decided the *Retain
+// intrinsic variant via `lowEscapeTrackableKind(irtKind(elemT)) or
 // lowIsRecBearing(elemT)`, never lowArrHeapScalarBearing, so a whole
-// array-of-Text/List/Map VALUE handed to push/unshift/index-assign is
-// never retained (confirmed by hand-probe: over-release SIGABRT once a
-// correct release walk is in place, since the container's copy was never
-// counted in the first place). lowIsRecBearing, by contrast, ALREADY
-// recurses into KArr (its own doc comment: "or a fixed array... whose
-// element type is [handle-backed]"), so array-of-RECORD push/set already
-// retains correctly today -- the ONLY thing missing for THIS shape was the
-// release-walk side this fix round adds. The array-of-Text push/set gap
-// is out of this fix round's scope (not the release-walk machinery this
-// review targeted) -- flagged in the fix round's own report, not fixed
-// here.
+// array-of-Text/List/Map VALUE handed to push/unshift/index-assign was
+// never retained -- round 1's OWN (correct) release walk then
+// double-released it against the source array's own scope-exit release
+// (confirmed: `rt_rc: over-release`). Round 2 fixes THIS gap (lower.cla's
+// six retain-selection sites now also check lowArrHeapScalarBearing,
+// sharing lowIsRecBearing's own lowRecStoreIsBirth birth check -- the two
+// predicates are mutually exclusive at the innermost element, so
+// combining them with `or` can never double-retain the record-array
+// case). listPushWholeArrCase/mapPushWholeArrCase below are the
+// round-2-review's own exact repro shape (text[3], NOT Item[3]) --
+// confirmed to ABORT (`rt_rc: over-release at rt_ext_host.inc:183`,
+// exit 134) before round 2's lower.cla fix, live=0 after.
 record Item {
     name: text
 }
@@ -111,6 +113,35 @@ func intMapTeardownCase() {
     im[1] = a
 }
 
+// listPushWholeArrCase/mapPushWholeArrCase: fix round 2's own repro --
+// `list of text[3]`/`map of text[3]`, a whole array VALUE pushed/set (not
+// built in place via `l[i][j] = ...`), function RETURNS (no `.clear()`) so
+// both `a`'s own scope-exit release AND the container's teardown walk run.
+// Pre-round-2-fix: `a`'s release drops the text handles to rc 0 (push/set
+// never retained them), then the container's (round-1-correct) teardown
+// walk tries to release the SAME already-freed handles again --
+// `rt_rc: over-release`. Post-fix: push/set retains, so both releases are
+// balanced.
+func listPushWholeArrCase() {
+    var l: list of text[3]
+    var a: text[3]
+
+    a[0] = "eleven"
+    a[1] = "twelve"
+    a[2] = "thirteen"
+    l.push(a)
+}
+
+func mapPushWholeArrCase() {
+    var m: map of text[3]
+    var a: text[3]
+
+    a[0] = "fourteen"
+    a[1] = "fifteen"
+    a[2] = "sixteen"
+    m["k"] = a
+}
+
 on App.startCLI(args: list of string) {
     listClearCase()
     listTeardownCase()
@@ -118,5 +149,7 @@ on App.startCLI(args: list of string) {
     mapTeardownCase()
     sortedMapClearCase()
     intMapTeardownCase()
+    listPushWholeArrCase()
+    mapPushWholeArrCase()
     quit 0
 }
