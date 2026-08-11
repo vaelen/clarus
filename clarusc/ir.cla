@@ -2888,121 +2888,266 @@ func irStrLitPoolIdx(i: int): int {
 // ================================================================
 
 // -- strings --
+var iStrConcatIdx: int = -1
+
 func IStrConcat(): int {
-    return intern("str_concat")
+    if iStrConcatIdx == -1 {
+        iStrConcatIdx = intern("str_concat")
+    }
+    return iStrConcatIdx
 }
+
+var iStrConcatCharIdx: int = -1
 
 func IStrConcatChar(): int {
-    return intern("str_concat_char")
+    if iStrConcatCharIdx == -1 {
+        iStrConcatCharIdx = intern("str_concat_char")
+    }
+    return iStrConcatCharIdx
 }
+
+var iStrPrependCharIdx: int = -1
 
 func IStrPrependChar(): int {
-    return intern("str_prepend_char")
+    if iStrPrependCharIdx == -1 {
+        iStrPrependCharIdx = intern("str_prepend_char")
+    }
+    return iStrPrependCharIdx
 }
+
+var iStrCmpIdx: int = -1
 
 func IStrCmp(): int {
-    return intern("str_cmp")
+    if iStrCmpIdx == -1 {
+        iStrCmpIdx = intern("str_cmp")
+    }
+    return iStrCmpIdx
 }
+
+var iStrLenIdx: int = -1
 
 func IStrLen(): int {
-    return intern("str_len")
+    if iStrLenIdx == -1 {
+        iStrLenIdx = intern("str_len")
+    }
+    return iStrLenIdx
 }
+
+var iStrIndexIdx: int = -1
 
 func IStrIndex(): int {
-    return intern("str_index")
+    if iStrIndexIdx == -1 {
+        iStrIndexIdx = intern("str_index")
+    }
+    return iStrIndexIdx
 }
+
+var iStrSetIndexIdx: int = -1
 
 func IStrSetIndex(): int {
-    return intern("str_set_index")
+    if iStrSetIndexIdx == -1 {
+        iStrSetIndexIdx = intern("str_set_index")
+    }
+    return iStrSetIndexIdx
 }
+
+var iStrFromBytesIdx: int = -1
 
 func IStrFromBytes(): int {
-    return intern("str_from_bytes")
+    if iStrFromBytesIdx == -1 {
+        iStrFromBytesIdx = intern("str_from_bytes")
+    }
+    return iStrFromBytesIdx
 }
+
+var iStrToBytesIdx: int = -1
 
 func IStrToBytes(): int {
-    return intern("str_to_bytes")
+    if iStrToBytesIdx == -1 {
+        iStrToBytesIdx = intern("str_to_bytes")
+    }
+    return iStrToBytesIdx
 }
+
+var iStrCoerceIdx: int = -1
 
 func IStrCoerce(): int {
-    return intern("str_coerce")
+    if iStrCoerceIdx == -1 {
+        iStrCoerceIdx = intern("str_coerce")
+    }
+    return iStrCoerceIdx
 }
+
+var iStrSliceIdx: int = -1
 
 func IStrSlice(): int {
-    return intern("str_slice")
+    if iStrSliceIdx == -1 {
+        iStrSliceIdx = intern("str_slice")
+    }
+    return iStrSliceIdx
 }
+
+var iStrIndexOfStrIdx: int = -1
 
 func IStrIndexOfStr(): int {
-    return intern("str_index_of_str")
+    if iStrIndexOfStrIdx == -1 {
+        iStrIndexOfStrIdx = intern("str_index_of_str")
+    }
+    return iStrIndexOfStrIdx
 }
 
+var iStrIndexOfCharIdx: int = -1
+
 func IStrIndexOfChar(): int {
-    return intern("str_index_of_char")
+    if iStrIndexOfCharIdx == -1 {
+        iStrIndexOfCharIdx = intern("str_index_of_char")
+    }
+    return iStrIndexOfCharIdx
 }
 
 // -- text (opaque handle on host: heap buffer) --
+var iTextStoreIdx: int = -1
+
 func ITextStore(): int {
-    return intern("text_store")
+    if iTextStoreIdx == -1 {
+        iTextStoreIdx = intern("text_store")
+    }
+    return iTextStoreIdx
 }
+
+var iTextConcatIdx: int = -1
 
 func ITextConcat(): int {
-    return intern("text_concat")
+    if iTextConcatIdx == -1 {
+        iTextConcatIdx = intern("text_concat")
+    }
+    return iTextConcatIdx
 }
+
+var iTextConcatSLIdx: int = -1
 
 func ITextConcatSL(): int {
-    return intern("text_concat_sl")
+    if iTextConcatSLIdx == -1 {
+        iTextConcatSLIdx = intern("text_concat_sl")
+    }
+    return iTextConcatSLIdx
 }
+
+var iTextCmpIdx: int = -1
 
 func ITextCmp(): int {
-    return intern("text_cmp")
+    if iTextCmpIdx == -1 {
+        iTextCmpIdx = intern("text_cmp")
+    }
+    return iTextCmpIdx
 }
+
+var iTextLenIdx: int = -1
 
 func ITextLen(): int {
-    return intern("text_len")
+    if iTextLenIdx == -1 {
+        iTextLenIdx = intern("text_len")
+    }
+    return iTextLenIdx
 }
+
+var iTextIndexIdx: int = -1
 
 func ITextIndex(): int {
-    return intern("text_index")
+    if iTextIndexIdx == -1 {
+        iTextIndexIdx = intern("text_index")
+    }
+    return iTextIndexIdx
 }
+
+var iTextSetIndexIdx: int = -1
 
 func ITextSetIndex(): int {
-    return intern("text_set_index")
+    if iTextSetIndexIdx == -1 {
+        iTextSetIndexIdx = intern("text_set_index")
+    }
+    return iTextSetIndexIdx
 }
+
+var iTextFromBytesIdx: int = -1
 
 func ITextFromBytes(): int {
-    return intern("text_from_bytes")
+    if iTextFromBytesIdx == -1 {
+        iTextFromBytesIdx = intern("text_from_bytes")
+    }
+    return iTextFromBytesIdx
 }
+
+var iTextToBytesIdx: int = -1
 
 func ITextToBytes(): int {
-    return intern("text_to_bytes")
+    if iTextToBytesIdx == -1 {
+        iTextToBytesIdx = intern("text_to_bytes")
+    }
+    return iTextToBytesIdx
 }
+
+var iTextSliceIdx: int = -1
 
 func ITextSlice(): int {
-    return intern("text_slice")
+    if iTextSliceIdx == -1 {
+        iTextSliceIdx = intern("text_slice")
+    }
+    return iTextSliceIdx
 }
+
+var iTextIndexOfStrIdx: int = -1
 
 func ITextIndexOfStr(): int {
-    return intern("text_index_of_str")
+    if iTextIndexOfStrIdx == -1 {
+        iTextIndexOfStrIdx = intern("text_index_of_str")
+    }
+    return iTextIndexOfStrIdx
 }
+
+var iTextIndexOfCharIdx: int = -1
 
 func ITextIndexOfChar(): int {
-    return intern("text_index_of_char")
+    if iTextIndexOfCharIdx == -1 {
+        iTextIndexOfCharIdx = intern("text_index_of_char")
+    }
+    return iTextIndexOfCharIdx
 }
+
+var iTextAppendStrIdx: int = -1
 
 func ITextAppendStr(): int {
-    return intern("text_append_str")
+    if iTextAppendStrIdx == -1 {
+        iTextAppendStrIdx = intern("text_append_str")
+    }
+    return iTextAppendStrIdx
 }
+
+var iTextAppendCharIdx: int = -1
 
 func ITextAppendChar(): int {
-    return intern("text_append_char")
+    if iTextAppendCharIdx == -1 {
+        iTextAppendCharIdx = intern("text_append_char")
+    }
+    return iTextAppendCharIdx
 }
+
+var iTextAppendTextIdx: int = -1
 
 func ITextAppendText(): int {
-    return intern("text_append_text")
+    if iTextAppendTextIdx == -1 {
+        iTextAppendTextIdx = intern("text_append_text")
+    }
+    return iTextAppendTextIdx
 }
 
+var iTextOfStrIdx: int = -1
+
 func ITextOfStr(): int {
-    return intern("text_of_str")
+    if iTextOfStrIdx == -1 {
+        iTextOfStrIdx = intern("text_of_str")
+    }
+    return iTextOfStrIdx
 }
 
 // ITextFreeVar/IListFreeVar/IMapFreeVar (memory-audit Task 7): a scope-exit
@@ -3013,25 +3158,50 @@ func ITextOfStr(): int {
 // Task 5's `cl_free_globals` (whole-program, at exit) and Task 6's
 // statement-temp frees (unnamed intermediates): these three name a real,
 // user-declared local by its own EVarRef.
+var iTextFreeVarIdx: int = -1
+
 func ITextFreeVar(): int {
-    return intern("text_free_var")
+    if iTextFreeVarIdx == -1 {
+        iTextFreeVarIdx = intern("text_free_var")
+    }
+    return iTextFreeVarIdx
 }
 
 // -- list (element size known at creation) --
+var iListPushIdx: int = -1
+
 func IListPush(): int {
-    return intern("list_push")
+    if iListPushIdx == -1 {
+        iListPushIdx = intern("list_push")
+    }
+    return iListPushIdx
 }
+
+var iListPopIdx: int = -1
 
 func IListPop(): int {
-    return intern("list_pop")
+    if iListPopIdx == -1 {
+        iListPopIdx = intern("list_pop")
+    }
+    return iListPopIdx
 }
+
+var iListShiftIdx: int = -1
 
 func IListShift(): int {
-    return intern("list_shift")
+    if iListShiftIdx == -1 {
+        iListShiftIdx = intern("list_shift")
+    }
+    return iListShiftIdx
 }
 
+var iListUnshiftIdx: int = -1
+
 func IListUnshift(): int {
-    return intern("list_unshift")
+    if iListUnshiftIdx == -1 {
+        iListUnshiftIdx = intern("list_unshift")
+    }
+    return iListUnshiftIdx
 }
 
 // IListPushRetain/IListUnshiftRetain -- ARC Task 5: the retaining sibling of
@@ -3041,24 +3211,49 @@ func IListUnshift(): int {
 // result) -- cprint.cla's shared IListPush(Retain)/IListUnshift(Retain)
 // printer branch is the only place that reads which of the two names it is;
 // everywhere else (arg shape, coercion) is identical to the plain form.
+var iListPushRetainIdx: int = -1
+
 func IListPushRetain(): int {
-    return intern("list_push_retain")
+    if iListPushRetainIdx == -1 {
+        iListPushRetainIdx = intern("list_push_retain")
+    }
+    return iListPushRetainIdx
 }
+
+var iListUnshiftRetainIdx: int = -1
 
 func IListUnshiftRetain(): int {
-    return intern("list_unshift_retain")
+    if iListUnshiftRetainIdx == -1 {
+        iListUnshiftRetainIdx = intern("list_unshift_retain")
+    }
+    return iListUnshiftRetainIdx
 }
+
+var iListFirstIdx: int = -1
 
 func IListFirst(): int {
-    return intern("list_first")
+    if iListFirstIdx == -1 {
+        iListFirstIdx = intern("list_first")
+    }
+    return iListFirstIdx
 }
+
+var iListLastIdx: int = -1
 
 func IListLast(): int {
-    return intern("list_last")
+    if iListLastIdx == -1 {
+        iListLastIdx = intern("list_last")
+    }
+    return iListLastIdx
 }
 
+var iListRemoveIdx: int = -1
+
 func IListRemove(): int {
-    return intern("list_remove")
+    if iListRemoveIdx == -1 {
+        iListRemoveIdx = intern("list_remove")
+    }
+    return iListRemoveIdx
 }
 
 // IListSet/IListSetRetain -- ARC Task 5: `lst[i] = v` on a heap-typed
@@ -3075,26 +3270,51 @@ func IListRemove(): int {
 // the new value BEFORE reading/releasing the old one (self-overwrite safety
 // -- `lst[i] = lst[i]`: retaining first guarantees the shared handle's rc
 // never transiently reaches zero from the old-element release that follows).
+var iListSetIdx: int = -1
+
 func IListSet(): int {
-    return intern("list_set")
+    if iListSetIdx == -1 {
+        iListSetIdx = intern("list_set")
+    }
+    return iListSetIdx
 }
+
+var iListSetRetainIdx: int = -1
 
 func IListSetRetain(): int {
-    return intern("list_set_retain")
+    if iListSetRetainIdx == -1 {
+        iListSetRetainIdx = intern("list_set_retain")
+    }
+    return iListSetRetainIdx
 }
 
+var iListCountIdx: int = -1
+
 func IListCount(): int {
-    return intern("list_count")
+    if iListCountIdx == -1 {
+        iListCountIdx = intern("list_count")
+    }
+    return iListCountIdx
 }
 
 // IListFreeVar -- see ITextFreeVar's doc comment.
+var iListFreeVarIdx: int = -1
+
 func IListFreeVar(): int {
-    return intern("list_free_var")
+    if iListFreeVarIdx == -1 {
+        iListFreeVarIdx = intern("list_free_var")
+    }
+    return iListFreeVarIdx
 }
 
 // -- map (string keys; value size known at creation) --
+var iMapSetIdx: int = -1
+
 func IMapSet(): int {
-    return intern("map_set")
+    if iMapSetIdx == -1 {
+        iMapSetIdx = intern("map_set")
+    }
+    return iMapSetIdx
 }
 
 // IMapSetRetain -- ARC Task 5's retaining sibling of IMapSet, chosen by
@@ -3107,16 +3327,31 @@ func IMapSet(): int {
 // non-retaining rt_map_get (never the retaining IMapGet intrinsic, which
 // would leave the guard's own release netting to a no-op instead of the
 // intended -1).
+var iMapSetRetainIdx: int = -1
+
 func IMapSetRetain(): int {
-    return intern("map_set_retain")
+    if iMapSetRetainIdx == -1 {
+        iMapSetRetainIdx = intern("map_set_retain")
+    }
+    return iMapSetRetainIdx
 }
+
+var iMapGetIdx: int = -1
 
 func IMapGet(): int {
-    return intern("map_get")
+    if iMapGetIdx == -1 {
+        iMapGetIdx = intern("map_get")
+    }
+    return iMapGetIdx
 }
 
+var iMapGetDvIdx: int = -1
+
 func IMapGetDv(): int {
-    return intern("map_get_dv")
+    if iMapGetDvIdx == -1 {
+        iMapGetDvIdx = intern("map_get_dv")
+    }
+    return iMapGetDvIdx
 }
 
 // IMapGetDvBirth -- ARC Task 8 fix (known open leak bug 2): the retaining
@@ -3132,66 +3367,136 @@ func IMapGetDv(): int {
 // unnecessary extra one) and orphans dv's box entirely when the key is
 // present (leak: nothing ever releases it). See cprint.cla's own
 // IMapGetDvBirth printer for the runtime-conditional fix.
+var iMapGetDvBirthIdx: int = -1
+
 func IMapGetDvBirth(): int {
-    return intern("map_get_dv_birth")
+    if iMapGetDvBirthIdx == -1 {
+        iMapGetDvBirthIdx = intern("map_get_dv_birth")
+    }
+    return iMapGetDvBirthIdx
 }
+
+var iMapHasIdx: int = -1
 
 func IMapHas(): int {
-    return intern("map_has")
+    if iMapHasIdx == -1 {
+        iMapHasIdx = intern("map_has")
+    }
+    return iMapHasIdx
 }
+
+var iMapRemoveIdx: int = -1
 
 func IMapRemove(): int {
-    return intern("map_remove")
+    if iMapRemoveIdx == -1 {
+        iMapRemoveIdx = intern("map_remove")
+    }
+    return iMapRemoveIdx
 }
 
+var iMapCountIdx: int = -1
+
 func IMapCount(): int {
-    return intern("map_count")
+    if iMapCountIdx == -1 {
+        iMapCountIdx = intern("map_count")
+    }
+    return iMapCountIdx
 }
 
 // IMapFreeVar -- see ITextFreeVar's doc comment.
+var iMapFreeVarIdx: int = -1
+
 func IMapFreeVar(): int {
-    return intern("map_free_var")
+    if iMapFreeVarIdx == -1 {
+        iMapFreeVarIdx = intern("map_free_var")
+    }
+    return iMapFreeVarIdx
 }
 
 // -- sortedmap (string keys, ascending iteration; map-hashtable phase,
 // Task 2) -- the nine ISortedMap* intrinsics are the DISTINCT-runtime twins
 // of the nine IMap* ones directly above (IMapSetRetain's/IMapGetDv's/
 // IMapGetDvBirth's own doc comments apply here unchanged, name-for-name).
+var iSortedMapSetIdx: int = -1
+
 func ISortedMapSet(): int {
-    return intern("sortedmap_set")
+    if iSortedMapSetIdx == -1 {
+        iSortedMapSetIdx = intern("sortedmap_set")
+    }
+    return iSortedMapSetIdx
 }
+
+var iSortedMapSetRetainIdx: int = -1
 
 func ISortedMapSetRetain(): int {
-    return intern("sortedmap_set_retain")
+    if iSortedMapSetRetainIdx == -1 {
+        iSortedMapSetRetainIdx = intern("sortedmap_set_retain")
+    }
+    return iSortedMapSetRetainIdx
 }
+
+var iSortedMapGetIdx: int = -1
 
 func ISortedMapGet(): int {
-    return intern("sortedmap_get")
+    if iSortedMapGetIdx == -1 {
+        iSortedMapGetIdx = intern("sortedmap_get")
+    }
+    return iSortedMapGetIdx
 }
+
+var iSortedMapGetDvIdx: int = -1
 
 func ISortedMapGetDv(): int {
-    return intern("sortedmap_get_dv")
+    if iSortedMapGetDvIdx == -1 {
+        iSortedMapGetDvIdx = intern("sortedmap_get_dv")
+    }
+    return iSortedMapGetDvIdx
 }
+
+var iSortedMapGetDvBirthIdx: int = -1
 
 func ISortedMapGetDvBirth(): int {
-    return intern("sortedmap_get_dv_birth")
+    if iSortedMapGetDvBirthIdx == -1 {
+        iSortedMapGetDvBirthIdx = intern("sortedmap_get_dv_birth")
+    }
+    return iSortedMapGetDvBirthIdx
 }
+
+var iSortedMapHasIdx: int = -1
 
 func ISortedMapHas(): int {
-    return intern("sortedmap_has")
+    if iSortedMapHasIdx == -1 {
+        iSortedMapHasIdx = intern("sortedmap_has")
+    }
+    return iSortedMapHasIdx
 }
+
+var iSortedMapRemoveIdx: int = -1
 
 func ISortedMapRemove(): int {
-    return intern("sortedmap_remove")
+    if iSortedMapRemoveIdx == -1 {
+        iSortedMapRemoveIdx = intern("sortedmap_remove")
+    }
+    return iSortedMapRemoveIdx
 }
 
+var iSortedMapCountIdx: int = -1
+
 func ISortedMapCount(): int {
-    return intern("sortedmap_count")
+    if iSortedMapCountIdx == -1 {
+        iSortedMapCountIdx = intern("sortedmap_count")
+    }
+    return iSortedMapCountIdx
 }
 
 // ISortedMapFreeVar -- see ITextFreeVar's doc comment.
+var iSortedMapFreeVarIdx: int = -1
+
 func ISortedMapFreeVar(): int {
-    return intern("sortedmap_free_var")
+    if iSortedMapFreeVarIdx == -1 {
+        iSortedMapFreeVarIdx = intern("sortedmap_free_var")
+    }
+    return iSortedMapFreeVarIdx
 }
 
 // -- intmap (int keys; map-hashtable phase, Task 7) -- the nine IIntMap*
@@ -3199,41 +3504,86 @@ func ISortedMapFreeVar(): int {
 // (IMapSetRetain's/IMapGetDv's/IMapGetDvBirth's own doc comments apply
 // here unchanged, name-for-name) -- only the key type differs (int, not
 // string).
+var iIntMapSetIdx: int = -1
+
 func IIntMapSet(): int {
-    return intern("intmap_set")
+    if iIntMapSetIdx == -1 {
+        iIntMapSetIdx = intern("intmap_set")
+    }
+    return iIntMapSetIdx
 }
+
+var iIntMapSetRetainIdx: int = -1
 
 func IIntMapSetRetain(): int {
-    return intern("intmap_set_retain")
+    if iIntMapSetRetainIdx == -1 {
+        iIntMapSetRetainIdx = intern("intmap_set_retain")
+    }
+    return iIntMapSetRetainIdx
 }
+
+var iIntMapGetIdx: int = -1
 
 func IIntMapGet(): int {
-    return intern("intmap_get")
+    if iIntMapGetIdx == -1 {
+        iIntMapGetIdx = intern("intmap_get")
+    }
+    return iIntMapGetIdx
 }
+
+var iIntMapGetDvIdx: int = -1
 
 func IIntMapGetDv(): int {
-    return intern("intmap_get_dv")
+    if iIntMapGetDvIdx == -1 {
+        iIntMapGetDvIdx = intern("intmap_get_dv")
+    }
+    return iIntMapGetDvIdx
 }
+
+var iIntMapGetDvBirthIdx: int = -1
 
 func IIntMapGetDvBirth(): int {
-    return intern("intmap_get_dv_birth")
+    if iIntMapGetDvBirthIdx == -1 {
+        iIntMapGetDvBirthIdx = intern("intmap_get_dv_birth")
+    }
+    return iIntMapGetDvBirthIdx
 }
+
+var iIntMapHasIdx: int = -1
 
 func IIntMapHas(): int {
-    return intern("intmap_has")
+    if iIntMapHasIdx == -1 {
+        iIntMapHasIdx = intern("intmap_has")
+    }
+    return iIntMapHasIdx
 }
+
+var iIntMapRemoveIdx: int = -1
 
 func IIntMapRemove(): int {
-    return intern("intmap_remove")
+    if iIntMapRemoveIdx == -1 {
+        iIntMapRemoveIdx = intern("intmap_remove")
+    }
+    return iIntMapRemoveIdx
 }
 
+var iIntMapCountIdx: int = -1
+
 func IIntMapCount(): int {
-    return intern("intmap_count")
+    if iIntMapCountIdx == -1 {
+        iIntMapCountIdx = intern("intmap_count")
+    }
+    return iIntMapCountIdx
 }
 
 // IIntMapFreeVar -- see ITextFreeVar's doc comment.
+var iIntMapFreeVarIdx: int = -1
+
 func IIntMapFreeVar(): int {
-    return intern("intmap_free_var")
+    if iIntMapFreeVarIdx == -1 {
+        iIntMapFreeVarIdx = intern("intmap_free_var")
+    }
+    return iIntMapFreeVarIdx
 }
 
 // -- retain/release (ARC Task 2) --
@@ -3247,59 +3597,124 @@ func IIntMapFreeVar(): int {
 // needed the first time it's seen. lower.cla doesn't emit either intrinsic
 // yet -- inserted starting with a later ARC task -- so this plumbing is
 // dormant until then.
+var iRetainIdx: int = -1
+
 func IRetain(): int {
-    return intern("retain")
+    if iRetainIdx == -1 {
+        iRetainIdx = intern("retain")
+    }
+    return iRetainIdx
 }
 
+var iReleaseIdx: int = -1
+
 func IRelease(): int {
-    return intern("release")
+    if iReleaseIdx == -1 {
+        iReleaseIdx = intern("release")
+    }
+    return iReleaseIdx
 }
 
 // -- fixed 16.16 --
+var iFixMulIdx: int = -1
+
 func IFixMul(): int {
-    return intern("fix_mul")
+    if iFixMulIdx == -1 {
+        iFixMulIdx = intern("fix_mul")
+    }
+    return iFixMulIdx
 }
 
+var iFixDivIdx: int = -1
+
 func IFixDiv(): int {
-    return intern("fix_div")
+    if iFixDivIdx == -1 {
+        iFixDivIdx = intern("fix_div")
+    }
+    return iFixDivIdx
 }
 
 // -- misc --
+var iAlertIdx: int = -1
+
 func IAlert(): int {
-    return intern("alert")
+    if iAlertIdx == -1 {
+        iAlertIdx = intern("alert")
+    }
+    return iAlertIdx
 }
+
+var iQuitIdx: int = -1
 
 func IQuit(): int {
-    return intern("quit")
+    if iQuitIdx == -1 {
+        iQuitIdx = intern("quit")
+    }
+    return iQuitIdx
 }
 
+var iLogIdx: int = -1
+
 func ILog(): int {
-    return intern("log")
+    if iLogIdx == -1 {
+        iLogIdx = intern("log")
+    }
+    return iLogIdx
 }
 
 // -- peek/poke (Plan 5a Task 4, Ch13) --
+var iPeekBIdx: int = -1
+
 func IPeekB(): int {
-    return intern("peekb")
+    if iPeekBIdx == -1 {
+        iPeekBIdx = intern("peekb")
+    }
+    return iPeekBIdx
 }
+
+var iPeekWIdx: int = -1
 
 func IPeekW(): int {
-    return intern("peekw")
+    if iPeekWIdx == -1 {
+        iPeekWIdx = intern("peekw")
+    }
+    return iPeekWIdx
 }
+
+var iPeekLIdx: int = -1
 
 func IPeekL(): int {
-    return intern("peekl")
+    if iPeekLIdx == -1 {
+        iPeekLIdx = intern("peekl")
+    }
+    return iPeekLIdx
 }
+
+var iPokeBIdx: int = -1
 
 func IPokeB(): int {
-    return intern("pokeb")
+    if iPokeBIdx == -1 {
+        iPokeBIdx = intern("pokeb")
+    }
+    return iPokeBIdx
 }
+
+var iPokeWIdx: int = -1
 
 func IPokeW(): int {
-    return intern("pokew")
+    if iPokeWIdx == -1 {
+        iPokeWIdx = intern("pokew")
+    }
+    return iPokeWIdx
 }
 
+var iPokeLIdx: int = -1
+
 func IPokeL(): int {
-    return intern("pokel")
+    if iPokeLIdx == -1 {
+        iPokeLIdx = intern("pokel")
+    }
+    return iPokeLIdx
 }
 
 // IXRecStrRead/IXRecStrWrite (Task 4, toolbox-integration Feature B) copy
@@ -3322,37 +3737,77 @@ func IPokeL(): int {
 // rendering IS ALREADY an address -- reusing SStoreStr would need a
 // dst-kind special case in every backend's printer for one field kind;
 // two dedicated intrinsics keep the existing StoreStr contract untouched.
+var iXRecStrReadIdx: int = -1
+
 func IXRecStrRead(): int {
-    return intern("xrec_str_read")
+    if iXRecStrReadIdx == -1 {
+        iXRecStrReadIdx = intern("xrec_str_read")
+    }
+    return iXRecStrReadIdx
 }
+
+var iXRecStrWriteIdx: int = -1
 
 func IXRecStrWrite(): int {
-    return intern("xrec_str_write")
+    if iXRecStrWriteIdx == -1 {
+        iXRecStrWriteIdx = intern("xrec_str_write")
+    }
+    return iXRecStrWriteIdx
 }
+
+var iLastErrCodeIdx: int = -1
 
 func ILastErrCode(): int {
-    return intern("lasterr_code")
+    if iLastErrCodeIdx == -1 {
+        iLastErrCodeIdx = intern("lasterr_code")
+    }
+    return iLastErrCodeIdx
 }
+
+var iLastErrMsgIdx: int = -1
 
 func ILastErrMsg(): int {
-    return intern("lasterr_msg")
+    if iLastErrMsgIdx == -1 {
+        iLastErrMsgIdx = intern("lasterr_msg")
+    }
+    return iLastErrMsgIdx
 }
 
+var iLastErrIdx: int = -1
+
 func ILastErr(): int {
-    return intern("lasterr_value")
+    if iLastErrIdx == -1 {
+        iLastErrIdx = intern("lasterr_value")
+    }
+    return iLastErrIdx
 }
 
 // -- files (host: stdio) --
+var iFileReadTextIdx: int = -1
+
 func IFileReadText(): int {
-    return intern("file_read_text")
+    if iFileReadTextIdx == -1 {
+        iFileReadTextIdx = intern("file_read_text")
+    }
+    return iFileReadTextIdx
 }
+
+var iFileWriteTextIdx: int = -1
 
 func IFileWriteText(): int {
-    return intern("file_write_text")
+    if iFileWriteTextIdx == -1 {
+        iFileWriteTextIdx = intern("file_write_text")
+    }
+    return iFileWriteTextIdx
 }
 
+var iFileNameIdx: int = -1
+
 func IFileName(): int {
-    return intern("file_name")
+    if iFileNameIdx == -1 {
+        iFileNameIdx = intern("file_name")
+    }
+    return iFileNameIdx
 }
 
 // -- files (Task 7, mac-resident-clarusc): 'CLFS'-named resource read /
@@ -3362,12 +3817,22 @@ func IFileName(): int {
 // rt_file_read_resource/rt_file_write_res -- no resource fork on that
 // filesystem), native lane is runtime/clarus/native.cla's
 // natReadResource/natWriteRes.
+var iFileReadResourceIdx: int = -1
+
 func IFileReadResource(): int {
-    return intern("file_read_resource")
+    if iFileReadResourceIdx == -1 {
+        iFileReadResourceIdx = intern("file_read_resource")
+    }
+    return iFileReadResourceIdx
 }
 
+var iFileWriteResIdx: int = -1
+
 func IFileWriteRes(): int {
-    return intern("file_write_res")
+    if iFileWriteResIdx == -1 {
+        iFileWriteResIdx = intern("file_write_res")
+    }
+    return iFileWriteResIdx
 }
 
 // -- files (record serialization, Task 2 mac-target-4d -> rt_file_save/
@@ -3378,12 +3843,22 @@ func IFileWriteRes(): int {
 // data arg's own IR type at print time (KRec directly, or KList/KMap's
 // elem), never carried as extra IR fields -- see cprint.cla's fpIntrCall
 // case.
+var iFileSaveIdx: int = -1
+
 func IFileSave(): int {
-    return intern("file_save")
+    if iFileSaveIdx == -1 {
+        iFileSaveIdx = intern("file_save")
+    }
+    return iFileSaveIdx
 }
 
+var iFileLoadIdx: int = -1
+
 func IFileLoad(): int {
-    return intern("file_load")
+    if iFileLoadIdx == -1 {
+        iFileLoadIdx = intern("file_load")
+    }
+    return iFileLoadIdx
 }
 
 // -- UI (Task 4: Ch7-11 windows/widgets/menus/canvas -> runtime/mac/rt_ui.h).
@@ -3392,12 +3867,22 @@ func IFileLoad(): int {
 // style (IStrLen/IStrIndex/... are one-op-per-name too) and letting each
 // cprint.cla case hardcode its own fixed rt_ui.h macro name textually, so no
 // macro-spelling data ever has to flow through an IR node's fields.
+var iUiOpenIdx: int = -1
+
 func IUiOpen(): int {
-    return intern("ui_open")
+    if iUiOpenIdx == -1 {
+        iUiOpenIdx = intern("ui_open")
+    }
+    return iUiOpenIdx
 }
 
+var iUiCloseIdx: int = -1
+
 func IUiClose(): int {
-    return intern("ui_close")
+    if iUiCloseIdx == -1 {
+        iUiCloseIdx = intern("ui_close")
+    }
+    return iUiCloseIdx
 }
 
 // IUiQuit (mac-target-4b final review) is `quit` in a UI program (Ch7
@@ -3411,16 +3896,31 @@ func IUiClose(): int {
 // accepted-and-ignored on the Macintosh). UI-free programs keep the plain
 // IQuit intrinsic (rt_quit) unchanged -- see lowQuit's irIsUiProgram()
 // branch.
+var iUiQuitIdx: int = -1
+
 func IUiQuit(): int {
-    return intern("ui_quit")
+    if iUiQuitIdx == -1 {
+        iUiQuitIdx = intern("ui_quit")
+    }
+    return iUiQuitIdx
 }
+
+var iUiFrontIdx: int = -1
 
 func IUiFront(): int {
-    return intern("ui_front")
+    if iUiFrontIdx == -1 {
+        iUiFrontIdx = intern("ui_front")
+    }
+    return iUiFrontIdx
 }
 
+var iUiStateIdx: int = -1
+
 func IUiState(): int {
-    return intern("ui_state")
+    if iUiStateIdx == -1 {
+        iUiStateIdx = intern("ui_state")
+    }
+    return iUiStateIdx
 }
 
 // IUiStateDefaults (clarusc-ui-gaps Task 2) constructs every handle-backed
@@ -3437,12 +3937,22 @@ func IUiState(): int {
 // window with >=1 such field. See its cprint.cla case (fpIntrCall) for the
 // per-field construction, which reuses cpDefaultInit -- no duplicated type
 // switch.
+var iUiStateDefaultsIdx: int = -1
+
 func IUiStateDefaults(): int {
-    return intern("ui_state_defaults")
+    if iUiStateDefaultsIdx == -1 {
+        iUiStateDefaultsIdx = intern("ui_state_defaults")
+    }
+    return iUiStateDefaultsIdx
 }
 
+var iUiSetTitleIdx: int = -1
+
 func IUiSetTitle(): int {
-    return intern("ui_set_title")
+    if iUiSetTitleIdx == -1 {
+        iUiSetTitleIdx = intern("ui_set_title")
+    }
+    return iUiSetTitleIdx
 }
 
 // IUiGetTitle (mac-target-4c Task 4b): `title` READ -- both the bare form
@@ -3450,16 +3960,31 @@ func IUiSetTitle(): int {
 // form (lowWindowInstSelect) lower to this, taking the window-instance IR
 // value as its one arg and yielding a fresh clar_str_255 temp filled by
 // rt_ui_get_title (cprint.cla, IFileName's fill-in-place temp pattern).
+var iUiGetTitleIdx: int = -1
+
 func IUiGetTitle(): int {
-    return intern("ui_get_title")
+    if iUiGetTitleIdx == -1 {
+        iUiGetTitleIdx = intern("ui_get_title")
+    }
+    return iUiGetTitleIdx
 }
+
+var iUiSetCaptionIdx: int = -1
 
 func IUiSetCaption(): int {
-    return intern("ui_set_caption")
+    if iUiSetCaptionIdx == -1 {
+        iUiSetCaptionIdx = intern("ui_set_caption")
+    }
+    return iUiSetCaptionIdx
 }
 
+var iUiSetTextIdx: int = -1
+
 func IUiSetText(): int {
-    return intern("ui_set_text")
+    if iUiSetTextIdx == -1 {
+        iUiSetTextIdx = intern("ui_set_text")
+    }
+    return iUiSetTextIdx
 }
 
 // IUiGetFieldText (mac-target-4c Task 2): `field.text` read --
@@ -3467,8 +3992,13 @@ func IUiSetText(): int {
 // pattern). field.text WRITE reuses IUiSetText directly (identical
 // rt_ui_widget_set_str/RTUI_PROP_TEXT call shape to label.text's write --
 // see lower.cla's lowWidgetSetAssign), so there is no IUiSetFieldText.
+var iUiGetFieldTextIdx: int = -1
+
 func IUiGetFieldText(): int {
-    return intern("ui_get_field_text")
+    if iUiGetFieldTextIdx == -1 {
+        iUiGetFieldTextIdx = intern("ui_get_field_text")
+    }
+    return iUiGetFieldTextIdx
 }
 
 // IUiGetLabelText (native-gaps-cleanup Task 5): `label.text` read --
@@ -3477,48 +4007,98 @@ func IUiGetFieldText(): int {
 // IUiSetText for the identical reason -- see lowWidgetSetAssign's own
 // comment). label.text's WRITE already reuses IUiSetText too, so there is
 // no IUiSetLabelText; this is a read-only intrinsic.
+var iUiGetLabelTextIdx: int = -1
+
 func IUiGetLabelText(): int {
-    return intern("ui_get_label_text")
+    if iUiGetLabelTextIdx == -1 {
+        iUiGetLabelTextIdx = intern("ui_get_label_text")
+    }
+    return iUiGetLabelTextIdx
 }
 
 // IUiGetTextviewText/IUiSetTextviewText (mac-target-4c Task 2):
 // `textview.text` read/write against rt_ui_widget_get_text/set_text's
 // rt_text* ABI -- distinct from field.text's Str255 shape, so these are
 // NOT interchangeable with IUiGetFieldText/IUiSetText.
+var iUiGetTextviewTextIdx: int = -1
+
 func IUiGetTextviewText(): int {
-    return intern("ui_get_textview_text")
+    if iUiGetTextviewTextIdx == -1 {
+        iUiGetTextviewTextIdx = intern("ui_get_textview_text")
+    }
+    return iUiGetTextviewTextIdx
 }
+
+var iUiSetTextviewTextIdx: int = -1
 
 func IUiSetTextviewText(): int {
-    return intern("ui_set_textview_text")
+    if iUiSetTextviewTextIdx == -1 {
+        iUiSetTextviewTextIdx = intern("ui_set_textview_text")
+    }
+    return iUiSetTextviewTextIdx
 }
+
+var iUiGetCheckedIdx: int = -1
 
 func IUiGetChecked(): int {
-    return intern("ui_get_checked")
+    if iUiGetCheckedIdx == -1 {
+        iUiGetCheckedIdx = intern("ui_get_checked")
+    }
+    return iUiGetCheckedIdx
 }
+
+var iUiSetCheckedIdx: int = -1
 
 func IUiSetChecked(): int {
-    return intern("ui_set_checked")
+    if iUiSetCheckedIdx == -1 {
+        iUiSetCheckedIdx = intern("ui_set_checked")
+    }
+    return iUiSetCheckedIdx
 }
+
+var iUiGetEnabledIdx: int = -1
 
 func IUiGetEnabled(): int {
-    return intern("ui_get_enabled")
+    if iUiGetEnabledIdx == -1 {
+        iUiGetEnabledIdx = intern("ui_get_enabled")
+    }
+    return iUiGetEnabledIdx
 }
+
+var iUiSetEnabledIdx: int = -1
 
 func IUiSetEnabled(): int {
-    return intern("ui_set_enabled")
+    if iUiSetEnabledIdx == -1 {
+        iUiSetEnabledIdx = intern("ui_set_enabled")
+    }
+    return iUiSetEnabledIdx
 }
+
+var iUiGetWidthIdx: int = -1
 
 func IUiGetWidth(): int {
-    return intern("ui_get_width")
+    if iUiGetWidthIdx == -1 {
+        iUiGetWidthIdx = intern("ui_get_width")
+    }
+    return iUiGetWidthIdx
 }
+
+var iUiGetHeightIdx: int = -1
 
 func IUiGetHeight(): int {
-    return intern("ui_get_height")
+    if iUiGetHeightIdx == -1 {
+        iUiGetHeightIdx = intern("ui_get_height")
+    }
+    return iUiGetHeightIdx
 }
 
+var iUiMenuEnableIdx: int = -1
+
 func IUiMenuEnable(): int {
-    return intern("ui_menu_enable")
+    if iUiMenuEnableIdx == -1 {
+        iUiMenuEnableIdx = intern("ui_menu_enable")
+    }
+    return iUiMenuEnableIdx
 }
 
 // IUiCancel (Task 5) is the `cancel` statement (Ch5/Ch8) -- valid only
@@ -3531,8 +4111,13 @@ func IUiMenuEnable(): int {
 // writes through that one program-wide scratch pointer, never a
 // per-handler parameter (closeRequest's own event spec always has 0
 // declared Clarus params, so there is no AST-visible slot for one anyway).
+var iUiCancelIdx: int = -1
+
 func IUiCancel(): int {
-    return intern("ui_cancel")
+    if iUiCancelIdx == -1 {
+        iUiCancelIdx = intern("ui_cancel")
+    }
+    return iUiCancelIdx
 }
 
 // IUiAskOpen/IUiAskSave/IUiAskSaveChanges (Task 4, mac-target-4c): the three
@@ -3545,56 +4130,116 @@ func IUiCancel(): int {
 // enum word (0/1/2), embedded directly since Save/Discard/Cancel already
 // fold to the same int consts at compile time (types.cla's seeded
 // saveChoice enum).
+var iUiAskOpenIdx: int = -1
+
 func IUiAskOpen(): int {
-    return intern("ui_ask_open")
+    if iUiAskOpenIdx == -1 {
+        iUiAskOpenIdx = intern("ui_ask_open")
+    }
+    return iUiAskOpenIdx
 }
+
+var iUiAskSaveIdx: int = -1
 
 func IUiAskSave(): int {
-    return intern("ui_ask_save")
+    if iUiAskSaveIdx == -1 {
+        iUiAskSaveIdx = intern("ui_ask_save")
+    }
+    return iUiAskSaveIdx
 }
+
+var iUiAskSaveChangesIdx: int = -1
 
 func IUiAskSaveChanges(): int {
-    return intern("ui_ask_save_changes")
+    if iUiAskSaveChangesIdx == -1 {
+        iUiAskSaveChangesIdx = intern("ui_ask_save_changes")
+    }
+    return iUiAskSaveChangesIdx
 }
+
+var iUiCanvasClearIdx: int = -1
 
 func IUiCanvasClear(): int {
-    return intern("ui_canvas_clear")
+    if iUiCanvasClearIdx == -1 {
+        iUiCanvasClearIdx = intern("ui_canvas_clear")
+    }
+    return iUiCanvasClearIdx
 }
+
+var iUiCanvasLineIdx: int = -1
 
 func IUiCanvasLine(): int {
-    return intern("ui_canvas_line")
+    if iUiCanvasLineIdx == -1 {
+        iUiCanvasLineIdx = intern("ui_canvas_line")
+    }
+    return iUiCanvasLineIdx
 }
+
+var iUiCanvasRectIdx: int = -1
 
 func IUiCanvasRect(): int {
-    return intern("ui_canvas_rect")
+    if iUiCanvasRectIdx == -1 {
+        iUiCanvasRectIdx = intern("ui_canvas_rect")
+    }
+    return iUiCanvasRectIdx
 }
+
+var iUiCanvasCircleIdx: int = -1
 
 func IUiCanvasCircle(): int {
-    return intern("ui_canvas_circle")
+    if iUiCanvasCircleIdx == -1 {
+        iUiCanvasCircleIdx = intern("ui_canvas_circle")
+    }
+    return iUiCanvasCircleIdx
 }
+
+var iUiCanvasFillCircleIdx: int = -1
 
 func IUiCanvasFillCircle(): int {
-    return intern("ui_canvas_fill_circle")
+    if iUiCanvasFillCircleIdx == -1 {
+        iUiCanvasFillCircleIdx = intern("ui_canvas_fill_circle")
+    }
+    return iUiCanvasFillCircleIdx
 }
 
+var iUiCanvasPatternIdx: int = -1
+
 func IUiCanvasPattern(): int {
-    return intern("ui_canvas_pattern")
+    if iUiCanvasPatternIdx == -1 {
+        iUiCanvasPatternIdx = intern("ui_canvas_pattern")
+    }
+    return iUiCanvasPatternIdx
 }
 
 // IUiGetSelected/IUiSetSelected (mac-target-4d Task 5): popup/table's
 // `selected` runtime property (Ch8/Ch10) -- rt_ui_widget_get_int/set_int's
 // RTUI_PROP_SELECTED, same shape as IUiGetWidth/IUiGetHeight's int-typed
 // get and IUiSetChecked's bool-typed set (but through *_int, not *_bool).
+var iUiGetSelectedIdx: int = -1
+
 func IUiGetSelected(): int {
-    return intern("ui_get_selected")
+    if iUiGetSelectedIdx == -1 {
+        iUiGetSelectedIdx = intern("ui_get_selected")
+    }
+    return iUiGetSelectedIdx
 }
+
+var iUiSetSelectedIdx: int = -1
 
 func IUiSetSelected(): int {
-    return intern("ui_set_selected")
+    if iUiSetSelectedIdx == -1 {
+        iUiSetSelectedIdx = intern("ui_set_selected")
+    }
+    return iUiSetSelectedIdx
 }
 
+var iUiCanvasDrawTextIdx: int = -1
+
 func IUiCanvasDrawText(): int {
-    return intern("ui_canvas_draw_text")
+    if iUiCanvasDrawTextIdx == -1 {
+        iUiCanvasDrawTextIdx = intern("ui_canvas_draw_text")
+    }
+    return iUiCanvasDrawTextIdx
 }
 
 // IUiEdit (mac-target-4d Task 7, Ch10's Edit Statement) is `edit F, target`
@@ -3609,15 +4254,25 @@ func IUiCanvasDrawText(): int {
 // case); a1/a2 (kind 1: lvalue, -; kind 2: list, index; kind 3: map, key)
 // are already-lowered IR exprs, -1/absent for kind 0. See cprint.cla's
 // fpUiEditStmt for the four call shapes this decodes into.
+var iUiEditIdx: int = -1
+
 func IUiEdit(): int {
-    return intern("ui_edit")
+    if iUiEditIdx == -1 {
+        iUiEditIdx = intern("ui_edit")
+    }
+    return iUiEditIdx
 }
 
 // IUiFormIsNew (Task 7) is `x.isNew` read on the `accepted` handler's own
 // parameter (lower.cla's lowSelect TyRec case, gated by lowCurHandlerEvent/
 // lowCurAcceptedParam) -- rt_ui_form_is_new(), no args.
+var iUiFormIsNewIdx: int = -1
+
 func IUiFormIsNew(): int {
-    return intern("ui_form_is_new")
+    if iUiFormIsNewIdx == -1 {
+        iUiFormIsNewIdx = intern("ui_form_is_new")
+    }
+    return iUiFormIsNewIdx
 }
 
 // ---- native-5e Task 6: reverse-waist dispatcher synthesis intrinsics ----
@@ -3635,8 +4290,13 @@ func IUiFormIsNew(): int {
 // clar_ui_fire_winevent's RTUI_EV_CLOSEREQUEST arm, mirroring the OLD
 // cpEmitOneWinEventDispatcher's own `clar_ui_cur_cancel = (long *)a;`
 // (cprint.cla:5164) at the IR level. Void; one ptr arg.
+var iUiSetCancelFlagIdx: int = -1
+
 func IUiSetCancelFlag(): int {
-    return intern("ui_set_cancel_flag")
+    if iUiSetCancelFlagIdx == -1 {
+        iUiSetCancelFlagIdx = intern("ui_set_cancel_flag")
+    }
+    return iUiSetCancelFlagIdx
 }
 
 // IUiValueAtPtr reads the by-value KRec or KStr value living at a ptr-typed
@@ -3647,8 +4307,13 @@ func IUiSetCancelFlag(): int {
 // "reinterpret this address as my own by-value wire type and copy it out"
 // -- the intrinsic's own return type (irExprType of the EIntr node) names
 // which (KStr or KRec). One ptr arg.
+var iUiValueAtPtrIdx: int = -1
+
 func IUiValueAtPtr(): int {
-    return intern("ui_value_at_ptr")
+    if iUiValueAtPtrIdx == -1 {
+        iUiValueAtPtrIdx = intern("ui_value_at_ptr")
+    }
+    return iUiValueAtPtrIdx
 }
 
 // IUiAddrOfGlobal returns a global's own storage address (cprint: `(void
@@ -3656,6 +4321,11 @@ func IUiValueAtPtr(): int {
 // only operation (the plan's "Table.rowsIdx = the bound global's irGlobals
 // declaration-order position" convention, uiblob.cla's uibGlobalIndex).
 // One EVarRef(global) arg; return type ptr.
+var iUiAddrOfGlobalIdx: int = -1
+
 func IUiAddrOfGlobal(): int {
-    return intern("ui_addr_of_global")
+    if iUiAddrOfGlobalIdx == -1 {
+        iUiAddrOfGlobalIdx = intern("ui_addr_of_global")
+    }
+    return iUiAddrOfGlobalIdx
 }
