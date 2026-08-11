@@ -1,0 +1,122 @@
+// arrelem.cla: memory-leak-fix phase Task 5 fix round 1 regression --
+// review finding: cgContainerElemNeedsWalk/cgContainerElemRelease (native)
+// and cpEmitRelease/cpEmitElemReleaseWalk's per-kind branches (host) had
+// no KArr arm. `list of Item[3]` (and the map/sortedmap/intmap value-type
+// equivalent) is legal Clarus -- check.cla only bans ptr/overlay/xrec as
+// array ELEMENT types, not KArr as a container element/value type -- and
+// BOTH the `.clear()` Deep walk (Task 4/5) and the pre-existing scope-exit
+// teardown walk (cgDeepReleaseContainer/cpEmitRelease, predating this
+// phase) silently skipped releasing the text handles packed inside each
+// array-typed slot/value.
+//
+// Uses Item[3] (array-of-handle-bearing-record), NOT text[3]
+// (array-of-text): populating a container element/value with a whole
+// array-of-TEXT VALUE (`l.push(arrOfText)`/`m[k] = arrOfText`) hits a
+// SEPARATE, pre-existing, unrelated gap -- lowListMethod's push/unshift
+// and lowIndexAssign's List/Map/SortedMap/IntMap branches decide the
+// *Retain intrinsic variant via `lowEscapeTrackableKind(irtKind(elemT)) or
+// lowIsRecBearing(elemT)`, never lowArrHeapScalarBearing, so a whole
+// array-of-Text/List/Map VALUE handed to push/unshift/index-assign is
+// never retained (confirmed by hand-probe: over-release SIGABRT once a
+// correct release walk is in place, since the container's copy was never
+// counted in the first place). lowIsRecBearing, by contrast, ALREADY
+// recurses into KArr (its own doc comment: "or a fixed array... whose
+// element type is [handle-backed]"), so array-of-RECORD push/set already
+// retains correctly today -- the ONLY thing missing for THIS shape was the
+// release-walk side this fix round adds. The array-of-Text push/set gap
+// is out of this fix round's scope (not the release-walk machinery this
+// review targeted) -- flagged in the fix round's own report, not fixed
+// here.
+record Item {
+    name: text
+}
+
+func makeArrItem(n: string): Item {
+    var it: Item
+    it.name = n
+    return it
+}
+
+// The work happens in these helpers, NOT in App.startCLI: `quit`
+// deliberately skips the quitting handler's own scope-exit frees
+// (clearprobe.cla's own doc comment) -- each RETURNS so its own release
+// path (either `.clear()`'s Deep walk or the natural end-of-scope
+// teardown walk) actually runs before this fixture's single live=0
+// assertion at exit.
+func listClearCase() {
+    var l: list of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("one")
+    a[1] = makeArrItem("two")
+    a[2] = makeArrItem("three")
+    l.push(a)
+    // .clear() Deep walk: must release all 3 record-held text handles
+    // before the O(1) hard reset.
+    l.clear()
+}
+
+func listTeardownCase() {
+    var l: list of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("four")
+    a[1] = makeArrItem("five")
+    a[2] = makeArrItem("six")
+    l.push(a)
+    // l goes out of scope here (function returns, no .clear()) -- pins
+    // cgDeepReleaseContainer's/cpEmitRelease's own pre-existing
+    // container-teardown walk over an array-of-record element.
+}
+
+func mapClearCase() {
+    var m: map of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("seven")
+    a[1] = makeArrItem("eight")
+    a[2] = makeArrItem("nine")
+    m["k"] = a
+    m.clear()
+}
+
+func mapTeardownCase() {
+    var m: map of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("ten")
+    a[1] = makeArrItem("eleven")
+    a[2] = makeArrItem("twelve")
+    m["k"] = a
+}
+
+func sortedMapClearCase() {
+    var sm: sortedmap of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("t1")
+    a[1] = makeArrItem("t2")
+    a[2] = makeArrItem("t3")
+    sm["k"] = a
+    sm.clear()
+}
+
+func intMapTeardownCase() {
+    var im: intmap of Item[3]
+    var a: Item[3]
+
+    a[0] = makeArrItem("i1")
+    a[1] = makeArrItem("i2")
+    a[2] = makeArrItem("i3")
+    im[1] = a
+}
+
+on App.startCLI(args: list of string) {
+    listClearCase()
+    listTeardownCase()
+    mapClearCase()
+    mapTeardownCase()
+    sortedMapClearCase()
+    intMapTeardownCase()
+    quit 0
+}

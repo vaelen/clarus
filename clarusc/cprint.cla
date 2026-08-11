@@ -4416,7 +4416,7 @@ func cpEmitElemReleaseWalk(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    { int32_t i; for (i = 0; i < " + countCall + "; i++) clar_release_" + recName + "((clar_rec_" + recName + " *)" + atPrefix + "i)); }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
             en = "en" + numToStr(cpLoopN)
@@ -4462,7 +4462,7 @@ func cpEmitElemReleaseWalk(dst: text, cexpr: string, t: int) {
         recName = poolGet(irtName(et))
         irMarkRcWalkNeeded(irtName(et))
         cpAppendLine(dst, "    { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
-    } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+    } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
         cpLoopN = cpLoopN + 1
         ix = "ix" + numToStr(cpLoopN)
         cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
@@ -4571,7 +4571,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; for (i = 0; i < " + countCall + "; i++) clar_release_" + recName + "((clar_rec_" + recName + " *)" + atPrefix + "i)); }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
             // ARC Task 8 (carry-forward 3): a NESTED container element
             // (`list of list of text`, `list of map of text`, ... -- the
             // type system permits arbitrary nesting: parseType/resolveType
@@ -4671,7 +4671,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
             // ARC Task 8 (carry-forward 3) -- same nested-container reasoning
             // as the KList branch just above, adapted for a map value: a map's
             // own internal storage is opaque bytes (unlike a list's directly
@@ -4726,7 +4726,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
             cpAppendLine(dst, "    if (" + lastrefCall + ") {")
@@ -4766,7 +4766,7 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
             recName = poolGet(irtName(et))
             irMarkRcWalkNeeded(irtName(et))
             cpAppendLine(dst, "    if (" + lastrefCall + ") { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
-        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap or (irtKind(et) == KArr and irtNeedsCtor(irtElem(et))) {
             cpLoopN = cpLoopN + 1
             ix = "ix" + numToStr(cpLoopN)
             cpAppendLine(dst, "    if (" + lastrefCall + ") {")

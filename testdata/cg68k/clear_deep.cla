@@ -10,6 +10,24 @@
 // this is the "list of text + .clear()" coverage the Task 5 brief calls
 // for, extended to the sibling map/sortedmap/intmap shapes so all four new
 // arms get at least one golden-listing proof.
+//
+// fix round 1 review asked for a list-of-array `.clear()` case too
+// (cgContainerElemNeedsWalk/cgContainerElemRelease's new KArr arm). NOT
+// added here: `list of Item[3]` (or any `list of T[n]`) fails to COMPILE
+// on this lane at all, whether pushed or map-set -- `cgExpr: EVarRef
+// non-scalar (str/rec/arr) reached in value context`, confirmed by direct
+// probe (both `l.push(arr)` and `m[k] = arr`) -- a separate, pre-existing
+// cg68k limitation (cgExpr/cgPushArgs never learned a KArr-by-value
+// argument shape; arr_whole_assign.cla's own comment already documents
+// this for List.push specifically, generalizes to Map subscript-store
+// too), independent of and unfixed by this task's own release-walk fix.
+// cgContainerElemNeedsWalk/cgContainerElemRelease's own KArr arms are
+// still added (see cg68k.cla) -- correct by code review/parity with the
+// already-proven cgReleaseAt/cgRetainAt KArr machinery for LOCALS -- but
+// currently unreachable by any program this lane can compile; see
+// testdata/leakgate/arrelem.cla's own doc comment for the host-lane
+// (fully executable) regression this fix DOES land, and the fix round's
+// own report for the full finding.
 func clearDeepRun() {
     var l: list of text
     var m: map of text

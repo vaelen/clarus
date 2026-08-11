@@ -35,6 +35,21 @@ func TestLeakGate(t *testing.T) {
 	t.Run("ClearRefElems", func(t *testing.T) {
 		runLeakFixture(t, "../../testdata/leakgate/clearprobe.cla")
 	})
+	t.Run("ArrElem", func(t *testing.T) {
+		// fix-round-1 regression: cgContainerElemNeedsWalk/
+		// cgContainerElemRelease (native) and cpEmitRelease/
+		// cpEmitElemReleaseWalk's per-kind branches (host) had no KArr
+		// arm -- a `list of Item[3]` (or the map/sortedmap/intmap
+		// value-type equivalent) silently skipped releasing the
+		// record-held text handles packed inside each array-typed
+		// slot/value, on both the `.clear()` Deep walk and the
+		// pre-existing scope-exit teardown walk. See
+		// testdata/leakgate/arrelem.cla's own doc comment for why it
+		// uses Item[3] (array-of-record) rather than text[3]
+		// (array-of-text): the latter hits a separate, pre-existing,
+		// out-of-this-fix-round's-scope push/set-retain gap.
+		runLeakFixture(t, "../../testdata/leakgate/arrelem.cla")
+	})
 	t.Run("DoubleCompile", func(t *testing.T) {
 		t.Skip("memory-leak-fix Task 8 flips this on")
 		runDoubleCompileGate(t)

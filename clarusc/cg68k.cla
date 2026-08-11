@@ -3867,10 +3867,14 @@ func cgFreeStmtTmps() {
 
 // cgContainerElemNeedsWalk mirrors cpEmitRelease's own List/Map
 // element-walk gate EXACTLY (cprint.cla:3251/3270/3281 for List,
-// :3360/3369/3381 for Map): KText, a handle-bearing KRec, or a nested
-// KList/KMap -- deliberately NOT KArr (cpEmitRelease has no KArr branch in
-// its own List/Map element dispatch either; a documented parity gap in the
-// C reference, mirrored here rather than "fixed").
+// :3360/3369/3381 for Map): KText, a handle-bearing KRec, a nested
+// KList/KMap/KSortedMap/KIntMap, or (fix round 1 review, memory-leak-fix
+// phase: a `list of text[3]`/similar is legal -- check.cla only bans
+// ptr/overlay/xrec as array ELEMENT types, not KArr as a container
+// element/value type -- this was a real silent-leak gap on a reachable
+// type, not a merely-hypothetical one) a KArr whose OWN element needs
+// construction/release traffic (irtNeedsCtor -- an all-scalar array, e.g.
+// `int[3]`, still needs no walk).
 func cgContainerElemNeedsWalk(et: int): bool {
     var k: IRKind
 
@@ -3881,19 +3885,23 @@ func cgContainerElemNeedsWalk(et: int): bool {
     if k == KRec {
         return irRecHasHandleField(irtName(et))
     }
+    if k == KArr {
+        return irtNeedsCtor(irtElem(et))
+    }
     return false
 }
 
 // cgNeedsRelease mirrors fpNeedsRelease (cprint.cla:434-445) EXACTLY: does
 // a value of IR type t need ANY retain/release traffic at all --
 // Text/List/Map, OR a handle-bearing record, OR (recursively) a fixed
-// array whose element does. Broader than cgContainerElemNeedsWalk (which
-// answers a DIFFERENT, List/Map-element-walk-specific question and
-// deliberately excludes KArr) -- this is the general predicate
-// cgIntr's own IListPop/IListShift discard-detection and IListRemove/
-// IMapSet(Retain)/IMapRemove's own old-value-release guards consult,
-// mirroring fpNeedsRelease's identical role at those same cprint call
-// sites.
+// array whose element does. A DIFFERENT question from
+// cgContainerElemNeedsWalk (that one answers "does a List/Map/SortedMap/
+// IntMap element/value of this type need its OWN walk", the same KArr
+// case included since the fix round 1 review) -- this is the general
+// predicate cgIntr's own IListPop/IListShift discard-detection and
+// IListRemove/IMapSet(Retain)/IMapRemove's own old-value-release guards
+// consult, mirroring fpNeedsRelease's identical role at those same cprint
+// call sites.
 func cgNeedsRelease(t: int): bool {
     var k: IRKind
 
@@ -3941,6 +3949,13 @@ func cgEmitAtCall(nameIdx: int, ptrOff: int, idxOff: int) {
 // element/value's own IR type, depth is the NEXT recursion level a nested
 // List/Map element's own walk should use (never the caller's own level:
 // cgDeepReleaseContainer already validates depth<cgDeepLevels itself).
+// KArr (fix round 1 review, memory-leak-fix phase): reuses cgReleaseAt's
+// OWN KArr walk verbatim -- the SAME (reg, off)-parametrized per-slot
+// release machinery cgReleaseAt already uses for a fixed-array LOCAL/field
+// (its own KArr branch, cgWalkStashBase/RestoreBase-protected against the
+// per-slot recursion's JSRs clobbering the base register) -- rather than
+// reimplementing an array walk here. (reg=0, off=0) is A0, exactly this
+// function's own "address already in A0" precondition.
 func cgContainerElemRelease(et: int, depth: int) {
     var k: IRKind
 
@@ -3951,6 +3966,8 @@ func cgContainerElemRelease(et: int, depth: int) {
         cgEmitRecWalkCall(false, 0, 0, irtName(et))
     } else if k == KList or k == KMap or k == KSortedMap or k == KIntMap {
         cgDeepReleaseContainer(0, 0, et, depth)
+    } else if k == KArr {
+        cgReleaseAt(0, 0, et)
     }
 }
 
