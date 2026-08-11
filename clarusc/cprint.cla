@@ -343,21 +343,11 @@ var fpStmtTmpType: list of int
 var fpDiscardExprIdx: int
 
 func fpReset(indent: int) {
-    while fpBody.count > 0 {
-        fpBody.pop()
-    }
-    while fpStmtTmps.count > 0 {
-        fpStmtTmps.pop()
-    }
-    while fpStmtTmpRel.count > 0 {
-        fpStmtTmpRel.pop()
-    }
-    while fpStmtTmpIsRec.count > 0 {
-        fpStmtTmpIsRec.pop()
-    }
-    while fpStmtTmpType.count > 0 {
-        fpStmtTmpType.pop()
-    }
+    fpBody.clear()
+    fpStmtTmps.clear()
+    fpStmtTmpRel.clear()
+    fpStmtTmpIsRec.clear()
+    fpStmtTmpType.clear()
     fpTmpN = 0
     fpIndent = indent
     fpDiscardExprIdx = -1
@@ -743,18 +733,10 @@ func fpFreeStmtTmps() {
         fpEmitTmpRelease(i)
         i = i + 1
     }
-    while fpStmtTmps.count > 0 {
-        fpStmtTmps.pop()
-    }
-    while fpStmtTmpRel.count > 0 {
-        fpStmtTmpRel.pop()
-    }
-    while fpStmtTmpIsRec.count > 0 {
-        fpStmtTmpIsRec.pop()
-    }
-    while fpStmtTmpType.count > 0 {
-        fpStmtTmpType.pop()
-    }
+    fpStmtTmps.clear()
+    fpStmtTmpRel.clear()
+    fpStmtTmpIsRec.clear()
+    fpStmtTmpType.clear()
 }
 
 // ================================================================
@@ -6431,21 +6413,11 @@ func cpEmitMain() {
 // ================================================================
 
 func cpResetBuffers() {
-    while cpTypeBuf.count > 0 {
-        cpTypeBuf.pop()
-    }
-    while cpLitBuf.count > 0 {
-        cpLitBuf.pop()
-    }
-    while cpRecBuf.count > 0 {
-        cpRecBuf.pop()
-    }
-    while cpUiBuf.count > 0 {
-        cpUiBuf.pop()
-    }
-    while cpRestBuf.count > 0 {
-        cpRestBuf.pop()
-    }
+    cpTypeBuf.clear()
+    cpLitBuf.clear()
+    cpRecBuf.clear()
+    cpUiBuf.clear()
+    cpRestBuf.clear()
 }
 
 // cpAppendLine appends a `string`-sourced line to out, followed by a single

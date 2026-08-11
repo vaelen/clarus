@@ -3116,12 +3116,8 @@ func cgFreeStmtTmps() {
         cgReleaseAt(6, cgStmtTmpOffs[i], cgStmtTmpType[i])
         i = i + 1
     }
-    while cgStmtTmpOffs.count > 0 {
-        cgStmtTmpOffs.pop()
-    }
-    while cgStmtTmpType.count > 0 {
-        cgStmtTmpType.pop()
-    }
+    cgStmtTmpOffs.clear()
+    cgStmtTmpType.clear()
 }
 
 // cgContainerElemNeedsWalk mirrors cpEmitRelease's own List/Map

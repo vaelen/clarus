@@ -649,9 +649,7 @@ func lexNext(): Token {
 func lexAll(src: text): int {
     var t: Token
 
-    while toks.count > 0 {
-        toks.pop()
-    }
+    toks.clear()
     lexInit(src)
     while true {
         t = lexNext()

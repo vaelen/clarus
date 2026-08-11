@@ -368,18 +368,10 @@ var typeExprs: list of TypeExpr
 // 5's established pattern for arenas that must not leak across programs in
 // the differential harness).
 func astReset() {
-    while exprs.count > 0 {
-        exprs.pop()
-    }
-    while stmts.count > 0 {
-        stmts.pop()
-    }
-    while decls.count > 0 {
-        decls.pop()
-    }
-    while typeExprs.count > 0 {
-        typeExprs.pop()
-    }
+    exprs.clear()
+    stmts.clear()
+    decls.clear()
+    typeExprs.clear()
 }
 
 // boolToInt/intToBool convert between Clarus bool and the 0/1 ints stored

@@ -1009,99 +1009,37 @@ var irWordT: int
 // IRTypes. Call between lowering independent programs (mirrors astReset/
 // typesReset).
 func irReset() {
-    while irTypes.count > 0 {
-        irTypes.pop()
-    }
-    while irStmts.count > 0 {
-        irStmts.pop()
-    }
-    while irExprs.count > 0 {
-        irExprs.pop()
-    }
-    while irLocals.count > 0 {
-        irLocals.pop()
-    }
-    while irFuncs.count > 0 {
-        irFuncs.pop()
-    }
-    while irCbGlueNames.count > 0 {
-        irCbGlueNames.pop()
-    }
-    while irGlobals.count > 0 {
-        irGlobals.pop()
-    }
-    while irFieldSlots.count > 0 {
-        irFieldSlots.pop()
-    }
-    while irRecords.count > 0 {
-        irRecords.pop()
-    }
-    while irEnumMembers.count > 0 {
-        irEnumMembers.pop()
-    }
-    while irEnums.count > 0 {
-        irEnums.pop()
-    }
-    while irWidgetDescs.count > 0 {
-        irWidgetDescs.pop()
-    }
-    while irBindDescs.count > 0 {
-        irBindDescs.pop()
-    }
-    while irWindowDescs.count > 0 {
-        irWindowDescs.pop()
-    }
-    while irMenuItemDescs.count > 0 {
-        irMenuItemDescs.pop()
-    }
-    while irMenuDescs.count > 0 {
-        irMenuDescs.pop()
-    }
-    while irWinHandlers.count > 0 {
-        irWinHandlers.pop()
-    }
-    while irWidgetHandlerEntries.count > 0 {
-        irWidgetHandlerEntries.pop()
-    }
-    while irMenuHandlerEntries.count > 0 {
-        irMenuHandlerEntries.pop()
-    }
-    while irEveryEntries.count > 0 {
-        irEveryEntries.pop()
-    }
-    while irStrLits.count > 0 {
-        irStrLits.pop()
-    }
-    while irExternNames.count > 0 {
-        irExternNames.pop()
-    }
-    while irExternRetTys.count > 0 {
-        irExternRetTys.pop()
-    }
-    while irExternParamStart.count > 0 {
-        irExternParamStart.pop()
-    }
-    while irExternParamCountArr.count > 0 {
-        irExternParamCountArr.pop()
-    }
-    while irExternParamTys.count > 0 {
-        irExternParamTys.pop()
-    }
-    while irExternTrapWords.count > 0 {
-        irExternTrapWords.pop()
-    }
-    while irExternConvs.count > 0 {
-        irExternConvs.pop()
-    }
-    while irExternSels.count > 0 {
-        irExternSels.pop()
-    }
-    while irExternParamRegs.count > 0 {
-        irExternParamRegs.pop()
-    }
-    while irExternRetRegs.count > 0 {
-        irExternRetRegs.pop()
-    }
+    irTypes.clear()
+    irStmts.clear()
+    irExprs.clear()
+    irLocals.clear()
+    irFuncs.clear()
+    irCbGlueNames.clear()
+    irGlobals.clear()
+    irFieldSlots.clear()
+    irRecords.clear()
+    irEnumMembers.clear()
+    irEnums.clear()
+    irWidgetDescs.clear()
+    irBindDescs.clear()
+    irWindowDescs.clear()
+    irMenuItemDescs.clear()
+    irMenuDescs.clear()
+    irWinHandlers.clear()
+    irWidgetHandlerEntries.clear()
+    irMenuHandlerEntries.clear()
+    irEveryEntries.clear()
+    irStrLits.clear()
+    irExternNames.clear()
+    irExternRetTys.clear()
+    irExternParamStart.clear()
+    irExternParamCountArr.clear()
+    irExternParamTys.clear()
+    irExternTrapWords.clear()
+    irExternConvs.clear()
+    irExternSels.clear()
+    irExternParamRegs.clear()
+    irExternRetRegs.clear()
 
     irHasLaunch = false
     irHasStartEmpty = false

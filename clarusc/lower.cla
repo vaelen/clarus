@@ -3039,9 +3039,7 @@ func lowCollectScopeExitCandidates(bodyBlk: int) {
 // synthetic, never a stale one left over from the previous function.
 func lowRunEscapePrepass(bodyBlk: int) {
     lowRetTempIdx = -1
-    while lowFreeNames.count > 0 {
-        lowFreeNames.pop()
-    }
+    lowFreeNames.clear()
     lowCollectScopeExitCandidates(bodyBlk)
 }
 

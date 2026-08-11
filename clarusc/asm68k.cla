@@ -219,15 +219,9 @@ var a68UnresolvedId: int
 // ================================================================
 
 func a68Reset() {
-    while a68Items.count > 0 {
-        a68Items.pop()
-    }
-    while a68LabelAddr.count > 0 {
-        a68LabelAddr.pop()
-    }
-    while a68LabelDefined.count > 0 {
-        a68LabelDefined.pop()
-    }
+    a68Items.clear()
+    a68LabelAddr.clear()
+    a68LabelDefined.clear()
     a68Pc = 0
     a68BytesOut = ""
     a68UnresolvedId = -1

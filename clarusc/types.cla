@@ -416,12 +416,8 @@ func typesInit() {
 // typesReset empties typeArena and enumMembers, then re-seeds the
 // singletons via typesInit -- call between compiling independent programs.
 func typesReset() {
-    while typeArena.count > 0 {
-        typeArena.pop()
-    }
-    while enumMembers.count > 0 {
-        enumMembers.pop()
-    }
+    typeArena.clear()
+    enumMembers.clear()
     typesInit()
 }
 
@@ -712,13 +708,7 @@ func scopesTruncate(mark: int) {
 // scopesReset empties scopes/symbols/funcSigs -- call between compiling
 // independent programs, alongside typesReset.
 func scopesReset() {
-    while scopes.count > 0 {
-        scopes.pop()
-    }
-    while symbols.count > 0 {
-        symbols.pop()
-    }
-    while funcSigs.count > 0 {
-        funcSigs.pop()
-    }
+    scopes.clear()
+    symbols.clear()
+    funcSigs.clear()
 }

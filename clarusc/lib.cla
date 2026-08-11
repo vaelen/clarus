@@ -84,15 +84,9 @@ func emitDiag(line: int, col: int, msg: string) {
 // Call this between compiling independent programs or files to avoid
 // cross-program diagnostic leakage.
 func resetDiags() {
-    while diags.count > 0 {
-        diags.pop()
-    }
-    while diagPaths.count > 0 {
-        diagPaths.pop()
-    }
-    while declFileTab.count > 0 {
-        declFileTab.pop()
-    }
+    diags.clear()
+    diagPaths.clear()
+    declFileTab.clear()
     curPathIdx = 0
 }
 

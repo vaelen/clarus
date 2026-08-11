@@ -5257,24 +5257,12 @@ func checkReset() {
     usesDateTime = false
     progGen = progGen + 1
 
-    while paramSpecs.count > 0 {
-        paramSpecs.pop()
-    }
-    while methodSigs.count > 0 {
-        methodSigs.pop()
-    }
-    while fieldInfos.count > 0 {
-        fieldInfos.pop()
-    }
-    while widgetInfos.count > 0 {
-        widgetInfos.pop()
-    }
-    while eventParams.count > 0 {
-        eventParams.pop()
-    }
-    while eventSpecs.count > 0 {
-        eventSpecs.pop()
-    }
+    paramSpecs.clear()
+    methodSigs.clear()
+    fieldInfos.clear()
+    widgetInfos.clear()
+    eventParams.clear()
+    eventSpecs.clear()
 
     registerUniverse(universeScope)
     buildMethodTables()
