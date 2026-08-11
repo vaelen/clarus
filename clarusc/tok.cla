@@ -98,43 +98,134 @@ record Token {
     col: int
 }
 
+// Keyword name indices, pre-interned once and cached in module globals
+// so keywordKind is 33 int compares per call instead of 33 intern() calls
+// (each a map lookup + string compare). NOT plain global initializers
+// (`var kwVar: int = intern("var")`) -- this compiler's C backend does
+// not forward-declare arbitrary functions called from global-initializer
+// expressions (cprint.cla's cpEmitDefaultInitFnProtos is a small,
+// deliberately closed whitelist for cpDefaultInit's own zero-value
+// construction, not a general mechanism), so that form fails to compile
+// with -Wimplicit-function-declaration: clar_init_globals calls
+// clar_fn_intern before its prototype is emitted. Guarding the intern()
+// calls behind kwInited and running them from kwInit's ordinary function
+// body sidesteps that entirely -- ordinary function bodies are only
+// emitted after every function's own forward-declared prototype, so
+// intern() is always visible there. Net effect is the same: one-time
+// cost, then cheap int compares for the rest of the process lifetime.
+var kwInited: bool
+var kwVar: int
+var kwFunc: int
+var kwRecord: int
+var kwEnum: int
+var kwConst: int
+var kwWindow: int
+var kwMenu: int
+var kwExtend: int
+var kwOn: int
+var kwEvery: int
+var kwIf: int
+var kwElse: int
+var kwWhile: int
+var kwFor: int
+var kwIn: int
+var kwTo: int
+var kwReturn: int
+var kwAnd: int
+var kwOr: int
+var kwNot: int
+var kwTrue: int
+var kwFalse: int
+var kwNil: int
+var kwOpen: int
+var kwClose: int
+var kwEdit: int
+var kwNew: int
+var kwQuit: int
+var kwCancel: int
+var kwSwitch: int
+var kwCase: int
+var kwBreak: int
+var kwContinue: int
+
+// kwInit interns all 33 keyword names exactly once, on keywordKind's
+// first call. Idempotent (kwInited guards re-entry).
+func kwInit() {
+    if kwInited { return }
+    kwInited = true
+    kwVar = intern("var")
+    kwFunc = intern("func")
+    kwRecord = intern("record")
+    kwEnum = intern("enum")
+    kwConst = intern("const")
+    kwWindow = intern("window")
+    kwMenu = intern("menu")
+    kwExtend = intern("extend")
+    kwOn = intern("on")
+    kwEvery = intern("every")
+    kwIf = intern("if")
+    kwElse = intern("else")
+    kwWhile = intern("while")
+    kwFor = intern("for")
+    kwIn = intern("in")
+    kwTo = intern("to")
+    kwReturn = intern("return")
+    kwAnd = intern("and")
+    kwOr = intern("or")
+    kwNot = intern("not")
+    kwTrue = intern("true")
+    kwFalse = intern("false")
+    kwNil = intern("nil")
+    kwOpen = intern("open")
+    kwClose = intern("close")
+    kwEdit = intern("edit")
+    kwNew = intern("new")
+    kwQuit = intern("quit")
+    kwCancel = intern("cancel")
+    kwSwitch = intern("switch")
+    kwCase = intern("case")
+    kwBreak = intern("break")
+    kwContinue = intern("continue")
+}
+
 // keywordKind maps nameIdx (the interned index of an identifier's text) to
 // its keyword TokKind, or TkIdent Ñ the sentinel meaning "not a keyword,
 // this is an ordinary identifier". Mirrors token.Keywords.
 func keywordKind(nameIdx: int): TokKind {
-    if nameIdx == intern("var") { return TkVar }
-    if nameIdx == intern("func") { return TkFunc }
-    if nameIdx == intern("record") { return TkRecord }
-    if nameIdx == intern("enum") { return TkEnum }
-    if nameIdx == intern("const") { return TkConst }
-    if nameIdx == intern("window") { return TkWindow }
-    if nameIdx == intern("menu") { return TkMenu }
-    if nameIdx == intern("extend") { return TkExtend }
-    if nameIdx == intern("on") { return TkOn }
-    if nameIdx == intern("every") { return TkEvery }
-    if nameIdx == intern("if") { return TkIf }
-    if nameIdx == intern("else") { return TkElse }
-    if nameIdx == intern("while") { return TkWhile }
-    if nameIdx == intern("for") { return TkFor }
-    if nameIdx == intern("in") { return TkIn }
-    if nameIdx == intern("to") { return TkTo }
-    if nameIdx == intern("return") { return TkReturn }
-    if nameIdx == intern("and") { return TkAnd }
-    if nameIdx == intern("or") { return TkOr }
-    if nameIdx == intern("not") { return TkNot }
-    if nameIdx == intern("true") { return TkTrue }
-    if nameIdx == intern("false") { return TkFalse }
-    if nameIdx == intern("nil") { return TkNil }
-    if nameIdx == intern("open") { return TkOpen }
-    if nameIdx == intern("close") { return TkClose }
-    if nameIdx == intern("edit") { return TkEdit }
-    if nameIdx == intern("new") { return TkNew }
-    if nameIdx == intern("quit") { return TkQuit }
-    if nameIdx == intern("cancel") { return TkCancel }
-    if nameIdx == intern("switch") { return TkSwitch }
-    if nameIdx == intern("case") { return TkCase }
-    if nameIdx == intern("break") { return TkBreak }
-    if nameIdx == intern("continue") { return TkContinue }
+    kwInit()
+    if nameIdx == kwVar { return TkVar }
+    if nameIdx == kwFunc { return TkFunc }
+    if nameIdx == kwRecord { return TkRecord }
+    if nameIdx == kwEnum { return TkEnum }
+    if nameIdx == kwConst { return TkConst }
+    if nameIdx == kwWindow { return TkWindow }
+    if nameIdx == kwMenu { return TkMenu }
+    if nameIdx == kwExtend { return TkExtend }
+    if nameIdx == kwOn { return TkOn }
+    if nameIdx == kwEvery { return TkEvery }
+    if nameIdx == kwIf { return TkIf }
+    if nameIdx == kwElse { return TkElse }
+    if nameIdx == kwWhile { return TkWhile }
+    if nameIdx == kwFor { return TkFor }
+    if nameIdx == kwIn { return TkIn }
+    if nameIdx == kwTo { return TkTo }
+    if nameIdx == kwReturn { return TkReturn }
+    if nameIdx == kwAnd { return TkAnd }
+    if nameIdx == kwOr { return TkOr }
+    if nameIdx == kwNot { return TkNot }
+    if nameIdx == kwTrue { return TkTrue }
+    if nameIdx == kwFalse { return TkFalse }
+    if nameIdx == kwNil { return TkNil }
+    if nameIdx == kwOpen { return TkOpen }
+    if nameIdx == kwClose { return TkClose }
+    if nameIdx == kwEdit { return TkEdit }
+    if nameIdx == kwNew { return TkNew }
+    if nameIdx == kwQuit { return TkQuit }
+    if nameIdx == kwCancel { return TkCancel }
+    if nameIdx == kwSwitch { return TkSwitch }
+    if nameIdx == kwCase { return TkCase }
+    if nameIdx == kwBreak { return TkBreak }
+    if nameIdx == kwContinue { return TkContinue }
     return TkIdent
 }
 
