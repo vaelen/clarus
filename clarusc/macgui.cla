@@ -121,15 +121,116 @@ func feReadSource(path: string, key: string, out: text): bool {
 }
 
 // gcProgressBuf accumulates drive.cla's compile-progress lines during
-// the synchronous compile; gcCompile flushes it into the Log textview
-// at its exit points. Painting lines LIVE mid-compile is the deferred
-// 2026-08-10-clarusc-mac-live-log-design.md phase -- this buffer is the
-// seam it will build on.
+// the synchronous compile; gcFlushProgress restores base-log +
+// accumulated lines at gcCompile's exit points. The LIVE view during
+// the compile is gcTickerRing below -- the last gcTickerLines lines,
+// repainted into the Log textview on every feProgress call (the
+// runtime's sync-paint path, live-log phase, makes the assignment
+// visible mid-handler).
 var gcProgressBuf: text
+
+// Rolling ticker state (live-log phase). gcLiveActive gates both the
+// ticker and the Status bar: false outside gcCompile, so a stray
+// feProgress can never repaint the restored log.
+//
+// gcTickerLines = 16 (fix round 2, live-log phase): the Output
+// textview's visible height at the window's DEFAULT 480x300 size, with
+// the Status label now occupying its own top lane (see window Log's own
+// layout-order comment below), renders exactly 16 full text lines with
+// no wasted space and no partial 17th line -- confirmed empirically with
+// a throwaway LayoutProbe.cla fixture booted on Mini vMac (fast
+// iteration lane; a real ClarusC.APPL compile is too slow to use for
+// tuning this constant -- see the live-log phase's own findings) and a
+// tight screencapture crop right at the textview's bottom edge: line 16
+// is flush against the border, no 17th line visible at all, not even
+// clipped. (Fix round 1 measured 17 against the OLD, broken layout,
+// where Output's `fill: both` claimed the full 300px with Status pushed
+// off-window entirely -- see the layout-order comment below for why that
+// was wrong and how it was fixed; 16 is the correct number for the
+// CORRECTED layout, which reserves a 24px top strip for Status.)
+const gcTickerLines: int = 16
+const gcBarWidth: int = 10
+
+var gcTickerRing: list of string
+var gcBaseLog: text
+var gcLiveActive: bool
+
+// gcTickerAdd: push line into the ring (ponytail: O(N) shift, N=16 --
+// a real ring index isn't worth it at this size) and repaint the Log
+// textview with the ring's contents, oldest first.
+func gcTickerAdd(line: string) {
+    var w: Log
+    var t: text
+    var i: int
+
+    if not gcLiveActive {
+        return
+    }
+    if gcTickerRing.count < gcTickerLines {
+        gcTickerRing.add(line)
+    } else {
+        i = 0
+        while i < gcTickerLines - 1 {
+            gcTickerRing[i] = gcTickerRing[i + 1]
+            i = i + 1
+        }
+        gcTickerRing[gcTickerLines - 1] = line
+    }
+    w = Log.front
+    if w == nil {
+        return
+    }
+    i = 0
+    while i < gcTickerRing.count {
+        t.append(gcTickerRing[i])
+        t.append("\n")
+        i = i + 1
+    }
+    w.Output.text = t
+}
 
 func feProgress(line: string) {
     gcProgressBuf.append(line)
     gcProgressBuf.append("\n")
+    gcTickerAdd(line)
+}
+
+// feProgressStep (live-log phase): drive.cla's counted-progress seam.
+// Renders an ASCII bar -- [######----] 12/32 -- into the Log window's
+// Status label; the runtime's sync-paint label path makes it visible
+// mid-handler. Pure ASCII by constraint (no MacRoman bytes).
+func feProgressStep(cur: int, total: int) {
+    var w: Log
+    var bar: string
+    var filled: int
+    var i: int
+
+    if not gcLiveActive {
+        return
+    }
+    w = Log.front
+    if w == nil {
+        return
+    }
+    filled = 0
+    if total > 0 {
+        filled = (cur * gcBarWidth) / total
+    }
+    bar = "["
+    i = 0
+    while i < gcBarWidth {
+        if i < filled {
+            bar = bar + "#"
+        } else {
+            bar = bar + "-"
+        }
+        i = i + 1
+    }
+    bar = bar + "] "
+    bar = bar + numToStr(cur)
+    bar = bar + "/"
+    bar = bar + numToStr(total)
+    w.Status.text = bar
 }
 
 app ClarusC {
@@ -145,7 +246,33 @@ window Log {
     size: 480, 300
     resizable: min(320, 160)
 
-    textview Output { fill: both; scrollbar: both }
+    // Layout fix (live-log phase, fix round 2): Status must be declared
+    // BEFORE Output, and Output must give an EXPLICIT `at: 0, bottom`
+    // (not bare `fill: both`). rt_ui_layout (runtime/mac/rt_ui.c) is a
+    // single forward pass with no lookahead -- a `fill: both` widget's
+    // height is always `contentH - its OWN y`, computed from the
+    // window's total content height regardless of any widget declared
+    // AFTER it. The original ordering (Output first with bare
+    // `fill: both`, Status second at `at: next, bottom`) made Output
+    // claim the FULL window height (y=0), which pushed Status's
+    // "bottom" position to prevBottom+gap == just past the window's own
+    // bottom edge -- entirely off-screen, not merely overlapped
+    // (confirmed empirically: no trace of Status at all in a live Snow
+    // screenshot). Since `textview` has no explicit width/height
+    // property (only at/fill/scrollbar -- see the language reference's
+    // widget property table), the only way to reserve a lane is
+    // declaration order: Status first (so it lands in the normal
+    // vertical-stack top position) reserves the top RTUI_LABEL_H+GAP
+    // strip, then Output's explicit `at: 0, bottom` resolves against
+    // Status's own bottom edge (prevBottom), and Output's `fill: both`
+    // height computes as contentH-minus-that-offset -- filling
+    // everything below Status down to the window's bottom edge. This
+    // moves the status/progress strip to the TOP of the window (a true
+    // bottom-pinned status bar alongside a fill-both log above it is not
+    // expressible in this single-pass layout engine without a runtime
+    // change, out of scope here).
+    label Status { at: 0, 0; text: "" }
+    textview Output { at: 0, bottom; fill: both; scrollbar: both }
 }
 
 // Menu layout (Task 11's events script drives this by `menu N M`):
@@ -157,18 +284,20 @@ menu File {
     item Quit    "Quit"        key "Q"
 }
 
-// gcFlushProgress: append-and-clear the buffered progress lines into
-// w's log textview (same read-mutate-reassign idiom as gcLog).
+// gcFlushProgress: end the live-ticker view and restore the full log --
+// the base text captured at compile start plus every accumulated
+// progress line. Called at every gcCompile exit point; after it, gcLog
+// appends diags/results exactly as before the live-log phase.
 func gcFlushProgress(w: Log) {
     var buf: text
 
-    if gcProgressBuf.length == 0 {
-        return
-    }
-    buf = w.Output.text
+    gcLiveActive = false
+    w.Status.text = ""
+    buf = gcBaseLog
     buf.append(gcProgressBuf)
     w.Output.text = buf
     gcProgressBuf = ""
+    gcBaseLog = ""
 }
 
 // gcLog appends line (plus a trailing Mac newline) to w's log textview.
@@ -219,6 +348,9 @@ func gcCompile(w: Log, p: string) {
     resetDiags()
     astReset()
     gcProgressBuf = ""
+    gcBaseLog = w.Output.text
+    gcTickerRing.clear()
+    gcLiveActive = true
     hostPaths = false
     wantEmit = true
     want68k = true
@@ -235,17 +367,14 @@ func gcCompile(w: Log, p: string) {
         alert("cannot open entry file: " + p)
         return
     }
-    gcFlushProgress(w)
-
-    // Diags appended to the log unconditionally (empty loop, no-op, on a
-    // clean compile).
-    i = 0
-    while i < diags.count {
-        gcLog(w, formatDiag(poolGet(diagPaths[i]), diags[i]))
-        i = i + 1
-    }
 
     if not ok {
+        gcFlushProgress(w)
+        i = 0
+        while i < diags.count {
+            gcLog(w, formatDiag(poolGet(diagPaths[i]), diags[i]))
+            i = i + 1
+        }
         alert(formatDiag(poolGet(diagPaths[0]), diags[0]))
         return
     }
