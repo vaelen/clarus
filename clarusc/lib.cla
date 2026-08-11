@@ -8,11 +8,14 @@ var strPool: list of string
 var strIndex: map of int
 
 // intern returns s's index in the pool, adding it if not already present.
+// Single get(s, -1) probe on the hit path (rather than has()-then-get()):
+// -1 is never a real pool index, same argument as scopeLookup's.
 func intern(s: string): int {
     var idx: int
 
-    if strIndex.has(s) {
-        return strIndex.get(s, -1)
+    idx = strIndex.get(s, -1)
+    if idx != -1 {
+        return idx
     }
     idx = strPool.count
     strPool.add(s)
@@ -151,7 +154,7 @@ func numToStr(n: int): string {
 
 // isLetter, isDigit, isAlnum, and isIdentStart mirror
 // internal/lexer/lexer.go's byte predicates exactly (isIdentStart excludes
-// '_' Ñ it's valid only as an identifier continuation character, not a
+// '_' ï¿½ it's valid only as an identifier continuation character, not a
 // start).
 func isDigit(c: char): bool {
     return c >= '0' and c <= '9'
