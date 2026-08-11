@@ -3021,6 +3021,28 @@ func cgZeroBlockAtA0(size: int) {
     }
 }
 
+// cgZeroInitAt (memory-leak-fix Task 3) writes a plain whole-slot zero at
+// off(reg) for an irLocalNoBirth local -- no birth call (rtTextNew/
+// rtListNew/rtMapNew/.../cgRecordCtorAt), just cgSizeOf(t) bytes cleared.
+// Reuses the exact LEA-then-cgZeroBlockAtA0 idiom cgDefaultInitStrAt's own
+// no-default arm already uses just below (cgZeroBlockAtA0's own doc
+// comment establishes the "size is always even" precondition this relies
+// on -- cgSizeOf's own KRec case always ends in `cgAlignUp(cur, 2)`
+// (cgRecordSize), and every other kind irLocalNoBirth is ever set for
+// (KText/KList/KMap/KSortedMap/KIntMap) is a flat 4-byte pointer slot, so
+// the precondition always holds here). Safe for both palettes: a pointer
+// slot zeroed this way reads back as a NULL handle (identical bit pattern
+// to cgStoreImmAt(reg, off, t, 0), just without the extra MOVE.L #0,D0
+// hop), and a KRec slot zeroed this way is the same all-zero struct
+// cpEmitFunc's own KRec nobirth arm produces on the host lane
+// (cprint.cla:4879-4883, `(Type){0}`) -- correct because a nobirth local's
+// own store site always release-then-overwrites (NULL-safe) before any
+// read, so no path ever needs a birth-constructed value here.
+func cgZeroInitAt(reg: int, off: int, t: int) {
+    a68Emit(OpLea, 0, AmDisp16, reg, off, AmAn, 0, 0)
+    cgZeroBlockAtA0(cgSizeOf(t))
+}
+
 // cgDefaultInitStrAt writes a str field/local/global's default at off(reg):
 // a whole-slot zero (LEA off(reg),A0; zero cgSizeOf(t) bytes) when
 // strDefaultIdx is -1 (mirrors cpDefaultInit's `(cpCType(t)){0}` -- every
@@ -4561,6 +4583,7 @@ func cgEmitFunc(f: int) {
     var frameNameIdxs: list of int
     var recLocalOffsets: list of int
     var recLocalTypes: list of int
+    var recLocalNoBirth: list of bool
     var tmpOffs: list of int
     var bigTmpOffs: list of int
     var startIdx: int
@@ -4598,6 +4621,7 @@ func cgEmitFunc(f: int) {
     frameNameIdxs = cgFreshIntList()
     recLocalOffsets = cgFreshIntList()
     recLocalTypes = cgFreshIntList()
+    recLocalNoBirth = cgFreshBoolList()
 
     // ---- params: collect in declaration order, then assign offsets in
     // REVERSE (the last-declared param is pushed last, so it lands at the
@@ -4705,8 +4729,17 @@ func cgEmitFunc(f: int) {
             // hang too (same class of bug the Task 13 comment above already
             // reproduced once: stack garbage feeding a container/loop
             // operation hangs the emulator rather than crashing cleanly).
+            // memory-leak-fix Task 3: one exception to "every local
+            // default-inits" -- a local flagged irLocalNoBirth (lowering's
+            // synthetic __store temp: Task 2) skips the birth-call default
+            // entirely in favor of a plain zero (see the prologue loop
+            // below and cgZeroInitAt), mirroring cpEmitFunc's own
+            // irLocalNoBirth arm (cprint.cla:4865) -- see
+            // docs/superpowers/plans/2026-08-12-memory-leak-fix.md for the
+            // full rationale.
             recLocalOffsets.add(runningNeg)
             recLocalTypes.add(irLocalType(loc))
+            recLocalNoBirth.add(irLocalNoBirth(loc))
         }
         loc = irLocalNext(loc)
     }
@@ -4769,7 +4802,11 @@ func cgEmitFunc(f: int) {
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
     while i < recLocalOffsets.count {
-        cgDefaultInitAt(6, recLocalOffsets[i], recLocalTypes[i], 0, -1)
+        if recLocalNoBirth[i] {
+            cgZeroInitAt(6, recLocalOffsets[i], recLocalTypes[i])
+        } else {
+            cgDefaultInitAt(6, recLocalOffsets[i], recLocalTypes[i], 0, -1)
+        }
         i = i + 1
     }
     cgStmts(irFuncBodyHead(f))

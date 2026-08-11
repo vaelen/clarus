@@ -19,12 +19,8 @@ LBL_0:
         MOVEA.L (A7)+,A0
         MOVE.L D0,(A0)
         LEA -12(A6),A0
-        MOVE.L A0,-(A7)
-        MOVE.L #4,-(A7)
-        JSR 218(A5)
-        ADDQ.L #4,A7
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        CLR.W (A0)+
+        CLR.W (A0)+
         MOVE.L -4(A6),D0
         MOVE.L D0,-(A7)
         MOVEQ #1,D0
@@ -265,15 +261,11 @@ LBL_88:
         CLR.W (A0)+
         DBRA D0,LBL_88
         LEA -788(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        CLR.W (A0)+
+        CLR.W (A0)+
         LEA -792(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        CLR.W (A0)+
+        CLR.W (A0)+
         LEA -788(A6),A0
         MOVE.L A1,-(A7)
         MOVE.L 0(A0),D0
@@ -850,10 +842,8 @@ LBL_2:
         MOVEQ #0,D0
         MOVE.L D0,-20(A6)
         LEA -24(A6),A0
-        MOVE.L A0,-(A7)
-        JSR 114(A5)
-        MOVEA.L (A7)+,A0
-        MOVE.L D0,(A0)
+        CLR.W (A0)+
+        CLR.W (A0)+
         MOVE.L #40000,D0
         MOVE.L D0,-20(A6)
         LEA -24(A6),A0
@@ -1104,16 +1094,8 @@ LBL_3:
 LBL_123:
         CLR.W (A0)+
         DBRA D0,LBL_123
-        MOVEQ #3,D0
-        MOVE.L D0,-96(A6)
-        MOVEQ #4,D0
-        MOVE.L D0,-92(A6)
-        MOVEQ #5,D0
-        MOVE.L D0,-88(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-84(A6)
-        LEA -80(A6),A0
-        MOVE.W #15,D0
+        LEA -96(A6),A0
+        MOVE.W #23,D0
 LBL_124:
         CLR.W (A0)+
         DBRA D0,LBL_124
@@ -1134,29 +1116,13 @@ LBL_125:
         MOVE.L D0,-148(A6)
         MOVEQ #0,D0
         MOVE.L D0,-152(A6)
-        MOVEQ #3,D0
-        MOVE.L D0,-200(A6)
-        MOVEQ #4,D0
-        MOVE.L D0,-196(A6)
-        MOVEQ #5,D0
-        MOVE.L D0,-192(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-188(A6)
-        LEA -184(A6),A0
-        MOVE.W #15,D0
+        LEA -200(A6),A0
+        MOVE.W #23,D0
 LBL_126:
         CLR.W (A0)+
         DBRA D0,LBL_126
-        MOVEQ #3,D0
-        MOVE.L D0,-248(A6)
-        MOVEQ #4,D0
-        MOVE.L D0,-244(A6)
-        MOVEQ #5,D0
-        MOVE.L D0,-240(A6)
-        MOVEQ #0,D0
-        MOVE.L D0,-236(A6)
-        LEA -232(A6),A0
-        MOVE.W #15,D0
+        LEA -248(A6),A0
+        MOVE.W #23,D0
 LBL_127:
         CLR.W (A0)+
         DBRA D0,LBL_127
