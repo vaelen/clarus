@@ -120,7 +120,16 @@ var checkInExternPtrArgCtx: bool
 // types.cla's TyRec carries only nameIdx (the named-type identity); the
 // field list itself is this module's own side table, keyed by that name --
 // exactly Go's types.Type.Record *RecordInfo side pointer, restated as an
-// arena + a name-keyed map instead of a Go pointer.
+// arena + a name-keyed map instead of a Go pointer. recFieldsHeadByName
+// (Task 6, layer1-compiler-perf) is keyed by nameIdx itself rather than
+// poolGet(nameIdx) -- same intern-pool-index-equals-string-equality
+// argument the interning side of this compiler relies on throughout --
+// saving the poolGet round-trip on every field lookup, the hottest of
+// which is member-select checking. OVERWRITTEN per record in
+// checkRecordDecl (phase 1, source order), and only ever read for a
+// record type that resolves in the current program's (reset) scope, so a
+// stale entry for a record absent from the current program is never
+// consulted -- checkReset resets it anyway (see its own comment there).
 record FieldInfo {
     nameIdx: int
     typeIdx: int
@@ -128,7 +137,7 @@ record FieldInfo {
 }
 
 var fieldInfos: list of FieldInfo
-var recFieldsHeadByName: map of int
+var recFieldsHeadByName: intmap of int
 
 func fieldInfoAppend(tailIdx: int, idx: int): int {
     if tailIdx >= 0 {
@@ -150,11 +159,11 @@ func newFieldInfo(nameIdx: int, typeIdx: int): int {
 // recordFieldsHead returns the head index (into fieldInfos) of the field
 // list for the record named by nameIdx, or -1 if none is registered.
 func recordFieldsHead(nameIdx: int): int {
-    return recFieldsHeadByName.get(poolGet(nameIdx), -1)
+    return recFieldsHeadByName.get(nameIdx, -1)
 }
 
 func setRecordFields(nameIdx: int, head: int) {
-    recFieldsHeadByName[poolGet(nameIdx)] = head
+    recFieldsHeadByName[nameIdx] = head
 }
 
 // ---- extern-record layout (Task 4, toolbox-integration Feature B) ----
@@ -722,6 +731,19 @@ func widgetInfoAppend(tailIdx: int, idx: int): int {
 
 var windowIsForm: map of int
 var windowFormRecType: map of int
+// windowVarsHead/windowWidgetsHead (Task 6, layer1-compiler-perf):
+// re-keying these to intmap-by-nameIdx (matching recFieldsHeadByName
+// above) is NOT done here -- unlike recFieldsHeadByName (accessed only
+// through the recordFieldsHead/setRecordFields functions), lower.cla
+// reads BOTH maps directly by winName string, with no accessor function
+// in between: lowBareWindowMemberRef (windowVarsHead), lowWindowInstSelect
+// (windowVarsHead -- already has winNameIdx in hand, easiest of the four),
+// uiWidgetIndex and widgetBindsIdx (windowWidgetsHead, both public
+// string-keyed helpers with their own callers elsewhere in lower.cla).
+// Re-keying is therefore a cross-file signature change outside this
+// task's check.cla-only scope -- see task-6-report.md's NEEDS_CONTEXT
+// note for the exact sites and a proposed one-line fix at each, if this
+// is picked up as a fast-follow.
 var windowVarsHead: map of int
 var windowWidgetsHead: map of int
 
@@ -3330,13 +3352,20 @@ func checkWindowRefSelect(e: int, xt: int): int {
 }
 
 // checkWidgetSelect checks a widget pseudo-value's Select -- Ch8's runtime
-// properties column, keyed by widget kind (widgetRuntimeProps).
+// properties column, keyed by widget kind (widgetRuntimeProps). A single
+// get(key, InvalidT) probe suffices (rather than has()-then-get(), Task
+// 6 layer1-compiler-perf): InvalidT is never a stored value (every
+// widgetRuntimeProps entry above is a real prop type -- strT(255)/
+// BoolT/TextT/IntT), so a miss and a genuine InvalidT-typed hit (which
+// can't happen) are indistinguishable only in the impossible case.
 func checkWidgetSelect(e: int, xt: int): int {
     var key: string
+    var t: int
 
     key = poolGet(typeNameIdx(xt)) + "." + poolGet(selectName(e))
-    if widgetRuntimeProps.has(key) {
-        return widgetRuntimeProps.get(key, InvalidT)
+    t = widgetRuntimeProps.get(key, InvalidT)
+    if t != InvalidT {
+        return t
     }
     emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(selectName(e)))
     return InvalidT
@@ -5028,9 +5057,10 @@ func checkCall(e: int, expected: int): int {
 //
 // checkExpr is a single-tail wrapper around checkExprInner (below, which
 // has the real per-ExprKind logic and its many return sites): it records
-// the resolved type in exprTypeOf, keyed by numToStr(e) same as
-// enumConstOf, so a later lowering pass can read it back via
-// exprTypeGet -- mirroring Go's Info.Types -- before returning it.
+// the resolved type in exprTypeOf, an intmap keyed directly by e (the
+// expr's own arena index) same as enumConstOf, so a later lowering pass
+// can read it back via exprTypeGet -- mirroring Go's Info.Types -- before
+// returning it.
 func checkExpr(e: int, expected: int): int {
     var t: int
     t = checkExprInner(e, expected)
@@ -5164,6 +5194,7 @@ func checkReset() {
     var freshConstUseInt: intmap of int
     var freshConstUseStr: intmap of string
     var freshExprTypeOf: intmap of int
+    var freshRecFieldsHeadByName: intmap of int
 
     cnInit()
     typesReset()
@@ -5173,6 +5204,17 @@ func checkReset() {
     constUseInt = freshConstUseInt
     constUseStr = freshConstUseStr
     exprTypeOf = freshExprTypeOf
+    // recFieldsHeadByName (Task 6, layer1-compiler-perf: re-keyed from a
+    // poolGet(nameIdx) string to nameIdx itself) doesn't strictly need
+    // this reset -- nameIdx is an intern-pool index, never reused across
+    // checkProgram calls (the pool itself is never reset), so it doesn't
+    // have the AST-node-index-reuse hazard the enumConstOf family above
+    // was fixed for, and the "OVERWRITTEN per record, only read for a
+    // record declared THIS program" argument (see this map's own decl
+    // comment) already makes a stale entry harmless either way. Reset
+    // anyway, fresh-map style matching every sibling intmap here, since
+    // it costs nothing and removes even the theoretical stale-entry case.
+    recFieldsHeadByName = freshRecFieldsHeadByName
 
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)
