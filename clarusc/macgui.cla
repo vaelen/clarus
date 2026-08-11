@@ -329,7 +329,7 @@ window Log {
     // bottom-pinned status bar alongside a fill-both log above it is not
     // expressible in this single-pass layout engine without a runtime
     // change, out of scope here).
-    label Status { at: 0, 0; text: "" }
+    label Status { at: 0, 0; width: fill; text: "" }
     textview Output { at: 0, bottom; fill: both; scrollbar: both }
 }
 

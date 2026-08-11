@@ -965,7 +965,7 @@ Widget declarations appear inside a `window` body. Each widget has declaration-t
 | `popup` | `label`, `at`, `binds` | `selected` (int index) | `change` |
 | `table` | `rows`, `column ...` (Chapter 10), `at`, `fill` | `selected` (int, −1 none) | `select(i: int)`, `doubleClick(i: int)` |
 | `canvas` | `at`, `fill`, `buffered` | `width`, `height` | `click(x: int, y: int)`, `drag(x: int, y: int)` |
-| `label` | `text`, `at` | `text` | — |
+| `label` | `text`, `at`, `width` | `text` | — |
 
 `binds` connects a `field`, `check`, or `popup` to a record field inside a form window (Chapter 10); `default` and `cancel` on a `button` wire the Return and Escape keys respectively. A `field`'s `text` runtime property is a `string`; a `textview`'s is a `text`.
 

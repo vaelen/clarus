@@ -810,6 +810,7 @@ func buildUiTables() {
 
     widgetDeclProps["label.text"] = 1
     widgetDeclProps["label.at"] = 1
+    widgetDeclProps["label.width"] = 1
 
     widgetRuntimeProps["button.caption"] = strT(255)
     widgetRuntimeProps["button.enabled"] = BoolT
