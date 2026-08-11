@@ -611,6 +611,8 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtListRemove"))
     } else if nm == IListCount() {
         shakeMarkAndEnqueue(intern("rtListCount"))
+    } else if nm == IListClear() {
+        shakeMarkAndEnqueue(intern("rtListClear"))
     } else if nm == IListFreeVar() {
         shakeMarkAndEnqueue(intern("rtListRelease"))
     // IListSet/IListSetRetain: no clar_fn_ call of their own (a raw
@@ -639,6 +641,8 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtMapGet"))
     } else if nm == IMapCount() {
         shakeMarkAndEnqueue(intern("rtMapCount"))
+    } else if nm == IMapClear() {
+        shakeMarkAndEnqueue(intern("rtMapClear"))
     } else if nm == IMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtMapRelease"))
 
@@ -662,6 +666,8 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtSortedMapGet"))
     } else if nm == ISortedMapCount() {
         shakeMarkAndEnqueue(intern("rtSortedMapCount"))
+    } else if nm == ISortedMapClear() {
+        shakeMarkAndEnqueue(intern("rtSortedMapClear"))
     } else if nm == ISortedMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
 
@@ -689,6 +695,8 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtIntMapGet"))
     } else if nm == IIntMapCount() {
         shakeMarkAndEnqueue(intern("rtIntMapCount"))
+    } else if nm == IIntMapClear() {
+        shakeMarkAndEnqueue(intern("rtIntMapClear"))
     } else if nm == IIntMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtIntMapRelease"))
 

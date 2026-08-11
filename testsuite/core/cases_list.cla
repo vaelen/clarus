@@ -13,6 +13,10 @@
 //                              list-of-text, map-of-list-of-text -- ported
 //                              as one aggregate pass/fail, same shape as
 //                              the source fixture's own `pass` flag)
+//
+// ClearBasics (layer1-compiler-perf phase, Task 8) is new -- proves
+// `.clear()` (count -> 0, capacity retained, re-add works) across all
+// four container families in one case: list, map, intmap, sortedmap.
 
 func caseListPushCountFirstLast(): TestResult {
     var l: list of int
@@ -125,4 +129,69 @@ func caseListForLoopVarAlias(): TestResult {
     }
 
     return tkPass("ListForLoopVarAlias")
+}
+
+func caseClearBasics(): TestResult {
+    var l: list of int
+    var m: map of int
+    var im: intmap of int
+    var sm: sortedmap of int
+
+    l.push(1)
+    l.push(2)
+    l.clear()
+    if l.count != 0 {
+        return tkFail("ClearBasics", "list count wrong")
+    }
+    l.push(3)
+    if l.count != 1 {
+        return tkFail("ClearBasics", "list re-add count wrong")
+    }
+    if l.first() != 3 {
+        return tkFail("ClearBasics", "list re-add content wrong")
+    }
+
+    m["a"] = 1
+    m["b"] = 2
+    m.clear()
+    if m.count != 0 {
+        return tkFail("ClearBasics", "map count wrong")
+    }
+    if m.has("a") {
+        return tkFail("ClearBasics", "map has wrong")
+    }
+    m["c"] = 3
+    if m.count != 1 or m.get("c", -1) != 3 {
+        return tkFail("ClearBasics", "map re-add wrong")
+    }
+
+    im[1] = 10
+    im[2] = 20
+    im.clear()
+    if im.count != 0 {
+        return tkFail("ClearBasics", "intmap count wrong")
+    }
+    if im.has(1) {
+        return tkFail("ClearBasics", "intmap has wrong")
+    }
+    im[3] = 30
+    if im.count != 1 or im.get(3, -1) != 30 {
+        return tkFail("ClearBasics", "intmap re-add wrong")
+    }
+
+    sm["x"] = 1
+    sm["y"] = 2
+    sm.clear()
+    if sm.count != 0 {
+        return tkFail("ClearBasics", "sortedmap count wrong")
+    }
+    if sm.has("x") {
+        return tkFail("ClearBasics", "sortedmap has wrong")
+    }
+    sm["z"] = 9
+    if sm.count != 1 or sm.get("z", -1) != 9 {
+        return tkFail("ClearBasics", "sortedmap re-add wrong")
+    }
+
+    return tkPass("ClearBasics")
 }

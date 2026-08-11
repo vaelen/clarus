@@ -199,6 +199,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"MapGrowRehash", "MapRemoveSwap", "MapIterComplete", "MapLongKeys",
 			"IntMapSetCount", "IntMapHasRemove", "IntMapOfListUpsert", "IntMapGrowIter",
 			"DurationStrShapes", "DateTimeStrVectors", "NowSanity",
+			"ClearBasics",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {

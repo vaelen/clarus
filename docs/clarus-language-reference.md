@@ -326,6 +326,7 @@ A `list of T` is a growable sequence. List operations are:
 - `l.remove(i)` — remove the element at index `i`
 - `l[i]` — access element at index `i` (returns `T`)
 - `l.count` — number of elements (returns `int`)
+- `l.clear()` — remove all elements; `count` becomes 0, capacity is retained
 - `for x in l { … }` — iterate (see Chapter 5)
 
 Out-of-range indexing raises a runtime error, and so do `pop`, `shift`, `first`, and `last` on an empty list.
@@ -340,6 +341,7 @@ A `map of T` is a hashtable with string keys (up to 255 bytes) and values of fix
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
 Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in an unspecified but deterministic order (a given sequence of inserts and removes always replays the same order); use `sortedmap of T` when ascending key order matters.
@@ -354,6 +356,7 @@ A `sortedmap of T` is a string-keyed (up to 255 bytes) container of fixed-size v
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained
 - `for k, v in m { … }` — iterate (see Chapter 5)
 
 Keys are compared case-sensitively, byte-wise. Iteration (`for k, v in m`) visits entries in ascending key order (byte-wise) — deterministic regardless of insertion or removal history.
@@ -370,6 +373,7 @@ An `intmap of T` is an int-keyed hashtable of fixed-size values of type `T`, wit
 - `m.has(k)` — test for key presence (returns `bool`)
 - `m.remove(k)` — remove the entry for key `k`; silently succeeds if absent
 - `m.count` — number of entries (returns `int`)
+- `m.clear()` — remove all entries; `count` becomes 0, capacity is retained
 - `for k, v in m { … }` — iterate (see Chapter 5), `k` is `int`
 
 Iteration (`for k, v in m`) visits entries in an unspecified but deterministic order (a given sequence of inserts and removes always replays the same order) — same contract as `map of T`.

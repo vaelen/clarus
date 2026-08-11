@@ -6738,6 +6738,13 @@ func cgIntr(e: int) {
         cgIntr1(e, "rtListCount", false)
         return
     }
+    if nm == "list_clear" {
+        // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
+        // -- void, single-ptr-arg runtime call, same shape as list_count
+        // just above (the return value, if any, is simply unused).
+        cgIntr1(e, "rtListClear", false)
+        return
+    }
     if nm == "list_free_var" {
         cgReleaseExpr(irIntrArgsHead(e))
         return
@@ -6770,6 +6777,12 @@ func cgIntr(e: int) {
     }
     if nm == "map_count" {
         cgIntr1(e, "rtMapCount", false)
+        return
+    }
+    if nm == "map_clear" {
+        // layer1-compiler-perf phase Task 8 -- see list_clear's own
+        // comment above.
+        cgIntr1(e, "rtMapClear", false)
         return
     }
     if nm == "map_free_var" {
@@ -6807,6 +6820,12 @@ func cgIntr(e: int) {
     }
     if nm == "sortedmap_count" {
         cgIntr1(e, "rtSortedMapCount", false)
+        return
+    }
+    if nm == "sortedmap_clear" {
+        // layer1-compiler-perf phase Task 8 -- see list_clear's own
+        // comment above.
+        cgIntr1(e, "rtSortedMapClear", false)
         return
     }
     if nm == "sortedmap_free_var" {
@@ -6853,6 +6872,12 @@ func cgIntr(e: int) {
     }
     if nm == "intmap_count" {
         cgIntr1(e, "rtIntMapCount", false)
+        return
+    }
+    if nm == "intmap_clear" {
+        // layer1-compiler-perf phase Task 8 -- see list_clear's own
+        // comment above.
+        cgIntr1(e, "rtIntMapClear", false)
         return
     }
     if nm == "intmap_free_var" {

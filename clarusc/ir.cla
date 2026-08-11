@@ -3297,6 +3297,17 @@ func IListCount(): int {
     return iListCountIdx
 }
 
+// IListClear -- layer1-compiler-perf phase Task 8: `l.clear()`, count -> 0
+// with capacity retained (rtListClear's own doc comment, list.cla).
+var iListClearIdx: int = -1
+
+func IListClear(): int {
+    if iListClearIdx == -1 {
+        iListClearIdx = intern("list_clear")
+    }
+    return iListClearIdx
+}
+
 // IListFreeVar -- see ITextFreeVar's doc comment.
 var iListFreeVarIdx: int = -1
 
@@ -3403,6 +3414,17 @@ func IMapCount(): int {
     return iMapCountIdx
 }
 
+// IMapClear -- layer1-compiler-perf phase Task 8: `m.clear()`, count -> 0
+// with capacity retained (rtMapClear's own doc comment, map.cla).
+var iMapClearIdx: int = -1
+
+func IMapClear(): int {
+    if iMapClearIdx == -1 {
+        iMapClearIdx = intern("map_clear")
+    }
+    return iMapClearIdx
+}
+
 // IMapFreeVar -- see ITextFreeVar's doc comment.
 var iMapFreeVarIdx: int = -1
 
@@ -3487,6 +3509,18 @@ func ISortedMapCount(): int {
         iSortedMapCountIdx = intern("sortedmap_count")
     }
     return iSortedMapCountIdx
+}
+
+// ISortedMapClear -- layer1-compiler-perf phase Task 8: `m.clear()`, count
+// -> 0 with capacity retained (rtSortedMapClear's own doc comment,
+// sortedmap.cla).
+var iSortedMapClearIdx: int = -1
+
+func ISortedMapClear(): int {
+    if iSortedMapClearIdx == -1 {
+        iSortedMapClearIdx = intern("sortedmap_clear")
+    }
+    return iSortedMapClearIdx
 }
 
 // ISortedMapFreeVar -- see ITextFreeVar's doc comment.
@@ -3574,6 +3608,17 @@ func IIntMapCount(): int {
         iIntMapCountIdx = intern("intmap_count")
     }
     return iIntMapCountIdx
+}
+
+// IIntMapClear -- layer1-compiler-perf phase Task 8: `m.clear()`, count ->
+// 0 with capacity retained (rtIntMapClear's own doc comment, map.cla).
+var iIntMapClearIdx: int = -1
+
+func IIntMapClear(): int {
+    if iIntMapClearIdx == -1 {
+        iIntMapClearIdx = intern("intmap_clear")
+    }
+    return iIntMapClearIdx
 }
 
 // IIntMapFreeVar -- see ITextFreeVar's doc comment.

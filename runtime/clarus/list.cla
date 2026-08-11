@@ -436,11 +436,9 @@ func rtListCount(l: ptr): int {
 }
 
 // rtListClear (rt_core.inc:724, `rt_list_clear`): count = 0, capacity kept
-// -- ported for interface parity with the C reference (no `IListClear`
-// intrinsic exists in cprint.cla's fpIntrCall dispatch today, so this
-// function is currently unreachable from any emitted program, same as
-// text.cla's rtTextStoreText); kept in case a future List method routes
-// here rather than silently dropped.
+// -- backs `l.clear()` (layer1-compiler-perf phase Task 8, IListClear
+// intrinsic) on both the cprint and cg68k lanes. No element release: same
+// "hard reset" contract as rtMapClear/rtIntMapClear/rtSortedMapClear below.
 func rtListClear(l: ptr) {
     var rl: RtList
 

@@ -390,12 +390,11 @@ func rtSortedMapCount(m: ptr): int {
     return RtSortedMap(m).count
 }
 
-// rtSortedMapClear (rt_core.inc:733, `rt_map_clear`): count = 0, capacity kept --
-// ported for interface parity with the C reference (no `IMapClear`
-// intrinsic exists in cprint.cla's fpIntrCall dispatch today, so this
-// function is currently unreachable from any emitted program, same as
-// rtListClear/rtTextStoreText); kept in case a future Map method routes
-// here rather than silently dropped.
+// rtSortedMapClear (rt_core.inc:733, `rt_map_clear`): count = 0, capacity
+// kept -- backs `m.clear()` (layer1-compiler-perf phase Task 8,
+// ISortedMapClear intrinsic) on both the cprint and cg68k lanes. No
+// element release -- same hard-reset contract as rtListClear/rtMapClear/
+// rtIntMapClear.
 func rtSortedMapClear(m: ptr) {
     var rm: RtSortedMap
 

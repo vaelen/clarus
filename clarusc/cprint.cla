@@ -2650,6 +2650,16 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
             return "clar_fn_rtListCount((void*)" + fpExpr(a0) + ")"
         }
         return "rt_list_count(" + fpExpr(a0) + ")"
+    } else if nm == IListClear() {
+        // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
+        // (rtListClear's own doc comment) -- no element release, same as
+        // the runtime function itself.
+        if cpListPorted {
+            fpEmit("clar_fn_rtListClear((void*)" + fpExpr(a0) + ");")
+        } else {
+            fpEmit("rt_list_clear(" + fpExpr(a0) + ");")
+        }
+        return toText("")
     } else if nm == IListFreeVar() {
         // memory-audit Task 7: reuse Task 5's cpEmitRelease (element-release
         // loop for a KText element type, then rt_list_release) rather than
@@ -2917,6 +2927,16 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
             return "clar_fn_rtMapCount((void*)" + fpExpr(a0) + ")"
         }
         return "rt_map_count(" + fpExpr(a0) + ")"
+    } else if nm == IMapClear() {
+        // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
+        // (rtMapClear's own doc comment) -- no element release, same as
+        // the runtime function itself.
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapClear((void*)" + fpExpr(a0) + ");")
+        } else {
+            fpEmit("rt_map_clear(" + fpExpr(a0) + ");")
+        }
+        return toText("")
     } else if nm == IMapFreeVar() {
         // memory-audit Task 7 -- see IListFreeVar's doc comment.
         freeVarBuf = ""
@@ -3397,6 +3417,17 @@ func fpIntrCall8(nm: int, x: int, a0: int, a1: int, a2: int): text {
             cpFatal("sortedmap count without cpSortedMapPorted")
         }
         return "clar_fn_rtSortedMapCount((void*)" + fpExpr(a0) + ")"
+    } else if nm == ISortedMapClear() {
+        // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
+        // (rtSortedMapClear's own doc comment) -- no element release, same
+        // as the runtime function itself. SortedMap has no raw C fallback
+        // (see cpSortedMapPorted's own doc comment) -- cpFatal is the only
+        // alternative, same as every other sortedmap dispatch site here.
+        if not cpSortedMapPorted {
+            cpFatal("sortedmap clear without cpSortedMapPorted")
+        }
+        fpEmit("clar_fn_rtSortedMapClear((void*)" + fpExpr(a0) + ");")
+        return toText("")
     } else if nm == ISortedMapFreeVar() {
         freeVarBuf = ""
         cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
@@ -3566,6 +3597,17 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
             cpFatal("intmap count without cpIntMapPorted")
         }
         return "clar_fn_rtIntMapCount((void*)" + fpExpr(a0) + ")"
+    } else if nm == IIntMapClear() {
+        // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
+        // (rtIntMapClear's own doc comment) -- no element release, same as
+        // the runtime function itself. IntMap has no raw C fallback (see
+        // cpIntMapPorted's own doc comment) -- cpFatal is the only
+        // alternative, same as every other intmap dispatch site here.
+        if not cpIntMapPorted {
+            cpFatal("intmap clear without cpIntMapPorted")
+        }
+        fpEmit("clar_fn_rtIntMapClear((void*)" + fpExpr(a0) + ");")
+        return toText("")
     } else if nm == IIntMapFreeVar() {
         freeVarBuf = ""
         cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))

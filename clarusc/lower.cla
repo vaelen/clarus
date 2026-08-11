@@ -1330,6 +1330,8 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
         return newIRIntr(IListRemove(), lowMethodArgs2(recv, argsHead), ty)
     } else if nm == "count" {
         return newIRIntr(IListCount(), recv, ty)
+    } else if nm == "clear" {
+        return newIRIntr(IListClear(), recv, ty)
     }
     lowUnsupported("list method " + nm)
     return -1
@@ -1358,20 +1360,24 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
     var hasName: int
     var removeName: int
     var countName: int
+    var clearName: int
 
     nm = poolGet(selectName(sel))
     if im {
         hasName = IIntMapHas()
         removeName = IIntMapRemove()
         countName = IIntMapCount()
+        clearName = IIntMapClear()
     } else if sorted {
         hasName = ISortedMapHas()
         removeName = ISortedMapRemove()
         countName = ISortedMapCount()
+        clearName = ISortedMapClear()
     } else {
         hasName = IMapHas()
         removeName = IMapRemove()
         countName = IMapCount()
+        clearName = IMapClear()
     }
     if nm == "get" {
         elemT = irtElem(irExprType(recv))
@@ -1412,6 +1418,8 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
         return newIRIntr(removeName, lowMethodArgs2(recv, argsHead), ty)
     } else if nm == "count" {
         return newIRIntr(countName, recv, ty)
+    } else if nm == "clear" {
+        return newIRIntr(clearName, recv, ty)
     }
     lowUnsupported("map method " + nm)
     return -1

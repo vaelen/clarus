@@ -788,9 +788,9 @@ func rtMapCount(m: ptr): int {
 
 // rtMapClear (shared design constants' "clear" rule): count = 0, tombs =
 // 0, poolused = 0, every index slot reset to EMPTY -- every Handle's own
-// capacity kept. Still unreachable from any emitted program today (no
-// `IMapClear` intrinsic exists), kept for interface parity same as
-// before.
+// capacity kept. Backs `m.clear()` (layer1-compiler-perf phase Task 8,
+// IMapClear intrinsic) on both the cprint and cg68k lanes. No element
+// release -- a hard reset, not a per-entry remove loop.
 func rtMapClear(m: ptr) {
     var rm: RtMap
     var mp: ptr

@@ -1627,6 +1627,12 @@ func checkListMethod(lt: int, sel: int, argsHead: int): int {
         }
         return IntT
     }
+    if name == "clear" {
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "clear takes no arguments")
+        }
+        return VoidT
+    }
     emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
     return InvalidT
 }
@@ -1678,6 +1684,12 @@ func checkMapMethod(mt: int, sel: int, argsHead: int, keyT: int): int {
             emitDiag(exprLine(sel), exprCol(sel), "count takes no arguments")
         }
         return IntT
+    }
+    if name == "clear" {
+        if argCount != 0 {
+            emitDiag(exprLine(sel), exprCol(sel), "clear takes no arguments")
+        }
+        return VoidT
     }
     emitDiag(exprLine(sel), exprCol(sel), "undefined: " + name)
     return InvalidT
