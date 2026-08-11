@@ -465,7 +465,246 @@ git commit -m "feat: live rolling-tail compile log + segment progress bar in Cla
 
 ---
 
-### Task 4: Frozen-scenario golden verification + docs
+### Task 4: Whole-pipeline progress + spinner (spec §3b amendment)
+
+**Files:**
+- Modify: `clarusc/drive.cla` (seam gains label param + tick; stage state + announcements in `driveCompile`/`driveEmit68kFork`)
+- Modify: `clarusc/main.cla` (no-op signatures updated/added)
+- Modify: `clarusc/cg68k.cla` (stage announcements + per-function ticks in measure/emit loops; segment-count total growth)
+- Modify: `clarusc/check.cla` (per-decl tick in the phase-2 loop)
+- Modify: `clarusc/macgui.cla` (bar renderer: 20 chars + label + step count; spinner)
+- Regenerate: `clarusc/clarusc.c` (drive/main/cg68k/check are all in the snapshot composition)
+
+**Interfaces:**
+- Consumes: Task 2's seam (this task CHANGES its signature) and Task 3's macgui implementation (this task rewrites `feProgressStep`'s body and adds `feProgressTick`).
+- Produces: `feProgressStep(cur: int, total: int, label: string)` and `feProgressTick()` — the final seam contract; `driveProgressStage(label: string)` and `driveProgressTick()` in drive.cla for pipeline callers. Task 5's docs describe THIS shape.
+
+- [ ] **Step 1: drive.cla — stage state, reshaped seam, tick**
+
+Replace `driveProgressStep` (added by Task 2) with the stage machinery, next to `driveProgress`:
+
+```
+// Stage/step progress (live-log phase, §3b amendment): drive announces
+// the START of each pipeline stage through feProgressStep with a
+// present-tense label and a running step count -- 10 fixed stages plus,
+// once cgPackProgram knows it, one per segment (drvStepsAddSegments).
+// Separate from the timestamped log lines by design: log and bar are
+// independent consumers of the pipeline's progress.
+const drvFixedSteps: int = 10
+
+var drvStepCur: int
+var drvStepTotal: int
+
+// driveProgressStage: announce entering the next stage. Same want68k
+// gate as driveProgress -- emit/check-only/appinfo stay byte-silent.
+func driveProgressStage(label: string) {
+    if not want68k {
+        return
+    }
+    drvStepCur = drvStepCur + 1
+    feProgressStep(drvStepCur, drvStepTotal, label)
+}
+
+// drvStepsAddSegments: grow the step total by the just-discovered
+// segment count (cg68k, after packing). The bar can jump backwards at
+// this moment -- accepted by design (spec §3b).
+func drvStepsAddSegments(n: int) {
+    drvStepTotal = drvStepTotal + n
+}
+
+// driveProgressTick: liveness pulse from long-running inner loops
+// (per-function measure/emit, per-file expansion, per-decl check).
+// Callers never throttle; the macgui front end throttles by TickCount.
+func driveProgressTick() {
+    if not want68k {
+        return
+    }
+    feProgressTick()
+}
+```
+
+In `driveCompile`, at the same point the Task 3 flow starts progress (right where "Starting" is logged), initialize and announce; find each listed anchor and add the stage call directly BEFORE it:
+
+- `drvStepCur = 0` and `drvStepTotal = drvFixedSteps`, then `driveProgressStage("Starting Compilation")` — next to the existing `driveProgress("Starting")` (line ~1322).
+- `driveProgressStage("Parsing")` — before the entry-expansion loop that produces the per-file `Compiling`/`Included` lines.
+- `driveProgressStage("Checking")` — before the user-program `checkProgram` call (the one whose completion logs "Checked user program").
+- `driveProgressStage("Loading Runtime")` — next to the existing `driveProgress("Loading runtime")` (line ~1398).
+- `driveProgressStage("Checking Whole Program")` — before the whole-program check (completion mark "Loaded runtime + checked whole program").
+- `driveProgressStage("Lowering")` — before the lowering call ("Lowered" mark).
+- `driveProgressStage("Shaking")` — before the shake call ("Shaken" mark).
+
+Also add `driveProgressTick()` inside the per-file expansion loop, next to the existing per-file `driveProgress(progressLine)` at line ~779.
+
+- [ ] **Step 2: main.cla — no-op seam update**
+
+Replace the Task 2 no-op with the new pair:
+
+```
+// feProgressStep/feProgressTick (live-log phase): counted-progress and
+// liveness seams -- no-ops on the host CLI; stderr already carries the
+// per-stage feProgress lines.
+func feProgressStep(cur: int, total: int, label: string) {
+}
+
+func feProgressTick() {
+}
+```
+
+- [ ] **Step 3: cg68k.cla — stages, total growth, ticks**
+
+In `cg68ProgramFork`:
+- `driveProgressStage("Measuring")` — directly before the `cg68Measure()` call (line ~12106).
+- `driveProgressStage("Packing")` — directly before `cgPackProgram()` (line ~12110).
+- `drvStepsAddSegments(cgSegCount)` — directly after the "Packed N segments" `driveProgressPhase` call.
+- In the segment loop, REPLACE Task 2's `driveProgressStep(s, cgSegCount)` with a labeled stage announcement placed at the TOP of the loop body (before emission work starts, so the bar names the segment being written, not the one finished), built piecewise:
+
+```
+        stageLine = "Writing Segment " + numToStr(s)
+        driveProgressStage(stageLine)
+```
+
+(`stageLine` is a new local `var stageLine: string` in `cg68ProgramFork`.)
+- `driveProgressStage("Building Fork")` — directly before the `cg68BuildFork(...)` call.
+- `driveProgressTick()` — inside `cg68Measure`'s per-function loop body and inside the segment loop's per-function emit loop body (the `while i < irFuncs.count { if shakeReachable(i) and cgFuncSegment[i] == s { cgEmitFunc(i) } ... }` loop), one call per iteration in each.
+
+- [ ] **Step 4: check.cla — per-decl tick**
+
+Find `checkProgram`'s phase-2 walk (the per-declaration loop that resolves bodies — locate the main `while` over top-level decls) and add one `driveProgressTick()` per iteration. Note the layering precedent: cg68k.cla already calls drive.cla's `driveProgressPhase`; everything composes into one program, and the call is a no-op unless `want68k`.
+
+- [ ] **Step 5: macgui.cla — 20-char bar + label + step count + spinner**
+
+Update `const gcBarWidth: int = 10` → `20`. Replace `feProgressStep` with:
+
+```
+// gcStatusBase: the bar+label+step text of the current stage, kept so
+// feProgressTick can repaint it with a rotating spinner glyph without
+// rebuilding (live-log phase, §3b).
+var gcStatusBase: string
+var gcSpinIdx: int
+var gcSpinLast: int
+
+func feProgressStep(cur: int, total: int, label: string) {
+    var w: Log
+    var bar: string
+    var filled: int
+    var i: int
+
+    if not gcLiveActive {
+        return
+    }
+    w = Log.front
+    if w == nil {
+        return
+    }
+    filled = 0
+    if total > 0 {
+        filled = (cur * gcBarWidth) / total
+    }
+    if filled > gcBarWidth {
+        filled = gcBarWidth
+    }
+    bar = "["
+    i = 0
+    while i < gcBarWidth {
+        if i < filled {
+            bar = bar + "#"
+        } else {
+            bar = bar + "-"
+        }
+        i = i + 1
+    }
+    bar = bar + "] "
+    bar = bar + label
+    bar = bar + " (Step "
+    bar = bar + numToStr(cur)
+    bar = bar + "/"
+    bar = bar + numToStr(total)
+    bar = bar + ")"
+    gcStatusBase = bar
+    gcSpinIdx = 0
+    gcSpinLast = TickCount()
+    w.Status.text = bar
+}
+
+// feProgressTick: liveness spinner. Throttled HERE (not at the callers)
+// by TickCount -- repaint at most every gcSpinTicks ticks, so per-
+// function callers cost one trap per call and ~2 repaints per second.
+func feProgressTick() {
+    var w: Log
+    var t: int
+    var line: string
+    var glyph: string
+
+    if not gcLiveActive {
+        return
+    }
+    t = TickCount()
+    if t - gcSpinLast < gcSpinTicks {
+        return
+    }
+    gcSpinLast = t
+    w = Log.front
+    if w == nil {
+        return
+    }
+    gcSpinIdx = gcSpinIdx + 1
+    if gcSpinIdx == 4 {
+        gcSpinIdx = 0
+    }
+    if gcSpinIdx == 0 {
+        glyph = "|"
+    } else if gcSpinIdx == 1 {
+        glyph = "/"
+    } else if gcSpinIdx == 2 {
+        glyph = "-"
+    } else {
+        glyph = "\\"
+    }
+    line = gcStatusBase
+    line = line + " "
+    line = line + glyph
+    w.Status.text = line
+}
+```
+
+with `const gcSpinTicks: int = 30` next to `gcBarWidth`. If `"\\"` is not a valid escape in Clarus string literals (check `docs/clarus-language-reference.md`; `\xC9` escapes exist), substitute `"*"` for the fourth glyph and note the deviation.
+
+Also reset the new state in `gcFlushProgress` (after clearing Status): `gcStatusBase = ""`.
+
+- [ ] **Step 6: Host-silence + compile checks**
+
+```bash
+cc -O1 -I runtime/host -o build-run/clarusc0 clarusc/clarusc.c runtime/host/rt.c   # OLD snapshot
+build-run/clarusc0 emit -o /tmp/new.c clarusc/main.cla
+cc -O1 -I runtime/host -o /tmp/new /tmp/new.c runtime/host/rt.c
+/tmp/new testdata/emitui/every.cla && echo CHECK-SILENT-OK
+build-run/clarusc0 emit --rtdir runtime/clarus/ -o /tmp/b.c testdata/emitui/every.cla
+/tmp/new emit --rtdir runtime/clarus/ -o /tmp/a.c testdata/emitui/every.cla
+cmp /tmp/b.c /tmp/a.c && echo EMIT-IDENTICAL
+/tmp/new clarusc/macgui.cla && echo MACGUI-CHECK-OK
+```
+
+Expected: all three OKs; `cmp` silent.
+
+- [ ] **Step 7: Snapshot regen to fixed point**
+
+Run: `go test ./internal/selfhost -run TestSnapshotFixedPoint -count=1 -timeout 30m` — expect FAIL with instructions; follow them; re-run → PASS.
+
+- [ ] **Step 8: Run T1**
+
+Run: `scripts/test-task.sh --smoke`
+Expected: PASS (per Task 2's precedent, compiler-source-only changes cause no golden churn; if goldens churn anyway, STOP and understand why before blessing).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add clarusc/drive.cla clarusc/main.cla clarusc/cg68k.cla clarusc/check.cla clarusc/macgui.cla clarusc/clarusc.c
+git commit -m "feat: whole-pipeline progress stages + liveness spinner (live-log phase, spec 3b)"
+```
+
+---
+
+### Task 5: Frozen-scenario golden verification + docs
 
 **Files:**
 - Possibly regenerate: `testdata/uisnaps/*` (only if the native lane shows churn)

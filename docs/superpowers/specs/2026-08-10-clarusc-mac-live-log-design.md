@@ -102,7 +102,37 @@ progress-bar widget kind.
   window), not computed from window height — no widget-geometry
   surface exists and a user-shrunk window merely crops the ticker.
 
-### 3. Counted progress seam + label bar
+### 3b. Whole-pipeline progress + spinner (amendment, 2026-08-11 evening)
+
+Added after the first Snow boots: the bar tracked only codegen segments,
+leaving e.g. a 35-minute `Measured` stretch bar-silent. Amended shape
+(supersedes §3's two-int seam):
+
+- **Seam:** `feProgressStep(cur: int, total: int, label: string)` —
+  drive.cla announces the START of each stage, present-tense label,
+  rendered as `[#####---------------] Loading Runtime (Step 4/10)`
+  (bar width 20 — Andrew's sizing, filling more of the label lane).
+  The timestamped log lines are untouched; log and bar are separate
+  consumers (looking ahead to a future bar-first UI with a collapsible
+  log — not built now).
+- **Steps:** 10 fixed (Starting Compilation, Parsing, Checking, Loading
+  Runtime, Checking Whole Program, Lowering, Shaking, Measuring,
+  Packing, Building Fork) plus one per segment ("Writing Segment s"),
+  inserted between Packing and Building Fork. `total` starts at 10 and
+  grows by the segment count once Packing knows it — the bar may jump
+  backwards at that moment, accepted by design (Andrew, 2026-08-11).
+- **Spinner:** new seam `feProgressTick()` — called from the
+  long-running inner loops (per-function in cg68k's measure and emit
+  loops, per-file in drive's include expansion, per-decl in the whole-
+  program check), no-op on the host CLI. macgui throttles by
+  `TickCount()` (repaint at most ~every 30 ticks) and rotates an ASCII
+  glyph appended to the status line, so long stages visibly stay alive.
+  Callers never throttle; the seam stays cheap enough to call per
+  function.
+- Both new calls sit behind the same `want68k` gate as the rest of the
+  progress machinery — emit/check-only/appinfo stay byte-silent.
+
+### 3. Counted progress seam + label bar (original shape — superseded by 3b's label/step model; the label, gating, and no-op-host structure below still stand)
 
 - **drive.cla:** new front-end seam `feProgressStep(cur, total)` plus a
   `driveProgressStep(cur, total)` wrapper (same `want68k` gate as
