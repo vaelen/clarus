@@ -802,6 +802,80 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `TickCount` is emulated, so this phase's per-stage tick instrumentation
   stays valid under fast-forward.
 
+- **memory-leak-fix (branch `memory-leak-fix`, 2026-08-12, based on
+  `clarusc-live-log`): DONE.** Root-causes and closes the cross-compile
+  degradation the live-log phase's Snow reruns exposed (STATUS.md step 0):
+  clarusc leaked heap blocks on every compile, in-process, on both lanes —
+  harmless on the host (malloc doesn't degrade with fragmentation) but
+  the direct cause of the Mac's 2-7x compile-#2 slowdown (a Memory-Manager
+  zone that fills with dead-but-live blocks compile #2 must walk/compact
+  around). 8 tasks, commits `bf07436..` (this task's own commits below);
+  full ledger: `.superpowers/sdd/2026-08-12-memory-leak-fix/progress.md`;
+  root-cause writeup: `docs/superpowers/specs/
+  2026-08-12-cross-compile-degradation-findings.md` (now annotated
+  `[FIXED]`/`[DEFERRED]` per item, see below).
+
+  **Root causes fixed, three:**
+  1. **Synthetic `__store` temps' prologue births** (Tasks 2+3, both
+     lanes) — lowering's synthetic counted-store temps were
+     unconditionally default-initialized (a real container birth) at
+     function entry, then only released at their own store site; any
+     return path that didn't reach that site leaked the birth. Fixed
+     with a no-birth IR-level local flag both backends honor (NULL/0
+     default-init instead), rather than adding every temp to the
+     scope-exit free list (would have bloated 68k code size against the
+     32KB segment ceiling). Dominant fix — took per-compile growth from
+     42,845 to 5,393 blocks.
+  2. **`.clear()` released no elements, plus the whole-array-value ARC
+     family** (Tasks 4+5, both lanes) — `rtListClear`/`rtMapClear` were
+     hard resets (count=0, no element release), silently leaking every
+     reference element in a container of containers/records/text. Fixed
+     with an element-aware deep-clear intrinsic (release-walk then
+     reset) for ref-bearing element types, keeping the O(1) hard reset
+     for scalar elements. Three fix rounds surfaced and closed a related
+     family of whole-array-value ARC gaps found along the way: a KArr
+     container-element release-walk gap (clear/teardown), a missing
+     retain on whole-array-value container stores, a named-slot
+     pop-assign leak, and a missing retain on array-typed return
+     values/params.
+  3. **No per-compile intern-pool reset** (Tasks 6+7) — `libReset` plus
+     162 `IXxx` interned-literal caches, 4 lazy-init bool guards, 11
+     `check.cla` string-keyed maps folded to `intmap`, and `progGen`
+     namespacing removed from `menuItems`/`externFirstDeclByName` (both
+     now cleanly reset instead) — closes the unbounded-growth class.
+     Guarded going forward by a new T1 gate,
+     `TestLazyInternGuardsAreReset` (`internal/testsuite`), that fails if
+     a future lazy-init guard is added without a matching reset.
+  4. **This task (8):** flips `TestLeakGate`'s `DoubleCompile` subtest
+     from skip to live, and regenerates the committed bootstrap snapshot
+     `clarusc/clarusc.c` (Go-free fixed-point regen per
+     `internal/selfhost/fixedpoint_test.go`'s `TestSnapshotFixedPoint`
+     instructions) — the step that makes the fix set reach
+     `ClarusC.APPL` and every other snapshot-bootstrapped build, which
+     otherwise ship pre-phase codegen indefinitely.
+
+  **Measured per-compile block growth** (`clarusc/test/dblcompile.cla`
+  harness, `CLARUS_MEM_STRICT=1`, host lane — the host shows the same
+  leak counts as the Mac, just without the Mac's slowdown):
+
+  | Stage | Live blocks growth/compile |
+  |---|---|
+  | Pre-phase (Task 1 RED baseline) | 42,845 (19,423 lists + 695 maps + 262 texts, rc=1 on nearly every leaked box) |
+  | After Task 2 (store-temp no-birth, host lane) | 5,393 |
+  | After full phase (Task 8, `DoubleCompile` gate) | 0 — byte-identity oracle green on both the same-file AND alternating-file (`tickprobe`/`catprobe`-style) 3-compile variants |
+
+  **T2 debt, unchanged by this phase (pre-existing, do not fix here):**
+  `internal/selfhost`'s `TestClarusModules` has 2 standing failures —
+  `asm68k_test.cla` (golden text mismatch, missing a trailing `; end of
+  exerciser` comment line) and `check_test.cla` (`clarusc/check.cla:5437`
+  references an undefined `driveProgressTick`) — both present before this
+  phase and confirmed unchanged after the snapshot regen.
+
+  **Validation remaining (Andrew-gated, not run this phase):** STATUS.md
+  step 0/1 — a Snow two-compile rerun to confirm compile #2 now tracks
+  compile #1's per-phase timing (the direct prediction of the 0-growth
+  result above), then the formal Snow acceptance PASS.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

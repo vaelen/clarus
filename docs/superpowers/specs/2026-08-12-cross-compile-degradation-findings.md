@@ -1,5 +1,12 @@
 # Cross-compile degradation findings — 2026-08-12
 
+**Status (2026-08-12, memory-leak-fix phase, Task 8): all three root
+causes below are `[FIXED]`, both lanes — `internal/mactest`'s
+`TestLeakGate/DoubleCompile` gate proves 0 block growth/compile at HEAD
+(byte-identity-clean). Per-item `[FIXED]`/`[DEFERRED]` annotations are
+inline below. Snow hardware validation of the resulting speedup is still
+Andrew-gated (STATUS.md steps 0-1), not run as part of this phase.**
+
 Root-cause investigation of the Snow observation (live-log phase ledger,
 reruns 1-2 of `TestMacResidentClaruscOnSnow`): in one `ClarusC.APPL`
 process, compile #2 (`catprobe.cla`) runs 2x-7x slower than compile #1
@@ -49,6 +56,12 @@ process, one argv entry per compile.
 ## Root cause 1 (dominant, ~18.5k lists/compile): synthetic `__store`
 ## temps' prologue births leak on every path that doesn't consume them
 
+**[FIXED]** memory-leak-fix Tasks 2 (host, `b9c2667`) + 3 (native,
+`a80d9e2`, fix round `82ca08c`): store temps now carry a no-birth IR-level
+local flag both backends honor (NULL/0 default-init instead of a real
+container birth); the store-site release-before-overwrite was already
+NULL-safe. Took per-compile growth 42,845 -> 5,393 blocks by itself.
+
 - Lowering (`lowCountedStore`, lower.cla) mints a synthetic
   `__storeN` local per counted-store site (via `lowAddLocal`).
 - BOTH backends unconditionally default-init every declared local at
@@ -79,6 +92,23 @@ process, one argv entry per compile.
 ## Root cause 2 (~2k blocks/compile): `.clear()` releases no elements,
 ## and some cleared/reset containers hold reference elements
 
+**[FIXED]** memory-leak-fix Tasks 4+5 (`cd361c0`, 3 fix rounds
+`3dd6e87`..`10c8636`): element-aware deep-clear intrinsic (release-walk
+then reset) for ref-bearing element types on both lanes, keeping the O(1)
+hard reset for scalar elements. The fix rounds also closed a related
+whole-array-value ARC family found along the way (out of this doc's
+original scope but the same class of bug): a KArr container-element
+release-walk gap shared by `.clear()` and scope-exit teardown, a missing
+retain on whole-array-value container stores, a named-slot pop-assign
+leak, and a missing retain on array-typed return values/params.
+
+**[DEFERRED]** native `cgExpr` still cannot evaluate `KArr` (array-typed)
+values at all (pre-existing, not introduced by this phase) — blocks
+native golden coverage of array-element containers; the fix-round work
+above was verified via the host lane and targeted native codegen arms,
+not a native `cgExpr` KArr golden. Follow-up-phase candidate, not
+scheduled.
+
 `rtListClear`/`rtMapClear` are documented hard resets — count=0, **no
 element release** (safe only for scalar elements). Confirmed leak vector
 by probe `clarusc/test/clearprobe.cla`: `.clear()` on a
@@ -101,6 +131,17 @@ it silently. Sites that leak per compile:
 ## Root cause 3 (unbounded growth, smaller): deliberately-never-reset
 ## tables (see agent survey, this session)
 
+**[FIXED]** memory-leak-fix Tasks 6 (`516da06`, fix round `147839a`) + 7
+(`43ff780`, fix round `e3499cb`): `libReset` plus 162 `IXxx`
+interned-literal caches, 4 lazy-init bool guards, 11 `check.cla`
+string-keyed maps folded to `intmap` and cleanly reset, and `progGen`
+namespacing removed from `menuItems`/`externFirstDeclByName` (both now
+cleanly reset in-place instead of growing forever). Includes the
+one-line `irColumnDescs` addition to `irReset` called out below. Guarded
+going forward by a new T1 gate, `TestLazyInternGuardsAreReset`
+(`internal/testsuite`), that fails if a future lazy-init guard is added
+without a matching reset.
+
 - `strPool`/`strIndex` (lib.cla:7-8) — documented "unbounded but
   harmless"; benign for repeat compiles of the same source (dedup), but
   every new distinct name/string across compiles stays forever.
@@ -113,6 +154,17 @@ it silently. Sites that leak per compile:
 - Assorted never-reset maps documented correctness-safe
   (`windowIsForm`, `funcScopeByDecl`, `shakeFuncIdxByName`,
   `irRcWalkNeededByName`, `irLayoutNeededByName`, ...).
+
+**[DEFERRED]** two minors noted during Task 7's review, both verified
+sound as-is, not worth a dedicated fix round:
+- `kwInited`'s reset lives in `lexAll` rather than in a shared reset
+  battery function — inconsistent placement, not a correctness bug
+  (verified re-armed every compile regardless).
+- `xrecFirstDeclByName` still carries `progGen` namespacing in its keys,
+  now redundant dead weight now that the table itself is freshly
+  reassigned per compile (the namespacing existed to survive a
+  never-reset table; the table is no longer never-reset). Harmless, just
+  an unnecessary string-concat cost per access.
 
 ## Fix directions (for the design discussion — costs are honest)
 
@@ -140,12 +192,31 @@ it silently. Sites that leak per compile:
 ## Validation plan
 
 - Host: rerun `dblcompile` 1-vs-3 ledger diff → expect ~0 block growth
-  per compile (strPool/strIndex only).
+  per compile (strPool/strIndex only). **[DONE]** — 0/compile at HEAD,
+  `TestLeakGate/DoubleCompile` (`internal/mactest`) proves it on every
+  T1 run, including the byte-identity check across compiles (both the
+  same-file 1-vs-3 variant and an alternating-file variant).
 - T1 + `--smoke`, cg68k goldens (expect churn: prologue-init changes
-  native codegen; emitui goldens likewise for the cprint side).
+  native codegen; emitui goldens likewise for the cprint side). **[DONE]**
+  — goldens re-blessed across Tasks 2-7; `scripts/test-task.sh --smoke`
+  green at HEAD (Task 8), including the regenerated bootstrap snapshot
+  (`clarusc/clarusc.c`) exercised by several of those tests.
 - Snow: rerun the two-compile acceptance — expect compile #2 ≈ compile
   #1 per-phase times, and the ~4x-shorter total run STATUS.md step 0
-  predicted.
+  predicted. **[NOT RUN THIS PHASE]** — Andrew-gated hardware validation,
+  STATUS.md steps 0-1.
+
+**Also done (Task 8, beyond this doc's original validation plan):** the
+committed bootstrap snapshot `clarusc/clarusc.c` was regenerated
+(Go-free fixed-point regen, per `internal/selfhost/fixedpoint_test.go`'s
+`TestSnapshotFixedPoint`) so `ClarusC.APPL` and every other
+snapshot-bootstrapped build actually carries this phase's fixes, instead
+of shipping pre-phase codegen indefinitely. `TestSnapshotFixedPoint` now
+PASSes. Two OTHER `internal/selfhost` failures remain
+(`TestClarusModules`'s `asm68k_test.cla` golden-text mismatch and
+`check_test.cla`'s undefined `driveProgressTick` reference) — both
+pre-existing, confirmed unchanged by this phase, standing T2 debt, not
+fixed here.
 
 ## Diagnostics kept
 

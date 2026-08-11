@@ -97,34 +97,45 @@ that matters (compiling a real multi-segment 68k app).
 
 ## Recommended next steps (in order)
 
-0. **FIRST THING NEXT SESSION: investigate the cross-compile slowdown
-   (2026-08-12, Snow reruns of `TestMacResidentClaruscOnSnow`).** In one
-   `ClarusC.APPL` process, compile #2 (`catprobe.cla`, comparably tiny)
-   runs ~4x slower than compile #1 across EVERY phase — whole-program
+0. **RESOLVED (memory-leak-fix phase, 2026-08-12) — root-caused and fixed
+   host-side.** The cross-compile slowdown investigated below was
+   clarusc leaking ~42,845 Memory Manager blocks per compile (missing
+   release, rc=1 — synthetic store-temp prologue births, `.clear()`
+   skipping element release, and never-reset intern-pool tables); see
+   `docs/superpowers/specs/2026-08-12-cross-compile-degradation-findings.md`
+   (per-item `[FIXED]`/`[DEFERRED]`) and the ROADMAP's memory-leak-fix
+   phase entry. Fixed on both lanes; the host-side `DoubleCompile` gate
+   (`internal/mactest/leakgate_test.go`) now proves 0 growth/compile,
+   byte-identity-clean. The Snow two-compile rerun below is now the
+   validation step for the fix (expect compile #2 ≈ compile #1 per-phase
+   timing); once confirmed, `CLARUS_MACRESIDENT_SETTLE` sizing in step 1
+   can drop from its degraded-compile-2 numbers back toward compile-#1-only
+   sizing. Original investigation notes (context for the fix), unchanged:
+   In one `ClarusC.APPL` process, compile #2 (`catprobe.cla`, comparably
+   tiny) ran ~4x slower than compile #1 across EVERY phase — whole-program
    check 35m vs 5m, Measure 2h20m vs 36m, segment-1 emit 49m vs 20m
    (emulated Mac II time; `now()` reads emulated Time, so these are true
    real-hardware durations even under fast-forward). Uniform cross-phase
-   degradation suggests heap/Memory-Manager-level trouble (fragmentation
+   degradation pointed at heap/Memory-Manager-level trouble (fragmentation
    or compaction thrash as the 48MB partition fills across compiles) —
    i.e. something surviving `driveReset`/`resetDiags`/`astReset`, or
    allocation churn the arena resets don't return — rather than one bad
-   algorithm. Both reruns were killed/failed on settle timing, NOT on a
-   compile error: compile #1 PASSes and BUILDs every time (live bar +
-   spinner + ticker confirmed working on screen by Andrew, 2026-08-12);
-   compile #2 also proceeds correctly, just degraded. Evidence: the
-   live-log phase ledger's timing entries
-   (`.superpowers/sdd/2026-08-11-clarusc-live-log/progress.md`) and
-   screenshots under that workspace's `evidence/`. Once fixed, the full
-   acceptance run gets ~4x shorter — do this BEFORE burning a 2.5h-settle
-   formal rerun.
-1. **Then finish the Snow acceptance rerun for a formal PASS.** Procedure
+   algorithm, which is exactly what the fix confirmed. Both reruns were
+   killed/failed on settle timing, NOT on a compile error: compile #1
+   PASSed and BUILT every time (live bar + spinner + ticker confirmed
+   working on screen by Andrew, 2026-08-12); compile #2 also proceeded
+   correctly, just degraded. Evidence: the live-log phase ledger's timing
+   entries (`.superpowers/sdd/2026-08-11-clarusc-live-log/progress.md`)
+   and screenshots under that workspace's `evidence/`.
+1. **Now: finish the Snow acceptance rerun for a formal PASS.** Procedure
    notes: boot Snow at 1x, engage fast-forward from the TOOLBAR after the
    app is up (`start_fastforward` at boot hangs the launch path —
    `macresident_test.go:79`); fast-forward is not a steady ratio (observed
    4-7x); size `CLARUS_MACRESIDENT_SETTLE` off the degraded compile-2
-   numbers until the degradation is fixed (≥2h30m settle, `-timeout`
-   above it). The worktree needs a `snow/` symlink to the main checkout's
-   local assets (`ln -s /Users/andrew/repos/clarus/snow snow`) — not in
+   numbers until the fix is confirmed on real hardware (≥2h30m settle,
+   `-timeout` above it) — expect to shrink this once compile #2 ≈ compile
+   #1 is confirmed. The worktree needs a `snow/` symlink to the main
+   checkout's local assets (`ln -s /Users/andrew/repos/clarus/snow snow`) — not in
    git.
 2. **Capture real on-Mac per-phase timings** using the instrumentation —
    partially DONE 2026-08-12: compile-#1 numbers for tickprobe (3 seg)

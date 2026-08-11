@@ -51,7 +51,6 @@ func TestLeakGate(t *testing.T) {
 		runLeakFixture(t, "../../testdata/leakgate/arrelem.cla")
 	})
 	t.Run("DoubleCompile", func(t *testing.T) {
-		t.Skip("memory-leak-fix Task 8 flips this on")
 		runDoubleCompileGate(t)
 	})
 }
