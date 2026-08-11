@@ -668,6 +668,17 @@ var irStmts: list of IRStmt
 var irExprs: list of IRExpr
 var irLocals: list of IRLocal
 var irFuncs: list of IRFunc
+
+// irFuncIdxByName maps irFuncName(i) -> i, keyed by interned nameIdx
+// directly (findings 1.4, same intern-pool-index-equality invariant
+// cgRecIdxByName/shakeFuncIdxByName already rely on). Maintained at
+// REGISTRATION time (newIRFunc), not built lazily on first lookup like
+// cgFindRecordByName -- this map backs findIRFuncIdxByName, which both
+// backends use (cprint's host lane calls it too, findings 1.4 Task 13),
+// so it must be correct from the very first lookup on every lane, not
+// just the 68k one. First-wins on a duplicate name, matching the old
+// linear scan's first-match semantics.
+var irFuncIdxByName: intmap of int
 var irGlobals: list of IRGlobal
 var irFieldSlots: list of IRFieldSlot
 var irRecords: list of IRRecordLayout
@@ -1015,6 +1026,7 @@ func irReset() {
     irExprs.clear()
     irLocals.clear()
     irFuncs.clear()
+    irFuncIdxByName.clear()
     irCbGlueNames.clear()
     irGlobals.clear()
     irFieldSlots.clear()
@@ -1808,6 +1820,9 @@ func newIRFunc(name: int, paramsHead: int, ret: int, localsHead: int, bodyHead: 
     n.localsHead = localsHead
     n.bodyHead = bodyHead
     irFuncs.add(n)
+    if not irFuncIdxByName.has(name) {
+        irFuncIdxByName[name] = irFuncs.count - 1
+    }
     return irFuncs.count - 1
 }
 
@@ -1856,20 +1871,13 @@ func irFuncSetLocalsHead(i: int, localsHead: int) {
 
 // findIRFuncIdxByName returns irFuncs' arena index for the func whose name
 // (an interned pool index, as returned by lowHandlerFunc/lowFuncDecl/etc.)
-// equals nameIdx, or -1 if none -- a linear scan, fine for the rare,
-// one-per-window-with-defaults lookup lowPrependWinVarDefaults needs
-// (Task 7, mac-target-4b).
+// equals nameIdx, or -1 if none. Findings 1.4 (Task 13): was a linear
+// scan over irFuncs (fine when this was a rare one-per-window-with-
+// defaults lookup, but cg68k's runtime-call emission calls it on every
+// emitted runtime call against ~1,600 IRFuncs); now answers from
+// irFuncIdxByName, maintained at newIRFunc registration time.
 func findIRFuncIdxByName(nameIdx: int): int {
-    var i: int
-
-    i = 0
-    while i < irFuncs.count {
-        if irFuncName(i) == nameIdx {
-            return i
-        }
-        i = i + 1
-    }
-    return -1
+    return irFuncIdxByName.get(nameIdx, -1)
 }
 
 // ================================================================

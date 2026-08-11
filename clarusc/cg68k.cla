@@ -171,6 +171,309 @@ var cgCbGlueBodyFuncIdx: list of int
 // cgGlobalOffsets[i] is irGlobals index i's negative A5 offset.
 var cgGlobalOffsets: list of int
 
+// cgGlobalOffByName maps irGlobalName(i) -> cgGlobalOffsets[i], keyed by
+// interned nameIdx (findings 1.4, Task 13: cgFindGlobalOffset's own
+// lookup table -- replaces a linear irGlobals scan with a poolGet PER
+// CANDIDATE). Fresh-assigned by cgAssignGlobalOffsets, which runs
+// exactly once per compile (cg68Measure's own "fresh-per-run" call), so
+// no separate invalidation flag is needed the way cgRecIdxByNameValid
+// needs one (that map is built lazily, on-demand, across multiple
+// cg68Measure/cg68Program passes in the same compile).
+var cgGlobalOffByName: intmap of int
+
+// ================================================================
+// Pre-interned runtime-call names (findings 1.4, Task 13)
+// ================================================================
+
+// rn* globals cache every runtime IRFunc name this backend calls BY
+// NAME (cgCallRuntime/cgJsrByName/cgIntr1-4/cgStrBuilderIntoTemp/
+// cgIntrUiForward/cgIntrFileSaveLoad/cgEmitContainerBirthCall/
+// cgEmitPtrRcCall/cgEmitAtCall/cgEmitMapValAtCall/cgDeepReleaseContainer's
+// own family-select locals/cgEmitPanic/cgEmitEnumCheckCall/
+// cgEmitStoreErr, and every string-map "prefix + suffix" combo the
+// map-hashtable phase's cgIntrMapSet/Get/GetDv/Remove/cgMapReleaseGuard/
+// cgForMapStmt families build) -- pre-interned ONCE per process rather
+// than re-interning the SAME literal on every one of the potentially
+// thousands of call sites a real program's own codegen emits (findings
+// 1.4: "every emitted runtime call... after interning a 256-byte
+// literal"). rnInit()/rnInited is check.cla's own cnInit()/cnInited
+// lazy-guard pattern (a global initializer cannot call intern() --
+// see cnInit's own doc comment) -- called once, from cg68ProgramFork's
+// own entry, before cg68Measure's first cgEmitFunc call needs any of
+// these. NOT exhaustive by design: cgEmitStartupCallIfPresent's own
+// literal call sites (rtUiStartup/rtUiLaunch/rtUiRun/natInit/the four
+// handler_App_* names) fire at most once each, per COMPILE, not per
+// call site emitted -- rare enough that pre-interning buys nothing
+// measurable, so that one function is deliberately left calling
+// intern() inline, same as cgCallExtUiGlueAddr/cgCallExtNatFallback's
+// own genuinely program-dependent (not fixed-literal) names.
+var rnInited: bool
+var rnAlert: int
+var rnFileName: int
+var rnFileReadText: int
+var rnFileWriteText: int
+var rnLastErrCode: int
+var rnLastErrMsg: int
+var rnLog: int
+var rnQuit: int
+var rnReadResource: int
+var rnWriteRes: int
+var rnArrCheck: int
+var rnEnumCheck: int
+var rnFileLoad: int
+var rnFileSave: int
+var rnFixDiv: int
+var rnFixMul: int
+var rnIntMapClear: int
+var rnIntMapCount: int
+var rnIntMapGet: int
+var rnIntMapGetDv: int
+var rnIntMapHas: int
+var rnIntMapKeyAt: int
+var rnIntMapLastref: int
+var rnIntMapNew: int
+var rnIntMapRelease: int
+var rnIntMapRemove: int
+var rnIntMapRetain: int
+var rnIntMapSet: int
+var rnIntMapValAt: int
+var rnListAt: int
+var rnListClear: int
+var rnListCount: int
+var rnListFirst: int
+var rnListLast: int
+var rnListLastref: int
+var rnListNew: int
+var rnListPop: int
+var rnListPush: int
+var rnListRelease: int
+var rnListRemove: int
+var rnListRetain: int
+var rnListShift: int
+var rnListUnshift: int
+var rnMapClear: int
+var rnMapCount: int
+var rnMapGet: int
+var rnMapGetDv: int
+var rnMapKeyAt: int
+var rnMapHas: int
+var rnMapLastref: int
+var rnMapNew: int
+var rnMapRelease: int
+var rnMapRemove: int
+var rnMapRetain: int
+var rnMapSet: int
+var rnMapValAt: int
+var rnPanic: int
+var rnSortedMapClear: int
+var rnSortedMapCount: int
+var rnSortedMapGet: int
+var rnSortedMapGetDv: int
+var rnSortedMapHas: int
+var rnSortedMapKeyAt: int
+var rnSortedMapLastref: int
+var rnSortedMapNew: int
+var rnSortedMapRelease: int
+var rnSortedMapRemove: int
+var rnSortedMapRetain: int
+var rnSortedMapSet: int
+var rnSortedMapValAt: int
+var rnStrCmp: int
+var rnStrConcat: int
+var rnStrConcatChar: int
+var rnStrFromBytes: int
+var rnStrIndex: int
+var rnStrIndexOfChar: int
+var rnStrIndexOfStr: int
+var rnStrLen: int
+var rnStrPrependChar: int
+var rnStrSetIndex: int
+var rnStrSlice: int
+var rnStrStore: int
+var rnStrToBytes: int
+var rnTextAppendChar: int
+var rnTextAppendStr: int
+var rnTextAppendText: int
+var rnTextCmp: int
+var rnTextCmpStr: int
+var rnTextConcat: int
+var rnTextConcatSl: int
+var rnTextFromBytes: int
+var rnTextIndex: int
+var rnTextIndexOfChar: int
+var rnTextIndexOfStr: int
+var rnTextLen: int
+var rnTextNew: int
+var rnTextRelease: int
+var rnTextRetain: int
+var rnTextSetIndex: int
+var rnTextSlice: int
+var rnTextStore: int
+var rnTextToBytes: int
+var rnUiAskOpen: int
+var rnUiAskSave: int
+var rnUiAskSaveChanges: int
+var rnUiCanvasCircle: int
+var rnUiCanvasClear: int
+var rnUiCanvasDrawText: int
+var rnUiCanvasFillCircle: int
+var rnUiCanvasLine: int
+var rnUiCanvasPattern: int
+var rnUiCanvasRect: int
+var rnUiClose: int
+var rnUiEdit: int
+var rnUiFormIsNew: int
+var rnUiFront: int
+var rnUiGetTitle: int
+var rnUiMenuEnable: int
+var rnUiOpen: int
+var rnUiQuit: int
+var rnUiSetTitle: int
+var rnUiState: int
+var rnUiWidgetGetBool: int
+var rnUiWidgetGetInt: int
+var rnUiWidgetGetStr: int
+var rnUiWidgetGetText: int
+var rnUiWidgetSetBool: int
+var rnUiWidgetSetInt: int
+var rnUiWidgetSetStr: int
+var rnUiWidgetSetText: int
+
+func rnInit() {
+    if rnInited { return }
+    rnInited = true
+    rnAlert = intern("natAlert")
+    rnFileName = intern("natFileName")
+    rnFileReadText = intern("natFileReadText")
+    rnFileWriteText = intern("natFileWriteText")
+    rnLastErrCode = intern("natLastErrCode")
+    rnLastErrMsg = intern("natLastErrMsg")
+    rnLog = intern("natLog")
+    rnQuit = intern("natQuit")
+    rnReadResource = intern("natReadResource")
+    rnWriteRes = intern("natWriteRes")
+    rnArrCheck = intern("rtArrCheck")
+    rnEnumCheck = intern("rtEnumCheck")
+    rnFileLoad = intern("rtFileLoad")
+    rnFileSave = intern("rtFileSave")
+    rnFixDiv = intern("rtFixDiv")
+    rnFixMul = intern("rtFixMul")
+    rnIntMapClear = intern("rtIntMapClear")
+    rnIntMapCount = intern("rtIntMapCount")
+    rnIntMapGet = intern("rtIntMapGet")
+    rnIntMapGetDv = intern("rtIntMapGetDv")
+    rnIntMapHas = intern("rtIntMapHas")
+    rnIntMapKeyAt = intern("rtIntMapKeyAt")
+    rnIntMapLastref = intern("rtIntMapLastref")
+    rnIntMapNew = intern("rtIntMapNew")
+    rnIntMapRelease = intern("rtIntMapRelease")
+    rnIntMapRemove = intern("rtIntMapRemove")
+    rnIntMapRetain = intern("rtIntMapRetain")
+    rnIntMapSet = intern("rtIntMapSet")
+    rnIntMapValAt = intern("rtIntMapValAt")
+    rnListAt = intern("rtListAt")
+    rnListClear = intern("rtListClear")
+    rnListCount = intern("rtListCount")
+    rnListFirst = intern("rtListFirst")
+    rnListLast = intern("rtListLast")
+    rnListLastref = intern("rtListLastref")
+    rnListNew = intern("rtListNew")
+    rnListPop = intern("rtListPop")
+    rnListPush = intern("rtListPush")
+    rnListRelease = intern("rtListRelease")
+    rnListRemove = intern("rtListRemove")
+    rnListRetain = intern("rtListRetain")
+    rnListShift = intern("rtListShift")
+    rnListUnshift = intern("rtListUnshift")
+    rnMapClear = intern("rtMapClear")
+    rnMapCount = intern("rtMapCount")
+    rnMapGet = intern("rtMapGet")
+    rnMapGetDv = intern("rtMapGetDv")
+    rnMapKeyAt = intern("rtMapKeyAt")
+    rnMapHas = intern("rtMapHas")
+    rnMapLastref = intern("rtMapLastref")
+    rnMapNew = intern("rtMapNew")
+    rnMapRelease = intern("rtMapRelease")
+    rnMapRemove = intern("rtMapRemove")
+    rnMapRetain = intern("rtMapRetain")
+    rnMapSet = intern("rtMapSet")
+    rnMapValAt = intern("rtMapValAt")
+    rnPanic = intern("rtPanic")
+    rnSortedMapClear = intern("rtSortedMapClear")
+    rnSortedMapCount = intern("rtSortedMapCount")
+    rnSortedMapGet = intern("rtSortedMapGet")
+    rnSortedMapGetDv = intern("rtSortedMapGetDv")
+    rnSortedMapHas = intern("rtSortedMapHas")
+    rnSortedMapKeyAt = intern("rtSortedMapKeyAt")
+    rnSortedMapLastref = intern("rtSortedMapLastref")
+    rnSortedMapNew = intern("rtSortedMapNew")
+    rnSortedMapRelease = intern("rtSortedMapRelease")
+    rnSortedMapRemove = intern("rtSortedMapRemove")
+    rnSortedMapRetain = intern("rtSortedMapRetain")
+    rnSortedMapSet = intern("rtSortedMapSet")
+    rnSortedMapValAt = intern("rtSortedMapValAt")
+    rnStrCmp = intern("rtStrCmp")
+    rnStrConcat = intern("rtStrConcat")
+    rnStrConcatChar = intern("rtStrConcatChar")
+    rnStrFromBytes = intern("rtStrFromBytes")
+    rnStrIndex = intern("rtStrIndex")
+    rnStrIndexOfChar = intern("rtStrIndexOfChar")
+    rnStrIndexOfStr = intern("rtStrIndexOfStr")
+    rnStrLen = intern("rtStrLen")
+    rnStrPrependChar = intern("rtStrPrependChar")
+    rnStrSetIndex = intern("rtStrSetIndex")
+    rnStrSlice = intern("rtStrSlice")
+    rnStrStore = intern("rtStrStore")
+    rnStrToBytes = intern("rtStrToBytes")
+    rnTextAppendChar = intern("rtTextAppendChar")
+    rnTextAppendStr = intern("rtTextAppendStr")
+    rnTextAppendText = intern("rtTextAppendText")
+    rnTextCmp = intern("rtTextCmp")
+    rnTextCmpStr = intern("rtTextCmpStr")
+    rnTextConcat = intern("rtTextConcat")
+    rnTextConcatSl = intern("rtTextConcatSl")
+    rnTextFromBytes = intern("rtTextFromBytes")
+    rnTextIndex = intern("rtTextIndex")
+    rnTextIndexOfChar = intern("rtTextIndexOfChar")
+    rnTextIndexOfStr = intern("rtTextIndexOfStr")
+    rnTextLen = intern("rtTextLen")
+    rnTextNew = intern("rtTextNew")
+    rnTextRelease = intern("rtTextRelease")
+    rnTextRetain = intern("rtTextRetain")
+    rnTextSetIndex = intern("rtTextSetIndex")
+    rnTextSlice = intern("rtTextSlice")
+    rnTextStore = intern("rtTextStore")
+    rnTextToBytes = intern("rtTextToBytes")
+    rnUiAskOpen = intern("rtUiAskOpen")
+    rnUiAskSave = intern("rtUiAskSave")
+    rnUiAskSaveChanges = intern("rtUiAskSaveChanges")
+    rnUiCanvasCircle = intern("rtUiCanvasCircle")
+    rnUiCanvasClear = intern("rtUiCanvasClear")
+    rnUiCanvasDrawText = intern("rtUiCanvasDrawText")
+    rnUiCanvasFillCircle = intern("rtUiCanvasFillCircle")
+    rnUiCanvasLine = intern("rtUiCanvasLine")
+    rnUiCanvasPattern = intern("rtUiCanvasPattern")
+    rnUiCanvasRect = intern("rtUiCanvasRect")
+    rnUiClose = intern("rtUiClose")
+    rnUiEdit = intern("rtUiEdit")
+    rnUiFormIsNew = intern("rtUiFormIsNew")
+    rnUiFront = intern("rtUiFront")
+    rnUiGetTitle = intern("rtUiGetTitle")
+    rnUiMenuEnable = intern("rtUiMenuEnable")
+    rnUiOpen = intern("rtUiOpen")
+    rnUiQuit = intern("rtUiQuit")
+    rnUiSetTitle = intern("rtUiSetTitle")
+    rnUiState = intern("rtUiState")
+    rnUiWidgetGetBool = intern("rtUiWidgetGetBool")
+    rnUiWidgetGetInt = intern("rtUiWidgetGetInt")
+    rnUiWidgetGetStr = intern("rtUiWidgetGetStr")
+    rnUiWidgetGetText = intern("rtUiWidgetGetText")
+    rnUiWidgetSetBool = intern("rtUiWidgetSetBool")
+    rnUiWidgetSetInt = intern("rtUiWidgetSetInt")
+    rnUiWidgetSetStr = intern("rtUiWidgetSetStr")
+    rnUiWidgetSetText = intern("rtUiWidgetSetText")
+}
+
 // cgGlobalsBelowA5Size is the total (positive) byte extent of the whole
 // below-A5 globals block -- the startup zero-loop's bound.
 var cgGlobalsBelowA5Size: int
@@ -466,11 +769,18 @@ func cgPoolDeltaAndUnion(cand: list of int, sizes: list of int, segSet: list of 
 // cgCurFrameNames[i]/cgCurFrameOffsets[i] are the CURRENT function's
 // combined param+local (name -> A6 offset) table, rebuilt by cgEmitFunc
 // right after it computes paramOffsets/local offsets (both already
-// walked there for the frame-layout comments) -- cgVarOff below is the
-// sole reader. Reassigned (never appended-to-and-reused), matching this
-// file's existing per-run module state discipline.
+// walked there for the frame-layout comments) -- the listing comments
+// (a68Comment "param"/"local" lines) read cgCurFrameNames directly.
+// cgCurFrameNameIdxs[i] is the SAME table keyed by interned nameIdx
+// instead of string (findings 1.4, Task 13): cgFindFrameOffset scans
+// this one with int compares -- cheaper than the string compares the
+// old cgCurFrameNames scan did on every EVarRef/EXRecAddr lookup. Built
+// in parallel at the exact same append sites, threading through the
+// already-interned indices (irLocalName(params[i])/irLocalName(loc))
+// rather than re-interning poolGet's own string result.
 var cgCurFrameNames: list of string
 var cgCurFrameOffsets: list of int
+var cgCurFrameNameIdxs: list of int
 
 // cgCurEpilogueLabel is bound immediately before the current function's
 // UNLK/RTS; every SReturn branches here rather than emitting its own
@@ -1742,11 +2052,13 @@ func cgAssignGlobalOffsets() {
     var running: int
 
     offs = cgFreshIntList()
+    cgGlobalOffByName.clear()
     running = 0
     i = 0
     while i < irGlobals.count {
         running = running - cgSlotSizeOf(irGlobalType(i))
         offs.add(running)
+        cgGlobalOffByName[irGlobalName(i)] = running
         i = i + 1
     }
     cgGlobalOffsets = offs
@@ -2478,7 +2790,7 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     a68EmitBr(OpBsr, 0, freeGlobalsLbl)
     a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0)
 
-    qi = findIRFuncIdxByName(intern("natQuit"))
+    qi = findIRFuncIdxByName(rnQuit)
     if qi != -1 and shakeReachable(qi) {
         cgCallFunc(qi)
     } else {
@@ -2570,7 +2882,7 @@ func cgDefaultInitStrAt(reg: int, off: int, t: int, strDefaultIdx: int) {
         cgZeroBlockAtA0(cgSizeOf(t))
         return
     }
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -2758,13 +3070,13 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
     } else if k == KText {
         cgDefaultInitTextAt(reg, off, strDefaultIdx)
     } else if k == KList {
-        cgEmitContainerBirthCall("rtListNew", cgSizeOf(irtElem(t)), reg, off)
+        cgEmitContainerBirthCall(rnListNew, cgSizeOf(irtElem(t)), reg, off)
     } else if k == KMap {
-        cgEmitContainerBirthCall("rtMapNew", cgSizeOf(irtElem(t)), reg, off)
+        cgEmitContainerBirthCall(rnMapNew, cgSizeOf(irtElem(t)), reg, off)
     } else if k == KSortedMap {
-        cgEmitContainerBirthCall("rtSortedMapNew", cgSizeOf(irtElem(t)), reg, off)
+        cgEmitContainerBirthCall(rnSortedMapNew, cgSizeOf(irtElem(t)), reg, off)
     } else if k == KIntMap {
-        cgEmitContainerBirthCall("rtIntMapNew", cgSizeOf(irtElem(t)), reg, off)
+        cgEmitContainerBirthCall(rnIntMapNew, cgSizeOf(irtElem(t)), reg, off)
     } else if k == KErr {
         // Task 14.7: mirrors cpDefaultInit's own KErr arm (cprint.cla:
         // 3170-3172, `dst.code = 0; dst.message = (clar_str_255){0};`) --
@@ -2826,7 +3138,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
     var newFi: int
     var storeFi: int
 
-    newFi = findIRFuncIdxByName(intern("rtTextNew"))
+    newFi = findIRFuncIdxByName(rnTextNew)
     if newFi == -1 or not shakeReachable(newFi) {
         log("cg68k: rtTextNew not found/reachable")
         quit 1
@@ -2839,7 +3151,7 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
     if strDefaultIdx == -1 {
         return
     }
-    storeFi = findIRFuncIdxByName(intern("rtTextStore"))
+    storeFi = findIRFuncIdxByName(rnTextStore)
     if storeFi == -1 or not shakeReachable(storeFi) {
         log("cg68k: rtTextStore not found/reachable")
         quit 1
@@ -2864,12 +3176,12 @@ func cgDefaultInitTextAt(reg: int, off: int, strDefaultIdx: int) {
 // address precomputed and carried across the JSR on the stack, same fix
 // (and same reason -- `reg` itself, not just A1, can be clobbered) as
 // cgDefaultInitTextAt's own rtTextNew call just above (Task 14, native-5e).
-func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) {
+func cgEmitContainerBirthCall(nameIdx: int, sizeArg: int, reg: int, off: int) {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     // Dest address pushed BEFORE the real argument (deeper on the stack,
@@ -2897,12 +3209,12 @@ func cgEmitContainerBirthCall(fnName: string, sizeArg: int, reg: int, off: int) 
 // callee-saved registers, so it's as free to clobber A1 as any other
 // scratch register, and A1 may currently hold a reg=0 walk's own base
 // that a LATER field/element in the same walk still needs.
-func cgEmitPtrRcCall(fnName: string, reg: int, off: int) {
+func cgEmitPtrRcCall(nameIdx: int, reg: int, off: int) {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
@@ -2969,15 +3281,15 @@ func cgRetainAt(reg: int, off: int, t: int) {
 
     k = irtKind(t)
     if k == KText {
-        cgEmitPtrRcCall("rtTextRetain", reg, off)
+        cgEmitPtrRcCall(rnTextRetain, reg, off)
     } else if k == KList {
-        cgEmitPtrRcCall("rtListRetain", reg, off)
+        cgEmitPtrRcCall(rnListRetain, reg, off)
     } else if k == KMap {
-        cgEmitPtrRcCall("rtMapRetain", reg, off)
+        cgEmitPtrRcCall(rnMapRetain, reg, off)
     } else if k == KSortedMap {
-        cgEmitPtrRcCall("rtSortedMapRetain", reg, off)
+        cgEmitPtrRcCall(rnSortedMapRetain, reg, off)
     } else if k == KIntMap {
-        cgEmitPtrRcCall("rtIntMapRetain", reg, off)
+        cgEmitPtrRcCall(rnIntMapRetain, reg, off)
     } else if k == KRec {
         cgEmitRecWalkCall(true, reg, off, irtName(t))
     } else if k == KArr {
@@ -3003,7 +3315,7 @@ func cgReleaseAt(reg: int, off: int, t: int) {
 
     k = irtKind(t)
     if k == KText {
-        cgEmitPtrRcCall("rtTextRelease", reg, off)
+        cgEmitPtrRcCall(rnTextRelease, reg, off)
     } else if k == KList {
         // Task 13: the deep, lastref-gated element-release walk
         // (cgDeepReleaseContainer) -- Task 12 left this a bare handle
@@ -3236,8 +3548,8 @@ func cgEmitPanic(msgLitIdx: int) {
     var storeFi: int
     var panicFi: int
 
-    storeFi = findIRFuncIdxByName(intern("rtStrStore"))
-    panicFi = findIRFuncIdxByName(intern("rtPanic"))
+    storeFi = findIRFuncIdxByName(rnStrStore)
+    panicFi = findIRFuncIdxByName(rnPanic)
     if storeFi == -1 or not shakeReachable(storeFi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -3405,12 +3717,12 @@ func cgNeedsRelease(t: int): bool {
 // two call shapes below) in D0. A1 stash/restore around the JSR, same
 // unconditional SECOND-ORDER BUG invariant cgEmitPtrRcCall/
 // cgEmitRecWalkCall already follow.
-func cgEmitAtCall(fnName: string, ptrOff: int, idxOff: int) {
+func cgEmitAtCall(nameIdx: int, ptrOff: int, idxOff: int) {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
@@ -3435,7 +3747,7 @@ func cgContainerElemRelease(et: int, depth: int) {
 
     k = irtKind(et)
     if k == KText {
-        cgEmitPtrRcCall("rtTextRelease", 0, 0)
+        cgEmitPtrRcCall(rnTextRelease, 0, 0)
     } else if k == KRec {
         cgEmitRecWalkCall(false, 0, 0, irtName(et))
     } else if k == KList or k == KMap or k == KSortedMap or k == KIntMap {
@@ -3449,12 +3761,12 @@ func cgContainerElemRelease(et: int, depth: int) {
 // from ptrOff/idxOff exactly like cgEmitAtCall's own List shape. Leaves
 // nothing meaningful in D0 (ValAt is void); the caller reads the result
 // back out of valOff itself.
-func cgEmitMapValAtCall(fnName: string, ptrOff: int, idxOff: int, valOff: int) {
+func cgEmitMapValAtCall(nameIdx: int, ptrOff: int, idxOff: int, valOff: int) {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
@@ -3499,10 +3811,10 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     var ptrOff: int
     var countOff: int
     var idxOff: int
-    var lastrefFn: string
-    var countFn: string
-    var atFn: string
-    var relFn: string
+    var lastrefFn: int
+    var countFn: int
+    var atFn: int
+    var relFn: int
     var opaque: bool
     var afterLbl: int
     var loopLbl: int
@@ -3516,29 +3828,34 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     countOff = cgDeepCountOffs[depth]
     idxOff = cgDeepIndexOffs[depth]
     opaque = irtKind(t) == KMap or irtKind(t) == KSortedMap or irtKind(t) == KIntMap
+    // Findings 1.4 (Task 13): lastrefFn/countFn/atFn/relFn were `string`
+    // literals, re-interned on every JSR below; now pre-interned rn*
+    // globals, picked once per depth-level walk (4-way, same runtime
+    // families cgIntrMapSet/Get/GetDv/Remove's own `sorted` bool covers,
+    // plus List/IntMap).
     if irtKind(t) == KIntMap {
         // map-hashtable phase Task 7: same opaque, out-param ValAt shape as
         // Map/SortedMap -- only the runtime name prefix differs. (The KEY
         // fetch this walk never needs -- it only walks VALUES.)
-        lastrefFn = "rtIntMapLastref"
-        countFn = "rtIntMapCount"
-        atFn = "rtIntMapValAt"
-        relFn = "rtIntMapRelease"
+        lastrefFn = rnIntMapLastref
+        countFn = rnIntMapCount
+        atFn = rnIntMapValAt
+        relFn = rnIntMapRelease
     } else if irtKind(t) == KSortedMap {
-        lastrefFn = "rtSortedMapLastref"
-        countFn = "rtSortedMapCount"
-        atFn = "rtSortedMapValAt"
-        relFn = "rtSortedMapRelease"
+        lastrefFn = rnSortedMapLastref
+        countFn = rnSortedMapCount
+        atFn = rnSortedMapValAt
+        relFn = rnSortedMapRelease
     } else if irtKind(t) == KMap {
-        lastrefFn = "rtMapLastref"
-        countFn = "rtMapCount"
-        atFn = "rtMapValAt"
-        relFn = "rtMapRelease"
+        lastrefFn = rnMapLastref
+        countFn = rnMapCount
+        atFn = rnMapValAt
+        relFn = rnMapRelease
     } else {
-        lastrefFn = "rtListLastref"
-        countFn = "rtListCount"
-        atFn = "rtListAt"
-        relFn = "rtListRelease"
+        lastrefFn = rnListLastref
+        countFn = rnListCount
+        atFn = rnListAt
+        relFn = rnListRelease
     }
 
     // t is always KList/KMap/KSortedMap/KIntMap here (a 4-byte pointer-shaped
@@ -3867,7 +4184,7 @@ func cgEmitSerdescTables() {
 func cgEmitEnumCheckCall() {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern("rtEnumCheck"))
+    fi = findIRFuncIdxByName(rnEnumCheck)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtEnumCheck not found/reachable")
         quit 1
@@ -3949,7 +4266,7 @@ func cgEmitGlobalTextFromStr(off: int, initE: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExprAddr(initE)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtTextStore")
+    cgJsrByName(rnTextStore)
     cgCleanupStack(8)
 }
 
@@ -4053,6 +4370,7 @@ func cgEmitFunc(f: int) {
     var p: int
     var frameNames: list of string
     var frameOffsets: list of int
+    var frameNameIdxs: list of int
     var recLocalOffsets: list of int
     var recLocalTypes: list of int
     var tmpOffs: list of int
@@ -4085,6 +4403,7 @@ func cgEmitFunc(f: int) {
     a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
     frameNames = cgFreshStringList()
     frameOffsets = cgFreshIntList()
+    frameNameIdxs = cgFreshIntList()
     recLocalOffsets = cgFreshIntList()
     recLocalTypes = cgFreshIntList()
 
@@ -4130,6 +4449,7 @@ func cgEmitFunc(f: int) {
         a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
         frameNames.add(poolGet(irLocalName(params[i])))
         frameOffsets.add(paramOffsets[i])
+        frameNameIdxs.add(irLocalName(params[i]))
         i = i + 1
     }
 
@@ -4151,6 +4471,7 @@ func cgEmitFunc(f: int) {
             a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
+            frameNameIdxs.add(irLocalName(loc))
             // Task 16 fix: EVERY local gets its own default-init at
             // function entry, unconditionally -- mirrors cpEmitFunc's own
             // unconditional per-local cpDefaultInit call (cprint.cla:3636)
@@ -4230,6 +4551,7 @@ func cgEmitFunc(f: int) {
     // before cgStmts walks the body.
     cgCurFrameNames = frameNames
     cgCurFrameOffsets = frameOffsets
+    cgCurFrameNameIdxs = frameNameIdxs
     cgCurHiddenOffset = -1
     if needsHidden {
         cgCurHiddenOffset = 8
@@ -4425,17 +4747,22 @@ func cgEmitCallbackGlue(glueFi: int, bodyFi: int) {
 // Task 8: variable resolution
 // ================================================================
 
-// cgFindFrameOffset returns nm's A6 offset from the CURRENT function's
-// frame table, or cgUnresolved (a sentinel no real offset ever equals) if
-// nm isn't a param/local of this function.
+// cgFindFrameOffset returns nameIdx's A6 offset from the CURRENT
+// function's frame table, or cgUnresolved (a sentinel no real offset
+// ever equals) if nameIdx isn't a param/local of this function. Findings
+// 1.4 (Task 13): scans cgCurFrameNameIdxs with int compares, keyed by
+// interned nameIdx directly (index equality already implies string
+// equality under the intern-pool invariant -- same one cgRecIdxByName/
+// irFuncIdxByName rely on) -- was a per-lookup string scan over
+// cgCurFrameNames, on every EVarRef/EXRecAddr codegen'd.
 const cgUnresolved: int = 0x7FFFFFFF
 
-func cgFindFrameOffset(nm: string): int {
+func cgFindFrameOffset(nameIdx: int): int {
     var i: int
 
     i = 0
-    while i < cgCurFrameNames.count {
-        if cgCurFrameNames[i] == nm {
+    while i < cgCurFrameNameIdxs.count {
+        if cgCurFrameNameIdxs[i] == nameIdx {
             return cgCurFrameOffsets[i]
         }
         i = i + 1
@@ -4443,19 +4770,14 @@ func cgFindFrameOffset(nm: string): int {
     return cgUnresolved
 }
 
-// cgFindGlobalOffset returns nm's A5 offset (cgAssignGlobalOffsets must
-// have already run this cg68Program() call), or cgUnresolved.
-func cgFindGlobalOffset(nm: string): int {
-    var i: int
-
-    i = 0
-    while i < irGlobals.count {
-        if poolGet(irGlobalName(i)) == nm {
-            return cgGlobalOffsets[i]
-        }
-        i = i + 1
-    }
-    return cgUnresolved
+// cgFindGlobalOffset returns nameIdx's A5 offset (cgAssignGlobalOffsets
+// must have already run this cg68Program() call), or cgUnresolved.
+// Findings 1.4 (Task 13): answers from cgGlobalOffByName (an intmap of
+// int keyed by interned nameIdx, built once by cgAssignGlobalOffsets) --
+// was a linear scan over ALL irGlobals with a poolGet PER CANDIDATE, on
+// every EVarRef/EXRecAddr referencing a global.
+func cgFindGlobalOffset(nameIdx: int): int {
+    return cgGlobalOffByName.get(nameIdx, cgUnresolved)
 }
 
 // cgVarReg/cgVarOff resolve an EVarRef to its base register (5=A5 for a
@@ -4471,17 +4793,17 @@ func cgVarReg(e: int): int {
 }
 
 func cgVarOff(e: int): int {
-    var nm: string
+    var nameIdx: int
     var off: int
 
-    nm = poolGet(irVarRefName(e))
+    nameIdx = irVarRefName(e)
     if irVarRefGlobal(e) {
-        off = cgFindGlobalOffset(nm)
+        off = cgFindGlobalOffset(nameIdx)
     } else {
-        off = cgFindFrameOffset(nm)
+        off = cgFindFrameOffset(nameIdx)
     }
     if off == cgUnresolved {
-        log("cg68k: unresolved variable " + nm)
+        log("cg68k: unresolved variable " + poolGet(nameIdx))
         quit 1
     }
     return off
@@ -4507,17 +4829,17 @@ func cgXRecAddrReg(e: int): int {
 }
 
 func cgXRecAddrDisp(e: int): int {
-    var nm: string
+    var nameIdx: int
     var off: int
 
-    nm = poolGet(irXRecAddrName(e))
+    nameIdx = irXRecAddrName(e)
     if irXRecAddrGlobal(e) {
-        off = cgFindGlobalOffset(nm)
+        off = cgFindGlobalOffset(nameIdx)
     } else {
-        off = cgFindFrameOffset(nm)
+        off = cgFindFrameOffset(nameIdx)
     }
     if off == cgUnresolved {
-        log("cg68k: unresolved xrec variable " + nm)
+        log("cg68k: unresolved xrec variable " + poolGet(nameIdx))
         quit 1
     }
     return off + irXRecAddrOffset(e)
@@ -4567,12 +4889,15 @@ func cgRetNeedsHidden(retTy: int): bool {
 // parameterized copy of their dispatch logic needed.
 func cgVarRefAt(off: int, t: int): int {
     var nm: string
+    var nameIdx: int
 
     nm = "__cg68scratch" + numToStr(cgSyntheticVarSeq)
     cgSyntheticVarSeq = cgSyntheticVarSeq + 1
+    nameIdx = intern(nm)
     cgCurFrameNames.add(nm)
     cgCurFrameOffsets.add(off)
-    return newIRVarRef(intern(nm), false, t)
+    cgCurFrameNameIdxs.add(nameIdx)
+    return newIRVarRef(nameIdx, false, t)
 }
 
 // cgMaterializeToTemp (Task 14.7) materializes e's value into a fresh
@@ -4820,7 +5145,7 @@ func cgArrElemAddr(e: int, xt: int) {
     addrs = cgFreshBoolList()
     addrs.add(false)
     addrs.add(false)
-    if not cgCallRuntime("rtArrCheck", args, addrs) {
+    if not cgCallRuntime(rnArrCheck, args, addrs) {
         quit 1
     }
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDn, 1, 0)
@@ -5034,19 +5359,19 @@ func cgEmitStoreRec(dst: int, src: int) {
             return
         }
         if nm == "map_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, "rtMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src, false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "map_get_dv" or nm == "map_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth", "rtMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth", false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src, true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get_dv" or nm == "sortedmap_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "intmap_get" {
@@ -5089,12 +5414,12 @@ func cgEmitStoreErr(dst: int, src: int) {
 
     sk = irExprKind(src)
     if sk == EIntr and poolGet(irIntrName(src)) == "lasterr_value" {
-        codeFi = findIRFuncIdxByName(intern("natLastErrCode"))
+        codeFi = findIRFuncIdxByName(rnLastErrCode)
         if codeFi == -1 or not shakeReachable(codeFi) {
             log("cg68k: natLastErrCode not found/reachable")
             quit 1
         }
-        msgFi = findIRFuncIdxByName(intern("natLastErrMsg"))
+        msgFi = findIRFuncIdxByName(rnLastErrMsg)
         if msgFi == -1 or not shakeReachable(msgFi) {
             log("cg68k: natLastErrMsg not found/reachable")
             quit 1
@@ -5463,7 +5788,7 @@ func cgIntrPoke(e: int, nm: string) {
 // these three.
 // ================================================================
 
-func cgIntr1(e: int, fnName: string, addr0: bool) {
+func cgIntr1(e: int, nameIdx: int, addr0: bool) {
     var a0e: int
     var args: list of int
     var addrs: list of bool
@@ -5473,12 +5798,12 @@ func cgIntr1(e: int, fnName: string, addr0: bool) {
     args.add(a0e)
     addrs = cgFreshBoolList()
     addrs.add(addr0)
-    if not cgCallRuntime(fnName, args, addrs) {
+    if not cgCallRuntime(nameIdx, args, addrs) {
         quit 1
     }
 }
 
-func cgIntr2(e: int, fnName: string, addr0: bool, addr1: bool) {
+func cgIntr2(e: int, nameIdx: int, addr0: bool, addr1: bool) {
     var a0e: int
     var a1e: int
     var args: list of int
@@ -5492,12 +5817,12 @@ func cgIntr2(e: int, fnName: string, addr0: bool, addr1: bool) {
     addrs = cgFreshBoolList()
     addrs.add(addr0)
     addrs.add(addr1)
-    if not cgCallRuntime(fnName, args, addrs) {
+    if not cgCallRuntime(nameIdx, args, addrs) {
         quit 1
     }
 }
 
-func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
+func cgIntr3(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool) {
     var a0e: int
     var a1e: int
     var a2e: int
@@ -5515,7 +5840,7 @@ func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
     addrs.add(addr0)
     addrs.add(addr1)
     addrs.add(addr2)
-    if not cgCallRuntime(fnName, args, addrs) {
+    if not cgCallRuntime(nameIdx, args, addrs) {
         quit 1
     }
 }
@@ -5523,7 +5848,7 @@ func cgIntr3(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool) {
 // cgIntr4 (native-gaps-cleanup Task 2): cgIntr3's 4-arg sibling --
 // file_write_text now carries type/creator (both by-address Str255s)
 // after path/text.
-func cgIntr4(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool, addr3: bool) {
+func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3: bool) {
     var a0e: int
     var a1e: int
     var a2e: int
@@ -5545,7 +5870,7 @@ func cgIntr4(e: int, fnName: string, addr0: bool, addr1: bool, addr2: bool, addr
     addrs.add(addr1)
     addrs.add(addr2)
     addrs.add(addr3)
-    if not cgCallRuntime(fnName, args, addrs) {
+    if not cgCallRuntime(nameIdx, args, addrs) {
         quit 1
     }
 }
@@ -5654,7 +5979,7 @@ func cgIntrStrFromBytes(e: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExpr(a2e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtStrFromBytes")
+    cgJsrByName(rnStrFromBytes)
     cgCleanupStack(20)
 }
 
@@ -5675,7 +6000,7 @@ func cgIntrStrToBytes(e: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtStrToBytes")
+    cgJsrByName(rnStrToBytes)
     cgCleanupStack(12)
 
     cgDrainTightScratchToPaddedArr(a1e, scratchOff)
@@ -5703,7 +6028,7 @@ func cgIntrTextFromBytes(e: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExpr(a2e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtTextFromBytes")
+    cgJsrByName(rnTextFromBytes)
     cgCleanupStack(16)
 }
 
@@ -5724,7 +6049,7 @@ func cgIntrTextToBytes(e: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmImm, 0, n, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtTextToBytes")
+    cgJsrByName(rnTextToBytes)
     cgCleanupStack(12)
 
     cgDrainTightScratchToPaddedArr(a1e, scratchOff)
@@ -5754,7 +6079,7 @@ func cgIntrTextCmp(e: int) {
         addrs = cgFreshBoolList()
         addrs.add(false)
         addrs.add(false)
-        if not cgCallRuntime("rtTextCmp", args, addrs) {
+        if not cgCallRuntime(rnTextCmp, args, addrs) {
             quit 1
         }
         return
@@ -5766,7 +6091,7 @@ func cgIntrTextCmp(e: int) {
         addrs = cgFreshBoolList()
         addrs.add(false)
         addrs.add(true)
-        if not cgCallRuntime("rtTextCmpStr", args, addrs) {
+        if not cgCallRuntime(rnTextCmpStr, args, addrs) {
             quit 1
         }
         return
@@ -5777,7 +6102,7 @@ func cgIntrTextCmp(e: int) {
     addrs = cgFreshBoolList()
     addrs.add(false)
     addrs.add(true)
-    if not cgCallRuntime("rtTextCmpStr", args, addrs) {
+    if not cgCallRuntime(rnTextCmpStr, args, addrs) {
         quit 1
     }
     a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
@@ -5802,7 +6127,7 @@ func cgIntrTextConcat(e: int) {
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     off = cgNewTrackedTmp(irTextT)
-    cgJsrByName("rtTextNew")
+    cgJsrByName(rnTextNew)
     cgStoreD0At(6, off, irTextT)
 
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
@@ -5818,7 +6143,7 @@ func cgIntrTextConcat(e: int) {
         cgExpr(a1e)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     }
-    cgJsrByName("rtTextConcat")
+    cgJsrByName(rnTextConcat)
     cgCleanupStack(16)
     cgLastTrackedOff = off
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
@@ -5832,7 +6157,7 @@ func cgIntrTextConcatSl(e: int) {
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
     off = cgNewTrackedTmp(irTextT)
-    cgJsrByName("rtTextNew")
+    cgJsrByName(rnTextNew)
     cgStoreD0At(6, off, irTextT)
 
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
@@ -5841,7 +6166,7 @@ func cgIntrTextConcatSl(e: int) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     cgExpr(a1e)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtTextConcatSl")
+    cgJsrByName(rnTextConcatSl)
     cgCleanupStack(12)
     cgLastTrackedOff = off
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
@@ -5853,14 +6178,14 @@ func cgIntrTextOfStr(e: int) {
 
     a0e = irIntrArgsHead(e)
     off = cgNewTrackedTmp(irTextT)
-    cgJsrByName("rtTextNew")
+    cgJsrByName(rnTextNew)
     cgStoreD0At(6, off, irTextT)
 
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExprAddr(a0e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtTextStore")
+    cgJsrByName(rnTextStore)
     cgCleanupStack(8)
     cgLastTrackedOff = off
     a68Emit(OpMove, 4, AmDisp16, 6, off, AmDn, 0, 0)
@@ -5960,7 +6285,7 @@ func cgIntrListPushLike(e: int, nm: string) {
     var a1e: int
     var elemT: int
     var scratchOff: int
-    var fnName: string
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
@@ -5977,11 +6302,11 @@ func cgIntrListPushLike(e: int, nm: string) {
     }
     a68Emit(OpLea, 0, AmDisp16, 6, scratchOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    fnName = "rtListPush"
+    nameIdx = rnListPush
     if nm == "list_unshift" or nm == "list_unshift_retain" {
-        fnName = "rtListUnshift"
+        nameIdx = rnListUnshift
     }
-    cgJsrByName(fnName)
+    cgJsrByName(nameIdx)
     cgCleanupStack(8)
 }
 
@@ -6007,7 +6332,7 @@ func cgIntrListPopLike(e: int, nm: string): int {
     var a0e: int
     var elemT: int
     var off: int
-    var fnName: string
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     elemT = irExprType(e)
@@ -6020,11 +6345,11 @@ func cgIntrListPopLike(e: int, nm: string): int {
     }
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    fnName = "rtListPop"
+    nameIdx = rnListPop
     if nm == "list_shift" {
-        fnName = "rtListShift"
+        nameIdx = rnListShift
     }
-    cgJsrByName(fnName)
+    cgJsrByName(nameIdx)
     cgCleanupStack(8)
     if cgSizeOf(elemT) <= 4 {
         cgIntrLoadScratch(off, elemT)
@@ -6041,7 +6366,7 @@ func cgIntrListFirstLast(e: int, nm: string): int {
     var a0e: int
     var elemT: int
     var off: int
-    var fnName: string
+    var nameIdx: int
     var k: IRKind
 
     a0e = irIntrArgsHead(e)
@@ -6056,11 +6381,11 @@ func cgIntrListFirstLast(e: int, nm: string): int {
     }
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    fnName = "rtListFirst"
+    nameIdx = rnListFirst
     if nm == "list_last" {
-        fnName = "rtListLast"
+        nameIdx = rnListLast
     }
-    cgJsrByName(fnName)
+    cgJsrByName(nameIdx)
     cgCleanupStack(8)
     if cgIsHandleKind(k) {
         cgRetainAt(6, off, elemT)
@@ -6106,7 +6431,7 @@ func cgIntrListRemove(e: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, iOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtListRemove")
+    cgJsrByName(rnListRemove)
     cgCleanupStack(8)
 }
 
@@ -6171,16 +6496,22 @@ func cgIntrListSet(e: int, retainVariant: bool) {
 // whatever k currently holds BEFORE the new value is written; the new
 // value is retained (the *Retain form only) BEFORE the set call.
 //
-// map-hashtable phase Task 2: `prefix` ("rtMap" or "rtSortedMap") selects
-// which runtime family's Set this calls -- parameterized rather than
-// duplicated (see cgMapReleaseGuard's own doc comment).
-func cgIntrMapSet(e: int, retainVariant: bool, prefix: string) {
+// map-hashtable phase Task 2: `sorted` selects which runtime family's Set
+// this calls (rtMap vs. rtSortedMap) -- parameterized rather than
+// duplicated (see cgMapReleaseGuard's own doc comment). Findings 1.4
+// (Task 13): was a `prefix: string` ("rtMap"/"rtSortedMap") concatenated
+// with the op suffix and interned fresh at every call (`prefix + "Set"`);
+// now a bool picking between two rnInit()-filled globals, same
+// pre-interned-name discipline as every other runtime-call site in this
+// file.
+func cgIntrMapSet(e: int, retainVariant: bool, sorted: bool) {
     var a0e: int
     var a1e: int
     var a2e: int
     var elemT: int
     var mOff: int
     var vOff: int
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
@@ -6191,7 +6522,7 @@ func cgIntrMapSet(e: int, retainVariant: bool, prefix: string) {
     cgStoreD0At(6, mOff, irPtrT)
 
     if cgNeedsRelease(elemT) {
-        cgMapReleaseGuard(mOff, a1e, elemT, prefix)
+        cgMapReleaseGuard(mOff, a1e, elemT, sorted)
     }
 
     vOff = cgAllocTmpOff(elemT)
@@ -6209,7 +6540,11 @@ func cgIntrMapSet(e: int, retainVariant: bool, prefix: string) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Set")
+    nameIdx = rnMapSet
+    if sorted {
+        nameIdx = rnSortedMapSet
+    }
+    cgJsrByName(nameIdx)
     cgCleanupStack(12)
 }
 
@@ -6218,16 +6553,18 @@ func cgIntrMapSet(e: int, retainVariant: bool, prefix: string) {
 // immediately into a tracked temp, same +1-and-tracked convention as
 // IListFirst/IListLast.
 //
-// map-hashtable phase Task 2: `prefix` ("rtMap" or "rtSortedMap") selects
-// which runtime family's Get this calls -- parameterized rather than
-// duplicated (see cgMapReleaseGuard's own doc comment).
-func cgIntrMapGet(e: int, prefix: string): int {
+// map-hashtable phase Task 2: `sorted` selects which runtime family's Get
+// this calls -- parameterized rather than duplicated (see
+// cgMapReleaseGuard's own doc comment). Findings 1.4 (Task 13): bool +
+// pre-interned rn* globals, same as cgIntrMapSet above.
+func cgIntrMapGet(e: int, sorted: bool): int {
     var a0e: int
     var a1e: int
     var elemT: int
     var mOff: int
     var off: int
     var k: IRKind
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
@@ -6249,7 +6586,11 @@ func cgIntrMapGet(e: int, prefix: string): int {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Get")
+    nameIdx = rnMapGet
+    if sorted {
+        nameIdx = rnSortedMapGet
+    }
+    cgJsrByName(nameIdx)
     cgCleanupStack(12)
 
     if cgIsHandleKind(k) {
@@ -6276,10 +6617,11 @@ func cgIntrMapGet(e: int, prefix: string): int {
 // aliases the map's OWN value (needs its own +1) AND dv's original box is
 // now orphaned (must be released here, or it leaks) -- ARC Task 8's fix
 // for both directions of that exact bug, mirrored exactly.
-// map-hashtable phase Task 2: `prefix` ("rtMap" or "rtSortedMap") selects
-// which runtime family's GetDv this calls -- parameterized rather than
-// duplicated (see cgMapReleaseGuard's own doc comment).
-func cgIntrMapGetDv(e: int, isBirth: bool, prefix: string): int {
+// map-hashtable phase Task 2: `sorted` selects which runtime family's
+// GetDv this calls -- parameterized rather than duplicated (see
+// cgMapReleaseGuard's own doc comment). Findings 1.4 (Task 13): bool +
+// pre-interned rn* globals, same as cgIntrMapSet above.
+func cgIntrMapGetDv(e: int, isBirth: bool, sorted: bool): int {
     var a0e: int
     var a1e: int
     var a2e: int
@@ -6289,6 +6631,7 @@ func cgIntrMapGetDv(e: int, isBirth: bool, prefix: string): int {
     var off: int
     var k: IRKind
     var skipLbl: int
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
@@ -6321,7 +6664,11 @@ func cgIntrMapGetDv(e: int, isBirth: bool, prefix: string): int {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "GetDv")
+    nameIdx = rnMapGetDv
+    if sorted {
+        nameIdx = rnSortedMapGetDv
+    }
+    cgJsrByName(nameIdx)
     cgCleanupStack(12)
 
     if cgIsHandleKind(k) {
@@ -6350,14 +6697,16 @@ func cgIntrMapGetDv(e: int, isBirth: bool, prefix: string): int {
 // cgMapReleaseGuard IMapSet(Retain) uses) before removing, regardless of
 // whether the guard fired (`m.remove(k)` "silently succeeds if absent").
 //
-// map-hashtable phase Task 2: `prefix` ("rtMap" or "rtSortedMap") selects
-// which runtime family's Remove this calls -- parameterized rather than
-// duplicated (see cgMapReleaseGuard's own doc comment).
-func cgIntrMapRemove(e: int, prefix: string) {
+// map-hashtable phase Task 2: `sorted` selects which runtime family's
+// Remove this calls -- parameterized rather than duplicated (see
+// cgMapReleaseGuard's own doc comment). Findings 1.4 (Task 13): bool +
+// pre-interned rn* globals, same as cgIntrMapSet above.
+func cgIntrMapRemove(e: int, sorted: bool) {
     var a0e: int
     var a1e: int
     var elemT: int
     var mOff: int
+    var nameIdx: int
 
     a0e = irIntrArgsHead(e)
     a1e = irExprNext(a0e)
@@ -6367,14 +6716,18 @@ func cgIntrMapRemove(e: int, prefix: string) {
     cgStoreD0At(6, mOff, irPtrT)
 
     if cgNeedsRelease(elemT) {
-        cgMapReleaseGuard(mOff, a1e, elemT, prefix)
+        cgMapReleaseGuard(mOff, a1e, elemT, sorted)
     }
 
     a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExprAddr(a1e)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Remove")
+    nameIdx = rnMapRemove
+    if sorted {
+        nameIdx = rnSortedMapRemove
+    }
+    cgJsrByName(nameIdx)
     cgCleanupStack(8)
 }
 
@@ -6428,7 +6781,7 @@ func cgIntrIntMapSet(e: int, retainVariant: bool) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapSet")
+    cgJsrByName(rnIntMapSet)
     cgCleanupStack(12)
 }
 
@@ -6468,7 +6821,7 @@ func cgIntrIntMapGet(e: int): int {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapGet")
+    cgJsrByName(rnIntMapGet)
     cgCleanupStack(12)
 
     if cgIsHandleKind(k) {
@@ -6527,7 +6880,7 @@ func cgIntrIntMapGetDv(e: int, isBirth: bool): int {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, off, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapGetDv")
+    cgJsrByName(rnIntMapGetDv)
     cgCleanupStack(12)
 
     if cgIsHandleKind(k) {
@@ -6579,7 +6932,7 @@ func cgIntrIntMapRemove(e: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapRemove")
+    cgJsrByName(rnIntMapRemove)
     cgCleanupStack(8)
 }
 
@@ -6603,7 +6956,7 @@ func cgIntrIntMapRemove(e: int) {
 // Result (0/1, ser.cla's own SerFileWriteData-derived clean boolean) is
 // already in D0 after the call, matching cgIntr's own "value ends in D0"
 // contract -- no extra masking needed.
-func cgIntrFileSaveLoad(e: int, fnName: string) {
+func cgIntrFileSaveLoad(e: int, nameIdx: int) {
     var a0: int
     var a1: int
     var a2: int
@@ -6619,9 +6972,12 @@ func cgIntrFileSaveLoad(e: int, fnName: string) {
     a1 = irExprNext(a0)
     // native-gaps-cleanup Task 2: file.save gains mandatory trailing
     // type/creator args (rtFileSave's own 2 new trailing ptr params);
-    // file.load stays 4-arg (unchanged) -- fnName tells the two apart,
+    // file.load stays 4-arg (unchanged) -- nameIdx tells the two apart,
     // same convention this function's own doc comment already uses.
-    isSave = fnName == "rtFileSave"
+    // Findings 1.4 (Task 13): fnName was a `string`, compared against a
+    // literal; now an already-interned nameIdx (rnFileSave/rnFileLoad),
+    // compared by int equality.
+    isSave = nameIdx == rnFileSave
     if isSave {
         a2 = irExprNext(a1)
         a3 = irExprNext(a2)
@@ -6640,7 +6996,7 @@ func cgIntrFileSaveLoad(e: int, fnName: string) {
     }
     descLbl = cgFindSerdescLabel(recNameIdx)
     if descLbl == -1 {
-        log("cg68k: " + fnName + ": no serdesc reserved for record " + poolGet(recNameIdx))
+        log("cg68k: " + poolGet(nameIdx) + ": no serdesc reserved for record " + poolGet(recNameIdx))
         quit 1
     }
 
@@ -6662,7 +7018,7 @@ func cgIntrFileSaveLoad(e: int, fnName: string) {
         cgExprAddr(a3)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     }
-    cgJsrByName(fnName)
+    cgJsrByName(nameIdx)
     if isSave {
         cgCleanupStack(24)
     } else {
@@ -6700,7 +7056,7 @@ func cgIntr(e: int) {
         addrs = cgFreshBoolList()
         addrs.add(true)
         addrs.add(true)
-        if not cgCallRuntime("rtStrCmp", args, addrs) {
+        if not cgCallRuntime(rnStrCmp, args, addrs) {
             quit 1
         }
         return
@@ -6738,7 +7094,7 @@ func cgIntr(e: int) {
         args.add(a0e)
         addrs = cgFreshBoolList()
         addrs.add(true)
-        if not cgCallRuntime("natAlert", args, addrs) {
+        if not cgCallRuntime(rnAlert, args, addrs) {
             quit 1
         }
         return
@@ -6749,7 +7105,7 @@ func cgIntr(e: int) {
         args.add(a0e)
         addrs = cgFreshBoolList()
         addrs.add(true)
-        if not cgCallRuntime("natLog", args, addrs) {
+        if not cgCallRuntime(rnLog, args, addrs) {
             quit 1
         }
         return
@@ -6761,7 +7117,7 @@ func cgIntr(e: int) {
         args.add(a0e)
         addrs = cgFreshBoolList()
         addrs.add(false)
-        if not cgCallRuntime("natQuit", args, addrs) {
+        if not cgCallRuntime(rnQuit, args, addrs) {
             quit 1
         }
         return
@@ -6796,7 +7152,7 @@ func cgIntr(e: int) {
         addrs.add(true)
         addrs.add(false)
         addrs.add(true)
-        if not cgCallRuntime("rtStrStore", args, addrs) {
+        if not cgCallRuntime(rnStrStore, args, addrs) {
             quit 1
         }
         return
@@ -6816,7 +7172,7 @@ func cgIntr(e: int) {
     if nm == "lasterr_code" {
         args = cgFreshIntList()
         addrs = cgFreshBoolList()
-        if not cgCallRuntime("natLastErrCode", args, addrs) {
+        if not cgCallRuntime(rnLastErrCode, args, addrs) {
             quit 1
         }
         return
@@ -6832,11 +7188,11 @@ func cgIntr(e: int) {
     // runtime/clarus/core.cla), by VALUE like any other cgIntr2(...,
     // false, false) scalar arm.
     if nm == "fix_mul" {
-        cgIntr2(e, "rtFixMul", false, false)
+        cgIntr2(e, rnFixMul, false, false)
         return
     }
     if nm == "fix_div" {
-        cgIntr2(e, "rtFixDiv", false, false)
+        cgIntr2(e, rnFixDiv, false, false)
         return
     }
 
@@ -6848,23 +7204,23 @@ func cgIntr(e: int) {
     // are UNREACHABLE from this value-context dispatch, matching every
     // other KStr-result gap this file already documents). ----
     if nm == "str_len" {
-        cgIntr1(e, "rtStrLen", true)
+        cgIntr1(e, rnStrLen, true)
         return
     }
     if nm == "str_index" {
-        cgIntr2(e, "rtStrIndex", true, false)
+        cgIntr2(e, rnStrIndex, true, false)
         return
     }
     if nm == "str_set_index" {
-        cgIntr3(e, "rtStrSetIndex", true, false, false)
+        cgIntr3(e, rnStrSetIndex, true, false, false)
         return
     }
     if nm == "str_index_of_str" {
-        cgIntr2(e, "rtStrIndexOfStr", true, true)
+        cgIntr2(e, rnStrIndexOfStr, true, true)
         return
     }
     if nm == "str_index_of_char" {
-        cgIntr2(e, "rtStrIndexOfChar", true, false)
+        cgIntr2(e, rnStrIndexOfChar, true, false)
         return
     }
     if nm == "str_from_bytes" {
@@ -6878,39 +7234,39 @@ func cgIntr(e: int) {
 
     // ---- Task 13: text family ----
     if nm == "text_store" {
-        cgIntr2(e, "rtTextStore", false, true)
+        cgIntr2(e, rnTextStore, false, true)
         return
     }
     if nm == "text_len" {
-        cgIntr1(e, "rtTextLen", false)
+        cgIntr1(e, rnTextLen, false)
         return
     }
     if nm == "text_index" {
-        cgIntr2(e, "rtTextIndex", false, false)
+        cgIntr2(e, rnTextIndex, false, false)
         return
     }
     if nm == "text_set_index" {
-        cgIntr3(e, "rtTextSetIndex", false, false, false)
+        cgIntr3(e, rnTextSetIndex, false, false, false)
         return
     }
     if nm == "text_index_of_str" {
-        cgIntr2(e, "rtTextIndexOfStr", false, true)
+        cgIntr2(e, rnTextIndexOfStr, false, true)
         return
     }
     if nm == "text_index_of_char" {
-        cgIntr2(e, "rtTextIndexOfChar", false, false)
+        cgIntr2(e, rnTextIndexOfChar, false, false)
         return
     }
     if nm == "text_append_str" {
-        cgIntr2(e, "rtTextAppendStr", false, true)
+        cgIntr2(e, rnTextAppendStr, false, true)
         return
     }
     if nm == "text_append_char" {
-        cgIntr2(e, "rtTextAppendChar", false, false)
+        cgIntr2(e, rnTextAppendChar, false, false)
         return
     }
     if nm == "text_append_text" {
-        cgIntr2(e, "rtTextAppendText", false, false)
+        cgIntr2(e, rnTextAppendText, false, false)
         return
     }
     if nm == "text_from_bytes" {
@@ -6964,14 +7320,14 @@ func cgIntr(e: int) {
         return
     }
     if nm == "list_count" {
-        cgIntr1(e, "rtListCount", false)
+        cgIntr1(e, rnListCount, false)
         return
     }
     if nm == "list_clear" {
         // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
         // -- void, single-ptr-arg runtime call, same shape as list_count
         // just above (the return value, if any, is simply unused).
-        cgIntr1(e, "rtListClear", false)
+        cgIntr1(e, rnListClear, false)
         return
     }
     if nm == "list_free_var" {
@@ -6981,37 +7337,37 @@ func cgIntr(e: int) {
 
     // ---- Task 13: map family ----
     if nm == "map_set" or nm == "map_set_retain" {
-        cgIntrMapSet(e, nm == "map_set_retain", "rtMap")
+        cgIntrMapSet(e, nm == "map_set_retain", false)
         return
     }
     if nm == "map_get" {
-        cgIntrMapGet(e, "rtMap")
+        cgIntrMapGet(e, false)
         return
     }
     if nm == "map_get_dv" {
-        cgIntrMapGetDv(e, false, "rtMap")
+        cgIntrMapGetDv(e, false, false)
         return
     }
     if nm == "map_get_dv_birth" {
-        cgIntrMapGetDv(e, true, "rtMap")
+        cgIntrMapGetDv(e, true, false)
         return
     }
     if nm == "map_has" {
-        cgIntr2(e, "rtMapHas", false, true)
+        cgIntr2(e, rnMapHas, false, true)
         return
     }
     if nm == "map_remove" {
-        cgIntrMapRemove(e, "rtMap")
+        cgIntrMapRemove(e, false)
         return
     }
     if nm == "map_count" {
-        cgIntr1(e, "rtMapCount", false)
+        cgIntr1(e, rnMapCount, false)
         return
     }
     if nm == "map_clear" {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
-        cgIntr1(e, "rtMapClear", false)
+        cgIntr1(e, rnMapClear, false)
         return
     }
     if nm == "map_free_var" {
@@ -7024,37 +7380,37 @@ func cgIntr(e: int) {
     // cgIntr2/cgReleaseExpr helpers with the "rtSortedMap" runtime-name
     // prefix instead of "rtMap" ----
     if nm == "sortedmap_set" or nm == "sortedmap_set_retain" {
-        cgIntrMapSet(e, nm == "sortedmap_set_retain", "rtSortedMap")
+        cgIntrMapSet(e, nm == "sortedmap_set_retain", true)
         return
     }
     if nm == "sortedmap_get" {
-        cgIntrMapGet(e, "rtSortedMap")
+        cgIntrMapGet(e, true)
         return
     }
     if nm == "sortedmap_get_dv" {
-        cgIntrMapGetDv(e, false, "rtSortedMap")
+        cgIntrMapGetDv(e, false, true)
         return
     }
     if nm == "sortedmap_get_dv_birth" {
-        cgIntrMapGetDv(e, true, "rtSortedMap")
+        cgIntrMapGetDv(e, true, true)
         return
     }
     if nm == "sortedmap_has" {
-        cgIntr2(e, "rtSortedMapHas", false, true)
+        cgIntr2(e, rnSortedMapHas, false, true)
         return
     }
     if nm == "sortedmap_remove" {
-        cgIntrMapRemove(e, "rtSortedMap")
+        cgIntrMapRemove(e, true)
         return
     }
     if nm == "sortedmap_count" {
-        cgIntr1(e, "rtSortedMapCount", false)
+        cgIntr1(e, rnSortedMapCount, false)
         return
     }
     if nm == "sortedmap_clear" {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
-        cgIntr1(e, "rtSortedMapClear", false)
+        cgIntr1(e, rnSortedMapClear, false)
         return
     }
     if nm == "sortedmap_free_var" {
@@ -7092,7 +7448,7 @@ func cgIntr(e: int) {
         return
     }
     if nm == "intmap_has" {
-        cgIntr2(e, "rtIntMapHas", false, false)
+        cgIntr2(e, rnIntMapHas, false, false)
         return
     }
     if nm == "intmap_remove" {
@@ -7100,13 +7456,13 @@ func cgIntr(e: int) {
         return
     }
     if nm == "intmap_count" {
-        cgIntr1(e, "rtIntMapCount", false)
+        cgIntr1(e, rnIntMapCount, false)
         return
     }
     if nm == "intmap_clear" {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
-        cgIntr1(e, "rtIntMapClear", false)
+        cgIntr1(e, rnIntMapClear, false)
         return
     }
     if nm == "intmap_free_var" {
@@ -7129,7 +7485,7 @@ func cgIntr(e: int) {
     // forbidden -- was a TODO-comment + move.l #0 placeholder) is now a
     // hard error naming the construct, not a silently wrong D0 value. ----
     if nm == "file_read_text" {
-        cgIntr2(e, "natFileReadText", true, false)
+        cgIntr2(e, rnFileReadText, true, false)
         return
     }
     if nm == "file_write_text" {
@@ -7137,7 +7493,7 @@ func cgIntr(e: int) {
         // Task 2: type/creator are new trailing args, both by-address
         // Str255s (same convention as path) -- natFileWriteText does the
         // pad/validate/stamp work (rtFourCC).
-        cgIntr4(e, "natFileWriteText", true, false, true, true)
+        cgIntr4(e, rnFileWriteText, true, false, true, true)
         return
     }
     if nm == "file_read_resource" {
@@ -7145,13 +7501,13 @@ func cgIntr(e: int) {
         // same addr0/addr1 shape as file_read_text above (name is a
         // Str255-shaped ptr, out's own value already IS the rtText box
         // pointer).
-        cgIntr2(e, "natReadResource", true, false)
+        cgIntr2(e, rnReadResource, true, false)
         return
     }
     if nm == "file_write_res" {
         // file.writeRes(path, fork, doctype, creator) -- same shape as
         // file_write_text above.
-        cgIntr4(e, "natWriteRes", true, false, true, true)
+        cgIntr4(e, rnWriteRes, true, false, true, true)
         return
     }
     if nm == "file_name" {
@@ -7159,11 +7515,11 @@ func cgIntr(e: int) {
         quit 1
     }
     if nm == "file_save" {
-        cgIntrFileSaveLoad(e, "rtFileSave")
+        cgIntrFileSaveLoad(e, rnFileSave)
         return
     }
     if nm == "file_load" {
-        cgIntrFileSaveLoad(e, "rtFileLoad")
+        cgIntrFileSaveLoad(e, rnFileLoad)
         return
     }
 
@@ -7263,7 +7619,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         cgPushIntLit(0) // idx
         cgPushIntLit(0) // mp
         cgPushIntLit(0) // key255
-        cgJsrByName("rtUiEdit")
+        cgJsrByName(rnUiEdit)
         cgCleanupStack(36)
         return
     }
@@ -7283,7 +7639,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         cgPushIntLit(0) // idx
         cgPushIntLit(0) // mp
         cgPushIntLit(0) // key255
-        cgJsrByName("rtUiEdit")
+        cgJsrByName(rnUiEdit)
         cgCleanupStack(36)
         return
     }
@@ -7301,7 +7657,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtListAt")
+        cgJsrByName(rnListAt)
         cgCleanupStack(8)
         srcOff = cgAllocTmpOff(irPtrT)
         cgStoreD0At(6, srcOff, irPtrT)
@@ -7318,7 +7674,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgPushIntLit(0) // mp
         cgPushIntLit(0) // key255
-        cgJsrByName("rtUiEdit")
+        cgJsrByName(rnUiEdit)
         cgCleanupStack(36)
         return
     }
@@ -7333,7 +7689,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         cgPushIntLit(255)
         a68Emit(OpLea, 0, AmDisp16, 6, keyOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtStrStore")
+        cgJsrByName(rnStrStore)
         cgCleanupStack(12)
 
         recNameIdx = cpFindWindowFormRecName(winName)
@@ -7347,7 +7703,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
         a68Emit(OpLea, 0, AmDisp16, 6, tmpOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtMapGetDv")
+        cgJsrByName(rnMapGetDv)
         cgCleanupStack(12)
 
         cgPushIntLit(winIdx)
@@ -7362,7 +7718,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         a68Emit(OpLea, 0, AmDisp16, 6, keyOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiEdit")
+        cgJsrByName(rnUiEdit)
         cgCleanupStack(36)
         return
     }
@@ -7406,26 +7762,26 @@ func cgIntrUi(e: int, nm: string) {
     if nm == "ui_open" {
         winIdx = cpFindWindowIndex(winName)
         cgPushIntLit(winIdx)
-        cgJsrByName("rtUiOpen")
+        cgJsrByName(rnUiOpen)
         cgCleanupStack(4)
         return
     }
     if nm == "ui_front" {
         winIdx = cpFindWindowIndex(winName)
         cgPushIntLit(winIdx)
-        cgJsrByName("rtUiFront")
+        cgJsrByName(rnUiFront)
         cgCleanupStack(4)
         return
     }
     if nm == "ui_close" {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiClose")
+        cgJsrByName(rnUiClose)
         cgCleanupStack(4)
         return
     }
     if nm == "ui_quit" {
-        cgJsrByName("rtUiQuit")
+        cgJsrByName(rnUiQuit)
         return
     }
     if nm == "ui_state" {
@@ -7438,7 +7794,7 @@ func cgIntrUi(e: int, nm: string) {
         // needed -- rtUiState's own return value already IS the answer.
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiState")
+        cgJsrByName(rnUiState)
         cgCleanupStack(4)
         return
     }
@@ -7451,7 +7807,7 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExprAddr(a1)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiSetTitle")
+        cgJsrByName(rnUiSetTitle)
         cgCleanupStack(8)
         return
     }
@@ -7467,7 +7823,7 @@ func cgIntrUi(e: int, nm: string) {
         }
         cgExprAddr(a2)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiWidgetSetStr")
+        cgJsrByName(rnUiWidgetSetStr)
         cgCleanupStack(16)
         return
     }
@@ -7478,7 +7834,7 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a2)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiWidgetSetText")
+        cgJsrByName(rnUiWidgetSetText)
         cgCleanupStack(12)
         return
     }
@@ -7492,7 +7848,7 @@ func cgIntrUi(e: int, nm: string) {
         } else {
             cgPushIntLit(cgRtuiPropEnabled)
         }
-        cgJsrByName("rtUiWidgetGetBool")
+        cgJsrByName(rnUiWidgetGetBool)
         cgCleanupStack(12)
         return
     }
@@ -7516,7 +7872,7 @@ func cgIntrUi(e: int, nm: string) {
         // `true` argument (Task 14 native-5e gate: buttons scenario's `T
         // SET Panel.On.checked 1` traced as 0).
         a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiWidgetSetBool")
+        cgJsrByName(rnUiWidgetSetBool)
         cgCleanupStack(14)
         return
     }
@@ -7532,7 +7888,7 @@ func cgIntrUi(e: int, nm: string) {
         } else {
             cgPushIntLit(cgRtuiPropSelected)
         }
-        cgJsrByName("rtUiWidgetGetInt")
+        cgJsrByName(rnUiWidgetGetInt)
         cgCleanupStack(12)
         return
     }
@@ -7544,7 +7900,7 @@ func cgIntrUi(e: int, nm: string) {
         cgPushIntLit(cgRtuiPropSelected)
         cgExpr(a2)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiWidgetSetInt")
+        cgJsrByName(rnUiWidgetSetInt)
         cgCleanupStack(16)
         return
     }
@@ -7557,7 +7913,7 @@ func cgIntrUi(e: int, nm: string) {
         // Same ordinary-call byte-push fix as ui_set_checked/ui_set_enabled
         // above (rtUiMenuEnable's bool param) -- MOVE.B, not MOVE.W.
         a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiMenuEnable")
+        cgJsrByName(rnUiMenuEnable)
         cgCleanupStack(10)
         return
     }
@@ -7572,27 +7928,27 @@ func cgIntrUi(e: int, nm: string) {
         return
     }
     if nm == "ui_canvas_clear" {
-        cgIntrUiForward(e, "rtUiCanvasClear")
+        cgIntrUiForward(e, rnUiCanvasClear)
         return
     }
     if nm == "ui_canvas_line" {
-        cgIntrUiForward(e, "rtUiCanvasLine")
+        cgIntrUiForward(e, rnUiCanvasLine)
         return
     }
     if nm == "ui_canvas_rect" {
-        cgIntrUiForward(e, "rtUiCanvasRect")
+        cgIntrUiForward(e, rnUiCanvasRect)
         return
     }
     if nm == "ui_canvas_circle" {
-        cgIntrUiForward(e, "rtUiCanvasCircle")
+        cgIntrUiForward(e, rnUiCanvasCircle)
         return
     }
     if nm == "ui_canvas_fill_circle" {
-        cgIntrUiForward(e, "rtUiCanvasFillCircle")
+        cgIntrUiForward(e, rnUiCanvasFillCircle)
         return
     }
     if nm == "ui_canvas_pattern" {
-        cgIntrUiForward(e, "rtUiCanvasPattern")
+        cgIntrUiForward(e, rnUiCanvasPattern)
         return
     }
     if nm == "ui_canvas_draw_text" {
@@ -7650,7 +8006,7 @@ func cgIntrUi(e: int, nm: string) {
         // instV/wIdx evaluation, then re-read (a plain stack peek, not a
         // register) to push as the 3rd arg, and popped back into D0 as
         // the final result.
-        fi = findIRFuncIdxByName(intern("rtTextNew"))
+        fi = findIRFuncIdxByName(rnTextNew)
         if fi == -1 or not shakeReachable(fi) {
             log("cg68k: rtTextNew not found/reachable")
             quit 1
@@ -7663,7 +8019,7 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         a68Emit(OpMove, 4, AmDisp16, 7, 8, AmDn, 0, 0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName("rtUiWidgetGetText")
+        cgJsrByName(rnUiWidgetGetText)
         cgCleanupStack(12)
         a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
         return
@@ -7684,7 +8040,7 @@ func cgIntrUi(e: int, nm: string) {
             // (a1) is a new trailing arg, same by-address Str255 shape as
             // path -- forward it exactly like ui_ask_save's own suggested
             // arg just below.
-            fi = findIRFuncIdxByName(intern("rtUiAskOpen"))
+            fi = findIRFuncIdxByName(rnUiAskOpen)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskOpen not found/reachable")
                 quit 1
@@ -7696,7 +8052,7 @@ func cgIntrUi(e: int, nm: string) {
             cgCallFunc(fi)
             cgCleanupStack(8)
         } else if nm == "ui_ask_save" {
-            fi = findIRFuncIdxByName(intern("rtUiAskSave"))
+            fi = findIRFuncIdxByName(rnUiAskSave)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskSave not found/reachable")
                 quit 1
@@ -7708,7 +8064,7 @@ func cgIntrUi(e: int, nm: string) {
             cgCallFunc(fi)
             cgCleanupStack(8)
         } else if nm == "ui_ask_save_changes" {
-            fi = findIRFuncIdxByName(intern("rtUiAskSaveChanges"))
+            fi = findIRFuncIdxByName(rnUiAskSaveChanges)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskSaveChanges not found/reachable")
                 quit 1
@@ -7718,7 +8074,7 @@ func cgIntrUi(e: int, nm: string) {
             cgCallFunc(fi)
             cgCleanupStack(4)
         } else {
-            fi = findIRFuncIdxByName(intern("rtUiFormIsNew"))
+            fi = findIRFuncIdxByName(rnUiFormIsNew)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiFormIsNew not found/reachable")
                 quit 1
@@ -7745,11 +8101,11 @@ func cgIntrUi(e: int, nm: string) {
 // marshaling is needed, unlike the PROP-injecting getters/setters above
 // or DrawText's trailing str-by-address arg (cgIntrUiCanvasDrawText,
 // below) -- both of which diverge from a plain 1:1 forward.
-func cgIntrUiForward(e: int, fnName: string) {
+func cgIntrUiForward(e: int, nameIdx: int) {
     var total: int
 
     total = cgPushArgs(irIntrArgsHead(e))
-    cgJsrByName(fnName)
+    cgJsrByName(nameIdx)
     cgCleanupStack(total)
 }
 
@@ -7781,7 +8137,7 @@ func cgIntrUiCanvasDrawText(e: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExprAddr(a4)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtUiCanvasDrawText")
+    cgJsrByName(rnUiCanvasDrawText)
     cgCleanupStack(20)
 }
 
@@ -7813,7 +8169,7 @@ func cgIntrUiStateDefaults(e: int, a0: int, winName: string) {
         if irtNeedsCtor(t) {
             cgExpr(a0)
             a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-            cgJsrByName("rtUiState")
+            cgJsrByName(rnUiState)
             cgCleanupStack(4)
             a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
             cgDefaultInitAt(0, off, t, 0, -1)
@@ -8233,7 +8589,7 @@ func cgMaterializeStrCoerce(a: int, t: int) {
     var innerX: int
 
     innerX = irIntrArgsHead(a)
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -8340,15 +8696,19 @@ func cgCallFnInto(e: int, dst: int) {
 // `ptr` params, so a str/text argument always passes as its address
 // (fpStrAddr's own "&(...)" cast, mirrored here), never a block copy.
 // Left-to-right, matching cgPushArgs' own convention. Returns false (having
-// already logged) if name isn't a reachable IRFunc.
-func cgCallRuntime(fnName: string, argExprs: list of int, argIsAddr: list of bool): bool {
+// already logged) if name isn't a reachable IRFunc. Findings 1.4 (Task 13):
+// takes an already-interned nameIdx (an rn* global at every fixed-literal
+// call site, rnInit()-filled) rather than a string -- removes the
+// re-intern-on-every-call-site cost findIRFuncIdxByName's own intmap fix
+// doesn't touch; poolGet(nameIdx) only runs on the (rare) not-found path.
+func cgCallRuntime(nameIdx: int, argExprs: list of int, argIsAddr: list of bool): bool {
     var fi: int
     var total: int
     var i: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: runtime function " + fnName + " not found/reachable")
+        log("cg68k: runtime function " + poolGet(nameIdx) + " not found/reachable")
         return false
     }
     total = 0
@@ -9035,13 +9395,13 @@ func cgCallExtUiStrAddr(e: int) {
 // guarantee), copy out of it into the real destination, and free it
 // (cgFlushA1TempToDst/cgFlushA1TempToRetPtr do both, `ADDA.W #256,A7`
 // included).
-func cgStrBuilderIntoTemp(fnName: string, argExprs: list of int, argIsAddr: list of bool) {
+func cgStrBuilderIntoTemp(nameIdx: int, argExprs: list of int, argIsAddr: list of bool) {
     var fi: int
     var i: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
@@ -9079,7 +9439,7 @@ func cgFlushA1TempToDst(dst: int) {
     var fi: int
 
     cap = irtN(irExprType(dst))
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -9103,7 +9463,7 @@ func cgFlushA1TempToRetPtr() {
     var fi: int
 
     cap = irtN(cgCurRetType)
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -9144,7 +9504,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs = cgFreshBoolList()
             addrs.add(true)
             addrs.add(true)
-            cgStrBuilderIntoTemp("rtStrConcat", args, addrs)
+            cgStrBuilderIntoTemp(rnStrConcat, args, addrs)
             cgFlushA1TempToDst(dst)
             return
         }
@@ -9157,7 +9517,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs = cgFreshBoolList()
             addrs.add(true)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtStrConcatChar", args, addrs)
+            cgStrBuilderIntoTemp(rnStrConcatChar, args, addrs)
             cgFlushA1TempToDst(dst)
             return
         }
@@ -9170,7 +9530,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs = cgFreshBoolList()
             addrs.add(false)
             addrs.add(true)
-            cgStrBuilderIntoTemp("rtStrPrependChar", args, addrs)
+            cgStrBuilderIntoTemp(rnStrPrependChar, args, addrs)
             cgFlushA1TempToDst(dst)
             return
         }
@@ -9186,7 +9546,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs.add(true)
             addrs.add(false)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtStrSlice", args, addrs)
+            cgStrBuilderIntoTemp(rnStrSlice, args, addrs)
             cgFlushA1TempToDst(dst)
             return
         }
@@ -9202,7 +9562,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs.add(false)
             addrs.add(false)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtTextSlice", args, addrs)
+            cgStrBuilderIntoTemp(rnTextSlice, args, addrs)
             cgFlushA1TempToDst(dst)
             return
         }
@@ -9224,7 +9584,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             addrs.add(true)
             addrs.add(false)
             addrs.add(true)
-            if not cgCallRuntime("rtStrStore", args, addrs) {
+            if not cgCallRuntime(rnStrStore, args, addrs) {
                 quit 1
             }
             return
@@ -9234,7 +9594,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // pointer call -- the same shape cgCallFnInto uses for a
             // zero-arg user function, hand-emitted here since src is an
             // EIntr node, not the ECallFn shape cgCallFnInto expects.
-            fi = findIRFuncIdxByName(intern("natLastErrMsg"))
+            fi = findIRFuncIdxByName(rnLastErrMsg)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natLastErrMsg not found/reachable")
                 quit 1
@@ -9257,7 +9617,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // (pushed last) at 8(A6) and dst at 12(A6), matching
             // `func natFileName(dst: ptr, path: ptr)` exactly.
             a0e = irIntrArgsHead(src)
-            fi = findIRFuncIdxByName(intern("natFileName"))
+            fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natFileName not found/reachable")
                 quit 1
@@ -9279,19 +9639,19 @@ func cgEmitStoreStr(dst: int, src: int) {
             return
         }
         if nm == "map_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, "rtMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src, false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "map_get_dv" or nm == "map_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth", "rtMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "map_get_dv_birth", false), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get" {
-            cgCopyScratchToDst(cgIntrMapGet(src, "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGet(src, true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "sortedmap_get_dv" or nm == "sortedmap_get_dv_birth" {
-            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", "rtSortedMap"), dst, cgSizeOf(irExprType(dst)))
+            cgCopyScratchToDst(cgIntrMapGetDv(src, nm == "sortedmap_get_dv_birth", true), dst, cgSizeOf(irExprType(dst)))
             return
         }
         if nm == "intmap_get" {
@@ -9326,7 +9686,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // labels[] slot rtUiWidgetSetStr's RTUI_LABEL arm writes.
             a0e = irIntrArgsHead(src)
             a1e = irExprNext(a0e)
-            fi = findIRFuncIdxByName(intern("rtUiWidgetGetStr"))
+            fi = findIRFuncIdxByName(rnUiWidgetGetStr)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiWidgetGetStr not found/reachable")
                 quit 1
@@ -9347,7 +9707,7 @@ func cgEmitStoreStr(dst: int, src: int) {
             // window-scoped (no wIdx/prop) sibling of ui_get_field_text
             // just above.
             a0e = irIntrArgsHead(src)
-            fi = findIRFuncIdxByName(intern("rtUiGetTitle"))
+            fi = findIRFuncIdxByName(rnUiGetTitle)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiGetTitle not found/reachable")
                 quit 1
@@ -9382,7 +9742,7 @@ func cgEmitStoreStr(dst: int, src: int) {
     addrs.add(true)
     addrs.add(false)
     addrs.add(true)
-    if not cgCallRuntime("rtStrStore", args, addrs) {
+    if not cgCallRuntime(rnStrStore, args, addrs) {
         quit 1
     }
 }
@@ -9426,7 +9786,7 @@ func cgEmitReturnStr(src: int) {
             addrs = cgFreshBoolList()
             addrs.add(true)
             addrs.add(true)
-            cgStrBuilderIntoTemp("rtStrConcat", args, addrs)
+            cgStrBuilderIntoTemp(rnStrConcat, args, addrs)
             cgFlushA1TempToRetPtr()
             return
         }
@@ -9439,7 +9799,7 @@ func cgEmitReturnStr(src: int) {
             addrs = cgFreshBoolList()
             addrs.add(true)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtStrConcatChar", args, addrs)
+            cgStrBuilderIntoTemp(rnStrConcatChar, args, addrs)
             cgFlushA1TempToRetPtr()
             return
         }
@@ -9452,7 +9812,7 @@ func cgEmitReturnStr(src: int) {
             addrs = cgFreshBoolList()
             addrs.add(false)
             addrs.add(true)
-            cgStrBuilderIntoTemp("rtStrPrependChar", args, addrs)
+            cgStrBuilderIntoTemp(rnStrPrependChar, args, addrs)
             cgFlushA1TempToRetPtr()
             return
         }
@@ -9468,7 +9828,7 @@ func cgEmitReturnStr(src: int) {
             addrs.add(true)
             addrs.add(false)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtStrSlice", args, addrs)
+            cgStrBuilderIntoTemp(rnStrSlice, args, addrs)
             cgFlushA1TempToRetPtr()
             return
         }
@@ -9484,7 +9844,7 @@ func cgEmitReturnStr(src: int) {
             addrs.add(false)
             addrs.add(false)
             addrs.add(false)
-            cgStrBuilderIntoTemp("rtTextSlice", args, addrs)
+            cgStrBuilderIntoTemp(rnTextSlice, args, addrs)
             cgFlushA1TempToRetPtr()
             return
         }
@@ -9493,7 +9853,7 @@ func cgEmitReturnStr(src: int) {
             // the destination is the hidden pointer's VALUE at 8(A6),
             // pushed directly (not LEA'd), same convention this
             // function's own generic tail below already uses.
-            fi = findIRFuncIdxByName(intern("natLastErrMsg"))
+            fi = findIRFuncIdxByName(rnLastErrMsg)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natLastErrMsg not found/reachable")
                 quit 1
@@ -9511,7 +9871,7 @@ func cgEmitReturnStr(src: int) {
             // FIRST (dst), then path's address SECOND -- same declaration
             // order (dst, path) as cgEmitStoreStr's arm.
             a0e = irIntrArgsHead(src)
-            fi = findIRFuncIdxByName(intern("natFileName"))
+            fi = findIRFuncIdxByName(rnFileName)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: natFileName not found/reachable")
                 quit 1
@@ -9538,7 +9898,7 @@ func cgEmitReturnStr(src: int) {
     }
 
     cap = irtN(cgCurRetType)
-    fi = findIRFuncIdxByName(intern("rtStrStore"))
+    fi = findIRFuncIdxByName(rnStrStore)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: rtStrStore not found/reachable")
         quit 1
@@ -9645,7 +10005,7 @@ func cgForRangeStmt(s: int) {
 
     vName = poolGet(irForRangeV(s))
     reg = 6
-    off = cgFindFrameOffset(vName)
+    off = cgFindFrameOffset(irForRangeV(s))
     if off == cgUnresolved {
         log("cg68k: unresolved for-range variable " + vName)
         quit 1
@@ -9688,13 +10048,14 @@ func cgForRangeStmt(s: int) {
 // hand-sequenced arg pushes below, where the SAME source values are read
 // into registers multiple times across several calls, making cgCallRuntime's
 // generic one-shot push-then-JSR shape a worse fit than composing the
-// pushes inline).
-func cgJsrByName(fnName: string) {
+// pushes inline). Findings 1.4 (Task 13): takes an already-interned
+// nameIdx, same rationale as cgCallRuntime's own signature change above.
+func cgJsrByName(nameIdx: int) {
     var fi: int
 
-    fi = findIRFuncIdxByName(intern(fnName))
+    fi = findIRFuncIdxByName(nameIdx)
     if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: " + fnName + " not found/reachable")
+        log("cg68k: " + poolGet(nameIdx) + " not found/reachable")
         quit 1
     }
     cgCallFunc(fi)
@@ -9712,20 +10073,31 @@ func cgJsrByName(fnName: string) {
 // re-run whatever produced the key -- only a bare EVarRef/EFieldRef/
 // EStrConst ever reaches a map-key position, per the checker's own
 // addressable-key constraint, str.cla's fpStrAddr precedent).
-// map-hashtable phase Task 2: `prefix` ("rtMap" or "rtSortedMap") selects
-// the has/get family this guard calls -- parameterized rather than
+// map-hashtable phase Task 2: `sorted` selects the has/get family this
+// guard calls (rtMap vs. rtSortedMap) -- parameterized rather than
 // duplicated for a second sortedmap twin (mirrors cprint.cla's own
-// fpMapReleaseGuard `sorted` parameterization; the brief's own explicit
-// instruction for this file's cgIntrMap* family).
-func cgMapReleaseGuard(mOff: int, kExpr: int, elemT: int, prefix: string) {
+// fpMapReleaseGuard `sorted` parameterization). Findings 1.4 (Task 13):
+// was a `prefix: string` concatenated with "Has"/"Get" and interned
+// fresh at every call; now a bool picking between pre-interned rn*
+// globals, same as cgIntrMapSet/Get/GetDv/Remove above.
+func cgMapReleaseGuard(mOff: int, kExpr: int, elemT: int, sorted: bool) {
     var afterLbl: int
     var oldOff: int
+    var hasIdx: int
+    var getIdx: int
+
+    hasIdx = rnMapHas
+    getIdx = rnMapGet
+    if sorted {
+        hasIdx = rnSortedMapHas
+        getIdx = rnSortedMapGet
+    }
 
     a68Emit(OpMove, 4, AmDisp16, 6, mOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExprAddr(kExpr)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Has")
+    cgJsrByName(hasIdx)
     cgCleanupStack(8)
     a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
     afterLbl = a68NewLabel()
@@ -9738,7 +10110,7 @@ func cgMapReleaseGuard(mOff: int, kExpr: int, elemT: int, prefix: string) {
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, oldOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Get")
+    cgJsrByName(getIdx)
     cgCleanupStack(12)
     cgReleaseAt(6, oldOff, elemT)
 
@@ -9764,7 +10136,7 @@ func cgIntMapReleaseGuard(mOff: int, kOff: int, elemT: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDisp16, 6, kOff, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapHas")
+    cgJsrByName(rnIntMapHas)
     cgCleanupStack(8)
     a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
     afterLbl = a68NewLabel()
@@ -9777,7 +10149,7 @@ func cgIntMapReleaseGuard(mOff: int, kOff: int, elemT: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpLea, 0, AmDisp16, 6, oldOff, AmAn, 0, 0)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtIntMapGet")
+    cgJsrByName(rnIntMapGet)
     cgCleanupStack(12)
     cgReleaseAt(6, oldOff, elemT)
 
@@ -9855,7 +10227,7 @@ func cgForListStmt(s: int) {
     var incrLbl: int
     var endLbl: int
 
-    vOff = cgFindFrameOffset(poolGet(irForListV(s)))
+    vOff = cgFindFrameOffset(irForListV(s))
     if vOff == cgUnresolved {
         log("cg68k: unresolved for-list variable " + poolGet(irForListV(s)))
         quit 1
@@ -9866,7 +10238,7 @@ func cgForListStmt(s: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push list
     a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)    // D0 = list (peek)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push list (rtListCount's own arg)
-    cgJsrByName("rtListCount")
+    cgJsrByName(rnListCount)
     cgCleanupStack(4)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // push count -> list@4(A7), count@0(A7)
     a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0) // push index=0 -> index@0, count@4, list@8
@@ -9885,7 +10257,7 @@ func cgForListStmt(s: int) {
     a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 1, 0)    // D1 = index
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
-    cgJsrByName("rtListAt")
+    cgJsrByName(rnListAt)
     cgCleanupStack(8)
     a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
     cgCopyElemInto(6, vOff, elemT)
@@ -9935,29 +10307,41 @@ func cgForMapStmt(s: int) {
     var condLbl: int
     var incrLbl: int
     var endLbl: int
-    var prefix: string
+    var countIdx: int
+    var keyAtIdx: int
+    var valAtIdx: int
     var intM: bool
 
-    kOff = cgFindFrameOffset(poolGet(irForMapK(s)))
+    kOff = cgFindFrameOffset(irForMapK(s))
     if kOff == cgUnresolved {
         log("cg68k: unresolved for-map key variable " + poolGet(irForMapK(s)))
         quit 1
     }
     vOff = cgUnresolved
     if irForMapV(s) != -1 {
-        vOff = cgFindFrameOffset(poolGet(irForMapV(s)))
+        vOff = cgFindFrameOffset(irForMapV(s))
         if vOff == cgUnresolved {
             log("cg68k: unresolved for-map value variable " + poolGet(irForMapV(s)))
             quit 1
         }
     }
 
-    prefix = "rtMap"
+    // Findings 1.4 (Task 13): was a `prefix: string` ("rtMap"/
+    // "rtSortedMap"/"rtIntMap") concatenated with "Count"/"KeyAt"/"ValAt"
+    // and interned fresh at every JSR below; now a 3-way pick among
+    // pre-interned rn* globals, same discipline as cgIntrMapSet/Get/
+    // GetDv/Remove/cgMapReleaseGuard above.
+    countIdx = rnMapCount
+    keyAtIdx = rnMapKeyAt
+    valAtIdx = rnMapValAt
     intM = false
     if irtKind(irExprType(irForMapMapV(s))) == KSortedMap {
-        prefix = "rtSortedMap"
+        countIdx = rnSortedMapCount
+        keyAtIdx = rnSortedMapKeyAt
+        valAtIdx = rnSortedMapValAt
     } else if irtKind(irExprType(irForMapMapV(s))) == KIntMap {
-        prefix = "rtIntMap"
+        countIdx = rnIntMapCount
+        valAtIdx = rnIntMapValAt
         intM = true
     }
 
@@ -9965,7 +10349,7 @@ func cgForMapStmt(s: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmInd, 7, 0, AmDn, 0, 0)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-    cgJsrByName(prefix + "Count")
+    cgJsrByName(countIdx)
     cgCleanupStack(4)
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0) // count@0, map@4
     a68Emit(OpClr, 4, AmNone, 0, 0, AmPreDec, 7, 0) // index@0, count@4, map@8
@@ -9987,13 +10371,13 @@ func cgForMapStmt(s: int) {
     if intM {
         // rtIntMapKeyAt(m, i) RETURNS the key in D0 -- no out-param arg,
         // store D0 straight into the key's own frame slot after the call.
-        cgJsrByName("rtIntMapKeyAt")
+        cgJsrByName(rnIntMapKeyAt)
         cgCleanupStack(8)
         cgStoreD0At(6, kOff, irIntT)
     } else {
         a68Emit(OpLea, 0, AmDisp16, 6, kOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName(prefix + "KeyAt")
+        cgJsrByName(keyAtIdx)
         cgCleanupStack(12)
     }
 
@@ -10004,7 +10388,7 @@ func cgForMapStmt(s: int) {
         a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
         a68Emit(OpLea, 0, AmDisp16, 6, vOff, AmAn, 0, 0)
         a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-        cgJsrByName(prefix + "ValAt")
+        cgJsrByName(valAtIdx)
         cgCleanupStack(12)
     }
 
@@ -11390,6 +11774,12 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
     var segBytes: list of text
     var segNumStr: string
     var progressLine: string
+
+    // Findings 1.4 (Task 13): fill every rn* pre-interned runtime-call
+    // name BEFORE cg68Measure's own first cgEmitFunc call can need one --
+    // 68k-only (cprint's host lane has no rn* consumers, findIRFuncIdxByName's
+    // own intmap fix is backend-agnostic and needs no equivalent call).
+    rnInit()
 
     if segLimit > 0 {
         cgSegLimit = segLimit
