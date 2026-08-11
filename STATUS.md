@@ -107,9 +107,11 @@ that matters (compiling a real multi-segment 68k app).
    built last phase — the decisive step that turns the findings doc's
    memory-derived Layer-1 ranking into measured fact, and would validate
    (or redirect) which Layer-2/Layer-3 target to pick next.
-3. Land the deferred live-log-window spec
-   (`2026-08-10-clarusc-mac-live-log-design.md`) once scheduled — today
-   the Log window only repaints between event-loop pumps.
+3. **DONE (clarusc-live-log phase, 2026-08-11, this branch).** Landed the
+   live-log-window spec (`2026-08-10-clarusc-mac-live-log-design.md`,
+   including its §3b amendment) — full detail in the ROADMAP's
+   `clarusc-live-log` phase entry. Frozen-scenario goldens re-verified,
+   no churn.
 4. Pick a Layer-2/Layer-3 target once on-Mac numbers exist: candidates are
    `string`'s 256-byte `Str255` representation, §1.7's full double-codegen
    fix (needs relocation), or codegen's calls-out-for-everything pattern

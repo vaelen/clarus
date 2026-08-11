@@ -709,6 +709,99 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   narrow-scope design (same discipline as the datetime-instrumentation
   phase).
 
+- **clarusc-live-log (branch `worktree-native-perf-findings`, 2026-08-11,
+  based on `layer1-compiler-perf`): DONE.** Implements
+  `docs/superpowers/specs/2026-08-10-clarusc-mac-live-log-design.md`
+  (including its §3b same-day amendment) — the Mac half of "is a compile
+  still running?": `ClarusC.APPL`'s Log window now shows live progress
+  while a compile runs, instead of only repainting between event-loop
+  pumps. 5 tasks (renumbered from an original Task 4/5 split during
+  execution — see the plan's own amendment note), commits
+  `7453b0f..b7207a0`; full ledger:
+  `.superpowers/sdd/2026-08-11-clarusc-live-log/progress.md`.
+
+  **What landed, three components:**
+  1. **Runtime: synchronous paint on programmatic sets**
+     (`runtime/clarus/uiwidgets.cla`) — `rtUiWidgetSetText` (textview)
+     and the label branch of `rtUiWidgetSetStr` now draw immediately
+     (`UiTEUpdate`/`UiTextBox` + `ValidRect`) instead of waiting for a
+     deferred update event, so a set made mid-compile is visible before
+     the compile returns. New `LivePaint` toolbox case
+     (`testsuite/toolbox/cases_textwidgets.cla`) hardware-proves it;
+     toolbox suite grew 29 → 30 real cases (`nTbCases`, `runtime.cla`).
+     Collateral: emitui/cg68k golden regens for the new draw calls.
+  2. **`feProgressStep`/`feProgressTick` counted-progress seams**
+     (`clarusc/drive.cla` + lane implementers) — originally landed as a
+     two-int `feProgressStep(cur, total)` fed only from cg68k's
+     per-segment loop (Task 2), then reshaped same-day by the §3b
+     amendment (commit `b7207a0`) once the first Snow boot showed the
+     bar sitting silent through a 35-minute `Measured` stretch: now
+     `feProgressStep(cur: int, total: int, label: string)` announces the
+     START of each of 10 fixed whole-pipeline stages (Starting
+     Compilation, Parsing, Checking, Loading Runtime, Checking Whole
+     Program, Lowering, Shaking, Measuring, Packing, Building Fork) plus
+     one "Writing Segment s" step per segment inserted between Packing
+     and Building Fork (`total` grows from 10 once Packing knows the
+     segment count — the bar may jump backwards there, accepted by
+     design). A new no-arg `feProgressTick()` spinner seam is called
+     from long-running inner loops (cg68k's measure/emit loops,
+     drive's include expansion, the whole-program check) with callers
+     never throttling — macgui throttles by `TickCount()` internally.
+     Both seams stay behind the same `want68k` gate as the rest of the
+     progress machinery; the host CLI's `feProgressStep`/`feProgressTick`
+     stay no-ops (already prints per-segment lines to stderr).
+  3. **macgui: rolling ticker + status bar + spinner**
+     (`clarusc/macgui.cla`) — a fixed 16-line ring (`gcTickerLines`,
+     tuned down from the spec's ~18 during a fix round) repaints the Log
+     window's `Output` textview live as `feProgress` lines arrive;
+     `gcFlushProgress` still restores the full accumulated log
+     (`base + gcProgressBuf`) at `gcCompile`'s exit points, so the
+     post-compile window stays byte-identical to before this phase. A
+     new `Status` label (top of window — Andrew's ruling: accepted as-is,
+     not a defect, do not relocate; the DSL declaration order needed a
+     dedicated fix round once `fill: both` on `Output` was found to push
+     a bottom-anchored `Status` fully off-screen) renders a
+     `[#####---------------] Loading Runtime (Step 4/10)`-style bar,
+     `gcBarWidth = 20`. The spinner appends a rotating ASCII glyph to the
+     status line, throttled to roughly every `gcSpinTicks = 30` ticks.
+     `gcCompile`'s flush/exit-path restructure included a fix for the
+     `emit68k`-failed path logging before the flush (message previously
+     lost under the new flush semantics — Task 3 fix round 1). Two
+     `clarusc.c` snapshot regens (Stage A/Stage B, map-phase pattern).
+
+  **Frozen-scenario golden check (this task):** `TestSmokeBounceOn68k`,
+  `TestUiScenariosOn68k` (`smoke_mandel`/`texteditor`/`bookmarks`
+  subtests), `TestRealEventLoopTickOn68k` — all PASS, **no PBM/trace
+  golden churn**. The sync-paint change is a no-op for these goldens
+  because none of them captures a mid-compile Log-window frame; nothing
+  to re-bless.
+
+  **Deferred minors:**
+  - The "Checking Whole Program" stage's placement inside
+    `driveManifestSplice` depends on the unconditional `native.cla`
+    splice keeping `neededMods` nonempty under `want68k` — a one-line
+    comment documenting that dependency at the call site was not added.
+  - No automated test exercises the 10-stage sequence itself (order,
+    count, `total` growth at Packing) — only exercised indirectly via a
+    real compile boot.
+
+  **Open item (deferred to the Snow acceptance rerun, not this task):**
+  the second scripted compile's completion is unproven — Task 3's own
+  ledger note flags that only the first of two compiles in a session was
+  confirmed to finish cleanly during in-branch testing.
+
+  **Future follow-up (recorded, unscheduled):** reuse the
+  `feProgressStep`/`feProgressTick` seam architecture to improve the
+  HOST CLI's own compile output — a bar/spinner-style progress rendering
+  on stderr, mirroring what `ClarusC.APPL` now shows. Not scheduled.
+
+  **Snow acceptance rerun procedure note:** boot Snow at 1x — engaging
+  `start_fastforward` AT BOOT hangs the launch path
+  (`internal/mactest/macresident_test.go:79`) — then switch to
+  fast-forward from the toolbar only once `ClarusC.APPL` is already up.
+  `TickCount` is emulated, so this phase's per-stage tick instrumentation
+  stays valid under fast-forward.
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

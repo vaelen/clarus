@@ -1,6 +1,6 @@
 # ClarusC.APPL live Log-window updates + compile progress bar
 
-Status: **designed 2026-08-11, ready for planning.** Originally a deferred
+Status: **implemented 2026-08-11 (this branch).** Originally a deferred
 requirement split out of `2026-08-10-datetime-instrumentation-design.md`
 §7; scheduled now that the layer1-compiler-perf phase has made on-Mac
 compiles fast enough to be worth instrumenting live (host-measured ~4.9x
