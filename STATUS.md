@@ -97,16 +97,40 @@ that matters (compiling a real multi-segment 68k app).
 
 ## Recommended next steps (in order)
 
-1. **Rebuild `ClarusC.APPL` from THIS branch and rerun the Snow
-   acceptance.** This branch now carries the map-hashtable fix, working
-   progress instrumentation, AND this phase's ~5x native compiler speedup
-   with ~4x less peak memory — the OOM's odds of recurring are much lower,
-   and if it does recur, the Log window and stderr will show exactly where
-   for the first time.
-2. **Capture real on-Mac per-phase timings** using the instrumentation
-   built last phase — the decisive step that turns the findings doc's
-   memory-derived Layer-1 ranking into measured fact, and would validate
-   (or redirect) which Layer-2/Layer-3 target to pick next.
+0. **FIRST THING NEXT SESSION: investigate the cross-compile slowdown
+   (2026-08-12, Snow reruns of `TestMacResidentClaruscOnSnow`).** In one
+   `ClarusC.APPL` process, compile #2 (`catprobe.cla`, comparably tiny)
+   runs ~4x slower than compile #1 across EVERY phase — whole-program
+   check 35m vs 5m, Measure 2h20m vs 36m, segment-1 emit 49m vs 20m
+   (emulated Mac II time; `now()` reads emulated Time, so these are true
+   real-hardware durations even under fast-forward). Uniform cross-phase
+   degradation suggests heap/Memory-Manager-level trouble (fragmentation
+   or compaction thrash as the 48MB partition fills across compiles) —
+   i.e. something surviving `driveReset`/`resetDiags`/`astReset`, or
+   allocation churn the arena resets don't return — rather than one bad
+   algorithm. Both reruns were killed/failed on settle timing, NOT on a
+   compile error: compile #1 PASSes and BUILDs every time (live bar +
+   spinner + ticker confirmed working on screen by Andrew, 2026-08-12);
+   compile #2 also proceeds correctly, just degraded. Evidence: the
+   live-log phase ledger's timing entries
+   (`.superpowers/sdd/2026-08-11-clarusc-live-log/progress.md`) and
+   screenshots under that workspace's `evidence/`. Once fixed, the full
+   acceptance run gets ~4x shorter — do this BEFORE burning a 2.5h-settle
+   formal rerun.
+1. **Then finish the Snow acceptance rerun for a formal PASS.** Procedure
+   notes: boot Snow at 1x, engage fast-forward from the TOOLBAR after the
+   app is up (`start_fastforward` at boot hangs the launch path —
+   `macresident_test.go:79`); fast-forward is not a steady ratio (observed
+   4-7x); size `CLARUS_MACRESIDENT_SETTLE` off the degraded compile-2
+   numbers until the degradation is fixed (≥2h30m settle, `-timeout`
+   above it). The worktree needs a `snow/` symlink to the main checkout's
+   local assets (`ln -s /Users/andrew/repos/clarus/snow snow`) — not in
+   git.
+2. **Capture real on-Mac per-phase timings** using the instrumentation —
+   partially DONE 2026-08-12: compile-#1 numbers for tickprobe (3 seg)
+   are in the ledger (Measured 36m34s / seg-1 emit 20m34s of ~66m total —
+   §1.7's double-codegen dominates); the degradation investigation (step
+   0) supersedes the rest of this item.
 3. **DONE (clarusc-live-log phase, 2026-08-11, this branch).** Landed the
    live-log-window spec (`2026-08-10-clarusc-mac-live-log-design.md`,
    including its §3b amendment) — full detail in the ROADMAP's
