@@ -1,0 +1,47 @@
+// clearprobe.cla: leak-gate fixture -- .clear() on containers whose
+// elements own heap references must release those elements (findings doc
+// root-cause 2). Expect zero live blocks at exit under CLARUS_MEM_STRICT.
+record Sig {
+    params: list of int
+}
+
+var outer: list of list of int
+var recs: list of Sig
+var texts: list of text
+var im: intmap of text
+
+func freshInner(): list of int {
+    var l: list of int
+    return l
+}
+
+// The work happens in run(), NOT in App.startCLI: `quit` deliberately
+// skips the quitting handler's own scope-exit frees (lowAppendTrailingFrees'
+// documented "quit mid-handler: no frees" behavior), so ref-bearing locals
+// must live in a function that RETURNS for this fixture to reach zero.
+func run() {
+    var i: int
+    var s: Sig
+    var t: text
+
+    i = 0
+    while i < 200 {
+        outer.add(freshInner())
+        s.params = freshInner()
+        s.params.add(i)
+        recs.add(s)
+        t = "x"
+        texts.add(t)
+        im[i] = t
+        i = i + 1
+    }
+    outer.clear()
+    recs.clear()
+    texts.clear()
+    im.clear()
+}
+
+on App.startCLI(args: list of string) {
+    run()
+    quit 0
+}

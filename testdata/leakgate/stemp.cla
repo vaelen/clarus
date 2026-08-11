@@ -1,0 +1,34 @@
+// stemp.cla: leak-gate fixture -- synthetic __store temp prologue births
+// must not leak on paths that skip their store site (findings doc
+// root-cause 1). Expect zero live blocks at exit under CLARUS_MEM_STRICT.
+var sink: int
+
+func freshList(): list of int {
+    var l: list of int
+    return l
+}
+
+func twoArm(x: int) {
+    var args: list of int
+
+    if x >= 0 {
+        args = freshList()
+        args.add(x)
+        sink = sink + args.count
+        return
+    }
+    args = freshList()
+    args.add(0 - x)
+    sink = sink - args.count
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+
+    i = 0
+    while i < 1000 {
+        twoArm(i)
+        i = i + 1
+    }
+    quit 0
+}

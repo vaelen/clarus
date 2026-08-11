@@ -1,0 +1,101 @@
+// dblcompile.cla: cross-compile leak-gate harness (memory-leak-fix
+// Task 1, promoted from the 2026-08-12 investigation probe). Runs the
+// exact macgui.cla per-compile sequence (driveReset/resetDiags/astReset
+// -> driveCompile -> driveEmit68kFork) repeatedly in ONE host process,
+// once per argv entry, reports each compile's total TickCount ticks, and
+// writes each compile's fork bytes to leakfork_<i>.bin in the cwd (the
+// stale-intern-index oracle: internal/mactest/leakgate_test.go's
+// DoubleCompile subtest byte-compares leakfork_0.bin against
+// leakfork_2.bin from a 3-entry run).
+//
+// Usage: scripts/clarus-run.sh clarusc/test/dblcompile.cla -- \
+//            testdata/cg68k/tickprobe.cla testdata/mac-resident/catprobe.cla ...
+
+include "../lib.cla"
+include "../tok.cla"
+include "../lex.cla"
+include "../ast.cla"
+include "../parse.cla"
+include "../types.cla"
+include "../check.cla"
+include "../ir.cla"
+include "../lower.cla"
+include "../shake.cla"
+include "../asm68k.cla"
+include "../peep68k.cla"
+include "../app68k.cla"
+include "../res68k.cla"
+include "../cprint.cla"
+include "../cg68k.cla"
+include "../uiblob.cla"
+include "../drive.cla"
+
+// Front-end seam: same as main.cla's host CLI (disk reads, no resources).
+func feReadSource(path: string, key: string, out: text): bool {
+    return file.readText(path, out)
+}
+
+func feHasKey(key: string): bool {
+    return false
+}
+
+func feProgress(line: string) {
+    log(line)
+}
+
+func feProgressStep(cur: int, total: int, label: string) {
+}
+
+func feProgressTick() {
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+    var entries: list of string
+    var ok: bool
+    var built: bool
+    var t0: int
+    var t1: int
+    var fork: text
+    var wrote: bool
+
+    hostPaths = true
+    rtDir = ""
+    haveRtDir = false
+
+    i = 0
+    while i < args.count {
+        t0 = TickCount()
+        driveReset()
+        resetDiags()
+        astReset()
+        wantEmit = true
+        want68k = true
+        entries = cgFreshStringList()
+        entries.add(args[i])
+        ok = driveCompile(entries, false)
+        if entryFailed {
+            log("dblcompile: cannot open entry file: " + args[i])
+            quit 2
+        }
+        if not ok {
+            log("dblcompile: compile FAILED: " + args[i])
+            quit 1
+        }
+        built = driveEmit68kFork("", false, 0, false)
+        if not built {
+            log("dblcompile: emit68k failed: " + args[i])
+            quit 1
+        }
+        fork = driveLastFork()
+        wrote = file.writeText("leakfork_" + numToStr(i) + ".bin", fork, fileTypeText, "????")
+        if not wrote {
+            log("dblcompile: fork write failed")
+            quit 1
+        }
+        t1 = TickCount()
+        log("COMPILE " + numToStr(i) + " " + args[i] + " ticks=" + numToStr(t1 - t0) + " fork=" + numToStr(fork.length))
+        i = i + 1
+    }
+    quit 0
+}
