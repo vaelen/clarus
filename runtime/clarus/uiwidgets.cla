@@ -69,6 +69,7 @@ external func UiEraseRect(r: ptr) = trap 0xA8A3
 external func UiFrameRect(r: ptr) = trap 0xA8A1
 external func UiFillRect(r: ptr, pat: ptr) = trap 0xA8A5
 external func UiInvalRect(badRect: ptr) = trap 0xA928
+external func UiValidRect(goodRect: ptr) = trap 0xA92A
 external func UiPtInRect(pt: int, r: ptr): bool = trap 0xA8AD
 external func UiFrameOval(r: ptr) = trap 0xA8B7
 external func UiFillOval(r: ptr, pat: ptr) = trap 0xA8BB
@@ -811,6 +812,13 @@ func rtUiWidgetSetStr(instV: ptr, wIdx: int, prop: int, s: ptr) {
     if kind == rtUiKindLabel and prop == rtUiPropText {
         rtUiPstrcpy(rtUiLabelAt(w, wIdx), s)
         UiInvalRect(rtUiRectAt(w, wIdx))
+        // Live paint (live-log phase): same sync draw as
+        // rtUiWidgetSetText's, in the update path's own TextBox form
+        // (TETextBox erases the rect first, so shorter text leaves no
+        // residue). Draw the STORED pstring, not `s` -- identical
+        // bytes, but it is what the update path itself would draw.
+        UiTextBox(rtUiLabelAt(w, wIdx) + 1, peekb(rtUiLabelAt(w, wIdx)), rtUiRectAt(w, wIdx), 0)
+        UiValidRect(rtUiRectAt(w, wIdx))
     } else if kind == rtUiKindButton and prop == rtUiPropCaption and ctrl != ptr(0) {
         UiSetControlTitle(ctrl, s)
     } else if kind == rtUiKindField and prop == rtUiPropText and te != ptr(0) {
@@ -923,6 +931,15 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     UiTECalText(te)
     UiInvalRect(UiHandleDeref(te) + rtUiTeViewRect)
     rtUiTeMutated(instV, wIdx, false) // PROGRAMMATIC set -- no trace/event
+    // Live paint (live-log phase): draw the fresh content NOW. The
+    // update event UiInvalRect just queued cannot arrive while a user
+    // handler is still running (ClarusC.APPL compiles synchronously
+    // inside one), so TEUpdate here -- after rtUiTeMutated's own
+    // clamp/scroll-sync settles the final state -- then ValidRect to
+    // cancel the now-redundant queued repaint. A hidden or covered
+    // window clips to the port's visRgn, making this a safe no-op.
+    UiTEUpdate(UiHandleDeref(te) + rtUiTeViewRect, te)
+    UiValidRect(UiHandleDeref(te) + rtUiTeViewRect)
     UiSetPort(savedPort)
 }
 

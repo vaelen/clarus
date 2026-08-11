@@ -142,6 +142,7 @@ extern void rt_ext_UiEraseRect(void *);
 extern void rt_ext_UiFrameRect(void *);
 extern void rt_ext_UiFillRect(void *, void *);
 extern void rt_ext_UiInvalRect(void *);
+extern void rt_ext_UiValidRect(void *);
 extern int32_t rt_ext_UiPtInRect(int32_t, void *);
 extern void rt_ext_UiFrameOval(void *);
 extern void rt_ext_UiFillOval(void *, void *);
@@ -4757,6 +4758,8 @@ static void clar_fn_rtUiWidgetSetStr(void * cv_instV, int32_t cv_wIdx, int32_t c
     if ((cv_kind == 3) && (cv_prop == 1)) {
         clar_fn_rtUiPstrcpy(clar_fn_rtUiLabelAt(cv_w, cv_wIdx), cv_s);
         rt_ext_UiInvalRect(clar_fn_rtUiRectAt(cv_w, cv_wIdx));
+        rt_ext_UiTextBox((void *)((char *)(clar_fn_rtUiLabelAt(cv_w, cv_wIdx)) + (1)), rt_peekb(clar_fn_rtUiLabelAt(cv_w, cv_wIdx)), clar_fn_rtUiRectAt(cv_w, cv_wIdx), 0);
+        rt_ext_UiValidRect(clar_fn_rtUiRectAt(cv_w, cv_wIdx));
     } else {
         if (((cv_kind == 0) && (cv_prop == 0)) && (cv_ctrl != (void *)(intptr_t)(0))) {
             rt_ext_UiSetControlTitle(cv_ctrl, cv_s);
@@ -4871,6 +4874,8 @@ static void clar_fn_rtUiWidgetSetText(void * cv_instV, int32_t cv_wIdx, void * c
     rt_ext_UiTECalText(cv_te);
     rt_ext_UiInvalRect((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)));
     clar_fn_rtUiTeMutated(cv_instV, cv_wIdx, 0);
+    rt_ext_UiTEUpdate((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)), cv_te);
+    rt_ext_UiValidRect((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)));
     rt_ext_UiSetPort(cv_savedPort);
 }
 

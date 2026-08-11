@@ -102,7 +102,12 @@
 // addition: hardware-proves the Date-Time Utilities catalog contracts
 // (SecondsToDate/DateToSeconds, toolbox/osutils.cla) and the
 // now()/dateTimeStr builtins against real ROM -- see
-// cases_datetime.cla's own header comment.
+// cases_datetime.cla's own header comment. LivePaint (cases_textwidgets.cla)
+// is the live-log phase's own Task 1 addition: hardware-proves that
+// programmatic textview/label sets (rtUiWidgetSetText / rtUiWidgetSetStr's
+// label branch, uiwidgets.cla) paint SYNCHRONOUSLY, before any update
+// event can run -- see that case's own header comment for the full
+// checksum-region derivation.
 
 enum ToolboxTest {
     All
@@ -134,15 +139,16 @@ enum ToolboxTest {
     ResourceBake
     WriteResStamp
     DateTimeRoundTrip
+    LivePaint
     SelfCheck
 }
 
-// nTbCases is ToolboxTest's member count minus All: the 28 real cases
+// nTbCases is ToolboxTest's member count minus All: the 29 real cases
 // plus SelfCheck itself. Same "SelfCheck's own branch does not increment
 // casesRun for itself" convention as CoreTest's nCoreCases (runner.cla) --
 // a forgotten branch leaves casesRun short and SelfCheck fails instead of
 // the suite silently shrinking.
-const nTbCases: int = 29
+const nTbCases: int = 30
 
 // tbCaseName maps a ToolboxTest member to its programmatic name, used as
 // both the GUI's table row label and a TestResult's name.
@@ -235,6 +241,9 @@ func tbCaseName(t: ToolboxTest): string {
     case DateTimeRoundTrip {
         return "DateTimeRoundTrip"
     }
+    case LivePaint {
+        return "LivePaint"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -274,6 +283,7 @@ func tbAllCases(): list of ToolboxTest {
     l.add(ResourceBake)
     l.add(WriteResStamp)
     l.add(DateTimeRoundTrip)
+    l.add(LivePaint)
     l.add(SelfCheck)
     return l
 }
@@ -422,6 +432,10 @@ func runToolboxTests(sel: list of ToolboxTest): list of TestResult {
     }
     if wantAll or tbHas(deduped, DateTimeRoundTrip) {
         results.add(caseDateTimeRoundTrip())
+        casesRun = casesRun + 1
+    }
+    if wantAll or tbHas(deduped, LivePaint) {
+        results.add(caseLivePaint())
         casesRun = casesRun + 1
     }
     if wantAll or tbHas(deduped, SelfCheck) {

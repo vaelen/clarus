@@ -138,3 +138,69 @@ func caseTextwidgets(): TestResult {
     detail = detail + " cs2 " + tkIntToStr(cs2)
     return tkFail("Textwidgets", detail)
 }
+
+// caseLivePaint (live-log phase): programmatic textview/label sets must
+// paint SYNCHRONOUSLY, mid-handler, before any update event can run --
+// the mechanism ClarusC.APPL's live compile log depends on
+// (rtUiWidgetSetText / rtUiWidgetSetStr's label branch draw + ValidRect
+// immediately). Proven the same before/after UiTestChecksum-inequality
+// way the retired ButtonsPanel Status proxy worked (this file's own
+// header comment on Status's native-gaps-cleanup Task 5 retirement):
+// this case runs entirely inside one handler dispatch (the case function
+// itself), so WITHOUT the sync draw the framebuffer cannot change
+// between the two checksums either widget takes.
+//
+// Body region derivation: TextWin's `size: 400, 280` -> content top-left
+// (56, 44) (this file's own header comment). Name is `at: 20, 20; width:
+// 140` -> LOCAL (20,20)-(230,40), so Body's `at: 20, bottom; fill: both;
+// scrollbar: vertical` starts at LOCAL y = 40 + rtUiGap(8) = 48, x = 20
+// (uiwidgets.cla's rtUiLayout). Its TE view rect insets rtUiTeFrameInset
+// (3px) from that box on every side, so Body's TE view GLOBAL rect is
+// approximately (79,95)-(438,313) -- the checksum region below sits well
+// inside that, over where the first line of typed text draws.
+//
+// Status region derivation: ButtonsPanel's `size: 300, 160` -> content
+// top-left (106, 44) (this file's own header comment). Go is `at: 20,
+// 20; width: 80` -> LOCAL (20,20)-(100,40). On is `at: right, 22` (no
+// width, so rtUiCheckW=90 applies) -> LOCAL x = 100 + rtUiGap(8) = 108,
+// y = 22 (explicit) -> LOCAL (108,22)-(198,38). Status is `at: next,
+// bottom` (no width, so rtUiLabelW=150, height rtUiLabelH=16 applies) ->
+// LOCAL x = 108, y = 38 + rtUiGap(8) = 46 -> LOCAL (108,46)-(258,62) ->
+// GLOBAL (214,90)-(364,106). The checksum region below sits well inside
+// that.
+func caseLivePaint(): TestResult {
+    var w: TextWin
+    var t: text
+    var before: int
+    var after: int
+    var p: ButtonsPanel
+    var beforeL: int
+    var afterL: int
+    var detail: string
+
+    w = open TextWin
+    // Region inside Body's TE view rect; x/w multiples of 8.
+    before = UiTestChecksum(88, 97, 64, 64)
+    t = "LIVE PAINT PROBE LINE ONE"
+    w.Body.text = t
+    after = UiTestChecksum(88, 97, 64, 64)
+    close w
+
+    p = open ButtonsPanel
+    // Region inside Status's label rect; x/w multiples of 8.
+    beforeL = UiTestChecksum(216, 92, 80, 12)
+    p.Status.text = "LivePaintProbe"
+    afterL = UiTestChecksum(216, 92, 80, 12)
+    close p
+
+    if before != after and beforeL != afterL {
+        return tkPass("LivePaint")
+    }
+    // Built up piecewise into `detail`, same native-68k per-statement
+    // str/rec temp-slot budget reason as this file's own caseTextwidgets.
+    detail = "before " + tkIntToStr(before)
+    detail = detail + " after " + tkIntToStr(after)
+    detail = detail + " beforeL " + tkIntToStr(beforeL)
+    detail = detail + " afterL " + tkIntToStr(afterL)
+    return tkFail("LivePaint", detail)
+}

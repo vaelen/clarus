@@ -333,8 +333,9 @@ func TestToolboxSuiteOnMac(t *testing.T) {
 // addition, then to 28 by mac-resident-clarusc Task 15's own FieldCap
 // addition (the language reference's live `string(n)` typing clamp, the
 // pin for that task's cgStackHeuristic fix), then to 29 by
-// datetime-instrumentation Task 7's own DateTimeRoundTrip addition:
-// parses each of the 29 result lines (28 real cases +
+// datetime-instrumentation Task 7's own DateTimeRoundTrip addition, then
+// to 30 by the live-log phase's own Task 1 LivePaint addition: parses
+// each of the 30 result lines (29 real cases +
 // SelfCheck) into its own t.Run subtest -- per-case CI reporting -- plus
 // the aggregate TOTAL line, regardless of which lane produced the
 // capture.
@@ -360,8 +361,8 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 		}
 	}
 
-	if len(results) != 29 {
-		t.Errorf("result lines: got %d, want 29\ncapture:\n%s", len(results), out)
+	if len(results) != 30 {
+		t.Errorf("result lines: got %d, want 30\ncapture:\n%s", len(results), out)
 	}
 	for _, r := range results {
 		r := r
@@ -371,7 +372,7 @@ func checkToolboxSuiteCapture(t *testing.T, out string) {
 			}
 		})
 	}
-	if want := "TOTAL 29 PASS 29 FAIL 0"; total != want {
+	if want := "TOTAL 30 PASS 30 FAIL 0"; total != want {
 		t.Errorf("TOTAL line: got %q, want %q\ncapture:\n%s", total, want, out)
 	}
 }
