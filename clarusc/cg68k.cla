@@ -4952,7 +4952,7 @@ func cgExprAddr(e: int) {
         // see EXRecAddr's own IRExprKind doc comment (ir.cla) for why this
         // is always exactly one instruction, never a chain.
         a68Emit(OpLea, 0, AmDisp16, cgXRecAddrReg(e), cgXRecAddrDisp(e), AmAn, 0, 0)
-    } else if k == EIntr and poolGet(irIntrName(e)) == "ui_value_at_ptr" {
+    } else if k == EIntr and irIntrName(e) == IUiValueAtPtr() {
         // Task 14 (native-5e gate, opendoc.cla): `*(T *)(a0)` -- unlike
         // every OTHER EIntr (a COMPUTED value with no existing storage,
         // needing the generic materialize-to-temp fallback below), this
@@ -5413,7 +5413,7 @@ func cgEmitStoreErr(dst: int, src: int) {
     var sz: int
 
     sk = irExprKind(src)
-    if sk == EIntr and poolGet(irIntrName(src)) == "lasterr_value" {
+    if sk == EIntr and irIntrName(src) == ILastErr() {
         codeFi = findIRFuncIdxByName(rnLastErrCode)
         if codeFi == -1 or not shakeReachable(codeFi) {
             log("cg68k: natLastErrCode not found/reachable")
@@ -5508,17 +5508,20 @@ func cgEmitReturnRec(src: int) {
 // condition-code nibble (a68CcName's own numbering). Flags are always
 // set as left-right (CMP's dm operand is the LEFT value -- see
 // cgCompare), so these map the same direction a signed comparison reads.
-func cgCcFor(op: string): int {
-    if op == "==" { return 7 }   // EQ
-    if op == "!=" { return 6 }   // NE
-    if op == "<" { return 13 }   // LT
-    if op == "<=" { return 15 }  // LE
-    if op == ">" { return 14 }   // GT
-    return 12                     // ">=" -> GE
+// layer1-compiler-perf phase Task 14 (findings 1.5): op is the interned
+// pool index (irBinOp's own return value), compared against ir.cla's
+// memoized IOp*() helpers -- cprint-style, same as cgIntr/cgIntrUi.
+func cgCcFor(op: int): int {
+    if op == IOpEq() { return 7 }   // EQ
+    if op == IOpNe() { return 6 }   // NE
+    if op == IOpLt() { return 13 }  // LT
+    if op == IOpLe() { return 15 }  // LE
+    if op == IOpGt() { return 14 }  // GT
+    return 12                        // ">=" -> GE
 }
 
-func cgIsCompareOp(op: string): bool {
-    return op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+func cgIsCompareOp(op: int): bool {
+    return op == IOpEq() or op == IOpNe() or op == IOpLt() or op == IOpLe() or op == IOpGt() or op == IOpGe()
 }
 
 // cgCompare: CMP + Scc + AND.L #1,D0 (Scc writes the whole byte
@@ -5527,7 +5530,7 @@ func cgIsCompareOp(op: string): bool {
 // comment); CMP's dm operand is always the "compared FROM" register
 // (flags = dm - ea), so dm=D1(left), sm/ea=D0(right) gives flags =
 // left-right, matching cgCcFor's direction.
-func cgCompare(e: int, op: string) {
+func cgCompare(e: int, op: int) {
     cgExpr(irBinX(e))
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExpr(irBinY(e))
@@ -5571,48 +5574,48 @@ func cgAndOr(e: int, isAnd: bool) {
 // cgArith: +, -, *, /, mod, &, |, ^, <<, >>. See the evaluation-discipline
 // doc comment (module-state block, above) for the D1=left/D0=right
 // convention and why SUB/shifts need a trailing MOVE.L D1,D0.
-func cgArith(e: int, op: string) {
+func cgArith(e: int, op: int) {
     cgExpr(irBinX(e))
     a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
     cgExpr(irBinY(e))
     a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
     // D1=left, D0=right.
-    if op == "+" {
+    if op == IOpAdd() {
         a68Emit(OpAddInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "&" {
+    } else if op == IOpBitAnd() {
         a68Emit(OpAndInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "|" {
+    } else if op == IOpBitOr() {
         a68Emit(OpOrInsn, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "^" {
+    } else if op == IOpBitXor() {
         a68Emit(OpEor, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "-" {
+    } else if op == IOpSub() {
         a68Emit(OpSubInsn, 4, AmDn, 0, 0, AmDn, 1, 0)
         a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "<<" {
+    } else if op == IOpShl() {
         a68Emit(OpAsl, 4, AmDn, 0, 0, AmDn, 1, 0)
         a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == ">>" {
+    } else if op == IOpShr() {
         // Arithmetic shift (sign-propagating) -- language reference Ch4.
         a68Emit(OpAsr, 4, AmDn, 0, 0, AmDn, 1, 0)
         a68Emit(OpMove, 4, AmDn, 1, 0, AmDn, 0, 0)
-    } else if op == "*" {
+    } else if op == IOpMul() {
         a68EmitBr(OpBsr, 0, cgMul32Label())
-    } else if op == "/" {
+    } else if op == IOpDiv() {
         a68EmitBr(OpBsr, 0, cgDiv32Label())
-    } else if op == "mod" {
+    } else if op == IOpMod() {
         a68EmitBr(OpBsr, 0, cgMod32Label())
     } else {
-        a68Comment("TODO EBin op " + op + ": unsupported this task")
+        a68Comment("TODO EBin op " + poolGet(op) + ": unsupported this task")
     }
 }
 
 func cgBin(e: int) {
-    var op: string
+    var op: int
 
-    op = poolGet(irBinOp(e))
-    if op == "and" {
+    op = irBinOp(e)
+    if op == IOpAnd() {
         cgAndOr(e, true)
-    } else if op == "or" {
+    } else if op == IOpOr() {
         cgAndOr(e, false)
     } else if cgIsCompareOp(op) {
         cgCompare(e, op)
@@ -5622,17 +5625,17 @@ func cgBin(e: int) {
 }
 
 func cgUn(e: int) {
-    var op: string
+    var op: int
 
-    op = poolGet(irUnOp(e))
+    op = irUnOp(e)
     cgExpr(irUnX(e))
-    if op == "-" {
+    if op == IOpSub() {
         a68Emit(OpNegInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
-    } else if op == "not" {
+    } else if op == IOpNot() {
         // bool is always exactly 0/1 (cgLoadVar/cgCompare/cgAndOr all
         // guarantee this) -- XOR with 1 flips it.
         a68Emit(OpEor, 4, AmImm, 0, 1, AmDn, 0, 0)
-    } else if op == "~" {
+    } else if op == IOpBitNot() {
         a68Emit(OpNotInsn, 4, AmNone, 0, 0, AmDn, 0, 0)
     }
 }
@@ -5724,10 +5727,10 @@ func cgConv(e: int) {
 // in bytes (Ch13, rt.h's rt_peekb/w/l -- str.cla's own doc comment: every
 // byte this runtime touches through the waist goes through peekb/pokeb or
 // StrBlockMoveData).
-func cgIntrPeekPokeSize(nm: string): int {
-    if nm == "peekb" or nm == "pokeb" {
+func cgIntrPeekPokeSize(nm: int): int {
+    if nm == IPeekB() or nm == IPokeB() {
         return 1
-    } else if nm == "peekw" or nm == "pokew" {
+    } else if nm == IPeekW() or nm == IPokeW() {
         return 2
     }
     return 4
@@ -5738,7 +5741,7 @@ func cgIntrPeekPokeSize(nm: string): int {
 // rt_peekb/rt_peekw, which both `return (int32_t)` an unsigned/uint16_t
 // value: peekb/peekw are UNSIGNED reads, never sign-extended; peekl is
 // already a full 32-bit value, no extension needed).
-func cgIntrPeek(e: int, nm: string) {
+func cgIntrPeek(e: int, nm: int) {
     var a0e: int
     var sz: int
 
@@ -5763,7 +5766,7 @@ func cgIntrPeek(e: int, nm: string) {
 // stores THROUGH THE SOURCE ADDRESS instead of the destination. Every
 // cgExpr path is stack-balanced, so (A7)+ recovers the address whatever the
 // value expression does.
-func cgIntrPoke(e: int, nm: string) {
+func cgIntrPoke(e: int, nm: int) {
     var a0e: int
     var a1e: int
     var sz: int
@@ -7036,18 +7039,24 @@ func cgIntrFileSaveLoad(e: int, nameIdx: int) {
 // still leaves D0 in a defined state (Task 13 completes the real
 // dispatch).
 func cgIntr(e: int) {
-    var nm: string
+    var nm: int
     var a0e: int
     var a1e: int
     var args: list of int
     var addrs: list of bool
 
-    nm = poolGet(irIntrName(e))
-    if nm.length >= 3 and nm[0] == 'u' and nm[1] == 'i' and nm[2] == '_' {
-        cgIntrUi(e, nm)
-        return
-    }
-    if nm == "str_cmp" {
+    // layer1-compiler-perf phase Task 14 (findings 1.5): nm is now the
+    // INTERNED pool index (irIntrName's own return value) rather than a
+    // freshly poolGet'd 256-byte string copy -- every arm below compares
+    // against a memoized I*() helper's interned int (cprint-style
+    // dispatch, ir.cla's own intrinsic-name-constant block), not a string.
+    // The old hand-unrolled "ui_"-prefix probe is gone: every non-UI arm
+    // is tried first, and falling through all of them now simply calls
+    // cgIntrUi(e, nm) unconditionally -- its own final else is the
+    // catch-all unknown-intrinsic error path (poolGet(nm) only there, on
+    // the cold/error path).
+    nm = irIntrName(e)
+    if nm == IStrCmp() {
         a0e = irIntrArgsHead(e)
         a1e = irExprNext(a0e)
         args = cgFreshIntList()
@@ -7070,11 +7079,11 @@ func cgIntr(e: int) {
     // the ordinary ported family function; KRec -> the generated
     // cg_retain_/cg_release_ walk, a no-op when the record has no handle
     // field at all).
-    if nm == "retain" {
+    if nm == IRetain() {
         cgRetainExpr(irIntrArgsHead(e))
         return
     }
-    if nm == "release" {
+    if nm == IRelease() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
@@ -7088,7 +7097,7 @@ func cgIntr(e: int) {
     // -- matches cgEmitStartup's own terminal sequence, for a `quit expr`
     // reached anywhere else in a handler body) -- natQuit's own code
     // argument is a plain int, passed BY VALUE (addrs=false).
-    if nm == "alert" {
+    if nm == IAlert() {
         a0e = irIntrArgsHead(e)
         args = cgFreshIntList()
         args.add(a0e)
@@ -7099,7 +7108,7 @@ func cgIntr(e: int) {
         }
         return
     }
-    if nm == "log" {
+    if nm == ILog() {
         a0e = irIntrArgsHead(e)
         args = cgFreshIntList()
         args.add(a0e)
@@ -7110,7 +7119,7 @@ func cgIntr(e: int) {
         }
         return
     }
-    if nm == "quit" {
+    if nm == IQuit() {
         a0e = irIntrArgsHead(e)
         a68EmitBr(OpBsr, 0, cgFreeGlobalsLbl)
         args = cgFreshIntList()
@@ -7122,15 +7131,15 @@ func cgIntr(e: int) {
         }
         return
     }
-    if nm == "peekb" or nm == "peekw" or nm == "peekl" {
+    if nm == IPeekB() or nm == IPeekW() or nm == IPeekL() {
         cgIntrPeek(e, nm)
         return
     }
-    if nm == "pokeb" or nm == "pokew" or nm == "pokel" {
+    if nm == IPokeB() or nm == IPokeW() or nm == IPokeL() {
         cgIntrPoke(e, nm)
         return
     }
-    if nm == "xrec_str_write" {
+    if nm == IXRecStrWrite() {
         // Task 6 (toolbox-integration Feature B): `ev.fName = s` -- an
         // extern-record str[N] field WRITE, an ExprStmt (ir.cla's
         // IXRecStrWrite doc comment), reached here via cgStmt's SExprStmt
@@ -7169,7 +7178,7 @@ func cgIntr(e: int) {
     // cgExprAddr's existing generic "TODO cgExprAddr <kind>" placeholder,
     // same as every other not-yet-wired record-valued source; not
     // exercised by any fixture this task adds.
-    if nm == "lasterr_code" {
+    if nm == ILastErrCode() {
         args = cgFreshIntList()
         addrs = cgFreshBoolList()
         if not cgCallRuntime(rnLastErrCode, args, addrs) {
@@ -7187,11 +7196,11 @@ func cgIntr(e: int) {
     // operands and the result are plain 4-byte ints (rtFixMul/rtFixDiv,
     // runtime/clarus/core.cla), by VALUE like any other cgIntr2(...,
     // false, false) scalar arm.
-    if nm == "fix_mul" {
+    if nm == IFixMul() {
         cgIntr2(e, rnFixMul, false, false)
         return
     }
-    if nm == "fix_div" {
+    if nm == IFixDiv() {
         cgIntr2(e, rnFixDiv, false, false)
         return
     }
@@ -7203,174 +7212,178 @@ func cgIntr(e: int) {
     // cgEmitStoreStr/cgEmitReturnStr (already true before this task) and
     // are UNREACHABLE from this value-context dispatch, matching every
     // other KStr-result gap this file already documents). ----
-    if nm == "str_len" {
+    if nm == IStrLen() {
         cgIntr1(e, rnStrLen, true)
         return
     }
-    if nm == "str_index" {
+    if nm == IStrIndex() {
         cgIntr2(e, rnStrIndex, true, false)
         return
     }
-    if nm == "str_set_index" {
+    if nm == IStrSetIndex() {
         cgIntr3(e, rnStrSetIndex, true, false, false)
         return
     }
-    if nm == "str_index_of_str" {
+    if nm == IStrIndexOfStr() {
         cgIntr2(e, rnStrIndexOfStr, true, true)
         return
     }
-    if nm == "str_index_of_char" {
+    if nm == IStrIndexOfChar() {
         cgIntr2(e, rnStrIndexOfChar, true, false)
         return
     }
-    if nm == "str_from_bytes" {
+    if nm == IStrFromBytes() {
         cgIntrStrFromBytes(e)
         return
     }
-    if nm == "str_to_bytes" {
+    if nm == IStrToBytes() {
         cgIntrStrToBytes(e)
         return
     }
 
     // ---- Task 13: text family ----
-    if nm == "text_store" {
+    if nm == ITextStore() {
         cgIntr2(e, rnTextStore, false, true)
         return
     }
-    if nm == "text_len" {
+    if nm == ITextLen() {
         cgIntr1(e, rnTextLen, false)
         return
     }
-    if nm == "text_index" {
+    if nm == ITextIndex() {
         cgIntr2(e, rnTextIndex, false, false)
         return
     }
-    if nm == "text_set_index" {
+    if nm == ITextSetIndex() {
         cgIntr3(e, rnTextSetIndex, false, false, false)
         return
     }
-    if nm == "text_index_of_str" {
+    if nm == ITextIndexOfStr() {
         cgIntr2(e, rnTextIndexOfStr, false, true)
         return
     }
-    if nm == "text_index_of_char" {
+    if nm == ITextIndexOfChar() {
         cgIntr2(e, rnTextIndexOfChar, false, false)
         return
     }
-    if nm == "text_append_str" {
+    if nm == ITextAppendStr() {
         cgIntr2(e, rnTextAppendStr, false, true)
         return
     }
-    if nm == "text_append_char" {
+    if nm == ITextAppendChar() {
         cgIntr2(e, rnTextAppendChar, false, false)
         return
     }
-    if nm == "text_append_text" {
+    if nm == ITextAppendText() {
         cgIntr2(e, rnTextAppendText, false, false)
         return
     }
-    if nm == "text_from_bytes" {
+    if nm == ITextFromBytes() {
         cgIntrTextFromBytes(e)
         return
     }
-    if nm == "text_to_bytes" {
+    if nm == ITextToBytes() {
         cgIntrTextToBytes(e)
         return
     }
-    if nm == "text_cmp" {
+    if nm == ITextCmp() {
         cgIntrTextCmp(e)
         return
     }
-    if nm == "text_concat" {
+    if nm == ITextConcat() {
         cgIntrTextConcat(e)
         return
     }
-    if nm == "text_concat_sl" {
+    if nm == ITextConcatSL() {
         cgIntrTextConcatSl(e)
         return
     }
-    if nm == "text_of_str" {
+    if nm == ITextOfStr() {
         cgIntrTextOfStr(e)
         return
     }
-    if nm == "text_free_var" {
+    if nm == ITextFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
 
     // ---- Task 13: list family ----
-    if nm == "list_push" or nm == "list_unshift" or nm == "list_push_retain" or nm == "list_unshift_retain" {
-        cgIntrListPushLike(e, nm)
+    if nm == IListPush() or nm == IListUnshift() or nm == IListPushRetain() or nm == IListUnshiftRetain() {
+        // cgIntrListPushLike is shared with cgEmitStoreRec/cgEmitStoreStr
+        // (out of this task's scope), which still poolGet their own nm
+        // themselves -- one poolGet here, paid only on this already-
+        // matched arm, not on every failed dispatch attempt.
+        cgIntrListPushLike(e, poolGet(nm))
         return
     }
-    if nm == "list_pop" or nm == "list_shift" {
-        cgIntrListPopLike(e, nm)
+    if nm == IListPop() or nm == IListShift() {
+        cgIntrListPopLike(e, poolGet(nm))
         return
     }
-    if nm == "list_first" or nm == "list_last" {
-        cgIntrListFirstLast(e, nm)
+    if nm == IListFirst() or nm == IListLast() {
+        cgIntrListFirstLast(e, poolGet(nm))
         return
     }
-    if nm == "list_remove" {
+    if nm == IListRemove() {
         cgIntrListRemove(e)
         return
     }
-    if nm == "list_set" or nm == "list_set_retain" {
-        cgIntrListSet(e, nm == "list_set_retain")
+    if nm == IListSet() or nm == IListSetRetain() {
+        cgIntrListSet(e, nm == IListSetRetain())
         return
     }
-    if nm == "list_count" {
+    if nm == IListCount() {
         cgIntr1(e, rnListCount, false)
         return
     }
-    if nm == "list_clear" {
+    if nm == IListClear() {
         // layer1-compiler-perf phase Task 8: count -> 0, capacity retained
         // -- void, single-ptr-arg runtime call, same shape as list_count
         // just above (the return value, if any, is simply unused).
         cgIntr1(e, rnListClear, false)
         return
     }
-    if nm == "list_free_var" {
+    if nm == IListFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
 
     // ---- Task 13: map family ----
-    if nm == "map_set" or nm == "map_set_retain" {
-        cgIntrMapSet(e, nm == "map_set_retain", false)
+    if nm == IMapSet() or nm == IMapSetRetain() {
+        cgIntrMapSet(e, nm == IMapSetRetain(), false)
         return
     }
-    if nm == "map_get" {
+    if nm == IMapGet() {
         cgIntrMapGet(e, false)
         return
     }
-    if nm == "map_get_dv" {
+    if nm == IMapGetDv() {
         cgIntrMapGetDv(e, false, false)
         return
     }
-    if nm == "map_get_dv_birth" {
+    if nm == IMapGetDvBirth() {
         cgIntrMapGetDv(e, true, false)
         return
     }
-    if nm == "map_has" {
+    if nm == IMapHas() {
         cgIntr2(e, rnMapHas, false, true)
         return
     }
-    if nm == "map_remove" {
+    if nm == IMapRemove() {
         cgIntrMapRemove(e, false)
         return
     }
-    if nm == "map_count" {
+    if nm == IMapCount() {
         cgIntr1(e, rnMapCount, false)
         return
     }
-    if nm == "map_clear" {
+    if nm == IMapClear() {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnMapClear, false)
         return
     }
-    if nm == "map_free_var" {
+    if nm == IMapFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
@@ -7379,41 +7392,41 @@ func cgIntr(e: int) {
     // above, name for name, dispatching to the SAME cgIntrMap*/cgIntr1/
     // cgIntr2/cgReleaseExpr helpers with the "rtSortedMap" runtime-name
     // prefix instead of "rtMap" ----
-    if nm == "sortedmap_set" or nm == "sortedmap_set_retain" {
-        cgIntrMapSet(e, nm == "sortedmap_set_retain", true)
+    if nm == ISortedMapSet() or nm == ISortedMapSetRetain() {
+        cgIntrMapSet(e, nm == ISortedMapSetRetain(), true)
         return
     }
-    if nm == "sortedmap_get" {
+    if nm == ISortedMapGet() {
         cgIntrMapGet(e, true)
         return
     }
-    if nm == "sortedmap_get_dv" {
+    if nm == ISortedMapGetDv() {
         cgIntrMapGetDv(e, false, true)
         return
     }
-    if nm == "sortedmap_get_dv_birth" {
+    if nm == ISortedMapGetDvBirth() {
         cgIntrMapGetDv(e, true, true)
         return
     }
-    if nm == "sortedmap_has" {
+    if nm == ISortedMapHas() {
         cgIntr2(e, rnSortedMapHas, false, true)
         return
     }
-    if nm == "sortedmap_remove" {
+    if nm == ISortedMapRemove() {
         cgIntrMapRemove(e, true)
         return
     }
-    if nm == "sortedmap_count" {
+    if nm == ISortedMapCount() {
         cgIntr1(e, rnSortedMapCount, false)
         return
     }
-    if nm == "sortedmap_clear" {
+    if nm == ISortedMapClear() {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnSortedMapClear, false)
         return
     }
-    if nm == "sortedmap_free_var" {
+    if nm == ISortedMapFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
@@ -7431,41 +7444,41 @@ func cgIntr(e: int) {
     // an intmap key is an ARBITRARY int expression with no such
     // restriction, so it must be evaluated exactly ONCE into a scratch slot
     // and reused from there.
-    if nm == "intmap_set" or nm == "intmap_set_retain" {
-        cgIntrIntMapSet(e, nm == "intmap_set_retain")
+    if nm == IIntMapSet() or nm == IIntMapSetRetain() {
+        cgIntrIntMapSet(e, nm == IIntMapSetRetain())
         return
     }
-    if nm == "intmap_get" {
+    if nm == IIntMapGet() {
         cgIntrIntMapGet(e)
         return
     }
-    if nm == "intmap_get_dv" {
+    if nm == IIntMapGetDv() {
         cgIntrIntMapGetDv(e, false)
         return
     }
-    if nm == "intmap_get_dv_birth" {
+    if nm == IIntMapGetDvBirth() {
         cgIntrIntMapGetDv(e, true)
         return
     }
-    if nm == "intmap_has" {
+    if nm == IIntMapHas() {
         cgIntr2(e, rnIntMapHas, false, false)
         return
     }
-    if nm == "intmap_remove" {
+    if nm == IIntMapRemove() {
         cgIntrIntMapRemove(e)
         return
     }
-    if nm == "intmap_count" {
+    if nm == IIntMapCount() {
         cgIntr1(e, rnIntMapCount, false)
         return
     }
-    if nm == "intmap_clear" {
+    if nm == IIntMapClear() {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnIntMapClear, false)
         return
     }
-    if nm == "intmap_free_var" {
+    if nm == IIntMapFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
     }
@@ -7484,11 +7497,11 @@ func cgIntr(e: int) {
     // handle it instead; a genuine reach here (Task 14.7: silent-zero is
     // forbidden -- was a TODO-comment + move.l #0 placeholder) is now a
     // hard error naming the construct, not a silently wrong D0 value. ----
-    if nm == "file_read_text" {
+    if nm == IFileReadText() {
         cgIntr2(e, rnFileReadText, true, false)
         return
     }
-    if nm == "file_write_text" {
+    if nm == IFileWriteText() {
         // file.writeText(path, text, type, creator) -- native-gaps-cleanup
         // Task 2: type/creator are new trailing args, both by-address
         // Str255s (same convention as path) -- natFileWriteText does the
@@ -7496,7 +7509,7 @@ func cgIntr(e: int) {
         cgIntr4(e, rnFileWriteText, true, false, true, true)
         return
     }
-    if nm == "file_read_resource" {
+    if nm == IFileReadResource() {
         // file.readResource(name, out) -- Task 7 (mac-resident-clarusc);
         // same addr0/addr1 shape as file_read_text above (name is a
         // Str255-shaped ptr, out's own value already IS the rtText box
@@ -7504,27 +7517,31 @@ func cgIntr(e: int) {
         cgIntr2(e, rnReadResource, true, false)
         return
     }
-    if nm == "file_write_res" {
+    if nm == IFileWriteRes() {
         // file.writeRes(path, fork, doctype, creator) -- same shape as
         // file_write_text above.
         cgIntr4(e, rnWriteRes, true, false, true, true)
         return
     }
-    if nm == "file_name" {
+    if nm == IFileName() {
         log("cg68k: cgIntr: file_name reached in scalar/value context (str-returning, only valid as a store/return target)")
         quit 1
     }
-    if nm == "file_save" {
+    if nm == IFileSave() {
         cgIntrFileSaveLoad(e, rnFileSave)
         return
     }
-    if nm == "file_load" {
+    if nm == IFileLoad() {
         cgIntrFileSaveLoad(e, rnFileLoad)
         return
     }
 
-    log("cg68k: cgIntr: intrinsic " + nm + " unsupported in value context")
-    quit 1
+    // Task 14: every non-UI intrinsic name is tried above; whatever falls
+    // through (ui_* names, plus any genuinely unsupported name) lands in
+    // cgIntrUi, whose own final else is the catch-all unknown-intrinsic
+    // error (poolGet(nm) only on that cold path) -- replaces the old
+    // hand-unrolled "ui_"-prefix probe at this function's head.
+    cgIntrUi(e, nm)
 }
 
 // ================================================================
@@ -7728,7 +7745,7 @@ func cgIntrUiEdit(e: int, a0: int, a1: int, a2: int, winName: string) {
     quit 1
 }
 
-func cgIntrUi(e: int, nm: string) {
+func cgIntrUi(e: int, nm: int) {
     var a0: int
     var a1: int
     var a2: int
@@ -7759,32 +7776,32 @@ func cgIntrUi(e: int, nm: string) {
         winName = poolGet(winNameIdx)
     }
 
-    if nm == "ui_open" {
+    if nm == IUiOpen() {
         winIdx = cpFindWindowIndex(winName)
         cgPushIntLit(winIdx)
         cgJsrByName(rnUiOpen)
         cgCleanupStack(4)
         return
     }
-    if nm == "ui_front" {
+    if nm == IUiFront() {
         winIdx = cpFindWindowIndex(winName)
         cgPushIntLit(winIdx)
         cgJsrByName(rnUiFront)
         cgCleanupStack(4)
         return
     }
-    if nm == "ui_close" {
+    if nm == IUiClose() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgJsrByName(rnUiClose)
         cgCleanupStack(4)
         return
     }
-    if nm == "ui_quit" {
+    if nm == IUiQuit() {
         cgJsrByName(rnUiQuit)
         return
     }
-    if nm == "ui_state" {
+    if nm == IUiState() {
         // Result (D0) is the window's per-instance state-struct address --
         // cgFieldRefAddr's own KUiState arm (its base-address-is-the-
         // value special case, mirroring KOverlay) reads this same value
@@ -7798,11 +7815,11 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(4)
         return
     }
-    if nm == "ui_state_defaults" {
+    if nm == IUiStateDefaults() {
         cgIntrUiStateDefaults(e, a0, winName)
         return
     }
-    if nm == "ui_set_title" {
+    if nm == IUiSetTitle() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExprAddr(a1)
@@ -7811,12 +7828,12 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(8)
         return
     }
-    if nm == "ui_set_caption" or nm == "ui_set_text" {
+    if nm == IUiSetCaption() or nm == IUiSetText() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        if nm == "ui_set_caption" {
+        if nm == IUiSetCaption() {
             cgPushIntLit(cgRtuiPropCaption)
         } else {
             cgPushIntLit(cgRtuiPropText)
@@ -7827,7 +7844,7 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(16)
         return
     }
-    if nm == "ui_set_textview_text" {
+    if nm == IUiSetTextviewText() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
@@ -7838,12 +7855,12 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(12)
         return
     }
-    if nm == "ui_get_checked" or nm == "ui_get_enabled" {
+    if nm == IUiGetChecked() or nm == IUiGetEnabled() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        if nm == "ui_get_checked" {
+        if nm == IUiGetChecked() {
             cgPushIntLit(cgRtuiPropChecked)
         } else {
             cgPushIntLit(cgRtuiPropEnabled)
@@ -7852,12 +7869,12 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(12)
         return
     }
-    if nm == "ui_set_checked" or nm == "ui_set_enabled" {
+    if nm == IUiSetChecked() or nm == IUiSetEnabled() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        if nm == "ui_set_checked" {
+        if nm == IUiSetChecked() {
             cgPushIntLit(cgRtuiPropChecked)
         } else {
             cgPushIntLit(cgRtuiPropEnabled)
@@ -7876,14 +7893,14 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(14)
         return
     }
-    if nm == "ui_get_width" or nm == "ui_get_height" or nm == "ui_get_selected" {
+    if nm == IUiGetWidth() or nm == IUiGetHeight() or nm == IUiGetSelected() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
-        if nm == "ui_get_width" {
+        if nm == IUiGetWidth() {
             cgPushIntLit(cgRtuiPropWidth)
-        } else if nm == "ui_get_height" {
+        } else if nm == IUiGetHeight() {
             cgPushIntLit(cgRtuiPropHeight)
         } else {
             cgPushIntLit(cgRtuiPropSelected)
@@ -7892,7 +7909,7 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(12)
         return
     }
-    if nm == "ui_set_selected" {
+    if nm == IUiSetSelected() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
@@ -7904,7 +7921,7 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(16)
         return
     }
-    if nm == "ui_menu_enable" {
+    if nm == IUiMenuEnable() {
         cgExpr(a0)
         a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
         cgExpr(a1)
@@ -7917,7 +7934,7 @@ func cgIntrUi(e: int, nm: string) {
         cgCleanupStack(10)
         return
     }
-    if nm == "ui_cancel" {
+    if nm == IUiCancel() {
         // `cancel` writes 1 through the dispatcher-owned scratch pointer
         // (cgUiCurCancelOff's own below-A5 cell) IUiSetCancelFlag already
         // pointed at this window's own cancelFlag: MOVEA.L off(A5),A0
@@ -7927,35 +7944,35 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmImm, 0, 1, AmInd, 0, 0)
         return
     }
-    if nm == "ui_canvas_clear" {
+    if nm == IUiCanvasClear() {
         cgIntrUiForward(e, rnUiCanvasClear)
         return
     }
-    if nm == "ui_canvas_line" {
+    if nm == IUiCanvasLine() {
         cgIntrUiForward(e, rnUiCanvasLine)
         return
     }
-    if nm == "ui_canvas_rect" {
+    if nm == IUiCanvasRect() {
         cgIntrUiForward(e, rnUiCanvasRect)
         return
     }
-    if nm == "ui_canvas_circle" {
+    if nm == IUiCanvasCircle() {
         cgIntrUiForward(e, rnUiCanvasCircle)
         return
     }
-    if nm == "ui_canvas_fill_circle" {
+    if nm == IUiCanvasFillCircle() {
         cgIntrUiForward(e, rnUiCanvasFillCircle)
         return
     }
-    if nm == "ui_canvas_pattern" {
+    if nm == IUiCanvasPattern() {
         cgIntrUiForward(e, rnUiCanvasPattern)
         return
     }
-    if nm == "ui_canvas_draw_text" {
+    if nm == IUiCanvasDrawText() {
         cgIntrUiCanvasDrawText(e)
         return
     }
-    if nm == "ui_set_cancel_flag" {
+    if nm == IUiSetCancelFlag() {
         // Void; one ptr arg -- the synthesized clar_ui_fire_winevent's
         // RTUI_EV_CLOSEREQUEST arm points clar_ui_cur_cancel-equivalent
         // storage at the runtime's own cancelFlag before calling into the
@@ -7965,7 +7982,7 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 5, cgUiCurCancelOff)
         return
     }
-    if nm == "ui_value_at_ptr" {
+    if nm == IUiValueAtPtr() {
         // *(T *)(a0) -- read the by-value KRec/KStr result straight out
         // of the address a0 evaluates to; only reached in a str/rec
         // MATERIALIZATION context (cgEmitStoreStr/cgEmitStoreRec's own
@@ -7975,7 +7992,7 @@ func cgIntrUi(e: int, nm: string) {
         log("cg68k: ui_value_at_ptr: str/rec result materialization not wired this task")
         quit 1
     }
-    if nm == "ui_addr_of_global" {
+    if nm == IUiAddrOfGlobal() {
         // LEA d16(A5),D0 -- a0 is always a bare EVarRef(global) (ir.cla's
         // own doc comment); cgExprAddr already resolves that to the
         // global's own A5-relative address.
@@ -7983,17 +8000,17 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmAn, 0, 0, AmDn, 0, 0)
         return
     }
-    if nm == "ui_get_title" or nm == "ui_get_field_text" or nm == "ui_get_label_text" {
+    if nm == IUiGetTitle() or nm == IUiGetFieldText() or nm == IUiGetLabelText() {
         // KStr (fixed-capacity, non-scalar) -- never reaches cgExpr's
         // VALUE context by construction (cgEmitStoreStr's own arms handle
         // all three, Task 14/native-gaps-cleanup Task 5); a real reach
         // here would mean some OTHER src context fed a KStr EIntr straight
         // to cgExpr, the exact hazard that function's own header comment
         // fails loud on.
-        log("cg68k: " + nm + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
+        log("cg68k: " + poolGet(nm) + ": KStr materialization reached cgExpr value context -- bind/store it instead (cgEmitStoreStr's own arm)")
         quit 1
     }
-    if nm == "ui_get_textview_text" {
+    if nm == IUiGetTextviewText() {
         // Task 14 (native-5e gate, textwidgets.cla): `textview.text` read
         // -- KText is scalar-sized (a bare ptr, cgIsScalarKind), so unlike
         // ui_get_field_text/ui_get_title's KStr materialize-in-place
@@ -8024,7 +8041,7 @@ func cgIntrUi(e: int, nm: string) {
         a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
         return
     }
-    if nm == "ui_ask_open" or nm == "ui_ask_save" or nm == "ui_ask_save_changes" or nm == "ui_form_is_new" {
+    if nm == IUiAskOpen() or nm == IUiAskSave() or nm == IUiAskSaveChanges() or nm == IUiFormIsNew() {
         // Task 14 (native-5e gate, dialogs.cla/texteditor.cla): askOpen/
         // askSave/askSaveChanges/x.isNew are ALREADY-PORTED plain Clarus
         // functions (uidialogs.cla's rtUiAskOpen/rtUiAskSave/
@@ -8035,7 +8052,7 @@ func cgIntrUi(e: int, nm: string) {
         // (fpAddrable's own address-of for an out-param, fpStrAddr's own
         // address-of for a read-only str), no pascal/trap marshaling of
         // any kind needed here at all.
-        if nm == "ui_ask_open" {
+        if nm == IUiAskOpen() {
             // askOpen(path, types) -- native-gaps-cleanup Task 2: types
             // (a1) is a new trailing arg, same by-address Str255 shape as
             // path -- forward it exactly like ui_ask_save's own suggested
@@ -8051,7 +8068,7 @@ func cgIntrUi(e: int, nm: string) {
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             cgCallFunc(fi)
             cgCleanupStack(8)
-        } else if nm == "ui_ask_save" {
+        } else if nm == IUiAskSave() {
             fi = findIRFuncIdxByName(rnUiAskSave)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskSave not found/reachable")
@@ -8063,7 +8080,7 @@ func cgIntrUi(e: int, nm: string) {
             a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             cgCallFunc(fi)
             cgCleanupStack(8)
-        } else if nm == "ui_ask_save_changes" {
+        } else if nm == IUiAskSaveChanges() {
             fi = findIRFuncIdxByName(rnUiAskSaveChanges)
             if fi == -1 or not shakeReachable(fi) {
                 log("cg68k: rtUiAskSaveChanges not found/reachable")
@@ -8083,12 +8100,12 @@ func cgIntrUi(e: int, nm: string) {
         }
         return
     }
-    if nm == "ui_edit" {
+    if nm == IUiEdit() {
         cgIntrUiEdit(e, a0, a1, a2, winName)
         return
     }
 
-    log("cg68k: cgIntrUi: unsupported UI intrinsic " + nm)
+    log("cg68k: cgIntrUi: unsupported UI intrinsic " + poolGet(nm))
     quit 1
 }
 
@@ -8427,7 +8444,7 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
     // ui_value_at_ptr (Task 14, native-5e): a raw pointer dereference --
     // already addressable via cgExprAddr's own dedicated arm, same
     // reasoning as that arm's own doc comment.
-    return ak == EIntr and poolGet(irIntrName(a)) == "ui_value_at_ptr"
+    return ak == EIntr and irIntrName(a) == IUiValueAtPtr()
 }
 
 // cgPushArgMaterialized handles a KStr/KRec call argument whose expr is

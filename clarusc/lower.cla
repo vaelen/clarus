@@ -3311,11 +3311,20 @@ func lowReturn(s: int): int {
 // the ASSIGNMENT form to IUiSetTitle directly, before ever reaching
 // lowSelect/lowWindowInstSelect (whose own `.title` case, IUiGetTitle,
 // handles the READ form instead -- see that function's doc comment).
+// lowTitleIdx memoizes "title"'s own interned pool index (layer1-compiler-
+// perf phase Task 14, findings 1.5) -- isWindowTitleSelect compares
+// selectName(e) (already an interned int) directly against it instead of
+// poolGet'ing a fresh string copy just to re-compare.
+var lowTitleIdx: int = -1
+
 func isWindowTitleSelect(e: int): bool {
     if exprKind(e) != ExSelect {
         return false
     }
-    if poolGet(selectName(e)) != "title" {
+    if lowTitleIdx == -1 {
+        lowTitleIdx = intern("title")
+    }
+    if selectName(e) != lowTitleIdx {
         return false
     }
     return typeKind(exprTypeGet(selectX(e))) == TyWindowRef

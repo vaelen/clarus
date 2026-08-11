@@ -4321,3 +4321,196 @@ func IUiAddrOfGlobal(): int {
     }
     return iUiAddrOfGlobalIdx
 }
+
+// ================================================================
+// Bin/Un operator-spelling constants (layer1-compiler-perf phase Task 14,
+// findings 1.5) -- SAME memoized-intern shape as the intrinsic-name block
+// above, but for the literal op spellings lower.cla writes into an
+// EBin/EUn node's Op field (irBinOp/irUnOp -- already an interned pool
+// index; only cg68k.cla's cgCcFor/cgIsCompareOp/cgArith/cgBin/cgUn used to
+// poolGet it back to a string just to re-compare against these SAME
+// literals). Every one of these is exactly the operator spelling the
+// checker/lower pipeline already writes -- see cprint.cla's cOp for the
+// twin C-side spelling table this mirrors.
+// -- arithmetic/bitwise/shift --
+var iOpAddIdx: int = -1
+
+func IOpAdd(): int {
+    if iOpAddIdx == -1 {
+        iOpAddIdx = intern("+")
+    }
+    return iOpAddIdx
+}
+
+var iOpSubIdx: int = -1
+
+func IOpSub(): int {
+    if iOpSubIdx == -1 {
+        iOpSubIdx = intern("-")
+    }
+    return iOpSubIdx
+}
+
+var iOpMulIdx: int = -1
+
+func IOpMul(): int {
+    if iOpMulIdx == -1 {
+        iOpMulIdx = intern("*")
+    }
+    return iOpMulIdx
+}
+
+var iOpDivIdx: int = -1
+
+func IOpDiv(): int {
+    if iOpDivIdx == -1 {
+        iOpDivIdx = intern("/")
+    }
+    return iOpDivIdx
+}
+
+var iOpModIdx: int = -1
+
+func IOpMod(): int {
+    if iOpModIdx == -1 {
+        iOpModIdx = intern("mod")
+    }
+    return iOpModIdx
+}
+
+var iOpBitAndIdx: int = -1
+
+func IOpBitAnd(): int {
+    if iOpBitAndIdx == -1 {
+        iOpBitAndIdx = intern("&")
+    }
+    return iOpBitAndIdx
+}
+
+var iOpBitOrIdx: int = -1
+
+func IOpBitOr(): int {
+    if iOpBitOrIdx == -1 {
+        iOpBitOrIdx = intern("|")
+    }
+    return iOpBitOrIdx
+}
+
+var iOpBitXorIdx: int = -1
+
+func IOpBitXor(): int {
+    if iOpBitXorIdx == -1 {
+        iOpBitXorIdx = intern("^")
+    }
+    return iOpBitXorIdx
+}
+
+var iOpShlIdx: int = -1
+
+func IOpShl(): int {
+    if iOpShlIdx == -1 {
+        iOpShlIdx = intern("<<")
+    }
+    return iOpShlIdx
+}
+
+var iOpShrIdx: int = -1
+
+func IOpShr(): int {
+    if iOpShrIdx == -1 {
+        iOpShrIdx = intern(">>")
+    }
+    return iOpShrIdx
+}
+
+// -- comparisons --
+var iOpEqIdx: int = -1
+
+func IOpEq(): int {
+    if iOpEqIdx == -1 {
+        iOpEqIdx = intern("==")
+    }
+    return iOpEqIdx
+}
+
+var iOpNeIdx: int = -1
+
+func IOpNe(): int {
+    if iOpNeIdx == -1 {
+        iOpNeIdx = intern("!=")
+    }
+    return iOpNeIdx
+}
+
+var iOpLtIdx: int = -1
+
+func IOpLt(): int {
+    if iOpLtIdx == -1 {
+        iOpLtIdx = intern("<")
+    }
+    return iOpLtIdx
+}
+
+var iOpLeIdx: int = -1
+
+func IOpLe(): int {
+    if iOpLeIdx == -1 {
+        iOpLeIdx = intern("<=")
+    }
+    return iOpLeIdx
+}
+
+var iOpGtIdx: int = -1
+
+func IOpGt(): int {
+    if iOpGtIdx == -1 {
+        iOpGtIdx = intern(">")
+    }
+    return iOpGtIdx
+}
+
+var iOpGeIdx: int = -1
+
+func IOpGe(): int {
+    if iOpGeIdx == -1 {
+        iOpGeIdx = intern(">=")
+    }
+    return iOpGeIdx
+}
+
+// -- logical/unary --
+var iOpAndIdx: int = -1
+
+func IOpAnd(): int {
+    if iOpAndIdx == -1 {
+        iOpAndIdx = intern("and")
+    }
+    return iOpAndIdx
+}
+
+var iOpOrIdx: int = -1
+
+func IOpOr(): int {
+    if iOpOrIdx == -1 {
+        iOpOrIdx = intern("or")
+    }
+    return iOpOrIdx
+}
+
+var iOpNotIdx: int = -1
+
+func IOpNot(): int {
+    if iOpNotIdx == -1 {
+        iOpNotIdx = intern("not")
+    }
+    return iOpNotIdx
+}
+
+var iOpBitNotIdx: int = -1
+
+func IOpBitNot(): int {
+    if iOpBitNotIdx == -1 {
+        iOpBitNotIdx = intern("~")
+    }
+    return iOpBitNotIdx
+}
