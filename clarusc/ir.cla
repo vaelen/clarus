@@ -1111,7 +1111,11 @@ func irReset() {
     // compile's pool generation the next time it's called (every one of
     // these functions is called from lowerProgram, which always runs AFTER
     // irReset(), so re-interning here is exactly as safe/timed as
-    // irFuncIdxByName's own clear() just above).
+    // irFuncIdxByName's own clear() just above). Adding a new IXxx()
+    // intrinsic-name accessor below REQUIRES adding its own `iNewIdx = -1`
+    // reset line here too -- internal/testsuite's
+    // TestLazyInternGuardsAreReset (memory-leak-fix Task 7 fix round 1)
+    // enforces this mechanically and will fail T1 if you forget.
     iStrConcatIdx = -1
     iStrConcatCharIdx = -1
     iStrPrependCharIdx = -1

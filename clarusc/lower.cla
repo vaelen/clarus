@@ -70,10 +70,15 @@ var lowSwitchN: int
 // uiMenuItemIdx maps (menu, item) to that item's 0-based position in its
 // OWN menu's declared entry list, separators included (matching
 // rt_ui_item_desc[]'s array order -- see probe_ui.c's kProbeMenuHandlers).
-// Both are progGen-prefixed exactly like check.cla's own menuItems/menuKey,
-// for the same reason (a differential harness may lower more than one
-// program per process; uiMenuCount is reset to 0 in lowerProgram, alongside
-// lowSwitchN, so a second program's menus renumber from 0 again). Relies on
+// uiMenuIdx is progGen-prefixed directly (its own inline key, not
+// menuKey); uiMenuItemIdx is keyed via check.cla's menuKey, which USED to
+// be progGen-prefixed too but memory-leak-fix Task 7 dropped that
+// namespacing (menuKey is shared with check.cla's own menuItems, folded
+// into checkReset instead) -- so uiMenuItemIdx now gets an explicit
+// fresh-reassign of its own at the top of lowerProgram (see that reset's
+// own comment) rather than relying on namespacing. uiMenuCount is reset
+// to 0 in lowerProgram, alongside lowSwitchN, so a second program's menus
+// renumber from 0 again either way. Relies on
 // every menu being declared before any code that references it, which is
 // the only order Clarus source ever writes it in (see the language
 // reference's own examples) -- lowerProgram's single top-to-bottom pass
@@ -6281,6 +6286,7 @@ func lowUiSynthExternName(externNameIdx: int): int {
 func lowerProgram(declHead: int): int {
     var d: int
     var freshStrIdx: map of int
+    var freshUiMenuItemIdx: map of int
 
     lowSwitchN = 0
     uiMenuCount = 0
@@ -6295,6 +6301,18 @@ func lowerProgram(declHead: int): int {
     // compile's pool generation instead of reusing a stale index from a
     // prior compile.
     lowTitleIdx = -1
+    // uiMenuItemIdx (memory-leak-fix Task 7, fix round 1): lost its
+    // cross-compile namespacing when check.cla's menuKey dropped progGen
+    // (Task 7's own checkReset fold-in) -- menuKey is shared between
+    // check.cla's menuItems (now reset every checkReset) and this map
+    // (never reset, per its own decl comment's "persist" precedent), so
+    // without an explicit reset here it grows unboundedly across
+    // compiles. Correctness survives regardless (every read at
+    // :3493/:5329 is gated by the checker having already resolved the
+    // menu/item against the now-per-compile-reset menuItems), but
+    // unbounded growth violates this phase's bounded-memory charter.
+    // Fresh-reassign, matching lowStrIdx's own idiom just above.
+    uiMenuItemIdx = freshUiMenuItemIdx
     lowBuiltinSaveChoiceLayout()
     // ARC Task 6 stopped calling the window-var/globals escape prepasses
     // (cpEmitWinReleaseFn/cpEmitGlobalsInit release unconditionally now);
