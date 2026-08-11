@@ -660,6 +660,19 @@ func driveProgress(msg: string) {
     feProgress(line)
 }
 
+// driveProgressStep (live-log phase): the counted-progress front-end
+// seam -- "cur of total" for a counted loop, today cg68k's per-segment
+// emission. Same want68k gate as driveProgress: the C emit lane and
+// check-only/appinfo modes stay byte-silent. Front ends: main.cla
+// no-op (its per-segment feProgress lines already cover it);
+// macgui.cla renders the Log window's Status-label bar.
+func driveProgressStep(cur: int, total: int) {
+    if not want68k {
+        return
+    }
+    feProgressStep(cur, total)
+}
+
 // driveProgressPhase: driveProgress plus a "(duration, N ticks)" suffix
 // measured since the previous phase mark; advances the mark.
 func driveProgressPhase(msg: string) {

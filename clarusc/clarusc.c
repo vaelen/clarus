@@ -6667,6 +6667,7 @@ static clar_str_255 clar_fn_findRtDir(clar_str_255 cv_probeFile);
 static clar_str_255 clar_fn_rtModuleKey(clar_str_255 cv_mod);
 static int32_t clar_fn_lastDecl(int32_t cv_head);
 static void clar_fn_driveProgress(clar_str_255 cv_msg);
+static void clar_fn_driveProgressStep(int32_t cv_cur, int32_t cv_total);
 static void clar_fn_driveProgressPhase(clar_str_255 cv_msg);
 static void clar_fn_driveProgressDone(void);
 static int32_t clar_fn_expand(clar_str_255 cv_rawPath, int32_t cv_entry, clar_str_255 cv_key);
@@ -6679,6 +6680,7 @@ static int32_t clar_fn_driveEmit68k(clar_str_255 cv_outPath, int32_t cv_listing,
 static int32_t clar_fn_feReadSource(clar_str_255 cv_path, clar_str_255 cv_key, rt_text * cv_out);
 static int32_t clar_fn_feHasKey(clar_str_255 cv_key);
 static void clar_fn_feProgress(clar_str_255 cv_line);
+static void clar_fn_feProgressStep(int32_t cv_cur, int32_t cv_total);
 static void clar_fn_cliResolveBake(rt_list * cv_bakePaths);
 static void clar_fn_handler_App_startCLI(rt_list * cv_args);
 
@@ -65162,6 +65164,7 @@ static int32_t clar_fn_cg68ProgramFork(clar_str_255 cv_outPath, int32_t cv_listi
                 return cv___ret92;
             }
         }
+        clar_fn_driveProgressStep(cv_s, cv_cgSegCount);
         clar_str_255 t44;
         t44 = clar_fn_numToStr(cv_s);
         clar_str_255 t45;
@@ -66726,6 +66729,13 @@ static void clar_fn_driveProgress(clar_str_255 cv_msg) {
     clar_fn_feProgress(cv_line);
 }
 
+static void clar_fn_driveProgressStep(int32_t cv_cur, int32_t cv_total) {
+    if (!(cv_want68k)) {
+        return;
+    }
+    clar_fn_feProgressStep(cv_cur, cv_total);
+}
+
 static void clar_fn_driveProgressPhase(clar_str_255 cv_msg) {
     int32_t cv_t;
     cv_t = 0;
@@ -67703,6 +67713,9 @@ static int32_t clar_fn_feHasKey(clar_str_255 cv_key) {
 
 static void clar_fn_feProgress(clar_str_255 cv_line) {
     rt_log((const uint8_t*)&(cv_line));
+}
+
+static void clar_fn_feProgressStep(int32_t cv_cur, int32_t cv_total) {
 }
 
 static void clar_fn_cliResolveBake(rt_list * cv_bakePaths) {

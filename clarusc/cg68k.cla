@@ -12247,6 +12247,7 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
             }
         }
 
+        driveProgressStep(s, cgSegCount)
         progressLine = "Emitted segment " + numToStr(s)
         driveProgressPhase(progressLine)
         s = s + 1
