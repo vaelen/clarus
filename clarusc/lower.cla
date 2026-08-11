@@ -6000,14 +6000,34 @@ func lowSynthReleaseVars() {
     shakeAddRoot(fnameIdx)
 }
 
-// lowSynthTableRows builds clar_ui_fire_staterows(rowsIdx): ptr -- one arm
-// per irGlobals entry, returning that global's own address (IUiAddrOfGlobal),
-// at EXACTLY the position uiblob.cla's uibGlobalIndex already uses for a
-// table's Table.rowsIdx field (the plan's ratified "rowsIdx = the bound
-// global's irGlobals declaration-order position" convention, Task 5) --
-// every global gets an arm (not just ones some table happens to bind),
+// lowSynthTableRows builds clar_ui_fire_staterows(rowsIdx): ptr, returning
+// the bound global's own address (IUiAddrOfGlobal) at EXACTLY the position
+// uiblob.cla's uibGlobalIndex already uses for a table's Table.rowsIdx field
+// (the plan's ratified "rowsIdx = the bound global's irGlobals
+// declaration-order position" convention, Task 5) -- the position
+// convention itself is untouched, arm conditions still test the global's
+// raw declaration-order index `i`.
+//
+// Originally (Task 6) this emitted one arm per irGlobals entry outright --
+// "every global gets an arm (not just ones some table happens to bind),
 // since that position is a pure structural fact about the program, cheap
-// to cover exhaustively and exactly as fail-closed-safe either way.
+// to cover exhaustively." That stopped being cheap at self-hosting scale:
+// this phase's macgui.cla split added ~210 module globals, pushing the
+// program past ~800 irGlobals entries, and the exhaustive if-chain blew
+// clar_ui_fire_staterows past the 32KB single-function segment limit
+// (`function clar_ui_fire_staterows exceeds the 32KB segment limit`),
+// blocking the ClarusC.APPL build entirely (unplanned Task 8b).
+//
+// Fixed invariant: emit an arm ONLY for globals whose IR type is a list
+// (irtKind(irGlobalType(i)) == KList). checkRowsProperty (check.cla) only
+// ever lets a `rows:` binds target a `list of record` global -- so no
+// non-list-typed global can ever reach this function as a live rowsIdx at
+// runtime; the existing fail-closed panic default (lowSynthPanic below)
+// already covers every skipped position exactly as it covered gaps
+// before. Not narrowed further to list-of-record specifically (i.e. not
+// checking irtElem(...) == KRec too) -- KList alone is what the checker's
+// rule structurally guarantees is reachable, and record-typed elements
+// aren't needed to make that guarantee hold.
 func lowSynthTableRows() {
     var paramsHead: int
     var conds: list of int
@@ -6020,8 +6040,10 @@ func lowSynthTableRows() {
 
     i = 0
     while i < irGlobals.count {
-        conds.add(lowSynthEqInt("rowsIdx", i))
-        bodies.add(newIRReturn(newIRIntr(IUiAddrOfGlobal(), newIRVarRef(irGlobalName(i), true, irGlobalType(i)), irPtrT)))
+        if irtKind(irGlobalType(i)) == KList {
+            conds.add(lowSynthEqInt("rowsIdx", i))
+            bodies.add(newIRReturn(newIRIntr(IUiAddrOfGlobal(), newIRVarRef(irGlobalName(i), true, irGlobalType(i)), irPtrT)))
+        }
         i = i + 1
     }
 

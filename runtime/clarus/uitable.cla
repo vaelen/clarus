@@ -135,8 +135,10 @@ external func UiNumToString(theNum: int, theString: ptr) = trap 0xA9EE reg
 
 // ---- Reverse-waist / per-backend glue externs this file consumes ----
 // UiTableRows: synthesized by clarusc/lower.cla's lowSynthTableRows (Task
-// 6) into clar_ui_fire_staterows -- one arm per irGlobals entry, returning
-// that global's OWN ADDRESS. Read through EVERY draw/sync call, never
+// 6; arm set narrowed to list-typed globals only by Task 8b, layer1-
+// compiler-perf, after the original one-arm-per-irGlobals-entry chain blew
+// the 32KB segment limit at self-hosting scale) into clar_ui_fire_staterows,
+// returning that global's OWN ADDRESS. Read through EVERY draw/sync call, never
 // cached (rt_ui.h:250-267's double-indirection contract: the `rt_list *`
 // stored at that address can be reassigned by the program at any time,
 // e.g. a fresh `list of` value; this port never observes that case in a
