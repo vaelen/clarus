@@ -809,8 +809,8 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   harmless on the host (malloc doesn't degrade with fragmentation) but
   the direct cause of the Mac's 2-7x compile-#2 slowdown (a Memory-Manager
   zone that fills with dead-but-live blocks compile #2 must walk/compact
-  around). 8 tasks, commits `bf07436..` (this task's own commits below);
-  full ledger: `.superpowers/sdd/2026-08-12-memory-leak-fix/progress.md`;
+  around). 8 tasks, commits `bf07436..d00c2e8`; full ledger:
+  `.superpowers/sdd/2026-08-12-memory-leak-fix/progress.md`;
   root-cause writeup: `docs/superpowers/specs/
   2026-08-12-cross-compile-degradation-findings.md` (now annotated
   `[FIXED]`/`[DEFERRED]` per item, see below).
