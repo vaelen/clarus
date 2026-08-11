@@ -57,10 +57,19 @@ var parseSawNonInclude: bool
 // since each call overwrites and is read back before any other call runs.
 var parseArgsAppleTalk: bool
 
-// Contextual-keyword name indices, pre-interned once and cached in module
-// globals (tok.cla's kwInit pattern -- see its own doc comment for why this
-// can't be a plain global initializer): curIsIdentIdx below compares
-// against these instead of curIsIdentText's poolGet + string compare.
+// Contextual-keyword name indices, pre-interned once PER COMPILE and
+// cached in module globals (see the doc comment for why this can't be a
+// plain global initializer): curIsIdentIdx below compares against these
+// instead of curIsIdentText's poolGet + string compare. cwInit's own
+// guard (cwInited) is a process-lifetime lazy-init idiom -- SAME class as
+// cg68k.cla's rnInit()/rnInited and check.cla's cnInit()/cnInited (see
+// their own doc comments) -- so parseReset resets cwInited = false,
+// forcing a fresh re-intern against lib.cla's CURRENT pool generation
+// (memory-leak-fix Task 7's libReset()) every compile, not just the first
+// one in the process. Found alongside cnInit's own identical gap while
+// wiring libReset() -- same audit blind spot: a lazy-guard interning
+// helper wrongly assumed safe because the intern pool used to never
+// reset.
 var cwInited: bool
 var cwMod: int
 var cwAppletalk: int
@@ -2385,5 +2394,9 @@ func parseReset() {
     parseIdx = 0
     parseAborted = false
     parseSawNonInclude = false
+    // cwInit's own guard would otherwise skip re-interning cw* after the
+    // first compile in the process -- see cwInited's own doc comment
+    // (memory-leak-fix Task 7).
+    cwInited = false
     parseSyncCur()
 }

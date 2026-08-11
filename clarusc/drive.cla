@@ -432,6 +432,28 @@ func driveFreshIntMap(): map of int {
 // ever invoked once, at process start, by main.cla's startCLI -- before
 // EVERY driveCompile call.
 //
+// memory-leak-fix Task 7: now calls libReset() FIRST, before anything
+// else here -- this FLIPS the historical "lib.cla's intern pool is
+// shared, unbounded-growth-but-harmless infrastructure, never reset"
+// exemption this comment used to carry (see the .superpowers/sdd/
+// 2026-08-12-memory-leak-fix/task-6-report.md audit). Every table that
+// leaned on pool-index stability across compiles has its own reset in
+// the same battery: ir.cla's irReset() (irFuncIdxByName,
+// irLayoutNeededByName, irRcWalkNeededByName, ...) and check.cla's
+// checkReset() already run unconditionally every driveCompile call (see
+// their own doc comments), so they're covered automatically. The two
+// exceptions the audit found -- rnInited (cg68k.cla) and
+// shakeFuncIdxByName (shake.cla) -- did NOT have an existing reset point
+// and are handled here / at shake.cla's own shakeProgram top,
+// respectively: rnInit() (cg68k.cla) is guarded by a process-lifetime
+// rnInited flag, so without re-arming it here, every compile after the
+// first would keep using rn* globals interned against the OLD
+// (pre-libReset) pool generation -- stale, silently wrong indices into
+// the NEW pool. Resetting rnInited = false here forces the next
+// cg68ProgramFork's rnInit() call to re-intern every rn* name fresh,
+// AFTER libReset() just above, and BEFORE cg68Measure's first
+// cgEmitFunc call (rnInit's own sole call site) ever needs one.
+//
 // Deliberately does NOT touch:
 //   - ir.cla's arenas: irReset() already runs inside driveCompile itself
 //     (right before lowerProgram), unconditionally, every call.
@@ -443,15 +465,9 @@ func driveFreshIntMap(): map of int {
 //     shakeMarks, ...): cg68k.cla's own "Module state" header documents
 //     these as "rebuilt fresh at the top of every cg68Program() call"
 //     (now cg68Measure, reached via driveEmit68kFork) -- reassigned, not
-//     appended-to, every call.
-//   - lib.cla's strPool/strIndex (the intern pool): shared, unbounded-
-//     growth-but-harmless infrastructure, not a per-compile arena --
-//     every index a cleared program (diags/AST/IR) might have referenced
-//     is gone the moment THOSE reset, so a stale pool entry is simply
-//     never looked up again. The differential test harness already
-//     tolerates this same growth across many compiles in one process;
-//     macgui.cla's own compile-then-exit-eventually lifetime is no
-//     different.
+//     appended-to, every call. shakeFuncIdxByName is reset at the top of
+//     shakeProgram itself (shake.cla, memory-leak-fix Task 7) -- same
+//     reasoning, kept local to shake.cla rather than duplicated here.
 //   - rtDir/haveRtDir: deliberately PRESERVED across compiles (once
 //     resolved, the runtime-module directory doesn't change), same
 //     reasoning findRtDir's own lazy-fill-once design already assumes.
@@ -461,6 +477,8 @@ func driveFreshIntMap(): map of int {
 //     their process-start zero value (empty/0) for every compile --
 //     nothing to reset.
 func driveReset() {
+    libReset()
+    rnInited = false
     seenPaths = driveFreshIntMap()
     asmHeads = driveFreshIntList()
     asmTails = driveFreshIntList()

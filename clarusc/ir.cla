@@ -814,9 +814,9 @@ func irRcWalkNeeded(nameIdx: int): bool {
 // under the intern-pool invariant -- Global Constraints; findings 1.4)
 // rather than a side map -- a program declares at most a handful of
 // externals, and a plain list is what irReset already knows how to clear
-// (a name->flag map, as irLayoutNeededByName/irRcWalkNeededByName already
-// demonstrate, would need its own reset the differential harness doesn't
-// currently give those two either; a list avoids the question entirely).
+// (a name->flag map needs its own explicit reset too; irLayoutNeededByName/
+// irRcWalkNeededByName now get exactly that from irReset() below --
+// memory-leak-fix Task 6 -- a list just avoids the question entirely).
 var irExternNames: list of int
 var irExternRetTys: list of int
 var irExternParamStart: list of int
@@ -1093,6 +1093,187 @@ func irReset() {
     irErrT = irSimpleType(KErr)
     irPtrT = irSimpleType(KPtr)
     irWordT = irSimpleType(KWord)
+
+    // memory-leak-fix Task 7: the IXxx() intrinsic-name-index family below
+    // (~162 functions, each `var iXxxIdx: int = -1` + `if iXxxIdx == -1 {
+    // iXxxIdx = intern("xxx") }`) is the SAME lazy-guard-interning idiom as
+    // cg68k.cla's rnInit()/rnInited, check.cla's cnInit()/cnInited,
+    // parse.cla's cwInit()/cwInited, and tok.cla's kwInit()/kwInited (see
+    // their own doc comments) -- just with a per-variable -1 sentinel
+    // instead of one shared bool. Found empirically: DoubleCompile's
+    // alternating-file gate (dblcompile.cla) miscompiled a SECOND compile's
+    // synthesized clar_ui_fire_widget body, reading a stale iLogIdx (from
+    // compile #1's pool generation) that happened to collide with an
+    // unrelated string in compile #2's freshly-reset pool -- textbook
+    // silent-wrong-output stale-index corruption, the exact failure mode
+    // libReset() exists to guard against. Resetting each back to -1 here
+    // forces every IXxx() call to re-intern fresh against the CURRENT
+    // compile's pool generation the next time it's called (every one of
+    // these functions is called from lowerProgram, which always runs AFTER
+    // irReset(), so re-interning here is exactly as safe/timed as
+    // irFuncIdxByName's own clear() just above).
+    iStrConcatIdx = -1
+    iStrConcatCharIdx = -1
+    iStrPrependCharIdx = -1
+    iStrCmpIdx = -1
+    iStrLenIdx = -1
+    iStrIndexIdx = -1
+    iStrSetIndexIdx = -1
+    iStrFromBytesIdx = -1
+    iStrToBytesIdx = -1
+    iStrCoerceIdx = -1
+    iStrSliceIdx = -1
+    iStrIndexOfStrIdx = -1
+    iStrIndexOfCharIdx = -1
+    iTextStoreIdx = -1
+    iTextConcatIdx = -1
+    iTextConcatSLIdx = -1
+    iTextCmpIdx = -1
+    iTextLenIdx = -1
+    iTextIndexIdx = -1
+    iTextSetIndexIdx = -1
+    iTextFromBytesIdx = -1
+    iTextToBytesIdx = -1
+    iTextSliceIdx = -1
+    iTextIndexOfStrIdx = -1
+    iTextIndexOfCharIdx = -1
+    iTextAppendStrIdx = -1
+    iTextAppendCharIdx = -1
+    iTextAppendTextIdx = -1
+    iTextOfStrIdx = -1
+    iTextFreeVarIdx = -1
+    iListPushIdx = -1
+    iListPopIdx = -1
+    iListShiftIdx = -1
+    iListUnshiftIdx = -1
+    iListPushRetainIdx = -1
+    iListUnshiftRetainIdx = -1
+    iListFirstIdx = -1
+    iListLastIdx = -1
+    iListRemoveIdx = -1
+    iListSetIdx = -1
+    iListSetRetainIdx = -1
+    iListCountIdx = -1
+    iListClearIdx = -1
+    iListClearDeepIdx = -1
+    iListFreeVarIdx = -1
+    iMapSetIdx = -1
+    iMapSetRetainIdx = -1
+    iMapGetIdx = -1
+    iMapGetDvIdx = -1
+    iMapGetDvBirthIdx = -1
+    iMapHasIdx = -1
+    iMapRemoveIdx = -1
+    iMapCountIdx = -1
+    iMapClearIdx = -1
+    iMapClearDeepIdx = -1
+    iMapFreeVarIdx = -1
+    iSortedMapSetIdx = -1
+    iSortedMapSetRetainIdx = -1
+    iSortedMapGetIdx = -1
+    iSortedMapGetDvIdx = -1
+    iSortedMapGetDvBirthIdx = -1
+    iSortedMapHasIdx = -1
+    iSortedMapRemoveIdx = -1
+    iSortedMapCountIdx = -1
+    iSortedMapClearIdx = -1
+    iSortedMapClearDeepIdx = -1
+    iSortedMapFreeVarIdx = -1
+    iIntMapSetIdx = -1
+    iIntMapSetRetainIdx = -1
+    iIntMapGetIdx = -1
+    iIntMapGetDvIdx = -1
+    iIntMapGetDvBirthIdx = -1
+    iIntMapHasIdx = -1
+    iIntMapRemoveIdx = -1
+    iIntMapCountIdx = -1
+    iIntMapClearIdx = -1
+    iIntMapClearDeepIdx = -1
+    iIntMapFreeVarIdx = -1
+    iRetainIdx = -1
+    iReleaseIdx = -1
+    iFixMulIdx = -1
+    iFixDivIdx = -1
+    iAlertIdx = -1
+    iQuitIdx = -1
+    iLogIdx = -1
+    iPeekBIdx = -1
+    iPeekWIdx = -1
+    iPeekLIdx = -1
+    iPokeBIdx = -1
+    iPokeWIdx = -1
+    iPokeLIdx = -1
+    iXRecStrReadIdx = -1
+    iXRecStrWriteIdx = -1
+    iLastErrCodeIdx = -1
+    iLastErrMsgIdx = -1
+    iLastErrIdx = -1
+    iFileReadTextIdx = -1
+    iFileWriteTextIdx = -1
+    iFileNameIdx = -1
+    iFileReadResourceIdx = -1
+    iFileWriteResIdx = -1
+    iFileSaveIdx = -1
+    iFileLoadIdx = -1
+    iUiOpenIdx = -1
+    iUiCloseIdx = -1
+    iUiQuitIdx = -1
+    iUiFrontIdx = -1
+    iUiStateIdx = -1
+    iUiStateDefaultsIdx = -1
+    iUiSetTitleIdx = -1
+    iUiGetTitleIdx = -1
+    iUiSetCaptionIdx = -1
+    iUiSetTextIdx = -1
+    iUiGetFieldTextIdx = -1
+    iUiGetLabelTextIdx = -1
+    iUiGetTextviewTextIdx = -1
+    iUiSetTextviewTextIdx = -1
+    iUiGetCheckedIdx = -1
+    iUiSetCheckedIdx = -1
+    iUiGetEnabledIdx = -1
+    iUiSetEnabledIdx = -1
+    iUiGetWidthIdx = -1
+    iUiGetHeightIdx = -1
+    iUiMenuEnableIdx = -1
+    iUiCancelIdx = -1
+    iUiAskOpenIdx = -1
+    iUiAskSaveIdx = -1
+    iUiAskSaveChangesIdx = -1
+    iUiCanvasClearIdx = -1
+    iUiCanvasLineIdx = -1
+    iUiCanvasRectIdx = -1
+    iUiCanvasCircleIdx = -1
+    iUiCanvasFillCircleIdx = -1
+    iUiCanvasPatternIdx = -1
+    iUiGetSelectedIdx = -1
+    iUiSetSelectedIdx = -1
+    iUiCanvasDrawTextIdx = -1
+    iUiEditIdx = -1
+    iUiFormIsNewIdx = -1
+    iUiSetCancelFlagIdx = -1
+    iUiValueAtPtrIdx = -1
+    iUiAddrOfGlobalIdx = -1
+    iOpAddIdx = -1
+    iOpSubIdx = -1
+    iOpMulIdx = -1
+    iOpDivIdx = -1
+    iOpModIdx = -1
+    iOpBitAndIdx = -1
+    iOpBitOrIdx = -1
+    iOpBitXorIdx = -1
+    iOpShlIdx = -1
+    iOpShrIdx = -1
+    iOpEqIdx = -1
+    iOpNeIdx = -1
+    iOpLtIdx = -1
+    iOpLeIdx = -1
+    iOpGtIdx = -1
+    iOpGeIdx = -1
+    iOpAndIdx = -1
+    iOpOrIdx = -1
+    iOpNotIdx = -1
+    iOpBitNotIdx = -1
 }
 
 // ================================================================
@@ -2854,7 +3035,18 @@ func irStrLitPoolIdx(i: int): int {
 // ================================================================
 // Intrinsic-name constants (internal/ir/intrinsics.go:18-76, verbatim).
 // Each returns its name interned into strPool -- the exact value lower.cla
-// writes into an Intr node's Name field and cprint.cla switches on.
+// writes into an Intr node's Name field and cprint.cla switches on. Each
+// `var iXxxIdx: int = -1` + `if iXxxIdx == -1 { iXxxIdx = intern(...) }`
+// pair is a process-lifetime lazy-init idiom -- SAME class as
+// cg68k.cla's rnInit()/rnInited (see its own doc comment) -- so
+// memory-leak-fix Task 7 resets every one of these ~162 iXxxIdx globals
+// back to -1 in irReset() (below all the arena .clear() calls), forcing a
+// fresh re-intern against the current compile's pool generation. Without
+// this, a stale iXxxIdx from a PRIOR compile can collide with an unrelated
+// string at that same recycled pool index in a LATER compile -- found via
+// the DoubleCompile alternating-file gate, which miscompiled a synthesized
+// clar_ui_fire_widget body on a second compile because a stale ILog()
+// (iLogIdx) resolved to a leftover panic-message string instead of "log".
 // ================================================================
 
 // -- strings --

@@ -650,6 +650,20 @@ func lexAll(src: text): int {
     var t: Token
 
     toks.clear()
+    // kwInit's own guard (kwInited, tok.cla) is a process-lifetime
+    // lazy-init idiom -- SAME class as cg68k.cla's rnInit()/rnInited,
+    // check.cla's cnInit()/cnInited, and parse.cla's cwInit()/cwInited
+    // (see their own doc comments) -- reset here so keywordKind() (called
+    // by lexIdent below, for every identifier lexed) re-interns kw* fresh
+    // against lib.cla's CURRENT pool generation every time lexAll runs,
+    // not just the first time in the process (memory-leak-fix Task 7's
+    // libReset()). Found alongside the other three -- same audit blind
+    // spot: a lazy-guard interning helper wrongly assumed safe because
+    // the intern pool used to never reset. This one is the highest-impact
+    // of the four: a stale kw* collision doesn't just misresolve one
+    // name, it misclassifies an ENTIRE file's token stream (every
+    // identifier is checked against keywordKind on every lex).
+    kwInited = false
     lexInit(src)
     while true {
         t = lexNext()

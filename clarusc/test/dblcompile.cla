@@ -58,6 +58,7 @@ on App.startCLI(args: list of string) {
     var t1: int
     var fork: text
     var wrote: bool
+    var di: int
 
     hostPaths = true
     rtDir = ""
@@ -80,6 +81,11 @@ on App.startCLI(args: list of string) {
         }
         if not ok {
             log("dblcompile: compile FAILED: " + args[i])
+            di = 0
+            while di < diags.count {
+                log(formatDiag(poolGet(diagPaths[di]), diags[di]))
+                di = di + 1
+            }
             quit 1
         }
         built = driveEmit68kFork("", false, 0, false)

@@ -41,6 +41,20 @@ func poolGet(i: int): string {
     return strPool[i]
 }
 
+// libReset (memory-leak-fix Task 7): per-compile intern-pool reset. Flips
+// the historical "unbounded-growth-but-harmless" exemption drive.cla's
+// driveReset doc comment used to carry -- every table that leaned on
+// pool-index stability across compiles now resets in the same battery (see
+// the audit table, .superpowers/sdd/2026-08-12-memory-leak-fix/
+// task-6-report.md). Must run FIRST in driveReset(), before anything that
+// re-interns pool entries (e.g. cg68k.cla's rnInit()).
+func libReset() {
+    var p: list of string
+    var ix: map of int
+    strPool = p
+    strIndex = ix
+}
+
 // Diag is a compiler diagnostic: a position plus an interned message. Shared
 // by every clarusc phase (lexer, parser, checker) so they all accumulate
 // into one list and format identically (Task 5's retrofit onto lib.cla; see

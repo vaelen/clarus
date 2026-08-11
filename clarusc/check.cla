@@ -47,15 +47,24 @@ var connectionT: int
 var listenerT: int
 var serviceBrowserT: int
 
-// Built-in-name index cache, pre-interned once and cached in module
-// globals (parse.cla's cwInit pattern -- see its own doc comment for why
-// this can't be a plain global initializer): every hot-path spot below
-// that used to compare `poolGet(nameIdx) == "int"` etc. compares nameIdx
-// against these instead, since both sides are already interned ints and
-// the intern pool is never reset in-process (index equality <=> string
+// Built-in-name index cache, pre-interned once per compile and cached in
+// module globals (parse.cla's cwInit pattern -- see its own doc comment
+// for why this can't be a plain global initializer): every hot-path spot
+// below that used to compare `poolGet(nameIdx) == "int"` etc. compares
+// nameIdx against these instead, since both sides are interned ints from
+// the SAME compile's pool generation (index equality <=> string
 // equality). cnInit is called from checkReset, checkProgram's first
 // statement, so every cn* global is filled before any checker function
-// that reads them can run.
+// that reads them can run. cnInit's own guard (cnInited) is a
+// process-lifetime lazy-init idiom -- SAME class as cg68k.cla's
+// rnInit()/rnInited (see its own doc comment) -- so checkReset resets
+// cnInited = false right before calling cnInit(), forcing a fresh
+// re-intern against the CURRENT compile's pool generation every time
+// (memory-leak-fix Task 7: this cn* guard was an audit gap -- the Task 6
+// report verdicted these globals safe on the mistaken assumption cnInit
+// re-interns every compile, when in fact its own guard only let that
+// happen on the first call in the process; found and fixed here while
+// wiring libReset()).
 var cnInited: bool
 var cnInt: int
 var cnBool: int
@@ -179,17 +188,21 @@ func setRecordFields(nameIdx: int, head: int) {
 // that pair's own doc comment) -- keep the two in lockstep if the Ch13
 // packing table ever changes. Plain name-keyed map, same no-namespacing
 // convention as recFieldsHeadByName above (see its own doc comment for
-// why that's safe).
+// why that's safe). memory-leak-fix Task 7 also folds it into checkReset
+// (bounded-memory charter), on top of that existing correctness argument.
 var xrecSizeByName: map of int
 
 func xrecSize(t: int): int {
     return xrecSizeByName.get(poolGet(typeNameIdx(t)), -1)
 }
 
-// xrecFirstDeclByName (Task 4 dedup) mirrors externFirstDeclByName's own
-// progGen-namespaced, name-keyed "first occurrence" registry exactly (see
-// its doc comment) -- the same field-for-field merge rule Ch13's Extern
-// dedup section states for `extern record`.
+// xrecFirstDeclByName (Task 4 dedup) is a progGen-namespaced, name-keyed
+// "first occurrence" registry -- the same field-for-field merge rule
+// Ch13's Extern dedup section states for `extern record`. Unlike
+// externFirstDeclByName (which memory-leak-fix Task 7 moved to a plain
+// key + checkReset fold), this one keeps its progGen namespace; Task 7
+// still folds it into checkReset too (bounded-memory charter), redundant
+// with the namespacing but harmless.
 var xrecFirstDeclByName: map of int
 
 // xrecFieldTypeMatches compares two extern-record fields' TypeExprs
@@ -579,21 +592,30 @@ func cvZero(): CVal {
 // by the later lowering pass, not by any diagnostic this task's driver
 // checks.
 //
-// None of these seven maps (nor funcSigByDecl, joining the family just
-// below, keyed the same decl-indexed way) is ever bulk-cleared between
-// programs (map has no bulk-clear primitive): every key used within a
+// Every key in all seven of these maps (plus funcSigByDecl, joining the
+// family just below, keyed the same decl-indexed way) used within a
 // checkProgram call is always freshly written in THAT SAME call before
 // anything in that call reads it (a func's decl index is registered in
 // phase 1 before phase 2 reads it; an Ident's resolved value is read back
 // only by the very same Ident occurrence that wrote it; an expr's type is
 // read back only by code that runs after that same expr was checked), so
 // a stale entry surviving from a previous program, under a decl/expr
-// index a later program happens to reuse, is never consulted before being
-// overwritten. checkReset relies on this and does not attempt to clear
-// them. externFirstDeclByName below is a DIFFERENT idiom (name-keyed, not
-// decl-indexed) and needs the progGen-namespacing menuKey already uses,
-// for exactly the reason menuKey's own comment gives -- see its own
-// comment just below.
+// index a later program happens to reuse, is never CONSULTED before being
+// overwritten -- correctness never depended on a bulk clear. enumConstOf/
+// constUseIsStr/constUseInt/constUseStr/exprTypeOf are the exception to
+// that argument (mac-resident-clarusc Task 11 fix round 2: they're
+// written only CONDITIONALLY, not for every node of their own kind, so a
+// stale hit at a reused index can misfire -- see checkReset's own doc
+// comment there) and do get bulk-cleared in checkReset. funcScopeByDecl/
+// funcRetByDecl/funcSigByDecl remain correctness-safe without a reset,
+// but memory-leak-fix Task 7 folds them into checkReset too anyway --
+// this phase's charter is bounded memory, not just correctness, and an
+// intmap left to grow across every driveCompile call in one
+// long-running ClarusC.APPL session is exactly the leak class this plan
+// exists to close. externFirstDeclByName below is a DIFFERENT idiom
+// (name-keyed, not decl-indexed); Task 7 also folds it (and menuItems'
+// own menuKey) into checkReset, which retires the progGen-namespacing
+// both previously needed -- see their own comments below.
 var funcScopeByDecl: intmap of int
 var funcRetByDecl: intmap of int
 
@@ -613,12 +635,15 @@ var funcSigByDecl: intmap of int
 // func` dedup -- duplicate extern declarations are legal iff identical,
 // see checkFuncSig's DkExternFunc arm and checkExternFunc's tail).
 // externFirstDeclByName maps a program's first-seen extern name to that
-// decl's own arena index, namespaced by progGen (menuKey's own idiom,
-// below) so it never needs an explicit reset across repeated checkProgram
-// calls in the same process (maps have no bulk-clear primitive). A
-// non-extern decl (ordinary func) never touches this map, so a func-vs-
-// extern name collision always falls through to the ordinary
-// scopeDeclare/"redeclaration of X" path, unaffected by any of this.
+// decl's own arena index. Was progGen-namespaced (menuKey's own former
+// idiom) so it never needed an explicit reset across repeated
+// checkProgram calls in the same process; memory-leak-fix Task 7 folds it
+// into checkReset instead (bounded-memory charter -- a progGen-namespaced
+// key never repeats, so the map only ever grows) and drops the
+// namespacing back to a plain name key. A non-extern decl (ordinary func)
+// never touches this map, so a func-vs-extern name collision always falls
+// through to the ordinary scopeDeclare/"redeclaration of X" path,
+// unaffected by any of this.
 // externMergeCandidate is scratch state: checkFuncSig sets it (to -1, or
 // to the FIRST decl's index on a same-name repeat) every time it runs for
 // a DkExternFunc decl; checkExternFunc reads it back immediately after
@@ -681,11 +706,16 @@ var usesSortedMap: bool
 // usesSortedMap above.
 var usesDateTime: bool
 
-// progGen is bumped by every checkReset so the per-program menuItems set
-// (below) can namespace its keys and never consult a stale entry from a
-// previous program compiled in the same process (maps have no bulk-clear
-// primitive, and menu-item lookup reads presence, so overwrite-on-redeclare
-// -- the discipline the other side tables rely on -- is not enough here).
+// progGen is bumped by every checkReset so a name-keyed side table that
+// isn't itself bulk-cleared can namespace its keys and never consult a
+// stale entry from a previous program compiled in the same process --
+// still used by this file's own xrecFirstDeclByName (see its own comment)
+// and by lower.cla's uiMenuIdx/uiWinHandlersIdx/winVarDefaultsHead.
+// menuItems/externFirstDeclByName USED to rely on this too, but
+// memory-leak-fix Task 7 folds both into checkReset directly (bounded-
+// memory charter: a progGen-namespaced key never repeats, so those two
+// maps only ever grew) and dropped their namespacing back to plain keys
+// -- see their own comments below.
 var progGen: int
 
 // ================================================================
@@ -698,7 +728,12 @@ var progGen: int
 // per window in checkWindowDecl (phase 1, source order), and only ever read
 // for a window that resolves in the current program's (reset) scope, so a
 // stale entry for a window absent from the current program is never
-// consulted -- the same argument recFieldsHeadByName relies on.
+// consulted -- the same argument recFieldsHeadByName relies on. Still
+// correctness-safe without a reset; memory-leak-fix Task 7 folds
+// windowIsForm/windowFormRecType/windowVarsHead/windowWidgetsHead into
+// checkReset anyway (bounded-memory charter -- an unreset map only ever
+// grows across repeated driveCompile calls in one long-running
+// ClarusC.APPL session).
 
 // per-instance vars reuse the FieldInfo arena (name+type+next); widgets get
 // their own WidgetInfo arena.
@@ -743,13 +778,17 @@ var windowFormRecType: map of int
 var windowVarsHead: intmap of int
 var windowWidgetsHead: intmap of int
 
-// menuItems is the flattened set of every declared menu's item names, keyed
-// (progGen | menuName | itemName) so it needs no reset. checkMenuDecl
-// populates it; checkMenuItemName / checkMenuExtend read it.
+// menuItems is the flattened set of every declared menu's item names,
+// keyed (menuName | itemName). checkMenuDecl populates it; checkMenuItemName
+// / checkMenuExtend read it. Was progGen-namespaced so it needed no reset;
+// memory-leak-fix Task 7 folds it into checkReset instead (bounded-memory
+// charter) and drops the namespacing back to a plain key -- safe because
+// checkReset now clears the whole map before any window/menu in the new
+// program gets checked.
 var menuItems: map of int
 
 func menuKey(menuName: string, itemName: string): string {
-    return numToStr(progGen) + "|" + menuName + "|" + itemName
+    return menuName + "|" + itemName
 }
 
 // ---- Ch8 widget/window property tables (ui.go) ----
@@ -2364,7 +2403,7 @@ func checkFuncSig(d: int) {
         // checkExternFunc, once ITS OWN trap/conv/reg-bind resolution
         // (which runs after this call returns) has completed -- see
         // externMergeCandidate's own comment above.
-        externKey = numToStr(progGen) + "|" + poolGet(sym.nameIdx)
+        externKey = poolGet(sym.nameIdx)
         externMergeCandidate = externFirstDeclByName.get(externKey, -1)
         if externMergeCandidate == -1 {
             externFirstDeclByName[externKey] = d
@@ -5219,7 +5258,23 @@ func checkReset() {
     var freshConstUseStr: intmap of string
     var freshExprTypeOf: intmap of int
     var freshRecFieldsHeadByName: intmap of int
+    var freshWindowIsForm: map of int
+    var freshWindowFormRecType: map of int
+    var freshWindowVarsHead: intmap of int
+    var freshWindowWidgetsHead: intmap of int
+    var freshFuncScopeByDecl: intmap of int
+    var freshFuncRetByDecl: intmap of int
+    var freshFuncSigByDecl: intmap of int
+    var freshXrecSizeByName: map of int
+    var freshXrecFirstDeclByName: map of int
+    var freshMenuItems: map of int
+    var freshExternFirstDeclByName: map of int
 
+    // cnInit's own guard (cnInited) is a process-lifetime lazy-init idiom
+    // (see its own decl comment) -- reset here, right before calling it,
+    // so it re-interns cn* fresh against libReset()'s current pool
+    // generation every compile, not just the first one in the process.
+    cnInited = false
     cnInit()
     typesReset()
     scopesReset()
@@ -5229,16 +5284,34 @@ func checkReset() {
     constUseStr = freshConstUseStr
     exprTypeOf = freshExprTypeOf
     // recFieldsHeadByName (Task 6, layer1-compiler-perf: re-keyed from a
-    // poolGet(nameIdx) string to nameIdx itself) doesn't strictly need
-    // this reset -- nameIdx is an intern-pool index, never reused across
-    // checkProgram calls (the pool itself is never reset), so it doesn't
-    // have the AST-node-index-reuse hazard the enumConstOf family above
-    // was fixed for, and the "OVERWRITTEN per record, only read for a
-    // record declared THIS program" argument (see this map's own decl
-    // comment) already makes a stale entry harmless either way. Reset
-    // anyway, fresh-map style matching every sibling intmap here, since
-    // it costs nothing and removes even the theoretical stale-entry case.
+    // poolGet(nameIdx) string to nameIdx itself) is keyed by an
+    // intern-pool index, which now RECYCLES across compiles
+    // (memory-leak-fix Task 7's libReset()) -- this reset is no longer
+    // just defensive, it's required: a stale entry would alias whatever
+    // new string the reset pool assigns that index this generation.
     recFieldsHeadByName = freshRecFieldsHeadByName
+    // windowIsForm/windowFormRecType/windowVarsHead/windowWidgetsHead/
+    // funcScopeByDecl/funcRetByDecl/funcSigByDecl/xrecSizeByName/
+    // xrecFirstDeclByName/menuItems/externFirstDeclByName (memory-leak-fix
+    // Task 7): each was already correctness-safe without a reset (see
+    // their own decl comments), but this phase's charter is bounded
+    // memory, not just correctness -- an unreset map only ever grows
+    // across repeated driveCompile calls in one long-running ClarusC.APPL
+    // session. Folded in here, fresh-map style matching every sibling
+    // reset above. menuItems/externFirstDeclByName also drop their former
+    // progGen-namespacing (see their own comments) now that this reset
+    // makes it redundant.
+    windowIsForm = freshWindowIsForm
+    windowFormRecType = freshWindowFormRecType
+    windowVarsHead = freshWindowVarsHead
+    windowWidgetsHead = freshWindowWidgetsHead
+    funcScopeByDecl = freshFuncScopeByDecl
+    funcRetByDecl = freshFuncRetByDecl
+    funcSigByDecl = freshFuncSigByDecl
+    xrecSizeByName = freshXrecSizeByName
+    xrecFirstDeclByName = freshXrecFirstDeclByName
+    menuItems = freshMenuItems
+    externFirstDeclByName = freshExternFirstDeclByName
 
     connectionT = pushSimple(TyConnection)
     listenerT = pushSimple(TyListener)

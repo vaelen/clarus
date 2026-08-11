@@ -92,17 +92,15 @@ var shakeMarks: list of bool
 // directly (map-hashtable phase, Stage B: was poolGet'd through a string
 // map) -- O(1) per lookup instead of findIRFuncIdxByName's linear scan,
 // since the walk below calls this at every ECallFn/EIntr/handler-name site
-// across the whole program. Rebuilt (overwritten, not cleared -- matches
-// irRcWalkNeededByName's own never-cleared convention) at the top of every
-// shakeProgram call: every name from the CURRENT program is re-pointed at
-// its current index, so a stale entry from a prior compile can only
-// survive for a name this program never looks up. This "keyed by nameIdx,
-// never reset" design is only sound because lib.cla's intern pool
-// (strPool/strIndex) is itself deliberately NEVER reset across compiles
-// in the same process (drive.cla's driveReset doc comment) -- if a future
-// change ever resets the pool mid-process, a nameIdx here could silently
-// alias a DIFFERENT string in a later compile (the a259d0f staleness
-// class), so any such change must also reset this table.
+// across the whole program. memory-leak-fix Task 7: explicitly `.clear()`'d
+// at the top of shakeProgram, below, before the repopulation loop --
+// lib.cla's intern pool (strPool/strIndex) is no longer never-reset
+// (libReset(), called from driveReset() every compile) -- pool indices
+// RECYCLE across compiles now, so a stale entry surviving here past a
+// libReset() could silently alias a DIFFERENT string's nameIdx in a later
+// compile (the a259d0f staleness class this comment used to warn about as
+// a future hazard; libReset() landing is exactly the "future change" it
+// meant).
 var shakeFuncIdxByName: intmap of int
 
 // shakeWorklist holds irFuncs indices already marked but not yet walked for
@@ -207,6 +205,7 @@ func shakeProgram() {
     shakeEdgesFrom = shakeFreshIntList()
     shakeEdgesTo = shakeFreshIntList()
     shakeCurFunc = -1
+    shakeFuncIdxByName.clear()
 
     i = 0
     while i < irFuncs.count {

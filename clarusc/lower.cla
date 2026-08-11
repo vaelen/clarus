@@ -3391,7 +3391,9 @@ func lowReturn(s: int): int {
 // lowTitleIdx memoizes "title"'s own interned pool index (layer1-compiler-
 // perf phase Task 14, findings 1.5) -- isWindowTitleSelect compares
 // selectName(e) (already an interned int) directly against it instead of
-// poolGet'ing a fresh string copy just to re-compare.
+// poolGet'ing a fresh string copy just to re-compare. Reset to -1 at the
+// top of lowerProgram every compile (memory-leak-fix Task 7) -- see that
+// reset's own comment.
 var lowTitleIdx: int = -1
 
 func isWindowTitleSelect(e: int): bool {
@@ -6286,6 +6288,13 @@ func lowerProgram(declHead: int): int {
     lowCurWinType = -1
     lowCurHandlerEvent = -1
     lowCurAcceptedParam = -1
+    // lowTitleIdx (memory-leak-fix Task 7): same process-lifetime
+    // lazy-init idiom as ir.cla's ~162 IXxx() intrinsic-name helpers (see
+    // irReset's own doc comment) -- reset to -1 here so
+    // isWindowTitleSelect re-interns "title" fresh against the current
+    // compile's pool generation instead of reusing a stale index from a
+    // prior compile.
+    lowTitleIdx = -1
     lowBuiltinSaveChoiceLayout()
     // ARC Task 6 stopped calling the window-var/globals escape prepasses
     // (cpEmitWinReleaseFn/cpEmitGlobalsInit release unconditionally now);
