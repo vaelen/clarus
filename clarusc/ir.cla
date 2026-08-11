@@ -791,9 +791,9 @@ func irRcWalkNeeded(nameIdx: int): bool {
 // types back-to-back (no nested lists, matching lower.cla/ast.cla's own
 // no-recursive-types constraint) -- extern i's params are
 // irExternParamTys[irExternParamStart[i] .. +irExternParamCountArr[i]-1].
-// irIsExtern answers by a linear scan over irExternNames (poolGet-compared,
-// same as irRecHasHandleField's own by-name scan just below) rather than a
-// side map -- a program declares at most a handful of
+// irIsExtern answers by a linear scan over irExternNames (int-compared
+// under the intern-pool invariant -- Global Constraints; findings 1.4)
+// rather than a side map -- a program declares at most a handful of
 // externals, and a plain list is what irReset already knows how to clear
 // (a name->flag map, as irLayoutNeededByName/irRcWalkNeededByName already
 // demonstrate, would need its own reset the differential harness doesn't
@@ -930,15 +930,16 @@ func irExternRetReg(i: int): int {
 // irExternLookup returns the extern registry index already holding
 // nameIdx, or -1 if none -- the lookup-before-append irRegisterExtern
 // needs (Task 3, Ch13 dedup) so a second identical `external func NAME`
-// never grows the registry past its documented "one entry" contract.
+// never grows the registry past its documented "one entry" contract. Int
+// compare (findings 1.4: index equality already implies string equality
+// under the intern-pool invariant -- Global Constraints; shake.cla:99-105's
+// shakeFuncIdxByName already relies on the same invariant).
 func irExternLookup(nameIdx: int): int {
-    var name: string
     var i: int
 
-    name = poolGet(nameIdx)
     i = 0
     while i < irExternNames.count {
-        if poolGet(irExternNames[i]) == name {
+        if irExternNames[i] == nameIdx {
             return i
         }
         i = i + 1

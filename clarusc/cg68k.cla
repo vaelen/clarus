@@ -998,7 +998,17 @@ var cgListOobMsgIdx: int
 
 // cgResetCodegenState clears every Task 8 module-global above -- called
 // once per cg68Program() run, mirroring cgAssignJtSlots/
-// cgAssignGlobalOffsets's own fresh-per-run discipline.
+// cgAssignGlobalOffsets's own fresh-per-run discipline. Also invalidates
+// cgFindRecordByName's cgRecIdxByName map and clears cgSizeOf's
+// cgSizeMemo (findings 1.4): this is cg68ProgramFork's own first real
+// call (via cg68Measure, the first thing cg68ProgramFork does), and both
+// caches are sound for the rest of that one compile -- cg68Measure's
+// throwaway pass and cg68Program's real per-segment passes all share the
+// SAME compile's irRecords/irTypes arenas -- but must not survive into a
+// LATER, different compile in the same process (irReset rebuilds
+// irRecords/irTypes fresh per compile; a stale entry keyed by a nameIdx
+// or a type index from a prior compile could otherwise misalign against
+// this compile's different arenas).
 func cgResetCodegenState() {
     cgMul32Used = false
     cgDiv32Used = false
@@ -1008,6 +1018,9 @@ func cgResetCodegenState() {
     cgLastTrackedOff = -1
     cgDiscardExprIdx = -1
     cgMaterializeDepth = 0
+    cgRecIdxByName.clear()
+    cgRecIdxByNameValid = false
+    cgSizeMemo.clear()
 }
 
 // cgReservePanicMsgs mints every panic-message string literal this
@@ -1175,7 +1188,35 @@ func cg68TypeEqual(a: int, b: int): bool {
 // See the file header's "LAYOUT AUTHORITY" note for the governing rule.
 // ================================================================
 
+// cgSizeMemo[t] caches cgSizeOfUncached(t), parallel to irTypes, -1 =
+// unknown (findings 1.4: cgSizeOf is recursive and had 66 direct call
+// sites plus cgAlignOf/cgSlotSizeOf/cgRecFieldSizeOf/cgArrElemStride
+// fan-in, so a nested record re-scanned the record registry once per
+// level per call). Sound because irTypes is append-only and each index is
+// immutable once created (Global Constraints) -- cleared, alongside
+// cgRecIdxByNameValid below, at the top of every cg68ProgramFork run
+// (cgResetCodegenState) so a stale entry from a PRIOR compile in the same
+// process can never misalign against this compile's different irTypes
+// arena.
+var cgSizeMemo: list of int
+
 func cgSizeOf(t: int): int {
+    var sz: int
+
+    while cgSizeMemo.count < irTypes.count {
+        cgSizeMemo.add(-1)
+    }
+    if cgSizeMemo[t] != -1 {
+        return cgSizeMemo[t]
+    }
+    sz = cgSizeOfUncached(t)
+    cgSizeMemo[t] = sz
+    return sz
+}
+
+// cgSizeOfUncached is cgSizeOf's real body (the memo above wraps it) --
+// unchanged from the pre-memo cgSizeOf.
+func cgSizeOfUncached(t: int): int {
     var k: IRKind
 
     k = irtKind(t)
@@ -1398,23 +1439,38 @@ func cgAlignUp(n: int, align: int): int {
     return n
 }
 
-// cgFindRecordByName linear-scans irRecords by interned name (poolGet-
-// compared, same shape irRecHasHandleField/irIsExtern already use in
-// ir.cla) -- serves both plain records and overlay records (isOverlay
+// cgRecIdxByName maps irRecordLayoutName(i) -> i, keyed by interned nameIdx
+// directly (findings 1.4: index equality already implies string equality
+// under the intern-pool invariant -- Global Constraints; shake.cla:99-105's
+// shakeFuncIdxByName already relies on the same invariant). Built lazily
+// (cgFindRecordByName's first call each run) rather than eagerly, and
+// invalidated -- via cgRecIdxByNameValid, not left to go stale -- at the
+// top of every cg68ProgramFork run (cgResetCodegenState) so a name from a
+// PRIOR compile in the same process can never misalign against this
+// compile's different irRecords arena. First-wins on duplicate names, to
+// match the scan it replaces.
+var cgRecIdxByName: intmap of int
+var cgRecIdxByNameValid: bool
+
+// cgFindRecordByName answers by cgRecIdxByName (built on first call each
+// run) -- serves both plain records and overlay records (isOverlay
 // doesn't change which arena a layout lives in).
 func cgFindRecordByName(nameIdx: int): int {
     var i: int
-    var nm: string
+    var nm: int
 
-    nm = poolGet(nameIdx)
-    i = 0
-    while i < irRecords.count {
-        if poolGet(irRecordLayoutName(i)) == nm {
-            return i
+    if not cgRecIdxByNameValid {
+        i = 0
+        while i < irRecords.count {
+            nm = irRecordLayoutName(i)
+            if cgRecIdxByName.get(nm, -1) == -1 {
+                cgRecIdxByName[nm] = i
+            }
+            i = i + 1
         }
-        i = i + 1
+        cgRecIdxByNameValid = true
     }
-    return -1
+    return cgRecIdxByName.get(nameIdx, -1)
 }
 
 // cgFieldOffset walks recName's field chain in declaration order, each
@@ -1429,18 +1485,16 @@ func cgFieldOffset(recName: int, fieldName: int): int {
     var ri: int
     var f: int
     var cur: int
-    var wantName: string
 
     ri = cgFindRecordByName(recName)
     if ri == -1 {
         return -1
     }
-    wantName = poolGet(fieldName)
     cur = 0
     f = irRecordLayoutFieldsHead(ri)
     while f != -1 {
         cur = cgAlignUp(cur, cgRecFieldAlignOf(irFieldSlotType(f)))
-        if poolGet(irFieldSlotName(f)) == wantName {
+        if irFieldSlotName(f) == fieldName {
             return cur
         }
         cur = cur + cgRecFieldSizeOf(irFieldSlotType(f))
@@ -3644,19 +3698,18 @@ func cgReserveSerdescLabels() {
 // that record has none -- cgIntrFileSaveLoad's own caller fails closed on
 // that, it should never actually happen since checkFileSave/checkFileLoad
 // already restrict file.save/file.load's data arg to a record-ish shape,
-// which lower.cla's own irMarkLayoutNeeded call always marks). Same
-// string-compare-by-poolGet linear scan as cgFindRecordByName (pool
-// indices for "the same" interned string are not assumed identical across
-// separate intern() call sites elsewhere in this file, so neither is
-// this).
+// which lower.cla's own irMarkLayoutNeeded call always marks). Int compare
+// (findings 1.4: index equality already implies string equality under the
+// intern-pool invariant -- Global Constraints; shake.cla:99-105's
+// shakeFuncIdxByName already relies on the same invariant, so the prior
+// "poolGet indices aren't assumed identical" doc comment here was
+// factually wrong).
 func cgFindSerdescLabel(recNameIdx: int): int {
     var i: int
-    var nm: string
 
-    nm = poolGet(recNameIdx)
     i = 0
     while i < irRecords.count {
-        if poolGet(irRecordLayoutName(i)) == nm {
+        if irRecordLayoutName(i) == recNameIdx {
             if cgSerdescLabels[i] != -1 {
                 cgRecordSerdesc(i)
             }
