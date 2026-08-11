@@ -29173,12 +29173,14 @@ static void clar_fn_lowSynthTableRows(void) {
     cv_i = 0;
     while (1) {
         if (!((cv_i < clar_fn_rtListCount((void*)cv_irGlobals)))) break;
-        int32_t t1;
-        t1 = clar_fn_lowSynthEqInt(clar_lit_866, cv_i);
-        clar_fn_rtListPush((void*)cv_conds, (void*)&(t1));
-        int32_t t2;
-        t2 = clar_fn_newIRReturn(clar_fn_newIRIntr(clar_fn_IUiAddrOfGlobal(), clar_fn_newIRVarRef(clar_fn_irGlobalName(cv_i), 1, clar_fn_irGlobalType(cv_i)), cv_irPtrT));
-        clar_fn_rtListPush((void*)cv_bodies, (void*)&(t2));
+        if (clar_fn_irtKind(clar_fn_irGlobalType(cv_i)) == 7) {
+            int32_t t1;
+            t1 = clar_fn_lowSynthEqInt(clar_lit_866, cv_i);
+            clar_fn_rtListPush((void*)cv_conds, (void*)&(t1));
+            int32_t t2;
+            t2 = clar_fn_newIRReturn(clar_fn_newIRIntr(clar_fn_IUiAddrOfGlobal(), clar_fn_newIRVarRef(clar_fn_irGlobalName(cv_i), 1, clar_fn_irGlobalType(cv_i)), cv_irPtrT));
+            clar_fn_rtListPush((void*)cv_bodies, (void*)&(t2));
+        }
         cv_i = (cv_i + 1);
     }
     cv_chain = clar_fn_lowSynthFoldIfChain(cv_conds, cv_bodies, clar_fn_lowSynthPanic(clar_lit_867, clar_lit_866, clar_fn_newIRReturn(clar_fn_newIRIntConst(0, cv_irPtrT))));
