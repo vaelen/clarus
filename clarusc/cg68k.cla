@@ -3029,8 +3029,20 @@ func cgZeroBlockAtA0(size: int) {
 // comment establishes the "size is always even" precondition this relies
 // on -- cgSizeOf's own KRec case always ends in `cgAlignUp(cur, 2)`
 // (cgRecordSize), and every other kind irLocalNoBirth is ever set for
-// (KText/KList/KMap/KSortedMap/KIntMap) is a flat 4-byte pointer slot, so
-// the precondition always holds here). Safe for both palettes: a pointer
+// (KText/KList/KMap/KSortedMap/KIntMap is a flat 4-byte pointer slot; a
+// rec-bearing KArr -- lowIsRecBearing recurses through KArr down to KRec,
+// so a whole-array assignment of handle-bearing record elements CAN mint
+// a KArr-typed nobirth temp in principle, cprint.cla:4865-4896's host-lane
+// fix-round-1 comment spells out the exact shape -- is likewise always
+// even: cgSizeOf's KArr case is N * cgArrElemStride(elem), and
+// cgArrElemStride only drops below cgSlotSizeOf's even-rounding for a
+// char/bool ELEMENT, never for the KRec (or nested KArr-of-KRec) element a
+// rec-bearing array bottoms out at) is even, so the precondition always
+// holds here; this kind list is NOT closed by codegen, only by what's
+// reachable -- a rec-bearing KArr never actually reaches this function
+// today because cgStmt's SAssign fail-closed guard (cg68k.cla:10831)
+// aborts handle-bearing whole-array assignment before
+// codegen ever mints the temp). Safe for both palettes: a pointer
 // slot zeroed this way reads back as a NULL handle (identical bit pattern
 // to cgStoreImmAt(reg, off, t, 0), just without the extra MOVE.L #0,D0
 // hop), and a KRec slot zeroed this way is the same all-zero struct

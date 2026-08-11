@@ -24,6 +24,14 @@ func TestLeakGate(t *testing.T) {
 	t.Run("StoreTemps", func(t *testing.T) {
 		runLeakFixture(t, "../../testdata/leakgate/stemp.cla")
 	})
+	t.Run("ArrStore", func(t *testing.T) {
+		// fix-round-1 regression: a rec-bearing KArr __store temp (whole
+		// fixed-array assignment of handle-bearing record elements) --
+		// see testdata/leakgate/arrstore.cla's own doc comment. Must cc
+		// build clean (the miscompile this pins was a build-time cc
+		// error, not a runtime leak) and report zero live blocks.
+		runLeakFixture(t, "../../testdata/leakgate/arrstore.cla")
+	})
 	t.Run("ClearRefElems", func(t *testing.T) {
 		t.Skip("memory-leak-fix Task 4 flips this on")
 		runLeakFixture(t, "../../testdata/leakgate/clearprobe.cla")

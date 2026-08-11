@@ -4863,20 +4863,37 @@ func cpEmitFunc(f: int) {
             declared[nm] = irLocalType(loc)
             fpEmit(toText(cpCType(irLocalType(loc)) + " cv_" + nm + ";"))
             if irLocalNoBirth(loc) {
-                // memory-leak-fix Task 2: this local is one of lowering's
-                // synthetic __store temps (IRLocal.nobirth) -- its own store
-                // site releases-then-overwrites it (NULL-safe) and nulls it
-                // after ownership transfer, so no path ever reads a
-                // birth-constructed value here; a plain zero/NULL prologue
-                // avoids the heap birth a real cpDefaultInit would leak on
-                // any return path that skips the store site. KRec is a
-                // by-value struct (cpCType above), not a pointer -- zero the
-                // whole struct via the same compound-literal idiom
-                // cpDefaultInit's own KStr arm uses; every other nobirth
-                // kind (only Text/List/Map/SortedMap/IntMap ever reach here
-                // -- lowCountedStoreVal is gated on lowEscapeTrackableKind)
-                // is a plain handle pointer.
-                if irtKind(irLocalType(loc)) == KRec {
+                // memory-leak-fix Task 2 (fix round 1: a later review caught
+                // a miscompile in the original irtKind()==KRec guard below --
+                // see the correction in this comment and the branch itself).
+                // This local is one of lowering's synthetic __store temps
+                // (IRLocal.nobirth) -- its own store site releases-then-
+                // overwrites it (NULL-safe) and nulls it after ownership
+                // transfer, so no path ever reads a birth-constructed value
+                // here; a plain zero/NULL prologue avoids the heap birth a
+                // real cpDefaultInit would leak on any return path that
+                // skips the store site.
+                //
+                // Classify by the SAME predicate lowering used to route the
+                // store here (lowIsRecBearing, lower.cla), not by a bare
+                // irtKind()==KRec check: site 1 (lowCountedStoreRecVal) mints
+                // this temp at whatever type t lowCountedStore's own
+                // lowIsRecBearing(t) gate matched, which is NOT always bare
+                // KRec -- a whole fixed-array assignment of a handle-bearing
+                // record element (`b = a` for `arr N of SomeRec`, reference
+                // line ~193's "record and fixed arrays copy by value") mints
+                // a KArr-typed temp too, since lowIsRecBearing recurses
+                // through KArr down to KRec. Both KRec and a rec-bearing
+                // KArr are BY-VALUE structs (cpCType above, never a pointer)
+                // -- zero the whole struct via the same compound-literal
+                // idiom cpDefaultInit's own KStr arm uses (correct for the
+                // KArr wrapper struct too: it zeroes every byte, including
+                // the nested array). Every OTHER nobirth kind (only
+                // Text/List/Map/SortedMap/IntMap ever reach here, via site 2
+                // -- lowCountedStoreVal, gated on lowEscapeTrackableKind's
+                // exact-kind check, which never matches KArr) is a plain
+                // handle pointer.
+                if lowIsRecBearing(irLocalType(loc)) {
                     fpEmit(toText("cv_" + nm + " = (" + cpCType(irLocalType(loc)) + "){0};"))
                 } else {
                     fpEmit(toText("cv_" + nm + " = NULL;"))

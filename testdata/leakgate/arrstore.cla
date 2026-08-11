@@ -1,0 +1,41 @@
+// arrstore.cla: leak-gate fixture -- fix-round-1 regression (memory-leak-fix
+// Task 2): whole-fixed-array assignment of handle-bearing record elements
+// (`b = a` for `var a, b: Box[3]`) mints a KArr-typed __store temp, not a
+// KRec-typed one -- lowIsRecBearing (lower.cla) recurses through KArr down
+// to KRec, so lowCountedStore's own lowIsRecBearing(t) gate routes a
+// whole-array store through lowCountedStoreRecVal with t = the KArr type
+// itself. cprint.cla's no-birth prologue branch must classify by that same
+// predicate (lowIsRecBearing), not by a bare irtKind()==KRec check, or it
+// emits `cv___storeN = NULL;` against a by-value struct decl
+// (clar_arr_rec_Box_3) and cc hard-errors. copyBoxes returns (a function
+// that RETURNS, not a `quit`-skipped handler) so its locals' scope-exit
+// frees run, and is called many times from App.startCLI so a real leak
+// would show up as nonzero live blocks. Expect zero live blocks at exit
+// under CLARUS_MEM_STRICT.
+record Box {
+    label: text
+    count: int
+}
+
+var sink: int
+
+func copyBoxes(x: int): int {
+    var a: Box[3]
+    var b: Box[3]
+
+    a[0].label = "hello"
+    a[0].count = x
+    b = a
+    return b[0].count
+}
+
+on App.startCLI(args: list of string) {
+    var i: int
+
+    i = 0
+    while i < 200 {
+        sink = sink + copyBoxes(i)
+        i = i + 1
+    }
+    quit 0
+}
