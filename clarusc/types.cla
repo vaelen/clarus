@@ -426,14 +426,21 @@ func typesReset() {
 }
 
 // assignable reports whether a value of type src may be assigned to a
-// location of type dst -- a byte-exact port of types.go's AssignableTo.
-// Deliberately has NO src==dst fast path (types.go's AssignableTo doesn't
-// either, unlike Equal): every case falls through the same kind-by-kind
-// rules whether or not the two indices happen to coincide.
+// location of type dst. Originally a byte-exact port of types.go's
+// AssignableTo (which had no src==dst fast path, unlike Equal) -- that
+// rationale is obsolete now that the Go compiler is deleted (tag
+// go-compiler-final); the fast path below is safe because for src==dst
+// every kind arm below returns true anyway: TyStr ignores capacity,
+// named-type arms compare typeNameIdx(src) to itself, and the container
+// arms (TyArr/TyList/TyMap/TySortedMap/TyIntMap) recurse into equal
+// element indices, which resolve the same way.
 func assignable(src: int, dst: int): bool {
     var sk: TypeKind
     var dk: TypeKind
 
+    if src == dst {
+        return true
+    }
     sk = typeKind(src)
     dk = typeKind(dst)
     if sk == TyInvalid or dk == TyInvalid {

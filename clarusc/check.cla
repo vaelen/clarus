@@ -47,6 +47,46 @@ var connectionT: int
 var listenerT: int
 var serviceBrowserT: int
 
+// Built-in-name index cache, pre-interned once and cached in module
+// globals (parse.cla's cwInit pattern -- see its own doc comment for why
+// this can't be a plain global initializer): every hot-path spot below
+// that used to compare `poolGet(nameIdx) == "int"` etc. compares nameIdx
+// against these instead, since both sides are already interned ints and
+// the intern pool is never reset in-process (index equality <=> string
+// equality). cnInit is called from checkReset, checkProgram's first
+// statement, so every cn* global is filled before any checker function
+// that reads them can run.
+var cnInited: bool
+var cnInt: int
+var cnBool: int
+var cnFixed: int
+var cnChar: int
+var cnText: int
+var cnPtr: int
+var cnFile: int
+var cnIsNew: int
+var cnFront: int
+var cnNow: int
+var cnDateTimeStr: int
+var cnDurationStr: int
+
+func cnInit() {
+    if cnInited { return }
+    cnInited = true
+    cnInt = intern("int")
+    cnBool = intern("bool")
+    cnFixed = intern("fixed")
+    cnChar = intern("char")
+    cnText = intern("text")
+    cnPtr = intern("ptr")
+    cnFile = intern("file")
+    cnIsNew = intern("isNew")
+    cnFront = intern("front")
+    cnNow = intern("now")
+    cnDateTimeStr = intern("dateTimeStr")
+    cnDurationStr = intern("durationStr")
+}
+
 // universeScope holds the built-in type/function names; topScope is the
 // user program's global scope, chained under it (mirrors Go's
 // `universe := NewScope(nil); registerBuiltins(universe); c.scope :=
@@ -1632,7 +1672,7 @@ func checkMethodCall(sel: int, argsHead: int): int {
     var name: string
 
     x = selectX(sel)
-    if exprKind(x) == ExIdent and poolGet(identName(x)) == "file" {
+    if exprKind(x) == ExIdent and identName(x) == cnFile {
         name = poolGet(selectName(sel))
         if name == "save" or name == "load" {
             // Marks the program as needing the serialization runtime
@@ -1710,35 +1750,33 @@ func checkFileCall(sel: int, argsHead: int): int {
 // InvalidT -- never re-diagnosed by a caller.
 func resolveType(te: int): int {
     var nameIdx: int
-    var name: string
     var symIdx: int
     var et: int
 
     switch typeExprKind(te) {
     case TxNamed {
         nameIdx = namedTypeName(te)
-        name = poolGet(nameIdx)
-        if name == "int" {
+        if nameIdx == cnInt {
             return IntT
         }
-        if name == "bool" {
+        if nameIdx == cnBool {
             return BoolT
         }
-        if name == "fixed" {
+        if nameIdx == cnFixed {
             return FixedT
         }
-        if name == "char" {
+        if nameIdx == cnChar {
             return CharT
         }
-        if name == "text" {
+        if nameIdx == cnText {
             return TextT
         }
-        if name == "ptr" {
+        if nameIdx == cnPtr {
             return PtrT
         }
         symIdx = scopeLookup(curScope, nameIdx)
         if symIdx == -1 or not symbols[symIdx].isType {
-            emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + name)
+            emitDiag(typeExprLine(te), typeExprCol(te), "undefined: " + poolGet(nameIdx))
             return InvalidT
         }
         return symbols[symIdx].typeIdx
@@ -3122,21 +3160,21 @@ func checkRowsProperty(p: int): int {
 // field of the row record. rowRecType is -1 when `rows:` was missing or
 // misdiagnosed; skip silently to avoid a cascading second error.
 func checkColumn(col: int, rowRecType: int) {
-    var shows: string
+    var want: int
     var fh: int
 
     if rowRecType == -1 {
         return
     }
-    shows = poolGet(columnShows(col))
+    want = columnShows(col)
     fh = recordFieldsHead(typeNameIdx(rowRecType))
     while fh != -1 {
-        if poolGet(fieldInfos[fh].nameIdx) == shows {
+        if fieldInfos[fh].nameIdx == want {
             return
         }
         fh = fieldInfos[fh].next
     }
-    emitDiag(declLine(col), declCol(col), "no field " + shows + " on " + poolGet(typeNameIdx(rowRecType)))
+    emitDiag(declLine(col), declCol(col), "no field " + poolGet(want) + " on " + poolGet(typeNameIdx(rowRecType)))
 }
 
 // checkBindsProperty checks `binds: name` on a field/check/popup widget
@@ -3146,6 +3184,7 @@ func checkColumn(col: int, rowRecType: int) {
 func checkBindsProperty(p: int, kind: string, formRecType: int): int {
     var vh: int
     var idName: string
+    var want: int
     var recName: string
     var fieldType: int
     var found: bool
@@ -3162,7 +3201,8 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
         emitDiag(declLine(p), declCol(p), "binds: expects a bare field name")
         return -1
     }
-    idName = poolGet(identName(vh))
+    want = identName(vh)
+    idName = poolGet(want)
     if formRecType == -1 {
         emitDiag(declLine(p), declCol(p), "binds: requires the window to declare form for")
         return -1
@@ -3172,7 +3212,7 @@ func checkBindsProperty(p: int, kind: string, formRecType: int): int {
     found = false
     fh = recordFieldsHead(typeNameIdx(formRecType))
     while fh != -1 {
-        if poolGet(fieldInfos[fh].nameIdx) == idName {
+        if fieldInfos[fh].nameIdx == want {
             fieldType = fieldInfos[fh].typeIdx
             found = true
             fh = -1
@@ -3261,24 +3301,26 @@ func checkMenuItemName(e: int, menuName: string): int {
 func checkWindowRefSelect(e: int, xt: int): int {
     var winName: string
     var name: string
+    var want: int
     var fh: int
     var wi: int
 
     winName = poolGet(typeNameIdx(xt))
-    name = poolGet(selectName(e))
+    want = selectName(e)
+    name = poolGet(want)
     if name == "title" {
         return strT(255)
     }
     fh = windowVarsHead.get(winName, -1)
     while fh != -1 {
-        if poolGet(fieldInfos[fh].nameIdx) == name {
+        if fieldInfos[fh].nameIdx == want {
             return fieldInfos[fh].typeIdx
         }
         fh = fieldInfos[fh].next
     }
     wi = windowWidgetsHead.get(winName, -1)
     while wi != -1 {
-        if poolGet(widgetInfos[wi].nameIdx) == name {
+        if widgetInfos[wi].nameIdx == want {
             return widgetT(widgetInfos[wi].kindIdx)
         }
         wi = widgetInfos[wi].next
@@ -3686,8 +3728,7 @@ func readOnlyPropName(sel: int): string {
     var xt: int
     var fh: int
 
-    name = poolGet(selectName(sel))
-    if name == "front" {
+    if selectName(sel) == cnFront {
         x = selectX(sel)
         if exprKind(x) == ExIdent {
             symIdx = scopeLookup(curScope, identName(x))
@@ -3696,7 +3737,17 @@ func readOnlyPropName(sel: int): string {
             }
         }
     }
-    xt = checkExpr(selectX(sel), -1)
+    // The receiver was fully checked moments earlier by checkAssignStmt's
+    // checkExpr(lhs, -1) -> checkSelect -> checkExpr(x, -1), so the memo
+    // (exprTypeOf, filled by checkExpr) is warm here -- re-checking it
+    // would just re-run diagnostics already emitted once. InvalidT means
+    // the receiver already failed; a read-only-property complaint on a
+    // broken receiver is noise.
+    xt = exprTypeGet(selectX(sel))
+    if xt == InvalidT {
+        return ""
+    }
+    name = poolGet(selectName(sel))
     switch typeKind(xt) {
     case TyList, TyMap, TySortedMap, TyIntMap {
         if name == "count" {
@@ -3714,7 +3765,7 @@ func readOnlyPropName(sel: int): string {
         }
         fh = recordFieldsHead(typeNameIdx(xt))
         while fh != -1 {
-            if poolGet(fieldInfos[fh].nameIdx) == "isNew" {
+            if fieldInfos[fh].nameIdx == cnIsNew {
                 return ""
             }
             fh = fieldInfos[fh].next
@@ -4313,7 +4364,7 @@ func checkIdent(e: int, expected: int): int {
         mi = typeElem(expected)
         i = 0
         while i < typeN(expected) {
-            if poolGet(enumMembers[mi + i].nameIdx) == name {
+            if enumMembers[mi + i].nameIdx == nameIdx {
                 enumConstOf[e] = enumMembers[mi + i].value
                 return expected
             }
@@ -4664,14 +4715,16 @@ func checkSliceExpr(e: int): int {
 func checkSelect(e: int): int {
     var x: int
     var name: string
+    var want: int
     var symIdx: int
     var xt: int
     var fh: int
 
     x = selectX(e)
-    name = poolGet(selectName(e))
+    want = selectName(e)
+    name = poolGet(want)
     if exprKind(x) == ExIdent {
-        if poolGet(identName(x)) == "file" {
+        if identName(x) == cnFile {
             emitDiag(exprLine(e), exprCol(e), "file." + name + " must be called")
             return InvalidT
         }
@@ -4695,7 +4748,7 @@ func checkSelect(e: int): int {
     case TyRec {
         fh = recordFieldsHead(typeNameIdx(xt))
         while fh != -1 {
-            if poolGet(fieldInfos[fh].nameIdx) == name {
+            if fieldInfos[fh].nameIdx == want {
                 return fieldInfos[fh].typeIdx
             }
             fh = fieldInfos[fh].next
@@ -4707,7 +4760,7 @@ func checkSelect(e: int): int {
     case TyOverlay {
         fh = recordFieldsHead(typeNameIdx(xt))
         while fh != -1 {
-            if poolGet(fieldInfos[fh].nameIdx) == name {
+            if fieldInfos[fh].nameIdx == want {
                 return fieldInfos[fh].typeIdx
             }
             fh = fieldInfos[fh].next
@@ -4725,7 +4778,7 @@ func checkSelect(e: int): int {
         // same as any other undeclared field name.
         fh = recordFieldsHead(typeNameIdx(xt))
         while fh != -1 {
-            if poolGet(fieldInfos[fh].nameIdx) == name {
+            if fieldInfos[fh].nameIdx == want {
                 return fieldInfos[fh].typeIdx
             }
             fh = fieldInfos[fh].next
@@ -4914,42 +4967,42 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
 // checkIdentCall handles `name(args)` where name is a bare identifier:
 // either a numeric/enum conversion or a call to a user-declared function.
 func checkIdentCall(e: int, fn: int): int {
-    var name: string
+    var nameIdx: int
     var symIdx: int
 
-    name = poolGet(identName(fn))
-    if name == "int" {
+    nameIdx = identName(fn)
+    if nameIdx == cnInt {
         return checkConversion(e, IntT, "int")
     }
-    if name == "fixed" {
+    if nameIdx == cnFixed {
         return checkConversion(e, FixedT, "fixed")
     }
-    if name == "char" {
+    if nameIdx == cnChar {
         return checkConversion(e, CharT, "char")
     }
-    if name == "ptr" {
+    if nameIdx == cnPtr {
         return checkConversion(e, PtrT, "ptr")
     }
-    if name == "now" or name == "dateTimeStr" or name == "durationStr" {
+    if nameIdx == cnNow or nameIdx == cnDateTimeStr or nameIdx == cnDurationStr {
         usesDateTime = true
     }
 
-    symIdx = scopeLookup(curScope, identName(fn))
+    symIdx = scopeLookup(curScope, nameIdx)
     if symIdx == -1 {
-        emitDiag(exprLine(e), exprCol(e), "undefined: " + name)
+        emitDiag(exprLine(e), exprCol(e), "undefined: " + poolGet(nameIdx))
         return InvalidT
     }
     if symbols[symIdx].isType {
         if typeKind(symbols[symIdx].typeIdx) == TyEnum or typeKind(symbols[symIdx].typeIdx) == TyOverlay {
-            return checkConversion(e, symbols[symIdx].typeIdx, name)
+            return checkConversion(e, symbols[symIdx].typeIdx, poolGet(nameIdx))
         }
-        emitDiag(exprLine(e), exprCol(e), "cannot convert to " + name)
+        emitDiag(exprLine(e), exprCol(e), "cannot convert to " + poolGet(nameIdx))
         return InvalidT
     }
     if symbols[symIdx].isFunc {
         return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx, symbols[symIdx].isExtern)
     }
-    emitDiag(exprLine(e), exprCol(e), name + " is not callable")
+    emitDiag(exprLine(e), exprCol(e), poolGet(nameIdx) + " is not callable")
     return InvalidT
 }
 
@@ -5112,6 +5165,7 @@ func checkReset() {
     var freshConstUseStr: intmap of string
     var freshExprTypeOf: intmap of int
 
+    cnInit()
     typesReset()
     scopesReset()
     enumConstOf = freshEnumConstOf
