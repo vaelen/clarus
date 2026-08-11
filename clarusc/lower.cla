@@ -2635,7 +2635,30 @@ func lowCountedStore(dst: int, srcAst: int, t: int): int {
     // all-scalar record (no rc traffic needed at all -- falls through to
     // the ordinary lowEscapeTrackableKind bypass below, an unconditional
     // plain byte-copy, unchanged from before this task).
-    if lowIsRecBearing(t) {
+    //
+    // memory-leak-fix phase, fix round 3 (finding F-A): a heap-scalar
+    // fixed array (`text[3]`, lowArrHeapScalarBearing) joins this SAME
+    // branch. lowCountedStoreRec/lowCountedStoreRecVal's own sequence
+    // (temp copy, retain-unless-birth, release dst's OLD value, store,
+    // null the temp) is already GENERIC over t, not record-specific
+    // despite the name -- lowNullValueAppend already recurses into KArr
+    // (ARC fix-wave Task 2, Gap A) and IRetain/IRelease's own KArr arms
+    // already walk array slots (fpRetainVal/cpEmitRetain host,
+    // cgRetainAt native -- proven correct in round 2). Direct precedent:
+    // lowIndexAssign's TyList branch already calls lowCountedStoreRecVal
+    // for `arr[i] = recVal` where recVal is itself array-of-record
+    // (lowIsRecBearing recurses into KArr), and testdata/leakgate/
+    // arrstore.cla's own passing test proves a whole `Box[3] = Box[3]`
+    // assignment already goes through this exact sequence correctly (a
+    // record-typed array). Before this fix, `text[3]` matched NEITHER
+    // lowIsRecBearing NOR lowEscapeTrackableKind, so a named-slot store
+    // or declared-initializer of a heap-scalar array (e.g. `popped =
+    // l.pop()` where `popped: text[3]`) fell through to the ordinary
+    // lowEscapeTrackableKind bypass below -- an UNCOUNTED plain
+    // byte-copy: nothing released what `popped` held before, a leak
+    // (fix round 3's own repro: live=6, the prologue default-constructed
+    // placeholder array orphaned).
+    if lowIsRecBearing(t) or lowArrHeapScalarBearing(t) {
         return lowCountedStoreRec(dst, srcAst, t)
     }
 
@@ -3270,7 +3293,18 @@ func lowReturn(s: int): int {
     // synthetic-materialization treatment as heapRet (Text/List/Map) --
     // retain-walk the materialized return value, a genuine +1 transfer,
     // mirroring Task 3's own convention for the other heap kinds.
-    recRet = lowIsRecBearing(lowCurFuncRet)
+    // memory-leak-fix phase, fix round 3 (finding F-B): a heap-scalar
+    // fixed array (`text[3]`) joins this SAME branch -- neither heapRet
+    // nor the old recRet recognized it, so a function returning `text[3]`
+    // never retained its return value at all while the local's own
+    // scope-exit release still fired (fix round 3's own repro: two
+    // `l.push(makeArr(...))` calls -> rt_rc: over-release). The retain
+    // gate just below (`recRet and not lowRecStoreIsBirth(...)`) already
+    // works unchanged for the array case -- lowRecStoreIsBirth is a pure
+    // AST-shape check (ExCall), not record-specific (see round 2's own
+    // reasoning), and lowStoreStmt/IRetain/IRelease are already generic
+    // over KArr.
+    recRet = lowIsRecBearing(lowCurFuncRet) or lowArrHeapScalarBearing(lowCurFuncRet)
     if freesHead == -1 and not heapRet and not recRet {
         return newIRReturn(x)
     }
@@ -3601,8 +3635,13 @@ func lowIndexAssign(lhs: int, rhsAst: int): int {
         // own top-level dispatch (lowIsRecBearing / lowEscapeTrackableKind),
         // just against the pre-lowered rhs via the *Val extractions instead
         // of re-lowering rhsAst.
+        // memory-leak-fix phase, fix round 3 (F-family sweep): elemTy can
+        // itself be a heap-scalar array (a NESTED array, e.g. storing a
+        // whole `text[3]` slice into `text[3][2]`'s own element) --
+        // lowArrHeapScalarBearing joins lowIsRecBearing here too, same
+        // mutual-exclusion reasoning as lowCountedStore's own fix above.
         elemTy = lowMustType(lhs)
-        if lowIsRecBearing(elemTy) {
+        if lowIsRecBearing(elemTy) or lowArrHeapScalarBearing(elemTy) {
             return lowCountedStoreRecVal(newIRIndexRef(x, i, elemTy), rhsAst, rhs, elemTy)
         } else if lowEscapeTrackableKind(irtKind(elemTy)) {
             return lowCountedStoreVal(newIRIndexRef(x, i, elemTy), rhsAst, rhs, elemTy)
@@ -4024,7 +4063,16 @@ func lowRetainRecParams(astParamsHead: int): int {
     p = astParamsHead
     while p != -1 {
         pt = lowResolveType(paramType(p))
-        if lowIsRecBearing(pt) {
+        // memory-leak-fix phase, fix round 3 (F-family sweep): a
+        // heap-scalar fixed array param (`text[3]`) has the SAME hazard
+        // as a rec-bearing param -- the callee's own by-value struct copy
+        // aliases the caller's array slots with no retain of its own, so
+        // a slot-level store inside the callee (`a[0] = ...`, now ARC-
+        // tracked via lowIndexAssign's TyArr branch) would release a
+        // handle the caller's own copy is still aliasing. Confirmed by
+        // hand-probe: `func f(a: text[3]) { a[0] = "x" }` -> rt_rc:
+        // over-release without this retain.
+        if lowIsRecBearing(pt) or lowArrHeapScalarBearing(pt) {
             pname = poolGet(paramName(p))
             lowFreeNames.add(pname)
             lowFreeTypes[pname] = pt

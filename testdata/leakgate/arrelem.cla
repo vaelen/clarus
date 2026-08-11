@@ -142,6 +142,66 @@ func mapPushWholeArrCase() {
     m["k"] = a
 }
 
+// makeArr: a genuine BIRTH source (a plain user-function call) returning a
+// heap-scalar array -- fix round 3's F-B repro depends on this exact shape.
+func makeArr(a: string, b: string, c: string): text[3] {
+    var t: text[3]
+    t[0] = a
+    t[1] = b
+    t[2] = c
+    return t
+}
+
+// popAssignCase: fix round 3 finding F-A -- lowCountedStore's own gate
+// (lowIsRecBearing/lowEscapeTrackableKind) missed lowArrHeapScalarBearing,
+// so a NAMED-SLOT store of a heap-scalar array (`popped = l.pop()`) fell
+// through to a plain, uncounted byte-copy: nothing released what `popped`
+// held before (its function-prologue default-constructed placeholder
+// array), and the popped value's own text handles were never independently
+// retained either. `l` is grown via `l.push(a)` (a NON-birth push, already
+// correctly retained by round 2's own fix) so this case isolates F-A alone
+// from F-B. Pre-round-3-fix: live=6 (three leaked default-init text
+// handles, header+bytes block each). Post-fix: live=0.
+func popAssignCase() {
+    var l: list of text[3]
+    var a: text[3]
+    var popped: text[3]
+
+    a[0] = "one"
+    a[1] = "two"
+    a[2] = "three"
+    l.push(a)
+    popped = l.pop()
+}
+
+// pushMakeArrCase: fix round 3 finding F-B -- lowReturn's heapRet/recRet
+// birth-retain gate missed lowArrHeapScalarBearing, so a function returning
+// a heap-scalar array never retained its return value while the local's
+// own scope-exit release still fired -- makeArr's `t` gets released at
+// scope exit with NOTHING having retained the copy handed back, so the
+// returned (aliased, now-dangling) value's later release double-frees.
+// push's own birth check (lowRecStoreIsBirth) correctly recognizes
+// `makeArr(...)` as a call/birth and does NOT re-retain on the push side
+// -- this repro depends entirely on lowReturn's OWN retain being correct.
+// Pre-round-3-fix: `rt_rc: over-release`, exit 134. Post-fix: live=0.
+func pushMakeArrCase() {
+    var l: list of text[3]
+
+    l.push(makeArr("seventeen", "eighteen", "nineteen"))
+    l.push(makeArr("twenty", "twentyone", "twentytwo"))
+}
+
+// returnArrThenScopeExitCase: the returned array bound to a plain local
+// that then goes out of scope -- exercises F-A (the `a = makeArr(...)`
+// named-slot store) and F-B (makeArr's own return retain) together, the
+// "natural" `list.push(f())`-adjacent pattern the round 3 finding named.
+// Pre-round-3-fix: `rt_rc: over-release`, exit 134. Post-fix: live=0.
+func returnArrThenScopeExitCase() {
+    var a: text[3]
+
+    a = makeArr("twentythree", "twentyfour", "twentyfive")
+}
+
 on App.startCLI(args: list of string) {
     listClearCase()
     listTeardownCase()
@@ -151,5 +211,8 @@ on App.startCLI(args: list of string) {
     intMapTeardownCase()
     listPushWholeArrCase()
     mapPushWholeArrCase()
+    popAssignCase()
+    pushMakeArrCase()
+    returnArrThenScopeExitCase()
     quit 0
 }

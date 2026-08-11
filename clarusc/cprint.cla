@@ -5057,7 +5057,16 @@ func cpEmitFunc(f: int) {
                 // -- lowCountedStoreVal, gated on lowEscapeTrackableKind's
                 // exact-kind check, which never matches KArr) is a plain
                 // handle pointer.
-                if lowIsRecBearing(irLocalType(loc)) {
+                //
+                // memory-leak-fix phase, Tasks 4/5 fix round 3: F-A widened
+                // lowCountedStore's own gate to ALSO route a heap-scalar
+                // array (lowArrHeapScalarBearing, e.g. `text[3]`) through
+                // lowCountedStoreRecVal -- a KArr wrapper struct too (never
+                // a pointer), so it needs the SAME compound-literal zero,
+                // not `= NULL` (an illegal struct<-pointer C assignment,
+                // caught at compile time: `assigning to 'clar_arr_text_3'
+                // from incompatible type 'void *'`).
+                if lowIsRecBearing(irLocalType(loc)) or lowArrHeapScalarBearing(irLocalType(loc)) {
                     fpEmit(toText("cv_" + nm + " = (" + cpCType(irLocalType(loc)) + "){0};"))
                 } else {
                     fpEmit(toText("cv_" + nm + " = NULL;"))
