@@ -4812,12 +4812,22 @@ static void clar_fn_rtUiWidgetSetText(void * cv_instV, int32_t cv_wIdx, void * c
     cv_kind = 0;
     void * cv_te;
     cv_te = 0;
+    void * cv_teMp;
+    cv_teMp = 0;
     void * cv_savedPort;
     cv_savedPort = 0;
     void * cv_buf;
     cv_buf = 0;
     int32_t cv_copied;
     cv_copied = 0;
+    int32_t cv_contentBottom;
+    cv_contentBottom = 0;
+    int32_t cv_viewTop;
+    cv_viewTop = 0;
+    int32_t cv_viewBottom;
+    cv_viewBottom = 0;
+    void * cv_eraseRect;
+    cv_eraseRect = 0;
     cv_w = ((clar_rec_RtUiWinst *)(cv_instV));
     cv_kind = clar_fn_uidWidgetKind((cv_w)->cv_winIdx, cv_wIdx);
     cv_te = clar_fn_rtUiTeAt(cv_w, cv_wIdx);
@@ -4836,8 +4846,21 @@ static void clar_fn_rtUiWidgetSetText(void * cv_instV, int32_t cv_wIdx, void * c
     rt_ext_UiTECalText(cv_te);
     rt_ext_UiInvalRect((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)));
     clar_fn_rtUiTeMutated(cv_instV, cv_wIdx, 0);
-    rt_ext_UiTEUpdate((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)), cv_te);
-    rt_ext_UiValidRect((void *)((char *)(rt_ext_UiHandleDeref(cv_te)) + (8)));
+    cv_teMp = rt_ext_UiHandleDeref(cv_te);
+    cv_viewTop = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (0)));
+    cv_viewBottom = rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (4)));
+    cv_contentBottom = (rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (0))) + (0))) + (rt_peekw((void *)((char *)(cv_teMp) + (94))) * rt_peekw((void *)((char *)(cv_teMp) + (24)))));
+    if (cv_contentBottom < cv_viewTop) {
+        cv_contentBottom = cv_viewTop;
+    }
+    if (cv_contentBottom < cv_viewBottom) {
+        cv_eraseRect = rt_ext_UiNewPtr(8);
+        rt_ext_UiSetRect(cv_eraseRect, rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (2))), cv_contentBottom, rt_peekw((void *)((char *)((void *)((char *)(cv_teMp) + (8))) + (6))), cv_viewBottom);
+        rt_ext_UiEraseRect(cv_eraseRect);
+        rt_ext_UiDisposePtr(cv_eraseRect);
+    }
+    rt_ext_UiTEUpdate((void *)((char *)(cv_teMp) + (8)), cv_te);
+    rt_ext_UiValidRect((void *)((char *)(cv_teMp) + (8)));
     rt_ext_UiSetPort(cv_savedPort);
 }
 

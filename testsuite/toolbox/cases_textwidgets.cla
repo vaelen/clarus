@@ -168,6 +168,29 @@ func caseTextwidgets(): TestResult {
 // LOCAL x = 108, y = 38 + rtUiGap(8) = 46 -> LOCAL (108,46)-(258,62) ->
 // GLOBAL (214,90)-(364,106). The checksum region below sits well inside
 // that.
+//
+// Shrink-leg region (live-log phase bugfix): a probe LOW in Body's TE
+// view rect -- (88,272)-(152,304), well inside the approx (79,95)-
+// (438,313) view rect derived above, and far below where a single short
+// line's own first row can ever reach -- that a tall MULTI-line
+// `Body.text` set paints real ink into, then a SHORT `Body.text` set
+// (replacing that tall content) must erase back to blank. Each of
+// tbLpShrinkLines (30) repeated lines is a full-width run of 20 `X`s, not
+// a single narrow glyph -- a 1-char line only paints a handful of pixels
+// near the view's LEFT edge and would never reach x=88..152, so a narrow
+// line would make this probe blind regardless of how many lines there
+// are (empirically confirmed while deriving these constants: a 1-char
+// line's own checksum at this same x came back 0 even with 30 lines
+// present). 30 lines of any width comfortably clears the probe's 177px
+// offset from the view top even at an implausibly small ~6px line
+// height, so the multi-line leg's own paint is never in doubt.
+const tbLpShrinkX: int = 88
+const tbLpShrinkY: int = 272
+const tbLpShrinkW: int = 64
+const tbLpShrinkH: int = 32
+const tbLpShrinkLine: string = "XXXXXXXXXXXXXXXXXXXX\n"
+const tbLpShrinkLines: int = 30
+
 func caseLivePaint(): TestResult {
     var w: TextWin
     var t: text
@@ -176,6 +199,11 @@ func caseLivePaint(): TestResult {
     var p: ButtonsPanel
     var beforeL: int
     var afterL: int
+    var shrinkBaseline: int
+    var tall: text
+    var shrinkAfterTall: int
+    var shrinkAfterShort: int
+    var i: int
     var detail: string
 
     w = open TextWin
@@ -184,6 +212,20 @@ func caseLivePaint(): TestResult {
     t = "LIVE PAINT PROBE LINE ONE"
     w.Body.text = t
     after = UiTestChecksum(88, 97, 64, 64)
+
+    // Shrink leg: baseline taken before this leg's own first set, so
+    // equality with it after the shrink proves the remainder was
+    // actually ERASED, not merely repainted with some other content.
+    shrinkBaseline = UiTestChecksum(tbLpShrinkX, tbLpShrinkY, tbLpShrinkW, tbLpShrinkH)
+    i = 0
+    while i < tbLpShrinkLines {
+        tall.append(tbLpShrinkLine)
+        i = i + 1
+    }
+    w.Body.text = tall
+    shrinkAfterTall = UiTestChecksum(tbLpShrinkX, tbLpShrinkY, tbLpShrinkW, tbLpShrinkH)
+    w.Body.text = t
+    shrinkAfterShort = UiTestChecksum(tbLpShrinkX, tbLpShrinkY, tbLpShrinkW, tbLpShrinkH)
     close w
 
     p = open ButtonsPanel
@@ -193,7 +235,7 @@ func caseLivePaint(): TestResult {
     afterL = UiTestChecksum(216, 92, 80, 12)
     close p
 
-    if before != after and beforeL != afterL {
+    if before != after and beforeL != afterL and shrinkAfterTall != shrinkBaseline and shrinkAfterShort == shrinkBaseline {
         return tkPass("LivePaint")
     }
     // Built up piecewise into `detail`, same native-68k per-statement
@@ -202,5 +244,8 @@ func caseLivePaint(): TestResult {
     detail = detail + " after " + tkIntToStr(after)
     detail = detail + " beforeL " + tkIntToStr(beforeL)
     detail = detail + " afterL " + tkIntToStr(afterL)
+    detail = detail + " shrinkBaseline " + tkIntToStr(shrinkBaseline)
+    detail = detail + " shrinkAfterTall " + tkIntToStr(shrinkAfterTall)
+    detail = detail + " shrinkAfterShort " + tkIntToStr(shrinkAfterShort)
     return tkFail("LivePaint", detail)
 }

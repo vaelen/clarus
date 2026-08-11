@@ -905,9 +905,14 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     var w: RtUiWinst
     var kind: int
     var te: ptr
+    var teMp: ptr
     var savedPort: ptr
     var buf: ptr
     var copied: int
+    var contentBottom: int
+    var viewTop: int
+    var viewBottom: int
+    var eraseRect: ptr
 
     w = RtUiWinst(instV)
     kind = uidWidgetKind(w.winIdx, wIdx)
@@ -938,8 +943,33 @@ func rtUiWidgetSetText(instV: ptr, wIdx: int, t: ptr) {
     // clamp/scroll-sync settles the final state -- then ValidRect to
     // cancel the now-redundant queued repaint. A hidden or covered
     // window clips to the port's visRgn, making this a safe no-op.
-    UiTEUpdate(UiHandleDeref(te) + rtUiTeViewRect, te)
-    UiValidRect(UiHandleDeref(te) + rtUiTeViewRect)
+    //
+    // live-log phase bugfix: a SET that REPLACES longer content with
+    // shorter content left the old text's pixels visible below the new
+    // content -- TEUpdate below draws only the new text's own lines, it
+    // never erases the rest of the view rect, and the ValidRect right
+    // after it cancels the queued update event that would otherwise have
+    // repainted (and thus erased) that remainder. Erase the below-content
+    // strip ourselves first: content bottom = dest top + nLines *
+    // lineHeight (the same teMp fields rtUiTeScrollSync reads, uitext.cla
+    // rtUiTeScrollSync), clamped into the view rect; skip the erase
+    // entirely when content already fills the view (nothing stale to
+    // clear, and it avoids a whole-view flicker on every ticker repaint).
+    teMp = UiHandleDeref(te)
+    viewTop = peekw(teMp + rtUiTeViewRect + 0)
+    viewBottom = peekw(teMp + rtUiTeViewRect + 4)
+    contentBottom = peekw(teMp + rtUiTeDestRect + 0) + peekw(teMp + rtUiTeNLines) * peekw(teMp + rtUiTeLineHeight)
+    if contentBottom < viewTop {
+        contentBottom = viewTop
+    }
+    if contentBottom < viewBottom {
+        eraseRect = UiNewPtr(rtUiRectSize)
+        UiSetRect(eraseRect, peekw(teMp + rtUiTeViewRect + 2), contentBottom, peekw(teMp + rtUiTeViewRect + 6), viewBottom)
+        UiEraseRect(eraseRect)
+        UiDisposePtr(eraseRect)
+    }
+    UiTEUpdate(teMp + rtUiTeViewRect, te)
+    UiValidRect(teMp + rtUiTeViewRect)
     UiSetPort(savedPort)
 }
 
