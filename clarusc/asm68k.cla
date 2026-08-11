@@ -207,6 +207,12 @@ var a68Items: list of A68Item
 var a68CommentTexts: list of string
 var a68DataTexts: list of text
 
+// a68ListingOn: set by drive.cla's driveEmit68kFork from its own listing
+// param (findings 1.8). Default false = --listing was not passed. Callers
+// use it to skip building the comment string (concat/numToStr/cgSizeOf
+// traffic) when nothing will ever print it -- see a68CommentMarker.
+var a68ListingOn: bool
+
 // a68LabelAddr/a68LabelDefined are parallel arrays indexed by label id
 // (a68NewLabel's return value): the address a68Bind recorded, and whether
 // a68Bind has been called for that id yet.
@@ -463,6 +469,23 @@ func a68Comment(s: string(255)) {
     it.dataTextIdx = -1
     it.commentIdx = a68CommentTexts.count
     a68CommentTexts.add(s)
+    it.addr = a68Pc
+    it.len = 0
+    a68Items.add(it)
+}
+
+// a68CommentMarker emits the SAME KindComment item a68Comment would (so
+// the peephole sees an identical item stream with or without --listing;
+// comments block match windows) but with no text: callers use it when
+// a68ListingOn is false to skip the concat/numToStr/Str255 traffic that
+// built the string nobody will print.
+func a68CommentMarker() {
+    var it: A68Item
+
+    it.kind = KindComment
+    it.trapNameIdx = -1
+    it.commentIdx = -1
+    it.dataTextIdx = -1
     it.addr = a68Pc
     it.len = 0
     a68Items.add(it)
@@ -1685,5 +1708,9 @@ func a68SelfExercise() {
     a68DcBytes("XYZ")   // odd length (3) -- pc becomes odd
     a68Align()           // pads one zero byte
 
-    a68Comment("end of exerciser")
+    if a68ListingOn {
+        a68Comment("end of exerciser")
+    } else {
+        a68CommentMarker()
+    }
 }

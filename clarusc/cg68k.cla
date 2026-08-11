@@ -2199,14 +2199,26 @@ func cgEmitGlobalsComment() {
     var t: int
 
     if irGlobals.count == 0 {
-        a68Comment("globals: none")
+        if a68ListingOn {
+            a68Comment("globals: none")
+        } else {
+            a68CommentMarker()
+        }
         return
     }
-    a68Comment("globals (below A5, " + numToStr(cgGlobalsBelowA5Size) + " bytes total):")
+    if a68ListingOn {
+        a68Comment("globals (below A5, " + numToStr(cgGlobalsBelowA5Size) + " bytes total):")
+    } else {
+        a68CommentMarker()
+    }
     i = 0
     while i < irGlobals.count {
         t = irGlobalType(i)
-        a68Comment("  " + poolGet(irGlobalName(i)) + " : " + numToStr(cgGlobalOffsets[i]) + "(A5)  size " + numToStr(cgSizeOf(t)) + "  type " + cgKindName(irtKind(t)))
+        if a68ListingOn {
+            a68Comment("  " + poolGet(irGlobalName(i)) + " : " + numToStr(cgGlobalOffsets[i]) + "(A5)  size " + numToStr(cgSizeOf(t)) + "  type " + cgKindName(irtKind(t)))
+        } else {
+            a68CommentMarker()
+        }
         i = i + 1
     }
 }
@@ -2228,7 +2240,11 @@ func cgEmitStartupCallIfPresent(name: string, has: bool) {
     }
     fi = findIRFuncIdxByName(intern(name))
     if fi == -1 or not shakeReachable(fi) {
-        a68Comment(name + " not found -- startup handler wiring incomplete")
+        if a68ListingOn {
+            a68Comment(name + " not found -- startup handler wiring incomplete")
+        } else {
+            a68CommentMarker()
+        }
         return
     }
     cgCallFunc(fi)
@@ -2805,7 +2821,11 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     var qi: int
 
     a68Bind(startupLbl)
-    a68Comment("startup (JT slot 0)")
+    if a68ListingOn {
+        a68Comment("startup (JT slot 0)")
+    } else {
+        a68CommentMarker()
+    }
     cgEmitGlobalsComment()
 
     if cgGlobalsBelowA5Size > 0 {
@@ -2816,7 +2836,11 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
         a68Emit(OpClr, 2, AmNone, 0, 0, AmPostInc, 0, 0)
         a68Emit(OpDbra, 2, AmDn, 0, 0, AmPCLabel, 0, zloopLbl)
     } else {
-        a68Comment("no globals below A5 -- nothing to zero")
+        if a68ListingOn {
+            a68Comment("no globals below A5 -- nothing to zero")
+        } else {
+            a68CommentMarker()
+        }
     }
 
     // Reserve extra stack space BEFORE MaxApplZone (Task 14, native-5e):
@@ -2869,7 +2893,11 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     if qi != -1 and shakeReachable(qi) {
         cgCallFunc(qi)
     } else {
-        a68Comment("natInit not present -- wired in Task 11")
+        if a68ListingOn {
+            a68Comment("natInit not present -- wired in Task 11")
+        } else {
+            a68CommentMarker()
+        }
     }
 
     // Task 12 (native-5e): a UI program's startup mirrors cpEmitUiMain's
@@ -2887,13 +2915,21 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     // function has one uniform, simple structure rather than an early
     // return the assembler/measure pass would need to special-case.
     if irIsUiProgram() {
-        a68Comment("UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun")
+        if a68ListingOn {
+            a68Comment("UI startup: rtUiStartup / [App.launch] / rtUiLaunch / rtUiRun")
+        } else {
+            a68CommentMarker()
+        }
         cgEmitStartupCallIfPresent("rtUiStartup", true)
         cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
         cgEmitStartupCallIfPresent("rtUiLaunch", true)
         cgEmitStartupCallIfPresent("rtUiRun", true)
     } else {
-        a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
+        if a68ListingOn {
+            a68Comment("entry-handler dispatch stub -- no event/arg marshaling yet (Task 11)")
+        } else {
+            a68CommentMarker()
+        }
         cgEmitStartupCallIfPresent("handler_App_launch", irHasLaunch)
         cgEmitStartupCallIfPresent("handler_App_startEmpty", irHasStartEmpty)
         cgEmitStartupCallIfPresent("handler_App_startCLI", irHasStartCLI)
@@ -2907,7 +2943,11 @@ func cgEmitStartup(startupLbl: int, initGlobalsLbl: int, freeGlobalsLbl: int) {
     if qi != -1 and shakeReachable(qi) {
         cgCallFunc(qi)
     } else {
-        a68Comment("natQuit not present -- wired in Task 11")
+        if a68ListingOn {
+            a68Comment("natQuit not present -- wired in Task 11")
+        } else {
+            a68CommentMarker()
+        }
     }
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 }
@@ -3206,7 +3246,11 @@ func cgDefaultInitAt(reg: int, off: int, t: int, scalarDefault: int, strDefaultI
     } else {
         // KUiState -- TODO, deferred: a safe NULL/zero placeholder,
         // matching every other "not built this task" degrade in this file.
-        a68Comment("TODO cgDefaultInitAt <kind " + numToStr(int(k)) + ">: unsupported this task")
+        if a68ListingOn {
+            a68Comment("TODO cgDefaultInitAt <kind " + numToStr(int(k)) + ">: unsupported this task")
+        } else {
+            a68CommentMarker()
+        }
         cgStoreImmAt(reg, off, irIntT, 0)
     }
 }
@@ -3534,7 +3578,11 @@ func cgEmitOneRcWalk(ri: int) {
     var frameSize: int
 
     a68Bind(cgRecRetainLbls[ri])
-    a68Comment("cg_retain_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    if a68ListingOn {
+        a68Comment("cg_retain_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    } else {
+        a68CommentMarker()
+    }
     frameSize = 0 - cgReserveDeepScratch(0)
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
@@ -3555,7 +3603,11 @@ func cgEmitOneRcWalk(ri: int) {
     a68Emit(OpRts, 0, AmNone, 0, 0, AmNone, 0, 0)
 
     a68Bind(cgRecReleaseLbls[ri])
-    a68Comment("cg_release_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    if a68ListingOn {
+        a68Comment("cg_release_" + poolGet(irRecordLayoutName(ri)) + "(rec ptr at 8(A6))")
+    } else {
+        a68CommentMarker()
+    }
     frameSize = 0 - cgReserveDeepScratch(0)
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     a68Emit(OpMovea, 4, AmDisp16, 6, 8, AmAn, 0, 0)
@@ -4084,7 +4136,11 @@ func cgEmitEnumTables() {
     var m: int
     var before: int
 
-    a68Comment("constant pool: enum value tables")
+    if a68ListingOn {
+        a68Comment("constant pool: enum value tables")
+    } else {
+        a68CommentMarker()
+    }
     i = 0
     while i < cgCurPoolEnumTables.count {
         ei = cgCurPoolEnumTables[i]
@@ -4267,7 +4323,11 @@ func cgEmitSerdescTables() {
     var j: int
     var before: int
 
-    a68Comment("constant pool: serdesc tables")
+    if a68ListingOn {
+        a68Comment("constant pool: serdesc tables")
+    } else {
+        a68CommentMarker()
+    }
     i = 0
     while i < cgCurPoolSerdescs.count {
         ri = cgCurPoolSerdescs[i]
@@ -4305,7 +4365,11 @@ func cgEmitEnumCheckCall() {
         log("cg68k: rtEnumCheck not found/reachable")
         quit 1
     }
-    a68Comment("enum conversion miss -> rtEnumCheck(v, false, <name arg unused>) panics")
+    if a68ListingOn {
+        a68Comment("enum conversion miss -> rtEnumCheck(v, false, <name arg unused>) panics")
+    } else {
+        a68CommentMarker()
+    }
     a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
     a68Emit(OpClr, 2, AmNone, 0, 0, AmPreDec, 7, 0)
     a68Emit(OpAdda, 4, AmImm, 0, 0 - 256, AmAn, 7, 0)
@@ -4427,7 +4491,11 @@ func cgEmitInitGlobalsStub(lbl: int) {
     var frameSize: int
 
     a68Bind(lbl)
-    a68Comment("cg_init_globals")
+    if a68ListingOn {
+        a68Comment("cg_init_globals")
+    } else {
+        a68CommentMarker()
+    }
     frameSize = 0 - cgReserveDeepScratch(0)
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
@@ -4452,7 +4520,11 @@ func cgEmitFreeGlobalsStub(lbl: int) {
     var frameSize: int
 
     a68Bind(lbl)
-    a68Comment("cg_free_globals")
+    if a68ListingOn {
+        a68Comment("cg_free_globals")
+    } else {
+        a68CommentMarker()
+    }
     frameSize = 0 - cgReserveDeepScratch(0)
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0 - frameSize)
     i = 0
@@ -4516,7 +4588,11 @@ func cgEmitFunc(f: int) {
     // above are hand-shaped and skipped deliberately).
     startIdx = a68Items.count
 
-    a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
+    if a68ListingOn {
+        a68Comment("func " + poolGet(irFuncName(f)) + "  (JT slot " + numToStr(cgJtSlot(f)) + ")")
+    } else {
+        a68CommentMarker()
+    }
     frameNames = cgFreshStringList()
     frameOffsets = cgFreshIntList()
     frameNameIdxs = cgFreshIntList()
@@ -4558,11 +4634,19 @@ func cgEmitFunc(f: int) {
         i = i - 1
     }
     if needsHidden {
-        a68Comment("  hidden result ptr : 8(A6)  size 4")
+        if a68ListingOn {
+            a68Comment("  hidden result ptr : 8(A6)  size 4")
+        } else {
+            a68CommentMarker()
+        }
     }
     i = 0
     while i < params.count {
-        a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
+        if a68ListingOn {
+            a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
+        } else {
+            a68CommentMarker()
+        }
         frameNames.add(poolGet(irLocalName(params[i])))
         frameOffsets.add(paramOffsets[i])
         frameNameIdxs.add(irLocalName(params[i]))
@@ -4584,7 +4668,11 @@ func cgEmitFunc(f: int) {
             declared[nm] = irLocalType(loc)
             sz = cgSlotSizeOf(irLocalType(loc))
             runningNeg = runningNeg - sz
-            a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
+            if a68ListingOn {
+                a68Comment("  local " + nm + " : " + numToStr(runningNeg) + "(A6)  size " + numToStr(sz))
+            } else {
+                a68CommentMarker()
+            }
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
             frameNameIdxs.add(irLocalName(loc))
@@ -4781,7 +4869,11 @@ func cgEmitCallbackGlue(glueFi: int, bodyFi: int) {
     var retKind: IRKind
     var pk: IRKind
 
-    a68Comment("func " + poolGet(irFuncName(glueFi)) + " (JT slot " + numToStr(cgJtSlot(glueFi)) + ") -- pascal callback glue for " + poolGet(irFuncName(bodyFi)))
+    if a68ListingOn {
+        a68Comment("func " + poolGet(irFuncName(glueFi)) + " (JT slot " + numToStr(cgJtSlot(glueFi)) + ") -- pascal callback glue for " + poolGet(irFuncName(bodyFi)))
+    } else {
+        a68CommentMarker()
+    }
     a68Bind(cgFuncLabels[glueFi])
     a68Emit(OpLink, 0, AmNone, 0, 0, AmAn, 6, 0)
 
@@ -4820,7 +4912,11 @@ func cgEmitCallbackGlue(glueFi: int, bodyFi: int) {
     i = 0
     while i < params.count {
         pk = irtKind(irLocalType(params[i]))
-        a68Comment("  " + poolGet(irLocalName(params[i])) + " : " + numToStr(offsets[i]) + "(A6)  pascal size " + numToStr(pascalWidths[i]))
+        if a68ListingOn {
+            a68Comment("  " + poolGet(irLocalName(params[i])) + " : " + numToStr(offsets[i]) + "(A6)  pascal size " + numToStr(pascalWidths[i]))
+        } else {
+            a68CommentMarker()
+        }
         if pk == KBool or pk == KChar {
             a68Emit(OpClr, 4, AmNone, 0, 0, AmDn, 0, 0)
             a68Emit(OpMove, 1, AmDisp16, 6, offsets[i], AmDn, 0, 0)
@@ -5721,7 +5817,11 @@ func cgArith(e: int, op: int) {
     } else if op == IOpMod() {
         a68EmitBr(OpBsr, 0, cgMod32Label())
     } else {
-        a68Comment("TODO EBin op " + poolGet(op) + ": unsupported this task")
+        if a68ListingOn {
+            a68Comment("TODO EBin op " + poolGet(op) + ": unsupported this task")
+        } else {
+            a68CommentMarker()
+        }
     }
 }
 
@@ -10766,7 +10866,11 @@ func cgStmt(s: int) {
 // signed or unsigned, so the very same routine serves both.
 func cgEmitMul32(lbl: int) {
     a68Bind(lbl)
-    a68Comment("cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)")
+    if a68ListingOn {
+        a68Comment("cg_mul32: D1=left * D0=right -> D0 (32x32->32, MULU partial products)")
+    } else {
+        a68CommentMarker()
+    }
     a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
@@ -10861,7 +10965,11 @@ func cgEmitDiv32(lbl: int) {
     var lpos: int
 
     a68Bind(lbl)
-    a68Comment("cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)")
+    if a68ListingOn {
+        a68Comment("cg_div32: D1=left / D0=right -> D0 (truncate toward zero, C99)")
+    } else {
+        a68CommentMarker()
+    }
     a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
@@ -10895,7 +11003,11 @@ func cgEmitMod32(lbl: int) {
     var lpos: int
 
     a68Bind(lbl)
-    a68Comment("cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)")
+    if a68ListingOn {
+        a68Comment("cg_mod32: D1=left mod D0=right -> D0 (sign follows dividend, C99)")
+    } else {
+        a68CommentMarker()
+    }
     a68Emit(OpMove, 4, AmDn, 2, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 3, 0, AmPreDec, 7, 0)
     a68Emit(OpMove, 4, AmDn, 4, 0, AmPreDec, 7, 0)
@@ -10996,7 +11108,11 @@ func cgEmitPoolsBody() {
     var s: string
     var before: int
 
-    a68Comment("constant pool: string literals")
+    if a68ListingOn {
+        a68Comment("constant pool: string literals")
+    } else {
+        a68CommentMarker()
+    }
     i = 0
     while i < cgCurPoolStrLits.count {
         idx = cgCurPoolStrLits[i]
@@ -11057,7 +11173,11 @@ func cgEmitUiBlobPool() {
     uibNativeLane = true
     bytes = uibBuild()
     uibNativeLane = false
-    a68Comment("constant pool: UI descriptor blob (" + numToStr(bytes.count) + " bytes)")
+    if a68ListingOn {
+        a68Comment("constant pool: UI descriptor blob (" + numToStr(bytes.count) + " bytes)")
+    } else {
+        a68CommentMarker()
+    }
     a68Bind(cgUiBlobLabel)
     i = 0
     while i < bytes.count {
@@ -11075,7 +11195,11 @@ func cgEmitUiBlobPool() {
 // the first byte non-NUL", so an absent --events flag (cgEventsBytes
 // empty) correctly degrades to a single 0 byte -- "not a scripted build".
 func cgEmitUiEventsPool() {
-    a68Comment("constant pool: --events script bytes (" + numToStr(cgEventsBytes.length) + " bytes + NUL)")
+    if a68ListingOn {
+        a68Comment("constant pool: --events script bytes (" + numToStr(cgEventsBytes.length) + " bytes + NUL)")
+    } else {
+        a68CommentMarker()
+    }
     a68Bind(cgUiEventsLabel)
     a68DcBytes(cgEventsBytes)
     a68DcB(0)

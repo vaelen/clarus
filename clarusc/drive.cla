@@ -1420,13 +1420,17 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 // pascal glue for any callback, shakes, then hands off to cg68ProgramFork
 // (cg68k.cla) -- the same segment-emission pipeline as driveEmit68k, just
 // stopping short of the wrap+write. `nopeep` sets peep68k.cla's
-// peepDisabled global, same as driveEmit68k always did. On success, the
+// peepDisabled global, same as driveEmit68k always did; `listing` sets
+// asm68k.cla's a68ListingOn global, gating listing-comment string
+// construction (findings 1.8) -- the item stream is identical either way,
+// only the text side table is skipped when off. On success, the
 // fork bytes/app name/creator are readable via driveLastFork/
 // driveLastAppName/driveLastCreator below -- a front end that writes the
 // raw fork itself (`file.writeRes`, Task 10) calls this instead of
 // driveEmit68k and never sees a MacBinary byte.
 func driveEmit68kFork(outPath: string, listing: bool, segLimit: int, nopeep: bool): bool {
     peepDisabled = nopeep
+    a68ListingOn = listing
     // native-5d Task 7: root the native-only entry points BEFORE shaking.
     cg68AddRoots()
     // Task 8 (toolbox-integration Feature C): synthesize/root one pascal
