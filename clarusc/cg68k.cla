@@ -1000,15 +1000,24 @@ var cgListOobMsgIdx: int
 // once per cg68Program() run, mirroring cgAssignJtSlots/
 // cgAssignGlobalOffsets's own fresh-per-run discipline. Also invalidates
 // cgFindRecordByName's cgRecIdxByName map and clears cgSizeOf's
-// cgSizeMemo (findings 1.4): this is cg68ProgramFork's own first real
-// call (via cg68Measure, the first thing cg68ProgramFork does), and both
-// caches are sound for the rest of that one compile -- cg68Measure's
-// throwaway pass and cg68Program's real per-segment passes all share the
-// SAME compile's irRecords/irTypes arenas -- but must not survive into a
-// LATER, different compile in the same process (irReset rebuilds
-// irRecords/irTypes fresh per compile; a stale entry keyed by a nameIdx
-// or a type index from a prior compile could otherwise misalign against
-// this compile's different arenas).
+// cgSizeMemo (findings 1.4): both caches are sound for the rest of one
+// compile -- cg68Measure's throwaway pass and cg68Program's real
+// per-segment passes all share the SAME compile's irRecords/irTypes
+// arenas -- but must not survive into a LATER, different compile in the
+// same process (irReset rebuilds irRecords/irTypes fresh per compile; a
+// stale entry keyed by a nameIdx or a type index from a prior compile
+// could otherwise misalign against this compile's different arenas).
+// Called from TWO places, deliberately: driveCompile (drive.cla, findings
+// 1.4 fix round 1) is the backend-agnostic call -- the C-print backend
+// (cprint.cla/uiblob.cla) calls cgFindRecordByName directly and never
+// runs cg68Measure/cg68ProgramFork at all, so that call is the only one
+// that ever protects it; the call here, inside cg68Measure (cg68Program-
+// Fork's own first real step), is redundant with driveCompile's for the
+// 68k lane specifically but kept anyway -- harmless (nothing populates
+// either cache between the two calls) and keeps this function's own
+// "once per cg68Program() run" contract honest on its own, without
+// relying on every future 68k-lane caller to also route through
+// driveCompile.
 func cgResetCodegenState() {
     cgMul32Used = false
     cgDiv32Used = false
@@ -1194,10 +1203,11 @@ func cg68TypeEqual(a: int, b: int): bool {
 // fan-in, so a nested record re-scanned the record registry once per
 // level per call). Sound because irTypes is append-only and each index is
 // immutable once created (Global Constraints) -- cleared, alongside
-// cgRecIdxByNameValid below, at the top of every cg68ProgramFork run
-// (cgResetCodegenState) so a stale entry from a PRIOR compile in the same
-// process can never misalign against this compile's different irTypes
-// arena.
+// cgRecIdxByNameValid below, by cgResetCodegenState, called once per
+// compile from both driveCompile and cg68Measure (see
+// cgResetCodegenState's own doc comment), so a stale entry from a PRIOR
+// compile in the same process can never misalign against this compile's
+// different irTypes arena.
 var cgSizeMemo: list of int
 
 func cgSizeOf(t: int): int {
@@ -1444,11 +1454,12 @@ func cgAlignUp(n: int, align: int): int {
 // under the intern-pool invariant -- Global Constraints; shake.cla:99-105's
 // shakeFuncIdxByName already relies on the same invariant). Built lazily
 // (cgFindRecordByName's first call each run) rather than eagerly, and
-// invalidated -- via cgRecIdxByNameValid, not left to go stale -- at the
-// top of every cg68ProgramFork run (cgResetCodegenState) so a name from a
-// PRIOR compile in the same process can never misalign against this
-// compile's different irRecords arena. First-wins on duplicate names, to
-// match the scan it replaces.
+// invalidated -- via cgRecIdxByNameValid, not left to go stale -- by
+// cgResetCodegenState, called once per compile from BOTH driveCompile
+// (backend-agnostic -- see cgResetCodegenState's own doc comment) and
+// cg68Measure, so a name from a PRIOR compile in the same process can
+// never misalign against this compile's different irRecords arena.
+// First-wins on duplicate names, to match the scan it replaces.
 var cgRecIdxByName: intmap of int
 var cgRecIdxByNameValid: bool
 

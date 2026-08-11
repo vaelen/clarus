@@ -1296,6 +1296,24 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var tail: int
     var earlySpliceDone: bool
 
+    // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
+    // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
+    // cg68Measure's own 68k-lane path -- driveCompile is the one entry
+    // BOTH backends share (main.cla's emitMode/appinfoMode C-print path
+    // calls cgFindRecordByName straight from cprint.cla/uiblob.cla,
+    // WITHOUT ever running cg68Measure/cg68ProgramFork), and it's also the
+    // one macgui.cla (the Mac-resident compiler) calls repeatedly, once
+    // per compiled file, in a single long-running process -- exactly the
+    // multi-compile-same-process case the caches must not go stale across.
+    // cgResetCodegenState's own reset of the OTHER Task 8 module globals
+    // (cgMul32Used etc.) is harmless to run here too, even for a
+    // check-only (wantEmit false) or C-print-only compile that never
+    // touches them. The cg68Measure-side call stays (see its own doc
+    // comment) -- it's still correct for the 68k lane, just redundant
+    // with this one there; nothing populates either cache between this
+    // call and cg68Measure's.
+    cgResetCodegenState()
+
     drvStartTicks = TickCount()
     drvPhaseTicks = drvStartTicks
     if entries.count > 0 {
