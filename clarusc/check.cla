@@ -731,21 +731,17 @@ func widgetInfoAppend(tailIdx: int, idx: int): int {
 
 var windowIsForm: map of int
 var windowFormRecType: map of int
-// windowVarsHead/windowWidgetsHead (Task 6, layer1-compiler-perf):
-// re-keying these to intmap-by-nameIdx (matching recFieldsHeadByName
-// above) is NOT done here -- unlike recFieldsHeadByName (accessed only
-// through the recordFieldsHead/setRecordFields functions), lower.cla
-// reads BOTH maps directly by winName string, with no accessor function
-// in between: lowBareWindowMemberRef (windowVarsHead), lowWindowInstSelect
-// (windowVarsHead -- already has winNameIdx in hand, easiest of the four),
-// uiWidgetIndex and widgetBindsIdx (windowWidgetsHead, both public
-// string-keyed helpers with their own callers elsewhere in lower.cla).
-// Re-keying is therefore a cross-file signature change outside this
-// task's check.cla-only scope -- see task-6-report.md's NEEDS_CONTEXT
-// note for the exact sites and a proposed one-line fix at each, if this
-// is picked up as a fast-follow.
-var windowVarsHead: map of int
-var windowWidgetsHead: map of int
+// windowVarsHead/windowWidgetsHead (Task 6, layer1-compiler-perf) are
+// keyed by the window's interned nameIdx rather than its poolGet name
+// string -- same saved-round-trip argument as recFieldsHeadByName above.
+// lower.cla reads both directly (no accessor function) at
+// lowBareWindowMemberRef/lowWindowInstSelect (windowVarsHead) and
+// through the public uiWidgetIndex/widgetBindsIdx helpers
+// (windowWidgetsHead), all converted to nameIdx alongside this pair --
+// see those functions' own doc comments there. windowIsForm/
+// windowFormRecType stay name-keyed (no comparable hot path reads them).
+var windowVarsHead: intmap of int
+var windowWidgetsHead: intmap of int
 
 // menuItems is the flattened set of every declared menu's item names, keyed
 // (progGen | menuName | itemName) so it needs no reset. checkMenuDecl
@@ -2923,8 +2919,8 @@ func checkWindowDecl(d: int) {
         }
         item = declNext(item)
     }
-    windowVarsHead[winName] = varsHead
-    windowWidgetsHead[winName] = widgetsHead
+    windowVarsHead[winNameIdx] = varsHead
+    windowWidgetsHead[winNameIdx] = widgetsHead
 
     sym.nameIdx = winNameIdx
     sym.typeIdx = windowRefT(winNameIdx)
@@ -3321,26 +3317,26 @@ func checkMenuItemName(e: int, menuName: string): int {
 // Instances): its `title`, per-instance vars, and widgets (yielding a widget
 // pseudo-type).
 func checkWindowRefSelect(e: int, xt: int): int {
-    var winName: string
+    var winNameIdx: int
     var name: string
     var want: int
     var fh: int
     var wi: int
 
-    winName = poolGet(typeNameIdx(xt))
+    winNameIdx = typeNameIdx(xt)
     want = selectName(e)
     name = poolGet(want)
     if name == "title" {
         return strT(255)
     }
-    fh = windowVarsHead.get(winName, -1)
+    fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         if fieldInfos[fh].nameIdx == want {
             return fieldInfos[fh].typeIdx
         }
         fh = fieldInfos[fh].next
     }
-    wi = windowWidgetsHead.get(winName, -1)
+    wi = windowWidgetsHead.get(winNameIdx, -1)
     while wi != -1 {
         if widgetInfos[wi].nameIdx == want {
             return widgetT(widgetInfos[wi].kindIdx)
@@ -3372,11 +3368,16 @@ func checkWidgetSelect(e: int, xt: int): int {
 }
 
 // findWidgetKind returns the kind ("button"/"canvas"/...) of the widget
-// named widgetName in window winName, or "" if there's no such widget.
-func findWidgetKind(winName: string, wgName: string): string {
+// named widgetName in window winNameIdx (the window type's own interned
+// name index), or "" if there's no such widget. Task 6 (layer1-compiler-
+// perf): took winName: string until the coordinator approved expanding
+// this task's scope to clarusc/lower.cla, whose findWidgetKind/
+// uiWidgetIndex/widgetBindsIdx callers all had (or could cheaply get) the
+// interned index already -- see each converted call site's own note.
+func findWidgetKind(winNameIdx: int, wgName: string): string {
     var wi: int
 
-    wi = windowWidgetsHead.get(winName, -1)
+    wi = windowWidgetsHead.get(winNameIdx, -1)
     while wi != -1 {
         if poolGet(widgetInfos[wi].nameIdx) == wgName {
             return poolGet(widgetInfos[wi].kindIdx)
@@ -3396,19 +3397,19 @@ func findWidgetKind(winName: string, wgName: string): string {
 // firing instance's properties, fields, and widgets.
 func windowScope(parent: int, winType: int): int {
     var s: int
-    var winName: string
+    var winNameIdx: int
     var fh: int
     var wi: int
 
     s = scopeNew(parent)
-    winName = poolGet(typeNameIdx(winType))
+    winNameIdx = typeNameIdx(winType)
     declScopeVar(s, intern("title"), strT(255))
-    fh = windowVarsHead.get(winName, -1)
+    fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         declScopeVar(s, fieldInfos[fh].nameIdx, fieldInfos[fh].typeIdx)
         fh = fieldInfos[fh].next
     }
-    wi = windowWidgetsHead.get(winName, -1)
+    wi = windowWidgetsHead.get(winNameIdx, -1)
     while wi != -1 {
         declScopeVar(s, widgetInfos[wi].nameIdx, widgetT(widgetInfos[wi].kindIdx))
         wi = widgetInfos[wi].next
@@ -3662,7 +3663,7 @@ func checkWindowHandler(winType: int, h: int) {
     } else if parts.count == 2 {
         wgName = parts[0]
         event = parts[1]
-        widgetKind = findWidgetKind(winName, wgName)
+        widgetKind = findWidgetKind(typeNameIdx(winType), wgName)
         if widgetKind == "" {
             emitDiag(line, col, "undefined: " + wgName)
             return

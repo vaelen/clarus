@@ -781,15 +781,15 @@ func lowIsUnshadowedLastError(nameIdx: int): bool {
 // as its own explicit case (IUiGetTitle, mac-target-4c Task 4b), matching
 // lowWindowInstSelect's IUiGetTitle handling for the explicit form.
 func lowBareWindowMemberRef(nm: int, ty: int): int {
-    var winName: string
+    var winNameIdx: int
     var fh: int
     var stateExpr: int
 
-    winName = poolGet(typeNameIdx(lowCurWinType))
-    fh = windowVarsHead.get(winName, -1)
+    winNameIdx = typeNameIdx(lowCurWinType)
+    fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         if poolGet(fieldInfos[fh].nameIdx) == poolGet(nm) {
-            stateExpr = newIRIntr(IUiState(), lowWinInstRef(), irUiStateType(typeNameIdx(lowCurWinType)))
+            stateExpr = newIRIntr(IUiState(), lowWinInstRef(), irUiStateType(winNameIdx))
             return newIRFieldRef(stateExpr, nm, ty)
         }
         fh = fieldInfos[fh].next
@@ -1056,12 +1056,17 @@ func lowMethodCall(e: int, fn: int): int {
     return -1
 }
 
-// LowWidgetRecv carries the resolved (instance IR value, window TYPE name,
-// widget name) triple for a widget-typed receiver expression -- lowCanvasMethod/
-// lowWidgetPropGet/lowWidgetSetAssign, wired against lowWidgetRecv below.
+// LowWidgetRecv carries the resolved (instance IR value, window TYPE
+// name index, widget name) triple for a widget-typed receiver expression
+// -- lowCanvasMethod/lowWidgetPropGet/lowWidgetSetAssign, wired against
+// lowWidgetRecv below. winNameIdx (Task 6, layer1-compiler-perf: was
+// winName: string) is the window type's own interned name index --
+// lowWidgetRecv always had this int already (typeNameIdx(...)) before
+// wrapping it in poolGet, so storing it directly here drops that
+// round-trip for every one of this record's three consumers below.
 record LowWidgetRecv {
     instIR: int
-    winName: string
+    winNameIdx: int
     wgName: string
 }
 
@@ -1083,11 +1088,11 @@ func lowWidgetRecv(recvAst: int): LowWidgetRecv {
 
     if exprKind(recvAst) == ExSelect {
         r.instIR = lowExpr(selectX(recvAst))
-        r.winName = poolGet(typeNameIdx(exprTypeGet(selectX(recvAst))))
+        r.winNameIdx = typeNameIdx(exprTypeGet(selectX(recvAst)))
         r.wgName = poolGet(selectName(recvAst))
     } else {
         r.instIR = lowWinInstRef()
-        r.winName = poolGet(typeNameIdx(lowCurWinType))
+        r.winNameIdx = typeNameIdx(lowCurWinType)
         r.wgName = poolGet(identName(recvAst))
     }
     return r
@@ -1114,7 +1119,7 @@ func lowCanvasMethod(e: int, fn: int, ty: int): int {
 
     wgSel = selectX(fn)
     recv = lowWidgetRecv(wgSel)
-    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
+    widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
 
     nm = poolGet(selectName(fn))
     intrName = -1
@@ -1821,17 +1826,20 @@ func lowSelect(e: int): int {
     return -1
 }
 
-// uiWidgetIndex returns wgName's 0-based position in window winName's
+// uiWidgetIndex returns wgName's 0-based position in window winNameIdx's
 // declared widget list -- reads check.cla's own windowWidgetsHead/
 // widgetInfos side tables directly (both modules share one process, one
 // scope/type arena, per lowResolveType's header comment), so this is the
 // SAME order cprint.cla's rt_ui_widget_desc[] array walk uses (lower.cla's
 // lowWindowDecl), and thus the SAME index rt_ui's runtime expects.
-func uiWidgetIndex(winName: string, wgName: string): int {
+// winNameIdx (Task 6, layer1-compiler-perf: was winName: string) is the
+// window type's own interned name index; every caller already had it (or
+// could get it without a poolGet) -- see each call site.
+func uiWidgetIndex(winNameIdx: int, wgName: string): int {
     var wi: int
     var idx: int
 
-    wi = windowWidgetsHead.get(winName, -1)
+    wi = windowWidgetsHead.get(winNameIdx, -1)
     idx = 0
     while wi != -1 {
         if poolGet(widgetInfos[wi].nameIdx) == wgName {
@@ -1855,13 +1863,11 @@ func uiWidgetIndex(winName: string, wgName: string): int {
 // peels both levels itself (lowWidgetPropGet).
 func lowWindowInstSelect(e: int, xExpr: int, propName: string, ty: int): int {
     var winNameIdx: int
-    var winName: string
     var fh: int
     var stateExpr: int
 
     winNameIdx = typeNameIdx(exprTypeGet(xExpr))
-    winName = poolGet(winNameIdx)
-    fh = windowVarsHead.get(winName, -1)
+    fh = windowVarsHead.get(winNameIdx, -1)
     while fh != -1 {
         if poolGet(fieldInfos[fh].nameIdx) == propName {
             stateExpr = newIRIntr(IUiState(), lowExpr(xExpr), irUiStateType(winNameIdx))
@@ -1897,8 +1903,8 @@ func lowWidgetPropGet(e: int, wgSel: int, ty: int): int {
     var intrName: int
 
     recv = lowWidgetRecv(wgSel)
-    widgetKind = findWidgetKind(recv.winName, recv.wgName)
-    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
+    widgetKind = findWidgetKind(recv.winNameIdx, recv.wgName)
+    widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
     propName = poolGet(selectName(e))
 
     intrName = -1
@@ -3423,8 +3429,8 @@ func lowWidgetSetAssign(lhs: int, rhsAst: int): int {
 
     wgSel = selectX(lhs)
     recv = lowWidgetRecv(wgSel)
-    widgetKind = findWidgetKind(recv.winName, recv.wgName)
-    widgetIdx = uiWidgetIndex(recv.winName, recv.wgName)
+    widgetKind = findWidgetKind(recv.winNameIdx, recv.wgName)
+    widgetIdx = uiWidgetIndex(recv.winNameIdx, recv.wgName)
     propName = poolGet(selectName(lhs))
 
     intrName = -1
@@ -4304,16 +4310,17 @@ func lowRequireIntLit(e: int): int {
 }
 
 // widgetBindsIdx returns widget wgName's checker-resolved bindsIdx (the
-// interned bound form-record field name, or -1) from window winName's
+// interned bound form-record field name, or -1) from window winNameIdx's
 // widgetInfos chain -- check.cla's checkBindsProperty already computed and
 // stored this (WidgetInfo.bindsIdx); lower.cla only ever needs to read it
 // back, exact same linear-scan idiom as uiWidgetIndex just above (both walk
 // windowWidgetsHead/widgetInfos to correlate an AST widget name with its
-// side-table entry).
-func widgetBindsIdx(winName: string, wgName: string): int {
+// side-table entry). winNameIdx (Task 6, layer1-compiler-perf: was
+// winName: string) same as uiWidgetIndex's own parameter.
+func widgetBindsIdx(winNameIdx: int, wgName: string): int {
     var wi: int
 
-    wi = windowWidgetsHead.get(winName, -1)
+    wi = windowWidgetsHead.get(winNameIdx, -1)
     while wi != -1 {
         if poolGet(widgetInfos[wi].nameIdx) == wgName {
             return widgetInfos[wi].bindsIdx
@@ -4405,9 +4412,12 @@ func lowTableRowsGlobalName(rowsVh: int): int {
 // chain checkWidget already validated; this covers rt_ui's whole widget
 // surface as of mac-target-4d Task 5 (button/check/canvas/label/field/
 // textview/popup/table). winName is the OWNING window's name -- needed for
-// popup's binds/form-window guard (widgetBindsIdx/windowIsForm) and table's
+// popup's form-window guard (windowIsForm, still name-keyed) and table's
 // desc/column C-name composition (cprint.cla's clar_ui_table_<Win>_<W>).
-func lowWidgetDesc(w: int, winName: string): int {
+// winNameIdx (Task 6, layer1-compiler-perf) is the same window's interned
+// name index, passed alongside winName rather than re-derived via
+// intern(winName): its only use here is widgetBindsIdx, now nameIdx-keyed.
+func lowWidgetDesc(w: int, winName: string, winNameIdx: int): int {
     var kind: string
     var wgName: string
     var p: int
@@ -4551,7 +4561,7 @@ func lowWidgetDesc(w: int, winName: string): int {
         // uniformly is what makes lowWindowDecl's own bind-table walk (which
         // reads irWidgetDescBindsIdx back off each widget) see field/check
         // binds at all, not just popup's.
-        bindsIdx = widgetBindsIdx(winName, wgName)
+        bindsIdx = widgetBindsIdx(winNameIdx, wgName)
     }
     if kind == "popup" {
         // Ch10: a popup finds its item labels through the OWNING window's
@@ -4711,7 +4721,7 @@ func lowWindowDecl(d: int) {
                 defTail = winVarDefaultListAppend(defTail, defIdx)
             }
         } else if declKind(item) == DkWidget {
-            wd = lowWidgetDesc(item, winName)
+            wd = lowWidgetDesc(item, winName, winNameIdx)
             if widgetsHead == -1 {
                 widgetsHead = wd
             }
@@ -4739,7 +4749,7 @@ func lowWindowDecl(d: int) {
         bw = widgetsHead
         bWidgetIdx = 0
         while bw != -1 {
-            bFieldNameIdx = widgetBindsIdx(winName, poolGet(irWidgetDescName(bw)))
+            bFieldNameIdx = widgetBindsIdx(winNameIdx, poolGet(irWidgetDescName(bw)))
             if bFieldNameIdx != -1 {
                 bFieldIdx = lowColumnFieldIndex(formRecType, poolGet(bFieldNameIdx))
                 nb = newIRBindDesc(bWidgetIdx, bFieldIdx)
@@ -5124,7 +5134,7 @@ func lowWidgetHandlerEvent(winType: int, winName: string, whIdx: int, wgName: st
     var fnName: int
     var cName: string
 
-    widgetIdx = uiWidgetIndex(winName, wgName)
+    widgetIdx = uiWidgetIndex(typeNameIdx(winType), wgName)
     entryIdx = lowFindWidgetHandlerEntry(whIdx, widgetIdx)
     cName = "ui_" + winName + "_" + wgName + "_" + event
     fnName = lowHandlerFunc(cName, winType, intern("window"), handlerDeclParamsHead(h), handlerDeclBody(h))
