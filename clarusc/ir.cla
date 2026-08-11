@@ -756,17 +756,19 @@ var irHasApp: bool
 // irLayoutNeededByName (Task 2, mac-target-4d) marks which record types
 // reached file.save/load (lower.cla's lowFileCall) and so need a
 // clar_layout_NAME table -- cprint's cpEmitLayouts walks irRecords in
-// declaration order and emits only the ones this registry names. Keyed by
+// declaration order and emits only the ones this registry names (also read
+// natively, cg68k.cla:4309/:11762 -- not a cprint-only table). Keyed by
 // interned nameIdx directly (map-hashtable phase, Stage B: was poolGet'd
 // through a string map; no per-generation namespacing needed either way --
 // one clarusc emit invocation lowers exactly one program, main.cla's own
-// "one program per process" contract). Never reset between compiles in the
-// same process -- safe only because lib.cla's intern pool (strPool/
-// strIndex) is itself deliberately never reset either (drive.cla's
-// driveReset doc comment); a future change that DOES reset the pool
-// mid-process would need to reset this table too, or a nameIdx here could
-// silently alias a different string in a later compile (the a259d0f
-// staleness class).
+// "one program per process" contract). memory-leak-fix Task 6 fix round 1:
+// cleared in irReset() below -- marking only happens in lowerProgram,
+// strictly AFTER irReset() runs (drive.cla:1457), so this is exactly as
+// safe/mechanical as irColumnDescs' own sibling fix; was previously
+// never reset, unboundedly accumulating record-type names across every
+// compile in one ClarusC.APPL process (a live leak on the mac-resident
+// path today, independent of whether lib.cla's intern pool itself is
+// ever reset).
 var irLayoutNeededByName: intmap of int
 
 func irMarkLayoutNeeded(nameIdx: int) {
@@ -779,15 +781,14 @@ func irLayoutNeeded(nameIdx: int): bool {
 
 // irRcWalkNeededByName (ARC Task 2) marks which record types were seen as
 // the KRec-typed argument of an IRetain/IRelease intrinsic (cprint.cla's
-// fpIntrCall) -- cprint's cpEmitRcWalks walks irRecords in declaration
-// order and emits a clar_retain_NAME/clar_release_NAME pair only for the
-// ones this registry names. Same mark/query pair idiom as
+// fpIntrCall, ~10 call sites) -- cprint's cpEmitRcWalks walks irRecords in
+// declaration order and emits a clar_retain_NAME/clar_release_NAME pair
+// only for the ones this registry names. Same mark/query pair idiom as
 // irMarkLayoutNeeded/irLayoutNeeded just above, keyed by interned nameIdx
-// directly for the same reason (and never reset, under the SAME
-// intern-pool-stability invariant irLayoutNeededByName's own comment just
-// above spells out). Nothing marks this yet -- lower.cla doesn't emit
-// either intrinsic until a later ARC task -- so cpEmitRcWalks stays
-// dormant.
+// directly for the same reason. memory-leak-fix Task 6 fix round 1:
+// cleared in irReset() below, same rationale/timing as
+// irLayoutNeededByName's own comment just above (marking happens in
+// lowerProgram, strictly after irReset()).
 var irRcWalkNeededByName: intmap of int
 
 func irMarkRcWalkNeeded(nameIdx: int) {
@@ -1061,6 +1062,8 @@ func irReset() {
     irExternSels.clear()
     irExternParamRegs.clear()
     irExternRetRegs.clear()
+    irLayoutNeededByName.clear()   // memory-leak-fix Task 6 fix round 1: see this map's own doc comment above
+    irRcWalkNeededByName.clear()   // memory-leak-fix Task 6 fix round 1: see this map's own doc comment above
 
     irHasLaunch = false
     irHasStartEmpty = false
