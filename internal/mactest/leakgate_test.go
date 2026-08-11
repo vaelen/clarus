@@ -22,7 +22,6 @@ import (
 // goldens + the gated suite boots.
 func TestLeakGate(t *testing.T) {
 	t.Run("StoreTemps", func(t *testing.T) {
-		t.Skip("memory-leak-fix Task 2 flips this on")
 		runLeakFixture(t, "../../testdata/leakgate/stemp.cla")
 	})
 	t.Run("ClearRefElems", func(t *testing.T) {

@@ -8555,7 +8555,7 @@ static void clar_fn_ui_TextWin_Name_enter(void * cv_window) {
 
 static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
     rt_text * cv___store1;
-    cv___store1 = (rt_text *)clar_fn_rtTextNew();
+    cv___store1 = NULL;
     clar_fn_rtTextRelease((void*)cv___store1);
     rt_text * t1 = NULL;
     t1 = rt_text_new();
@@ -8574,7 +8574,7 @@ static void clar_fn_ui_TextWin_Body_change(void * cv_window) {
 
 static void clar_fn_ui_NoteWin_opened(void * cv_window) {
     rt_text * cv___store2;
-    cv___store2 = (rt_text *)clar_fn_rtTextNew();
+    cv___store2 = NULL;
     ((*(clar_uistate_NoteWin *)clar_fn_rtUiState(cv_window))).cv_scratch = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_NoteWin *)clar_fn_rtUiState(cv_window))).cv_greeting = (rt_text *)clar_fn_rtTextNew();
     for (int32_t ix1 = 0; ix1 < 2; ix1++) {
@@ -8593,7 +8593,7 @@ static void clar_fn_ui_NoteWin_opened(void * cv_window) {
 
 static void clar_fn_ui_TextWin_opened(void * cv_window) {
     rt_text * cv___store3;
-    cv___store3 = (rt_text *)clar_fn_rtTextNew();
+    cv___store3 = NULL;
     ((*(clar_uistate_TextWin *)clar_fn_rtUiState(cv_window))).cv_bodyText = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_TextWin *)clar_fn_rtUiState(cv_window))).cv_log = (rt_text *)clar_fn_rtTextNew();
     ((*(clar_uistate_TextWin *)clar_fn_rtUiState(cv_window))).cv_note = (rt_text *)clar_fn_rtTextNew();

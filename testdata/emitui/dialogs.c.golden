@@ -8543,7 +8543,7 @@ static void clar_fn_handler_App_launch(void) {
     clar_str_255 cv_wt;
     cv_wt = (clar_str_255){0};
     rt_text * cv___store1;
-    cv___store1 = (rt_text *)clar_fn_rtTextNew();
+    cv___store1 = NULL;
     cv_w = clar_fn_rtUiOpen(0);
     clar_str_255 t1;
     clar_fn_rtUiGetTitle(cv_w, (uint8_t*)&t1);

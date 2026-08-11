@@ -322,6 +322,13 @@ record IRLocal {
     name: int
     t: int
     next: int
+    // nobirth (memory-leak-fix Task 2): true for lowering's synthetic
+    // __store temps (lowCountedStoreRecVal / the counted-store site in
+    // lower.cla) -- their prologue init must be NULL/zero, never a
+    // container/record birth, because the temp is only released at its
+    // own store site; a return path that skips that site would otherwise
+    // leak the prologue birth. Never set for lowNewReturnTemp temps.
+    nobirth: bool
 }
 
 record IRFunc {
@@ -1791,6 +1798,7 @@ func newIRLocal(name: int, t: int): int {
     n.name = name
     n.t = t
     n.next = -1
+    n.nobirth = false
     irLocals.add(n)
     return irLocals.count - 1
 }
@@ -1805,6 +1813,17 @@ func irLocalType(i: int): int {
 
 func irLocalNext(i: int): int {
     return irLocals[i].next
+}
+
+// irLocalMarkNoBirth/irLocalNoBirth (memory-leak-fix Task 2): mark/query
+// pair for IRLocal.nobirth, same direct-indexed-field-write idiom as
+// irLocalListAppend just above.
+func irLocalMarkNoBirth(i: int) {
+    irLocals[i].nobirth = true
+}
+
+func irLocalNoBirth(i: int): bool {
+    return irLocals[i].nobirth
 }
 
 // ================================================================

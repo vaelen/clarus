@@ -2380,7 +2380,9 @@ func lowCountedStoreRecVal(dst: int, srcAst: int, src: int, t: int): int {
     var tail: int
 
     tmpNameIdx = lowNewStoreTemp()
-    lowAddLocal(tmpNameIdx, t)
+    // no prologue birth: this temp's own store site releases-then-overwrites it
+    // (NULL-safe), and nulls it after transfer -- memory-leak-fix Task 2, findings root-cause 1.
+    irLocalMarkNoBirth(lowAddLocal(tmpNameIdx, t))
     tmpRef = newIRVarRef(tmpNameIdx, false, t)
 
     head = newIRExprStmt(newIRIntr(IRelease(), tmpRef, irVoidT))
@@ -2538,7 +2540,9 @@ func lowCountedStoreVal(dst: int, srcAst: int, src: int, t: int): int {
         // is correct: the prologue box on the very first run, a safe
         // release-of-NULL no-op on every run after.
         tmpNameIdx = lowNewStoreTemp()
-        lowAddLocal(tmpNameIdx, t)
+        // no prologue birth: this temp's own store site releases-then-overwrites it
+        // (NULL-safe), and nulls it after transfer -- memory-leak-fix Task 2, findings root-cause 1.
+        irLocalMarkNoBirth(lowAddLocal(tmpNameIdx, t))
         head = newIRExprStmt(newIRIntr(IRelease(), newIRVarRef(tmpNameIdx, false, t), irVoidT))
         tail = irStmtListAppend(head, newIRAssign(newIRVarRef(tmpNameIdx, false, t), src))
         srcUsed = newIRVarRef(tmpNameIdx, false, t)

@@ -4862,7 +4862,28 @@ func cpEmitFunc(f: int) {
         } else {
             declared[nm] = irLocalType(loc)
             fpEmit(toText(cpCType(irLocalType(loc)) + " cv_" + nm + ";"))
-            cpDefaultInit(toText("cv_" + nm), irLocalType(loc), 0, -1)
+            if irLocalNoBirth(loc) {
+                // memory-leak-fix Task 2: this local is one of lowering's
+                // synthetic __store temps (IRLocal.nobirth) -- its own store
+                // site releases-then-overwrites it (NULL-safe) and nulls it
+                // after ownership transfer, so no path ever reads a
+                // birth-constructed value here; a plain zero/NULL prologue
+                // avoids the heap birth a real cpDefaultInit would leak on
+                // any return path that skips the store site. KRec is a
+                // by-value struct (cpCType above), not a pointer -- zero the
+                // whole struct via the same compound-literal idiom
+                // cpDefaultInit's own KStr arm uses; every other nobirth
+                // kind (only Text/List/Map/SortedMap/IntMap ever reach here
+                // -- lowCountedStoreVal is gated on lowEscapeTrackableKind)
+                // is a plain handle pointer.
+                if irtKind(irLocalType(loc)) == KRec {
+                    fpEmit(toText("cv_" + nm + " = (" + cpCType(irLocalType(loc)) + "){0};"))
+                } else {
+                    fpEmit(toText("cv_" + nm + " = NULL;"))
+                }
+            } else {
+                cpDefaultInit(toText("cv_" + nm), irLocalType(loc), 0, -1)
+            }
         }
         loc = irLocalNext(loc)
     }
