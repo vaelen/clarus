@@ -381,9 +381,9 @@ func gcCompile(w: Log, p: string) {
 
     built = driveEmit68kFork("", false, 0, false)
     if not built {
+        gcFlushProgress(w)
         gcLog(w, "emit68k failed")
         alert("emit68k failed")
-        gcFlushProgress(w)
         return
     }
 
