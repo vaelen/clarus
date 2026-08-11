@@ -578,6 +578,22 @@ func cgFreshIntList(): list of int {
     return l
 }
 
+// cgFreshIntListSized (Task 15, findings 1.8) hands back a length-n list
+// of int, every slot 0 -- the shape the epoch-stamp membership lists
+// (cgStrLitSeen/cgEnumSeen/cgSerdescSeen) need.
+func cgFreshIntListSized(n: int): list of int {
+    var l: list of int
+    var i: int
+
+    l = cgFreshIntList()
+    i = 0
+    while i < n {
+        l.add(0)
+        i = i + 1
+    }
+    return l
+}
+
 func cgFreshStringList(): list of string {
     var l: list of string
     return l
@@ -586,6 +602,42 @@ func cgFreshStringList(): list of string {
 func cgFreshBoolList(): list of bool {
     var l: list of bool
     return l
+}
+
+// cgFreshBoolListSized (Task 15, findings 1.8) hands back an all-false
+// list of bool of length n -- the shape cgPackProgram's per-segment
+// bitmaps and cgCurPool*Bits need (parallel to a list of int need-set,
+// one slot per dense IR-arena index).
+func cgFreshBoolListSized(n: int): list of bool {
+    var l: list of bool
+    var i: int
+
+    l = cgFreshBoolList()
+    i = 0
+    while i < n {
+        l.add(false)
+        i = i + 1
+    }
+    return l
+}
+
+// cgBoolBitmapFromList (Task 15, findings 1.8) builds a length-n
+// all-false bitmap and sets lst's own entries true -- the shared
+// "rebuild a bitmap from its list's current contents" helper used
+// wherever a pool need-set list is wholesale-replaced or freshly
+// assigned rather than incrementally unioned into (cgPackProgram's
+// single-segment restore, cgCurPool* assignment sites).
+func cgBoolBitmapFromList(lst: list of int, n: int): list of bool {
+    var bits: list of bool
+    var i: int
+
+    bits = cgFreshBoolListSized(n)
+    i = 0
+    while i < lst.count {
+        bits[lst[i]] = true
+        i = i + 1
+    }
+    return bits
 }
 
 func cgFreshTextList(): list of text {
@@ -598,12 +650,24 @@ func cgFreshIntListList(): list of list of int {
     return l
 }
 
-// cgIntListHas is a plain linear membership scan. ponytail: these lists
-// are per-function/per-segment constant-pool subsets, not the whole
-// program's pool -- small in practice even for clarusc's own ~2000-entry
-// pool, so O(n*m) here is a one-time compile-time cost, not a hot path;
-// swap for a bool array indexed by pool entry if it's ever measured
-// slow.
+func cgFreshBoolListList(): list of list of bool {
+    var l: list of list of bool
+    return l
+}
+
+// cgIntListHas is a plain linear membership scan. Its "not a hot path"
+// claim (findings 1.8) did not hold up: every one of its former callers
+// -- cgRecordStrLit/cgRecordEnumTable/cgRecordSerdesc's per-reference
+// membership test during the measure pass, cgPoolDeltaPeek/
+// cgPoolDeltaAndUnion's per-candidate probe in cgPackProgram's first-fit
+// segment packing, and cgReserveStrLitLabels/cgReserveEnumTableLabels/
+// cgReserveSerdescLabels' per-arena-entry reserve-pass probe -- has been
+// converted to O(1) membership (epoch stamps for the recording paths,
+// bitmaps for the pack loop and reserve paths; Task 15). cgIntListHas
+// itself has no remaining callers in this file as of that task, but
+// stays as a plain, reusable helper for any future cold caller that
+// wants a simple membership check without the bookkeeping a stamp/
+// bitmap scheme demands.
 func cgIntListHas(lst: list of int, v: int): bool {
     var i: int
     i = 0
@@ -625,51 +689,60 @@ func cgIntListHas(lst: list of int, v: int): bool {
 // the same function bodies are emitted twice, but usage was already
 // captured once during measurement -- see cgRecMode's own header note
 // for why re-recording would be redundant).
+// Task 15 (findings 1.8): membership is `cgXSeen[idx] == cgSeenEpoch`
+// instead of a cgIntListHas scan of the current bucket -- see
+// cgSeenEpoch's own doc comment for why one epoch counter safely covers
+// all three recording modes (a fresh epoch precedes every distinct
+// recording context: each function's own cgRecFuncIdx assignment, and
+// once each for the cgRecMode 2/3 streams).
 func cgRecordStrLit(litIdx: int) {
+    if cgRecMode == 0 {
+        return
+    }
+    if cgStrLitSeen[litIdx] == cgSeenEpoch {
+        return
+    }
+    cgStrLitSeen[litIdx] = cgSeenEpoch
     if cgRecMode == 1 {
-        if not cgIntListHas(cgFuncStrLits[cgRecFuncIdx], litIdx) {
-            cgFuncStrLits[cgRecFuncIdx].add(litIdx)
-        }
+        cgFuncStrLits[cgRecFuncIdx].add(litIdx)
     } else if cgRecMode == 2 {
-        if not cgIntListHas(cgSeg1StrLits, litIdx) {
-            cgSeg1StrLits.add(litIdx)
-        }
+        cgSeg1StrLits.add(litIdx)
     } else if cgRecMode == 3 {
-        if not cgIntListHas(cgGlueStrLits, litIdx) {
-            cgGlueStrLits.add(litIdx)
-        }
+        cgGlueStrLits.add(litIdx)
     }
 }
 
 func cgRecordEnumTable(ei: int) {
+    if cgRecMode == 0 {
+        return
+    }
+    if cgEnumSeen[ei] == cgSeenEpoch {
+        return
+    }
+    cgEnumSeen[ei] = cgSeenEpoch
     if cgRecMode == 1 {
-        if not cgIntListHas(cgFuncEnumTables[cgRecFuncIdx], ei) {
-            cgFuncEnumTables[cgRecFuncIdx].add(ei)
-        }
+        cgFuncEnumTables[cgRecFuncIdx].add(ei)
     } else if cgRecMode == 2 {
-        if not cgIntListHas(cgSeg1EnumTables, ei) {
-            cgSeg1EnumTables.add(ei)
-        }
+        cgSeg1EnumTables.add(ei)
     } else if cgRecMode == 3 {
-        if not cgIntListHas(cgGlueEnumTables, ei) {
-            cgGlueEnumTables.add(ei)
-        }
+        cgGlueEnumTables.add(ei)
     }
 }
 
 func cgRecordSerdesc(ri: int) {
+    if cgRecMode == 0 {
+        return
+    }
+    if cgSerdescSeen[ri] == cgSeenEpoch {
+        return
+    }
+    cgSerdescSeen[ri] = cgSeenEpoch
     if cgRecMode == 1 {
-        if not cgIntListHas(cgFuncSerdescs[cgRecFuncIdx], ri) {
-            cgFuncSerdescs[cgRecFuncIdx].add(ri)
-        }
+        cgFuncSerdescs[cgRecFuncIdx].add(ri)
     } else if cgRecMode == 2 {
-        if not cgIntListHas(cgSeg1Serdescs, ri) {
-            cgSeg1Serdescs.add(ri)
-        }
+        cgSeg1Serdescs.add(ri)
     } else if cgRecMode == 3 {
-        if not cgIntListHas(cgGlueSerdescs, ri) {
-            cgGlueSerdescs.add(ri)
-        }
+        cgGlueSerdescs.add(ri)
     }
 }
 
@@ -696,10 +769,16 @@ func cgRecordUiEvents() {
 // cgPoolDeltaPeek is the read-only probe cgPackProgram's first-fit
 // "would function/bucket X fit in THIS segment" check uses: the total
 // byte cost of whichever of cand's own entries aren't already in segSet,
-// WITHOUT mutating segSet (first-fit tries segments in declaration order
-// and discards rejected ones -- committing early would corrupt an
-// abandoned segment's own accounting).
-func cgPoolDeltaPeek(cand: list of int, sizes: list of int, segSet: list of int): int {
+// WITHOUT mutating segSet or segBits (first-fit tries segments in
+// declaration order and discards rejected ones -- committing early would
+// corrupt an abandoned segment's own accounting). Task 15 (findings
+// 1.8): membership is `segBits[idx]`, O(1), instead of a cgIntListHas
+// scan of segSet -- segBits is segSet's own parallel bitmap (same
+// length as the universe segSet's entries are drawn from), kept in
+// lockstep by every caller that mutates segSet; segSet itself stays the
+// authority for emission ORDER (see cgPackProgram's own "Whole-list
+// REPLACE, not a union merge" comment).
+func cgPoolDeltaPeek(cand: list of int, sizes: list of int, segSet: list of int, segBits: list of bool): int {
     var i: int
     var idx: int
     var delta: int
@@ -708,7 +787,7 @@ func cgPoolDeltaPeek(cand: list of int, sizes: list of int, segSet: list of int)
     i = 0
     while i < cand.count {
         idx = cand[i]
-        if not cgIntListHas(segSet, idx) {
+        if not segBits[idx] {
             delta = delta + sizes[idx]
         }
         i = i + 1
@@ -717,12 +796,13 @@ func cgPoolDeltaPeek(cand: list of int, sizes: list of int, segSet: list of int)
 }
 
 // cgPoolDeltaAndUnion is cgPoolDeltaPeek's committing sibling: adds every
-// cand entry not already in segSet into segSet (list of int is Clarus's
-// reference-counted handle type -- see cprint.cla's fpIsHandleType KList
-// arm -- so this mutation is visible through every other reference to
-// the SAME segSet list, no explicit write-back needed), returning the
-// same marginal byte cost cgPoolDeltaPeek would have reported.
-func cgPoolDeltaAndUnion(cand: list of int, sizes: list of int, segSet: list of int): int {
+// cand entry not already in segSet into segSet AND sets its segBits bit
+// (list of int/list of bool are Clarus's reference-counted handle type --
+// see cprint.cla's fpIsHandleType KList arm -- so both mutations are
+// visible through every other reference to the SAME segSet/segBits,
+// no explicit write-back needed), returning the same marginal byte cost
+// cgPoolDeltaPeek would have reported.
+func cgPoolDeltaAndUnion(cand: list of int, sizes: list of int, segSet: list of int, segBits: list of bool): int {
     var i: int
     var idx: int
     var delta: int
@@ -731,8 +811,9 @@ func cgPoolDeltaAndUnion(cand: list of int, sizes: list of int, segSet: list of 
     i = 0
     while i < cand.count {
         idx = cand[i]
-        if not cgIntListHas(segSet, idx) {
+        if not segBits[idx] {
             segSet.add(idx)
+            segBits[idx] = true
             delta = delta + sizes[idx]
         }
         i = i + 1
@@ -985,6 +1066,26 @@ var cgPoolSize: int
 var cgRecMode: int
 var cgRecFuncIdx: int
 
+// Task 15 (findings 1.8): epoch-stamp membership for cgRecordStrLit/
+// cgRecordEnumTable/cgRecordSerdesc, replacing a per-call cgIntListHas
+// linear scan of the CURRENT bucket. cgStrLitSeen[i]/cgEnumSeen[i]/
+// cgSerdescSeen[i] hold the cgSeenEpoch value as of the last time arena
+// entry i was recorded; "already in the current bucket" is just
+// `cgXSeen[i] == cgSeenEpoch`, O(1) and self-clearing -- no per-function
+// reset needed, since cgSeenEpoch is bumped every time the recording
+// context changes (each function's own cgRecFuncIdx assignment in
+// cg68Measure's function loop, and once each before the cgRecMode=2 and
+// cgRecMode=3 blocks), making every prior epoch value stale by
+// definition. Both are sized once, to the dense IR-arena universe
+// (irStrLits.count/irEnums.count/irRecords.count -- fixed after
+// lowering), at cg68Measure entry; cgSeenEpoch starts at its int default
+// 0 and is always bumped (never read) before first use, so epoch 0 never
+// legitimately matches and needs no separate sentinel.
+var cgSeenEpoch: int
+var cgStrLitSeen: list of int
+var cgEnumSeen: list of int
+var cgSerdescSeen: list of int
+
 // cgFuncStrLits[i]/cgFuncEnumTables[i]/cgFuncSerdescs[i]/
 // cgFuncUsesUiBlob[i]/cgFuncUsesUiEvents[i] are irFuncs index i's own
 // constant-pool needs (str-lit / enum-table / serdesc indices, deduped;
@@ -1039,6 +1140,18 @@ var cgCurPoolEnumTables: list of int
 var cgCurPoolSerdescs: list of int
 var cgCurPoolUsesUiBlob: bool
 var cgCurPoolUsesUiEvents: bool
+
+// cgCurPoolStrLitBits/cgCurPoolEnumBits/cgCurPoolSerdescBits (Task 15,
+// findings 1.8) are cgCurPoolStrLits/cgCurPoolEnumTables/cgCurPoolSerdescs'
+// own O(1)-membership bitmaps -- length irStrLits.count/irEnums.count/
+// irRecords.count, rebuilt (via cgBoolBitmapFromList) every time the
+// matching cgCurPool* list is assigned, both sites: cg68Measure's own
+// "every entry" setup and cg68ProgramFork's per-segment loop. Read by
+// cgReserveStrLitLabels/cgReserveEnumTableLabels/cgReserveSerdescLabels
+// in place of a cgIntListHas scan of the list itself.
+var cgCurPoolStrLitBits: list of bool
+var cgCurPoolEnumBits: list of bool
+var cgCurPoolSerdescBits: list of bool
 
 // cgAllStrLits/cgAllEnumTables/cgAllSerdescs are cg68Measure's own
 // "every entry" filter sets, kept around (not just used transiently) so
@@ -3938,7 +4051,9 @@ func cgEnumMemberCount(ei: int): int {
 // body, well before cgEmitEnumTables lays the pool out).
 // Task 13: filtered by cgCurPoolEnumTables the same way
 // cgReserveStrLitLabels is filtered by cgCurPoolStrLits -- see that
-// function's own doc comment.
+// function's own doc comment. Task 15 (findings 1.8): the membership
+// test reads cgCurPoolEnumBits (O(1)), cgCurPoolEnumTables' own parallel
+// bitmap, instead of scanning cgCurPoolEnumTables itself.
 func cgReserveEnumTableLabels() {
     var i: int
     var labels: list of int
@@ -3946,7 +4061,7 @@ func cgReserveEnumTableLabels() {
     labels = cgFreshIntList()
     i = 0
     while i < irEnums.count {
-        if cgIntListHas(cgCurPoolEnumTables, i) {
+        if cgCurPoolEnumBits[i] {
             labels.add(a68NewLabel())
         } else {
             labels.add(-1)
@@ -4004,7 +4119,8 @@ func cgEnumTableRef(ei: int): int {
 // irLayoutNeeded yet still be absent from THIS pass's own need-set, if
 // no function/bucket assigned to this segment ever actually reaches a
 // file.save/file.load call for it) -- same discipline as
-// cgReserveStrLitLabels.
+// cgReserveStrLitLabels. Task 15 (findings 1.8): the membership test
+// reads cgCurPoolSerdescBits (O(1)) instead of scanning cgCurPoolSerdescs.
 func cgReserveSerdescLabels() {
     var i: int
     var labels: list of int
@@ -4012,7 +4128,7 @@ func cgReserveSerdescLabels() {
     labels = cgFreshIntList()
     i = 0
     while i < irRecords.count {
-        if irLayoutNeeded(irRecordLayoutName(i)) and cgIntListHas(cgCurPoolSerdescs, i) {
+        if irLayoutNeeded(irRecordLayoutName(i)) and cgCurPoolSerdescBits[i] {
             labels.add(a68NewLabel())
         } else {
             labels.add(-1)
@@ -10838,6 +10954,9 @@ func cgPoolStrRef(litIdx: int): int {
 // real per-segment pass's cgCurPoolStrLits is that segment's own deduped
 // need-set (cgPackProgram's output), so only labels that segment's own
 // code will actually reference get allocated.
+// Task 15 (findings 1.8): the membership test reads cgCurPoolStrLitBits
+// (O(1)), cgCurPoolStrLits' own parallel bitmap, instead of scanning
+// cgCurPoolStrLits itself.
 func cgReserveStrLitLabels() {
     var i: int
     var labels: list of int
@@ -10845,7 +10964,7 @@ func cgReserveStrLitLabels() {
     labels = cgFreshIntList()
     i = 0
     while i < irStrLits.count {
-        if cgIntListHas(cgCurPoolStrLits, i) {
+        if cgCurPoolStrLitBits[i] {
             labels.add(a68NewLabel())
         } else {
             labels.add(-1)
@@ -11318,6 +11437,15 @@ func cg68Measure(): bool {
     cgAssignGlobalOffsets()
     cgReservePanicMsgs()
 
+    // Task 15 (findings 1.8): size the epoch-stamp membership lists once,
+    // to the dense IR-arena universe -- see cgSeenEpoch's own doc
+    // comment. cgSeenEpoch itself starts at its int default 0 and is
+    // always bumped before first use (below), so this all-zero fill
+    // never collides with a real epoch.
+    cgStrLitSeen = cgFreshIntListSized(irStrLits.count)
+    cgEnumSeen = cgFreshIntListSized(irEnums.count)
+    cgSerdescSeen = cgFreshIntListSized(irRecords.count)
+
     // Task 13: this pass measures the WHOLE pool (every entry gets a
     // label and gets emitted, exactly like the pre-Task-13 unconditional
     // behavior) -- cgPackProgram is what later decides each real
@@ -11352,6 +11480,12 @@ func cg68Measure(): bool {
     cgAllStrLits = allStrLits
     cgAllEnumTables = allEnumTables
     cgAllSerdescs = allSerdescs
+
+    // Task 15 (findings 1.8): cgCurPool*Bits is built every time
+    // cgCurPool* is assigned -- see cgCurPoolStrLitBits' own doc comment.
+    cgCurPoolStrLitBits = cgBoolBitmapFromList(cgCurPoolStrLits, irStrLits.count)
+    cgCurPoolEnumBits = cgBoolBitmapFromList(cgCurPoolEnumTables, irEnums.count)
+    cgCurPoolSerdescBits = cgBoolBitmapFromList(cgCurPoolSerdescs, irRecords.count)
 
     cgReserveStrLitLabels()
     cgReserveUiPoolLabels()
@@ -11433,6 +11567,9 @@ func cg68Measure(): bool {
     cgFreeGlobalsLbl = freeGlobalsLbl
 
     before = a68SizeSoFar()
+    // Task 15 (findings 1.8): bump the epoch before this recording
+    // context (cgRecMode 2's own single stream) begins.
+    cgSeenEpoch = cgSeenEpoch + 1
     cgRecMode = 2
     cgEmitStartup(startupLbl, initGlobalsLbl, freeGlobalsLbl)
     cgEmitInitGlobalsStub(initGlobalsLbl)
@@ -11444,6 +11581,9 @@ func cg68Measure(): bool {
     while i < irFuncs.count {
         if shakeReachable(i) {
             before = a68SizeSoFar()
+            // Task 15 (findings 1.8): bump the epoch per cgRecFuncIdx
+            // change -- each function gets its own recording context.
+            cgSeenEpoch = cgSeenEpoch + 1
             cgRecMode = 1
             cgRecFuncIdx = i
             cgEmitFunc(i)
@@ -11456,6 +11596,9 @@ func cg68Measure(): bool {
     }
 
     before = a68SizeSoFar()
+    // Task 15 (findings 1.8): bump the epoch before this recording
+    // context (cgRecMode 3's own single stream) begins.
+    cgSeenEpoch = cgSeenEpoch + 1
     cgRecMode = 3
     if cgMul32Used {
         cgEmitMul32(cgMul32Lbl)
@@ -11546,6 +11689,9 @@ func cgPackProgram(): bool {
     var segStrSets: list of list of int
     var segEnumSets: list of list of int
     var segSerdescSets: list of list of int
+    var segStrBits: list of list of bool
+    var segEnumBits: list of list of bool
+    var segSerdescBits: list of list of bool
     var segUiBlob: list of bool
     var segUiEvents: list of bool
     var freshAvail: int
@@ -11555,6 +11701,9 @@ func cgPackProgram(): bool {
     var newStrSet: list of int
     var newEnumSet: list of int
     var newSerdescSet: list of int
+    var newStrBits: list of bool
+    var newEnumBits: list of bool
+    var newSerdescBits: list of bool
     var newUiBlob: bool
     var newUiEvents: bool
     var newUsed: int
@@ -11574,20 +11723,33 @@ func cgPackProgram(): bool {
     segStrSets = cgFreshIntListList()
     segEnumSets = cgFreshIntListList()
     segSerdescSets = cgFreshIntListList()
+    segStrBits = cgFreshBoolListList()
+    segEnumBits = cgFreshBoolListList()
+    segSerdescBits = cgFreshBoolListList()
     segUiBlob = cgFreshBoolList()
     segUiEvents = cgFreshBoolList()
 
     // Open segment 1: seed with the every-segment glue bucket, then the
-    // seg1-only bucket.
+    // seg1-only bucket. Task 15 (findings 1.8): segStrBits[s]/
+    // segEnumBits[s]/segSerdescBits[s] are segStrSets[s]/etc's own
+    // O(1)-membership bitmaps, length irStrLits.count/irEnums.count/
+    // irRecords.count, all-false for a fresh segment -- every site that
+    // appends to or replaces a segSet below keeps its segBits in
+    // lockstep (cgPoolDeltaAndUnion sets bits as it appends; the
+    // single-segment wholesale REPLACE near the end of this function
+    // rebuilds its bitmap from the replacement list's own contents).
     segStrSets.add(cgFreshIntList())
     segEnumSets.add(cgFreshIntList())
     segSerdescSets.add(cgFreshIntList())
+    segStrBits.add(cgFreshBoolListSized(irStrLits.count))
+    segEnumBits.add(cgFreshBoolListSized(irEnums.count))
+    segSerdescBits.add(cgFreshBoolListSized(irRecords.count))
     segUiBlob.add(false)
     segUiEvents.add(false)
     newUsed = 0
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueStrLits, cgStrLitSize, segStrSets[0])
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueEnumTables, cgEnumTableSize, segEnumSets[0])
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueSerdescs, cgSerdescSize, segSerdescSets[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueStrLits, cgStrLitSize, segStrSets[0], segStrBits[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueEnumTables, cgEnumTableSize, segEnumSets[0], segEnumBits[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueSerdescs, cgSerdescSize, segSerdescSets[0], segSerdescBits[0])
     if cgGlueUsesUiBlob {
         newUsed = newUsed + cgUiBlobSize
         segUiBlob[0] = true
@@ -11596,9 +11758,9 @@ func cgPackProgram(): bool {
         newUsed = newUsed + cgUiEventsSize
         segUiEvents[0] = true
     }
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1StrLits, cgStrLitSize, segStrSets[0])
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1EnumTables, cgEnumTableSize, segEnumSets[0])
-    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1Serdescs, cgSerdescSize, segSerdescSets[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1StrLits, cgStrLitSize, segStrSets[0], segStrBits[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1EnumTables, cgEnumTableSize, segEnumSets[0], segEnumBits[0])
+    newUsed = newUsed + cgPoolDeltaAndUnion(cgSeg1Serdescs, cgSerdescSize, segSerdescSets[0], segSerdescBits[0])
     if cgSeg1UsesUiBlob and not segUiBlob[0] {
         newUsed = newUsed + cgUiBlobSize
         segUiBlob[0] = true
@@ -11617,9 +11779,9 @@ func cgPackProgram(): bool {
             placed = false
             s = 0
             while s < segUsed.count {
-                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, segStrSets[s])
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s])
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s])
+                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, segStrSets[s], segStrBits[s])
+                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s], segEnumBits[s])
+                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
                 if cgFuncUsesUiBlob[i] and not segUiBlob[s] {
                     candDelta = candDelta + cgUiBlobSize
                 }
@@ -11629,9 +11791,9 @@ func cgPackProgram(): bool {
                 totalDelta = sz + candDelta
                 if segUsed[s] + totalDelta <= segAvail[s] {
                     segUsed[s] = segUsed[s] + totalDelta
-                    cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, segStrSets[s])
-                    cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s])
-                    cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s])
+                    cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, segStrSets[s], segStrBits[s])
+                    cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, segEnumSets[s], segEnumBits[s])
+                    cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, segSerdescSets[s], segSerdescBits[s])
                     if cgFuncUsesUiBlob[i] {
                         segUiBlob[s] = true
                     }
@@ -11651,12 +11813,15 @@ func cgPackProgram(): bool {
                 newStrSet = cgFreshIntList()
                 newEnumSet = cgFreshIntList()
                 newSerdescSet = cgFreshIntList()
+                newStrBits = cgFreshBoolListSized(irStrLits.count)
+                newEnumBits = cgFreshBoolListSized(irEnums.count)
+                newSerdescBits = cgFreshBoolListSized(irRecords.count)
                 newUiBlob = false
                 newUiEvents = false
                 newUsed = 0
-                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueStrLits, cgStrLitSize, newStrSet)
-                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueEnumTables, cgEnumTableSize, newEnumSet)
-                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueSerdescs, cgSerdescSize, newSerdescSet)
+                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueStrLits, cgStrLitSize, newStrSet, newStrBits)
+                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueEnumTables, cgEnumTableSize, newEnumSet, newEnumBits)
+                newUsed = newUsed + cgPoolDeltaAndUnion(cgGlueSerdescs, cgSerdescSize, newSerdescSet, newSerdescBits)
                 if cgGlueUsesUiBlob {
                     newUsed = newUsed + cgUiBlobSize
                     newUiBlob = true
@@ -11666,9 +11831,9 @@ func cgPackProgram(): bool {
                     newUiEvents = true
                 }
 
-                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, newStrSet)
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet)
-                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet)
+                candDelta = cgPoolDeltaPeek(cgFuncStrLits[i], cgStrLitSize, newStrSet, newStrBits)
+                candDelta = candDelta + cgPoolDeltaPeek(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet, newEnumBits)
+                candDelta = candDelta + cgPoolDeltaPeek(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet, newSerdescBits)
                 if cgFuncUsesUiBlob[i] and not newUiBlob {
                     candDelta = candDelta + cgUiBlobSize
                 }
@@ -11682,9 +11847,9 @@ func cgPackProgram(): bool {
                     return false
                 }
 
-                cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, newStrSet)
-                cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet)
-                cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet)
+                cgPoolDeltaAndUnion(cgFuncStrLits[i], cgStrLitSize, newStrSet, newStrBits)
+                cgPoolDeltaAndUnion(cgFuncEnumTables[i], cgEnumTableSize, newEnumSet, newEnumBits)
+                cgPoolDeltaAndUnion(cgFuncSerdescs[i], cgSerdescSize, newSerdescSet, newSerdescBits)
                 if cgFuncUsesUiBlob[i] {
                     newUiBlob = true
                 }
@@ -11697,6 +11862,9 @@ func cgPackProgram(): bool {
                 segStrSets.add(newStrSet)
                 segEnumSets.add(newEnumSet)
                 segSerdescSets.add(newSerdescSet)
+                segStrBits.add(newStrBits)
+                segEnumBits.add(newEnumBits)
+                segSerdescBits.add(newSerdescBits)
                 segUiBlob.add(newUiBlob)
                 segUiEvents.add(newUiEvents)
                 cgFuncSegment[i] = segUsed.count
@@ -11720,9 +11888,9 @@ func cgPackProgram(): bool {
     // correctness risk, for the rare single-segment program whose pool
     // is large enough that the difference would matter.
     if segUsed.count == 1 {
-        candDelta = cgPoolDeltaPeek(cgAllStrLits, cgStrLitSize, segStrSets[0])
-        candDelta = candDelta + cgPoolDeltaPeek(cgAllEnumTables, cgEnumTableSize, segEnumSets[0])
-        candDelta = candDelta + cgPoolDeltaPeek(cgAllSerdescs, cgSerdescSize, segSerdescSets[0])
+        candDelta = cgPoolDeltaPeek(cgAllStrLits, cgStrLitSize, segStrSets[0], segStrBits[0])
+        candDelta = candDelta + cgPoolDeltaPeek(cgAllEnumTables, cgEnumTableSize, segEnumSets[0], segEnumBits[0])
+        candDelta = candDelta + cgPoolDeltaPeek(cgAllSerdescs, cgSerdescSize, segSerdescSets[0], segSerdescBits[0])
         if irIsUiProgram() and not segUiBlob[0] {
             candDelta = candDelta + cgUiBlobSize
         }
@@ -11737,9 +11905,16 @@ func cgPackProgram(): bool {
             // append the restored entries in "encounter order" at the
             // tail of segStrSets[0]'s own partial accumulation,
             // producing the same SET but a different byte ORDER.
+            // Task 15 (findings 1.8): the wholesale replace REBUILDS
+            // segStrBits[0]/segEnumBits[0]/segSerdescBits[0] from the
+            // replacement lists' own contents -- these bitmaps must stay
+            // in lockstep with the ordered lists they mirror.
             segStrSets[0] = cgAllStrLits
             segEnumSets[0] = cgAllEnumTables
             segSerdescSets[0] = cgAllSerdescs
+            segStrBits[0] = cgBoolBitmapFromList(cgAllStrLits, irStrLits.count)
+            segEnumBits[0] = cgBoolBitmapFromList(cgAllEnumTables, irEnums.count)
+            segSerdescBits[0] = cgBoolBitmapFromList(cgAllSerdescs, irRecords.count)
             if irIsUiProgram() {
                 segUiBlob[0] = true
                 segUiEvents[0] = true
@@ -11845,6 +12020,13 @@ func cg68ProgramFork(outPath: string, listing: bool, segLimit: int): bool {
         cgCurPoolSerdescs = cgSegSerdescSets[s - 1]
         cgCurPoolUsesUiBlob = cgSegUsesUiBlob[s - 1]
         cgCurPoolUsesUiEvents = cgSegUsesUiEvents[s - 1]
+
+        // Task 15 (findings 1.8): rebuild cgCurPool*Bits every time
+        // cgCurPool* is assigned -- see cgCurPoolStrLitBits' own doc
+        // comment.
+        cgCurPoolStrLitBits = cgBoolBitmapFromList(cgCurPoolStrLits, irStrLits.count)
+        cgCurPoolEnumBits = cgBoolBitmapFromList(cgCurPoolEnumTables, irEnums.count)
+        cgCurPoolSerdescBits = cgBoolBitmapFromList(cgCurPoolSerdescs, irRecords.count)
 
         cgReserveStrLitLabels()
         cgReserveUiPoolLabels()
