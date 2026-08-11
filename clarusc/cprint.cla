@@ -2642,6 +2642,21 @@ func fpIntrCall4(nm: int, x: int, a0: int, a1: int, a2: int): text {
             fpEmit("rt_list_clear(" + fpExpr(a0) + ");")
         }
         return toText("")
+    } else if nm == IListClearDeep() {
+        // memory-leak-fix phase Task 4: release every current element
+        // (cpEmitElemReleaseWalk) BEFORE the same O(1) hard reset
+        // IListClear does -- lowListMethod only ever picks this name for a
+        // ref-bearing element type.
+        l = fpExpr(a0)
+        freeVarBuf = ""
+        cpEmitElemReleaseWalk(freeVarBuf, toStr(l), irExprType(a0))
+        fpEmit(freeVarBuf)
+        if cpListPorted {
+            fpEmit("clar_fn_rtListClear((void*)" + l + ");")
+        } else {
+            fpEmit("rt_list_clear(" + l + ");")
+        }
+        return toText("")
     } else if nm == IListFreeVar() {
         // memory-audit Task 7: reuse Task 5's cpEmitRelease (element-release
         // loop for a KText element type, then rt_list_release) rather than
@@ -2917,6 +2932,20 @@ func fpIntrCall5(nm: int, x: int, a0: int, a1: int, a2: int): text {
             fpEmit("clar_fn_rtMapClear((void*)" + fpExpr(a0) + ");")
         } else {
             fpEmit("rt_map_clear(" + fpExpr(a0) + ");")
+        }
+        return toText("")
+    } else if nm == IMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's doc
+        // comment; keys are inline strings, never released, so only
+        // values are walked.
+        m = fpExpr(a0)
+        freeVarBuf = ""
+        cpEmitElemReleaseWalk(freeVarBuf, toStr(m), irExprType(a0))
+        fpEmit(freeVarBuf)
+        if cpMapPorted {
+            fpEmit("clar_fn_rtMapClear((void*)" + m + ");")
+        } else {
+            fpEmit("rt_map_clear(" + m + ");")
         }
         return toText("")
     } else if nm == IMapFreeVar() {
@@ -3410,6 +3439,18 @@ func fpIntrCall8(nm: int, x: int, a0: int, a1: int, a2: int): text {
         }
         fpEmit("clar_fn_rtSortedMapClear((void*)" + fpExpr(a0) + ");")
         return toText("")
+    } else if nm == ISortedMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's doc
+        // comment.
+        if not cpSortedMapPorted {
+            cpFatal("sortedmap clear deep without cpSortedMapPorted")
+        }
+        m = fpExpr(a0)
+        freeVarBuf = ""
+        cpEmitElemReleaseWalk(freeVarBuf, toStr(m), irExprType(a0))
+        fpEmit(freeVarBuf)
+        fpEmit("clar_fn_rtSortedMapClear((void*)" + m + ");")
+        return toText("")
     } else if nm == ISortedMapFreeVar() {
         freeVarBuf = ""
         cpEmitRelease(freeVarBuf, "cv_" + poolGet(irVarRefName(a0)), irExprType(a0))
@@ -3589,6 +3630,18 @@ func fpIntrCall9(nm: int, x: int, a0: int, a1: int, a2: int): text {
             cpFatal("intmap clear without cpIntMapPorted")
         }
         fpEmit("clar_fn_rtIntMapClear((void*)" + fpExpr(a0) + ");")
+        return toText("")
+    } else if nm == IIntMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's doc
+        // comment.
+        if not cpIntMapPorted {
+            cpFatal("intmap clear deep without cpIntMapPorted")
+        }
+        m = fpExpr(a0)
+        freeVarBuf = ""
+        cpEmitElemReleaseWalk(freeVarBuf, toStr(m), irExprType(a0))
+        fpEmit(freeVarBuf)
+        fpEmit("clar_fn_rtIntMapClear((void*)" + m + ");")
         return toText("")
     } else if nm == IIntMapFreeVar() {
         freeVarBuf = ""
@@ -4307,6 +4360,117 @@ func cpDefaultInit(dst: text, t: int, scalarDefault: int, strDefault: int) {
         cpDefaultInit(dst + ".e[" + ix + "]", irtElem(t), 0, -1)
         fpIndent = fpIndent - 1
         fpEmit(toText("}"))
+    }
+}
+
+// cpEmitElemReleaseWalk (memory-leak-fix phase Task 4) appends to dst an
+// UNGUARDED loop releasing every element (KList) / value (KMap/KSortedMap/
+// KIntMap) currently held by container cexpr at IR type t -- the `.clear()`
+// Deep intrinsics' own element-release pass, run BEFORE the plain O(1)
+// hard reset. Deliberately not cpEmitRelease's own KList/KMap/KSortedMap/
+// KIntMap branches: those wrap the walk in an `rt_*_lastref` guard because
+// a shared (rc>1) container being torn down along two independent paths
+// must not have its elements released twice; `.clear()` has exactly ONE
+// call site and always empties THIS container's current contents (any
+// other reference to the same handle sees the same empty container
+// afterward), so gating on the container's own rc would wrongly skip the
+// element release whenever the container happens to be shared. No final
+// container release either -- the container handle survives `.clear()`.
+// A container-valued element/value recurses through cpEmitRelease itself
+// (its own per-kind branch already walks+releases a whole container
+// value correctly) -- no separate recursion is written here, per the
+// plan's own instruction. Mirrors cpEmitRelease's per-kind C shapes
+// exactly (same accessor calls, same *Ported redirects) so the emitted
+// release calls are the same ones already covered by cpEmitRelease's own
+// tests; kept as separate emission (not a shared sub-helper) so
+// cpEmitRelease's own byte-exact golden output is untouched by this task.
+func cpEmitElemReleaseWalk(dst: text, cexpr: string, t: int) {
+    var k: IRKind
+    var et: int
+    var ix: string
+    var en: string
+    var recName: string
+    var atPrefix: string
+    var countCall: string
+    var valAtFn: string
+    var mArg: string
+    var outCast: string
+
+    k = irtKind(t)
+    et = irtElem(t)
+    if k == KList {
+        if cpListPorted {
+            atPrefix = "clar_fn_rtListAt((void*)" + cexpr + ", "
+            countCall = "clar_fn_rtListCount((void*)" + cexpr + ")"
+        } else {
+            atPrefix = "rt_list_at(" + cexpr + ", "
+            countCall = "rt_list_count(" + cexpr + ")"
+        }
+        if irtKind(et) == KText {
+            if cpTextArcPorted {
+                cpAppendLine(dst, "    { int32_t i; for (i = 0; i < " + countCall + "; i++) clar_fn_rtTextRelease((void*)*(rt_text **)" + atPrefix + "i)); }")
+            } else {
+                cpAppendLine(dst, "    { int32_t i; for (i = 0; i < " + countCall + "; i++) rt_text_release(*(rt_text **)" + atPrefix + "i)); }")
+            }
+        } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
+            recName = poolGet(irtName(et))
+            irMarkRcWalkNeeded(irtName(et))
+            cpAppendLine(dst, "    { int32_t i; for (i = 0; i < " + countCall + "; i++) clar_release_" + recName + "((clar_rec_" + recName + " *)" + atPrefix + "i)); }")
+        } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+            cpLoopN = cpLoopN + 1
+            ix = "ix" + numToStr(cpLoopN)
+            en = "en" + numToStr(cpLoopN)
+            cpAppendLine(dst, "    { int32_t " + ix + "; for (" + ix + " = 0; " + ix + " < " + countCall + "; " + ix + "++) {")
+            cpAppendLine(dst, "    " + cpCType(et) + " " + en + " = *(" + cpCType(et) + "*)" + atPrefix + ix + ");")
+            cpEmitRelease(dst, en, et)
+            cpAppendLine(dst, "    } }")
+        }
+        return
+    }
+    // KMap / KSortedMap / KIntMap share the val_at-out-param shape
+    // (cpEmitRelease's own KMap/KSortedMap/KIntMap branches, unguarded).
+    if k == KMap {
+        if cpMapPorted {
+            countCall = "clar_fn_rtMapCount((void*)" + cexpr + ")"
+            valAtFn = "clar_fn_rtMapValAt"
+            mArg = "(void*)" + cexpr
+            outCast = "(void*)"
+        } else {
+            countCall = "rt_map_count(" + cexpr + ")"
+            valAtFn = "rt_map_val_at"
+            mArg = cexpr
+            outCast = ""
+        }
+    } else if k == KSortedMap {
+        countCall = "clar_fn_rtSortedMapCount((void*)" + cexpr + ")"
+        valAtFn = "clar_fn_rtSortedMapValAt"
+        mArg = "(void*)" + cexpr
+        outCast = "(void*)"
+    } else if k == KIntMap {
+        countCall = "clar_fn_rtIntMapCount((void*)" + cexpr + ")"
+        valAtFn = "clar_fn_rtIntMapValAt"
+        mArg = "(void*)" + cexpr
+        outCast = "(void*)"
+    }
+    if irtKind(et) == KText {
+        if cpTextArcPorted {
+            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_fn_rtTextRelease((void*)v); } }")
+        } else {
+            cpAppendLine(dst, "    { int32_t i; rt_text *v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); rt_text_release(v); } }")
+        }
+    } else if irtKind(et) == KRec and irRecHasHandleField(irtName(et)) {
+        recName = poolGet(irtName(et))
+        irMarkRcWalkNeeded(irtName(et))
+        cpAppendLine(dst, "    { int32_t i; clar_rec_" + recName + " v; for (i = 0; i < " + countCall + "; i++) { " + valAtFn + "(" + mArg + ", i, " + outCast + "&v); clar_release_" + recName + "(&v); } }")
+    } else if irtKind(et) == KList or irtKind(et) == KMap or irtKind(et) == KSortedMap or irtKind(et) == KIntMap {
+        cpLoopN = cpLoopN + 1
+        ix = "ix" + numToStr(cpLoopN)
+        cpAppendLine(dst, "    { int32_t " + ix + "; " + cpCType(et) + " v" + numToStr(cpLoopN) + ";")
+        cpAppendLine(dst, "    for (" + ix + " = 0; " + ix + " < " + countCall + "; " + ix + "++) {")
+        cpAppendLine(dst, "    " + valAtFn + "(" + mArg + ", " + ix + ", " + outCast + "&v" + numToStr(cpLoopN) + ");")
+        cpEmitRelease(dst, "v" + numToStr(cpLoopN), et)
+        cpAppendLine(dst, "    }")
+        cpAppendLine(dst, "    }")
     }
 }
 

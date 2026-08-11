@@ -1,0 +1,53 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// clear_deep.cla: memory-leak-fix phase Task 5 pinning fixture -- native
+// codegen coverage for `.clear()` on a ref-bearing element/value type, the
+// four IListClearDeep/IMapClearDeep/ISortedMapClearDeep/IIntMapClearDeep
+// intrinsics (cgClearDeepContainer, cg68k.cla). Before this task, no
+// testdata/cg68k fixture exercised these arms at all (bounce.cla's only
+// `.clear()` is a UI canvas method, an entirely separate dispatch path);
+// this is the "list of text + .clear()" coverage the Task 5 brief calls
+// for, extended to the sibling map/sortedmap/intmap shapes so all four new
+// arms get at least one golden-listing proof.
+func clearDeepRun() {
+    var l: list of text
+    var m: map of text
+    var sm: sortedmap of text
+    var im: intmap of text
+
+    l.push("alpha")
+    l.push("beta")
+    l.clear()
+    smokeCheck(l.count == 0, "list text clear count")
+
+    m["a"] = "alpha"
+    m["b"] = "beta"
+    m.clear()
+    smokeCheck(m.count == 0, "map text clear count")
+
+    sm["a"] = "alpha"
+    sm["b"] = "beta"
+    sm.clear()
+    smokeCheck(sm.count == 0, "sortedmap text clear count")
+
+    im[1] = "alpha"
+    im[2] = "beta"
+    im.clear()
+    smokeCheck(im.count == 0, "intmap text clear count")
+}
+
+func smokeCheck(cond: bool, label: string) {
+    var msg: string
+    if cond {
+        msg = "PASS " + label
+    } else {
+        msg = "FAIL " + label
+    }
+    alert(msg)
+}
+
+on App.launch {
+    clearDeepRun()
+    quit 0
+}

@@ -3274,6 +3274,19 @@ func IListClear(): int {
     return iListClearIdx
 }
 
+// IListClearDeep -- memory-leak-fix phase Task 4: `.clear()` on a
+// ref-bearing-element list -- releases every element first, then the same
+// O(1) hard reset IListClear does. See docs/superpowers/plans/
+// 2026-08-12-memory-leak-fix.md Task 4.
+var iListClearDeepIdx: int = -1
+
+func IListClearDeep(): int {
+    if iListClearDeepIdx == -1 {
+        iListClearDeepIdx = intern("list_clear_deep")
+    }
+    return iListClearDeepIdx
+}
+
 // IListFreeVar -- see ITextFreeVar's doc comment.
 var iListFreeVarIdx: int = -1
 
@@ -3391,6 +3404,20 @@ func IMapClear(): int {
     return iMapClearIdx
 }
 
+// IMapClearDeep -- memory-leak-fix phase Task 4: `.clear()` on a
+// ref-bearing-value map -- releases every value first, then the same O(1)
+// hard reset IMapClear does (keys are inline strings, never released --
+// rtMapClear's own poolused=0 already reclaims their bytes). See
+// docs/superpowers/plans/2026-08-12-memory-leak-fix.md Task 4.
+var iMapClearDeepIdx: int = -1
+
+func IMapClearDeep(): int {
+    if iMapClearDeepIdx == -1 {
+        iMapClearDeepIdx = intern("map_clear_deep")
+    }
+    return iMapClearDeepIdx
+}
+
 // IMapFreeVar -- see ITextFreeVar's doc comment.
 var iMapFreeVarIdx: int = -1
 
@@ -3489,6 +3516,19 @@ func ISortedMapClear(): int {
     return iSortedMapClearIdx
 }
 
+// ISortedMapClearDeep -- memory-leak-fix phase Task 4: ISortedMapClear's
+// ref-bearing-value twin, IMapClearDeep's own doc comment applies
+// unchanged. See docs/superpowers/plans/2026-08-12-memory-leak-fix.md
+// Task 4.
+var iSortedMapClearDeepIdx: int = -1
+
+func ISortedMapClearDeep(): int {
+    if iSortedMapClearDeepIdx == -1 {
+        iSortedMapClearDeepIdx = intern("sortedmap_clear_deep")
+    }
+    return iSortedMapClearDeepIdx
+}
+
 // ISortedMapFreeVar -- see ITextFreeVar's doc comment.
 var iSortedMapFreeVarIdx: int = -1
 
@@ -3585,6 +3625,19 @@ func IIntMapClear(): int {
         iIntMapClearIdx = intern("intmap_clear")
     }
     return iIntMapClearIdx
+}
+
+// IIntMapClearDeep -- memory-leak-fix phase Task 4: IIntMapClear's
+// ref-bearing-value twin, IMapClearDeep's own doc comment applies
+// unchanged. See docs/superpowers/plans/2026-08-12-memory-leak-fix.md
+// Task 4.
+var iIntMapClearDeepIdx: int = -1
+
+func IIntMapClearDeep(): int {
+    if iIntMapClearDeepIdx == -1 {
+        iIntMapClearDeepIdx = intern("intmap_clear_deep")
+    }
+    return iIntMapClearDeepIdx
 }
 
 // IIntMapFreeVar -- see ITextFreeVar's doc comment.

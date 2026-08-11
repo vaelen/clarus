@@ -1331,6 +1331,15 @@ func lowListMethod(recv: int, sel: int, argsHead: int, ty: int): int {
     } else if nm == "count" {
         return newIRIntr(IListCount(), recv, ty)
     } else if nm == "clear" {
+        // memory-leak-fix phase Task 4: a ref-bearing element type needs
+        // its whole current population released before the O(1) hard
+        // reset -- same predicate trio the scope-exit release walk uses
+        // (lowFreeAt), applied to the ELEMENT type instead of a whole
+        // local. Scalar elements keep the plain O(1) reset unchanged.
+        elemT = irtElem(irExprType(recv))
+        if lowEscapeTrackableKind(irtKind(elemT)) or lowIsRecBearing(elemT) or lowArrHeapScalarBearing(elemT) {
+            return newIRIntr(IListClearDeep(), recv, ty)
+        }
         return newIRIntr(IListClear(), recv, ty)
     }
     lowUnsupported("list method " + nm)
@@ -1361,6 +1370,7 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
     var removeName: int
     var countName: int
     var clearName: int
+    var clearDeepName: int
 
     nm = poolGet(selectName(sel))
     if im {
@@ -1368,16 +1378,19 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
         removeName = IIntMapRemove()
         countName = IIntMapCount()
         clearName = IIntMapClear()
+        clearDeepName = IIntMapClearDeep()
     } else if sorted {
         hasName = ISortedMapHas()
         removeName = ISortedMapRemove()
         countName = ISortedMapCount()
         clearName = ISortedMapClear()
+        clearDeepName = ISortedMapClearDeep()
     } else {
         hasName = IMapHas()
         removeName = IMapRemove()
         countName = IMapCount()
         clearName = IMapClear()
+        clearDeepName = IMapClearDeep()
     }
     if nm == "get" {
         elemT = irtElem(irExprType(recv))
@@ -1419,6 +1432,14 @@ func lowMapMethod(recv: int, sel: int, argsHead: int, ty: int, sorted: bool, im:
     } else if nm == "count" {
         return newIRIntr(countName, recv, ty)
     } else if nm == "clear" {
+        // memory-leak-fix phase Task 4: dispatch on the VALUE type
+        // (lowListMethod's own "clear" doc comment applies unchanged) --
+        // keys are inline strings, never released, so only the value type
+        // matters here.
+        elemT = irtElem(irExprType(recv))
+        if lowEscapeTrackableKind(irtKind(elemT)) or lowIsRecBearing(elemT) or lowArrHeapScalarBearing(elemT) {
+            return newIRIntr(clearDeepName, recv, ty)
+        }
         return newIRIntr(clearName, recv, ty)
     }
     lowUnsupported("map method " + nm)

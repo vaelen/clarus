@@ -613,6 +613,15 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtListCount"))
     } else if nm == IListClear() {
         shakeMarkAndEnqueue(intern("rtListClear"))
+    } else if nm == IListClearDeep() {
+        // memory-leak-fix phase Task 4: same underlying hard reset as
+        // IListClear, plus an element-release walk -- the walk's own
+        // rtListAt/rtListCount/rtTextRelease/rtListRelease(nested) calls
+        // are already in the always-rooted core above; a record element's
+        // own clar_release_X is rooted separately, at cprint time, via
+        // cpEmitElemReleaseWalk's irMarkRcWalkNeeded call (same mechanism
+        // cpEmitRelease's own record-element branch already uses).
+        shakeMarkAndEnqueue(intern("rtListClear"))
     } else if nm == IListFreeVar() {
         shakeMarkAndEnqueue(intern("rtListRelease"))
     // IListSet/IListSetRetain: no clar_fn_ call of their own (a raw
@@ -643,6 +652,10 @@ func shakeWalkIntr(x: int) {
         shakeMarkAndEnqueue(intern("rtMapCount"))
     } else if nm == IMapClear() {
         shakeMarkAndEnqueue(intern("rtMapClear"))
+    } else if nm == IMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's own
+        // comment.
+        shakeMarkAndEnqueue(intern("rtMapClear"))
     } else if nm == IMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtMapRelease"))
 
@@ -667,6 +680,10 @@ func shakeWalkIntr(x: int) {
     } else if nm == ISortedMapCount() {
         shakeMarkAndEnqueue(intern("rtSortedMapCount"))
     } else if nm == ISortedMapClear() {
+        shakeMarkAndEnqueue(intern("rtSortedMapClear"))
+    } else if nm == ISortedMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's own
+        // comment.
         shakeMarkAndEnqueue(intern("rtSortedMapClear"))
     } else if nm == ISortedMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtSortedMapRelease"))
@@ -696,6 +713,10 @@ func shakeWalkIntr(x: int) {
     } else if nm == IIntMapCount() {
         shakeMarkAndEnqueue(intern("rtIntMapCount"))
     } else if nm == IIntMapClear() {
+        shakeMarkAndEnqueue(intern("rtIntMapClear"))
+    } else if nm == IIntMapClearDeep() {
+        // memory-leak-fix phase Task 4 -- see IListClearDeep's own
+        // comment.
         shakeMarkAndEnqueue(intern("rtIntMapClear"))
     } else if nm == IIntMapFreeVar() {
         shakeMarkAndEnqueue(intern("rtIntMapRelease"))

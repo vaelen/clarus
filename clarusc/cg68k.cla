@@ -4006,54 +4006,35 @@ func cgEmitMapValAtCall(nameIdx: int, ptrOff: int, idxOff: int, valOff: int) {
 // same shape regardless of key type), so IntMap's int keys never enter into
 // it at all.
 func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
-    var et: int
     var ptrOff: int
-    var countOff: int
-    var idxOff: int
     var lastrefFn: int
-    var countFn: int
-    var atFn: int
     var relFn: int
-    var opaque: bool
     var afterLbl: int
-    var loopLbl: int
 
     if depth >= cgDeepLevels {
         log("cg68k: container nesting too deep (Task 13 scope, max " + numToStr(cgDeepLevels) + " levels)")
         quit 1
     }
-    et = irtElem(t)
     ptrOff = cgDeepPtrOffs[depth]
-    countOff = cgDeepCountOffs[depth]
-    idxOff = cgDeepIndexOffs[depth]
-    opaque = irtKind(t) == KMap or irtKind(t) == KSortedMap or irtKind(t) == KIntMap
-    // Findings 1.4 (Task 13): lastrefFn/countFn/atFn/relFn were `string`
-    // literals, re-interned on every JSR below; now pre-interned rn*
-    // globals, picked once per depth-level walk (4-way, same runtime
-    // families cgIntrMapSet/Get/GetDv/Remove's own `sorted` bool covers,
-    // plus List/IntMap).
+    // Findings 1.4 (Task 13): lastrefFn/relFn were `string` literals,
+    // re-interned on every JSR below; now pre-interned rn* globals, picked
+    // once per depth-level walk (4-way, same runtime families
+    // cgIntrMapSet/Get/GetDv/Remove's own `sorted` bool covers, plus
+    // List/IntMap).
     if irtKind(t) == KIntMap {
         // map-hashtable phase Task 7: same opaque, out-param ValAt shape as
         // Map/SortedMap -- only the runtime name prefix differs. (The KEY
         // fetch this walk never needs -- it only walks VALUES.)
         lastrefFn = rnIntMapLastref
-        countFn = rnIntMapCount
-        atFn = rnIntMapValAt
         relFn = rnIntMapRelease
     } else if irtKind(t) == KSortedMap {
         lastrefFn = rnSortedMapLastref
-        countFn = rnSortedMapCount
-        atFn = rnSortedMapValAt
         relFn = rnSortedMapRelease
     } else if irtKind(t) == KMap {
         lastrefFn = rnMapLastref
-        countFn = rnMapCount
-        atFn = rnMapValAt
         relFn = rnMapRelease
     } else {
         lastrefFn = rnListLastref
-        countFn = rnListCount
-        atFn = rnListAt
         relFn = rnListRelease
     }
 
@@ -4066,41 +4047,131 @@ func cgDeepReleaseContainer(reg: int, off: int, t: int, depth: int) {
     a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, ptrOff)
 
     afterLbl = a68NewLabel()
-    if cgContainerElemNeedsWalk(et) {
+    if cgContainerElemNeedsWalk(irtElem(t)) {
         cgEmitPtrRcCall(lastrefFn, 6, ptrOff)
         a68Emit(OpTst, 4, AmNone, 0, 0, AmDn, 0, 0)
         a68EmitBr(OpBcc, 7, afterLbl) // BEQ: not lastref -> skip the walk
 
-        cgEmitPtrRcCall(countFn, 6, ptrOff)
-        a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, countOff)
-        a68Emit(OpClr, 4, AmNone, 0, 0, AmDisp16, 6, idxOff)
-
-        loopLbl = a68NewLabel()
-        a68Bind(loopLbl)
-        a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
-        a68Emit(OpMove, 4, AmDisp16, 6, countOff, AmDn, 1, 0)
-        a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
-        a68EmitBr(OpBcc, 12, afterLbl) // BGE: index>=count -> done
-
-        if opaque {
-            // rtMapValAt/rtSortedMapValAt(m, i, out) -- out is THIS depth's
-            // own `value` scratch slot (Map/SortedMap storage is opaque,
-            // unlike List's directly addressable backing array --
-            // cpEmitRelease's own "copied OUT into a local" shape,
-            // mirrored exactly).
-            cgEmitMapValAtCall(atFn, ptrOff, idxOff, cgDeepValueOffs[depth])
-            a68Emit(OpLea, 0, AmDisp16, 6, cgDeepValueOffs[depth], AmAn, 0, 0)
-        } else {
-            cgEmitAtCall(atFn, ptrOff, idxOff)
-            a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
-        }
-        cgContainerElemRelease(et, depth + 1)
-
-        a68Emit(OpAddq, 4, AmImm, 0, 1, AmDisp16, 6, idxOff)
-        a68EmitBr(OpBra, 0, loopLbl)
+        cgReleaseContainerElems(t, depth, afterLbl)
     }
     a68Bind(afterLbl)
     cgEmitPtrRcCall(relFn, 6, ptrOff)
+}
+
+// cgReleaseContainerElems (memory-leak-fix phase Task 5) is
+// cgDeepReleaseContainer's own element-walk loop, factored out so
+// `.clear()`'s Deep arms (cgClearDeepContainer, below) can reuse the exact
+// same walk WITHOUT cgDeepReleaseContainer's lastref gate: that gate exists
+// because a shared (rc>1) container's TEARDOWN can be reached from two
+// independent release call sites, and only the one that actually drops the
+// container to zero may free what it owns. `.clear()` has exactly ONE call
+// site and the container handle survives it (only its CONTENTS are
+// discarded), so the same double-release hazard the gate defends against
+// cannot occur here -- gating this walk on the container's own rc would
+// instead wrongly SKIP the element release whenever the container happens
+// to be aliased, reintroducing the leak class this task fixes (see
+// cpEmitElemReleaseWalk's own doc comment, cprint.cla, for the identical
+// host-lane reasoning/Task 4 precedent).
+//
+// Callers own the gate: this function unconditionally emits the walk, and
+// assumes (a) the caller has already checked
+// cgContainerElemNeedsWalk(irtElem(t)) before calling (an all-scalar
+// element type has nothing to walk) and (b) cgDeepPtrOffs[depth] already
+// holds the container's pointer VALUE (both callers stash it themselves,
+// exactly as cgDeepReleaseContainer always has). exitLbl is an
+// already-allocated, NOT-YET-bound label -- the loop branches to it when
+// index>=count, but binding it is the CALLER's job (cgDeepReleaseContainer
+// reuses the same label as its own lastref-skip target; cgClearDeepContainer
+// has no such second use and binds it immediately after this call).
+func cgReleaseContainerElems(t: int, depth: int, exitLbl: int) {
+    var et: int
+    var ptrOff: int
+    var countOff: int
+    var idxOff: int
+    var countFn: int
+    var atFn: int
+    var opaque: bool
+    var loopLbl: int
+
+    et = irtElem(t)
+    ptrOff = cgDeepPtrOffs[depth]
+    countOff = cgDeepCountOffs[depth]
+    idxOff = cgDeepIndexOffs[depth]
+    opaque = irtKind(t) == KMap or irtKind(t) == KSortedMap or irtKind(t) == KIntMap
+    if irtKind(t) == KIntMap {
+        countFn = rnIntMapCount
+        atFn = rnIntMapValAt
+    } else if irtKind(t) == KSortedMap {
+        countFn = rnSortedMapCount
+        atFn = rnSortedMapValAt
+    } else if irtKind(t) == KMap {
+        countFn = rnMapCount
+        atFn = rnMapValAt
+    } else {
+        countFn = rnListCount
+        atFn = rnListAt
+    }
+
+    cgEmitPtrRcCall(countFn, 6, ptrOff)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, countOff)
+    a68Emit(OpClr, 4, AmNone, 0, 0, AmDisp16, 6, idxOff)
+
+    loopLbl = a68NewLabel()
+    a68Bind(loopLbl)
+    a68Emit(OpMove, 4, AmDisp16, 6, idxOff, AmDn, 0, 0)
+    a68Emit(OpMove, 4, AmDisp16, 6, countOff, AmDn, 1, 0)
+    a68Emit(OpCmp, 4, AmDn, 1, 0, AmDn, 0, 0)
+    a68EmitBr(OpBcc, 12, exitLbl) // BGE: index>=count -> done
+
+    if opaque {
+        // rtMapValAt/rtSortedMapValAt(m, i, out) -- out is THIS depth's
+        // own `value` scratch slot (Map/SortedMap storage is opaque,
+        // unlike List's directly addressable backing array --
+        // cpEmitRelease's own "copied OUT into a local" shape,
+        // mirrored exactly).
+        cgEmitMapValAtCall(atFn, ptrOff, idxOff, cgDeepValueOffs[depth])
+        a68Emit(OpLea, 0, AmDisp16, 6, cgDeepValueOffs[depth], AmAn, 0, 0)
+    } else {
+        cgEmitAtCall(atFn, ptrOff, idxOff)
+        a68Emit(OpMovea, 4, AmDn, 0, 0, AmAn, 0, 0)
+    }
+    cgContainerElemRelease(et, depth + 1)
+
+    a68Emit(OpAddq, 4, AmImm, 0, 1, AmDisp16, 6, idxOff)
+    a68EmitBr(OpBra, 0, loopLbl)
+}
+
+// cgClearDeepContainer (memory-leak-fix phase Task 5) is
+// cpEmitElemReleaseWalk's native counterpart: the four IListClearDeep/
+// IMapClearDeep/ISortedMapClearDeep/IIntMapClearDeep intrinsic arms (below,
+// cgIntr) share this one body. a0e is the receiver expr (an ordinary
+// scalar-kind value expr -- a container handle IS its own pointer VALUE,
+// cgIsScalarKind's own KList/KMap/KSortedMap/KIntMap=true rule, same as
+// every other List/Map method arm's addr0=false receiver evaluation, e.g.
+// IListClear's cgIntr1(e, rnListClear, false) just above); evaluated ONCE
+// via cgExpr into D0, then stashed into depth-0 scratch, exactly mirroring
+// cpEmitElemReleaseWalk's own single-capture-and-reuse discipline
+// (`l = fpExpr(a0)`, used for both the walk and the final clear call --
+// never re-evaluated). Always depth 0: a `.clear()` receiver is always the
+// TOP-level container expr, never a nested element mid-walk (nested
+// elements only ever go through cgContainerElemRelease's own recursion).
+// Releases every CURRENT element (cgReleaseContainerElems, unguarded -- see
+// its own doc comment for why no lastref gate belongs here) before the
+// SAME O(1) hard-reset JSR (clearFn) the plain, non-Deep arm emits.
+func cgClearDeepContainer(a0e: int, t: int, clearFn: int) {
+    var ptrOff: int
+    var afterLbl: int
+
+    ptrOff = cgDeepPtrOffs[0]
+    cgExpr(a0e)
+    a68Emit(OpMove, 4, AmDn, 0, 0, AmDisp16, 6, ptrOff)
+
+    if cgContainerElemNeedsWalk(irtElem(t)) {
+        afterLbl = a68NewLabel()
+        cgReleaseContainerElems(t, 0, afterLbl)
+        a68Bind(afterLbl)
+    }
+    cgEmitPtrRcCall(clearFn, 6, ptrOff)
 }
 func cgFindEnumByName(nameIdx: int): int {
     var i: int
@@ -7608,6 +7679,15 @@ func cgIntr(e: int) {
         cgIntr1(e, rnListClear, false)
         return
     }
+    if nm == IListClearDeep() {
+        // memory-leak-fix phase Task 5: cgClearDeepContainer's own doc
+        // comment -- release every current element before the same
+        // IListClear hard reset, lowering only ever picks this name for a
+        // ref-bearing element type.
+        a0e = irIntrArgsHead(e)
+        cgClearDeepContainer(a0e, irExprType(a0e), rnListClear)
+        return
+    }
     if nm == IListFreeVar() {
         cgReleaseExpr(irIntrArgsHead(e))
         return
@@ -7646,6 +7726,14 @@ func cgIntr(e: int) {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnMapClear, false)
+        return
+    }
+    if nm == IMapClearDeep() {
+        // memory-leak-fix phase Task 5 -- see list_clear_deep's own
+        // comment above. Releases VALUES only; keys are inline pool bytes
+        // reclaimed by rtMapClear's own poolused=0 reset.
+        a0e = irIntrArgsHead(e)
+        cgClearDeepContainer(a0e, irExprType(a0e), rnMapClear)
         return
     }
     if nm == IMapFreeVar() {
@@ -7689,6 +7777,13 @@ func cgIntr(e: int) {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnSortedMapClear, false)
+        return
+    }
+    if nm == ISortedMapClearDeep() {
+        // memory-leak-fix phase Task 5 -- see list_clear_deep's own
+        // comment above. Values only, same reason as map_clear_deep.
+        a0e = irIntrArgsHead(e)
+        cgClearDeepContainer(a0e, irExprType(a0e), rnSortedMapClear)
         return
     }
     if nm == ISortedMapFreeVar() {
@@ -7741,6 +7836,13 @@ func cgIntr(e: int) {
         // layer1-compiler-perf phase Task 8 -- see list_clear's own
         // comment above.
         cgIntr1(e, rnIntMapClear, false)
+        return
+    }
+    if nm == IIntMapClearDeep() {
+        // memory-leak-fix phase Task 5 -- see list_clear_deep's own
+        // comment above. Values only, same reason as map_clear_deep.
+        a0e = irIntrArgsHead(e)
+        cgClearDeepContainer(a0e, irExprType(a0e), rnIntMapClear)
         return
     }
     if nm == IIntMapFreeVar() {

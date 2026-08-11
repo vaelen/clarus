@@ -33,7 +33,6 @@ func TestLeakGate(t *testing.T) {
 		runLeakFixture(t, "../../testdata/leakgate/arrstore.cla")
 	})
 	t.Run("ClearRefElems", func(t *testing.T) {
-		t.Skip("memory-leak-fix Task 4 flips this on")
 		runLeakFixture(t, "../../testdata/leakgate/clearprobe.cla")
 	})
 	t.Run("DoubleCompile", func(t *testing.T) {
