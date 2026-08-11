@@ -697,6 +697,18 @@ func scopeLookup(scope: int, nameIdx: int): int {
     return -1
 }
 
+// scopesTruncate pops every scope at index >= mark. Callers pass the
+// scopes.count captured BEFORE their scopeNew: block scopes are strictly
+// LIFO and nothing stores a block scope's index (funcScopeByDecl only
+// ever stores function scopes, created outside any block), so popping
+// frees each block's Scope record and its names intmap immediately
+// instead of leaking ~one live intmap per block until checkReset.
+func scopesTruncate(mark: int) {
+    while scopes.count > mark {
+        scopes.pop()
+    }
+}
+
 // scopesReset empties scopes/symbols/funcSigs -- call between compiling
 // independent programs, alongside typesReset.
 func scopesReset() {

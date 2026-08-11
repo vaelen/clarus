@@ -3448,6 +3448,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
     var ep: int
     var base: int
     var fnScope: int
+    var mark: int
     var psym: Symbol
     var savedScope: int
     var savedRet: int
@@ -3478,6 +3479,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
         emitDiag(line, col, "handler " + displayName + " takes (" + formatEventParams(specIdx) + ")")
     }
 
+    mark = scopes.count
     base = curScope
     if winType != -1 {
         base = windowScope(base, winType)
@@ -3516,6 +3518,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
     curFuncRet = savedRet
     curWindow = savedWin
     inCloseRequest = savedCR
+    scopesTruncate(mark)
 }
 
 // checkTopHandlerDecl checks a top-level `on App.event` or `on
@@ -3862,10 +3865,12 @@ func checkAssignStmt(s: int) {
 // nested under whatever curScope currently is.
 func checkBlock(b: int) {
     var saved: int
+    var mark: int
     var v: int
     var s: int
 
     saved = curScope
+    mark = scopes.count
     curScope = scopeNew(saved)
     v = blockVarsHead(b)
     while v != -1 {
@@ -3878,6 +3883,7 @@ func checkBlock(b: int) {
         s = stmtNext(s)
     }
     curScope = saved
+    scopesTruncate(mark)
 }
 
 // checkStmt dispatches one statement. Only StAssign and StExprStmt are
@@ -4008,6 +4014,7 @@ func checkForStmt(s: int) {
     var seqT: int
     var toT: int
     var saved: int
+    var mark: int
 
     seq = forSeq(s)
     toX = forTo(s)
@@ -4017,6 +4024,7 @@ func checkForStmt(s: int) {
 
     seqT = checkExpr(seq, -1)
     saved = curScope
+    mark = scopes.count
     curScope = scopeNew(saved)
 
     if toX != -1 {
@@ -4033,6 +4041,7 @@ func checkForStmt(s: int) {
         declareForVar(v1, IntT)
         checkLoopBody(body)
         curScope = saved
+        scopesTruncate(mark)
         return
     }
 
@@ -4075,6 +4084,7 @@ func checkForStmt(s: int) {
     }
     checkLoopBody(body)
     curScope = saved
+    scopesTruncate(mark)
 }
 
 // checkReturnStmt checks `return` / `return expr` (Ch5: Return). No
