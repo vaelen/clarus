@@ -1041,6 +1041,7 @@ func irReset() {
     irEnumMembers.clear()
     irEnums.clear()
     irWidgetDescs.clear()
+    irColumnDescs.clear()   // memory-leak-fix Task 6: was missing, unlike every sibling desc arena above/below (leaked unbounded across repeated in-process compiles; also skewed uiblob.cla's uibBaseLayouts size calc, which multiplies this list's .count).
     irBindDescs.clear()
     irWindowDescs.clear()
     irMenuItemDescs.clear()
