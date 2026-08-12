@@ -9,6 +9,15 @@ include "../parse.cla"
 include "../types.cla"
 include "../check.cla"
 
+// driveProgressTick seam stub: check.cla's per-decl liveness pulse (live-log
+// phase) calls drive.cla's driveProgressTick(), but this module test's file
+// list deliberately excludes drive.cla (dragging it in would pull the whole
+// driver/front-end world into a checker-only test). This harness plays the
+// same role main.cla/macgui.cla play for the real front ends -- the
+// consumer calls a free function the top-level file provides -- so it
+// supplies its own no-op here rather than widening the module's deps.
+func driveProgressTick() { }
+
 // runCase lexes, parses, and (if the parse was clean) type-checks src,
 // then alerts either "clean" or every diagnostic -- one line per
 // diagnostic family, cross-checked against `clarus check` on the

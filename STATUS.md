@@ -95,6 +95,42 @@ that matters (compiling a real multi-segment 68k app).
   progress instrumentation entirely (so it also gave no visible sign it
   was running before the OOM).
 
+## 3. memory-leak-fix phase close-out (2026-08-12, this session, branch `memory-leak-fix`)
+
+**COMPLETE.** 16 commits (`bf07436..f3419bc`) plus one T2-debt-fix commit
+on top implementing the 8-task plan referenced in step 0 below: per-compile
+growth went from ~42,845 Memory Manager blocks/compile to 0, with the
+leak-gate (`internal/mactest/leakgate_test.go`'s `DoubleCompile` alternating
+oracle) and the byte-identity oracle both green, and the bootstrap snapshot
+(`clarusc/clarusc.c`) regenerated with the fixed codegen.
+
+T2 (`go test ./internal/selfhost -count=1 -timeout 30m`) was staged green
+this session **except** two pre-existing, cross-phase `TestClarusModules`
+failures unrelated to the leak fix itself:
+
+- `check_test.cla`: the datetime-instrumentation/live-log phases added
+  `driveProgressTick()` calls inside `check.cla`, but `driveProgressTick`
+  lives in `drive.cla`, which this module test's file list doesn't include
+  (by design — it would drag the whole driver/front-end world into a
+  checker-only test). Fixed by giving `check_test.cla` its own no-op
+  `driveProgressTick()` stub, the same fe*-seam pattern `main.cla`/
+  `macgui.cla` already use for their own front-end hooks.
+- `asm68k_test.cla`: a golden mismatch from the layer1-compiler-perf
+  phase's findings-1.8 commit (`9faa69f`), which gated `asm68k.cla`'s
+  self-exerciser's `"end of exerciser"` listing comment behind
+  `a68ListingOn` (default false, matching `--listing`'s own default) —
+  legitimate behavior change, golden never refreshed. Golden regenerated
+  from the current driver's actual output (verified via direct diff: the
+  removed comment line was the only delta).
+
+With both fixed, T2 is fully green. Next: the Snow two-compile rerun (step
+1 below) is the remaining validation step for the leak fix on real
+hardware (expect compile #2 timings to now track compile #1's, not the
+degraded ~4x-slower numbers the original investigation measured); after
+that, merge decisions cover five stacked phases (`mac-resident-clarusc`,
+`map-hashtable`, `datetime-instrumentation`, `layer1-compiler-perf`,
+`memory-leak-fix`).
+
 ## Recommended next steps (in order)
 
 0. **RESOLVED (memory-leak-fix phase, 2026-08-12) — root-caused and fixed
@@ -151,10 +187,11 @@ that matters (compiling a real multi-segment 68k app).
    `string`'s 256-byte `Str255` representation, §1.7's full double-codegen
    fix (needs relocation), or codegen's calls-out-for-everything pattern
    (findings doc §2.3).
-5. Run T2 (`scripts/test-merge.sh`) before any merge to main; expect
-   possible module-golden churn (standing debt across all three stacked
-   phases).
+5. **DONE (memory-leak-fix phase close-out, 2026-08-12) — see section 3
+   above.** T2 (`scripts/test-merge.sh`'s `go test ./internal/selfhost`
+   body) is fully green; the two pre-existing `TestClarusModules` goldens
+   are fixed.
 6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
-   Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`, and
-   `layer1-compiler-perf` are all review-approved and stacked on top of
-   it, unmerged.
+   Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`,
+   `layer1-compiler-perf`, and `memory-leak-fix` are all review-approved
+   and stacked on top of it, unmerged.
