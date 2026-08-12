@@ -939,31 +939,48 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   | Host self-compile (`emit clarusc/main.cla`) | 0.42s | 0.39s | 1.08x faster |
   | `emit68k testdata/cg68k/tickprobe.cla` wall time | 0.02s | 0.02s | no measurable change (10ms `time` resolution floor) |
   | Peak RSS, `emit68k tickprobe.cla` | 29.35 MB | 30.64 MB | ~4% higher |
+  | `emit68k clarusc/macgui.cla` (33 segments) wall time | 0.52s | 0.46s | 1.13x faster |
+  | Peak RSS, `emit68k clarusc/macgui.cla` (33 segments) | 172.5 MB | 188.1 MB | +9.05% higher |
+
+  The macgui row uses the CURRENT working-tree `clarusc/macgui.cla` — a
+  confound-free apples-to-apples input, since `git diff cc3f798..HEAD --
+  clarusc/macgui.cla` is empty (Task 1 never touched it), so the same
+  33-segment source compiles under both the old and new snapshot
+  compiler. The layer1 phase's own `/tmp/l1src` frozen-source procedure
+  was NOT used for this row (see deferred item below) — the working tree
+  itself already gave a confound-free comparison.
 
   Honest read: `tickprobe.cla` is a tiny fixture (2-3 functions), too
   small to exercise the copy-avoidance this phase is actually for — its
-  wall time and RSS are dominated by fixed compiler-process overhead
-  (the new snapshot's larger generated-C size, ~3.45MB vs ~3.42MB,
-  plausibly accounts for the small RSS increase) rather than by the ABI
-  change. The self-compile number (clarusc compiling its own
-  string-parameter-dense ~13k-line source) is the more representative
-  signal, and it is modestly positive. The layer1 phase's own findings
-  doc note applies again here: **host self-compile gains are structurally
-  modest; a large multi-segment 68k workload is where a call-convention
-  win like this should show up clearly** — see the deferred frozen-fixture
-  item below.
+  wall time and RSS are dominated by fixed compiler-process overhead. The
+  macgui row is the representative signal (a real 33-segment,
+  `ClarusC.APPL`-shaped compile): a genuine **1.13x wall-time win**,
+  consistent with the self-compile number and with the layer1 phase's own
+  observation that a large multi-segment 68k workload is where a
+  call-convention win like this should show up clearest. The **RSS
+  increase is real, not a small-fixture artifact** — it holds at the
+  172MB real-build scale too (+9.05%), so it is recorded as an open
+  question rather than explained away (see deferred item below).
 
   **Deferred / debt:**
-  - **Frozen-fixture macro SKIPPED, not measured.** The layer1 phase's
-    `/tmp/l1src` frozen-`macgui.cla` procedure (`docs/superpowers/plans/
-    2026-08-11-layer1-compiler-perf.md`'s byte-identity gate) is the one
-    benchmark that would exercise a real multi-segment compile — but its
-    frozen source predates this phase's own immutable-parameters checker
-    rule and now fails to compile against it (`cannot assign to
-    parameter` on 11 pre-existing param-rebinding sites in the frozen
-    `lib.cla`/`lower.cla`/`res68k.cla`/`cg68k.cla`/`drive.cla`). A future
-    phase wanting this signal needs a fresh frozen snapshot taken
-    post-param-abi.
+  - **RSS increase (~4-9%, both fixture and real-build scale) — open
+    observation, not investigated this task.** Plausible suspects: the
+    new call-site copy temps (borrow/copy classification materializes
+    copy temps into the existing big-temp pool — Task 3/5/6), or growth
+    in classification-flag/side-table arenas the ABI flip added. Worth a
+    profiling look in a future phase before further Layer-2/3 memory
+    work, since a wall-time win that costs meaningfully more peak memory
+    is a real tradeoff, not free.
+  - **`/tmp/l1src` frozen-source procedure confirmed stale** (layer1
+    phase's `docs/superpowers/plans/2026-08-11-layer1-compiler-perf.md`
+    byte-identity-gate macro): its frozen source predates this phase's
+    own immutable-parameters checker rule and now fails to compile
+    against it (`cannot assign to parameter` on 11 pre-existing
+    param-rebinding sites in the frozen
+    `lib.cla`/`lower.cla`/`res68k.cla`/`cg68k.cla`/`drive.cla`). Not
+    needed for the macgui row above (working-tree input sufficed), but a
+    future phase relying on that specific frozen-archive procedure needs
+    a fresh re-freeze taken post-param-abi.
   - **Bare-`EIntr` arg release gap, both lanes** (pre-existing, narrowed
     but not closed by Task 6): `list_pop`/`list_shift` results passed
     directly as a borrowed call argument get no scheduled release on

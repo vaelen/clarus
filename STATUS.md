@@ -158,18 +158,23 @@ commits `94725e2..f210e4f`; ledger:
   | Host self-compile (`emit clarusc/main.cla`) | 0.42s | 0.39s | 1.08x faster |
   | `emit68k testdata/cg68k/tickprobe.cla` wall time | 0.02s | 0.02s | no measurable change |
   | Peak RSS, `emit68k tickprobe.cla` | 29.35 MB | 30.64 MB | ~4% higher |
+  | `emit68k clarusc/macgui.cla` (33 segments) wall time | 0.52s | 0.46s | 1.13x faster |
+  | Peak RSS, `emit68k clarusc/macgui.cla` (33 segments) | 172.5 MB | 188.1 MB | +9.05% higher |
 
   `tickprobe.cla` is too small a fixture to exercise the copy-avoidance
   this phase targets; its numbers are dominated by fixed compiler-process
-  overhead (the new snapshot's larger generated-C, ~3.45MB vs ~3.42MB,
-  plausibly explains the small RSS bump). The frozen-`macgui.cla` macro
-  (`/tmp/l1src`, the layer1 phase's real-multi-segment-workload
-  benchmark) was **SKIPPED** — its frozen source predates this phase's
-  own immutable-parameters checker and now fails to compile against it
-  (11 `cannot assign to parameter` errors across
-  `lib.cla`/`lower.cla`/`res68k.cla`/`cg68k.cla`/`drive.cla`). A fresh
-  frozen snapshot taken post-param-abi would be needed to recover that
-  signal.
+  overhead. The macgui row is the representative signal — a real
+  33-segment `ClarusC.APPL`-shaped compile, genuinely **1.13x faster** —
+  using the CURRENT working-tree `clarusc/macgui.cla` (byte-identical
+  between old and new base since Task 1 never touched it, so no fresh
+  freeze was needed; the layer1 phase's own `/tmp/l1src` frozen-source
+  procedure is confirmed stale — its source predates this phase's
+  immutable-parameters checker and fails to compile against it, 11
+  `cannot assign to parameter` errors — but wasn't required here). The
+  RSS increase (+9.05%) is real at this scale too, not a small-fixture
+  artifact; recorded as an open observation in the ROADMAP entry
+  (plausible suspects: new call-site copy temps, classification-flag
+  arena growth), not investigated further this task.
 - **T2's full emulator body still owed before merge** — `scripts/
   test-merge.sh`'s gated native `internal/mactest` lane was not run this
   session (Andrew's merge-gate call, per standing convention). T1 + the
