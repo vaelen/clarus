@@ -53,8 +53,9 @@ a parameter may not appear as:
   including reference types (`text`, `list`, `map`, window refs);
 - the base of a field assignment (`p.f = ...`) or index assignment
   (`p[i] = ...`) **when the parameter is a value type** (record, fixed
-  array, `string` — strings have no assignable elements today, so this
-  arm is records/arrays in practice);
+  array, or `string` — string element assignment `p[i] = ch` is legal
+  Clarus today, core suite `StrIndexing`, and must be rejected on a
+  param);
 - an `edit` statement's target (checkEditStmt requires a record — a
   value type — so this follows from the previous bullet; called out
   explicitly because `edit` is not spelled `=`);
@@ -212,6 +213,13 @@ for these shapes at exactly today's cost.
   reference-typed box pointers).
 - Window handler synthetic params (KWinRef — reference-typed).
 - Peephole/assembler (no new instruction shapes beyond existing ones).
+- **Fixed-array (`KArr`) parameter ABI** — out of scope (research
+  2026-08-12): a `KArr`-typed call argument is a hard compile error on
+  the 68k lane today (`cgExpr` EVarRef non-scalar guard; no committed
+  fixture passes one), and the host lane uses C's own struct-by-value.
+  Both stay as they are; immutability still applies to array params at
+  the checker level. Building 68k `KArr` argument passing remains the
+  separate deferred item from the cross-compile findings doc.
 
 ## 5. Migration (opening task of the plan)
 
