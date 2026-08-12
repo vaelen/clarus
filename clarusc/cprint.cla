@@ -1314,6 +1314,19 @@ func fpCallFnArg(a: int): text {
             fpEmit(name + " = " + fpExpr(a) + ";")
             return "&(" + name + ")"
         }
+        // final-review fix wave (UAF fix, owning-read half): list_pop/
+        // list_shift transfer ownership OUT of the list with no retain
+        // (see IListPop/IListShift's own printer above) -- when the popped/
+        // shifted value is itself a handle-bearing record used directly as
+        // a call argument, that ownership still needs a release once the
+        // call returns (nothing else will ever claim it), same tracked-temp
+        // shape as the ENewRec branch just above, but with NO extra retain
+        // (the pop/shift already transferred the +1).
+        if ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) and fpNeedsRelease(t) {
+            name = fpNewTrackedTmp(t)
+            fpEmit(name + " = " + fpExpr(a) + ";")
+            return "&(" + name + ")"
+        }
         return "&(" + fpAddrable(a) + ")"
     }
     handleBearing = k == KRec and irRecHasHandleField(irtName(t))

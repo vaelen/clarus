@@ -8939,15 +8939,21 @@ func cgFlushArgReleases(saved: list of int) {
 //     (cgEmitRecWalkCall isRetain=true) before scheduling its release.
 //     Either way the temp's own reference must be dropped once the call
 //     returns -- scheduled into cgPendingArgReleases, walked by
-//     cgFlushArgReleases at each of this function's own call sites. A
-//     bare EIntr source (list_pop/map_get/etc as a directly-borrowed
-//     argument) gets NEITHER retain NOR release scheduled here -- it
-//     mirrors cprint's own fpCallFnArg exactly (only ECallFn/ENewRec are
-//     special-cased there too; every other EIntr shape falls through to
-//     the untracked fpCopyToTemp path), a pre-existing, shared-across-both-
-//     lanes limitation for the specific case of an ownership-transferring
-//     read (list_pop/list_shift) passed directly as a bare call argument,
-//     not introduced or widened by this task.
+//     cgFlushArgReleases at each of this function's own call sites.
+//     final-review fix wave (UAF fix) widens this to a bare EIntr source
+//     too, split by lower.cla's own owning/non-owning classification: a
+//     NON-OWNING container read (map/sortedmap/intmap get(_dv[_birth]),
+//     list first/last -- lowIntrIsNonOwningContainerRead, now reclassified
+//     COPY by lowArgNeedsCopy, so it reaches here via irArgNeedsCopy(a))
+//     gets the SAME retain+schedule as the EVarRef/EFieldRef/EIndexRef
+//     aliasing case -- its materialized temp shallow-copied a handle field
+//     that still aliases the container's own storage. An OWNING read
+//     (list_pop/list_shift -- lowIntrIsOwningContainerRead, stays borrow,
+//     never irArgNeedsCopy) gets release-only scheduling like ECallFn/
+//     ENewRec -- already a freshly-owned +1 with no other owner, no retain
+//     needed. Before this fix wave, a bare EIntr source got NEITHER
+//     (mirroring cprint's own then-identical gap) -- see this phase's
+//     final-review report for the map_get repro this closes.
 //
 // A bool/char scalar pushes its cgSlotSizeOf-padded 2-byte slot via
 // MOVE.B, NOT MOVE.W (Task 12 fix, unchanged by this task -- see git
@@ -8982,6 +8988,28 @@ func cgPushArgs(argsHead: int): int {
                             cgPendingArgReleases.add(recNameIdx)
                         } else if ak == EVarRef or ak == EFieldRef or ak == EIndexRef {
                             cgEmitRecWalkCall(true, 6, cgVarOff(tmpRef), recNameIdx)
+                            cgPendingArgReleases.add(cgVarOff(tmpRef))
+                            cgPendingArgReleases.add(recNameIdx)
+                        } else if ak == EIntr and irArgNeedsCopy(a) {
+                            // final-review fix wave (UAF fix, non-owning half):
+                            // a bare map/sortedmap/intmap get(_dv[_birth]) or
+                            // list first/last, reclassified COPY by lowering's
+                            // lowIntrIsNonOwningContainerRead -- the
+                            // materialize above shallow-copied a handle field
+                            // that still aliases the container's own storage;
+                            // same retain+schedule as the EVarRef/EFieldRef/
+                            // EIndexRef aliasing-copy case just above.
+                            cgEmitRecWalkCall(true, 6, cgVarOff(tmpRef), recNameIdx)
+                            cgPendingArgReleases.add(cgVarOff(tmpRef))
+                            cgPendingArgReleases.add(recNameIdx)
+                        } else if ak == EIntr and lowIntrIsOwningContainerRead(irIntrName(a)) {
+                            // final-review fix wave (UAF fix, owning half):
+                            // list_pop/list_shift already transferred the +1
+                            // out of the list (no retain needed), but a bare
+                            // pop/shift used directly as a call argument still
+                            // needs its own release once the call returns --
+                            // same tracked-release-only shape as ECallFn/
+                            // ENewRec above.
                             cgPendingArgReleases.add(cgVarOff(tmpRef))
                             cgPendingArgReleases.add(recNameIdx)
                         }

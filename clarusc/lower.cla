@@ -885,6 +885,51 @@ func lowIsValueKind(t: int): bool {
     return k == KStr or k == KRec or k == KArr
 }
 
+// lowIntrIsNonOwningContainerRead (final-review fix wave: UAF fix) reports
+// whether nm names a container-READ intrinsic whose result ALIASES the
+// container's own stored element without transferring ownership out of it
+// -- the element (and any handle field it carries) stays reachable through
+// the container after the read, so if the callee re-enters the container
+// past the call (e.g. removes the very key/index just read), a borrowed
+// shallow copy's handle field would dangle. Exhaustive over every
+// KRec-producing "read without removing" op across all three map kinds
+// plus list: map/sortedmap/intmap get, get-with-default, and
+// get-with-default-birth (the birth variant is a RUNTIME conditional --
+// present-key returns the container's own value, absent-key returns a
+// freshly birthed one -- but classification here is compile-time and must
+// stay conservative for both branches; treating it as non-owning is safe
+// either way, see lowArgNeedsCopy's own doc comment) -- and list first/last
+// (read without removing, unlike pop/shift below). NOT included:
+// list_pop/list_shift, which REMOVE the element and transfer ownership OUT
+// of the list -- see lowIntrIsOwningContainerRead just below.
+func lowIntrIsNonOwningContainerRead(nm: int): bool {
+    if nm == IMapGet() or nm == IMapGetDv() or nm == IMapGetDvBirth() {
+        return true
+    }
+    if nm == ISortedMapGet() or nm == ISortedMapGetDv() or nm == ISortedMapGetDvBirth() {
+        return true
+    }
+    if nm == IIntMapGet() or nm == IIntMapGetDv() or nm == IIntMapGetDvBirth() {
+        return true
+    }
+    return nm == IListFirst() or nm == IListLast()
+}
+
+// lowIntrIsOwningContainerRead (final-review fix wave) reports whether nm
+// names a container-read intrinsic that REMOVES the element and transfers
+// ownership out of the container (list_pop/list_shift -- the only two;
+// no map/sortedmap/intmap kind has a remove-and-return op). These stay
+// classified as borrow (lowArgNeedsCopy never marks them COPY -- nothing
+// else can alias a just-removed element), but a bare pop/shift used
+// directly as a call argument still needs its own release scheduled once
+// the call returns (the popped/shifted handle is real and freshly owned,
+// with no other owner) -- both backends (cprint.cla's fpCallFnArg,
+// cg68k.cla's cgPushArgs) consult this to add release-only scheduling,
+// mirroring how an ECallFn/ENewRec result is tracked.
+func lowIntrIsOwningContainerRead(nm: int): bool {
+    return nm == IListPop() or nm == IListShift()
+}
+
 // lowArgNeedsCopy classifies a KStr/KRec call-argument expression (param-abi
 // phase, Task 3 -- spec doc's own borrow/copy table, single authority here):
 // walk EFieldRef/EIndexRef wrappers toward the root, staying borrow only
@@ -893,14 +938,33 @@ func lowIsValueKind(t: int): bool {
 // means the arg is reachable through container storage the callee could
 // re-enter past the call, so it needs a COPY. At the root: a global
 // EVarRef needs COPY (its storage outlives the call); a local/param
-// EVarRef, an EStrConst, or any other rvalue temp (ECallFn, EIntr, EConv,
-// ENewRec, ...) borrows -- nothing else can alias a caller-local temporary
-// during the callee's lifetime.
+// EVarRef, an EStrConst, or any other rvalue temp (ECallFn, EConv,
+// ENewRec, most EIntr, ...) borrows -- nothing else can alias a
+// caller-local temporary during the callee's lifetime.
+//
+// final-review fix wave (UAF fix): ONE more root shape needs COPY --
+// e's own type is a handle-bearing KRec (irRecHasHandleField -- a plain
+// scalar record or a KStr result never aliases anything, so both are
+// exempt) AND the walk's root is a bare, non-owning container-read EIntr
+// (lowIntrIsNonOwningContainerRead: map/sortedmap/intmap get(_dv[_birth])
+// or list first/last). That root's materialized temp is a SHALLOW copy --
+// its handle field(s) still point at the SAME storage the container's
+// element owns, so if the callee mutates the container past the call
+// (e.g. `gm.remove(k)` on the very key just read), the borrowed handle
+// dangles. The list-index-read path (EIndexRef over a KList base) already
+// gets COPY from the walk loop above (KList is never a "value kind"); this
+// closes the exact same hole for the map/sortedmap/intmap/list-first/last
+// path, which lowers to a bare EIntr root instead of an EIndexRef. Owning
+// reads (list_pop/list_shift, lowIntrIsOwningContainerRead) stay borrow --
+// see that function's own doc comment for why, and for the release-only
+// scheduling the backends still owe them.
 func lowArgNeedsCopy(e: int): bool {
     var k: IRExprKind
     var cur: int
     var base: int
+    var et: int
 
+    et = irExprType(e)
     cur = e
     k = irExprKind(cur)
     while k == EFieldRef or k == EIndexRef {
@@ -914,6 +978,9 @@ func lowArgNeedsCopy(e: int): bool {
         }
         cur = base
         k = irExprKind(cur)
+    }
+    if k == EIntr and irtKind(et) == KRec and irRecHasHandleField(irtName(et)) and lowIntrIsNonOwningContainerRead(irIntrName(cur)) {
+        return true
     }
     if k == EVarRef {
         return irVarRefGlobal(cur)
