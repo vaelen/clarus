@@ -263,3 +263,25 @@ clean
 === extern-dedup-str-param-width-conflict ===
 check_test.cla:1:1: conflicting extern declaration for 'UiStrAddr2' (also declared at 2:1)
 check_test.cla:2:1: conflicting extern declaration for 'UiStrAddr2' (also declared at 1:1)
+=== param-rebind-int ===
+check_test.cla:2:5: cannot assign to parameter x
+=== param-rebind-string ===
+check_test.cla:2:5: cannot assign to parameter s
+=== param-field-assign-record ===
+check_test.cla:5:5: cannot assign to parameter r
+=== param-index-assign-string ===
+check_test.cla:2:5: cannot assign to parameter s
+=== param-index-assign-fixed-array ===
+check_test.cla:2:5: cannot assign to parameter a
+=== param-text-element-write-clean ===
+clean
+=== param-list-mutation-clean ===
+clean
+=== local-field-assign-with-same-type-param-clean ===
+clean
+=== edit-target-param ===
+check_test.cla:9:13: cannot assign to parameter r
+=== asksave-fill-target-param ===
+check_test.cla:2:20: cannot assign to parameter p
+=== assign-to-constant ===
+check_test.cla:3:5: cannot assign to constant k

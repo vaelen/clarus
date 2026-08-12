@@ -1637,4 +1637,114 @@ on App.startEmpty {
     ln(src, "external func UiStrAddr2(s: string(63)): ptr")
     ln(src, "external func UiStrAddr2(s: string): ptr")
     runCase("extern-dedup-str-param-width-conflict", src)
+
+    // ---- param-abi phase, Task 2: immutable parameters ----
+
+    // Case 130: param rebind (int) -> "cannot assign to parameter x".
+    src = ""
+    ln(src, "func f(x: int): int {")
+    ln(src, "    x = x + 1")
+    ln(src, "    return x")
+    ln(src, "}")
+    runCase("param-rebind-int", src)
+
+    // Case 131: param rebind (string) -> same diagnostic.
+    src = ""
+    ln(src, "func f(s: string): string {")
+    ln(src, "    s = \"hi\"")
+    ln(src, "    return s")
+    ln(src, "}")
+    runCase("param-rebind-string", src)
+
+    // Case 132: field-assign through a record param -- value-typed, so a
+    // store through it is banned same as a bare rebind.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    n: int")
+    ln(src, "}")
+    ln(src, "func f(r: R) {")
+    ln(src, "    r.n = 1")
+    ln(src, "}")
+    runCase("param-field-assign-record", src)
+
+    // Case 133: index-assign through a string param -- strings are value
+    // types, so this is a store-through-param too, not referent mutation.
+    src = ""
+    ln(src, "func f(s: string) {")
+    ln(src, "    s[0] = 'H'")
+    ln(src, "}")
+    runCase("param-index-assign-string", src)
+
+    // Case 134: index-assign through a fixed-array param -- same reasoning,
+    // fixed arrays are value types.
+    src = ""
+    ln(src, "func f(a: int[3]) {")
+    ln(src, "    a[0] = 1")
+    ln(src, "}")
+    runCase("param-index-assign-fixed-array", src)
+
+    // Case 135: LEGAL -- text param element write. text is a reference
+    // type, so mutating through it stays legal.
+    src = ""
+    ln(src, "func f(t: text) {")
+    ln(src, "    t[0] = 'H'")
+    ln(src, "}")
+    runCase("param-text-element-write-clean", src)
+
+    // Case 136: LEGAL -- list param mutation. list is a reference type too.
+    src = ""
+    ln(src, "func f(l: list of int) {")
+    ln(src, "    l.add(1)")
+    ln(src, "}")
+    runCase("param-list-mutation-clean", src)
+
+    // Case 137: LEGAL -- a local record field assign inside a func that
+    // also has a param of the SAME record type. Proves the isParam check
+    // is keyed off the assigned symbol, not the type -- the local `p`
+    // (not the param `r`) is the assignment target here.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    n: int")
+    ln(src, "}")
+    ln(src, "func f(r: R) {")
+    ln(src, "    var p: R")
+    ln(src, "    p.n = 1")
+    ln(src, "}")
+    runCase("local-field-assign-with-same-type-param-clean", src)
+
+    // Case 138: edit-statement target is a param -> rejected. Reuses Case
+    // 19/21's form-window boilerplate (record + `window { form for R;
+    // field ... }`), the only existing check_test.cla shapes that exercise
+    // checkEditStmt's non-`new` (lvalue-target) path.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "window W {")
+    ln(src, "    form for R")
+    ln(src, "    field F { binds: x; label: \"X:\" }")
+    ln(src, "}")
+    ln(src, "func f(r: R) {")
+    ln(src, "    edit W, r")
+    ln(src, "}")
+    runCase("edit-target-param", src)
+
+    // Case 139: askSave's fill (first) argument is a bare string param ->
+    // rejected. askOpen shares the same check.cla code path (checkIdentCall)
+    // so isn't separately cased here.
+    src = ""
+    ln(src, "func f(p: string): bool {")
+    ln(src, "    return askSave(p, \"x\")")
+    ln(src, "}")
+    runCase("asksave-fill-target-param", src)
+
+    // Case 140: "cannot assign to constant" -- closes the zero-coverage gap
+    // found 2026-08-12 (the diagnostic already existed in checkAssignStmt
+    // but no check_test.cla case exercised it before now).
+    src = ""
+    ln(src, "const k: int = 1")
+    ln(src, "func f() {")
+    ln(src, "    k = 2")
+    ln(src, "}")
+    runCase("assign-to-constant", src)
 }

@@ -607,6 +607,14 @@ record Symbol {
     sigIdx: int
     isType: bool
     isConst: bool
+    // isParam (param-abi phase, Task 2) marks a symbol declared at a
+    // function/handler param-declare site (checkFuncSig, checkHandlerBody)
+    // -- checkAssignStmt/checkEditStmt/checkIdentCall's askOpen/askSave
+    // fill-arg check all read it to enforce immutable-parameter bindings.
+    // Zero-value default false, same "every OTHER symbol construction site
+    // leaves it unset" reasoning as isExtern/isCallback's own comments
+    // below.
+    isParam: bool
     constIsStr: bool
     constInt: int
     constStrIdx: int

@@ -756,6 +756,8 @@ func logGreeting(p: Person) {
 
 Scalars, records, and strings pass **by value**; `text`, `list`, `map`, and window refs pass **by reference** (they are references). A parameter documented as filled by the callee (e.g. `file.readText(path, t)`) mutates the passed `text`/`list`/`map` in place. User-declared functions cannot fill fixed-size out-parameters — return values instead. Built-in runtime routines are not bound by this rule: dialogs such as `askOpen(p, types)` and `askSave(path, suggested)` fill the string you pass, using a runtime calling convention not available to user code (Chapter 12).
 
+Parameters are immutable bindings: a function may not rebind a parameter name (`x = ...`) or store through a value-typed parameter — a field or index write on a `record`, fixed array, or `string` parameter — and either is a build-time error (`cannot assign to parameter NAME`). Mutating the referent of a reference-typed parameter (`text`, `list`, `map`, a window ref) stays legal; that mutation is the whole point of passing by reference, not a rebind of the parameter itself.
+
 ### Recursion
 
 Recursion is allowed:

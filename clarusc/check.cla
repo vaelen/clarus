@@ -78,6 +78,8 @@ var cnFront: int
 var cnNow: int
 var cnDateTimeStr: int
 var cnDurationStr: int
+var cnAskOpen: int
+var cnAskSave: int
 
 func cnInit() {
     if cnInited { return }
@@ -94,6 +96,8 @@ func cnInit() {
     cnNow = intern("now")
     cnDateTimeStr = intern("dateTimeStr")
     cnDurationStr = intern("durationStr")
+    cnAskOpen = intern("askOpen")
+    cnAskSave = intern("askSave")
 }
 
 // universeScope holds the built-in type/function names; topScope is the
@@ -2427,6 +2431,7 @@ func checkFuncSig(d: int) {
         psym.sigIdx = -1
         psym.isType = false
         psym.isConst = false
+        psym.isParam = true
         psym.constIsStr = false
         psym.constInt = 0
         psym.constStrIdx = -1
@@ -3546,6 +3551,7 @@ func checkHandlerBody(displayName: string, paramsHead: int, specIdx: int, body: 
         psym.sigIdx = -1
         psym.isType = false
         psym.isConst = false
+        psym.isParam = true
         psym.constIsStr = false
         psym.constInt = 0
         psym.constStrIdx = -1
@@ -3800,6 +3806,16 @@ func lvalueRootIdent(e: int): int {
     return -1
 }
 
+// symTypeIsValueKind reports whether t is a value-typed kind (record,
+// fixed array, or string) -- assigning THROUGH a param of one of these
+// kinds (a field or index write) mutates the same by-value copy a bare
+// rebind would, so checkAssignStmt bans it too (param-abi phase, Task 2).
+// Reference kinds (text/list/map/window ref) are deliberately excluded --
+// mutating what they refer to is their entire point.
+func symTypeIsValueKind(t: int): bool {
+    return typeKind(t) == TyRec or typeKind(t) == TyArr or typeKind(t) == TyStr
+}
+
 // readOnlyPropName reports the read-only pseudo-property sel names
 // (`front`, `count`, `length`, `isNew`, the error type's `code`/`message`),
 // or "" if sel isn't one. Widget runtime properties (text/caption/
@@ -3886,6 +3902,17 @@ func checkAssignStmt(s: int) {
         if symIdx != -1 and symbols[symIdx].isConst {
             emitDiag(stmtLine(s), stmtCol(s), "cannot assign to constant " + poolGet(identName(rootIdent)))
             return
+        }
+        // param-abi phase, Task 2: rebinding a param (LHS root ident IS
+        // the target, e.g. `x = x + 1`) is always banned; a store THROUGH
+        // a param (a field/index write, e.g. `r.n = 1`) is banned only
+        // when the param's type is value-kind -- a reference-typed param
+        // (text/list/map/window ref) keeps referent mutation legal.
+        if symIdx != -1 and symbols[symIdx].isParam {
+            if exprKind(lhs) == ExIdent or symTypeIsValueKind(symbols[symIdx].typeIdx) {
+                emitDiag(stmtLine(s), stmtCol(s), "cannot assign to parameter " + poolGet(identName(rootIdent)))
+                return
+            }
         }
     }
     if lt == InvalidT or rt == InvalidT {
@@ -4348,6 +4375,7 @@ func checkEditStmt(s: int) {
     var tsymIdx: int
     var target: int
     var tt: int
+    var rootIdent: int
 
     formNameIdx = editForm(s)
     symIdx = scopeLookup(curScope, formNameIdx)
@@ -4381,6 +4409,20 @@ func checkEditStmt(s: int) {
     }
 
     target = editTarget(s)
+    // param-abi phase, Task 2: an lvalue target is written back into on
+    // OK (Ch10), the same mutate-through-the-binding shape checkAssignStmt
+    // bans for a bare param -- ban it here too, regardless of the param's
+    // type (a record param is always value-kind anyway, so this mirrors
+    // checkAssignStmt's own bare-ident-rebind branch, not its value-kind
+    // one).
+    rootIdent = lvalueRootIdent(target)
+    if rootIdent != -1 {
+        symIdx = scopeLookup(curScope, identName(rootIdent))
+        if symIdx != -1 and symbols[symIdx].isParam {
+            emitDiag(exprLine(target), exprCol(target), "cannot assign to parameter " + poolGet(identName(rootIdent)))
+            return
+        }
+    }
     tt = checkExpr(target, formRecType)
     if tt != InvalidT and not (typeKind(tt) == TyRec and typeNameIdx(tt) == typeNameIdx(formRecType)) {
         emitDiag(exprLine(target), exprCol(target), "cannot use " + typeName(tt) + " where " + recName + " is expected")
@@ -5061,6 +5103,8 @@ func checkArgsCall(e: int, argsHead: int, sigIdx: int, isExtern: bool): int {
 func checkIdentCall(e: int, fn: int): int {
     var nameIdx: int
     var symIdx: int
+    var fillArg: int
+    var fillSymIdx: int
 
     nameIdx = identName(fn)
     if nameIdx == cnInt {
@@ -5092,6 +5136,21 @@ func checkIdentCall(e: int, fn: int): int {
         return InvalidT
     }
     if symbols[symIdx].isFunc {
+        // param-abi phase, Task 2: askOpen/askSave fill their FIRST
+        // argument in place using a runtime calling convention no
+        // user-declared function has (Ch6's own "Built-in runtime
+        // routines are not bound by this rule" carve-out) -- a bare param
+        // there is silently mutated exactly like a rebind would be, so
+        // ban it same as any other assign-to-param.
+        if nameIdx == cnAskOpen or nameIdx == cnAskSave {
+            fillArg = callArgsHead(e)
+            if fillArg != -1 and exprKind(fillArg) == ExIdent {
+                fillSymIdx = scopeLookup(curScope, identName(fillArg))
+                if fillSymIdx != -1 and symbols[fillSymIdx].isParam {
+                    emitDiag(exprLine(fillArg), exprCol(fillArg), "cannot assign to parameter " + poolGet(identName(fillArg)))
+                }
+            }
+        }
         return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx, symbols[symIdx].isExtern)
     }
     emitDiag(exprLine(e), exprCol(e), poolGet(nameIdx) + " is not callable")
