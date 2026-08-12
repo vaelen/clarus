@@ -863,6 +863,18 @@ var cgCurFrameNames: list of string
 var cgCurFrameOffsets: list of int
 var cgCurFrameNameIdxs: list of int
 
+// cgCurFrameIsRef[i] (param-abi phase, Task 6) parallels the three tables
+// above: true when this frame slot is a KStr/KRec PARAM (holds an ADDRESS,
+// the callee's own by-ref copy of the caller's argument -- Ch13/the plan's
+// own by-address ABI), false for every local (always holds its value
+// directly) and every scalar/handle-kind param. cgExprAddr's EVarRef arm is
+// the sole consumer: MOVEA.L off(A6),A0 (dereference the stored pointer)
+// when true, LEA off(A6),A0 (address of the slot itself) when false --
+// every str/record read, field ref, retain walk, and store already routes
+// through cgExprAddr, so this one bit at this one arm is the whole
+// callee-side deref path.
+var cgCurFrameIsRef: list of bool
+
 // cgCurEpilogueLabel is bound immediately before the current function's
 // UNLK/RTS; every SReturn branches here rather than emitting its own
 // UNLK/RTS inline -- one shared epilogue per function, naive but uniform.
@@ -1274,7 +1286,10 @@ const cgTmpSlots: int = 14
 // UI record shapes. mac-resident-clarusc Task 3: bumped 4 -> 16 --
 // self-hosting clarusc through emit68k hit the ceiling again, this time
 // from clarusc's OWN source (a single call statement with 16 str_concat
-// arguments, each needing cgPushArgMaterialized's own generic fallback).
+// arguments, each needing the arg-materialization generic fallback --
+// cgPushArgMaterialized at the time, folded into cgPushArgs' own
+// cgMaterializeToTemp branch by the param-abi phase, Task 6, but drawing
+// from this SAME pool either way).
 // Set to the exact observed need, not padded -- see the regression pin,
 // testdata/run/bigtmp_ceiling.cla, which exercises exactly 16 so an
 // accidental future shrink fails there, loudly, instead of only being
@@ -1354,39 +1369,25 @@ var cgLastTrackedOff: int
 // (cgFreeStmtTmps) releases it (final-review T13).
 var cgDiscardExprIdx: int
 
-// cgMaterializeDepth: final-review I1 guard, generalized by
-// mac-resident-clarusc Task 3. cgMaterializeCallResult stashes its
-// hidden-result pointer in A1 (cgPushArgMaterialized) BEFORE pushing its
-// own callee's argument chain (cgPushArgs) -- if evaluating one of THOSE
-// args itself needs materialization (e.g. `f(g(makeStr()))` with g
-// str-returning and an unaddressable inner arg), the nested call
-// overwrites A1. Task 2's own fix (this function's doc comment) already
-// established the reload invariant that makes this safe: A1 is saved on
-// the STACK (not trusted in the register) before calling cgPushArgs, and
-// reloaded afterward from displacement `total` -- a purely local
-// save/reload pair, self-contained to this one call frame, correct
-// regardless of what cgPushArgs does internally as long as it nets
-// exactly `total` bytes pushed (cgPushArgs' own invariant, unconditional,
-// not depth-dependent). By induction the SAME pair is correct at every
-// nesting level -- each level's save/reload is relative to ITS OWN
-// immediate A7 right after ITS OWN cgPushArgs call, oblivious to any
-// other level's. Originally guarded at depth 1 (fail closed rather than
-// trust an unverified case); clarusc's own self-emit needs depth 2
-// (`f(g(poolGet(...)))`-shaped code, pinned by
-// testdata/run/gapclose3.cla's `sumPair(wrapPair(mkPair(...)))` case) --
-// raised to cgMaterializeMaxDepth and hardware-verified (booted on real
-// 68k, native output byte-identical to host) rather than left blocking
-// self-hosting. 0
-// outside any materialization, 1 while inside the outermost one, etc.;
-// depth exceeding the cap still fails closed (truly pathological
-// nesting, never observed, kept as a backstop, not a proof of a real
-// limit).
-var cgMaterializeDepth: int
-
-// cgMaterializeMaxDepth is cgMaterializeDepth's cap -- generous headroom
-// past the depth-2 case clarusc's own source needs (hardware-verified),
-// same "fixed constant, hard error past it" discipline as cgDeepLevels.
-const cgMaterializeMaxDepth: int = 8
+// cgMaterializeDepth/cgMaterializeMaxDepth (final-review I1 guard,
+// generalized by mac-resident-clarusc Task 3; REMOVED, param-abi phase
+// Task 6): used to bound nested-materialization depth for
+// cgPushArgMaterialized/cgMaterializeCallResult's own A1-stash-across-
+// nested-cgPushArgs dance -- that whole mechanism existed because the OLD
+// by-value ABI reserved a KStr/KRec argument's FINAL stack slot up front
+// (a >4-byte block) and had to protect its address (A1) across evaluating
+// any of ITS OWN nested args. Task 6's by-address ABI removed the need
+// entirely: a materialized KStr/KRec argument's temp is now an ordinary
+// A6-relative scratch slot (cgMaterializeToTemp), addressable at ANY time
+// via a single LEA, with no ordering constraint against the arg-push
+// sequence to protect -- cgPushArgs' own materialize branch just calls
+// cgMaterializeToTemp directly (which recurses through the SAME
+// cgEmitStoreRec/cgCallFnInto dispatch every other str/rec store already
+// used, no depth bound needed) and pushes the temp's address once done.
+// See cgPendingArgReleases' own doc comment (near cgPushArgs) for the ONE
+// reentrancy hazard the new design still has (a module-global release
+// list, not a register) and how it's guarded -- the direct successor to
+// this note.
 
 // cgDeepLevels bounds container release-walk nesting (a List/Map element
 // that is itself a List/Map recurses -- cpEmitRelease's own ARC Task 8
@@ -1449,7 +1450,7 @@ func cgResetCodegenState() {
     cgLoopContinueLabels = cgFreshIntList()
     cgLastTrackedOff = -1
     cgDiscardExprIdx = -1
-    cgMaterializeDepth = 0
+    cgPendingArgReleases = cgFreshIntList()
     cgRecIdxByName.clear()
     cgRecIdxByNameValid = false
     cgSizeMemo.clear()
@@ -4682,6 +4683,7 @@ func cgEmitFunc(f: int) {
     var frameNames: list of string
     var frameOffsets: list of int
     var frameNameIdxs: list of int
+    var frameIsRef: list of bool
     var recLocalOffsets: list of int
     var recLocalTypes: list of int
     var recLocalNoBirth: list of bool
@@ -4720,6 +4722,7 @@ func cgEmitFunc(f: int) {
     frameNames = cgFreshStringList()
     frameOffsets = cgFreshIntList()
     frameNameIdxs = cgFreshIntList()
+    frameIsRef = cgFreshBoolList()
     recLocalOffsets = cgFreshIntList()
     recLocalTypes = cgFreshIntList()
     recLocalNoBirth = cgFreshBoolList()
@@ -4742,7 +4745,7 @@ func cgEmitFunc(f: int) {
     }
     // Task 14.7 fix (review round 2: factored into the single
     // cgRetNeedsHidden authority, below -- was inline here, and again in
-    // cgCallFnScalar/cgMaterializeCallResult's own matching guards; see
+    // cgCallFnScalar's own matching guard; see
     // cgRetNeedsHidden's own doc comment for the ABI-mismatch bug this
     // guards against).
     needsHidden = cgRetNeedsHidden(irFuncRet(f))
@@ -4753,7 +4756,12 @@ func cgEmitFunc(f: int) {
     }
     i = params.count - 1
     while i >= 0 {
-        sz = cgSlotSizeOf(irLocalType(params[i]))
+        // param-abi phase, Task 6: cgArgSlotSize, NOT cgSlotSizeOf -- a
+        // KStr/KRec param's own FRAME slot holds an ADDRESS now (4 bytes),
+        // regardless of the value's true size (cgArgSlotSize's own kind
+        // test, the cgRetNeedsHidden lesson: never size-test an ABI
+        // decision).
+        sz = cgArgSlotSize(irLocalType(params[i]))
         paramOffsets[i] = offset
         offset = offset + sz
         i = i - 1
@@ -4768,13 +4776,17 @@ func cgEmitFunc(f: int) {
     i = 0
     while i < params.count {
         if a68ListingOn {
-            a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgSlotSizeOf(irLocalType(params[i]))))
+            a68Comment("  param " + poolGet(irLocalName(params[i])) + " : " + numToStr(paramOffsets[i]) + "(A6)  size " + numToStr(cgArgSlotSize(irLocalType(params[i]))))
         } else {
             a68CommentMarker()
         }
         frameNames.add(poolGet(irLocalName(params[i])))
         frameOffsets.add(paramOffsets[i])
         frameNameIdxs.add(irLocalName(params[i]))
+        // param-abi phase, Task 6: KStr/KRec params pass BY ADDRESS now --
+        // this frame slot HOLDS a pointer, not the value itself. cgExprAddr's
+        // EVarRef arm consults this bit to MOVEA (deref) instead of LEA.
+        frameIsRef.add(irtKind(irLocalType(params[i])) == KStr or irtKind(irLocalType(params[i])) == KRec)
         i = i + 1
     }
 
@@ -4801,6 +4813,9 @@ func cgEmitFunc(f: int) {
             frameNames.add(nm)
             frameOffsets.add(runningNeg)
             frameNameIdxs.add(irLocalName(loc))
+            // A local's own slot always holds its VALUE directly, never a
+            // param's borrowed address -- LEA, not MOVEA (cgExprAddr).
+            frameIsRef.add(false)
             // Task 16 fix: EVERY local gets its own default-init at
             // function entry, unconditionally -- mirrors cpEmitFunc's own
             // unconditional per-local cpDefaultInit call (cprint.cla:3636)
@@ -4890,6 +4905,7 @@ func cgEmitFunc(f: int) {
     cgCurFrameNames = frameNames
     cgCurFrameOffsets = frameOffsets
     cgCurFrameNameIdxs = frameNameIdxs
+    cgCurFrameIsRef = frameIsRef
     cgCurHiddenOffset = -1
     if needsHidden {
         cgCurHiddenOffset = 8
@@ -5120,6 +5136,37 @@ func cgFindFrameOffset(nameIdx: int): int {
     return cgUnresolved
 }
 
+// cgFindFrameIsRef (param-abi phase, Task 6) is cgFindFrameOffset's own
+// by-ref-bit sibling, same linear scan over cgCurFrameNameIdxs (never
+// called on a global -- see cgVarIsByRef, its sole caller, below) --
+// false for a name not found at all (never actually reached: every
+// non-global EVarRef's name IS in the current function's own frame
+// tables, checked or not).
+func cgFindFrameIsRef(nameIdx: int): bool {
+    var i: int
+
+    i = 0
+    while i < cgCurFrameNameIdxs.count {
+        if cgCurFrameNameIdxs[i] == nameIdx {
+            return cgCurFrameIsRef[i]
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// cgVarIsByRef (param-abi phase, Task 6) reports whether EVarRef e denotes
+// a KStr/KRec PARAM slot -- the only frame entries cgEmitFunc ever marks
+// true (see cgCurFrameIsRef's own doc comment). A global is never by-ref
+// (globals always hold their value directly, Ch13's own by-address ABI is
+// param-only) -- checked first, short-circuiting the frame scan.
+func cgVarIsByRef(e: int): bool {
+    if irVarRefGlobal(e) {
+        return false
+    }
+    return cgFindFrameIsRef(irVarRefName(e))
+}
+
 // cgFindGlobalOffset returns nameIdx's A5 offset (cgAssignGlobalOffsets
 // must have already run this cg68Program() call), or cgUnresolved.
 // Findings 1.4 (Task 13): answers from cgGlobalOffByName (an intmap of
@@ -5216,7 +5263,7 @@ func cgIsScalarKind(k: IRKind): bool {
 // "does a function returning retTy use the hidden-result-pointer calling
 // convention" -- a KIND test (KStr/KRec), never a SIZE test. Was three
 // independent inline copies (cgEmitFunc's own needsHidden, plus matching
-// guards in cgCallFnScalar and cgMaterializeCallResult); collapsed here
+// guards in cgCallFnScalar and cgCallFnInto's own callers); collapsed here
 // so a future one-sided edit can't silently reintroduce the caller/
 // callee ABI mismatch the kind-vs-size bug was (see cgEmitFunc's own
 // needsHidden doc comment for the full account: a `string(3)` return is
@@ -5225,6 +5272,22 @@ func cgIsScalarKind(k: IRKind): bool {
 // unconditionally, regardless of size).
 func cgRetNeedsHidden(retTy: int): bool {
     return irtKind(retTy) == KStr or irtKind(retTy) == KRec
+}
+
+// cgArgSlotSize (param-abi phase, Task 6) is the bytes a call ARGUMENT of
+// type t occupies on the stack -- distinct from cgSlotSizeOf (a param's/
+// local's/global's own FRAME/storage width): a KStr/KRec argument now
+// passes by ADDRESS, always exactly 4 bytes, regardless of the value's
+// true size (a KIND test, never a size test -- the same cgRetNeedsHidden
+// lesson, and the reason this is its own function rather than folded into
+// cgSlotSizeOf, which every OTHER caller still needs to answer "how big is
+// the value itself" for -- record-field layout, local/global reservation,
+// array-element stride, none of which changed this task).
+func cgArgSlotSize(t: int): int {
+    if irtKind(t) == KStr or irtKind(t) == KRec {
+        return 4
+    }
+    return cgSlotSizeOf(t)
 }
 
 // cgVarRefAt (Task 14.7) wraps a raw A6-relative scratch slot (off(A6) --
@@ -5247,6 +5310,9 @@ func cgVarRefAt(off: int, t: int): int {
     cgCurFrameNames.add(nm)
     cgCurFrameOffsets.add(off)
     cgCurFrameNameIdxs.add(nameIdx)
+    // A synthetic scratch slot always holds its value directly (a real
+    // A6-relative temp, never a borrowed param address) -- never by-ref.
+    cgCurFrameIsRef.add(false)
     return newIRVarRef(nameIdx, false, t)
 }
 
@@ -5289,7 +5355,16 @@ func cgExprAddr(e: int) {
 
     k = irExprKind(e)
     if k == EVarRef {
-        a68Emit(OpLea, 0, AmDisp16, cgVarReg(e), cgVarOff(e), AmAn, 0, 0)
+        // param-abi phase, Task 6: a KStr/KRec PARAM's own frame slot
+        // holds the caller's ADDRESS, not the value -- MOVEA (dereference)
+        // instead of LEA (address-of-slot). Every other EVarRef (locals,
+        // globals, scalar/handle-kind params) is unchanged: cgVarIsByRef
+        // is false for all of them, so this degrades to the original LEA.
+        if cgVarIsByRef(e) {
+            a68Emit(OpMovea, 4, AmDisp16, cgVarReg(e), cgVarOff(e), AmAn, 0, 0)
+        } else {
+            a68Emit(OpLea, 0, AmDisp16, cgVarReg(e), cgVarOff(e), AmAn, 0, 0)
+        }
     } else if k == EStrConst {
         a68Emit(OpLea, 0, AmPCLabel, 0, cgPoolStrRef(irStrConstIdx(e)), AmAn, 0, 0)
     } else if k == EFieldRef {
@@ -8505,10 +8580,17 @@ func cgIntrUi(e: int, nm: int) {
 // below) -- both of which diverge from a plain 1:1 forward.
 func cgIntrUiForward(e: int, nameIdx: int) {
     var total: int
+    var savedReleases: list of int
 
+    // param-abi phase, Task 6: same save/flush bracket as cgCallFnScalar/
+    // cgCallFnInto -- fnName is an ordinary Clarus function (rtUi*), so a
+    // KStr/KRec arg of its own follows the SAME by-address ABI and can
+    // schedule the same pending releases (harmless no-op when it doesn't).
+    savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irIntrArgsHead(e))
     cgJsrByName(nameIdx)
     cgCleanupStack(total)
+    cgFlushArgReleases(savedReleases)
 }
 
 // cgIntrUiCanvasDrawText: rtUiCanvasDrawText(instV, wIdx, x, y, s: ptr) --
@@ -8733,71 +8815,190 @@ func cgBlockCopy(size: int) {
     }
 }
 
+// cgPendingArgReleases (param-abi phase, Task 6) is a flat list of
+// (off, recNameIdx) pairs -- one per handle-bearing KRec call-arg temp
+// cgPushArgs materialized THIS call that owns a reference (either a fresh
+// birth -- ECallFn/ENewRec, already +1 from the callee's own return-value
+// retain / the constructor's own birth -- or an explicit retain this file
+// just emitted for an aliasing copy). Each must be released once the
+// call it was pushed for returns; Clarus has no out-params, so this is a
+// module global, exactly like cgLastTrackedOff/cgDiscardExprIdx above.
+//
+// Reentrancy: cgPushArgs' own materialize branch can re-enter the call
+// path (a nested ECallFn/ENewRec argument, e.g. `f(g(makeRec()))`'s inner
+// `g(...)`, materializes via cgMaterializeToTemp -> cgEmitStoreRec ->
+// cgCallFnInto, which calls cgPushArgs AGAIN for g's own args) -- an
+// inner call's own pending releases must be walked and cleared BEFORE
+// control returns to the outer cgPushArgs loop, not merged into or
+// deferred past it: the SAME big-pool temp slot can be reallocated to a
+// LATER argument within the same statement (cgAllocBigTmpOff's own
+// per-statement bump allocator), so a deferred release could fire against
+// whatever unrelated value has since been written there. cgSaveArgReleases/
+// cgFlushArgReleases below save/reset/restore this list around every
+// direct cgPushArgs call site (cgCallFnScalar, cgCallFnInto,
+// cgIntrUiForward, cgCallExtNatFallback, cgCallExtUiSynth) -- the same
+// "state survives a nested call, uncorrupted, because it was saved first"
+// discipline this file's own A1-stash sites already established (see the
+// removed cgMaterializeDepth's doc comment, ~1369, for the register-based
+// precedent this module-var version follows).
+var cgPendingArgReleases: list of int
+
+// cgSaveArgReleases stashes the CURRENT (possibly in-progress, from an
+// outer call still mid-arg-evaluation) pending-release list and installs a
+// fresh empty one for the call about to run its own cgPushArgs -- pair
+// with cgFlushArgReleases once that call (and its cleanup) is done.
+func cgSaveArgReleases(): list of int {
+    var saved: list of int
+
+    saved = cgPendingArgReleases
+    cgPendingArgReleases = cgFreshIntList()
+    return saved
+}
+
+// cgFlushArgReleases releases every (off, recNameIdx) pair THIS call's own
+// cgPushArgs scheduled (cgEmitRecWalkCall's own no-op guard means a
+// non-handle-bearing entry never reaches this list at all -- nothing to
+// gate here), then restores the caller's own (possibly still in-progress)
+// list from before cgSaveArgReleases.
+//
+// D0/D1 hazard (found via native suite-boot verification, not by static
+// review): cgCallFnScalar's own return value lands in D0 (cgCallFunc's own
+// convention) BEFORE this function runs -- cgEmitRecWalkCall's JSR to
+// cg_release_<Rec> is an ordinary function call under this file's own
+// "no callee-saved registers" rule, so it's free to clobber D0/D1 like any
+// other. Left unprotected, a scalar/handle-return call whose OWN args
+// needed a scheduled release (e.g. `readParamDocBody(makeNestedDoc()) !=
+// "nested"`) had its just-returned D0 value stomped by the release walk
+// before the caller ever read it -- reproduced natively (not on host, C's
+// own call stack has no such hazard) as a bogus comparison result, NOT a
+// refcount/leak symptom. D0/D1 are saved on the stack across the WHOLE
+// walk (a single push/pop pair, not per-entry) and restored before
+// returning, protecting every one of this function's 6 call sites
+// uniformly rather than requiring each to know about the hazard itself.
+func cgFlushArgReleases(saved: list of int) {
+    var i: int
+
+    if cgPendingArgReleases.count > 0 {
+        a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+        a68Emit(OpMove, 4, AmDn, 1, 0, AmPreDec, 7, 0)
+    }
+    i = 0
+    while i < cgPendingArgReleases.count {
+        cgEmitRecWalkCall(false, 6, cgPendingArgReleases[i], cgPendingArgReleases[i + 1])
+        i = i + 2
+    }
+    if cgPendingArgReleases.count > 0 {
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 1, 0)
+        a68Emit(OpMove, 4, AmPostInc, 7, 0, AmDn, 0, 0)
+    }
+    cgPendingArgReleases = saved
+}
+
 // cgPushArgs pushes e's own argument chain (irCallFnArgsHead-shaped),
 // left to right, returning the total bytes pushed. Each arg's OWN type
 // (already coerced to the callee's param type by lower.cla's
-// lowCallArgs -- fpCallFn's own comment) decides push shape: a str OR
-// record argument (task-8-review round 1's Important 1 flagged this exact
-// gap; Task 12 closes it -- SAME mechanics for both, address-of then
-// block-copy, since cgSizeOf(KRec) is already this record type's TRUE,
-// possibly >4-byte, size, so `total` below stays correctly synced to what
-// cgCleanupStack must pop) that IS an addressable lvalue shape
-// (cgIsAddressableArgShape -- EVarRef/EFieldRef, or EStrConst for a str)
-// block-copies cgSizeOf(t) bytes onto a freshly-reserved stack slot (KNOWN
-// LIMITATION -- see the Task 8 report: this assumes the argument
-// expression's own buffer is already exactly that many bytes, true for
-// every addressable shape this backend resolves); anything else
-// (task-12-review's Important finding: `ECallFn`/`ENewRec` results and a
-// capacity-coerced str literal -- `IStrCoerce`, lower.cla's
-// `lowCoerceStr` -- were silently falling through `cgExprAddr`'s
-// no-such-address-exists fallback, reading/copying garbage from address 0
-// -- reproduced by `recsSum(recsMake(555))` and
-// `recsMakeBox("first")` in recs.cla) is MATERIALIZED into the arg's own
-// reserved slot directly (`cgPushArgMaterialized`) rather than copied from
-// an address that was never valid; a bool/char scalar pushes its
-// cgSlotSizeOf-padded 2-byte
-// slot via MOVE.B, NOT MOVE.W (Task 12 fix -- reproduced via smoke.cla's
-// `smokeCheck(cond: bool, ...)`, the first fixture to ever both PASS and
-// READ BACK a bool/char param on real 68k hardware: MOVE.W D0,-(A7)
-// writes the value's LOW byte to the HIGHER of the slot's two addresses
-// (big-endian, MSB-at-lower-address), but cgLoadVar/cgStoreScalarVar's own
-// byte access for a size-1 type always reads/writes the slot's BASE
-// (lower) address -- for a LOCAL/GLOBAL that's harmless self-consistency
-// (same function reads what it itself wrote, at whichever byte), but for
-// a PARAM the WRITER is the CALLER's cgPushArgs and the READER is the
-// CALLEE's cgLoadVar: reading the base address was silently reading the
-// always-zero high byte instead of the real value. MOVE.B Dn,-(A7) still
-// decrements A7 by 2 (the 68k's own stack-pointer-stays-word-aligned rule
-// for a byte operand), but writes the single addressed byte at exactly
-// that new (base) address -- landing precisely where cgLoadVar/
-// cgStoreScalarVar already read/write, with no reader-side change needed
-// at all); everything else pushes 4 (MOVE.L).
+// lowCallArgs) decides push shape:
+//
+// A KStr/KRec argument (param-abi phase, Task 6: by-ADDRESS now, always
+// exactly cgArgSlotSize==4 bytes, regardless of the value's true size --
+// the callee's own frame slot holds a pointer, cgEmitFunc's matching
+// change) either BORROWS the source's own address (cgIsAddressableArgShape
+// true -- a real lvalue/literal -- AND irArgNeedsCopy(a) false -- Task 3's
+// single classification authority, consumed verbatim here, never
+// re-derived) or is first MATERIALIZED into a fresh big-pool temp
+// (cgMaterializeToTemp) whose address is pushed instead:
+//   - Literal-borrow safety (Step 5): a borrowed EStrConst is safe because
+//     the ONE primitive this backend ever routes a string CONTENT copy
+//     through, rtStrStore (runtime/clarus/str.cla), reads the SOURCE's
+//     own length byte (peekb) and copies min(srclen, dstcap) bytes --
+//     never more than srclen+1 bytes from the source regardless of the
+//     destination's capacity. A pool literal is exactly len+1 bytes
+//     (COMPACT literal layout, ~11274-11298), so it can never be read
+//     past its own real length -- no materialize-first fallback needed.
+//   - cgMaterializeToTemp's existing dispatch (cgEmitStoreRec/
+//     cgEmitStoreStr) already handles every source kind reaching the
+//     materialize branch CORRECTLY and DIRECTLY -- an ENewRec constructs
+//     straight into the temp (cgRecordCtorAt), an ECallFn calls straight
+//     into it as the hidden-result pointer (cgCallFnInto), an EIntr
+//     (str_concat/list_pop/map_get/etc) builds into it via its own
+//     existing builder -- no separate "reserve the arg's own stack slot
+//     and construct into THAT" machinery is needed the way the OLD
+//     by-value ABI required (cgPushArgMaterialized/cgMaterializeCallResult/
+//     cgMaterializeStrCoerce, all removed this task): the arg's own stack
+//     slot is now just a 4-byte address, decoupled from where the value
+//     actually lives, so there is no ordering constraint left to protect
+//     with the old A1-stash-across-nested-cgPushArgs dance.
+//   - Ownership (the exact leak Task 5's cprint fix round 1 found and
+//     fixed on the host lane -- mirrored here): an ECallFn/ENewRec source
+//     is ALREADY a freshly-owned +1 (the callee's own return-value
+//     retain, or a constructor's own birth) -- retaining it AGAIN here
+//     would double-count, so only an ALIASING copy (EVarRef/EFieldRef/
+//     EIndexRef -- reached here only when irArgNeedsCopy is true: a
+//     global, or reachable through List/Map/Text/IntMap container storage
+//     the callee could re-enter past the call) gets an explicit retain
+//     (cgEmitRecWalkCall isRetain=true) before scheduling its release.
+//     Either way the temp's own reference must be dropped once the call
+//     returns -- scheduled into cgPendingArgReleases, walked by
+//     cgFlushArgReleases at each of this function's own call sites. A
+//     bare EIntr source (list_pop/map_get/etc as a directly-borrowed
+//     argument) gets NEITHER retain NOR release scheduled here -- it
+//     mirrors cprint's own fpCallFnArg exactly (only ECallFn/ENewRec are
+//     special-cased there too; every other EIntr shape falls through to
+//     the untracked fpCopyToTemp path), a pre-existing, shared-across-both-
+//     lanes limitation for the specific case of an ownership-transferring
+//     read (list_pop/list_shift) passed directly as a bare call argument,
+//     not introduced or widened by this task.
+//
+// A bool/char scalar pushes its cgSlotSizeOf-padded 2-byte slot via
+// MOVE.B, NOT MOVE.W (Task 12 fix, unchanged by this task -- see git
+// history for the full byte-order account); everything else pushes 4
+// (MOVE.L).
 func cgPushArgs(argsHead: int): int {
     var a: int
     var t: int
     var sz: int
     var total: int
+    var ak: IRExprKind
+    var tmpRef: int
+    var recNameIdx: int
 
     total = 0
     a = argsHead
     while a != -1 {
         t = irExprType(a)
-        sz = cgSlotSizeOf(t)
         if irtKind(t) == KStr or irtKind(t) == KRec {
-            if cgIsAddressableArgShape(a, irtKind(t)) {
+            sz = cgArgSlotSize(t)
+            if cgIsAddressableArgShape(a, irtKind(t)) and not irArgNeedsCopy(a) {
                 cgExprAddr(a)
-                a68Emit(OpAdda, 4, AmImm, 0, 0 - sz, AmAn, 7, 0)
-                a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
-                cgBlockCopy(sz)
+                a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             } else {
-                cgPushArgMaterialized(a, t)
+                ak = irExprKind(a)
+                tmpRef = cgMaterializeToTemp(a)
+                if irtKind(t) == KRec {
+                    recNameIdx = irtName(t)
+                    if irRecHasHandleField(recNameIdx) {
+                        if ak == ECallFn or ak == ENewRec {
+                            cgPendingArgReleases.add(cgVarOff(tmpRef))
+                            cgPendingArgReleases.add(recNameIdx)
+                        } else if ak == EVarRef or ak == EFieldRef or ak == EIndexRef {
+                            cgEmitRecWalkCall(true, 6, cgVarOff(tmpRef), recNameIdx)
+                            cgPendingArgReleases.add(cgVarOff(tmpRef))
+                            cgPendingArgReleases.add(recNameIdx)
+                        }
+                    }
+                }
+                cgExprAddr(tmpRef)
+                a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
             }
-        } else if sz == 2 {
-            cgExpr(a)
-            a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
         } else {
-            cgExpr(a)
-            a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            sz = cgSlotSizeOf(t)
+            if sz == 2 {
+                cgExpr(a)
+                a68Emit(OpMove, 1, AmDn, 0, 0, AmPreDec, 7, 0)
+            } else {
+                cgExpr(a)
+                a68Emit(OpMove, 4, AmDn, 0, 0, AmPreDec, 7, 0)
+            }
         }
         total = total + sz
         a = irExprNext(a)
@@ -8807,15 +9008,14 @@ func cgPushArgs(argsHead: int): int {
 
 // cgIsAddressableArgShape reports whether a KStr/KRec argument expr `a` is
 // an lvalue `cgExprAddr` genuinely resolves to a real address -- EVarRef/
-// EFieldRef (either kind, both str and record), or EStrConst (str only --
-// a literal pool entry has a real address too). Anything else (`ECallFn`,
-// `ENewRec`, an `EIntr` coercion) is a VALUE-PRODUCING shape with no
-// existing storage to take the address of -- `cgPushArgMaterialized`
-// handles those by constructing/copying the value directly into the arg's
-// own freshly-reserved slot, rather than asking `cgExprAddr` for an
-// address it cannot give (task-12-review's Important finding: the OLD
-// unconditional `cgExprAddr(a)` call silently read/copied from address 0
-// for exactly these shapes).
+// EFieldRef/EIndexRef (any kind, both str and record), or EStrConst (str
+// only -- a literal pool entry has a real address too). Anything else
+// (`ECallFn`, `ENewRec`, any other `EIntr`) is a VALUE-PRODUCING shape with
+// no existing storage to take the address of -- cgPushArgs' own materialize
+// branch (cgMaterializeToTemp) handles those, rather than asking
+// `cgExprAddr` for an address it cannot give (task-12-review's Important
+// finding: the OLD unconditional `cgExprAddr(a)` call silently read/copied
+// from address 0 for exactly these shapes).
 func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
     var ak: IRExprKind
 
@@ -8830,178 +9030,6 @@ func cgIsAddressableArgShape(a: int, tk: IRKind): bool {
     // already addressable via cgExprAddr's own dedicated arm, same
     // reasoning as that arm's own doc comment.
     return ak == EIntr and irIntrName(a) == IUiValueAtPtr()
-}
-
-// cgPushArgMaterialized handles a KStr/KRec call argument whose expr is
-// NOT an addressable lvalue (`cgIsAddressableArgShape` false): reserves
-// the argument's own final stack slot up front (exactly where it needs to
-// live for the call about to happen), stashes that address in A1 (this
-// file's established "stable stash across nested arg evaluation"
-// register -- cgConcatIntoTemp's own precedent; cgExprAddr/cgExpr never
-// touch A1, only A0/D0/D1), then constructs/copies the value DIRECTLY
-// into that slot per its own expr kind -- no intermediate temp-then-copy,
-// same "construct straight into the destination" discipline
-// cgEmitStoreRec's own ENewRec/ECallFn arms already use. `ENewRec`
-// constructs via `cgRecordCtorAt` (the record's own field-default walk);
-// `ECallFn` calls the function with the reserved slot as its hidden
-// result pointer (`cgMaterializeCallResult`); an `EIntr("str_coerce", ...)`
-// (`lowCoerceStr`, lower.cla -- a str literal/var whose capacity differs
-// from the callee's own param capacity) clamp-copies via `rtStrStore`
-// (`cgMaterializeStrCoerce`). A bare `EStrConst`/`EVarRef`/`EFieldRef`
-// never reaches here at all -- `cgIsAddressableArgShape` already routed
-// those through the existing address-of+block-copy path. Any OTHER
-// unaddressable shape (Mac-resident-clarusc Task 2 -- str_concat/
-// str_concat_char/str_prepend_char/str_slice/a container-element read/
-// any other KStr/KRec-producing EIntr as a bare call argument, e.g.
-// `takes("a" + "bc")`; formerly a real, open gap, same category as
-// `ENewRec`-as-bare-arg documented in the Task 12 report) falls through
-// to the generic materialize-to-temp-then-block-copy path at this
-// function's tail instead of hard-erroring.
-func cgPushArgMaterialized(a: int, t: int) {
-    var sz: int
-    var k: IRExprKind
-    var nm: string
-    var tmp: int
-
-    sz = cgSizeOf(t)
-    k = irExprKind(a)
-    a68Emit(OpAdda, 4, AmImm, 0, 0 - sz, AmAn, 7, 0)
-    a68Emit(OpMovea, 4, AmAn, 7, 0, AmAn, 1, 0)
-    if k == ENewRec {
-        a68Emit(OpMovea, 4, AmAn, 1, 0, AmAn, 0, 0)
-        cgRecordCtorAt(0, 0, irNewRecName(a))
-        return
-    }
-    if k == ECallFn {
-        cgMaterializeCallResult(a)
-        return
-    }
-    if k == EIntr {
-        nm = poolGet(irIntrName(a))
-        if nm == "str_coerce" and irtKind(t) == KStr {
-            cgMaterializeStrCoerce(a, t)
-            return
-        }
-    }
-    // Generic fallback (Mac-resident-clarusc Task 2 -- was the hard error
-    // this doc comment used to describe, e.g. `takes("a" + "bc")`,
-    // testdata/run/argmat_intr.cla): any OTHER value-producing KStr/KRec
-    // shape -- str_concat/str_concat_char/str_prepend_char/str_slice/
-    // container-element-read/etc, whatever EIntr this file's OWN single
-    // canonical str/rec construction dispatch (cgEmitStoreStr/
-    // cgEmitStoreRec) already knows how to build -- reuses that dispatch
-    // via cgMaterializeToTemp, the SAME generic materialize-to-a-fresh-
-    // temp fallback cgExprAddr's own catch-all arm already uses elsewhere
-    // (str_cmp/alert/log arguments, non-addressable map keys) -- rather
-    // than hand-duplicating a second copy of that per-intrinsic dispatch
-    // here. Slightly less efficient than this function's other arms
-    // (constructs into an EXTRA temp, then block-copies into the arg's
-    // own reserved slot, instead of constructing straight into the slot),
-    // but correct for any EIntr shape, present or future, with no new
-    // per-name cases to maintain in two places.
-    //
-    // The reserved arg slot's own address is already captured in A1 by
-    // this function's shared prologue above -- but cgMaterializeToTemp
-    // (through cgEmitStoreStr's own str-builder arms, e.g.
-    // cgStrBuilderIntoTemp/cgFlushA1TempToDst) clobbers A1 for ITS OWN
-    // scratch handling, the same "stable stash across nested arg
-    // evaluation" hazard cgMaterializeCallResult's own doc comment
-    // describes -- so the outer slot address is saved on the stack first
-    // and recovered afterward, rather than trusted to survive.
-    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    tmp = cgMaterializeToTemp(a)
-    cgExprAddr(tmp)
-    a68Emit(OpMovea, 4, AmPostInc, 7, 0, AmAn, 1, 0)
-    cgBlockCopy(sz)
-}
-
-// cgMaterializeCallResult calls a (an ECallFn whose return needs the
-// hidden-result-pointer convention -- cgSizeOf(ret)>4, always true for
-// every currently-reachable KRec/KStr this backend's own `needsHidden`
-// rule would route through it, per cgEmitFunc's identical test) with the
-// reserved arg slot (A1, stashed by cgPushArgMaterialized) as its hidden
-// pointer: pushes a's OWN argument chain first (cgPushArgs, recursively),
-// then A1, then JSRs and cleans up ONLY a's own args + the hidden-pointer
-// push -- the reserved OUTER slot itself is left alone, it IS this
-// argument's own final home.
-//
-// Mac-resident-clarusc Task 2 review fix (Critical): cgPushArgs is NOT
-// A1-transparent -- ANY KStr/KRec argument of a's own (addressable, via
-// cgPushArgs' own address-of+block-copy branch, OR materialized, via
-// cgPushArgMaterialized -- both use A1 as scratch) clobbers it. This used
-// to be a documented "not reachable by any fixture today" limitation
-// (cgMaterializeCallResult was the ONLY producer of nested
-// cgPushArgMaterialized calls, and no fixture nested one KStr/KRec
-// call-result inside another's own arg list); Task 2's own generalization
-// of cgPushArgMaterialized's fallback (any EIntr, not just
-// ENewRec/ECallFn/str_coerce) made it commonly reachable --
-// testdata/run/argmat_nested.cla (`sumPair(mk(3, "a" + "bc"))`, the inner
-// mk() call's own second arg needing materialization) reproduced a real
-// native-lane miscompile. Fix: stash the OUTER reserved-slot address (A1)
-// on the stack BEFORE calling cgPushArgs, then reload it from the stack
-// (at displacement `total` -- cgPushArgs only ever nets `total` bytes
-// PUSHED, so the stashed copy sits exactly `total` bytes further up the
-// stack once cgPushArgs returns) rather than trusting the register --
-// same "stack survives, no register does" discipline as every other
-// nested-call-safe sequence in this file (cgMaterializeStrCoerce's own
-// immediate A1 push, this function's own `total`-relative displacement
-// math). The stashed copy is popped once total+4 (a's own args + the
-// hidden pointer) is cleaned up after the call.
-func cgMaterializeCallResult(a: int) {
-    var fi: int
-    var total: int
-
-    fi = findIRFuncIdxByName(irCallFnName(a))
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(a)))
-        quit 1
-    }
-    if not cgRetNeedsHidden(irFuncRet(fi)) {
-        // Task 14.7 fix (review round 2: cgRetNeedsHidden, the single
-        // shared authority -- see its own doc comment).
-        log("cg68k: cgPushArgs: call-result argument " + poolGet(irCallFnName(a)) + " is not str/rec-returning -- materialization not built for this shape")
-        quit 1
-    }
-    // Final-review I1, generalized (Task 3): the stack save/reload pair
-    // below is depth-agnostic (see cgMaterializeDepth's own doc comment
-    // for the invariant) -- only truly pathological nesting past
-    // cgMaterializeMaxDepth still fails closed, as a backstop.
-    cgMaterializeDepth = cgMaterializeDepth + 1
-    if cgMaterializeDepth > cgMaterializeMaxDepth {
-        log("cg68k: cgMaterializeCallResult: str/rec-returning call-result materialization nested >" + numToStr(cgMaterializeMaxDepth) + " deep (" + poolGet(irCallFnName(a)) + ") -- bump cgMaterializeMaxDepth or bind an inner call to a temp first")
-        quit 1
-    }
-    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    total = cgPushArgs(irCallFnArgsHead(a))
-    a68Emit(OpMovea, 4, AmDisp16, 7, total, AmAn, 1, 0)
-    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    cgCallFunc(fi)
-    cgCleanupStack(total + 4)
-    cgCleanupStack(4)
-    cgMaterializeDepth = cgMaterializeDepth - 1
-}
-
-// cgMaterializeStrCoerce clamp-copies a's own wrapped source expr into the
-// reserved arg slot (A1) via rtStrStore(dst=A1, cap=t's own capacity,
-// src=&innerX) -- mirrors cgDefaultInitStrAt's identical clamped-copy call
-// shape (a record field's own str default), just targeting the reserved
-// arg slot instead of a field offset.
-func cgMaterializeStrCoerce(a: int, t: int) {
-    var fi: int
-    var innerX: int
-
-    innerX = irIntrArgsHead(a)
-    fi = findIRFuncIdxByName(rnStrStore)
-    if fi == -1 or not shakeReachable(fi) {
-        log("cg68k: rtStrStore not found/reachable")
-        quit 1
-    }
-    a68Emit(OpMove, 4, AmAn, 1, 0, AmPreDec, 7, 0)
-    a68Emit(OpMove, 4, AmImm, 0, irtN(t), AmPreDec, 7, 0)
-    cgExprAddr(innerX)
-    a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
-    cgCallFunc(fi)
-    cgCleanupStack(12)
 }
 
 // cgCallFnScalar calls a user Clarus function whose return fits in D0
@@ -9020,6 +9048,7 @@ func cgCallFnScalar(e: int) {
     var retType: int
     var off: int
     var dst: int
+    var savedReleases: list of int
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
@@ -9060,9 +9089,14 @@ func cgCallFnScalar(e: int) {
         log("cg68k: cgCallFnScalar used for str/rec-return function " + poolGet(irCallFnName(e)) + " (need cgCallFnInto)")
         quit 1
     }
+    // param-abi phase, Task 6: cgSaveArgReleases/cgFlushArgReleases bracket
+    // the push+call+cleanup span -- see cgPendingArgReleases' own doc
+    // comment for the reentrancy this protects against.
+    savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallFnArgsHead(e))
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgFlushArgReleases(savedReleases)
     retType = irFuncRet(fi)
     if e == cgDiscardExprIdx and cgNeedsRelease(retType) {
         off = cgNewTrackedTmp(retType)
@@ -9077,18 +9111,25 @@ func cgCallFnScalar(e: int) {
 func cgCallFnInto(e: int, dst: int) {
     var fi: int
     var total: int
+    var savedReleases: list of int
 
     fi = findIRFuncIdxByName(irCallFnName(e))
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: call to unknown/unreachable function " + poolGet(irCallFnName(e)))
         quit 1
     }
+    // param-abi phase, Task 6: same save/flush bracket as cgCallFnScalar --
+    // this is ALSO the reentry point cgPushArgs' own materialize branch
+    // uses for a nested ECallFn arg (cgMaterializeToTemp -> cgEmitStoreRec
+    // -> cgCallFnInto), so the guard matters here just as much.
+    savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallFnArgsHead(e))
     cgExprAddr(dst)
     a68Emit(OpMove, 4, AmAn, 0, 0, AmPreDec, 7, 0)
     total = total + 4
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgFlushArgReleases(savedReleases)
 }
 
 // cgCallRuntime calls a runtime IRFunc (str.cla/etc, found by interned
@@ -9573,20 +9614,20 @@ func cgCallExtNop(e: int) {
 // cgCallExtNatFallback resolves a clause-less extern (irExternConv(xi) ==
 // 0) to a Clarus function named nat_<ExternName> (the plan's own
 // "extern-to-native fallback" design decision) -- structurally
-// cgCallFnScalar with a different name mangling and error message. A
-// str/text arg marshals BY VALUE through the ordinary cgPushArgs
-// block-copy path (unlike fpCallExt's C-seam, which marshals str BY
-// ADDRESS to match rt_ext_*'s `const uint8_t *` parameter) -- this is
-// deliberate, not a mismatch: nat_<Name> is an ORDINARY Clarus function,
-// declared with the SAME str-by-value param type the extern itself
-// declares (the plan's own native.cla inventory: `func
-// nat_CorePanic(msg: str 255)`, str BY VALUE, never a ptr-taking bridge
-// function) -- so the existing ECallFn-shaped call convention already
-// does the right thing with no special-casing.
+// cgCallFnScalar with a different name mangling and error message.
+// nat_<Name> is an ORDINARY Clarus function (the plan's own native.cla
+// inventory: `func nat_CorePanic(msg: str 255)`), so a str/rec arg of its
+// own now marshals BY ADDRESS through the SAME cgPushArgs KStr/KRec branch
+// every other user-function call goes through (param-abi phase, Task 6 --
+// this WAS a deliberate by-value/by-address divergence from fpCallExt's
+// C-seam, noted here pre-Task-6; cgEmitFunc's own by-ref param flip applies
+// uniformly to every IRFunc it compiles, nat_ included, so no
+// special-casing is needed here either, before or after this task).
 func cgCallExtNatFallback(e: int) {
     var natName: int
     var fi: int
     var total: int
+    var savedReleases: list of int
 
     natName = intern("nat_" + poolGet(irCallExtName(e)))
     fi = findIRFuncIdxByName(natName)
@@ -9594,9 +9635,11 @@ func cgCallExtNatFallback(e: int) {
         log("extern " + poolGet(irCallExtName(e)) + " has no trap clause and no nat_ fallback")
         quit 1
     }
+    savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallExtArgsHead(e))
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgFlushArgReleases(savedReleases)
 }
 
 // cgCallExt dispatches an ECallExt node. Task 12 (native-5e) inserts a
@@ -9682,15 +9725,18 @@ func cgCallExt(e: int) {
 func cgCallExtUiSynth(e: int, synthName: int) {
     var fi: int
     var total: int
+    var savedReleases: list of int
 
     fi = findIRFuncIdxByName(synthName)
     if fi == -1 or not shakeReachable(fi) {
         log("cg68k: UI dispatcher " + poolGet(synthName) + " not found/reachable")
         quit 1
     }
+    savedReleases = cgSaveArgReleases()
     total = cgPushArgs(irCallExtArgsHead(e))
     cgCallFunc(fi)
     cgCleanupStack(total)
+    cgFlushArgReleases(savedReleases)
 }
 
 // cgCallExtUiBlobAddr resolves UiProgDesc/UiTestScript to a PC-relative
