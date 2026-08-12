@@ -175,10 +175,12 @@ commits `94725e2..f210e4f`; ledger:
   artifact; recorded as an open observation in the ROADMAP entry
   (plausible suspects: new call-site copy temps, classification-flag
   arena growth), not investigated further this task.
-- **T2's full emulator body still owed before merge** — `scripts/
-  test-merge.sh`'s gated native `internal/mactest` lane was not run this
-  session (Andrew's merge-gate call, per standing convention). T1 + the
-  full `internal/selfhost` body are green.
+- **T2 fully green at `5e44fd3`** (run post-final-review, 2026-08-12
+  17:36 JST): `scripts/test-merge.sh` PASS in 225s — T1 body 18s,
+  `internal/selfhost` 89s, gated native `internal/mactest` emulator lane
+  118s. (The whole gate now fits in under 4 minutes — the stacked
+  phases' compiler speedups shrank what used to need a 30m selfhost
+  ceiling.) Merge remains Andrew's call.
 - **Docs (Task 8 step 4):** findings doc §2.1 annotated `[FIXED
   2026-08-12]`; ROADMAP phase entry added (design/plan paths, task
   ledger, fix rounds, perf table, deferred items); this STATUS section.
@@ -273,10 +275,10 @@ param ABI.
 6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
    Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`,
    `layer1-compiler-perf`, `memory-leak-fix`, and `param-abi` are all
-   stacked on top of it, unmerged. `param-abi` additionally still owes a
-   full `scripts/test-merge.sh` run (the gated native `internal/mactest`
-   emulator lane) before it's merge-ready — T1 + full `internal/selfhost`
-   are green, but the native T2 boots have not been run this phase.
+   stacked on top of it, unmerged. `param-abi`'s full
+   `scripts/test-merge.sh` ran GREEN at `5e44fd3` (2026-08-12, 225s
+   total incl. the native emulator lane) — the branch is fully gated
+   and merge-ready from a testing standpoint.
 7. **Precompiled-artifacts work is now unblocked** (param-abi phase
    close-out, 2026-08-12): the design notes doc's own "Sequencing
    decision" named the param-ABI rewrite as the prerequisite before
