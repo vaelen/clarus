@@ -755,6 +755,25 @@ of the same trap ever disagree, that disagreement is exactly the kind of
 thing this document's §1 and §4 warn about: one of the two transcriptions is
 wrong, and the compiler is telling you to go find out which.
 
+### (c) A fill-target trap parameter must be declared `ptr`, never `str`
+
+A Toolbox trap that WRITES INTO a caller-supplied string (fills it, the
+same shape `file.readText`/`askOpen`/`askSave` use for their own
+runtime-side out-params, Ch3/Ch12) must transcribe that parameter as
+`ptr`, never `str`, in its `external func` declaration. Before the
+param-abi phase (2026-08-12), a `str`-typed Clarus variable was always a
+private, full-copy value at every call boundary, so even if you passed it
+into a filling trap, only your own local copy could ever be mutated — a
+`str` parameter looked safe to use for a fill target by accident. Since
+that phase, `string`/record parameters pass **by address** (Ch3, Ch13's
+own `external func` note): a `str`-typed Clarus PARAMETER is now a
+borrowed alias of whatever storage the caller passed, not a private copy,
+so a fill through it writes into the caller's own aliased storage instead
+of a disposable local. Declaring the trap's out-param `ptr` instead keeps
+the aliasing explicit and caller-controlled (the caller passes the
+address of whatever storage it actually intends to have mutated) rather
+than letting it happen silently through ordinary `str`-param plumbing.
+
 ## 10. Walkthrough: the bit-11 exception — `SecondsToDate`
 
 `SecondsToDate`'s trap word is `0xA9C6`. `0xA9C6 & 0x0800 == 0x0800` — bit 11

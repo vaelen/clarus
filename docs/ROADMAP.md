@@ -893,7 +893,9 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   `cgSizeOf(KStr)` stays 256, records stay inline; this is call-convention
   only, not the separate variable-length-string-storage question.
 
-  **8 tasks, commits `94725e2..f210e4f`; full ledger:
+  **8 tasks, commits `94725e2..66abed3`, PLUS a final-review fix wave on
+  top (UAF fix + suite case + docs + snapshot regen — see the fix-round
+  bullet below for the range); full ledger:
   `.superpowers/sdd/2026-08-12-param-abi-immutability/progress.md`.**
   Task 1 migrated the 13 pre-existing param-rebinding call sites ahead of
   the language change; Task 2 added the checker rule + reference update;
@@ -929,6 +931,23 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
     ran the native T2 suite boots as a bonus check (62/62 core, 25/25
     toolbox, both green) — fixed once A1 was confirmed protected by
     `cgEmitRecWalkCall` itself and A0 scratch by calling convention.
+  - **Final-review fix wave (both lanes, 1 Critical):** the whole-branch
+    review found a use-after-free on non-owning container-read record
+    temps (`gm["k"]`, a bare `EIntr` `map_get`) borrowed as call args —
+    `lowArgNeedsCopy` never special-cased `EIntr` the way it already did
+    `ECallFn`/`ENewRec`, so a callee that removed the just-read key mid-
+    call (`use(gm["k"])` where `use` calls `gm.remove("k")`) dangled the
+    borrowed handle. Fixed in lowering (reclassify every non-owning
+    container-read intrinsic — map/sortedmap/intmap get/get-dv/get-dv-
+    birth, list first/last — as copy) plus both backends (cg68k's
+    `cgPushArgs` widened to retain+schedule the reclassified copies and
+    schedule-release-only the owning `list.pop()`/`list.shift()` case
+    cprint already handled via its existing copy path). New mandatory
+    core-suite case `ParamContainerElemArg` (case 63). This wave's own
+    commits (fix / suite case / docs / snapshot regen, in that order) are
+    the four immediately following `66abed3` in `git log`; see
+    `.superpowers/sdd/2026-08-12-param-abi-immutability/final-fix-report.md`
+    for the full mechanics, before/after emitted code, and gate outputs.
 
   **Measured results (10-pair interleaved medians; old = merge-base
   `cc3f798`'s bootstrap snapshot, new = this phase's regenerated

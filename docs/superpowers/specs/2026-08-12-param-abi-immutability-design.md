@@ -148,7 +148,9 @@ qualify.
 |---|---|
 | `EVarRef` local (incl. a borrowed param passed onward) | borrow |
 | `EStrConst` literal | borrow (constant pool is read-only) |
-| Rvalue temp (call result, concat, coercion, ...) | borrow the temp |
+| Owning rvalue temp (`ECallFn`/`ENewRec` result; `list.pop()`/`list.shift()` — ownership TRANSFERS to the temp, nothing else can alias it) | borrow the temp, but schedule a release once the call returns (no retain — the temp already owns a fresh +1) |
+| Non-owning container-read rvalue (`m[k]`/`m.get(k,dv)`/`sm[k]`/`im[k]` and their `_dv`/`_dv_birth` siblings; `list.first()`/`list.last()` — the read ALIASES the container's own stored element, ownership stays with the container) | copy to temp: retain-and-schedule-release, same bracket as row 6 below — the container could be re-entered (e.g. the key removed) past the call, and a bare borrow's shallow copy would alias a handle field the container's own release could free out from under it (final-review fix wave, 2026-08-12: this row was the whole-branch review's one Critical finding — a `gm["k"]` argument classified as an ordinary borrowed rvalue temp, use-after-freed by a callee that removed the key mid-call) |
+| Other rvalue temp (concat, coercion, scalar-producing intrinsics, ...) | borrow the temp (no handle-bearing record shape reaches here) |
 | `EVarRef` global | copy to temp |
 | `EFieldRef`/`EIndexRef`, base is a value-typed local | borrow |
 | `EFieldRef`/`EIndexRef`, base global or heap (container element) | copy to temp |
