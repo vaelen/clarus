@@ -1,0 +1,202 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Package bake is the Go-side harness for clarusc's `--bake-ir` host mode
+// (clarusc/bake.cla, runtime-ir-bake Task 3): running the mode against a
+// current-source clarusc build, and parsing the resulting 'CLIR' artifact's
+// header/section framing (magic, format version, lane tag, stamp, module
+// manifest, section table) far enough to sanity-check it without decoding
+// every section's own payload -- full decode is the future loader's job
+// (Task 4). CorruptStampFixture generates a one-byte-flipped-stamp fixture
+// on demand (not a committed binary blob, which would go stale the moment
+// clarusc/clarusc.c is regenerated and the real stamp changes) for the
+// loader-refusal test Task 4 adds.
+package bake
+
+import (
+	"encoding/binary"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+// RepoRoot walks up from the test package's own directory (internal/bake
+// is two levels below the repo root, matching internal/cg68k's own
+// repoRoot helper).
+func RepoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	return filepath.Join(wd, "..", "..")
+}
+
+// Section is one parsed section header (id + length), with Offset pointing
+// at its payload's first byte within the whole file.
+type Section struct {
+	ID     int
+	Length int
+	Offset int
+}
+
+// Header is the parsed CLIR header plus the section table (ids/lengths/
+// offsets only -- payload content is a future loader's concern).
+type Header struct {
+	FormatVersion int
+	Lane          int
+	Stamp         []byte
+	StampOffset   int // offset of Stamp's first byte within the file
+	Modules       []string
+	Sections      []Section
+}
+
+// ParseHeader parses data as a CLIR artifact per clarusc/bake.cla's format
+// (magic 'CLIR' | formatVersion(4) | laneTag(1) | stampLen(2) | stamp |
+// moduleCount(2) | [keyLen(1) key]... | sectionCount(2) | [id(2) len(4)
+// payload]...), and verifies the section table accounts for every
+// remaining byte (a structural well-formedness check, not a section-
+// content decode).
+func ParseHeader(data []byte) (*Header, error) {
+	pos := 0
+	need := func(n int) error {
+		if pos+n > len(data) {
+			return fmt.Errorf("bake: truncated at offset %d, need %d more bytes, have %d", pos, n, len(data)-pos)
+		}
+		return nil
+	}
+
+	if err := need(4); err != nil {
+		return nil, err
+	}
+	if string(data[pos:pos+4]) != "CLIR" {
+		return nil, fmt.Errorf("bake: bad magic %q, want \"CLIR\"", data[pos:pos+4])
+	}
+	pos += 4
+
+	if err := need(4); err != nil {
+		return nil, err
+	}
+	formatVersion := int(binary.BigEndian.Uint32(data[pos:]))
+	pos += 4
+
+	if err := need(1); err != nil {
+		return nil, err
+	}
+	lane := int(data[pos])
+	pos++
+
+	if err := need(2); err != nil {
+		return nil, err
+	}
+	stampLen := int(binary.BigEndian.Uint16(data[pos:]))
+	pos += 2
+	if err := need(stampLen); err != nil {
+		return nil, err
+	}
+	stampOffset := pos
+	stamp := append([]byte(nil), data[pos:pos+stampLen]...)
+	pos += stampLen
+
+	if err := need(2); err != nil {
+		return nil, err
+	}
+	moduleCount := int(binary.BigEndian.Uint16(data[pos:]))
+	pos += 2
+	modules := make([]string, 0, moduleCount)
+	for i := 0; i < moduleCount; i++ {
+		if err := need(1); err != nil {
+			return nil, err
+		}
+		keyLen := int(data[pos])
+		pos++
+		if err := need(keyLen); err != nil {
+			return nil, err
+		}
+		modules = append(modules, string(data[pos:pos+keyLen]))
+		pos += keyLen
+	}
+
+	if err := need(2); err != nil {
+		return nil, err
+	}
+	sectionCount := int(binary.BigEndian.Uint16(data[pos:]))
+	pos += 2
+	sections := make([]Section, 0, sectionCount)
+	for i := 0; i < sectionCount; i++ {
+		if err := need(6); err != nil {
+			return nil, err
+		}
+		id := int(binary.BigEndian.Uint16(data[pos:]))
+		pos += 2
+		length := int(binary.BigEndian.Uint32(data[pos:]))
+		pos += 4
+		if err := need(length); err != nil {
+			return nil, err
+		}
+		sections = append(sections, Section{ID: id, Length: length, Offset: pos})
+		pos += length
+	}
+
+	if pos != len(data) {
+		return nil, fmt.Errorf("bake: %d trailing bytes after the last section (consumed %d of %d)", len(data)-pos, pos, len(data))
+	}
+
+	return &Header{
+		FormatVersion: formatVersion,
+		Lane:          lane,
+		Stamp:         stamp,
+		StampOffset:   stampOffset,
+		Modules:       modules,
+		Sections:      sections,
+	}, nil
+}
+
+// RunBakeIR runs `clarusc --bake-ir --lane LANE -o outPath` (exe from
+// claruscboot.CurrentExe, run with cmd.Dir at the repo root so the
+// default --rtdir search finds runtime/clarus/ the same way an ordinary
+// `clarusc emit68k` invocation does) and returns the written bytes.
+func RunBakeIR(t *testing.T, exe, lane, outPath string) []byte {
+	t.Helper()
+	cmd := exec.Command(exe, "--bake-ir", "--lane", lane, "-o", outPath)
+	cmd.Dir = RepoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clarusc --bake-ir --lane %s: %v\n%s", lane, err, out)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", outPath, err)
+	}
+	return data
+}
+
+// CorruptStampFixture bakes a fresh valid lane artifact into dir, flips
+// one bit of its stamp's first byte, writes the result to
+// dir/corrupt-stamp-<lane>.clir, and returns that path. Task 4's loader-
+// refusal test is expected to call this (not read a committed binary
+// fixture, which would go stale the moment clarusc/clarusc.c is
+// regenerated and the real stamp changes).
+func CorruptStampFixture(t *testing.T, exe, lane, dir string) string {
+	t.Helper()
+	validPath := filepath.Join(dir, "valid-"+lane+".clir")
+	data := RunBakeIR(t, exe, lane, validPath)
+
+	hdr, err := ParseHeader(data)
+	if err != nil {
+		t.Fatalf("parse header of freshly-baked %s: %v", validPath, err)
+	}
+	if len(hdr.Stamp) == 0 {
+		t.Fatalf("bake %s: empty stamp, cannot corrupt", lane)
+	}
+
+	corrupt := append([]byte(nil), data...)
+	corrupt[hdr.StampOffset] ^= 0xFF
+
+	corruptPath := filepath.Join(dir, "corrupt-stamp-"+lane+".clir")
+	if err := os.WriteFile(corruptPath, corrupt, 0o644); err != nil {
+		t.Fatalf("write %s: %v", corruptPath, err)
+	}
+	return corruptPath
+}

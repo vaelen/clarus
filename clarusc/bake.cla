@@ -1,0 +1,1089 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// bake.cla: the CLIR serializer -- `clarusc --bake-ir` host mode
+// (runtime-ir-bake Task 3, docs/superpowers/specs/2026-08-12-runtime-ir-
+// bake-design.md). Builds the runtime chain (the target lane's full
+// module superset, per drive.cla's driveManifestSplice, PLUS uitest.cla
+// -- see bakeModuleList's own doc comment) as if it were the compiled
+// PROGRAM, following the runtime-ir-bake Task 1 Step 3 probe's exact
+// pipeline shape (task-1-report.md section (a) Step 3, amendment 4):
+// expand the runtime chain as ordinary entries, checkProgram(combined)
+// ONCE, then irReset()+lowerProgram(combined2 == combined) directly -- no
+// manifest re-splice, no second checkProgram, no shake (the bake captures
+// PRE-shake lowered IR; per-compile shake runs later, over the combined
+// user+runtime IR, not here).
+//
+// The resulting arena/pool/counter/checker state is then serialized to a
+// flat 'CLIR' byte format (bakeWriteFile) that a future loader (Task 4)
+// re-inflates at arena base 0 before a user compile's own lowering
+// appends at base N. Format constants here are the shared contract both
+// this serializer and that future loader read from.
+//
+// Sections are one per irReset-order IR arena (task-1-report.md section
+// (b)'s frozen inventory table, whose row order IS irReset's own clear()
+// call order -- verified against ir.cla:1039-1289 directly), plus four
+// more: the intern pool, the lowering-counters block, the checker-symbol
+// block, and the curPathIdx (declFileTab) stamp table -- the four extra
+// blocks the design spec's own "Body, flat sections" list names beyond
+// the arenas themselves. Section ids are stable constants, numbered in
+// that order; gaps are fine (Task 3 controller resolution), renumbering
+// an EXISTING id is not.
+
+include "lib.cla"
+include "ast.cla"
+include "types.cla"
+include "check.cla"
+include "ir.cla"
+include "lower.cla"
+include "drive.cla"
+
+// ================================================================
+// Format constants -- shared contract with the future loader (Task 4)
+// ================================================================
+
+const bkMagic: string = "CLIR"
+const bkFormatVersion: int = 1
+
+// Lane tags (brief's format block: 0=68k, 1=c).
+const bkLane68k: int = 0
+const bkLaneC: int = 1
+
+// Section ids, in irReset() clear-call order (ir.cla:1039-1289), then the
+// four non-arena blocks. See this file's own top doc comment.
+const bkSecIrTypes: int = 1
+const bkSecIrStmts: int = 2
+const bkSecIrExprs: int = 3
+const bkSecIrLocals: int = 4
+const bkSecIrFuncs: int = 5
+const bkSecIrFuncIdxByName: int = 6
+const bkSecIrCbGlueNames: int = 7
+const bkSecIrGlobals: int = 8
+const bkSecIrFieldSlots: int = 9
+const bkSecIrRecords: int = 10
+const bkSecIrEnumMembers: int = 11
+const bkSecIrEnums: int = 12
+const bkSecIrWidgetDescs: int = 13
+const bkSecIrColumnDescs: int = 14
+const bkSecIrBindDescs: int = 15
+const bkSecIrWindowDescs: int = 16
+const bkSecIrMenuItemDescs: int = 17
+const bkSecIrMenuDescs: int = 18
+const bkSecIrWinHandlers: int = 19
+const bkSecIrWidgetHandlerEntries: int = 20
+const bkSecIrMenuHandlerEntries: int = 21
+const bkSecIrEveryEntries: int = 22
+const bkSecIrStrLits: int = 23
+const bkSecIrExternNames: int = 24
+const bkSecIrExternRetTys: int = 25
+const bkSecIrExternParamStart: int = 26
+const bkSecIrExternParamCountArr: int = 27
+const bkSecIrExternParamTys: int = 28
+const bkSecIrExternTrapWords: int = 29
+const bkSecIrExternConvs: int = 30
+const bkSecIrExternSels: int = 31
+const bkSecIrExternParamRegs: int = 32
+const bkSecIrExternRetRegs: int = 33
+const bkSecIrLayoutNeededByName: int = 34
+const bkSecIrRcWalkNeededByName: int = 35
+// bkSecIrScalars: irHasLaunch..irEveryCount plus the singleton IRType
+// indices (irVoidT..irWordT) -- everything irReset() sets to a plain
+// scalar (not a list/map clear()), bundled into one section.
+const bkSecIrScalars: int = 36
+
+// Non-arena blocks (gap left deliberately, per the controller resolution
+// above -- these are conceptually a different tier than the IR arenas).
+const bkSecStrPool: int = 40
+const bkSecLowCounters: int = 41
+const bkSecCheckerSymbols: int = 42
+const bkSecDeclFileTab: int = 43
+
+const bkSectionCount: int = 40
+
+// ================================================================
+// Byte-buffer primitives -- explicit one-byte-at-a-time big-endian
+// (reference:1323, byte-clean verbatim), the same technique app68k.cla's
+// app68PutByte/Word/Long use (`>>` is arithmetic/sign-propagating and
+// char() keeps only the low byte, so this is correct for negative values
+// too). Kept as this file's own tiny copies rather than reaching into
+// app68k.cla, matching that file's own stated policy of not cross-
+// depending on a sibling module for small shared helpers.
+// ================================================================
+
+func bkPutByte(out: text, b: int) {
+    out.append(char(b))
+}
+
+func bkPutU16(out: text, w: int) {
+    bkPutByte(out, w >> 8)
+    bkPutByte(out, w)
+}
+
+func bkPutU32(out: text, v: int) {
+    bkPutU16(out, v >> 16)
+    bkPutU16(out, v)
+}
+
+func bkPutBool(out: text, b: bool) {
+    if b {
+        bkPutByte(out, 1)
+    } else {
+        bkPutByte(out, 0)
+    }
+}
+
+// bkPutStr: the intern-pool string convention (controller resolution) --
+// 4-byte BE length + raw bytes.
+func bkPutStr(out: text, s: string) {
+    var i: int
+
+    bkPutU32(out, s.length)
+    i = 0
+    while i < s.length {
+        out.append(s[i])
+        i = i + 1
+    }
+}
+
+// bkPutStrShort: the header's module-key convention (brief's format
+// block) -- 1-byte length + raw bytes. rtModuleKey names ("runtime/
+// clarus/uidialogs.cla") are always well under 256 bytes.
+func bkPutStrShort(out: text, s: string) {
+    var i: int
+
+    bkPutByte(out, s.length)
+    i = 0
+    while i < s.length {
+        out.append(s[i])
+        i = i + 1
+    }
+}
+
+// bkEmitSection frames one section's already-built payload into out:
+// sectionId (2) + byteLen (4) + payload, per the brief's format block.
+func bkEmitSection(out: text, id: int, payload: text) {
+    bkPutU16(out, id)
+    bkPutU32(out, payload.length)
+    out.append(payload)
+}
+
+// ================================================================
+// Stamp: a deterministic FNV-1a-style rolling hash (masked to 31 bits
+// after every step, mirroring map.cla's own mapHash convention, so the
+// arithmetic never depends on unspecified 32-bit signed overflow
+// behavior) over clarusc/clarusc.c's own bytes -- "the generating
+// compiler (the clarusc.c snapshot identity)" per the design spec's own
+// header description. A loader built from a DIFFERENT clarusc.c snapshot
+// (a different compiler identity, e.g. after a codegen/IR-shape change)
+// hashes to a different stamp and can refuse to load a stale bake
+// (Task 4's own job -- this task only computes and writes it).
+// ================================================================
+
+const bkFnvSeed: int = 5381
+const bkFnvPrime: int = 16777619
+
+func bkHashText(data: text): int {
+    var h: int
+    var i: int
+    var b: int
+
+    h = bkFnvSeed
+    i = 0
+    while i < data.length {
+        b = int(data[i])
+        h = h ^ b
+        h = h * bkFnvPrime
+        h = h & 0x7FFFFFFF
+        i = i + 1
+    }
+    return h
+}
+
+// bkFindClarusC loads clarusc/clarusc.c's raw bytes into out, searching
+// upward from the working directory exactly like findRtDir does for
+// runtime/clarus/ (drive.cla) -- clarusc.c and clarusc/ are repo-root
+// siblings of runtime/clarus/, not reachable from rtDir itself, so this
+// is its own small search rather than a reuse of findRtDir's.
+func bkFindClarusC(out: text): bool {
+    var prefix: string
+    var candidate: string
+    var i: int
+
+    prefix = ""
+    i = 0
+    while i < 10 {
+        candidate = prefix + "clarusc/clarusc.c"
+        if file.readText(candidate, out) {
+            return true
+        }
+        prefix = prefix + "../"
+        i = i + 1
+    }
+    return false
+}
+
+// ================================================================
+// Module list -- the lane's full driveManifestSplice superset (Task 2)
+// PLUS uitest.cla. The design spec's pipeline restructure says the
+// --testapi path preloads "the baked runtime symbols" into scope so user
+// code may legally name UiTest* functions -- those symbols only exist if
+// uitest.cla's own declarations are part of the baked checker-symbol
+// state, so the bake chain carries uitest.cla unconditionally (its own
+// VISIBILITY to a non-testapi compile is the loader's job, Task 5 per
+// the dispatch brief -- this serializer only captures state, it does not
+// gate anything). Ordering mirrors driveEarlySplice's own module list
+// (uitest slotted right after the ui* family, ahead of sortedmap/
+// datetime/ser/native), not driveManifestSplice's (which never mentions
+// uitest at all, since it's --testapi-only on the from-source path).
+func bakeModuleList(lane: int): list of string {
+    var mods: list of string
+
+    mods.add("core.cla")
+    mods.add("str.cla")
+    mods.add("text.cla")
+    mods.add("list.cla")
+    mods.add("map.cla")
+    mods.add("uidesc.cla")
+    mods.add("ui.cla")
+    mods.add("uiwidgets.cla")
+    mods.add("uitext.cla")
+    mods.add("uitable.cla")
+    mods.add("uiscript.cla")
+    mods.add("uidialogs.cla")
+    mods.add("uitest.cla")
+    mods.add("sortedmap.cla")
+    mods.add("datetime.cla")
+    if lane == bkLane68k {
+        mods.add("datetime_68k.cla")
+    } else {
+        mods.add("datetime_c.cla")
+    }
+    mods.add("ser.cla")
+    if lane == bkLane68k {
+        // native.cla is native-only (Toolbox-trap glue, no C runtime
+        // under it at all -- see its own doc comment); driveManifestSplice
+        // only ever splices it under want68k, and the bake generator
+        // follows the exact same gate.
+        mods.add("native.cla")
+    }
+    return mods
+}
+
+// ================================================================
+// Generator: assemble the runtime chain as the program, check once,
+// lower once -- Task 1 Step 3's proven shape, no other accommodation.
+// ================================================================
+
+func bakeGenerateChain(lane: int): bool {
+    var mods: list of string
+    var i: int
+    var rtPath: string
+    var h: int
+    var tail: int
+
+    mods = bakeModuleList(lane)
+    if not haveRtDir {
+        rtDir = findRtDir(mods[0])
+    }
+
+    i = 0
+    while i < mods.count {
+        rtPath = joinPath(rtDir, mods[i])
+        if expand(rtPath, true, rtModuleKey(mods[i])) {
+            if haveRtDir {
+                log("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched " + rtDir + "); use --rtdir")
+            } else {
+                log("clarusc --bake-ir: runtime module " + mods[i] + " not found (searched runtime/clarus/ from the working directory upward); use --rtdir")
+            }
+            quit 1
+        }
+        i = i + 1
+    }
+    if entryFailed {
+        log("clarusc --bake-ir: cannot open a runtime module")
+        quit 1
+    }
+
+    // Same post-order assembly driveCompile's own Phase A loop does
+    // (drive.cla:1409-1425) -- no hoistDedups/hoisting machinery needed:
+    // that exists only to reconcile a runtime splice against an ALREADY-
+    // assembled user chain, which the bake generator has none of.
+    combined = -1
+    tail = -1
+    i = 0
+    while i < asmHeads.count {
+        h = asmHeads[i]
+        if h != -1 {
+            if combined == -1 {
+                combined = h
+            } else {
+                tail = declListAppend(tail, h)
+            }
+            tail = lastDecl(h)
+        }
+        i = i + 1
+    }
+    if combined == -1 {
+        log("clarusc --bake-ir: no declarations found in the runtime chain")
+        return false
+    }
+
+    checkProgram(combined)
+    if diags.count > 0 {
+        return false
+    }
+
+    combined2 = combined
+    irReset()
+    lowerProgram(combined2)
+    if diags.count > 0 {
+        return false
+    }
+    return true
+}
+
+// ================================================================
+// Section writers -- one per irReset-order arena, field-by-field in
+// declaration order (bool = 1 byte, every int = 4 bytes BE, per the
+// controller resolution). Enum-typed fields serialize via int(x)
+// (Chapter 3: "int(e) yields the member's value").
+// ================================================================
+
+func bkWriteIrTypes(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irTypes.count)
+    i = 0
+    while i < irTypes.count {
+        bkPutU32(sec, int(irTypes[i].k))
+        bkPutU32(sec, irTypes[i].n)
+        bkPutU32(sec, irTypes[i].elem)
+        bkPutU32(sec, irTypes[i].name)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrStmts(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irStmts.count)
+    i = 0
+    while i < irStmts.count {
+        bkPutU32(sec, int(irStmts[i].kind))
+        bkPutU32(sec, irStmts[i].a)
+        bkPutU32(sec, irStmts[i].b)
+        bkPutU32(sec, irStmts[i].c)
+        bkPutU32(sec, irStmts[i].next)
+        bkPutU32(sec, irStmts[i].nameIdx)
+        bkPutU32(sec, irStmts[i].intVal)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrExprs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irExprs.count)
+    i = 0
+    while i < irExprs.count {
+        bkPutU32(sec, int(irExprs[i].kind))
+        bkPutU32(sec, irExprs[i].a)
+        bkPutU32(sec, irExprs[i].b)
+        bkPutU32(sec, irExprs[i].name)
+        bkPutU32(sec, irExprs[i].intVal)
+        bkPutBool(sec, irExprs[i].global)
+        bkPutU32(sec, int(irExprs[i].convOp))
+        bkPutU32(sec, irExprs[i].ty)
+        bkPutU32(sec, irExprs[i].next)
+        bkPutBool(sec, irExprs[i].argCopy)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrLocals(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irLocals.count)
+    i = 0
+    while i < irLocals.count {
+        bkPutU32(sec, irLocals[i].name)
+        bkPutU32(sec, irLocals[i].t)
+        bkPutU32(sec, irLocals[i].next)
+        bkPutBool(sec, irLocals[i].nobirth)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrFuncs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irFuncs.count)
+    i = 0
+    while i < irFuncs.count {
+        bkPutU32(sec, irFuncs[i].name)
+        bkPutU32(sec, irFuncs[i].paramsHead)
+        bkPutU32(sec, irFuncs[i].ret)
+        bkPutU32(sec, irFuncs[i].localsHead)
+        bkPutU32(sec, irFuncs[i].bodyHead)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrFuncIdxByName(): text {
+    var sec: text
+    var m: intmap of int
+    var k: int
+    var v: int
+
+    m = irFuncIdxByName
+    bkPutU32(sec, m.count)
+    for k, v in m {
+        bkPutU32(sec, k)
+        bkPutU32(sec, v)
+    }
+    return sec
+}
+
+func bkWriteIrCbGlueNames(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irCbGlueNames.count)
+    i = 0
+    while i < irCbGlueNames.count {
+        bkPutU32(sec, irCbGlueNames[i])
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrGlobals(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irGlobals.count)
+    i = 0
+    while i < irGlobals.count {
+        bkPutU32(sec, irGlobals[i].name)
+        bkPutU32(sec, irGlobals[i].t)
+        bkPutU32(sec, irGlobals[i].init)
+        bkPutBool(sec, irGlobals[i].initBirth)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrFieldSlots(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irFieldSlots.count)
+    i = 0
+    while i < irFieldSlots.count {
+        bkPutU32(sec, irFieldSlots[i].name)
+        bkPutU32(sec, irFieldSlots[i].t)
+        bkPutU32(sec, irFieldSlots[i].default)
+        bkPutU32(sec, irFieldSlots[i].defaultStr)
+        bkPutU32(sec, irFieldSlots[i].next)
+        bkPutU32(sec, irFieldSlots[i].xkind)
+        bkPutU32(sec, irFieldSlots[i].xn)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrRecords(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irRecords.count)
+    i = 0
+    while i < irRecords.count {
+        bkPutU32(sec, irRecords[i].name)
+        bkPutU32(sec, irRecords[i].fieldsHead)
+        bkPutBool(sec, irRecords[i].isOverlay)
+        bkPutBool(sec, irRecords[i].isXRec)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrEnumMembers(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irEnumMembers.count)
+    i = 0
+    while i < irEnumMembers.count {
+        bkPutU32(sec, irEnumMembers[i].name)
+        bkPutU32(sec, irEnumMembers[i].value)
+        bkPutU32(sec, irEnumMembers[i].label)
+        bkPutU32(sec, irEnumMembers[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrEnums(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irEnums.count)
+    i = 0
+    while i < irEnums.count {
+        bkPutU32(sec, irEnums[i].name)
+        bkPutU32(sec, irEnums[i].membersHead)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrWidgetDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irWidgetDescs.count)
+    i = 0
+    while i < irWidgetDescs.count {
+        bkPutU32(sec, irWidgetDescs[i].nameIdx)
+        bkPutU32(sec, irWidgetDescs[i].kindIdx)
+        bkPutU32(sec, irWidgetDescs[i].captionIdx)
+        bkPutU32(sec, irWidgetDescs[i].atKind)
+        bkPutU32(sec, irWidgetDescs[i].x)
+        bkPutBool(sec, irWidgetDescs[i].yIsBottom)
+        bkPutU32(sec, irWidgetDescs[i].y)
+        bkPutBool(sec, irWidgetDescs[i].widthIsFill)
+        bkPutU32(sec, irWidgetDescs[i].width)
+        bkPutBool(sec, irWidgetDescs[i].fillBoth)
+        bkPutBool(sec, irWidgetDescs[i].isDefault)
+        bkPutBool(sec, irWidgetDescs[i].isCancel)
+        bkPutBool(sec, irWidgetDescs[i].isBuffered)
+        bkPutBool(sec, irWidgetDescs[i].isScrollV)
+        bkPutBool(sec, irWidgetDescs[i].isScrollH)
+        bkPutU32(sec, irWidgetDescs[i].bindsIdx)
+        bkPutU32(sec, irWidgetDescs[i].rowsGlobalIdx)
+        bkPutU32(sec, irWidgetDescs[i].columnsHead)
+        bkPutU32(sec, irWidgetDescs[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrColumnDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irColumnDescs.count)
+    i = 0
+    while i < irColumnDescs.count {
+        bkPutU32(sec, irColumnDescs[i].headerIdx)
+        bkPutU32(sec, irColumnDescs[i].fieldIndex)
+        bkPutU32(sec, irColumnDescs[i].widthPx)
+        bkPutBool(sec, irColumnDescs[i].widthFill)
+        bkPutU32(sec, irColumnDescs[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrBindDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irBindDescs.count)
+    i = 0
+    while i < irBindDescs.count {
+        bkPutU32(sec, irBindDescs[i].widgetIndex)
+        bkPutU32(sec, irBindDescs[i].fieldIndex)
+        bkPutU32(sec, irBindDescs[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrWindowDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irWindowDescs.count)
+    i = 0
+    while i < irWindowDescs.count {
+        bkPutU32(sec, irWindowDescs[i].nameIdx)
+        bkPutU32(sec, irWindowDescs[i].titleIdx)
+        bkPutU32(sec, irWindowDescs[i].w)
+        bkPutU32(sec, irWindowDescs[i].h)
+        bkPutBool(sec, irWindowDescs[i].resizable)
+        bkPutU32(sec, irWindowDescs[i].minW)
+        bkPutU32(sec, irWindowDescs[i].minH)
+        bkPutU32(sec, irWindowDescs[i].widgetsHead)
+        bkPutU32(sec, irWindowDescs[i].stateFieldsHead)
+        bkPutU32(sec, irWindowDescs[i].formRecNameIdx)
+        bkPutU32(sec, irWindowDescs[i].formBindsHead)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrMenuItemDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irMenuItemDescs.count)
+    i = 0
+    while i < irMenuItemDescs.count {
+        bkPutU32(sec, irMenuItemDescs[i].nameIdx)
+        bkPutU32(sec, irMenuItemDescs[i].captionIdx)
+        bkPutU32(sec, irMenuItemDescs[i].keyIdx)
+        bkPutBool(sec, irMenuItemDescs[i].isSeparator)
+        bkPutU32(sec, irMenuItemDescs[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrMenuDescs(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irMenuDescs.count)
+    i = 0
+    while i < irMenuDescs.count {
+        bkPutU32(sec, irMenuDescs[i].nameIdx)
+        bkPutU32(sec, irMenuDescs[i].titleIdx)
+        bkPutU32(sec, irMenuDescs[i].itemsHead)
+        bkPutBool(sec, irMenuDescs[i].isStandardEdit)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrWinHandlers(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irWinHandlers.count)
+    i = 0
+    while i < irWinHandlers.count {
+        bkPutU32(sec, irWinHandlers[i].winTypeNameIdx)
+        bkPutU32(sec, irWinHandlers[i].openedFn)
+        bkPutU32(sec, irWinHandlers[i].closeRequestFn)
+        bkPutU32(sec, irWinHandlers[i].closedFn)
+        bkPutU32(sec, irWinHandlers[i].resizedFn)
+        bkPutU32(sec, irWinHandlers[i].keyFn)
+        bkPutU32(sec, irWinHandlers[i].acceptedFn)
+        bkPutU32(sec, irWinHandlers[i].cancelledFn)
+        bkPutU32(sec, irWinHandlers[i].formRecNameIdx)
+        bkPutU32(sec, irWinHandlers[i].widgetHead)
+        bkPutU32(sec, irWinHandlers[i].widgetTail)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrWidgetHandlerEntries(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irWidgetHandlerEntries.count)
+    i = 0
+    while i < irWidgetHandlerEntries.count {
+        bkPutU32(sec, irWidgetHandlerEntries[i].widgetIndex)
+        bkPutU32(sec, irWidgetHandlerEntries[i].clickFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].changeFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].dragFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].enterFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].selectFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].doubleClickFn)
+        bkPutU32(sec, irWidgetHandlerEntries[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrMenuHandlerEntries(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irMenuHandlerEntries.count)
+    i = 0
+    while i < irMenuHandlerEntries.count {
+        bkPutU32(sec, irMenuHandlerEntries[i].menuNameIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].itemNameIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].menuIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].itemIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].funcNameIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].scopeWinTypeNameIdx)
+        bkPutU32(sec, irMenuHandlerEntries[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrEveryEntries(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irEveryEntries.count)
+    i = 0
+    while i < irEveryEntries.count {
+        bkPutU32(sec, irEveryEntries[i].funcNameIdx)
+        bkPutU32(sec, irEveryEntries[i].ticks)
+        bkPutU32(sec, irEveryEntries[i].next)
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrStrLits(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, irStrLits.count)
+    i = 0
+    while i < irStrLits.count {
+        bkPutU32(sec, irStrLits[i])
+        i = i + 1
+    }
+    return sec
+}
+
+// bkWriteIntList: shared body for the ten parallel extern arenas
+// (irExternNames.. irExternRetRegs), each a plain `list of int` -- one
+// section per arena (task-1-report.md's inventory rows 24-33), same
+// count-then-elements shape as irStrLits/irCbGlueNames.
+func bkWriteIntList(l: list of int): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, l.count)
+    i = 0
+    while i < l.count {
+        bkPutU32(sec, l[i])
+        i = i + 1
+    }
+    return sec
+}
+
+func bkWriteIrLayoutNeededByName(): text {
+    var sec: text
+    var m: intmap of int
+    var k: int
+    var v: int
+
+    m = irLayoutNeededByName
+    bkPutU32(sec, m.count)
+    for k, v in m {
+        bkPutU32(sec, k)
+        bkPutU32(sec, v)
+    }
+    return sec
+}
+
+func bkWriteIrRcWalkNeededByName(): text {
+    var sec: text
+    var m: intmap of int
+    var k: int
+    var v: int
+
+    m = irRcWalkNeededByName
+    bkPutU32(sec, m.count)
+    for k, v in m {
+        bkPutU32(sec, k)
+        bkPutU32(sec, v)
+    }
+    return sec
+}
+
+// bkWriteIrScalars: the plain-scalar half of irReset() -- program flags,
+// app-decl fields (always their zero/absent value for a pure runtime
+// bake, since the runtime chain declares no `app` section), the menu/
+// every chain heads, and the singleton IRType indices (irVoidT..irWordT),
+// in irReset()'s own assignment order. The loader re-derives nothing
+// here; these ARE the values a runtime-only lowerProgram produced.
+func bkWriteIrScalars(): text {
+    var sec: text
+
+    bkPutBool(sec, irHasLaunch)
+    bkPutBool(sec, irHasStartEmpty)
+    bkPutBool(sec, irHasStartCLI)
+    bkPutBool(sec, irHasOpenDocument)
+    bkPutU32(sec, irAppName)
+    bkPutU32(sec, irAppVersion)
+    bkPutU32(sec, irAppAuthor)
+    bkPutU32(sec, irAppAbout)
+    bkPutU32(sec, irAppId)
+    bkPutU32(sec, irAppDoctype)
+    bkPutU32(sec, irAppStack)
+    bkPutBool(sec, irHasApp)
+    bkPutU32(sec, irMenuHandlersHead)
+    bkPutU32(sec, irMenuHandlersTail)
+    bkPutU32(sec, irMenuHandlerCount)
+    bkPutU32(sec, irEveryHead)
+    bkPutU32(sec, irEveryTail)
+    bkPutU32(sec, irEveryCount)
+    bkPutU32(sec, irVoidT)
+    bkPutU32(sec, irIntT)
+    bkPutU32(sec, irBoolT)
+    bkPutU32(sec, irFixedT)
+    bkPutU32(sec, irCharT)
+    bkPutU32(sec, irTextT)
+    bkPutU32(sec, irErrT)
+    bkPutU32(sec, irPtrT)
+    bkPutU32(sec, irWordT)
+    return sec
+}
+
+// ================================================================
+// Non-arena blocks
+// ================================================================
+
+// bkWriteStrPool: the intern pool (lib.cla's strPool), verbatim,
+// length-prefixed per entry -- user parsing interns on top of this at
+// load time (append-only, so baked indices never move).
+func bkWriteStrPool(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, strPool.count)
+    i = 0
+    while i < strPool.count {
+        bkPutStr(sec, strPool[i])
+        i = i + 1
+    }
+    return sec
+}
+
+// bkWriteLowCounters: lowering's program-wide counters (lower.cla) --
+// end values so user lowering continues numbering where the bake
+// stopped, plus lowStrIdx (string-literal-by-VALUE dedup map) so a user
+// literal identical to a runtime one reuses the same clar_lit_K slot.
+// The ~162 lazy-intern iXxxIdx scalars, lowTitleIdx, and the always-
+// empty progGen-namespaced maps (uiMenuIdx/uiMenuItemIdx/
+// uiWinHandlersIdx/winVarDefaults*) are NOT here -- task-1-report.md
+// section (b) is explicit that all of those are reset-on-load /
+// irrelevant-while-empty, not bake state.
+func bkWriteLowCounters(): text {
+    var sec: text
+    var m: map of int
+    var k: string
+    var v: int
+
+    bkPutU32(sec, lowSwitchN)
+    bkPutU32(sec, uiMenuCount)
+    bkPutU32(sec, lowStoreTempN)
+    bkPutU32(sec, lowRetTempN)
+    m = lowStrIdx
+    bkPutU32(sec, m.count)
+    for k, v in m {
+        bkPutStr(sec, k)
+        bkPutU32(sec, v)
+    }
+    return sec
+}
+
+// bkWriteCheckerSymbols: the runtime's checker symbol state (types.cla/
+// check.cla), used ONLY on the --testapi path (task-1-report.md section
+// (b)) -- funcSigs, symbols, scopes, typeArena, enumMembers, each self-
+// delimited by its own leading count, in that fixed order.
+func bkWriteCheckerSymbols(): text {
+    var sec: text
+    var i: int
+    var j: int
+    var names: intmap of int
+    var k: int
+    var v: int
+
+    bkPutU32(sec, funcSigs.count)
+    i = 0
+    while i < funcSigs.count {
+        bkPutU32(sec, funcSigs[i].params.count)
+        j = 0
+        while j < funcSigs[i].params.count {
+            bkPutU32(sec, funcSigs[i].params[j])
+            j = j + 1
+        }
+        bkPutU32(sec, funcSigs[i].ret)
+        i = i + 1
+    }
+
+    bkPutU32(sec, symbols.count)
+    i = 0
+    while i < symbols.count {
+        bkPutU32(sec, symbols[i].nameIdx)
+        bkPutU32(sec, symbols[i].typeIdx)
+        bkPutBool(sec, symbols[i].isFunc)
+        bkPutU32(sec, symbols[i].sigIdx)
+        bkPutBool(sec, symbols[i].isType)
+        bkPutBool(sec, symbols[i].isConst)
+        bkPutBool(sec, symbols[i].isParam)
+        bkPutBool(sec, symbols[i].constIsStr)
+        bkPutU32(sec, symbols[i].constInt)
+        bkPutU32(sec, symbols[i].constStrIdx)
+        bkPutBool(sec, symbols[i].isMenu)
+        bkPutBool(sec, symbols[i].isExtern)
+        bkPutBool(sec, symbols[i].isCallback)
+        i = i + 1
+    }
+
+    bkPutU32(sec, scopes.count)
+    i = 0
+    while i < scopes.count {
+        bkPutU32(sec, scopes[i].parent)
+        names = scopes[i].names
+        bkPutU32(sec, names.count)
+        for k, v in names {
+            bkPutU32(sec, k)
+            bkPutU32(sec, v)
+        }
+        i = i + 1
+    }
+
+    bkPutU32(sec, typeArena.count)
+    i = 0
+    while i < typeArena.count {
+        bkPutU32(sec, int(typeArena[i].kind))
+        bkPutU32(sec, typeArena[i].n)
+        bkPutU32(sec, typeArena[i].elem)
+        bkPutU32(sec, typeArena[i].nameIdx)
+        i = i + 1
+    }
+
+    bkPutU32(sec, enumMembers.count)
+    i = 0
+    while i < enumMembers.count {
+        bkPutU32(sec, enumMembers[i].nameIdx)
+        bkPutU32(sec, enumMembers[i].value)
+        bkPutU32(sec, enumMembers[i].labelIdx)
+        i = i + 1
+    }
+
+    return sec
+}
+
+// bkWriteDeclFileTab: lib.cla's declFileTab (decl-arena-index ->
+// interned source-path index), verbatim -- the curPathIdx stamp table
+// the brief's format block names, so a runtime-attributed diagnostic/
+// panic at use time can still name the right runtime source file.
+func bkWriteDeclFileTab(): text {
+    var sec: text
+    var i: int
+
+    bkPutU32(sec, declFileTab.count)
+    i = 0
+    while i < declFileTab.count {
+        bkPutU32(sec, declFileTab[i])
+        i = i + 1
+    }
+    return sec
+}
+
+// ================================================================
+// Top-level orchestrator
+// ================================================================
+
+// bakeWriteFile runs the generator (bakeGenerateChain) for lane, then
+// serializes every section into outPath in the brief's format:
+//   magic(4) formatVersion(4) laneTag(1) stampLen(2) stamp
+//   moduleCount(2) [keyLen(1) key]... sectionCount(2) [id(2) len(4) payload]...
+// Returns false on a checker/lowering diagnostic (diags stays populated
+// for the caller to print, exactly as driveCompile's own contract) or a
+// write failure (logged directly, same as emitMode's own write-failure
+// path in main.cla).
+func bakeWriteFile(lane: int, outPath: string): bool {
+    var out: text
+    var mods: list of string
+    var stamp: text
+    var compilerSrc: text
+    var i: int
+
+    if not bakeGenerateChain(lane) {
+        return false
+    }
+
+    mods = bakeModuleList(lane)
+
+    out = ""
+    out.append(bkMagic)
+    bkPutU32(out, bkFormatVersion)
+    bkPutByte(out, lane)
+
+    compilerSrc = ""
+    stamp = ""
+    if bkFindClarusC(compilerSrc) {
+        bkPutU32(stamp, bkHashText(compilerSrc))
+    } else {
+        // clarusc/clarusc.c unreachable from the working directory (an
+        // unusual invocation location) -- an all-zero stamp still keeps
+        // the bake deterministic (bake-twice-identical) and the loader's
+        // mismatch-refusal (Task 4) errs safe either way: a real
+        // clarusc.c-hash stamp will never legitimately be zero.
+        bkPutU32(stamp, 0)
+    }
+    bkPutU16(out, stamp.length)
+    out.append(stamp)
+
+    bkPutU16(out, mods.count)
+    i = 0
+    while i < mods.count {
+        bkPutStrShort(out, rtModuleKey(mods[i]))
+        i = i + 1
+    }
+
+    bkPutU16(out, bkSectionCount)
+    bkEmitSection(out, bkSecIrTypes, bkWriteIrTypes())
+    bkEmitSection(out, bkSecIrStmts, bkWriteIrStmts())
+    bkEmitSection(out, bkSecIrExprs, bkWriteIrExprs())
+    bkEmitSection(out, bkSecIrLocals, bkWriteIrLocals())
+    bkEmitSection(out, bkSecIrFuncs, bkWriteIrFuncs())
+    bkEmitSection(out, bkSecIrFuncIdxByName, bkWriteIrFuncIdxByName())
+    bkEmitSection(out, bkSecIrCbGlueNames, bkWriteIrCbGlueNames())
+    bkEmitSection(out, bkSecIrGlobals, bkWriteIrGlobals())
+    bkEmitSection(out, bkSecIrFieldSlots, bkWriteIrFieldSlots())
+    bkEmitSection(out, bkSecIrRecords, bkWriteIrRecords())
+    bkEmitSection(out, bkSecIrEnumMembers, bkWriteIrEnumMembers())
+    bkEmitSection(out, bkSecIrEnums, bkWriteIrEnums())
+    bkEmitSection(out, bkSecIrWidgetDescs, bkWriteIrWidgetDescs())
+    bkEmitSection(out, bkSecIrColumnDescs, bkWriteIrColumnDescs())
+    bkEmitSection(out, bkSecIrBindDescs, bkWriteIrBindDescs())
+    bkEmitSection(out, bkSecIrWindowDescs, bkWriteIrWindowDescs())
+    bkEmitSection(out, bkSecIrMenuItemDescs, bkWriteIrMenuItemDescs())
+    bkEmitSection(out, bkSecIrMenuDescs, bkWriteIrMenuDescs())
+    bkEmitSection(out, bkSecIrWinHandlers, bkWriteIrWinHandlers())
+    bkEmitSection(out, bkSecIrWidgetHandlerEntries, bkWriteIrWidgetHandlerEntries())
+    bkEmitSection(out, bkSecIrMenuHandlerEntries, bkWriteIrMenuHandlerEntries())
+    bkEmitSection(out, bkSecIrEveryEntries, bkWriteIrEveryEntries())
+    bkEmitSection(out, bkSecIrStrLits, bkWriteIrStrLits())
+    bkEmitSection(out, bkSecIrExternNames, bkWriteIntList(irExternNames))
+    bkEmitSection(out, bkSecIrExternRetTys, bkWriteIntList(irExternRetTys))
+    bkEmitSection(out, bkSecIrExternParamStart, bkWriteIntList(irExternParamStart))
+    bkEmitSection(out, bkSecIrExternParamCountArr, bkWriteIntList(irExternParamCountArr))
+    bkEmitSection(out, bkSecIrExternParamTys, bkWriteIntList(irExternParamTys))
+    bkEmitSection(out, bkSecIrExternTrapWords, bkWriteIntList(irExternTrapWords))
+    bkEmitSection(out, bkSecIrExternConvs, bkWriteIntList(irExternConvs))
+    bkEmitSection(out, bkSecIrExternSels, bkWriteIntList(irExternSels))
+    bkEmitSection(out, bkSecIrExternParamRegs, bkWriteIntList(irExternParamRegs))
+    bkEmitSection(out, bkSecIrExternRetRegs, bkWriteIntList(irExternRetRegs))
+    bkEmitSection(out, bkSecIrLayoutNeededByName, bkWriteIrLayoutNeededByName())
+    bkEmitSection(out, bkSecIrRcWalkNeededByName, bkWriteIrRcWalkNeededByName())
+    bkEmitSection(out, bkSecIrScalars, bkWriteIrScalars())
+    bkEmitSection(out, bkSecStrPool, bkWriteStrPool())
+    bkEmitSection(out, bkSecLowCounters, bkWriteLowCounters())
+    bkEmitSection(out, bkSecCheckerSymbols, bkWriteCheckerSymbols())
+    bkEmitSection(out, bkSecDeclFileTab, bkWriteDeclFileTab())
+
+    if not file.writeText(outPath, out, fileTypeData, "????") {
+        log("clarusc --bake-ir: cannot write " + outPath + ": " + lastError.message)
+        return false
+    }
+    return true
+}

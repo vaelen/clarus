@@ -36,6 +36,7 @@ include "cprint.cla"
 include "cg68k.cla"
 include "uiblob.cla"
 include "drive.cla"
+include "bake.cla"
 
 // feReadSource is main.cla's front end for drive.cla's expand() seam
 // (Task 6): the host CLI reads everything straight off disk via
@@ -135,6 +136,10 @@ on App.startCLI(args: list of string) {
     var ok: bool
     var ok68: bool
     var appinfoMode: bool
+    var bakeIrMode: bool
+    var laneFlag: string
+    var haveLaneFlag: bool
+    var laneInt: int
     var startArg: int
     var outPath: string
     var haveOutPath: bool
@@ -192,6 +197,9 @@ on App.startCLI(args: list of string) {
     eventsPath = ""
     haveEvents = false
     appinfoMode = false
+    bakeIrMode = false
+    laneFlag = ""
+    haveLaneFlag = false
     startArg = 0
     if args[0] == "emit" {
         emitMode = true
@@ -205,8 +213,18 @@ on App.startCLI(args: list of string) {
         appinfoMode = true
         startArg = 1
     }
+    // runtime-ir-bake Task 3: `clarusc --bake-ir --lane 68k|c --rtdir DIR
+    // -o FILE` -- generates the CLIR runtime bake (bake.cla) instead of
+    // checking/emitting a user program. Parsed as an args[0] subcommand,
+    // the same way emit/emit68k/appinfo are, per the brief's own "add
+    // bakeIrMode the same way" instruction; --lane/--rtdir/-o are then
+    // ordinary flags in the loop below.
+    if args[0] == "--bake-ir" {
+        bakeIrMode = true
+        startArg = 1
+    }
     if startArg >= args.count {
-        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
+        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
         quit 2
     }
 
@@ -221,11 +239,13 @@ on App.startCLI(args: list of string) {
     haveRtDir = false
     i = startArg
     while i < args.count {
-        if (emitMode or emitMode68k) and args[i] == "-o" {
+        if (emitMode or emitMode68k or bakeIrMode) and args[i] == "-o" {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
                     log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
+                } else if bakeIrMode {
+                    log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else {
                     log("usage: clarusc emit -o OUT.c FILE...")
                 }
@@ -233,11 +253,13 @@ on App.startCLI(args: list of string) {
             }
             outPath = args[i]
             haveOutPath = true
-        } else if (emitMode or emitMode68k) and args[i] == "--rtdir" {
+        } else if (emitMode or emitMode68k or bakeIrMode) and args[i] == "--rtdir" {
             i = i + 1
             if i >= args.count {
                 if emitMode68k {
                     log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
+                } else if bakeIrMode {
+                    log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
                 } else {
                     log("usage: clarusc emit -o OUT.c [--rtdir DIR] [--testapi] FILE...")
                 }
@@ -248,6 +270,14 @@ on App.startCLI(args: list of string) {
                 rtDir = rtDir + "/"
             }
             haveRtDir = true
+        } else if bakeIrMode and args[i] == "--lane" {
+            i = i + 1
+            if i >= args.count {
+                log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
+                quit 2
+            }
+            laneFlag = args[i]
+            haveLaneFlag = true
         } else if (emitMode or emitMode68k or appinfoMode) and args[i] == "--testapi" {
             // ui-scenario-retirement Task 2: opts a UI program into an
             // early splice of the UI runtime set + uitest.cla (below, "Early
@@ -365,9 +395,46 @@ on App.startCLI(args: list of string) {
         log("usage: clarusc emit68k -o OUT.bin [--rtdir DIR] [--testapi] [--listing] FILE...")
         quit 2
     }
-    if fileArgs.count == 0 {
-        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo] FILE...")
+    if bakeIrMode and not haveOutPath {
+        log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
         quit 2
+    }
+    if bakeIrMode and fileArgs.count > 0 {
+        log("clarusc --bake-ir: no FILE arguments accepted (the runtime chain is the program)")
+        quit 2
+    }
+    if fileArgs.count == 0 and not bakeIrMode {
+        log("usage: clarusc [emit -o OUT.c | emit68k -o OUT.bin | appinfo | --bake-ir --lane 68k|c -o OUT.clir] FILE...")
+        quit 2
+    }
+
+    // runtime-ir-bake Task 3: bakeIrMode never touches driveCompile at
+    // all (there is no user program -- the runtime chain itself is
+    // "the program", per bake.cla's own doc comment) -- resolve --lane,
+    // generate, and quit before the ordinary check/emit pipeline below.
+    if bakeIrMode {
+        if not haveLaneFlag or (laneFlag != "68k" and laneFlag != "c") {
+            log("usage: clarusc --bake-ir --lane 68k|c -o OUT.clir [--rtdir DIR]")
+            quit 2
+        }
+        if laneFlag == "68k" {
+            laneInt = bkLane68k
+        } else {
+            laneInt = bkLaneC
+        }
+        if not bakeWriteFile(laneInt, outPath) {
+            if entryFailed {
+                log("cannot open entry file")
+                quit 1
+            }
+            i = 0
+            while i < diags.count {
+                alert(formatDiag(poolGet(diagPaths[i]), diags[i]))
+                i = i + 1
+            }
+            quit 1
+        }
+        quit 0
     }
 
     // Task 6 (mac-resident-clarusc): the whole pipeline -- Phase A
