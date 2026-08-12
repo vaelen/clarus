@@ -1019,6 +1019,246 @@ should be fixed before the Mac runtime freezes contracts. The older plans'
   (including `TestSnapshotFixedPoint`, `TestClarusModules`, and
   `TestErrorGoldens`) are green.
 
+- **runtime-ir-bake (branch `runtime-ir-bake`, 2026-08-12/13, based on
+  `param-abi`): Tasks 1-6 + Task 7 Steps 0-3 DONE; Step 4 (T2) BLOCKED
+  by a newly-discovered pre-existing regression, not yet merge-ready.**
+  Implements precompiled-artifacts item 3 at IR depth (deepened from the
+  notes doc's "pre-parsed bake" v1 during brainstorm): design
+  `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md`, plan
+  `docs/superpowers/plans/2026-08-12-runtime-ir-bake.md`. Bakes the
+  runtime's post-`lowerProgram` IR (superset — all 17 68k-lane modules
+  lowered together, `uitest.cla` visibility-gated but always carried) into
+  a stamped `'CLIR'` resource; per compile, loads it at arena base 0 and
+  runs only USER code through expand/lex/parse/check/lower — check#2
+  retired on the bake path, manifest-splice conditionals retired
+  everywhere (the from-source path also moved to the unconditional
+  superset splice, so its IR indices match a superset bake's by
+  construction — the byte-identity oracle's whole premise).
+  `ClarusC.APPL` consumes the resource by default; the host CLI gets an
+  opt-in `--rtbake FILE` (`clarusc --bake-ir --lane 68k|c` generates the
+  artifact). Full ledger:
+  `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md`.
+
+  **7 tasks, commits `322765a..c99d95a`, plus a Task 7 close-out wave
+  (housekeeping + snapshot regen, `c99d95a..ac423b0`).** Task 1 was a
+  probe wave (no tree commits — reverted after measuring; report +
+  amendments only) that found the naive superset splice breaks 26/28
+  non-UI native fixtures (a latent `cg68AddRoots`/dispatcher-synthesis
+  bug, below) and narrowed the "check#2 adds nothing" assumption. Task 2
+  fixed the dispatcher bug and made the from-source splice unconditional
+  superset, re-blessing goldens once. Task 3 built the `'CLIR'`
+  serializer (`clarusc --bake-ir`). Task 4 built the loader (`--rtbake` on
+  the host emit paths) plus the leak gate's bake-path twin. Task 5 closed
+  the bake-vs-from-source byte-identity gap across the full corpus (both
+  lanes) through two controller-directed fix rounds plus a
+  changes-requested review's own fix round — the riskiest diff of the
+  phase, reviewed by Opus. **One of Task 5's fix rounds is also the
+  source of the T2 blocker below.** Task 6 wired `ClarusC.APPL` to
+  consume the bake by default (`--bake-ir` embedding, stamp sidecar,
+  `--no-bake-ir` opt-out) and root-caused a real, previously-
+  **documented-but-not-fixed** cg68k codegen bug the bake path exposed
+  (below), then proved the whole path byte-identical to the host oracle
+  on real Snow hardware. Task 7 (this entry) fixed three deferred review
+  minors, regenerated the bootstrap snapshot to a fixed point, measured
+  perf, wrote docs, then — running this whole phase's FIRST full T2
+  (including the gated native-emulator lane) — found the blocker below.
+
+  **T2 BLOCKER (found 2026-08-13, Task 7 Step 4, unresolved):**
+  `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+  TestToolboxSuiteOn68k` (the gated native-emulator toolbox-suite boot,
+  part of `scripts/test-merge.sh`'s native lane) crashes with a native
+  runtime panic (`##CLARUS-EXIT## 3`, `nat_CorePanic` fired with a
+  **completely empty message** — not a normal fail-closed diagnostic
+  like `lower.cla`'s `lowSynthPanic` always produces) partway through
+  the scripted suite run, at the very first UI action inside
+  `testsuite/toolbox/cases_popuptable.cla`'s `casePopuptable()` — a
+  table-row `select` on the `PopupTableWin` `Marks` table widget. Every
+  case before it (window/menu/every/canvas/scroll dispatch, ~14 cases)
+  passes clean.
+  - **Confirmed real and pre-existing, not caused by Task 7's own work**
+    (housekeeping, snapshot regen, doc edits): manual bisection via git
+    worktrees, rebuilding the exact toolbox-suite native binary at each
+    commit and booting it in the emulator —
+    `322765a` (pre-phase base) PASS, `d5e1ed7` (Task 2) PASS, `4248ddd`
+    (Task 4) PASS, `b3d205e` (Task 5 impl round 1) PASS,
+    **`e72b92a` (Task 5 fix round 1) FAILS — same crash**, `45ba8a1`
+    (Task 5 end) FAILS, `c99d95a` (Task 6 end, this phase's pre-Task-7
+    base) FAILS. The regression was introduced by `e72b92a` ("fix:
+    bake-path structural identity — skip generator dispatchers, reorder
+    testapi splice") and has survived unchanged through every later
+    commit.
+  - **Why it evaded Tasks 5/6's own gates:** those gates only assert
+    "bake-path output == from-source output" (byte-identity), never
+    "output == correct behavior." If a decl-chain reordering bug (see
+    below) produces the SAME wrong codegen on both the bake path and the
+    from-source `--testapi` path, byte-identity holds while both are
+    equally broken. `TestToolboxSuiteOn68k` is a live UI-driven
+    behavioral boot — apparently never run as part of Tasks 5/6's own
+    per-task gates (only individually-scoped checks were) — so Task 7
+    Step 4 is the first time in the whole phase this exact 34-file
+    `--testapi` composition was exercised dynamically on real hardware.
+  - **Leading hypothesis, NOT confirmed (needs 68k register/memory-level
+    tracing this environment doesn't have):** `drive.cla`'s
+    `driveManifestSplice`, in its `earlySpliceDone` branch (added by
+    `e72b92a`, further reworked by Task 5's later fix rounds — current
+    shape reassembles `combined2` from three separately-tracked decl
+    chains, `earlyRuntimeChain`/`rtHeads`/`uitestChain`/
+    `userChainRebuilt`, to match the bake's fixed module order), shifts
+    the relative POSITION of runtime decls in a way that corrupts an
+    A5-relative jump-table offset used by table-widget event dispatch
+    specifically (not window/menu/every dispatch, which is unaffected).
+    The empty `nat_CorePanic("")` message is consistent with a wrong
+    `JSR N(A5)` landing on `nat_CorePanic`'s own entry by coincidence
+    rather than a real, intentional panic call — `nat_CorePanic`'s slot
+    number shifts from 19 to 396 between a passing and failing build
+    (pure reordering artifact, not evidence on its own, but consistent
+    with the theory). Supporting evidence a dedicated investigation
+    gathered (543K tokens, 310 tool calls, ~100 min): the crash's
+    presence is sensitive to ANY unrelated structural change (segment
+    packing budget, `--nopeep`, one unused `const` added to an unrelated
+    file) — the classic signature of undefined behavior/memory
+    corruption tied to code layout, not a deterministic logic bug
+    locatable by code review alone. Literally reverting the splice order
+    does make the crash disappear, but reopens the byte-identity gap
+    Task 5's fix rounds closed (`TestBakeFullCorpusTestapi`/
+    `TestBakeFullCorpusSuiteCore` regress) — so it is a real regression
+    trade, not a fix.
+  - **Ruled out:** 16-bit PC-relative displacement overflow in
+    `asm68k.cla` (checked via an added range-check diagnostic against the
+    exact crashing binary — zero overflows fired); insufficient stack
+    reserve alone (widened `cgToolboxHeadroom` well past the computed
+    need, still crashed).
+  - **Next steps for whoever picks this up:** this needs real 68k
+    debugger-level tracing (register/memory state at the crash PC), not
+    available in this environment — or a careful manual audit of
+    `driveManifestSplice`'s decl-chain surgery against cg68k's A5
+    jump-table slot-assignment logic, cross-referencing exactly which
+    function occupies the wrong-but-landed-on slot for a `select`-event
+    dispatch on a table widget specifically. Repro:
+    `CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+    TestToolboxSuiteOn68k -v -timeout 5m` (fast, ~40s, deterministic).
+    Do not start precompiled-artifacts stage 3.5 (object code + linker)
+    until this is resolved — the notes doc's own 2026-08-13 update says
+    why.
+
+  **Latent bugs found (all pre-existing, none introduced by this
+  phase):**
+  - **Dispatcher-synthesis gate (Task 1→2):** `cg68AddRoots` unconditionally
+    roots every native `nat*`-named `IRFunc`, including `ui.cla`'s
+    `nat_UiLaunchReal`, which calls `UiFireStartEmpty` — but that
+    dispatcher (`clar_ui_fire_startempty`) is only synthesized when
+    `irWindowDescs`/`irMenuDescs`/`irEveryCount > 0`. Splicing `ui.cla`
+    into a non-UI program (a precondition of any unconditional superset
+    splice, from-source or baked) therefore failed to build. Fixed by
+    making dispatcher synthesis itself unconditional
+    (`lowSynthUiDispatchers`), matching the splice's own new
+    unconditional shape.
+  - **Double-lowering + checker string-singleton crash (Task 5 round
+    1):** `lastDecl` tracking through stitched-together decl chains
+    double-lowered some runtime decls when the bake-vs-from-source
+    corpus classification surfaced the shape; separately, the checker
+    crashed on `string` not being registered as a singleton type in one
+    bake-path-only code path. Both fixed; both are general correctness
+    bugs, not bake-specific workarounds.
+  - **cg68k `fromBytes`/`toBytes` stride-2 regression (Task 6, fix round
+    1):** `cgFillTightScratchFromPaddedArr`/`cgDrainTightScratchToPaddedArr`
+    kept a 2-byte-stride char-array walk after the 2026-08-04
+    `cgArrElemStride` 1-byte repack, corrupting every native
+    `fromBytes`/`toBytes` call since (`"rtListNew"` → `"rLsNw"`,
+    byte-exact — the mechanism the bake-path resource loader tripped
+    over). Fixed by correcting the stride. **Provenance correction**
+    (Task 6 review): this bug was already *documented* as a known,
+    deferred cg68k bug in `testsuite/toolbox/cases_resources.cla`'s
+    comments since 2026-08-09 (mac-resident-clarusc phase) — Task 6
+    root-caused and fixed it, but did not newly discover it. Task 7
+    reverted that test's workaround to the natural
+    `.toBytes()`+`buf[i]` form it had dodged, so the case now stands as
+    a standing regression test for the bug class.
+
+  **Design-claim narrowing (recorded in the design doc's own
+  annotations, `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md`):**
+  - **check#2-adds-nothing:** the literal claim, probed as written, FAILS
+    100% of the corpus — check#2 is currently the *only* pass that
+    type-checks the runtime chain's own internal calls, not just
+    user→runtime references. The design's real dependency survives
+    narrowed: check#2 adds nothing *new for user code specifically* over
+    check#1, which is what Task 3's bake-time one-shot runtime check
+    (baked at `--bake-ir` time, not re-run per compile) plus Task 5's
+    `--testapi` symbol preload actually need to uphold, and Tasks 4–5's
+    full-corpus byte-identity oracle is the proof, not a standalone
+    re-verification of the original claim.
+  - **`--testapi` visibility:** not just `UiTest*` names. From-source
+    `--testapi` check#1 sees every symbol from all 13 early-spliced
+    modules (three `cases_*.cla` toolbox-suite files name raw runtime
+    internals, not just `UiTest*` wrappers) — the bake path's preload
+    widened to match (format v3, `bkSecCheckerVisibility`); the
+    always-invisible remainder is the *manifest*-spliced modules
+    (ser/sortedmap/datetime/native), never early-spliced ones.
+  - **`uitest.cla` "the one `--testapi`-gated module":** true for symbol
+    *visibility*, not for bake *inclusion* — the CLIR always carries
+    `uitest.cla`'s lowered IR (Task 4 found this; the gate is
+    checker-visibility-only, enforced at preload time, not a
+    splice-time exclusion from the artifact).
+
+  **Perf (10-pair interleaved medians, host, `/usr/bin/time -l`,
+  regenerated snapshot compiler, `-O1`):**
+
+  | Benchmark | From-source | `--rtbake` | Speedup |
+  |---|---|---|---|
+  | `emit68k clarusc/macgui.cla` (37 segments) wall time | 0.335s | 0.170s | ~1.97x faster |
+  | Peak RSS, `emit68k clarusc/macgui.cla` | 197.0 MB | 198.8 MB | ~1% higher |
+  | Host self-compile (`emit clarusc/main.cla`) wall time | 0.625s | 0.410s | ~1.52x faster |
+  | Peak RSS, host self-compile | 330.6 MB | 328.1 MB | ~1% lower |
+  | Bake generation (one-off), `--bake-ir --lane 68k` | 0.04s / 22.5 MB peak RSS | — | — |
+  | Bake generation (one-off), `--bake-ir --lane c` | 0.02s / 18.7 MB peak RSS | — | — |
+
+  Both host benchmarks show real, repeatable wall-time wins (raw pairs
+  and both distributions in `.superpowers/sdd/2026-08-12-runtime-ir-bake/task-7-report.md`)
+  with essentially flat peak RSS either way — unlike param-abi's ABI
+  rewrite, this phase trades no memory for the speedup, because the win
+  is "skip re-parsing/re-checking/re-lowering the runtime," not a
+  storage or call-convention change. The host self-compile distribution
+  is bimodal (two RSS/time clusters ~25MB apart in both from-source and
+  `--rtbake` samples) — plausibly page-cache/allocator-arena variance
+  between runs, not a bake-path artifact (it appears in both arms
+  equally); medians are still the honest summary. The **Mac-side win**
+  (the actual point of the phase) was measured on real Snow hardware in
+  Task 6: a bake-path `TickProbe` compile completed in 55m2s wall clock
+  (settle=55m), against the pre-phase (leak-fix investigation,
+  2026-08-12) ~66m reference for the same fixture's from-source compile.
+  **Caveat:** these two numbers are not a controlled pair — different
+  sessions, different settle windows, and the pre-phase number predates
+  this phase's own housekeeping/snapshot-regen commits — so treat "~55m
+  vs ~66m" as directional (consistent with the design's ~2-4 minute
+  prediction plus this phase landing on an already-fast post-leak-fix,
+  post-param-abi baseline), not a precise before/after delta.
+
+  **Deferred / phase debt:**
+  - **Include-dedup fallback trigger is broad** (Task 5 review, Important
+    3; explicitly carried to this entry per the review's own scoping):
+    any program `include`-ing `toolbox/{files,standardfile,appleevents}.cla`
+    (transitive bake inputs) silently falls back to a from-source compile
+    for that build — correct, but loses the speedup, visible only via a
+    Log line. Narrowing direction: distinguish a `--testapi`-only or
+    extern-only-declaration collision (harmless, could stay on the bake
+    path) from a real hoisting collision (needs fallback). Not attempted
+    this phase (Task 6 was explicitly told not to; Task 7 only documents
+    it).
+  - **Object code + linker (item 3.5, the precompiled-artifacts notes
+    doc's staging) is the natural next phase, but BLOCKED on the T2
+    regression above** — building a new stage on the same
+    decl-chain/position-sensitive machinery that's already corrupting
+    something would make debugging harder, not easier.
+  - Everything param-abi already deferred (bare-`EIntr` arg release gap,
+    `KArr` param ABI, `toBytes` name-only guard) is untouched by this
+    phase, still open.
+
+  **T2 (`scripts/test-merge.sh`): RED, blocked on the regression above.**
+  T1 body, full `internal/selfhost` (incl. `TestSnapshotFixedPoint`), and
+  `CLARUS_BAKE_FULL=1 go test ./internal/bake -run TestBakeFullCorpus`
+  are all green; the gated native `internal/mactest` emulator lane fails
+  on `TestToolboxSuiteOn68k` as detailed above. **Not merge-ready.**
+
 ## Small open items (not yet scheduled)
 
 - `clarus run prog.cla -- args…` pass-through: DONE (clarus-run-dashdash).

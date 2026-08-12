@@ -1,7 +1,15 @@
 # Runtime IR bake — precompiled-artifacts item 3, at IR depth (2026-08-12)
 
-Status: **design approved in discussion (Andrew, 2026-08-12 evening),
-pre-plan.** Implements the first stage of the precompiled-artifacts
+Status: **Implemented (2026-08-13, branch `runtime-ir-bake`, commits
+`322765a..ac423b0`) but T2-BLOCKED** — see the ROADMAP `runtime-ir-bake`
+entry and `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md` for
+the task ledger, and the ROADMAP entry's own "T2 blocker" subsection for
+a pre-existing regression (Task 5, commit `e72b92a`) discovered by
+Task 7's first full native-emulator T2 run, still unresolved. Annotations
+below (Task N/7, 2026-08-13) mark claims the implementation narrowed; the
+design otherwise landed as approved.
+Originally: design approved in discussion (Andrew, 2026-08-12 evening),
+pre-plan. Implements the first stage of the precompiled-artifacts
 program (`2026-08-12-precompiled-artifacts-design-notes.md`), deepened
 from that doc's "pre-parsed bake" v1 to a **post-lower IR bake** by the
 brainstorm decisions recorded here. Prerequisite phase: param-abi
@@ -34,6 +42,12 @@ its ABI.
    paths. The A5/fork-size cost of superset on small programs is
    measured by plan Task 1 before Task 2 commits to it, with
    shake-aware global emission as the recorded mitigation if needed.
+   **[Task 4/7 annotation, 2026-08-13]** "`--testapi`-gated" means
+   checker-*visibility*-gated, not bake-*inclusion*-gated: the CLIR
+   artifact always carries `uitest.cla`'s lowered IR unconditionally
+   (Task 4 found this carried-but-gated shape); the gate is enforced at
+   symbol-preload time on the from-source `--testapi` check, not by
+   excluding the module from the bake itself.
 3. **Lane roles:** ClarusC.APPL consumes the baked resource **by
    default** (that is the point of the phase); the host CLI gains an
    **opt-in flag** (`--rtbake FILE`) with from-source remaining the
@@ -81,6 +95,15 @@ passed via `--rtbake`.
   - the checker symbol tables for the runtime (used ONLY on the
     `--testapi` path, where user code may legally name `UiTest*`
     runtime functions);
+    **[Task 5/7 annotation, 2026-08-13]** narrower than stated: it's not
+    just `UiTest*`. From-source `--testapi` check#1 sees every symbol
+    from all 13 early-spliced modules (three `cases_*.cla` toolbox-suite
+    files name raw runtime internals directly, not just `UiTest*`
+    wrappers), so the bake path's preload widened to match (format v3,
+    `bkSecCheckerVisibility`) — manifest-spliced modules
+    (ser/sortedmap/datetime/native) stay invisible either way. See
+    `.superpowers/sdd/2026-08-12-runtime-ir-bake/task-5-report.md`
+    (fix round 2).
   - `curPathIdx` path stamps for baked decls, so runtime-attributed
     diagnostics/panics still name the right source file.
 - **Not baked:** memoized `I*()` intrinsic caches and lazy-init guards
@@ -112,6 +135,20 @@ verifies it differentially across the corpus rather than assuming it**
 where check#2 mutates state lower depends on, narrows the claim and
 the design adapts (worst case: a user-only check#2 pass over the user
 chain with baked symbols visible).
+
+> **[Task 1/7 annotation, 2026-08-13]** Probed literally, this claim
+> FAILS 100% of the corpus: check#2 is currently the *only* pass that
+> type-checks the runtime chain's own internal calls (not just
+> user→runtime references), so skipping it outright would silently stop
+> checking the runtime against itself. The design's actual dependency
+> survives narrowed: check#2 adds nothing *new for user code
+> specifically* over check#1. Task 3's bake-time one-shot runtime check
+> (run once, at `--bake-ir` generation time, not per compile) plus
+> `--testapi` symbol preload are what uphold the narrowed claim; Tasks
+> 4-5's full-corpus byte-identity oracle is the proof (not a standalone
+> re-verification of the original, broader claim). See
+> `.superpowers/sdd/2026-08-12-runtime-ir-bake/task-1-report.md`
+> (Step 2) and the ROADMAP `runtime-ir-bake` entry.
 
 ## The oracle
 

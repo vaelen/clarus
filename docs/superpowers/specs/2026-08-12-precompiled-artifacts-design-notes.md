@@ -138,7 +138,25 @@ approved design. Rationale: after the layer1/leak-fix speedups, parse
 and check are no longer the dominant Mac costs, so the shallow bakes'
 payoff shrank; the IR depth kills the whole front half of the pipeline
 for the runtime with the same serialization machinery (the AST/IR/
-symbol tables are all flat int arenas). Original staging kept for the
+symbol tables are all flat int arenas).
+
+**UPDATE 2026-08-13: stages 1+2 (as deepened above, the IR bake) are
+IMPLEMENTED but T2-BLOCKED** — branch `runtime-ir-bake`, commits
+`322765a..ac423b0`, ledger
+`.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md`. The
+serializer (flat int-arena sections, content-hash stamp, base-0 index
+discipline) and loader landed as the reusable machinery this doc's
+staging always intended them to be, and the host-side byte-identity
+oracles are green. However, Task 7's close-out (the first FULL
+`scripts/test-merge.sh` run of the whole phase, including the gated
+native-emulator `internal/mactest` lane) found a real, pre-existing
+regression from Task 5 (commit `e72b92a`) — see the ROADMAP
+`runtime-ir-bake` entry's "T2 blocker" subsection for the full writeup.
+**Stage 3.5 (object code + linker, item 5 below) should NOT start until
+that regression is root-caused and fixed** — it builds on the same
+decl-chain/position-sensitive machinery that's already misbehaving, and
+starting a new stage on top of an unresolved corruption bug would make
+future debugging harder, not easier. Original staging kept for the
 record:
 
 1. Bake post-parse AST (item 3 v1) — smallest step; proves serialization,

@@ -1,46 +1,53 @@
-# Session status — 2026-08-12 (param-abi close-out + runtime-ir-bake readied)
+# Session status — 2026-08-13 (runtime-ir-bake T2-blocked)
 
-Handoff summary for the next session. Current branch: `param-abi` (stacked
-on unmerged `memory-leak-fix` → `layer1-compiler-perf` → `datetime-
-instrumentation` → `map-hashtable` → `mac-resident-clarusc`, **not
-merged** — merge is Andrew's call).
+Handoff summary for the next session. Current branch: `runtime-ir-bake`
+(stacked on unmerged `param-abi` → `memory-leak-fix` →
+`layer1-compiler-perf` → `datetime-instrumentation` → `map-hashtable` →
+`mac-resident-clarusc`, **not merged** — merge is Andrew's call).
 
-## 0. START HERE next session: runtime-ir-bake phase, ready to implement
+## 0. START HERE next session: fix the T2 blocker before anything else
 
-Brainstormed and specced 2026-08-12 evening (Andrew-approved design).
-**Spec (normative):** `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md`
-**Plan (7 tasks):** `docs/superpowers/plans/2026-08-12-runtime-ir-bake.md`
-**Parent design context:** `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`
-(its Staging section records why this phase is the IR-depth deepening of
-stage 1+2).
+`runtime-ir-bake`'s Tasks 1-6 and Task 7 Steps 0-3 (housekeeping,
+snapshot regen, perf, docs) are DONE and committed. **Task 7 Step 4 (the
+phase's first full `scripts/test-merge.sh` run, including the gated
+native-emulator lane) found a real, pre-existing regression** —
+`CLARUS_MAC_TESTS=1 go test ./internal/mactest -run
+TestToolboxSuiteOn68k` crashes with an empty-message native panic
+(`nat_CorePanic("")`, exit 3) the instant `cases_popuptable.cla`'s first
+table-widget `select` event fires. Full writeup, evidence, and the
+leading (unconfirmed) hypothesis: the ROADMAP `runtime-ir-bake` entry's
+"T2 blocker" subsection. Short version:
 
-One-paragraph summary: bake the runtime's post-lower IR (superset, all
-17 68k-lane modules lowered together) into a stamped `'CLIR'` artifact;
-per compile, load it at arena base 0 and run only USER code through
-expand/lex/parse/check/lower — check#2 retired, manifest-splice
-conditionals retired (the from-source path ALSO moves to the superset
-splice so the byte-identity oracle holds by construction; that is plan
-Task 2 and re-blesses goldens once). ClarusC.APPL consumes the resource
-by default; host gets opt-in `--rtbake`. Payoff: ~2-4 min of the
-~20-min Mac compile plus pipeline simplification; the serializer/
-stamp/loader is the foundation 3.5 (object code + linker) reuses.
+- **Confirmed via git-worktree bisection** (rebuild the exact toolbox
+  suite native binary at each commit, boot in the emulator): passes at
+  `322765a`/`d5e1ed7`/`4248ddd`/`b3d205e`, **fails starting at `e72b92a`**
+  (Task 5 fix round 1) and every commit after, including current HEAD.
+  Not caused by Task 7's own work.
+- **A dedicated ~100-minute, 543K-token investigation could not root-cause
+  it** — ruled out PC-relative displacement overflow and insufficient
+  stack reserve; found the crash's presence is sensitive to almost ANY
+  unrelated structural change (segment budget, `--nopeep`, one unused
+  `const` in an unrelated file), the classic signature of layout-sensitive
+  undefined behavior, not a locatable logic bug. Leading hypothesis: a
+  decl-chain reordering in `drive.cla`'s `driveManifestSplice`
+  (`earlySpliceDone` branch) corrupts an A5-relative jump-table offset
+  that table-widget event dispatch depends on. **Needs real 68k
+  register/memory-level tracing to pin down — not available in this
+  environment.**
+- Repro (fast, ~40s, 100% deterministic): `CLARUS_MAC_TESTS=1 go test
+  ./internal/mactest -run TestToolboxSuiteOn68k -v -timeout 5m`.
+- **Do not start precompiled-artifacts stage 3.5** (object code +
+  linker) until this is fixed — see the notes doc's own 2026-08-13
+  update.
+- Tree is clean at `ac423b0` (verified) — no partial/speculative fixes
+  were committed. `git worktree list` should show only the main
+  worktree; scratch investigation worktrees were removed.
 
-Execution notes for the next session:
-- Create branch `runtime-ir-bake` from `param-abi` HEAD (per the plan's
-  Global Constraints). Task 1 is a PROBE wave that commits nothing to
-  the tree — its deliverable is the assumptions/inventory report.
-- Implementation is subagent-driven per CLAUDE.md (sonnet impl/review,
-  most-capable final review); log each subagent's model (standing
-  request). Task 1's report may AMEND Tasks 2+ (superset A5/fork-size
-  decision gate) — controller reviews amendments before dispatching
-  Task 2.
-- MacRoman discipline: 3 corruption incidents in the param-abi phase;
-  the plan's Global Constraints carry the exact pre-edit check.
-- The plan cites research facts (irReset at ir.cla:1039-1289, lowering
-  counters incl. the lowStoreTempN/lowRetTempN collision hazard,
-  driveCompile at drive.cla:1359-1486, CLFS/bake machinery at
-  cg68k.cla:11714-11758, shake/codegen's IR-only boundary) verified at
-  param-abi HEAD `8039277`; Task 1 re-verifies the load-bearing ones.
+Design context (unchanged): **Spec (normative):**
+`docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md` (now
+annotated where Tasks 1/4/5 narrowed its claims). **Plan (7 tasks):**
+`docs/superpowers/plans/2026-08-12-runtime-ir-bake.md`. **Parent design
+context:** `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`.
 
 ## Why this session happened
 
@@ -234,6 +241,85 @@ that prerequisite is now satisfied, so a future session can pick that doc
 back up and plan the bake/object-code/artifact-cache work on a frozen
 param ABI.
 
+## 5. runtime-ir-bake phase (2026-08-12/13, branch `runtime-ir-bake`) — T2-BLOCKED, not merge-ready
+
+Implements precompiled-artifacts item 3 at IR depth: bakes the runtime's
+post-`lowerProgram` IR (unconditional superset, all 17 68k-lane modules)
+into a stamped `'CLIR'` resource; `ClarusC.APPL` consumes it by default,
+the host CLI opts in via `--rtbake FILE`. check#2 and every manifest
+splice conditional are retired. See the ROADMAP's `runtime-ir-bake` entry
+for the full task ledger, latent-bug finds, design-claim narrowing, perf
+table, deferred items, AND the T2 blocker writeup — summary here.
+
+- **7 tasks, commits `322765a..c99d95a`, plus this session's Task 7
+  close-out wave (`c99d95a..ac423b0`).** Task 1 (probe, no tree commits)
+  found the naive superset splice breaks 26/28 non-UI native fixtures
+  (dispatcher-synthesis gate bug) and narrowed the check#2 assumption.
+  Task 2 fixed the dispatcher bug + made the from-source splice
+  unconditional superset. Task 3 built the `'CLIR'` serializer. Task 4
+  built the loader (`--rtbake`) + leak-gate bake-path twin. Task 5 closed
+  the full-corpus byte-identity gap both lanes (3 fix rounds, Opus
+  review) — **and, per Task 7's own bisection, ALSO introduced the T2
+  blocker below in fix round 1 (`e72b92a`), undetected until now because
+  the byte-identity oracle only checks bake==from-source, never
+  correctness.** Task 6 wired `ClarusC.APPL`'s bake-by-default path and
+  root-caused a real cg68k `fromBytes`/`toBytes` stride-2 codegen bug
+  the bake path exposed (2 fix rounds), then proved byte-identity on
+  real Snow hardware (3 Snow runs). Full ledger:
+  `.superpowers/sdd/2026-08-12-runtime-ir-bake/progress.md`.
+- **Task 7, Step 0 (housekeeping, commit `a5d23fd`):** fixed three
+  deferred review minors — stale doc comments describing retired
+  conditional-splice gates as live consumers (`check.cla`, `cprint.cla`);
+  reverted `cases_resources.cla`'s workaround for the now-fixed cg68k
+  stride bug back to the natural `.toBytes()`+`buf[i]` form, making it a
+  standing regression test; added the loud duplicate-reserved-name
+  refusal `cliResolveBakeIr` was missing (`main.cla`).
+- **Step 1 (snapshot regen, commit `ac423b0`):** `clarusc/clarusc.c`
+  regenerated to a Go-free fixed point in 2 bootstrap rounds (same as
+  param-abi's own regen). Verified freshness and fixed point
+  independently before committing. Full `go test ./internal/selfhost
+  -count=1 -timeout 30m` green, **93s**, including
+  `TestSnapshotFixedPoint`. `CLARUS_BAKE_FULL=1 go test ./internal/bake
+  -run TestBakeFullCorpus` green too.
+- **Step 2 (perf), 10-pair interleaved medians, host,
+  `/usr/bin/time -l`, using the regenerated snapshot compiler
+  (`-O1`):**
+
+  | Benchmark | From-source | `--rtbake` | Speedup |
+  |---|---|---|---|
+  | `emit68k clarusc/macgui.cla` (37 segments) wall time | 0.335s | 0.170s | ~1.97x faster |
+  | Peak RSS, `emit68k clarusc/macgui.cla` | 197.0 MB | 198.8 MB | ~1% higher |
+  | Host self-compile (`emit clarusc/main.cla`) wall time | 0.625s | 0.410s | ~1.52x faster |
+  | Peak RSS, host self-compile | 330.6 MB | 328.1 MB | ~1% lower |
+  | Bake generation (one-off), `--bake-ir --lane 68k` | 0.04s / 22.5 MB peak RSS | — | — |
+  | Bake generation (one-off), `--bake-ir --lane c` | 0.02s / 18.7 MB peak RSS | — | — |
+
+  Both benchmarks show real wall-time wins with flat peak RSS either way.
+  Raw 10-pair data in `.superpowers/sdd/2026-08-12-runtime-ir-bake/task-7-report.md`.
+  The Mac-side win was measured on real Snow hardware in Task 6: a
+  bake-path `TickProbe` compile completed in 55m2s wall clock
+  (settle=55m), against the pre-phase ~66m reference — directional, not
+  a controlled pair (different sessions/settle windows/baselines).
+- **Step 3 (docs):** ROADMAP `runtime-ir-bake` phase entry (task ledger,
+  latent-bug finds, design-claim narrowing, perf table, deferred items,
+  T2 blocker writeup); this STATUS section; precompiled-artifacts notes
+  doc's Staging section marked stages 1+2 implemented-but-T2-blocked;
+  the design doc annotated at the three claims Tasks 1/4/5 narrowed.
+- **Step 4, T2: RED.** `scripts/test-merge.sh`'s T1 body, full
+  `internal/selfhost`, and the bake full-corpus identity gate are all
+  green; the gated native `internal/mactest` emulator lane fails on
+  `TestToolboxSuiteOn68k` — see section 0 above for the full writeup.
+  **Not merge-ready.** A dedicated fix subagent (~100 min, 543K tokens)
+  could not root-cause it within this session; it needs 68k-level
+  debugger tracing this environment doesn't have.
+
+**Deferred / phase debt (full detail in ROADMAP entry):** the T2 blocker
+above (top priority — blocks everything else in this phase and stage
+3.5); include-dedup fallback trigger is broad (correct but slower,
+narrowing direction recorded); object code + linker (stage 3.5) is next
+but blocked on the T2 fix landing first; everything param-abi already
+deferred remains open.
+
 ## Recommended next steps (in order)
 
 0. **RESOLVED (memory-leak-fix phase, 2026-08-12) — root-caused and fixed
@@ -311,15 +397,18 @@ param ABI.
    are fixed.
 6. Merge decisions (Andrew's): `mac-resident-clarusc` still gated on a
    Snow acceptance PASS; `map-hashtable`, `datetime-instrumentation`,
-   `layer1-compiler-perf`, `memory-leak-fix`, and `param-abi` are all
-   stacked on top of it, unmerged. `param-abi`'s full
-   `scripts/test-merge.sh` ran GREEN at `5e44fd3` (2026-08-12, 225s
-   total incl. the native emulator lane) — the branch is fully gated
-   and merge-ready from a testing standpoint.
-7. **Precompiled-artifacts work is now unblocked** (param-abi phase
-   close-out, 2026-08-12): the design notes doc's own "Sequencing
-   decision" named the param-ABI rewrite as the prerequisite before
-   freezing the ABI surface for baked/object-code artifacts; that
-   prerequisite landed this phase. Next session can pick
-   `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`
-   back up and turn it into a spec/plan.
+   `layer1-compiler-perf`, `memory-leak-fix`, `param-abi`, and now
+   `runtime-ir-bake` are all stacked on top of it, unmerged, in that
+   order. `param-abi`'s full `scripts/test-merge.sh` ran GREEN at
+   `5e44fd3` (2026-08-12, 225s total incl. the native emulator lane) —
+   fully gated and merge-ready. **`runtime-ir-bake`'s full
+   `scripts/test-merge.sh` is RED** (see section 0/5 above) —
+   **NOT merge-ready until the T2 blocker is fixed.**
+7. **TOP PRIORITY next session: fix the runtime-ir-bake T2 blocker**
+   (section 0 above) before touching anything else on this stack —
+   precompiled-artifacts stage 3.5 (object code + linker) is otherwise
+   next in line (the param-ABI prerequisite landed in the param-abi
+   phase, and the IR-bake serializer/loader is the reusable foundation
+   3.5 builds on — see the notes doc), but starting it on top of an
+   unresolved decl-chain/position-sensitive corruption bug would be a
+   mistake per that doc's own 2026-08-13 update.
