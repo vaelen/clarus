@@ -168,11 +168,14 @@ var cpListArcPorted: bool
 var cpMapArcPorted: bool
 
 // cpSortedMapPorted (map-hashtable phase, Task 2) is `sortedmap of T`'s
-// ported-module flag -- UNLIKE cpMapPorted/cpMapArcPorted (both always
-// true, since map.cla is an unconditional manifest entry), sortedmap.cla
-// is CONDITIONALLY spliced (mirrors cpSerPorted's own convention): drive.cla
-// (driveManifestSplice) sets this to check.cla's usesSortedMap right where
-// it decides whether to pull runtime/clarus/sortedmap.cla into the manifest. A single
+// ported-module flag -- born CONDITIONALLY spliced (mirroring cpSerPorted's
+// own convention: drive.cla's driveManifestSplice set this to check.cla's
+// usesSortedMap right where it decided whether to pull
+// runtime/clarus/sortedmap.cla into the manifest). As of runtime-ir-bake
+// Task 2, drive.cla splices the full lane superset unconditionally, so
+// this flag (like cpMapPorted/cpMapArcPorted) is now set true
+// unconditionally too -- usesSortedMap itself is set-but-unread by the
+// splice (see check.cla's own doc comment). A single
 // flag covers BOTH data operations and ARC (set/get/has/remove/count AND
 // retain/release/lastref) -- unlike Map's own two-flag split
 // (cpMapPorted/cpMapArcPorted, a historical wave1-vs-wave2a artifact) --
@@ -544,9 +547,10 @@ func fpRetainVal(v: text, t: int) {
         // fallback at all (unlike Map/List/Text, which each started with
         // one before their own *ArcPorted wave) -- it is ALWAYS ported, so
         // cpSortedMapPorted here is a defensive exhaustiveness guard
-        // (cpFatal), never expected to actually fire: usesSortedMap gates
-        // the type's very existence in a checker-clean program, and
-        // drive.cla sets cpSortedMapPorted true in lockstep with it.
+        // (cpFatal), never expected to actually fire: drive.cla sets
+        // cpSortedMapPorted true unconditionally as of runtime-ir-bake
+        // Task 2's full-superset splice (see its own declaration doc
+        // comment above).
         if cpSortedMapPorted {
             fpEmit("clar_fn_rtSortedMapRetain((void*)" + v + ");")
         } else {
@@ -4859,9 +4863,9 @@ func cpEmitRelease(dst: text, cexpr: string, t: int) {
         // one before their own *ArcPorted wave), so it always calls the
         // Clarus-ported rtSortedMap* family directly. cpSortedMapPorted is
         // a defensive exhaustiveness guard (cpFatal), never expected to
-        // actually fire: usesSortedMap gates the type's very existence in a
-        // checker-clean program, and drive.cla sets cpSortedMapPorted true
-        // in lockstep with it.
+        // actually fire: drive.cla sets cpSortedMapPorted true
+        // unconditionally as of runtime-ir-bake Task 2's full-superset
+        // splice (see its own declaration doc comment above).
         if not cpSortedMapPorted {
             cpFatal("sortedmap release without cpSortedMapPorted")
         }
@@ -6874,19 +6878,22 @@ func emitProgram(): text {
         // clar_fn_rtSortedMap* calls that pass it through as an opaque
         // pointer) -- so this forward declaration alone is enough to make
         // "rt_sortedmap *"-typed locals/params/fields compile. Gated on
-        // cpSortedMapPorted (only true when usesSortedMap) to keep a
-        // sortedmap-free program's emitted C byte-identical.
+        // cpSortedMapPorted, which as of runtime-ir-bake Task 2's
+        // full-superset splice is set true unconditionally (like
+        // cpIntMapPorted below), so this typedef is always emitted now --
+        // harmless even on a sortedmap-free program.
         cpTypeBuf.add(toText("typedef struct rt_sortedmap rt_sortedmap;"))
     }
     if cpIntMapPorted {
         // map-hashtable phase Task 7: same opaque forward-declare treatment
         // as rt_sortedmap above -- rt_intmap has no C implementation either
-        // (map.cla's rtIntMap* family is pure Clarus). UNLIKE
-        // cpSortedMapPorted (only true when usesSortedMap), cpIntMapPorted
-        // is always true (intmap.cla's own rtIntMap* family lives in the
-        // always-spliced map.cla), so this typedef is always emitted --
-        // harmless even on an intmap-free program, since no code ever
-        // references the "rt_intmap *" type unless it's actually used.
+        // (map.cla's rtIntMap* family is pure Clarus). cpIntMapPorted was
+        // always true (intmap.cla's own rtIntMap* family lives in the
+        // always-spliced map.cla), and cpSortedMapPorted has been
+        // unconditionally true too since runtime-ir-bake Task 2, so both
+        // typedefs are always emitted now -- harmless even on an
+        // intmap-free/sortedmap-free program, since no code ever
+        // references either type unless it's actually used.
         cpTypeBuf.add(toText("typedef struct rt_intmap rt_intmap;"))
     }
     cpRecBuf.add(toText("typedef struct { int32_t code; clar_str_255 message; } clar_rec_Err;"))

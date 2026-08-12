@@ -27,7 +27,8 @@ const tbResBakeLen: int = 10
 
 func caseResourceBake(): TestResult {
     var out: text
-    var expect: text
+    var buf: char[10]
+    var n: int
     var detail: string
     var ok: bool
     var missingOk: bool
@@ -65,36 +66,27 @@ func caseResourceBake(): TestResult {
         return r
     }
 
-    // Build the expected 10-byte value via char()+append rather than a
-    // `char[N]` local + `.toBytes()`/direct indexing (a real, pre-
-    // existing, unrelated cg68k codegen bug on the native lane -- found
-    // live-driving this exact case: `.toBytes()` fills a `char[N]`
-    // local's PADDED (2-byte-stride) slots via cgDrainTightScratchToPaddedArr,
-    // but the array's own storage is ALREADY tight-packed (1-byte
-    // stride, small-scalar-width phase), so alternating bytes land in
-    // never-read padding and ordinary `buf[i]` reads see zeros at every
-    // odd index -- confirmed with an isolated non-UI native repro
-    // (`s.toBytes(buf)` then `buf[i]`, no resource code involved at
-    // all) and reported separately; out of scope to fix here. `text ==
-    // text` (rtTextCmp, native.cla/text.cla) never touches that array
-    // machinery, so it stays a reliable byte-for-byte check, including
-    // the raw 0x00/0xFF bytes a string LITERAL couldn't safely carry
-    // (ASCII-only source, embedded NUL) -- also proves `file.readResource`
-    // shares `file.readText`'s "every byte value 0-255 round-trips
-    // unchanged" promise (Chapter 12).
-    expect.append(char(67))  // C
-    expect.append(char(108)) // l
-    expect.append(char(97))  // a
-    expect.append(char(114)) // r
-    expect.append(char(117)) // u
-    expect.append(char(115)) // s
-    expect.append(char(0))
-    expect.append(char(255))
-    expect.append(char(128)) // MacRoman capital-A-umlaut
-    expect.append(char(138)) // MacRoman lowercase-a-circumflex
-
-    if out.length != tbResBakeLen or out != expect {
-        detail = "content mismatch, len " + tkIntToStr(out.length)
+    // Compare via `.toBytes()` into a `char[N]` local + direct `buf[i]`
+    // indexing -- the natural way to check a byte-exact readback. This
+    // used to be dodged (built the expected value as a `text` via
+    // char()+append and compared with `text == text` instead) because of
+    // a real cg68k codegen bug on the native lane: `.toBytes()` filled a
+    // `char[N]` local's PADDED (2-byte-stride) slots via
+    // cgDrainTightScratchToPaddedArr, but the array's own storage was
+    // ALREADY tight-packed (1-byte stride, small-scalar-width phase), so
+    // alternating bytes landed in never-read padding and ordinary
+    // `buf[i]` reads saw zeros at every odd index. Fixed by
+    // runtime-ir-bake Task 6 fix round 1 (commit 4338217): the stride-2
+    // char-array walk in cgFillTightScratchFromPaddedArr/
+    // cgDrainTightScratchToPaddedArr was corrected to stride 1. This case
+    // now uses the natural form again, standing as a regression test for
+    // that bug class -- and still proves `file.readResource` shares
+    // `file.readText`'s "every byte value 0-255 round-trips unchanged"
+    // promise (Chapter 12), including the raw 0x00/0xFF bytes a string
+    // LITERAL couldn't safely carry (ASCII-only source, embedded NUL).
+    n = out.toBytes(buf)
+    if n != tbResBakeLen or buf[0] != char(67) or buf[1] != char(108) or buf[2] != char(97) or buf[3] != char(114) or buf[4] != char(117) or buf[5] != char(115) or buf[6] != char(0) or buf[7] != char(255) or buf[8] != char(128) or buf[9] != char(138) {
+        detail = "content mismatch, len " + tkIntToStr(n)
         return tkFail("ResourceBake", detail)
     }
 

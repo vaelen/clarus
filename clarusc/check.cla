@@ -691,23 +691,29 @@ var inCloseRequest: bool
 var appDeclSeen: bool
 
 // usesFileSaveLoad is true once the program under check has called
-// file.save/file.load (checkMethodCall's `file` arm sets it) -- main.cla's
-// implicit runtime-module manifest reads this after checkProgram to decide
-// whether the serialization runtime module needs pulling into the emit.
+// file.save/file.load (checkMethodCall's `file` arm sets it). Until
+// runtime-ir-bake Task 2 this gated whether drive.cla's manifest splice
+// pulled the serialization runtime module in; Task 2 made the from-source
+// path splice the full lane superset unconditionally, so this flag is now
+// set-but-unread by that splice (harmless -- see drive.cla's
+// driveManifestSplice doc comment). Kept in case a future consumer needs
+// per-program file-save/load usage.
 var usesFileSaveLoad: bool
 
 // usesSortedMap is true once the program under check has named `sortedmap
 // of T` anywhere a type is resolved (resolveType's TxSortedMap arm sets
-// it, mirroring usesFileSaveLoad above) -- drive.cla's manifest splice
-// reads this to decide whether the sortedmap runtime module needs pulling
-// into the emit.
+// it, mirroring usesFileSaveLoad above). Until runtime-ir-bake Task 2 this
+// gated drive.cla's manifest splice of sortedmap.cla; Task 2 made that
+// splice unconditional (full lane superset), so this flag is now
+// set-but-unread by the splice -- see drive.cla's driveManifestSplice doc
+// comment.
 var usesSortedMap: bool
 
 // usesDateTime is true once the program under check has called one of
-// the date/time builtins (now/dateTimeStr/durationStr) -- drive.cla's
-// manifest splice reads it to decide whether runtime/clarus/datetime.cla
-// (plus exactly one per-lane rtNow variant) must be spliced. Mirrors
-// usesSortedMap above.
+// the date/time builtins (now/dateTimeStr/durationStr). Like
+// usesSortedMap above, this used to gate drive.cla's manifest splice of
+// runtime/clarus/datetime.cla; Task 2's unconditional full-superset splice
+// retired that gate, so this flag is now set-but-unread by the splice.
 var usesDateTime: bool
 
 // progGen is bumped by every checkReset so a name-keyed side table that

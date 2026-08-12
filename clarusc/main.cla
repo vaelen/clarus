@@ -155,10 +155,26 @@ func cliResolveBake(bakePaths: list of string) {
 // CLIR resource would ALWAYS be refused -- a silent, hard-to-diagnose
 // "bake path never taken" failure mode. Missing on disk is therefore a
 // loud quit 1 here, not a quiet skip (same "a typo must fail loudly"
-// precedent --partition's own doc comment already sets).
+// precedent --partition's own doc comment already sets). Always called
+// AFTER cliResolveBake (see App.startCLI's call order), so cgBakeNames
+// already holds every manual --bake entry by the time this runs -- the
+// reserved-name check below mirrors cliResolveBake's own loud duplicate
+// refusal, guarding against a manual --bake FILE whose given name
+// collides with bkClirResourceName/bkStampResourceName and would
+// otherwise silently produce two same-named resources instead of failing.
 func cliResolveBakeIr(clirPath: string) {
     var bytes: text
     var stampPath: string
+    var bi: int
+
+    bi = 0
+    while bi < cgBakeNames.count {
+        if cgBakeNames[bi] == bkClirResourceName or cgBakeNames[bi] == bkStampResourceName {
+            log("clarusc emit68k --bake-ir: --bake name collides with reserved name: " + cgBakeNames[bi])
+            quit 2
+        }
+        bi = bi + 1
+    }
 
     bytes = ""
     if not file.readText(clirPath, bytes) {
