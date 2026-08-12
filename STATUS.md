@@ -1,9 +1,46 @@
-# Session status — 2026-08-12 (param-abi close-out)
+# Session status — 2026-08-12 (param-abi close-out + runtime-ir-bake readied)
 
 Handoff summary for the next session. Current branch: `param-abi` (stacked
 on unmerged `memory-leak-fix` → `layer1-compiler-perf` → `datetime-
 instrumentation` → `map-hashtable` → `mac-resident-clarusc`, **not
 merged** — merge is Andrew's call).
+
+## 0. START HERE next session: runtime-ir-bake phase, ready to implement
+
+Brainstormed and specced 2026-08-12 evening (Andrew-approved design).
+**Spec (normative):** `docs/superpowers/specs/2026-08-12-runtime-ir-bake-design.md`
+**Plan (7 tasks):** `docs/superpowers/plans/2026-08-12-runtime-ir-bake.md`
+**Parent design context:** `docs/superpowers/specs/2026-08-12-precompiled-artifacts-design-notes.md`
+(its Staging section records why this phase is the IR-depth deepening of
+stage 1+2).
+
+One-paragraph summary: bake the runtime's post-lower IR (superset, all
+17 68k-lane modules lowered together) into a stamped `'CLIR'` artifact;
+per compile, load it at arena base 0 and run only USER code through
+expand/lex/parse/check/lower — check#2 retired, manifest-splice
+conditionals retired (the from-source path ALSO moves to the superset
+splice so the byte-identity oracle holds by construction; that is plan
+Task 2 and re-blesses goldens once). ClarusC.APPL consumes the resource
+by default; host gets opt-in `--rtbake`. Payoff: ~2-4 min of the
+~20-min Mac compile plus pipeline simplification; the serializer/
+stamp/loader is the foundation 3.5 (object code + linker) reuses.
+
+Execution notes for the next session:
+- Create branch `runtime-ir-bake` from `param-abi` HEAD (per the plan's
+  Global Constraints). Task 1 is a PROBE wave that commits nothing to
+  the tree — its deliverable is the assumptions/inventory report.
+- Implementation is subagent-driven per CLAUDE.md (sonnet impl/review,
+  most-capable final review); log each subagent's model (standing
+  request). Task 1's report may AMEND Tasks 2+ (superset A5/fork-size
+  decision gate) — controller reviews amendments before dispatching
+  Task 2.
+- MacRoman discipline: 3 corruption incidents in the param-abi phase;
+  the plan's Global Constraints carry the exact pre-edit check.
+- The plan cites research facts (irReset at ir.cla:1039-1289, lowering
+  counters incl. the lowStoreTempN/lowRetTempN collision hazard,
+  driveCompile at drive.cla:1359-1486, CLFS/bake machinery at
+  cg68k.cla:11714-11758, shake/codegen's IR-only boundary) verified at
+  param-abi HEAD `8039277`; Task 1 re-verifies the load-bearing ones.
 
 ## Why this session happened
 

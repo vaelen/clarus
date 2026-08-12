@@ -130,6 +130,17 @@ verified, `a259d0f`).
 
 ## Staging
 
+**AMENDED 2026-08-12 (post-param-abi brainstorm):** stages 1 and 2
+below were superseded by a single deeper phase — a **post-lower IR
+bake** (superset runtime + shake, `'CLIR'` resource, check#2 retired on
+the bake path) — see `2026-08-12-runtime-ir-bake-design.md` for the
+approved design. Rationale: after the layer1/leak-fix speedups, parse
+and check are no longer the dominant Mac costs, so the shallow bakes'
+payoff shrank; the IR depth kills the whole front half of the pipeline
+for the runtime with the same serialization machinery (the AST/IR/
+symbol tables are all flat int arenas). Original staging kept for the
+record:
+
 1. Bake post-parse AST (item 3 v1) — smallest step; proves serialization,
    version stamping, base-0 loading; kills Mac lex/parse.
 2. Extend bake to post-check interface — makes check incremental; attacks
