@@ -221,8 +221,14 @@ fixed here.
 ## Diagnostics kept
 
 - Probes: `clarusc/test/{dblcompile,leakprobe,clearprobe,earlyret,
-  paramleak,voidret,untouched,stemp}.cla` (uncommitted; outside the
-  `*_test.cla` glob `internal/selfhost/modules_test.go` consumes).
+  paramleak,voidret,untouched,stemp}.cla` were kept uncommitted during
+  the investigation (outside the `*_test.cla` glob
+  `internal/selfhost/modules_test.go` consumes), then **deleted
+  2026-08-12** (Andrew's call, post-param-abi phase): every shape they
+  probed is now guarded by committed tests — the `TestLeakGate`
+  `DoubleCompile` oracle (`internal/mactest/leakgate_test.go`) plus the
+  core suite's param/ARC guard cases (`testsuite/core/cases_param.cla`).
+  The probe descriptions earlier in this doc record what each proved.
 - Runtime diagnostic patch (rc dump + `-DRT_MEM_BACKTRACE` attribution +
   `CLARUS_MEM_NOCLEAN`): `rtmem-diag.patch` in this session's scratchpad
   — reverted from the working tree; reapply for fix-phase verification.
