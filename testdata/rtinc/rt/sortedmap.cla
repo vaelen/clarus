@@ -1,0 +1,18 @@
+// Copyright 2026, Andrew C. Young <andrew@vaelen.org>
+// SPDX-License-Identifier: MIT
+
+// Stand-in for the now-UNCONDITIONAL sortedmap.cla manifest entry
+// (runtime-ir-bake Task 2: the from-source splice moved to the full lane
+// superset) in this fake runtime-module directory (Task 4's
+// inclusion-machinery test, internal/lowlevel/rtinc_test.go). Deliberately
+// empty, same reason as this directory's core.cla/str.cla/text.cla/
+// list.cla/map.cla stand-ins: this directory exercises expand's
+// declare-before-use splicing machinery, not sortedmap.cla's real content --
+// the real module lives at runtime/clarus/sortedmap.cla. driveManifestSplice
+// now always adds "sortedmap.cla" to neededMods regardless of program shape,
+// so --rtdir testdata/rtinc/rt needs SOME file by that name (an
+// empty/decl-less file pushes main.cla's own "-1 head" empty-file
+// sentinel, already handled) or TestRtInc's IncludesRuntimeModule/
+// NoInclusionWithoutUsage subtests fail with "runtime module sortedmap.cla
+// not found" before ever reaching the assertions they actually care
+// about.

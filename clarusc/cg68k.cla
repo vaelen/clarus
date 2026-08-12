@@ -11466,13 +11466,36 @@ func cgEmitUiEventsPool() {
 // segment whose code never references one of the two leaves that
 // label at -1, never bound, per a68Finish's own "every allocated label
 // must be bound" contract.
+//
+// runtime-ir-bake Task 2: dropped the extra `irIsUiProgram() and` conjunct
+// that used to gate both branches -- under the superset splice, ui*.cla
+// (including uidesc.cla/uitable.cla's UiProgDesc-reading helpers and the
+// `callback func rtUiLdefDraw`/rtUiScrollbarAction LDEF/control glue) is
+// spliced into EVERY program, and cg68SynthCbGlue's own callback rooting
+// is a deliberate over-approximation (shake.cla: "over-approximation is
+// always safe here" -- every callback name an ECbAddr decay was EVER
+// built for anywhere in the combined program gets both its glue and body
+// unconditionally rooted, dead code included). So a non-UI program can
+// now have a REAL, reachable call chain into UiProgDesc() (observed:
+// arith.cla's rtUiLdefDraw -> ...table drawing... -> uidStrPtr ->
+// UiProgDesc()) even though irIsUiProgram() is false -- exactly the same
+// "synthesized/rooted regardless of program shape, but the backing data
+// was only allocated for a UI-shaped program" mismatch Step 0 already
+// fixed for the reverse-waist dispatchers. cgCurPoolUsesUiBlob/
+// cgCurPoolUsesUiEvents ALONE is already the precise, correct signal here
+// (cgFuncUsesUiBlob-derived per-segment real need, cgPackProgram's own
+// output on the real per-segment pass; == irIsUiProgram() on the measure
+// pass, per this function's own header comment -- so this change is a
+// no-op for measure and for every UI-program segment whose need was
+// already accurately tracked; it only changes the previously-broken
+// non-UI-program-with-a-real-reference case).
 func cgReserveUiPoolLabels() {
-    if irIsUiProgram() and cgCurPoolUsesUiBlob {
+    if cgCurPoolUsesUiBlob {
         cgUiBlobLabel = a68NewLabel()
     } else {
         cgUiBlobLabel = -1
     }
-    if irIsUiProgram() and cgCurPoolUsesUiEvents {
+    if cgCurPoolUsesUiEvents {
         cgUiEventsLabel = a68NewLabel()
     } else {
         cgUiEventsLabel = -1

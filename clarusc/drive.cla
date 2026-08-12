@@ -1096,11 +1096,15 @@ func driveEarlySplice(testapi: bool): bool {
 
 // driveManifestSplice implements the post-check runtime-module manifest
 // (ported verbatim off main.cla's old startCLI, split out only for
-// function-size headroom): core/str/text/list/map unconditionally unless
-// driveEarlySplice already spliced them, ui*.cla when the program is a UI
-// program, ser.cla when it uses file save/load, native.cla for a 68k
-// target (want68k) -- then rebuilds `combined2` with the runtime chain
-// first (declare-before-use) and re-checks it. want68k also resolves the
+// function-size headroom): as of runtime-ir-bake Task 2, the from-source
+// path splices the full lane superset unconditionally -- core/str/text/
+// list/map/sortedmap/datetime(+per-lane)/ser/ui* unless driveEarlySplice
+// already spliced the early subset, plus native.cla for a 68k target
+// (want68k). The old per-program usage gates (isUiProg, usesSortedMap,
+// usesDateTime, usesFileSaveLoad) are retired here; tree-shaking (already
+// running before codegen) drops whatever a given program doesn't reach.
+// Then rebuilds `combined2` with the runtime chain first (declare-before-
+// use) and re-checks it. want68k also resolves the
 // app's raw name/icon path into cg68k.cla's cgAppRawName/cgAppIconPath
 // globals here (Task 13, native-5e resource parity's original spot),
 // since cg68BuildFork (driveEmit68kFork/driveEmit68k) needs both and
@@ -1112,7 +1116,6 @@ func driveEarlySplice(testapi: bool): bool {
 // front end renders `diags` itself, exactly as driveCompile's own doc
 // comment promises).
 func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
-    var isUiProg: bool
     var d: int
     var appIdx: int
     var nameV: string
@@ -1132,20 +1135,6 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var beforeHits: int
     var hoists: list of int
     var hoistBefore: int
-
-    // isUiProg reports whether this program declares any window, menu, or
-    // `every` block -- computed from the checked AST decl list (`combined`)
-    // so it's available BEFORE lowering: ir.cla's irIsUiProgram() reads IR
-    // arrays lowerProgram doesn't populate until later, so it can't gate
-    // the manifest splice below.
-    isUiProg = false
-    d = combined
-    while d != -1 {
-        if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
-            isUiProg = true
-        }
-        d = declNext(d)
-    }
 
     if want68k {
         d = combined
@@ -1196,41 +1185,49 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         // entry) -- intmap.cla's rtIntMap* family lives in map.cla itself,
         // which is already unconditionally spliced above.
         cpIntMapPorted = true
-        if isUiProg {
-            neededMods.add("uidesc.cla")
-            neededMods.add("ui.cla")
-            neededMods.add("uiwidgets.cla")
-            neededMods.add("uitext.cla")
-            neededMods.add("uitable.cla")
-            neededMods.add("uiscript.cla")
-            neededMods.add("uidialogs.cla")
-        }
+        // runtime-ir-bake Task 2: ui*.cla is now an unconditional manifest
+        // entry (not gated on the program actually declaring a
+        // window/menu/every), matching core/str/text/list/map above --
+        // the from-source path splices the full lane superset so its IR
+        // indices (and downstream jump-table slots/A5 offsets) match a
+        // future superset bake's, and tree-shaking (already running before
+        // codegen) drops whatever a given program doesn't reach, exactly
+        // like it does for spliced-but-unused code today. `uitest.cla`
+        // remains the one exception, staying `--testapi`-gated (it's a
+        // test API surface, not runtime -- see driveEarlySplice, the only
+        // place it's spliced).
+        neededMods.add("uidesc.cla")
+        neededMods.add("ui.cla")
+        neededMods.add("uiwidgets.cla")
+        neededMods.add("uitext.cla")
+        neededMods.add("uitable.cla")
+        neededMods.add("uiscript.cla")
+        neededMods.add("uidialogs.cla")
     }
-    // map-hashtable phase Task 2: cpSortedMapPorted mirrors cpSerPorted's
-    // own usage-gated splice, ordered right after map.cla (its data-shape
-    // cousin) and before ser.cla -- see cpSortedMapPorted's own doc comment
-    // (cprint.cla) for why sortedmap.cla, unlike map.cla, is CONDITIONALLY
-    // spliced.
-    cpSortedMapPorted = usesSortedMap
-    if usesSortedMap {
-        neededMods.add("sortedmap.cla")
-    }
+    // map-hashtable phase Task 2's cpSortedMapPorted doc comment (cprint.cla)
+    // explains why sortedmap.cla used to be CONDITIONALLY spliced, mirroring
+    // cpSerPorted's own old usage-gated convention; runtime-ir-bake Task 2
+    // makes both unconditional (full lane superset, see the ui* comment
+    // above) -- cpSortedMapPorted/cpSerPorted are set true unconditionally
+    // now, same as cpIntMapPorted's own precedent (never gated at all).
+    // usesSortedMap/usesFileSaveLoad/usesDateTime (check.cla) still get set
+    // by the checker (no other consumer besides this now-retired splice
+    // gate; harmless to leave set-but-unread) but no longer gate anything
+    // here.
+    cpSortedMapPorted = true
+    neededMods.add("sortedmap.cla")
     // datetime (2026-08-10 spec): datetime.cla + exactly one per-lane
     // rtNow variant. No cprint ported-flag exists for this family -- the
     // builtins lower to ordinary named calls (lowCall), so the C lane
     // compiles the spliced .cla source directly.
-    if usesDateTime {
-        neededMods.add("datetime.cla")
-        if want68k {
-            neededMods.add("datetime_68k.cla")
-        } else {
-            neededMods.add("datetime_c.cla")
-        }
+    neededMods.add("datetime.cla")
+    if want68k {
+        neededMods.add("datetime_68k.cla")
+    } else {
+        neededMods.add("datetime_c.cla")
     }
-    cpSerPorted = usesFileSaveLoad
-    if usesFileSaveLoad {
-        neededMods.add("ser.cla")
-    }
+    cpSerPorted = true
+    neededMods.add("ser.cla")
     if want68k {
         neededMods.add("native.cla")
     }
