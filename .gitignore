@@ -13,3 +13,10 @@ internal/mactest/uiprobe/build/
 # Inside Macintosh reference PDFs (local only, never committed)
 /inside-macintosh-v1
 /inside-macintosh-v2
+
+# core-suite serialization case droppings (written to cwd when the host
+# suite CLI runs from the repo root; regenerated every run)
+/core_bin_roundtrip.dat
+/core_mixed_scalar.dat
+/core_ser_name.txt
+/core_ser_roundtrip.txt
