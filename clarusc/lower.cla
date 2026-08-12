@@ -61,6 +61,25 @@ var lowStrIdx: map of int
 // branch) is completely unaffected by this flag's existence.
 var lowResumeFromBake: bool
 
+// lowSkipUiDispatchers (runtime-ir-bake Task 5, fix round 1) tells
+// lowerProgram to skip lowSynthUiDispatchers entirely -- set ONLY by
+// bake.cla's own bakeGenerateChain, around its own two lowerProgram
+// calls (base pass and uitest pass), false everywhere else including
+// every real driveCompile call (bake-path or from-source). The real
+// per-compile lowerProgram(combined2) call ALWAYS runs
+// lowSynthUiDispatchers unconditionally regardless of this flag (it
+// never sets this true), so the eight dispatcher stubs still get built
+// exactly once, against the REAL program's own window/menu/every state,
+// on every actual compile -- this flag only stops the GENERATOR from
+// wastefully building a second (always-empty-state, always-discarded)
+// copy that a real compile's own dispatcher synthesis would otherwise
+// dedup its panic-message string literals against (lowStrIdx), landing
+// them at the WRONG (early, baked) position instead of the tail
+// position a from-source compile's ONE synthesis pass always gives them
+// -- runtime-ir-bake Task 5's own report, "inherited problem, second
+// wave".
+var lowSkipUiDispatchers: bool
+
 // lowCurFuncRet is the enclosing function's declared return IR type index,
 // for the Return-statement coercion Task 4 adds (lower.go's curFuncRet).
 var lowCurFuncRet: int
@@ -6463,9 +6482,17 @@ func lowerProgram(declHead: int): int {
     // cgEmitStartup's UI startup path (irIsUiProgram(), cg68k.cla), never
     // from a nat_*-rooted function, so a non-UI program has no need for
     // them and shake correctly drops them.
-    lowSynthUiDispatchers()
-    if irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0 {
-        lowUiPortAddRoots()
+    // lowSkipUiDispatchers (runtime-ir-bake Task 5, fix round 1): the bake
+    // generator's own two lowerProgram calls set this true -- see the
+    // flag's own doc comment above for why. Every real compile (bake-path
+    // or from-source) leaves it at its default false, so this is a no-op
+    // there; the dispatchers always get built, exactly once, against the
+    // REAL program's own state.
+    if not lowSkipUiDispatchers {
+        lowSynthUiDispatchers()
+        if irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0 {
+            lowUiPortAddRoots()
+        }
     }
     return 0
 }

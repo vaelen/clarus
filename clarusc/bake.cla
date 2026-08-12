@@ -293,27 +293,13 @@ func bakeModuleList(lane: int): list of string {
 var bkGenBaseIrFuncsCount: int
 var bkGenBaseIrStrLitsCount: int
 
-// bkPathIsUitest reports whether pathIdx (an interned path-pool index,
-// resolved via poolGet) names uitest.cla -- a plain basename suffix match
-// rather than an exact-string compare against rtModuleKey("uitest.cla"),
-// since the RECORDED identity (declFileTab/curPathIdx, drive.cla's
-// expand()) is always the DISK path (joinPath(rtDir, "uitest.cla")),
-// which only equals the "runtime/clarus/uitest.cla" key when rtDir is
-// left at its default -- a --rtdir override still ends in the same
-// "uitest.cla" tail either way. Shared by the generator (bakeGenerateChain,
-// splitting the base/uitest lowering below) and the loader (bake.cla's
-// own bkFindUitestPathIdx, Task 5 deliverable (a)/(c)).
-func bkPathIsUitest(pathIdx: int): bool {
-    var p: string
-    var want: string
-
-    if pathIdx == -1 {
-        return false
-    }
-    p = poolGet(pathIdx)
-    want = "uitest.cla"
-    return p.length >= want.length and p[p.length - want.length, want.length] == want
-}
+// drivePathIsUitest (moved to drive.cla, fix round 2): originally lived
+// here as bkPathIsUitest, but drive.cla's own driveManifestSplice needs
+// it too now (its own uitest-tail-repositioning partition) and drive.cla
+// is a DEPENDENCY of bake.cla (bake.cla includes drive.cla, not the
+// reverse), so the shared helper has to live at or below drive.cla's own
+// layer. See drive.cla's own doc comment for the full rationale --
+// unchanged in behavior, just relocated.
 
 // ================================================================
 // Generator: assemble the runtime chain as the program, check once,
@@ -421,7 +407,7 @@ func bakeGenerateChain(lane: int): bool {
     while i < asmHeads.count {
         h = asmHeads[i]
         if h != -1 {
-            if bkPathIsUitest(getDeclFile(h)) {
+            if drivePathIsUitest(getDeclFile(h)) {
                 if uitHead == -1 {
                     uitHead = h
                 } else {
@@ -456,10 +442,21 @@ func bakeGenerateChain(lane: int): bool {
 
     irReset()
     lowResumeFromBake = false
+    // runtime-ir-bake Task 5, fix round 1: lowSkipUiDispatchers=true for
+    // BOTH generator passes -- the baked arenas carry no reverse-waist
+    // dispatcher stubs and no early-interned panic-message string
+    // literals at all now (lowSkipUiDispatchers' own doc comment, lower.
+    // cla). The real per-compile lowerProgram(combined2) call (driveCompile,
+    // never sets this true) still always builds them, fresh, against the
+    // real program's own state, exactly where a from-source compile's ONE
+    // dispatcher-synthesis pass always puts them -- after every runtime
+    // AND user literal.
+    lowSkipUiDispatchers = true
     if baseHead != -1 {
         lowerProgram(baseHead)
     }
     if diags.count > 0 {
+        lowSkipUiDispatchers = false
         return false
     }
     bkGenBaseIrFuncsCount = irFuncs.count
@@ -470,6 +467,7 @@ func bakeGenerateChain(lane: int): bool {
         lowerProgram(uitHead)
     }
     lowResumeFromBake = false
+    lowSkipUiDispatchers = false
     if diags.count > 0 {
         return false
     }
@@ -2414,29 +2412,20 @@ func bkComputeManifestPaths() {
 // just-reset arenas," the brief's own contract).
 //
 // The eight reverse-waist dispatcher stubs (clar_ui_fire_winevent and
-// its seven siblings, lower.cla's lowSynthUiDispatchers) are the one
-// deliberate exception, filtered out of the installed irFuncs/
-// irFuncIdxByName here rather than installed verbatim: the runtime-only
-// bake generator built them against an always-empty/false
+// its seven siblings, lower.cla's lowSynthUiDispatchers) used to need a
+// by-name install-time filter here (Task 4's own original design): the
+// runtime-only bake generator built them against an always-empty/false
 // irWindowDescs/irMenuDescs/irEveryCount/irHasStartEmpty/
-// irHasOpenDocument (the runtime chain declares no app/window/menu/
-// every section at all), so their baked bodies are permanently the
-// no-handler stub shape -- never this program's real one.
-// lowSynthUiDispatchers() always runs again after user lowering
-// (unconditional, un-gated by lowResumeFromBake -- see lower.cla's own
-// header comment on that flag) and rebuilds all eight against the REAL
-// combined state; ir.cla's newIRFunc only registers a name into
-// irFuncIdxByName the FIRST time it's seen (`if not
-// irFuncIdxByName.has(name) { ... }`), so if the stale baked stand-ins
-// kept their names, the fresh rebuild would silently lose the naming
-// race and sit orphaned/unreachable while the stale stub's name (and
-// its permanently-empty body) stayed live. Filtering here -- so the
-// fresh rebuild has a clean name to claim -- needed no change to
-// lower.cla's eight dispatcher-building functions at all; nothing else
-// in the compiler ever references an irFuncs entry by ARENA INDEX (call
-// sites always resolve a callee by interned NAME, ir.cla's
-// findIRFuncIdxByName), so dropping these eight baked entries and
-// re-numbering everyone after them is safe.
+// irHasOpenDocument, so their baked bodies were permanently the
+// no-handler stub shape -- never this program's real one -- and had to
+// be dropped so the REAL per-compile lowerProgram(combined2) call's own
+// (unconditional) dispatcher rebuild could claim their names fresh.
+// Task 5 fix round 1 removed the filter instead: bake.cla's own
+// generator now sets lower.cla's lowSkipUiDispatchers around both its
+// lowerProgram calls, so the baked arenas never contain these eight
+// entries (or their panic-message string literals) AT ALL -- there is
+// nothing left to filter. Verified nothing else in bkInstallArenas or
+// bake.cla depended on the removed skip list before deleting it.
 // testapi (Task 5, inherited-problem fix): when false, irFuncs and
 // irStrLits are truncated back to the base/uitest boundary
 // (bkLdBaseIrFuncsCount/bkLdBaseIrStrLitsCount, bkSecUitestBounds) BEFORE
@@ -2451,30 +2440,13 @@ func bkComputeManifestPaths() {
 // build ALSO always carries uitest.cla (driveEarlySplice), so there is no
 // gap to close on that path.
 func bkInstallArenas(testapi: bool) {
-    var skipNames: list of int
-    var skip: intmap of bool
     var i: int
-    var filtered: list of IRFunc
     var filteredIdx: intmap of int
     var nm: int
     var srcFuncs: list of IRFunc
     var srcStrLits: list of int
     var truncFuncs: list of IRFunc
     var truncStrLits: list of int
-
-    skipNames.add(intern("clar_ui_fire_winevent"))
-    skipNames.add(intern("clar_ui_fire_widget"))
-    skipNames.add(intern("clar_ui_fire_menu"))
-    skipNames.add(intern("clar_ui_fire_every"))
-    skipNames.add(intern("clar_ui_fire_releasevars"))
-    skipNames.add(intern("clar_ui_fire_staterows"))
-    skipNames.add(intern("clar_ui_fire_launchdoc"))
-    skipNames.add(intern("clar_ui_fire_startempty"))
-    i = 0
-    while i < skipNames.count {
-        skip[skipNames[i]] = true
-        i = i + 1
-    }
 
     irTypes = bkLdIrTypes
     irStmts = bkLdIrStmts
@@ -2498,14 +2470,13 @@ func bkInstallArenas(testapi: bool) {
         srcStrLits = truncStrLits
     }
 
-    i = 0
-    while i < srcFuncs.count {
-        if not skip.get(srcFuncs[i].name, false) {
-            filtered.add(srcFuncs[i])
-        }
-        i = i + 1
-    }
-    irFuncs = filtered
+    // No by-name filter needed any more (see this function's own doc
+    // comment) -- srcFuncs (already truncated above for non-testapi)
+    // installs verbatim; irFuncIdxByName still needs its own fresh
+    // build (not a straight copy of the loaded map) since a non-testapi
+    // truncation drops entries the loaded map's own indices would still
+    // reference.
+    irFuncs = srcFuncs
     i = 0
     while i < irFuncs.count {
         nm = irFuncs[i].name
@@ -2598,7 +2569,7 @@ func bkInstallArenas(testapi: bool) {
 // name's params/return type is picked up automatically -- only adding or
 // renaming a UiTest* function needs this list updated too.
 // ponytail: a name-list ceiling, not a derived-from-bake one; upgrade to
-// a real module-boundary scan (mirroring bkPathIsUitest's declFileTab
+// a real module-boundary scan (mirroring drivePathIsUitest's declFileTab
 // walk) if uitest.cla's surface starts changing often enough for this to
 // go stale.
 func bkUitestTestapiNames(): list of string {
@@ -2636,7 +2607,7 @@ func bkFindUitestPathIdx(): int {
 
     i = 0
     while i < bkLoadedDeclFileTab.count {
-        if bkPathIsUitest(bkLoadedDeclFileTab[i]) {
+        if drivePathIsUitest(bkLoadedDeclFileTab[i]) {
             return bkLoadedDeclFileTab[i]
         }
         i = i + 1

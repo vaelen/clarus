@@ -199,22 +199,12 @@ func writeTestapiFixture(t *testing.T, dir string) string {
 	return path
 }
 
-// TestRtbakeTestapiPositive proves --rtbake + --testapi now compiles a
+// TestRtbakeTestapiPositive proves --rtbake + --testapi compiles a
 // program that legitimately names UiTest* (runtime-ir-bake Task 5,
-// deliverable (a) -- Task 4's own refusal is gone). Functional-only, not
-// byte-identity: see this file's own package doc / task-5-report.md for
-// the root-caused reason a --testapi bake install can't be byte-identical
-// to from-source with the CURRENT single-fixed-order bake artifact
-// (driveEarlySplice/driveManifestSplice's own testapi-only module
-// ordering puts sortedmap/datetime/ser/native BEFORE core..uidialogs+
-// uitest, the opposite of the bake's own fixed internal order, which non-
-// testapi's own byte-identity depends on matching) -- fixing that would
-// need a real position-remap of every order-sensitive arena (irStrLits'
-// own EStrConst references, primarily), the same class of undertaking
-// Task 4's report already declined to attempt hastily for the analogous
-// non-testapi problem, for the same reason (silent-correctness-bug risk
-// outweighs a byte-diff). This test instead proves the FUNCTIONAL
-// contract: compiles cleanly, exit 0, non-trivial output.
+// deliverable (a) -- Task 4's own refusal is gone). Functional-only here
+// (compiles cleanly, exit 0, non-trivial output) -- TestBakeFullCorpus
+// Testapi (CLARUS_BAKE_FULL=1) is the byte-identity counterpart, fix
+// round 2's own gate.
 func TestRtbakeTestapiPositive(t *testing.T) {
 	exe := claruscboot.CurrentExe(t)
 	dir := t.TempDir()
@@ -417,57 +407,22 @@ func TestRtbakeIncludeDedupFallback(t *testing.T) {
 // CLARUS_BAKE_FULL=1 (wired into scripts/test-merge.sh's own T2
 // environment -- see that script's own comment block).
 //
-// Every testdata/cg68k/*.cla fixture needing 2+ 32KB code segments is
-// byte-identical -- confirmed exhaustively here, not just the 6-fixture
-// T1 sample (cg68kFullMultiSegment). Among the remaining single-segment
-// fixtures, most ALSO match (cg68kFullSingleSegmentOK) -- the base/
-// uitest lowering split (this task's own inherited-problem fix) closed
-// the PRESENCE gap Task 4 originally found (a single-segment build no
-// longer carries uitest.cla's own unreachable functions/literals at
-// all). A residual, narrower set (cg68kKnownDivergent) still differs:
-// root-caused to the eight reverse-waist dispatchers' own PANIC-MESSAGE
-// string literals (lowSynthPanic, lower.cla) landing at a DIFFERENT
-// irStrLits position than from-source produces -- the bake generator's
-// own runtime-only lowerProgram call ALSO runs lowSynthUiDispatchers()
-// unconditionally (lower.cla's own doc comment), interning these ~7
-// panic strings once, early (right after the rest of the base runtime's
-// own literals); the REAL per-compile lowerProgram(combined2) call
-// rebuilds the dispatchers again (always, regardless of program shape --
-// native.cla's own nat_UiLaunchReal roots them unconditionally on 68k)
-// and its OWN lowInternStr calls DEDUP against the carried-over
-// lowStrIdx map, reusing those EARLY indices instead of interning fresh
-// ones at the tail (where a from-source compile's ONE dispatcher-
-// synthesis pass, running after every runtime AND user literal, always
-// places them). cg68k.cla's Task-13 single-segment shortcut and
-// cprint.cla's C-lane printer both walk irStrLits in raw ARRAY order
-// (not by reachability), so this position difference becomes a visible
-// byte difference; multi-segment 68k builds are immune (their own per-
-// segment packing already reorders by reachability, not raw position).
-// An attempted fix (stripping the 7 panic-message keys from the
-// installed lowStrIdx so the real compile re-interns them fresh) was
-// tried and REVERTED during this task -- it regressed several
-// PREVIOUSLY-matching fixtures (removing a dedup key unconditionally
-// changes behavior for programs that never needed these strings at all
-// too), which is exactly the "quick fix trades a visible divergence for
-// a silent correctness bug" risk Task 4's own report already flagged for
-// the analogous PRESENCE problem. A correct fix needs the SAME class of
-// careful, scoped remap Task 4 declined to attempt hastily, now scoped
-// to these ~7 strings' own reachable-callers set; documented here as a
-// CONCERN for a follow-up, not silently swept under the rug -- see
-// task-5-report.md's own "inherited problem, second wave" section.
-var cg68kFullMultiSegment = []string{
-	"tickprobe.cla", "bounce.cla", "arc.cla", "clear_deep.cla", "smoke.cla", "strcontainers.cla",
-}
-
-var cg68kFullSingleSegmentOK = []string{
-	"arith.cla", "arr_whole_assign.cla", "callback.cla", "control.cla", "inline_a5.cla",
-	"mutrec.cla", "peep_clr.cla", "peep_pushpop.cla", "peep_quick.cla", "peep_shuffle.cla",
-	"regnamed.cla", "xrec.cla",
-}
-
-var cg68kKnownDivergent = []string{
-	"argmat_intr.cla", "argmat_nested.cla", "bigtmp_ceiling.cla", "calls.cla", "enums.cla",
-	"gapclose3.cla", "globals.cla", "recs.cla", "smalltmp_ceiling.cla", "strs.cla", "traps.cla",
+// Fix round 1 (dispatcher panic-string position) and fix round 2 (testapi
+// splice ordering) together closed BOTH divergence classes this gate
+// originally found and had to allowlist around -- see task-5-report.md's
+// own "fix round" section for the root causes and the two structural
+// fixes (bake.cla's lowSkipUiDispatchers gate; drive.cla's
+// driveManifestSplice reassembling combined2 from three separately-
+// tracked chains for testapi instead of driveEarlySplice's own check#1-
+// oriented order). There is no allowlist any more: every fixture below
+// is asserted to match, full stop -- a clean oracle needs no exceptions.
+var cg68kAllFixtures = []string{
+	"arc.cla", "argmat_intr.cla", "argmat_nested.cla", "arith.cla", "arr_whole_assign.cla",
+	"bigtmp_ceiling.cla", "bounce.cla", "callback.cla", "calls.cla", "clear_deep.cla",
+	"control.cla", "enums.cla", "gapclose3.cla", "globals.cla", "inline_a5.cla", "mutrec.cla",
+	"peep_clr.cla", "peep_pushpop.cla", "peep_quick.cla", "peep_shuffle.cla", "recs.cla",
+	"regnamed.cla", "smalltmp_ceiling.cla", "smoke.cla", "strcontainers.cla", "strs.cla",
+	"tickprobe.cla", "traps.cla", "xrec.cla",
 }
 
 func requireBakeFull(t *testing.T) {
@@ -478,12 +433,8 @@ func requireBakeFull(t *testing.T) {
 }
 
 // TestBakeFullCorpusCg68k is the exhaustive counterpart of
-// TestBakePathByteIdentity: every multi-segment fixture plus every
-// single-segment fixture NOT in the documented-divergent set (above)
-// must be byte-identical. cg68kKnownDivergent fixtures are asserted to
-// STILL diverge (not silently dropped) -- if one starts matching (e.g. a
-// future fix), this test fails loudly so the list gets trimmed instead
-// of quietly going stale.
+// TestBakePathByteIdentity: every testdata/cg68k/*.cla fixture, single-
+// or multi-segment, must be byte-identical -- no allowlist.
 func TestBakeFullCorpusCg68k(t *testing.T) {
 	requireBakeFull(t)
 	exe := claruscboot.CurrentExe(t)
@@ -492,32 +443,20 @@ func TestBakeFullCorpusCg68k(t *testing.T) {
 	bakePath := filepath.Join(dir, "rt68k.clir")
 	RunBakeIR(t, exe, "68k", bakePath)
 
-	runOne := func(t *testing.T, base string) bool {
-		entry := filepath.Join(root, "testdata", "cg68k", base)
-		srcDir := filepath.Join(dir, "src-"+base)
-		bakeDir := filepath.Join(dir, "bake-"+base)
-		os.MkdirAll(srcDir, 0o755)
-		os.MkdirAll(bakeDir, 0o755)
-		srcOut := filepath.Join(srcDir, base+".bin")
-		bakeOut := filepath.Join(bakeDir, base+".bin")
-		srcData := runEmit68k(t, exe, entry, srcOut, "")
-		bakeData := runEmit68k(t, exe, entry, bakeOut, bakePath)
-		return bytes.Equal(srcData, bakeData)
-	}
-
-	for _, base := range append(append([]string{}, cg68kFullMultiSegment...), cg68kFullSingleSegmentOK...) {
+	for _, base := range cg68kAllFixtures {
 		base := base
 		t.Run(base, func(t *testing.T) {
-			if !runOne(t, base) {
-				t.Fatalf("%s: --rtbake fork != from-source fork (expected identity)", base)
-			}
-		})
-	}
-	for _, base := range cg68kKnownDivergent {
-		base := base
-		t.Run("known-divergent/"+base, func(t *testing.T) {
-			if runOne(t, base) {
-				t.Fatalf("%s: now matches from-source -- trim it out of cg68kKnownDivergent", base)
+			entry := filepath.Join(root, "testdata", "cg68k", base)
+			srcDir := filepath.Join(dir, "src-"+base)
+			bakeDir := filepath.Join(dir, "bake-"+base)
+			os.MkdirAll(srcDir, 0o755)
+			os.MkdirAll(bakeDir, 0o755)
+			srcOut := filepath.Join(srcDir, base+".bin")
+			bakeOut := filepath.Join(bakeDir, base+".bin")
+			srcData := runEmit68k(t, exe, entry, srcOut, "")
+			bakeData := runEmit68k(t, exe, entry, bakeOut, bakePath)
+			if !bytes.Equal(srcData, bakeData) {
+				t.Fatalf("%s: --rtbake fork (%d bytes) != from-source fork (%d bytes)", base, len(bakeData), len(srcData))
 			}
 		})
 	}
@@ -546,33 +485,14 @@ func TestBakeFullCorpusSelfCompile(t *testing.T) {
 	}
 }
 
-// emituiFullOK are testdata/emitui/*.cla fixtures verified (this task's
-// own manual full-corpus pass) to be byte-identical via `emit --rtbake`
-// (deliverable (d), C-lane): programs that never declare a window/menu/
-// every, so no reverse-waist dispatcher content exists to diverge (see
-// cg68kKnownDivergent's own doc comment -- the C lane's cpEmitStrLits
-// prints unconditionally in raw array order, so it is EQUALLY exposed to
-// the same dispatcher-panic-string-position issue as a single-segment
-// 68k build, for any UI-declaring program).
-var emituiFullOK = []string{
-	"app_info.cla", "app_nonui.cla", "canvas_pattern.cla", "editmenu.cla",
-	"lowlevel_seam.cla", "menu_basic.cla", "overlay_seam.cla", "xrec_ptr_field.cla",
-}
-
-// emituiFullKnownDivergent are UI-declaring emitui fixtures with the same
-// documented dispatcher-panic-string divergence as cg68kKnownDivergent.
-var emituiFullKnownDivergent = []string{
-	"dialogs.cla", "every.cla", "filesave.cla", "formedit.cla", "handlers.cla",
-	"macroman.cla", "opendoc.cla", "popuptable.cla", "textwidgets.cla",
-	"uiblob_probe.cla", "win_basic.cla",
-}
-
 // TestBakeFullCorpusEmitui is deliverable (d)'s own gate: `emit --rtbake`
 // (C lane, --bake-ir --lane c) against from-source `emit`, over the
-// emitui corpus. Fixtures that error identically on both sides (a parse/
-// check-diagnostic fixture, e.g. err_const_at.cla) are skipped -- there
-// is no COMPILED OUTPUT to compare for those; both sides already share
-// internal/emitui's own diagnostic-text golden coverage.
+// FULL emitui corpus -- no allowlist (fix rounds 1/2 closed both
+// divergence classes this gate originally found). Fixtures that error
+// identically on both sides (a parse/check-diagnostic fixture, e.g.
+// err_const_at.cla) are skipped -- there is no COMPILED OUTPUT to
+// compare for those; both sides already share internal/emitui's own
+// diagnostic-text golden coverage.
 func TestBakeFullCorpusEmitui(t *testing.T) {
 	requireBakeFull(t)
 	exe := claruscboot.CurrentExe(t)
@@ -581,52 +501,239 @@ func TestBakeFullCorpusEmitui(t *testing.T) {
 	bakePath := filepath.Join(dir, "rtc.clir")
 	RunBakeIR(t, exe, "c", bakePath)
 
-	runOne := func(t *testing.T, base string) (data []byte, ok bool, ranClean bool) {
-		entry := filepath.Join(root, "testdata", "emitui", base)
-		srcOutPath := filepath.Join(dir, "src-"+base+".c")
-		bakeOutPath := filepath.Join(dir, "bake-"+base+".c")
-		srcCmd := exec.Command(exe, "emit", "--rtdir", "runtime/clarus/", "-o", srcOutPath, entry)
-		srcCmd.Dir = root
-		_, srcErr := srcCmd.CombinedOutput()
-		bakeCmd := exec.Command(exe, "emit", "--rtdir", "runtime/clarus/", "--rtbake", bakePath, "-o", bakeOutPath, entry)
-		bakeCmd.Dir = root
-		_, bakeErr := bakeCmd.CombinedOutput()
-		if (srcErr == nil) != (bakeErr == nil) {
-			t.Fatalf("%s: exit mismatch (from-source err=%v, bake err=%v)", base, srcErr, bakeErr)
-		}
-		if srcErr != nil {
-			return nil, false, false
-		}
-		srcData, err1 := os.ReadFile(srcOutPath)
-		bakeData, err2 := os.ReadFile(bakeOutPath)
-		if err1 != nil || err2 != nil {
-			t.Fatalf("%s: read output: %v / %v", base, err1, err2)
-		}
-		return nil, bytes.Equal(srcData, bakeData), true
+	fixtures, err := filepath.Glob(filepath.Join(root, "testdata", "emitui", "*.cla"))
+	if err != nil || len(fixtures) == 0 {
+		t.Fatalf("glob testdata/emitui/*.cla: %v (%d matches)", err, len(fixtures))
 	}
 
-	for _, base := range emituiFullOK {
-		base := base
+	for _, entry := range fixtures {
+		base := filepath.Base(entry)
 		t.Run(base, func(t *testing.T) {
-			_, ok, ranClean := runOne(t, base)
-			if !ranClean {
+			srcOutPath := filepath.Join(dir, "src-"+base+".c")
+			bakeOutPath := filepath.Join(dir, "bake-"+base+".c")
+			srcCmd := exec.Command(exe, "emit", "--rtdir", "runtime/clarus/", "-o", srcOutPath, entry)
+			srcCmd.Dir = root
+			_, srcErr := srcCmd.CombinedOutput()
+			bakeCmd := exec.Command(exe, "emit", "--rtdir", "runtime/clarus/", "--rtbake", bakePath, "-o", bakeOutPath, entry)
+			bakeCmd.Dir = root
+			_, bakeErr := bakeCmd.CombinedOutput()
+			if (srcErr == nil) != (bakeErr == nil) {
+				t.Fatalf("%s: exit mismatch (from-source err=%v, bake err=%v)", base, srcErr, bakeErr)
+			}
+			if srcErr != nil {
 				t.Skip("fixture errors identically on both sides -- no compiled output to compare")
 			}
-			if !ok {
-				t.Fatalf("%s: --rtbake fork != from-source fork (expected identity)", base)
+			srcData, err1 := os.ReadFile(srcOutPath)
+			bakeData, err2 := os.ReadFile(bakeOutPath)
+			if err1 != nil || err2 != nil {
+				t.Fatalf("%s: read output: %v / %v", base, err1, err2)
+			}
+			if !bytes.Equal(srcData, bakeData) {
+				t.Fatalf("%s: --rtbake fork (%d bytes) != from-source fork (%d bytes)", base, len(bakeData), len(srcData))
 			}
 		})
 	}
-	for _, base := range emituiFullKnownDivergent {
-		base := base
-		t.Run("known-divergent/"+base, func(t *testing.T) {
-			_, ok, ranClean := runOne(t, base)
-			if !ranClean {
-				t.Skip("fixture errors identically on both sides -- no compiled output to compare")
-			}
-			if ok {
-				t.Fatalf("%s: now matches from-source -- trim it out of emituiFullKnownDivergent", base)
-			}
-		})
+}
+
+// TestBakeFullCorpusTestapi (deliverable (a), fix round 2): a --testapi
+// program's `emit68k --rtbake` output must now be byte-identical to
+// from-source --testapi -- fix round 2 (driveManifestSplice reassembling
+// combined2 from three separately-tracked chains: the early runtime
+// modules, the manifest-splice remainder, and uitest.cla, in exactly the
+// bake's own fixed order) closed the ordering gap deliverable (a)'s own
+// first-round report flagged as unresolved.
+func TestBakeFullCorpusTestapi(t *testing.T) {
+	requireBakeFull(t)
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+	fixture := writeTestapiFixture(t, dir)
+
+	srcDir := filepath.Join(dir, "src")
+	bakeDir := filepath.Join(dir, "bake")
+	os.MkdirAll(srcDir, 0o755)
+	os.MkdirAll(bakeDir, 0o755)
+	srcOut := filepath.Join(srcDir, "testapi.bin")
+	bakeOut := filepath.Join(bakeDir, "testapi.bin")
+
+	srcCmd := exec.Command(exe, "emit68k", "--rtdir", "runtime/clarus/", "--testapi", "-o", srcOut, fixture)
+	srcCmd.Dir = RepoRoot(t)
+	if out, err := srcCmd.CombinedOutput(); err != nil {
+		t.Fatalf("from-source --testapi build failed: %v\n%s", err, out)
+	}
+	bakeCmd := exec.Command(exe, "emit68k", "--rtdir", "runtime/clarus/", "--testapi", "--rtbake", bakePath, "-o", bakeOut, fixture)
+	bakeCmd.Dir = RepoRoot(t)
+	if out, err := bakeCmd.CombinedOutput(); err != nil {
+		t.Fatalf("--rtbake --testapi build failed: %v\n%s", err, out)
+	}
+
+	srcData, err := os.ReadFile(srcOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bakeData, err := os.ReadFile(bakeOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("--rtbake --testapi fork (%d bytes) != from-source --testapi fork (%d bytes)", len(bakeData), len(srcData))
+	}
+}
+
+// suiteFiles mirror internal/mactest's own coreCLIFiles/toolboxFiles +
+// their own gui.cla front end (coreGUIFiles/toolboxFiles there) --
+// duplicated here rather than imported (internal/mactest doesn't export
+// them, and pulling a test-only package as a real import would be an
+// odd dependency direction) since both suites' --testapi gui.cla builds
+// are exactly the byte-identity gate deliverable (e) asks for (host
+// emit68k, no emulator boot needed). Keep in sync with internal/mactest/
+// suite_host_test.go's coreCLIFiles and coresuite_test.go's
+// toolboxFiles if either changes.
+var coreSuiteGUIFiles = []string{
+	filepath.Join("testsuite", "kit.cla"),
+	filepath.Join("testsuite", "core", "runner.cla"),
+	filepath.Join("testsuite", "core", "cases_str.cla"),
+	filepath.Join("testsuite", "core", "cases_text.cla"),
+	filepath.Join("testsuite", "core", "cases_list.cla"),
+	filepath.Join("testsuite", "core", "cases_map.cla"),
+	filepath.Join("testsuite", "core", "cases_sortedmap.cla"),
+	filepath.Join("testsuite", "core", "cases_intmap.cla"),
+	filepath.Join("testsuite", "core", "cases_rec.cla"),
+	filepath.Join("testsuite", "core", "cases_arr.cla"),
+	filepath.Join("testsuite", "core", "cases_enumfix.cla"),
+	filepath.Join("testsuite", "core", "cases_ser.cla"),
+	filepath.Join("testsuite", "core", "cases_misc.cla"),
+	filepath.Join("testsuite", "core", "cases_xrec.cla"),
+	filepath.Join("testsuite", "core", "cases_datetime.cla"),
+	filepath.Join("testsuite", "core", "cases_param.cla"),
+	filepath.Join("testsuite", "core", "gui.cla"),
+}
+
+var toolboxSuiteGUIFiles = []string{
+	filepath.Join("testsuite", "kit.cla"),
+	filepath.Join("toolbox", "memory.cla"),
+	filepath.Join("toolbox", "events.cla"),
+	filepath.Join("toolbox", "osutils.cla"),
+	filepath.Join("toolbox", "scrap.cla"),
+	filepath.Join("toolbox", "files.cla"),
+	filepath.Join("toolbox", "resources.cla"),
+	filepath.Join("testsuite", "toolbox", "runner.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_events.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_draw.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_a5.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_gestalt.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_event.cla"),
+	filepath.Join("testsuite", "toolbox", "harness.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_uitest.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_pattern.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_buttons.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_winvar.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_textwidgets.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_menus.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_editmenu.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_canvas.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_zoomwin.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_hscroll.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_popuptable.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_dialogs.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_hdim.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_formedit.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_bigtext.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_catalog.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_finfo.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_resources.cla"),
+	filepath.Join("testsuite", "toolbox", "cases_datetime.cla"),
+	filepath.Join("testsuite", "toolbox", "gui.cla"),
+}
+
+// runSuiteEmit68k runs `clarusc emit68k --testapi [--rtbake bakePath] -o
+// outPath FILES...` (both suites' gui.cla need --testapi, UiTest*) with
+// cmd.Dir at the repo root, and returns the written bytes.
+func runSuiteEmit68k(t *testing.T, exe string, files []string, outPath, bakePath string) []byte {
+	t.Helper()
+	args := []string{"emit68k", "--testapi", "-o", outPath}
+	if bakePath != "" {
+		args = append(args, "--rtbake", bakePath)
+	}
+	args = append(args, files...)
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = RepoRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clarusc %v: %v\n%s", args, err, out)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", outPath, err)
+	}
+	return data
+}
+
+// TestBakeFullCorpusSuiteCore (deliverable (e)'s own suite-build
+// addendum): the core suite's --testapi gui.cla composition, host
+// emit68k (no emulator boot needed for byte-identity), must be byte-
+// identical via --rtbake.
+func TestBakeFullCorpusSuiteCore(t *testing.T) {
+	requireBakeFull(t)
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	srcDir := filepath.Join(dir, "core-src")
+	bakeDir := filepath.Join(dir, "core-bake")
+	os.MkdirAll(srcDir, 0o755)
+	os.MkdirAll(bakeDir, 0o755)
+	srcOut := filepath.Join(srcDir, "core.bin")
+	bakeOut := filepath.Join(bakeDir, "core.bin")
+	srcData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, srcOut, "")
+	bakeData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, bakeOut, bakePath)
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("core suite: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
+	}
+}
+
+// TestBakeFullCorpusSuiteToolbox: the toolbox suite's --testapi gui.cla
+// composition does NOT yet compile via --rtbake -- a genuinely NEW gap
+// found by adding this test (not something fix rounds 1/2 targeted or
+// fixed): testsuite/toolbox/cases_uitest.cla, cases_finfo.cla, and
+// cases_resources.cla name RAW runtime internals directly (UiNewPtr,
+// UiGetNextEvent, rtUiHandleMouseDown, UiStrAddr, ...), not just the 16
+// UiTest* wrapper names bkInstallCheckerSymbolsForTestapi preloads
+// (bake.cla). From-source --testapi's own check#1 sees ALL THIRTEEN
+// early-spliced modules' top-level names (driveEarlySplice splices core.
+// cla..uidialogs.cla+uitest.cla into ONE combined chain, declaring every
+// one of them into the same scope) -- not just uitest.cla's own, an
+// assumption this task's deliverable (a) got wrong from the start (the
+// core suite's own gui.cla composition happens not to name anything
+// outside the 16-name set, which is why it passes and this gap went
+// undetected until this specific suite build was added to the gate).
+// A real fix needs bkInstallCheckerSymbolsForTestapi to preload ALL
+// thirteen early-spliced modules' own checker symbols (funcSigs/symbols/
+// scopes), not just uitest.cla's -- the natural approach mirrors this
+// task's own base/uitest IR split (bake.cla's bakeGenerateChain): a
+// SECOND checker-side boundary captured in the generator, marking where
+// "core.cla..uitest.cla" ends and "sortedmap.cla.." begins, installed
+// wholesale for testapi instead of the current 16-name lookup. Out of
+// scope for this fix round (a genuinely new widening, not a structural
+// reorder like fixes 1/2) -- documented here, asserted to STILL fail so
+// a future fix trips this test instead of it silently going stale.
+func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
+	requireBakeFull(t)
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	bakeOut := filepath.Join(dir, "toolbox.bin")
+	args := append([]string{"emit68k", "--testapi", "--rtbake", bakePath, "-o", bakeOut}, toolboxSuiteGUIFiles...)
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = RepoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("toolbox suite --rtbake build now SUCCEEDS -- the checker-symbol-scope gap (this test's own doc comment) appears fixed; replace this test with a byte-identity assertion like TestBakeFullCorpusSuiteCore")
+	}
+	if !bytes.Contains(out, []byte("undefined:")) {
+		t.Fatalf("expected the documented checker-symbol-scope failure (undefined: ...), got a different error:\n%s", out)
 	}
 }

@@ -548,6 +548,31 @@ func rtModuleKey(mod: string): string {
     return "runtime/clarus/" + mod
 }
 
+// drivePathIsUitest reports whether pathIdx (an interned path-pool index,
+// resolved via poolGet) names uitest.cla -- a plain basename suffix match
+// rather than an exact-string compare against rtModuleKey("uitest.cla"),
+// since the RECORDED identity (declFileTab/curPathIdx, expand() above)
+// is always the DISK path (joinPath(rtDir, "uitest.cla")), which only
+// equals the "runtime/clarus/uitest.cla" key when rtDir is left at its
+// default -- a --rtdir override still ends in the same "uitest.cla" tail
+// either way. Shared by bake.cla's own generator (bakeGenerateChain,
+// splitting the base/uitest lowering) and loader (bkFindUitestPathIdx)
+// AND, as of runtime-ir-bake Task 5 fix round 2, this file's own
+// driveManifestSplice (repositioning uitest.cla's decl nodes to
+// combined2's tail on the from-source path) -- lives here rather than in
+// bake.cla since bake.cla includes drive.cla, not the reverse.
+func drivePathIsUitest(pathIdx: int): bool {
+    var p: string
+    var want: string
+
+    if pathIdx == -1 {
+        return false
+    }
+    p = poolGet(pathIdx)
+    want = "uitest.cla"
+    return p.length >= want.length and p[p.length - want.length, want.length] == want
+}
+
 // lastDecl returns the last node in head's `next` chain (head must be a real
 // index, not -1) -- used to splice one file's decl list onto the running
 // combined list.
@@ -967,6 +992,24 @@ func hoistDedups(fromHit: int): list of int {
 // is unaffected either way -- returns false and leaves `combined` alone.
 // Returns whether it spliced (earlySpliceDone): driveManifestSplice must
 // not re-add the same module set when it did.
+// drvEarlyRtHeadsNoUitest/drvEarlyUitestHeads (runtime-ir-bake Task 5, fix
+// round 2): driveEarlySplice's own earlyRtHeads, split into "the twelve
+// non-uitest early modules" and "uitest.cla alone" (uitest.cla is always
+// the LAST earlyMods entry) -- driveManifestSplice consumes both
+// DIRECTLY (asmHeads-index chains, the same idiom every splice loop in
+// this file already uses) to reassemble combined2 in the bake's own
+// fixed order (early runtime, THEN the manifest-splice remainder, THEN
+// uitest.cla, THEN user code) instead of driveEarlySplice's own
+// check#1-oriented order (early runtime INCLUDING uitest.cla, then
+// user). `combined` itself (check#1's own input) is UNCHANGED --
+// reconstructed exactly as before, from the concatenation of both lists,
+// so check#1's own visibility contract is untouched. Reset to empty at
+// this function's own top (not just declared) so a stale value from a
+// PRIOR compile in a long-running process (macgui.cla) never leaks into
+// a compile that doesn't reach the splice below.
+var drvEarlyRtHeadsNoUitest: list of int
+var drvEarlyUitestHeads: list of int
+
 func driveEarlySplice(testapi: bool): bool {
     var earlyIsUiProg: bool
     var earlyMods: list of string
@@ -981,6 +1024,13 @@ func driveEarlySplice(testapi: bool): bool {
     var beforeHits: int
     var hoists: list of int
     var h: int
+    var freshIntList1: list of int
+    var freshIntList2: list of int
+
+    freshIntList1 = driveFreshIntList()
+    freshIntList2 = driveFreshIntList()
+    drvEarlyRtHeadsNoUitest = freshIntList1
+    drvEarlyUitestHeads = freshIntList2
 
     if not testapi or combined == -1 {
         return false
@@ -1009,6 +1059,17 @@ func driveEarlySplice(testapi: bool): bool {
     earlyMods.add("uitable.cla")
     earlyMods.add("uiscript.cla")
     earlyMods.add("uidialogs.cla")
+    // runtime-ir-bake Task 5, fix round 2: uitest.cla STAYS in this
+    // early-spliced list -- check#1 (driveCompile's own first
+    // checkProgram call, over `combined`, BEFORE driveManifestSplice/
+    // check#2 ever run) needs its names visible here, or a --testapi
+    // program naming UiTest* fails check#1 before ever reaching
+    // driveManifestSplice. driveManifestSplice now RE-POSITIONS
+    // uitest.cla's own decl NODES (not a second splice -- see its own
+    // doc comment) to the tail of combined2, the chain LOWERING actually
+    // uses, so check#1's visibility need and lowering's own byte-layout
+    // need (matching the bake's fixed order) are both satisfied from the
+    // SAME one splice.
     earlyMods.add("uitest.cla")
     cpCorePorted = true
     cpStrPorted = true
@@ -1070,12 +1131,22 @@ func driveEarlySplice(testapi: bool): bool {
         j = 0
         while j < hoists.count {
             earlyRtHeads.add(hoists[j])
+            if earlyMods[i] == "uitest.cla" {
+                drvEarlyUitestHeads.add(hoists[j])
+            } else {
+                drvEarlyRtHeadsNoUitest.add(hoists[j])
+            }
             j = j + 1
         }
         j = beforeCount
         while j < asmHeads.count {
             if asmHeads[j] != -1 {
                 earlyRtHeads.add(j)
+                if earlyMods[i] == "uitest.cla" {
+                    drvEarlyUitestHeads.add(j)
+                } else {
+                    drvEarlyRtHeadsNoUitest.add(j)
+                }
             }
             j = j + 1
         }
@@ -1198,7 +1269,7 @@ func driveResolveAppName(entries: list of string) {
     }
 }
 
-func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
+func driveManifestSplice(entries: list of string, earlySpliceDone: bool, testapi: bool): bool {
     var neededMods: list of string
     var rtHeads: list of int
     var rtTail: int
@@ -1210,6 +1281,12 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var beforeHits: int
     var hoists: list of int
     var hoistBefore: int
+    var earlyRuntimeChain: int
+    var earlyRuntimeTail: int
+    var uitestChain: int
+    var uitestChainTail: int
+    var userChainRebuilt: int
+    var userChainRebuiltTail: int
 
     if want68k {
         driveResolveAppName(entries)
@@ -1281,6 +1358,57 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         neededMods.add("native.cla")
     }
 
+    // runtime-ir-bake Task 5, fix round 2: for testapi, combined2 gets
+    // assembled from THREE separately-tracked chains -- earlyRuntimeChain
+    // (the twelve non-uitest early modules, drvEarlyRtHeadsNoUitest),
+    // uitestChain (uitest.cla alone, drvEarlyUitestHeads), and
+    // userChainRebuilt (the ORIGINAL user files, re-walked from
+    // asmHeads[0..userHeadCount) skipping anything hoisted -- by EITHER
+    // driveEarlySplice's own loop or this function's own neededMods loop
+    // below, hoistedHead is one shared global either way) -- instead of
+    // driveEarlySplice's own check#1-oriented `combined` (early runtime
+    // INCLUDING uitest.cla, THEN user). Reason: `combined`'s own fixed
+    // shape (early-runtime-then-user) can't be reordered into the bake's
+    // fixed order (early-runtime, then the neededMods remainder, then
+    // uitest.cla, then user) by a simple append -- neededMods needs to
+    // land BETWEEN the early-runtime chain and user code, not before or
+    // after both, so the three pieces are tracked separately and
+    // reassembled in the right order below instead. Non-testapi is
+    // COMPLETELY UNCHANGED: earlySpliceDone is false, so none of this
+    // runs, and combined2 is built the original way (neededMods = the
+    // full 16-module list, `combined` = user code only).
+    if earlySpliceDone {
+        earlyRuntimeChain = -1
+        earlyRuntimeTail = -1
+        i = 0
+        while i < drvEarlyRtHeadsNoUitest.count {
+            h = asmHeads[drvEarlyRtHeadsNoUitest[i]]
+            if earlyRuntimeChain == -1 {
+                earlyRuntimeChain = h
+            } else {
+                earlyRuntimeTail = declListAppend(earlyRuntimeTail, h)
+            }
+            earlyRuntimeTail = asmTails[drvEarlyRtHeadsNoUitest[i]]
+            i = i + 1
+        }
+        declListAppend(earlyRuntimeTail, -1)
+
+        uitestChain = -1
+        uitestChainTail = -1
+        i = 0
+        while i < drvEarlyUitestHeads.count {
+            h = asmHeads[drvEarlyUitestHeads[i]]
+            if uitestChain == -1 {
+                uitestChain = h
+            } else {
+                uitestChainTail = declListAppend(uitestChainTail, h)
+            }
+            uitestChainTail = asmTails[drvEarlyUitestHeads[i]]
+            i = i + 1
+        }
+        declListAppend(uitestChainTail, -1)
+    }
+
     combined2 = combined
     if neededMods.count > 0 {
         if not haveRtDir {
@@ -1328,46 +1456,106 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
         }
         drvSpliceActive = false
 
-        // Rebuild the assembled program with the runtime modules' heads
-        // FIRST (declare-before-use), followed by the original (already
-        // fully linked) user-program chain. rtHeads holds asmHeads INDICES
-        // (not heads), so each segment's own end comes from asmTails --
-        // lastDecl would run off the end of a HOISTED segment, whose tail
-        // Phase A already linked to the next user file's head.
-        combined2 = -1
-        rtTail = -1
-        i = 0
-        while i < rtHeads.count {
-            h = asmHeads[rtHeads[i]]
-            if combined2 == -1 {
-                combined2 = h
-            } else {
-                rtTail = declListAppend(rtTail, h)
-            }
-            rtTail = asmTails[rtHeads[i]]
-            i = i + 1
-        }
-        if combined != -1 {
-            if combined2 == -1 {
-                combined2 = combined
-            } else if hoistCount == hoistBefore {
-                rtTail = declListAppend(rtTail, combined)
-            } else {
-                // Hoisting happened: the user chain has to be re-linked
-                // segment by segment, skipping the hoisted files (now in
-                // the runtime chain above) and terminating explicitly --
-                // the last kept segment's `next` still points at whatever
-                // Phase A linked after it, which may be a hoisted file.
-                i = 0
-                while i < userHeadCount {
-                    h = asmHeads[i]
-                    if h != -1 and not hoistedHead[i] {
-                        rtTail = declListAppend(rtTail, h)
-                        rtTail = asmTails[i]
-                    }
-                    i = i + 1
+        if earlySpliceDone {
+            // runtime-ir-bake Task 5, fix round 2: testapi order --
+            // earlyRuntimeChain, THEN rtHeads (the neededMods remainder,
+            // sortedmap/datetime/ser/native), THEN uitestChain, THEN the
+            // rebuilt user chain -- matching the bake's own fixed
+            // internal order (bakeGenerateChain's base/uitest split,
+            // bake.cla) exactly, base modules always in bakeModuleList's
+            // own order followed by uitest.cla, followed by user code.
+            combined2 = earlyRuntimeChain
+            rtTail = lastDecl(combined2)
+            i = 0
+            while i < rtHeads.count {
+                h = asmHeads[rtHeads[i]]
+                if combined2 == -1 {
+                    combined2 = h
+                } else {
+                    rtTail = declListAppend(rtTail, h)
                 }
-                rtTail = declListAppend(rtTail, -1)
+                rtTail = asmTails[rtHeads[i]]
+                i = i + 1
+            }
+            if combined2 == -1 {
+                combined2 = uitestChain
+            } else if uitestChain != -1 {
+                declListAppend(rtTail, uitestChain)
+            }
+            // The rebuilt user chain (asmHeads[0..userHeadCount) minus
+            // whatever hoistedHead marks, from EITHER splice loop) always
+            // goes last, regardless of hoisting -- hoistedHead is exactly
+            // what makes this safe: a user file colliding with any
+            // runtime module (early OR neededMods) is already excluded
+            // here by the SAME flag that put it into the runtime chain
+            // above, so it can never appear twice.
+            userChainRebuilt = -1
+            userChainRebuiltTail = -1
+            i = 0
+            while i < userHeadCount {
+                h = asmHeads[i]
+                if h != -1 and not hoistedHead[i] {
+                    if userChainRebuilt == -1 {
+                        userChainRebuilt = h
+                    } else {
+                        userChainRebuiltTail = declListAppend(userChainRebuiltTail, h)
+                    }
+                    userChainRebuiltTail = asmTails[i]
+                }
+                i = i + 1
+            }
+            declListAppend(userChainRebuiltTail, -1)
+            if userChainRebuilt != -1 {
+                if combined2 == -1 {
+                    combined2 = userChainRebuilt
+                } else {
+                    declListAppend(lastDecl(combined2), userChainRebuilt)
+                }
+            }
+        } else {
+            // Non-testapi: UNCHANGED from before this task -- runtime
+            // modules' heads FIRST (declare-before-use), followed by the
+            // original (already fully linked) user-program chain. rtHeads
+            // holds asmHeads INDICES (not heads), so each segment's own
+            // end comes from asmTails -- lastDecl would run off the end
+            // of a HOISTED segment, whose tail Phase A already linked to
+            // the next user file's head.
+            combined2 = -1
+            rtTail = -1
+            i = 0
+            while i < rtHeads.count {
+                h = asmHeads[rtHeads[i]]
+                if combined2 == -1 {
+                    combined2 = h
+                } else {
+                    rtTail = declListAppend(rtTail, h)
+                }
+                rtTail = asmTails[rtHeads[i]]
+                i = i + 1
+            }
+            if combined != -1 {
+                if combined2 == -1 {
+                    combined2 = combined
+                } else if hoistCount == hoistBefore {
+                    rtTail = declListAppend(rtTail, combined)
+                } else {
+                    // Hoisting happened: the user chain has to be
+                    // re-linked segment by segment, skipping the hoisted
+                    // files (now in the runtime chain above) and
+                    // terminating explicitly -- the last kept segment's
+                    // `next` still points at whatever Phase A linked
+                    // after it, which may be a hoisted file.
+                    i = 0
+                    while i < userHeadCount {
+                        h = asmHeads[i]
+                        if h != -1 and not hoistedHead[i] {
+                            rtTail = declListAppend(rtTail, h)
+                            rtTail = asmTails[i]
+                        }
+                        i = i + 1
+                    }
+                    rtTail = declListAppend(rtTail, -1)
+                }
             }
         }
 
@@ -1662,7 +1850,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     driveProgressStage("Loading Runtime")
     driveProgress("Loading runtime")
-    if not driveManifestSplice(entries, earlySpliceDone) {
+    if not driveManifestSplice(entries, earlySpliceDone, testapi) {
         return false
     }
     driveProgressPhase("Loaded runtime + checked whole program")
