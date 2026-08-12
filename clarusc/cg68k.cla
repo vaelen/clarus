@@ -6318,31 +6318,47 @@ func cgIntr4(e: int, nameIdx: int, addr0: bool, addr1: bool, addr2: bool, addr3:
 }
 
 // cgFillTightScratchFromPaddedArr/cgDrainTightScratchToPaddedArr (Task 16
-// fix) adapt between a `char[N]` local's own cg68k layout -- each element
-// padded to 2 bytes (cgSlotSizeOf, file header's LAYOUT AUTHORITY note) --
-// and the TIGHT (1-byte-per-element) buffer contract runtime/clarus/
-// str.cla's rtStrToBytes/rtStrFromBytes/rtTextToBytes/rtTextFromBytes
-// share with cprint's C backend, where `char[N]` really IS tight. Calling
-// those functions directly against a native char[] local's own PADDED
-// address used to silently touch only every OTHER element (found by Task
-// 16's end gate: strings.cla's `buf[3] = 'z'` after `packed.toBytes(buf)`
-// produced "ABCDEFzH" instead of "ABCzEFGH" -- toBytes had written
-// "A_C_E_G_" into buf's padded slots, verified with an isolated repro).
-// cgIntrStrToBytes/cgIntrTextToBytes now call the runtime function against
-// a fresh TIGHT scratch buffer instead, then drain it into the real
-// (padded) destination array via cgDrainTightScratchToPaddedArr;
-// cgIntrStrFromBytes/cgIntrTextFromBytes fill a tight scratch buffer FROM
-// the padded source array via cgFillTightScratchFromPaddedArr first, then
-// call the runtime function against that. Symmetric fix, both directions
-// -- a toBytes/fromBytes round trip through the SAME buffer, with no
-// direct `buf[i]` access in between, happened to already "work" pre-fix
-// (both ends agreed on the SAME wrong tight-on-padded-memory assumption,
-// so it round-tripped correctly by accident) -- fixing only one direction
-// would have broken that existing case instead of just fixing the real bug.
+// fix, 2026-08-01) originally adapted between a `char[N]` local's own
+// cg68k layout -- each element padded to 2 bytes (cgSlotSizeOf) -- and the
+// TIGHT (1-byte-per-element) buffer contract runtime/clarus/str.cla's
+// rtStrToBytes/rtStrFromBytes/rtTextToBytes/rtTextFromBytes share with
+// cprint's C backend, where `char[N]` really IS tight. Calling those
+// functions directly against a native char[] local's own PADDED address
+// used to silently touch only every OTHER element (found by Task 16's end
+// gate: strings.cla's `buf[3] = 'z'` after `packed.toBytes(buf)` produced
+// "ABCDEFzH" instead of "ABCzEFGH").
+//
+// runtime-ir-bake Task 6 fix round 2 (2026-08-13): `cgArrElemStride`
+// (toolbox-integration Task 6, 2026-08-04 -- three days AFTER the fix
+// above) made a `char[N]` ARRAY's own element spacing tight (1 byte, no
+// padding) too, to fix a DIFFERENT bug (extern-record storage needing
+// truly contiguous bytes) -- but never updated these two functions' own
+// hardcoded stride-2 walk of `arrExpr`, silently reintroducing the exact
+// same "every other byte" corruption Task 16 had fixed, just on the
+// OTHER side of the mismatch (both ends now tight, but this code still
+// walks the source 2 bytes per element). Found via
+// TestClarusCBakePathOnSnow (internal/mactest/clarusc_bake_test.go):
+// bake.cla's bkGetStr builds each interned string via a `char[255] buf`
+// + `buf[i] = char(bkGetByte())` loop (tight, correct, per
+// cgArrElemStride) then `s.fromBytes(buf, n)` -- on real 68k hardware,
+// "rtListNew" (9 bytes) came back as "rLsNw" + 4 garbage/pad bytes:
+// exactly the even-indexed characters (0,2,4,6,8), the stride-2-read
+// signature. Never caught before because it corrupts CONTENT, not
+// length or structure -- every existing test comparing fromBytes/toBytes
+// round-trips through the SAME (consistently, symmetrically wrong)
+// mismatch would have kept passing; only a lookup keyed on the resulting
+// STRING VALUE (bake.cla's own strIndex dedup-by-name) exposed it.
+//
+// Fix: both functions now walk `arrExpr` at stride 1 (cgArrElemStride's
+// OWN current char-array rule), matching what's actually there. The
+// scratch-buffer indirection itself is now a tight-to-tight copy --
+// redundant since the fix above, but left in place rather than removed
+// under this fix round's own time budget (a real simplification,
+// deliberately deferred, not a correctness concern either way).
 
 // cgFillTightScratchFromPaddedArr unrolls a compile-time-bounded copy (N
 // is always a compile-time constant, same cgArrDefaultAt precedent) of
-// arrExpr's own N padded char elements into a tight scratchOff(A6) byte
+// arrExpr's own N tightly-packed char elements into a scratchOff(A6) byte
 // buffer, one element per iteration -- ahead of a FromBytes runtime call.
 func cgFillTightScratchFromPaddedArr(arrExpr: int, scratchOff: int, n: int) {
     var i: int
@@ -6353,15 +6369,17 @@ func cgFillTightScratchFromPaddedArr(arrExpr: int, scratchOff: int, n: int) {
     i = 0
     while i < n {
         a68Emit(OpMove, 1, AmInd, 1, 0, AmPostInc, 0, 0)
-        a68Emit(OpAdda, 4, AmImm, 0, 2, AmAn, 1, 0)
+        a68Emit(OpAdda, 4, AmImm, 0, 1, AmAn, 1, 0)
         i = i + 1
     }
 }
 
 // cgDrainTightScratchToPaddedArr copies the first D0 (n, the actual byte
 // count a ToBytes runtime call just returned) bytes of a tight
-// scratchOff(A6) buffer into arrExpr's own padded char elements -- the
-// mirror of cgFillTightScratchFromPaddedArr, for the opposite direction.
+// scratchOff(A6) buffer into arrExpr's own tightly-packed char elements --
+// the mirror of cgFillTightScratchFromPaddedArr, for the opposite
+// direction (see its own doc comment above for the stride-1 fix, Task 6
+// fix round 2, and why "padded" in these two names is now historical).
 // D0 is PRESERVED throughout (this intrinsic's own return value, cgExpr's
 // "leaves the value in D0" postcondition) -- D1 is the runtime loop
 // counter instead (n itself isn't known at compile time here, unlike the
@@ -6383,7 +6401,7 @@ func cgDrainTightScratchToPaddedArr(arrExpr: int, scratchOff: int) {
     loopLbl = a68NewLabel()
     a68Bind(loopLbl)
     a68Emit(OpMove, 1, AmPostInc, 0, 0, AmInd, 1, 0)
-    a68Emit(OpAdda, 4, AmImm, 0, 2, AmAn, 1, 0)
+    a68Emit(OpAdda, 4, AmImm, 0, 1, AmAn, 1, 0)
     a68Emit(OpDbra, 2, AmDn, 1, 0, AmPCLabel, 0, loopLbl)
     a68Bind(skipLbl)
 }

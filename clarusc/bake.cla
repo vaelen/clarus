@@ -2364,6 +2364,22 @@ func bkLoadSections(): bool {
         }
         i = i + 1
     }
+    // runtime-ir-bake Task 6 fix round 1: a truncated OR overlong buffer
+    // is refused loudly here, on BOTH lanes -- every section's own
+    // framing check (above) only proves internal self-consistency
+    // between adjacent length fields; it says nothing about whether the
+    // WHOLE buffer this parse just walked is the artifact's real,
+    // complete extent. A short copy (a lane's own resource/file read
+    // silently clamping) would, in the general case, either run off the
+    // end of a too-short bkLoadBuf (an out-of-range index -- a loud
+    // runtime error already, not a silent gap) or, if the clamp happened
+    // to land past every section this parse actually touched, leave
+    // trailing bytes unconsumed with no error at all otherwise -- this
+    // catches exactly that second case.
+    if bkLoadPos != bkLoadBuf.length {
+        emitDiag(1, 1, "--rtbake: trailing " + numToStr(bkLoadBuf.length - bkLoadPos) + " unconsumed byte(s) after the last section (truncated or overlong bake)")
+        return false
+    }
     return true
 }
 
