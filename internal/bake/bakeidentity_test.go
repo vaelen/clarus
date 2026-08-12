@@ -1,29 +1,25 @@
 // Copyright 2026, Andrew C. Young <andrew@vaelen.org>
 // SPDX-License-Identifier: MIT
 
-// bakeidentity_test.go (runtime-ir-bake Task 4): the loader's own T1
-// byte-identity gate -- `emit68k --rtbake` against a from-source
-// `emit68k`, over a representative fixture slice, must produce
-// byte-identical forks. Host-only (no emulator needed): both sides run
-// entirely via claruscboot.CurrentExe's host binary.
+// bakeidentity_test.go (runtime-ir-bake Task 4, widened Task 5): the
+// loader's own T1 byte-identity gate -- `emit68k --rtbake` against a
+// from-source `emit68k`, over a representative fixture slice, must
+// produce byte-identical forks. Host-only (no emulator needed): both
+// sides run entirely via claruscboot.CurrentExe's host binary.
 //
 // Fixture slice: tickprobe.cla + bounce.cla (the two window-declaring
 // cg68k goldens named by the brief) plus arc.cla/clear_deep.cla/
-// smoke.cla/strcontainers.cla (four more cg68k fixtures, chosen because
-// each needs 2+ 32KB code segments -- see this task's own report for
-// why: cg68k.cla's cgPackProgram has a documented ("Task 13") single-
-// segment-only shortcut that restores the WHOLE irStrLits pool verbatim
-// when everything fits in one segment, a pre-existing golden-preserving
-// behavior that predates this task; since the bake unconditionally
-// carries uitest.cla regardless of --testapi (bake.cla's own documented
-// Task 3 design), a single-segment non-testapi bake-path build can
-// legitimately include a few extra never-referenced uitest.cla string
-// literals this shortcut doesn't shake-filter, while the true
-// reachability-aware per-segment path (triggered once a program needs
-// 2+ segments) already filters them correctly -- confirmed empirically:
-// every 2+-segment fixture in testdata/cg68k matches byte-for-byte,
-// every 1-segment one does not) plus a self-compile (emit68k of
-// clarusc/main.cla, comfortably multi-segment).
+// smoke.cla/strcontainers.cla (four more multi-segment cg68k fixtures)
+// plus a self-compile (emit68k of clarusc/main.cla, comfortably multi-
+// segment). This T1-tier slice predates Task 5's own inherited-problem
+// fix (bake.cla's base/uitest lowering split + lower.cla's
+// lowSkipUiDispatchers, task-5-report.md's fix rounds 1/2) and was
+// chosen back when only multi-segment fixtures were known to match --
+// that gap is closed now (TestBakeFullCorpusCg68k, gated behind
+// CLARUS_BAKE_FULL=1, asserts pure identity across the FULL corpus,
+// single-segment fixtures included, no allowlist), but this slice stays
+// small/representative for T1's own runtime budget rather than growing
+// to the full corpus by default.
 package bake
 
 import (
@@ -61,8 +57,20 @@ func runEmit68k(t *testing.T, exe, entry, outPath, bakePath string) []byte {
 	args = append(args, entry)
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = RepoRoot(t)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("clarusc %v: %v\n%s", args, err, out)
+	}
+	// runtime-ir-bake Task 5, fix round 3 (IMPORTANT 2): every fixture
+	// reached through this helper is expected to take the REAL bake
+	// path, not deliverable (b)'s own from-source fallback -- a silent
+	// fallback would make the byte-identity assertion that follows this
+	// call PASS VACUOUSLY (comparing from-source against a from-source
+	// recompile, proving nothing about --rtbake itself). Fixtures that
+	// deliberately trigger the fallback (the toolbox suite composition)
+	// go through runSuiteEmit68k's own wantFallback parameter instead.
+	if bakePath != "" && bytes.Contains(out, []byte("falling back")) {
+		t.Fatalf("clarusc %v: unexpectedly fell back to from-source (deliverable (b)'s own fallback note) -- expected the real bake path:\n%s", args, out)
 	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -328,6 +336,50 @@ extend Probe {
 	}
 
 	const want = "undefined: sortedmapKeySlot"
+	if !bytes.Contains(srcOut, []byte(want)) {
+		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
+	}
+	if !bytes.Contains(bakeOut, []byte(want)) {
+		t.Fatalf("--rtbake diagnostic missing %q:\n%s", want, bakeOut)
+	}
+}
+
+// TestRtbakeTestapiNonUiNegative (fix round 3, CRITICAL 1's own required
+// negative test): a NON-UI --testapi program naming UiTestVerb must
+// error identically under --rtbake and from-source -- from-source only
+// ever splices the early runtime (uitest.cla included) for a UI program
+// (driveEarlySplice's own isUiProgram gate), so a non-UI --testapi
+// program naming UiTestVerb is `undefined` there regardless of testapi;
+// the bake path's own testapi branch used to install checker visibility
+// unconditionally on `testapi` alone (driveIsUiProgram, drive.cla, now
+// gates it identically on both paths).
+func TestRtbakeTestapiNonUiNegative(t *testing.T) {
+	exe := claruscboot.CurrentExe(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	src := "func main() {\n    UiTestVerb(\"click Foo\")\n}\n"
+	fixture := filepath.Join(dir, "nonui.cla")
+	if err := os.WriteFile(fixture, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", filepath.Join(dir, "src.bin"), fixture)
+	srcCmd.Dir = RepoRoot(t)
+	srcOut, srcErr := srcCmd.CombinedOutput()
+	if srcErr == nil {
+		t.Fatalf("from-source --testapi (non-UI) naming UiTestVerb: expected failure, got success\n%s", srcOut)
+	}
+
+	bakeCmd := exec.Command(exe, "emit68k", "--rtbake", bakePath, "--testapi", "-o", filepath.Join(dir, "bake.bin"), fixture)
+	bakeCmd.Dir = RepoRoot(t)
+	bakeOut, bakeErr := bakeCmd.CombinedOutput()
+	if bakeErr == nil {
+		t.Fatalf("--rtbake --testapi (non-UI) naming UiTestVerb: expected failure, got success\n%s", bakeOut)
+	}
+
+	const want = "undefined: UiTestVerb"
 	if !bytes.Contains(srcOut, []byte(want)) {
 		t.Fatalf("from-source diagnostic missing %q:\n%s", want, srcOut)
 	}
@@ -671,6 +723,64 @@ func TestBakeFullCorpusTestapi(t *testing.T) {
 	}
 }
 
+// TestBakeFullCorpusTestapiNonUI (fix round 3, CRITICAL 1): the sibling
+// of TestBakeFullCorpusTestapi (which uses a window-declaring fixture)
+// for a NON-UI --testapi program -- reviewer-reproduced divergence:
+// from-source only ever makes testapi's early-spliced runtime visible to
+// a UI program (driveEarlySplice's own isUiProgram gate), but the bake
+// path's own testapi branch used to install checker/IR testapi
+// visibility unconditionally on `testapi` alone, so a non-UI --testapi
+// build (arith.cla, an ordinary testdata/cg68k fixture -- no window/
+// menu/every) diverged: 486 bytes differing, 33152 vs 33024. Fixed by
+// driveIsUiProgram (drive.cla, hoisted out of driveEarlySplice's own
+// inline scan) gating both bkInstallTypeArenaPrefix/bkInstallChecker
+// SymbolsForTestapi (the check-time install) and bkInstallArenas' own
+// testapi argument (the IR-truncation install) on `testapi and
+// isUiProg`, not `testapi` alone.
+func TestBakeFullCorpusTestapiNonUI(t *testing.T) {
+	requireBakeFull(t)
+	exe := claruscboot.CurrentExe(t)
+	root := RepoRoot(t)
+	dir := t.TempDir()
+	bakePath := filepath.Join(dir, "rt68k.clir")
+	RunBakeIR(t, exe, "68k", bakePath)
+
+	entry := filepath.Join(root, "testdata", "cg68k", "arith.cla")
+	srcDir := filepath.Join(dir, "src")
+	bakeDir := filepath.Join(dir, "bake")
+	os.MkdirAll(srcDir, 0o755)
+	os.MkdirAll(bakeDir, 0o755)
+	srcOut := filepath.Join(srcDir, "arith.bin")
+	bakeOut := filepath.Join(bakeDir, "arith.bin")
+
+	srcCmd := exec.Command(exe, "emit68k", "--testapi", "-o", srcOut, entry)
+	srcCmd.Dir = root
+	if out, err := srcCmd.CombinedOutput(); err != nil {
+		t.Fatalf("from-source --testapi build (non-UI) failed: %v\n%s", err, out)
+	}
+	bakeCmd := exec.Command(exe, "emit68k", "--testapi", "--rtbake", bakePath, "-o", bakeOut, entry)
+	bakeCmd.Dir = root
+	bakeOutput, err := bakeCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--rtbake --testapi build (non-UI) failed: %v\n%s", err, bakeOutput)
+	}
+	if bytes.Contains(bakeOutput, []byte("falling back")) {
+		t.Fatalf("--rtbake --testapi (non-UI): unexpectedly fell back to from-source:\n%s", bakeOutput)
+	}
+
+	srcData, err := os.ReadFile(srcOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bakeData, err := os.ReadFile(bakeOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(srcData, bakeData) {
+		t.Fatalf("--rtbake --testapi (non-UI) fork (%d bytes) != from-source --testapi (non-UI) fork (%d bytes)", len(bakeData), len(srcData))
+	}
+}
+
 // suiteFiles mirror internal/mactest's own coreCLIFiles/toolboxFiles +
 // their own gui.cla front end (coreGUIFiles/toolboxFiles there) --
 // duplicated here rather than imported (internal/mactest doesn't export
@@ -740,7 +850,15 @@ var toolboxSuiteGUIFiles = []string{
 // runSuiteEmit68k runs `clarusc emit68k --testapi [--rtbake bakePath] -o
 // outPath FILES...` (both suites' gui.cla need --testapi, UiTest*) with
 // cmd.Dir at the repo root, and returns the written bytes.
-func runSuiteEmit68k(t *testing.T, exe string, files []string, outPath, bakePath string) []byte {
+// wantFallback (IMPORTANT 2): asserts on the presence/absence of
+// deliverable (b)'s own "falling back" note, so a caller expecting the
+// REAL bake path can't pass vacuously (comparing from-source against a
+// silently-fallen-back from-source recompile) and a caller that
+// deliberately exercises the fallback (the toolbox suite) documents that
+// expectation instead of just happening not to fail. Never checked for
+// bakePath == "" (the from-source half of a comparison, which never
+// takes the bake path or its own fallback note at all).
+func runSuiteEmit68k(t *testing.T, exe string, files []string, outPath, bakePath string, wantFallback bool) []byte {
 	t.Helper()
 	args := []string{"emit68k", "--testapi", "-o", outPath}
 	if bakePath != "" {
@@ -749,8 +867,18 @@ func runSuiteEmit68k(t *testing.T, exe string, files []string, outPath, bakePath
 	args = append(args, files...)
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = RepoRoot(t)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("clarusc %v: %v\n%s", args, err, out)
+	}
+	if bakePath != "" {
+		fellBack := bytes.Contains(out, []byte("falling back"))
+		if wantFallback && !fellBack {
+			t.Fatalf("clarusc %v: expected the documented from-source fallback (deliverable (b)), got none:\n%s", args, out)
+		}
+		if !wantFallback && fellBack {
+			t.Fatalf("clarusc %v: unexpectedly fell back to from-source -- expected the real bake path:\n%s", args, out)
+		}
 	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -776,31 +904,42 @@ func TestBakeFullCorpusSuiteCore(t *testing.T) {
 	os.MkdirAll(bakeDir, 0o755)
 	srcOut := filepath.Join(srcDir, "core.bin")
 	bakeOut := filepath.Join(bakeDir, "core.bin")
-	srcData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, srcOut, "")
-	bakeData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, bakeOut, bakePath)
+	srcData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, srcOut, "", false)
+	bakeData := runSuiteEmit68k(t, exe, coreSuiteGUIFiles, bakeOut, bakePath, false)
 	if !bytes.Equal(srcData, bakeData) {
 		t.Fatalf("core suite: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
 	}
 }
 
-// TestBakeFullCorpusSuiteToolbox (fix round 2): the checker-symbol-scope
-// gap round 1 found (testsuite/toolbox/cases_uitest.cla, cases_finfo.
-// cla, and cases_resources.cla name RAW runtime internals -- UiNewPtr,
-// UiStrAddr, ...) is closed -- bkInstallCheckerSymbolsForTestapi now
-// installs full checker-symbol visibility for all THIRTEEN early-
-// spliced modules, not just uitest.cla's 16 UiTest* wrapper names (see
-// its own doc comment, bake.cla). The toolbox suite's own gui.cla
-// composition also directly names toolbox/files.cla -- a NESTED include
-// of uidialogs.cla (one of the thirteen), so its own names are now
-// visible via the SAME preload as toolbox/files.cla's own direct
-// inclusion, a genuine collision from-source resolves via expand()'s own
-// dedup/hoisting (no live re-parse on the bake path to dedup against);
-// bkComputeManifestPaths (deliverable (b)) was widened to cover every
-// file the bake transitively touched (via bkLoadedDeclFileTab, not just
-// bakeModuleList's own top-level entries), so this compile now falls
-// back to a from-source recompile -- byte-identical to it by
-// construction, exactly like TestBakeFullCorpusSuiteCore's own direct
-// (non-fallback) path.
+// TestBakeFullCorpusSuiteToolbox (fix round 2, corrected in fix round 3
+// -- IMPORTANT 2): the checker-symbol-scope gap round 1 found
+// (testsuite/toolbox/cases_uitest.cla, cases_finfo.cla, and cases_
+// resources.cla name RAW runtime internals -- UiNewPtr, UiStrAddr, ...)
+// is closed -- bkInstallCheckerSymbolsForTestapi now installs full
+// checker-symbol visibility for all THIRTEEN early-spliced modules, not
+// just uitest.cla's 16 UiTest* wrapper names (see its own doc comment,
+// bake.cla). But the toolbox suite's own gui.cla composition is NOT an
+// example of the bake path actually compiling this shape: it directly
+// names toolbox/files.cla, toolbox/standardfile.cla, and toolbox/
+// appleevents.cla, each ALSO a transitive nested include of one of the
+// thirteen early-spliced modules (uidialogs.cla:10-11, ui.cla:179) --
+// deliverable (b)'s own fallback (bkComputeManifestPaths, widened in fix
+// round 2 to cover every file the bake transitively touched, not just
+// bakeModuleList's own top-level entries) correctly detects this and
+// falls back to a full from-source recompile for the WHOLE composition.
+// This test therefore asserts the EXPLICIT fallback-class shape (the
+// fallback note IS present, byte-identical to from-source by
+// construction, since it IS a from-source recompile) rather than proving
+// anything about the bake path itself for a toolbox-catalog composition
+// -- round 2's own version of this test asserted plain byte-identity
+// without checking whether "falling back" ever appeared in the output,
+// so it was PASSING VACUOUSLY (from-source compared against a silently-
+// fallen-back from-source recompile, proving --rtbake was never
+// actually exercised for this suite at all). Narrowing the fallback
+// trigger (e.g. testapi-only or extern-only-decl collisions don't need
+// to force a WHOLE-compile fallback) so a toolbox-catalog composition
+// can keep the real bake path is deferred to Task 6/7 -- out of scope
+// for this fix round.
 func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	requireBakeFull(t)
 	exe := claruscboot.CurrentExe(t)
@@ -814,8 +953,8 @@ func TestBakeFullCorpusSuiteToolbox(t *testing.T) {
 	os.MkdirAll(bakeDir, 0o755)
 	srcOut := filepath.Join(srcDir, "toolbox.bin")
 	bakeOut := filepath.Join(bakeDir, "toolbox.bin")
-	srcData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, srcOut, "")
-	bakeData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, bakeOut, bakePath)
+	srcData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, srcOut, "", false)
+	bakeData := runSuiteEmit68k(t, exe, toolboxSuiteGUIFiles, bakeOut, bakePath, true)
 	if !bytes.Equal(srcData, bakeData) {
 		t.Fatalf("toolbox suite: --rtbake fork (%d bytes) != from-source fork (%d bytes)", len(bakeData), len(srcData))
 	}

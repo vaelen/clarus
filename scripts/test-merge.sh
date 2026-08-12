@@ -43,13 +43,18 @@ echo "test-merge.sh: internal/mactest (gated, native lane; cprint-Mac lane opt-i
 
 # runtime-ir-bake Task 5: the bake package's own exhaustive full-corpus
 # byte-identity gate (every testdata/cg68k fixture, self-compile, the
-# emitui corpus via the C lane) -- gated behind CLARUS_BAKE_FULL=1, off
-# by the T1 body's own default run just above (which only exercises the
-# small representative slice, TestBakePathByteIdentity). See
-# internal/bake/bakeidentity_test.go's own doc comments for the
-# documented-divergent fixture lists this asserts STAY divergent (a
-# narrower, precisely-bounded residual of Task 4's original inherited
-# problem -- task-5-report.md).
+# emitui corpus via the C lane, a non-UI and a UI --testapi fixture, and
+# both suites' --testapi gui.cla compositions) -- gated behind
+# CLARUS_BAKE_FULL=1, off by the T1 body's own default run just above
+# (which only exercises the small representative slice,
+# TestBakePathByteIdentity). No allowlist/divergent-fixture list any
+# more (task-5-report.md's fix rounds 1-3 closed every divergence class
+# this gate found) -- every case asserts plain byte-identity, except the
+# toolbox suite's own composition, which asserts the DOCUMENTED
+# fallback-class shape instead (a toolbox-catalog composition currently
+# triggers deliverable (b)'s own from-source fallback rather than taking
+# the bake path -- narrowing that fallback trigger is deferred to Task
+# 6/7, task-5-report.md's fix round 3 section).
 T2C_START=$(date +%s)
 CLARUS_BAKE_FULL=1 go test ./internal/bake -count=1 -timeout 10m
 echo "test-merge.sh: internal/bake full-corpus gate (CLARUS_BAKE_FULL=1) PASS in $(($(date +%s) - T2C_START))s"

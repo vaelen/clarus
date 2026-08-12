@@ -321,13 +321,34 @@ var bkGenBaseIrStrLitsCount: int
 var bkGenEarlyFuncSigsCount: int
 var bkGenEarlySymbolsCount: int
 
-// drivePathIsUitest (moved to drive.cla, fix round 2): originally lived
-// here as bkPathIsUitest, but drive.cla's own driveManifestSplice needs
-// it too now (its own uitest-tail-repositioning partition) and drive.cla
-// is a DEPENDENCY of bake.cla (bake.cla includes drive.cla, not the
-// reverse), so the shared helper has to live at or below drive.cla's own
-// layer. See drive.cla's own doc comment for the full rationale --
-// unchanged in behavior, just relocated.
+// bkPathIsUitest reports whether pathIdx (an interned path-pool index,
+// resolved via poolGet) names uitest.cla -- a plain basename suffix match
+// rather than an exact-string compare against rtModuleKey("uitest.cla"),
+// since the RECORDED identity (declFileTab/curPathIdx, drive.cla's
+// expand()) is always the DISK path (joinPath(rtDir, "uitest.cla")),
+// which only equals the "runtime/clarus/uitest.cla" key when rtDir is
+// left at its default -- a --rtdir override still ends in the same
+// "uitest.cla" tail either way.
+//
+// (runtime-ir-bake Task 5 history: this briefly moved to drive.cla in
+// fix round 2, when driveManifestSplice ALSO needed it for a decl-node
+// partition of `combined`; that partition was replaced, in the SAME fix
+// round, by the drvEarlyRtHeadsNoUitest/drvEarlyUitestHeads asmHeads-
+// index chains driveEarlySplice now tracks directly, which never needed
+// this helper at all -- so as of fix round 3, bakeGenerateChain's own
+// base/uitest split (below) is once again the ONLY caller, and this
+// moved back here where it started.)
+func bkPathIsUitest(pathIdx: int): bool {
+    var p: string
+    var want: string
+
+    if pathIdx == -1 {
+        return false
+    }
+    p = poolGet(pathIdx)
+    want = "uitest.cla"
+    return p.length >= want.length and p[p.length - want.length, want.length] == want
+}
 
 // ================================================================
 // Generator: assemble the runtime chain as the program, check once,
@@ -494,7 +515,7 @@ func bakeGenerateChain(lane: int): bool {
     while i < asmHeads.count {
         h = asmHeads[i]
         if h != -1 {
-            if drivePathIsUitest(getDeclFile(h)) {
+            if bkPathIsUitest(getDeclFile(h)) {
                 if uitHead == -1 {
                     uitHead = h
                 } else {

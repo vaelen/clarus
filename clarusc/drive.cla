@@ -504,6 +504,14 @@ func driveReset() {
     entryFailed = false
     combined = -1
     combined2 = -1
+    // runtime-ir-bake Task 5, fix round 3: defensive reset -- only
+    // bake.cla's own bakeGenerateChain ever sets this true, and it
+    // already clears it on both its own exits (success and every
+    // failure return), so this is a no-op today. Added anyway so the
+    // leak gate's own DoubleCompile oracle (a real cross-compile
+    // correctness check, not just a style nicety) would catch a future
+    // bakeGenerateChain change that left it set.
+    lowSkipUiDispatchers = false
 }
 
 // findRtDir resolves the default --rtdir when the flag is omitted: it walks
@@ -546,30 +554,6 @@ func findRtDir(probeFile: string): string {
 // reading straight off disk.
 func rtModuleKey(mod: string): string {
     return "runtime/clarus/" + mod
-}
-
-// drivePathIsUitest reports whether pathIdx (an interned path-pool index,
-// resolved via poolGet) names uitest.cla -- a plain basename suffix match
-// rather than an exact-string compare against rtModuleKey("uitest.cla"),
-// since the RECORDED identity (declFileTab/curPathIdx, expand() above)
-// is always the DISK path (joinPath(rtDir, "uitest.cla")), which only
-// equals the "runtime/clarus/uitest.cla" key when rtDir is left at its
-// default -- a --rtdir override still ends in the same "uitest.cla" tail
-// either way. Shared by bake.cla's own generator (bakeGenerateChain,
-// splitting the base/uitest lowering) and this file's own
-// driveManifestSplice (repositioning uitest.cla's decl nodes to
-// combined2's tail on the from-source path) -- lives here rather than in
-// bake.cla since bake.cla includes drive.cla, not the reverse.
-func drivePathIsUitest(pathIdx: int): bool {
-    var p: string
-    var want: string
-
-    if pathIdx == -1 {
-        return false
-    }
-    p = poolGet(pathIdx)
-    want = "uitest.cla"
-    return p.length >= want.length and p[p.length - want.length, want.length] == want
 }
 
 // lastDecl returns the last node in head's `next` chain (head must be a real
@@ -1009,13 +993,36 @@ func hoistDedups(fromHit: int): list of int {
 var drvEarlyRtHeadsNoUitest: list of int
 var drvEarlyUitestHeads: list of int
 
+// driveIsUiProgram scans declHead's own top-level decls for a window/
+// menu/every declaration -- hoisted out of driveEarlySplice's own inline
+// scan (runtime-ir-bake Task 5, fix round 3) so driveCompile's bake-path
+// testapi branch can use the IDENTICAL check: from-source only ever
+// makes testapi's early-spliced runtime visible to a UI program
+// (driveEarlySplice's own original gate), but the bake path's own
+// testapi install used to run unconditionally on `testapi` alone,
+// diverging for a non-UI --testapi program (both in checker-symbol
+// visibility -- a non-UI program could illegally resolve UiTestVerb --
+// and in baked IR content, since bkInstallArenas' own testapi argument
+// controlled whether uitest.cla's functions/literals stayed in the
+// installed arenas at all).
+func driveIsUiProgram(declHead: int): bool {
+    var d: int
+
+    d = declHead
+    while d != -1 {
+        if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
+            return true
+        }
+        d = declNext(d)
+    }
+    return false
+}
+
 func driveEarlySplice(testapi: bool): bool {
-    var earlyIsUiProg: bool
     var earlyMods: list of string
     var earlyRtHeads: list of int
     var earlyTail: int
     var earlyCombined2: int
-    var d: int
     var i: int
     var j: int
     var rtPath: string
@@ -1034,15 +1041,7 @@ func driveEarlySplice(testapi: bool): bool {
     if not testapi or combined == -1 {
         return false
     }
-    earlyIsUiProg = false
-    d = combined
-    while d != -1 {
-        if declKind(d) == DkWindow or declKind(d) == DkMenu or declKind(d) == DkEvery {
-            earlyIsUiProg = true
-        }
-        d = declNext(d)
-    }
-    if not earlyIsUiProg {
+    if not driveIsUiProgram(combined) {
         return false
     }
 
@@ -1268,7 +1267,7 @@ func driveResolveAppName(entries: list of string) {
     }
 }
 
-func driveManifestSplice(entries: list of string, earlySpliceDone: bool, testapi: bool): bool {
+func driveManifestSplice(entries: list of string, earlySpliceDone: bool): bool {
     var neededMods: list of string
     var rtHeads: list of int
     var rtTail: int
@@ -1464,7 +1463,10 @@ func driveManifestSplice(entries: list of string, earlySpliceDone: bool, testapi
             // bake.cla) exactly, base modules always in bakeModuleList's
             // own order followed by uitest.cla, followed by user code.
             combined2 = earlyRuntimeChain
-            rtTail = lastDecl(combined2)
+            rtTail = -1
+            if combined2 != -1 {
+                rtTail = lastDecl(combined2)
+            }
             i = 0
             while i < rtHeads.count {
                 h = asmHeads[rtHeads[i]]
@@ -1596,6 +1598,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
     var earlySpliceDone: bool
     var wantLane: int
     var fallbackOk: bool
+    var isUiProg: bool
 
     // findings 1.4 fix round 1: invalidate cg68k.cla's cgFindRecordByName/
     // cgSizeOf lookup caches (cgRecIdxByName, cgSizeMemo) HERE, not only on
@@ -1748,10 +1751,18 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         return false
     }
 
+    // isUiProg (fix round 3): computed once, right after Phase A, from
+    // the user's own (pre-any-splice) `combined` -- reused below both to
+    // gate the bake-path testapi check-install AND, later, the
+    // bkInstallArenas testapi argument, so both halves of the bake path
+    // agree with from-source's own driveIsUiProgram gate (driveEarlySplice)
+    // on whether this specific compile is UI-shaped.
+    isUiProg = combined != -1 and driveIsUiProgram(combined)
+
     // Phase B: one checker pass over the whole program, collecting all
     // check-phase diagnostics (they follow every parse diagnostic).
     driveProgressStage("Checking")
-    if haveRtbake and testapi {
+    if haveRtbake and testapi and isUiProg {
         // runtime-ir-bake Task 5, deliverable (a): the bake path's own
         // --testapi check#1 -- no driveEarlySplice (no source-level
         // re-parse of the runtime; the bake already carries its checked
@@ -1837,7 +1848,13 @@ func driveCompile(entries: list of string, testapi: bool): bool {
         driveProgressStage("Loading Runtime")
         driveProgress("Loading runtime")
         irReset()
-        bkInstallArenas(testapi)
+        // isUiProg (fix round 3): a non-UI --testapi --rtbake compile
+        // truncates the baked IR exactly like non-testapi does -- from-
+        // source's own non-UI testapi build never splices uitest.cla
+        // either (driveEarlySplice's own UI gate), so there is nothing
+        // for a non-UI --testapi bake install to keep that a plain
+        // truncated (non-testapi-shaped) install wouldn't already match.
+        bkInstallArenas(testapi and isUiProg)
         combined2 = combined
         driveProgressPhase("Installed baked runtime")
 
@@ -1854,7 +1871,7 @@ func driveCompile(entries: list of string, testapi: bool): bool {
 
     driveProgressStage("Loading Runtime")
     driveProgress("Loading runtime")
-    if not driveManifestSplice(entries, earlySpliceDone, testapi) {
+    if not driveManifestSplice(entries, earlySpliceDone) {
         return false
     }
     driveProgressPhase("Loaded runtime + checked whole program")
