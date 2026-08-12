@@ -1747,4 +1747,95 @@ on App.startEmpty {
     ln(src, "    k = 2")
     ln(src, "}")
     runCase("assign-to-constant", src)
+
+    // ---- param-abi phase, Task 2 review round 1: the rest of the fill/
+    // mutate-in-place surface (checkRejectParamFill), found by reproducing
+    // three review Criticals against a live build. ----
+
+    // Case 141 (Critical 1): file.load(path, data) fills `data` in place;
+    // a bare value-typed (record) param there is a store-through, banned
+    // same as any other fill target.
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func f(r: R): bool {")
+    ln(src, "    return file.load(\"path.dat\", r)")
+    ln(src, "}")
+    runCase("file-load-record-param-reject", src)
+
+    // Case 142 (Critical 2): askSave's fill argument reached through a
+    // field select on a value-typed (record) param -- round 1 only caught
+    // a BARE ident there; this proves the lvalue-root walk closes it.
+    src = ""
+    ln(src, "record Doc {")
+    ln(src, "    path: string")
+    ln(src, "}")
+    ln(src, "func f(d: Doc): bool {")
+    ln(src, "    return askSave(d.path, \"Untitled\")")
+    ln(src, "}")
+    runCase("asksave-field-through-record-param-reject", src)
+
+    // Case 143 (Critical 3, fromBytes): `s.fromBytes(buf, n)` mutates the
+    // RECEIVER `s` in place (buf is the read-only source) -- a `string`
+    // receiver reached through a bare value-typed param is a store-
+    // through, banned same as any other mutate-in-place receiver.
+    src = ""
+    ln(src, "func f(s: string) {")
+    ln(src, "    var buf: char[8]")
+    ln(src, "    s.fromBytes(buf, 8)")
+    ln(src, "}")
+    runCase("string-frombytes-receiver-param-reject", src)
+
+    // Case 144 (Critical 3, toBytes-param-buf): `s.toBytes(buf)` fills the
+    // `buf` ARGUMENT (always a fixed char array, always value-kind) --
+    // banned when buf is itself a bare param, regardless of the
+    // receiver's own kind.
+    src = ""
+    ln(src, "func f(buf: char[8]) {")
+    ln(src, "    var s: string")
+    ln(src, "    s.toBytes(buf)")
+    ln(src, "}")
+    runCase("string-tobytes-argbuf-param-reject", src)
+
+    // Case 145: LEGAL -- `text.fromBytes` on a `text` PARAM receiver.
+    // `text` is a reference type, so mutating it in place through a param
+    // stays legal, same as any other reference-typed param mutation.
+    src = ""
+    ln(src, "func f(t: text) {")
+    ln(src, "    var buf: char[8]")
+    ln(src, "    t.fromBytes(buf, 8)")
+    ln(src, "}")
+    runCase("text-frombytes-receiver-param-clean", src)
+
+    // Case 146: LEGAL -- file.load(path, data) where `data` is a `list of`
+    // record PARAM. Ch12 allows `data` to be a record, list of record, or
+    // map of record; list is a reference type, so filling it through a
+    // param stays legal (checkRejectParamFill's value-kind gate is keyed
+    // off the ROOT symbol's own declared type -- TyList here, not TyRec).
+    src = ""
+    ln(src, "record R {")
+    ln(src, "    x: int")
+    ln(src, "}")
+    ln(src, "func f(l: list of R): bool {")
+    ln(src, "    return file.load(\"path.dat\", l)")
+    ln(src, "}")
+    runCase("file-load-list-param-clean", src)
+
+    // Case 147 (Minor): LEGAL -- field-assign through a window-ref-typed
+    // param. Window refs are fixed-size 4-byte references (Ch3), same
+    // reference class as text/list/map, so mutating the referent through
+    // a param stays legal -- no existing check_test.cla case exercised
+    // this combination before now (the language reference's own
+    // texteditor.cla acceptance app relies on exactly this: `func
+    // save(d: Doc): bool { ... d.path = ... }` with `d: Doc` a window-ref
+    // param).
+    src = ""
+    ln(src, "window W {")
+    ln(src, "    var n: int")
+    ln(src, "}")
+    ln(src, "func f(w: W) {")
+    ln(src, "    w.n = 5")
+    ln(src, "}")
+    runCase("param-windowref-field-assign-clean", src)
 }

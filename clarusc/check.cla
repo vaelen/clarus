@@ -1754,6 +1754,18 @@ func checkMethodCall(sel: int, argsHead: int): int {
             // at emit time; Task 7 wires the real module in).
             usesFileSaveLoad = true
         }
+        // param-abi phase, Task 2 (review round 1): file.load(path, data)
+        // fills `data` in place (Ch12) -- ban a value-typed param there,
+        // same as any other fill surface. `data` may also be a `list of`
+        // or `map of` record (Ch12's own "any record, list of record, or
+        // map of record"), which stays legal -- list/map are reference
+        // types, so checkRejectParamFill's value-kind gate (keyed off the
+        // ROOT symbol's own declared type) already leaves those alone.
+        // file.save's `data` is read-only (serialized FROM it), so it
+        // needs no guard.
+        if name == "load" and argsHead != -1 and exprNext(argsHead) != -1 {
+            checkRejectParamFill(exprNext(argsHead))
+        }
         return checkTableMethod(fileFuncs, sel, argsHead)
     }
     xt = checkExpr(x, -1)
@@ -1761,6 +1773,20 @@ func checkMethodCall(sel: int, argsHead: int): int {
         return InvalidT
     }
     name = poolGet(selectName(sel))
+    // param-abi phase, Task 2 (review round 1): the two in-place-mutating
+    // string/text methods. `fromBytes` mutates its RECEIVER in place (buf
+    // is the read-only source) -- legal for a `text` receiver (reference
+    // type) but not a `string` receiver reached through a value-typed
+    // param. `toBytes` instead fills its `buf` ARGUMENT (always a fixed
+    // char array, always value-kind) regardless of the receiver's own
+    // kind, so it's guarded unconditionally here rather than inside the
+    // TyStr/TyText cases below.
+    if name == "fromBytes" and typeKind(xt) == TyStr {
+        checkRejectParamFill(x)
+    }
+    if name == "toBytes" and argsHead != -1 {
+        checkRejectParamFill(argsHead)
+    }
     switch typeKind(xt) {
     case TyList {
         return checkListMethod(xt, sel, argsHead)
@@ -3816,6 +3842,34 @@ func symTypeIsValueKind(t: int): bool {
     return typeKind(t) == TyRec or typeKind(t) == TyArr or typeKind(t) == TyStr
 }
 
+// checkRejectParamFill bans passing a value-typed param (bare, or reached
+// through a field/index chain) at any position a callee fills or mutates
+// in place -- the fill-argument surface's own version of checkAssignStmt's
+// value-kind branch (param-abi phase, Task 2 review round 1: the original
+// commit only guarded checkAssignStmt/checkEditStmt/the askOpen/askSave
+// bare-ident case, missing every other fill/mutate surface -- see
+// task-2-report.md's enumeration table for the full audit this closes).
+// Unlike checkAssignStmt, there is no bare-rebind special case here: a fill
+// argument is never a REBIND of the caller's variable (the callee writes
+// INTO existing storage, it doesn't hand back a new reference), so only
+// the value-kind condition applies -- a reference-typed root (text/list/
+// map/window ref/connection/listener/serviceBrowser) stays legal
+// unconditionally, matching every other by-reference mutation in the
+// language.
+func checkRejectParamFill(argExpr: int) {
+    var rootIdent: int
+    var symIdx: int
+
+    rootIdent = lvalueRootIdent(argExpr)
+    if rootIdent == -1 {
+        return
+    }
+    symIdx = scopeLookup(curScope, identName(rootIdent))
+    if symIdx != -1 and symbols[symIdx].isParam and symTypeIsValueKind(symbols[symIdx].typeIdx) {
+        emitDiag(exprLine(argExpr), exprCol(argExpr), "cannot assign to parameter " + poolGet(identName(rootIdent)))
+    }
+}
+
 // readOnlyPropName reports the read-only pseudo-property sel names
 // (`front`, `count`, `length`, `isNew`, the error type's `code`/`message`),
 // or "" if sel isn't one. Widget runtime properties (text/caption/
@@ -5104,7 +5158,6 @@ func checkIdentCall(e: int, fn: int): int {
     var nameIdx: int
     var symIdx: int
     var fillArg: int
-    var fillSymIdx: int
 
     nameIdx = identName(fn)
     if nameIdx == cnInt {
@@ -5136,19 +5189,20 @@ func checkIdentCall(e: int, fn: int): int {
         return InvalidT
     }
     if symbols[symIdx].isFunc {
-        // param-abi phase, Task 2: askOpen/askSave fill their FIRST
-        // argument in place using a runtime calling convention no
-        // user-declared function has (Ch6's own "Built-in runtime
-        // routines are not bound by this rule" carve-out) -- a bare param
-        // there is silently mutated exactly like a rebind would be, so
-        // ban it same as any other assign-to-param.
+        // param-abi phase, Task 2 (review round 1): askOpen/askSave fill
+        // their FIRST argument in place using a runtime calling convention
+        // no user-declared function has (Ch6's own "Built-in runtime
+        // routines are not bound by this rule" carve-out) -- a value-typed
+        // param there, bare OR reached through a field/index chain (e.g.
+        // `askSave(d.path, ...)` where `d` is a record param), is silently
+        // mutated exactly like a rebind would be, so ban it same as any
+        // other assign-to-param. checkRejectParamFill walks to the lvalue
+        // root the same way checkAssignStmt does -- round 1's fix only
+        // checked a bare ExIdent, missing the field/index case.
         if nameIdx == cnAskOpen or nameIdx == cnAskSave {
             fillArg = callArgsHead(e)
-            if fillArg != -1 and exprKind(fillArg) == ExIdent {
-                fillSymIdx = scopeLookup(curScope, identName(fillArg))
-                if fillSymIdx != -1 and symbols[fillSymIdx].isParam {
-                    emitDiag(exprLine(fillArg), exprCol(fillArg), "cannot assign to parameter " + poolGet(identName(fillArg)))
-                }
+            if fillArg != -1 {
+                checkRejectParamFill(fillArg)
             }
         }
         return checkArgsCall(e, callArgsHead(e), symbols[symIdx].sigIdx, symbols[symIdx].isExtern)

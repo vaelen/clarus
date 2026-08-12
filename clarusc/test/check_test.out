@@ -285,3 +285,17 @@ check_test.cla:9:13: cannot assign to parameter r
 check_test.cla:2:20: cannot assign to parameter p
 === assign-to-constant ===
 check_test.cla:3:5: cannot assign to constant k
+=== file-load-record-param-reject ===
+check_test.cla:5:34: cannot assign to parameter r
+=== asksave-field-through-record-param-reject ===
+check_test.cla:5:21: cannot assign to parameter d
+=== string-frombytes-receiver-param-reject ===
+check_test.cla:3:5: cannot assign to parameter s
+=== string-tobytes-argbuf-param-reject ===
+check_test.cla:3:15: cannot assign to parameter buf
+=== text-frombytes-receiver-param-clean ===
+clean
+=== file-load-list-param-clean ===
+clean
+=== param-windowref-field-assign-clean ===
+clean
