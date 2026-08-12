@@ -56,7 +56,11 @@
 // param-abi phase Task 4) are the 57th-59th real cases: by-value
 // parameter semantics under aliasing, written against TODAY'S full-copy
 // convention so they stay green across the coming borrow/copy ABI flip
-// (Tasks 5-7) as a live semantic guard.
+// (Tasks 5-7) as a live semantic guard. ParamNestedCallArg (same file,
+// Task 5 fix round 1) is the 60th real case: a handle-bearing record
+// built by a nested call or inline `new T`, passed DIRECTLY as a by-ref
+// argument -- the leak-gate regression the other three cases didn't
+// cover (see cases_param.cla's own doc comment).
 
 enum CoreTest {
     All
@@ -120,16 +124,17 @@ enum CoreTest {
     ParamAliasGlobal
     ParamAliasHandle
     ParamBorrowChain
+    ParamNestedCallArg
     SelfCheck
 }
 
-// nCoreCases is CoreTest's member count minus All: the 60 real cases plus
+// nCoreCases is CoreTest's member count minus All: the 61 real cases plus
 // SelfCheck itself. SelfCheck's own branch does not increment casesRun for
 // itself (it is checking that the OTHER branches ran) -- so on a clean
 // run, casesRun has reached nCoreCases - 1 by the time SelfCheck's own
 // check runs. A forgotten branch leaves casesRun short and SelfCheck
 // fails, instead of the suite silently shrinking.
-const nCoreCases: int = 61
+const nCoreCases: int = 62
 
 // coreCaseName maps a CoreTest member to its programmatic name, used
 // both for CLI arg matching (cli.cla) and as a TestResult's name.
@@ -318,6 +323,9 @@ func coreCaseName(t: CoreTest): string {
     case ParamBorrowChain {
         return "ParamBorrowChain"
     }
+    case ParamNestedCallArg {
+        return "ParamNestedCallArg"
+    }
     case SelfCheck {
         return "SelfCheck"
     }
@@ -398,6 +406,7 @@ func coreAllCases(): list of CoreTest {
     l.add(ParamAliasGlobal)
     l.add(ParamAliasHandle)
     l.add(ParamBorrowChain)
+    l.add(ParamNestedCallArg)
     l.add(SelfCheck)
     return l
 }
@@ -674,6 +683,10 @@ func runCoreTests(sel: list of CoreTest): list of TestResult {
     }
     if wantAll or coreHas(deduped, ParamBorrowChain) {
         results.add(caseParamBorrowChain())
+        casesRun = casesRun + 1
+    }
+    if wantAll or coreHas(deduped, ParamNestedCallArg) {
+        results.add(caseParamNestedCallArg())
         casesRun = casesRun + 1
     }
     if wantAll or coreHas(deduped, SelfCheck) {

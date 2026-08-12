@@ -1245,13 +1245,24 @@ func fpIsHandleType(t: int): bool {
 // argument instead passes the callee's new by-ref pointer param an
 // address, per irArgNeedsCopy(a)'s Task 3 classification (single source of
 // truth -- this function does not re-derive it):
-//   - borrow (false): `&(<addrable form>)` -- fpAddrable already covers
-//     every addressable shape (a bare var, `.field`/`[i]` chains, a
-//     literal, an intrinsic that materializes its own result into a named
-//     temp) and falls back to materializing a genuine rvalue into a fresh
-//     temp itself (fpCopyToTemp) when none of those apply -- the exact
-//     "rvalue temps: materialize via the existing tracked-temp machinery"
-//     shape the brief calls for, reused rather than reimplemented.
+//   - borrow (false): `&(<addrable form>)` for most shapes --
+//     `fpAddrable` covers a bare var, `.field`/`[i]` chains, a literal,
+//     and falls back to materializing a genuine rvalue via `fpCopyToTemp`.
+//     TWO shapes need their OWN handling first, both fix-round-1 findings
+//     (a nested-call-result / inline-`new`-record borrowed arg,
+//     `useDoc(makeDoc())`/`useDoc(new Doc)`): `fpCopyToTemp` unconditionally
+//     `fpHandoff`s (untracks) whatever `fpExpr(e)` just tracked, then
+//     shallow-copies it into a FRESH, UNTRACKED temp -- correct for
+//     `fpCopyToTemp`'s OTHER callers (a list/map-push VALUE argument,
+//     where the raw byte copy is about to become a birth-store into a
+//     longer-lived container that inherits the ownership wholesale, so
+//     dropping this temp's own tracking is right), but wrong here: a
+//     BORROW has no new owner, so a handle-bearing rvalue must stay
+//     tracked for the ordinary end-of-statement release, or its callee-
+//     return/constructor +1 leaks permanently (nothing else ever
+//     references the abandoned original). See ECallFn/ENewRec's own
+//     branches below instead of touching `fpAddrable`/`fpCopyToTemp`
+//     themselves, which stay correct, unchanged, for every OTHER caller.
 //   - copy (true): hoist a fresh statement-level temp via the SAME
 //     tracked-temp machinery fpCallFn's own call-RESULT path uses just
 //     below (fpNewTrackedTmp/fpStmtTmpRel) -- but only for a handle-bearing
@@ -1268,6 +1279,7 @@ func fpIsHandleType(t: int): bool {
 func fpCallFnArg(a: int): text {
     var t: int
     var k: IRKind
+    var ak: IRExprKind
     var name: text
     var handleBearing: bool
 
@@ -1277,6 +1289,31 @@ func fpCallFnArg(a: int): text {
         return fpExpr(a)
     }
     if not irArgNeedsCopy(a) {
+        ak = irExprKind(a)
+        // fix round 1 (leak-gate review): a handle-bearing KRec produced
+        // by a NESTED user-function call is ALREADY materialized into an
+        // addressable, release-tracked temp by fpExpr/fpCallFn itself
+        // (fpCallFn's own tracked-temp gate is EXACTLY fpNeedsRelease on
+        // a KRec return -- k is pinned to KStr/KRec above, and
+        // fpNeedsRelease(KStr) is always false, so `fpNeedsRelease(t)`
+        // here can only be true when k==KRec and the callee's return is
+        // handle-bearing, the SAME condition fpCallFn's own gate tests) --
+        // reuse that name as-is rather than routing it through
+        // `fpAddrable`, which would `fpHandoff` (untrack) it first.
+        if ak == ECallFn and fpNeedsRelease(t) {
+            return "&(" + fpExpr(a) + ")"
+        }
+        // An inline `new T` record literal is NEVER itself addressable
+        // (`clar_new_NAME()`, a bare call expression -- unlike ECallFn,
+        // fpExpr never self-tracks it), so it needs a temp regardless;
+        // when handle-bearing, that temp must be release-tracked (no
+        // retain -- a constructor result, like a call's return, is always
+        // freshly and uniquely owned, nothing else to alias).
+        if ak == ENewRec and fpNeedsRelease(t) {
+            name = fpNewTrackedTmp(t)
+            fpEmit(name + " = " + fpExpr(a) + ";")
+            return "&(" + name + ")"
+        }
         return "&(" + fpAddrable(a) + ")"
     }
     handleBearing = k == KRec and irRecHasHandleField(irtName(t))

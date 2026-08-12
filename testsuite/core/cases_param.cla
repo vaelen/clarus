@@ -21,6 +21,19 @@
 //                        not the global's).
 //   ParamBorrowChain  <- a string value threaded through two levels of
 //                        param passing comes back unchanged.
+//   ParamNestedCallArg <- a handle-bearing record built by a NESTED call
+//                        (`f(g())`) or an inline `new T` literal, passed
+//                        DIRECTLY as a by-ref record argument (no local
+//                        var in between), reads back correctly. Task 5
+//                        fix round 1: this exact shape leaked the
+//                        callee's/constructor's owned text handle every
+//                        call -- `fpAddrable`'s rvalue fallback
+//                        (`fpCopyToTemp`) untracked the call result's
+//                        already-tracked release before shallow-copying
+//                        it, orphaning the +1 permanently. No existing
+//                        case caught it because every other case borrows
+//                        a NAMED var/global, never a bare nested call or
+//                        `new` result.
 //
 // Params are immutable (Task 2): none of these helpers assign to or
 // store through a parameter -- caseParamAliasHandle's global doc/`d`
@@ -80,4 +93,25 @@ func caseParamBorrowChain(): TestResult {
         return tkFail("ParamBorrowChain", "borrow chain corrupted value")
     }
     return tkPass("ParamBorrowChain")
+}
+
+func makeNestedDoc(): PParamDoc {
+    var d: PParamDoc
+    d.title = "t2"
+    d.body = "nested"
+    return d
+}
+
+func readParamDocBody(d: PParamDoc): text {
+    return d.body
+}
+
+func caseParamNestedCallArg(): TestResult {
+    if readParamDocBody(makeNestedDoc()) != "nested" {
+        return tkFail("ParamNestedCallArg", "nested call-result arg corrupted")
+    }
+    if readParamDocBody(new PParamDoc) != "" {
+        return tkFail("ParamNestedCallArg", "inline new-record arg corrupted")
+    }
+    return tkPass("ParamNestedCallArg")
 }

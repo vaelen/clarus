@@ -201,7 +201,7 @@ func TestCoreSuiteCLI(t *testing.T) {
 			"IntMapSetCount", "IntMapHasRemove", "IntMapOfListUpsert", "IntMapGrowIter",
 			"DurationStrShapes", "DateTimeStrVectors", "NowSanity",
 			"ClearBasics",
-			"ParamAliasGlobal", "ParamAliasHandle", "ParamBorrowChain",
+			"ParamAliasGlobal", "ParamAliasHandle", "ParamBorrowChain", "ParamNestedCallArg",
 			"SelfCheck",
 		}
 		if len(lines) != len(wantCases) {
