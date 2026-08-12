@@ -6410,11 +6410,28 @@ func lowerProgram(declHead: int): int {
         d = declNext(d)
     }
     lowSynthesizeMissingOpenedHandlers()
-    // Reverse-waist dispatcher synthesis -- duplicates irIsUiProgram()'s
-    // own gate (cprint.cla) rather than calling across the layering
-    // boundary; see lowSynthUiDispatchers' own header comment.
+    // Reverse-waist dispatcher synthesis (runtime-ir-bake Task 2: made
+    // UNCONDITIONAL -- was gated on irIsUiProgram()'s own condition,
+    // duplicated here rather than calling across the layering boundary).
+    // Under the superset splice, native.cla is spliced into EVERY 68k
+    // program (driveManifestSplice), and cg68AddRoots (cg68k.cla) roots
+    // every "nat_*" IRFunc unconditionally -- so nat_UiLaunchReal
+    // (runtime/clarus/ui.cla), rooted regardless of program shape, always
+    // calls the UiFireStartEmpty() extern, which cgCallExtUiSynth resolves
+    // by name to clar_ui_fire_startempty. That dispatcher (and the shake
+    // root each lowSynthXxx below already registers unconditionally for
+    // itself) has to exist even for a non-UI program, or cg68k quits with
+    // "UI dispatcher ... not found/reachable" (cg68k.cla). Each dispatcher
+    // already degrades to an empty/no-op body when its handler doesn't
+    // exist (lowSynthStartEmpty et al.), so this is a no-op in shape for
+    // non-UI programs, just extra always-present stub functions.
+    // lowUiPortAddRoots stays gated on isUiProgram: its own roots
+    // (rtUiStartup/rtUiRun/...) are only ever called by name from
+    // cgEmitStartup's UI startup path (irIsUiProgram(), cg68k.cla), never
+    // from a nat_*-rooted function, so a non-UI program has no need for
+    // them and shake correctly drops them.
+    lowSynthUiDispatchers()
     if irWindowDescs.count > 0 or irMenuDescs.count > 0 or irEveryCount > 0 {
-        lowSynthUiDispatchers()
         lowUiPortAddRoots()
     }
     return 0
